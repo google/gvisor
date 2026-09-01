@@ -930,9 +930,14 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
     socklen_t enableLen = sizeof(enable);
 
     // Test that the option is initially set to false.
-    ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
-                           &enableLen),
-                SyscallSucceeds());
+    int ret = getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
+                         &enableLen);
+    if (sock_opt == SO_PASSCRED && ret < 0 && errno == EOPNOTSUPP) {
+      // Since Linux 6.16 (7d8d93fdde50), SO_PASSCRED is restricted to
+      // AF_UNIX, AF_NETLINK, and AF_BLUETOOTH sockets.
+      continue;
+    }
+    ASSERT_THAT(ret, SyscallSucceeds());
     ASSERT_EQ(enableLen, sizeof(enable));
     EXPECT_EQ(enable, 0) << absl::StrFormat(
         "getsockopt(fd, SOL_SOCKET, %d, &enable, &enableLen) => enable=%d",

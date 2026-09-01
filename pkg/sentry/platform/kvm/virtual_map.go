@@ -21,6 +21,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
@@ -36,13 +37,15 @@ type virtualRegion struct {
 // mapsLine matches a single line from /proc/PID/maps.
 var mapsLine = regexp.MustCompile(`([0-9a-f]+)-([0-9a-f]+) ([r-][w-][x-][sp]) ([0-9a-f]+) [0-9a-f]{2,3}:[0-9a-f]{2,} [0-9]+\s+(.*)`)
 
+var excludeVvarRegion bool
+
 // excludeVirtualRegion returns true if these regions should be excluded from
 // the physical map. Virtual regions need to be excluded if get_user_pages will
 // fail on those addresses, preventing KVM from satisfying EPT faults.
 //
 // This is called by the physical map functions, not applyVirtualRegions.
 func excludeVirtualRegion(r virtualRegion) bool {
-	return false
+	return excludeVvarRegion && (strings.HasPrefix(r.filename, "[vvar") || strings.HasPrefix(r.filename, "[vdso"))
 }
 
 // mmioVirtualRegion returns true if r should be included in the physical map,
@@ -56,8 +59,11 @@ func mmioVirtualRegion(r virtualRegion) bool {
 
 // applyVirtualRegions parses the process maps file.
 //
+// Takes a function that's called on each virtualRegion. If function returns
+// true, stops iteration.
+//
 // Unlike mappedRegions, these are not consistent over time.
-func applyVirtualRegions(fn func(vr virtualRegion)) error {
+func applyVirtualRegions(fn func(vr virtualRegion) bool) error {
 	// Open /proc/self/maps.
 	f, err := os.Open("/proc/self/maps")
 	if err != nil {
@@ -91,7 +97,7 @@ func applyVirtualRegions(fn func(vr virtualRegion)) error {
 			if err != nil {
 				return fmt.Errorf("bad offset: %v", string(b))
 			}
-			fn(virtualRegion{
+			if stop := fn(virtualRegion{
 				region: region{
 					virtual: uintptr(start),
 					length:  uintptr(end - start),
@@ -104,7 +110,9 @@ func applyVirtualRegions(fn func(vr virtualRegion)) error {
 				shared:   shared,
 				offset:   uintptr(offset),
 				filename: string(m[5]),
-			})
+			}); stop {
+				break
+			}
 		}
 		if err != nil && err == io.EOF {
 			break
@@ -114,4 +122,24 @@ func applyVirtualRegions(fn func(vr virtualRegion)) error {
 	}
 
 	return nil
+}
+
+func findRegionStartingWith(name string) (region, error) {
+	var r region
+	var found bool
+	err := applyVirtualRegions(func(vr virtualRegion) bool {
+		if strings.HasPrefix(vr.filename, name) {
+			r = vr.region
+			found = true
+			return true
+		}
+		return false
+	})
+	if err != nil {
+		return region{}, err
+	}
+	if !found {
+		return region{}, fmt.Errorf("region %s not found", name)
+	}
+	return r, nil
 }

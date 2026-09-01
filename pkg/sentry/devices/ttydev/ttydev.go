@@ -40,10 +40,11 @@ func (ttyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opt
 	if t == nil {
 		return nil, linuxerr.ENXIO
 	}
-	tty := t.ThreadGroup().TTY()
+	tty := t.ThreadGroup().GetTTY()
 	if tty == nil {
 		return nil, linuxerr.ENXIO
 	}
+	defer tty.DecRef(ctx) // Ref taken over by OpenTTY.
 	// Opening /dev/tty does not set the controlling terminal. See Linux
 	// tty_open().
 	opts.Flags |= linux.O_NOCTTY

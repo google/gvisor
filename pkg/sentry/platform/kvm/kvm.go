@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -105,6 +106,7 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	if globalErr != nil {
 		return nil, globalErr
 	}
+	config.StartupTimer.Reached("kvm global state initialized")
 
 	// Create a new VM fd.
 	var (
@@ -123,14 +125,24 @@ func New(deviceFile *fd.FD, config Config) (*KVM, error) {
 	}
 	// We are done with the device file.
 	deviceFile.Close()
+	config.StartupTimer.Reached("kvm VM created")
+
+	// `kvm_destroy_vm` costs tens of milliseconds. Do that async.
+	config.PinRing.Add(int(vm))
 
 	// Create a VM context.
 	machine, err := newMachine(int(vm), &config)
 	if err != nil {
 		return nil, err
 	}
+	config.StartupTimer.Reached("kvm machine created")
+
+	config.StartupTimer.Reached("waiting for membarrier")
+	memBarrier := <-mbCh
+	config.StartupTimer.Reached("host membarrier probed")
+
 	return &KVM{
-		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: <-mbCh},
+		UseHostProcessMemoryBarrier: platform.UseHostProcessMemoryBarrier{MemBarrier: memBarrier},
 		machine:                     machine,
 	}, nil
 }
@@ -227,6 +239,8 @@ func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 	return New(opts.DeviceFile, Config{
 		ApplicationCores: opts.ApplicationCores,
 		UseCPUNums:       opts.UseCPUNums,
+		StartupTimer:     opts.StartupTimer,
+		PinRing:          opts.PinRing,
 	})
 }
 

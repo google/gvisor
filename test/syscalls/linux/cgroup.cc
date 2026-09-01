@@ -242,6 +242,25 @@ TEST(Cgroup, UnmountRepeated) {
   EXPECT_THAT(umount(c.Path().c_str()), SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(Cgroup, DetachedMountBindFails) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
+
+  // Hold an open fd on the mount so that it survives the lazy umount, then
+  // name it again through /proc/self/fd.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(c.Path(), O_RDONLY | O_DIRECTORY));
+  ASSERT_THAT(umount2(c.Path().c_str(), MNT_DETACH), SyscallSucceeds());
+  m.release(c);
+
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string fd_path = absl::StrFormat("/proc/self/fd/%d", fd.get());
+  EXPECT_THAT(mount(fd_path.c_str(), target.path().c_str(), "", MS_BIND, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(Cgroup, Create) {
   SKIP_IF(!CgroupsAvailable());
 

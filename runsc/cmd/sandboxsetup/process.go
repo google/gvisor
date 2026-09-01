@@ -181,3 +181,14 @@ func UmountProcFile(syncFile *os.File) {
 		util.Fatalf("/proc is still accessible")
 	}
 }
+
+// UmountProcInProcess umounts /proc directly from the calling process.
+// The caller must still hold CAP_SYS_ADMIN.
+func UmountProcInProcess() {
+	if err := unix.Unmount("/proc", unix.MNT_DETACH); err != nil {
+		util.Fatalf("error umounting /proc: %v", err)
+	}
+	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
+		util.Fatalf("/proc is still accessible")
+	}
+}

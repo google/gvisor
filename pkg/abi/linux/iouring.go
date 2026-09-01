@@ -68,6 +68,11 @@ const (
 	IORING_OP_READV = 1
 )
 
+// Constants for io_uring_register(2). See include/uapi/linux/io_uring.h.
+const (
+	IORING_REGISTER_FILES = 2
+)
+
 // IORingIndex represents SQE array indexes.
 //
 // +marshal

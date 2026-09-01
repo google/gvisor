@@ -18,12 +18,18 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <cstdint>
+#include <functional>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -323,6 +329,88 @@ TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvPeerShutdown) {
         RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags | MSG_DONTWAIT),
         SyscallSucceedsWithValue(0));
   }
+}
+
+constexpr int kBlockedPollTimeoutMs = 3000;
+
+struct BlockedPollResult {
+  int ret;
+  int16_t revents;
+};
+
+// Blocks a poller on fd in a background thread — with an events mask that
+// contains no data events, only POLLRDHUP or the implicit POLLHUP/POLLERR
+// (events=0) — then runs trigger() and reports how poll returned. A kernel
+// that fails to wake hangup-only waiters on shutdown makes poll ride out
+// its full timeout and return 0.
+BlockedPollResult PollDuringTrigger(int fd, int16_t events,
+                                    const std::function<void()>& trigger) {
+  BlockedPollResult res = {};
+  struct pollfd pfd = {fd, events, 0};
+  ScopedThread t([&] {
+    res.ret = RetryEINTR(poll)(&pfd, 1, kBlockedPollTimeoutMs);
+    res.revents = pfd.revents;
+  });
+  // Give the poller time to block. If the trigger still wins the race, the
+  // test degrades to checking poll's entry-time readiness.
+  absl::SleepFor(absl::Milliseconds(300));
+  trigger();
+  t.Join();
+  return res;
+}
+
+// A blocked poller interested only in hangup events (events=0; POLLHUP is
+// unmaskable) must be woken by a concurrent full shutdown of the socket:
+// unix_shutdown() wakes all waiters via sk_state_change(), and the poller
+// re-evaluates to POLLHUP.
+TEST_P(StreamUnixSocketPairTest, ShutdownWakesHangupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int fd = sockets->first_fd();
+
+  BlockedPollResult res = PollDuringTrigger(
+      fd, 0, [fd] { ASSERT_THAT(shutdown(fd, SHUT_RDWR), SyscallSucceeds()); });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLHUP);
+}
+
+// A blocked POLLRDHUP-only poller must likewise be woken by a concurrent
+// read shutdown.
+TEST_P(StreamUnixSocketPairTest, ReadShutdownWakesRdHupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int fd = sockets->first_fd();
+
+  BlockedPollResult res = PollDuringTrigger(fd, POLLRDHUP, [fd] {
+    ASSERT_THAT(shutdown(fd, SHUT_RD), SyscallSucceeds());
+  });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLRDHUP);
+}
+
+// A stream peer's full shutdown propagates both directions to this socket
+// (see unix_shutdown() in net/unix/af_unix.c), so a blocked hangup-only
+// poller here must be woken with POLLHUP.
+TEST_P(StreamUnixSocketPairTest, PeerShutdownWakesHangupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int peer = sockets->second_fd();
+
+  BlockedPollResult res = PollDuringTrigger(sockets->first_fd(), 0, [peer] {
+    ASSERT_THAT(shutdown(peer, SHUT_RDWR), SyscallSucceeds());
+  });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLHUP);
+}
+
+// A stream peer's write shutdown propagates to this socket's read side, so
+// a blocked POLLRDHUP-only poller here must be woken.
+TEST_P(StreamUnixSocketPairTest, PeerWriteShutdownWakesRdHupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int peer = sockets->second_fd();
+
+  BlockedPollResult res = PollDuringTrigger(
+      sockets->first_fd(), POLLRDHUP,
+      [peer] { ASSERT_THAT(shutdown(peer, SHUT_WR), SyscallSucceeds()); });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLRDHUP);
 }
 
 INSTANTIATE_TEST_SUITE_P(

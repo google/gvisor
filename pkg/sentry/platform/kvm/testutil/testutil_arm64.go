@@ -29,6 +29,12 @@ import (
 // It returns true or false.
 func TLSWorks() bool
 
+// AddrOfPACLoop returns the address of a function that executes non-hint
+// pointer authentication instructions and then performs a syscall, in a
+// loop.
+func AddrOfPACLoop() uintptr
+func pacLoop()
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn uintptr) {
 	regs.Pc = uint64(fn)

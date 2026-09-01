@@ -959,7 +959,7 @@ func Getpgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 
 // Setsid implements the linux syscall setsid(2).
 func Setsid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	sid, err := t.ThreadGroup().CreateSession()
+	sid, err := t.ThreadGroup().CreateSession(t)
 	if err != nil {
 		return 0, nil, err
 	}

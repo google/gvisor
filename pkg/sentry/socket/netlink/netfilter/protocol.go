@@ -364,12 +364,16 @@ func (p *Protocol) updateChain(nft *nftables.NFTables, tab *nftables.Table, chai
 		}
 	}
 
-	// TODO: b/537802914 - Support chain counters.
-	if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
+	// Ref: net/netfilter/nf_tables_api.c:nft_stats_alloc()
+	if countersBytes, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
 		if !chain.IsBaseChain() {
 			return syserr.NewAnnotatedError(syserr.ErrNotSupported, "chain counters attribute specified for non-base chain")
 		}
-		return syserr.NewAnnotatedError(syserr.ErrNotSupported, "chain counters attribute is unimplemented")
+		counter, err := nftables.ParseChainCounter(countersBytes)
+		if err != nil {
+			return err
+		}
+		chain.SetCounter(counter)
 	}
 
 	newNameBytes, updateName := attrs[linux.NFTA_CHAIN_NAME]
@@ -523,16 +527,22 @@ func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 			return nil, err
 		}
 		chainFlags |= linux.NFT_CHAIN_BASE
-		// TODO: b/434243967 - support NFTA_CHAIN_COUNTERS (nested attribute)
-		if _, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok {
-			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain counters attribute is currently not supported")
-		}
 	} else {
 		if chainFlags&linux.NFT_CHAIN_BASE != 0 {
 			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Chain base attribute is invalid for chains without a hook")
 		}
 		if chainFlags&linux.NFT_CHAIN_HW_OFFLOAD != 0 {
 			return nil, syserr.NewAnnotatedError(syserr.ErrNotSupported, "Nftables: Chain hardware offload attribute is not supported for chains without a hook")
+		}
+	}
+
+	var counter *nftables.ChainCounter
+	// For regular non-base chains, nft_addchain ignores NFTA_CHAIN_COUNTERS.
+	if countersBytes, ok := attrs[linux.NFTA_CHAIN_COUNTERS]; ok && bcInfo != nil {
+		var err *syserr.AnnotatedError
+		counter, err = nftables.ParseChainCounter(countersBytes)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -554,6 +564,10 @@ func (p *Protocol) addChain(nft *nftables.NFTables, attrs map[uint16]nlmsg.Bytes
 	chain, err := nft.AddChainToTable(tab, name, bcInfo, "" /* comment */, true /* errorOnDuplicate */, chainFlags, udata, policy)
 	if err != nil {
 		return nil, err
+	}
+
+	if counter != nil {
+		chain.SetCounter(counter)
 	}
 
 	// Register the chain ID if it is set.
@@ -757,6 +771,15 @@ func fillChainInfo(chain *nftables.Chain, ms *nlmsg.MessageSet) *syserr.Annotate
 		baseChainInfo := chain.GetBaseChainInfo()
 		m.PutAttr(linux.NFTA_CHAIN_POLICY, nlmsg.PutU32(uint32(baseChainInfo.PolicyBoolToValue())))
 		m.PutAttrString(linux.NFTA_CHAIN_TYPE, baseChainInfo.BcType.String())
+
+		// Ref: net/netfilter/nf_tables_api.c:nft_dump_stats()
+		if counter := chain.Counter(); counter != nil {
+			var nestedAttrs nlmsg.NestedAttr
+			bytes, packets := counter.Value()
+			nestedAttrs.PutAttr(linux.NFTA_COUNTER_PACKETS, nlmsg.PutU64(packets))
+			nestedAttrs.PutAttr(linux.NFTA_COUNTER_BYTES, nlmsg.PutU64(bytes))
+			m.PutNestedAttr(linux.NFTA_CHAIN_COUNTERS, nestedAttrs)
+		}
 	}
 
 	chainFlags := chain.GetFlags()
@@ -1085,7 +1108,7 @@ func dumpRules(nft *nftables.NFTables, attrs map[uint16]nlmsg.BytesView, family 
 func fillRuleInfo(rule *nftables.Rule, ms *nlmsg.MessageSet) *syserr.AnnotatedError {
 	chain := rule.GetChain()
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
-		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWCHAIN),
+		Type: uint16(linux.NFNL_SUBSYS_NFTABLES)<<8 | uint16(linux.NFT_MSG_NEWRULE),
 	})
 
 	m.Put(&linux.NetFilterGenMsg{
@@ -1216,6 +1239,14 @@ func (p *Protocol) ProcessMessage(ctx context.Context, s *netlink.Socket, msg *n
 
 	// Nftables functions error check the address family value.
 	family, _ := nftables.AFtoNetlinkAF(nfGenMsg.Family)
+	subsysID := hdr.NetFilterSubsysID()
+	if subsysID == linux.NFNL_SUBSYS_NFT_COMPAT {
+		if err := nft.ProcessCompatMessage(hdr, ms, attrs, family); err != nil {
+			log.Debugf("Nftables-XT compat message error: %s", err)
+			return err.GetError()
+		}
+		return nil
+	}
 
 	switch msgType {
 	case linux.NFT_MSG_GETTABLE:

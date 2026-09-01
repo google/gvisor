@@ -18,19 +18,24 @@ package tcp
 //
 // +stateify savable
 type segmentQueue struct {
-	mu     segmentQueueMutex `state:"nosave"`
-	list   segmentList       `state:"wait"`
-	ep     *Endpoint
+	mu segmentQueueMutex `state:"nosave"`
+	// +checklocks:mu
+	list segmentList `state:"wait"`
+	ep   *Endpoint
+	// +checklocks:mu
 	frozen bool
 }
 
-// emptyLocked determines if the queue is empty.
-// Preconditions: q.mu must be held.
+// emptyLocked is equivalent to empty with q.mu already held.
+//
+// +checklocks:q.mu
 func (q *segmentQueue) emptyLocked() bool {
 	return q.list.Empty()
 }
 
 // empty determines if the queue is empty.
+//
+// +checklocksexclude:q.mu
 func (q *segmentQueue) empty() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -39,13 +44,11 @@ func (q *segmentQueue) empty() bool {
 
 // enqueue adds the given segment to the queue.
 //
-// Returns true when the segment is successfully added to the queue, in which
-// case ownership of the reference is transferred to the queue. And returns
-// false if the queue is full, in which case ownership is retained by the
-// caller.
+// If enqueue succeeds, the queue acquires its own reference and returns true.
+// Otherwise it returns false. The caller retains its reference in either case.
+//
+// +checklocksexclude:q.mu
 func (q *segmentQueue) enqueue(s *segment) bool {
-	// q.ep.receiveBufferParams() must be called without holding q.mu to
-	// avoid lock order inversion.
 	bufSz := q.ep.ops.GetReceiveBufferSize()
 	used := q.ep.receiveMemUsed()
 
@@ -69,6 +72,8 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 // dequeue removes and returns the next segment from queue, if one exists.
 // Ownership is transferred to the caller, who is responsible for decrementing
 // the ref count when done.
+//
+// +checklocksexclude:q.mu
 func (q *segmentQueue) dequeue() *segment {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -84,6 +89,8 @@ func (q *segmentQueue) dequeue() *segment {
 // freeze prevents any more segments from being added to the queue. i.e all
 // future segmentQueue.enqueue will return false and not add the segment to the
 // queue till the queue is unfroze with a corresponding segmentQueue.thaw call.
+//
+// +checklocksexclude:q.mu
 func (q *segmentQueue) freeze() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -92,6 +99,8 @@ func (q *segmentQueue) freeze() {
 
 // thaw unfreezes a previously frozen queue using segmentQueue.freeze() and
 // allows new segments to be queued again.
+//
+// +checklocksexclude:q.mu
 func (q *segmentQueue) thaw() {
 	q.mu.Lock()
 	defer q.mu.Unlock()

@@ -36,10 +36,11 @@ const maxPorts = 10000
 //
 // +stateify savable
 type Manager struct {
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// ports contains a map of allocated ports for each protocol.
+	//
+	// +checklocks:mu
 	ports map[int]map[int32]struct{}
 }
 
@@ -52,6 +53,8 @@ func New() *Manager {
 
 // Allocate reserves a new port ID for protocol. hint will be taken if
 // available.
+//
+// +checklocksexclude:m.mu
 func (m *Manager) Allocate(protocol int, hint int32) (int32, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -100,6 +103,8 @@ func (m *Manager) Allocate(protocol int, hint int32) (int32, bool) {
 // Release frees the specified port for protocol.
 //
 // Preconditions: port is already allocated.
+//
+// +checklocksexclude:m.mu
 func (m *Manager) Release(protocol int, port int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

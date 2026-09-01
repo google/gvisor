@@ -23,9 +23,11 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -60,7 +62,7 @@ func bindMountSysfsInChrootReadonly(chroot, src, dst string) error {
 }
 
 // setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
-func setupMinimalProcfs(chroot string) error {
+func setupMinimalProcfs(chroot string, timer *timing.Timer) error {
 	// We can't always directly mount procfs because it may be obstructed
 	// by submounts within it. See https://gvisor.dev/issue/10944.
 	// All we really need from procfs is /proc/self and a few kernel
@@ -97,6 +99,7 @@ func setupMinimalProcfs(chroot string) error {
 		}
 		log.Debugf("Successfully mounted a recursive bind mount of procfs at %q; continuing.", filepath.Join(procRoot, procSubmountDir))
 	}
+	timer.Reached("chroot proc mounted")
 	// Create needed directories.
 	for _, d := range []string{
 		"/proc/sys",
@@ -131,7 +134,7 @@ func setupMinimalProcfs(chroot string) error {
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
-func setUpChroot(spec *specs.Spec, conf *config.Config) error {
+func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) error {
 	// We are a new mount namespace, so we can use /tmp as a directory to
 	// construct a new root.
 	chroot := os.TempDir()
@@ -155,10 +158,12 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 	if err := sandboxsetup.CopyFile(filepath.Join(chroot, "etc/localtime"), "/etc/localtime"); err != nil {
 		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
+	timer.Reached("chroot base mounted")
 
-	if err := setupMinimalProcfs(chroot); err != nil {
+	if err := setupMinimalProcfs(chroot, timer); err != nil {
 		return fmt.Errorf("error setting up minimal procfs in chroot %q: %v", chroot, err)
 	}
+	timer.Reached("chroot procfs set up")
 
 	if err := tpuProxyUpdateChroot("/", chroot, spec, conf); err != nil {
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
@@ -171,6 +176,7 @@ func setUpChroot(spec *specs.Spec, conf *config.Config) error {
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
+	timer.Reached("chroot sealed read-only")
 
 	return sandboxsetup.PivotRoot(chroot)
 }

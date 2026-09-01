@@ -93,8 +93,6 @@ analyzers:
     internal:
       suppress:
         # Valid reasons to break the rules.
-        - "xsetbv: invalid MOVL of value"
-        - "xsetbv: invalid offset value"
         - "xgetbv: invalid MOVL of ret"
         - "xgetbv: invalid offset ret"
         - "wrmsr: invalid MOVL of value"

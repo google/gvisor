@@ -249,6 +249,16 @@ func TestInvalidFlags(t *testing.T) {
 			value: "root:memory,sz=sdg",
 			error: "expected format is --overlay2",
 		},
+		{
+			name:  "sidecar-usage-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be DEFAULT, STRICT, or LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK",
+		},
+		{
+			name:  "sidecar-release-enforcement-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be NEVER, ALWAYS, or IF_RELEASE_BUILD",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -441,6 +451,11 @@ func TestOverrideError(t *testing.T) {
 			value: "invalid",
 			error: "invalid file access type",
 		},
+		{
+			name:  "in-sandbox-cgroup",
+			value: "invalid",
+			error: "invalid in-sandbox-cgroup",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := c.Override(testFlags, tc.name, tc.value, false); err == nil || !strings.Contains(err.Error(), tc.error) {
@@ -473,12 +488,12 @@ func TestOverrideAllowlist(t *testing.T) {
 			error: "error setting flag",
 		},
 		{
-			flag:  "mount-cgroup-v2",
-			value: "true",
+			flag:  "in-sandbox-cgroup",
+			value: "v1",
 		},
 		{
-			flag:  "mount-cgroup-v2",
-			value: "false",
+			flag:  "in-sandbox-cgroup",
+			value: "v2",
 		},
 		{
 			flag:  "oci-seccomp",

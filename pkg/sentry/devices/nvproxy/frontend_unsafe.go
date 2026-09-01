@@ -188,6 +188,69 @@ func ctrlGpuExecRegOps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMET
 	return n, nil
 }
 
+// debugReadMemoryMaxLength bounds the size of the sentry buffer allocated to
+// proxy a single NV83DE_CTRL_CMD_DEBUG_READ_MEMORY request, preventing a
+// malicious application from forcing an arbitrarily large (up to ^uint32(0)
+// bytes) sentry allocation. The driver itself does not impose a limit below
+// the size of the memory object being read (it passes
+// RMAPI_PARAM_COPY_FLAGS_DISABLE_MAX_SIZE_CHECK for this control). In
+// practice, CUDA GPU coredump generation is expected to stay comfortably
+// within 1 GiB.
+const debugReadMemoryMaxLength = 1 << 30 // 1 GiB
+
+// ctrlDebugReadMemory implements NV83DE_CTRL_CMD_DEBUG_READ_MEMORY, whose
+// parameters contain an embedded pointer (Buffer) that the driver fills with
+// Length bytes read from the debugged context. Compare
+// src/nvidia/src/kernel/rmapi/embedded_param_copy.c:embeddedParamCopyIn();
+// note that the driver passes RMAPI_PARAM_COPY_FLAGS_DISABLE_MAX_SIZE_CHECK
+// for this control, so Buffer's size is not limited by
+// RMAPI_PARAM_COPY_MAX_PARAMS_SIZE; we bound it by debugReadMemoryMaxLength
+// instead.
+func ctrlDebugReadMemory(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if ctrlParams.Length > debugReadMemoryMaxLength {
+		// NV_ERR_INVALID_ARGUMENT is consistent with the status returned by
+		// src/nvidia/src/kernel/rmapi/param_copy.c:rmapiParamsAcquire() when
+		// RMAPI_PARAM_COPY_MAX_PARAMS_SIZE is exceeded, for controls where
+		// that check is enabled.
+		fi.ctx.Warningf("nvproxy: NV83DE_CTRL_CMD_DEBUG_READ_MEMORY length %d exceeds limit %d", ctrlParams.Length, uint32(debugReadMemoryMaxLength))
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	var buffer []byte
+	if ctrlParams.Buffer != 0 && ctrlParams.Length != 0 {
+		buffer = make([]byte, ctrlParams.Length)
+	}
+
+	origBuffer := ctrlParams.Buffer
+	ctrlParams.Buffer = 0
+	if len(buffer) != 0 {
+		ctrlParams.Buffer = p64FromPtr(unsafe.Pointer(&buffer[0]))
+	}
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.Buffer = origBuffer
+	if err != nil {
+		return n, err
+	}
+	// The driver copies the buffer out unconditionally (even if the control
+	// returned a non-OK status); see
+	// src/nvidia/src/kernel/rmapi/embedded_param_copy.c:embeddedParamCopyOut().
+	if len(buffer) != 0 {
+		if _, err := fi.t.CopyOutBytes(addrFromP64(origBuffer), buffer); err != nil {
+			return n, err
+		}
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlDevGRGetCapsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *nvgpu.NV0080_CTRL_GET_CAPS_PARAMS, capsTbl []byte) (uintptr, error) {
 	origCapsTbl := ctrlParams.CapsTbl
 	ctrlParams.CapsTbl = p64FromPtr(unsafe.Pointer(&capsTbl[0]))

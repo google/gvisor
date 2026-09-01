@@ -37,6 +37,13 @@ type TTYFileDescription struct {
 	fileDescription
 }
 
+// Release implements vfs.FileDescriptionImpl.Release.
+//
+// It drops the inode reference taken in inode.OpenTTY.
+func (t *TTYFileDescription) Release(ctx context.Context) {
+	t.inode.DecRef(ctx)
+}
+
 // TTY returns the kernel.TTY.
 func (t *TTYFileDescription) TTY() *kernel.TTY {
 	return t.inode.tty
@@ -266,7 +273,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, task.ThreadGroup().ReleaseControllingTTY(t.TTY())
+		return 0, task.ThreadGroup().ReleaseControllingTTY(ctx, t.TTY())
 
 	// Unimplemented commands.
 	case linux.TIOCSETD,

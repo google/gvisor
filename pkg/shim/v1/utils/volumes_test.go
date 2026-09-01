@@ -428,6 +428,38 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 		},
 		{
+			// A spec without a container-type annotation is a sandbox, so the
+			// map must be created before the /dev/shm hints are added.
+			name: "shm-sandbox-nil-annotations",
+			spec: &specs.Spec{
+				Annotations: nil,
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "bind",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					volumeKeyPrefix + devshmName + ".share":   "pod",
+					volumeKeyPrefix + devshmName + ".type":    "tmpfs",
+					volumeKeyPrefix + devshmName + ".options": "rw",
+					volumeKeyPrefix + devshmName + ".source":  testVolumePath,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "tmpfs",
+						Source:      testVolumePath,
+						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+		},
+		{
 			name: "shm-container",
 			spec: &specs.Spec{
 				Annotations: map[string]string{

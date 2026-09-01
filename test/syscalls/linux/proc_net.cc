@@ -41,6 +41,7 @@ namespace {
 constexpr const char kProcNet[] = "/proc/net";
 constexpr const char kIpForward[] = "/proc/sys/net/ipv4/ip_forward";
 constexpr const char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
+constexpr const char kProcSysNetIpv6[] = "/proc/sys/net/ipv6";
 
 TEST(ProcNetSymlinkTarget, FileMode) {
   struct stat s;
@@ -71,6 +72,26 @@ TEST(ProcNetIfInet6, Format) {
               ::testing::MatchesRegex(
                   // Ex: "00000000000000000000000000000001 01 80 10 80 lo\n"
                   "^([a-f0-9]{32}( [a-f0-9]{2}){4} +[a-z][a-z0-9]*\n)+$"));
+}
+
+TEST(ProcSysNetIpv6, DirectoryExists) {
+  struct stat s;
+  ASSERT_THAT(stat(kProcSysNetIpv6, &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_mode & S_IFMT, S_IFDIR);
+  EXPECT_EQ(s.st_mode & 0777, 0555);
+}
+
+TEST(ProcSysNetIpv6, FilesExist) {
+  const char* files[] = {
+      "/proc/sys/net/ipv6/auto_flowlabels",
+      "/proc/sys/net/ipv6/bindv6only",
+      "/proc/sys/net/ipv6/ip6frag_time",
+      "/proc/sys/net/ipv6/ip_nonlocal_bind",
+  };
+
+  for (const char* file : files) {
+    EXPECT_THAT(open(file, O_RDONLY), SyscallSucceeds()) << file;
+  }
 }
 
 TEST(ProcSysNetIpv4Sack, Exists) {

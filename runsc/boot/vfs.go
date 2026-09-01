@@ -67,6 +67,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -86,6 +87,11 @@ func SelfFilestorePath(mountSrc, sandboxID string) string {
 	// multiple sandboxes. So make the filestore file unique to a sandbox by
 	// suffixing the sandbox ID.
 	return path.Join(mountSrc, selfFilestoreName(sandboxID))
+}
+
+// SelfFilestoreName returns the name of the self filestore file for a given sandbox.
+func SelfFilestoreName(sandboxID string) string {
+	return selfFilestoreName(sandboxID)
 }
 
 func selfFilestoreName(sandboxID string) string {
@@ -129,7 +135,7 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
 		AllowUserMount: true,
 		AllowUserList:  true,
 	})
-	if info.conf.MountCgroupV2 {
+	if info.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		vfsObj.MustRegisterFilesystemType(cgroup2fs.Name, &cgroup2fs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 			AllowUserMount: true,
 			AllowUserList:  true,
@@ -283,7 +289,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 
 	// If cgroups are mounted, then only check for the cgroup mounts per
 	// container. Otherwise the root cgroups will be enabled.
-	if mntr.cgroupsMounted && !info.conf.MountCgroupV2 {
+	if mntr.cgroupsMounted && info.conf.InSandboxCgroup != config.InSandboxCgroupV2 {
 		cgroupRegistry := mntr.l.k.CgroupRegistry()
 		for _, ctrl := range kernel.CgroupCtrls {
 			cg, err := cgroupRegistry.FindCgroup(ctx, ctrl, "/"+mntr.containerID)
@@ -303,6 +309,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 	if err := createDeviceFiles(rootCtx, rootCreds, info, mntr.l.k.VFS(), mnsRoot); err != nil {
 		return fmt.Errorf("failed to create device files: %w", err)
 	}
+	procArgs.StartupTimeline.Reached("device files created")
 
 	if err := mntr.l.k.VFS().MkdirAllAt(
 		ctx, procArgs.WorkingDirectory, mnsRoot, rootCreds,
@@ -322,6 +329,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 		return err
 	}
 	procArgs.Filename = resolved
+	procArgs.StartupTimeline.Reached("executable path resolved")
 	return nil
 }
 
@@ -336,7 +344,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config, containerID string) []
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
-		if conf.MountCgroupV2 {
+		if conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 			// Under this flag, we only want a single unified mount at
 			// /sys/fs/cgroup. Skip any legacy v1 controller sub-mounts
 			// (e.g., /sys/fs/cgroup/cpu) requested by the OCI spec.
@@ -421,6 +429,9 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config, suppr
 	}
 	if !conf.HostFifo.AllowOpen() {
 		opts = append(opts, "disable_fifo_open")
+	}
+	if conf.CharacterDevicePolicy.AllowsPassthrough() {
+		opts = append(opts, "char_device_policy="+conf.CharacterDevicePolicy.String())
 	}
 	return opts
 }
@@ -561,6 +572,7 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 	if err != nil {
 		return nil, fmt.Errorf("creating mount namespace: %w", err)
 	}
+	rootProcArgs.StartupTimeline.Reached("rootfs mounted")
 	rootProcArgs.MountNamespace = mns
 
 	root := mns.Root(rootCtx)
@@ -579,9 +591,10 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 	}
 
 	// Mount submounts.
-	if err := c.mountSubmounts(rootCtx, spec, conf, mns, rootCreds); err != nil {
+	if err := c.mountSubmounts(rootCtx, spec, conf, mns, rootCreds, rootProcArgs.StartupTimeline); err != nil {
 		return nil, fmt.Errorf("mounting submounts: %w", err)
 	}
+	rootProcArgs.StartupTimeline.Reached("submounts mounted")
 
 	return mns, nil
 }
@@ -852,11 +865,12 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	return &overlayOpts, cu.Release(), nil
 }
 
-func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
+func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, timeline *timing.Timeline) error {
 	mounts, err := c.prepareMounts()
 	if err != nil {
 		return err
 	}
+	timeline.Reached("submounts prepared")
 
 	for i := range mounts {
 		submount := &mounts[i]
@@ -876,9 +890,9 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
 			}
 		} else if submount.mount.Type == cgroupfs.Name || submount.mount.Type == cgroup2fs.Name {
-			if conf.MountCgroupV2 {
+			if conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 				// There is no "type: cgroup2" defined in the OCI spec.
-				// So, when the runsc flag MountCgroupV2 is set, we honor the
+				// So, when the runsc flag InSandboxCgroup is set to v2, we honor the
 				// OCI request for "type: cgroupfs" by a v2 mount.
 				if submount.mount.Type == cgroupfs.Name {
 					submount.mount.Type = cgroup2fs.Name
@@ -914,6 +928,9 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 					panic(fmt.Sprintf("failed to restore mount at %q back to readonly: %v", submount.mount.Destination, err))
 				}
 			}()
+		}
+		if timeline != nil {
+			timeline.Reached(fmt.Sprintf("mounted %q", submount.mount.Destination))
 		}
 	}
 

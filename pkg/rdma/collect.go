@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // UverbsSpec identifies one /dev/infiniband/uverbs* device from the
@@ -42,7 +44,7 @@ var pciAttrNames = []string{
 	"class", "vendor", "device", "subsystem_vendor", "subsystem_device",
 	"revision", "numa_node", "local_cpus", "local_cpulist",
 	"max_link_speed", "max_link_width", "current_link_speed",
-	"current_link_width", "modalias", "uevent",
+	"current_link_width", "modalias", "uevent", "resource",
 }
 
 // Static identity attributes of /sys/class/infiniband/<ibdev>/.
@@ -55,7 +57,7 @@ var ibAttrNames = []string{
 // table repopulates when netdevs move namespaces and acquire addresses;
 // link state and rate can change on retrain).
 var portLiveAttrNames = []string{
-	"state", "phys_state", "rate", "lid", "sm_lid", "sm_sl",
+	"state", "phys_state", "rate", "lid", "lid_mask_count", "sm_lid", "sm_sl",
 }
 
 // Per-port attributes that are fixed for the sandbox lifetime.
@@ -75,6 +77,21 @@ var numaAggregateNames = []string{
 // GPU/accelerator PCI classes included as leaves (beyond the NIC leaves
 // derived from the spec): 3D controller, VGA controller, NVSwitch bridge.
 var gpuClassPrefixes = []string{"0x0302", "0x0300", "0x0680"}
+
+// Maps a host PCI driver module name (the DRIVER= field of the leaf PCI
+// function's uevent) to the kernel's enum rdma_driver_id value
+// (linux.RDMA_DRIVER_*) of the RDMA driver stacked on that module. The
+// sentry's NETLINK_RDMA shim reports it in RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID,
+// which is how libibverbs binds a provider library before its fallback to PCI
+// ID matching.
+var rdmaDriverIDFromName = map[string]uint32{
+	"mlx5_core": linux.RDMA_DRIVER_MLX5,
+	"irdma":     linux.RDMA_DRIVER_IRDMA,
+	"ice":       linux.RDMA_DRIVER_IRDMA,
+	"idpf":      linux.RDMA_DRIVER_IRDMA,
+	"i40e":      linux.RDMA_DRIVER_I40IW,
+	"efa":       linux.RDMA_DRIVER_EFA,
+}
 
 // Collect builds a snapshot for the given spec devices by reading host
 // sysfs rooted at sysRoot (normally "/sys"; overridable for tests).
@@ -182,15 +199,34 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 		}
 	}
 
-	// Materialize every PCI node with its static attributes.
+	// Materialize every PCI node with its static attributes and config space.
 	for p := range pciPaths {
 		attrs, err := readAttrs(path.Join(sysRoot, p), pciAttrNames)
 		if err != nil {
 			return nil, fmt.Errorf("PCI node %q: %w", p, err)
 		}
-		s.PCINodes = append(s.PCINodes, PCINode{Path: p, Attrs: attrs})
+		// config is best-effort: root complexes and some bridges lack it.
+		config, err := os.ReadFile(path.Join(sysRoot, p, "config"))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("reading PCI config of %q: %w", p, err)
+		}
+		s.PCINodes = append(s.PCINodes, PCINode{Path: p, Attrs: attrs, Config: config})
 	}
 	sort.Slice(s.PCINodes, func(i, j int) bool { return s.PCINodes[i].Path < s.PCINodes[j].Path })
+
+	// Assign driver IDs to each driver by matching the driver name from the
+	// DRIVER= line in the uevent of each PCI node.
+	uevents := make(map[string]string, len(s.PCINodes))
+	for i := range s.PCINodes {
+		uevents[s.PCINodes[i].Path] = s.PCINodes[i].Attrs["uevent"]
+	}
+	for i := range s.Devices {
+		driver_name, err := pciDriverName(uevents[s.Devices[i].LeafPCI])
+		if err != nil {
+			return nil, err
+		}
+		s.Devices[i].DriverID = rdmaDriverIDFromName[driver_name]
+	}
 
 	numa, err := collectNUMA(sysRoot)
 	if err != nil {
@@ -352,6 +388,17 @@ func collectNUMA(sysRoot string) (*NUMA, error) {
 		return nil, err
 	}
 	return &NUMA{Aggregate: agg}, nil
+}
+
+// pciDriverName returns the DRIVER= field of a PCI uevent, or errors if
+// field is missing.
+func pciDriverName(uevent string) (string, error) {
+	for _, line := range strings.Split(uevent, "\n") {
+		if driver, ok := strings.CutPrefix(line, "DRIVER="); ok {
+			return driver, nil
+		}
+	}
+	return "", errors.New("DRIVER= field not found in uevent")
 }
 
 // relRealpath resolves p and returns it relative to sysRoot.

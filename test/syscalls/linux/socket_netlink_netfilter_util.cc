@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <sstream>
 #include <string>
@@ -115,6 +116,27 @@ uint64_t GetNfAttrU64(const struct nfattr* attr) {
   memcpy(&aligned_value, source_ptr, sizeof(uint64_t));
   return be64toh(aligned_value);
 }
+
+std::string GetNfAttrString(const struct nfattr* attr) {
+  if (attr == nullptr || attr->nfa_len <= NLA_HDRLEN) {
+    return "";
+  }
+  const char* str = reinterpret_cast<const char*>(NFA_DATA(attr));
+  return std::string(str, strnlen(str, attr->nfa_len - NLA_HDRLEN));
+}
+
+template <typename T>
+std::vector<T> GetNfAttrBytes(const struct nfattr* attr) {
+  if (attr == nullptr || attr->nfa_len <= NLA_HDRLEN) {
+    return {};
+  }
+  const T* data = reinterpret_cast<const T*>(NFA_DATA(attr));
+  return std::vector<T>(data, data + (attr->nfa_len - NLA_HDRLEN));
+}
+
+template std::vector<char> GetNfAttrBytes<char>(const struct nfattr* attr);
+template std::vector<uint8_t> GetNfAttrBytes<uint8_t>(
+    const struct nfattr* attr);
 
 // Reads a data value from a nested nfattr.
 PosixErrorOr<std::vector<uint8_t>> GetNestedDataValue(
@@ -351,6 +373,42 @@ void CheckNetfilterChainAttributes(const NfChainCheckOptions& options) {
   } else {
     EXPECT_EQ(user_data_attr, nullptr);
     EXPECT_EQ(options.expected_udata_size, nullptr);
+  }
+
+  // Check for the NFTA_CHAIN_COUNTERS attribute.
+  const struct nfattr* counters_attr =
+      FindNfAttr(options.hdr, nullptr, NFTA_CHAIN_COUNTERS);
+  if (counters_attr != nullptr && (options.expected_packets != nullptr ||
+                                   options.expected_bytes != nullptr)) {
+    size_t payload_len = NFA_PAYLOAD(counters_attr);
+    const char* payload_ptr =
+        reinterpret_cast<const char*>(NFA_DATA(counters_attr));
+    std::vector<const struct nfattr*> nested_attrs =
+        ParseNfAttrs(absl::MakeSpan(payload_ptr, payload_len));
+    const struct nfattr* packets_attr = nullptr;
+    const struct nfattr* bytes_attr = nullptr;
+    for (const struct nfattr* sub_attr : nested_attrs) {
+      if (sub_attr->nfa_type == NFTA_COUNTER_PACKETS) {
+        packets_attr = sub_attr;
+      } else if (sub_attr->nfa_type == NFTA_COUNTER_BYTES) {
+        bytes_attr = sub_attr;
+      }
+    }
+    if (options.expected_packets != nullptr) {
+      ASSERT_NE(packets_attr, nullptr);
+      uint64_t packets = GetNfAttrU64(packets_attr);
+      EXPECT_EQ(packets, *options.expected_packets);
+    }
+    if (options.expected_bytes != nullptr) {
+      ASSERT_NE(bytes_attr, nullptr);
+      uint64_t bytes = GetNfAttrU64(bytes_attr);
+      EXPECT_EQ(bytes, *options.expected_bytes);
+    }
+  } else if (options.expected_packets != nullptr ||
+             options.expected_bytes != nullptr) {
+    EXPECT_NE(counters_attr, nullptr);
+  } else {
+    EXPECT_EQ(counters_attr, nullptr);
   }
 }
 
@@ -1043,28 +1101,23 @@ PosixError NetlinkNetfilterBatchRequestAckOrError(const FileDescriptor& fd,
   // (such as deferred ACKs for successfully processed messages).
   // Drain the socket to prevent these leftover messages from interfering
   // with subsequent requests (like cleanup).
-  // If an error occurred, the kernel may have queued additional messages
-  // (such as deferred ACKs for successfully processed messages).
-  // Drain the socket to prevent these leftover messages from interfering
-  // with subsequent requests.
   if (err_set) {
-    char buf[4096];
-    struct iovec iov = {};
-    iov.iov_base = buf;
-    iov.iov_len = sizeof(buf);
-    struct msghdr msg = {};
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-
-    while (true) {
-      int len = recvmsg(fd.get(), &msg, MSG_DONTWAIT);
-      if (len < 0) {
-        break;
-      }
-    }
+    DrainNetlinkSocket(fd);
   }
 
   return PosixError(err);
+}
+
+void DrainNetlinkSocket(const FileDescriptor& fd) {
+  char buf[4096];
+  struct iovec iov = {};
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  while (recvmsg(fd.get(), &msg, MSG_DONTWAIT) > 0) {
+  }
 }
 
 PosixError DestroyNetfilterTable(FileDescriptor& fd,
@@ -1097,13 +1150,74 @@ PosixError NetfilterFlushRuleset(const FileDescriptor& fd) {
       fd, seq, seq + 2, flush_request.data(), flush_request.size());
 }
 
+// Helper function to send a dump request and process each streamed message;
+// `on_item` is called for each dumped message.
+PosixError NetlinkDumpRequest(
+    const FileDescriptor& fd, void* req, size_t req_len, uint32_t seq,
+    const std::function<PosixError(const struct nlmsghdr* hdr)>& on_item) {
+  PosixError parse_err;
+
+  PosixError err = NetlinkRequestResponse(
+      fd, req, req_len,
+      [&](const struct nlmsghdr* hdr) {
+        if (!parse_err.ok()) {
+          return;
+        }
+
+        // Ignore messages from previous requests.
+        if (hdr->nlmsg_seq != seq) {
+          return;
+        }
+
+        // End of dump marker.
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          if (hdr->nlmsg_len >= NLMSG_LENGTH(sizeof(int))) {
+            int done_errno = *reinterpret_cast<const int*>(NLMSG_DATA(hdr));
+            if (done_errno < 0) {
+              parse_err = PosixError(-done_errno);
+            }
+          }
+          return;
+        }
+
+        // Error or ACK message.
+        if (hdr->nlmsg_type == NLMSG_ERROR) {
+          if (hdr->nlmsg_len >= sizeof(*hdr) + sizeof(struct nlmsgerr)) {
+            const auto* err_payload =
+                reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+            if (err_payload->error != 0) {
+              parse_err = PosixError(-err_payload->error);
+            }
+          }
+          return;
+        }
+
+        PosixError item_err = on_item(hdr);
+        if (!item_err.ok()) {
+          parse_err = item_err;
+        }
+      },
+      /*expect_ack=*/false);
+
+  // If an error occurred or the response was aborted, drain any remaining
+  // messages from the socket buffer to prevent leftover bytes from interfering
+  // with subsequent requests on the same fd.
+  if (!parse_err.ok() || !err.ok()) {
+    DrainNetlinkSocket(fd);
+  }
+
+  if (!parse_err.ok()) {
+    return parse_err;
+  }
+  return err;
+}
+
 // GetSetElements returns the elements of a set by
 // parsing the response of a netlink set dump request.
 PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
     const FileDescriptor& fd, absl::string_view table_name,
     absl::string_view set_name, uint32_t seq) {
   std::vector<ElementDescriptor> actual_elements;
-  PosixError parse_err;
 
   // Setup set elements dump request: NFT_MSG_GETSETELEM
   std::vector<char> get_dump_request_buffer =
@@ -1117,15 +1231,9 @@ PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
           .Build();
 
   // Process the dumped msgs.
-  PosixError err = NetlinkRequestResponse(
-      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(),
-      [&](const struct nlmsghdr* hdr) {
-        if (!parse_err.ok()) {
-          return;
-        }
-        if (hdr->nlmsg_type == NLMSG_DONE) {
-          return;
-        }
+  PosixError err = NetlinkDumpRequest(
+      fd, get_dump_request_buffer.data(), get_dump_request_buffer.size(), seq,
+      /*on_item=*/[&](const struct nlmsghdr* hdr) {
         // Output stream MUST chunk successfully.
         EXPECT_TRUE(hdr->nlmsg_flags & NLM_F_MULTI);
 
@@ -1133,7 +1241,7 @@ PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
             FindNfAttr(hdr, nullptr, NFTA_SET_ELEM_LIST_ELEMENTS);
         // Element chunk list block absent from this subset message string.
         if (!elements_attr) {
-          return;
+          return NoError();
         }
 
         int nested_len = NFA_PAYLOAD(elements_attr);
@@ -1145,21 +1253,102 @@ PosixErrorOr<std::vector<ElementDescriptor>> GetSetElements(
              nested_attr = NFA_NEXT(nested_attr, nested_len)) {
           auto parsed = ParseElement(nested_attr);
           if (!parsed.ok()) {
-            parse_err = parsed.error();
-            return;
+            return parsed.error();
           }
           actual_elements.push_back(parsed.ValueOrDie());
         }
-      },
-      false);
+        return NoError();
+      });
 
-  if (!parse_err.ok()) {
-    return parse_err;
-  }
   if (!err.ok()) {
     return err;
   }
   return actual_elements;
+}
+
+PosixErrorOr<ParsedRule> ParseRule(const struct nlmsghdr* hdr) {
+  if (hdr->nlmsg_type != ((NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWRULE)) {
+    return PosixError(EINVAL, "Not an NFT_MSG_NEWRULE message");
+  }
+
+  if (hdr->nlmsg_len < NLMSG_LENGTH(sizeof(struct nfgenmsg))) {
+    return PosixError(EMSGSIZE, "Netlink header length too short for nfgenmsg");
+  }
+
+  ParsedRule rule;
+  const struct nfgenmsg* nfg =
+      reinterpret_cast<const struct nfgenmsg*>(NLMSG_DATA(hdr));
+  rule.family = nfg->nfgen_family;
+
+  rule.table_name = GetNfAttrString(FindNfAttr(hdr, nullptr, NFTA_RULE_TABLE));
+  rule.chain_name = GetNfAttrString(FindNfAttr(hdr, nullptr, NFTA_RULE_CHAIN));
+
+  const struct nfattr* handle_attr = FindNfAttr(hdr, nullptr, NFTA_RULE_HANDLE);
+  if (handle_attr != nullptr) {
+    rule.handle = GetNfAttrU64(handle_attr);
+  }
+
+  rule.userdata =
+      GetNfAttrBytes<uint8_t>(FindNfAttr(hdr, nullptr, NFTA_RULE_USERDATA));
+
+  const struct nfattr* expr_list_attr =
+      FindNfAttr(hdr, nullptr, NFTA_RULE_EXPRESSIONS);
+  if (expr_list_attr != nullptr && expr_list_attr->nfa_len > NLA_HDRLEN) {
+    absl::Span<const char> expr_list_data =
+        absl::MakeSpan((const char*)NFA_DATA(expr_list_attr),
+                       expr_list_attr->nfa_len - NLA_HDRLEN);
+    for (const struct nfattr* elem : ParseNfAttrs(expr_list_data)) {
+      if (elem->nfa_type != NFTA_LIST_ELEM || elem->nfa_len <= NLA_HDRLEN) {
+        continue;
+      }
+      absl::Span<const char> elem_data = absl::MakeSpan(
+          (const char*)NFA_DATA(elem), elem->nfa_len - NLA_HDRLEN);
+      ParsedRuleExpr expr;
+      for (const struct nfattr* sub : ParseNfAttrs(elem_data)) {
+        if (sub->nfa_type == NFTA_EXPR_NAME) {
+          expr.name = GetNfAttrString(sub);
+        } else if (sub->nfa_type == NFTA_EXPR_DATA) {
+          expr.data = GetNfAttrBytes<char>(sub);
+        }
+      }
+      rule.expressions.push_back(std::move(expr));
+    }
+  }
+
+  return rule;
+}
+
+PosixErrorOr<std::vector<ParsedRule>> GetRules(const FileDescriptor& fd,
+                                               uint16_t family,
+                                               absl::string_view table_name,
+                                               absl::string_view chain_name,
+                                               uint32_t seq) {
+  std::vector<ParsedRule> rules;
+
+  NlReq req = NlReq("getrule req dump").Seq(seq).Family(family);
+  if (!table_name.empty()) {
+    req.StrAttr(NFTA_RULE_TABLE, std::string(table_name));
+  }
+  if (!chain_name.empty()) {
+    req.StrAttr(NFTA_RULE_CHAIN, std::string(chain_name));
+  }
+  std::vector<char> req_buf = req.Build();
+
+  PosixError err =
+      NetlinkDumpRequest(fd, req_buf.data(), req_buf.size(), seq,
+                         /*on_item=*/[&](const struct nlmsghdr* hdr) {
+                           auto parsed = ParseRule(hdr);
+                           if (!parsed.ok()) {
+                             return parsed.error();
+                           }
+                           rules.push_back(parsed.ValueOrDie());
+                           return NoError();
+                         });
+
+  if (!err.ok()) {
+    return err;
+  }
+  return rules;
 }
 
 }  // namespace testing

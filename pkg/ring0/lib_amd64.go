@@ -64,12 +64,6 @@ func ldmxcsr(addr *uint32)
 // readCR2 reads the current CR2 value.
 func readCR2() uintptr
 
-// fninit initializes the floating point unit.
-func fninit()
-
-// xsetbv writes to an extended control register.
-func xsetbv(reg, value uintptr)
-
 // xgetbv reads an extended control register.
 func xgetbv(reg uintptr) uintptr
 
@@ -101,6 +95,9 @@ var (
 func Init(fs cpuid.FeatureSet) {
 	// Initialize all sizes.
 	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	if !fs.HasFeature(cpuid.X86FeatureLA57) && VirtualAddressBits > 48 {
+		VirtualAddressBits = 48
+	}
 	if PhysicalAddressBits == 0 {
 		PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
 	}

@@ -114,6 +114,10 @@ type Config struct {
 	// HostFifo controls permission to access host FIFO (or named pipes).
 	HostFifo HostFifo `flag:"host-fifo"`
 
+	// CharacterDevicePolicy controls how character device files on gofer
+	// mounts (the rootfs and bind mounts) are handled.
+	CharacterDevicePolicy CharacterDevicePolicy `flag:"character-device-policy"`
+
 	// HostSettings controls how host settings are handled.
 	HostSettings HostSettingsPolicy `flag:"host-settings"`
 
@@ -188,7 +192,11 @@ type Config struct {
 
 	// SidecarReleaseEnforcementPolicy controls when spawned sidecar binaries
 	// must match `runsc`'s build label.
-	SidecarReleaseEnforcementPolicy SidecarPolicy `flag:"sidecar-release-enforcement-policy"`
+	SidecarReleaseEnforcementPolicy SidecarReleasePolicy `flag:"sidecar-release-enforcement-policy"`
+
+	// SidecarUsagePolicy controls when to use sidecar binaries vs embedded
+	// fallbacks.
+	SidecarUsagePolicy SidecarUsagePolicy `flag:"sidecar-usage-policy"`
 
 	// FinalMetricsLog is the file to which all metric data should be written
 	// upon sandbox termination.
@@ -313,8 +321,8 @@ type Config struct {
 	// Don't configure cgroups.
 	IgnoreCgroups bool `flag:"ignore-cgroups"`
 
-	// Mount cgroup v2 instead of cgroup v1 inside the sandbox.
-	MountCgroupV2 bool `flag:"mount-cgroup-v2"`
+	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
+	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
 
 	// Use systemd to configure cgroups.
 	SystemdCgroup bool `flag:"systemd-cgroup"`
@@ -835,6 +843,50 @@ func (n GoferNetworkNamespace) String() string {
 	return string(n)
 }
 
+// InSandboxCgroupType tells which cgroup setup to use inside the sandbox.
+type InSandboxCgroupType int
+
+const (
+	// InSandboxCgroupV1 mounts cgroup v1 inside the sandbox.
+	InSandboxCgroupV1 InSandboxCgroupType = iota
+
+	// InSandboxCgroupV2 mounts cgroup v2 inside the sandbox.
+	InSandboxCgroupV2
+)
+
+func inSandboxCgroupTypePtr(v InSandboxCgroupType) *InSandboxCgroupType {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (c *InSandboxCgroupType) Set(v string) error {
+	switch v {
+	case "v1":
+		*c = InSandboxCgroupV1
+	case "v2":
+		*c = InSandboxCgroupV2
+	default:
+		return fmt.Errorf("invalid in-sandbox-cgroup %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (c *InSandboxCgroupType) Get() any {
+	return *c
+}
+
+// String implements flag.Value.
+func (c InSandboxCgroupType) String() string {
+	switch c {
+	case InSandboxCgroupV1:
+		return "v1"
+	case InSandboxCgroupV2:
+		return "v2"
+	}
+	panic(fmt.Sprintf("Invalid in-sandbox cgroup type %d", c))
+}
+
 // QueueingDiscipline is used to specify the kind of Queueing Discipline to
 // apply for a give FDBasedLink.
 type QueueingDiscipline int
@@ -1009,6 +1061,72 @@ func (g HostFifo) String() string {
 // AllowOpen returns true if it can consume FIFOs from the host.
 func (g HostFifo) AllowOpen() bool {
 	return g&HostFifoOpen != 0
+}
+
+// CharacterDevicePolicy tells how character device files on gofer mounts are
+// handled. It does not affect device files on sentry-internal filesystems
+// like devtmpfs, which are always dispatched to the sentry's device registry.
+type CharacterDevicePolicy int
+
+const (
+	// CharDevEmulatedOnly dispatches opens of character device files to the
+	// sentry's device registry: a device implemented by the sentry is served
+	// by the sentry, and opening an unimplemented device fails with ENXIO.
+	// Host character devices are never opened on the container's behalf.
+	CharDevEmulatedOnly CharacterDevicePolicy = iota
+
+	// CharDevPreferEmulated behaves like CharDevEmulatedOnly for devices the
+	// sentry implements, but falls back to opening the host device through
+	// the gofer for device numbers the sentry has no implementation for.
+	CharDevPreferEmulated
+
+	// CharDevPassthrough opens all character device files through the gofer,
+	// exposing the host device to the container.
+	CharDevPassthrough
+)
+
+func charDevicePolicyPtr(v CharacterDevicePolicy) *CharacterDevicePolicy {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *CharacterDevicePolicy) Set(v string) error {
+	switch v {
+	case "", "emulated-only":
+		*p = CharDevEmulatedOnly
+	case "prefer-emulated":
+		*p = CharDevPreferEmulated
+	case "passthrough":
+		*p = CharDevPassthrough
+	default:
+		return fmt.Errorf("invalid character device policy %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (p *CharacterDevicePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p CharacterDevicePolicy) String() string {
+	switch p {
+	case CharDevEmulatedOnly:
+		return "emulated-only"
+	case CharDevPreferEmulated:
+		return "prefer-emulated"
+	case CharDevPassthrough:
+		return "passthrough"
+	default:
+		panic(fmt.Sprintf("Invalid character device policy %d", p))
+	}
+}
+
+// AllowsPassthrough returns true if the policy permits opening host character
+// devices through the gofer.
+func (p CharacterDevicePolicy) AllowsPassthrough() bool {
+	return p != CharDevEmulatedOnly
 }
 
 // OverlayMedium describes how overlay medium is configured.
@@ -1290,46 +1408,96 @@ func (p HostSettingsPolicy) String() string {
 	}
 }
 
-// SidecarPolicy controls when a sidecar-related action applies.
-type SidecarPolicy string
+// SidecarReleasePolicy controls sidecar release version enforcement policy.
+type SidecarReleasePolicy string
 
 // SidecarPolicy values.
 const (
-	SidecarNever          SidecarPolicy = "NEVER"
-	SidecarAlways         SidecarPolicy = "ALWAYS"
-	SidecarIfReleaseBuild SidecarPolicy = "IF_RELEASE_BUILD"
+	SidecarReleaseNever          SidecarReleasePolicy = "NEVER"
+	SidecarReleaseAlways         SidecarReleasePolicy = "ALWAYS"
+	SidecarReleaseIfReleaseBuild SidecarReleasePolicy = "IF_RELEASE_BUILD"
 )
 
 // Set implements flag.Value. Set(String()) should be idempotent.
-func (p *SidecarPolicy) Set(v string) error {
-	sp := SidecarPolicy(strings.ToUpper(v))
+func (p *SidecarReleasePolicy) Set(v string) error {
+	sp := SidecarReleasePolicy(strings.ToUpper(v))
 	switch sp {
-	case SidecarNever, SidecarAlways, SidecarIfReleaseBuild:
+	case SidecarReleaseNever, SidecarReleaseAlways, SidecarReleaseIfReleaseBuild:
 		*p = sp
 		return nil
 	}
-	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarNever, SidecarAlways, SidecarIfReleaseBuild)
+	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarReleaseNever, SidecarReleaseAlways, SidecarReleaseIfReleaseBuild)
 }
 
 // Ptr returns a pointer to `p`.
 // Useful in flag declaration line.
-func (p SidecarPolicy) Ptr() *SidecarPolicy {
+func (p SidecarReleasePolicy) Ptr() *SidecarReleasePolicy {
 	return &p
 }
 
 // Get implements flag.Get.
-func (p *SidecarPolicy) Get() any {
+func (p *SidecarReleasePolicy) Get() any {
 	return *p
 }
 
 // String implements flag.String.
-func (p SidecarPolicy) String() string {
+func (p SidecarReleasePolicy) String() string {
 	return string(p)
 }
 
 // Applies returns whether the policy is in effect for this runsc build.
-func (p SidecarPolicy) Applies() bool {
-	return p == SidecarAlways || (p == SidecarIfReleaseBuild && IsReleaseVersion(version.Version()))
+func (p SidecarReleasePolicy) Applies() bool {
+	return p == SidecarReleaseAlways || (p == SidecarReleaseIfReleaseBuild && IsReleaseVersion(version.Version()))
+}
+
+// SidecarUsagePolicy controls when to use sidecar binaries vs embedded fallbacks.
+type SidecarUsagePolicy string
+
+// SidecarUsagePolicy values.
+const (
+	SidecarUsageDefault        SidecarUsagePolicy = "DEFAULT"
+	SidecarUsageStrict         SidecarUsagePolicy = "STRICT"
+	SidecarUsageLegacyEmbedded SidecarUsagePolicy = "LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK"
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SidecarUsagePolicy) Set(v string) error {
+	sp := SidecarUsagePolicy(strings.ToUpper(v))
+	switch sp {
+	case SidecarUsageDefault, SidecarUsageStrict, SidecarUsageLegacyEmbedded:
+		*p = sp
+		return nil
+	}
+	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarUsageDefault, SidecarUsageStrict, SidecarUsageLegacyEmbedded)
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SidecarUsagePolicy) Ptr() *SidecarUsagePolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SidecarUsagePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SidecarUsagePolicy) String() string {
+	return string(p)
+}
+
+// AllowEmbeddedFallback returns whether embedded fallback binaries can be used
+// if the on-disk sidecar binaries are not found.
+func (p SidecarUsagePolicy) AllowEmbeddedFallback() bool {
+	switch p {
+	case SidecarUsageStrict:
+		return false
+	case SidecarUsageDefault, SidecarUsageLegacyEmbedded:
+		return true
+	default:
+		panic(fmt.Sprintf("invalid sidecar usage policy: %q", p))
+	}
 }
 
 // releaseVersionRE matches the version strings of production release builds:

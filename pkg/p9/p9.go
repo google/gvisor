@@ -536,7 +536,7 @@ func StatToAttr(s *syscall.Stat_t, req AttrMask) (Attr, AttrMask) {
 		attr.GID = GID(s.Gid)
 	}
 	if req.RDev {
-		attr.RDev = s.Dev
+		attr.RDev = s.Rdev
 	}
 	if req.ATime {
 		attr.ATimeSeconds = uint64(s.Atim.Sec)

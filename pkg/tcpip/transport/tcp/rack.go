@@ -77,6 +77,8 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 
 // update will update the RACK related fields when an ACK has been received.
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
+//
+// +checklocks:rc.snd.ep.mu
 func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// Compute the RTT sample against the time the ACK was received at ingress
 	// (ackSeg.rcvdTime), not the current clock. The two differ when the ACK was
@@ -156,6 +158,8 @@ func (rc *rackControl) setDSACKSeen(dsackSeen bool) {
 
 // shouldSchedulePTO dictates whether we should schedule a PTO or not.
 // See https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
+//
+// +checklocks:s.ep.mu
 func (s *sender) shouldSchedulePTO() bool {
 	// Schedule PTO only if RACK loss detection is enabled.
 	return s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 &&
@@ -171,6 +175,7 @@ func (s *sender) shouldSchedulePTO() bool {
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.1.
 //
 // +checklocks:s.ep.mu
+// +checklocksexclude:s.rtt.rttMutex
 func (s *sender) schedulePTO() {
 	pto := time.Second
 	s.rtt.Lock()
@@ -197,6 +202,7 @@ func (s *sender) schedulePTO() {
 // https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.5.2.
 //
 // +checklocks:s.ep.mu
+// +checklocksexclude:s.rtt.rttMutex
 func (s *sender) probeTimerExpired() tcpip.Error {
 	if s.probeTimer.isUninitialized() || !s.probeTimer.checkExpiration() {
 		return nil
@@ -293,6 +299,7 @@ func (s *sender) detectTLPRecovery(ack seqnum.Value, rcvdSeg *segment) {
 //     DUPACKthreshold.
 //
 // +checklocks:rc.snd.ep.mu
+// +checklocksexclude:rc.snd.rtt.rttMutex
 func (rc *rackControl) updateRACKReorderWindow() {
 	dsackSeen := rc.DSACKSeen
 	snd := rc.snd
@@ -403,6 +410,7 @@ func (rc *rackControl) detectLoss(rcvTime tcpip.MonotonicTime) int {
 // before the reorder timer expired.
 //
 // +checklocks:rc.snd.ep.mu
+// +checklocksexclude:rc.snd.rtt.rttMutex
 func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 	if rc.snd.reorderTimer.isUninitialized() || !rc.snd.reorderTimer.checkExpiration() {
 		return nil
@@ -437,6 +445,7 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 // DoRecovery implements lossRecovery.DoRecovery.
 //
 // +checklocks:rc.snd.ep.mu
+// +checklocksexclude:rc.snd.rtt.rttMutex
 func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 	snd := rc.snd
 	if fastRetransmit {

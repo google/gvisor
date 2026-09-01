@@ -744,6 +744,8 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 	}
 
 	flags := opts.Flags & supportedOpenFlags
+	// Every TTYFileDescription holds an explicit reference on the inode.
+	i.IncRef()
 	fd := &TTYFileDescription{
 		fileDescription: fileDescription{inode: i},
 	}
@@ -752,6 +754,7 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
 		SpecialFile: true,
 	}); err != nil {
+		i.DecRef(ctx)
 		return nil, err
 	}
 	return vfsfd, nil
@@ -762,7 +765,7 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
 	// Set up an external transport.Endpoint using the host fd.
 	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
-	e, err := transport.NewHostConnectedEndpoint(hostFD, addr)
+	e, err := transport.NewHostSender(hostFD, addr)
 	if err != nil {
 		return nil, err.ToError()
 	}

@@ -16,6 +16,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
@@ -255,17 +256,29 @@ func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
 //
 // EPERM may be returned if either the given ThreadGroup is already a Session
 // leader, or a ProcessGroup already exists for the ThreadGroup's ID.
-func (tg *ThreadGroup) CreateSession() (SessionID, error) {
+func (tg *ThreadGroup) CreateSession(ctx context.Context) (SessionID, error) {
 	tg.pidns.owner.mu.Lock()
-	defer tg.pidns.owner.mu.Unlock()
-	tg.signalHandlers.mu.Lock()
-	defer tg.signalHandlers.mu.Unlock()
-	return tg.createSession()
+	sid, err := tg.createSession()
+	var oldTTY *TTY
+	if err == nil {
+		// tg.tty is protected by the signal mutex, which must not be held
+		// across createSession: it may orphan the old process group, and
+		// handleOrphan locks the signal mutex of each remaining member.
+		tg.signalHandlers.mu.Lock()
+		oldTTY = tg.tty
+		tg.tty = nil
+		tg.signalHandlers.mu.Unlock()
+	}
+	tg.pidns.owner.mu.Unlock()
+	if oldTTY != nil {
+		oldTTY.DecRef(ctx)
+	}
+	return sid, err
 }
 
 // createSession creates a new session for a threadgroup.
 //
-// Precondition: callers must hold TaskSet.mu and the signal mutex for writing.
+// +checklocks:tg.pidns.owner.mu
 func (tg *ThreadGroup) createSession() (SessionID, error) {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
@@ -322,11 +335,8 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 			childTG.processGroup.incRefWithParent(pg)
 			childTG.processGroup.decRefWithParent(oldParentPG)
 		})
-		// If tg.processGroup is an orphan, decRefWithParent will lock
-		// the signal mutex of each thread group in tg.processGroup.
-		// However, tg's signal mutex may already be locked at this
-		// point. We change tg's process group before calling
-		// decRefWithParent to avoid locking tg's signal mutex twice.
+		// Reassign before decRef so tg isn't signaled as a member of the
+		// old group if it becomes orphaned.
 		oldPG := tg.processGroup
 		tg.processGroup = pg
 		oldPG.decRefWithParent(oldParentPG)
@@ -353,9 +363,8 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 		ns.processGroups[ProcessGroupID(local)] = pg
 	}
 
-	// Disconnect from the controlling terminal.
-	tg.tty = nil
-
+	// The caller disconnects the controlling terminal (tg.tty), which is
+	// protected by the signal mutex.
 	return sid, nil
 }
 

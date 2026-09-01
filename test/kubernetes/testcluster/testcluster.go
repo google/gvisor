@@ -31,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v13 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -325,6 +326,25 @@ func (t *TestCluster) GetGVisorRuntimeToleration() v13.Toleration {
 	}
 }
 
+// GetMicroVMRuntimeLabelMap returns the MicroVM runtime key-value pair used
+// on MicroVM-runtime-enabled nodes.
+func (t *TestCluster) GetMicroVMRuntimeLabelMap() map[string]string {
+	return map[string]string{
+		microvmNodepoolKey: microvmRuntimeClass,
+	}
+}
+
+// GetMicroVMRuntimeToleration returns a pod scheduling toleration that
+// allows the pod to schedule on MicroVM-runtime-enabled nodes.
+func (t *TestCluster) GetMicroVMRuntimeToleration() v13.Toleration {
+	return v13.Toleration{
+		Key:      microvmNodepoolKey,
+		Operator: v13.TolerationOpEqual,
+		Value:    microvmRuntimeClass,
+		Effect:   v13.TaintEffectNoSchedule,
+	}
+}
+
 // OverrideTestNodepoolRuntime overrides the runtime used for pods running on
 // the test nodepool. If unset, the test nodepool's default runtime is used.
 func (t *TestCluster) OverrideTestNodepoolRuntime(testRuntime RuntimeType) {
@@ -502,6 +522,16 @@ func (t *TestCluster) HasGVisorTestRuntime(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return testNodePool.runtime == RuntimeTypeGVisor || testNodePool.runtime == RuntimeTypeGVisorCapped || testNodePool.runtime == RuntimeTypeGVisorTPU, nil
+}
+
+// HasMicroVMTestRuntime returns whether the test nodes in this cluster
+// use the MicroVM runtime.
+func (t *TestCluster) HasMicroVMTestRuntime(ctx context.Context) (bool, error) {
+	testNodePool, err := t.getNodePool(ctx, TestRuntimeNodepoolName)
+	if err != nil {
+		return false, err
+	}
+	return testNodePool.runtime == RuntimeTypeMicroVM, nil
 }
 
 // CreatePod is a helper to create a pod.
@@ -778,9 +808,14 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 		if requestCores < 1 {
 			requestCores = 1
 		}
+		requestMemoryMiB := int(float64(targetMemoryMiB) * defaultMaxResourceUtilization)
+		if requestMemoryMiB < 1 {
+			requestMemoryMiB = 1
+		}
 		resLimitCPU := resource.MustParse(fmt.Sprintf("%d", targetCores))
 		resRequestCPU := resource.MustParse(fmt.Sprintf("%d", requestCores))
-		resMem := resource.MustParse(fmt.Sprintf("%dMi", targetMemoryMiB))
+		resLimitMem := resource.MustParse(fmt.Sprintf("%dMi", targetMemoryMiB))
+		resRequestMem := resource.MustParse(fmt.Sprintf("%dMi", requestMemoryMiB))
 		for _, containers := range [][]v13.Container{
 			podSpec.InitContainers,
 			podSpec.Containers,
@@ -799,10 +834,10 @@ func (t *TestCluster) applyCommonPodConfigurations(ctx context.Context, np *Node
 					containers[i].Resources.Limits[v13.ResourceCPU] = resLimitCPU
 				}
 				if _, ok := containers[i].Resources.Requests[v13.ResourceMemory]; !ok {
-					containers[i].Resources.Requests[v13.ResourceMemory] = resMem
+					containers[i].Resources.Requests[v13.ResourceMemory] = resRequestMem
 				}
 				if _, ok := containers[i].Resources.Limits[v13.ResourceMemory]; !ok {
-					containers[i].Resources.Limits[v13.ResourceMemory] = resMem
+					containers[i].Resources.Limits[v13.ResourceMemory] = resLimitMem
 				}
 			}
 		}
@@ -1223,4 +1258,76 @@ func (t *TestCluster) ListPodEvents(ctx context.Context, pod *v13.Pod) (*eventsv
 			FieldSelector: fmt.Sprintf("regarding.name=%s", pod.Name),
 		})
 	})
+}
+
+// GetMicroVMRuntimeClass returns the default RuntimeClass definition for GKE Sandbox MicroVM.
+func GetMicroVMRuntimeClass() *nodev1.RuntimeClass {
+	return &nodev1.RuntimeClass{
+		ObjectMeta: v1.ObjectMeta{
+			Name: "microvm",
+			Annotations: map[string]string{
+				"components.gke.io/component-name":    "sandbox-runtime-class",
+				"components.gke.io/component-version": "1.36.4",
+				"components.gke.io/layer":             "addon",
+			},
+			Labels: map[string]string{
+				"addonmanager.kubernetes.io/mode": "Reconcile",
+				"kubernetes.io/cluster-service":   "true",
+			},
+		},
+		Handler: "kata-clh",
+		Overhead: &nodev1.Overhead{
+			PodFixed: v13.ResourceList{
+				v13.ResourceCPU:    resource.MustParse("250m"),
+				v13.ResourceMemory: resource.MustParse("130Mi"),
+			},
+		},
+		Scheduling: &nodev1.Scheduling{
+			NodeSelector: map[string]string{
+				"sandbox.gke.io/runtime": "microvm",
+			},
+			Tolerations: []v13.Toleration{
+				{
+					Key:      "sandbox.gke.io/runtime",
+					Operator: v13.TolerationOpEqual,
+					Value:    "microvm",
+					Effect:   v13.TaintEffectNoSchedule,
+				},
+			},
+		},
+	}
+}
+
+// CreateRuntimeClass creates a runtime class.
+func (t *TestCluster) CreateRuntimeClass(ctx context.Context, rc *nodev1.RuntimeClass) (*nodev1.RuntimeClass, error) {
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*nodev1.RuntimeClass, error) {
+		return client.NodeV1().RuntimeClasses().Create(ctx, rc, v1.CreateOptions{})
+	})
+}
+
+// GetRuntimeClass gets a runtime class by name.
+func (t *TestCluster) GetRuntimeClass(ctx context.Context, name string) (*nodev1.RuntimeClass, error) {
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*nodev1.RuntimeClass, error) {
+		return client.NodeV1().RuntimeClasses().Get(ctx, name, v1.GetOptions{})
+	})
+}
+
+// UpdateRuntimeClass updates a runtime class.
+func (t *TestCluster) UpdateRuntimeClass(ctx context.Context, rc *nodev1.RuntimeClass) (*nodev1.RuntimeClass, error) {
+	return request(ctx, t.client, func(ctx context.Context, client kubernetes.Interface) (*nodev1.RuntimeClass, error) {
+		return client.NodeV1().RuntimeClasses().Update(ctx, rc, v1.UpdateOptions{})
+	})
+}
+
+// ApplyMicroVMRuntimeClass creates or updates the MicroVM RuntimeClass in the cluster.
+func (t *TestCluster) ApplyMicroVMRuntimeClass(ctx context.Context) error {
+	rc := GetMicroVMRuntimeClass()
+	existing, err := t.GetRuntimeClass(ctx, rc.Name)
+	if err == nil && existing != nil {
+		rc.ResourceVersion = existing.ResourceVersion
+		_, err = t.UpdateRuntimeClass(ctx, rc)
+		return err
+	}
+	_, err = t.CreateRuntimeClass(ctx, rc)
+	return err
 }

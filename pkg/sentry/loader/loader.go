@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -96,6 +97,10 @@ type LoadArgs struct {
 
 	// AllowSUID indicates whether to allow ID elevation during execve.
 	AllowSUID bool
+
+	// StartupTimeline tracks this load as part of overall sandbox startup.
+	// Only set when loading the initial task image of the root container.
+	StartupTimeline *timing.Timeline
 }
 
 // openPath opens args.Filename and checks that it is valid for loading.
@@ -240,7 +245,7 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Contex
 			*args.RemainingTraversals = linux.MaxSymlinkTraversals
 
 		default:
-			ctx.Infof("Unknown magic: %v", hdr)
+			ctx.Infof("Unknown magic for %s: %v", args.Filename, hdr)
 			return loadedELF{}, nil, nil, nil, linuxerr.ENOEXEC
 		}
 		// Set to nil in case we loop on a Interpreter Script.
@@ -278,12 +283,14 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer file.DecRef(ctx)
+	args.StartupTimeline.Reached("executable loaded")
 
 	// Load the VDSO.
 	vdsoAddr, err := loadVDSO(ctx, args.MemoryManager, vdso, loaded)
 	if err != nil {
 		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
+	args.StartupTimeline.Reached("VDSO mapped")
 
 	// Setup the heap. brk starts at the next page after the end of the
 	// executable. Userspace can assume that the remainder of the page after
@@ -299,6 +306,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	if err != nil {
 		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
 	}
+	args.StartupTimeline.Reached("stack allocated")
 
 	// Push the original filename to the stack, for AT_EXECFN.
 	if _, err := stack.PushNullTerminatedByteSlice([]byte(args.Filename)); err != nil {
@@ -350,6 +358,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	if err != nil {
 		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
 	}
+	args.StartupTimeline.Reached("stack contents loaded")
 
 	m := args.MemoryManager
 	m.SetArgvStart(sl.ArgvStart)

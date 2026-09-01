@@ -86,6 +86,7 @@ go_library(
         "//pkg/hosttid",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/pinring",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
         "//pkg/seccomp",
@@ -99,6 +100,7 @@ go_library(
         "//pkg/sigframe",
         "//pkg/sighandling",
         "//pkg/sync",
+        "//pkg/timing",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

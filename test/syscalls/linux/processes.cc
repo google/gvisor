@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
+#include <sched.h>
+#include <signal.h>
 #include <stdint.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -117,6 +121,66 @@ TEST(Processes, SetPGIDOfZombie) {
   ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
               SyscallSucceedsWithValue(pid));
   EXPECT_EQ(status, 0);
+}
+
+// Sibling thread group C for SetsidOrphansSharedSignalHandlers below: it shares
+// its creator's signal handlers and idles in the process group until killed.
+int idleUntilKilled(void* arg) {
+  while (true) {
+    pause();
+  }
+  return 0;
+}
+
+// Runs as process B: create sibling C, a distinct thread group that shares B's
+// signal handlers (clone(CLONE_VM|CLONE_SIGHAND) without CLONE_THREAD) and
+// stays in B's process group, then call setsid(2).
+void setsidWithSharedSignalHandlersSibling() {
+  char stack[4096] __attribute__((aligned(16)));
+  pid_t c = clone(idleUntilKilled, stack + sizeof(stack),
+                  CLONE_VM | CLONE_SIGHAND | SIGCHLD, nullptr);
+  TEST_PCHECK(c > 0);
+
+  // setsid(2) moves B into a new session, orphaning its old process group while
+  // C, which shares B's signal handlers (and thus the signal mutex), remains in
+  // it. This previously self-deadlocked the sentry in
+  // ProcessGroup.handleOrphan.
+  int r = setsid();
+
+  // Reap C regardless of the outcome.
+  TEST_PCHECK(kill(c, SIGKILL) == 0);
+  int status;
+  TEST_PCHECK(RetryEINTR(waitpid)(c, &status, 0) == c);
+
+  TEST_PCHECK(r != -1);
+  _exit(0);
+}
+
+// Regression test: setsid(2) must not deadlock when it orphans a process group
+// that still contains a thread group sharing the caller's signal handlers.
+TEST(Processes, SetsidOrphansSharedSignalHandlers) {
+  pid_t a = fork();
+  if (a == 0) {
+    // Process A: create a fresh session so its process group has no ancestors
+    // (i.e. is an orphan), then fork B into it.
+    TEST_PCHECK(setsid() != -1);
+    pid_t b = fork();
+    if (b == 0) {
+      setsidWithSharedSignalHandlersSibling();
+      _exit(1);  // Unreachable.
+    }
+    TEST_PCHECK(b > 0);
+    int status;
+    TEST_PCHECK(RetryEINTR(waitpid)(b, &status, 0) == b);
+    TEST_PCHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(a, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(a, &status, 0), SyscallSucceedsWithValue(a));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "process A exited with status " << status;
 }
 
 void WritePIDToPipe(int* pipe_fds) {

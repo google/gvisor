@@ -10,8 +10,7 @@ go_library(
     testonly = True,
     srcs = ["shimutils.go"],
     data = [
-        "//runsc",
-        "//shim:containerd-shim-runsc-v1",
+        "//:release",
     ],
     visibility = ["//shim:__subpackages__"],
     deps = [

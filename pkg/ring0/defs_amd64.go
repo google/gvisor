@@ -147,6 +147,7 @@ type CPUArchState struct {
 	hasXSAVE    bool
 	hasXSAVEOPT bool
 	hasFSGSBASE bool
+	xcr0Eax     uint32
 }
 
 // ErrorCode returns the last error code.

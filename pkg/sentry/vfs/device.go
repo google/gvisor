@@ -153,6 +153,11 @@ func (vfs *VirtualFilesystem) OpenDeviceSpecialFile(ctx context.Context, mnt *Mo
 func (vfs *VirtualFilesystem) GetDynamicCharDevMajor() (uint32, error) {
 	vfs.dynCharDevMajorMu.Lock()
 	defer vfs.dynCharDevMajorMu.Unlock()
+	return vfs.getDynamicCharDevMajorLocked()
+}
+
+// Preconditions: vfs.dynCharDevMajorMu must be locked.
+func (vfs *VirtualFilesystem) getDynamicCharDevMajorLocked() (uint32, error) {
 	// Compare Linux's fs/char_dev.c:find_dynamic_major().
 	for major := uint32(254); major >= 234; major-- {
 		if _, ok := vfs.dynCharDevMajorUsed[major]; !ok {
@@ -167,6 +172,49 @@ func (vfs *VirtualFilesystem) GetDynamicCharDevMajor() (uint32, error) {
 		}
 	}
 	return 0, linuxerr.EBUSY
+}
+
+// SharedDynamicCharDevMajorKey identifies a shared global dynamic character
+// device major number allocation.
+//
+// +stateify savable
+type SharedDynamicCharDevMajorKey uint32
+
+const (
+	// CheckpointDeviceMajorKey is used for /proc/gvisor/checkpoint.
+	CheckpointDeviceMajorKey SharedDynamicCharDevMajorKey = iota
+	// FSCheckpointDeviceMajorKey is used for /proc/gvisor/fscheckpoint.
+	FSCheckpointDeviceMajorKey
+)
+
+// GetSharedDynamicCharDevMajor returns the major device number associated with
+// key, allocating one on first use. All callers passing the same key receive
+// the same major number.
+//
+// Unlike GetDynamicCharDevMajor(), the returned major number is never
+// deallocated; it remains reserved for key for the lifetime of the sentry.
+// This is intended for sentry-internal pseudo-devices that are instantiated
+// once per filesystem instance, but for which a single kernel-wide device
+// number is correct (as is the case for character devices in Linux, whose
+// major numbers are global rather than per-superblock). Using
+// GetDynamicCharDevMajor() for such devices consumes a major number per
+// filesystem instance, which can exhaust the dynamic major number space when
+// many instances exist concurrently.
+//
+// Callers must not pass the returned major number to
+// PutDynamicCharDevMajor().
+func (vfs *VirtualFilesystem) GetSharedDynamicCharDevMajor(key SharedDynamicCharDevMajorKey) (uint32, error) {
+	vfs.dynCharDevMajorMu.Lock()
+	defer vfs.dynCharDevMajorMu.Unlock()
+	if major, ok := vfs.dynCharDevMajorShared[key]; ok {
+		return major, nil
+	}
+	major, err := vfs.getDynamicCharDevMajorLocked()
+	if err != nil {
+		return 0, err
+	}
+	vfs.dynCharDevMajorShared[key] = major
+	return major, nil
 }
 
 // PutDynamicCharDevMajor deallocates a major device number returned by a

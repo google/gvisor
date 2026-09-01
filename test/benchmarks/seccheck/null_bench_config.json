@@ -1,0 +1,15 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "points": [
+      {
+        "name": "syscall/execve/enter"
+      }
+    ],
+    "sinks": [
+      {
+        "name": "null"
+      }
+    ]
+  }
+}

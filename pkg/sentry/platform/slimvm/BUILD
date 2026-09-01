@@ -60,6 +60,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sighandling",
+        "//pkg/timing",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -135,16 +135,13 @@ endif
 $(RUNTIME_BIN): # See below.
 	@mkdir -p "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
-	@$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN))
-	@# Install sidecar binaries next to `RUNTIME_BIN`:
-	@$(call copy,//debian:gvisor-bin-tar,$(RUNTIME_DIR))
-	@tar -C "$(RUNTIME_DIR)" -xf "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
-	@rm -f "$(RUNTIME_DIR)/gvisor-bin-tar.tar"
+	@$(call copy,//:release,$(RUNTIME_DIR))
+	@$(if $(filter-out //runsc,$(RUNSC_TARGET)),$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN)))
 	@$(if $(EXTRA_SIDECAR_TARGETS),$(call copy,$(EXTRA_SIDECAR_TARGETS),$(RUNTIME_DIR)/gvisor-bin))
 else
 	@gcloud storage cat "${STAGED_BINARIES}" | \
-	  tar -C "$(RUNTIME_DIR)" -zxvf - ./runsc ./gvisor-bin && \
-	  chmod -R a+rx "$(RUNTIME_BIN)" "$(RUNTIME_DIR)/gvisor-bin"
+	  tar -C "$(RUNTIME_DIR)" -zxvf - && \
+	  chmod -R a+rx "$(RUNTIME_DIR)"
 endif
 .PHONY: $(RUNTIME_BIN) # Real file, but force rebuild.
 
@@ -199,6 +196,16 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@$(call reload_docker)
 .PHONY: dev
 
+governance-regen: ## Regenerates the files derived from governance/maintainers.yaml and governance/areas.yaml.
+	@$(call run,//governance/tools/maintainers:maintainers_gen,-input governance/maintainers.yaml -areas governance/areas.yaml -format MAINTAINERS.md -output MAINTAINERS.md)
+	@$(call run,//governance/tools/maintainers:maintainers_gen,-input governance/maintainers.yaml -areas governance/areas.yaml -format CODEOWNERS -output CODEOWNERS)
+.PHONY: governance-regen
+
+governance-check: governance-regen ## Checks that the files derived from governance/*.yaml are in sync. Can't be a bazel test because it requires visibility across the whole codebase to check for subdirectories' existence.
+	@git diff --exit-code -- CODEOWNERS MAINTAINERS.md || \
+		(echo "Generated governance files are out of sync. Please run \`make governance-regen\`." >&2; exit 1)
+.PHONY: governance-check
+
 ##
 ## Canonical build and test targets.
 ##
@@ -226,12 +233,13 @@ debian: ## Builds the debian packages.
 	@$(call build,-c opt //debian:debian)
 .PHONY: debian
 
-smoke-tests: ## Runs a simple smoke test after building runsc.
-	@$(call run,//runsc,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+smoke-tests: $(RUNTIME_BIN) ## Runs a simple smoke test after building runsc.
+	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-tests
 
-smoke-race-tests: ## Runs a smoke test after build building runsc in race configuration.
-	@$(call run,$(RACE_FLAGS) //runsc:runsc-race,--alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true)
+smoke-race-tests: RUNSC_TARGET = $(RACE_FLAGS) //runsc:runsc-race
+smoke-race-tests: $(RUNTIME_BIN) ## Runs a smoke test after build building runsc in race configuration.
+	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-race-tests
 
 nogo-tests:
@@ -261,7 +269,7 @@ integration-tests: do-tests kvm-tests containerd-tests-min
 integration-tests: sandbox-posture-tests
 .PHONY: integration-tests
 
-integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services
+integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services load-ubi10-init
 .PHONY: integration-test-images
 
 network-tests: ## Run all networking integration tests.
@@ -423,7 +431,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
 	@$(call install_runtime_noreload,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
-	@$(call install_runtime,$(RUNTIME)-cgroupv2,--mount-cgroup-v2) # Used by TestSystemd* and TestPIDFDSelftests.
+	@$(call install_runtime,$(RUNTIME)-cgroupv2,--in-sandbox-cgroup=v2) # Used by TestSystemd* and TestPIDFDSelftests.
 	@$(call test_runtime_cached,$(RUNTIME),$(INTEGRATION_TARGETS) --test_env=TEST_SAVE_RESTORE_NETSTACK=true //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test)
 .PHONY: docker-tests
 
@@ -472,19 +480,27 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_nat
 	@sudo modprobe ip6table_nat
 	@# FIXME(b/218923513): Need to fix permissions issues.
-	@#$(call test,--test_env=RUNTIME=runc //test/iptables:iptables_test)
+	@#$(call test,--test_env=RUNTIME=runc -- //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME),--net-raw)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/iptables:iptables_test)
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true -- //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME)-nftables,--net-raw --reproduce-nftables)
-	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true --test_output=all //test/iptables:nftables_test)
+	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true --test_output=all -- //test/iptables:nftables_test)
 .PHONY: iptables-tests
+
+# Run iptables tests with iptables-nft client.
+iptables-nft-tests: load-iptables $(RUNTIME_BIN)
+	@sudo modprobe nfnetlink
+	@sudo modprobe nf_tables
+	@$(call install_runtime,$(RUNTIME)-nftables,--net-raw --TESTONLY-nftables)
+	@$(call test_runtime,$(RUNTIME)-nftables,--test_env=TEST_NET_RAW=true -- //test/iptables:iptables_nft_test)
+.PHONY: iptables-nft-tests
 
 nftables-tests: load-nftables $(RUNTIME_BIN)
 	@sudo modprobe nfnetlink
 	@sudo modprobe nf_tables
-	@$(call test,--test_env=RUNTIME=runc //test/nftables:nftables_test) # run with runc
+	@$(call test,--test_env=RUNTIME=runc -- //test/nftables:nftables_test) # run with runc
 	@$(call install_runtime,$(RUNTIME),--net-raw --TESTONLY-nftables)
-	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/nftables:nftables_test) # run with runsc
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true -- //test/nftables:nftables_test) # run with runsc
 .PHONY: nftables-tests
 
 # Runs the socket_netlink_netfilter_test with runc as root user in a docker
@@ -493,7 +509,7 @@ nftables-syscall-runc-tests: load-nftables
 	@sudo modprobe nfnetlink
 	@sudo modprobe nf_tables
 	@# Overrides the default `--user` flag of DOCKER_RUN_OPTIONS to run as root.
-	@$(call build_paths,//test/syscalls/linux:socket_netlink_netfilter_test,docker run $(DOCKER_RUN_OPTIONS) --user 0:0 --runtime runc --rm gvisor.dev/images/nftables {})
+	@$(call build_paths,//test/syscalls/linux:socket_netlink_netfilter_test,docker run $(DOCKER_RUN_OPTIONS) --user 0:0 --runtime runc --rm gvisor.dev/images/nftables "$$0")
 .PHONY: nftables-syscall-runc-tests
 
 bwrap-tests: $(RUNTIME_BIN)
@@ -525,13 +541,10 @@ containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-b
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
 	@$(call install_containerd,$*)
 ifeq (,$(STAGED_BINARIES))
-	@(export T=$$(mktemp -d --tmpdir containerd.XXXXXX); \
-	$(call copy,//shim:containerd-shim-runsc-v1,$$T) && \
-	sudo mv $$T/containerd-shim-runsc-v1 "$$(dirname $$(which containerd))"; \
-	rm -rf $$T)
+	@sudo cp -fa "$(RUNTIME_DIR)"/* "$$(dirname $$(which containerd))/"
 else
-	gcloud storage cat "$(STAGED_BINARIES)" | \
-		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
+	@gcloud storage cat "$(STAGED_BINARIES)" | \
+		sudo tar -C "$$(dirname $$(which containerd))" -zxvf -
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
 containerd-tests-min: containerd-test-1.7.31
@@ -628,6 +641,21 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
+
+# For benchmarking seccheck, use setup-seccheck and run-benchmark-seccheck.
+# Default seccheck benchmark config.
+SECCHECK_BENCH_CONFIG ?= $(CURDIR)/test/benchmarks/seccheck/null_bench_config.json
+
+# Installs seccheck instrumented runtime for benchmarking.
+setup-seccheck: $(RUNTIME_BIN)
+	@cp -f "$(SECCHECK_BENCH_CONFIG)" /tmp/seccheck_bench_config.json
+	@$(call configure,$(RUNTIME)-seccheck,--net-raw --pod-init-config="/tmp/seccheck_bench_config.json")
+.PHONY: setup-seccheck
+
+# Runs single benchmark using the seccheck instrumented runtime.
+run-benchmark-seccheck: load-benchmarks
+	@$(call run_benchmark,$(RUNTIME)-seccheck)
+.PHONY: run-benchmark-seccheck
 
 # The arguments passed to benchmarks when run for PGO profile collection.
 # This should *not* include the `-profile` or `-profile-cpu` arguments, as
@@ -836,11 +864,9 @@ $(RELEASE_KEY):
 
 $(RELEASE_ARTIFACTS)/%:
 	@mkdir -p $@
-	@$(call copy,//runsc:runsc,$@)
-	@$(call copy,//runsc/cmd/metricserver:runsc-metric-server,$@)
-	@$(call copy,//shim:containerd-shim-runsc-v1,$@)
 	@$(call copy,//debian:debian,$@)
-	@$(call copy,//debian:gvisor-release-tar,$@)
+	@$(call copy,//debian:gvisor-release-tar-bz2,$@)
+	@$(call copy,//debian:gvisor-release-tar-zstd,$@)
 
 release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 	@mkdir -p $(RELEASE_ROOT)
@@ -848,24 +874,25 @@ release: $(RELEASE_KEY) $(RELEASE_ARTIFACTS)/$(ARCH)
 .PHONY: release
 
 release-tarball: DESTINATION ?= .
-release-tarball: ## Builds an optimized release tarball (gvisor.tar.bz2) and copies it to $(DESTINATION). E.g. make release-tarball DESTINATION=bin/
+release-tarball: ## Builds optimized release tarballs (gvisor.tar.bz2, gvisor.tar.zstd) and copies them to $(DESTINATION). E.g. make release-tarball DESTINATION=bin/
 	@mkdir -p "$(DESTINATION)"
-	@$(call copy,-c opt //debian:gvisor-release-tar,$(DESTINATION))
+	@$(call copy,-c opt //debian:gvisor-release-tar-bz2,$(DESTINATION))
+	@$(call copy,-c opt //debian:gvisor-release-tar-zstd,$(DESTINATION))
 .PHONY: release-tarball
 
-staged-binaries-check: ## Verifies STAGED_BINARIES contains all files from the //debian:gvisor-release-tar fileset.
+staged-binaries-check: ## Verifies STAGED_BINARIES contains all files from the //debian:gvisor-release-tar-bz2 fileset.
 ifeq (,$(STAGED_BINARIES))
 	@echo "STAGED_BINARIES not set; nothing to check."
 else
 	@# T is exported so the nested `cp` inside the copy macro (a child process)
 	@# sees it; the rest of the recipe runs in this shell directly.
 	@export T=$$(mktemp -d --tmpdir staged-check.XXXXXX); \
-	$(call copy,//debian:gvisor-release-tar,$$T) && \
+	$(call copy,//debian:gvisor-release-tar-bz2,$$T) && \
 	tar -tjf "$$T/gvisor.tar.bz2" | sed 's#^\./##' | grep -v '/$$' | sort >"$$T/release.txt" && \
 	gcloud storage cat "$(STAGED_BINARIES)" | tar -tzf - | sed 's#^\./##' | grep -v '/$$' | sort >"$$T/staged.txt" && \
 	comm -23 "$$T/release.txt" "$$T/staged.txt" >"$$T/missing.txt" && \
 	test ! -s "$$T/missing.txt" \
-	  || { echo "ERROR: STAGED_BINARIES missing members from //debian:gvisor-release-tar:" >&2; cat "$$T/missing.txt" >&2; rm -rf "$$T"; exit 1; }; \
+	  || { echo "ERROR: STAGED_BINARIES missing members from //debian:gvisor-release-tar-bz2:" >&2; cat "$$T/missing.txt" >&2; rm -rf "$$T"; exit 1; }; \
 	rm -rf "$$T"
 endif
 .PHONY: staged-binaries-check

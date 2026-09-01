@@ -81,6 +81,7 @@ const (
 	UVERBS_OBJECT_PD          = 1
 	UVERBS_OBJECT_CQ          = 3
 	UVERBS_OBJECT_QP          = 4
+	UVERBS_OBJECT_AH          = 6
 	UVERBS_OBJECT_MR          = 7
 	UVERBS_OBJECT_ASYNC_EVENT = 16
 )
@@ -105,6 +106,11 @@ const (
 	// enum uverbs_methods_qp.
 	UVERBS_METHOD_QP_CREATE  = 0
 	UVERBS_METHOD_QP_DESTROY = 1
+
+	// enum uverbs_methods_ah. AH creation uses the legacy write path
+	// (IB_USER_VERBS_CMD_CREATE_AH via INVOKE_WRITE); only destroy has a
+	// modern object method.
+	UVERBS_METHOD_AH_DESTROY = 0
 
 	// enum uverbs_methods_mr.
 	UVERBS_METHOD_MR_DESTROY    = 1
@@ -159,6 +165,9 @@ const (
 
 // UVERBS_ATTR_DESTROY_PD_HANDLE is the handle attribute ID for uverbs_attrs_destroy_pd_cmd_attr_ids.
 const UVERBS_ATTR_DESTROY_PD_HANDLE = 0
+
+// UVERBS_ATTR_DESTROY_AH_HANDLE is the handle attribute ID for enum uverbs_attrs_ah_destroy_ids.
+const UVERBS_ATTR_DESTROY_AH_HANDLE = 0
 
 // enum uverbs_attrs_reg_mr_cmd_attr_ids.
 const (
@@ -272,6 +281,21 @@ const (
 
 	// enum mlx5_ib_uar_obj_destroy_attrs.
 	MLX5_IB_ATTR_UAR_OBJ_DESTROY_HANDLE = 0x1000
+)
+
+// EFA driver-namespace method/attr IDs from include/uapi/rdma/efa-abi.h. EFA
+// extends the standard UVERBS_OBJECT_MR with a query method returning the
+// interconnect IDs an RDMA-read/write source MR must advertise to peers.
+const (
+	// enum efa_mr_methods.
+	EFA_IB_METHOD_MR_QUERY = 0x1000
+
+	// enum efa_query_mr_attrs.
+	EFA_IB_ATTR_QUERY_MR_HANDLE               = 0x1000
+	EFA_IB_ATTR_QUERY_MR_RESP_IC_ID_VALIDITY  = 0x1001
+	EFA_IB_ATTR_QUERY_MR_RESP_RECV_IC_ID      = 0x1002
+	EFA_IB_ATTR_QUERY_MR_RESP_RDMA_READ_IC_ID = 0x1003
+	EFA_IB_ATTR_QUERY_MR_RESP_RDMA_RECV_IC_ID = 0x1004
 )
 
 // Legacy write(2)-path command numbers (enum ib_uverbs_write_cmds,

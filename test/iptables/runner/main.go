@@ -28,10 +28,12 @@ import (
 var (
 	name = flag.String("name", "", "name of the test to run")
 	ipv6 = flag.Bool("ipv6", false, "whether the test utilizes ip6tables")
+	nft  = flag.Bool("nft", false, "whether to use iptables-nft")
 )
 
 func main() {
 	flag.Parse()
+	iptables.NFT = *nft
 
 	// Find out which test we're running.
 	test, ok := iptables.Tests[*name]

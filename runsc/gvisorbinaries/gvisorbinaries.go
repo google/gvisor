@@ -73,6 +73,7 @@ const (
 	checkpointGoferName         = "checkpointgofer"
 	gvisorSentryName            = "gvisor_sentry"
 	gvisorSentryPluginStackName = "gvisor_sentry_plugin_stack"
+	prewarmerName               = "gvisor-sentry-prewarmer"
 )
 
 // binDirName is the name of the directory holding sidecar binaries.
@@ -110,7 +111,12 @@ func cutSkip(val, prefix string) (string, bool) {
 // ReleaseEnforcementPolicy controls whether Exec/ForkExec set
 // GVISOR_ENFORCE_RELEASE in the sidecar env.
 // Set from config flag.
-var ReleaseEnforcementPolicy = config.SidecarNever
+var ReleaseEnforcementPolicy = config.SidecarReleaseNever
+
+// UsagePolicy controls whether Exec/ForkExec and other sidecar invocations
+// will fall back to embedded copies when on-disk binaries are not available.
+// Set from config flag.
+var UsagePolicy = config.SidecarUsageDefault
 
 // WithEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
 // sidecar processes. Exec and ForkExec apply it automatically
@@ -217,10 +223,12 @@ var (
 	// network stack linked in.
 	// Only present in plugin-enabled installations, so not part of `All`.
 	GvisorSentryPluginStack = Binary{Name: gvisorSentryPluginStackName}
+	// GvisorSentryPrewarmer is the C binary that runs ahead of `GvisorSentry`.
+	GvisorSentryPrewarmer = Binary{Name: prewarmerName}
 )
 
 // All lists every sidecar present in a standard installation.
-var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry}
+var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry, &GvisorSentryPrewarmer}
 
 // Options is the set of options used to execute a sidecar binary.
 type Options struct {
@@ -338,16 +346,31 @@ func (b *Binary) notAvailableError() error {
 	if err != nil {
 		return err
 	}
+	if UsagePolicy == config.SidecarUsageStrict {
+		return fmt.Errorf("sidecar binary %q not found (expected at %q) and --sidecar-usage-policy is set to STRICT; install it per https://gvisor.dev/docs/user_guide/install/ instructions", b.Name, p)
+	}
 	return fmt.Errorf("sidecar binary %q not found (expected at %q); install it per https://gvisor.dev/docs/user_guide/install/ instructions", b.Name, p)
 }
 
-// TODO(gvisor.dev/issue/13718): remove along with the embedded fallback.
-func (b *Binary) warnEmbeddedDeprecated(opts *Options) {
+// WarnUnavailable logs an appropriate warning when the sidecar binary is not found on disk.
+func (b *Binary) WarnUnavailable(action string) {
 	expected, err := b.expectedPath()
 	if err != nil {
 		expected = filepath.Join(binDirName, b.Name)
 	}
-	log.Warningf("Executing embedded copy of sidecar %q (%v); embedded sidecar binaries are deprecated and will be removed in a future release. Please install it at %q; see https://gvisor.dev/docs/user_guide/install/", b.Name, opts, expected)
+	switch UsagePolicy {
+	case config.SidecarUsageStrict:
+		log.Warningf("Sidecar binary %q not found (expected at %q) and --sidecar-usage-policy is set to STRICT.", b.Name, expected)
+	case config.SidecarUsageLegacyEmbedded:
+		log.Warningf("%s; embedded sidecar binaries are deprecated and will stop working after 2026-10. This slows down gVisor startup. Please install sidecar binaries as per https://gvisor.dev/docs/user_guide/install/", action)
+	case config.SidecarUsageDefault:
+		log.Warningf("%s; embedded sidecar binaries are deprecated and will be removed in a future release. Please install sidecar binaries per https://gvisor.dev/docs/user_guide/install/ or set `--sidecar-usage-policy=LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK` as a temporary option to restore functionality (this slows down gVisor startup and will stop working after 2026-10).", action)
+	}
+}
+
+// TODO(gvisor.dev/issue/13718): remove along with the embedded fallback.
+func (b *Binary) warnEmbeddedDeprecated(opts *Options) {
+	b.WarnUnavailable(fmt.Sprintf("Executing embedded copy of sidecar %q (%v)", b.Name, opts))
 }
 
 // Exec resolves the binary and replaces the current process with it. It only
@@ -358,7 +381,7 @@ func (b *Binary) Exec(opts Options) error {
 		log.Infof("sidecar %q found: executing %s (%v)", b.Name, p, &opts)
 		return execDisk(p, opts)
 	}
-	if b.embeddedExec != nil {
+	if UsagePolicy.AllowEmbeddedFallback() && b.embeddedExec != nil {
 		b.warnEmbeddedDeprecated(&opts)
 		return b.embeddedExec(opts)
 	}
@@ -373,7 +396,7 @@ func (b *Binary) ForkExec(opts Options) (int, error) {
 		log.Infof("sidecar %q: executing %s (%v)", b.Name, p, &opts)
 		return forkExecDisk(p, opts)
 	}
-	if b.embeddedForkExec != nil {
+	if UsagePolicy.AllowEmbeddedFallback() && b.embeddedForkExec != nil {
 		b.warnEmbeddedDeprecated(&opts)
 		return b.embeddedForkExec(opts)
 	}

@@ -42,6 +42,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -379,31 +380,41 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		root.lowerVDs = append(root.lowerVDs, lowerRoot)
 	}
 	rootTopVD := root.topLayer()
+	rootCleanup := cleanup.Make(func() {
+		root.destroyLocked(ctx)
+		fs.vfsfs.DecRef(ctx)
+	})
+	defer rootCleanup.Clean()
 	// Get metadata from the topmost layer. See fs.lookupLocked().
 	const rootStatMask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
-	rootStat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
+	rootPop := &vfs.PathOperation{
 		Root:  rootTopVD,
 		Start: rootTopVD,
-	}, &vfs.StatOptions{
+	}
+	rootStat, err := vfsObj.StatAt(ctx, creds, rootPop, &vfs.StatOptions{
 		Mask: rootStatMask,
 	})
 	if err != nil {
-		root.destroyLocked(ctx)
-		fs.vfsfs.DecRef(ctx)
+		return nil, nil, err
+	}
+	rootACL, err := vfsObj.GetPosixACLAt(ctx, creds, rootPop, vfs.AccessACL)
+	if err != nil {
+		return nil, nil, err
+	}
+	rootDefaultACL, err := vfsObj.GetPosixACLAt(ctx, creds, rootPop, vfs.DefaultACL)
+	if err != nil {
 		return nil, nil, err
 	}
 	if rootStat.Mask&rootStatMask != rootStatMask {
-		root.destroyLocked(ctx)
-		fs.vfsfs.DecRef(ctx)
 		return nil, nil, linuxerr.EREMOTE
 	}
 	if isWhiteout(&rootStat) {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: filesystem root is a whiteout")
-		root.destroyLocked(ctx)
-		fs.vfsfs.DecRef(ctx)
 		return nil, nil, linuxerr.EINVAL
 	}
 	root.mode = atomicbitops.FromUint32(uint32(rootStat.Mode))
+	root.accessACL.Store(rootACL)
+	root.defaultACL.Store(rootDefaultACL)
 	root.uid = atomicbitops.FromUint32(rootStat.UID)
 	root.gid = atomicbitops.FromUint32(rootStat.GID)
 	if rootStat.Mode&linux.S_IFMT == linux.S_IFDIR {
@@ -422,8 +433,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		rootDevMinor, err := fs.getLowerDevMinor(rootStat.DevMajor, rootStat.DevMinor)
 		if err != nil {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
-			root.destroyLocked(ctx)
-			fs.vfsfs.DecRef(ctx)
 			return nil, nil, err
 		}
 		root.devMinor = atomicbitops.FromUint32(rootDevMinor)
@@ -434,6 +443,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		root.ino.Store(rootStat.Ino)
 	}
 
+	rootCleanup.Release()
 	return &fs.vfsfs, &root.vfsd, nil
 }
 
@@ -561,13 +571,15 @@ type dentry struct {
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
 
-	// mode, uid, and gid are the file mode, owner, and group of the file in
-	// the topmost layer (and therefore the overlay file as well), and are used
-	// for permission checks on this dentry. These fields are protected by
-	// copyMu.
-	mode atomicbitops.Uint32
-	uid  atomicbitops.Uint32
-	gid  atomicbitops.Uint32
+	// mode, uid, gid, accessACL, and defaultACL are the file mode, owner,
+	// group, and POSIX ACLs of the file in the topmost layer (and
+	// therefore the overlay file as well), and are used for permission checks
+	// on this dentry. These fields are protected by copyMu.
+	mode       atomicbitops.Uint32
+	accessACL  atomic.Pointer[vfs.PosixACL] `state:".(*vfs.PosixACL)"`
+	defaultACL atomic.Pointer[vfs.PosixACL] `state:".(*vfs.PosixACL)"`
+	uid        atomicbitops.Uint32
+	gid        atomicbitops.Uint32
 
 	// copiedUp is 1 if this dentry has been copied-up (i.e. upperVD.Ok()) and
 	// 0 otherwise.
@@ -677,6 +689,9 @@ func (d *dentry) IncRef() {
 	r := d.refs.Add(1)
 	if d.LogRefs() {
 		refs.LogIncRef(d, r)
+	}
+	if r <= 0 {
+		panic(fmt.Sprintf("Incrementing negative count %d on overlay.dentry", r))
 	}
 }
 
@@ -872,14 +887,14 @@ func (d *dentry) topLookupLayer() lookupLayer {
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), nil, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.mode.Load()), d.accessACL.Load(), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load()))
 }
 
 func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
 	mode := linux.FileMode(d.mode.Load())
 	kuid := auth.KUID(d.uid.Load())
 	kgid := auth.KGID(d.gid.Load())
-	if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, kuid, kgid); err != nil {
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, d.accessACL.Load(), kuid, kgid); err != nil {
 		return err
 	}
 	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
@@ -909,6 +924,20 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 // Preconditions: d.copyMu must be locked for writing.
 func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 	if opts.Stat.Mask&linux.STATX_MODE != 0 {
+		// If the mode was changed, the underlying file's ACL may have changed,
+		// so recompute the ACL too.
+		oldACL := d.accessACL.Load()
+		if oldACL != nil {
+			newACL := oldACL.Chmod(opts.Stat.Mode)
+			mode, equiv := newACL.Mode()
+			opts.Stat.Mode = (opts.Stat.Mode &^ linux.PermissionsMask) | (mode & linux.PermissionsMask)
+			if equiv {
+				d.accessACL.Store(nil)
+			} else {
+				d.accessACL.Store(&newACL)
+			}
+		}
+
 		d.mode.Store((d.mode.RacyLoad() & linux.S_IFMT) | uint32(opts.Stat.Mode&^linux.S_IFMT))
 	}
 	if opts.Stat.Mask&linux.STATX_UID != 0 {
@@ -1006,14 +1035,18 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 
 // GetPosixACL implements vfs.FileDescriptionImpl.GetPosixACL.
 func (fd *fileDescription) GetPosixACL(ctx context.Context, t vfs.ACLType) (*vfs.PosixACL, error) {
-	// overlayfs does not yet support POSIX ACLs.
-	return nil, nil
+	fs := fd.filesystem()
+	fs.renameMu.RLock()
+	defer fs.renameMu.RUnlock()
+	return fs.getPosixACLLocked(ctx, fd.dentry(), t)
 }
 
 // SetPosixACL implements vfs.FileDescriptionImpl.SetPosixACL.
 func (fd *fileDescription) SetPosixACL(ctx context.Context, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
-	// overlayfs does not yet support POSIX ACLs.
-	return nil, 0, linuxerr.EOPNOTSUPP
+	fs := fd.filesystem()
+	fs.renameMu.RLock()
+	defer fs.renameMu.RUnlock()
+	return fs.setPosixACLLocked(ctx, fd.dentry(), auth.CredentialsFromContext(ctx), fd.vfsfd.Mount(), t, acl, clearSGID)
 }
 
 // IsCopiedUp returns true if the given vfs.Dentry is an overlayfs dentry that has

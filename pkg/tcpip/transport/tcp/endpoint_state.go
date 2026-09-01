@@ -37,6 +37,9 @@ func logDisconnect() {
 }
 
 // beforeSave is invoked by stateify.
+//
+// +checklocksexclude:e.segmentQueue.mu
+// +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) beforeSave() {
 	// Stop incoming packets.
 	e.segmentQueue.freeze()
@@ -146,15 +149,12 @@ func (e *Endpoint) closeEndpointAtRestore() {
 	defer e.mu.Unlock()
 
 	epState := EndpointState(e.origEndpointState)
-	if !epState.connected() && !epState.handshake() {
+	if !epState.connected() && !epState.connecting() {
 		log.Debugf("endpoint was marked to terminate at restore in a wrong state, ID: %+v state: %v", e.ID, epState)
 		return
 	}
 
-	if epState.handshake() {
-		connectedLoading.Wait()
-		listenLoading.Wait()
-	}
+	log.Debugf("terminating TCP connection during restore, ID: %+v state: %v", e.ID, epState)
 
 	// Put the endpoint in the error state and do cleanup. Do not
 	// attempt to send RST as route will be nil.
@@ -170,12 +170,15 @@ func (e *Endpoint) closeEndpointAtRestore() {
 
 	if epState.connected() {
 		connectedLoading.Done()
-	} else {
+	} else if epState.connecting() {
 		connectingLoading.Done()
 	}
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
+//
+// +checklocksexclude:e.segmentQueue.mu
+// +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) Restore(s *stack.Stack) {
 	if !e.EndpointState().closed() {
 		e.keepalive.timer.init(s.Clock(), timerHandler(e, e.keepaliveTimerExpired))
@@ -363,12 +366,17 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 }
 
 // Resume implements tcpip.ResumableEndpoint.Resume.
+//
+// +checklocksexclude:e.segmentQueue.mu
 func (e *Endpoint) Resume() {
 	e.segmentQueue.thaw()
 }
 
 // requeueOnRestore re-adds the endpoint to its processor's run-queue if it has
 // queued segments. The run-queue is not saved across checkpoint/restore.
+//
+// +checklocksexclude:e.segmentQueue.mu
+// +checklocksexclude:e.pendingProcessingMu
 func (e *Endpoint) requeueOnRestore() {
 	if e.segmentQueue.empty() || e.isOwnedByUser() {
 		return

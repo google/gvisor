@@ -18,6 +18,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -38,7 +40,37 @@ type testVariant struct {
 }
 
 // run runs the test variant.
-func (test testVariant) run(ctx context.Context, logger testutil.Logger, runscPath string) (string, error) {
+func (test testVariant) run(ctx context.Context, logger testutil.Logger) (string, error) {
+	runscPath, err := testutil.FindRunsc()
+	if err != nil {
+		return "", fmt.Errorf("cannot locate runsc binary: %v", err)
+	}
+	gvisorBinDir, err := testutil.FindFile("release/gvisor-bin")
+	if err != nil {
+		return "", fmt.Errorf("cannot locate gvisor-bin directory: %v", err)
+	}
+	runscRealPath, err := filepath.EvalSymlinks(runscPath)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve runsc path %q: %v", runscPath, err)
+	}
+	gvisorBinEntries, err := os.ReadDir(gvisorBinDir)
+	if err != nil {
+		return "", fmt.Errorf("cannot read gvisor-bin directory %q: %v", gvisorBinDir, err)
+	}
+	var sidecarMounts []mount.Mount
+	for _, entry := range gvisorBinEntries {
+		src := filepath.Join(gvisorBinDir, entry.Name())
+		realPath, err := filepath.EvalSymlinks(src)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve sidecar path %q: %v", src, err)
+		}
+		sidecarMounts = append(sidecarMounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   realPath,
+			Target:   "/gvisor-bin/" + entry.Name(),
+			ReadOnly: true,
+		})
+	}
 	d := dockerutil.MakeNativeContainer(ctx, logger)
 	defer d.CleanUp(ctx)
 	opts := dockerutil.RunOpts{
@@ -56,15 +88,15 @@ func (test testVariant) run(ctx context.Context, logger testutil.Logger, runscPa
 			"label=type:container_engine_t",
 		},
 		CapAdd: test.CapAdd,
-		Mounts: []mount.Mount{
+		Mounts: append([]mount.Mount{
 			// Mount the runtime binary.
 			{
 				Type:     mount.TypeBind,
-				Source:   runscPath,
+				Source:   runscRealPath,
 				Target:   "/runtime",
 				ReadOnly: true,
 			},
-		},
+		}, sidecarMounts...),
 	}
 	if test.MountCgroupfs {
 		opts.Mounts = append(opts.Mounts, mount.Mount{
@@ -81,7 +113,16 @@ func (test testVariant) run(ctx context.Context, logger testutil.Logger, runscPa
 		"--debug-log=/dev/stderr",
 	}
 	args = append(args, test.Args...)
-	args = append(args, "do", "/bin/echo", wantMessage)
+	args = append(args, "do")
+	// Split the message into separate substrings to avoid matching on the message
+	// just because the sandbox argv in the debug logs matches it
+	// (we want to match stdout specifically).
+	splitWantMessage := strings.Split(wantMessage, " ")
+	var command []string
+	for _, arg := range splitWantMessage {
+		command = append(command, fmt.Sprintf("printf '%%s ' %q", arg))
+	}
+	args = append(args, "/bin/sh", "-c", strings.Join(command, " && "))
 	logger.Logf("Running: %v", args)
 	got, err := d.Run(ctx, opts, args...)
 	got = strings.TrimSpace(got)
@@ -132,13 +173,6 @@ func (test testVariant) failureCases() []testVariant {
 // https://gvisor.dev/blog/2024/09/23/safe-ride-into-the-dangerzone/
 func TestGVisorInDocker(t *testing.T) {
 	ctx := context.Background()
-	runscPath, err := testutil.FindFile("release/runsc")
-	if err != nil {
-		runscPath, err = testutil.FindFile("runsc/runsc")
-		if err != nil {
-			t.Fatalf("Cannot locate runsc binary: %v", err)
-		}
-	}
 	for _, test := range []testVariant{
 		{
 			Name: "Rootful",
@@ -212,12 +246,12 @@ func TestGVisorInDocker(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			if logs, err := test.run(ctx, t, runscPath); err != nil {
+			if logs, err := test.run(ctx, t); err != nil {
 				t.Fatalf("Error: %v; logs:\n%s", err, logs)
 			}
 			for _, failureCase := range test.failureCases() {
 				t.Run(failureCase.Name, func(t *testing.T) {
-					if logs, err := failureCase.run(ctx, t, runscPath); err == nil {
+					if logs, err := failureCase.run(ctx, t); err == nil {
 						t.Fatalf("Failure case unexpectedly succeeded; logs:\n%s", logs)
 					}
 				})

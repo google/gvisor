@@ -69,6 +69,9 @@ func (b *baseTCPEndpointImpl) Read(w io.Writer, _ tcpip.ReadOptions) (tcpip.Read
 	if b.closed {
 		return tcpip.ReadResult{}, &tcpip.ErrClosedForReceive{}
 	}
+	if b.readBuf.Len() == 0 {
+		return tcpip.ReadResult{}, &tcpip.ErrWouldBlock{}
+	}
 	buf := b.readBuf.Next(b.readBuf.Len())
 	n, err := w.Write(buf)
 	if err != nil {

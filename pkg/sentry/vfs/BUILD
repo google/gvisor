@@ -211,6 +211,7 @@ go_test(
     name = "vfs_test",
     size = "small",
     srcs = [
+        "device_test.go",
         "file_description_impl_util_test.go",
         "mount_test.go",
         "posix_acl_test.go",
@@ -222,6 +223,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",

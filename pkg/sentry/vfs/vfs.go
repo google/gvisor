@@ -100,6 +100,10 @@ type VirtualFilesystem struct {
 	// lastMountNamespaceID is accessed using atomic memory operations.
 	lastMountNamespaceID atomicbitops.Uint64
 
+	// MountMax is the maximum number of mounts allowed in a mount namespace.
+	// Configurable by userspace via /proc/sys/fs/mount-max.
+	MountMax atomicbitops.Int32
+
 	// anonMount is a Mount, not included in mounts or mountpoints,
 	// representing an anonFilesystem. anonMount is used to back
 	// VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().
@@ -115,8 +119,13 @@ type VirtualFilesystem struct {
 
 	// dynCharDevMajorUsed contains all allocated dynamic character device
 	// major numbers. dynCharDevMajor is protected by dynCharDevMajorMu.
-	dynCharDevMajorMu   sync.Mutex `state:"nosave"`
-	dynCharDevMajorUsed map[uint32]struct{}
+	//
+	// dynCharDevMajorShared maps keys passed to
+	// GetSharedDynamicCharDevMajor() to the major number allocated for that
+	// key. dynCharDevMajorShared is protected by dynCharDevMajorMu.
+	dynCharDevMajorMu     sync.Mutex `state:"nosave"`
+	dynCharDevMajorUsed   map[uint32]struct{}
+	dynCharDevMajorShared map[SharedDynamicCharDevMajorKey]uint32
 
 	// anonBlockDevMinor contains all allocated anonymous block device minor
 	// numbers. anonBlockDevMinorNext is a lower bound for the smallest
@@ -158,12 +167,14 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	vfs.mountpoints = make(map[*Dentry]map[*Mount]struct{})
 	vfs.devices = make(map[devTuple]*registeredDevice)
 	vfs.dynCharDevMajorUsed = make(map[uint32]struct{})
+	vfs.dynCharDevMajorShared = make(map[SharedDynamicCharDevMajorKey]uint32)
 	vfs.anonBlockDevMinorNext = 1
 	vfs.anonBlockDevMinor = make(map[uint32]struct{})
 	vfs.fsTypes = make(map[string]*registeredFilesystemType)
 	vfs.filesystems = make(map[*Filesystem]struct{})
 	vfs.mounts.Init()
 	vfs.groupIDBitmap = bitmap.New(1024)
+	vfs.MountMax.Store(DefaultMountMax)
 	vfs.mountMu.Lock()
 	vfs.toDecRef = make(map[refs.RefCounter]int)
 	vfs.mountMu.Unlock()

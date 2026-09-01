@@ -46,6 +46,7 @@ func getLastRuntimeError(r *runsccmd.Runsc) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer f.Close()
 
 	var (
 		errMsg string

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 // capHeader mirrors `struct __user_cap_header_struct`.
@@ -64,37 +65,60 @@ func allThreadsPrctl(option, arg2, arg3 uintptr) error {
 	return nil
 }
 
-// ApplyCapsAllThreads applies the capabilities in the spec to every thread of
-// the current process. Fails with ENOTSUP in cgo builds.
-func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
+// ResolvedThreadCaps is a set of capability masks resolved against the
+// current process's capabilities.
+type ResolvedThreadCaps struct {
+	bounding, effective, permitted, inheritable, ambient uint64
+
+	// lastCap is the highest capability number supported by the host kernel.
+	lastCap capability.Cap
+
+	// haveSetPCap is whether the effective set had `CAP_SETPCAP` at
+	// resolution time. (`PR_CAPBSET_DROP` requires it.)
+	haveSetPCap bool
+}
+
+// ResolveThreadCaps resolves the capability sets in the spec against the
+// current process's capabilities.
+//
+// Precondition: procfs is mounted at `/proc`.
+// This reads `/proc/self/status` and `/proc/sys/kernel/cap_last_cap`.
+func ResolveThreadCaps(caps *specs.LinuxCapabilities, timer *timing.Timer) (*ResolvedThreadCaps, error) {
 	curCaps, err := capability.NewPid2(0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := curCaps.Load(); err != nil {
-		return err
+		return nil, err
 	}
-	var bounding, effective, permitted, inheritable, ambient uint64
-	for i, mask := range [5]*uint64{&bounding, &effective, &permitted, &inheritable, &ambient} {
+	timer.Reached("current capabilities read")
+	var r ResolvedThreadCaps
+	for i, mask := range [5]*uint64{&r.bounding, &r.effective, &r.permitted, &r.inheritable, &r.ambient} {
 		set, err := TrimCaps(GetCaps(AllCapTypes[i], caps), curCaps)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, c := range set {
 			*mask |= uint64(1) << uint(c)
 		}
 	}
-	last, err := capability.LastCap()
-	if err != nil {
-		return err
+	if r.lastCap, err = capability.LastCap(); err != nil {
+		return nil, err
 	}
+	r.haveSetPCap = curCaps.Get(capability.EFFECTIVE, capability.CAP_SETPCAP)
+	return &r, nil
+}
 
+// Apply applies `r` to every thread of the current process.
+// May be run without procfs available.
+// Fails with `ENOTSUP` in cgo builds.
+func (r *ResolvedThreadCaps) Apply(timer *timing.Timer) error {
 	// 1. Trim the bounding set on every thread. This must happen before
 	// capset drops CAP_SETPCAP from the effective set (PR_CAPBSET_DROP
 	// requires it).
-	if curCaps.Get(capability.EFFECTIVE, capability.CAP_SETPCAP) {
-		for c := capability.Cap(0); c <= last; c++ {
-			if bounding&(uint64(1)<<uint(c)) != 0 {
+	if r.haveSetPCap {
+		for c := capability.Cap(0); c <= r.lastCap; c++ {
+			if r.bounding&(uint64(1)<<uint(c)) != 0 {
 				continue
 			}
 			if err := allThreadsPrctl(unix.PR_CAPBSET_DROP, uintptr(c), 0); err != nil {
@@ -102,6 +126,7 @@ func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
 			}
 		}
 	}
+	timer.Reached("bounding set trimmed on all threads")
 
 	// 2. Apply effective/permitted/inheritable via `capset(2)` on all threads.
 	capsetHdr = capHeader{
@@ -111,22 +136,23 @@ func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
 		// in turn mean each Go runtime thread.
 		pid: 0,
 	}
-	capsetData[0].effective = uint32(effective)
-	capsetData[1].effective = uint32(effective >> 32)
-	capsetData[0].permitted = uint32(permitted)
-	capsetData[1].permitted = uint32(permitted >> 32)
-	capsetData[0].inheritable = uint32(inheritable)
-	capsetData[1].inheritable = uint32(inheritable >> 32)
+	capsetData[0].effective = uint32(r.effective)
+	capsetData[1].effective = uint32(r.effective >> 32)
+	capsetData[0].permitted = uint32(r.permitted)
+	capsetData[1].permitted = uint32(r.permitted >> 32)
+	capsetData[0].inheritable = uint32(r.inheritable)
+	capsetData[1].inheritable = uint32(r.inheritable >> 32)
 	if _, _, errno := syscall.AllThreadsSyscall6(unix.SYS_CAPSET, uintptr(unsafe.Pointer(&capsetHdr)), uintptr(unsafe.Pointer(&capsetData[0])), 0, 0, 0, 0); errno != 0 {
 		return fmt.Errorf("capset on all threads: %w", errno)
 	}
+	timer.Reached("capset applied on all threads")
 
 	// 3. Ambient set: clear everything, then raise the requested caps.
 	if err := allThreadsPrctl(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_CLEAR_ALL, 0); err != nil {
 		return fmt.Errorf("clearing ambient capabilities on all threads: %w", err)
 	}
-	for c := capability.Cap(0); c <= last; c++ {
-		if ambient&(uint64(1)<<uint(c)) == 0 {
+	for c := capability.Cap(0); c <= r.lastCap; c++ {
+		if r.ambient&(uint64(1)<<uint(c)) == 0 {
 			continue
 		}
 		if err := allThreadsPrctl(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_RAISE, uintptr(c)); err != nil {
@@ -135,6 +161,18 @@ func ApplyCapsAllThreads(caps *specs.LinuxCapabilities) error {
 	}
 
 	log.Infof("Capabilities applied to all threads: bounding=%#x effective=%#x permitted=%#x inheritable=%#x ambient=%#x",
-		bounding, effective, permitted, inheritable, ambient)
+		r.bounding, r.effective, r.permitted, r.inheritable, r.ambient)
 	return nil
+}
+
+// ApplyCapsAllThreads applies the capabilities in the spec to every thread of
+// the current process. Fails with `ENOTSUP` in cgo builds.
+// Requires procfs to be mounted at `/proc`; see `ResolveThreadCaps` if you
+// need to decouple these operations.
+func ApplyCapsAllThreads(caps *specs.LinuxCapabilities, timer *timing.Timer) error {
+	r, err := ResolveThreadCaps(caps, timer)
+	if err != nil {
+		return err
+	}
+	return r.Apply(timer)
 }

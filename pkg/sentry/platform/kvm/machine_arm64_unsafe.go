@@ -39,6 +39,20 @@ type kvmVcpuInit struct {
 
 var vcpuInit kvmVcpuInit
 
+// ptrauthKeyRegs is the set of pointer authentication key registers.
+var ptrauthKeyRegs = [...]uint64{
+	_KVM_ARM64_REGS_APIAKEYLO_EL1,
+	_KVM_ARM64_REGS_APIAKEYHI_EL1,
+	_KVM_ARM64_REGS_APIBKEYLO_EL1,
+	_KVM_ARM64_REGS_APIBKEYHI_EL1,
+	_KVM_ARM64_REGS_APDAKEYLO_EL1,
+	_KVM_ARM64_REGS_APDAKEYHI_EL1,
+	_KVM_ARM64_REGS_APDBKEYLO_EL1,
+	_KVM_ARM64_REGS_APDBKEYHI_EL1,
+	_KVM_ARM64_REGS_APGAKEYLO_EL1,
+	_KVM_ARM64_REGS_APGAKEYHI_EL1,
+}
+
 // initArchState initializes architecture-specific state.
 func (m *machine) initArchState() error {
 	if errno := hostsyscall.RawSyscallErrno(
@@ -78,12 +92,43 @@ func (c *vCPU) initArchState() error {
 	regGet.addr = uint64(reflect.ValueOf(&dataGet).Pointer())
 
 	vcpuInit.features[0] |= (1 << _KVM_ARM_VCPU_PSCI_0_2)
+	if hasPtrauth {
+		// Enable pointer authentication in the guest. Without this,
+		// KVM injects an undefined instruction exception for every
+		// non-hint PAC instruction (e.g. PACIA, RETAA, PACGA), which
+		// are UNDEFINED without FEAT_PAuth; applications compiled for
+		// armv8.3+ execute them unconditionally and would receive
+		// spurious SIGILLs. KVM requires both features to be set
+		// together.
+		vcpuInit.features[0] |= (1 << _KVM_ARM_VCPU_PTRAUTH_ADDRESS) |
+			(1 << _KVM_ARM_VCPU_PTRAUTH_GENERIC)
+	}
 	if errno := hostsyscall.RawSyscallErrno(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		_KVM_ARM_VCPU_INIT,
 		uintptr(unsafe.Pointer(&vcpuInit))); errno != 0 {
 		panic(fmt.Sprintf("error setting KVM_ARM_VCPU_INIT failed: %v", errno))
+	}
+
+	if hasPtrauth {
+		// Zero all pointer authentication keys.
+		//
+		// _SCTLR_EL1_DEFAULT keeps EnIA/EnIB/EnDA/EnDB clear, so the
+		// address authentication instructions execute as no-ops at both
+		// EL1 and EL0, matching a host with pointer authentication
+		// disabled (see disableHostPAC()). PACGA, however, is not
+		// gated by SCTLR_EL1 and always mixes in APGAKey_EL1, and KVM
+		// resets the key registers to an unspecified value. Zeroed
+		// keys keep PACGA results consistent across vCPUs, which is
+		// required because tasks are not pinned to vCPUs.
+		for _, id := range ptrauthKeyRegs {
+			data = 0
+			reg.id = id
+			if err := c.setOneRegister(&reg); err != nil {
+				return err
+			}
+		}
 	}
 
 	// tcr_el1

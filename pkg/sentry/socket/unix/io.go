@@ -35,7 +35,7 @@ type EndpointWriter struct {
 	// To is the endpoint to send to. May be nil.
 	To transport.BoundEndpoint
 
-	// Notify is the receiver.SendNotify notification callback that is set
+	// Notify is the Sender.NotifyDataReady notification callback that is set
 	// by WriteFromBlocks and should be called without mm.activeMu held
 	// (i.e. after CopyOut completes).
 	Notify func()
@@ -91,7 +91,7 @@ type EndpointReader struct {
 	// the value of NumRights.
 	ControlTrunc bool
 
-	// Notify is the ConnectedEndpoint.RecvNotify callback that is set by
+	// Notify is the Receiver.NotifyWriteSpace callback that is set by
 	// ReadToBlocks and should be called without mm.activeMu held (i.e.
 	// after CopyIn completes).
 	Notify func()

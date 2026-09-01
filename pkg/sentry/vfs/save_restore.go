@@ -189,3 +189,10 @@ func (epi *epollInterest) afterLoad(goContext.Context) {
 		epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
 	}
 }
+
+// afterLoad is called by stateify.
+func (vfs *VirtualFilesystem) afterLoad(goContext.Context) {
+	if vfs.dynCharDevMajorShared == nil {
+		vfs.dynCharDevMajorShared = make(map[SharedDynamicCharDevMajorKey]uint32)
+	}
+}

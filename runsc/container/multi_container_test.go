@@ -31,11 +31,14 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
+	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -2370,7 +2373,7 @@ func TestMultiContainerEvent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			conf := testutil.TestConfig(t)
 			if name == "enableCgroupsV2" {
-				conf.MountCgroupV2 = true
+				conf.InSandboxCgroup = config.InSandboxCgroupV2
 			}
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -2507,7 +2510,7 @@ func TestMultiContainerEvent(t *testing.T) {
 
 func TestCgroupV2ReadControlFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.MountCgroupV2 = true
+	conf.InSandboxCgroup = config.InSandboxCgroupV2
 
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
@@ -2578,7 +2581,7 @@ func TestCgroupV2ReadControlFile(t *testing.T) {
 // mount in its spec is never given a cgroup2 node.
 func TestMultiContainerCgroupV2Destroy(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.MountCgroupV2 = true
+	conf.InSandboxCgroup = config.InSandboxCgroupV2
 
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
@@ -3230,7 +3233,7 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 		for name, conf := range configs(t, false /* noOverlay */) {
 			if cgroupV2 {
 				name += "-cgroupV2"
-				conf.MountCgroupV2 = true
+				conf.InSandboxCgroup = config.InSandboxCgroupV2
 			}
 			t.Run(name, func(t *testing.T) {
 				rootDir, cleanup, err := testutil.SetupRootDir()
@@ -3353,16 +3356,42 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 // - When 'all' is true, all tmpfs filesystems are checkpointed and restored.
 func TestFSCheckpointCommand(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		savePath   string
-		lostPath   string
-		all        bool
-		multipaths bool
+		name           string
+		savePath       string
+		lostPath       string
+		all            bool
+		multipaths     bool
+		modifyManifest func(t *testing.T, imagePath string)
 	}{
 		{name: "root", savePath: "/", lostPath: "/homedir"},
 		{name: "all", savePath: "/", lostPath: "/homedir", all: true},
 		{name: "homedir", savePath: "/homedir", lostPath: "/lost-dir"},
 		{name: "multipath", multipaths: true},
+		{
+			name:     "phony_runsc_version",
+			savePath: "/",
+			lostPath: "/homedir",
+			modifyManifest: func(t *testing.T, imagePath string) {
+				manifestPath := filepath.Join(imagePath, checkpointfiles.FSCheckpointManifestFileName)
+				data, err := os.ReadFile(manifestPath)
+				if err != nil {
+					t.Fatalf("Failed to read manifest: %v", err)
+				}
+				var pb fspb.Manifest
+				if err := proto.Unmarshal(data, &pb); err != nil {
+					t.Fatalf("Failed to unmarshal manifest: %v", err)
+				}
+				// Ascertain that a different runsc version doesn't mean we fail
+				pb.RunscVersion = "prehistoric"
+				newData, err := proto.Marshal(&pb)
+				if err != nil {
+					t.Fatalf("Failed to marshal manifest: %v", err)
+				}
+				if err := os.WriteFile(manifestPath, newData, 0644); err != nil {
+					t.Fatalf("Failed to write manifest: %v", err)
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testutil.TestConfig(t)
@@ -3559,6 +3588,10 @@ func TestFSCheckpointCommand(t *testing.T) {
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatalf("Timed out waiting for WaitFSCheckpoint")
+			}
+
+			if tc.modifyManifest != nil {
+				tc.modifyManifest(t, imagePath)
 			}
 
 			// Start three containers which sleep, two of which restore from the

@@ -118,7 +118,6 @@ pkg_tar(
         "//website/application_compatibility:index.html",
         "//website/blog:index.html",
         "//website/security_track_record:index.html",
-        "//website/users:index.html",
     ] + glob([
         "_data/**",
         "assets/**",
@@ -143,6 +142,7 @@ docs(
     name = "docs",
     deps = [
         ":index",
+        "//:adopters",
         "//:code_of_conduct",
         "//:contributing",
         "//:governance",
@@ -179,6 +179,7 @@ docs(
         "//g3doc/user_guide:tpu",
         "//g3doc/user_guide/containerd:configuration",
         "//g3doc/user_guide/containerd:containerd_11",
+        "//g3doc/user_guide/containerd:crio",
         "//g3doc/user_guide/containerd:quick_start",
         "//g3doc/user_guide/quick_start:docker",
         "//g3doc/user_guide/quick_start:kubernetes",

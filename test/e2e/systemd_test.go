@@ -95,11 +95,10 @@ func spawnSystemdContainer(ctx context.Context, t *testing.T, image string) *doc
 	return d
 }
 
-// startService starts the given unit and waits for it to become active,
-// dumping the unit's journal on failure.
-func startService(ctx context.Context, t *testing.T, d *dockerutil.Container, unit string) {
+// waitForUnitActive polls until the given unit becomes active, dumping the
+// unit's journal on failure.
+func waitForUnitActive(ctx context.Context, t *testing.T, d *dockerutil.Container, unit string) {
 	t.Helper()
-	execOrFatal(ctx, t, d, "systemctl", "start", unit)
 	checkUnitActive := func(ctx context.Context) error {
 		out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "systemctl", "is-active", unit)
 		if err != nil || strings.TrimSpace(out) != "active" {
@@ -111,6 +110,14 @@ func startService(ctx context.Context, t *testing.T, d *dockerutil.Container, un
 		journal, _ := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "journalctl", "-u", unit, "--no-pager")
 		t.Fatalf("%s did not become active: %v\njournal:\n%s", unit, err, journal)
 	}
+}
+
+// startService starts the given unit and waits for it to become active,
+// dumping the unit's journal on failure.
+func startService(ctx context.Context, t *testing.T, d *dockerutil.Container, unit string) {
+	t.Helper()
+	execOrFatal(ctx, t, d, "systemctl", "start", unit)
+	waitForUnitActive(ctx, t, d, unit)
 }
 
 // stopService stops the given unit and verifies that it becomes inactive.
@@ -127,6 +134,17 @@ func stopService(ctx context.Context, t *testing.T, d *dockerutil.Container, uni
 func unitState(ctx context.Context, t *testing.T, d *dockerutil.Container, unit string) string {
 	t.Helper()
 	return strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "show", "-p", "ActiveState", "--value", unit))
+}
+
+// unitCgroupDir returns the cgroupfs directory of the given unit's main
+// process, derived from /proc rather than hardcoded: the container may share
+// the host's cgroup namespace (docker's default on cgroup-v1 hosts), which
+// prefixes every cgroup path with the container's own.
+func unitCgroupDir(ctx context.Context, t *testing.T, d *dockerutil.Container, unit string) string {
+	t.Helper()
+	pid := strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "show", "-p", "MainPID", "--value", unit))
+	cg := strings.TrimSpace(execOrFatal(ctx, t, d, "cat", "/proc/"+pid+"/cgroup"))
+	return "/sys/fs/cgroup" + strings.TrimPrefix(cg, "0::")
 }
 
 // TestSystemdBoot verifies that systemd boots to a "running" state and that
@@ -147,6 +165,24 @@ func TestSystemdBoot(t *testing.T) {
 	out = execOrFatal(ctx, t, d, "systemctl", "status", "systemd-logind.service", "--no-pager")
 	if !strings.Contains(out, wantLogindActive) {
 		t.Errorf("After systemd boot, systemd-logind service is not active (output does not contain %q):\n%s", wantLogindActive, out)
+	}
+}
+
+// TestSystemdUBI10Init boots Red Hat's UBI 10 init image: a second systemd
+// lineage (RHEL 10, systemd v257, which mandates cgroup v2).
+func TestSystemdUBI10Init(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "ubi10-init")
+	defer d.CleanUp(ctx)
+
+	if out := strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "--failed", "--no-legend", "--plain")); out != "" {
+		t.Errorf("failed units after boot (want none):\n%s", out)
+	}
+	wantEcho := "gv-ubi10-ok"
+	out, err := transientRun(ctx, d, nil, "/bin/echo", wantEcho)
+	if err != nil || !strings.Contains(out, wantEcho) {
+		t.Errorf("transient unit failed: %v (output does not contain %q): %s", err, wantEcho, out)
 	}
 }
 
@@ -446,13 +482,19 @@ func TestSystemdRedis(t *testing.T) {
 
 const alpineImageRef = "mirror.gcr.io/library/alpine:3.22"
 
-// TestSystemdDocker verifies that dockerd runs as a systemd service: the unit
-// becomes active, the daemon answers API requests, and it can pull images.
+// TestSystemdDocker verifies that dockerd runs as a systemd service and can
+// pull images and run containers.
 func TestSystemdDocker(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	d := spawnSystemdContainer(ctx, t, "systemd-services")
 	defer d.CleanUp(ctx)
+
+	// Overlay upper layers cannot sit on runsc's sandbox-internal overlay
+	// rootfs, so back the state directories with tmpfs.
+	execOrFatal(ctx, t, d, "mkdir", "-p", "/var/lib/docker", "/var/lib/containerd")
+	execOrFatal(ctx, t, d, "mount", "-t", "tmpfs", "tmpfs", "/var/lib/docker")
+	execOrFatal(ctx, t, d, "mount", "-t", "tmpfs", "tmpfs", "/var/lib/containerd")
 
 	startService(ctx, t, d, "docker.service")
 
@@ -465,6 +507,14 @@ func TestSystemdDocker(t *testing.T) {
 	out := execOrFatal(ctx, t, d, "docker", "image", "ls", alpineImageRef)
 	if !strings.Contains(out, wantImage) {
 		t.Errorf("pulled image not listed (output does not contain %q):\n%s", wantImage, out)
+	}
+
+	// Run a command in a container from the pulled image (--network=none:
+	// the image disables dockerd's iptables integration).
+	wantRelease := "Alpine Linux"
+	out = execOrFatal(ctx, t, d, "docker", "run", "--network=none", "--rm", alpineImageRef, "cat", "/etc/os-release")
+	if !strings.Contains(out, wantRelease) {
+		t.Errorf("running a container did not produce its output (output does not contain %q):\n%s", wantRelease, out)
 	}
 
 	stopService(ctx, t, d, "docker.service")
@@ -631,4 +681,468 @@ func TestSystemdWatchdog(t *testing.T) {
 	if err := pollWithTimeout(ctx, daemonPollTimeout, checkWatchdogFired); err != nil {
 		t.Errorf("systemd did not kill gv-watchdog after pings stopped: %v\njournal:\n%s", err, dumpJournal())
 	}
+}
+
+// The tests below exercise kernel functionality that core PID1 machinery
+// depends on. They are patterned after systemd's own integration tests
+// (test/units/TEST-* in the systemd repo).
+
+// transientRun runs a command synchronously in a transient unit via
+// `systemd-run --pipe` with the given unit properties.
+func transientRun(ctx context.Context, d *dockerutil.Container, props []string, argv ...string) (string, error) {
+	args := []string{"systemd-run", "--quiet", "--collect", "--wait", "--pipe"}
+	for _, p := range props {
+		args = append(args, "--property="+p)
+	}
+	args = append(args, "--")
+	args = append(args, argv...)
+	return d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, args...)
+}
+
+// TestSystemdExecSandboxing verifies per-service sandboxing knobs:
+// PrivateTmp=, ProtectSystem=strict, User=, and NoNewPrivileges=.
+func TestSystemdExecSandboxing(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-integ")
+	defer d.CleanUp(ctx)
+
+	// A marker in the host /tmp must be invisible under PrivateTmp=yes.
+	hostMarker := "gv-host-marker"
+	execOrFatal(ctx, t, d, "touch", "/tmp/"+hostMarker)
+	out, err := transientRun(ctx, d, []string{"PrivateTmp=yes"}, "/bin/ls", "/tmp")
+	if err != nil {
+		t.Fatalf("systemd-run with PrivateTmp=yes failed: %v (output: %s)", err, out)
+	}
+	if strings.Contains(out, hostMarker) {
+		t.Errorf("PrivateTmp=yes service sees the host /tmp (output contains %q):\n%s", hostMarker, out)
+	}
+	// And a file created in the private /tmp must not leak to the host /tmp.
+	if out, err := transientRun(ctx, d, []string{"PrivateTmp=yes"}, "/usr/bin/touch", "/tmp/gv-private-marker"); err != nil {
+		t.Fatalf("touch in the private /tmp failed: %v (output: %s)", err, out)
+	}
+	if out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "test", "-e", "/tmp/gv-private-marker"); err == nil {
+		t.Errorf("file created under PrivateTmp=yes leaked to the host /tmp (output: %s)", out)
+	}
+
+	// ProtectSystem=strict must make /usr read-only.
+	wantEROFS := "Read-only file system"
+	out, _ = transientRun(ctx, d, []string{"ProtectSystem=strict"}, "/bin/bash", "-c", "touch /usr/gv-protected 2>&1")
+	if !strings.Contains(out, wantEROFS) {
+		t.Errorf("writing /usr under ProtectSystem=strict did not fail with EROFS (output does not contain %q):\n%s", wantEROFS, out)
+	}
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "test", "-e", "/usr/gv-protected"); err == nil {
+		t.Errorf("ProtectSystem=strict did not prevent creating /usr/gv-protected")
+	}
+
+	// User= must run the payload as the requested user.
+	wantUser := "nobody"
+	out, err = transientRun(ctx, d, []string{"User=nobody"}, "/usr/bin/id", "-un")
+	if err != nil {
+		t.Fatalf("systemd-run with User=nobody failed: %v (output: %s)", err, out)
+	}
+	if got := strings.TrimSpace(out); got != wantUser {
+		t.Errorf("User=nobody service runs as the wrong user (got %q, want %q)", got, wantUser)
+	}
+
+	// NoNewPrivileges= must set the no_new_privs bit.
+	nnpProbe := `awk '/^NoNewPrivs:/{print $2}' /proc/self/status`
+	wantNNP := "1"
+	out, err = transientRun(ctx, d, []string{"NoNewPrivileges=yes"}, "/bin/bash", "-c", nnpProbe)
+	if err != nil {
+		t.Fatalf("systemd-run with NoNewPrivileges=yes failed: %v (output: %s)", err, out)
+	}
+	if got := strings.TrimSpace(out); got != wantNNP {
+		t.Errorf("NoNewPrivileges=yes service has the wrong no_new_privs bit (got %q, want %q)", got, wantNNP)
+	}
+	// Control: without the property the bit must be unset, proving the
+	// probe does not always report 1.
+	wantNoNNP := "0"
+	out, err = transientRun(ctx, d, nil, "/bin/bash", "-c", nnpProbe)
+	if err != nil {
+		t.Fatalf("systemd-run for the no_new_privs control failed: %v (output: %s)", err, out)
+	}
+	if got := strings.TrimSpace(out); got != wantNoNNP {
+		t.Errorf("service without NoNewPrivileges has the wrong no_new_privs bit (got %q, want %q)", got, wantNoNNP)
+	}
+}
+
+// userExec runs a command as the given user, as a transient unit in the
+// user's service manager (systemd-run --machine=<user>@.host --user).
+// Unlike `docker exec --user`, the user is resolved inside the sandbox.
+// The command line is parsed as an ExecStart= value, so "$$" escapes a
+// literal "$".
+func userExec(ctx context.Context, d *dockerutil.Container, user string, args ...string) (string, error) {
+	fullArgs := append([]string{"systemd-run", "--machine=" + user + "@.host", "--user",
+		"--quiet", "--collect", "--wait", "--pipe", "--"}, args...)
+	return d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, fullArgs...)
+}
+
+// userExecOrFatal is userExec, fataling on error.
+func userExecOrFatal(ctx context.Context, t *testing.T, d *dockerutil.Container, user string, args ...string) string {
+	t.Helper()
+	out, err := userExec(ctx, d, user, args...)
+	if err != nil {
+		t.Fatalf("exec %v as %s failed: %v (output: %s)", args, user, err, out)
+	}
+	return out
+}
+
+// TestSystemdMultiUser proves multiuser operation: unprivileged per-user
+// managers in delegated cgroup subtrees, per-user daemons and journals, and
+// enforcement between users. The subtests share one container and run in
+// parallel, so cleanup is registered with t.Cleanup rather than deferred.
+func TestSystemdMultiUser(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "systemd-integ")
+	t.Cleanup(func() { d.CleanUp(context.Background()) })
+
+	const (
+		aliceUID = 1001
+		bobUID   = 1002
+	)
+	aliceUnit := fmt.Sprintf("user@%d.service", aliceUID)
+	bobUnit := fmt.Sprintf("user@%d.service", bobUID)
+
+	// Fixture: two users, persistent journal, both managers booted via
+	// lingering (no login needed).
+	execOrFatal(ctx, t, d, "useradd", "-m", "-u", strconv.Itoa(aliceUID), "alice")
+	execOrFatal(ctx, t, d, "useradd", "-m", "-u", strconv.Itoa(bobUID), "bob")
+	// journald only splits out per-user journal files (and ACLs them) when
+	// /var/log/journal exists.
+	execOrFatal(ctx, t, d, "mkdir", "-p", "/var/log/journal")
+	execOrFatal(ctx, t, d, "systemctl", "restart", "systemd-journald")
+	execOrFatal(ctx, t, d, "journalctl", "--flush")
+	execOrFatal(ctx, t, d, "loginctl", "enable-linger", "alice", "bob")
+	waitForUnitActive(ctx, t, d, aliceUnit)
+	waitForUnitActive(ctx, t, d, bobUnit)
+	checkManagerRunning := func(ctx context.Context) error {
+		out, err := userExec(ctx, d, "alice", "systemctl", "--user", "is-system-running")
+		if err != nil || strings.TrimSpace(out) != "running" {
+			return fmt.Errorf("alice's manager not running: %v (output: %s)", err, out)
+		}
+		return nil
+	}
+	if err := pollWithTimeout(ctx, daemonPollTimeout, checkManagerRunning); err != nil {
+		t.Fatalf("alice's user manager did not reach the running state: %v", err)
+	}
+	aliceCgroup := strings.TrimSuffix(unitCgroupDir(ctx, t, d, aliceUnit), "/init.scope")
+
+	t.Run("RuntimeDir", func(t *testing.T) {
+		t.Parallel()
+		// The per-user runtime directory must be a private tmpfs owned by
+		// the user.
+		runtimeDir := fmt.Sprintf("/run/user/%d", aliceUID)
+		wantFstype := "tmpfs"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "findmnt", "-n", "-o", "FSTYPE", runtimeDir)); got != wantFstype {
+			t.Errorf("%s has the wrong filesystem type (got %q, want %q)", runtimeDir, got, wantFstype)
+		}
+		wantOwnerMode := "alice 700"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "stat", "-c", "%U %a", runtimeDir)); got != wantOwnerMode {
+			t.Errorf("%s has the wrong owner/mode (got %q, want %q)", runtimeDir, got, wantOwnerMode)
+		}
+	})
+
+	t.Run("MachinedShell", func(t *testing.T) {
+		t.Parallel()
+		// machinectl shell asks systemd-machined to allocate a pty and
+		// spawn the command as the target user.
+		wantUser := "alice"
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root", UseTTY: true},
+			"machinectl", "--quiet", "shell", "alice@.host", "/usr/bin/id", "-un")
+		if err != nil {
+			t.Fatalf("machinectl shell failed: %v (output: %s)", err, out)
+		}
+		if !strings.Contains(out, wantUser) {
+			t.Errorf("machinectl shell ran as the wrong user (output does not contain %q):\n%s", wantUser, out)
+		}
+	})
+
+	t.Run("CgroupDelegation", func(t *testing.T) {
+		t.Parallel()
+		// The delegated subtree must be chowned to the user...
+		wantOwner := "alice"
+		for _, path := range []string{aliceCgroup, aliceCgroup + "/cgroup.procs", aliceCgroup + "/cgroup.subtree_control"} {
+			if got := strings.TrimSpace(execOrFatal(ctx, t, d, "stat", "-c", "%U", path)); got != wantOwner {
+				t.Errorf("%s has the wrong owner (got %q, want %q)", path, got, wantOwner)
+			}
+		}
+		// ...the unprivileged manager must have built its own hierarchy
+		// inside it...
+		execOrFatal(ctx, t, d, "test", "-d", aliceCgroup+"/init.scope")
+		// ...and controllers must be available for delegation.
+		out := execOrFatal(ctx, t, d, "cat", aliceCgroup+"/cgroup.controllers")
+		for _, want := range []string{"memory", "pids"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("delegated cgroup.controllers is missing %q: %s", want, out)
+			}
+		}
+	})
+
+	t.Run("UserUnits", func(t *testing.T) {
+		t.Parallel()
+		// A transient user unit must run as the user, inside the
+		// delegated subtree, with limits written by its manager.
+		userExecOrFatal(ctx, t, d, "alice", "systemd-run", "--user", "--quiet", "--collect",
+			"--unit=gv-user-svc", "--property=MemoryMax=64M", "/bin/sleep", "infinity")
+		checkActive := func(ctx context.Context) error {
+			out, err := userExec(ctx, d, "alice", "systemctl", "--user", "is-active", "gv-user-svc.service")
+			if err != nil || strings.TrimSpace(out) != "active" {
+				return fmt.Errorf("gv-user-svc not active: %v (output: %s)", err, out)
+			}
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkActive); err != nil {
+			t.Fatalf("alice's transient unit did not become active: %v", err)
+		}
+
+		pidStr := strings.TrimSpace(userExecOrFatal(ctx, t, d, "alice",
+			"systemctl", "--user", "show", "-p", "MainPID", "--value", "gv-user-svc.service"))
+		wantOwner := "alice"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "stat", "-c", "%U", "/proc/"+pidStr)); got != wantOwner {
+			t.Errorf("the user unit's main process runs as the wrong user (got %q, want %q)", got, wantOwner)
+		}
+
+		// The unit's cgroup must live inside the delegated subtree.
+		cgOut := strings.TrimSpace(execOrFatal(ctx, t, d, "cat", "/proc/"+pidStr+"/cgroup"))
+		cgPath := strings.TrimPrefix(cgOut, "0::")
+		wantSubtree := fmt.Sprintf("/user@%d.service/", aliceUID)
+		if !strings.Contains(cgPath, wantSubtree) || !strings.Contains(cgPath, "gv-user-svc.service") {
+			t.Errorf("the user unit's cgroup %q is not inside the delegated subtree (want it to contain %q and %q)", cgPath, wantSubtree, "gv-user-svc.service")
+		}
+		// And MemoryMax= must have been written through by the unprivileged
+		// manager.
+		wantMemMax := "67108864"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "cat", "/sys/fs/cgroup"+cgPath+"/memory.max")); got != wantMemMax {
+			t.Errorf("the user unit's memory.max is wrong (got %q, want %q)", got, wantMemMax)
+		}
+
+		userExecOrFatal(ctx, t, d, "alice", "systemctl", "--user", "stop", "gv-user-svc.service")
+	})
+
+	t.Run("UserDaemon", func(t *testing.T) {
+		t.Parallel()
+		// gpg-agent's socket unit sits in the user manager; the first
+		// gpg invocation must socket-activate the daemon.
+		userExecOrFatal(ctx, t, d, "alice", "systemctl", "--user", "start", "gpg-agent.socket")
+		wantInactive := "inactive"
+		out, _ := userExec(ctx, d, "alice", "systemctl", "--user", "is-active", "gpg-agent.service")
+		if got := strings.TrimSpace(out); got != wantInactive {
+			t.Fatalf("before first use, gpg-agent.service state is wrong (got %q, want %q)", got, wantInactive)
+		}
+
+		// First use: key generation connects to the listening socket.
+		userExecOrFatal(ctx, t, d, "alice", "gpg", "--batch", "--pinentry-mode", "loopback",
+			"--passphrase", "", "--quick-gen-key", "alice@gvisor.test", "default", "default")
+		wantActive := "active"
+		if out, err := userExec(ctx, d, "alice", "systemctl", "--user", "is-active", "gpg-agent.service"); err != nil || strings.TrimSpace(out) != wantActive {
+			t.Fatalf("after first gpg use, gpg-agent.service was not socket-activated: %v (output: %s)", err, out)
+		}
+
+		// The agent gpg talks to must be the systemd-supervised process...
+		mainPID := strings.TrimSpace(userExecOrFatal(ctx, t, d, "alice",
+			"systemctl", "--user", "show", "-p", "MainPID", "--value", "gpg-agent.service"))
+		agentPID := strings.TrimSpace(userExecOrFatal(ctx, t, d, "alice", "/bin/sh", "-c",
+			"gpg-connect-agent 'getinfo pid' /bye | awk '/^D/{print $2}'"))
+		if mainPID == "0" || mainPID != agentPID {
+			t.Errorf("the agent serving gpg is not the systemd-supervised one (unit MainPID %q, agent reports pid %q)", mainPID, agentPID)
+		}
+		// ...running as alice inside her delegated cgroup subtree.
+		wantOwner := "alice"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "stat", "-c", "%U", "/proc/"+mainPID)); got != wantOwner {
+			t.Errorf("gpg-agent runs as the wrong user (got %q, want %q)", got, wantOwner)
+		}
+		wantSubtree := fmt.Sprintf("/user@%d.service/", aliceUID)
+		if cg := strings.TrimSpace(execOrFatal(ctx, t, d, "cat", "/proc/"+mainPID+"/cgroup")); !strings.Contains(cg, wantSubtree) {
+			t.Errorf("gpg-agent's cgroup %q is outside the delegated subtree (want it to contain %q)", cg, wantSubtree)
+		}
+
+		// End-to-end: sign and verify through the daemon.
+		wantGood := "Good signature"
+		out = userExecOrFatal(ctx, t, d, "alice", "/bin/sh", "-c",
+			"echo gv-sign-payload > /tmp/gv-msg && gpg --batch --yes -u alice@gvisor.test --output /tmp/gv-msg.sig --sign /tmp/gv-msg && gpg --verify /tmp/gv-msg.sig 2>&1")
+		if !strings.Contains(out, wantGood) {
+			t.Errorf("sign/verify through gpg-agent failed (output does not contain %q):\n%s", wantGood, out)
+		}
+	})
+
+	t.Run("PackagedUserDaemon", func(t *testing.T) {
+		t.Parallel()
+		// The image ships test-daemon.service only as a system unit;
+		// enable with a full path links it into alice's own manager.
+		unitPath := "/etc/systemd/system/test-daemon.service"
+		userExecOrFatal(ctx, t, d, "alice", "systemctl", "--user", "enable", "--now", unitPath)
+		defer userExec(ctx, d, "alice", "systemctl", "--user", "disable", "--now", "test-daemon.service")
+		wantLink := "/home/alice/.config/systemd/user/default.target.wants/test-daemon.service"
+		if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "test", "-L", wantLink); err != nil {
+			t.Errorf("enabling the linked unit did not create the wants symlink %q: %v", wantLink, err)
+		}
+
+		checkActive := func(ctx context.Context) error {
+			out, err := userExec(ctx, d, "alice", "systemctl", "--user", "is-active", "test-daemon.service")
+			if err != nil || strings.TrimSpace(out) != "active" {
+				return fmt.Errorf("test-daemon not active in alice's manager: %v (output: %s)", err, out)
+			}
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkActive); err != nil {
+			t.Fatalf("alice's test-daemon did not become active: %v", err)
+		}
+
+		// The daemon must run as alice inside her delegated subtree.
+		mainPID := strings.TrimSpace(userExecOrFatal(ctx, t, d, "alice",
+			"systemctl", "--user", "show", "-p", "MainPID", "--value", "test-daemon.service"))
+		wantOwner := "alice"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "stat", "-c", "%U", "/proc/"+mainPID)); got != wantOwner {
+			t.Errorf("test-daemon runs as the wrong user (got %q, want %q)", got, wantOwner)
+		}
+		wantSubtree := fmt.Sprintf("/user@%d.service/", aliceUID)
+		if cg := strings.TrimSpace(execOrFatal(ctx, t, d, "cat", "/proc/"+mainPID+"/cgroup")); !strings.Contains(cg, wantSubtree) || !strings.Contains(cg, "test-daemon.service") {
+			t.Errorf("test-daemon's cgroup %q is outside the delegated subtree (want it to contain %q and %q)", cg, wantSubtree, "test-daemon.service")
+		}
+
+		// Its stdout must flow into alice's own journal.
+		wantMsg := "Hello from test daemon"
+		checkJournal := func(ctx context.Context) error {
+			out, err := userExec(ctx, d, "alice", "journalctl", "--user", "-u", "test-daemon.service", "--no-pager")
+			if err != nil || !strings.Contains(out, wantMsg) {
+				return fmt.Errorf("alice's journal has no test-daemon output yet: %v (output does not contain %q): %s", err, wantMsg, out)
+			}
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkJournal); err != nil {
+			t.Errorf("test-daemon's stdout did not reach alice's user journal: %v", err)
+		}
+
+		// Restart= supervision by the unprivileged manager: an
+		// out-of-band SIGKILL must produce a fresh main process.
+		execOrFatal(ctx, t, d, "kill", "-9", mainPID)
+		checkRestarted := func(ctx context.Context) error {
+			if err := checkActive(ctx); err != nil {
+				return err
+			}
+			out, err := userExec(ctx, d, "alice",
+				"systemctl", "--user", "show", "-p", "MainPID", "--value", "test-daemon.service")
+			if err != nil {
+				return fmt.Errorf("cannot get test-daemon's MainPID: %v (output: %s)", err, out)
+			}
+			if pid := strings.TrimSpace(out); pid == "0" || pid == mainPID {
+				return fmt.Errorf("test-daemon not respawned yet (MainPID %q)", pid)
+			}
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkRestarted); err != nil {
+			t.Errorf("alice's manager did not restart the killed daemon: %v", err)
+		}
+	})
+
+	t.Run("Sandboxing", func(t *testing.T) {
+		t.Parallel()
+		// PrivateTmp= in a user unit is built entirely without privileges
+		// (user namespace + mount namespace as the user).
+		hostMarker := "gv-user-host-marker"
+		execOrFatal(ctx, t, d, "touch", "/tmp/"+hostMarker)
+		out, err := userExec(ctx, d, "alice", "systemd-run", "--user", "--quiet", "--collect", "--wait", "--pipe",
+			"--property=PrivateTmp=yes", "/bin/ls", "/tmp")
+		if err != nil {
+			t.Fatalf("user unit with PrivateTmp=yes failed: %v (output: %s)", err, out)
+		}
+		if strings.Contains(out, hostMarker) {
+			t.Errorf("user PrivateTmp service sees the host /tmp (output contains %q):\n%s", hostMarker, out)
+		}
+		if out, err := userExec(ctx, d, "alice", "systemd-run", "--user", "--quiet", "--collect", "--wait", "--pipe",
+			"--property=PrivateTmp=yes", "/usr/bin/touch", "/tmp/gv-user-priv-marker"); err != nil {
+			t.Fatalf("touch in the user's private /tmp failed: %v (output: %s)", err, out)
+		}
+		if _, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "test", "-e", "/tmp/gv-user-priv-marker"); err == nil {
+			t.Errorf("file created under user PrivateTmp leaked to the host /tmp")
+		}
+	})
+
+	t.Run("JournalACL", func(t *testing.T) {
+		t.Parallel()
+		// alice's entry must land in her per-user journal file, made
+		// readable to her alone via a POSIX ACL.
+		wantMsg := "gv-alice-journal-msg"
+		userExecOrFatal(ctx, t, d, "alice", "systemd-cat", "-t", "gv-alice-tag", "echo", wantMsg)
+		execOrFatal(ctx, t, d, "journalctl", "--sync")
+
+		journalGlob := fmt.Sprintf("/var/log/journal/*/user-%d.journal", aliceUID)
+		var journalPath string
+		checkJournalFile := func(ctx context.Context) error {
+			out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "bash", "-c", "ls "+journalGlob)
+			if err != nil {
+				return fmt.Errorf("per-user journal file not created yet: %v (output: %s)", err, out)
+			}
+			journalPath = strings.TrimSpace(out)
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkJournalFile); err != nil {
+			t.Fatalf("journald did not create alice's per-user journal: %v", err)
+		}
+
+		// Base permissions alone must NOT grant alice access...
+		wantPerms := "root systemd-journal 640"
+		if got := strings.TrimSpace(execOrFatal(ctx, t, d, "stat", "-c", "%U %G %a", journalPath)); got != wantPerms {
+			t.Errorf("alice's journal file has the wrong base permissions (got %q, want %q)", got, wantPerms)
+		}
+		// ...the access must come from an ACL entry for alice.
+		wantACL := "user:alice:r"
+		if out := execOrFatal(ctx, t, d, "getfacl", "-p", journalPath); !strings.Contains(out, wantACL) {
+			t.Errorf("alice's journal file is missing her ACL entry (output does not contain %q):\n%s", wantACL, out)
+		}
+
+		// Enforcement, positive: alice can read her own message back.
+		checkAliceReads := func(ctx context.Context) error {
+			out, err := userExec(ctx, d, "alice", "journalctl", "-t", "gv-alice-tag", "--no-pager")
+			if err != nil || !strings.Contains(out, wantMsg) {
+				return fmt.Errorf("alice cannot read her journal entry yet: %v (output: %s)", err, out)
+			}
+			return nil
+		}
+		if err := pollWithTimeout(ctx, daemonPollTimeout, checkAliceReads); err != nil {
+			t.Errorf("alice cannot read her own journal through the ACL: %v", err)
+		}
+
+		// Enforcement, negative: bob must not be able to open alice's
+		// journal file.
+		wantDenied := "Permission denied"
+		out, err := userExec(ctx, d, "bob", "cat", journalPath)
+		if err == nil {
+			t.Errorf("bob unexpectedly opened alice's journal file %s", journalPath)
+		} else if !strings.Contains(out, wantDenied) {
+			t.Errorf("bob's read of alice's journal failed for the wrong reason (output does not contain %q): %s", wantDenied, out)
+		}
+	})
+
+	t.Run("CrossUserIsolation", func(t *testing.T) {
+		t.Parallel()
+		// Both managers must be alive simultaneously.
+		wantActive := "active"
+		for _, unit := range []string{aliceUnit, bobUnit} {
+			if state := unitState(ctx, t, d, unit); state != wantActive {
+				t.Errorf("%s ActiveState is wrong (got %q, want %q)", unit, state, wantActive)
+			}
+		}
+
+		// bob must not see into alice's runtime directory...
+		wantDenied := "Permission denied"
+		out, err := userExec(ctx, d, "bob", "ls", fmt.Sprintf("/run/user/%d", aliceUID))
+		if err == nil {
+			t.Errorf("bob unexpectedly listed alice's runtime directory (output: %s)", out)
+		} else if !strings.Contains(out, wantDenied) {
+			t.Errorf("bob's access to alice's runtime dir failed for the wrong reason (output does not contain %q): %s", wantDenied, out)
+		}
+
+		// ...and must not be able to write into alice's delegated cgroup
+		// subtree (the open for writing is what must fail).
+		targetFile := aliceCgroup + "/init.scope/cgroup.procs"
+		out, err = userExec(ctx, d, "bob", "bash", "-c", `echo 0 > "$$1"`, "--", targetFile)
+		if err == nil {
+			t.Errorf("bob unexpectedly migrated a process into alice's cgroup subtree (output: %s)", out)
+		} else if !strings.Contains(out, wantDenied) {
+			t.Errorf("bob's write to alice's cgroup failed for the wrong reason (output does not contain %q): %s", wantDenied, out)
+		}
+	})
 }

@@ -371,11 +371,14 @@ evalLoop:
 			jumpDepth--
 		}
 
-		// Update verdict after jumps/gotos.
+		// Update verdict after jumps.
 		v = regs.Verdict()
 
 		// Only continues evaluation for Continue and Break verdicts.
 		switch v.Code {
+		case VC(linux.NFT_RETURN):
+			regs.verdict.Code = VC(linux.NFT_CONTINUE)
+			return nil
 		case VC(linux.NFT_BREAK):
 			// Resets verdict for next rule (after breaking from a single operation).
 			regs.verdict.Code = VC(linux.NFT_CONTINUE)
@@ -393,6 +396,9 @@ evalLoop:
 // evaluate for Chain evaluates the packet through the chain's rules and returns
 // the verdict and modifies the packet in place.
 func (c *Chain) evaluate(regs *registerSet, evalCtx opEvalCtx) *syserr.AnnotatedError {
+	if c.counter != nil {
+		c.counter.Add(1, uint64(evalCtx.pkt.Size()))
+	}
 	return c.evaluateFromRule(0, 0, regs, evalCtx)
 }
 
@@ -1319,6 +1325,16 @@ func (c *Chain) GetRules() []*Rule {
 	return c.rules
 }
 
+// Counter returns the chain's counter.
+func (c *Chain) Counter() *ChainCounter {
+	return c.counter
+}
+
+// SetCounter sets or replaces the chain's counter.
+func (c *Chain) SetCounter(counter *ChainCounter) {
+	c.counter = counter
+}
+
 // RegisterRule assigns the chain to the rule and adds the rule to the chain's
 // rule list at the given index.
 // Valid indices are -1 (append) and [0, len]. Errors on invalid index.
@@ -1581,13 +1597,21 @@ func (r *Rule) AddOpFromExprInfo(nf *NFTables, tab *Table, exprInfo ExprInfo) *s
 		if op, err = initMasqOp(tab, exprInfo); err != nil {
 			return err
 		}
+	case OpTypeMatch:
+		if op, err = initMatch(tab, exprInfo); err != nil {
+			return err
+		}
+	case OpTypeTarget:
+		if op, err = initTarget(tab, exprInfo); err != nil {
+			return err
+		}
 
 	default:
 		return syserr.NewAnnotatedError(syserr.ErrNoFileOrDir, fmt.Sprintf("unknown expression type not found: %s", exprInfo.ExprName))
 	}
 
-	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq {
-		// NAT and Masq operations require connection tracking.
+	if exprOpType == OpTypeCT || exprOpType == OpTypeNAT || exprOpType == OpTypeMasq || exprOpType == OpTypeMatch || exprOpType == OpTypeTarget {
+		// NAT, Masq, and xtables operations require connection tracking.
 		nf.InitConnTrackOnce()
 	}
 
@@ -1896,4 +1920,27 @@ func (nf *NFTables) DeleteRule(attrs map[uint16]nlmsg.BytesView, family stack.Ad
 		chain.DeleteAllRules()
 	}
 	return nil
+}
+
+// chainCountersPolicy is the NLA policy for chain counter attributes.
+// Ref: net/netfilter/nf_tables_api.c:nft_counter_policy
+var chainCountersPolicy = []NlaPolicy{
+	linux.NFTA_COUNTER_PACKETS: {nlaType: linux.NLA_U64},
+	linux.NFTA_COUNTER_BYTES:   {nlaType: linux.NLA_U64},
+}
+
+// ParseChainCounter parses a nested NFTA_CHAIN_COUNTERS attribute.
+func ParseChainCounter(data nlmsg.BytesView) (*ChainCounter, *syserr.AnnotatedError) {
+	attrs, err := NfParseWithOpts(nlmsg.AttrsView(data), &NfParseOpts{
+		Policy: chainCountersPolicy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	pkts, okP := AttrNetToHost[uint64](linux.NFTA_COUNTER_PACKETS, attrs)
+	bytes, okB := AttrNetToHost[uint64](linux.NFTA_COUNTER_BYTES, attrs)
+	if !okP || !okB {
+		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "NFTA_COUNTER_PACKETS and NFTA_COUNTER_BYTES are required in NFTA_CHAIN_COUNTERS")
+	}
+	return newChainCounter(bytes, pkts), nil
 }

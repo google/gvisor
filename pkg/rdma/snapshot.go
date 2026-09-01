@@ -40,6 +40,11 @@ type PCINode struct {
 	// Attrs maps attribute file name to contents (verbatim, including any
 	// trailing newline).
 	Attrs map[string]string `json:"attrs"`
+	// Config is the raw PCI config space ("config" file), or nil if absent.
+	// hwloc (used by aws-ofi-nccl for NCCL topology) reads it to recover the
+	// PCI-bridge bus-number registers and PCIe link attributes; without it
+	// hwloc cannot reconstruct the bridge hierarchy.
+	Config []byte `json:"config,omitempty"`
 }
 
 // Port is the per-IB-port state. Attributes split into static (immutable
@@ -75,6 +80,10 @@ type Device struct {
 	// Dev is the host "major:minor" of the uverbs char device.
 	Dev        string `json:"dev"`
 	ABIVersion string `json:"abi_version"`
+	// DriverID is the kernel's enum rdma_driver_id value (RDMA_DRIVER_*)
+	// for the device, inferred at collection time from the DRIVER= field of
+	// the leaf PCI function's uevent.
+	DriverID uint32 `json:"driver_id"`
 	// IBAttrs are the static identity attributes of
 	// /sys/class/infiniband/<ibdev>/ (node_guid, fw_ver, ...).
 	IBAttrs map[string]string `json:"ib_attrs"`

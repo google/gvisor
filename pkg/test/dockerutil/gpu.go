@@ -282,13 +282,13 @@ func ParseCudaVersion(version string) (*CudaVersion, error) {
 	return &CudaVersion{Major: major, Minor: minor}, nil
 }
 
-var cudaRE = regexp.MustCompile(`CUDA\s*Version\s*:\s*(\d+)\.(\d+)`)
+var cudaRE = regexp.MustCompile(`CUDA\s*(?:UMD\s*)?Version\s*:\s*(\d+)\.(\d+)`)
 
 // NewCudaVersionFromOutput returns a new CudaVersion from the output of nvidia-smi.
 func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 	parts := cudaRE.FindStringSubmatch(out)
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("CUDA version not found in output: %v", parts)
+		return nil, fmt.Errorf("CUDA version not found in output %q", out)
 	}
 
 	major, err := strconv.ParseInt(parts[1], 10, 64)
@@ -298,7 +298,7 @@ func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 
 	minor, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse major version %q: %v", parts[2], err)
+		return nil, fmt.Errorf("failed to parse minor version %q: %v", parts[2], err)
 	}
 
 	return &CudaVersion{Major: major, Minor: minor}, err
