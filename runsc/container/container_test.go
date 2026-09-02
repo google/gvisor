@@ -6274,6 +6274,111 @@ func TestCheckpointResume(t *testing.T) {
 	}
 }
 
+// TestSaveRestoreExecReconfigure checkpoints a sandbox twice with a
+// save/restore binary configured, and then checkpoints it again after a
+// restore. The hook configuration is stored in the kernel and outlives both a
+// single checkpoint and a restore, so every checkpoint must be able to
+// reconfigure it.
+func TestSaveRestoreExecReconfigure(t *testing.T) {
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding dir: %q, %v", dir, err)
+	}
+
+	// The hook records the mode it was invoked with so that the test can tell
+	// whether it ran on every checkpoint.
+	hookLog := filepath.Join(dir, "hook.log")
+	hookPath := filepath.Join(dir, "hook.sh")
+	hook := fmt.Sprintf("#!/bin/sh\necho ${GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE} >> %q\n", hookLog)
+	if err := os.WriteFile(hookPath, []byte(hook), 0777); err != nil {
+		t.Fatalf("error writing hook: %v", err)
+	}
+	checkpointOpts := sandbox.CheckpointOpts{
+		Resume:                 true,
+		SaveRestoreExecArgv:    hookPath,
+		SaveRestoreExecTimeout: control.DefaultSaveRestoreExecTimeout,
+	}
+	imageDir := func(name string) string {
+		path := filepath.Join(dir, name)
+		if err := os.Mkdir(path, 0777); err != nil {
+			t.Fatalf("error creating image dir: %v", err)
+		}
+		return path
+	}
+	wantHookLog := func(want string) {
+		got, err := os.ReadFile(hookLog)
+		if err != nil {
+			t.Fatalf("error reading hook log: %v", err)
+		}
+		if string(got) != want {
+			t.Errorf("save/restore binary invocations: got %q, want %q", got, want)
+		}
+	}
+
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	checkpointOpts.SaveRestoreExecContainerID = cont.ID
+	var lastImage string
+	for i := 0; i < 2; i++ {
+		lastImage = imageDir(fmt.Sprintf("image%d", i))
+		if err := cont.Checkpoint(conf, lastImage, checkpointOpts); err != nil {
+			t.Fatalf("checkpoint %d failed: %v", i+1, err)
+		}
+	}
+	wantHookLog("save\nresume\nsave\nresume\n")
+	cont.Destroy()
+
+	// Restore the last checkpoint and checkpoint it once more. The restored
+	// kernel still holds the configuration from before the checkpoint.
+	spec2, _ := sleepSpecConf(t)
+	_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec2, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup2()
+
+	cont2, err := New(conf, Args{
+		ID:        args.ID,
+		Spec:      spec2,
+		BundleDir: bundleDir2,
+	})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Restore(conf, lastImage, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		t.Fatalf("error restoring: %v", err)
+	}
+	checkpointOpts.SaveRestoreExecContainerID = cont2.ID
+	if err := cont2.Checkpoint(conf, imageDir("image-restored"), checkpointOpts); err != nil {
+		t.Fatalf("checkpoint after restore failed: %v", err)
+	}
+	wantHookLog("save\nresume\nsave\nresume\nrestore\nsave\nresume\n")
+}
+
 func TestMarkerFile(t *testing.T) {
 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
