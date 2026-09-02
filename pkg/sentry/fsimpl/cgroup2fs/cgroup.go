@@ -391,6 +391,11 @@ func (c *cgroup) rebuildCtrlsLocked(ctx context.Context, cTypes []kernel.Cgroup2
 			c.ctrls[cType] = nil
 			c.removeInterfaceFiles(ctx, ctrl)
 			ctrl.detach()
+			// Reparent the cpu controller's tasks and accumulated usage onto
+			// the parent so disabling +cpu does not discard them.
+			if oldCPU, ok := ctrl.(*cpu); ok {
+				c.reparentCPUOnDisableLocked(oldCPU)
+			}
 		}
 	}
 
