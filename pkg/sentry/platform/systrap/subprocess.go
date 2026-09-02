@@ -846,9 +846,11 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(err.Error())
 	}
 
+	ctxState := ctx.state()
+
 	// Check if there's been an error.
-	threadID := ctx.threadID()
-	if threadID != invalidThreadID {
+	if ctxState == sysmsg.ContextStateUnexpectedDeath {
+		threadID := ctx.threadID()
 		s.sysmsgThreadsMu.RLock()
 		sysThread, ok := s.sysmsgThreads[threadID]
 		s.sysmsgThreadsMu.RUnlock()
@@ -857,7 +859,10 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 			log.BugTraceback(sysmsgErr)
 			return false, false, hostarch.NoAccess, sysmsgErr
 		}
-		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID))
+		return false, false, hostarch.NoAccess, &platform.ContextError{
+			Err:   fmt.Errorf("systrap unexpected death"),
+			Errno: unix.ECHILD,
+		}
 	}
 
 	// Copy register state locally.
@@ -868,7 +873,6 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	// either delivered from the kernel or from this process. We
 	// don't respect other signals.
 	c.signalInfo = ctx.shared.SignalInfo
-	ctxState := ctx.state()
 	if ctxState == sysmsg.ContextStateSyscallCanBePatched {
 		ctxState = sysmsg.ContextStateSyscall
 		shouldPatchSyscall = true
@@ -879,11 +883,6 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		}
 		updateSyscallRegs(regs)
 		return true, shouldPatchSyscall, hostarch.NoAccess, nil
-	} else if ctxState == sysmsg.ContextStateUnexpectedDeath {
-		return false, shouldPatchSyscall, hostarch.NoAccess, &platform.ContextError{
-			Err:   fmt.Errorf("systrap unexpected death"),
-			Errno: unix.ECHILD,
-		}
 	} else if ctxState != sysmsg.ContextStateFault {
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
 	}
