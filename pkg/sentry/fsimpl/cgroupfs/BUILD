@@ -41,6 +41,7 @@ go_library(
         "cpuset.go",
         "devices.go",
         "dir_refs.go",
+        "freezer.go",
         "job.go",
         "memory.go",
         "pids.go",

@@ -528,8 +528,8 @@ func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	//		signal mask when it transitions from TaskExitNone to TaskExitInitiated.
 	//	- No special case for SIGKILL: SIGKILL already interrupted all tasks in the
 	//		task group via applySignalSideEffects => killLocked.
-	//	- Do not choose stopped tasks, which cannot handle signals.
-	if t.stop != nil {
+	//	- Do not choose stopped or frozen tasks, which cannot handle signals.
+	if t.stop != nil || t.cgroupFrozen {
 		return false
 	}
 	//	- Do not choose tasks that have already been interrupted, as they may be
