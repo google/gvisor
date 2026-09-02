@@ -1557,9 +1557,9 @@ func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials)
 		case "memory":
 			// Set memory limit from --total-memory if specified.
 			// This allows applications to see the correct memory limit in cgroup.
-			if defaults := cgroupfsMemoryDefaults(usage.MaximumTotalMemoryBytes); defaults != nil {
+			if defaults := cgroupfsMemoryDefaults(usage.MaximumTotalMemoryBytes.Load()); defaults != nil {
 				internalData = &cgroupfs.InternalData{DefaultControlValues: defaults}
-				log.Infof("Setting cgroupfs memory defaults: limit=%d bytes (%.2f GB)", usage.MaximumTotalMemoryBytes, float64(usage.MaximumTotalMemoryBytes)/(1<<30))
+				log.Infof("Setting cgroupfs memory defaults: limit=%d bytes (%.2f GB)", usage.MaximumTotalMemoryBytes.Load(), float64(usage.MaximumTotalMemoryBytes.Load())/(1<<30))
 			}
 		}
 
