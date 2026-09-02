@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
@@ -154,16 +153,6 @@ type Container struct {
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
 	goferIsChild bool `nojson:"true"`
-
-	// sentryExitSock is the creator's end of the root gofer's
-	// `--sync-sentry-exit-fd` socket,
-	// A pidfd of the sandbox process is sent over it once the sandbox has been
-	// spawned, and then it is closed.
-	sentryExitSock *os.File `nojson:"true"`
-
-	// pinRingFile is the pin ring (see `//pkg/pinring`)
-	// It is held between the gofer and the boot process's spawn.
-	pinRingFile *os.File `nojson:"true"`
 }
 
 // Args is used to configure a new container.
@@ -404,23 +393,12 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			ExecFile:            args.ExecFile,
 			FSRestoreImagePath:  args.FSRestoreImagePath,
 			FSRestoreDirect:     args.FSRestoreDirect,
-			PinRingFile:         c.pinRingFile,
 		}
 		sand, err := sandbox.New(conf, sandArgs)
 		if err != nil {
 			return fmt.Errorf("cannot create sandbox: %w", err)
 		}
 		c.Sandbox = sand
-		c.pinRingFile = nil // Now owned by the sandbox's donation agency.
-		if c.sentryExitSock != nil {
-			// The gofer waits on this pidfd before exiting, so it is
-			// always the last holder of the pin ring.
-			if err := pinring.SendPidfd(c.sentryExitSock, sand.Pid.Load()); err != nil {
-				log.Warningf("Cannot send the sandbox's pidfd to the gofer (gofer exit may race the sandbox's): %v", err)
-			}
-			c.sentryExitSock.Close()
-			c.sentryExitSock = nil
-		}
 		return nil
 
 	}); err != nil {
@@ -1605,19 +1583,6 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		s.Register(&goferToHostRPC{goferPID: pid})
 		s.StartHandling(rpcServ)
 	}()
-
-	if ring, err := pinring.NewDisabledIOURing(); err != nil {
-		log.Warningf("Cannot create disabled io_uring ring: %v. This slows down gVisor sandbox teardown.", err)
-	} else {
-		donations.Donate("pin-ring-fd", ring)
-		c.pinRingFile = ring
-		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-		donations.DonateAndClose("sync-sentry-exit-fd", os.NewFile(uintptr(fds[1]), "sentry exit sync gofer FD"))
-		c.sentryExitSock = os.NewFile(uintptr(fds[0]), "sentry exit sync runsc FD")
-	}
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0
