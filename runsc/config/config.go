@@ -139,6 +139,10 @@ type Config struct {
 	// AllowLiveTCPMigration allows TCP connection state to be migrated.
 	AllowLiveTCPMigration bool `flag:"allow-live-tcp-migration"`
 
+	// SignalUnkillablePolicy controls protection of PID namespace init processes
+	// from signals under Linux SIGNAL_UNKILLABLE semantics (see SignalUnkillablePolicy).
+	SignalUnkillablePolicy SignalUnkillablePolicy `flag:"signal-unkillable-policy"`
+
 	// HostGSO indicates that host segmentation offload is enabled.
 	HostGSO bool `flag:"gso"`
 
@@ -1563,6 +1567,59 @@ func (p RestoreSpecValidationPolicy) String() string {
 		return "enforce"
 	default:
 		panic(fmt.Sprintf("invalid restore spec validation policy %d", p))
+	}
+}
+
+// SignalUnkillablePolicy dictates whether PID namespace init processes (PID 1)
+// are protected from signals under Linux SIGNAL_UNKILLABLE semantics.
+type SignalUnkillablePolicy int
+
+// SignalUnkillablePolicy values.
+const (
+	// SignalUnkillableNone disables the protection: init follows standard
+	// signal semantics and can be killed or stopped from within the sandbox.
+	SignalUnkillableNone SignalUnkillablePolicy = iota
+
+	// SignalUnkillableLinux implements Linux SIGNAL_UNKILLABLE semantics:
+	// unhandled default-fatal/stop signals from peers in the same PID namespace
+	// are discarded, handled signals run their handlers, and signals from
+	// outside the namespace take effect normally.
+	SignalUnkillableLinux
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SignalUnkillablePolicy) Set(v string) error {
+	switch v {
+	case "none":
+		*p = SignalUnkillableNone
+	case "linux":
+		*p = SignalUnkillableLinux
+	default:
+		return fmt.Errorf("invalid signal-unkillable policy %q (must be one of: linux, none)", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SignalUnkillablePolicy) Ptr() *SignalUnkillablePolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SignalUnkillablePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SignalUnkillablePolicy) String() string {
+	switch p {
+	case SignalUnkillableNone:
+		return "none"
+	case SignalUnkillableLinux:
+		return "linux"
+	default:
+		panic(fmt.Sprintf("invalid signal unkillable policy %d", p))
 	}
 }
 

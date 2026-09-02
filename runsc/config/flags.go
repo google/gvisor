@@ -115,6 +115,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("cpu-num-from-quota", true, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
 	flagSet.Bool(flagOCISeccomp, false, "Enables loading OCI seccomp filters inside the sandbox.")
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
+	flagSet.Var(SignalUnkillableNone.Ptr(), "signal-unkillable-policy", "controls protection of PID namespace init processes from signals under Linux SIGNAL_UNKILLABLE semantics: none (default) or linux.")
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")
 	flagSet.Var(HostSettingsCheck.Ptr(), "host-settings", "how to handle non-optimal host kernel settings: check (default, advisory-only), ignore (do not check), adjust (best-effort auto-adjustment), or enforce (auto-adjustment must succeed).")
 	flagSet.Var(SidecarReleaseIfReleaseBuild.Ptr(), "sidecar-release-enforcement-policy", "when spawned sidecar binaries must match runsc's release: NEVER, ALWAYS, or IF_RELEASE_BUILD. May be overridden by setting GVISOR_ENFORCE_RELEASE=SKIP as env var.")
