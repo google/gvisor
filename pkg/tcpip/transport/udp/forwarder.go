@@ -49,11 +49,15 @@ func NewForwarder(s *stack.Stack, handler ForwarderHandler) *Forwarder {
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	return f.handler(&ForwarderRequest{
+	r := &ForwarderRequest{
 		stack: f.stack,
 		id:    id,
 		pkt:   pkt.Clone(),
-	})
+	}
+	// The forwarder handler is synchronous, so the cloned packet only needs
+	// to outlive the handler call. Release it on every return path.
+	defer r.pkt.DecRef()
+	return f.handler(r)
 }
 
 // ForwarderRequest represents a session request received by the forwarder and
