@@ -96,39 +96,62 @@ func (cc *cpu) cancelAttach(ctx context.Context, actx *attachCtx) {}
 // attach implements controller.attach.
 func (cc *cpu) attach(ctx context.Context, actx *attachCtx) {
 	for t := range actx.tasks {
-		charge := t.CPUStats()
+		var oldCPU *cpu
 		if oldNode := actx.oldNodes[t]; oldNode != nil {
 			if oldCtrl := oldNode.closestCtrls.Load()[kernel.Cgroup2CPU]; oldCtrl != nil {
-				if oldCPU, ok := oldCtrl.(*cpu); ok && oldCPU != cc {
-					oldCPU.commitTaskCharges(t, charge)
-				}
+				oldCPU = oldCtrl.(*cpu)
 			}
 		}
-		cc.mu.Lock()
-		cc.baselineCharges[t] = charge
-		cc.mu.Unlock()
+		migrateTaskCPU(t, oldCPU, cc)
+	}
+}
+
+// migrateTaskCPU commits the task's outstanding usage to oldCPU and rebaselines
+// it in newCPU. If oldCPU == newCPU the task stays in the same domain and the
+// baseline is left alone, since rebaselining would discard its usage so far.
+func migrateTaskCPU(t *kernel.Task, oldCPU, newCPU *cpu) {
+	if oldCPU == newCPU {
+		return
+	}
+	charge := t.CPUStats()
+	if oldCPU != nil {
+		oldCPU.commitTaskCharges(t, charge)
+	}
+	if newCPU != nil {
+		newCPU.mu.Lock()
+		newCPU.baselineCharges[t] = charge
+		newCPU.mu.Unlock()
 	}
 }
 
 // +checklocksread:cc.c.fs.treeMu
 // +checklocksread:cc.c.fs.tasksMu
 func (cc *cpu) collectCPUStatsLocked(acc *usage.CPUStats) {
-	for t := range cc.c.tasks {
+	cc.accumulateDomainLocked(cc.c, acc)
+	cc.mu.Lock()
+	acc.Accumulate(cc.usage)
+	cc.mu.Unlock()
+}
+
+// accumulateDomainLocked adds the live usage of every task in cc's domain to acc:
+// c and its descendants without their own cpu controller, attributed against cc's
+// baselines. Descendants with their own controller are recursed into via it.
+// +checklocksread:c.fs.treeMu
+// +checklocksread:c.fs.tasksMu
+func (cc *cpu) accumulateDomainLocked(c *cgroup, acc *usage.CPUStats) {
+	for t := range c.tasks {
 		charge := t.CPUStats()
 		cc.mu.Lock()
 		outstandingCharge := charge.DifferenceSince(cc.baselineCharges[t])
 		cc.mu.Unlock()
 		acc.Accumulate(outstandingCharge)
 	}
-	cc.mu.Lock()
-	acc.Accumulate(cc.usage)
-	cc.mu.Unlock()
-
-	for child := range cc.c.children {
-		if childCtrl := child.closestCtrls.Load()[kernel.Cgroup2CPU]; childCtrl != nil {
-			if cpuChild, ok := childCtrl.(*cpu); ok && cpuChild.c == child {
-				cpuChild.collectCPUStatsLocked(acc) // +checklocksforce: cpuChild shares cc.c.fs locks
-			}
+	for child := range c.children {
+		// child shares c.fs, so c.fs.treeMu already guards child.ctrls.
+		if childCtrl := child.ctrls[kernel.Cgroup2CPU]; childCtrl != nil { // +checklocksforce: child shares c.fs locks
+			childCtrl.(*cpu).collectCPUStatsLocked(acc) // +checklocksforce: child shares c.fs locks
+		} else {
+			cc.accumulateDomainLocked(child, acc) // +checklocksforce: child shares c.fs locks
 		}
 	}
 }
@@ -142,6 +165,51 @@ func (cc *cpu) collectCPUStats() usage.CPUStats {
 	var cs usage.CPUStats
 	cc.collectCPUStatsLocked(&cs)
 	return cs
+}
+
+// forEachCPUDomainTaskLocked calls fn for every task in c's domain: c and its
+// descendants without their own cpu controller.
+// +checklocksread:c.fs.treeMu
+// +checklocksread:c.fs.tasksMu
+func (c *cgroup) forEachCPUDomainTaskLocked(fn func(t *kernel.Task)) {
+	for t := range c.tasks {
+		fn(t)
+	}
+	for child := range c.children {
+		// child shares c.fs, so c.fs.treeMu already guards child.ctrls.
+		if child.ctrls[kernel.Cgroup2CPU] == nil { // +checklocksforce: child shares c.fs locks
+			child.forEachCPUDomainTaskLocked(fn) // +checklocksforce: child shares c.fs locks
+		}
+	}
+}
+
+// reparentCPUOnDisableLocked handles oldCPU being detached from c: it migrates
+// c's domain tasks onto the parent's nearest cpu controller and folds oldCPU's
+// accumulated usage into it, so no usage is lost.
+// +checklocksread:c.fs.treeMu
+func (c *cgroup) reparentCPUOnDisableLocked(oldCPU *cpu) {
+	var newCPU *cpu
+	if c.parent != nil {
+		if newCtrl := c.parent.closestCtrls.Load()[kernel.Cgroup2CPU]; newCtrl != nil {
+			newCPU = newCtrl.(*cpu)
+		}
+	}
+	c.fs.tasksMu.RLock()
+	c.forEachCPUDomainTaskLocked(func(t *kernel.Task) {
+		migrateTaskCPU(t, oldCPU, newCPU)
+	})
+	c.fs.tasksMu.RUnlock()
+
+	if newCPU == nil {
+		return
+	}
+	oldCPU.mu.Lock()
+	reparented := oldCPU.usage
+	oldCPU.usage = usage.CPUStats{}
+	oldCPU.mu.Unlock()
+	newCPU.mu.Lock()
+	newCPU.usage.Accumulate(reparented)
+	newCPU.mu.Unlock()
 }
 
 // interfaceFiles implements controller.interfaceFiles.

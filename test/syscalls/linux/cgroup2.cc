@@ -26,6 +26,7 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -2437,6 +2438,189 @@ TEST_F(Cgroup2Test, CpuStatMigration) {
   int64_t usage_a_final = ParseCpuUsageUsec(cg_a);
   EXPECT_GT(usage_b_final, usage_b_post_migration);
   EXPECT_EQ(usage_a_final, usage_a_post_migration);
+}
+
+// BurnCpuMs busy-loops, consuming CPU, for at least ms milliseconds of wall
+// time. The loop never blocks, so the CPU time consumed tracks wall time. Safe
+// to call in a forked child: it only touches CLOCK_MONOTONIC.
+void BurnCpuMs(int ms) {
+  struct timespec start;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  volatile uint64_t x = 0;
+  for (;;) {
+    for (int i = 0; i < 200000; ++i) x++;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    int64_t el_ms = (now.tv_sec - start.tv_sec) * 1000 +
+                    (now.tv_nsec - start.tv_nsec) / 1000000;
+    if (el_ms >= ms) break;
+  }
+}
+
+// cpu.stat of a cgroup must include live tasks residing in descendant cgroups
+// that have not enabled their own cpu controller.
+TEST_F(Cgroup2Test, CpuStatCountsControllerlessDescendants) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  // a does not enable +cpu, so sub has no cpu controller of its own; a's
+  // controller is the nearest one.
+  Cgroup sub = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("sub"));
+
+  int start[2], stop[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  ASSERT_THAT(pipe(stop), SyscallSucceeds());
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    close(stop[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    int flags = fcntl(stop[0], F_GETFL);
+    fcntl(stop[0], F_SETFL, flags | O_NONBLOCK);
+    for (;;) {
+      BurnCpuMs(50);
+      if (read(stop[0], &ch, 1) == 0 || errno != EAGAIN) break;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+  close(stop[0]);
+
+  ASSERT_NO_ERRNO(sub.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+
+  // a's cpu.stat must reflect the task burning in sub.
+  int64_t usage = PollCpuUsageUsecGreaterThan(a, 100000);
+  EXPECT_GT(usage, 100000);
+
+  close(stop[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+}
+
+// Migrating a task between two cgroups that share the same nearest cpu
+// controller must not discard the CPU it burned before the migration.
+TEST_F(Cgroup2Test, CpuStatSameInstanceMigrationKeepsUsage) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  // a does not enable +cpu, so x and y both resolve to a's controller.
+  Cgroup x = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("x"));
+  Cgroup y = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("y"));
+
+  int start[2], stop[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  ASSERT_THAT(pipe(stop), SyscallSucceeds());
+
+  // The child burns continuously so a's usage keeps growing while we poll; a
+  // frozen counter could stall exactly on the poll target and never exceed it.
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    close(stop[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    int flags = fcntl(stop[0], F_GETFL);
+    fcntl(stop[0], F_SETFL, flags | O_NONBLOCK);
+    for (;;) {
+      BurnCpuMs(50);
+      if (read(stop[0], &ch, 1) == 0 || errno != EAGAIN) break;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+  close(stop[0]);
+
+  ASSERT_NO_ERRNO(x.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+
+  int64_t usage_before = PollCpuUsageUsecGreaterThan(a, 100000);
+  EXPECT_GT(usage_before, 100000);
+
+  // Migrate to a sibling that shares a's controller.
+  ASSERT_NO_ERRNO(y.Enter(pid));
+
+  int64_t usage_after = ParseCpuUsageUsec(a);
+  EXPECT_GE(usage_after, usage_before);
+
+  close(stop[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+}
+
+// Disabling +cpu on a cgroup must reparent the disabled controller's
+// accumulated usage to the parent, not discard it.
+TEST_F(Cgroup2Test, CpuStatDisableReparentsUsage) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  ASSERT_NO_ERRNO(a.WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("b"));
+
+  int start[2], stop[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  ASSERT_THAT(pipe(stop), SyscallSucceeds());
+
+  // The child burns continuously so b's usage keeps growing while we poll; a
+  // frozen counter could stall exactly on the poll target and never exceed it.
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    close(stop[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    int flags = fcntl(stop[0], F_GETFL);
+    fcntl(stop[0], F_SETFL, flags | O_NONBLOCK);
+    for (;;) {
+      BurnCpuMs(50);
+      if (read(stop[0], &ch, 1) == 0 || errno != EAGAIN) break;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+  close(stop[0]);
+
+  ASSERT_NO_ERRNO(b.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+
+  // Confirm substantial usage on b's live, growing counter.
+  int64_t live = PollCpuUsageUsecGreaterThan(b, 100000);
+  EXPECT_GT(live, 100000);
+
+  // Stop and reap the child so its usage is committed to b's controller.
+  close(stop[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+
+  // a's recursive cpu.stat includes b's committed usage.
+  int64_t usage_before = PollCpuUsageUsecGreaterThan(a, 0);
+  EXPECT_GT(usage_before, 0);
+
+  // Disabling +cpu destroys b's controller; its usage must survive on a.
+  ASSERT_NO_ERRNO(a.WriteControlFile("cgroup.subtree_control", "-cpu"));
+
+  int64_t usage_after = ParseCpuUsageUsec(a);
+  EXPECT_GE(usage_after, usage_before);
 }
 
 // With nsdelegate, cgroup namespace roots are delegation boundaries: only
