@@ -60,8 +60,9 @@ type execProcess struct {
 	waitBlock chan struct{}
 }
 
-func (e *execProcess) Wait() {
+func (e *execProcess) Wait(ctx context.Context) error {
 	<-e.waitBlock
+	return nil
 }
 
 func (e *execProcess) ID() string {

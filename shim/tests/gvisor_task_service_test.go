@@ -270,7 +270,7 @@ func TestGvisorTaskService(t *testing.T) {
 	}
 }
 
-func setupSandboxWithSpec(t *testing.T, containerd *shimutils.MockContainerd, spec *specs.Spec) (*shimutils.Container, task.TaskService) {
+func setupSandboxWithSpec(t *testing.T, containerd *shimutils.MockContainerd, spec *specs.Spec) (*shimutils.Container, task.TTRPCTaskService) {
 	t.Helper()
 	sandbox, err := shimutils.NewContainer(spec, containerd)
 	if err != nil {
