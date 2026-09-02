@@ -50,6 +50,27 @@ When you are done, restart containerd to pick up the changes.
 sudo systemctl restart containerd
 ```
 
+### systemd cgroups
+
+If you set `systemd-cgroup = "true"` under `[runsc_config]`, containerd must
+pass cgroup paths in systemd `slice:prefix:name` form. Do not enable this flag
+when the OCI spec contains cgroupfs paths such as
+`/kubepods/burstable/pod<uid>/<container-id>`; in that case runsc should use
+the default cgroupfs driver so it joins the same cgroup hierarchy where kubelet
+applies resource limits.
+
+After creating a pod with CPU or memory limits, verify that the sandbox process
+is in the limited host cgroup:
+
+```shell
+PID=$(sudo crictl inspectp <sandbox-id> | jq -r .info.pid)
+CGROUP=/sys/fs/cgroup$(awk -F'::' '{print $2}' /proc/$PID/cgroup)
+cat "$CGROUP/cpu.max"
+```
+
+For a pod with a CPU limit, `cpu.max` should show a quota and period instead of
+`max 100000`.
+
 ## Debug
 
 When `shim_debug` is enabled in `/etc/containerd/config.toml`, containerd will
