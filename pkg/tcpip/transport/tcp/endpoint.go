@@ -179,6 +179,83 @@ func (s EndpointState) String() string {
 	}
 }
 
+type pendingTransportError struct {
+	mu       sync.Mutex `state:"nosave"`
+	transErr stack.TransportError
+	pkt      *stack.PacketBuffer
+}
+
+// emptyLocked determines if there is no pending transport error.
+//
+// Preconditions: p.mu must be held.
+func (p *pendingTransportError) emptyLocked() bool {
+	return p.pkt == nil
+}
+
+// empty determines if there is no pending transport error.
+func (p *pendingTransportError) empty() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.emptyLocked()
+}
+
+// store replaces the pending transport error. Ownership of pkt is transferred
+// to p.
+func (p *pendingTransportError) store(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	p.mu.Lock()
+	oldPkt := p.pkt
+	p.transErr = transErr
+	p.pkt = pkt
+	p.mu.Unlock()
+
+	if oldPkt != nil {
+		oldPkt.DecRef()
+	}
+}
+
+// take returns and clears the pending transport error. Ownership of the packet
+// buffer is transferred to the caller.
+func (p *pendingTransportError) take() (stack.TransportError, *stack.PacketBuffer, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.pkt == nil {
+		return nil, nil, false
+	}
+
+	transErr := p.transErr
+	pkt := p.pkt
+	p.transErr = nil
+	p.pkt = nil
+	return transErr, pkt, true
+}
+
+func (e *Endpoint) storeTransportError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	e.pendingTransportError.store(transErr, pkt.Clone())
+
+	if !e.isOwnedByUser() {
+		e.protocol.dispatcher.selectProcessor(e.ID).queueEndpoint(e)
+	}
+}
+
+func (e *Endpoint) handlePendingTransportError() {
+	if e.isOwnedByUser() {
+		return
+	}
+
+	transErr, pkt, ok := e.pendingTransportError.take()
+	if !ok {
+		return
+	}
+
+	e.HandleError(transErr, pkt)
+	pkt.DecRef()
+}
+
+func (e *Endpoint) hasQueuedWork() bool {
+	return !e.segmentQueue.empty() || !e.pendingTransportError.empty()
+}
+
 // SACKInfo holds TCP SACK related information for a given endpoint.
 //
 // +stateify savable
@@ -482,6 +559,11 @@ type Endpoint struct {
 	// and dropped when it is.
 	segmentQueue segmentQueue `state:"wait"`
 
+	// pendingTransportError is used to hand the most recent transport error
+	// received while the endpoint is owned by a user goroutine to the protocol
+	// goroutine.
+	pendingTransportError pendingTransportError `state:"nosave"`
+
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
 	userMSS uint16
@@ -711,10 +793,10 @@ func (e *Endpoint) LockUser() {
 	e.ownedByUser.Store(1)
 }
 
-// UnlockUser will check if there are any segments already queued for processing
-// and wake up a processor goroutine to process them before unlocking e.mu.
-// This is required because we when packets arrive and endpoint lock is already
-// held then such packets are queued up to be processed.
+// UnlockUser will check if there is any work already queued for processing and
+// wake up a processor goroutine to process it before unlocking e.mu. This is
+// required because when packets or transport errors arrive and endpoint lock is
+// already held then such work is recorded to be processed.
 //
 // Precondition: e.LockUser() must have been called before calling e.UnlockUser()
 // +checklocksrelease:e.mu
@@ -725,18 +807,21 @@ func (e *Endpoint) UnlockUser() {
 	// segments can be queued between the time we check if queue is empty
 	// and actually unlock the endpoint mutex.
 	e.segmentQueue.mu.Lock()
-	if e.segmentQueue.emptyLocked() {
+	e.pendingTransportError.mu.Lock()
+	if e.segmentQueue.emptyLocked() && e.pendingTransportError.emptyLocked() {
 		if e.ownedByUser.Swap(0) != 1 {
 			panic("e.UnlockUser() called without calling e.LockUser()")
 		}
 		e.mu.Unlock()
+		e.pendingTransportError.mu.Unlock()
 		e.segmentQueue.mu.Unlock()
 		return
 	}
+	e.pendingTransportError.mu.Unlock()
 	e.segmentQueue.mu.Unlock()
 
 	// Since we are waking the processor goroutine here just unlock
-	// and let it process the queued segments.
+	// and let it process the queued work.
 	if e.ownedByUser.Swap(0) != 1 {
 		panic("e.UnlockUser() called without calling e.LockUser()")
 	}
@@ -3069,6 +3154,11 @@ func (e *Endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 
 // HandleError implements stack.TransportEndpoint.
 func (e *Endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+	if e.isOwnedByUser() {
+		e.storeTransportError(transErr, pkt)
+		return
+	}
+
 	handlePacketTooBig := func(mtu uint32) {
 		e.sndQueueInfo.sndQueueMu.Lock()
 		update := false
