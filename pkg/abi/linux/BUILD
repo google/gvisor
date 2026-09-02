@@ -43,6 +43,7 @@ go_library(
         "ip.go",
         "ipc.go",
         "keyctl.go",
+        "landlock.go",
         "limits.go",
         "linux.go",
         "membarrier.go",

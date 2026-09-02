@@ -131,6 +131,13 @@ func (i *inode) GID() auth.KGID {
 	return auth.KGID(i.gid.Load())
 }
 
+// Ino identifies i for kernfs.Dentry.InodeIdentity. It returns the immutable
+// nodeID rather than the mutable i.ino, matching getFUSEAttr(); the server
+// assigns one nodeID per file, so hard links to a file share it.
+func (i *inode) Ino() uint64 {
+	return i.nodeID
+}
+
 // +checklocks:i.attrMu
 func (i *inode) filemode() linux.FileMode {
 	return linux.FileMode(i.mode.Load())

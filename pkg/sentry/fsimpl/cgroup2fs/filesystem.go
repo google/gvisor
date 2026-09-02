@@ -153,8 +153,15 @@ func (fs *filesystem) MountRootPath(ctx context.Context, vd vfs.VirtualDentry) s
 func NewInternalMount(k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem) *vfs.Mount {
 	fs := k.Cgroup2FS().(*filesystem)
 	fs.mounted.Store(1)
+	// Note that MountOptions.InternalMount and
+	// GetFilesystemOptions.InternalMount are distinct fields: the former
+	// marks the mount as sentry-internal (and so, among other things, exempt
+	// from Landlock, like Linux's SB_NOUSER/MNT_INTERNAL filesystems), the
+	// latter only records that the filesystem was not created by an
+	// application mount(2). Both are true of this mount.
 	return vfsObj.NewDisconnectedMount(fs.VFSFilesystem(), fs.root.VFSDentry(), &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{InternalMount: true},
+		InternalMount:        true,
 	})
 }
 
