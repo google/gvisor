@@ -23,6 +23,7 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/pty_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -263,6 +264,28 @@ TEST(Pwritev2Test, UnseekableFileInvalid) {
 
   EXPECT_THAT(close(pipe_fds[0]), SyscallSucceeds());
   EXPECT_THAT(close(pipe_fds[1]), SyscallSucceeds());
+}
+
+TEST(Pwritev2Test, PtyWithOffset) {
+  SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  const FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NOCTTY));
+  const FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  char buf = 'x';
+  struct iovec iov = {&buf, sizeof(buf)};
+
+  const auto check_endpoint = [&](int fd) {
+    EXPECT_THAT(pwritev(fd, &iov, /*iovcnt=*/1, /*offset=*/0),
+                SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(pwritev2(fd, &iov, /*iovcnt=*/1, /*offset=*/0, /*flags=*/0),
+                SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(pwritev2(fd, &iov, /*iovcnt=*/1,
+                         /*offset=*/static_cast<off_t>(-1), /*flags=*/0),
+                SyscallSucceedsWithValue(sizeof(buf)));
+  };
+  check_endpoint(master.get());
+  check_endpoint(replica.get());
 }
 
 TEST(Pwritev2Test, ReadOnlyFile) {
