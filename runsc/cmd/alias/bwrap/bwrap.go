@@ -19,9 +19,12 @@ package bwrap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -37,24 +40,46 @@ import (
 )
 
 // generateUID generates a random ID for the runsc container.
+// The ID must not exceed 12 characters so that virtual network interface
+// names ("ve-" + cid or "vp-" + cid) do not exceed Linux's 15-character
+// limit (IFNAMSIZ - 1).
 func generateUID() string {
-	return fmt.Sprintf("runsc-bwrap-%06d", rand.Int31n(1000000))
+	return fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
+}
+
+// CapOpType represents the type of capability operation.
+type CapOpType string
+
+const (
+	// CapOpDrop represents a capability drop operation.
+	CapOpDrop CapOpType = "drop"
+	// CapOpAdd represents a capability add operation.
+	CapOpAdd CapOpType = "add"
+)
+
+// CapOp represents a capability operation.
+type CapOp struct {
+	Type CapOpType
+	Cap  string
 }
 
 // bwrapConfig represents the configuration for the bwrap sandbox.
 type bwrapConfig struct {
-	Mounts      []sandbox.Mount
-	UnshareNet  bool
-	Args        []string
-	Chdir       string
-	runscConfig *config.Config
-	Env         []string
-	UnsetEnv    []string
-	UID         int
-	GID         int
-	UnshareUser bool
-	Hostname    string
-	ShareNet    bool
+	Mounts       []sandbox.Mount
+	CapOps       []*CapOp
+	UnshareNet   bool
+	Args         []string
+	Chdir        string
+	WorkspaceDir string
+	runscConfig  *config.Config
+	Env          []string
+	UnsetEnv     []string
+	UID          int
+	GID          int
+	UnshareUser  bool
+	Hostname     string
+	ip           string
+	cleanNet     func()
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -232,15 +257,33 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 		return nil, fmt.Errorf("failed to map current working directory: %v", err)
 	}
 
-	network := sandbox.NetworkModeHost
+	cid := generateUID()
+	network := sandbox.NetworkModeSandbox
+	var netns specs.LinuxNamespace
+
 	if c.UnshareNet {
 		network = sandbox.NetworkModeNone
+	} else if os.Geteuid() != 0 {
+		// Non-root users cannot configure veth devices or iptables on the host.
+		// Fall back to host network mode, matching runsc do and real bubblewrap.
+		network = sandbox.NetworkModeHost
+	} else {
+		ns, clean, err := c.setupNet(cid)
+		switch err {
+		case errNoDefaultInterface:
+			log.Warningf("Network interface not found, using internal network")
+			network = sandbox.NetworkModeNone
+		case nil:
+			c.cleanNet = clean
+			netns = ns
+		default:
+			return nil, fmt.Errorf("error setting up network: %v", err)
+		}
 	}
 
 	opts := []sandbox.Option{
-		sandbox.WithID(generateUID()),
+		sandbox.WithID(cid),
 		sandbox.WithWorkingDir(cwd),
-		sandbox.WithCapabilities(specutils.AllCapabilities()),
 		// A bubblewrap sandbox holds only what the command line asks for.
 		sandbox.WithoutLinuxSystemMounts(),
 		sandbox.WithoutHostBinaryMounts(),
@@ -274,7 +317,25 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 		namespaces = append(namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
 		opts = append(opts, c.userNamespace()...)
 	}
+	if netns.Path != "" {
+		namespaces = append(namespaces, netns)
+	}
 	opts = append(opts, sandbox.WithNamespaces(namespaces...))
+
+	caps := specutils.AllCapabilities()
+	for _, capOp := range c.CapOps {
+		normCap, err := normalizeCap(capOp.Cap)
+		if err != nil {
+			return nil, err
+		}
+		switch capOp.Type {
+		case CapOpAdd:
+			addCapability(caps, normCap)
+		case CapOpDrop:
+			dropCapability(caps, normCap)
+		}
+	}
+	opts = append(opts, sandbox.WithCapabilities(caps))
 
 	return opts, nil
 }
@@ -284,6 +345,9 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 	opts, err := c.sandboxOptions()
 	if err != nil {
 		return util.Errorf("%v", err)
+	}
+	if c.cleanNet != nil {
+		defer c.cleanNet()
 	}
 	// Configure the sandbox to invoke the current runsc executable.
 	if err := os.Setenv(sandbox.RunscPathEnvVar, specutils.ExePath); err != nil {
@@ -336,4 +400,254 @@ func (c *bwrapConfig) resolveEnv() {
 		}
 	}
 	c.Env = env
+}
+
+// normalizeCap normalizes a capability name to uppercase and prepends "CAP_"
+// if necessary. "ALL" is treated as a special CLI keyword and returned as-is.
+func normalizeCap(capName string) (string, error) {
+	normCap := strings.ToUpper(strings.TrimSpace(capName))
+	if normCap != "ALL" {
+		if !strings.HasPrefix(normCap, "CAP_") {
+			normCap = "CAP_" + normCap
+		}
+		if !isKnownCapability(normCap) {
+			return "", fmt.Errorf("bwrap: unknown cap: %s", capName)
+		}
+	}
+	return normCap, nil
+}
+
+// isKnownCapability checks if capName is a valid Linux capability known to gVisor.
+func isKnownCapability(capName string) bool {
+	for _, c := range specutils.AllCapabilities().Bounding {
+		if c == capName {
+			return true
+		}
+	}
+	return false
+}
+
+// addCapability adds a single capability to all 5 capability sets.
+// This is used by bwrap to support re-adding capabilities after --cap-drop ALL.
+func addCapability(caps *specs.LinuxCapabilities, capName string) {
+	addUnique := func(set []string) []string {
+		for _, c := range set {
+			if c == capName {
+				return set
+			}
+		}
+		return append(set, capName)
+	}
+	caps.Bounding = addUnique(caps.Bounding)
+	caps.Effective = addUnique(caps.Effective)
+	caps.Inheritable = addUnique(caps.Inheritable)
+	caps.Permitted = addUnique(caps.Permitted)
+	caps.Ambient = addUnique(caps.Ambient)
+}
+
+// dropCapability removes a capability from all 5 capability sets.
+//
+// If capName is "ALL" (a CLI keyword for --cap-drop ALL), all capability
+// sets are cleared. This logic is kept in bwrap rather than specutils because
+// "ALL" is not a valid Linux capability name, and bwrap uniquely supports
+// dropping all capabilities and subsequently re-adding specific ones via --cap-add.
+func dropCapability(caps *specs.LinuxCapabilities, capName string) {
+	if capName == "ALL" {
+		caps.Bounding = nil
+		caps.Effective = nil
+		caps.Inheritable = nil
+		caps.Permitted = nil
+		caps.Ambient = nil
+		return
+	}
+	specutils.DropCapability(caps, capName)
+}
+
+func defaultDevice() (string, error) {
+	out, err := exec.Command("ip", "route", "list", "default").CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	parts := strings.Fields(string(out))
+	if len(parts) < 5 {
+		return "", fmt.Errorf("malformed %q output: %q", "ip route list default", string(out))
+	}
+	return parts[4], nil
+}
+
+func deviceMTU(dev string) (int, error) {
+	intf, err := net.InterfaceByName(dev)
+	if err != nil {
+		return 0, err
+	}
+	return intf.MTU, nil
+}
+
+func calculatePeerIP(ip string) (string, error) {
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return "", fmt.Errorf("invalid IP format %q", ip)
+	}
+	n, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return "", fmt.Errorf("invalid IP format %q: %v", ip, err)
+	}
+	n++
+	if n > 255 {
+		n = 1
+	}
+	return fmt.Sprintf("%s.%s.%s.%d", parts[0], parts[1], parts[2], n), nil
+}
+
+func deviceNames(cid string) (string, string) {
+	// Device name is limited to 15 letters.
+	return "ve-" + cid, "vp-" + cid
+}
+
+func (c *bwrapConfig) makeFile(dest, content string) (string, error) {
+	tmpFile, err := os.CreateTemp("", filepath.Base(dest))
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+	if _, err := tmpFile.WriteString(content); err != nil {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			log.Warningf("Failed to remove %q: %v", tmpFile.Name(), err)
+		}
+		return "", err
+	}
+	c.Mounts = append(c.Mounts, sandbox.Mount{
+		Source:      tmpFile.Name(),
+		Destination: dest,
+		Type:        sandbox.MountTypeBind,
+		ReadOnly:    true,
+	})
+	return tmpFile.Name(), nil
+}
+
+func tryRemove(path string) {
+	if path == "" {
+		return
+	}
+
+	if err := os.Remove(path); err != nil {
+		log.Warningf("Failed to remove %q: %v", path, err)
+	}
+}
+
+// errNoDefaultInterface is returned when no default network interface is found
+var errNoDefaultInterface = errors.New("no default interface found")
+
+// cleanupNet tries to cleanup the network setup in setupNet.
+//
+// It may be called when setupNet is only partially complete, in which case it
+// will cleanup as much as possible, logging warnings for the rest.
+//
+// Unfortunately none of this can be automatically cleaned up on process exit,
+// we must do so explicitly.
+func (c *bwrapConfig) cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath string) {
+	_, peer := deviceNames(cid)
+	ip := c.ip
+
+	cmds := []string{
+		fmt.Sprintf("ip link delete %s", peer),
+		fmt.Sprintf("ip netns delete %s", cid),
+		fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s -o %s -m comment --comment runsc-%s -j MASQUERADE", ip, dev, peer),
+		fmt.Sprintf("iptables -D FORWARD -i %s -o %s -j ACCEPT", dev, peer),
+		fmt.Sprintf("iptables -D FORWARD -o %s -i %s -j ACCEPT", dev, peer),
+	}
+
+	for _, cmd := range cmds {
+		log.Debugf("Run %q", cmd)
+		args := strings.Fields(cmd)
+		execCmd := exec.Command(args[0], args[1:]...)
+		if err := execCmd.Run(); err != nil {
+			log.Warningf("Failed to run %q: %v", cmd, err)
+		}
+	}
+
+	tryRemove(resolvPath)
+	tryRemove(hostnamePath)
+	tryRemove(hostsPath)
+}
+
+// setupNet setups up the sandbox network, including the creation of a network
+// namespace, and iptable rules to redirect the traffic. Returns a cleanup
+// function to tear down the network. Returns errNoDefaultInterface when there
+// is no network interface available to setup the network.
+func (c *bwrapConfig) setupNet(cid string) (specs.LinuxNamespace, func(), error) {
+	if c.ip == "" {
+		randSubnet := 10 + rand.Int31n(245)
+		c.ip = fmt.Sprintf("192.168.%d.2", randSubnet)
+	}
+	ip := c.ip
+	dev, err := defaultDevice()
+	if err != nil {
+		return specs.LinuxNamespace{}, nil, errNoDefaultInterface
+	}
+	mtu, err := deviceMTU(dev)
+	if err != nil {
+		return specs.LinuxNamespace{}, nil, err
+	}
+	peerIP, err := calculatePeerIP(ip)
+	if err != nil {
+		return specs.LinuxNamespace{}, nil, err
+	}
+	veth, peer := deviceNames(cid)
+
+	cmds := []string{
+		fmt.Sprintf("ip link add %s mtu %v type veth peer name %s", veth, mtu, peer),
+
+		// Setup device outside the namespace.
+		fmt.Sprintf("ip addr add %s/24 dev %s", peerIP, peer),
+		fmt.Sprintf("ip link set %s up", peer),
+
+		// Setup device inside the namespace.
+		fmt.Sprintf("ip netns add %s", cid),
+		fmt.Sprintf("ip link set %s netns %s", veth, cid),
+		fmt.Sprintf("ip netns exec %s ip addr add %s/24 dev %s", cid, ip, veth),
+		fmt.Sprintf("ip netns exec %s ip link set %s up", cid, veth),
+		fmt.Sprintf("ip netns exec %s ip link set lo up", cid),
+		fmt.Sprintf("ip netns exec %s ip route add default via %s", cid, peerIP),
+
+		// Enable network access.
+		"sysctl -w net.ipv4.ip_forward=1",
+		fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s -o %s -m comment --comment runsc-%s -j MASQUERADE", ip, dev, peer),
+		fmt.Sprintf("iptables -A FORWARD -i %s -o %s -j ACCEPT", dev, peer),
+		fmt.Sprintf("iptables -A FORWARD -o %s -i %s -j ACCEPT", dev, peer),
+	}
+
+	for _, cmd := range cmds {
+		log.Debugf("Run %q", cmd)
+		args := strings.Fields(cmd)
+		execCmd := exec.Command(args[0], args[1:]...)
+		if err := execCmd.Run(); err != nil {
+			c.cleanupNet(cid, dev, "", "", "")
+			return specs.LinuxNamespace{}, nil, fmt.Errorf("failed to run %q: %v", cmd, err)
+		}
+	}
+
+	resolvPath, err := c.makeFile("/etc/resolv.conf", "nameserver 8.8.8.8\n")
+	if err != nil {
+		c.cleanupNet(cid, dev, "", "", "")
+		return specs.LinuxNamespace{}, nil, err
+	}
+	hostnamePath, err := c.makeFile("/etc/hostname", cid+"\n")
+	if err != nil {
+		c.cleanupNet(cid, dev, resolvPath, "", "")
+		return specs.LinuxNamespace{}, nil, err
+	}
+	hosts := fmt.Sprintf("127.0.0.1\tlocalhost\n%s\t%s\n", ip, cid)
+	hostsPath, err := c.makeFile("/etc/hosts", hosts)
+	if err != nil {
+		c.cleanupNet(cid, dev, resolvPath, hostnamePath, "")
+		return specs.LinuxNamespace{}, nil, err
+	}
+
+	netns := specs.LinuxNamespace{
+		Type: specs.NetworkNamespace,
+		Path: filepath.Join("/var/run/netns", cid),
+	}
+
+	return netns, func() { c.cleanupNet(cid, dev, resolvPath, hostnamePath, hostsPath) }, nil
 }
