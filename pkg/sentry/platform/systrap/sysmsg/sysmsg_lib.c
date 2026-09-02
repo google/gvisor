@@ -239,8 +239,8 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
     }
     struct thread_context *ctx = thread_context_addr(context_id);
     sysmsg->context = ctx;
-    atomic_store(&ctx->acked_time, rdtsc());
     atomic_store(&ctx->thread_id, sysmsg->thread_id);
+    atomic_store(&ctx->acked_time, rdtsc());
     return ctx;
   }
   return NULL;
@@ -386,10 +386,10 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
 
   if (ctx) {
     atomic_sub(&queue->num_active_contexts, 1);
-    atomic_store(&ctx->thread_id, INVALID_THREAD_ID);
     atomic_store(&ctx->last_thread_id, sysmsg->thread_id);
     atomic_store(&ctx->state_changed_time, rdtsc());
     atomic_store(&ctx->state, new_context_state);
+    atomic_store(&ctx->thread_id, INVALID_THREAD_ID);
     if (atomic_load(&ctx->sentry_fast_path) == 0) {
       int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
       if (ret < 0) {

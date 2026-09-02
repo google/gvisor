@@ -170,7 +170,8 @@ static void __panic(int err, int err_additional, long line) {
   sysmsg->err_additional = err_additional;
   sysmsg->err_line = line;
   // Wake up the goroutine waiting on the current context.
-  __atomic_store_n(&ctx->state, CONTEXT_STATE_FAULT, __ATOMIC_RELEASE);
+  __atomic_store_n(&ctx->state, CONTEXT_STATE_UNEXPECTED_DEATH,
+                   __ATOMIC_RELEASE);
   sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 666);
   // crash the stub process.
   //

@@ -114,10 +114,22 @@ go_test(
     srcs = [
         "context_queue_test.go",
         "shared_context_test.go",
+        "systrap_test.go",
     ],
     library = ":systrap",
     deps = [
+        "//pkg/context",
+        "//pkg/cpuid",
         "//pkg/hostarch",
+        "//pkg/safemem",
+        "//pkg/sentry/arch",
+        "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc",
+        "//pkg/sentry/platform",
         "//pkg/sentry/platform/systrap/sysmsg",
+        "//pkg/sentry/platform/systrap/testutil",
+        "//pkg/sentry/usage",
+        "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
