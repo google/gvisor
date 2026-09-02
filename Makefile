@@ -242,6 +242,12 @@ smoke-race-tests: $(RUNTIME_BIN) ## Runs a smoke test after build building runsc
 	@$(RUNTIME_BIN) --alsologtostderr --network none --debug --TESTONLY-unsafe-nonroot=true --rootless do true
 .PHONY: smoke-race-tests
 
+cpu-sr-smoke-tests: load-basic_python $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call sudo,test/cpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: cpu-sr-smoke-tests
+
+
 nogo-tests:
 	@$(call test,--test_tag_filters=nogo //:all pkg/... tools/...)
 .PHONY: nogo-tests
