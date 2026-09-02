@@ -966,3 +966,50 @@ func TestParseSerializeOverlay2(t *testing.T) {
 		}
 	})
 }
+
+func TestSignalUnkillablePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		val     string
+		want    SignalUnkillablePolicy
+		wantErr bool
+	}{
+		{val: "none", want: SignalUnkillableNone},
+		{val: "linux", want: SignalUnkillableLinux},
+		{val: "invalid", wantErr: true},
+	} {
+		t.Run(tc.val, func(t *testing.T) {
+			var p SignalUnkillablePolicy
+			err := p.Set(tc.val)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("p.Set(%q) succeeded, want error", tc.val)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("p.Set(%q) failed: %v", tc.val, err)
+			}
+			if p != tc.want {
+				t.Errorf("got %v, want %v", p, tc.want)
+			}
+			if p.String() != tc.val {
+				t.Errorf("p.String() = %q, want %q", p.String(), tc.val)
+			}
+			if p.Get() != tc.want {
+				t.Errorf("p.Get() = %v, want %v", p.Get(), tc.want)
+			}
+			if *p.Ptr() != tc.want {
+				t.Errorf("*p.Ptr() = %v, want %v", *p.Ptr(), tc.want)
+			}
+		})
+	}
+
+	t.Run("InvalidStringPanics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("expected panic for invalid policy string, got none")
+			}
+		}()
+		_ = SignalUnkillablePolicy(-1).String()
+	})
+}
