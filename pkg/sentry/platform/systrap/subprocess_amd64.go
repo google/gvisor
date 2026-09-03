@@ -200,6 +200,8 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_FS)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
 				},
 			}),
 			Action: seccomp.Allow,
@@ -208,6 +210,14 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 }
 
 func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+	// If syscall patching is disabled or the GS register is not 0, then we are in a context where
+	// the GS register is/can be used by the application. Thus, we need to set the TLS to 1 to
+	// restore the GS register to its original value in the signal handler.
+	if disableSyscallPatching || ac.GS() != 0 {
+		ctx.TLS = 1
+	} else {
+		ctx.TLS = 0
+	}
 }
 
 func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
