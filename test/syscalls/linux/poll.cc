@@ -44,7 +44,6 @@ class PollTest : public BasePollTest {
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnonnull"
-#pragma GCC diagnostic ignored "-Wstringop-overflow"
 TEST_F(PollTest, InvalidFds) {
   // fds is invalid because it's null, but we tell ppoll the length is non-zero.
   EXPECT_THAT(poll(nullptr, 1, 1), SyscallFailsWithErrno(EFAULT));
