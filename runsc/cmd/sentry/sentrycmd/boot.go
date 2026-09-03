@@ -201,6 +201,11 @@ type Boot struct {
 	// If so, the format used to write to it will contain a checksum.
 	profilingMetricsLossy bool
 
+	// cpuDMALatencyFD is a file descriptor holding /dev/cpu_dma_latency
+	// open to prevent host CPUs from entering deep idle states for the
+	// lifetime of the sandbox. See MaybeCapCPUIdleStates.
+	cpuDMALatencyFD int
+
 	// procMountSyncFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore.
 	procMountSyncFD int
@@ -262,6 +267,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	// uses the Linux default of 100000us (100ms). A positive value is
 	// passed through as-is.
 	f.Int64Var(&b.cpuPeriod, "cpu-period", 0, "raw CFS cpu period in usecs to expose via sandbox cgroupfs (0 means use default 100ms)")
+	f.IntVar(&b.cpuDMALatencyFD, "cpu-dma-latency-fd", -1, "file descriptor holding /dev/cpu_dma_latency open")
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
 	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
@@ -416,21 +422,34 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 	timer.Reached("spec read")
 
-	if specutils.NVProxyEnabled(spec, conf) && b.procDriverNvidiaParams == "" {
-		driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
-		nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
-			WantFabricIMEXManagement: driverCapsErr == nil && driverCaps&nvconf.CapFabricIMEXManagement != 0,
-		})
-		if err != nil {
-			log.Warningf("Failed to get nvconf.HostSettings: %v", err)
-		} else {
-			b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
-			argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
-			if nvhs.HaveFabricIMEXManagement {
-				b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
-				argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
+	if specutils.NVProxyEnabled(spec, conf) {
+		if b.cpuDMALatencyFD < 0 {
+			// Best effort; requires root.
+			if gPlatform, err := platform.Lookup(conf.Platform); err == nil && gPlatform.Requirements().FrequentHostThreadWakeups {
+				if fd := sandboxsetup.MaybeCapCPUIdleStates(); fd >= 0 {
+					b.cpuDMALatencyFD = fd
+					argOverride["cpu-dma-latency-fd"] = strconv.Itoa(fd)
+				}
 			}
 		}
+
+		if b.procDriverNvidiaParams == "" {
+			driverCaps, driverCapsErr := specutils.NVProxyDriverCapsAllowed(conf)
+			nvhs, err := nvconf.GetHostSettings(nvconf.HostSettingsOptions{
+				WantFabricIMEXManagement: driverCapsErr == nil && driverCaps&nvconf.CapFabricIMEXManagement != 0,
+			})
+			if err != nil {
+				log.Warningf("Failed to get nvconf.HostSettings: %v", err)
+			} else {
+				b.procDriverNvidiaParams = nvhs.ProcDriverNvidiaParams
+				argOverride["nvidia-host-params"] = nvhs.ProcDriverNvidiaParams
+				if nvhs.HaveFabricIMEXManagement {
+					b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
+					argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
+				}
+			}
+		}
+		timer.Reached("set nvproxy flags")
 	}
 
 	if b.setUpRoot {
@@ -669,6 +688,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		ControllerFD:        b.controllerFD,
 		Device:              fd.New(b.deviceFD),
 		PinRingFD:           b.pinRingFD,
+		CPUDMALatencyFD:     b.cpuDMALatencyFD,
 		GoferFDs:            b.ioFDs.GetArray(),
 		DevGoferFD:          b.devIoFD,
 		StdioFDs:            b.stdioFDs.GetArray(),
