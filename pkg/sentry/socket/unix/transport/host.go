@@ -364,7 +364,7 @@ func (c *HostSender) HostReadiness(mask waiter.EventMask) waiter.EventMask {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.fd < 0 {
-		return 0
+		return (waiter.ReadableEvents | waiter.EventHUp | waiter.EventRdHUp) & mask
 	}
 	return fdnotifier.NonBlockingPoll(int32(c.fd), mask)
 }
@@ -453,6 +453,9 @@ type SCMSender struct {
 func (e *SCMSender) beforeSave() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.fd < 0 {
+		return
+	}
 	fdnotifier.RemoveFD(int32(e.fd))
 	e.closeRecvLocked()
 	e.closeSendLocked()
