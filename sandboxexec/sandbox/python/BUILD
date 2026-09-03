@@ -16,6 +16,11 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
+exports_files(
+    ["gvisor/sandbox.py"],
+    visibility = ["//:__subpackages__"],
+)
+
 py_test(
     name = "sandbox_py_test",
     srcs = ["tests/sandbox_test.py"],
