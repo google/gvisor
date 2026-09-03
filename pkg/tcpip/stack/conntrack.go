@@ -57,6 +57,9 @@ const (
 	// ConnTrackStateEstablishedReply represents an established connection
 	// in the reply direction.
 	ConnTrackStateEstablishedReply ConnTrackState = 3
+	// ConnTrackStateRelated represents a related packet/connection (e.g. an ICMP
+	// error response for an existing tracked flow).
+	ConnTrackStateRelated ConnTrackState = 4
 )
 
 // ConnTrackDirection represents the direction of a connection.
