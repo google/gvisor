@@ -1057,6 +1057,12 @@ const (
 	XT_ADDRTYPE_XRESOLVE    = 1 << 11
 )
 
+// SizeOfXTAddrtypeInfoV1 is the size of struct xt_addrtype_info_v1.
+const SizeOfXTAddrtypeInfoV1 = 8
+
+// SizeOfXTAddrtypeInfo is the size of struct xt_addrtype_info.
+const SizeOfXTAddrtypeInfo = 12
+
 // XTAddrtypeInfoV1 corresponds to struct xt_addrtype_info_v1 in
 // include/uapi/linux/netfilter/xt_addrtype.h.
 //
