@@ -16,7 +16,9 @@
 #include <signal.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cerrno>
@@ -1027,6 +1029,24 @@ TEST(SemaphoreTest, SemInfo) {
   // semaem range from 0 to a random number. Since the numbers are always
   // non-negative, the test will not check the results of semusz and semaem.
   EXPECT_EQ(info.semvmx, kSemVmx);
+}
+
+TEST(SemaphoreTest, RemoveWithoutPermission) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  AutoSem sem(semget(IPC_PRIVATE, 1, 0600));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+  const uid_t other_uid = geteuid() == 0 ? 1 : 0;
+  ScopedThread([&] {
+    // Change only this thread's credentials so the owner can remove the set.
+    ASSERT_THAT(syscall(SYS_setresuid, -1, other_uid, -1), SyscallSucceeds());
+    ASSERT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
+    EXPECT_THAT(semctl(sem.get(), 0, IPC_RMID), SyscallFailsWithErrno(EPERM));
+  });
+
+  struct semid_ds ds = {};
+  EXPECT_THAT(semctl(sem.get(), 0, IPC_STAT, &ds), SyscallSucceeds());
+  // AutoSem's destructor checks that removal by the owner still succeeds.
 }
 
 TEST(SempahoreTest, RemoveNonExistentSemaphore) {
