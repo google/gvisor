@@ -44,11 +44,16 @@ const maxAddrLen = 200
 
 // maxOptLen is the maximum sockopt parameter length we're willing to accept.
 // Linux limits this to INT_MAX (net/socket.c: do_sock_setsockopt), but we use
-// a conservative 32KB here to balance compatibility with resource protection.
-// The previous limit of 8KB broke real-world workloads such as iptables-restore
-// with large rulesets (e.g. Istio service mesh) where IPT_SO_SET_REPLACE
-// payloads commonly exceed 8KB.
-const maxOptLen = 32 * 1024
+// a bounded value here to balance compatibility with resource protection.
+// This must be large enough for iptables-restore's IPT_SO_SET_REPLACE payload:
+// the entire table (all chains + rules, encoded as ipt_entry structs) is passed
+// in a single setsockopt. kube-proxy's nat table alone exceeds 32KB once a
+// handful of multi-port ClusterIP Services exist (each Service adds several
+// KUBE-SVC/KUBE-SEP chains with DNAT/MARK/comment rules), and a rejected
+// SET_REPLACE surfaces only as an opaque "iptables-restore: line N failed" at
+// the table's COMMIT. A 1MB cap comfortably fits realistic kube-proxy/Istio
+// rulesets while staying well under maxControlLen.
+const maxOptLen = 1024 * 1024
 
 // maxControlLen is the maximum length of the msghdr.msg_control buffer we're
 // willing to accept. Note that this limit is smaller than Linux, which allows
