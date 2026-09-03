@@ -455,7 +455,7 @@ const (
 	visited
 )
 
-func checkChainDFS(table stack.Table, ruleIdx int, state []visitState, ipv6 bool) *syserr.Error {
+func checkChainDFS(table stack.Table, ruleIdx int, state []visitState, ipv6 bool, hook stack.Hook) *syserr.Error {
 	if state[ruleIdx] == visiting {
 		nflog("jump loop detected at rule %d", ruleIdx)
 		return syserr.ErrInvalidArgument
@@ -466,6 +466,10 @@ func checkChainDFS(table stack.Table, ruleIdx int, state []visitState, ipv6 bool
 	state[ruleIdx] = visiting
 
 	rule := table.Rules[ruleIdx]
+	if _, ok := rule.Target.(*masqueradeTarget); ok && hook != stack.Postrouting {
+		nflog("MASQUERADE target is only supported in POSTROUTING, rule %d is in hook %v", ruleIdx, hook)
+		return syserr.ErrInvalidArgument
+	}
 	if jump, ok := rule.Target.(*JumpTarget); ok {
 		jumpTo := jump.RuleNum
 		if jumpTo <= 0 || jumpTo >= len(table.Rules) {
@@ -476,7 +480,7 @@ func checkChainDFS(table stack.Table, ruleIdx int, state []visitState, ipv6 bool
 			nflog("jump target %d is not a user chain (rule %d-1 target is %T)", jumpTo, jumpTo, table.Rules[jumpTo-1].Target)
 			return syserr.ErrInvalidArgument
 		}
-		if err := checkChainDFS(table, jumpTo, state, ipv6); err != nil {
+		if err := checkChainDFS(table, jumpTo, state, ipv6, hook); err != nil {
 			return err
 		}
 	}
@@ -495,7 +499,7 @@ func checkChainDFS(table stack.Table, ruleIdx int, state []visitState, ipv6 bool
 		nflog("chain fell through into a user chain without an unconditional final rule at rule %d (next target is %T)", ruleIdx, table.Rules[nextIdx].Target)
 		return syserr.ErrInvalidArgument
 	}
-	if err := checkChainDFS(table, nextIdx, state, ipv6); err != nil {
+	if err := checkChainDFS(table, nextIdx, state, ipv6, hook); err != nil {
 		return err
 	}
 	state[ruleIdx] = visited
@@ -507,7 +511,7 @@ func checkLoopsAndChains(table stack.Table, ipv6 bool) *syserr.Error {
 
 	for hook, ruleIdx := range table.BuiltinChains {
 		if table.ValidHooks()&(1<<hook) != 0 {
-			if err := checkChainDFS(table, ruleIdx, state, ipv6); err != nil {
+			if err := checkChainDFS(table, ruleIdx, state, ipv6, hookFromLinux(hook)); err != nil {
 				return err
 			}
 		}
@@ -515,7 +519,7 @@ func checkLoopsAndChains(table stack.Table, ipv6 bool) *syserr.Error {
 
 	for ruleIdx, rule := range table.Rules {
 		if isUserChainTarget(rule.Target) && ruleIdx+1 < len(table.Rules) {
-			if err := checkChainDFS(table, ruleIdx+1, state, ipv6); err != nil {
+			if err := checkChainDFS(table, ruleIdx+1, state, ipv6, stack.Postrouting); err != nil {
 				return err
 			}
 		}

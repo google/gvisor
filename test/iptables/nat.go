@@ -57,6 +57,9 @@ func init() {
 	RegisterTestCase(&NATOutDNAT{})
 	RegisterTestCase(&NATOutDNATAddrOnly{})
 	RegisterTestCase(&NATOutDNATPortOnly{})
+	RegisterTestCase(&NATPostMasqueradeUDP{})
+	RegisterTestCase(&NATPostMasqueradeTCP{})
+	RegisterTestCase(&NATMasqueradeInvalidHookReject{})
 }
 
 // NATPreRedirectUDPPort tests that packets are redirected to different port.
@@ -1159,5 +1162,85 @@ func (*NATOutDNATPortOnly) ContainerAction(ctx context.Context, ip net.IP, ipv6 
 
 // LocalAction implements TestCase.LocalAction.
 func (*NATOutDNATPortOnly) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return nil
+}
+
+// NATPostMasqueradeUDP tests that MASQUERADE rewrites the source IP on UDP packets.
+type NATPostMasqueradeUDP struct{ localCase }
+
+var _ TestCase = (*NATPostMasqueradeUDP)(nil)
+
+func (*NATPostMasqueradeUDP) Name() string {
+	return "NATPostMasqueradeUDP"
+}
+
+func (*NATPostMasqueradeUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := natTable(ipv6, "-A", "POSTROUTING", "-p", "udp", "-j", "MASQUERADE"); err != nil {
+		return err
+	}
+	return netutils.SendUDPLoop(ctx, ip, acceptPort, ipv6)
+}
+
+func (*NATPostMasqueradeUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	remote, err := netutils.ListenUDPFrom(ctx, acceptPort, ipv6)
+	if err != nil {
+		return err
+	}
+	if remote.IP == nil || remote.IP.IsUnspecified() {
+		return fmt.Errorf("expected valid remote address from masquerade, got %v", remote.IP)
+	}
+	return nil
+}
+
+// NATPostMasqueradeTCP tests that MASQUERADE rewrites source IP on TCP connections.
+type NATPostMasqueradeTCP struct{ localCase }
+
+var _ TestCase = (*NATPostMasqueradeTCP)(nil)
+
+func (*NATPostMasqueradeTCP) Name() string {
+	return "NATPostMasqueradeTCP"
+}
+
+func (*NATPostMasqueradeTCP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := natTable(ipv6, "-A", "POSTROUTING", "-p", "tcp", "-j", "MASQUERADE"); err != nil {
+		return err
+	}
+	return netutils.ConnectTCP(ctx, ip, acceptPort, ipv6)
+}
+
+func (*NATPostMasqueradeTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	remote, err := netutils.ListenTCPFrom(ctx, acceptPort, ipv6)
+	if err != nil {
+		return err
+	}
+	if remote.IP == nil || remote.IP.IsUnspecified() {
+		return fmt.Errorf("expected valid remote address from masquerade, got %v", remote.IP)
+	}
+	return nil
+}
+
+// NATMasqueradeInvalidHookReject tests that installing MASQUERADE in hooks
+// other than POSTROUTING (e.g. PREROUTING or non-nat tables) is rejected.
+type NATMasqueradeInvalidHookReject struct{ containerCase }
+
+var _ TestCase = (*NATMasqueradeInvalidHookReject)(nil)
+
+func (*NATMasqueradeInvalidHookReject) Name() string {
+	return "NATMasqueradeInvalidHookReject"
+}
+
+func (*NATMasqueradeInvalidHookReject) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// MASQUERADE in nat PREROUTING must be rejected.
+	if err := natTable(ipv6, "-A", "PREROUTING", "-p", "udp", "-j", "MASQUERADE"); err == nil {
+		return fmt.Errorf("expected error installing MASQUERADE target in PREROUTING, but succeeded")
+	}
+	// MASQUERADE in filter table must be rejected.
+	if err := filterTable(ipv6, "-A", "INPUT", "-p", "udp", "-j", "MASQUERADE"); err == nil {
+		return fmt.Errorf("expected error installing MASQUERADE target in filter table, but succeeded")
+	}
+	return nil
+}
+
+func (*NATMasqueradeInvalidHookReject) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return nil
 }
