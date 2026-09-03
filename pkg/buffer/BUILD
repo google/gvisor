@@ -40,7 +40,9 @@ go_library(
         "view_list.go",
         "view_unsafe.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//pkg/atomicbitops",
         "//pkg/bits",
