@@ -138,7 +138,7 @@ func Semctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	switch cmd {
 	case linux.SETVAL:
 		val := args[3].Int()
-		if val > math.MaxInt16 {
+		if val < 0 || val > math.MaxInt16 {
 			return 0, nil, linuxerr.ERANGE
 		}
 		return 0, nil, setVal(t, id, num, int16(val))
