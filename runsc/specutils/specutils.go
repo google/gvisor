@@ -96,6 +96,17 @@ const (
 // changed in tests that aren't linked in the same binary.
 var ExePath = "/proc/self/exe"
 
+func init() {
+	// Resolve the actual binary path early to work around issues in rootless
+	// Docker, where the binary is copied to a temporary location before execution.
+	// This makes /proc/self/exe invalid once we enter a different mount namespace.
+	// See https://github.com/google/gvisor/issues/12575
+	if exePath, err := os.Executable(); err == nil {
+		ExePath = exePath
+	}
+	// If os.Executable() fails, fall back to /proc/self/exe
+}
+
 // Version is the supported spec version.
 var Version = specs.Version
 
