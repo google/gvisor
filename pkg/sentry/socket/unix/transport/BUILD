@@ -112,10 +112,15 @@ go_library(
 go_test(
     name = "transport_test",
     size = "small",
-    srcs = ["queue_test.go"],
+    srcs = [
+        "host_test.go",
+        "queue_test.go",
+    ],
     library = ":transport",
     deps = [
         "//pkg/context",
         "//pkg/syserr",
+        "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
