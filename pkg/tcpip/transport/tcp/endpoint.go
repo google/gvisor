@@ -339,7 +339,7 @@ func (sq *sndQueueInfo) CloneState(other *TCPSndBufState) {
 // lock from say a syscall goroutine we can implement a bit of spinning if we
 // know that the lock is not held by another syscall goroutine. Background
 // processors should never hold the lock for long and we can avoid an expensive
-// sleep/wakeup by spinning for a shortwhile.
+// sleep/wakeup by spinning for a short while.
 //
 // For more details please see the detailed documentation on
 // e.LockUser/e.UnlockUser methods.

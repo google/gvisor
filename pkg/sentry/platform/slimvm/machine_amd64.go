@@ -254,7 +254,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 	// to produce vCPU bounce stalls.
 	switchOpts.PageTables.PrefaultRootTable()
 
-	// Enable CPUID Faulting featue if the CPU supported.
+	// Enable CPUID Faulting feature if the CPU supported.
 	if c.cpuidFaultingEnable == 0 {
 		ring0.SetCPUIDFaulting(true)
 		c.cpuidFaultingEnable = 1

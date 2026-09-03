@@ -489,7 +489,7 @@ func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, 
 	//     message, the source and destination addresses are simply reversed,
 	//     the type code changed to 0, and the checksum recomputed.
 	//
-	// This was interpreted by early implementors to mean that all options must
+	// This was interpreted by early implementers to mean that all options must
 	// be copied from the echo request IP header to the echo reply IP header
 	// and this behaviour is still relied upon by some applications.
 	//

@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// This file contains utilities for implementors of AsyncReader and
+// This file contains utilities for implementers of AsyncReader and
 // AsyncWriter.
 
 // NoRegisterClientFD implements AsyncReader.NeedRegisterDestinationFD,

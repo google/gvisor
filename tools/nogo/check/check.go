@@ -856,7 +856,7 @@ func SplitStdPackages(srcs []string, srcRootPrefix string) (map[string][]string,
 	sources := make(map[string][]string)
 	for _, filename := range srcs {
 		if !strings.HasPrefix(filename, srcRootPrefix) {
-			continue // Superflouous file.
+			continue // Superfluous file.
 		}
 		d := path.Dir(filename)
 		if len(srcRootPrefix) >= len(d) {

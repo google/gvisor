@@ -3455,7 +3455,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 			// Helper to add mount hints.
 			addMountHint := func(spec *specs.Spec, name, source string, share string) {
 				// Adding a "bind" mount type annotation with share=container will cause
-				// the bind mount to be overlayed with medium=self.
+				// the bind mount to be overlaid with medium=self.
 				spec.Annotations["dev.gvisor.spec.mount."+name+".source"] = source
 				spec.Annotations["dev.gvisor.spec.mount."+name+".share"] = share
 				spec.Annotations["dev.gvisor.spec.mount."+name+".type"] = "bind"

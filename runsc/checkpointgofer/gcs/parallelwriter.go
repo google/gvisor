@@ -941,7 +941,7 @@ func (w *ParallelWriter) deleterMain(ctx context.Context) {
 			return
 		case obj := <-w.delete:
 			// Use context.Background() here since we don't want ParallelWriter
-			// cancelation or closure to cancel deletions.
+			// cancellation or closure to cancel deletions.
 			if err := obj.Delete(context.Background()); err != nil {
 				log.Warningf("Deletion of %s failed: %v", obj.ObjectName(), err)
 			}

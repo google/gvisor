@@ -234,7 +234,7 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	}
 
 	// nr determines the argument type.
-	// Implementors:
+	// Implementers:
 	// - To map nr to a symbol, look in
 	// src/nvidia/arch/nvalloc/unix/include/nv_escape.h,
 	// kernel-open/common/inc/nv-ioctl-numbers.h, and
@@ -905,7 +905,7 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		// Consequently, its parameters cannot reasonably contain pointers.
 		return rmControlSimple(fi, &ioctlParams)
 	}
-	// Implementors:
+	// Implementers:
 	// - Top two bytes of Cmd specifies class; third byte specifies category;
 	// fourth byte specifies "message ID" (command within class/category).
 	//   e.g. 0x800288:
@@ -1223,7 +1223,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	if log.IsLogging(log.Debug) {
 		fi.ctx.Debugf("nvproxy: allocation class %v", ioctlParams.HClass)
 	}
-	// Implementors:
+	// Implementers:
 	// - To map hClass to a symbol, look in
 	// src/nvidia/generated/g_allclasses.h.
 	// - See src/nvidia/src/kernel/rmapi/resource_list.h for table mapping class

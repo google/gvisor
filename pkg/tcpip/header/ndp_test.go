@@ -1630,7 +1630,7 @@ func TestNDPOptionsIterCheck(t *testing.T) {
 // TestNDPOptionsIter tests that we can iterator over a valid NDPOptions. Note,
 // this test does not actually check any of the option's getters, it simply
 // checks the option Type and Body. We have other tests that tests the option
-// field gettings given an option body and don't need to duplicate those tests
+// field getters given an option body and don't need to duplicate those tests
 // here.
 func TestNDPOptionsIter(t *testing.T) {
 	buf := []byte{

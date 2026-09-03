@@ -16,7 +16,7 @@ package kvm
 
 const (
 	reservedMemory = 0
-	// 5-level page tables are not implemeted on arm64.
+	// 5-level page tables are not implemented on arm64.
 	extendedAddressSpaceAllowed = false
 )
 
