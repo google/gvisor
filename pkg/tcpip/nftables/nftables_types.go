@@ -1071,7 +1071,7 @@ type nftSet struct {
 	// or the combined length of all the sub-keys.
 	keyLen uint8
 	// dataLen is the length of the data;
-	// incase of a verdict set, this is not required.
+	// in case of a verdict set, this is not required.
 	dataLen uint8
 	// handle is the NFTables unique identifier for this set.
 	handle uint64

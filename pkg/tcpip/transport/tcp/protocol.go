@@ -201,7 +201,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 
 func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 	// Initialize a random tsOffset that will be added to the recentTS
-	// everytime the timestamp is sent when the Timestamp option is enabled.
+	// every time the timestamp is sent when the Timestamp option is enabled.
 	//
 	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
 	// why this is required.

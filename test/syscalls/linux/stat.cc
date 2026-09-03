@@ -471,7 +471,7 @@ TEST_F(StatTest, LinkCountsWithRegularFileChild) {
 //
 // It is marked NoSave because we don't support saving unlinked files.
 TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoSave) {
-  // Setting the enviornment variable GVISOR_GOFER_UNCACHED to any value
+  // Setting the environment variable GVISOR_GOFER_UNCACHED to any value
   // will prevent this test from running, see the tmpfs lifecycle.
   //
   // We need to support this because when a file is unlinked and we forward

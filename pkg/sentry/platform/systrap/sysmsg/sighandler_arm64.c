@@ -51,7 +51,8 @@ long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   register long x5 __asm__("x5") = a6;
   __asm__ __volatile__("svc #0"
                        : "=r"(x0)
-                       : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5)
+                       : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4),
+                         "r"(x5)
                        : "memory", "cc");
   return x0;
 }
@@ -75,7 +76,7 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
 static void gregs_to_ptregs(ucontext_t *ucontext,
                             struct user_regs_struct *ptregs) {
   // Set all registers.
-  for (int i = 0; i < 31; i++ ) {
+  for (int i = 0; i < 31; i++) {
     ptregs->regs[i] = ucontext->uc_mcontext.regs[i];
   }
   ptregs->sp = ucontext->uc_mcontext.sp;
@@ -85,7 +86,7 @@ static void gregs_to_ptregs(ucontext_t *ucontext,
 
 static void ptregs_to_gregs(ucontext_t *ucontext,
                             struct user_regs_struct *ptregs) {
-  for (int i = 0; i < 31; i++ ) {
+  for (int i = 0; i < 31; i++) {
     ucontext->uc_mcontext.regs[i] = ptregs->regs[i];
   }
   ucontext->uc_mcontext.sp = ptregs->sp;

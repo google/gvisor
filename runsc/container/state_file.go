@@ -50,7 +50,7 @@ type LoadOpts struct {
 	// Exact tells whether the search should be exact. See Load() for more.
 	Exact bool
 
-	// SkipCheck tells Load() to skip checking if container is runnning.
+	// SkipCheck tells Load() to skip checking if container is running.
 	SkipCheck bool
 
 	// TryLock tells Load() to fail if the container state file cannot be locked,

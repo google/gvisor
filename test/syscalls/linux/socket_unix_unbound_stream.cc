@@ -331,9 +331,7 @@ TEST_P(UnixStreamSocketPairTest, CredsNotCoalescedUp) {
 
   EXPECT_EQ(0, memcmp(sent_data1, received_data, sizeof(sent_data1)));
 
-  struct ucred want_creds {
-    0, 65534, 65534
-  };
+  struct ucred want_creds{0, 65534, 65534};
 
   EXPECT_EQ(want_creds.pid, received_creds.pid);
   EXPECT_EQ(want_creds.uid, received_creds.uid);
@@ -462,9 +460,7 @@ TEST_P(UnixStreamSocketPairTest, CoalescedCreds1) {
   EXPECT_EQ(0, memcmp(sent_data2, received_data + sizeof(sent_data1),
                       sizeof(sent_data2)));
 
-  struct ucred want_creds {
-    0, 65534, 65534
-  };
+  struct ucred want_creds{0, 65534, 65534};
 
   EXPECT_EQ(want_creds.pid, received_creds.pid);
   EXPECT_EQ(want_creds.uid, received_creds.uid);
@@ -533,9 +529,7 @@ TEST_P(UnixStreamSocketPairTest, NonCoalescedDifferingCreds1) {
 
   EXPECT_EQ(0, memcmp(sent_data1, received_data1, sizeof(sent_data1)));
 
-  struct ucred want_creds1 {
-    0, 65534, 65534
-  };
+  struct ucred want_creds1{0, 65534, 65534};
 
   EXPECT_EQ(want_creds1.pid, received_creds1.pid);
   EXPECT_EQ(want_creds1.uid, received_creds1.uid);
@@ -605,9 +599,7 @@ TEST_P(UnixStreamSocketPairTest, NonCoalescedDifferingCreds2) {
 
   EXPECT_EQ(0, memcmp(sent_data2, received_data2, sizeof(sent_data2)));
 
-  struct ucred want_creds2 {
-    0, 65534, 65534
-  };
+  struct ucred want_creds2{0, 65534, 65534};
 
   EXPECT_EQ(want_creds2.pid, received_creds2.pid);
   EXPECT_EQ(want_creds2.uid, received_creds2.uid);

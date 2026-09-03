@@ -97,7 +97,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, op
 				// FDs.
 				ttyFile = appFile
 			} else {
-				// Re-use the existing TTY file, as all three stdio FDs must point to
+				// Reuse the existing TTY file, as all three stdio FDs must point to
 				// the same fs.File in order to share TTY state, specifically the
 				// foreground process group id.
 				appFile = ttyFile

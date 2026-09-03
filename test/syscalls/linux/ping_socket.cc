@@ -586,8 +586,7 @@ std::string TestDescription(
   auto [socket_factory, test_case] = info.param;
   std::string name = absl::StrJoin(
       {socket_factory.description, test_case.bind_to.description}, "_");
-  absl::c_replace_if(
-      name, [](char c) { return !std::isalnum(c); }, '_');
+  absl::c_replace_if(name, [](char c) { return !std::isalnum(c); }, '_');
   return name;
 }
 

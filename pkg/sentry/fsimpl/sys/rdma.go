@@ -338,7 +338,7 @@ func (fs *filesystem) addPorts(ib *rdmaDirTree, dev *rdma.Device) {
 // /sys/class/pci_bus symlink. NCCL resolves GPU and NIC positions via
 // "/sys/class/pci_bus/<bus>/../../<bdf>".
 //
-// Precondtion: rdma.IsBDF(path.Base(leaf)) == true
+// Precondition: rdma.IsBDF(path.Base(leaf)) == true
 func (fs *filesystem) addPCIBus(root *rdmaDirTree, leaf string, classPCIBus map[string]string) {
 	base := path.Base(leaf)
 	i := strings.LastIndex(base, ":")

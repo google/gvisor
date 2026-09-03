@@ -233,9 +233,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
 TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());

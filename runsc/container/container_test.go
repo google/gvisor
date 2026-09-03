@@ -5011,7 +5011,7 @@ func TestMountEROFS(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	// When running this test inside a user namespace without host root mapped, like bazel is wont to
+	// When running this test inside a user namespace without host root mapped, as bazel tends to
 	// do, /bin/umount appears as a setuid binary owned by (host) overflow-uid inside the container,
 	// and thus would rob the execing process of its exalted (sandbox) root EUID. So we make a copy.
 	copiedUmount := filepath.Join(testutil.TmpDir(), "umount")

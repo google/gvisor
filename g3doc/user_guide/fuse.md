@@ -19,7 +19,7 @@ The external FUSE server feature allows a host-side process to serve a FUSE
 filesystem into a gVisor sandbox. The host process and the sandbox communicate
 over a Unix socketpair using the standard FUSE protocol. This approach avoids
 the performance penalty incurred by context switching through the I/O proxy
-mechansim that's otherwise used to expose host filesystems.
+mechanism that's otherwise used to expose host filesystems.
 
 ### How It Works
 
