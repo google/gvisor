@@ -96,11 +96,12 @@ const (
 // changed in tests that aren't linked in the same binary.
 var ExePath = "/proc/self/exe"
 
-func init() {
-	// Resolve the actual binary path early to work around issues in rootless
-	// Docker, where the binary is copied to a temporary location before execution.
-	// This makes /proc/self/exe invalid once we enter a different mount namespace.
-	// See https://github.com/google/gvisor/issues/12575
+// InitExePath resolves the actual binary path early to work around issues in rootless
+// Docker, where the binary is copied to a temporary location before execution.
+// This makes /proc/self/exe invalid once we enter a different mount namespace.
+// See https://github.com/google/gvisor/issues/12575
+// This must be called early in the program, before entering any mount namespaces.
+func InitExePath() {
 	if exePath, err := os.Executable(); err == nil {
 		ExePath = exePath
 	}
