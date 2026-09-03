@@ -185,6 +185,8 @@ docs(
         "//g3doc/user_guide/quick_start:kubernetes",
         "//g3doc/user_guide/quick_start:oci",
         "//g3doc/user_guide/sdk:go",
+        "//g3doc/user_guide/sdk:python",
+        "//g3doc/user_guide/sdk:python_quickstart",
         "//g3doc/user_guide/sdk:quickstart",
         "//g3doc/user_guide/tutorials:cni",
         "//g3doc/user_guide/tutorials:docker",
