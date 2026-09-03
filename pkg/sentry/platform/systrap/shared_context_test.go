@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -113,6 +114,86 @@ func TestSleepOnStateRecoveredContext(t *testing.T) {
 	<-stateChanged
 	if err != nil {
 		t.Fatalf("sleepOnStateWithTimeout got error %v, want nil", err)
+	}
+}
+
+func TestSleepOnStateDeadSubprocess(t *testing.T) {
+	sc := newTestSharedContext(t)
+	sc.subprocess.dead.Store(true)
+
+	err := sc.sleepOnState(sysmsg.ContextStateNone)
+	if !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("sleepOnState got error %v, want %v", err, errDeadSubprocess)
+	}
+}
+
+func TestWaitOnStateDeadSubprocess(t *testing.T) {
+	sc := newTestSharedContext(t)
+	sc.subprocess.dead.Store(true)
+
+	err := sc.subprocess.waitOnState(sc)
+	if !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("waitOnState got error %v, want %v", err, errDeadSubprocess)
+	}
+}
+
+func TestKickSysmsgThreadDeadSubprocess(t *testing.T) {
+	sc := newTestSharedContext(t)
+	sc.subprocess.dead.Store(true)
+
+	if sc.subprocess.kickSysmsgThread() {
+		t.Fatalf("kickSysmsgThread got true, want false when subprocess is dead")
+	}
+}
+
+func TestWithAliveRLockDeadSubprocess(t *testing.T) {
+	s := &subprocess{}
+	s.dead.Store(true)
+
+	called := false
+	err := s.withAliveRLock(func() error {
+		called = true
+		return nil
+	})
+	if !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("withAliveRLock got error %v, want %v", err, errDeadSubprocess)
+	}
+	if called {
+		t.Fatalf("withAliveRLock executed callback when dead")
+	}
+}
+
+func TestSyscallDeadSubprocess(t *testing.T) {
+	s := &subprocess{}
+	s.dead.Store(true)
+
+	if _, err := s.syscall(unix.SYS_MMAP); !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("syscall got error %v, want %v", err, errDeadSubprocess)
+	}
+}
+
+func TestCreateSysmsgThreadDeadSubprocess(t *testing.T) {
+	s := &subprocess{}
+	s.dead.Store(true)
+
+	if err := s.createSysmsgThread(); !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("createSysmsgThread got error %v, want %v", err, errDeadSubprocess)
+	}
+}
+
+func TestReleaseDeadSubprocessDecRefs(t *testing.T) {
+	sc := newTestSharedContext(t)
+	s := sc.subprocess
+	s.subprocessRefs.InitRefs()
+	s.dead.Store(true)
+
+	released := false
+	// Set ref count to 1 and verify DecRef fires.
+	s.DecRef(func() {
+		released = true
+	})
+	if !released {
+		t.Fatalf("expected subprocess to be released")
 	}
 }
 

@@ -85,6 +85,9 @@ const (
 func (s *subprocess) getSharedContext() (*sharedContext, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.dead.Load() {
+		return nil, errDeadSubprocess
+	}
 
 	id, ok := s.threadContextPool.Get()
 	if !ok {
@@ -122,6 +125,9 @@ func (sc *sharedContext) isActiveInSubprocess(s *subprocess) bool {
 }
 
 func (sc *sharedContext) interruptStub() (*thread, error) {
+	if sc.subprocess.dead.Load() {
+		return nil, errDeadSubprocess
+	}
 	// If this context is not being worked on right now we need to mark it as
 	// interrupted so the next executor does not start working on it.
 	atomic.StoreUint32(&sc.shared.Interrupt, 1)
@@ -155,14 +161,7 @@ func (sc *sharedContext) interruptStub() (*thread, error) {
 
 // killSubprocess marks the subprocess dead and kills its syscall thread.
 func (sc *sharedContext) killSubprocess() {
-	s := sc.subprocess
-	s.dead.Store(true)
-	if !sc.shared.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
-		s.syscallThread.thread.Warningf("failed to set context state to ContextStateUnexpectedDeath; context state was %v", sc.state())
-	}
-	s.syscallThreadMu.Lock()
-	defer s.syscallThreadMu.Unlock()
-	s.syscallThread.thread.kill()
+	sc.subprocess.kill()
 }
 
 // NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
@@ -254,7 +253,11 @@ const (
 )
 
 var (
-	errDeadSubprocess = fmt.Errorf("subprocess died")
+	errDeadSubprocess        = fmt.Errorf("subprocess died")
+	errDeadSubprocessContext = &platform.ContextError{
+		Err:   errDeadSubprocess,
+		Errno: unix.ECHILD,
+	}
 	errNoStubThread   = fmt.Errorf("no stub thread to interrupt")
 	errStubThreadGone = fmt.Errorf("stub thread does not exist")
 	errStuckContext   = fmt.Errorf("systrap context is stuck")
@@ -280,6 +283,9 @@ func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuc
 	interruptsSent := 0
 	deadline := time.Now().Add(stuckTimeout)
 	for sc.state() == state {
+		if sc.subprocess.dead.Load() {
+			return errDeadSubprocess
+		}
 		errno := sc.shared.SleepOnState(state, &timeout)
 		if errno == 0 {
 			continue
