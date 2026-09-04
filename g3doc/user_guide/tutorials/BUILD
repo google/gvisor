@@ -56,6 +56,15 @@ doc(
 )
 
 doc(
+    name = "deepseek_harness",
+    src = "deepseek-harness.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/deepseek-harness/",
+    subcategory = "Tutorials",
+    weight = "45",
+)
+
+doc(
     name = "cni",
     src = "cni.md",
     category = "User Guide",
