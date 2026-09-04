@@ -246,6 +246,8 @@ func (i *taskOwnedInode) Valid(ctx context.Context, parent *kernfs.Dentry, name 
 }
 
 // Stat implements kernfs.Inode.Stat.
+//
+// +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	stat, err := i.Inode.Stat(ctx, fs, opts)
 	if err != nil {
@@ -264,12 +266,15 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 }
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
+//
+// +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
 	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
 }
 
+// +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {
 	// By default, set the task owner as the file owner.
 	creds := i.owner.Credentials()

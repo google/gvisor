@@ -44,30 +44,38 @@ type Kcov struct {
 	// mf stores application memory. It is immutable after creation.
 	mf *pgalloc.MemoryFile
 
-	// mu protects all of the fields below.
 	mu sync.RWMutex
 
 	// mode is the current kcov mode.
+	//
+	// +checklocks:mu
 	mode uint8
 
 	// size is the size of the mapping through which the kernel conveys coverage
 	// information to userspace.
+	//
+	// +checklocks:mu
 	size uint64
 
 	// owningTask is the task that currently owns coverage data on the system. The
 	// interface for kcov essentially requires that coverage is only going to a
 	// single task. Note that kcov should only generate coverage data for the
 	// owning task, but we currently generate global coverage.
+	//
+	// +checklocks:mu
 	owningTask *Task
 
 	// count is a locally cached version of the first uint64 in the kcov data,
 	// which is the number of subsequent entries representing PCs.
 	//
-	// It is used with kcovInode.countBlock(), to copy in/out the first element of
+	// It is used with Kcov.countBlock(), to copy in/out the first element of
 	// the actual data in an efficient manner, avoid boilerplate, and prevent
 	// accidental garbage escapes by the temporary counts.
+	//
+	// +checklocks:mu
 	count uint64
 
+	// +checklocks:mu
 	mappable *mm.SpecialMappable
 }
 
@@ -85,6 +93,9 @@ var coveragePool = sync.Pool{
 }
 
 // TaskWork implements TaskWorker.TaskWork.
+//
+// +checklocksexclude:kcov.mu
+// +checklocksexclude:t.taskWorkMu
 func (kcov *Kcov) TaskWork(t *Task) {
 	kcov.mu.Lock()
 	defer kcov.mu.Unlock()
@@ -120,6 +131,8 @@ func (kcov *Kcov) TaskWork(t *Task) {
 }
 
 // InitTrace performs the KCOV_INIT_TRACE ioctl.
+//
+// +checklocksexclude:kcov.mu
 func (kcov *Kcov) InitTrace(size uint64) error {
 	kcov.mu.Lock()
 	defer kcov.mu.Unlock()
@@ -146,6 +159,8 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 }
 
 // EnableTrace performs the KCOV_ENABLE_TRACE ioctl.
+//
+// +checklocksexclude:kcov.mu
 func (kcov *Kcov) EnableTrace(ctx context.Context, traceKind uint8) error {
 	t := TaskFromContext(ctx)
 	if t == nil {
@@ -185,6 +200,8 @@ func (kcov *Kcov) EnableTrace(ctx context.Context, traceKind uint8) error {
 }
 
 // DisableTrace performs the KCOV_DISABLE_TRACE ioctl.
+//
+// +checklocksexclude:kcov.mu
 func (kcov *Kcov) DisableTrace(ctx context.Context) error {
 	kcov.mu.Lock()
 	defer kcov.mu.Unlock()
@@ -209,6 +226,8 @@ func (kcov *Kcov) DisableTrace(ctx context.Context) error {
 // Clear resets the mode and clears the owning task and memory mapping for kcov.
 // It is called when the fd corresponding to kcov is closed. Note that the mode
 // needs to be set so that the next call to kcov.TaskWork() will exit early.
+//
+// +checklocksexclude:kcov.mu
 func (kcov *Kcov) Clear(ctx context.Context) {
 	kcov.mu.Lock()
 	kcov.mode = linux.KCOV_MODE_INIT
@@ -223,6 +242,8 @@ func (kcov *Kcov) Clear(ctx context.Context) {
 // OnTaskExit is called when the owning task exits. It is similar to
 // kcov.Clear(), except the memory mapping is not cleared, so that the same
 // mapping can be used in the future if kcov is enabled again by another task.
+//
+// +checklocksexclude:kcov.mu
 func (kcov *Kcov) OnTaskExit() {
 	kcov.mu.Lock()
 	kcov.mode = linux.KCOV_MODE_INIT
@@ -232,6 +253,8 @@ func (kcov *Kcov) OnTaskExit() {
 
 // ConfigureMMap is called by the vfs.FileDescription for this kcov instance to
 // implement vfs.FileDescription.ConfigureMMap.
+//
+// +checklocksexclude:kcov.mu
 func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	kcov.mu.Lock()
 	defer kcov.mu.Unlock()

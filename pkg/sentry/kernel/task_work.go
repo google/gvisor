@@ -28,6 +28,8 @@ type TaskWorker interface {
 // RegisterWork can be used to register additional task work that will be
 // performed prior to returning to user space. See TaskWorker.TaskWork for
 // semantics regarding registration.
+//
+// +checklocksexclude:t.taskWorkMu
 func (t *Task) RegisterWork(work TaskWorker) {
 	t.taskWorkMu.Lock()
 	defer t.taskWorkMu.Unlock()
