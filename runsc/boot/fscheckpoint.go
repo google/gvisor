@@ -88,6 +88,8 @@ func GetAnnotationFSCheckpointDirect(spec *specs.Spec) bool {
 }
 
 // FSSave implements kernel.Saver.FSSave.
+//
+// +checklocksexclude:l.k.fsSaveMu
 func (l *Loader) FSSave() error {
 	l.mu.Lock()
 	fsSaveFDs := l.fsSaveFDs

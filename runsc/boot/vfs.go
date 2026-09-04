@@ -270,6 +270,8 @@ func rdmaproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem
 	return nil
 }
 
+// +checklocksexclude:mntr.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:mntr.l.fsRestore.apfl.mu
 func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
 	// Create context with root credentials to mount the filesystem (the current
 	// user may not be privileged enough).
@@ -565,6 +567,8 @@ func getMountAccessType(conf *config.Config, hint *MountHint) config.FileAccessT
 	return conf.FileAccessMounts
 }
 
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Credentials, spec *specs.Spec, conf *config.Config, rootProcArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
 	log.Infof("Configuring container's file system")
 
@@ -600,6 +604,9 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 }
 
 // createMountNamespace creates the container's root mount and namespace.
+//
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) createMountNamespace(ctx context.Context, spec *specs.Spec, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	ioFD := c.goferFDs.remove()
 	rootfsConf := c.goferMountConfs[0]
@@ -719,6 +726,9 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, spec *specs
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
+//
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf specutils.GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
@@ -865,6 +875,8 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	return &overlayOpts, cu.Release(), nil
 }
 
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, timeline *timing.Timeline) error {
 	mounts, err := c.prepareMounts()
 	if err != nil {
@@ -1007,6 +1019,8 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 	return linux.FileMode(stat.Mode), nil
 }
 
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
 	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
 	if err != nil {
@@ -1071,6 +1085,9 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
+//
+// +checklocksexclude:fsr.apfl.amflsMu
+// +checklocksexclude:fsr.apfl.mu
 func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore, rdmaSysfs *rdma.Snapshot) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
@@ -1220,6 +1237,8 @@ func parseKeyValue(s string) (string, string, bool) {
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
 }
 
+// +checklocksexclude:fsr.apfl.amflsMu
+// +checklocksexclude:fsr.apfl.mu
 func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, error) {
 	pagesMetadataReader, pagesFileOffset, onLoadEnd, err := fsr.memoryFileLoadArgs(resourceID, cid)
 	if err != nil {
@@ -1266,6 +1285,9 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.
+//
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
 	for _, m := range c.mounts {
 		// m.Destination has been cleaned, so it's to use equality here.
@@ -1330,6 +1352,8 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 	}
 }
 
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) getSharedMount(ctx context.Context, spec *specs.Spec, conf *config.Config, mount *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
 	sharedMount, ok := c.sharedMounts[mount.hint.Mount.Source]
 	if ok {
@@ -1593,6 +1617,9 @@ func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials)
 // container. The cgroup submounts are created under the root controller mount
 // with containerID as the directory name and then bind mounts this directory
 // inside the container's mount namespace.
+//
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) error {
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
@@ -1662,6 +1689,9 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
 
 // mountSharedMaster mounts the master of a volume that is shared among
 // containers in a pod.
+//
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Spec, conf *config.Config, mntInfo *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
@@ -1788,6 +1818,9 @@ func (c *containerMounter) makeMountPoint(
 
 // configureRestore returns an updated context.Context including filesystem
 // state used by restore defined by conf.
+//
+// +checklocksexclude:c.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:c.l.fsRestore.apfl.mu
 func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
 	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
