@@ -183,6 +183,17 @@ const (
 	IFLA_INFO_SLAVE_DATA = 5
 )
 
+// Interface operational states (RFC 2863), from uapi/linux/if_link.h.
+const (
+	IF_OPER_UNKNOWN        = 0
+	IF_OPER_NOTPRESENT     = 1
+	IF_OPER_DOWN           = 2
+	IF_OPER_LOWERLAYERDOWN = 3
+	IF_OPER_TESTING        = 4
+	IF_OPER_DORMANT        = 5
+	IF_OPER_UP             = 6
+)
+
 // Virtuall ethernet attributes, from uapi/linux/veth.h.
 const (
 	VETH_INFO_PEER = 1
