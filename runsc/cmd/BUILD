@@ -109,6 +109,7 @@ go_test(
         "delete_test.go",
         "exec_test.go",
         "features_test.go",
+        "fscheckpoint_test.go",
         "gofer_test.go",
         "install_test.go",
         "list_test.go",
@@ -126,6 +127,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",

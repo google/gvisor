@@ -37,6 +37,13 @@ const (
 // Files specific to filesystem checkpoints (see fscheckpoint package for
 // details):
 const (
+	FSCheckpointDir              = "fs"
 	FSCheckpointManifestFileName = "fscheckpoint.pb"
 	FSCheckpointMultiTarFileName = "multitar.img"
+
+	// Paths for split filesystem checkpoint files when stored under an 'fs/' subpath:
+	FSCheckpointManifestPath      = "fs/" + FSCheckpointManifestFileName
+	FSCheckpointMultiTarPath      = "fs/" + FSCheckpointMultiTarFileName
+	FSCheckpointPagesMetadataPath = "fs/" + PagesMetadataFileName
+	FSCheckpointPagesPath         = "fs/" + PagesFileName
 )
