@@ -625,6 +625,19 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		timer:      timer,
 	}
 
+	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
+	if err != nil {
+		return fmt.Errorf("creating statefile reader: %w", err)
+	}
+	stateFile = nil
+	timer.Reached("created statefile reader")
+
+	checkpointVersion := cm.restorer.metadata[VersionKey]
+	currentVersion := version.Version()
+	if checkpointVersion != currentVersion {
+		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
+	}
+
 	// Create the main MemoryFile.
 	cm.restorer.mainMF, err = createMemoryFile(cm.l.root.conf.AppHugePages, cm.l.hostTHP)
 	if err != nil {
@@ -639,13 +652,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		pagesFile = nil
 		timer.Reached("created async MF loader")
 	}
-
-	cm.restorer.stateFile, cm.restorer.metadata, err = state.NewStatefileReader(stateFile /* transfers ownership on success */, nil)
-	if err != nil {
-		return fmt.Errorf("creating statefile reader: %w", err)
-	}
-	stateFile = nil
-	timer.Reached("created statefile reader")
 
 	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoringUnstarted
@@ -686,12 +692,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 		return err
 	}
 	cm.restorer.checkpointedSpecs = specs
-
-	checkpointVersion := cm.restorer.metadata[VersionKey]
-	currentVersion := version.Version()
-	if checkpointVersion != currentVersion {
-		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
-	}
 	timer.Reached("restorer initialized")
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
 }
