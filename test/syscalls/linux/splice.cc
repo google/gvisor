@@ -20,12 +20,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/memory_util.h"
 #include "test/util/signal_util.h"

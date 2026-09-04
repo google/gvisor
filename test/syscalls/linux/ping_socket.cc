@@ -25,10 +25,10 @@
 #include <cstring>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
 #include "absl/strings/str_join.h"
 #include "absl/types/optional.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/socket_util.h"
@@ -586,8 +586,7 @@ std::string TestDescription(
   auto [socket_factory, test_case] = info.param;
   std::string name = absl::StrJoin(
       {socket_factory.description, test_case.bind_to.description}, "_");
-  absl::c_replace_if(
-      name, [](char c) { return !std::isalnum(c); }, '_');
+  absl::c_replace_if(name, [](char c) { return !std::isalnum(c); }, '_');
   return name;
 }
 

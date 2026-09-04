@@ -23,10 +23,10 @@
 #include <cstring>
 #include <vector>
 
-#include "gmock/gmock.h"
 #include "absl/strings/str_cat.h"
 #include "absl/synchronization/notification.h"
 #include "benchmark/benchmark.h"
+#include "gmock/gmock.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"

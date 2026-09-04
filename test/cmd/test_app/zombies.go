@@ -58,7 +58,7 @@ func (*zombieTest) Name() string {
 	return "zombie_test"
 }
 
-// Synopsis implements subcommands.Command.Synopsys.
+// Synopsis implements subcommands.Command.Synopsis.
 func (*zombieTest) Synopsis() string {
 	return "creates an orphaned grandchild and expects to be reparented and reaped."
 }

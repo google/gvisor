@@ -18,8 +18,8 @@
 
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
+#include "gtest/gtest.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

@@ -25,9 +25,9 @@
 
 #include <iterator>
 
+#include "absl/base/macros.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
 #include "test/util/cleanup.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"

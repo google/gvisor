@@ -14,8 +14,8 @@
 
 #include <sched.h>
 
-#include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

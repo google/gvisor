@@ -17,8 +17,8 @@
 
 #include <algorithm>
 
-#include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
+#include "gtest/gtest.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"

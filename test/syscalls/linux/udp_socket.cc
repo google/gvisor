@@ -45,10 +45,10 @@
 #include <linux/sockios.h>
 #endif
 
-#include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"

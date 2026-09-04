@@ -28,12 +28,12 @@
 #include <memory>
 #include <utility>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/fs_util.h"
 #include "test/util/logging.h"
@@ -1167,8 +1167,7 @@ TEST(PtraceTest, GetSigMask) {
 
     // Install a signal handler for kBlockSignal to avoid termination and block
     // it.
-    TEST_PCHECK(signal(
-                    kBlockSignal, +[](int signo) {}) != SIG_ERR);
+    TEST_PCHECK(signal(kBlockSignal, +[](int signo) {}) != SIG_ERR);
     MaybeSave();
     TEST_PCHECK(sigprocmask(SIG_SETMASK, &blocked, nullptr) == 0);
     MaybeSave();
@@ -2501,8 +2500,7 @@ int main(int argc, char** argv) {
   }
 
   if (absl::GetFlag(FLAGS_ptrace_test_prctl_set_ptracer_and_exec_non_leader)) {
-    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(
-        fd);
+    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(fd);
   }
 
   if (absl::GetFlag(

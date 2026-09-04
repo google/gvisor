@@ -69,6 +69,14 @@ env:
   SYSCALL_TEST_FILTERS: ''
 
 steps:
+  # Source-level lint checks.
+  - <<: *common
+    <<: *source_test
+    label: ":lipstick: Lint"
+    command: make lint
+    agents:
+      queue: "default"
+
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
     <<: *source_test

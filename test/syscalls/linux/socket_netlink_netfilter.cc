@@ -36,11 +36,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_netfilter_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"

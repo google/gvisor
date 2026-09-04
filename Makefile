@@ -906,6 +906,16 @@ tag: ## Creates and pushes a release tag.
 	@tools/tag_release.sh "$(RELEASE_COMMIT)" "$(RELEASE_NAME)" "$(RELEASE_NOTES)"
 .PHONY: tag
 
-codespell:
-	codespell
-.PHONY: codespell
+##
+## Lint targets.
+##
+##   These run the source-level linters that live outside the Bazel build.
+##   Deep Go analysis is owned by gVisor nogo.
+##
+lint: ## Runs the source linters.
+	@tools/lint.sh
+.PHONY: lint
+
+lint-fix: ## Reformats sources in place.
+	@tools/lint.sh --fix
+.PHONY: lint-fix

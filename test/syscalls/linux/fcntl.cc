@@ -29,8 +29,6 @@
 #include <string>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "absl/base/port.h"
 #include "absl/flags/flag.h"
@@ -38,6 +36,8 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
@@ -2196,8 +2196,7 @@ int set_lock() {
   if (socket_fd != -1) {
     // Send signal to the parent.
     char c = 0;
-    gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&c),
-                                   sizeof(c));
+    gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&c), sizeof(c));
   }
   // Test the fcntl.
   int err = 0;
@@ -2219,7 +2218,7 @@ int set_lock() {
   // to execute this syscall.
   if (socket_fd != -1) {
     gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&usec),
-                                   sizeof(usec));
+                             sizeof(usec));
     close(socket_fd);
   }
 

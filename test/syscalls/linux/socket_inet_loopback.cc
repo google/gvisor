@@ -28,12 +28,12 @@
 #include <utility>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/util/file_descriptor.h"
@@ -1213,7 +1213,7 @@ TEST_P(SocketInetLoopbackTest, TCPResetAfterClose) {
   // have timed out and closed the socket.
   EXPECT_THAT(RetryEINTR(send)(accepted.get(), &data, sizeof(data), 0),
               SyscallSucceeds());
-  // Sleep for a shortwhile to get a RST back.
+  // Sleep for a short while to get a RST back.
   absl::SleepFor(absl::Seconds(1));
 
   // Try writing again and we should get an EPIPE back.

@@ -26,8 +26,6 @@
 #include <limits>
 #include <string>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/random/random.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
@@ -35,6 +33,8 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/posix_error.h"
 #include "test/util/thread_util.h"
 

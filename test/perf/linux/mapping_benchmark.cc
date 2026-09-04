@@ -19,8 +19,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "gmock/gmock.h"
 #include "benchmark/benchmark.h"
+#include "gmock/gmock.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"

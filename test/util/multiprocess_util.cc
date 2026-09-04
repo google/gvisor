@@ -25,9 +25,9 @@
 #include <functional>
 #include <string>
 
-#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"

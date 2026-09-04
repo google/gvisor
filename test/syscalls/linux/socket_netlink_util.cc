@@ -26,9 +26,9 @@
 #include <utility>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
+#include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"

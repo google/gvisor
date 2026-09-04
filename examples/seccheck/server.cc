@@ -34,11 +34,11 @@
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
+#include "google/protobuf/text_format.h"
 #include "pkg/sentry/seccheck/points/common.pb.h"
 #include "pkg/sentry/seccheck/points/container.pb.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
 #include "pkg/sentry/seccheck/points/syscall.pb.h"
-#include "google/protobuf/text_format.h"
 
 namespace {
 

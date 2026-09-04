@@ -16,9 +16,9 @@
 #include <linux/sem.h>
 #include <linux/shm.h>
 
-#include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
+#include "gtest/gtest.h"
 #include "test/util/fs_util.h"
 #include "test/util/test_util.h"
 

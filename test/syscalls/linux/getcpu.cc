@@ -14,9 +14,9 @@
 
 #include <sched.h>
 
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

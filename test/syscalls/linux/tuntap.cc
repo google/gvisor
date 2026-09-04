@@ -29,10 +29,10 @@
 #include <cstddef>
 #include <cstring>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_split.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"

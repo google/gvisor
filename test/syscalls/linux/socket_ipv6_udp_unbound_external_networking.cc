@@ -23,9 +23,9 @@
 #include <optional>
 #include <utility>
 
+#include "absl/cleanup/cleanup.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/cleanup/cleanup.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"

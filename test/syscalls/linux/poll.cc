@@ -21,10 +21,10 @@
 #include <algorithm>
 #include <iostream>
 
-#include "gtest/gtest.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/base_poll_test.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"

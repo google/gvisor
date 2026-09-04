@@ -25,9 +25,9 @@
 #include <cstdint>
 #include <functional>
 
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/memory_util.h"
 #include "test/util/socket_util.h"
@@ -233,9 +233,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
 TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());

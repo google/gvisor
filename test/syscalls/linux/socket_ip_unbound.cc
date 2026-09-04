@@ -297,7 +297,7 @@ TEST_P(IPUnboundSocketTest, LargeTOSOptionSize) {
                 SyscallSucceedsWithValue(0));
     int get = -1;
     socklen_t get_sz = i;
-    // We expect the system call handler to only copy atmost sizeof(int) bytes
+    // We expect the system call handler to only copy at most sizeof(int) bytes
     // as asserted by the check below. Hence, we do not expect the copy to
     // overflow in getsockopt.
     ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),

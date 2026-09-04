@@ -22,9 +22,9 @@
 
 #include <ctime>
 
+#include "absl/strings/numbers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/numbers.h"
 #include "test/util/logging.h"
 #include "test/util/pty_util.h"
 #include "test/util/test_util.h"

@@ -22,9 +22,9 @@
 #include <utility>
 #include <variant>
 
+#include "absl/base/attributes.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/attributes.h"
 #include "test/util/logging.h"
 
 namespace gvisor {

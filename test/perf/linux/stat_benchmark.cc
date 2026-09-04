@@ -16,9 +16,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"

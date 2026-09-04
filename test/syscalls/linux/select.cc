@@ -21,8 +21,8 @@
 #include <csignal>
 #include <cstdio>
 
-#include "gtest/gtest.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/base_poll_test.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/multiprocess_util.h"

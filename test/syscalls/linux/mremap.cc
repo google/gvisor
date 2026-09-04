@@ -22,8 +22,8 @@
 
 #include <string>
 
-#include "gmock/gmock.h"
 #include "absl/strings/string_view.h"
+#include "gmock/gmock.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"

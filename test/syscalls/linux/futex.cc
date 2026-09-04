@@ -28,10 +28,10 @@
 #include <memory>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/memory_util.h"

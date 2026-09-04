@@ -14,10 +14,10 @@
 
 #include <signal.h>
 
-#include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/logging.h"
 
 extern bool FLAGS_gtest_list_tests;

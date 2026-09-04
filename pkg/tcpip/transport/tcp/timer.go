@@ -39,13 +39,13 @@ const (
 // timer is a timer implementation that reduces the interactions with the
 // clock timer infrastructure by letting timers run (and potentially
 // eventually expire) even if they are stopped. It makes it cheaper to
-// disable/reenable timers at the expense of spurious wakes. This is useful for
-// cases when the same timer is disabled/reenabled repeatedly with relatively
+// disable/re-enable timers at the expense of spurious wakes. This is useful for
+// cases when the same timer is disabled/re-enabled repeatedly with relatively
 // long timeouts farther into the future.
 //
 // TCP retransmit timers benefit from this because they the timeouts are long
 // (currently at least 200ms), and get disabled when acks are received, and
-// reenabled when new pending segments are sent.
+// re-enabled when new pending segments are sent.
 //
 // It is advantageous to avoid interacting with the clock because it acquires
 // a global mutex and performs O(log n) operations, where n is the global number

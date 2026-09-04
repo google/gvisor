@@ -20,10 +20,10 @@
 #include <cstdlib>
 #include <ctime>
 
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/logging.h"
 #include "test/util/thread_util.h"
 

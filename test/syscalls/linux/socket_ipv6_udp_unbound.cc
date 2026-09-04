@@ -28,8 +28,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include "gtest/gtest.h"
 #include "absl/memory/memory.h"
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"

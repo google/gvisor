@@ -61,7 +61,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	// Test 1: Check for receive of a zero window probe, record the duration for
 	//         probe to be sent.
 	//
-	// Advertize zero window to the dut.
+	// Advertise zero window to the dut.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 
 	// Expected sequence number of the zero window probe.
@@ -92,7 +92,7 @@ func TestZeroWindowProbe(t *testing.T) {
 	// Test 2: Check if the dut recovers on advertizing non-zero receive window.
 	//         and sends out the sample payload after the send window opens.
 	//
-	// Advertize non-zero window to the dut and ack the zero window probe.
+	// Advertise non-zero window to the dut and ack the zero window probe.
 	conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	// Expect the dut to recover and transmit data.
 	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {

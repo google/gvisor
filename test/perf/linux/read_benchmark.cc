@@ -17,8 +17,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
+#include "gtest/gtest.h"
 #include "test/util/fs_util.h"
 #include "test/util/logging.h"
 #include "test/util/temp_path.h"
