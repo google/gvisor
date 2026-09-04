@@ -143,7 +143,12 @@ type Watchdog struct {
 	// spamming the log.
 	lastStackDump time.Time
 
-	// lastRun is set to the last time the watchdog executed a monitoring loop.
+	// lastRun is the CPU-clock time of the last monitoring pass.
+	//
+	// Start initializes it before launching the loop, which then owns it.
+	// Stop holds mu until the loop acknowledges its last access, preventing a
+	// later Start from resetting it concurrently. checklocks cannot express
+	// this ownership handoff.
 	lastRun ktime.Time
 
 	// mu protects the fields below.
@@ -197,7 +202,7 @@ func (w *Watchdog) Start() {
 		log.Infof("Watchdog task timeout disabled")
 		return
 	}
-	w.lastRun = w.k.MonotonicClock().Now()
+	w.lastRun = w.k.CPUClockNow()
 
 	log.Infof("Starting watchdog, period: %v, timeout: %v, action: %v", w.period, w.TaskTimeout, w.TaskTimeoutAction)
 	go w.loop() // S/R-SAFE: watchdog is stopped during save and restarted after restore.
@@ -364,7 +369,7 @@ func (w *Watchdog) reportStuckWatchdog() {
 	buf.WriteString("Watchdog goroutine is stuck")
 	var stuckTasks map[int64]struct{}
 	forceStackDump := false
-	w.doAction(w.StartupTimeoutAction, forceStackDump, stuckTasks, &buf)
+	w.doAction(w.TaskTimeoutAction, forceStackDump, stuckTasks, &buf)
 }
 
 // doAction will take the given action. If the action is LogWarning, the stack
