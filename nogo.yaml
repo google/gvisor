@@ -259,6 +259,8 @@ analyzers:
         - pkg/sentry/fs/fs.go          # Intentional.
         - pkg/sentry/fs/gofer/inode.go # Intentional.
         - pkg/refs/refcounter_test.go  # Intentional.
+        # Lock-order validator tests intentionally have no protected data.
+        - '^pkg/sync/locking/lockdep_test\.go:'
   SA4016: # Useless bitwise operations.
     internal:
       exclude:
