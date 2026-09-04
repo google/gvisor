@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -97,5 +98,39 @@ func TestConnectionedEndpointClosedHostReadiness(t *testing.T) {
 	want := (waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventRdHUp) & mask
 	if got != want {
 		t.Fatalf("Readiness(%v) for closed host endpoint = %v, want %v", mask, got, want)
+	}
+}
+
+// TestSeveredRecvSend verifies that an SCMSender whose host fd was severed by
+// beforeSave reports EOF on receive and EPIPE on send, never EBADF: the
+// application's fd is still valid even though the sentry's host fd is gone.
+func TestSeveredRecvSend(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("Socketpair failed: %v", err)
+	}
+	defer unix.Close(fds[1])
+
+	ep, serr := NewSCMSender(fds[0], &waiter.Queue{}, "test-addr")
+	if serr != nil {
+		unix.Close(fds[0])
+		t.Fatalf("NewSCMSender failed: %v", serr)
+	}
+	if err := ep.Init(); err != nil {
+		unix.Close(fds[0])
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	ep.beforeSave()
+	if ep.fd != -1 {
+		t.Fatalf("after beforeSave, ep.fd = %d, want -1", ep.fd)
+	}
+
+	buf := [][]byte{make([]byte, 8)}
+	if _, _, serr := ep.Recv(nil, buf, RecvArgs{}); serr != syserr.ErrClosedForReceive {
+		t.Errorf("Recv on severed endpoint returned %v, want %v", serr, syserr.ErrClosedForReceive)
+	}
+	if _, _, serr := ep.Send(nil, [][]byte{{1}}, ControlMessages{}, Address{}); serr != syserr.ErrClosedForSend {
+		t.Errorf("Send on severed endpoint returned %v, want %v", serr, syserr.ErrClosedForSend)
 	}
 }
