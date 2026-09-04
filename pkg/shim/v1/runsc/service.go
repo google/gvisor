@@ -123,6 +123,8 @@ type runscService struct {
 	root string
 
 	// runtime is runsc runtime configured for sandbox.
+	//
+	// +checklocks:mu
 	runtime *runsccmd.Runsc
 
 	shutdown shutdown.Service
@@ -920,11 +922,16 @@ func (g *GvisorTaskServer) State(ctx context.Context, req *pb.StateRequest) (*pb
 }
 
 // Version implements taskServer.GvisorTaskServiceExt.
+//
+// +checklocksexclude:g.s.mu
 func (g *GvisorTaskServer) Version(ctx context.Context, req *pb.VersionRequest) (*pb.VersionResponse, error) {
-	cmd := exec.Command("runsc", "-version")
-	if g.s.runtime.Command != "" {
-		cmd = exec.Command(g.s.runtime.Command, "-version")
+	g.s.mu.Lock()
+	command := g.s.runtime.Command
+	g.s.mu.Unlock()
+	if command == "" {
+		command = runsccmd.DefaultCommand
 	}
+	cmd := exec.Command(command, "-version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runsc version: %w, output: %s", err, string(out))
