@@ -90,22 +90,11 @@ def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **
         **kwargs
     )
     if nogo:
-        # Note that the nogo rule applies only for go_library and go_test
-        # targets, therefore we construct a library from the binary sources.
-        # This is done because the binary may not be in a form that objdump
-        # supports (i.e. a pure Go binary).
-        _go_library(
-            name = name + "_nogo_library",
-            srcs = kwargs.get("srcs", []),
-            deps = kwargs.get("deps", []),
-            embedsrcs = kwargs.get("embedsrcs", []),
-            testonly = 1,
-        )
         nogo_test(
             name = name + "_nogo",
             config = "//:nogo_config",
             srcs = kwargs.get("srcs", []),
-            deps = [":" + name + "_nogo_library"],
+            deps = [":" + name],
             tags = ["nogo"],
         )
 
