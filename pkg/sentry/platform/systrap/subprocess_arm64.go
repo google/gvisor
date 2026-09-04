@@ -76,7 +76,27 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 
 // updateSyscallRegs updates registers after finishing sysemu.
 func updateSyscallRegs(regs *arch.Registers) {
-	// No special work is necessary.
+	// In the Linux kernel (arch/arm64/kernel/signal.c:do_signal), if in_syscall(regs)
+	// is true and regs[0] matches an internal syscall restart code, the kernel
+	// treats regs[0] as a return value and rewinds regs.Pc by 4 (SyscallWidth)
+	// to re-execute the svc instruction.
+	//
+	// Under systrap, seccomp traps the syscall via SIGSYS before the host kernel
+	// executes it. The host kernel's SECCOMP_RET_TRAP path restores regs[0] to
+	// orig_x0 via syscall_rollback(). On the way to delivering SIGSYS, do_signal()
+	// misinterprets this first argument as a syscall return value.
+	//
+	// Because SIGSYS is delivered without SA_RESTART, Linux's get_signal() reverts
+	// the restart decision for -ERESTARTSYS, -ERESTARTNOHAND, and -ERESTART_RESTARTBLOCK,
+	// resetting regs.Pc back to continue_addr. However, for -ERESTARTNOINTR, the
+	// kernel does not revert the restart, leaving regs.Pc pointing at the svc instruction.
+	//
+	// Check if regs[0] matches -ERESTARTNOINTR, and if so, restore the PC to
+	// continue_addr (regs.Pc + 4).
+	sysno := int32(regs.Regs[8])
+	if sysno >= 0 && int64(regs.Regs[0]) == -int64(ERESTARTNOINTR) {
+		regs.Pc += arch.SyscallWidth
+	}
 }
 
 // syscallReturnValue extracts a sensible return from registers.
