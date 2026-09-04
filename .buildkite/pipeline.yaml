@@ -14,7 +14,8 @@ _templates:
   source_test_presubmit: &source_test_presubmit
     if: build.env("STAGED_BINARIES") == null && build.branch != "master"
   source_test_continuous: &source_test_continuous
-    if: build.env("STAGED_BINARIES") == null && build.branch == "master"
+    # TODO: revert this after testing
+    if: build.env("STAGED_BINARIES") == null
   gpu_test: &gpu_test
     if: build.env("STAGED_BINARIES") == null && ( build.env("SKIP_GPU_TESTS") == null || build.message =~ /nvidia|nvproxy|gpu/i )
   gpu_test_continuous: &gpu_test_continuous
@@ -395,6 +396,25 @@ steps:
     agents:
       arch: "arm64"
       queue: "arm64"
+  # Against Linux release candidates on AMD64.
+  - <<: *common
+    <<: *source_test_continuous
+    label: ":linux: System call tests on release-candidate Linux (AMD64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,-runsc_slimvm syscall-tests
+    parallelism: 20
+    agents:
+      arch: "amd64"
+      queue: "rckernel"
+  # Against Linux release candidates on ARM64.
+  # TODO(b/546611123): Test kvm platform on arm64 against rc kernels.
+  - <<: *common
+    <<: *source_test_continuous
+    label: ":linux: System call tests on release-candidate Linux (ARM64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,runsc_ptrace,runsc_systrap syscall-tests
+    parallelism: 10
+    agents:
+      arch: "arm64"
+      queue: "rckernel-arm64"
   # With Save Restore on AMD64.
   - <<: *common
     <<: *source_test_continuous
