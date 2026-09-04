@@ -20,7 +20,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
-// afterLoad is invoked by stateify.
+// afterLoad is invoked by stateify before the restored context is in use.
+// The generated StateLoad caller's checklocks exemption covers this
+// prepublication access.
+//
+// +checklocks:aio.mu
 func (aio *AIOContext) afterLoad(context.Context) {
 	aio.requestReady = make(chan struct{}, 1)
 }
