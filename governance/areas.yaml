@@ -141,7 +141,6 @@ areas:
       - /.buildkite
       - /.github
       - /debian
-      - /images/agent
       - /tools/github
   - name: runsc
     enforced_review: false

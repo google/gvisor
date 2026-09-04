@@ -5,7 +5,6 @@
 /.buildkite/ @etienneperot @relkochta
 /.github/ @etienneperot @relkochta
 /debian/ @etienneperot @relkochta
-/images/agent/ @etienneperot @relkochta
 /tools/github/ @etienneperot @relkochta
 
 # Area: seccomp
