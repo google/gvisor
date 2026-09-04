@@ -16,10 +16,12 @@ package scsdk
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -30,9 +32,13 @@ import (
 type Fs struct {
 	content []byte
 	err     error
+	delay   time.Duration
 }
 
 func (f *Fs) Read(o *control.ReadOpts, _ *struct{}) error {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.err != nil {
 		return f.err
 	}
@@ -55,8 +61,13 @@ func (f *Fs) Read(o *control.ReadOpts, _ *struct{}) error {
 
 func setupTestServer(t *testing.T, content []byte, srvErr error) (*SandboxClient, func()) {
 	t.Helper()
+	return setupTestServerWithDelay(t, content, srvErr, 0)
+}
+
+func setupTestServerWithDelay(t *testing.T, content []byte, srvErr error, delay time.Duration) (*SandboxClient, func()) {
+	t.Helper()
 	srv := urpc.NewServer()
-	srv.Register(&Fs{content: content, err: srvErr})
+	srv.Register(&Fs{content: content, err: srvErr, delay: delay})
 
 	clientSock, serverSock, err := unet.SocketPair(false)
 	if err != nil {
@@ -224,5 +235,33 @@ func TestReadSocket(t *testing.T) {
 	}
 	if want := "socket"; string(got) != want {
 		t.Errorf("c.ReadFile got %q, want %q", string(got), want)
+	}
+}
+
+func TestReadFileContextCancel(t *testing.T) {
+	// Provide enough delay so the select statement hits ctx.Done() first.
+	c, cleanup := setupTestServerWithDelay(t, nil, nil, 5*time.Second)
+	defer cleanup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately.
+	cancel()
+
+	_, err := c.ReadFileWithContext(ctx, Options{Path: "/test"})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("ReadFileWithContext got err %v, want context.Canceled", err)
+	}
+}
+
+func TestReadFileContextTimeout(t *testing.T) {
+	c, cleanup := setupTestServerWithDelay(t, nil, nil, 5*time.Second)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := c.ReadFileWithContext(ctx, Options{Path: "/test"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("ReadFileWithContext got err %v, want context.DeadlineExceeded", err)
 	}
 }
