@@ -1091,7 +1091,11 @@ func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, async
 	log.Infof("Overall load took [%s] after async work", time.Since(loadStart))
 
 	// Now call TarRootfsUpperLayer on the root filesystem
-	root := k.GlobalInit().Leader().MountNamespace().Root(ctx)
+	mntns := k.GlobalInitMountNamespace()
+	if mntns == nil {
+		return fmt.Errorf("cannot serialize rootfs upper layer: sandbox has no root mount namespace")
+	}
+	root := mntns.Root(ctx)
 	defer root.DecRef(ctx)
 	ts, ok := root.Mount().Filesystem().Impl().(vfs.TarSerializer)
 	if !ok {
@@ -1248,12 +1252,11 @@ func (ctx *createProcessContext) Value(key any) any {
 		root := ctx.args.MountNamespace.Root(ctx)
 		return root
 	case vfs.CtxMountNamespace:
-		if ctx.kernel.globalInit == nil {
+		if ctx.args.MountNamespace == nil {
 			return nil
 		}
-		mntns := ctx.kernel.GlobalInit().Leader().MountNamespace()
-		mntns.IncRef()
-		return mntns
+		ctx.args.MountNamespace.IncRef()
+		return ctx.args.MountNamespace
 	case devutil.CtxDevGoferClient:
 		return ctx.kernel.GetDevGoferClient(ctx.kernel.ContainerName(ctx.args.ContainerID))
 	case inet.CtxStack:
@@ -1314,11 +1317,10 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	ctx := args.NewContext(k)
 	mntns := args.MountNamespace
 	if mntns == nil {
-		if k.globalInit == nil {
+		if mntns = k.globalInitMountNamespace(); mntns == nil {
 			return nil, 0, fmt.Errorf("mount namespace is nil")
 		}
 		// Add a reference to the namespace, which is transferred to the new process.
-		mntns = k.globalInit.Leader().MountNamespace()
 		mntns.IncRef()
 	}
 	// Get the root directory from the MountNamespace.
@@ -1458,7 +1460,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	// Success.
 	cu.Release()
 	tgid := k.tasks.Root.IDOfThreadGroup(tg)
-	if k.globalInit == nil {
+	// A namespace with a reserved init TID never gets a global init.
+	if k.globalInit == nil && !k.tasks.Root.noInit {
 		k.globalInit = tg
 	}
 	return tg, tgid, nil
@@ -1777,8 +1780,6 @@ func (k *Kernel) Unpause() {
 // SendExternalSignal injects a signal into the kernel.
 //
 // context is used only for debugging to describe how the signal was received.
-//
-// Preconditions: Kernel must have an init process.
 func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
@@ -1912,6 +1913,30 @@ func (k *Kernel) GlobalInit() *ThreadGroup {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.globalInit
+}
+
+// GlobalInitMountNamespace returns the mount namespace of the global init task
+// without taking a reference, or nil if there is none.
+func (k *Kernel) GlobalInitMountNamespace() *vfs.MountNamespace {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	return k.globalInitMountNamespace()
+}
+
+// globalInitMountNamespace returns the mount namespace of the global init
+// task, or nil if there is no global init or it has already exited.
+//
+// Does not take k.extMu; CreateProcess calls this while holding it.
+func (k *Kernel) globalInitMountNamespace() *vfs.MountNamespace {
+	tg := k.globalInit
+	if tg == nil {
+		return nil
+	}
+	leader := tg.Leader()
+	if leader == nil {
+		return nil
+	}
+	return leader.MountNamespace()
 }
 
 // TestOnlySetGlobalInit sets the thread group with ID 1 in the root PID namespace.
@@ -2139,16 +2164,17 @@ func (ctx *supervisorContext) Value(key any) any {
 		// The supervisor context is global root.
 		return auth.NewRootCredentials(ctx.Kernel.rootUserNamespace)
 	case vfs.CtxRoot:
-		if ctx.Kernel.globalInit == nil || ctx.Kernel.globalInit.Leader() == nil {
+		mntns := ctx.Kernel.globalInitMountNamespace()
+		if mntns == nil {
 			return vfs.VirtualDentry{}
 		}
-		root := ctx.Kernel.GlobalInit().Leader().MountNamespace().Root(ctx)
+		root := mntns.Root(ctx)
 		return root
 	case vfs.CtxMountNamespace:
-		if ctx.Kernel.globalInit == nil || ctx.Kernel.globalInit.Leader() == nil {
+		mntns := ctx.Kernel.globalInitMountNamespace()
+		if mntns == nil {
 			return nil
 		}
-		mntns := ctx.Kernel.GlobalInit().Leader().MountNamespace()
 		mntns.IncRef()
 		return mntns
 	case inet.CtxStack:
