@@ -79,14 +79,22 @@ func HaveEmitters() bool {
 }
 
 // multiEmitter is an Emitter that forwards messages to multiple Emitters.
+//
+// Emit and Close call constituent emitters synchronously with mu held. Those
+// callbacks must not reenter this multiEmitter. checklocks cannot recover that
+// owner through the Emitter interface.
 type multiEmitter struct {
-	// mu protects emitters.
 	mu sync.Mutex
+
 	// emitters is initialized lazily in AddEmitter.
+	//
+	// +checklocks:mu
 	emitters map[Emitter]struct{}
 }
 
 // Emit emits a message using all added emitters.
+//
+// +checklocksexclude:me.mu
 func (me *multiEmitter) Emit(msg proto.Message) (bool, error) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
@@ -114,6 +122,8 @@ func (me *multiEmitter) Emit(msg proto.Message) (bool, error) {
 }
 
 // AddEmitter adds a new emitter.
+//
+// +checklocksexclude:me.mu
 func (me *multiEmitter) AddEmitter(e Emitter) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
@@ -125,6 +135,8 @@ func (me *multiEmitter) AddEmitter(e Emitter) {
 
 // Close closes all emitters. If any Close call errors, it returns the first
 // one encountered.
+//
+// +checklocksexclude:me.mu
 func (me *multiEmitter) Close() error {
 	me.mu.Lock()
 	defer me.mu.Unlock()

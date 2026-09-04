@@ -57,20 +57,25 @@ type MetricsExportOpts struct {
 }
 
 var (
-	// lastOnlyMetricsMu protects the variables below.
 	lastOnlyMetricsMu sync.Mutex
 
 	// lastOnlyMetricsStr is the last value of the "only_metrics" parameter passed to
 	// MetricsExport. It is used to avoid re-compiling the regular expression on every
 	// request in the common case where a single metric scraper is scraping the sandbox
 	// metrics using the same filter in each request.
+	//
+	// +checklocks:lastOnlyMetricsMu
 	lastOnlyMetricsStr string
 
 	// lastOnlyMetrics is the compiled version of lastOnlyMetricsStr.
+	//
+	// +checklocks:lastOnlyMetricsMu
 	lastOnlyMetrics *regexp.Regexp
 )
 
 // filterFunc returns a filter function to filter relevant Prometheus metric names.
+//
+// +checklocksexclude:lastOnlyMetricsMu
 func (m *MetricsExportOpts) filterFunc() (func(*prometheus.Metric) bool, error) {
 	if m.OnlyMetrics == "" {
 		return nil, nil

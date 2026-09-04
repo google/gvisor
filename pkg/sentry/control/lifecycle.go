@@ -43,17 +43,22 @@ type Lifecycle struct {
 	// Kernel is the kernel where the tasks belong to.
 	Kernel *kernel.Kernel
 
-	// mu protects the fields below.
 	mu sync.RWMutex
 
 	// ShutdownCh is the channel used to signal the sentry to shutdown
 	// the sentry/sandbox.
+	//
+	// +checklocks:mu
 	ShutdownCh chan struct{}
 
 	// ContainerNamespacesMap maps container IDs to namespaces.
+	//
+	// +checklocks:mu
 	ContainerNamespacesMap map[string]ContainerNamespaces
 
 	// containerMap is a map of the container id and the container.
+	//
+	// +checklocks:mu
 	containerMap map[string]*Container
 }
 
@@ -88,6 +93,10 @@ type Container struct {
 	tg *kernel.ThreadGroup
 
 	// state is the current state of the container.
+	//
+	// It is initialized before publication in Lifecycle.containerMap and then
+	// protected by that Lifecycle's mu. Container does not store its owning
+	// Lifecycle, so checklocks cannot recover the mutex from map membership.
 	state containerState
 }
 
@@ -166,6 +175,7 @@ func (sca StartContainerArgs) String() string {
 	return string(b)
 }
 
+// +checklocksexclude:l.mu
 func (l *Lifecycle) updateContainerState(containerID string, newState containerState) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -199,6 +209,8 @@ func (l *Lifecycle) updateContainerState(containerID string, newState containerS
 }
 
 // StartContainer will start a new container in the sandbox.
+//
+// +checklocksexclude:l.mu
 func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	timeRequested := time.Now()
 	timeRequestReceived := &timestamppb.Timestamp{
@@ -405,6 +417,8 @@ func (l *Lifecycle) reap(containerID string, tg *kernel.ThreadGroup) {
 }
 
 // Shutdown sends signal to destroy the sentry/sandbox.
+//
+// +checklocksexclude:l.mu
 func (l *Lifecycle) Shutdown(_, _ *struct{}) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -415,6 +429,7 @@ func (l *Lifecycle) Shutdown(_, _ *struct{}) error {
 	return nil
 }
 
+// +checklocksexclude:l.mu
 func (l *Lifecycle) getInitContainerProcess(containerID string) (*kernel.ThreadGroup, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -433,6 +448,8 @@ type ContainerArgs struct {
 }
 
 // GetExitStatus returns the container exit status if it has stopped.
+//
+// +checklocksexclude:l.mu
 func (l *Lifecycle) GetExitStatus(args *ContainerArgs, status *uint32) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -457,6 +474,8 @@ func (l *Lifecycle) GetExitStatus(args *ContainerArgs, status *uint32) error {
 // Reap notifies the sandbox that the caller is interested in the exit status via
 // an exit event. The caller is responsible for handling any corresponding exit
 // events, especially if they're interested in waiting for the exit.
+//
+// +checklocksexclude:l.mu
 func (l *Lifecycle) Reap(args *ContainerArgs, _ *struct{}) error {
 	// Check if there are any real emitters registered. If there are no
 	// emitters, the caller will never be notified, so fail immediately.
@@ -493,6 +512,8 @@ func (l *Lifecycle) Reap(args *ContainerArgs, _ *struct{}) error {
 }
 
 // IsContainerRunning returns true if the container is running.
+//
+// +checklocksexclude:l.mu
 func (l *Lifecycle) IsContainerRunning(args *ContainerArgs, isRunning *bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -517,6 +538,8 @@ type SignalContainerArgs struct {
 
 // SignalContainer signals the container in multi-container mode. It returns error if the
 // container hasn't started or has exited.
+//
+// +checklocksexclude:l.mu
 func (l *Lifecycle) SignalContainer(args *SignalContainerArgs, _ *struct{}) error {
 	tg, err := l.getInitContainerProcess(args.ContainerID)
 	if err != nil {

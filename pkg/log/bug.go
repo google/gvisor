@@ -57,17 +57,23 @@ func reportBug(caller int, msg string, vars []any) {
 }
 
 var (
-	// warnedMu protects the variables below.
 	warnedMu sync.Mutex
-	// warnedSet is used to keep track of which WarnOnOnce calls have fired.
+
+	// warnedSet records call sites already reported by BugTracebackOnce and
+	// BugTracebackfOnce.
+	//
+	// +checklocks:warnedMu
 	warnedSet map[string]struct{}
 )
 
+// +checklocksexclude:warnedMu
+//
 //go:noinline
 func reportBugErrOnce(caller int, err error) {
 	reportBugOnce(caller+1, err.Error(), nil)
 }
 
+// +checklocksexclude:warnedMu
 func reportBugOnce(caller int, msg string, vars []any) {
 	var b strings.Builder
 	if _, file, line, ok := runtime.Caller(caller); ok {
