@@ -915,6 +915,13 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 	if !ats.MayWrite() {
 		return nil
 	}
+	// Reject writes to a file that is currently being executed, as Linux does
+	// in fs/namei.c:may_open() and fs/open.c:handle_truncate(). This must
+	// happen before copy-up, since copying up would otherwise create a fresh
+	// upper file with a zero write count and silently bypass the check.
+	if err := d.writeCount.CheckWrite(); err != nil {
+		return err
+	}
 	if !d.upperVD.Ok() && !d.canBeCopiedUp() {
 		return linuxerr.EPERM
 	}
@@ -1526,6 +1533,14 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 	mode := linux.FileMode(d.mode.Load())
 	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, d.accessACL.Load(), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
+	}
+	if opts.NeedWritePerm {
+		// truncate(2), unlike ftruncate(2), acquires write access to the file
+		// and so fails with ETXTBSY if it is being executed. See
+		// fs/open.c:do_sys_truncate().
+		if err := d.writeCount.CheckWrite(); err != nil {
+			return err
+		}
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {

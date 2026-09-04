@@ -89,6 +89,12 @@ cc_binary(
 )
 
 cc_binary(
+    name = "exec_etxtbsy_workload",
+    testonly = 1,
+    srcs = ["exec_etxtbsy_workload.cc"],
+)
+
+cc_binary(
     name = "exec_state_workload",
     testonly = 1,
     srcs = ["exec_state_workload.cc"],
@@ -870,6 +876,7 @@ cc_binary(
         ":exec_assert_closed_workload",
         ":exec_basic_workload",
         ":exec_check_creds",
+        ":exec_etxtbsy_workload",
         ":exec_proc_exe_workload",
         ":exec_state_workload",
         ":exit_script",
