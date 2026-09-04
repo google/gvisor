@@ -234,10 +234,21 @@ func (cf *cgroupProcs) Write(ctx context.Context, fd *vfs.FileDescription, src u
 	}
 
 	var nsRoot *cgroup
-	if ifd, ok := fd.Impl().(*interfaceFD); ok && ifd.ns != nil {
-		nsRoot = ifd.ns.Root().(*cgroup)
+	var creds *auth.Credentials
+	if fd != nil {
+		creds = fd.Credentials()
+		if ifd, ok := fd.Impl().(*interfaceFD); ok && ifd.ns != nil {
+			nsRoot = ifd.ns.Root().(*cgroup)
+		}
+	} else {
+		// If fd is nil, this write originates from outside the sandbox
+		// (e.g. via WriteControl or control RPCs) rather than through a
+		// sandboxed VFS file descriptor. Credentials come from ctx, and
+		// nsRoot remains nil so migration is unconfined by any cgroup
+		// namespace delegation boundary.
+		creds = auth.CredentialsFromContext(ctx)
 	}
-	if err := cf.c.attachProcess(ctx, fd.Credentials(), nsRoot, pid); err != nil {
+	if err := cf.c.attachProcess(ctx, creds, nsRoot, pid); err != nil {
 		return 0, err
 	}
 

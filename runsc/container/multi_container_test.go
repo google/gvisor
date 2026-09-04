@@ -2576,6 +2576,78 @@ func TestCgroupV2ReadControlFile(t *testing.T) {
 	}
 }
 
+// Tests writing to cgroup v2 control files from outside the sandbox (e.g. via WriteControl).
+func TestCgroupV2WriteControlFile(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.InSandboxCgroup = config.InSandboxCgroupV2
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	podSpecs, ids := createSpecs(sleepCmd)
+	mnt0 := specs.Mount{
+		Destination: "/sys/fs/cgroup",
+		Type:        "cgroup",
+		Options:     nil,
+	}
+	podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
+	createSharedMount(mnt0, "test-mount", podSpecs...)
+
+	containers, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	cgPath := path.Join("/", containers[0].ID)
+
+	// Read current PID from cgroup.procs.
+	procsCtrl := control.CgroupControlFile{Controller: "cgroup", Path: cgPath, Name: "cgroup.procs"}
+	val, err := containers[0].Sandbox.CgroupsReadControlFile(procsCtrl)
+	if err != nil {
+		t.Fatalf("error reading cgroup.procs in %q: %v", cgPath, err)
+	}
+	pidStr := strings.TrimSpace(val)
+	if pidStr == "" {
+		t.Fatalf("expected non-empty cgroup.procs in %q", cgPath)
+	}
+
+	// Writing to cgroup.procs tests cgroupProcs.Write with fd == nil.
+	if err := containers[0].Sandbox.CgroupsWriteControlFile(procsCtrl, pidStr); err != nil {
+		t.Fatalf("error writing %q to cgroup.procs: %v", pidStr, err)
+	}
+
+	// Writing to a non-delegatable file tests checkNSDelegateWrite with fd == nil.
+	maxDescCtrl := control.CgroupControlFile{Controller: "cgroup", Path: cgPath, Name: "cgroup.max.descendants"}
+	if err := containers[0].Sandbox.CgroupsWriteControlFile(maxDescCtrl, "10"); err != nil {
+		t.Fatalf("error writing cgroup.max.descendants: %v", err)
+	}
+	readVal, err := containers[0].Sandbox.CgroupsReadControlFile(maxDescCtrl)
+	if err != nil {
+		t.Fatalf("error reading cgroup.max.descendants: %v", err)
+	}
+	if got := strings.TrimSpace(readVal); got != "10" {
+		t.Fatalf("cgroup.max.descendants mismatch, want %q, got %q", "10", got)
+	}
+
+	// Writing to memory.max tests controller-specific Write with fd == nil.
+	memMaxCtrl := control.CgroupControlFile{Controller: "memory", Path: cgPath, Name: "memory.max"}
+	if err := containers[0].Sandbox.CgroupsWriteControlFile(memMaxCtrl, "104857600"); err != nil {
+		t.Fatalf("error writing memory.max: %v", err)
+	}
+	readMem, err := containers[0].Sandbox.CgroupsReadControlFile(memMaxCtrl)
+	if err != nil {
+		t.Fatalf("error reading memory.max: %v", err)
+	}
+	if got := strings.TrimSpace(readMem); got != "104857600" {
+		t.Fatalf("memory.max mismatch, want %q, got %q", "104857600", got)
+	}
+}
+
 // Tests that destroying a container removes its cgroup2 node, including
 // sub-cgroups the container created, and that a container without a cgroup
 // mount in its spec is never given a cgroup2 node.
