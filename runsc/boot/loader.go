@@ -341,6 +341,8 @@ type Loader struct {
 
 	// networkArgs contains the routes and links which were scraped from the
 	// host network namespace during sandbox creation.
+	//
+	// +checklocks:mu
 	networkArgs *CreateLinksAndRoutesArgs
 
 	// pinRing accumulates host FDs to pin before seccomp filters are
@@ -348,6 +350,8 @@ type Loader struct {
 	pinRing pinring.PinRing
 
 	// fsSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
+	//
+	// +checklocks:mu
 	fsSaveFDs []*fd.FD
 
 	// fsSaveCheckpointGofer is true if fsSaveFDs contains only one FD, which
@@ -355,6 +359,11 @@ type Loader struct {
 	fsSaveCheckpointGofer bool
 
 	// hostinetNetDevFile is the pre-opened /proc/net/dev file for hostinet restore.
+	//
+	// Restore initializes both hostinet files before taking mu.
+	// ConfigureNetwork transfers them while mu is held; restore closes
+	// any unconsumed files without mu. checklocks cannot express this
+	// phase-dependent ownership.
 	hostinetNetDevFile *os.File
 
 	// hostinetNetSNMPFile is the pre-opened /proc/net/snmp file for hostinet restore.
@@ -938,6 +947,13 @@ func New(args Args) (*Loader, error) {
 }
 
 // ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
+//
+// Startup calls this directly before installing seccomp filters. Restore
+// calls it synchronously through Kernel.LoadFrom after installing filters.
+// Both callers hold l.mu, but the restore interface call cannot convey this
+// concrete lock contract to checklocks.
+//
+// +checklocks:l.mu
 func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if h, ok := s.(*hostinet.Stack); ok {
 		h.SetFiles(l.hostinetNetDevFile, l.hostinetNetSNMPFile)
@@ -1025,6 +1041,8 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 // Note that this will block until all open control server connections have
 // been closed. For that reason, this should NOT be called in a defer, because
 // a panic in a control server rpc would then hang forever.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) Destroy() {
 	if l.stopSignalForwarding != nil {
 		l.stopSignalForwarding()
@@ -1213,6 +1231,8 @@ func (l *Loader) installSeccompFilters() error {
 }
 
 // Run runs the root container.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) Run() error {
 	err := l.run()
 	l.ctrl.manager.startResultChan <- err
@@ -1227,6 +1247,7 @@ func (l *Loader) Run() error {
 	return nil
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) run() error {
 	if l.root.conf.Network == config.NetworkHost {
 		// Delay host network configuration to this point because network namespace
@@ -1358,6 +1379,8 @@ func (l *Loader) run() error {
 }
 
 // createSubcontainer creates a new container inside the sandbox.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1373,6 +1396,8 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf, rootfsUpperTarFD *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1655,6 +1680,8 @@ func (l *Loader) startGoferMonitor(info *containerInfo) {
 
 // destroySubcontainer stops a container if it is still running and cleans up
 // its filesystem.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) destroySubcontainer(cid string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1698,6 +1725,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	return nil
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	// Hold the lock for the entire operation to ensure that exec'd process is
 	// added to 'processes' in case it races with destroyContainer().
@@ -1781,6 +1809,8 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 }
 
 // waitContainer waits for the init process of a container to exit.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	l.mu.Lock()
 	state := l.state
@@ -1835,6 +1865,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	return nil
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) waitRestore() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1849,6 +1880,7 @@ func (l *Loader) waitRestore() error {
 	return l.restoreErr
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
 	if tgid <= 0 {
 		return fmt.Errorf("PID (%d) must be positive", tgid)
@@ -2041,6 +2073,8 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 // option, the signal may be sent directly to the indicated process, to all
 // processes in the container, or to the foreground process group. pid is
 // relative to the root PID namespace, not the container's.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) error {
 	if pid < 0 {
 		return fmt.Errorf("PID (%d) must be positive", pid)
@@ -2088,6 +2122,8 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 
 // signalProcess sends signal to process in the given container. tgid is
 // relative to the root PID namespace, not the container's.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) error {
 	execTG, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
 	if err == nil {
@@ -2110,6 +2146,8 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 
 // signalForegrondProcessGroup looks up foreground process group from the TTY
 // for the given "tgid" inside container "cid", and send the signal to it.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, signo int32) error {
 	l.mu.Lock()
 	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid, pid: tgid})
@@ -2185,6 +2223,8 @@ func (l *Loader) signalProcessGroup(cid string, pgid kernel.ProcessGroupID, sign
 // threadGroupFromID is similar to tryThreadGroupFromIDLocked except that it
 // acquires mutex before calling it and fails in case container hasn't started
 // yet.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) threadGroupFromID(key execID) (*kernel.ThreadGroup, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2264,6 +2304,8 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs
 // represent a two connections each copying to each other (read ends to write ends) in goroutines.
 // The proxies are stored and can be cleaned up, or clean up after themselves if the connection
 // is broken.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) portForward(opts *PortForwardOpts) error {
 	// Validate that we have a stream FD to write to. If this happens then
 	// it means there is a misbehaved urpc client or a bug has occurred.
@@ -2357,6 +2399,7 @@ func (l *Loader) importFD(ctx context.Context, f *os.File) (*vfs.FileDescription
 	return fd, nil
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) containerCount() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2372,6 +2415,7 @@ func (l *Loader) containerCount() int {
 	return containers
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) pidsCount(cid string) (int, error) {
 	l.mu.Lock()
 	_, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
@@ -2415,6 +2459,7 @@ func (l *Loader) findProcessLocked(key execID) (*execProcess, error) {
 	return ep, nil
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) registerContainer(spec *specs.Spec, cid string) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2436,6 +2481,7 @@ func (l *Loader) registerContainerLocked(spec *specs.Spec, cid string) string {
 	return containerName
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) getContainerSpec(containerName string) *specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2444,6 +2490,8 @@ func (l *Loader) getContainerSpec(containerName string) *specs.Spec {
 
 // SpecEnviron returns the environment variables for the given container from
 // the container spec it was created with.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) SpecEnviron(containerName string) []string {
 	spec := l.getContainerSpec(containerName)
 	if spec == nil {
@@ -2453,6 +2501,7 @@ func (l *Loader) SpecEnviron(containerName string) []string {
 	return spec.Process.Env
 }
 
+// +checklocksexclude:l.mu
 func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2481,6 +2530,8 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 }
 
 // GetContainerSpecs returns the container specs map.
+//
+// +checklocksexclude:l.mu
 func (l *Loader) GetContainerSpecs() map[string]*specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()

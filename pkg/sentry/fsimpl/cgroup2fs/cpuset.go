@@ -31,13 +31,18 @@ import (
 
 // +stateify savable
 type cpuset struct {
-	c        *cgroup
-	parent   *cpuset
+	c      *cgroup
+	parent *cpuset
+
+	// +checkatomic
 	detached atomicbitops.Bool
 
 	mu sync.Mutex `state:"nosave"`
 
+	// +checklocks:mu
 	cpus *bitmap.Bitmap
+
+	// +checklocks:mu
 	mems *bitmap.Bitmap
 }
 
@@ -81,6 +86,8 @@ type cpusetCpus struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:cc.cs.mu
 func (cc *cpusetCpus) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cc.cs.mu.Lock()
 	defer cc.cs.mu.Unlock()
@@ -93,6 +100,8 @@ func (cc *cpusetCpus) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:cc.cs.mu
 func (cc *cpusetCpus) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
@@ -131,6 +140,8 @@ type cpusetMems struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:cm.cs.mu
 func (cm *cpusetMems) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cm.cs.mu.Lock()
 	defer cm.cs.mu.Unlock()
@@ -143,6 +154,8 @@ func (cm *cpusetMems) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:cm.cs.mu
 func (cm *cpusetMems) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL

@@ -49,13 +49,15 @@ type cpuacctController struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// taskCommittedCharges tracks charges for a task already attributed to this
-	// cgroup. This is used to avoid double counting usage for live
-	// tasks. Protected by mu.
+	// cgroup. This is used to avoid double counting usage for live tasks.
+	//
+	// +checklocks:mu
 	taskCommittedCharges map[*kernel.Task]usage.CPUStats
 
 	// usage is the cumulative CPU time used by past tasks in this cgroup. Note
-	// that this doesn't include usage by live tasks currently in the
-	// cgroup. Protected by mu.
+	// that this doesn't include usage by live tasks currently in the cgroup.
+	//
+	// +checklocks:mu
 	usage usage.CPUStats
 }
 
@@ -91,6 +93,8 @@ func (c *cpuacctController) AddControlFiles(ctx context.Context, creds *auth.Cre
 func (c *cpuacctController) Enter(t *kernel.Task) {}
 
 // Leave implements controller.Leave.
+//
+// +checklocksexclude:c.mu
 func (c *cpuacctController) Leave(t *kernel.Task) {
 	charge := t.CPUStats()
 	c.mu.Lock()
@@ -106,6 +110,11 @@ func (c *cpuacctController) PrepareMigrate(t *kernel.Task, src controller) error
 }
 
 // CommitMigrate implements controller.CommitMigrate.
+//
+// The caller must also not hold src's controller mutex. checklocks cannot
+// name that concrete mutex through the controller interface.
+//
+// +checklocksexclude:c.mu
 func (c *cpuacctController) CommitMigrate(t *kernel.Task, src controller) {
 	charge := t.CPUStats()
 
@@ -136,7 +145,12 @@ func (c *cpuacctCgroup) cpuacctController() *cpuacctController {
 	return c.controllers[kernel.CgroupControllerCPUAcct].(*cpuacctController)
 }
 
-// checklocks:c.fs.tasksMu
+// collectCPUStatsLocked includes descendant charges under the shared task lock.
+//
+// It acquires each visited controller's mutex. The caller must not hold those
+// mutexes; checklocks cannot name their owners through the controller map.
+//
+// +checklocksread:c.fs.tasksMu
 func (c *cpuacctCgroup) collectCPUStatsLocked(acc *usage.CPUStats) {
 	ctl := c.cpuacctController()
 	for t := range c.ts {
@@ -152,10 +166,14 @@ func (c *cpuacctCgroup) collectCPUStatsLocked(acc *usage.CPUStats) {
 
 	c.forEachChildDir(func(d *dir) {
 		cg := cpuacctCgroup{d.cgi}
-		cg.collectCPUStatsLocked(acc)
+		// forEachChildDir visits the same filesystem synchronously while
+		// c.fs.tasksMu is read-locked. checklocks cannot carry that lock or
+		// relate cg.fs to c.fs through the callback's directory argument.
+		cg.collectCPUStatsLocked(acc) // +checklocksignore
 	})
 }
 
+// +checklocksexclude:c.fs.tasksMu
 func (c *cpuacctCgroup) collectCPUStats() usage.CPUStats {
 	c.fs.tasksMu.RLock()
 	defer c.fs.tasksMu.RUnlock()
@@ -171,6 +189,8 @@ type cpuacctStatData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.fs.tasksMu
 func (d *cpuacctStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cs := d.collectCPUStats()
 	fmt.Fprintf(buf, "user %d\n", linux.ClockTFromDuration(cs.UserTime))
@@ -184,6 +204,8 @@ type cpuacctUsageData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.fs.tasksMu
 func (d *cpuacctUsageData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cs := d.collectCPUStats()
 	fmt.Fprintf(buf, "%d\n", cs.UserTime.Nanoseconds()+cs.SysTime.Nanoseconds())
@@ -196,6 +218,8 @@ type cpuacctUsageUserData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.fs.tasksMu
 func (d *cpuacctUsageUserData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cs := d.collectCPUStats()
 	fmt.Fprintf(buf, "%d\n", cs.UserTime.Nanoseconds())
@@ -208,6 +232,8 @@ type cpuacctUsageSysData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.fs.tasksMu
 func (d *cpuacctUsageSysData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	cs := d.collectCPUStats()
 	fmt.Fprintf(buf, "%d\n", cs.SysTime.Nanoseconds())

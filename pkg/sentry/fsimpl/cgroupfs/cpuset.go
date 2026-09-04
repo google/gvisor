@@ -42,7 +42,10 @@ type cpusetController struct {
 
 	mu sync.Mutex `state:"nosave"`
 
+	// +checklocks:mu
 	cpus *bitmap.Bitmap
+
+	// +checklocks:mu
 	mems *bitmap.Bitmap
 }
 
@@ -65,6 +68,8 @@ func newCPUSetController(k *kernel.Kernel, fs *filesystem) *cpusetController {
 }
 
 // Clone implements controller.Clone.
+//
+// +checklocksexclude:c.mu
 func (c *cpusetController) Clone() controller {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -92,6 +97,8 @@ type cpusData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.c.mu
 func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
@@ -100,11 +107,15 @@ func (d *cpusData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:d.c.mu
 func (d *cpusData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	return d.WriteBackground(ctx, src)
 }
 
 // WriteBackground implements writableControllerFileImpl.WriteBackground.
+//
+// +checklocksexclude:d.c.mu
 func (d *cpusData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL
@@ -140,6 +151,8 @@ type memsData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.c.mu
 func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
@@ -148,11 +161,15 @@ func (d *memsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:d.c.mu
 func (d *memsData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	return d.WriteBackground(ctx, src)
 }
 
 // WriteBackground implements writableControllerFileImpl.WriteBackground.
+//
+// +checklocksexclude:d.c.mu
 func (d *memsData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	if src.NumBytes() > hostarch.PageSize {
 		return 0, linuxerr.EINVAL

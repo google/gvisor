@@ -50,6 +50,8 @@ func (mm *MemoryManager) SetDumpability(d Dumpability) {
 // ArgvStart returns the start of the application argument vector.
 //
 // There is no guarantee that this value is sensible w.r.t. ArgvEnd.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) ArgvStart() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -57,6 +59,8 @@ func (mm *MemoryManager) ArgvStart() hostarch.Addr {
 }
 
 // SetArgvStart sets the start of the application argument vector.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetArgvStart(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -66,6 +70,8 @@ func (mm *MemoryManager) SetArgvStart(a hostarch.Addr) {
 // ArgvEnd returns the end of the application argument vector.
 //
 // There is no guarantee that this value is sensible w.r.t. ArgvStart.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) ArgvEnd() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -73,6 +79,8 @@ func (mm *MemoryManager) ArgvEnd() hostarch.Addr {
 }
 
 // SetArgvEnd sets the end of the application argument vector.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetArgvEnd(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -82,6 +90,8 @@ func (mm *MemoryManager) SetArgvEnd(a hostarch.Addr) {
 // EnvvStart returns the start of the application environment vector.
 //
 // There is no guarantee that this value is sensible w.r.t. EnvvEnd.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) EnvvStart() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -89,6 +99,8 @@ func (mm *MemoryManager) EnvvStart() hostarch.Addr {
 }
 
 // SetEnvvStart sets the start of the application environment vector.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetEnvvStart(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -98,6 +110,8 @@ func (mm *MemoryManager) SetEnvvStart(a hostarch.Addr) {
 // EnvvEnd returns the end of the application environment vector.
 //
 // There is no guarantee that this value is sensible w.r.t. EnvvStart.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) EnvvEnd() hostarch.Addr {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -105,6 +119,8 @@ func (mm *MemoryManager) EnvvEnd() hostarch.Addr {
 }
 
 // SetEnvvEnd sets the end of the application environment vector.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetEnvvEnd(a hostarch.Addr) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -112,6 +128,8 @@ func (mm *MemoryManager) SetEnvvEnd(a hostarch.Addr) {
 }
 
 // Auxv returns the current map of auxiliary vectors.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) Auxv() arch.Auxv {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -119,6 +137,8 @@ func (mm *MemoryManager) Auxv() arch.Auxv {
 }
 
 // SetAuxv sets the entire map of auxiliary vectors.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetAuxv(auxv arch.Auxv) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -129,6 +149,8 @@ func (mm *MemoryManager) SetAuxv(auxv arch.Auxv) {
 //
 // An additional reference will be taken in the case of a non-nil executable,
 // which must be released by the caller.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) Executable() *vfs.FileDescription {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -144,6 +166,8 @@ func (mm *MemoryManager) Executable() *vfs.FileDescription {
 // SetExecutable sets the executable.
 //
 // This takes a reference on d.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetExecutable(ctx context.Context, fd *vfs.FileDescription) {
 	mm.metadataMu.Lock()
 
@@ -166,6 +190,8 @@ func (mm *MemoryManager) SetExecutable(ctx context.Context, fd *vfs.FileDescript
 }
 
 // VDSOSigReturn returns the address of vdso_sigreturn.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) VDSOSigReturn() uint64 {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
@@ -173,6 +199,8 @@ func (mm *MemoryManager) VDSOSigReturn() uint64 {
 }
 
 // SetVDSOSigReturn sets the address of vdso_sigreturn.
+//
+// +checklocksexclude:mm.metadataMu
 func (mm *MemoryManager) SetVDSOSigReturn(addr uint64) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
