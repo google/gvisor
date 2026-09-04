@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -40,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -208,6 +210,10 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// CheckpointDirPath is the path to the sentry checkpoint directory.
+	// Used to default FSRestoreImagePath if it is empty.
+	CheckpointDirPath string
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -215,6 +221,15 @@ type Args struct {
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
+
+	if args.FSRestoreImagePath == "" && args.CheckpointDirPath != "" {
+		defaultFSDir := filepath.Join(args.CheckpointDirPath, checkpointfiles.FSCheckpointDir)
+		manifestPath := filepath.Join(defaultFSDir, checkpointfiles.FSCheckpointManifestFileName)
+		if _, err := os.Stat(manifestPath); err == nil {
+			args.FSRestoreImagePath = defaultFSDir
+		}
+	}
+
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
