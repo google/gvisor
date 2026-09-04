@@ -263,6 +263,55 @@ func (l *lockState) isCompatible(other *lockState) bool {
 	return l.isSubset(other) && other.isSubset(l)
 }
 
+// hasSameLocks compares returned lock sets without requiring identical alias
+// representatives. It does not change either state and must not be used to
+// decide whether a basic block can be skipped.
+func (l *lockState) hasSameLocks(other *lockState) bool {
+	if l.count() != other.count() {
+		return false
+	}
+	if l.isCompatible(other) {
+		return true
+	}
+
+	// Match classes through keys held in both states. Require a one-to-one
+	// match instead of merging aliases discovered on different paths.
+	matches := make(map[string]string, l.count())
+	used := make(map[string]struct{}, other.count())
+	match := func(key string) bool {
+		left, right := l.aliasKey(key), other.aliasKey(key)
+		leftInfo, leftHeld := l.lockedMutexes[left]
+		rightInfo, rightHeld := other.lockedMutexes[right]
+		if !leftHeld || !rightHeld {
+			return true
+		}
+		if leftInfo.exclusive != rightInfo.exclusive {
+			return false
+		}
+		if previous, ok := matches[left]; ok {
+			return previous == right
+		}
+		if _, ok := used[right]; ok {
+			return false
+		}
+		matches[left] = right
+		used[right] = struct{}{}
+		return true
+	}
+	for key := range l.lockedMutexes {
+		if !match(key) {
+			return false
+		}
+	}
+	// Every other member of a held class appears as an alias key.
+	for key := range l.aliases {
+		if !match(key) {
+			return false
+		}
+	}
+	return len(matches) == l.count()
+}
+
 // elemType is a type that implements the Elem function.
 type elemType interface {
 	Elem() types.Type
@@ -387,6 +436,7 @@ func (l *lockState) String() string {
 		// Include the exclusive status of each lock.
 		keys = append(keys, fmt.Sprintf("%s %s", k, exclusiveStr(info.exclusive)))
 	}
+	slices.Sort(keys)
 	return strings.Join(keys, ",")
 }
 
