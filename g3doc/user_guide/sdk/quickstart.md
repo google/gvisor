@@ -34,9 +34,9 @@ func main() {
     ctx := context.Background()
 
     // Initialize a new sandbox.
-    // Note: WithNetworking(true) requires running as root.
+    // Note: Sandboxes by default run without networking.
     // For this quickstart, we disable networking to allow running as non-root.
-    sb, err := sandbox.New(ctx, sandbox.WithNetworking(false))
+    sb, err := sandbox.New(ctx)
     if err != nil {
         log.Fatalf("Failed to create sandbox: %v", err)
     }
@@ -47,12 +47,13 @@ func main() {
     }()
 
     // Execute a command inside the sandbox.
-    stdout, stderr, err := sb.Exec(ctx, "uname", "-a")
+    res, err := sb.Exec(ctx, []string{"uname", "-a"})
     if err != nil {
-        log.Fatalf("Exec failed: %v, stderr: %s", err, stderr)
+        log.Fatalf("Exec failed: %v, stderr: %s", err, res.Stderr)
+
     }
 
-    fmt.Printf("Stdout: %s", stdout)
+    fmt.Printf("Stdout: %s", res.Stdout)
 }
 ```
 
