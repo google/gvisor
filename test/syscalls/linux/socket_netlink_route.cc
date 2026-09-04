@@ -2108,6 +2108,37 @@ struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
   return req;
 }
 
+// Builds a veth create whose VETH_INFO_PEER payload is too short to hold the
+// peer's ifinfomsg.
+struct VethRequest GetShortPeerVethRequest(uint32_t seq, const char* ifname) {
+  struct VethRequest req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = seq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = 0;
+
+  addattr(&req.hdr, sizeof(req), IFLA_IFNAME, ifname, strlen(ifname));
+
+  struct rtattr* linkinfo = NLMSG_TAIL(&req.hdr);
+  {
+    addattr(&req.hdr, sizeof(req), IFLA_LINKINFO, nullptr, 0);
+    addattr(&req.hdr, sizeof(req), IFLA_INFO_KIND, "veth", 4);
+    struct rtattr* veth_data = NLMSG_TAIL(&req.hdr);
+    {
+      addattr(&req.hdr, sizeof(req), IFLA_INFO_DATA, NULL, 0);
+      uint32_t truncated = 0;
+      addattr(&req.hdr, sizeof(req), VETH_INFO_PEER, &truncated,
+              sizeof(truncated));
+    }
+    veth_data->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)veth_data;
+  }
+  linkinfo->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)linkinfo;
+
+  return req;
+}
+
 struct BridgeRequest {
   struct nlmsghdr hdr;
   struct ifinfomsg ifm;
@@ -2208,6 +2239,30 @@ TEST(NetlinkRouteTest, VethAdd) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, VethAddShortPeerIfInfoMsg) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetShortPeerVethRequest(kSeq, "veth1");
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(AnyOf(EINVAL, ERANGE), _));
+
+  std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(fd));
+  for (const Link& link : links) {
+    EXPECT_NE(link.name, "veth1");
+  }
 }
 
 TEST(NetlinkRouteTest, LinkInfoKind) {

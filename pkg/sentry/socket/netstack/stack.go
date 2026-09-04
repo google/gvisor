@@ -437,10 +437,10 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 			return syserr.ErrInvalidArgument
 		}
 		if v, ok := linkInfoData[linux.VETH_INFO_PEER]; ok {
-			attrsView := nlmsg.AttrsView(v[ifinfomsg.SizeBytes():])
-			if !ok {
+			if len(v) < ifinfomsg.SizeBytes() {
 				return syserr.ErrInvalidArgument
 			}
+			attrsView := nlmsg.AttrsView(v[ifinfomsg.SizeBytes():])
 			peerLinkAttrs, ok = attrsView.Parse()
 			if !ok {
 				return syserr.ErrInvalidArgument
