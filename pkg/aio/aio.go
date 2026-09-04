@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -128,7 +127,6 @@ func newGoQueue(cap, workers int) *GoQueue {
 	for range workers {
 		go q.workerMain()
 	}
-	gomaxprocs.Add(workers)
 	return q
 }
 
@@ -169,7 +167,6 @@ func (q *GoQueue) workerMain() {
 func (q *GoQueue) Destroy() {
 	close(q.shutdown)
 	q.workers.Wait()
-	gomaxprocs.Add(-q.numWorkers)
 }
 
 // Cap implements Queue.Cap.

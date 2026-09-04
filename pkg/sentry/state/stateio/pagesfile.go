@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	pagesFileFDDefaultMaxIOBytes  = 256 << 10
-	pagesFileFDDefaultMaxParallel = 128
+	pagesFileFDDefaultMaxReadBytes  = 4 << 20
+	pagesFileFDDefaultMaxReads      = 8
+	pagesFileFDDefaultMaxWriteBytes = 256 << 10
+	pagesFileFDDefaultMaxWrites     = 128
 )
 
 // NewPagesFileFDReader returns a FDReader that reads a pages file from the
@@ -39,7 +41,7 @@ func NewPagesFileFDReader(fd int32, maxReadBytes uint64, maxParallel int) *FDRea
 // the given host file descriptor, using defaults for MaxReadBytes and
 // MaxParallel. It takes ownership of the file descriptor.
 func NewPagesFileFDReaderDefault(fd int32) *FDReader {
-	return NewPagesFileFDReader(fd, pagesFileFDDefaultMaxIOBytes, pagesFileFDDefaultMaxParallel)
+	return NewPagesFileFDReader(fd, pagesFileFDDefaultMaxReadBytes, pagesFileFDDefaultMaxReads)
 }
 
 // NewPagesFileFDWriter returns a FDWriter that writes a pages file to the
@@ -58,5 +60,5 @@ func NewPagesFileFDWriter(fd int32, maxWriteBytes uint64, maxParallel int) *FDWr
 // file descriptor, using defaults for MaxWriteBytes and MaxParallel. It takes
 // ownership of the file descriptor.
 func NewPagesFileFDWriterDefault(fd int32) *FDWriter {
-	return NewPagesFileFDWriter(fd, pagesFileFDDefaultMaxIOBytes, pagesFileFDDefaultMaxParallel)
+	return NewPagesFileFDWriter(fd, pagesFileFDDefaultMaxWriteBytes, pagesFileFDDefaultMaxWrites)
 }
