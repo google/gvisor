@@ -93,6 +93,10 @@ else
         continue
       fi
       # LINT.ThenChange(../.buildkite/hooks/pre-command)
+      # A staging tag names a release that is still being built.
+      if [[ "$tag" == staging-release-* ]]; then
+        continue
+      fi
       name=$(echo "${tag}" | cut -d'-' -f2)
       base=$(echo "${name}" | cut -d'.' -f1)
       # Install the "specific" release. This is the latest release with the
