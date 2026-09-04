@@ -137,26 +137,24 @@ func (ms *memoryStats) decLocked(val uint64, kind MemoryKind) {
 //
 // Precondition: must be called when locked.
 func (ms *memoryStats) totalLocked() (total uint64) {
-	total += ms.System.RacyLoad()
-	total += ms.Anonymous.RacyLoad()
-	total += ms.PageCache.RacyLoad()
-	total += ms.Mapped.RacyLoad()
-	total += ms.Tmpfs.RacyLoad()
-	total += ms.Ramdiskfs.RacyLoad()
+	total += ms.System.Load()
+	total += ms.Anonymous.Load()
+	total += ms.PageCache.Load()
+	total += ms.Mapped.Load()
+	total += ms.Tmpfs.Load()
+	total += ms.Ramdiskfs.Load()
 	return
 }
 
 // copyLocked returns a copy of the structure.
-//
-// Precondition: must be called when locked.
 func (ms *memoryStats) copyLocked() MemoryStats {
 	return MemoryStats{
-		System:    ms.System.RacyLoad(),
-		Anonymous: ms.Anonymous.RacyLoad(),
-		PageCache: ms.PageCache.RacyLoad(),
-		Tmpfs:     ms.Tmpfs.RacyLoad(),
-		Mapped:    ms.Mapped.RacyLoad(),
-		Ramdiskfs: ms.Ramdiskfs.RacyLoad(),
+		System:    ms.System.Load(),
+		Anonymous: ms.Anonymous.Load(),
+		PageCache: ms.PageCache.Load(),
+		Tmpfs:     ms.Tmpfs.Load(),
+		Mapped:    ms.Mapped.Load(),
+		Ramdiskfs: ms.Ramdiskfs.Load(),
 	}
 }
 
@@ -229,14 +227,19 @@ type RTMemoryStats struct {
 
 // MemoryLocked is Memory with access methods.
 type MemoryLocked struct {
-	mu memoryMutex
-	// memoryStats records the memory stats.
+	// memoryStats records the global memory stats. All fields are
+	// atomicbitops.Uint64 and are safe to read/update without holding any lock.
 	memoryStats
 	// RTMemoryStats records the memory stats that need to be exposed through
 	// shared page.
 	*RTMemoryStats
 	// File is the backing file storing the memory stats.
 	File *os.File
+	// cgMu guards the structure of MemCgIDToMemStats (insertion of new keys).
+	// The *memoryStats values it points to are internally atomic, so charging or
+	// reading an existing cgroup's stats requires only cgMu.RLock(); cgMu.Lock()
+	// is taken only the first time a given memCgID is observed.
+	cgMu memoryRWMutex
 	// MemCgIDToMemStats is the map of cgroup ids to memory stats.
 	MemCgIDToMemStats map[uint32]*memoryStats
 }
@@ -286,13 +289,31 @@ func Init() error {
 // resident.
 var MemoryAccounting *MemoryLocked
 
-func (m *MemoryLocked) incLockedPerCg(val uint64, kind MemoryKind, memCgID uint32) {
-	if _, ok := m.MemCgIDToMemStats[memCgID]; !ok {
-		m.MemCgIDToMemStats[memCgID] = &memoryStats{}
-	}
+// perCg returns the memoryStats for memCgID, or nil if none has been created.
+// It takes only a read lock.
+func (m *MemoryLocked) perCg(memCgID uint32) *memoryStats {
+	m.cgMu.RLock()
+	defer m.cgMu.RUnlock()
+	return m.MemCgIDToMemStats[memCgID]
+}
 
-	ms := m.MemCgIDToMemStats[memCgID]
-	ms.incLocked(val, kind)
+// getOrCreatePerCg returns the memoryStats for memCgID, creating an entry if one
+// does not already exist. The write lock is taken only the first time a given
+// memCgID is observed; steady-state charging hits only the read-lock fast path.
+func (m *MemoryLocked) getOrCreatePerCg(memCgID uint32) *memoryStats {
+	if ms := m.perCg(memCgID); ms != nil {
+		return ms
+	}
+	m.cgMu.Lock()
+	defer m.cgMu.Unlock()
+	// Re-check: another goroutine may have created the entry between the RUnlock
+	// above and the Lock here.
+	if ms, ok := m.MemCgIDToMemStats[memCgID]; ok {
+		return ms
+	}
+	ms := &memoryStats{}
+	m.MemCgIDToMemStats[memCgID] = ms
+	return ms
 }
 
 // Inc adds an additional usage of 'val' bytes to memory category 'kind' for a
@@ -301,11 +322,10 @@ func (m *MemoryLocked) incLockedPerCg(val uint64, kind MemoryKind, memCgID uint3
 //
 // This method is thread-safe.
 func (m *MemoryLocked) Inc(val uint64, kind MemoryKind, memCgID uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Global counters are atomic; no lock required.
 	m.incLocked(val, kind)
 	if memCgID != 0 {
-		m.incLockedPerCg(val, kind, memCgID)
+		m.getOrCreatePerCg(memCgID).incLocked(val, kind)
 	}
 
 	// If the memory category is 'Mapped', update RTMapped.
@@ -314,26 +334,19 @@ func (m *MemoryLocked) Inc(val uint64, kind MemoryKind, memCgID uint32) {
 	}
 }
 
-func (m *MemoryLocked) decLockedPerCg(val uint64, kind MemoryKind, memCgID uint32) {
-	if _, ok := m.MemCgIDToMemStats[memCgID]; !ok {
-		panic(fmt.Sprintf("invalid memory cgroup id: %v", memCgID))
-	}
-
-	ms := m.MemCgIDToMemStats[memCgID]
-	ms.decLocked(val, kind)
-}
-
 // Dec removes a usage of 'val' bytes from memory category 'kind' for a cgroup
 // with id 'memCgID'. If 'memCgID' is zero, the memory is removed only from the
 // total usage.
 //
 // This method is thread-safe.
 func (m *MemoryLocked) Dec(val uint64, kind MemoryKind, memCgID uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.decLocked(val, kind)
 	if memCgID != 0 {
-		m.decLockedPerCg(val, kind, memCgID)
+		ms := m.perCg(memCgID)
+		if ms == nil {
+			panic(fmt.Sprintf("invalid memory cgroup id: %v", memCgID))
+		}
+		ms.decLocked(val, kind)
 	}
 
 	// If the memory category is 'Mapped', update RTMapped.
@@ -347,16 +360,19 @@ func (m *MemoryLocked) Dec(val uint64, kind MemoryKind, memCgID uint32) {
 //
 // This method is thread-safe.
 func (m *MemoryLocked) Move(val uint64, to MemoryKind, from MemoryKind, memCgID uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	// Just call decLocked and incLocked directly. We held the Lock to
-	// protect against concurrent callers to Total().
+	// Each field is atomic. A concurrent Copy()/Total() may briefly observe the
+	// post-dec/pre-inc state (undercount by val for one category); this is benign
+	// for the stats consumers (meminfo/sysinfo/events).
 	m.decLocked(val, from)
 	m.incLocked(val, to)
 
 	if memCgID != 0 {
-		m.decLockedPerCg(val, from, memCgID)
-		m.incLockedPerCg(val, to, memCgID)
+		ms := m.perCg(memCgID)
+		if ms == nil {
+			panic(fmt.Sprintf("invalid memory cgroup id: %v", memCgID))
+		}
+		ms.decLocked(val, from)
+		ms.incLocked(val, to)
 	}
 }
 
@@ -364,8 +380,6 @@ func (m *MemoryLocked) Move(val uint64, to MemoryKind, from MemoryKind, memCgID 
 //
 // This method is thread-safe.
 func (m *MemoryLocked) Total() uint64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	return m.totalLocked()
 }
 
@@ -373,16 +387,13 @@ func (m *MemoryLocked) Total() uint64 {
 //
 // This method is thread-safe.
 func (m *MemoryLocked) TotalPerCg(memCgID uint32) uint64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Total memory usage including the sentry memory.
 	if memCgID == 0 {
 		return m.totalLocked()
 	}
 	// Memory usage for all cgroups except sentry memory.
-	ms, ok := m.MemCgIDToMemStats[memCgID]
-	if !ok {
+	ms := m.perCg(memCgID)
+	if ms == nil {
 		return 0
 	}
 	return ms.totalLocked()
@@ -392,8 +403,6 @@ func (m *MemoryLocked) TotalPerCg(memCgID uint32) uint64 {
 //
 // This method is thread-safe.
 func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	return m.copyLocked(), m.totalLocked()
 }
 
@@ -401,16 +410,13 @@ func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 //
 // This method is thread-safe.
 func (m *MemoryLocked) CopyPerCg(memCgID uint32) (MemoryStats, uint64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Total memory usage including the sentry memory.
 	if memCgID == 0 {
 		return m.copyLocked(), m.totalLocked()
 	}
 	// Memory usage for all cgroups except sentry memory.
-	ms, ok := m.MemCgIDToMemStats[memCgID]
-	if !ok {
+	ms := m.perCg(memCgID)
+	if ms == nil {
 		return MemoryStats{}, 0
 	}
 	return ms.copyLocked(), ms.totalLocked()

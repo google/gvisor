@@ -1093,6 +1093,27 @@ func (i *ioData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
+// oomScore implements /proc/<pid>/oom_score, exposing the Linux-compatible OOM
+// badness score in [0, 1000] used by the guest OOM killer.
+//
+// +stateify savable
+type oomScore struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*oomScore)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (o *oomScore) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if o.task.ExitState() == kernel.TaskExitDead {
+		return linuxerr.ESRCH
+	}
+	fmt.Fprintf(buf, "%d\n", o.task.OOMScore())
+	return nil
+}
+
 // oomScoreAdj is a stub of the /proc/<pid>/oom_score_adj file.
 //
 // +stateify savable

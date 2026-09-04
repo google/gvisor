@@ -97,7 +97,18 @@ type memoryEvents struct {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (me *memoryEvents) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	buf.WriteString("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0\n")
+	// Report the guest OOM kills attributed to this cgroup's subtree so tooling
+	// watching memory.events observes in-sandbox OOM activity. Each kill counts
+	// as one OOM event and one OOM kill.
+	var oomKills uint64
+	if k := kernel.KernelFromContext(ctx); k != nil {
+		memCgIDs := make(map[uint32]struct{})
+		me.m.c.fs.treeMu.RLock()
+		collectMemCgIDs(me.m.c, memCgIDs)
+		me.m.c.fs.treeMu.RUnlock()
+		oomKills = k.OOMKillsForMemCgs(memCgIDs)
+	}
+	fmt.Fprintf(buf, "low 0\nhigh 0\nmax 0\noom %d\noom_kill %d\noom_group_kill 0\nsock_throttled 0\n", oomKills, oomKills)
 	return nil
 }
 
@@ -106,16 +117,17 @@ type memoryCurrent struct {
 	m *memory
 }
 
-// Collects all the memory cgroup ids under the given cgroup.
+// collectMemCgIDs adds the memory cgroup ids of c and all of its descendants to
+// memCgIDs.
 // +checklocksread:c.fs.treeMu
-func (mc *memoryCurrent) collectMemCgIDs(c *cgroup, memCgIDs map[uint32]struct{}) {
+func collectMemCgIDs(c *cgroup, memCgIDs map[uint32]struct{}) {
 	// Add ourselves.
 	if mem := c.ctrls[kernel.Cgroup2Memory]; mem != nil {
 		memCgIDs[mem.(*memory).id] = struct{}{}
 	}
 	// Add our children.
 	for child := range c.children {
-		mc.collectMemCgIDs(child, memCgIDs) // +checklocksforce: c.fs.treeMu is locked
+		collectMemCgIDs(child, memCgIDs) // +checklocksforce: c.fs.treeMu is locked
 	}
 }
 
@@ -136,7 +148,7 @@ func (mc *memoryCurrent) Generate(ctx context.Context, buf *bytes.Buffer) error 
 
 	memCgIDs := make(map[uint32]struct{})
 	mc.m.c.fs.treeMu.RLock()
-	mc.collectMemCgIDs(mc.m.c, memCgIDs)
+	collectMemCgIDs(mc.m.c, memCgIDs)
 	mc.m.c.fs.treeMu.RUnlock()
 
 	totalBytes := getUsage(k, memCgIDs)
@@ -162,7 +174,8 @@ func (mm *memoryMax) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
 //
-// Note: Although memory.max is writable and remembers the value, nothing is enforced.
+// Note: memory.max is enforced asynchronously by the in-sentry guest OOM killer
+// (see kernel.CgroupMemoryPressureSource), not synchronously in this write path.
 func (mm *memoryMax) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if src.NumBytes() > 1024 {
 		return 0, linuxerr.EINVAL
@@ -294,4 +307,78 @@ func parseMemoryLimit(str string) (int64, error) {
 		result = result &^ int64(hostarch.PageSize-1)
 	}
 	return result, nil
+}
+
+// collectLimitedMemCgroups appends to out every cgroup in c's subtree whose
+// memory controller has a finite memory.max limit (i.e. not "max").
+// +checklocksread:c.fs.treeMu
+func collectLimitedMemCgroups(c *cgroup, out *[]*cgroup) {
+	if ctrl := c.ctrls[kernel.Cgroup2Memory]; ctrl != nil {
+		if mem := ctrl.(*memory); mem.maxBytes.Load() != math.MaxInt64 {
+			*out = append(*out, c)
+		}
+	}
+	for child := range c.children {
+		collectLimitedMemCgroups(child, out) // +checklocksforce: c.fs.treeMu is locked
+	}
+}
+
+// OverLimitMemoryCgroups implements kernel.CgroupMemoryPressureSource. It reports
+// every memory cgroup whose subtree usage exceeds watermarkPercent of its
+// memory.max limit, so the guest OOM killer can enforce per-cgroup limits. The
+// offending subtrees' id-sets and limits are gathered under treeMu; per-cgroup
+// usage (which refreshes accounting and may take pgalloc locks) is computed after
+// the tree lock is released.
+func (fs *filesystem) OverLimitMemoryCgroups(k *kernel.Kernel, watermarkPercent int) []kernel.CgroupMemoryPressure {
+	if watermarkPercent <= 0 || watermarkPercent > 100 {
+		watermarkPercent = 100
+	}
+	if fs.root == nil {
+		return nil
+	}
+	rootCG, ok := fs.root.Inode().(*cgroup)
+	if !ok {
+		return nil
+	}
+
+	type pending struct {
+		ids   map[uint32]struct{}
+		limit uint64
+	}
+	var pends []pending
+	fs.treeMu.RLock()
+	var limited []*cgroup
+	collectLimitedMemCgroups(rootCG, &limited) // +checklocksforce: fs.treeMu is locked
+	for _, c := range limited {
+		ctrl := c.ctrls[kernel.Cgroup2Memory] // +checklocksforce: fs.treeMu is locked
+		if ctrl == nil {
+			continue
+		}
+		ids := make(map[uint32]struct{})
+		collectMemCgIDs(c, ids) // +checklocksforce: fs.treeMu is locked
+		pends = append(pends, pending{ids: ids, limit: uint64(ctrl.(*memory).maxBytes.Load())})
+	}
+	fs.treeMu.RUnlock()
+	if len(pends) == 0 {
+		return nil
+	}
+
+	var out []kernel.CgroupMemoryPressure
+	for _, p := range pends {
+		usageBytes := getUsage(k, p.ids)
+		watermark := p.limit / 100 * uint64(watermarkPercent)
+		if usageBytes > watermark {
+			out = append(out, kernel.CgroupMemoryPressure{
+				IDs:       p.ids,
+				Limit:     p.limit,
+				Watermark: watermark,
+			})
+		}
+	}
+	return out
+}
+
+// MemoryCgroupUsage implements kernel.CgroupMemoryPressureSource.
+func (fs *filesystem) MemoryCgroupUsage(k *kernel.Kernel, ids map[uint32]struct{}) uint64 {
+	return getUsage(k, ids)
 }

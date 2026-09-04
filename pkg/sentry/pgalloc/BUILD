@@ -207,13 +207,18 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = [
+        "oom_backpressure_test.go",
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
     ],
     library = ":pgalloc",
     deps = [
+        "//pkg/atomicbitops",
+        "//pkg/context",
         "//pkg/hostarch",
+        "//pkg/memutil",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/usage",
     ],
 )
 

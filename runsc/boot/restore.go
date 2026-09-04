@@ -492,6 +492,13 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("failed to load kernel: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
+
+	// The guest OOM killer's configuration and manager goroutine are not part of
+	// the saved kernel state (both are state:"nosave", and state.Load clears the
+	// config during LoadFrom). Re-apply the configured policy from the restore
+	// flags and restart the killer so OOM protection resumes after restore
+	// instead of silently staying disabled for the life of the restored sandbox.
+	l.k.RestoreOOMKiller(l.root.conf.GuestOOMKiller, l.root.conf.GuestOOMWatermarkPercent)
 	if oldNvidiaDriverVersion.Major() > 0 && !l.k.NvidiaDriverVersion.Equals(oldNvidiaDriverVersion) {
 		return fmt.Errorf("nvidia driver version changed during restore: was %v, now %v", oldNvidiaDriverVersion, l.k.NvidiaDriverVersion)
 	}

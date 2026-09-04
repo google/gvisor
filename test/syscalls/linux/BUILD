@@ -2325,8 +2325,10 @@ cc_binary(
     srcs = ["proc_pid_oomscore.cc"],
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
-    deps = [
+    deps = select_gtest() + [
+        "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
         "@com_google_absl//absl/strings",
@@ -5224,6 +5226,21 @@ cc_binary(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
+    name = "guest_oom_cgroup_test",
+    testonly = 1,
+    srcs = ["guest_oom_cgroup.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:cgroup_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
     ],
 )
 

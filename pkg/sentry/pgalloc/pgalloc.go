@@ -199,6 +199,20 @@ type MemoryFile struct {
 	// immutable.
 	stopNotifyPressure func()
 
+	// oomWatermark, oomHardLimit and oomKick drive the guest OOM killer. They
+	// are configured by SetOOMKick before the kernel starts and are immutable
+	// thereafter.
+	//
+	// oomWatermark, if non-zero, is the accounted-memory threshold (bytes) at or
+	// above which Allocate wakes the killer via oomKick so it can reclaim memory
+	// asynchronously. oomHardLimit, if non-zero, is the committed-memory ceiling
+	// (bytes) enforced synchronously by WaitForOOMHeadroom: a guest page fault
+	// will not commit past it, so a fast allocator cannot overshoot the sandbox
+	// limit and trigger a host OOM kill.
+	oomWatermark atomicbitops.Uint64 `state:"nosave"`
+	oomHardLimit atomicbitops.Uint64 `state:"nosave"`
+	oomKick      chan struct{}       `state:"nosave"`
+
 	// If asyncPageLoad is non-nil, it tracks the state of in-progress or
 	// failed async page loading.
 	asyncPageLoad atomic.Pointer[asyncMemoryFileLoad]
@@ -667,6 +681,11 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 		return fr, err
 	}
 
+	// The reservation above updated global memory accounting; wake the guest
+	// OOM killer if we have crossed the watermark so it can reclaim memory
+	// before the host memory limit is reached.
+	f.maybeNotifyOOM()
+
 	var dsts safemem.BlockSeq
 	if alloc.willCommit {
 		needHugeTouch := false
@@ -771,6 +790,134 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	}
 
 	return fr, nil
+}
+
+// oomBackpressurePollInterval is how often WaitForOOMHeadroom re-checks
+// committed memory while a guest allocation is paused at the hard limit. It is
+// short so a paused workload resumes promptly once the killer reclaims memory.
+const oomBackpressurePollInterval = 500 * time.Microsecond
+
+// oomBackpressureTimeout bounds how long WaitForOOMHeadroom pauses a single
+// allocation. If the killer cannot reclaim within this window (e.g. the only
+// memory consumers are OOM-immune), the allocation is allowed to proceed rather
+// than stalling the guest forever. It is a var so tests can shorten it.
+var oomBackpressureTimeout = 10 * time.Second
+
+// SetOOMKick configures guest OOM killer enforcement. It must be called before
+// the kernel starts. A zero value for either threshold disables that mechanism.
+//
+//   - watermarkBytes: when accounted memory reaches it, Allocate performs a
+//     non-blocking send on kick to wake the OOM manager for asynchronous
+//     reclaim.
+//   - hardLimitBytes: the committed-memory ceiling enforced synchronously by
+//     WaitForOOMHeadroom; a guest page fault will not commit past it.
+func (f *MemoryFile) SetOOMKick(watermarkBytes, hardLimitBytes uint64, kick chan struct{}) {
+	f.oomWatermark.Store(watermarkBytes)
+	f.oomHardLimit.Store(hardLimitBytes)
+	f.oomKick = kick
+}
+
+// WaitForOOMHeadroom applies synchronous back-pressure before the guest commits
+// new memory. If committed sandbox memory has reached the hard limit, it wakes
+// the guest OOM killer and pauses the caller (interruptibly) until memory is
+// reclaimed, so a fast-allocating workload cannot push the sandbox past its
+// limit and cause the host to OOM-kill the whole sandbox.
+//
+// It is called from the page-fault path (MemoryManager.HandleUserFault) with no
+// MemoryManager locks held, so pausing here cannot block the killer's victim
+// selection (which reads RSS locklessly) or reclaim (which frees a victim's
+// pages under that victim's own locks). If the caller is itself the victim, its
+// pending SIGKILL makes ctx.Killed() true and it returns immediately to unwind
+// the fault and exit.
+//
+// The fast path (limit not reached, or killer disabled) is a single atomic load
+// plus, when the killer is enabled, one cheap fstat of the backing memfd.
+func (f *MemoryFile) WaitForOOMHeadroom(ctx context.Context) {
+	hard := f.oomHardLimit.Load()
+	if hard == 0 || f.oomKick == nil {
+		return
+	}
+	cur, err := f.TotalUsage()
+	if err != nil {
+		log.Warningf("gVisor OOM: back-pressure skipped, TotalUsage failed: %v", err)
+		return
+	}
+	if cur < hard {
+		return
+	}
+	f.waitForOOMHeadroomSlow(ctx, hard)
+}
+
+// Headroom returns the amount of committed memory (in bytes) that can be
+// allocated before reaching the OOM hard limit. If no hard limit is configured,
+// it returns ^uint64(0). If the hard limit has already been reached or
+// exceeded, it returns 0.
+func (f *MemoryFile) Headroom() uint64 {
+	hard := f.oomHardLimit.Load()
+	if hard == 0 {
+		return ^uint64(0)
+	}
+	cur, err := f.TotalUsage()
+	if err != nil {
+		return 0
+	}
+	if cur >= hard {
+		return 0
+	}
+	return hard - cur
+}
+
+// waitForOOMHeadroomSlow is the out-of-line slow path of WaitForOOMHeadroom,
+// entered only when committed memory is at or above the hard limit.
+func (f *MemoryFile) waitForOOMHeadroomSlow(ctx context.Context, hard uint64) {
+	// Eagerly trigger evictions of evictable memory (e.g. page cache) so
+	// memory pressure may be relieved without killing processes.
+	f.StartEvictions()
+
+	deadline := time.Now().Add(oomBackpressureTimeout)
+	for {
+		// Wake the killer so it reclaims memory while we wait.
+		select {
+		case f.oomKick <- struct{}{}:
+		default:
+		}
+		// If we are the victim (or are otherwise being torn down), stop waiting
+		// so the fault can unwind and our pending SIGKILL is delivered; that
+		// frees our memory and relieves the pressure.
+		if ctx.Killed() {
+			return
+		}
+		time.Sleep(oomBackpressurePollInterval)
+		cur, err := f.TotalUsage()
+		if err != nil {
+			log.Warningf("gVisor OOM: back-pressure ending, TotalUsage failed: %v", err)
+			return
+		}
+		if cur < hard {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			log.Warningf("gVisor OOM: allocation back-pressure timed out after %v (committed %d >= limit %d); allowing allocation to avoid stalling the guest", oomBackpressureTimeout, cur, hard)
+			return
+		}
+	}
+}
+
+// maybeNotifyOOM wakes the guest OOM killer if accounted memory has reached the
+// configured watermark. It is cheap when the killer is disabled (a single
+// atomic load) and never blocks.
+func (f *MemoryFile) maybeNotifyOOM() {
+	wm := f.oomWatermark.Load()
+	if wm == 0 || f.oomKick == nil {
+		return
+	}
+	if usage.MemoryAccounting.Total() < wm {
+		return
+	}
+	select {
+	case f.oomKick <- struct{}{}:
+	default:
+	}
 }
 
 func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.FileRange, err error) {
@@ -1896,12 +2043,22 @@ func (f *MemoryFile) stringLocked() string {
 	return b.String()
 }
 
-// StartEvictions requests that f evict all evictable allocations. It does not
-// wait for eviction to complete; for this, see MemoryFile.WaitForEvictions.
-func (f *MemoryFile) StartEvictions() {
+// StartEvictions requests that f evict all evictable allocations. It returns
+// true if any eviction was started or was already running. It does not wait
+// for eviction to complete; for this, see MemoryFile.WaitForEvictions.
+func (f *MemoryFile) StartEvictions() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.startEvictionsLocked()
+	startedAny := f.startEvictionsLocked()
+	if startedAny {
+		return true
+	}
+	for _, info := range f.evictable {
+		if info.evicting {
+			return true
+		}
+	}
+	return false
 }
 
 // Preconditions: f.mu must be locked.
@@ -1960,6 +2117,24 @@ func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info
 // allocations.
 func (f *MemoryFile) WaitForEvictions() {
 	f.evictionWG.Wait()
+}
+
+// WaitForEvictionsTimeout blocks until f is no longer evicting any evictable
+// allocations or until timeout elapses. It returns true if all evictions
+// completed, or false if the timeout elapsed.
+func (f *MemoryFile) WaitForEvictionsTimeout(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		f.evictionWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		log.Warningf("pgalloc.MemoryFile: WaitForEvictions timed out after %v", timeout)
+		return false
+	}
 }
 
 type unwasteSetFunctions struct{}

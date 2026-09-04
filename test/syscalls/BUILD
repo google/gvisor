@@ -83,6 +83,12 @@ syscall_test(
 )
 
 syscall_test(
+    size = "large",
+    in_sandbox_cgroup = "v2",
+    test = "//test/syscalls/linux:guest_oom_cgroup_test",
+)
+
+syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:chdir_test",

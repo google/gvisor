@@ -39,6 +39,13 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr
 		return linuxerr.EFAULT
 	}
 
+	// Before committing a new page, apply guest OOM back-pressure: if the sandbox
+	// is at its memory limit, pause here (interruptibly) until the OOM killer
+	// reclaims memory. This runs with no MemoryManager locks held and guarantees
+	// a fast-allocating workload cannot overshoot the limit and get the whole
+	// sandbox OOM-killed by the host.
+	mm.mf.WaitForOOMHeadroom(ctx)
+
 	// Don't bother trying existingPMAsLocked; in most cases, if we did have
 	// existing pmas, we wouldn't have faulted.
 
@@ -184,6 +191,16 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar h
 		return nil
 	}
 
+	// Clamp eager population to available OOM headroom so eager commit cannot
+	// overshoot the sandbox memory limit.
+	if headroom := mm.mf.Headroom(); uint64(ar.Length()) > headroom {
+		clampedLen := hostarch.Addr(headroom).RoundDown()
+		if clampedLen == 0 {
+			return nil
+		}
+		ar.End = ar.Start + clampedLen
+	}
+
 	mm.activeMu.Lock()
 	// Can't defer mm.activeMu.Unlock(); see below.
 
@@ -227,6 +244,19 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 		// mm/gup.c:populate_vma_page_range.
 		mm.mappingMu.Unlock()
 		return
+	}
+
+	// Clamp eager population to available OOM headroom so eager commit
+	// (MAP_POPULATE, MAP_LOCKED) cannot overshoot the sandbox memory limit.
+	// In Linux, MAP_POPULATE is best-effort: unpopulated pages are faulted in
+	// lazily on first access, where WaitForOOMHeadroom applies back-pressure.
+	if headroom := mm.mf.Headroom(); uint64(ar.Length()) > headroom {
+		clampedLen := hostarch.Addr(headroom).RoundDown()
+		if clampedLen == 0 {
+			mm.mappingMu.Unlock()
+			return
+		}
+		ar.End = ar.Start + clampedLen
 	}
 
 	mm.activeMu.Lock()
@@ -851,7 +881,20 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 		return linuxerr.EINVAL
 	}
 
+	if mode == memmap.MLockEager {
+		mm.mf.WaitForOOMHeadroom(ctx)
+		if ctx.Killed() {
+			return linuxerr.EINTR
+		}
+	}
+
 	mm.mappingMu.Lock()
+	// Can't defer mm.mappingMu.Unlock(); see below.
+
+	if mode == memmap.MLockEager && uint64(ar.Length()) > mm.mf.Headroom() {
+		mm.mappingMu.Unlock()
+		return linuxerr.ENOMEM
+	}
 	// Can't defer mm.mappingMu.Unlock(); see below.
 
 	if mode != memmap.MLockNone {
@@ -1486,9 +1529,9 @@ func (mm *MemoryManager) VirtualMemorySizeRange(ar hostarch.AddrRange) uint64 {
 
 // ResidentSetSize returns the value advertised as mm's RSS in bytes.
 func (mm *MemoryManager) ResidentSetSize() uint64 {
-	mm.activeMu.RLock()
-	defer mm.activeMu.RUnlock()
-	return mm.curRSS
+	// curRSS is stored atomically, so no lock is required. This lets the guest
+	// OOM killer snapshot every process's RSS without contending on activeMu.
+	return mm.curRSS.Load()
 }
 
 // MaxResidentSetSize returns the value advertised as mm's max RSS in bytes.
