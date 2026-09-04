@@ -2073,7 +2073,8 @@ struct VethRequest {
 };
 
 struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
-                                  const char* ifname_second) {
+                                  const char* ifname_second,
+                                  int peer_netns_fd = -1) {
   struct VethRequest req = {};
   req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
   req.hdr.nlmsg_type = RTM_NEWLINK;
@@ -2098,6 +2099,10 @@ struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
         addattr(&req.hdr, sizeof(req), VETH_INFO_PEER, &ifm, sizeof(ifm));
         addattr(&req.hdr, sizeof(req), IFLA_IFNAME, ifname_second,
                 strlen(ifname_second));
+        if (peer_netns_fd >= 0) {
+          addattr(&req.hdr, sizeof(req), IFLA_NET_NS_FD, &peer_netns_fd,
+                  sizeof(peer_netns_fd));
+        }
       }
       peer_data->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)peer_data;
     }
@@ -2208,6 +2213,34 @@ TEST(NetlinkRouteTest, VethAdd) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, VethAddRefusedPeerNetnsLeavesNothing) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor outer_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+
+  ASSERT_THAT(InForkedProcess([&] {
+                // The new user namespace does not own the netns
+                // outer_nsfd points at, so the peer is refused.
+                TEST_PCHECK(syscall(SYS_unshare,
+                                    CLONE_NEWUSER | CLONE_NEWNET) == 0);
+
+                FileDescriptor fd = TEST_CHECK_NO_ERRNO_AND_VALUE(
+                    NetlinkBoundSocket(NETLINK_ROUTE));
+                VethRequest req =
+                    GetVethRequest(kSeq, "veth1", "veth2", outer_nsfd.get());
+                TEST_CHECK(
+                    NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len)
+                        .errno_value() == EPERM);
+
+                TEST_CHECK(if_nametoindex("veth1") == 0);
+                TEST_CHECK(if_nametoindex("veth2") == 0);
+                _exit(0);
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(NetlinkRouteTest, LinkInfoKind) {
