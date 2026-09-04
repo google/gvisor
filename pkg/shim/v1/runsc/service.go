@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -711,6 +712,7 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 		return nil, fmt.Errorf("update volume annotations: %w", err)
 	}
 	updated = setPodCgroup(spec) || updated
+	updated = applyPodResourcesFromAnnotations(spec) || updated
 
 	if updated {
 		if err := utils.WriteSpec(r.Bundle, spec); err != nil {
@@ -774,6 +776,152 @@ func setPodCgroup(spec *specs.Spec) bool {
 		}
 	}
 	return false
+}
+
+// applyPodResourcesFromAnnotations copies pod-level CPU settings and memory
+// limits from the CRI sandbox annotations into spec.Linux.Resources so that
+// runsc writes them to the sandbox host cgroup (e.g. cpu.max on the sandbox
+// scope).
+//
+// Background: containerd's CRI plugin puts pod-level limits on the sandbox
+// (pause) container's OCI spec as annotations only. Its Linux.Resources block
+// carries just cpu.shares=2 (the pause container's own resources). Because
+// gVisor collapses all containers of a pod into a single sandbox process, the
+// per-container cgroup limits never apply to the actual workload; the only
+// cgroup where a pod-wide limit can meaningfully bite is the sandbox scope.
+// Without this translation the sandbox scope ends up with cpu.max=max /
+// memory.max=max and pod-level limits are silently unenforced.
+// See google/gvisor#13777.
+//
+// This runs only for sandbox containers. Existing explicit values in
+// spec.Linux.Resources take precedence for quota/period/memory. For CPU shares,
+// the pause-container default (2) is treated as non-pod-level metadata and may
+// be replaced by the pod-level sandbox-cpu-shares annotation.
+//
+// Non-positive annotation values are ignored. containerd may emit zero-valued
+// annotations when the CRI resource object exists but fields are unset; copying
+// memory=0 into the OCI spec would become systemd MemoryMax=0 on cgroup v2.
+func applyPodResourcesFromAnnotations(spec *specs.Spec) bool {
+	if spec == nil || spec.Annotations == nil {
+		return false
+	}
+	if !utils.IsSandbox(spec) {
+		return false
+	}
+
+	ensureResources := func() *specs.LinuxResources {
+		if spec.Linux == nil {
+			spec.Linux = &specs.Linux{}
+		}
+		if spec.Linux.Resources == nil {
+			spec.Linux.Resources = &specs.LinuxResources{}
+		}
+		return spec.Linux.Resources
+	}
+
+	updated := false
+
+	// CPU quota / period / shares.
+	cpuQuotaStr := spec.Annotations[utils.SandboxCPUQuotaAnnotation]
+	cpuPeriodStr := spec.Annotations[utils.SandboxCPUPeriodAnnotation]
+	cpuSharesStr := spec.Annotations[utils.SandboxCPUSharesAnnotation]
+
+	if cpuQuotaStr != "" || cpuPeriodStr != "" || cpuSharesStr != "" {
+		var cpu *specs.LinuxCPU
+		ensureCPU := func() *specs.LinuxCPU {
+			if cpu != nil {
+				return cpu
+			}
+			res := ensureResources()
+			if res.CPU == nil {
+				res.CPU = &specs.LinuxCPU{}
+			}
+			cpu = res.CPU
+			return cpu
+		}
+		getCPU := func() *specs.LinuxCPU {
+			if cpu != nil {
+				return cpu
+			}
+			if spec.Linux != nil && spec.Linux.Resources != nil {
+				cpu = spec.Linux.Resources.CPU
+			}
+			return cpu
+		}
+
+		if cpuQuotaStr != "" {
+			if existing := getCPU(); existing == nil || existing.Quota == nil {
+				if v, ok := parsePositiveInt64Annotation(utils.SandboxCPUQuotaAnnotation, cpuQuotaStr); ok {
+					ensureCPU().Quota = &v
+					updated = true
+				}
+			}
+		}
+		if cpuPeriodStr != "" {
+			if existing := getCPU(); existing == nil || existing.Period == nil {
+				if v, ok := parsePositiveUint64Annotation(utils.SandboxCPUPeriodAnnotation, cpuPeriodStr); ok {
+					ensureCPU().Period = &v
+					updated = true
+				}
+			}
+		}
+		if cpuSharesStr != "" {
+			if existing := getCPU(); existing == nil || existing.Shares == nil || *existing.Shares == pauseContainerDefaultCPUShares {
+				if v, ok := parsePositiveUint64Annotation(utils.SandboxCPUSharesAnnotation, cpuSharesStr); ok {
+					ensureCPU().Shares = &v
+					updated = true
+				}
+			}
+		}
+	}
+
+	// Memory limit.
+	if memStr := spec.Annotations[utils.SandboxMemoryAnnotation]; memStr != "" {
+		var mem *specs.LinuxMemory
+		if spec.Linux != nil && spec.Linux.Resources != nil {
+			mem = spec.Linux.Resources.Memory
+		}
+		if mem == nil || mem.Limit == nil {
+			if v, ok := parsePositiveInt64Annotation(utils.SandboxMemoryAnnotation, memStr); ok {
+				res := ensureResources()
+				if res.Memory == nil {
+					res.Memory = &specs.LinuxMemory{}
+				}
+				res.Memory.Limit = &v
+				updated = true
+			}
+		}
+	}
+
+	return updated
+}
+
+const pauseContainerDefaultCPUShares uint64 = 2
+
+func parsePositiveInt64Annotation(name, value string) (int64, bool) {
+	v, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		log.L.Warnf("gvisor: ignoring unparsable %s=%q: %v", name, value, err)
+		return 0, false
+	}
+	if v <= 0 {
+		log.L.Debugf("gvisor: ignoring non-positive %s=%q", name, value)
+		return 0, false
+	}
+	return v, true
+}
+
+func parsePositiveUint64Annotation(name, value string) (uint64, bool) {
+	v, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		log.L.Warnf("gvisor: ignoring unparsable %s=%q: %v", name, value, err)
+		return 0, false
+	}
+	if v == 0 {
+		log.L.Debugf("gvisor: ignoring non-positive %s=%q", name, value)
+		return 0, false
+	}
+	return v, true
 }
 
 // GvisorTaskServer adapters runscService to taskServer.GvisorTaskServiceExt.
