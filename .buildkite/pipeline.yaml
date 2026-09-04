@@ -388,11 +388,11 @@ steps:
       arch: "amd64"
       queue: "default"
   - <<: *common
-    <<: *source_test
-    label: ":muscle: System call tests (ARM64)"
+    label: ":toolbox: System call tests (ARM64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,runsc_ptrace,runsc_systrap syscall-tests
     parallelism: 10
     agents:
+      <<: *platform_specific_agents
       arch: "arm64"
       queue: "arm64"
   # With Save Restore on AMD64.
