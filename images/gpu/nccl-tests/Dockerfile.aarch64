@@ -1,6 +1,8 @@
 # CUDA 12.8 is the first toolkit whose nvcc knows the Blackwell arches
 # (sm_100/sm_120); nccl-tests derives its gencode list from the toolkit.
-FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+# Pinned to linux/arm64 platform manifest digest to prevent Docker from
+# creating/pushing a multi-platform image index.
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:068e9c6a072aba2a5f07618f620ceb8cd1412d6d9e53b46191ab5c797997f46a
 
 RUN apt-get update && apt-get install git -y
 

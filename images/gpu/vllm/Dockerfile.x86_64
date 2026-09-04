@@ -16,7 +16,9 @@ RUN git clone https://github.com/vllm-project/vllm.git /vllm && cd /vllm && git 
 # "no kernel image is available for execution on the device" under any
 # runtime. v0.27.1 ships torch 2.13.0+cu130 built for
 # ['sm_75','sm_80','sm_86','sm_90','sm_100','sm_120'].
-FROM vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967
+# Pinned to linux/amd64 platform manifest digest to prevent Docker from
+# creating/pushing a multi-platform image index.
+FROM vllm/vllm-openai@sha256:c2f3b1b964e47809b722b5e75b61b1e7b39a50f70388cf2bf2418f16a9f31da2
 COPY --from=downloader /vllm/examples/template_chatml.jinja /vllm/examples/template_chatml.jinja
 COPY --from=downloader /vllm/benchmarks /vllm/benchmarks
 COPY --from=downloader /opt-125m /model
