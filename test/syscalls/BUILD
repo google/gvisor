@@ -139,8 +139,6 @@ syscall_test(
 syscall_test(
     add_host_connector = True,
     add_hostinet = True,
-    # TODO(b/318948806): lisafs.BoundSocketFD is leaked.
-    leak_check = False,
     one_sandbox = False,
     # Takes too long to run with S/R.
     save = False,
@@ -153,8 +151,6 @@ syscall_test(
 syscall_test(
     add_host_uds = True,
     add_hostinet = True,
-    # TODO(b/318948806): lisafs.BoundSocketFD is leaked.
-    leak_check = False,
     one_sandbox = False,
     # Takes too long to run with S/R.
     save = False,
