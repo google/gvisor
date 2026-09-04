@@ -1256,6 +1256,76 @@ TEST(NetlinkRouteTest, GetRouteRequest) {
   EXPECT_TRUE(rtDstFound);
 }
 
+// GetRouteOversizedDestination tests that RTM_GETROUTE with an RTA_DST longer
+// than an address is refused and leaves the socket usable.
+TEST(NetlinkRouteTest, GetRouteOversizedDestination) {
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in6_addr sin6_addr;
+    uint8_t extraDstByte;
+    uint8_t pad[3];
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET6;
+  req.rtm.rtm_dst_len = 128;
+  req.rtm.rtm_src_len = 0;
+  req.rtm.rtm_tos = 0;
+  req.rtm.rtm_table = RT_TABLE_UNSPEC;
+  req.rtm.rtm_protocol = RTPROT_UNSPEC;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNSPEC;
+
+  req.nla.nla_len =
+      sizeof(req.nla) + sizeof(req.sin6_addr) + sizeof(req.extraDstByte);
+  req.nla.nla_type = RTA_DST;
+  req.sin6_addr = in6addr_loopback;
+
+  bool refusalFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
+      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+        if (IsRunningOnGvisor()) {
+          EXPECT_EQ(hdr->nlmsg_type, NLMSG_ERROR);
+          ASSERT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+          const struct nlmsgerr* msg =
+              reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+          EXPECT_EQ(msg->error, -EINVAL);
+        }
+        refusalFound = true;
+      }));
+  EXPECT_TRUE(refusalFound);
+
+  const size_t exactLen =
+      sizeof(req) - sizeof(req.extraDstByte) - sizeof(req.pad);
+  req.hdr.nlmsg_len = exactLen;
+  req.hdr.nlmsg_seq = kSeq + 1;
+  req.nla.nla_len = sizeof(req.nla) + sizeof(req.sin6_addr);
+
+  bool responseFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
+      fd, &req, exactLen, [&](const struct nlmsghdr* hdr) {
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq + 1);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+        responseFound = true;
+      }));
+  EXPECT_TRUE(responseFound);
+}
+
 // GetRouteRoot tests a RTM_GETROUTE + NLM_F_ROOT request.
 TEST(NetlinkRouteTest, GetRouteRoot) {
   FileDescriptor fd =

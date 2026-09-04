@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // commandKind describes the operational class of a message type.
@@ -350,6 +351,10 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 // commonPrefixLen reports the length of the longest IP address prefix.
 // This is a simplified version from Golang's src/net/addrselect.go.
 func commonPrefixLen(a, b []byte) (cpl int) {
+	if len(a) != len(b) {
+		return 0
+	}
+
 	for len(a) > 0 {
 		if a[0] == b[0] {
 			cpl += 8
@@ -450,7 +455,12 @@ func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
 		}
 		attrs = rest
 		if hdr.Type == linux.RTA_DST {
-			return value, nil
+			switch len(value) {
+			case header.IPv4AddressSize, header.IPv6AddressSize:
+				return value, nil
+			default:
+				return nil, syserr.ErrInvalidArgument
+			}
 		}
 	}
 	return nil, syserr.ErrInvalidArgument
