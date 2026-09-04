@@ -131,3 +131,17 @@ func (s *subprocess) alive() bool {
 	s.dead.Store(true)
 	return false
 }
+
+// wakeAllContexts transitions all active context slots in ContextStateNone to
+// ContextStateUnexpectedDeath and wakes their futex.
+func (s *subprocess) wakeAllContexts() {
+	if s.threadContextRegion == 0 {
+		return
+	}
+	for i := uint64(0); i < maxGuestContexts; i++ {
+		tc := s.getThreadContextFromID(i)
+		if tc.State.CompareAndSwap(sysmsg.ContextStateNone, sysmsg.ContextStateUnexpectedDeath) {
+			futexWakeUint32((*uint32)(unsafe.Pointer(&tc.State)))
+		}
+	}
+}
