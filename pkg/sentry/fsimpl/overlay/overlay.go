@@ -922,6 +922,7 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 }
 
 // Preconditions: d.copyMu must be locked for writing.
+// +checklocks:d.copyMu
 func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 	if opts.Stat.Mask&linux.STATX_MODE != 0 {
 		// If the mode was changed, the underlying file's ACL may have changed,
