@@ -131,6 +131,9 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
 	ctx := k.SupervisorContext()
 	vfsObj := k.VFS()
 
+	// Configure the process-wide EROFS dentry cache.
+	erofs.SetDentryCacheSize(info.conf.DCache)
+
 	vfsObj.MustRegisterFilesystemType(cgroupfs.Name, &cgroupfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 		AllowUserList:  true,
@@ -1160,7 +1163,12 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		if m.goferFD == nil {
 			return "", nil, fmt.Errorf("EROFS mount requires an image file FD")
 		}
-		data = []string{fmt.Sprintf("ifd=%d", m.goferFD.Release())}
+		var err error
+		mopts, data, err = consumeMountOptions(mopts, erofs.SupportedMountOptions...)
+		if err != nil {
+			return "", nil, err
+		}
+		data = append(data, fmt.Sprintf("ifd=%d", m.goferFD.Release()))
 		internalData = erofs.InternalFilesystemOptions{
 			UniqueID: checkpoint.ResourceID{
 				ContainerName: containerName,

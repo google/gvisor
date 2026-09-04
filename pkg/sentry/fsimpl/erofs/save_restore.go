@@ -15,17 +15,38 @@
 package erofs
 
 import (
-	"context"
+	goContext "context"
 	"fmt"
 	"os"
 
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+var _ vfs.FilesystemImplSaveRestoreExtension = (*filesystem)(nil)
+
+// PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
+func (fs *filesystem) PrepareSave(ctx context.Context) error {
+	for fs.evictCachedDentry(ctx) {
+	}
+	return nil
+}
+
+// BeforeResume implements vfs.FilesystemImplSaveRestoreExtension.BeforeResume.
+func (*filesystem) BeforeResume(context.Context) {}
+
+// CompleteRestore implements vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
+func (fs *filesystem) CompleteRestore(context.Context, vfs.CompleteRestoreOptions) error {
+	if globalDentryCache != nil {
+		fs.dentryCache = globalDentryCache
+	}
+	return nil
+}
+
 // afterLoad is called by stateify.
-func (fs *filesystem) afterLoad(ctx context.Context) {
+func (fs *filesystem) afterLoad(ctx goContext.Context) {
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
@@ -49,12 +70,12 @@ func (d *dentry) saveParent() *dentry {
 }
 
 // loadParent is called by stateify.
-func (d *dentry) loadParent(_ context.Context, parent *dentry) {
+func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 	d.parent.Store(parent)
 }
 
 // afterLoad is called by stateify.
-func (d *dentry) afterLoad(context.Context) {
+func (d *dentry) afterLoad(goContext.Context) {
 	if d.refs.Load() != -1 {
 		refs.Register(d)
 	}
