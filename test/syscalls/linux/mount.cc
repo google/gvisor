@@ -3140,6 +3140,54 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
               IsPosixErrorOkAndHolds(0));
 }
 
+// Renaming a directory on an overlay mounted without userxattr inside a user
+// namespace triggers noxattr mode (trusted.overlay.* xattrs are not available).
+// Renaming a merged directory returns EXDEV.
+TEST(MountTest, OverlayfsDirectoryRenameInUserNamespaceNoxattrFallback) {
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+
+  const std::function<void()> parent = [] {};
+  const std::function<void()> child = [&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
+                               "mode=1777,size=10m"));
+    }
+    auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+      if (in_overlayfs) {
+        TEST_CHECK_SUCCESS(umount2(base_dir.path().c_str(), 0));
+      }
+    });
+
+    auto lower = JoinPath(base_dir.path(), "lower");
+    auto upper = JoinPath(base_dir.path(), "upper");
+    auto work = JoinPath(base_dir.path(), "work");
+    auto merged = JoinPath(base_dir.path(), "merged");
+    TEST_CHECK_SUCCESS(mkdir(lower.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(upper.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(work.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(merged.c_str(), 0755));
+
+    TEST_CHECK_SUCCESS(mkdir(JoinPath(lower, "mydir").c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(JoinPath(lower, "renamed").c_str(), 0755));
+
+    std::string opts = "lowerdir=" + lower + ",upperdir=" + upper +
+                       ",workdir=" + work;
+    TEST_CHECK_SUCCESS(
+        mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()));
+    auto overlayfs_cleanup =
+        Cleanup([&merged] { TEST_CHECK_SUCCESS(umount2(merged.c_str(), 0)); });
+
+    auto mydir = JoinPath(merged, "mydir");
+    auto renamed = JoinPath(merged, "renamed");
+    TEST_CHECK(rename(mydir.c_str(), renamed.c_str()) == -1 && errno == EXDEV);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
