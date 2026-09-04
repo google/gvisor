@@ -31,6 +31,11 @@ The ABSL build benchmark (`BenchmarkBuildABSL` in
 `execve` and general syscall overhead, as Bazel orchestrates thousands of
 short-lived compiler processes.
 
+**Tracepoint Selection Note**: The default `null_bench_config.json` and
+`remote_bench_config.json` files are tuned specifically for this
+`BenchmarkBuildABSL` workload and are hard-coded to trace only
+`syscall/execve/enter`.
+
 ```shell
 $ make run-benchmark-seccheck \
     BENCHMARKS_TARGETS="//test/benchmarks/fs:bazel_test" \
@@ -108,7 +113,7 @@ binaries repeatedly).
 
 -   **Baseline:** provides IPC and compilation performance inside the generic
     Sentry sandbox unburdened by syscall interception telemetry.
--   **Cache enabled:** the Sentry only incurs the heavy disk-read and SHA-256
+-   **Cache enabled:** the Sentry only incurs the heavy disk-read and SHA256
     calculation mathematically on the very first compilation hit. On subsequent
     invocations, the Sentry detects the identical ELF binary footprint and
     serves the hash instantly.
@@ -140,3 +145,182 @@ network variability can inject variance. While repeating loops (`-test.count=5`)
 statistically filters out the largest massive spikes by discarding the extremes,
 minor host-level CPU priority jitter can still bleed into the isolated true
 medians.
+
+## Example: Profiling Seccheck Memory Overheads (Redis)
+
+`redis-benchmark` can be used to answer concerns about the memory allocation
+(`allocs/op`) and garbage collection (GC) pressure that `seccheck` may inflict,
+Redis is heavily dependent on `syscall` throughput (specifically thousands of
+socket loops per second), making it an ideal candidate to flush out Sentry
+memory leaks or GC spikes.
+
+**Tracepoint Selection Note**: Unlike the ABSL benchmark which forks processes
+(`execve`), the Redis benchmark does endless I/O over the network and executes
+almost no `execve` calls. The `redis_*_bench_config.json` files are explicitly
+overwritten to capture `syscall/read/enter` and `syscall/write/enter` to ensure
+high-frequency trace generation during this test.
+
+### Pass 1: Baseline (Disabled)
+
+This runs the Redis macro-benchmark under a standard `runsc` sandbox without any
+telemetry configurations initialized. We enable native profiling to collect a
+baseline heap profile and execution trace:
+
+```shell
+make setup-seccheck \
+    SECCHECK_BENCH_CONFIG=$(pwd)/test/benchmarks/seccheck/empty_bench_config.json \
+    RUNTIME_ARGS="--debug --profile=true --profile-heap=/tmp/redis-baseline-heap.prof --trace=/tmp/redis-baseline-trace.out" && \
+make run-benchmark-seccheck \
+    BENCHMARKS_TARGETS="//test/benchmarks/database:redis_test" \
+    BENCHMARKS_OPTIONS="-test.benchtime=2s -test.count=6" \
+    BENCHMARKS_FILTER="BenchmarkRedis" 2>&1 | tee redis_baseline.log
+```
+
+**Tip for GC Tracing:** To explicitly count Garbage Collection cycles, you can
+prefix any of the following `make run-benchmark-seccheck` commands with
+`GODEBUG=gctrace=1`. This prints raw GC statistics (and Stop-The-World pause
+timings) directly to the logs. *Note: Doing this consumes extra CPU cycles and
+introduces a minor observer effect penalty on max throughput.*
+
+```
+GODEBUG=gctrace=1 make run-benchmark-seccheck ...
+```
+
+### Pass 2: Base Instrumentation (Null Sink)
+
+This enables `seccheck` using a `null` sink configuration (to discard the
+serialized events instantly, eliminating remote IPC networking lag). This tests
+the absolute memory allocation cost strictly inside the Sentry when it
+dynamically intercepts high-frequency network events and generates Protobuf
+payload context structures.
+
+```shell
+make setup-seccheck \
+    SECCHECK_BENCH_CONFIG=$(pwd)/test/benchmarks/seccheck/redis_null_bench_config.json \
+    RUNTIME_ARGS="--debug --profile=true --profile-heap=/tmp/redis-null-heap.prof --trace=/tmp/redis-null-trace.out" && \
+make run-benchmark-seccheck \
+    BENCHMARKS_TARGETS="//test/benchmarks/database:redis_test" \
+    BENCHMARKS_OPTIONS="-test.benchtime=2s -test.count=6" \
+    BENCHMARKS_FILTER="BenchmarkRedis" 2>&1 | tee redis_null_sink.log
+```
+
+### Pass 3: IPC Transfer Overhead (Remote Sink)
+
+This enables `seccheck` using a `remote` sink. To isolate the extreme cost of
+the Sentry serializing and pushing bytes over the inter-process boundary (IPC),
+we launch a dummy listener in the background that instantly accepts and discards
+the Unix Domain Socket bytes.
+
+```shell
+# Start a dummy UDS listener that discards the IPC bytes (SOCK_SEQPACKET type)
+python3 $(pwd)/test/benchmarks/seccheck/dummy_uds_server.py &
+DUMMY_PID=$!
+
+# Configure and run the benchmark sending to the socket
+make setup-seccheck \
+    SECCHECK_BENCH_CONFIG=$(pwd)/test/benchmarks/seccheck/redis_remote_bench_config.json \
+    RUNTIME_ARGS="--profile=true --profile-heap=/tmp/redis-remote-heap.prof --trace=/tmp/redis-remote-trace.out" && \
+make run-benchmark-seccheck \
+    BENCHMARKS_TARGETS="//test/benchmarks/database:redis_test" \
+    BENCHMARKS_OPTIONS="-test.benchtime=2s -test.count=6" \
+    BENCHMARKS_FILTER="BenchmarkRedis" 2>&1 | tee redis_remote_sink.log
+
+# Kill the dummy listener and clean up the socket lock
+kill $DUMMY_PID
+rm -f /tmp/seccheck.sock
+```
+
+### Analysis and Comparison
+
+#### Comparing Application Throughput (QPS)
+
+To compare the performance logs and see the exact QPS drop between the baseline
+and the instrumentation, use the official Go `benchstat` tool:
+
+```shell
+# Install benchstat if you don't already have it
+go install golang.org/x/perf/cmd/benchstat@latest
+
+~/go/bin/benchstat baseline=redis_baseline.log null=redis_null_sink.log remote=redis_remote_sink.log
+```
+
+#### Comparing Memory Overhead (Profiles)
+
+Instead of manually analyzing raw text logs, we use Go's built-in tooling to
+subtract the baseline memory profile from the seccheck profile. This isolates
+the exact code paths and memory overhead introduced exclusively by the
+telemetry.
+
+**Option 1: Terminal Text Output** For a quick look directly in your terminal,
+output a ranked diff table:
+
+```shell
+# Compare Data Generation Overhead (Null Sink target)
+go tool pprof -top -diff_base=/tmp/redis-baseline-heap.prof /tmp/redis-null-heap.prof
+
+# Compare Total IPC Overhead (Remote Sink target)
+go tool pprof -top -diff_base=/tmp/redis-baseline-heap.prof /tmp/redis-remote-heap.prof
+```
+
+**Option 2: Interactive Web UI** To view a visual flamegraph or the timeline
+trace, start a local web server:
+
+```shell
+# View the heap flamegraph for Null Sink (Internal CPU Cost)
+go tool pprof -no_browser -http=0.0.0.0:8080 -diff_base=/tmp/redis-baseline-heap.prof /tmp/redis-null-heap.prof
+
+# View the heap flamegraph for Remote Sink (Cross-Boundary IPC Cost)
+go tool pprof -no_browser -http=0.0.0.0:8080 -diff_base=/tmp/redis-baseline-heap.prof /tmp/redis-remote-heap.prof
+
+# View the execution timeline trace for Null Sink
+# (safely ignore the X11 error if it appears, trace doesn't support -no_browser)
+go tool trace -http=0.0.0.0:8081 /tmp/redis-null-trace.out
+```
+
+*(Navigate to `http://<your-machine-ip-or-hostname>:8080` in your browser).*
+
+### What to expect
+
+-   **What it measures:** The `redis-benchmark` isolates operations throughput
+    (in Queries Per Second) across workloads (e.g., `SET`, `LPUSH`) whilst
+    simultaneously recording all memory allocations (`allocs/op`) and Garbage
+    Collection sweep pauses natively into the `.prof` and `.out` files.
+-   **What to look for:** You should compare the memory profiles (`pprof`) to
+    see if the sheer act of generating the `seccheck` context objects is
+    creating a high volume of garbage. Then, compare the execution traces
+    (`trace`) to see if frequent GC "Stop The World" (STW) pauses are actively
+    starving the Redis socket loops of CPU time.
+
+### Interpreting the Benchmark Results
+
+By comparing the three generated logs (Baseline vs. Null Sink vs. Remote Sink),
+we can decompose the performance cost of Seccheck tracing into two distinct
+architectural phases: **Data Generation** and **Data Export**.
+
+Here is an example real-world result from `redis_test.go` tracing constant
+`read` and `write` activity:
+
+```text
+                       │  baseline   │               null                │               remote               │
+                       │   SET.rps   │   SET.rps    vs base              │   SET.rps    vs base               │
+Redis/operation.SET-96   39.22k ± 3%   37.62k ± 3%  -4.08% (p=0.015 n=6)   28.16k ± 0%  -28.20% (p=0.002 n=6)
+```
+
+#### Data Generation Overhead (Baseline vs. Null Sink)
+
+The Null Sink measures strictly the CPU and Memory cost of intercepting the
+syscalls, gathering context data, and formatting the Protobuf trace objects
+in-memory (before instantly discarding them).
+
+**Result:** The overhead of structuring traces inside the Sentry drops
+operations throughput by **~4%**. Future optimizations should aim to bring this
+down to **<1%**.
+
+#### Data Export Overhead (Baseline vs. Remote Sink)
+
+The Remote Sink measures the total end-to-end burden of tracing, which heavily
+includes writing the serialized Protobufs over a Unix Domain Socket (UDS) and
+crossing the Inter-Process Communication boundary to an external daemon.
+
+**Result:** Serializing and moving the data out of the socket drops operations
+throughput by a massive **~28%**.
