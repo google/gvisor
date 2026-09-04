@@ -46,6 +46,9 @@ func (fs *filesystem) loadMf(ctx goContext.Context, resourceID checkpoint.Resour
 	}
 	mf, ok := mfmap[resourceID]
 	if !ok {
+		mf, ok = mfmap[resourceID.Clean()]
+	}
+	if !ok {
 		panic(fmt.Sprintf("Memory file for %q not found in CtxMemoryFileMap", resourceID))
 	}
 	fs.mf = mf

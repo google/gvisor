@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -107,6 +108,14 @@ type SaveOpts struct {
 	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
 	// sequentially (rather than in parallel).
 	CudaCheckpointSequential bool `json:"cuda_checkpoint_sequential"`
+
+	// SplitFSCheckpointPaths is the list of paths to include in the filesystem
+	// for split checkpoint. If non-empty, split filesystem checkpoint is enabled.
+	// For capturing all of tmpfs, the ResourceID Path should be "all-tmpfs".
+	SplitFSCheckpointPaths []checkpoint.ResourceID `json:"split_fs_checkpoint_paths"`
+
+	// RunscVersion is the runsc binary version.
+	RunscVersion string `json:"runsc_version"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary
@@ -143,6 +152,10 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 }
 
 func setSaveOpts(o *SaveOpts, saveOpts *state.SaveOpts) error {
+	// TODO(b/541219576): Support checkpoint gofer with split checkpoint.
+	if len(o.SplitFSCheckpointPaths) > 0 && o.UseCheckpointGofer {
+		return fmt.Errorf("split filesystem checkpoint is not supported with checkpoint gofer")
+	}
 	if o.UseCheckpointGofer {
 		return setSaveOptsForCheckpointGofer(o, saveOpts)
 	}
@@ -154,7 +167,11 @@ func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) e
 	if o.HavePagesFile {
 		wantFiles += 2
 	}
-	if gotFiles := len(o.FilePayload.Files); gotFiles != wantFiles {
+	fsFilesStart := wantFiles
+	if len(o.SplitFSCheckpointPaths) > 0 {
+		wantFiles += 4
+	}
+	if gotFiles := len(o.Files); gotFiles != wantFiles {
 		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
 	}
 
@@ -182,6 +199,33 @@ func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) e
 			return err
 		}
 		saveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
+	}
+
+	if len(o.SplitFSCheckpointPaths) > 0 {
+		saveOpts.FSSaveOpts = &kernel.FSSaveOpts{
+			RunscVersion: o.RunscVersion,
+			Paths:        o.SplitFSCheckpointPaths,
+		}
+		manifestFile, err := o.ReleaseFD(fsFilesStart)
+		if err != nil {
+			return err
+		}
+		saveOpts.FSSaveOpts.ManifestFile = stateio.NewBufioWriteCloser(manifestFile)
+		multiTarFile, err := o.ReleaseFD(fsFilesStart + 1)
+		if err != nil {
+			return err
+		}
+		saveOpts.FSSaveOpts.MultiTarFile = stateio.NewBufioWriteCloser(multiTarFile)
+		pagesMetadataFile, err := o.ReleaseFD(fsFilesStart + 2)
+		if err != nil {
+			return err
+		}
+		saveOpts.FSSaveOpts.PagesMetadataFile = stateio.NewBufioWriteCloser(pagesMetadataFile)
+		pagesFileFD, err := unix.Dup(int(o.Files[fsFilesStart+3].Fd()))
+		if err != nil {
+			return err
+		}
+		saveOpts.FSSaveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
 	}
 	return nil
 }
@@ -233,7 +277,13 @@ func setSaveOptsForCheckpointGofer(o *SaveOpts, saveOpts *state.SaveOpts) error 
 }
 
 // Save saves the running system.
-func (s *State) Save(o *SaveOpts, _ *struct{}) error {
+func (s *State) Save(o *SaveOpts, _ *struct{}) (err error) {
+	if len(o.SplitFSCheckpointPaths) > 0 {
+		defer func() {
+			s.Kernel.SignalAllFSSaveWaiters(err)
+		}()
+	}
+
 	saveOpts, err := ConvertToStateSaveOpts(o)
 	if err != nil {
 		return err
