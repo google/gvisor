@@ -2179,6 +2179,15 @@ func (s *Sandbox) HeapProfile(f *os.File, delay time.Duration) error {
 	return s.call(boot.ProfileHeap, &opts, nil)
 }
 
+// GoroutineProfile writes a goroutine stack dump to the given file.
+func (s *Sandbox) GoroutineProfile(f *os.File) error {
+	log.Debugf("Goroutine profile %q", s.ID)
+	opts := control.GoroutineProfileOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+	}
+	return s.call(boot.ProfileGoroutine, &opts, nil)
+}
+
 // CPUProfile collects a CPU profile.
 func (s *Sandbox) CPUProfile(f *os.File, duration time.Duration) error {
 	log.Debugf("CPU profile %q", s.ID)

@@ -162,11 +162,12 @@ const (
 
 // Profiling related commands (see pprof.go for more details).
 const (
-	ProfileCPU   = "Profile.CPU"
-	ProfileHeap  = "Profile.Heap"
-	ProfileBlock = "Profile.Block"
-	ProfileMutex = "Profile.Mutex"
-	ProfileTrace = "Profile.Trace"
+	ProfileCPU       = "Profile.CPU"
+	ProfileHeap      = "Profile.Heap"
+	ProfileGoroutine = "Profile.Goroutine"
+	ProfileBlock     = "Profile.Block"
+	ProfileMutex     = "Profile.Mutex"
+	ProfileTrace     = "Profile.Trace"
 )
 
 // Logging related commands (see logging.go for more details).
