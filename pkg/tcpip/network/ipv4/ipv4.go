@@ -688,6 +688,14 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 	if packetMustBeFragmented(pkt, networkMTU) {
 		h := header.IPv4(pkt.NetworkHeader().Slice())
 		if h.Flags()&header.IPv4FlagDontFragment != 0 && pkt.NetworkPacketInfo.IsForwardedPacket {
+			// For forwarded packets with DF set, check if this is a GSO packet whose
+			// per-segment size fits the MTU. If so, allow it to proceed for re-segmentation
+			// at transmit time instead of dropping it.
+			if gsoSegmentFitsNetworkMTU(pkt, networkMTU) {
+				// GSO packet with segments that fit MTU - skip fragmentation.
+				// The NIC will handle segmentation at transmit time.
+				goto skipFragmentation
+			}
 			// TODO(gvisor.dev/issue/5919): Handle error condition in which DontFragment
 			// is set but the packet must be fragmented for the non-forwarding case.
 			return &tcpip.ErrMessageTooLong{}
@@ -704,6 +712,7 @@ func (e *endpoint) writePacketPostRouting(r *stack.Route, pkt *stack.PacketBuffe
 		return err
 	}
 
+skipFragmentation:
 	if err := e.nic.WritePacket(r, pkt); err != nil {
 		stats.OutgoingPacketErrors.Increment()
 		return err
@@ -2023,6 +2032,19 @@ func calculateNetworkMTU(linkMTU, networkHeaderSize uint32) (uint32, tcpip.Error
 func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
 	payload := len(pkt.TransportHeader().Slice()) + pkt.Data().Size()
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
+}
+
+// gsoSegmentFitsNetworkMTU checks if a GSO packet's per-segment size would fit
+// within the network MTU. This is equivalent to Linux's skb_gso_validate_network_len.
+func gsoSegmentFitsNetworkMTU(pkt *stack.PacketBuffer, networkMTU uint32) bool {
+	if pkt.GSOOptions.Type == stack.GSONone {
+		return false
+	}
+	// For GSO packets, check if the per-segment size (MSS + headers) fits MTU.
+	// The MSS is the data portion per segment; we need to add transport and network headers.
+	transportHdrLen := uint32(len(pkt.TransportHeader().Slice()))
+	perSegmentSize := uint32(pkt.GSOOptions.MSS) + transportHdrLen
+	return perSegmentSize <= networkMTU
 }
 
 // addressToUint32 translates an IPv4 address into its little endian uint32
