@@ -1559,6 +1559,51 @@ func rmAllocIMEXSession(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAME
 	return n, nil
 }
 
+// rmAllocTraceDeviceEvent handles allocation of TRACE_DEVICE_EVENT, which
+// exists on Blackwell and later GPUs since driver version 610.43.02. Its alloc
+// params contain a file descriptor for the trace-device capability file in
+// /dev/nvidia-caps/, which must be translated to the corresponding host FD. See
+// src/nvidia/src/kernel/gpu/hwpm/trace_device_event.c:traceDeviceEventConstruct_IMPL().
+func rmAllocTraceDeviceEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	var allocParams nvgpu.NVCDCD_ALLOC_PARAMETERS
+	// As in rmAllocSimpleParams(), the driver ignores ioctlParams.ParamsSize and
+	// derives the param size from the class, so it is not validated here.
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return 0, err
+	}
+
+	origCapDescriptor := allocParams.CapDescriptor
+	capsFileGeneric, _ := fi.t.FDTable().Get(int32(allocParams.CapDescriptor))
+	if capsFileGeneric == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer capsFileGeneric.DecRef(fi.ctx)
+	capsFile, ok := capsFileGeneric.Impl().(*openOnlyFD)
+	if !ok {
+		fi.ctx.Warningf("nvproxy: rmAllocTraceDeviceEvent got capDescriptor file of incompatible type %T", capsFileGeneric.Impl())
+		return 0, linuxerr.EINVAL
+	}
+	allocParams.CapDescriptor = uint64(capsFile.hostFD)
+
+	// As in rmAllocIMEXSession(), don't capture allocParams in the tracked
+	// object: they hold a host FD, which is meaningless after restore, so
+	// replaying the allocation with them would be incorrect. This makes the
+	// object non-restorable, so checkpointing a sandbox with a live
+	// TRACE_DEVICE_EVENT fails rather than restoring a broken one.
+	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NVCDCD_ALLOC_PARAMETERS) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, ioctlParams.HObjectParent)
+	})
+	if err != nil {
+		return n, err
+	}
+
+	allocParams.CapDescriptor = origCapDescriptor
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func rmAllocMulticastFabric[Params any, PtrParams hasPOsEventPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	var allocParamsValue Params
 	allocParams := PtrParams(&allocParamsValue)

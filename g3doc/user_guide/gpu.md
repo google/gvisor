@@ -170,6 +170,39 @@ microarchitectures as the above will likely work as well. This includes
 consumer-oriented GPUs such as **RTX 3090** (Ampere) and **RTX 4090** (Ada
 Lovelace).
 
+#### Blackwell {#blackwell}
+
+Blackwell GPUs are **not yet officially supported**, because gVisor's
+continuous tests do not currently run on Blackwell hardware. `nvproxy` does
+however implement the Blackwell ABI, and CUDA workloads have been verified to
+run on a **RTX PRO 6000 Blackwell Server Edition** (GB202, compute capability
+12.0) with driver 610.57.04: `nvidia-smi`, the CUDA vector-add and smoke
+samples, and vLLM inference all pass under `runsc`, and the
+[ioctl sniffer](#debugging) reports no unimplemented `ioctl`s. Treat this as
+"expected to work, not qualified": please report problems, but do not rely on
+Blackwell in production the way you can rely on the GPUs listed above.
+
+`nvproxy` implements allocation classes for both Blackwell chip families: the
+datacenter parts (GB100/GB102/GB110/GB112, i.e. B100/B200/GB200/GB300) and the
+consumer and workstation parts (GB202-GB207, i.e. GeForce RTX 50 series and
+RTX PRO Blackwell). Blackwell requires a supported driver version of
+**570.124.06 or newer**; older supported drivers predate the Blackwell
+allocation classes. The Blackwell SoCs (GB10, as in DGX Spark, and GB20x, as in
+Jetson Thor) additionally need their video engine classes, which are present in
+supported drivers 580.65.06 and newer. Device-level GPU tracing uses the
+driver's `trace-device` capability, which exists in driver versions 610.43.02
+and newer and requires the `profiling` driver capability; see
+[Supported Driver Capabilities](#driver-capabilities).
+
+Note that a workload also needs kernels compiled for the GPU's compute
+capability. Frameworks that predate Blackwell fail with `no kernel image is
+available for execution on the device` regardless of the container runtime;
+this is a property of the workload, not of gVisor. For PyTorch, Blackwell
+kernels first shipped in **2.7.0**, and only in the CUDA 12.8 (`cu128`) builds,
+so a `cu126`-or-older wheel will fail on Blackwell even at a recent PyTorch
+version. `torch.cuda.get_arch_list()` shows what a given build actually
+contains.
+
 Therefore, if you encounter an incompatible workload on a GPU on one of the
 above microarchitectures, even if on an unsupported GPU, chances are that this
 workload is also incompatible in the same manner on one of the officially
@@ -233,6 +266,21 @@ capabilities to allow. Allowing additional capabilities broadens the host driver
 surface exposed to the sandbox, so provision this flag conservatively. Passing
 "all" will allow all supported capabilities. If `NVIDIA_DRIVER_CAPABILITIES=all`
 then all allowed capabilities will be used.
+
+`nvproxy` additionally understands the following *privileged* capabilities,
+which correspond to capabilities in the driver's
+`src/nvidia/inc/kernel/os/capability.h` rather than to capabilities defined by
+`nvidia-container-toolkit`. These are not included in "all" and must be
+requested explicitly via `--nvproxy-allowed-driver-capabilities`, because each
+one exposes a substantially larger part of the host driver to the sandbox:
+
+*   `profiling`: GPU hardware performance counter and tracing access, as used by
+    Nsight Compute and Nsight Systems. On Blackwell GPUs with driver 610.43.02
+    or newer this also exposes the driver's `trace-device` capability, which
+    `TRACE_DEVICE_EVENT` requires.
+*   `fabric-imex-mgmt`: NVLink fabric IMEX management, as used for multi-node
+    NVLink (for example on GB200 NVL72).
+*   `rdma`: GPUDirect RDMA, i.e. exporting GPU memory to a dma-buf FD.
 
 ### Supported Device Files {#device-files}
 
