@@ -850,7 +850,7 @@ type Endpoint interface {
 	// protocol-specific and is primarily used for diagnostics.
 	State() uint32
 
-	// ModerateRecvBuf should be called everytime data is copied to the user
+	// ModerateRecvBuf should be called every time data is copied to the user
 	// space. This allows for dynamic tuning of recv buffer space for a
 	// given socket.
 	//

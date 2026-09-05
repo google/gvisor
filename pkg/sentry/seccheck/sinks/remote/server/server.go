@@ -64,7 +64,7 @@ func (c client) close() {
 }
 
 // CommonServer provides common functionality to connect and process messages
-// from different clients. Implementors decide how clients and messages are
+// from different clients. Implementers decide how clients and messages are
 // handled, e.g. counting messages for testing.
 type CommonServer struct {
 	// Endpoint is the path to the socket that the server listens to.

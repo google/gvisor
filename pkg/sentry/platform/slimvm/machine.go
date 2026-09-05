@@ -150,7 +150,7 @@ type vCPU struct {
 // newVCPU creates and returns a new vCPU. It returns nil when the per-machine
 // vCPU limit (m.maxVCPUs) is exhausted.
 //
-// Precondtion: mu must be held.
+// Precondition: mu must be held.
 func (m *machine) newVCPU() *vCPU {
 	id, ok := m.allocateVCPUID()
 	if !ok {
@@ -443,7 +443,7 @@ func (c *vCPU) unlock() {
 		// when next time this vCPU enter guest ring3, bit of vCPUWaiter
 		// may not be cleard, this will cause the following BounceToKernel
 		// to this vCPU hang at waitUntilNot.
-		// Halt may workaroud this issue, because halt process will reset
+		// Halt may workaround this issue, because halt process will reset
 		// vCPU status into vCPUUser, and notify all waiter for vCPU state
 		// change, but if there is no exception or syscall in this period,
 		// BounceToKernel will hang at waitUntilNot.
