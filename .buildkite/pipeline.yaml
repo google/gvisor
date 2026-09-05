@@ -323,6 +323,13 @@ steps:
     agents:
       arch: "amd64"
 
+  - <<: *common
+    <<: *source_test
+    label: ":scales: Dependency license check"
+    command: make license-check
+    agents:
+      arch: "amd64"
+
   # Basic unit tests.
   - <<: *common
     <<: *source_test
