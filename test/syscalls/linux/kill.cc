@@ -12,30 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <elf.h>
 #include <errno.h>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/user.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <csignal>
+#include <cstdint>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/synchronization/mutex.h"
-#include "absl/time/clock.h"
-#include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
 ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
 ABSL_FLAG(int32_t, scratch_gid, 65534, "scratch GID");
-
-using ::testing::Ge;
 
 namespace gvisor {
 namespace testing {
@@ -381,6 +386,62 @@ TEST(KillTest, CanSIGCONTSameSession) {
               SyscallSucceedsWithValue(other_child));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "status " << status;
+}
+
+// On arm64, if the first argument of a syscall equals one of the kernel's
+// internal restart codes (-513 / `-ERESTARTNOINTR`, etc.), the host kernel's
+// do_signal() must not cause the syscall to execute twice. Test that all
+// restart-code arguments result in exactly one execution of SYS_kill, matching
+// real Linux kernel behavior.
+TEST(KillTest, RestartArgumentNotExecutedTwice) {
+  for (int64_t arg : {-512, -513, -514, -516}) {
+    pid_t child = fork();
+    if (child == 0) {
+      TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == 0);
+      kill(getpid(), SIGSTOP);
+      syscall(SYS_kill, arg, 0);
+      _exit(42);
+    }
+    ASSERT_THAT(child, SyscallSucceeds());
+
+    int status;
+    ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+    ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_TRACESYSGOOD),
+                SyscallSucceeds());
+
+    int kill_count = 0;
+    while (true) {
+      ASSERT_THAT(ptrace(PTRACE_SYSCALL, child, 0, 0), SyscallSucceeds());
+      ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+      if (WIFEXITED(status)) {
+        EXPECT_EQ(WEXITSTATUS(status), 42);
+        break;
+      }
+      ASSERT_TRUE(WIFSTOPPED(status));
+      if (WSTOPSIG(status) == (SIGTRAP | 0x80)) {
+        struct user_regs_struct regs = {};
+        struct iovec iov = {&regs, sizeof(regs)};
+        ASSERT_THAT(ptrace(PTRACE_GETREGSET, child, NT_PRSTATUS, &iov),
+                    SyscallSucceeds());
+#if defined(__x86_64__)
+        int64_t sysno = regs.orig_rax;
+#elif defined(__aarch64__)
+        int64_t sysno = regs.regs[8];
+#else
+        int64_t sysno = -1;
+#endif
+        if (sysno == SYS_kill) {
+          kill_count++;
+        }
+      }
+    }
+    // Each syscall triggers 2 stops (entry and exit).
+    // Exactly 1 execution of SYS_kill(arg, 0) gives kill_count == 2.
+    // If re-executed, kill_count would be 4.
+    EXPECT_EQ(kill_count, 2) << "for arg " << arg;
+  }
 }
 
 }  // namespace

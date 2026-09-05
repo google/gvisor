@@ -69,9 +69,10 @@ var (
 //
 // These constants are only used in subprocess.go.
 const (
-	ERESTARTSYS    = unix.Errno(512)
-	ERESTARTNOINTR = unix.Errno(513)
-	ERESTARTNOHAND = unix.Errno(514)
+	ERESTARTSYS           = unix.Errno(512)
+	ERESTARTNOINTR        = unix.Errno(513)
+	ERESTARTNOHAND        = unix.Errno(514)
+	ERESTART_RESTARTBLOCK = unix.Errno(516)
 )
 
 // thread is a traced thread; it is a thread identifier.
