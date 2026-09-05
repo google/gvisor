@@ -161,6 +161,39 @@ static void set_fsbase(uint64_t fsbase) {
   }
 }
 
+// get_gsbase writes the current thread's gsbase value to ptregs.
+static uint64_t get_gsbase(void) {
+  uint64_t gsbase;
+  if (__export_arch_state.fsgsbase) {
+    asm volatile("rdgsbase %0" : "=r"(gsbase));
+  } else {
+    int ret =
+        __syscall(__NR_arch_prctl, ARCH_GET_GS, (long)&gsbase, 0, 0, 0, 0);
+    if (ret) {
+      panic(STUB_ERROR_ARCH_PRCTL, ret);
+    }
+  }
+  return gsbase;
+}
+
+// set_gsbase sets the current thread's gsbase to the gsbase value in ptregs.
+static void set_gsbase(uint64_t gsbase) {
+  if (__export_arch_state.fsgsbase) {
+    asm volatile("wrgsbase %0" : : "r"(gsbase) : "memory");
+  } else {
+    int ret = __syscall(__NR_arch_prctl, ARCH_SET_GS, gsbase, 0, 0, 0, 0);
+    if (ret) {
+      panic(STUB_ERROR_ARCH_PRCTL, ret);
+    }
+  }
+}
+
+// is_syscall_patching_disabled returns true if syscall patching is disabled
+// globally or for the given context.
+static bool is_syscall_patching_disabled(struct thread_context* ctx) {
+  return __export_disable_syscall_patching != 0 || ctx->tls != 0;
+}
+
 // switch_context_amd64 is a wrapper of switch_context() which does checks
 // specific to amd64.
 struct thread_context *switch_context_amd64(
@@ -209,9 +242,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct thread_context *ctx = NULL;
   enum context_state ctx_state = CONTEXT_STATE_INVALID;
   long fs_base = 0;
+  long gs_base = 0;
 
   if (thread_state == THREAD_STATE_INITIALIZING) {
     // Find a new context and exit to restore it.
+    fs_base = get_fsbase();
+    gs_base = get_gsbase();
     init_new_thread();
     goto init;
   }
@@ -232,6 +268,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   }
 
   fs_base = get_fsbase();
+  gs_base = get_gsbase();
 
   ctx->signo = signo;
   ctx->siginfo = *siginfo;
@@ -241,6 +278,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   if (signo != SIGCHLD ||
       ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
     ctx->ptregs.fs_base = fs_base;
+    // If syscall patching is disabled or the ctx->tls is non-zero (flag),
+    // then we are in a context where the GS register is/can be used by the
+    // application. Thus, set the GS base to the value in the context.
+    if (is_syscall_patching_disabled(ctx)) {
+      ctx->ptregs.gs_base = gs_base;
+    }
     ctx->err = 0;
     gregs_to_ptregs(ucontext, &ctx->ptregs);
     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
@@ -254,8 +297,11 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       // Check whether this syscall can be replaced on a function call or not.
       // If a syscall instruction set is "mov sysno, %eax, syscall", it can be
       // replaced on a function call which works much faster.
+      // Syscall patching must be enabled and the TLS register must be 0 to
+      // indicate that we are in a context where the GS register is not used by
+      // the application.
       // Look at pkg/sentry/usertrap for more details.
-      if (__export_disable_syscall_patching == 0 &&
+      if (!is_syscall_patching_disabled(ctx) &&
           siginfo->si_arch == AUDIT_ARCH_X86_64) {
         uint8_t *rip = (uint8_t *)ctx->ptregs.rip;
         // FIXME(b/144063246): Even if all five bytes before the syscall
@@ -340,6 +386,11 @@ init:
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
   }
+  if (is_syscall_patching_disabled(ctx)) {
+    if (gs_base != ctx->ptregs.gs_base) {
+      set_gsbase(ctx->ptregs.gs_base);
+    }
+  }
 
   if (atomic_load(&ctx->fpstate_changed)) {
     prep_fpstate_for_sigframe(
@@ -387,6 +438,9 @@ void asm_restore_state();
 void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
                    void *unused) {
   set_fsbase(ctx->ptregs.fs_base);
+  if (is_syscall_patching_disabled(ctx)) {
+    set_gsbase(ctx->ptregs.gs_base);
+  }
   asm_restore_state();
 }
 
