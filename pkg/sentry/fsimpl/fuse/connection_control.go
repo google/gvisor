@@ -42,7 +42,13 @@ const (
 
 	// The FUSE_INIT_IN flags sent to the daemon.
 	// TODO(gvisor.dev/issue/3199): complete the flags.
-	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES
+	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES | linux.FUSE_ATOMIC_O_TRUNC | linux.FUSE_BIG_WRITES
+
+	// fuseDatagramUnsafeInitFlags are flags that cannot be offered over a
+	// transport that carries each request in a single datagram: a
+	// max_write-sized FUSE_WRITE exceeds the default datagram size limit and
+	// cannot be fragmented.
+	fuseDatagramUnsafeInitFlags = linux.FUSE_BIG_WRITES
 
 	// An INIT response needs to be at least this long.
 	minInitSize = 24
