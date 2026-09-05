@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 // Caller provides the droppedIDs slice to collect dropped mapping
@@ -130,6 +132,17 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		name:           opts.Name,
 		nameMut:        opts.NameMut,
 	}
+	if opts.Mappable == nil && opts.Length <= pgalloc.MaxAnonymousReserve {
+		fr, err := mm.reserveAnonymousLocked(ctx, opts.Length, vgap, ar.Start, opts.GrowsDown, opts.Stack)
+		if err != nil {
+			if opts.MappingIdentity != nil {
+				opts.MappingIdentity.DecRef(ctx)
+			}
+			return vmaIterator{}, hostarch.AddrRange{}, droppedIDs, err
+		}
+		v.off = fr.Start
+		v.memfileReserved = true
+	}
 
 	vseg := mm.vmas.Insert(vgap, ar, v)
 	mm.usageAS += opts.Length
@@ -141,6 +154,39 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 	}
 
 	return vseg, ar, droppedIDs, nil
+}
+
+// reserveAnonymousLocked takes a contiguous uncommitted MemoryFile span for a
+// new anonymous vma. If an adjacent reserved vma exists, it tries to extend
+// that span so the two vmas can merge (brk, mremap grow, MAP_FIXED filling a
+// hole). Previous (lower-address) wins when both sides exist.
+func (mm *MemoryManager) reserveAnonymousLocked(ctx context.Context, length uint64, vgap vmaGapIterator, addr hostarch.Addr, growsDown, isStack bool) (memmap.FileRange, error) {
+	opts := pgalloc.AllocOpts{
+		Kind:    usage.Anonymous,
+		MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx),
+		Mode:    pgalloc.AllocateUncommitted,
+		Dir:     mm.getDefaultAllocationDirection(),
+	}
+	if mm.mf.HugepagesEnabled() && hostarch.IsHugePageAligned(length) && !growsDown && !isStack {
+		opts.Huge = true
+	}
+	if prev := vgap.PrevSegment(); prev.Ok() && prev.End() == addr {
+		pv := prev.ValuePtr()
+		if pv.memfileReserved {
+			opts.PreferStart = true
+			opts.PreferredStart = pv.off + uint64(prev.Range().Length())
+		}
+	}
+	if !opts.PreferStart {
+		if next := vgap.NextSegment(); next.Ok() && next.Start() == addr+hostarch.Addr(length) {
+			nv := next.ValuePtr()
+			if nv.memfileReserved && nv.off >= length {
+				opts.PreferStart = true
+				opts.PreferredStart = nv.off - length
+			}
+		}
+	}
+	return mm.mf.Reserve(length, opts)
 }
 
 type findAvailableOpts struct {
@@ -424,6 +470,12 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar hostarch.AddrR
 		if vma.mappable != nil {
 			vma.mappable.RemoveMapping(ctx, mm, vmaAR, vma.off, vma.canWriteMappableLocked())
 		}
+		if vma.memfileReserved {
+			// Drop the reservation after Invalidate removed pmas (see
+			// unmapLocked). Faulted pages still have the pma ref until
+			// then; unfaulted pages go from 1 to 0 here.
+			mm.mf.DecRef(memmap.FileRange{Start: vma.off, End: vma.off + uint64(vmaAR.Length())})
+		}
 		if vma.id != nil {
 			droppedIDs = append(droppedIDs, vma.id)
 		}
@@ -478,7 +530,8 @@ func (vmaSetFunctions) ClearValue(vma *vma) {
 
 func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.AddrRange, vma2 vma) (vma, bool) {
 	if vma1.mappable != vma2.mappable ||
-		(vma1.mappable != nil && vma1.off+uint64(ar1.Length()) != vma2.off) ||
+		vma1.memfileReserved != vma2.memfileReserved ||
+		((vma1.mappable != nil || vma1.memfileReserved) && vma1.off+uint64(ar1.Length()) != vma2.off) ||
 		vma1.realPerms != vma2.realPerms ||
 		vma1.maxPerms != vma2.maxPerms ||
 		vma1.private != vma2.private ||
@@ -512,13 +565,21 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 
 func (vmaSetFunctions) Split(ar hostarch.AddrRange, v vma, split hostarch.Addr) (vma, vma) {
 	v2 := v
-	if v2.mappable != nil {
+	if v2.mappable != nil || v2.memfileReserved {
 		v2.off += uint64(split - ar.Start)
 	}
 	if v2.id != nil {
 		v2.id.IncRef()
 	}
 	return v, v2
+}
+
+// fileOffsetAt returns the memmap.File or Mappable offset for addr in vseg:
+// vma.off plus the distance from the start of the vma.
+//
+// Preconditions: vseg.Range().Contains(addr).
+func (vseg vmaIterator) fileOffsetAt(addr hostarch.Addr) uint64 {
+	return vseg.ValuePtr().off + uint64(addr-vseg.Start())
 }
 
 // Preconditions:
@@ -537,9 +598,7 @@ func (vseg vmaIterator) mappableOffsetAt(addr hostarch.Addr) uint64 {
 		}
 	}
 
-	vma := vseg.ValuePtr()
-	vstart := vseg.Start()
-	return vma.off + uint64(addr-vstart)
+	return vseg.fileOffsetAt(addr)
 }
 
 // Preconditions: vseg.ValuePtr().mappable != nil.

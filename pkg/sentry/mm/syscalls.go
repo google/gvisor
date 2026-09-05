@@ -574,6 +574,13 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		vma := vseg.ValuePtr().copy()
 		if vma.mappable != nil {
 			vma.off = vseg.mappableOffsetAt(oldAR.Start)
+		} else if vma.memfileReserved {
+			// mremap copy (oldSize==0) is a new mapping. Keeping or extending
+			// the source reservation would alias the copy onto the source if
+			// the destination VA is adjacent and Merge sees contiguous file
+			// offsets. Faults Allocate independently, as for a forked child.
+			vma.memfileReserved = false
+			vma.off = 0
 		}
 		if vma.id != nil {
 			vma.id.IncRef()
@@ -607,29 +614,51 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	vseg = mm.vmas.Isolate(vseg, oldAR)
 	vma := vseg.ValuePtr().copy()
 	mm.vmas.Remove(vseg)
-	vseg = mm.vmas.Insert(mm.vmas.FindGap(newAR.Start), newAR, vma)
-	mm.usageAS = mm.usageAS - uint64(oldAR.Length()) + uint64(newAR.Length())
-	if vma.isPrivateDataLocked() {
-		mm.dataAS = mm.dataAS - uint64(oldAR.Length()) + uint64(newAR.Length())
-	}
-	if vma.mlockMode != memmap.MLockNone {
-		mm.lockedAS = mm.lockedAS - uint64(oldAR.Length()) + uint64(newAR.Length())
-	}
+	movedAR := hostarch.AddrRange{Start: newAR.Start, End: newAR.Start + hostarch.Addr(oldAR.Length())}
+	vseg = mm.vmas.Insert(mm.vmas.FindGap(newAR.Start), movedAR, vma)
 
 	// Move pmas. This is technically optional for non-private pmas, which
 	// could just go through memmap.Mappable.Translate again, but it's required
 	// for private pmas.
 	mm.activeMu.Lock()
-	mm.movePMAsLocked(oldAR, newAR)
+	mm.movePMAsLocked(oldAR, movedAR)
 	mm.activeMu.Unlock()
 
-	// Now that pmas have been moved to newAR, we can notify vma.mappable that
+	// Now that pmas have been moved to movedAR, we can notify vma.mappable that
 	// oldAR is no longer mapped.
 	if vma.mappable != nil {
 		vma.mappable.RemoveMapping(ctx, mm, oldAR, vma.off, vma.canWriteMappableLocked())
 	}
 
+	if newAR.End > movedAR.End {
+		var extraOff uint64
+		if vma.mappable != nil {
+			extraOff = vma.off + uint64(oldAR.Length())
+		}
+		var extraErr error
+		vseg, _, droppedIDs, extraErr = mm.createVMALocked(ctx, memmap.MMapOpts{
+			Length:          uint64(newAR.End - movedAR.End),
+			MappingIdentity: vma.id,
+			Mappable:        vma.mappable,
+			Offset:          extraOff,
+			Addr:            movedAR.End,
+			Fixed:           true,
+			Perms:           vma.realPerms,
+			MaxPerms:        vma.maxPerms,
+			Private:         vma.private,
+			GrowsDown:       vma.growsDown,
+			Stack:           vma.isStack,
+			MLockMode:       vma.mlockMode,
+			Name:            vma.name,
+			NameMut:         vma.nameMut,
+		}, droppedIDs)
+		if extraErr != nil {
+			return 0, extraErr
+		}
+	}
+
 	if vma.mlockMode == memmap.MLockEager {
+		vseg = mm.vmas.FindSegment(newAR.Start)
 		mm.populateVMA(ctx, vseg, newAR, memmap.PlatformEffectCommit)
 	}
 
@@ -1195,17 +1224,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 					// normally.
 					if psegAR.Start < lastWholeHugeEnd {
 						pseg = mm.pmas.Isolate(pseg, hostarch.AddrRange{psegAR.Start, lastWholeHugeEnd})
-						pma = pseg.ValuePtr()
-						if !didUnmapAS {
-							// Unmap all of ar, not just pseg.Range(), to minimize host
-							// syscalls. AddressSpace mappings must be removed before
-							// pma.file.DecRef().
-							mm.unmapASLocked(ar)
-							didUnmapAS = true
-						}
-						pma.file.DecRef(pseg.fileRange())
-						mm.removeRSSLocked(pseg.Range())
-						pseg = mm.pmas.Remove(pseg).NextSegment()
+						pseg = mm.dropDecommittedPMALocked(vseg, pseg, ar, &didUnmapAS)
 					}
 					if lastWholeHugeEnd != psegAR.End {
 						// psegAR.End is not hugepage-aligned.
@@ -1216,17 +1235,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 				}
 			}
 			pseg = mm.pmas.Isolate(pseg, vsegAR)
-			pma = pseg.ValuePtr()
-			if !didUnmapAS {
-				// Unmap all of ar, not just pseg.Range(), to minimize host
-				// syscalls. AddressSpace mappings must be removed before
-				// pma.file.DecRef().
-				mm.unmapASLocked(ar)
-				didUnmapAS = true
-			}
-			pma.file.DecRef(pseg.fileRange())
-			mm.removeRSSLocked(pseg.Range())
-			pseg = mm.pmas.Remove(pseg).NextSegment()
+			pseg = mm.dropDecommittedPMALocked(vseg, pseg, ar, &didUnmapAS)
 		}
 		if ar.End <= vseg.End() {
 			break
@@ -1246,6 +1255,29 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 		return linuxerr.ENOMEM
 	}
 	return nil
+}
+
+// dropDecommittedPMALocked drops a PMA during MADV_DONTNEED. If the pages
+// still sit on a reserved linear span, DecRef leaves the reservation ref, so
+// the file range is punched to match Linux zeroing.
+func (mm *MemoryManager) dropDecommittedPMALocked(vseg vmaIterator, pseg pmaIterator, unmapAR hostarch.AddrRange, didUnmapAS *bool) pmaIterator {
+	pma := pseg.ValuePtr()
+	if !*didUnmapAS {
+		// Unmap all of unmapAR, not just pseg.Range(), to minimize host
+		// syscalls. AddressSpace mappings must be removed before
+		// pma.file.DecRef().
+		mm.unmapASLocked(unmapAR)
+		*didUnmapAS = true
+	}
+	fr := pseg.fileRange()
+	reservedLinear := vseg.ValuePtr().memfileReserved && pma.off == vseg.fileOffsetAt(pseg.Start())
+	pma.file.DecRef(fr)
+	mm.removeRSSLocked(pseg.Range())
+	if reservedLinear {
+		mm.mf.Decommit(fr)
+		mm.mf.MarkImplicitZero(fr)
+	}
+	return mm.pmas.Remove(pseg).NextSegment()
 }
 
 // madviseMutateVMAs is similar to mm.vmas.MutateRange(), but:

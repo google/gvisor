@@ -17,6 +17,8 @@
 package pgalloc
 
 import (
+	"bytes"
+	"context"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -583,5 +585,184 @@ func TestFindAllocatable(t *testing.T) {
 				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
 			}
 		})
+	}
+}
+
+func TestReserve(t *testing.T) {
+	f := &MemoryFile{
+		opts: MemoryFileOpts{
+			DisableMemoryAccounting: true,
+		},
+	}
+	f.initFields()
+
+	fr1, err := f.Reserve(2*page, AllocOpts{Dir: BottomUp})
+	if err != nil {
+		t.Fatalf("Reserve(2 pages): %v", err)
+	}
+	fr2, err := f.Reserve(page, AllocOpts{Dir: BottomUp})
+	if err != nil {
+		t.Fatalf("Reserve(1 page): %v", err)
+	}
+	if fr1.Start < fr2.End && fr2.Start < fr1.End {
+		t.Fatalf("overlapping reservations: %v and %v", fr1, fr2)
+	}
+
+	// PreferStart should extend a span when the next pages are still free.
+	wantNext := fr1.End
+	if fr2.Start == fr1.End {
+		wantNext = fr2.End
+	}
+	fr3, err := f.Reserve(page, AllocOpts{
+		Dir:            BottomUp,
+		PreferStart:    true,
+		PreferredStart: wantNext,
+	})
+	if err != nil {
+		t.Fatalf("Reserve PreferStart: %v", err)
+	}
+	if fr3.Start != wantNext {
+		t.Errorf("PreferStart got %#x want %#x", fr3.Start, wantNext)
+	}
+
+	// PreferStart falls back to Dir when the preferred offset is occupied.
+	frMiss, err := f.Reserve(page, AllocOpts{
+		Dir:            BottomUp,
+		PreferStart:    true,
+		PreferredStart: fr1.Start,
+	})
+	if err != nil {
+		t.Fatalf("Reserve PreferStart occupied: %v", err)
+	}
+	if frMiss.Start == fr1.Start {
+		t.Errorf("PreferStart occupied still returned %#x", frMiss.Start)
+	}
+	f.DecRef(frMiss)
+
+	if !f.HasExactRefs(fr1, 1) {
+		t.Errorf("HasExactRefs(%v, 1) got false want true", fr1)
+	}
+	if !f.HasUniqueRef(fr1) {
+		t.Errorf("HasUniqueRef(%v) got false want true", fr1)
+	}
+	f.IncRef(fr1, 0)
+	if !f.HasExactRefs(fr1, 2) {
+		t.Errorf("after IncRef, HasExactRefs(%v, 2) got false want true", fr1)
+	}
+	if f.HasUniqueRef(fr1) {
+		t.Errorf("after IncRef, HasUniqueRef(%v) got true want false", fr1)
+	}
+	f.DecRef(fr1)
+
+	f.DecRef(fr1)
+	seg := f.unfreeSmall.FindSegment(fr1.Start)
+	if !seg.Ok() {
+		t.Fatalf("no unfree segment covering released range %v", fr1)
+	}
+	if refs := seg.ValuePtr().refs; refs != 0 {
+		t.Errorf("after DecRef, refs=%d want 0 (span leaked as used)", refs)
+	}
+}
+
+func implicitZeroAt(f *MemoryFile, off uint64) bool {
+	seg := f.memAcct.FindSegment(off)
+	return seg.Ok() && seg.ValuePtr().implicitZero
+}
+
+func TestReserveSaveSkipsUnfaultedPages(t *testing.T) {
+	f := &MemoryFile{
+		opts: MemoryFileOpts{
+			DisableMemoryAccounting: true,
+		},
+	}
+	f.initFields()
+
+	const length = 4 << 20
+	fr, err := f.Reserve(length, AllocOpts{Dir: BottomUp})
+	if err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if !implicitZeroAt(f, fr.Start) {
+		t.Fatal("Reserve left implicitZero false")
+	}
+
+	var buf bytes.Buffer
+	if err := f.SaveTo(context.Background(), &buf, &SaveOpts{}); err != nil {
+		t.Fatalf("SaveTo unfaulted reserve: %v", err)
+	}
+	seg := f.memAcct.FindSegment(fr.Start)
+	if !seg.Ok() {
+		t.Fatal("memAcct lost reserved span after SaveTo")
+	}
+	if seg.ValuePtr().knownCommitted {
+		t.Fatal("SaveTo marked unfaulted reserved pages knownCommitted")
+	}
+	if !seg.ValuePtr().implicitZero {
+		t.Fatal("SaveTo cleared implicitZero")
+	}
+
+	touched := memmap.FileRange{Start: fr.Start, End: fr.Start + page}
+	f.IncRef(touched, 0)
+	if implicitZeroAt(f, touched.Start) {
+		t.Fatal("IncRef left implicitZero true")
+	}
+	if !implicitZeroAt(f, touched.End) {
+		t.Fatal("IncRef cleared implicitZero on untouched pages")
+	}
+
+	f.DecRef(touched)
+	f.MarkImplicitZero(touched)
+	if !implicitZeroAt(f, touched.Start) {
+		t.Fatal("MarkImplicitZero left implicitZero false")
+	}
+
+	pb := f.exportMetadataProto()
+	var found bool
+	for _, ma := range pb.MemAcct {
+		if ma.Start <= fr.Start && fr.Start < ma.End {
+			found = true
+			if !ma.ImplicitZero {
+				t.Fatal("exportMetadataProto dropped implicitZero")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("exportMetadataProto omitted reserved span")
+	}
+
+	f2 := &MemoryFile{
+		opts: MemoryFileOpts{DisableMemoryAccounting: true},
+	}
+	f2.initFields()
+	if err := f2.importMetadataProto(pb); err != nil {
+		t.Fatalf("importMetadataProto: %v", err)
+	}
+	if !implicitZeroAt(f2, fr.Start) {
+		t.Fatal("importMetadataProto dropped implicitZero")
+	}
+}
+
+func TestReserveHugeUsesHugeUnfree(t *testing.T) {
+	f := &MemoryFile{
+		opts: MemoryFileOpts{
+			ExpectHugepages:         true,
+			DisableMemoryAccounting: true,
+		},
+	}
+	f.initFields()
+
+	fr, err := f.Reserve(hugepage, AllocOpts{Huge: true, Dir: BottomUp})
+	if err != nil {
+		t.Fatalf("Reserve huge: %v", err)
+	}
+	if !f.IsHugeChunk(fr.Start) {
+		t.Fatalf("Reserve(Huge) chunk at %#x is not huge", fr.Start)
+	}
+	seg := f.unfreeHuge.FindSegment(fr.Start)
+	if !seg.Ok() {
+		t.Fatal("Reserve(Huge) did not insert into unfreeHuge")
+	}
+	if refs := seg.ValuePtr().refs; refs != 1 {
+		t.Errorf("unfreeHuge refs=%d want 1", refs)
 	}
 }
