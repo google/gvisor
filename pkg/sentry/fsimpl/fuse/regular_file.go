@@ -57,15 +57,15 @@ type regularFileFD struct {
 	data fsutil.FileRangeSet
 }
 
-// Seek implements vfs.FileDescriptionImpl.Allocate.
+// Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	if mode & ^uint64(linux.FALLOC_FL_KEEP_SIZE|linux.FALLOC_FL_PUNCH_HOLE|linux.FALLOC_FL_ZERO_RANGE) != 0 {
+	if mode&^uint64(linux.FALLOC_FL_KEEP_SIZE|linux.FALLOC_FL_PUNCH_HOLE|linux.FALLOC_FL_ZERO_RANGE) != 0 {
 		return linuxerr.EOPNOTSUPP
 	}
 	in := linux.FUSEFallocateIn{
 		Fh:     fd.Fh,
-		Offset: uint64(offset),
-		Length: uint64(length),
+		Offset: offset,
+		Length: length,
 		Mode:   uint32(mode),
 	}
 	i := fd.inode()
@@ -74,15 +74,13 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	}
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
-	if uint64(offset+length) > i.size.Load() {
-		if err := i.reviseAttr(ctx, linux.FUSE_GETATTR_FH, fd.Fh); err != nil {
-			return err
-		}
-		// If the offset after update is still too large, return error.
-		if uint64(offset) >= i.size.Load() {
-			return io.EOF
+	if mode&linux.FALLOC_FL_KEEP_SIZE == 0 {
+		if newSize := offset + length; newSize > i.size.Load() {
+			i.size.Store(newSize)
+			i.fs.conn.attributeVersion.Add(1)
 		}
 	}
+	i.touchCMtime()
 	return nil
 }
 
