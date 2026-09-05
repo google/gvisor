@@ -98,7 +98,11 @@ func TestDentryCacheLimit(t *testing.T) {
 
 	// Create a directory with a bunch of files.
 	const nfiles = 5000
-	tmpDir := testutil.TmpDir()
+	tmpDir, err := os.MkdirTemp(testutil.TmpDir(), "dcache")
+	if err != nil {
+		t.Fatalf("MkdirTemp(): %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
 	for i := 0; i < nfiles; i++ {
 		if _, err := os.CreateTemp(tmpDir, "tmp"); err != nil {
 			t.Fatalf("TempFile(): %v", err)
