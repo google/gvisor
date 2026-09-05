@@ -209,11 +209,14 @@ go_test(
     srcs = [
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
+        "save_restore_external_test.go",
     ],
     library = ":pgalloc",
     deps = [
         "//pkg/hostarch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/usage",
     ],
 )
 

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -182,6 +183,100 @@ type SaveOpts struct {
 	// but may instead improve SaveTo() and LoadFrom() time, and checkpoint
 	// size, if the application has many committed zero pages.
 	ExcludeCommittedZeroPages bool
+
+	// If ExternalContent is true, SaveTo() will not scan for zero pages and
+	// will not save page contents; it only saves segment metadata, marked
+	// with ContentExternal so that LoadFrom() expects contents to be provided
+	// externally by the backing file itself. This is appropriate for private
+	// (disk-backed) MemoryFiles whose host file contents are captured
+	// out-of-band (e.g. by snapshotting the host file) instead of being
+	// serialized into the checkpoint.
+	ExternalContent bool
+}
+
+// externalContentInfoLocked returns the exact size and sampled fingerprint to
+// record for an ExternalContent save. If SnapshotToFd() captured an in-window
+// snapshot during the current save, the snapshot's values are used (reflink
+// guarantees they stay stable even if the original file diverges after the
+// window, e.g. with leave-running); otherwise the backing file's current
+// values are sampled (valid because the kernel is paused throughout the save).
+//
+// Precondition: f.mu is locked.
+func (f *MemoryFile) externalContentInfoLocked() (uint64, string, error) {
+	if f.externalSavedFingerprint != "" {
+		return f.externalSavedSize, f.externalSavedFingerprint, nil
+	}
+	if f.file == nil {
+		return 0, "", fmt.Errorf("MemoryFile %p has no backing file to fingerprint", f)
+	}
+	fi, err := f.file.Stat()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to stat backing file: %w", err)
+	}
+	fp, err := checkpoint.FingerprintFile(f.file)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to fingerprint backing file: %w", err)
+	}
+	return uint64(fi.Size()), fp, nil
+}
+
+// BeginSaveWindow clears the snapshot credentials stashed by a previous
+// window's SnapshotToFd(). It must be called at the start of every save
+// window, before any SnapshotToFd()/SaveTo(ExternalContent) calls: without
+// it, a later ExternalContent save on the same live MemoryFile (e.g. a
+// plain --skip-filestore-pages checkpoint following a
+// --filestore-snapshot-dir one) would embed the stale size and fingerprint
+// of the old snapshot instead of describing the backing file's current
+// contents.
+func (f *MemoryFile) BeginSaveWindow() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.externalSavedSize = 0
+	f.externalSavedFingerprint = ""
+}
+
+// SnapshotToFd reflink-clones (FICLONE) the backing file's current contents to
+// dst, and records the snapshot's size and sampled fingerprint for the ongoing
+// save, so that SaveTo(ExternalContent) embeds values describing the snapshot
+// rather than the original (which may diverge after the save window).
+//
+// It is used to internalize the filestore snapshot into the checkpoint's
+// freeze window (runsc checkpoint --filestore-snapshot-dir), making the
+// snapshot and the saved memory-state metadata describe the same instant.
+//
+// Precondition: the kernel is paused (no writers to the backing file), and
+// SaveTo(ExternalContent) is called on the same MemoryFile afterwards. Both
+// the backing file and dst must be on a filesystem supporting reflink
+// (e.g. XFS/btrfs); otherwise this fails loudly (EOPNOTSUPP/EXDEV).
+func (f *MemoryFile) SnapshotToFd(dst *os.File) (size uint64, fingerprint string, err error) {
+	if f.file == nil {
+		return 0, "", fmt.Errorf("MemoryFile %p has no backing file to snapshot", f)
+	}
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, dst.Fd(), unix.FICLONE, f.file.Fd()); errno != 0 {
+		return 0, "", fmt.Errorf("FICLONE of filestore backing file to snapshot failed (%w); --filestore-snapshot-dir requires a reflink-capable filesystem (e.g. XFS) for both the backing filestore and the snapshot directory", errno)
+	}
+	if err := dst.Sync(); err != nil {
+		return 0, "", fmt.Errorf("failed to fsync filestore snapshot: %w", err)
+	}
+	fi, err := dst.Stat()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to stat filestore snapshot: %w", err)
+	}
+	fp, err := checkpoint.FingerprintFile(dst)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to fingerprint filestore snapshot: %w", err)
+	}
+	f.externalSavedSize = uint64(fi.Size())
+	f.externalSavedFingerprint = fp
+	return f.externalSavedSize, f.externalSavedFingerprint, nil
+}
+
+// ChunkCount returns the number of chunks currently tracked by f. It is used
+// by in-checkpoint snapshotting to record artifact chunk counts.
+func (f *MemoryFile) ChunkCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.chunksLoad())
 }
 
 // SaveTo writes f's state to the given stream.
@@ -202,6 +297,49 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	// Ensure that there are no pending evictions.
 	if len(f.evictable) != 0 {
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
+	}
+
+	if opts.ExternalContent {
+		// Only save segment metadata; page contents are expected to be
+		// captured out-of-band (the backing host file is preserved or
+		// snapshotted separately). Skip async page file registration, zero
+		// page scanning (which would otherwise decommit pages, mutating the
+		// backing file), and page serialization entirely.
+		//
+		// Also arm contentExternal so that Destroy does not decommit the
+		// file: the checkpoint is only usable together with the backing
+		// file's contents, which may outlive this MemoryFile via an
+		// externally-held fd referencing the same inode.
+		f.contentExternal = true
+		// Record the exact size and a sampled fingerprint of the content
+		// source so that LoadFrom() can reject a wrong or diverged adopted
+		// file. If an in-checkpoint snapshot (SnapshotToFd) already captured
+		// the contents during this save window, its recorded values are used:
+		// the snapshot file is reflink-stable while the original may diverge
+		// after the window (leave-running).
+		extSize, extFP, err := f.externalContentInfoLocked()
+		if err != nil {
+			return err
+		}
+		timeMetadataStart := gohacks.Nanotime()
+		pb := f.exportMetadataProto()
+		pb.ContentExternal = true
+		pb.ContentExternalFileSize = extSize
+		pb.ContentExternalFingerprint = extFP
+		data, err := proto.Marshal(pb)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		var lengthBuf [8]byte
+		binary.LittleEndian.PutUint64(lengthBuf[:], uint64(len(data)))
+		if _, err := w.Write(lengthBuf[:]); err != nil {
+			return fmt.Errorf("failed to write metadata length: %w", err)
+		}
+		if _, err := w.Write(data); err != nil {
+			return fmt.Errorf("failed to write metadata: %w", err)
+		}
+		log.Infof("MemoryFile(%p): saved external-content metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
+		return nil
 	}
 
 	// Register this MemoryFile with async page saving if a pages file has been
@@ -1047,6 +1185,40 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
 
 	fileSize := uint64(len(chunks)) * chunkSize
+	if pb.ContentExternal {
+		// Contents are expected to already be present in the backing file.
+		// Require that the MemoryFile adopted an existing host file (i.e.
+		// was not created empty) and that the file is at least as large as
+		// the saved chunk table requires; otherwise restore would silently
+		// produce zero-filled holes instead of the original contents.
+		if !f.opts.AdoptExistingFile {
+			return fmt.Errorf("cannot restore externally-contented MemoryFile: backing file was not adopted")
+		}
+		fi, err := f.file.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to stat adopted MemoryFile file: %w", err)
+		}
+		if pb.ContentExternalFileSize != 0 {
+			// Exact size match: an artifact with a different size cannot be
+			// the file that was checkpointed, even if it is large enough.
+			if uint64(fi.Size()) != pb.ContentExternalFileSize {
+				return fmt.Errorf("adopted MemoryFile file size %d != checkpointed filestore size %d (wrong or diverged filestore artifact)", fi.Size(), pb.ContentExternalFileSize)
+			}
+		} else if uint64(fi.Size()) < fileSize {
+			// Legacy checkpoint (saved before size/fingerprint recording):
+			// keep the weaker lower-bound check.
+			return fmt.Errorf("adopted MemoryFile file size %d is smaller than required %d (state checkpoint and filestore artifact mismatch?)", fi.Size(), fileSize)
+		}
+		if pb.ContentExternalFingerprint != "" {
+			fp, err := checkpoint.FingerprintFile(f.file)
+			if err != nil {
+				return fmt.Errorf("failed to fingerprint adopted MemoryFile file: %w", err)
+			}
+			if fp != pb.ContentExternalFingerprint {
+				return fmt.Errorf("adopted MemoryFile file fingerprint mismatch: got %s, checkpoint expects %s (artifact contents differ from the checkpointed filestore, e.g. the original filestore diverged after a leave-running checkpoint)", fp[:16], pb.ContentExternalFingerprint[:16])
+			}
+		}
+	}
 	if err := f.file.Truncate(int64(fileSize)); err != nil {
 		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
 	}
@@ -1091,9 +1263,10 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	defer madviseWG.Wait()
 
 	// Register this MemoryFile with async page loading if a pages file has
-	// been provided.
+	// been provided. This is skipped for externally-contented MemoryFiles:
+	// no pages are read from the pages file, so there is nothing to load.
 	var amfl *asyncMemoryFileLoad
-	if opts.PagesFile != nil {
+	if opts.PagesFile != nil && !pb.ContentExternal {
 		var df stateio.DestinationFile
 		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
 			var err error
@@ -1153,9 +1326,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		}
 		maFR := maseg.Range()
 		amount := maFR.Length()
-		// Wait for all chunks spanned by this segment to be madvised.
-		for madviseEnd.Load() < maFR.End {
-			<-madviseChan
+		if !pb.ContentExternal {
+			// Wait for all chunks spanned by this segment to be madvised.
+			for madviseEnd.Load() < maFR.End {
+				<-madviseChan
+			}
 		}
 		if amfl != nil {
 			// Record where to read data.
@@ -1170,7 +1345,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			amfl.pf.mu.Unlock()
 			opts.PagesFileOffset += amount
 			amfl.pf.lfStatus.Notify(aplLFPending)
-		} else {
+		} else if !pb.ContentExternal {
 			// Verify header.
 			length, object, err := state.ReadHeader(&wr)
 			if err != nil {

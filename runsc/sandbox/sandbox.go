@@ -1661,6 +1661,22 @@ type CheckpointOpts struct {
 	CudaCheckpointPath        string
 	CudaCheckpointSequential  bool
 
+	// SkipFilestorePages causes private (disk-backed) MemoryFiles to save
+	// only segment metadata; their backing host files (gofer filestore files)
+	// must be captured out-of-band and adopted on restore.
+	SkipFilestorePages bool
+
+	// FilestoreSnapshotDir internalizes the filestore capture: inside the
+	// checkpoint's freeze window, each private MemoryFile's backing file is
+	// reflink-cloned to FilestoreSnapshotFiles[i] (created by the container
+	// process under this directory), and the filestores.json manifest is
+	// written to FilestoreSidecarFile and renamed into place on success.
+	// Requires SkipFilestorePages.
+	FilestoreSnapshotDir     string
+	FilestoreSnapshotTargets []checkpoint.ResourceID
+	FilestoreSnapshotFiles   []*os.File
+	FilestoreSidecarFile     *os.File
+
 	// Save/restore exec options.
 	SaveRestoreExecArgv        string
 	SaveRestoreExecTimeout     time.Duration
@@ -1675,6 +1691,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	opt := control.SaveOpts{
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
+		PrivateMFExternalContent:       opts.SkipFilestorePages,
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
@@ -1693,8 +1710,75 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return err
 	}
 
+	if opts.FilestoreSnapshotDir != "" {
+		if !opts.SkipFilestorePages {
+			return fmt.Errorf("--filestore-snapshot-dir requires --skip-filestore-pages")
+		}
+		if opt.UseCheckpointGofer {
+			return fmt.Errorf("--filestore-snapshot-dir is not supported with the checkpoint gofer")
+		}
+		// The snapshot destination FDs (and the sidecar temp file, last) are
+		// donated after the save files; the sentry FICLONEs into them inside
+		// the save freeze window.
+		base := len(opt.FilePayload.Files)
+		for i, dest := range opts.FilestoreSnapshotFiles {
+			opt.FilestoreSnapshot = append(opt.FilestoreSnapshot, control.FilestoreSnapshotTarget{
+				ResourceID: opts.FilestoreSnapshotTargets[i],
+				Name:       fmt.Sprintf("filestore-%d", i),
+				FDIndex:    base + i,
+			})
+			opt.FilePayload.Files = append(opt.FilePayload.Files, dest)
+		}
+		opt.FilestoreSidecarFDIndex = base + len(opts.FilestoreSnapshotFiles)
+		opt.FilePayload.Files = append(opt.FilePayload.Files, opts.FilestoreSidecarFile)
+	}
+
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
+		// Remove the partial snapshot artifacts: without the sidecar rename,
+		// the directory is not a valid adoption target anyway.
+		if opts.FilestoreSnapshotDir != "" {
+			for _, f := range opts.FilestoreSnapshotFiles {
+				f.Close()
+				os.Remove(f.Name())
+			}
+			opts.FilestoreSidecarFile.Close()
+			os.Remove(opts.FilestoreSidecarFile.Name())
+		}
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
+	}
+	if opts.FilestoreSnapshotDir != "" {
+		// The sentry wrote the sidecar manifest during the freeze window;
+		// make it durable and visible atomically (tmp+rename). With zero
+		// filestore mounts the sentry writes nothing; emit an empty (but
+		// valid) manifest ourselves.
+		if len(opts.FilestoreSnapshotFiles) == 0 {
+			if err := checkpoint.WriteFilestoreSidecar(opts.FilestoreSidecarFile, nil); err != nil {
+				return fmt.Errorf("failed to write empty filestores.json: %w", err)
+			}
+		}
+		if err := opts.FilestoreSidecarFile.Sync(); err != nil {
+			return fmt.Errorf("failed to fsync filestores.json: %w", err)
+		}
+		if err := opts.FilestoreSidecarFile.Close(); err != nil {
+			return fmt.Errorf("failed to close filestores.json.tmp: %w", err)
+		}
+		final := filepath.Join(opts.FilestoreSnapshotDir, "filestores.json")
+		if err := os.Rename(opts.FilestoreSidecarFile.Name(), final); err != nil {
+			return fmt.Errorf("failed to rename filestores.json into place: %w", err)
+		}
+		// fsync the snapshot directory itself so the rename is durable too;
+		// the artifact files were already fsynced inside the freeze window.
+		snapDir, err := os.Open(opts.FilestoreSnapshotDir)
+		if err != nil {
+			return fmt.Errorf("failed to open filestore snapshot dir %q for fsync: %w", opts.FilestoreSnapshotDir, err)
+		}
+		if err := snapDir.Sync(); err != nil {
+			snapDir.Close()
+			return fmt.Errorf("failed to fsync filestore snapshot dir %q: %w", opts.FilestoreSnapshotDir, err)
+		}
+		if err := snapDir.Close(); err != nil {
+			return fmt.Errorf("failed to close filestore snapshot dir %q: %w", opts.FilestoreSnapshotDir, err)
+		}
 	}
 	s.Checkpointed = true
 	return nil
