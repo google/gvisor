@@ -15,6 +15,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 
 #include <string>
 
@@ -31,7 +33,6 @@
 #include "test/util/test_util.h"
 
 using ::testing::AnyOf;
-using ::testing::Matches;
 
 namespace gvisor {
 namespace testing {
@@ -503,7 +504,17 @@ TEST(Renameat2Test, NoReplaceDot) {
       SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
 }
 
+// gVisor only supports RENAME_EXCHANGE when running under runsc, and its FUSE
+// implementation does not support it at all.
+bool RenameExchangeSupported() {
+  if (IsRunningOnGvisor() && !IsRunningOnRunsc()) {
+    return false;
+  }
+  return absl::NullSafeStringView(getenv("GVISOR_FUSE_TEST")) != "TRUE";
+}
+
 TEST(Renameat2Test, ExchangeDirectories) {
+  SKIP_IF(!RenameExchangeSupported());
   absl::string_view c1 = "xyz";
   absl::string_view c2 = "abc";
   const auto d1 =
@@ -514,45 +525,32 @@ TEST(Renameat2Test, ExchangeDirectories) {
       TempPath::CreateFileWith(d1.path(), c1, TempPath::kDefaultFileMode));
   auto f2 = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(d2.path(), c2, TempPath::kDefaultFileMode));
-  // renameat2 returns EINVAL if the flag is unsupported.
-  auto rename_result = renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
-                                 d2.path().c_str(), RENAME_EXCHANGE);
-  EXPECT_THAT(rename_result,
-              AnyOf(SyscallFailsWithErrno(EINVAL), SyscallSucceeds()));
+  ASSERT_THAT(renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
+                        d2.path().c_str(), RENAME_EXCHANGE),
+              SyscallSucceeds());
 
-  if (Matches(SyscallSucceeds())(rename_result)) {
-    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f2.path()))),
-                IsPosixErrorOkAndHolds(true));
-    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f1.path()))),
-                IsPosixErrorOkAndHolds(false));
-    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f1.path()))),
-                IsPosixErrorOkAndHolds(true));
-    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f2.path()))),
-                IsPosixErrorOkAndHolds(false));
-  } else {
-    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f2.path()))),
-                IsPosixErrorOkAndHolds(false));
-    EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f1.path()))),
-                IsPosixErrorOkAndHolds(true));
-    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f1.path()))),
-                IsPosixErrorOkAndHolds(false));
-    EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f2.path()))),
-                IsPosixErrorOkAndHolds(true));
-  }
+  EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f2.path()))),
+              IsPosixErrorOkAndHolds(true));
+  EXPECT_THAT(Exists(JoinPath(d1.path(), Basename(f1.path()))),
+              IsPosixErrorOkAndHolds(false));
+  EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f1.path()))),
+              IsPosixErrorOkAndHolds(true));
+  EXPECT_THAT(Exists(JoinPath(d2.path(), Basename(f2.path()))),
+              IsPosixErrorOkAndHolds(false));
 }
 
 TEST(Renameat2Test, PathDoesNotExist) {
+  SKIP_IF(!RenameExchangeSupported());
   const auto d1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
   // d2 doesn't exist.
   const auto d2 = NewTempAbsPathInDir(GetAbsoluteTestTmpdir());
   EXPECT_THAT(renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD, d2.c_str(),
                         RENAME_EXCHANGE),
-              SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, ENOENT)));
-  // renameat2 returns EINVAL if the flag is unsupported.
+              SyscallFailsWithErrno(ENOENT));
   EXPECT_THAT(renameat2(AT_FDCWD, d2.c_str(), AT_FDCWD, d1.path().c_str(),
                         RENAME_EXCHANGE),
-              SyscallFailsWithErrno(AnyOf(EINVAL, ENOENT)));
+              SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(Renameat2Test, InvalidFlags) {
@@ -567,6 +565,7 @@ TEST(Renameat2Test, InvalidFlags) {
 }
 
 TEST(Renameat2Test, ExchangeFiles) {
+  SKIP_IF(!RenameExchangeSupported());
   absl::string_view c1 = "xyz";
   absl::string_view c2 = "abc";
   const auto p1 =
@@ -577,19 +576,78 @@ TEST(Renameat2Test, ExchangeFiles) {
       TempPath::CreateFileWith(p1.path(), c1, TempPath::kDefaultFileMode));
   const auto f2 = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(p2.path(), c2, TempPath::kDefaultFileMode));
-  auto rename_result = renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD,
-                                 f2.path().c_str(), RENAME_EXCHANGE);
-  // renameat2 returns EINVAL if the flag is unsupported.
-  EXPECT_THAT(rename_result,
-              AnyOf(SyscallFailsWithErrno(EINVAL), SyscallSucceeds()));
+  ASSERT_THAT(renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD,
+                        f2.path().c_str(), RENAME_EXCHANGE),
+              SyscallSucceeds());
 
-  if (Matches(SyscallSucceeds())(rename_result)) {
-    EXPECT_THAT(GetContents(f2.path()), IsPosixErrorOkAndHolds(c1));
-    EXPECT_THAT(GetContents(f1.path()), IsPosixErrorOkAndHolds(c2));
-  } else {
-    EXPECT_THAT(GetContents(f1.path()), IsPosixErrorOkAndHolds(c1));
-    EXPECT_THAT(GetContents(f2.path()), IsPosixErrorOkAndHolds(c2));
-  }
+  EXPECT_THAT(GetContents(f2.path()), IsPosixErrorOkAndHolds(c1));
+  EXPECT_THAT(GetContents(f1.path()), IsPosixErrorOkAndHolds(c2));
+}
+
+TEST(Renameat2Test, ExchangeFilesSameParent) {
+  SKIP_IF(!RenameExchangeSupported());
+  absl::string_view c1 = "xyz";
+  absl::string_view c2 = "abc";
+  const auto parent =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto f1 = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(parent.path(), c1, TempPath::kDefaultFileMode));
+  const auto f2 = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(parent.path(), c2, TempPath::kDefaultFileMode));
+  ASSERT_THAT(renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD,
+                        f2.path().c_str(), RENAME_EXCHANGE),
+              SyscallSucceeds());
+
+  EXPECT_THAT(GetContents(f2.path()), IsPosixErrorOkAndHolds(c1));
+  EXPECT_THAT(GetContents(f1.path()), IsPosixErrorOkAndHolds(c2));
+}
+
+TEST(Renameat2Test, ExchangeFileAndDirectory) {
+  SKIP_IF(!RenameExchangeSupported());
+  absl::string_view c = "xyz";
+  const auto p1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto p2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(p1.path()));
+  // The exchanged directory need not be empty.
+  const auto dir_child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(p2.path(), c, TempPath::kDefaultFileMode));
+  ASSERT_THAT(renameat2(AT_FDCWD, dir.path().c_str(), AT_FDCWD,
+                        file.path().c_str(), RENAME_EXCHANGE),
+              SyscallSucceeds());
+
+  const struct stat dir_st = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
+  EXPECT_TRUE(S_ISREG(dir_st.st_mode));
+  const struct stat file_st = ASSERT_NO_ERRNO_AND_VALUE(Stat(file.path()));
+  EXPECT_TRUE(S_ISDIR(file_st.st_mode));
+  EXPECT_THAT(GetContents(dir.path()), IsPosixErrorOkAndHolds(c));
+  EXPECT_THAT(Exists(JoinPath(file.path(), Basename(dir_child.path()))),
+              IsPosixErrorOkAndHolds(true));
+}
+
+TEST(Renameat2Test, ExchangeWithAncestorDirectory) {
+  SKIP_IF(!RenameExchangeSupported());
+  const auto ancestor =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(GetAbsoluteTestTmpdir()));
+  const auto descendant =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(ancestor.path()));
+  const auto deep_descendant =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(descendant.path()));
+  EXPECT_THAT(renameat2(AT_FDCWD, ancestor.path().c_str(), AT_FDCWD,
+                        descendant.path().c_str(), RENAME_EXCHANGE),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(renameat2(AT_FDCWD, descendant.path().c_str(), AT_FDCWD,
+                        ancestor.path().c_str(), RENAME_EXCHANGE),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(renameat2(AT_FDCWD, ancestor.path().c_str(), AT_FDCWD,
+                        deep_descendant.path().c_str(), RENAME_EXCHANGE),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(renameat2(AT_FDCWD, deep_descendant.path().c_str(), AT_FDCWD,
+                        ancestor.path().c_str(), RENAME_EXCHANGE),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace
