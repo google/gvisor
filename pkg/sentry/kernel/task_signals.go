@@ -116,6 +116,39 @@ func computeAction(sig linux.Signal, act linux.SigAction) SignalAction {
 	}
 }
 
+// initSignalDiscarded reports whether a signal targeted at a PID namespace's
+// init process must be discarded under Linux SIGNAL_UNKILLABLE semantics
+// (kernel/signal.c:sig_task_ignored(), pid_namespaces(7)).
+//
+// "forced" indicates the signal originated from outside the PID namespace
+// (e.g. host, orchestrator, or kernel; see info.Code == SI_KERNEL or
+// info.PID() == 0).
+//
+// Signals whose default disposition is neither fatal nor stop (e.g. SIGCHLD,
+// SIGURG) are never discarded. For default-fatal or stop signals,
+// SIGKILL/SIGSTOP take effect only when forced, while others are delivered
+// only if an explicit handler is installed.
+func initSignalDiscarded(sig linux.Signal, act linux.SigAction, forced bool) bool {
+	// Classify the signal by its default disposition.
+	switch computeAction(sig, linux.SigAction{Handler: linux.SIG_DFL}) {
+	case SignalActionTerm, SignalActionCore, SignalActionStop:
+		if sig == linux.SIGKILL || sig == linux.SIGSTOP {
+			return !forced
+		}
+		return computeAction(sig, act) != SignalActionHandler
+	default:
+		return false
+	}
+}
+
+// isForcedSignal returns true if info represents a forced signal to a PID
+// namespace init process. Forced signals originate from outside the PID
+// namespace (e.g. host or kernel with info.Code == SI_KERNEL, or ancestor
+// namespaces where info.PID() == 0).
+func isForcedSignal(info *linux.SignalInfo) bool {
+	return info.Code == linux.SI_KERNEL || (info.Code <= 0 && info.PID() == 0)
+}
+
 // UnblockableSignals contains the set of signals which cannot be blocked.
 var UnblockableSignals = linux.MakeSignalSet(linux.SIGKILL, linux.SIGSTOP)
 
@@ -413,19 +446,23 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 		return linuxerr.EINVAL
 	}
 
+	// Protect PID namespace init processes under Linux SIGNAL_UNKILLABLE
+	// semantics (kernel/signal.c:sig_task_ignored(), pid_namespaces(7)).
+	// Signals from ancestor namespaces (info.PID() == 0) or the kernel/host
+	// (info.Code == linux.SI_KERNEL) are considered forced. Traced tasks are
+	// exempt to allow ptrace attach and debugging.
+	if t.k.signalUnkillable != SignalUnkillableNone && t.tg.ID() == initTID && !t.hasTracer() {
+		if initSignalDiscarded(sig, t.tg.signalHandlers.actions[sig], isForcedSignal(info)) {
+			t.Debugf("Discarding signal %d targeted at protected init process", sig)
+			if timer != nil {
+				timer.signalRejectedLocked()
+			}
+			return nil
+		}
+	}
+
 	// Signal side effects apply even if the signal is ultimately discarded.
 	t.tg.applySignalSideEffectsLocked(sig)
-
-	// TODO: "Only signals for which the "init" process has established a
-	// signal handler can be sent to the "init" process by other members of the
-	// PID namespace. This restriction applies even to privileged processes,
-	// and prevents other members of the PID namespace from accidentally
-	// killing the "init" process." - pid_namespaces(7). We don't currently do
-	// this for child namespaces, though we should; we also don't do this for
-	// the root namespace (the same restriction applies to global init on
-	// Linux), where whether or not we should is much murkier. In practice,
-	// most sandboxed applications are not prepared to function as an init
-	// process.
 
 	// Unmasked, ignored signals are discarded without being queued, unless
 	// they will be visible to a tracer. Even for group signals, it's the
