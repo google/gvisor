@@ -58,6 +58,7 @@ package scsdk
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -89,30 +90,48 @@ type Options = ReadOptions
 // ReadFile connects to the sandbox control socket at socketPath and reads the file
 // specified by opts, returning its contents as a byte slice.
 func ReadFile(socketPath string, opts ReadOptions) ([]byte, error) {
+	return ReadFileWithContext(context.Background(), socketPath, opts)
+}
+
+// ReadFileWithContext connects to the sandbox control socket at socketPath and reads the file
+// specified by opts, returning its contents as a byte slice. It can be canceled via ctx.
+func ReadFileWithContext(ctx context.Context, socketPath string, opts ReadOptions) ([]byte, error) {
 	c, err := Connect(socketPath)
 	if err != nil {
 		return nil, err
 	}
 	defer c.Close()
-	return c.ReadFile(opts)
+	return c.ReadFileWithContext(ctx, opts)
 }
 
 // ReadFileToWriter connects to the sandbox control socket at socketPath and reads
 // the file specified by opts, streaming its contents into w.
 func ReadFileToWriter(socketPath string, opts ReadOptions, w io.Writer) error {
+	return ReadFileToWriterWithContext(context.Background(), socketPath, opts, w)
+}
+
+// ReadFileToWriterWithContext connects to the sandbox control socket at socketPath and reads
+// the file specified by opts, streaming its contents into w. It can be canceled via ctx.
+func ReadFileToWriterWithContext(ctx context.Context, socketPath string, opts ReadOptions, w io.Writer) error {
 	c, err := Connect(socketPath)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	return c.ReadFileToWriter(opts, w)
+	return c.ReadFileToWriterWithContext(ctx, opts, w)
 }
 
 // ReadFile reads the file specified by opts from the container filesystem,
 // returning its contents as a byte slice.
 func (c *SandboxClient) ReadFile(opts ReadOptions) ([]byte, error) {
+	return c.ReadFileWithContext(context.Background(), opts)
+}
+
+// ReadFileWithContext reads the file specified by opts from the container filesystem,
+// returning its contents as a byte slice. It can be canceled via ctx.
+func (c *SandboxClient) ReadFileWithContext(ctx context.Context, opts ReadOptions) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := c.ReadFileToWriter(opts, &buf); err != nil {
+	if err := c.ReadFileToWriterWithContext(ctx, opts, &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -121,6 +140,12 @@ func (c *SandboxClient) ReadFile(opts ReadOptions) ([]byte, error) {
 // ReadFileToWriter reads the file specified by opts from the container
 // filesystem and streams its contents into w.
 func (c *SandboxClient) ReadFileToWriter(opts ReadOptions, w io.Writer) error {
+	return c.ReadFileToWriterWithContext(context.Background(), opts, w)
+}
+
+// ReadFileToWriterWithContext reads the file specified by opts from the container
+// filesystem and streams its contents into w. It can be canceled via ctx.
+func (c *SandboxClient) ReadFileToWriterWithContext(ctx context.Context, opts ReadOptions, w io.Writer) error {
 	if c == nil || c.urpc == nil {
 		return fmt.Errorf("client is not connected")
 	}
@@ -144,15 +169,24 @@ func (c *SandboxClient) ReadFileToWriter(opts ReadOptions, w io.Writer) error {
 	// If w is already an *os.File, pass its file descriptor directly to the server.
 	if f, ok := w.(*os.File); ok {
 		rpcOpts.FilePayload = urpc.FilePayload{Files: []*os.File{f}}
-		return c.urpc.Call("Fs.Read", &rpcOpts, nil)
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- c.urpc.Call("Fs.Read", &rpcOpts, nil)
+		}()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errCh:
+			return err
+		}
 	}
 
 	// Otherwise, use an os.Pipe to bridge the file descriptor from Fs.Read to io.Writer.
-	r, pipeW, err := os.Pipe()
+	pipeR, pipeW, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("creating pipe: %w", err)
 	}
-	defer r.Close()
+	defer pipeR.Close()
 
 	rpcOpts.FilePayload = urpc.FilePayload{Files: []*os.File{pipeW}}
 
@@ -165,11 +199,22 @@ func (c *SandboxClient) ReadFileToWriter(opts ReadOptions, w io.Writer) error {
 		callErr = c.urpc.Call("Fs.Read", &rpcOpts, nil)
 	}()
 
-	_, copyErr := io.Copy(w, r)
-	wg.Wait()
+	errCh := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(w, pipeR)
+		wg.Wait()
+		if callErr != nil {
+			errCh <- callErr
+		} else {
+			errCh <- copyErr
+		}
+	}()
 
-	if callErr != nil {
-		return callErr
+	select {
+	case <-ctx.Done():
+		pipeR.Close()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
 	}
-	return copyErr
 }
