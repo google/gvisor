@@ -130,6 +130,27 @@ type cgroup struct {
 	// killSeq tracks cgroup.kill invocations.
 	// +checklocks:fs.tasksMu
 	killSeq uint64
+	// frozen records whether cgroup.freeze has been set on this cgroup itself.
+	// A cgroup is *effectively* frozen if it or any of its ancestors has frozen
+	// set; see isFrozenLocked.
+	// +checklocks:fs.tasksMu
+	frozen bool
+
+	// pendingFreezeCount is the number of tasks directly in this cgroup that
+	// currently have an outstanding cgroup v2 freeze credit: asked to
+	// freeze (kernel.FreezeCreditIssue), but not yet resolved by actually
+	// parking, a thaw, an exit, or a migration (see
+	// kernel.Task.pendingFreezeCredit). A cgroup whose subtree has no such
+	// tasks anywhere is "settled" -- see unsettled().
+	// +checklocks:fs.tasksMu
+	// +checkatomic
+	pendingFreezeCount atomicbitops.Int64
+	// nrUnsettledChildren counts the number of immediate children whose own
+	// subtree (pendingFreezeCount + nrUnsettledChildren) is nonzero. It lets
+	// unsettled() answer in O(1), mirroring nrPopulatedChildren/populated().
+	// +checklocks:fs.tasksMu
+	// +checkatomic
+	nrUnsettledChildren atomicbitops.Int64
 
 	// xattrs stores extended attributes on this cgroup directory.
 	xattrs memxattr.SimpleExtendedAttributes
@@ -137,6 +158,23 @@ type cgroup struct {
 	// bpf contains eBPF programs associated with the cgroup.
 	// +checklocks:fs.treeMu
 	bpf *kernel.Cgroup2BPF
+}
+
+// isFrozenLocked returns whether this cgroup is effectively frozen, i.e. it or
+// any of its ancestors has cgroup.freeze set. parent pointers are immutable, so
+// walking them only requires fs.tasksMu to read each frozen field.
+// +checklocksread:c.fs.tasksMu
+
+func (c *cgroup) isFrozenLocked() bool {
+	for cg := c; cg != nil; cg = cg.parent {
+		// All cgroups in a tree share one filesystem, so cg.fs.tasksMu is the
+		// same mutex as the c.fs.tasksMu the caller holds; checklocks cannot
+		// prove cg.fs == c.fs across the parent walk.
+		if cg.frozen { // +checklocksforce: c.fs.tasksMu is locked
+			return true
+		}
+	}
+	return false
 }
 
 // +checklocks:c.fs.treeMu
@@ -345,6 +383,135 @@ func (c *cgroup) updatePopulated(ctx context.Context, populated bool) {
 	}
 }
 
+// unsettled returns true if this cgroup, or any of its descendants, has a
+// task with an outstanding cgroup v2 freeze credit (asked to freeze, but not
+// yet actually parked, thawed, exited, or migrated away). nrUnsettledChildren
+// keeps this O(1), mirroring populated()/nrPopulatedChildren.
+func (c *cgroup) unsettled() bool {
+	if c.pendingFreezeCount.Load() > 0 {
+		return true
+	}
+	if c.nrUnsettledChildren.Load() > 0 {
+		return true
+	}
+	return false
+}
+
+// settledFrozen returns whether c's cgroup.events "frozen" line should
+// report 1: c is effectively frozen (isFrozenLocked()) AND every task in
+// its subtree currently asked to freeze has finished doing so
+// (!unsettled()). Deliberately distinct from IsFrozen() alone, which
+// task_start.go's fork-inherit check and cgroup.attach's migration-refresh
+// need to keep meaning "is this task currently supposed to be frozen", not
+// "has the subtree settled" -- IsFrozen() must not be repurposed here.
+//
+// Reads both under a single fs.tasksMu.RLock() for a consistent snapshot.
+func (c *cgroup) settledFrozen() bool {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	return c.settledFrozenLocked()
+}
+
+// settledFrozenLocked is settledFrozen's precondition-locked core, for
+// freeze() (which already holds fs.tasksMu for writing -- settledFrozen()
+// would self-deadlock trying to RLock it again).
+// +checklocksread:c.fs.tasksMu
+func (c *cgroup) settledFrozenLocked() bool {
+	return c.isFrozenLocked() && !c.unsettled()
+}
+
+// updatePendingFreeze propagates a change in unsettled-ness up the ancestry,
+// exactly mirroring updatePopulated: when an ancestor transitions between
+// settled and unsettled, it updates its parent's unsettled-child counter and
+// triggers a cgroup.events notification. The caller must already have
+// applied the corresponding +1/-1 to c.pendingFreezeCount before calling
+// this, mirroring how CanEnter/Exit/attach adjust tasksCount before calling
+// updatePopulated.
+// +checklocks:c.fs.tasksMu
+func (c *cgroup) updatePendingFreeze(ctx context.Context, unsettled bool) {
+	// If c still has an unsettled child, c.unsettled() cannot have flipped:
+	// it was already true via that child, and stays true regardless of
+	// c.pendingFreezeCount's own transition. Nothing to propagate.
+	if c.nrUnsettledChildren.Load() > 0 {
+		return
+	}
+
+	diff := int64(-1)
+	if unsettled {
+		diff = 1
+	}
+
+	child := (*cgroup)(nil)
+	curr := c
+	for curr != nil {
+		wasUnsettled := curr.unsettled()
+
+		if child != nil {
+			curr.nrUnsettledChildren.Add(diff) // +checklocksforce: c.fs.tasksMu is locked
+		}
+
+		if child != nil && wasUnsettled == curr.unsettled() {
+			break
+		}
+		if curr.eventsFile != nil {
+			curr.eventsFile.Notify(ctx)
+		}
+		child = curr
+		curr = curr.parent
+	}
+}
+
+// adjustPendingFreezeLocked adjusts c's own pending-freeze count according
+// to delta (+1 and propagate for kernel.FreezeCreditIssue, -1 and propagate
+// for kernel.FreezeCreditRetract, no-op for kernel.FreezeCreditNone),
+// notifying on any settled<->unsettled crossing exactly as
+// updatePopulated's callers do for task population.
+// +checklocks:c.fs.tasksMu
+func (c *cgroup) adjustPendingFreezeLocked(ctx context.Context, delta kernel.FreezeCreditDelta) {
+	switch delta {
+	case kernel.FreezeCreditNone:
+	case kernel.FreezeCreditIssue:
+		if c.pendingFreezeCount.Add(1) == 1 { // +checklocksforce: c.fs.tasksMu is locked
+			c.updatePendingFreeze(ctx, true) // +checklocksforce: c.fs.tasksMu is locked
+		}
+	case kernel.FreezeCreditRetract:
+		if c.pendingFreezeCount.Add(-1) == 0 { // +checklocksforce: c.fs.tasksMu is locked
+			c.updatePendingFreeze(ctx, false) // +checklocksforce: c.fs.tasksMu is locked
+		}
+	default:
+		panic(fmt.Sprintf("cgroup2fs: unknown FreezeCreditDelta %d", delta))
+	}
+}
+
+// applyFreezeCreditDelta type-asserts creditCg back to *cgroup (always
+// safe: it's always a value this package supplied) and applies delta to
+// its pending-freeze counter. No-op if creditCg is nil.
+//
+// Preconditions: if creditCg is non-nil, caller holds
+// creditCg.(*cgroup).fs.tasksMu. checklocks can't express this through a
+// type-asserted parameter, hence the plain comment.
+func applyFreezeCreditDelta(ctx context.Context, delta kernel.FreezeCreditDelta, creditCg kernel.Cgroup2) {
+	if creditCg == nil {
+		return
+	}
+	creditCg.(*cgroup).adjustPendingFreezeLocked(ctx, delta) // +checklocksforce: caller holds fs.tasksMu
+}
+
+// SetTaskFrozen implements kernel.Cgroup2.SetTaskFrozen.
+func (c *cgroup) SetTaskFrozen(ctx context.Context, t *kernel.Task, frozen bool) {
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+	delta, creditCg := t.SetCgroupFrozenLocked(c, frozen)
+	applyFreezeCreditDelta(ctx, delta, creditCg)
+}
+
+// ApplyFreezeCreditDelta implements kernel.Cgroup2.ApplyFreezeCreditDelta.
+func (c *cgroup) ApplyFreezeCreditDelta(ctx context.Context, delta kernel.FreezeCreditDelta) {
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+	c.adjustPendingFreezeLocked(ctx, delta)
+}
+
 // setControllersLocked modifies the set of enabled controllers for the children of the
 // given cgroup and updates impacted descendants.
 // +checklocks:c.fs.treeMu
@@ -533,6 +700,15 @@ func (c *cgroup) Exit(ctx context.Context, t *kernel.Task) {
 	if c.tasksCount.Add(-1) == 0 {
 		c.updatePopulated(ctx, false)
 	}
+	// Retract any outstanding cgroup v2 freeze credit t still holds: t may
+	// die (e.g. SIGKILLed) before ever parking in frozenStop, in which case
+	// nothing else will ever resolve the credit once t is gone (see
+	// Task.ResolveFreezeCreditLocked). Applied inline here, in the same
+	// fs.tasksMu-held critical section -- unlike runInterrupt's park path,
+	// Exit() already holds fs.tasksMu, so there is no lock-order reason to
+	// split this into a lock-then-callback shape.
+	delta, creditCg := t.ResolveFreezeCreditLocked()
+	applyFreezeCreditDelta(ctx, delta, creditCg)
 	c.fs.tasksMu.Unlock()
 
 	curSet := c.closestCtrls.Load()
@@ -641,6 +817,22 @@ func (c *cgroup) attach(ctx context.Context, actx *attachCtx) {
 		if c.tasksCount.Add(1) == 1 {
 			c.updatePopulated(ctx, true)
 		}
+
+		// Migrating t changes its effective freeze state, so refresh the
+		// per-task frozen cache (otherwise freeze would be escapable via
+		// cgroup.procs). We relay the destination's effective state, not
+		// oldNode's flag: a task moved out may stay frozen via a higher
+		// destination ancestor. isFrozenLocked (not IsFrozen) is used
+		// since fs.tasksMu is already held.
+		//
+		// SetCgroupFrozenLockedForMigration is required (not plain
+		// SetCgroupFrozenLocked): migration is the one case where a
+		// task's owning cgroup changes while its frozen-ness may not,
+		// which a single (delta, Cgroup2) pair can't always express --
+		// see its doc. Apply both returned adjustments, in either order.
+		delta1, cg1, delta2, cg2 := t.SetCgroupFrozenLockedForMigration(c, c.isFrozenLocked())
+		applyFreezeCreditDelta(ctx, delta1, cg1)
+		applyFreezeCreditDelta(ctx, delta2, cg2)
 	}
 
 	curSet := c.closestCtrls.Load()
@@ -779,6 +971,17 @@ func (c *cgroup) KillSeq() uint64 {
 	c.fs.tasksMu.RLock()
 	defer c.fs.tasksMu.RUnlock()
 	return c.killSeq
+}
+
+// IsFrozen implements kernel.Cgroup2.IsFrozen. It returns whether this cgroup
+// is effectively frozen (it or any ancestor has cgroup.freeze set), as the
+// tasksMu-locked wrapper around isFrozenLocked, mirroring KillSeq. Used both by
+// the clone path (a task forked into a frozen subtree starts frozen) and by
+// cgroup.events generation.
+func (c *cgroup) IsFrozen() bool {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	return c.isFrozenLocked()
 }
 
 // +checklocksread:c.fs.treeMu
@@ -1084,6 +1287,82 @@ func (c *cgroup) kill() error {
 
 	for _, t := range toKill {
 		t.SendSignal(kernel.SignalInfoPriv(linux.SIGKILL))
+	}
+	return nil
+}
+
+// freeze() handles writes to cgroup.freeze: computes each task's effective
+// freeze state under the tree locks and relays it via Task.SetCgroupFrozen,
+// which enters/leaves the stop on the correct goroutine (mirrors kill()).
+//
+// Lock ordering: treeMu, then tasksMu, then (per task) signalHandlers.mu --
+// matching fs.tasksMu -> signalHandlers.mu (see kill() -> Task.SendSignal).
+// runInterrupt never takes a cgroup lock, so the reverse ordering, which
+// would deadlock here, never occurs.
+func (c *cgroup) freeze(ctx context.Context, frozen bool) error {
+	c.fs.treeMu.Lock()
+	defer c.fs.treeMu.Unlock()
+	if c.deleted.Load() {
+		return linuxerr.ENODEV
+	}
+
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
+	// Snapshot every affected node's settledFrozenLocked() before c.frozen
+	// changes, to notify cgroup.events on any resulting flip. Needed
+	// alongside (not instead of) applyFreezeCreditDelta's own
+	// unsettled()-crossing notifications: c.frozen flipping can change
+	// settledFrozenLocked() with no credit ever touched (e.g. thawing an
+	// already-fully-parked cgroup, or freezing an empty one). Scoped to
+	// c's own subtree: isFrozenLocked() never inspects descendants, so
+	// nothing outside this subtree can be affected.
+	type settledSnapshot struct {
+		cg  *cgroup
+		was bool
+	}
+	snapshots := []settledSnapshot{{c, c.settledFrozenLocked()}}
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		snapshots = append(snapshots, settledSnapshot{child, child.settledFrozenLocked()}) // +checklocksforce: c.fs.tasksMu is locked
+		return true
+	})
+
+	// Record the self-request only; inheritance from ancestors is resolved
+	// by isFrozenLocked's walk, not by marking descendants (unlike
+	// killSeq, which is bumped on every descendant).
+	c.frozen = frozen
+
+	// Relay the *effective* frozen state (isFrozenLocked(), not c.frozen)
+	// to every task in this subtree: thawing c must keep a task frozen if
+	// a higher ancestor still is, and a descendant with its own
+	// cgroup.freeze must stay frozen. The per-task frozen field is a
+	// cache of this walk, refreshed at every site that can change it:
+	// freeze/thaw here, migration (attach()), and fork (newTask).
+	//
+	// SetCgroupFrozenLocked is used (not SetCgroupFrozen) since this loop
+	// already holds fs.tasksMu; applyFreezeCreditDelta (not a bare
+	// adjustPendingFreezeLocked) is used for consistency with every other
+	// call site, even though a task's owning cgroup can't change mid-call.
+	eff := c.isFrozenLocked()
+	for t := range c.tasks {
+		delta, creditCg := t.SetCgroupFrozenLocked(c, eff)
+		applyFreezeCreditDelta(ctx, delta, creditCg)
+	}
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		childEff := child.isFrozenLocked() // +checklocksforce: c.fs.tasksMu is locked
+		for t := range child.tasks {       // +checklocksforce: c.fs.tasksMu is locked
+			delta, creditCg := t.SetCgroupFrozenLocked(child, childEff) // +checklocksforce: c.fs.tasksMu is locked
+			applyFreezeCreditDelta(ctx, delta, creditCg)
+		}
+		return true
+	})
+
+	// Notify watchers on every node whose settledFrozenLocked() actually
+	// changed (see the snapshot comment above).
+	for _, s := range snapshots {
+		if s.cg.settledFrozenLocked() != s.was && s.cg.eventsFile != nil { // +checklocksforce: c.fs.tasksMu is locked
+			s.cg.eventsFile.Notify(ctx)
+		}
 	}
 	return nil
 }

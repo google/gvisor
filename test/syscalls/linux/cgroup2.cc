@@ -19,6 +19,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -188,6 +189,44 @@ class Cgroup2Test : public ::testing::Test {
     return *root_;
   }
 
+  // WaitForFrozen polls cg's cgroup.events until it reports "frozen
+  // <want>" (want is 0 or 1), instead of assuming a fixed delay after
+  // writing cgroup.freeze is enough. How long the requested state takes to
+  // actually settle for every task in the cgroup depends on scheduling, and
+  // a fixed sleep occasionally isn't enough, racing the caller's next
+  // action (e.g. sending a signal that should be deferred by an
+  // in-progress freeze) against a settle that hasn't finished yet.
+  //
+  // Once cgroup.events first reports the requested state, an additional
+  // fixed settle margin is applied before returning. Empirically (measured
+  // under nested virtualization on a native nested-VM nested test
+  // environment), the first "frozen 1" observation in cgroup.events does
+  // not itself guarantee every task has finished settling into the fully
+  // quiesced kernel state that defers non-fatal signal delivery: polling
+  // tightly and returning on the first observation raced into that
+  // unsettled window *more* often than a generous fixed sleep did. This
+  // margin is a native-environment scheduling-jitter accommodation for
+  // *this test's* timing, not a statement about gVisor's own frozen-state
+  // transition, which is a single lock-protected flag flip in the sentry
+  // and doesn't have an analogous settle window (see the ptrace-platform
+  // runs of these tests, which are deterministic).
+  void WaitForFrozen(const Cgroup& cg, int want) {
+    std::string want_str = absl::StrCat("frozen ", want);
+    absl::Time deadline = absl::Now() + absl::Seconds(2);
+    while (true) {
+      auto events = cg.ReadControlFile("cgroup.events");
+      if (events.ok() && absl::StrContains(events.ValueOrDie(), want_str)) {
+        absl::SleepFor(absl::Milliseconds(300));
+        return;
+      }
+      if (absl::Now() >= deadline) {
+        EXPECT_THAT(events, IsPosixErrorOkAndHolds(HasSubstr(want_str)));
+        return;
+      }
+      absl::SleepFor(absl::Milliseconds(10));
+    }
+  }
+
   void ExpectInotifyEvent(const FileDescriptor& fd) {
     struct pollfd pfd = {fd.get(), POLLIN, 0};
     ASSERT_GT(poll(&pfd, 1, 5000), 0);
@@ -224,6 +263,32 @@ class Cgroup2Test : public ::testing::Test {
   void ExpectNoPollEvent(const FileDescriptor& fd) {
     struct pollfd pfd = {fd.get(), POLLPRI, 0};
     EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(0));
+  }
+
+  // ReadMarker returns true if a progress marker becomes readable on fd within
+  // timeout_ms. Poll-based, so it never blocks on an empty pipe.
+  bool ReadMarker(int fd, int timeout_ms) {
+    struct pollfd pfd = {fd, POLLIN, 0};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+      return false;
+    }
+    char buf[64];
+    return read(fd, buf, sizeof(buf)) > 0;
+  }
+
+  // DrainMarkers consumes any currently-available progress markers on fd
+  // without blocking.
+  void DrainMarkers(int fd) {
+    while (true) {
+      struct pollfd pfd = {fd, POLLIN, 0};
+      if (poll(&pfd, 1, 0) <= 0) {
+        break;
+      }
+      char buf[4096];
+      if (read(fd, buf, sizeof(buf)) <= 0) {
+        break;
+      }
+    }
   }
 
   void ExpectDefaultControlFiles(const Cgroup& cg, bool is_root = false) {
@@ -1202,6 +1267,127 @@ TEST_F(Cgroup2Test, CgroupDotEvents) {
   EXPECT_TRUE(WIFEXITED(status));
 }
 
+// CgroupDotEventsFrozenPollWakesOnBothTransitions verifies that poll(POLLPRI)
+// on cgroup.events actually wakes a blocked waiter -- not merely reflects the
+// correct value once polled -- on both the frozen 0->1 (settle) and 1->0
+// (thaw) transitions. This is the runtime proof of freeze()'s
+// snapshot-compare-notify pass: c.frozen flipping does not by itself cross
+// any pendingFreezeCount edge (e.g. thawing an already-fully-parked cgroup
+// retracts no credit, since none is outstanding), so without that pass
+// nothing would call eventsFile.Notify() for that transition at all, even
+// though the frozen line genuinely changed.
+TEST_F(Cgroup2Test, CgroupDotEventsFrozenPollWakesOnBothTransitions) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t target_pid = fork();
+  if (target_pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end
+    // open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(target_pid, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(target_pid));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // ready_fds signals from the poller to the parent that it is about to
+  // call poll() (once per expected transition, two total); result_fds
+  // reports back whether that poll() call actually observed POLLPRI.
+  int ready_fds[2], result_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  ASSERT_THAT(pipe(result_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]);
+  FileDescriptor ready_w(ready_fds[1]);
+  FileDescriptor result_r(result_fds[0]);
+  FileDescriptor result_w(result_fds[1]);
+
+  std::string events_path = child.Relpath("cgroup.events");
+
+  pid_t poller_pid = fork();
+  if (poller_pid == 0) {
+    ready_r.reset();
+    result_r.reset();
+
+    // Deliberately avoid gtest ASSERT_*/EXPECT_* macros in this forked
+    // child: they operate on this process's own copy of gtest's internal
+    // state, not the one the actual test result is collected from.
+    int event_fd = open(events_path.c_str(), O_RDONLY);
+    if (event_fd < 0) {
+      _exit(1);
+    }
+
+    for (int i = 0; i < 2; i++) {
+      char one = 1;
+      if (write(ready_w.get(), &one, 1) != 1) {
+        _exit(1);
+      }
+      struct pollfd pfd = {event_fd, POLLPRI, 0};
+      int ret = poll(&pfd, 1, /*timeout=*/5000);
+      char result = (ret == 1 && (pfd.revents & POLLPRI)) ? 1 : 0;
+      // Consume the readiness so the next poll() call detects the next
+      // transition rather than immediately re-observing this one.
+      char buf[256];
+      lseek(event_fd, 0, SEEK_SET);
+      read(event_fd, buf, sizeof(buf));
+      if (write(result_w.get(), &result, 1) != 1) {
+        _exit(1);
+      }
+    }
+    _exit(0);
+  }
+  ASSERT_GT(poller_pid, 0);
+  ready_w.reset();
+  result_w.reset();
+
+  // Wait for the poller to be about to block in poll(), then freeze: the
+  // 0->1 transition.
+  char buf;
+  ASSERT_THAT(read(ready_r.get(), &buf, 1), SyscallSucceedsWithValue(1));
+  absl::SleepFor(absl::Milliseconds(50));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+
+  char result;
+  ASSERT_THAT(read(result_r.get(), &result, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result, 1)
+      << "poll(POLLPRI) on cgroup.events did not wake on frozen 0->1";
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Wait for the poller's second poll() call, then thaw: the 1->0
+  // transition.
+  ASSERT_THAT(read(ready_r.get(), &buf, 1), SyscallSucceedsWithValue(1));
+  absl::SleepFor(absl::Milliseconds(50));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+
+  ASSERT_THAT(read(result_r.get(), &result, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result, 1)
+      << "poll(POLLPRI) on cgroup.events did not wake on frozen 1->0";
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  int status;
+  ASSERT_EQ(waitpid(poller_pid, &status, 0), poller_pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+
+  // Let the target exit normally.
+  go_w.reset();
+  ASSERT_EQ(waitpid(target_pid, &status, 0), target_pid);
+  EXPECT_TRUE(WIFEXITED(status));
+}
+
 TEST_F(Cgroup2Test, CgroupDotEventsPropagatesToAncestors) {
   Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
@@ -1500,6 +1686,906 @@ TEST_F(Cgroup2Test, KillTree) {
   ASSERT_EQ(waitpid(pid2, &status, 0), pid2);
   EXPECT_TRUE(WIFSIGNALED(status));
   EXPECT_EQ(WTERMSIG(status), SIGKILL);
+}
+
+// FreezeStopsAndResumesProgress verifies that writing 1 to cgroup.freeze stops
+// a running process from making progress, and writing 0 resumes it.
+TEST_F(Cgroup2Test, FreezeStopsAndResumesProgress) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  // cgroup.freeze starts at 0.
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+
+  // prog: child emits a marker per loop iteration; parent observes progress.
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  // go: parent tells the child to begin looping (after it's in the cgroup).
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);  // 10ms
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+
+  // poll-based helpers avoid blocking on an empty pipe.
+  auto read_marker = [&](int timeout_ms) -> bool {
+    struct pollfd pfd = {prog_r.get(), POLLIN, 0};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+      return false;
+    }
+    char buf[64];
+    return read(prog_r.get(), buf, sizeof(buf)) > 0;
+  };
+  auto drain = [&]() {
+    while (true) {
+      struct pollfd pfd = {prog_r.get(), POLLIN, 0};
+      if (poll(&pfd, 1, 0) <= 0) {
+        break;
+      }
+      char buf[4096];
+      if (read(prog_r.get(), buf, sizeof(buf)) <= 0) {
+        break;
+      }
+    }
+  };
+
+  // The child is running and making progress.
+  ASSERT_TRUE(read_marker(5000));
+
+  // Freeze: the child must stop making progress.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("1")));
+
+  // Let the freeze take effect, then drain any markers buffered before the
+  // child parked.
+  absl::SleepFor(absl::Milliseconds(100));
+  drain();
+
+  // No new markers arrive while frozen (~50 missed 10ms iterations).
+  EXPECT_FALSE(read_marker(500));
+
+  // Thaw: progress resumes.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+  EXPECT_TRUE(read_marker(5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// FrozenProcessKillableBySIGKILL verifies that a frozen process (parked in a
+// killable internal stop) is still terminated by SIGKILL. This is the runtime
+// proof of frozenStop.Killable().
+TEST_F(Cgroup2Test, FrozenProcessKillableBySIGKILL) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // A frozen task must still die on SIGKILL.
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGKILL);
+}
+
+// FrozenProcessWakesAndDiesOnDefaultFatalSignal verifies that a frozen
+// process (parked in a killable internal stop) is woken by a non-SIGKILL
+// signal whose default disposition terminates the process, and that the
+// resulting exit status reflects that specific signal (SIGTERM) rather than
+// SIGKILL. This is the runtime proof that ThreadGroup.applySignalSideEffects's
+// generalized wake-on-fatal-signal path only unblocks the stop, and does not
+// reuse killLocked's SIGKILL-specific delivery/exit-status semantics.
+TEST_F(Cgroup2Test, FrozenProcessWakesAndDiesOnDefaultFatalSignal) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely with SIGTERM at its default disposition (no
+    // handler installed); the parent never writes and holds the write end
+    // open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // A frozen task must wake and die on a default-disposition SIGTERM, with
+  // an exit status that reflects SIGTERM specifically, not SIGKILL.
+  ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGTERM);
+}
+
+// g_sigusr1FrozenHandledFd is the write end of a pipe that
+// HandleSigusr1ForFrozenTest writes a token to when SIGUSR1 is actually
+// delivered to (and handled by) the forked child in
+// FrozenProcessDefersNonFatalSignalUntilThaw below. It is set by that child
+// itself, immediately after fork() and before installing the handler, so it
+// is only ever touched within that single forked, single-threaded child
+// process.
+int g_sigusr1FrozenHandledFd = -1;
+
+void HandleSigusr1ForFrozenTest(int sig) {
+  char token = 1;
+  (void)write(g_sigusr1FrozenHandledFd, &token, 1);
+}
+
+// FrozenProcessDefersNonFatalSignalUntilThaw verifies that a frozen process
+// (parked in a killable internal stop) does NOT dequeue and deliver a
+// pending signal whose default disposition is not fatal -- specifically, a
+// SIGUSR1 with a handler installed -- while frozen: the handler must not
+// run, and the process must not exit. Once thawed, the same still-pending
+// signal must then be delivered normally (the handler runs). This is the
+// runtime proof of the peekPendingBit-gated ordering in
+// runInterrupt.execute(): freeze must take effect before an already-pending,
+// non-fatal signal is dequeued, and must never delay a signal whose default
+// disposition is fatal (covered separately by
+// FrozenProcessWakesAndDiesOnDefaultFatalSignal above).
+TEST_F(Cgroup2Test, FrozenProcessDefersNonFatalSignalUntilThaw) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  int handled_fds[2];
+  ASSERT_THAT(pipe(handled_fds), SyscallSucceeds());
+  FileDescriptor handled_r(handled_fds[0]);
+  FileDescriptor handled_w(handled_fds[1]);
+
+  // ready_fds signals from the child to the parent that its sigaction(2)
+  // call has actually completed, so the parent does not freeze the child
+  // while SIGUSR1 is still SIG_DFL: a freeze that lands in that window would
+  // make the wake-on-fatal-signal path correctly kill the child instead of
+  // deferring the (not-yet-installed) handler, which is not what this test
+  // means to exercise.
+  int ready_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]);
+  FileDescriptor ready_w(ready_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    handled_r.reset();
+    ready_r.reset();
+    g_sigusr1FrozenHandledFd = handled_w.release();
+
+    struct sigaction sa = {};
+    sa.sa_handler = HandleSigusr1ForFrozenTest;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;  // No SA_RESTART: the read() below must return EINTR on
+                       // signal delivery so the child observes it and loops,
+                       // rather than either exiting or silently swallowing
+                       // delivery via a transparent restart.
+    if (sigaction(SIGUSR1, &sa, nullptr) != 0) {
+      _exit(1);
+    }
+
+    char ready_token = 1;
+    if (write(ready_w.get(), &ready_token, 1) != 1) {
+      _exit(1);
+    }
+    ready_w.reset();
+
+    // Block indefinitely, waking on either signal delivery (EINTR, in which
+    // case keep blocking) or the parent closing go_w (EOF), whichever comes
+    // first. The parent never writes to go_w; it only closes it once the
+    // test is done observing the handler's effect, to let this child exit.
+    char token;
+    ssize_t n;
+    while ((n = read(go_r.get(), &token, 1)) < 0 && errno == EINTR) {
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+  handled_w.reset();
+  ready_w.reset();
+
+  // Wait for the child's sigaction(SIGUSR1, ...) to actually complete before
+  // entering it into the cgroup and freezing it.
+  char ready_token;
+  ASSERT_THAT(read(ready_r.get(), &ready_token, 1),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  ASSERT_THAT(kill(pid, SIGUSR1), SyscallSucceeds());
+
+  // While frozen, the handler must not run: poll the handled-pipe with a
+  // bounded timeout and expect no data, and confirm the process is still
+  // alive (not reaped) throughout.
+  struct pollfd pfd = {.fd = handled_r.get(), .events = POLLIN};
+  EXPECT_THAT(poll(&pfd, 1, /*timeout=*/500), SyscallSucceedsWithValue(0))
+      << "SIGUSR1 handler ran (or the process exited) while frozen";
+  EXPECT_EQ(waitpid(pid, nullptr, WNOHANG), 0)
+      << "process exited while frozen";
+
+  // Thaw. The still-pending SIGUSR1 must now be dequeued and delivered.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  absl::SleepFor(absl::Milliseconds(100));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  pfd = {.fd = handled_r.get(), .events = POLLIN};
+  ASSERT_THAT(poll(&pfd, 1, /*timeout=*/5000), SyscallSucceedsWithValue(1))
+      << "SIGUSR1 handler did not run after thaw";
+  char token;
+  EXPECT_THAT(read(handled_r.get(), &token, 1), SyscallSucceedsWithValue(1));
+
+  // Let the child exit normally.
+  go_w.reset();
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+// IgnoreSigusr1ForFatalRaceTest is installed as SIGUSR1's handler in
+// FrozenProcessDiesOnFatalSignalWithLowerNumberedSignalPending below, purely
+// so SIGUSR1's disposition isn't SIG_DFL (which would make it fatal too).
+void IgnoreSigusr1ForFatalRaceTest(int sig) {}
+
+// FrozenProcessDiesOnFatalSignalWithLowerNumberedSignalPending verifies that
+// a frozen process wakes and dies on a fatal-by-default signal even when a
+// lower-numbered, non-fatal signal was queued first. On Linux this races
+// with the target's own scheduling and isn't guaranteed either way; gVisor
+// deliberately guarantees the process dies, so this test is gVisor-only.
+TEST_F(Cgroup2Test,
+       FrozenProcessDiesOnFatalSignalWithLowerNumberedSignalPending) {
+  SKIP_IF(!IsRunningOnGvisor());
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int ready_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]);
+  FileDescriptor ready_w(ready_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    ready_r.reset();
+
+    struct sigaction sa = {};
+    sa.sa_handler = IgnoreSigusr1ForFatalRaceTest;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGUSR1, &sa, nullptr) != 0) {
+      _exit(1);
+    }
+
+    char ready_token = 1;
+    if (write(ready_w.get(), &ready_token, 1) != 1) {
+      _exit(1);
+    }
+    ready_w.reset();
+
+    // Block indefinitely; SIGTERM at its default disposition should
+    // eventually kill this process.
+    while (true) {
+      pause();
+    }
+  }
+  ASSERT_GT(pid, 0);
+  ready_w.reset();
+  // If the bug under test is present, the child never dies on its own; make
+  // sure it doesn't outlive (or get left as a zombie by) this test.
+  auto clean_pid = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // Wait for the child's sigaction(SIGUSR1, ...) to actually complete before
+  // entering it into the cgroup and freezing it.
+  char ready_token;
+  ASSERT_THAT(read(ready_r.get(), &ready_token, 1),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // Queue the lower-numbered, non-fatal signal first, then the
+  // higher-numbered, fatal-by-default one.
+  ASSERT_THAT(kill(pid, SIGUSR1), SyscallSucceeds());
+  ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+  // The frozen process must still die on SIGTERM. Poll with WNOHANG on a
+  // bounded deadline instead of a blocking waitpid: if the fatal-signal gate
+  // regresses to only inspecting the lowest-numbered pending signal, this
+  // process never dies while frozen, and a blocking wait would hang forever.
+  int status = 0;
+  bool exited = false;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (absl::Now() < deadline) {
+    pid_t ret = waitpid(pid, &status, WNOHANG);
+    if (ret == pid) {
+      exited = true;
+      break;
+    }
+    ASSERT_EQ(ret, 0) << "waitpid failed: " << strerror(errno);
+    absl::SleepFor(absl::Milliseconds(50));
+  }
+  ASSERT_TRUE(exited) << "frozen process did not die on SIGTERM within the "
+                          "deadline -- a lower-numbered pending SIGUSR1 is "
+                          "likely blocking the fatal-signal gate";
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGTERM);
+}
+
+// FrozenProcessDefersCoreDumpSignalUntilThaw verifies that a core-dump-default
+// signal (SIGQUIT) does not kill a frozen process -- it stays queued until
+// thaw -- unlike a term-default signal (SIGTERM), which kills it immediately
+// while still frozen. Linux's complete_signal() gates its fatal-wake fast
+// path on !sig_kernel_coredump(sig): core-dump signals only ever reach
+// get_signal()'s normal dequeue path, which a frozen task never runs until
+// thaw.
+TEST_F(Cgroup2Test, FrozenProcessDefersCoreDumpSignalUntilThaw) {
+  // SIGQUIT: frozen, must not die until thaw.
+  {
+    Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("quit"));
+    pid_t pid = fork();
+    if (pid == 0) {
+      while (true) {
+        pause();
+      }
+    }
+    ASSERT_GT(pid, 0);
+    auto cleanup = Cleanup([&] {
+      kill(pid, SIGKILL);
+      waitpid(pid, nullptr, 0);
+    });
+
+    ASSERT_NO_ERRNO(child.Enter(pid));
+    ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+    WaitForFrozen(child, 1);
+
+    ASSERT_THAT(kill(pid, SIGQUIT), SyscallSucceeds());
+
+    // Must not die while frozen; give it a full second to prove that.
+    int status = 0;
+    const absl::Time not_dead_deadline = absl::Now() + absl::Seconds(1);
+    while (absl::Now() < not_dead_deadline) {
+      ASSERT_THAT(waitpid(pid, &status, WNOHANG), SyscallSucceedsWithValue(0))
+          << "SIGQUIT killed the frozen process before thaw, status = "
+          << status;
+      absl::SleepFor(absl::Milliseconds(50));
+    }
+
+    // Thaw: the queued SIGQUIT should now kill it. Poll with WNOHANG on a
+    // bounded deadline rather than a blocking waitpid, so a regression here
+    // fails loudly instead of hanging the test.
+    ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+    bool exited = false;
+    const absl::Time dead_deadline = absl::Now() + absl::Seconds(10);
+    while (absl::Now() < dead_deadline) {
+      pid_t ret = waitpid(pid, &status, WNOHANG);
+      if (ret == pid) {
+        exited = true;
+        break;
+      }
+      ASSERT_EQ(ret, 0) << "waitpid failed: " << strerror(errno);
+      absl::SleepFor(absl::Milliseconds(50));
+    }
+    ASSERT_TRUE(exited) << "process did not die on the queued SIGQUIT after "
+                            "thaw within the deadline";
+    EXPECT_TRUE(WIFSIGNALED(status));
+    EXPECT_EQ(WTERMSIG(status), SIGQUIT);
+  }
+
+  // SIGTERM: frozen, must die immediately (comparison).
+  {
+    Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("term"));
+    pid_t pid = fork();
+    if (pid == 0) {
+      while (true) {
+        pause();
+      }
+    }
+    ASSERT_GT(pid, 0);
+    auto cleanup = Cleanup([&] {
+      kill(pid, SIGKILL);
+      waitpid(pid, nullptr, 0);
+    });
+
+    ASSERT_NO_ERRNO(child.Enter(pid));
+    ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+    WaitForFrozen(child, 1);
+
+    ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+    int status = 0;
+    bool exited = false;
+    const absl::Time deadline = absl::Now() + absl::Seconds(10);
+    while (absl::Now() < deadline) {
+      pid_t ret = waitpid(pid, &status, WNOHANG);
+      if (ret == pid) {
+        exited = true;
+        break;
+      }
+      ASSERT_EQ(ret, 0) << "waitpid failed: " << strerror(errno);
+      absl::SleepFor(absl::Milliseconds(50));
+    }
+    ASSERT_TRUE(exited) << "SIGTERM did not kill the frozen process within "
+                            "the deadline";
+    EXPECT_TRUE(WIFSIGNALED(status));
+    EXPECT_EQ(WTERMSIG(status), SIGTERM);
+  }
+}
+
+// FrozenCgroupNotThawedBySIGCONT verifies that sending SIGCONT to a member
+// task of a frozen cgroup does not thaw it. SIGCONT's side effect of ending a
+// job-control group-stop (ThreadGroup.applySignalSideEffectsLocked's sig ==
+// linux.SIGCONT case, endGroupStopLocked) is specific to *groupStop; cgroup
+// v2 freeze is a separate stop mechanism (frozenStop) with its own explicit
+// thaw path (writing "0" to cgroup.freeze), and must not be conflated with
+// job control -- matching Linux, where the cgroup v2 freezer likewise
+// ignores SIGCONT.
+TEST_F(Cgroup2Test, FrozenCgroupNotThawedBySIGCONT) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end
+    // open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+
+  // SIGCONT must not thaw the cgroup: give it a moment to (not) take
+  // effect, then confirm it is still frozen and the process is still alive.
+  absl::SleepFor(absl::Milliseconds(200));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")))
+      << "SIGCONT thawed a frozen cgroup";
+  EXPECT_EQ(waitpid(pid, nullptr, WNOHANG), 0)
+      << "process exited despite SIGCONT not being fatal";
+
+  // The explicit thaw path must still work afterward.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  WaitForFrozen(child, 0);
+
+  // Let the child exit normally.
+  go_w.reset();
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+// CgroupFreezeEffectiveStateAndPropagation verifies that the cgroup.events
+// "frozen" line reflects the effective state (self or any ancestor), that
+// freeze propagates to descendants, and that cgroup.freeze itself reports only
+// the cgroup's own requested flag.
+TEST_F(Cgroup2Test, CgroupFreezeEffectiveStateAndPropagation) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  // Initially nothing is frozen.
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Freeze the parent: effective state propagates to the child, but the child's
+  // own cgroup.freeze flag stays 0.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("1")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Thaw the parent: effective state clears everywhere.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Freeze only the child: the parent is unaffected.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+}
+
+// CgroupFreezeInvalidInput verifies input validation on cgroup.freeze.
+TEST_F(Cgroup2Test, CgroupFreezeInvalidInput) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+  // Matches Linux: an out-of-range integer is ERANGE, a non-integer is EINVAL.
+  EXPECT_THAT(child.WriteControlFile("cgroup.freeze", "2"), PosixErrorIs(ERANGE));
+  EXPECT_THAT(child.WriteControlFile("cgroup.freeze", "abc"),
+              PosixErrorIs(EINVAL));
+  EXPECT_TRUE(child.WriteControlFile("cgroup.freeze", "1").ok());
+  EXPECT_TRUE(child.WriteControlFile("cgroup.freeze", "0").ok());
+}
+
+// FreezeAncestorStopsDescendantTasks proves task-level freeze propagation: a
+// process in a descendant cgroup actually stops when an ancestor is frozen (not
+// merely that cgroup.events reports "frozen 1").
+TEST_F(Cgroup2Test, FreezeAncestorStopsDescendantTasks) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+
+  // The process lives in the descendant cgroup.
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  // Freeze the ANCESTOR: the descendant's process must stop.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  absl::SleepFor(absl::Milliseconds(100));
+  DrainMarkers(prog_r.get());
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+
+  // Thaw the ancestor: the descendant's process resumes.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// FreezeSettledStateAccountsForGrandchildren regresses a counting bug in
+// updatePendingFreeze: a cgroup can be unsettled for either of two reasons
+// -- its own pendingFreezeCount, or a child's own unsettled subtree via
+// nrUnsettledChildren -- but the ancestor walk only checked the first
+// reason's transition, ignoring whether the second still held. In a
+// W -> A -> B hierarchy with a task in A and a group-stopped task in B, A's
+// own task parking (while B's hasn't) wrongly propagates "settled" past A
+// up to W; once B's task eventually settles too, W's unsettled-child
+// counter goes permanently negative, and W reports "frozen 1" immediately
+// on every later freeze, before anything has actually parked.
+TEST_F(Cgroup2Test, FreezeSettledStateAccountsForGrandchildren) {
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("b"));
+
+  // a_pid: a plain progress-marking loop, entered directly into A.
+  int a_prog_fds[2];
+  ASSERT_THAT(pipe(a_prog_fds), SyscallSucceeds());
+  FileDescriptor a_prog_r(a_prog_fds[0]);
+  FileDescriptor a_prog_w(a_prog_fds[1]);
+  int a_go_fds[2];
+  ASSERT_THAT(pipe(a_go_fds), SyscallSucceeds());
+  FileDescriptor a_go_r(a_go_fds[0]);
+  FileDescriptor a_go_w(a_go_fds[1]);
+
+  pid_t a_pid = fork();
+  if (a_pid == 0) {
+    a_prog_r.reset();
+    a_go_w.reset();
+    char token;
+    if (read(a_go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(a_prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+  }
+  ASSERT_GT(a_pid, 0);
+  a_prog_w.reset();
+  a_go_r.reset();
+
+  // b_pid: a group-stopped task, entered directly into B.
+  pid_t b_pid = fork();
+  if (b_pid == 0) {
+    raise(SIGSTOP);
+    while (true) {
+      pause();
+    }
+  }
+  ASSERT_GT(b_pid, 0);
+
+  auto cleanup = Cleanup([&] {
+    kill(a_pid, SIGKILL);
+    waitpid(a_pid, nullptr, 0);
+    kill(b_pid, SIGKILL);
+    waitpid(b_pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(a.Enter(a_pid));
+  ASSERT_THAT(write(a_go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(a_prog_r.get(), 5000));
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(b_pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(b_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << "status = " << status;
+  ASSERT_NO_ERRNO(b.Enter(b_pid));
+
+  // Freeze at the root. a_pid can and will actually park; b_pid,
+  // group-stopped, cannot enter frozenStop until it's continued, so B --
+  // and therefore A and the root -- must all stay unsettled the whole time
+  // b_pid is stopped.
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.freeze", "1"));
+
+  // Wait for a_pid to actually stop making progress (parked), not just for
+  // freeze to have been requested.
+  absl::SleepFor(absl::Milliseconds(200));
+  DrainMarkers(a_prog_r.get());
+  EXPECT_FALSE(ReadMarker(a_prog_r.get(), 500));
+
+  // a_pid has parked; b_pid has not and cannot on its own. If A's
+  // transition wrongly propagated past A without checking A's own
+  // unsettled child (B), the root would already claim "frozen 1" here.
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(c().ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Let b_pid settle too, while still frozen: continuing it lets it
+  // actually enter frozenStop. This must still propagate normally -- the
+  // new guard only short-circuits while a child is unsettled, not once it
+  // settles -- so both A (nrUnsettledChildren 1->0) and the root
+  // (1->0, from A's own transition) must actually reach "frozen 1" here.
+  ASSERT_THAT(kill(b_pid, SIGCONT), SyscallSucceeds());
+  WaitForFrozen(a, 1);
+  WaitForFrozen(c(), 1);
+
+  // Thaw everything, then stop b_pid again and re-freeze. If the first
+  // settle (a_pid parking behind an unsettled B) already corrupted the
+  // root's unsettled-child counter, and b_pid's own settle then drove it
+  // negative, the counter can no longer register any child's unsettled
+  // state at all -- the root would immediately claim "frozen 1" here even
+  // though b_pid, freshly stopped, has not parked again.
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.freeze", "0"));
+  WaitForFrozen(c(), 0);
+
+  ASSERT_THAT(kill(b_pid, SIGSTOP), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(waitpid)(b_pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(b_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << "status = " << status;
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(c().ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")))
+      << "root reported frozen before b_pid (freshly stopped) could have "
+         "parked -- nrUnsettledChildren is stuck negative from an earlier "
+         "settle";
+}
+
+// CloneIntoFrozenCgroupStartsFrozen verifies that a task born (via
+// CLONE_INTO_CGROUP) directly into a frozen cgroup starts frozen and runs no
+// application code until thawed. (A plain fork/CLONE_THREAD into a frozen group
+// isn't reachable from within it — the creating task would already be frozen —
+// so CLONE_INTO_CGROUP from an unfrozen parent is the testable birth case.)
+TEST_F(Cgroup2Test, CloneIntoFrozenCgroupStartsFrozen) {
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+  FileDescriptor cgroup_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(frozen_cg.Path(), O_RDONLY | O_DIRECTORY));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+
+  clone_args args = {};
+  args.flags = CLONE_INTO_CGROUP;
+  args.cgroup = cgroup_fd.get();
+  args.exit_signal = SIGCHLD;
+  pid_t pid = clone3(&args, sizeof(args));
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    prog_r.reset();
+    // Born into a frozen cgroup: this loop must not run until thawed.
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+    _exit(0);
+  }
+  prog_w.reset();
+
+  // The child was born frozen: no progress markers appear.
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+  EXPECT_THAT(frozen_cg.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Thaw: the child now runs for the first time.
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// MigrateIntoFrozenFreezesAndOutResumes proves the attach() reconciliation: a
+// running task migrated (via cgroup.procs) into a frozen cgroup stops, and
+// migrated back out resumes. Without the attach() fix, freeze would be
+// escapable by moving a task out of a frozen subtree.
+TEST_F(Cgroup2Test, MigrateIntoFrozenFreezesAndOutResumes) {
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  Cgroup normal_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("normal"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      usleep(10000);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+
+  // Start out running in the unfrozen cgroup.
+  ASSERT_NO_ERRNO(normal_cg.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  // Migrate into the frozen cgroup: the task must stop.
+  ASSERT_NO_ERRNO(frozen_cg.Enter(pid));
+  absl::SleepFor(absl::Milliseconds(100));
+  DrainMarkers(prog_r.get());
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+
+  // Migrate back out to the unfrozen cgroup: the task must resume.
+  ASSERT_NO_ERRNO(normal_cg.Enter(pid));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
 }
 
 TEST_F(Cgroup2Test, DescendantsStatAndLimit) {

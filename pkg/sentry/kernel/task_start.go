@@ -461,6 +461,15 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		t.SendSignal(SignalInfoPriv(linux.SIGKILL))
 	}
 
+	// A task forked into an effectively-frozen subtree must start frozen,
+	// before running any application code -- covers both a new process
+	// and a CLONE_THREAD thread in an already-frozen group. Setting
+	// t.frozen here guarantees the task parks in frozenStop on its first
+	// schedule (run()'s initial runState bounces through runInterrupt).
+	if t.Cgroup2().IsFrozen() {
+		t.SetCgroupFrozen(ctx, true)
+	}
+
 	return t, nil
 }
 

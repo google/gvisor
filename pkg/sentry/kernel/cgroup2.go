@@ -116,6 +116,28 @@ type Cgroup2 interface {
 	// It helps prevent fork()s racing with cgroup.kill.
 	KillSeq() uint64
 
+	// IsFrozen returns whether the cgroup is effectively frozen (it or any
+	// ancestor has cgroup.freeze set). It lets a task forked into a frozen
+	// subtree start frozen.
+	IsFrozen() bool
+
+	// SetTaskFrozen relays frozen to t (passing this cgroup as the issuing
+	// cgroup) and atomically adjusts whichever cgroup's counter actually
+	// needs it -- not necessarily this one; see Task.SetCgroupFrozenLocked.
+	// Unlike cgroup2fs's freeze()/attach() tree-walks, callers must not
+	// already hold the counter lock: SetTaskFrozen acquires it itself.
+	// Used by Task.SetCgroupFrozen.
+	SetTaskFrozen(ctx context.Context, t *Task, frozen bool)
+
+	// ApplyFreezeCreditDelta adjusts this cgroup's pending-freeze counter
+	// by delta, self-acquiring its lock. Unlike SetTaskFrozen it never
+	// touches a task's frozen state -- the caller must already know this
+	// is the correct cgroup to adjust (the one a prior
+	// setCgroupFrozenLocked/resolveFreezeCreditLocked returned, not
+	// re-derived independently). Used by runInterrupt after a task parks,
+	// strictly after releasing signalHandlers.mu.
+	ApplyFreezeCreditDelta(ctx context.Context, delta FreezeCreditDelta)
+
 	// Deleted returns true if the cgroup has been deleted.
 	Deleted() bool
 
