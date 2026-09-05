@@ -691,6 +691,11 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 
 // saveWithOpts saves the kernel with the given options.
 func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRestoreExecOpts) (err error) {
+	// A checkpoint without resume kills the kernel, and hence the loader,
+	// before OnCheckpointAttempt below publishes the checkpoint's result.
+	// Mark the attempt as in flight so that the loader's destruction does not
+	// overwrite the result with an error for pending WaitCheckpoint callers.
+	l.k.BeginCheckpoint()
 	defer func() {
 		// This closure is required to capture the final value of err.
 		l.k.OnCheckpointAttempt(err)
