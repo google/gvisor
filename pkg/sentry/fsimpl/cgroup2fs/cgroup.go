@@ -564,6 +564,7 @@ func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials, ns *
 	if err != nil {
 		return err
 	}
+	defer inode.DecRef(ctx)
 	if err := inode.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -682,6 +683,7 @@ func (c *cgroup) removeInterfaceFiles(ctx context.Context, ctrl controller) {
 	for _, name := range ctrl.interfaceFileNames() {
 		if inode, err := c.OrderedChildren.Lookup(ctx, name); err == nil {
 			c.OrderedChildren.Unlink(ctx, name, inode)
+			inode.DecRef(ctx)
 		}
 	}
 }
@@ -811,6 +813,7 @@ func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Cred
 	if err != nil {
 		return err
 	}
+	defer lcaProcs.DecRef(ctx)
 	if err := lcaProcs.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -1163,6 +1166,7 @@ func (c *cgroup) ReadControl(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no such control file")
 	}
+	defer cfi.DecRef(ctx)
 	dbf, ok := cfi.(*cgroupInterfaceFile)
 	var data vfs.DynamicBytesSource
 	if ok {
@@ -1193,6 +1197,7 @@ func (c *cgroup) WriteControl(ctx context.Context, name string, val string) erro
 	if err != nil {
 		return fmt.Errorf("no such control file")
 	}
+	defer cfi.DecRef(ctx)
 	dbf, ok := cfi.(*cgroupInterfaceFile)
 	if !ok {
 		return fmt.Errorf("control file not writable")
