@@ -399,6 +399,14 @@ func TestRmControlOpaqueDispatchClassification(t *testing.T) {
 			wantBINAPI: true,
 		},
 		{
+			// Both predicates match. rmControl() tests the legacy mask
+			// first, so this is a GSP-legacy control, not a binapi one.
+			name:       "NV2081_BINAPI class with legacy bit set",
+			cmd:        (uint32(nvgpu.NV2081_BINAPI) << 16) | 0xffff,
+			wantGSP:    true,
+			wantBINAPI: true,
+		},
+		{
 			name: "NV0080 typed-handler control NV0080_CTRL_GR -- must NOT classify as opaque",
 			cmd:  0x00800180,
 		},
@@ -426,13 +434,27 @@ func TestRmControlOpaqueDispatchClassification(t *testing.T) {
 					tc.cmd, gotBINAPI, tc.wantBINAPI)
 			}
 
-			// Production rmControl checks GSS_LEGACY first and returns,
-			// so any cmd that satisfies both predicates would be silently
-			// classified as GSS_LEGACY only. Flag such overlaps so
-			// future cmd values are reviewed explicitly.
-			if gotGSP && gotBINAPI {
-				t.Errorf("cmd=%#x: ambiguous classification, both GSP_LEGACY and NV2081_BINAPI bits set; rmControl resolves to GSP_LEGACY first",
-					tc.cmd)
+			// The predicates are not mutually exclusive: the low half of a
+			// class NV2081_BINAPI command can have RM_GSS_LEGACY_MASK set.
+			// rmControl() tests the legacy mask first and returns, so such a
+			// command takes the GSP path. Assert the branch rmControl() would
+			// actually take instead of treating the overlap as an error.
+			wantPath := "typed"
+			switch {
+			case tc.wantGSP:
+				wantPath = "gsp_legacy"
+			case tc.wantBINAPI:
+				wantPath = "nv2081_binapi"
+			}
+			gotPath := "typed"
+			switch {
+			case gotGSP:
+				gotPath = "gsp_legacy"
+			case gotBINAPI:
+				gotPath = "nv2081_binapi"
+			}
+			if gotPath != wantPath {
+				t.Errorf("cmd=%#x: dispatch path = %s, want %s", tc.cmd, gotPath, wantPath)
 			}
 		})
 	}
