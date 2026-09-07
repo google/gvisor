@@ -101,7 +101,7 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
 		contents = map[string]kernfs.Inode{
 			"ipv4": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-				"ip_forward":          fs.newInode(ctx, root, 0444, &ipForwarding{stack: stack}),
+				"ip_forward":          fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack}),
 				"ip_local_port_range": fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
 				"tcp_recovery":        fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
 				"tcp_rmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),

@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -118,6 +119,10 @@ func setup(t *testing.T) *testutil.System {
 }
 
 func setupWithData(t *testing.T, data *InternalData) *testutil.System {
+	return setupWithDataAndStack(t, data, nil)
+}
+
+func setupWithDataAndStack(t *testing.T, data *InternalData, netStack inet.Stack) *testutil.System {
 	k, err := testutil.Boot()
 	if err != nil {
 		t.Fatalf("Error creating kernel: %v", err)
@@ -125,6 +130,12 @@ func setupWithData(t *testing.T, data *InternalData) *testutil.System {
 
 	ctx := k.SupervisorContext()
 	creds := auth.CredentialsFromContext(ctx)
+
+	// The root network namespace of a freshly booted test kernel has no stack, so
+	// /proc/sys/net is empty. Inject one so /proc/sys/net/ipv4/* is populated.
+	if netStack != nil {
+		k.RootNetworkNamespace().RestoreRootStack(netStack)
+	}
 
 	k.VFS().MustRegisterFilesystemType(Name, &FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
@@ -769,5 +780,38 @@ func TestFdInfoRecursion(t *testing.T) {
 	content := string(buf[:n])
 	if !strings.Contains(content, "pos:\t0") {
 		t.Errorf("pos should be 0, got: %q", content)
+	}
+}
+
+// TestSysNetIPv4FileModes verifies the permission bits of files under
+// /proc/sys/net/ipv4. In particular ip_forward must be writable (0644), matching
+// Linux's /proc/sys/net/ipv4/ip_forward; a read-only stub is checked as a
+// contrast so the test fails if all files were made writable by mistake.
+func TestSysNetIPv4FileModes(t *testing.T) {
+	s := setupWithDataAndStack(t, &InternalData{}, inet.NewTestStack())
+	defer s.Destroy()
+
+	for _, tc := range []struct {
+		path string
+		perm uint16
+	}{
+		// The file this test guards: Linux registers ip_forward as 0644 so an
+		// unprivileged workload (e.g. kube-proxy) can enable forwarding by writing
+		// to it. Registering it 0444 makes the existing Write path unreachable.
+		{path: "/proc/sys/net/ipv4/ip_forward", perm: 0644},
+		// A writable sibling, to confirm the harness reports write bits at all.
+		{path: "/proc/sys/net/ipv4/ip_local_port_range", perm: 0644},
+		// A read-only stub, to confirm the harness does not report write bits for
+		// everything (guards against a blanket mode change).
+		{path: "/proc/sys/net/ipv4/tcp_dsack", perm: 0444},
+	} {
+		stat, err := s.VFS.StatAt(s.Ctx, s.Creds, s.PathOpAtRoot(tc.path), &vfs.StatOptions{Mask: linux.STATX_MODE})
+		if err != nil {
+			t.Errorf("StatAt(%q) failed: %v", tc.path, err)
+			continue
+		}
+		if got := stat.Mode & 0777; got != tc.perm {
+			t.Errorf("%s mode = %#o, want %#o", tc.path, got, tc.perm)
+		}
 	}
 }
