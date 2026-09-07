@@ -1157,6 +1157,24 @@ func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool)
 	return nil
 }
 
+// GetAllowExternalLoopbackTraffic implements inet.Stack.GetAllowExternalLoopbackTraffic.
+func (s *Stack) GetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber) (bool, error) {
+	var opt tcpip.AllowExternalLoopbackTrafficOption
+	if err := s.Stack.NetworkProtocolOption(protocol, &opt); err != nil {
+		return false, fmt.Errorf("NetworkProtocolOption(%d, ...): %s", protocol, err)
+	}
+	return bool(opt), nil
+}
+
+// SetAllowExternalLoopbackTraffic implements inet.Stack.SetAllowExternalLoopbackTraffic.
+func (s *Stack) SetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	opt := tcpip.AllowExternalLoopbackTrafficOption(enable)
+	if err := s.Stack.SetNetworkProtocolOption(protocol, &opt); err != nil {
+		return fmt.Errorf("SetNetworkProtocolOption(%d, &%t): %s", protocol, enable, err)
+	}
+	return nil
+}
+
 // PortRange implements inet.Stack.PortRange.
 func (s *Stack) PortRange() (uint16, uint16) {
 	return s.Stack.PortRange()
