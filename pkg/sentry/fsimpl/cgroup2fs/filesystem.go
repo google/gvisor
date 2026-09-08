@@ -89,7 +89,7 @@ func mountingCgroupNS(ctx context.Context) *kernel.CgroupNamespace {
 	if t := kernel.TaskFromContext(ctx); t != nil {
 		return t.GetCgroupNamespace()
 	}
-	return kernel.CgroupNamespaceFromContext(ctx)
+	return kernel.GetCgroupNamespaceFromContext(ctx)
 }
 
 // mountRoot returns the dentry a new cgroup2 mount should be rooted at, with
@@ -150,10 +150,10 @@ func (fs *filesystem) MountRootPath(ctx context.Context, vd vfs.VirtualDentry) s
 // rooted at the true root of the hierarchy, for use by the sentry control
 // plane (e.g. to create per-container cgroups). The caller owns the returned
 // mount reference.
-func NewInternalMount(k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem) *vfs.Mount {
+func NewInternalMount(k *kernel.Kernel) *vfs.Mount {
 	fs := k.Cgroup2FS().(*filesystem)
 	fs.mounted.Store(1)
-	return vfsObj.NewDisconnectedMount(fs.VFSFilesystem(), fs.root.VFSDentry(), &vfs.MountOptions{
+	return k.VFS().NewDisconnectedMount(fs.VFSFilesystem(), fs.root.VFSDentry(), &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{InternalMount: true},
 	})
 }
@@ -164,6 +164,20 @@ func NewInternalMount(k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem) *vfs.Moun
 // from the init cgroup namespace.
 func SetNSDelegate(k *kernel.Kernel, v bool) {
 	k.Cgroup2FS().(*filesystem).nsDelegate.Store(v)
+}
+
+// InitHierarchy initializes sandbox-wide cgroup2 state: creates an internal
+// mount of the cgroup2fs singleton, sets nsdelegate, and enables all supported
+// controllers for child cgroups in root's subtree_control. The caller owns the
+// returned mount reference.
+func InitHierarchy(ctx context.Context, k *kernel.Kernel) (*vfs.Mount, error) {
+	cg2Mount := NewInternalMount(k)
+	SetNSDelegate(k, true)
+	if err := k.Cgroup2FS().RootCgroup().WriteControl(ctx, "cgroup.subtree_control", "+cpu +memory +pids +cpuset"); err != nil {
+		cg2Mount.DecRef(ctx)
+		return nil, fmt.Errorf("enabling root cgroup2 controllers: %w", err)
+	}
+	return cg2Mount, nil
 }
 
 // CgroupFromDentry returns the cgroup2 node backing d, if any.

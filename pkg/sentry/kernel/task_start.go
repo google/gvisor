@@ -335,6 +335,9 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		} else if cfg.InitialCgroupV2 != nil {
 			// Container start or exec into an existing container.
 			cgroup2 = cfg.InitialCgroupV2
+		} else if cfg.CgroupNamespace != nil {
+			// Container start with dedicated cgroup namespace.
+			cgroup2 = cfg.CgroupNamespace.Root()
 		} else {
 			// Direct exec into the sandbox.
 			cgroup2 = cfg.Kernel.Cgroup2FS().RootCgroup()

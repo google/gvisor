@@ -89,12 +89,16 @@ func IPCNamespaceFromContext(ctx context.Context) *IPCNamespace {
 	return nil
 }
 
-// CgroupNamespaceFromContext returns the cgroup namespace in which ctx is
-// executing, or nil if there is no such cgroup namespace. No reference is
-// transferred: the returned namespace is only valid while ctx is.
-func CgroupNamespaceFromContext(ctx context.Context) *CgroupNamespace {
+// GetCgroupNamespaceFromContext returns the cgroup namespace in which ctx is
+// executing, or nil if there is no such cgroup namespace. A reference is taken
+// on the returned namespace.
+func GetCgroupNamespaceFromContext(ctx context.Context) *CgroupNamespace {
 	if v := ctx.Value(CtxCgroupNamespace); v != nil {
-		return v.(*CgroupNamespace)
+		cgns := v.(*CgroupNamespace)
+		if cgns != nil {
+			cgns.IncRef()
+			return cgns
+		}
 	}
 	return nil
 }
