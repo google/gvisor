@@ -4428,7 +4428,7 @@ func TestProfileLive(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	// Test live CPU profiling.
+	// Test live CPU profiling (runsc profile cpu).
 	cpuFile, err := os.Create(filepath.Join(t.TempDir(), "live_cpu.pprof"))
 	if err != nil {
 		t.Fatalf("creating cpu file: %v", err)
@@ -4446,7 +4446,7 @@ func TestProfileLive(t *testing.T) {
 		t.Errorf("live CPU profile file is empty")
 	}
 
-	// Test live Heap profiling.
+	// Test live Heap profiling (runsc profile heap).
 	heapFile, err := os.Create(filepath.Join(t.TempDir(), "live_heap.pprof"))
 	if err != nil {
 		t.Fatalf("creating heap file: %v", err)
@@ -4462,6 +4462,78 @@ func TestProfileLive(t *testing.T) {
 	}
 	if fi.Size() == 0 {
 		t.Errorf("live Heap profile file is empty")
+	}
+
+	// Test live Goroutine profiling (runsc profile goroutine).
+	goroutineFile, err := os.Create(filepath.Join(t.TempDir(), "live_goroutine.txt"))
+	if err != nil {
+		t.Fatalf("creating goroutine file: %v", err)
+	}
+	defer goroutineFile.Close()
+
+	if err := cont.Sandbox.GoroutineProfile(goroutineFile); err != nil {
+		t.Fatalf("GoroutineProfile: %v", err)
+	}
+	fi, err = goroutineFile.Stat()
+	if err != nil {
+		t.Fatalf("stat goroutine file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Goroutine profile file is empty")
+	}
+
+	// Test live Block profiling (runsc profile block).
+	blockFile, err := os.Create(filepath.Join(t.TempDir(), "live_block.pprof"))
+	if err != nil {
+		t.Fatalf("creating block file: %v", err)
+	}
+	defer blockFile.Close()
+
+	if err := cont.Sandbox.BlockProfile(blockFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("BlockProfile: %v", err)
+	}
+	fi, err = blockFile.Stat()
+	if err != nil {
+		t.Fatalf("stat block file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Block profile file is empty")
+	}
+
+	// Test live Mutex profiling (runsc profile mutex).
+	mutexFile, err := os.Create(filepath.Join(t.TempDir(), "live_mutex.pprof"))
+	if err != nil {
+		t.Fatalf("creating mutex file: %v", err)
+	}
+	defer mutexFile.Close()
+
+	if err := cont.Sandbox.MutexProfile(mutexFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("MutexProfile: %v", err)
+	}
+	fi, err = mutexFile.Stat()
+	if err != nil {
+		t.Fatalf("stat mutex file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Mutex profile file is empty")
+	}
+
+	// Test live Trace profiling (runsc profile trace).
+	traceFile, err := os.Create(filepath.Join(t.TempDir(), "live_trace.out"))
+	if err != nil {
+		t.Fatalf("creating trace file: %v", err)
+	}
+	defer traceFile.Close()
+
+	if err := cont.Sandbox.Trace(traceFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("Trace: %v", err)
+	}
+	fi, err = traceFile.Stat()
+	if err != nil {
+		t.Fatalf("stat trace file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Trace profile file is empty")
 	}
 }
 
