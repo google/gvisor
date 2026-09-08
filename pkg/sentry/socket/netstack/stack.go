@@ -445,6 +445,19 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 			if !ok {
 				return syserr.ErrInvalidArgument
 			}
+			for attr := range peerLinkAttrs {
+				switch attr {
+				case linux.IFLA_IFNAME:
+				case linux.IFLA_MASTER:
+				case linux.IFLA_ADDRESS:
+				case linux.IFLA_MTU:
+				case linux.IFLA_NET_NS_FD:
+				case linux.IFLA_TXQLEN:
+				default:
+					ctx.Warningf("unexpected peer attribute: %x", attr)
+					return syserr.ErrNotSupported
+				}
+			}
 			if v, ok = peerLinkAttrs[linux.IFLA_IFNAME]; ok {
 				peerName = v.String()
 			}

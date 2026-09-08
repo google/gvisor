@@ -2073,7 +2073,8 @@ struct VethRequest {
 };
 
 struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
-                                  const char* ifname_second) {
+                                  const char* ifname_second,
+                                  int peer_netns_pid = -1) {
   struct VethRequest req = {};
   req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
   req.hdr.nlmsg_type = RTM_NEWLINK;
@@ -2098,6 +2099,10 @@ struct VethRequest GetVethRequest(uint32_t seq, const char* ifname_first,
         addattr(&req.hdr, sizeof(req), VETH_INFO_PEER, &ifm, sizeof(ifm));
         addattr(&req.hdr, sizeof(req), IFLA_IFNAME, ifname_second,
                 strlen(ifname_second));
+        if (peer_netns_pid >= 0) {
+          addattr(&req.hdr, sizeof(req), IFLA_NET_NS_PID, &peer_netns_pid,
+                  sizeof(peer_netns_pid));
+        }
       }
       peer_data->rta_len = (uint64_t)NLMSG_TAIL(&req.hdr) - (uint64_t)peer_data;
     }
@@ -2208,6 +2213,30 @@ TEST(NetlinkRouteTest, VethAdd) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, VethAddRejectsUnsupportedPeerAttr) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // gVisor implements IFLA_NET_NS_PID at neither position.
+  SKIP_IF(!IsRunningOnGvisor());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetVethRequest(kSeq, "veth1", "veth2", getpid());
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(ENOTSUP, _));
+
+  EXPECT_EQ(if_nametoindex("veth1"), 0);
+  EXPECT_EQ(if_nametoindex("veth2"), 0);
 }
 
 TEST(NetlinkRouteTest, LinkInfoKind) {
