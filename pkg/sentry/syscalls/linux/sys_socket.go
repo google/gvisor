@@ -815,12 +815,12 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	// Fast path when no control message nor name buffers are provided.
 	if msg.ControlLen == 0 && msg.NameLen == 0 {
 		n, mflags, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
-		if err != nil {
-			return 0, linuxerr.ConvertIntr(err.ToError(), linuxerr.ERESTARTSYS)
-		}
 		if !cms.Unix.Empty() {
 			mflags |= linux.MSG_CTRUNC
 			cms.Release(t)
+		}
+		if err != nil {
+			return 0, linuxerr.ConvertIntr(err.ToError(), linuxerr.ERESTARTSYS)
 		}
 
 		if int(msg.Flags) != mflags {
@@ -837,10 +837,11 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 		return 0, linuxerr.ENOBUFS
 	}
 	n, mflags, sender, senderLen, cms, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, msg.NameLen != 0, msg.ControlLen)
+	// Control messages may have been dequeued even if copying the data failed.
+	defer cms.Release(t)
 	if e != nil {
 		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
-	defer cms.Release(t)
 
 	controlData := make([]byte, 0, msg.ControlLen)
 	controlData = control.PackControlMessages(t, cms, controlData)
