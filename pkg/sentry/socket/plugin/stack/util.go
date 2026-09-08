@@ -26,6 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin/cgo"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func int2err(from int64) *syserr.Error {
@@ -58,6 +60,34 @@ func copyAddrOut(ifr *linux.IFReq, ifaceAddr *inet.InterfaceAddr) {
 	} else {
 		copy(ifr.Data[8:24], ifaceAddr.Addr[:16])
 	}
+}
+
+func firstIPv4InterfaceAddr(stack inet.Stack, index int32) (inet.InterfaceAddr, bool) {
+	for _, addr := range stack.InterfaceAddrs()[index] {
+		if addr.Family == linux.AF_INET && len(addr.Addr) == header.IPv4AddressSize {
+			return addr, true
+		}
+	}
+	return inet.InterfaceAddr{}, false
+}
+
+func copyIPv4SockAddrOut(ifr *linux.IFReq, addr []byte) {
+	clear(ifr.Data[:linux.SockAddrInetSize])
+	hostarch.ByteOrder.PutUint16(ifr.Data[0:2], uint16(linux.AF_INET))
+	copy(ifr.Data[4:8], addr)
+}
+
+func copyBroadcastAddrOut(ifr *linux.IFReq, iface inet.Interface, addr inet.InterfaceAddr) {
+	if iface.Flags&linux.IFF_BROADCAST == 0 || addr.PrefixLen >= 31 {
+		copyIPv4SockAddrOut(ifr, []byte{0, 0, 0, 0})
+		return
+	}
+	subnet := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom4Slice(addr.Addr),
+		PrefixLen: int(addr.PrefixLen),
+	}.Subnet()
+	broadcast := subnet.Broadcast().As4()
+	copyIPv4SockAddrOut(ifr, broadcast[:])
 }
 
 func iovecsFromBlockSeq(bs safemem.BlockSeq, rw *pluginStackRW) []syscall.Iovec {
