@@ -263,6 +263,10 @@ analyzers:
     internal:
       exclude:
         - pkg/gohacks/noescape_unsafe.go # x ^ 0 always equals x.
+  SA4023: # Impossible condition.
+    internal:
+      exclude:
+        - runsc/sandbox/network.go # Stubs in no_xdp.go always return error when built without XDP.
   ST1019: # Multiple imports of the same package.
     generated:
       exclude:
