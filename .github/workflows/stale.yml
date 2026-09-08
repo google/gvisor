@@ -14,7 +14,7 @@ jobs:
       issues: write        # label / comment / close stale issues
       pull-requests: write # label / comment / close stale PRs
     steps:
-    - uses: actions/stale@v10
+    - uses: actions/stale@v11
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         stale-issue-message: 'A friendly reminder that this issue had no activity for 120 days.'
