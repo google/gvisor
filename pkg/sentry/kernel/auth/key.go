@@ -247,15 +247,20 @@ func (c *Credentials) PossessedKeys(sessionKeyring, processKeyring, threadKeyrin
 //
 //go:nosplit
 func (c *Credentials) HasKeyPermission(k *Key, possessed *PossessedKeys, permission KeyPermission) bool {
-	perms := k.perms & keyOtherPermissionsMask
+	keyPerms := k.Permissions()
+	// Select one permission class before adding possessor permissions. Linux
+	// falls back to other permissions when the group permission mask is empty.
+	var perms KeyPermissions
+	switch {
+	case c.EffectiveKUID == k.kuid:
+		perms = (keyPerms & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
+	case k.kgid.Ok() && keyPerms&keyGroupPermissionsMask != 0 && c.InGroup(k.kgid):
+		perms = (keyPerms & keyGroupPermissionsMask) >> keyGroupPermissionsShift
+	default:
+		perms = keyPerms & keyOtherPermissionsMask
+	}
 	if _, ok := possessed.possessed[k.ID]; ok {
-		perms |= (k.perms & keyPossessorPermissionsMask) >> keyPossessorPermissionsShift
-	}
-	if c.EffectiveKUID == k.kuid {
-		perms |= (k.perms & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
-	}
-	if c.EffectiveKGID == k.kgid {
-		perms |= (k.perms & keyGroupPermissionsMask) >> keyGroupPermissionsShift
+		perms |= (keyPerms & keyPossessorPermissionsMask) >> keyPossessorPermissionsShift
 	}
 	switch permission {
 	case KeyView:

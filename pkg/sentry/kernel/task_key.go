@@ -15,28 +15,10 @@
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
-
-// SessionKeyring returns this Task's session keyring.
-// Session keyrings are inherited from the parent when a task is started.
-// If the session keyring is unset, it is implicitly initialized.
-// As such, this function should never return ENOKEY.
-func (t *Task) SessionKeyring() (*auth.Key, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.sessionKeyring != nil {
-		// Verify that we still have access to this keyring.
-		creds := t.Credentials()
-		if !creds.HasKeyPermission(t.sessionKeyring, creds.PossessedKeys(t.sessionKeyring, nil, nil), auth.KeySearch) {
-			return nil, linuxerr.EACCES
-		}
-		return t.sessionKeyring, nil
-	}
-	// If we don't have a session keyring, implicitly create one.
-	return t.joinNewSessionKeyringLocked(auth.DefaultSessionKeyringName, auth.DefaultUnnamedSessionKeyringPermissions)
-}
 
 // joinNewSessionKeyringLocked creates a new session keyring with the given
 // description, and joins it immediately.
@@ -90,15 +72,37 @@ func (t *Task) JoinSessionKeyring(keyDesc *string) (*auth.Key, error) {
 	return t.joinNewSessionKeyringLocked(newKeyDesc, newKeyPerms)
 }
 
-// LookupKey looks up a key by ID using this task's credentials.
+// lookupKeyLocked resolves a key ID without checking permissions. The caller
+// must check the permissions required by its operation. If the session keyring
+// is requested but unset, it is implicitly initialized.
+//
+// Preconditions: t.mu is held.
+//
+// +checklocks:t.mu
+func (t *Task) lookupKeyLocked(keyID auth.KeySerial) (*auth.Key, error) {
+	if keyID == linux.KEY_SPEC_SESSION_KEYRING {
+		if t.sessionKeyring == nil {
+			return t.joinNewSessionKeyringLocked(auth.DefaultSessionKeyringName, auth.DefaultUnnamedSessionKeyringPermissions)
+		}
+		return t.sessionKeyring, nil
+	}
+	// The session keyring may belong to a previous user namespace.
+	if key := t.sessionKeyring; key != nil && key.ID == keyID {
+		return key, nil
+	}
+	return t.UserNamespace().Keys.Lookup(keyID)
+}
+
+// LookupKey looks up a key by ID and checks search permission using this task's
+// credentials. keyID may be KEY_SPEC_SESSION_KEYRING.
 func (t *Task) LookupKey(keyID auth.KeySerial) (*auth.Key, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	creds := t.Credentials()
-	key, err := creds.UserNamespace.Keys.Lookup(keyID)
+	key, err := t.lookupKeyLocked(keyID)
 	if err != nil {
 		return nil, err
 	}
+	creds := t.Credentials()
 	if !creds.HasKeyPermission(key, creds.PossessedKeys(t.sessionKeyring, nil, nil), auth.KeySearch) {
 		return nil, linuxerr.EACCES
 	}
@@ -106,10 +110,14 @@ func (t *Task) LookupKey(keyID auth.KeySerial) (*auth.Key, error) {
 }
 
 // SetPermsOnKey sets the permission bits on the given key using the task's
-// credentials.
-func (t *Task) SetPermsOnKey(key *auth.Key, perms auth.KeyPermissions) error {
+// credentials. keyID may be KEY_SPEC_SESSION_KEYRING.
+func (t *Task) SetPermsOnKey(keyID auth.KeySerial, perms auth.KeyPermissions) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	key, err := t.lookupKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
 	creds := t.Credentials()
 	possessed := creds.PossessedKeys(t.sessionKeyring, nil, nil)
 	return creds.UserNamespace.Keys.Do(func(keySet *auth.LockedKeySet) error {
