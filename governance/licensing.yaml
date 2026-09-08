@@ -43,12 +43,13 @@ exceptions:
       gRPC is Apache-2.0; its LICENSE file additionally embeds notices for
       bundled components, including the MPL-2.0 text covering Mozilla's CA
       certificate data (etc/roots.pem). Used by Bazel build and test tooling
-      only; released gVisor binaries use the pure-Go google.golang.org/grpc.
+      only. Released gVisor binaries use the pure-Go google.golang.org/grpc.
   - dependency: llvm-raw
     license:
       - Apache-2.0 WITH LLVM-exception
       - MIT
     exception_rationale: >-
-      LLVM is part of the benchmark toolchain only and is not distributed with
-      gVisor. The LLVM exception only relaxes Apache-2.0's requirements, and
-      the MIT match comes from third-party notices embedded in LICENSE.TXT.
+      LLVM is part of the NVIDIA GPU test toolchain only and is not
+      distributed with gVisor. The LLVM exception only relaxes
+      Apache-2.0's requirements, and the MIT match comes from third-party
+      notices embedded in LICENSE.TXT.
