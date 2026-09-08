@@ -3724,6 +3724,54 @@ func TestSignalCreated(t *testing.T) {
 	}
 }
 
+// TestStateNonLeaderExec verifies that a container whose init process
+// continuously execs from non-leader threads is never reported Stopped.
+// During such an execve the old thread group leader exits before the execing
+// thread is promoted in its place; the leader alone must not be used as a
+// liveness signal. A single transient "stopped" answer from `runsc state` is
+// treated as terminal by container shims, permanently wedging teardown.
+func TestStateNonLeaderExec(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+	spec := testutil.NewSpecWithArgs(app, "exec-from-thread")
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Poll state the same way `runsc state` does (Load + CheckStopped) while
+	// init re-execs from non-leader threads, and verify the container is
+	// never reported Stopped.
+	polls := 0
+	for start := time.Now(); time.Since(start) < 10*time.Second; polls++ {
+		cLoaded, err := Load(conf.RootDir, FullID{ContainerID: args.ID}, LoadOpts{})
+		if err != nil {
+			t.Fatalf("error loading container after %d polls: %v", polls, err)
+		}
+		if cLoaded.Status == Stopped {
+			t.Fatalf("container transiently reported Stopped after %d polls while init is alive", polls)
+		}
+	}
+}
+
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
 	for i := 0; i < 10; i++ {
