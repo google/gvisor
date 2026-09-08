@@ -267,6 +267,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_PWRITEV:  seccomp.MatchAll{},
 	unix.SYS_PWRITEV2: seccomp.MatchAll{},
 	unix.SYS_READ:     seccomp.MatchAll{},
+	unix.SYS_READV:    seccomp.MatchAll{}, // Used by TAP/TUN fdbased links.
 	unix.SYS_RECVMSG: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},
