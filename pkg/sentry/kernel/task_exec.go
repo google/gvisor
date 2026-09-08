@@ -290,6 +290,9 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 		oldTID = tracer.tg.pidns.tids[t]
 	}
 	t.promoteLocked()
+	// The new image initialises its own GPU driver state, so this thread group
+	// no longer holds device identities from before a checkpoint.
+	t.tg.clearExistedAtCheckpoint()
 	// "POSIX timers are not preserved (timer_create(2))." - execve(2). Handle
 	// this first since POSIX timers are protected by the signal mutex, which
 	// we're about to change. Note that we have to stop and destroy timers
