@@ -87,6 +87,17 @@ type DeviceRemapID struct {
 	// invocation of NV2080_CTRL_CMD_GPU_SET_SDM.
 	SubDeviceInstance uint32 `json:"subdevice_instance"`
 
+	// PCIDomain, PCIBus, PCISlot and PCIFunction are the device's PCI address,
+	// from nv_pci_info_t as reported by NV_ESC_CARD_INFO. PCIAddrValid says
+	// whether they were recorded: a checkpoint written before nvproxy recorded
+	// them decodes with all four zero, which is indistinguishable from a
+	// legitimate 0000:00:00.0, so the flag is what the restore checks.
+	PCIDomain    uint32 `json:"pci_domain"`
+	PCIBus       uint8  `json:"pci_bus"`
+	PCISlot      uint8  `json:"pci_slot"`
+	PCIFunction  uint8  `json:"pci_function"`
+	PCIAddrValid bool   `json:"pci_addr_valid"`
+
 	// UUID is the "UUID", including the "GPU-" prefix, as printed by
 	// `nvidia-smi -L`. This is provided by the GSP, and retrieved and
 	// stringified by src/nvidia/src/kernel/gpu/gpu.c:gpuGetGidInfo_IMPL().
@@ -99,7 +110,17 @@ type DeviceRemapID struct {
 
 // String implements fmt.Stringer.String.
 func (id *DeviceRemapID) String() string {
-	return fmt.Sprintf("{Minor:%d PCIVendorID:0x%04x PCIDeviceID:0x%04x GPUID:%#x DeviceInstance:%d SubDeviceInstance:%d UUID:%s}", id.Minor, id.PCIVendorID, id.PCIDeviceID, id.GPUID, id.DeviceInstance, id.SubDeviceInstance, id.UUID)
+	return fmt.Sprintf("{Minor:%d PCIVendorID:0x%04x PCIDeviceID:0x%04x PCIAddr:%s GPUID:%#x DeviceInstance:%d SubDeviceInstance:%d UUID:%s}", id.Minor, id.PCIVendorID, id.PCIDeviceID, id.PCIAddrString(), id.GPUID, id.DeviceInstance, id.SubDeviceInstance, id.UUID)
+}
+
+// PCIAddrString renders the device's PCI address in the conventional
+// domain:bus:slot.function form, or "<unrecorded>" for a device saved before
+// nvproxy recorded it.
+func (id *DeviceRemapID) PCIAddrString() string {
+	if !id.PCIAddrValid {
+		return "<unrecorded>"
+	}
+	return fmt.Sprintf("%04x:%02x:%02x.%x", id.PCIDomain, id.PCIBus, id.PCISlot, id.PCIFunction)
 }
 
 // CheckDevicesRemappable checks that the set of devices in ids can be saved.

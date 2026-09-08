@@ -70,6 +70,11 @@ func FillDeviceRemapIDsFromMinor(ctx context.Context, ctlDevClient *devutil.Gofe
 		}
 		id.PCIVendorID = ci.PCIInfo.VendorID
 		id.PCIDeviceID = ci.PCIInfo.DeviceID
+		id.PCIDomain = ci.PCIInfo.Domain
+		id.PCIBus = ci.PCIInfo.Bus
+		id.PCISlot = ci.PCIInfo.Slot
+		id.PCIFunction = ci.PCIInfo.Function
+		id.PCIAddrValid = true
 		id.GPUID = ci.GPUID
 	}
 
