@@ -519,3 +519,28 @@ func TestEnumerationPreservesOverlappingAndIdentityMappings(t *testing.T) {
 		}
 	}
 }
+
+// Admission needs the current composed map, scoped to the caller's CUDA identity.
+func TestAdmissionGPUUUIDMap(t *testing.T) {
+	nvp := &nvproxy{guestToHostUUID: map[string]string{guestUUID: hostUUID}}
+	if got := nvp.gpuUUIDMap(translationScope{}); len(got) != 0 {
+		t.Fatalf("fresh process map = %v, want empty", got)
+	}
+	restored := translationScope{Restored: true}
+	got := nvp.gpuUUIDMap(restored)
+	if got[guestUUID] != hostUUID {
+		t.Fatalf("restored map = %v", got)
+	}
+	got[guestUUID] = "changed"
+	if nvp.guestToHostUUID[guestUUID] != hostUUID {
+		t.Fatal("caller mutated runtime mapping")
+	}
+	nvp.guestToHostUUID[guestUUID] = guestUUID
+	if got := nvp.gpuUUIDMap(restored); got[guestUUID] != guestUUID {
+		t.Fatalf("second migration map = %v", got)
+	}
+	var absent *nvproxy
+	if got := absent.gpuUUIDMap(restored); len(got) != 0 {
+		t.Fatalf("absent nvproxy map = %v", got)
+	}
+}
