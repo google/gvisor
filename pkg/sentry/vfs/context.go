@@ -16,6 +16,7 @@ package vfs
 
 import (
 	goContext "context"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -35,7 +36,24 @@ const (
 	// map[checkpoint.ResourceID]int mapping filesystem unique IDs (cf.
 	// gofer.InternalFilesystemOptions.UniqueID) to host FDs.
 	CtxRestoreFilesystemFDMap
+
+	// CtxFSTarProvider is a Context.Value key for an FSTarProvider.
+	CtxFSTarProvider
 )
+
+// FSTarProvider provides a tar reader for a filesystem.
+type FSTarProvider interface {
+	// GetFSTar returns a reader for the given filesystem's tar stream.
+	GetFSTar(id checkpoint.ResourceID) (io.ReadCloser, error)
+}
+
+// FSTarProviderFromContext returns the FSTarProvider used by ctx, or nil if none.
+func FSTarProviderFromContext(ctx goContext.Context) FSTarProvider {
+	if v, ok := ctx.Value(CtxFSTarProvider).(FSTarProvider); ok {
+		return v
+	}
+	return nil
+}
 
 // MountNamespaceFromContext returns the MountNamespace used by ctx. If ctx is
 // not associated with a MountNamespace, MountNamespaceFromContext returns nil.

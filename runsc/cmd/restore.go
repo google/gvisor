@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -38,8 +40,8 @@ type Restore struct {
 
 	containerLoader
 
-	// imagePath is the path to the saved container image
-	imagePath string
+	// imagePaths is the list of paths to the saved container image(s).
+	imagePaths imagePathsVar
 
 	// detach indicates that runsc has to start a process and exit without waiting it.
 	detach bool
@@ -77,7 +79,7 @@ func (*Restore) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (r *Restore) SetFlags(f *flag.FlagSet) {
 	r.Create.SetFlags(f)
-	f.StringVar(&r.imagePath, "image-path", "", "directory path to saved container image")
+	f.Var(&r.imagePaths, "image-path", "directory path to saved container image (can be specified up to two times: first for Sentry state, second for filesystem checkpoint)")
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 	f.BoolVar(&r.direct, "direct", false, "use O_DIRECT for reading checkpoint pages file")
 	f.BoolVar(&r.background, "background", false, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
@@ -116,6 +118,67 @@ func (r *Restore) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *spec
 	return r.Create.FetchSpec(conf, f)
 }
 
+type imagePathsVar []string
+
+// String implements flag.Value.String.
+func (v *imagePathsVar) String() string {
+	if v == nil {
+		return ""
+	}
+	return strings.Join(*v, ",")
+}
+
+// Get implements flag.Value.Get.
+func (v *imagePathsVar) Get() any {
+	if v == nil {
+		return []string(nil)
+	}
+	return []string(*v)
+}
+
+// Set implements flag.Value.Set.
+func (v *imagePathsVar) Set(s string) error {
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			*v = append(*v, part)
+		}
+	}
+	return nil
+}
+
+func parseRestoreImagePaths(imagePaths []string) ([]string, error) {
+	var paths []string
+	for _, p := range imagePaths {
+		for _, part := range strings.Split(p, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				paths = append(paths, part)
+			}
+		}
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("image-path flag must be provided")
+	}
+	if len(paths) > 2 {
+		return nil, fmt.Errorf("at most 2 image-path flags are supported, got %d", len(paths))
+	}
+	return paths, nil
+}
+
+func resolveRestorePaths(paths []string, flagFSRestoreImagePath string) (string, string, bool, error) {
+	if len(paths) == 1 {
+		checkpointDirPath := paths[0]
+		fsRestoreImagePath := flagFSRestoreImagePath
+		combinedFSRestore := flagFSRestoreImagePath != ""
+		return checkpointDirPath, fsRestoreImagePath, combinedFSRestore, nil
+	}
+	if flagFSRestoreImagePath != "" && filepath.Clean(flagFSRestoreImagePath) != filepath.Clean(paths[1]) {
+		return "", "", false, fmt.Errorf("conflicting filesystem checkpoint paths: %q from image-path and %q from fs-restore-image-path", paths[1], flagFSRestoreImagePath)
+	}
+	return paths[0], paths[1], true, nil
+}
+
 // Execute implements subcommands.Command.Execute.
 func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -135,21 +198,32 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	if bundleDir == "" {
 		bundleDir = getwdOrDie()
 	}
-	if r.imagePath == "" {
-		return util.Errorf("image-path flag must be provided")
+
+	paths, err := parseRestoreImagePaths(r.imagePaths)
+	if err != nil {
+		return util.Errorf("%v", err)
+	}
+
+	checkpointDirPath, fsRestoreImagePath, combinedFSRestore, err := resolveRestorePaths(paths, r.fsRestoreImagePath)
+	if err != nil {
+		return util.Errorf("%v", err)
 	}
 
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
 	runArgs := container.Args{
-		ID:            id,
-		Spec:          nil,
-		BundleDir:     bundleDir,
-		ConsoleSocket: r.consoleSocket,
-		PIDFile:       r.pidFile,
-		UserLog:       r.userLog,
-		Attached:      !r.detach,
+		ID:                 id,
+		Spec:               nil,
+		BundleDir:          bundleDir,
+		ConsoleSocket:      r.consoleSocket,
+		PIDFile:            r.pidFile,
+		UserLog:            r.userLog,
+		Attached:           !r.detach,
+		FSRestoreImagePath: fsRestoreImagePath,
+		FSRestoreDirect:    r.fsRestoreDirect || r.direct,
+		CheckpointDirPath:  checkpointDirPath,
+		CombinedFSRestore:  combinedFSRestore,
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
@@ -183,8 +257,8 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		runArgs.Spec = c.Spec
 	}
 
-	log.Debugf("Restore: %v", r.imagePath)
-	err = c.Restore(conf, r.imagePath, r.direct, r.background, nil /* networkArgs */)
+	log.Debugf("Restore: %v", checkpointDirPath)
+	err = c.Restore(conf, checkpointDirPath, r.direct, r.background, nil /* networkArgs */)
 	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}

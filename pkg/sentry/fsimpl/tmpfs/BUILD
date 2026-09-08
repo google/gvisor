@@ -177,6 +177,7 @@ go_test(
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
     ],

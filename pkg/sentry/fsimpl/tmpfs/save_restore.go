@@ -15,6 +15,7 @@
 package tmpfs
 
 import (
+	"archive/tar"
 	goContext "context"
 	"fmt"
 
@@ -45,6 +46,9 @@ func (fs *filesystem) loadMf(ctx goContext.Context, resourceID checkpoint.Resour
 		panic("CtxMemoryFileMap was not provided")
 	}
 	mf, ok := mfmap[resourceID]
+	if !ok {
+		mf, ok = mfmap[resourceID.Clean()]
+	}
 	if !ok {
 		panic(fmt.Sprintf("Memory file for %q not found in CtxMemoryFileMap", resourceID))
 	}
@@ -81,6 +85,12 @@ func (i *inode) loadDefaultACL(_ goContext.Context, defaultACL *vfs.PosixACL) {
 	i.defaultACL.Store(defaultACL)
 }
 
+func (rf *regularFile) afterLoad(_ goContext.Context) {
+	if rf.inode.fs != nil {
+		rf.inode.fs.registerRegularFile(rf)
+	}
+}
+
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	resourceID := fs.mf.ResourceID()
@@ -104,5 +114,35 @@ func (fs *filesystem) BeforeResume(ctx context.Context) {}
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
-	return nil
+	tarProvider := vfs.FSTarProviderFromContext(ctx)
+	if tarProvider == nil {
+		return nil
+	}
+	if fs.mf == nil || !fs.mf.IsDiskBacked() {
+		return nil
+	}
+	resourceID := fs.mf.ResourceID()
+	if !resourceID.Ok() {
+		return nil
+	}
+	cleanID := resourceID.Clean()
+	tarReader, err := tarProvider.GetFSTar(cleanID)
+	if err != nil {
+		return fmt.Errorf("failed to get filesystem tar for %q: %w", cleanID, err)
+	}
+	if tarReader == nil {
+		// If the filesystem is not in the tar provider, it was not split.
+		return nil
+	}
+	defer tarReader.Close()
+
+	if fsCheckpointed := pgalloc.FSCheckpointedMemoryFilesFromContext(ctx); fsCheckpointed != nil {
+		if _, ok := fsCheckpointed[cleanID]; !ok {
+			return fmt.Errorf("tmpfs %q has a filesystem checkpoint tar but its MemoryFile was not loaded from the filesystem checkpoint", cleanID)
+		}
+	}
+	return fs.tarRestore(ctx, tarReader, &fsckptTarReaderCallbacks{
+		fs:           fs,
+		regularFiles: make(map[*tar.Header]*fsckptRegularFile),
+	})
 }

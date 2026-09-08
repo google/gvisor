@@ -126,6 +126,7 @@ func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.
 		return nil, err
 	}
 	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
+	fs.registerRegularFile(file)
 	return &file.inode, nil
 }
 

@@ -18,6 +18,7 @@ package checkpoint
 
 import (
 	"fmt"
+	"path"
 )
 
 // ResourceID is a unique ID that is used to identify resources between save/restore sessions.
@@ -39,4 +40,16 @@ func (id ResourceID) Ok() bool {
 
 func (id ResourceID) String() string {
 	return fmt.Sprintf("%s:%s", id.ContainerName, id.Path)
+}
+
+// Clean returns a copy of id with its Path cleaned via path.Clean.
+// If id.Path is empty, id is returned unchanged.
+func (id ResourceID) Clean() ResourceID {
+	if id.Path == "" {
+		return id
+	}
+	return ResourceID{
+		ContainerName: id.ContainerName,
+		Path:          path.Clean(id.Path),
+	}
 }

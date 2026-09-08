@@ -22,6 +22,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -159,4 +161,105 @@ func (cb *fsckptTarReaderCallbacks) regularFileSetContents(ctx context.Context, 
 		return fmt.Errorf("restored filesystem would exceed size limit of %d pages", cb.fs.maxSizeInPages)
 	}
 	return nil
+}
+
+// tarRestore restores the tmpfs filesystem from a tar stream containing
+// filesystem checkpoint data by clearing in-memory metadata and reloading from
+// tar.
+//
+// Note: Submounts attached to directories within the tmpfs filesystem are not
+// preserved across combined restore. Wiping the dentry hierarchy unlinks the
+// mountpoint dentries and shadows any active submounts when directories are
+// recreated from tar.
+//
+// Preconditions: The kernel must be paused and quiesced.
+func (fs *filesystem) tarRestore(ctx context.Context, src io.Reader, cb tarReaderCallbacks) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	fs.clearAllFileMappingsLocked(ctx)
+	if fs.root != nil && fs.root.inode != nil && fs.root.inode.isDir() {
+		fs.root.wipeChildrenLocked(ctx)
+	}
+
+	tr := tar.NewReader(src)
+	return fs.readFromTar(ctx, tr, cb)
+}
+
+// clearAllFileMappingsLocked clears and invalidates mappings for all regular
+// files in the filesystem (including unlinked-but-open files).
+//
+// In split restore scenarios (e.g. Sentry state from checkpoint T1 combined with
+// a filesystem checkpoint from T2):
+//  1. Inodes and file descriptors are reconstituted from T1, but the backing
+//     pgalloc.MemoryFile is loaded from T2 (or freshly initialized). Without
+//     invalidation, rf.data would reference T1 frame offsets in T2's MemoryFile,
+//     leading to cross-file data corruption on reads or a panic in
+//     MemoryFile.DecRef ("DecRef called with 0 references") when the file is
+//     closed.
+//  2. By iterating fs.regularFiles, we ensure that every regularFile—whether
+//     linked in a directory or unlinked-but-held-open by an active file
+//     descriptor—has its active memory mappings invalidated via
+//     rf.mappings.Invalidate (which unmaps address space and drops PMAs/frame
+//     references).
+//  3. We then clear rf.data to an empty set and reset rf.size to 0, unaccounting
+//     any previously tracked pages in fs.pagesUsed.
+//
+// Existing open file descriptors and memory mappings held across restore remain
+// bound to their pre-existing regularFile instances (which are unlinked and
+// emptied to size 0 with no dangling MemoryFile page references):
+//   - Reads on such open file descriptors will return EOF (0 bytes).
+//   - Accessing memory-mapped pages will fault beyond EOF (size 0), causing the
+//     kernel to deliver SIGBUS to the process, matching standard Linux behavior
+//     for truncated/emptied files.
+//
+// Files present in the incoming T2 filesystem archive are re-created as new
+// dentries and inodes by readFromTar, which can subsequently be opened by path
+// lookups after restore.
+func (fs *filesystem) clearAllFileMappingsLocked(ctx context.Context) {
+	log.Debugf("clearAllFileMappingsLocked start, fs.pagesUsed = %d", fs.pagesUsed.Load())
+	fs.regularFilesMu.Lock()
+	rfs := make([]*regularFile, 0, len(fs.regularFiles))
+	for rf := range fs.regularFiles {
+		rfs = append(rfs, rf)
+	}
+	fs.regularFilesMu.Unlock()
+
+	for _, rf := range rfs {
+		fs.clearRegularFileMappingsLocked(ctx, rf)
+	}
+	log.Debugf("clearAllFileMappingsLocked done, fs.pagesUsed = %d", fs.pagesUsed.Load())
+}
+
+func (fs *filesystem) clearRegularFileMappingsLocked(ctx context.Context, rf *regularFile) {
+	if rf == nil {
+		return
+	}
+	rf.inode.mu.Lock()
+	rf.mapsMu.Lock()
+	oldSize := rf.size.Load()
+	log.Debugf("clearRegularFileMappingsLocked: regularFile ino %d, size %d", rf.inode.ino, oldSize)
+	for seg := rf.mappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		log.Debugf("  mapping segment: %v", seg.Range())
+		for m := range seg.Value() {
+			log.Debugf("    mapping: space %T (%p), range %v, writable %v", m.MappingSpace, m.MappingSpace, m.AddrRange, m.Writable)
+		}
+	}
+	log.Debugf("clearRegularFileMappingsLocked: invalidating all mappings for ino %d", rf.inode.ino)
+	rf.mappings.InvalidateAll(memmap.InvalidateOpts{
+		InvalidatePrivate: true,
+	})
+	rf.mapsMu.Unlock()
+
+	rf.dataMu.Lock()
+	pages := uint64(0)
+	for seg := rf.data.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		pages += seg.Range().Length() / hostarch.PageSize
+	}
+	log.Debugf("clearRegularFileMappingsLocked: regularFile ino %d, pages to unaccount %d, fs.pagesUsed = %d", rf.inode.ino, pages, fs.pagesUsed.Load())
+	fs.unaccountPages(pages)
+	rf.data = fsutil.FileRangeSet{}
+	rf.size.Store(0)
+	rf.dataMu.Unlock()
+	rf.inode.mu.Unlock()
 }

@@ -274,6 +274,9 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	}
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
+		fd, ok = fdmap[fs.iopts.UniqueID.Clean()]
+	}
+	if !ok {
 		return fmt.Errorf("no server FD available for filesystem with unique ID %q, map: %#v", fs.iopts.UniqueID, fdmap)
 	}
 	fs.opts.fd = fd
