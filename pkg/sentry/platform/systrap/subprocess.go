@@ -1252,14 +1252,14 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
 		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
+	s.sysmsgThreadsMu.Lock()
+	s.sysmsgThreads[threadID] = sysThread
+	s.sysmsgThreadsMu.Unlock()
+
 	// Resume the BPF process.
 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(p.tid), 0); errno != 0 {
 		panic(fmt.Sprintf("can't detach new clone: %v", errno))
 	}
-
-	s.sysmsgThreadsMu.Lock()
-	s.sysmsgThreads[threadID] = sysThread
-	s.sysmsgThreadsMu.Unlock()
 
 	return nil
 }
