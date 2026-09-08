@@ -219,6 +219,28 @@ type nvproxy struct {
 
 	clientsMu sync.RWMutex `state:"nosave"`
 	clients   map[nvgpu.Handle]*rootClient
+
+	// The identifier translation tables established by restores that remapped
+	// devices; empty if this sandbox has never been restored onto a different
+	// set of devices. See gpuid.go and uuid.go.
+	//
+	// They are saved rather than recomputed on each restore: a restored
+	// sandbox can be checkpointed again and restored onto a third set of
+	// devices, and the identifiers the application remembers are still those
+	// of its original boot.
+	//
+	// These are only mutated by nvproxy.afterLoad(), which runs while the
+	// sandbox is paused, so they need no lock.
+	hostToGuestDeviceInstance map[uint32]uint32
+	guestToHostDeviceInstance map[uint32]uint32
+	hostToGuestGPUID          map[uint32]uint32
+	guestToHostGPUID          map[uint32]uint32
+	hostToGuestUUID           map[string]string
+	guestToHostUUID           map[string]string
+	hostToGuestMinor          map[uint32]uint32
+	guestToHostMinor          map[uint32]uint32
+	hostToGuestPCIAddr        map[uint64]uint64
+	guestToHostPCIAddr        map[uint64]uint64
 }
 
 func nvproxyFromVFS(vfsObj *vfs.VirtualFilesystem) *nvproxy {
@@ -234,6 +256,19 @@ func nvproxyFromVFS(vfsObj *vfs.VirtualFilesystem) *nvproxy {
 		return nil
 	}
 	return ctlDevice.nvp
+}
+
+// ids returns nvp's identifier translation tables.
+func (nvp *nvproxy) ids() idMaps {
+	return idMaps{
+		HostToGuestDeviceInstance: nvp.hostToGuestDeviceInstance,
+		GuestToHostDeviceInstance: nvp.guestToHostDeviceInstance,
+		HostToGuestGPUID:          nvp.hostToGuestGPUID,
+		GuestToHostGPUID:          nvp.guestToHostGPUID,
+		HostToGuestUUID:           nvp.hostToGuestUUID,
+		HostToGuestPCIAddr:        nvp.hostToGuestPCIAddr,
+		GuestToHostPCIAddr:        nvp.guestToHostPCIAddr,
+	}
 }
 
 type marshalPtr[T any] interface {
@@ -259,6 +294,12 @@ type hasFrontendFDAndStatusPtr[T any] interface {
 	marshalPtr[T]
 	nvgpu.HasFrontendFD
 	nvgpu.HasStatus
+}
+
+type hasFrontendFDAndDeviceInstancePtr[T any] interface {
+	marshalPtr[T]
+	nvgpu.HasFrontendFD
+	nvgpu.HasDeviceInstance
 }
 
 type hasCtrlInfoListPtr[T any] interface {

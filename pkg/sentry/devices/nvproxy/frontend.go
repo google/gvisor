@@ -60,10 +60,10 @@ func (dev *frontendDevice) basename() string {
 // Open implements vfs.Device.Open.
 func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	fd := &frontendFD{
-		dev: dev,
+		dev: dev.forOpeningTask(ctx),
 	}
 	var err error
-	fd.hostFD, fd.containerName, err = openHostDevFile(ctx, dev.basename(), dev.nvp.useDevGofer, opts.Flags)
+	fd.hostFD, fd.containerName, err = openHostDevFile(ctx, fd.dev.basename(), dev.nvp.useDevGofer, opts.Flags)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +85,49 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 	defer fd.dev.nvp.fdsMu.Unlock()
 	fd.dev.nvp.frontendFDs[fd] = struct{}{}
 	return &fd.vfsfd, nil
+}
+
+// forOpeningTask returns the device that an open of dev by the calling task
+// should actually be served by.
+//
+// After a restore that remapped devices, a process that existed at checkpoint
+// time still derives the device file to open from the device instances its
+// user-mode driver recorded then, so it opens the old minor -- /dev/nvidia2
+// when the sandbox now holds nvidia4 and nvidia6. The old device file still
+// exists in the sandbox (runsc/boot/nvproxy.go:createRemappedNvproxyDeviceFiles
+// creates the new ones and leaves the old ones alone), so the open reaches
+// here, and forwarding it to host minor 2 fails: that device is not in this
+// container's device gofer.
+//
+// This mirrors what nvproxy.afterLoad() already does for frontendFDs that were
+// themselves restored -- it repoints fd.dev at the new device -- for the case
+// of a restored process opening a device file afresh.
+//
+// A task that did not exist at checkpoint time initialised its driver against
+// the devices that are present and means the minor it named, so it is served
+// unchanged.
+func (dev *frontendDevice) forOpeningTask(ctx context.Context) *frontendDevice {
+	if dev.isCtlDevice() {
+		return dev
+	}
+	nvp := dev.nvp
+	if len(nvp.guestToHostMinor) == 0 {
+		return dev
+	}
+	scope := scopeFor(kernel.TaskFromContext(ctx))
+	if !scope.Restored {
+		return dev
+	}
+	newMinor, ok := nvp.guestToHostMinor[dev.minor]
+	if !ok || newMinor == dev.minor {
+		return dev
+	}
+	if newMinor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
+		log.Warningf("nvproxy: refusing to remap an open of nvidia%d to out-of-range minor %d", dev.minor, newMinor)
+		return dev
+	}
+	log.Infof("nvproxy: remapped open of nvidia%d to nvidia%d for restored tg %d", dev.minor, newMinor, scope.TGID)
+	return nvp.regularDevs[newMinor]
 }
 
 // frontendFD implements vfs.FileDescriptionImpl for /dev/nvidia# and
@@ -966,6 +1009,21 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
+	n, err := ctrlHasFrontendFDInvoke[Params, PtrParams](fi, ioctlParams, ctrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// ctrlHasFrontendFDInvoke copies in ctrlParams, replaces the application FD it
+// carries with the corresponding host FD for the duration of the ioctl, and
+// invokes it. It does not copy ctrlParams back out, so that callers can amend
+// the returned parameters first.
+func ctrlHasFrontendFDInvoke[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams PtrParams) (uintptr, error) {
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
 	}
@@ -987,8 +1045,25 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	ctrlParams.SetFrontendFD(ctlFile.hostFD)
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
 	ctrlParams.SetFrontendFD(origFD)
+	return n, err
+}
+
+// ctrlGetExportObjectInfo implements
+// NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO. It is ctrlHasFrontendFD plus
+// translation of the device instance the driver reports: after a restore that
+// remapped devices, the host device instance owning the exported memory no
+// longer matches the device instance that the application's user-mode driver
+// recorded before the checkpoint, and returning it untranslated makes
+// cuMemImportFromShareableHandle() fail with CUDA_ERROR_INVALID_DEVICE.
+func ctrlGetExportObjectInfo[Params any, PtrParams hasFrontendFDAndDeviceInstancePtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParamsValue Params
+	ctrlParams := PtrParams(&ctrlParamsValue)
+	n, err := ctrlHasFrontendFDInvoke[Params, PtrParams](fi, ioctlParams, ctrlParams)
 	if err != nil {
 		return n, err
+	}
+	if scope := scopeFor(fi.t); ioctlParams.Status == nvgpu.NV_OK && scope.Restored {
+		fi.fd.dev.nvp.translateDeviceInstanceToGuest(ctrlParams, scope)
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
