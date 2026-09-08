@@ -159,5 +159,5 @@ func fromProtoResourceID(pb *fspb.ResourceID) checkpoint.ResourceID {
 	return checkpoint.ResourceID{
 		ContainerName: pb.ContainerName,
 		Path:          pb.Path,
-	}
+	}.Clean()
 }

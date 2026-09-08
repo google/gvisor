@@ -447,6 +447,7 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/arch",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/sched",

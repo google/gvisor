@@ -710,15 +710,10 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 }
 
 // SaveTo saves the state of k to stateFile. It takes ownership of stateFile,
-// pagesMetadata, and pagesFile, even if it returns a non-nil error.
+// pagesMetadata, pagesFile, and fsOpts, even if it returns a non-nil error.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool) error {
-	if hostarch.PageSize != 4096 {
-		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
-	}
-	saveStart := time.Now()
-
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool, fsOpts *FSSaveOpts) error {
 	stateFileCleanup := cleanup.Make(func() { stateFile.Close() })
 	defer stateFileCleanup.Clean()
 
@@ -732,106 +727,159 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	}
 	defer pagesCleanup.Clean()
 
+	var fsCleanup cleanup.Cleanup
+	if fsOpts != nil {
+		fsCleanup.Add(func() {
+			if fsOpts.ManifestFile != nil {
+				fsOpts.ManifestFile.Close()
+				fsOpts.ManifestFile = nil
+			}
+			if fsOpts.MultiTarFile != nil {
+				fsOpts.MultiTarFile.Close()
+				fsOpts.MultiTarFile = nil
+			}
+			if fsOpts.PagesMetadataFile != nil {
+				fsOpts.PagesMetadataFile.Close()
+				fsOpts.PagesMetadataFile = nil
+			}
+			if fsOpts.PagesFile != nil {
+				fsOpts.PagesFile.Close()
+				fsOpts.PagesFile = nil
+			}
+		})
+	}
+	defer fsCleanup.Clean()
+
+	if hostarch.PageSize != 4096 {
+		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
+	}
+
 	return k.quiescePausedAnd(ctx, func() error {
-		// Discard unsavable mappings, such as those for host file descriptors.
-		if err := k.invalidateUnsavableMappings(ctx); err != nil {
-			return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
-		}
-
-		// Capture all private memory files.
-		mfsToSave := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
-		vfsCtx := context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfsToSave)
-		// Prepare filesystems for saving. This must be done after
-		// invalidateUnsavableMappings(), since dropping memory mappings may
-		// affect filesystem state (e.g. page cache reference counts).
-		if err := k.vfs.PrepareSave(vfsCtx); err != nil {
-			return err
-		}
-		// Mark all to-be-saved MemoryFiles as savable to inform kernel save below.
-		k.mf.MarkSavable()
-		for _, mf := range mfsToSave {
-			mf.MarkSavable()
-		}
-
-		var (
-			mfSaveWg  sync.WaitGroup
-			mfSaveErr error
-		)
-		if parallelMFSave {
-			// Parallelize MemoryFile save and kernel save. Both are independent.
-			mfSaveWg.Add(1)
-			go func() {
-				defer mfSaveWg.Done()
-				mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSave, appMFExcludeCommittedZeroPages) // transfers ownership
-			}()
-			pagesCleanup.Release()
-			// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
-			// error out without reaching the other Wait() below.
-			defer mfSaveWg.Wait()
-		}
-
-		// Save the CPUID FeatureSet before the rest of the kernel so we can
-		// verify its compatibility on restore before attempting to restore the
-		// entire kernel, which may fail on an incompatible machine.
-		//
-		// N.B. This will also be saved along with the full kernel save below.
-		cpuidStart := time.Now()
-		if _, err := state.Save(ctx, stateFile, &k.featureSet); err != nil {
-			return err
-		}
-		log.Infof("CPUID save took [%s].", time.Since(cpuidStart))
-
-		// Save the timekeeper's state.
-
-		if rootNS := k.rootNetworkNamespace; rootNS != nil && rootNS.Stack() != nil {
-			// Pause the network stack.
-			netstackPauseStart := time.Now()
-			// Stack.removeConf should be true when resume=false and vice versa.
-			k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
-			log.Infof("Pausing root network namespace")
-			k.rootNetworkNamespace.Stack().Pause()
-			defer k.rootNetworkNamespace.Stack().Resume()
-			log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
-		}
-
-		// Save the kernel state.
-		kernelStart := time.Now()
-		stats, err := state.Save(ctx, stateFile, k)
-		if err != nil {
-			return err
-		}
-		log.Infof("Kernel save stats: %s", stats.String())
-		log.Infof("Kernel save took [%s].", time.Since(kernelStart))
-
-		if parallelMFSave {
-			// Close stateFile while MemoryFile saving is in progress to overlap
-			// their latencies.
-			err := stateFile.Close()
-			stateFileCleanup.Release()
-			if err != nil {
-				return fmt.Errorf("closing state file failed: %w", err)
-			}
-			mfSaveWg.Wait()
-			if mfSaveErr != nil {
-				return mfSaveErr
-			}
-		} else {
-			mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSave, appMFExcludeCommittedZeroPages)
-			if mfSaveErr != nil {
-				return mfSaveErr
-			}
-			// Can't close stateFile until k.saveMemoryFiles() finishes writing to
-			// it.
-			err := stateFile.Close()
-			stateFileCleanup.Release()
-			if err != nil {
-				return fmt.Errorf("closing state file failed: %w", err)
-			}
-		}
-
-		log.Infof("Overall save took [%s].", time.Since(saveStart))
-		return nil
+		return k.saveToLocked(ctx, stateFile, pagesMetadata, pagesFile, appMFExcludeCommittedZeroPages, resume, fsOpts, &stateFileCleanup, &pagesCleanup, &fsCleanup)
 	})
+}
+
+// saveToLocked saves the kernel state while the kernel is paused and quiesced.
+//
+// Preconditions: The kernel must be paused and quiesced.
+func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool, fsOpts *FSSaveOpts, stateFileCleanup, pagesCleanup, fsCleanup *cleanup.Cleanup) error {
+	saveStart := time.Now()
+
+	// Discard unsavable mappings, such as those for host file descriptors.
+	if err := k.invalidateUnsavableMappings(ctx); err != nil {
+		return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
+	}
+
+	// Capture all private memory files.
+	mfsToSave := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
+	vfsCtx := context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfsToSave)
+	// Prepare filesystems for saving. This must be done after
+	// invalidateUnsavableMappings(), since dropping memory mappings may
+	// affect filesystem state (e.g. page cache reference counts).
+	if err := k.vfs.PrepareSave(vfsCtx); err != nil {
+		return err
+	}
+	// Mark all to-be-saved MemoryFiles as savable to inform kernel save below.
+	k.mf.MarkSavable()
+	for _, mf := range mfsToSave {
+		mf.MarkSavable()
+	}
+
+	mfsToSaveActual := mfsToSave
+	var matchCtx *fsCheckpointMatchContext
+	if fsOpts != nil {
+		matchCtx = k.newFSCheckpointMatchContext(ctx, fsOpts.Paths)
+		mfsToSaveActual = filterMFsToSave(mfsToSave, matchCtx)
+	}
+
+	parallelMFSave := pagesMetadata != nil
+	var (
+		mfSaveWg  sync.WaitGroup
+		mfSaveErr error
+	)
+	if parallelMFSave {
+		// Parallelize MemoryFile save and kernel save. Both are independent.
+		mfSaveWg.Add(1)
+		go func() {
+			defer mfSaveWg.Done()
+			mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages) // transfers ownership
+		}()
+		pagesCleanup.Release()
+		// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
+		// error out without reaching the other Wait() below.
+		defer mfSaveWg.Wait()
+	}
+
+	// Save the CPUID FeatureSet before the rest of the kernel so we can
+	// verify its compatibility on restore before attempting to restore the
+	// entire kernel, which may fail on an incompatible machine.
+	//
+	// N.B. This will also be saved along with the full kernel save below.
+	cpuidStart := time.Now()
+	if _, err := state.Save(ctx, stateFile, &k.featureSet); err != nil {
+		return err
+	}
+	log.Infof("CPUID save took [%s].", time.Since(cpuidStart))
+
+	// Save the timekeeper's state.
+
+	if rootNS := k.rootNetworkNamespace; rootNS != nil && rootNS.Stack() != nil {
+		// Pause the network stack.
+		netstackPauseStart := time.Now()
+		// Stack.removeConf should be true when resume=false and vice versa.
+		k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
+		log.Infof("Pausing root network namespace")
+		k.rootNetworkNamespace.Stack().Pause()
+		defer k.rootNetworkNamespace.Stack().Resume()
+		log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
+	}
+
+	// Save the kernel state.
+	kernelStart := time.Now()
+	stats, err := state.Save(ctx, stateFile, k)
+	if err != nil {
+		return err
+	}
+	log.Infof("Kernel save stats: %s", stats.String())
+	log.Infof("Kernel save took [%s].", time.Since(kernelStart))
+
+	if fsOpts != nil {
+		fsSaveStart := time.Now()
+		if err := k.fsSaveLocked(ctx, fsOpts, mfsToSave, matchCtx); err != nil {
+			return fmt.Errorf("failed to save split filesystem: %w", err)
+		}
+		log.Infof("Split filesystem save took [%s].", time.Since(fsSaveStart))
+		fsCleanup.Release()
+	}
+
+	if parallelMFSave {
+		// Close stateFile while MemoryFile saving is in progress to overlap
+		// their latencies.
+		err := stateFile.Close()
+		stateFileCleanup.Release()
+		if err != nil {
+			return fmt.Errorf("closing state file failed: %w", err)
+		}
+		mfSaveWg.Wait()
+		if mfSaveErr != nil {
+			return mfSaveErr
+		}
+	} else {
+		mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages)
+		if mfSaveErr != nil {
+			return mfSaveErr
+		}
+		// Can't close stateFile until k.saveMemoryFiles() finishes writing to
+		// it.
+		err := stateFile.Close()
+		stateFileCleanup.Release()
+		if err != nil {
+			return fmt.Errorf("closing state file failed: %w", err)
+		}
+	}
+
+	log.Infof("Overall save took [%s].", time.Since(saveStart))
+	return nil
 }
 
 // BeforeResume is called before the kernel is resumed after save.
@@ -2476,4 +2524,22 @@ func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.containerNames[cid]
+}
+
+func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
+	if matchCtx == nil {
+		return mfsToSave
+	}
+	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
+	for id, mf := range mfsToSave {
+		cleanID := id.Clean()
+		_, isTmpfs := matchCtx.tmpfsResourceIDs[cleanID]
+		if !matchesPaths(cleanID, matchCtx.pathsMap, isTmpfs) {
+			mfsToSaveActual[id] = mf
+		}
+	}
+	if len(mfsToSaveActual) == 0 {
+		return nil
+	}
+	return mfsToSaveActual
 }
