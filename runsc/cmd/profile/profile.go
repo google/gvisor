@@ -68,7 +68,11 @@ func createCommander(f *flag.FlagSet) *subcommands.Commander {
 	cdr := subcommands.NewCommander(f, "profile")
 	cdr.Register(cdr.HelpCommand(), "")
 	cdr.Register(cdr.FlagsCommand(), "")
+	cdr.Register(new(block), "")
 	cdr.Register(new(cpu), "")
+	cdr.Register(new(goroutine), "")
 	cdr.Register(new(heap), "")
+	cdr.Register(new(mutex), "")
+	cdr.Register(new(trace), "")
 	return cdr
 }
