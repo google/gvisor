@@ -318,7 +318,12 @@ func (p *Init) Delete(ctx context.Context) error {
 
 func (p *Init) delete(ctx context.Context) error {
 	p.killAllLocked(ctx)
-	p.wg.Wait()
+	// Bound the drain: the shim holds the write ends of a sub-container's stdio
+	// itself, so a container that never started can never produce EOF. On
+	// timeout continue anyway -- the p.io.Close() below releases the goroutines.
+	if err := waitTimeout(ctx, &p.wg, 10*time.Second); err != nil {
+		log.G(ctx).WithError(err).Errorf("failed to drain init process %s io", p.id)
+	}
 
 	err := p.runtime.Delete(ctx, p.id, nil)
 	if err != nil {

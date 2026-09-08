@@ -16,10 +16,12 @@
 package proc
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
@@ -70,4 +72,24 @@ func getLastRuntimeError(r *runsccmd.Runsc) (string, error) {
 
 func hasNoIO(r *CreateConfig) bool {
 	return r.Stdin == "" && r.Stdout == "" && r.Stderr == ""
+}
+
+// waitTimeout waits for wg, returning nil if it completed within timeout and
+// the context's error otherwise. It does not cancel the outstanding work, only
+// bounds the wait; callers are expected to continue with cleanup, which is
+// typically what unblocks it.
+func waitTimeout(ctx context.Context, wg *sync.WaitGroup, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
