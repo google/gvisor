@@ -149,6 +149,7 @@ func testTwoLocksDoubleGuardStructValid(tc *twoLocksDoubleGuardStruct) {
 	tc.secondMu.Lock()
 	tc.doubleGuardedField = 1
 	tc.secondMu.Unlock()
+	tc.mu.Unlock()
 }
 
 func testTwoLocksDoubleGuardStructOnlyOne(tc *twoLocksDoubleGuardStruct) {
