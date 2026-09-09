@@ -162,7 +162,7 @@ func TestTCPEstablishedUnreachable(t *testing.T) {
 }
 
 // TestTCPSynSentUnreachable6 verifies that TCP connections fail immediately when
-// an ICMP destination unreachable message is sent in response to the inital
+// an ICMP destination unreachable message is sent in response to the initial
 // SYN.
 func TestTCPSynSentUnreachable6(t *testing.T) {
 	// Create the DUT and connection.

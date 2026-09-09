@@ -200,7 +200,7 @@ func hostRedirectHandler(h http.Handler) http.Handler {
 	})
 }
 
-// prefixRedirectHandler returns a handler that redirects to the given formated url.
+// prefixRedirectHandler returns a handler that redirects to the given formatted url.
 func prefixRedirectHandler(prefix string, info prefixInfo) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := r.URL.Path; p == prefix {

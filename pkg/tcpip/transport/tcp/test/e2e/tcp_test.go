@@ -7253,7 +7253,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 	// Introduce a 25ms latency by delaying the first byte.
 	latency := 25 * time.Millisecond
 	time.Sleep(latency)
-	// Send an initial payload with atleast segment overhead size. The receive
+	// Send an initial payload with at least segment overhead size. The receive
 	// window would not grow for smaller segments.
 	rawEP.SendPacketWithTS(make([]byte, tcp.SegOverheadSize), tsVal)
 

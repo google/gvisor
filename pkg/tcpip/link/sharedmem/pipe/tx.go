@@ -51,7 +51,7 @@ func (t *Tx) Capacity(recordSize uint64) uint64 {
 }
 
 // Push reserves "payloadSize" bytes for transmission in the pipe. The caller
-// populates the returned slice with the data to be transferred and enventually
+// populates the returned slice with the data to be transferred and eventually
 // calls Flush() to make the data visible to the reader, or Abort() to make the
 // pipe forget all Push() calls since the last Flush().
 //

@@ -763,8 +763,9 @@ TEST_P(RawSocketTest, RecvBufLimits) {
 
   // Set a receive timeout so that we don't block forever on reads if the test
   // fails.
-  struct timeval tv {
-    .tv_sec = 1, .tv_usec = 0,
+  struct timeval tv{
+      .tv_sec = 1,
+      .tv_usec = 0,
   };
   ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
               SyscallSucceeds());

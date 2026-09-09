@@ -204,7 +204,7 @@ TEST_P(TCPSocketPairTest, RSTSentOnCloseWithUnreadDataAllowsReadBuffered) {
               SyscallFailsWithErrno(ECONNRESET));
 }
 
-// This test will verify that a clean shutdown (FIN) is preformed when there
+// This test will verify that a clean shutdown (FIN) is performed when there
 // is unread data but only the write side is closed.
 TEST_P(TCPSocketPairTest, FINSentOnShutdownWrWithUnreadData) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());

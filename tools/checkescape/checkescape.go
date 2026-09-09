@@ -738,7 +738,7 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 				}
 
 				// If this package is the atomic package, the implementation
-				// may be replaced by instrinsics that don't have analysis.
+				// may be replaced by intrinsics that don't have analysis.
 				if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
 					return
 				}

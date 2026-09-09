@@ -1744,7 +1744,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 			continue
 		}
 		if mp := vfs.getMountPromise(mntRootVD); mp != nil && !mp.resolved.Load() {
-			// If the caller is reponsible for resolving the mount promise,
+			// If the caller is responsible for resolving the mount promise,
 			// blocking below in StatAt will result in deadlock. Some
 			// applications expect mount promises to appear in /proc/mountinfo
 			// (b/388102869), so generate fake information to avoid this.

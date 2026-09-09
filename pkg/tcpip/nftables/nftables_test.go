@@ -6213,7 +6213,7 @@ func TestCompatAddrtypeMatchEvaluation(t *testing.T) {
 			wantVerdict: VC(linux.NFT_BREAK),
 		},
 		{
-			name: "destination mis-match",
+			name: "destination mismatch",
 			matchInfo: addrTypeMatchInfo{
 				checkSrc:   true,
 				sourceMask: linux.XT_ADDRTYPE_BROADCAST,
