@@ -1560,7 +1560,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	// shown as `exe`.
 	cmd.Args[0] = "runsc-gofer"
 
-	// Tranfer FDs that need to be present before the "gofer" command.
+	// Transfer FDs that need to be present before the "gofer" command.
 	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := donations.Transfer(cmd, 3)
 

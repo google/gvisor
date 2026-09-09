@@ -31,7 +31,7 @@ import (
 // Queues are not safe to use concurrently in multiple goroutines.
 type Queue interface {
 	// Destroy cancels all inflight operations and releases resources owned by
-	// the Queue. Destroy waits for cancelation, so the Queue will not access
+	// the Queue. Destroy waits for cancellation, so the Queue will not access
 	// memory corresponding to inflight operations after Destroy returns.
 	Destroy()
 

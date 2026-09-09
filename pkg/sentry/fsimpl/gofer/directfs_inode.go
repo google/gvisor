@@ -138,7 +138,7 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 	// and its inode together in the heap. This will help reduce allocations and memory
 	// fragmentation. This is more cache friendly too.
 	// Obviously in case of hard link and if the inode already exists,
-	// we just re-use the inode and heap allocate just the dentry struct.
+	// we just reuse the inode and heap allocate just the dentry struct.
 	temp := struct {
 		d dentry
 		i directfsInode
