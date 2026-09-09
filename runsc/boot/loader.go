@@ -843,6 +843,7 @@ func New(args Args) (*Loader, error) {
 		RootPIDNamespace:     kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,
 		Cgroup2FSInit:        cgroup2fs.NewFilesystem,
+		SignalUnkillable:     signalUnkillablePolicy(args.Conf.SignalUnkillablePolicy),
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
@@ -2485,4 +2486,17 @@ func (l *Loader) GetContainerSpecs() map[string]*specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.containerSpecs
+}
+
+// signalUnkillablePolicy maps the runsc config signal-unkillable policy
+// to the corresponding kernel policy.
+func signalUnkillablePolicy(p config.SignalUnkillablePolicy) kernel.SignalUnkillablePolicy {
+	switch p {
+	case config.SignalUnkillableLinux:
+		return kernel.SignalUnkillableLinux
+	case config.SignalUnkillableNone:
+		return kernel.SignalUnkillableNone
+	default:
+		return kernel.SignalUnkillableNone
+	}
 }
