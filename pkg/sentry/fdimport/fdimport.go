@@ -67,6 +67,8 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, op
 	// We iterate through the FDs in sorted order to keep it deterministic
 	// during startup, but it shouldn't matter.
 	var ttyFile *vfs.FileDescription
+	var ttyStat unix.Stat_t
+	hasTTY := false
 	for _, appFD := range slices.Sorted(maps.Keys(fds)) {
 		hostFD := fds[appFD]
 		fdOpts := host.NewFDOptions{
@@ -83,7 +85,10 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, op
 		fdOpts.RestoreKey = host.MakeResourceID(opts.ContainerName, appFD)
 		if opts.Console && appFD < 3 {
 			// Import the file as a host TTY file.
-			if ttyFile == nil {
+			if !hasTTY {
+				if err := unix.Fstat(hostFD.FD(), &ttyStat); err != nil {
+					return nil, err
+				}
 				fdOpts.IsTTY = true
 				var err error
 				appFile, err = host.NewFD(ctx, mnt, hostFD.FD(), &fdOpts)
@@ -94,13 +99,30 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, fds map[int]*fd.FD, op
 				hostFD.Release() // FD is transferred to host FD.
 
 				// Remember this in the TTY file, as we will use it for the other stdio
-				// FDs.
+				// FDs if they are the same file.
 				ttyFile = appFile
+				hasTTY = true
 			} else {
-				// Re-use the existing TTY file, as all three stdio FDs must point to
-				// the same fs.File in order to share TTY state, specifically the
-				// foreground process group id.
-				appFile = ttyFile
+				var stat unix.Stat_t
+				if err := unix.Fstat(hostFD.FD(), &stat); err != nil {
+					return nil, err
+				}
+				if stat.Dev == ttyStat.Dev && stat.Ino == ttyStat.Ino {
+					// Re-use the existing TTY file, as all three stdio FDs must point to
+					// the same fs.File in order to share TTY state, specifically the
+					// foreground process group id.
+					appFile = ttyFile
+				} else {
+					// Different file, do not reuse ttyFile.
+					fdOpts.IsTTY = opts.SupportTTYs && host.IsTTY(hostFD.FD())
+					var err error
+					appFile, err = host.NewFD(ctx, mnt, hostFD.FD(), &fdOpts)
+					if err != nil {
+						return nil, err
+					}
+					defer appFile.DecRef(ctx)
+					hostFD.Release()
+				}
 			}
 		} else {
 			var err error

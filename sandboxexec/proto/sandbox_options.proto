@@ -29,6 +29,7 @@ message SandboxOptions {
   DebugOptions debug_options = 6;
 
   int64 start_timeout_ms = 7;
+  bool terminal = 8;
 }
 
 message NetworkingOptions {

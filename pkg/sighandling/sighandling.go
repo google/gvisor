@@ -27,6 +27,12 @@ import (
 // numSignals is the number of normal (non-realtime) signals on Linux.
 const numSignals = 32
 
+// EnableFuseInterrupts controls whether SIGUSR1 is used to interrupt blocking
+// host FD reads (for FUSE stdin emulation). When true, SIGUSR1 is suppressed
+// in the signal forwarding loop and SA_RESTART is cleared for both SIGUSR1
+// and SIGWINCH. Callers must set this before calling StartSignalForwarding.
+var EnableFuseInterrupts bool
+
 // handleSignals listens for incoming signals and calls the given handler
 // function.
 //
@@ -58,9 +64,11 @@ func handleSignals(sigchans []chan os.Signal, handler func(linux.Signal), stop, 
 			panic("signal channel closed unexpectedly")
 		}
 
-		// Otherwise, it was a signal on channel N. Index 0 represents the stop
-		// channel, so index N represents the channel for signal N.
-		handler(linux.Signal(index))
+		sigVal := linux.Signal(index)
+		if EnableFuseInterrupts && sigVal == linux.SIGUSR1 {
+			continue
+		}
+		handler(sigVal)
 	}
 }
 
@@ -102,6 +110,18 @@ func StartSignalForwarding(handler func(linux.Signal)) func() {
 			continue
 		}
 		signal.Notify(sigchan, unix.Signal(sig))
+		if EnableFuseInterrupts {
+			if sig == int(linux.SIGWINCH) {
+				if err := ClearSaRestart(unix.Signal(sig)); err != nil {
+					os.Stderr.WriteString("Failed to clear SA_RESTART for SIGWINCH: " + err.Error() + "\n")
+				}
+			}
+			if sig == int(linux.SIGUSR1) {
+				if err := ClearSaRestart(unix.Signal(sig)); err != nil {
+					os.Stderr.WriteString("Failed to clear SA_RESTART for SIGUSR1: " + err.Error() + "\n")
+				}
+			}
+		}
 	}
 	// Start up our listener.
 	go handleSignals(sigchans, handler, stop, done) // S/R-SAFE: synchronized by Kernel.extMu.

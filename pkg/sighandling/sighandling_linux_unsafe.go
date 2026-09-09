@@ -101,3 +101,22 @@ func KillItself() error {
 	}
 	panic("unreachable")
 }
+
+// ClearSaRestart clears the SA_RESTART flag for the given signal handler.
+// This ensures that blocking host system calls are interrupted by the signal.
+func ClearSaRestart(sig unix.Signal) error {
+	var sa linux.SigAction
+	const maskLen = 8
+
+	if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), 0, uintptr(unsafe.Pointer(&sa)), maskLen, 0, 0); e != 0 {
+		return e
+	}
+
+	sa.Flags &^= linux.SA_RESTART
+
+	if _, _, e := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&sa)), 0, maskLen, 0, 0); e != 0 {
+		return e
+	}
+
+	return nil
+}
