@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -672,5 +673,20 @@ func TestNetworkConfig(t *testing.T) {
 	}
 	if diff := cmp.Diff(networkArgs.LoopbackLinks, args.LoopbackLinks); diff != "" {
 		t.Errorf("Network config content mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSignalUnkillablePolicyMapping(t *testing.T) {
+	for _, tc := range []struct {
+		confPolicy   config.SignalUnkillablePolicy
+		kernelPolicy kernel.SignalUnkillablePolicy
+	}{
+		{config.SignalUnkillableNone, kernel.SignalUnkillableNone},
+		{config.SignalUnkillableLinux, kernel.SignalUnkillableLinux},
+		{config.SignalUnkillablePolicy(-1), kernel.SignalUnkillableNone},
+	} {
+		if got := signalUnkillablePolicy(tc.confPolicy); got != tc.kernelPolicy {
+			t.Errorf("signalUnkillablePolicy(%v) = %v, want %v", tc.confPolicy, got, tc.kernelPolicy)
+		}
 	}
 }

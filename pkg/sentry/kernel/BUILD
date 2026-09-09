@@ -436,6 +436,7 @@ go_test(
     srcs = [
         "fd_table_test.go",
         "table_test.go",
+        "task_signals_test.go",
         "task_syscall_benchmark_test.go",
         "task_test.go",
         "timekeeper_test.go",
@@ -443,6 +444,7 @@ go_test(
     library = ":kernel",
     deps = [
         "//pkg/abi",
+        "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
