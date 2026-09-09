@@ -37,6 +37,18 @@ func TestGateBasic(t *testing.T) {
 	}
 }
 
+func TestRaceUncheckedAtomicCompareAndSwapUintptr(t *testing.T) {
+	// Gate's park callback needs distinct old and new operands even when the
+	// primitive uses race-detector-free assembly.
+	value := uintptr(1)
+	if swapped := RaceUncheckedAtomicCompareAndSwapUintptr(&value, 1, 2); !swapped || value != 2 {
+		t.Fatalf("CAS(1, 2) = %t, value = %d; want true, 2", swapped, value)
+	}
+	if swapped := RaceUncheckedAtomicCompareAndSwapUintptr(&value, 1, 3); swapped || value != 2 {
+		t.Fatalf("CAS(1, 3) = %t, value = %d; want false, 2", swapped, value)
+	}
+}
+
 func TestGateConcurrent(t *testing.T) {
 	// Each call to testGateConcurrentOnce tests behavior around a single call
 	// to Gate.Close, so run many short tests to increase the probability of
