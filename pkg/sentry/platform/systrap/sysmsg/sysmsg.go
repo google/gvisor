@@ -275,7 +275,9 @@ type ThreadContext struct {
 	// (the sentry does not populate this field except to reset it).
 	StateChangedTime uint64
 	// TLS is a pointer to a thread local storage.
-	// It is is only populated on ARM64.
+	// It is is only populated with a pointer on ARM64.
+	// On x86_64 it is used as a flag to indicate whether the GS register is being used
+	// by the user. This works because reg FS already holds the TLS pointer.
 	TLS uint64
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64

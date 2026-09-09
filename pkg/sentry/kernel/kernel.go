@@ -524,7 +524,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		return fmt.Errorf("args.ApplicationCores is 0")
 	}
 
-	k.featureSet = args.FeatureSet
+	k.featureSet = args.FeatureSet.SanitizeGuest()
 	k.timekeeper = args.Timekeeper
 	k.tasks = newTaskSet(args.RootPIDNamespace)
 	k.rootUserNamespace = args.RootUserNamespace

@@ -814,6 +814,7 @@ func New(args Args) (*Loader, error) {
 		}
 		cpufs = afs
 	}
+	cpufs = cpufs.SanitizeGuest()
 
 	maxFDLimit := kernel.MaxFdLimit
 	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {

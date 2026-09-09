@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -688,3 +689,8 @@ func (s *subprocess) PreFork() {}
 
 // PostFork implements platform.AddressSpace.PostFork.
 func (s *subprocess) PostFork() {}
+
+// UnpatchSyscalls implements platform.AddressSpace.UnpatchSyscalls.
+func (s *subprocess) UnpatchSyscalls(ctx pkgcontext.Context, mm platform.MemoryManager) error {
+	return nil
+}
