@@ -197,7 +197,29 @@ func TestInstall(t *testing.T) {
 			},
 			wantProps: []systemdDbus.Property{
 				{"AllowedCPUs", dbus.MakeVariant([]byte{0b_101110})},
-				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1, 0b_11100000})},
+				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{0b_11100000, 1})},
+			},
+		},
+		{
+			name: "cpuset high cpu",
+			res: &specs.LinuxResources{
+				CPU: &specs.LinuxCPU{
+					// This reproduces the Docker/containerd/runsc failure mode
+					// where the OCI bundle asks for sibling CPUs 8 and 184 but
+					// the systemd scope was previously assigned CPUs 0 and 176.
+					// The pair intentionally spans many bytes so the test fails
+					// if RangeToBits returns big-endian bytes instead of the byte
+					// order expected by systemd's AllowedCPUs property.
+					Cpus: "8,184",
+				},
+			},
+			wantProps: []systemdDbus.Property{
+				{"AllowedCPUs", dbus.MakeVariant(func() []byte {
+					bits := make([]byte, 24)
+					bits[1] = 1
+					bits[23] = 1
+					return bits
+				}())},
 			},
 		},
 		{
