@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/sys/unix"
+
 	taskServer "gvisor.dev/gvisor/pkg/shim/v1/taskserver"
 	pb "gvisor.dev/gvisor/pkg/shim/v1/taskserver/task_server_go_proto"
 
@@ -602,7 +604,6 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		log.L.Debugf("Container init process exited, killing all container processes")
 		ip.KillAll(ctx)
 	}
-	p.SetExited(e.Status)
 	// On init process exit, synchronously check the cgroup for OOM kills
 	// before publishing the exit event. The async OOM notification via
 	// EventChan (cgroups v2) can lose the race against the container exit
@@ -611,7 +612,17 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	// exec processes share the sandbox cgroup and would produce spurious
 	// events.
 	// Use the per-container id for TaskOOM routing.
-	if isInit && s.oomPoller.isOOM(containerID) {
+	isOOM := isInit && s.oomPoller.isOOM(containerID)
+	// When the memcg kill lands on the sentry itself, `runsc wait` cannot
+	// recover the real signal status and the shim substitutes the generic
+	// InternalErrorCode. Since the cgroup confirms an OOM kill, report the
+	// status tooling expects for SIGKILL (137). A real status reported by
+	// runsc is never overridden.
+	if isOOM && e.Status == proc.InternalErrorCode {
+		e.Status = 128 + int(unix.SIGKILL)
+	}
+	p.SetExited(e.Status)
+	if isOOM {
 		s.send(&events.TaskOOM{ContainerID: containerID})
 	}
 	s.send(&events.TaskExit{

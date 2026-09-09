@@ -96,7 +96,7 @@ func (s *createdState) Start(ctx context.Context, restoreConf *extension.Restore
 			if s.p.io != nil {
 				s.p.io.Close()
 			}
-			s.p.setExited(internalErrorCode)
+			s.p.setExited(InternalErrorCode)
 			s.transition(stopped)
 		}
 		return err

@@ -256,7 +256,7 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 		if err != nil {
 			log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
 			p.killAllLocked(ctx)
-			status = internalErrorCode
+			status = InternalErrorCode
 		}
 		ExitCh <- Exit{
 			Timestamp: time.Now(),
@@ -506,7 +506,7 @@ func (p *Init) runtimeError(rErr error, msg string) error {
 }
 
 func (p *Init) convertStatus(status string) string {
-	if status == "created" && !p.Sandbox && p.status == internalErrorCode {
+	if status == "created" && !p.Sandbox && p.status == InternalErrorCode {
 		// Treat start failure state for non-root container as stopped.
 		return statusStopped
 	}
