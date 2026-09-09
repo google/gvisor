@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,12 +29,42 @@ import (
 
 	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
 )
 
 // BenchmarkVLLM runs a vLLM workload.
 func BenchmarkVLLM(b *testing.B) {
 	doVLLMTest(b)
+}
+
+type modelsResponse struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+}
+
+func waitForVLLMReady(ctx context.Context, serverIP string) error {
+	url := fmt.Sprintf("http://%s:8000/v1/models", serverIP)
+	httpClient := &http.Client{Timeout: 2 * time.Second}
+	return testutil.Poll(func() error {
+		resp, err := httpClient.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
+		var models modelsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+			return err
+		}
+		if len(models.Data) != 1 {
+			return fmt.Errorf("expected 1 loaded model, got %d", len(models.Data))
+		}
+		return nil
+	}, 10*time.Minute)
 }
 
 func doVLLMTest(b *testing.B) {
@@ -61,8 +92,13 @@ func doVLLMTest(b *testing.B) {
 	if err := serverCtr.Spawn(ctx, runOpts); err != nil {
 		b.Errorf("failed to run container: %v", err)
 	}
-	if out, err := serverCtr.WaitForOutput(ctx, "Uvicorn running on http://0.0.0.0:8000", 10*time.Minute); err != nil {
-		b.Fatalf("failed to start vllm model: %v %s", err, out)
+	serverIP, err := serverCtr.FindIP(ctx, false)
+	if err != nil {
+		b.Fatalf("failed to find container IP: %v", err)
+	}
+	if err := waitForVLLMReady(ctx, serverIP.String()); err != nil {
+		logs, _ := serverCtr.Logs(ctx)
+		b.Fatalf("failed to start vllm model %v; container logs:\n%s", err, logs)
 	}
 
 	b.Run("opt-125", func(b *testing.B) {
@@ -95,7 +131,7 @@ func doVLLMTest(b *testing.B) {
 					Type:   "bind",
 				},
 			},
-		}, "/vllm/benchmarks/benchmark_serving.py", "--num-prompts", fmt.Sprintf("%d", b.N), "--host", "vllmctr", "--model", "/model", "--tokenizer", "/model", "--endpoint", "/v1/completions", "--backend", "openai", "--dataset", "/ShareGPT_V3_unfiltered_cleaned_split.json", "--save-result", "--result-dir", "/tmp")
+		}, "-m", "vllm.entrypoints.cli.main", "bench", "serve", "--num-prompts", fmt.Sprintf("%d", b.N), "--host", "vllmctr", "--model", "/model", "--tokenizer", "/model", "--endpoint", "/v1/completions", "--backend", "openai", "--dataset-name", "sharegpt", "--dataset-path", "/ShareGPT_V3_unfiltered_cleaned_split.json", "--save-result", "--result-dir", "/tmp")
 		if err != nil {
 			b.Errorf("failed to run container: %v logs: %s", err, out)
 		}
