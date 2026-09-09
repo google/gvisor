@@ -211,6 +211,10 @@ type Sandbox struct {
 	// StartTime is the time the sandbox was started.
 	StartTime time.Time `json:"startTime"`
 
+	// NoRootContainer records how the sandbox was booted. See
+	// Args.NoRootContainer.
+	NoRootContainer bool `json:"noRootContainer"`
+
 	// rootDir is the same as config.Config.RootDir. It represents the runtime
 	// root directory being used by the current runsc invocation. It's not saved
 	// to json, because the RootDir can change across runsc invocations.
@@ -325,6 +329,10 @@ type Args struct {
 	// PinRingFile, if non-nil, is the pin ring to donate to the boot
 	// process (see `//pkg/pinring`).
 	PinRingFile *os.File
+
+	// NoRootContainer boots without a root container: no gofer FDs, no root
+	// process. See container.Args.NoRootContainer.
+	NoRootContainer bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -341,6 +349,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		MetricServerAddress: conf.MetricServer,
 		MountHints:          args.MountHints,
 		StartTime:           starttime.Get(),
+		NoRootContainer:     args.NoRootContainer,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
@@ -1001,6 +1010,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	//
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
+	if args.NoRootContainer {
+		cmd.Args = append(cmd.Args, "--no-root-container")
+	}
 
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// --TESTONLY-unsafe-nonroot is set, so keep env.
@@ -1040,7 +1052,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	// Pass gofer mount configs.
-	cmd.Args = append(cmd.Args, "--gofer-mount-confs="+args.GoferMountConfs.String())
+	if len(args.GoferMountConfs) > 0 {
+		cmd.Args = append(cmd.Args, "--gofer-mount-confs="+args.GoferMountConfs.String())
+	}
 
 	// Create a socket for the control server and donate it to the sandbox.
 	controlSocketPath, sockFD, err := createControlSocket(conf.RootDir, s.ID)
@@ -1265,7 +1279,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// If the console control socket file is provided, then create a new
 	// pty master/replica pair and set the TTY on the sandbox process.
-	if args.Spec.Process.Terminal && args.ConsoleSocket != "" {
+	if args.Spec.Process != nil && args.Spec.Process.Terminal && args.ConsoleSocket != "" {
 		// console.NewWithSocket will send the master on the given
 		// socket, and return the replica.
 		tty, err := console.NewWithSocket(args.ConsoleSocket)
@@ -1451,6 +1465,10 @@ func SandboxUserGroupIDs(spec *specs.Spec) (uint32, uint32) {
 	uid := uint32(0)
 	gid := uint32(0)
 
+	if spec.Process == nil {
+		return uid, gid
+	}
+
 	if !rootMappedInContainer(spec.Linux.UIDMappings) {
 		uid = spec.Process.User.UID
 	}
@@ -1507,6 +1525,9 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		return unix.WaitStatus(0), err
 	}
 	if !s.child {
+		if s.NoRootContainer && s.IsRootContainer(cid) {
+			return unix.WaitStatus(0), nil
+		}
 		return unix.WaitStatus(0), fmt.Errorf("sandbox no longer running and its exit status is unavailable")
 	}
 

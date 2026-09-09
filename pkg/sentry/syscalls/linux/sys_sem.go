@@ -116,7 +116,7 @@ func semTimedOp(t *kernel.Task, id ipc.ID, ops []linux.Sembuf, haveTimeout bool,
 		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
-	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	pid := t.Kernel().RootPIDNamespace().IDOfThreadGroup(t.ThreadGroup())
 	for {
 		ch, num, err := set.ExecuteOps(t, ops, creds, int32(pid))
 		if ch == nil || err != nil {
@@ -294,7 +294,7 @@ func setVal(t *kernel.Task, id ipc.ID, num int32, val int16) error {
 		return linuxerr.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
-	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	pid := t.Kernel().RootPIDNamespace().IDOfThreadGroup(t.ThreadGroup())
 	return set.SetVal(t, num, val, creds, int32(pid))
 }
 
@@ -309,7 +309,7 @@ func setValAll(t *kernel.Task, id ipc.ID, array hostarch.Addr) error {
 		return err
 	}
 	creds := auth.CredentialsFromContext(t)
-	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	pid := t.Kernel().RootPIDNamespace().IDOfThreadGroup(t.ThreadGroup())
 	return set.SetValAll(t, vals, creds, int32(pid))
 }
 

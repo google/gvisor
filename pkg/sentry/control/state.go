@@ -446,7 +446,11 @@ func ConfigureSaveRestoreExec(k *kernel.Kernel, argv []string, timeout time.Dura
 // the given containerID. If containerID is empty, the global init process is returned.
 func findContainerInitProcess(k *kernel.Kernel, containerID string) (*kernel.Task, error) {
 	if containerID == "" {
-		return k.GlobalInit().Leader(), nil
+		init := k.GlobalInit()
+		if init == nil {
+			return nil, fmt.Errorf("sandbox has no global init process")
+		}
+		return init.Leader(), nil
 	}
 	// To find the init process of a container, we look for the process with no
 	// parent (root of execution) that is not an exec process.
