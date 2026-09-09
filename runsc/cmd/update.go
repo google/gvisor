@@ -283,7 +283,7 @@ func (u *Update) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 		}
 	}
 
-	if err := c.Update(&r); err != nil {
+	if err := c.Update(conf, &r); err != nil {
 		return util.Errorf("setting resources: %v", err)
 	}
 
