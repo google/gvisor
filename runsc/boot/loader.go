@@ -417,6 +417,9 @@ type Args struct {
 	// its expensive-to-release files into. See `//pkg/pinring`.
 	// -1 if there is no ring.
 	PinRingFD int
+	// CPUDMALatencyFD is an FD for /dev/cpu_dma_latency that the boot
+	// process opened to cap host CPU idle states. -1 if unset.
+	CPUDMALatencyFD int
 	// Device is an optional argument that is passed to the platform. The Loader
 	// takes ownership of this file and may close it at any time.
 	Device *fd.FD
@@ -727,6 +730,14 @@ func New(args Args) (*Loader, error) {
 
 	// Create kernel and platform.
 	l.pinRing.FD = args.PinRingFD
+	if args.CPUDMALatencyFD >= 0 {
+		if l.pinRing.Exists() {
+			l.pinRing.Add(args.CPUDMALatencyFD)
+		} else {
+			log.Infof("No pin ring to hold /dev/cpu_dma_latency; not capping host CPU idle states")
+		}
+		unix.Close(args.CPUDMALatencyFD)
+	}
 	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
