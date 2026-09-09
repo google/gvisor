@@ -89,6 +89,15 @@ func compareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (prev uint32, sig
 //go:noescape
 func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
 
+// storeUint64 stores val into *ptr using a single non-writeback store
+// instruction. If a SIGSEGV or SIGBUS signal is received during the store, sig
+// is the number of the signal that was received.
+//
+// Preconditions: ptr must be aligned to an 8-byte boundary.
+//
+//go:noescape
+func storeUint64(ptr unsafe.Pointer, val uint64) (sig int32)
+
 // Return the start address of the functions above.
 //
 // In Go 1.17+, Go references to assembly functions resolve to an ABIInternal
@@ -100,6 +109,7 @@ func addrOfSwapUint32() uintptr
 func addrOfSwapUint64() uintptr
 func addrOfCompareAndSwapUint32() uintptr
 func addrOfLoadUint32() uintptr
+func addrOfStoreUint64() uintptr
 
 // CopyIn copies len(dst) bytes from src to dst. It returns the number of bytes
 // copied and an error if SIGSEGV or SIGBUS is received while reading from src.
@@ -317,6 +327,24 @@ func LoadUint32(ptr unsafe.Pointer) (uint32, error) {
 	}
 	val, sig := loadUint32(ptr)
 	return val, errorFromFaultSignal(uintptr(ptr), sig)
+}
+
+// StoreUint64 stores val into *ptr, returning an error if SIGSEGV or SIGBUS is
+// received while accessing ptr, or if ptr is not aligned to an 8-byte
+// boundary.
+//
+// Unlike CopyOut, StoreUint64 is guaranteed to perform the write with a single
+// non-writeback store instruction. This matters when ptr is a KVM ioeventfd
+// MMIO address accessed from guest mode: Arm only reports a valid instruction
+// syndrome (ESR_ELx.ISV=1) for a single-register load or store that does not
+// use writeback, and without one the hypervisor cannot decode the access to
+// service the ioeventfd.
+func StoreUint64(ptr unsafe.Pointer, val uint64) error {
+	if addr := uintptr(ptr); addr&7 != 0 {
+		return AlignmentError{addr, 8}
+	}
+	sig := storeUint64(ptr, val)
+	return errorFromFaultSignal(uintptr(ptr), sig)
 }
 
 func errorFromFaultSignal(addr uintptr, sig int32) error {
