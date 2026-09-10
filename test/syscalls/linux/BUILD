@@ -1359,6 +1359,8 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
+        "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:signal_util",
         "//test/util:test_main",
         "//test/util:test_util",

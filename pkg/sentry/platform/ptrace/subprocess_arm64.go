@@ -84,7 +84,34 @@ func isSingleStepping(regs *arch.Registers) bool {
 
 // updateSyscallRegs updates registers after finishing sysemu.
 func updateSyscallRegs(regs *arch.Registers) {
-	// No special work is necessary.
+	// In the Linux kernel (arch/arm64/kernel/signal.c:arch_do_signal_or_restart), if in_syscall(regs)
+	// is true and regs[0] matches an internal syscall restart code, the kernel
+	// treats regs[0] as a return value and rewinds regs.Pc by 4 (SyscallWidth)
+	// to re-execute the svc instruction.
+	//
+	// Under ptrace, PTRACE_SYSEMU stops at syscall entry without executing the
+	// syscall, leaving the first argument in regs[0]. When arm64SyscallWorkaround
+	// resumes the thread to deliver an interrupt, arch_do_signal_or_restart() runs without a
+	// user signal handler, so the restart decision is not reverted for any of the
+	// restart codes (-ERESTARTSYS, -ERESTARTNOINTR, -ERESTARTNOHAND, -ERESTART_RESTARTBLOCK).
+	//
+	// In Linux, regs->regs[0] is assigned to an `int retval` (32-bit signed),
+	// truncating the register before checking for restart codes. Userspace
+	// callers (such as libc wrappers taking a 32-bit argument) may zero-extend
+	// the upper 32 bits into the 64-bit register. Therefore, we must do a
+	// 32-bit comparison to match the kernel's behavior.
+	//
+	// Here we undo the false PC rewind.
+	if sysno := int32(regs.Regs[8]); sysno >= 0 {
+		switch int32(regs.Regs[0]) {
+		case -int32(ERESTARTSYS),
+			-int32(ERESTARTNOINTR),
+			-int32(ERESTARTNOHAND),
+			-int32(ERESTART_RESTARTBLOCK):
+
+			regs.Pc += arch.SyscallWidth
+		}
+	}
 }
 
 // syscallReturnValue extracts a sensible return from registers.

@@ -190,8 +190,7 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.reg.Remove(id, creds)
-	return nil
+	return r.reg.Remove(id, creds)
 }
 
 // FindByID returns the queue with the specified ID and an error if the ID
