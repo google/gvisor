@@ -495,6 +495,14 @@ func (tg *ThreadGroup) anyNonExitingTaskLocked() *Task {
 	return nil
 }
 
+// HasNonExitingTasks returns true if any task in tg has not yet begun
+// exiting.
+func (tg *ThreadGroup) HasNonExitingTasks() bool {
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+	return tg.anyNonExitingTaskLocked() != nil
+}
+
 // reparentLocked changes t's parent. The new parent may be nil.
 //
 // Preconditions: The TaskSet mutex must be locked for writing.

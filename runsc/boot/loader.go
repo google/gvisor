@@ -271,6 +271,16 @@ type Loader struct {
 
 	hostTHP HostTHP
 
+	// saveMu serializes save operations. Saves can be requested concurrently:
+	// autosave in save-resume mode is triggered by any task executing the
+	// trigger syscall, and checkpoints may be requested concurrently via the
+	// control API. Overlapping saves race: post-save cleanup
+	// (Kernel.BeforeResume) runs outside Kernel.extMu, so save N's cleanup can
+	// clear state that save N+1's in-progress Kernel.SaveTo has just set up.
+	//
+	// Lock order: saveMu is taken before mu.
+	saveMu sync.Mutex
+
 	// mu guards the fields below.
 	mu sync.Mutex
 
@@ -2473,8 +2483,8 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 		// Container has no thread group assigned, so it has not started yet.
 		return RuntimeStateCreating
 	}
-	if exec.tg.Leader().ExitState() == kernel.TaskExitNone {
-		// Init process is still running.
+	if exec.tg.HasNonExitingTasks() {
+		// Init process thread group is still running.
 		return RuntimeStateRunning
 	}
 	// Init process has stopped, but no one has called wait on it yet.

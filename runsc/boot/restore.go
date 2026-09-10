@@ -691,6 +691,11 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 
 // saveWithOpts saves the kernel with the given options.
 func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRestoreExecOpts) (err error) {
+	// Fully serialize save operations, including post-save cleanup. See
+	// Loader.saveMu.
+	l.saveMu.Lock()
+	defer l.saveMu.Unlock()
+
 	defer func() {
 		// This closure is required to capture the final value of err.
 		l.k.OnCheckpointAttempt(err)
