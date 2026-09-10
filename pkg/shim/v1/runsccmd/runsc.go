@@ -757,6 +757,9 @@ func (r *Runsc) command(context context.Context, args ...string) *exec.Cmd {
 		command = DefaultCommand
 	}
 	cmd := exec.CommandContext(context, command, append(r.args(), args...)...)
+	// After the context kills the command, force-close its pipes so Wait
+	// cannot stay blocked on fds inherited by a grandchild.
+	cmd.WaitDelay = 5 * time.Second
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setpgid: r.Setpgid,
 	}
