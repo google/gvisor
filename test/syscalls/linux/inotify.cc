@@ -2692,6 +2692,102 @@ TEST(Inotify, KernfsBasic) {
   ASSERT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd)}));
 }
 
+TEST(Inotify, WatchCapReturnsENOSPC) {
+  // gVisor caps per-instance watches at the lower-bound Linux default (8192).
+  // Linux caps per-user via /proc/sys/fs/inotify/max_user_watches; that
+  // sysctl ranges from 8192 on small-memory systems up to 1048576 on larger
+  // hosts. Read the configured cap and verify ENOSPC at cap+1 against
+  // whichever cap applies on this runner. The test is parameterised on the
+  // sysctl so it compares directly to whatever Linux is enforcing.
+  std::string contents;
+  ASSERT_NO_ERRNO(GetContents("/proc/sys/fs/inotify/max_user_watches",
+                              &contents));
+  const long cap = std::stol(contents);
+  // Linux runners with high max_user_watches make this test prohibitively
+  // slow to fill. Skip when the cap is beyond a sane test budget; the
+  // gVisor hard cap (8192) is always inside the budget so coverage holds
+  // there.
+  SKIP_IF(cap <= 0 || cap > 16384);
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  std::vector<TempPath> subs;
+  subs.reserve(cap + 1);
+  for (long i = 0; i < cap; i++) {
+    auto sub =
+        ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+    ASSERT_THAT(inotify_add_watch(fd.get(), sub.path().c_str(), IN_ALL_EVENTS),
+                SyscallSucceeds());
+    subs.push_back(std::move(sub));
+  }
+
+  auto over =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  EXPECT_THAT(inotify_add_watch(fd.get(), over.path().c_str(), IN_ALL_EVENTS),
+              SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(Inotify, QueueOverflowEmitsMarker) {
+  // gVisor and Linux both cap queued inotify events at
+  // /proc/sys/fs/inotify/max_queued_events (Linux default 16384; gVisor
+  // hard-caps the per-instance queue at the same value). On overflow, both
+  // emit a single IN_Q_OVERFLOW marker (wd == -1) at the queue tail and drop
+  // subsequent events until reads drain the queue.
+  std::string contents;
+  ASSERT_NO_ERRNO(GetContents("/proc/sys/fs/inotify/max_queued_events",
+                              &contents));
+  const long max_q = std::stol(contents);
+  SKIP_IF(max_q <= 0 || max_q > 16384);
+
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), root.path(), IN_CREATE));
+
+  // Generate distinct create events so adjacent-coalescing does not collapse
+  // them. Push past the cap so the kernel must emit IN_Q_OVERFLOW.
+  for (long i = 0; i < max_q + 16; i++) {
+    const std::string name = absl::StrCat(root.path(), "/q", i);
+    ASSERT_NO_ERRNO_AND_VALUE(
+        Open(name, O_CREAT | O_EXCL | O_WRONLY, 0644));
+  }
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  bool saw_overflow = false;
+  for (const auto& ev : events) {
+    if (ev.mask & IN_Q_OVERFLOW) {
+      EXPECT_EQ(ev.wd, -1);
+      saw_overflow = true;
+    }
+  }
+  EXPECT_TRUE(saw_overflow)
+      << "expected IN_Q_OVERFLOW marker after queue overflow";
+  // The drained event count never exceeds the cap plus the overflow marker.
+  EXPECT_LE(events.size(), static_cast<size_t>(max_q + 1));
+
+  // After the overflow marker is consumed by DrainEvents, the queue should
+  // accept new events again. Trigger one more create and verify the next
+  // drain returns at least one IN_CREATE event on wd.
+  const std::string recovery_name = absl::StrCat(root.path(), "/recovered");
+  ASSERT_NO_ERRNO_AND_VALUE(
+      Open(recovery_name, O_CREAT | O_EXCL | O_WRONLY, 0644));
+  const std::vector<Event> recovered =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  bool saw_post_overflow_event = false;
+  for (const auto& ev : recovered) {
+    if (ev.wd == wd && (ev.mask & IN_CREATE)) {
+      saw_post_overflow_event = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(saw_post_overflow_event)
+      << "queue did not accept events after IN_Q_OVERFLOW was drained";
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

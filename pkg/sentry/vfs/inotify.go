@@ -35,6 +35,28 @@ import (
 // must be a power 2 for rounding below.
 const inotifyEventBaseSize = 16
 
+// Per-instance resource caps matching Linux defaults at
+// fs/notify/inotify/inotify_user.c. Linux enforces max_user_watches and
+// max_user_instances per user namespace via UCOUNT_INOTIFY_*; gVisor does
+// not yet have an equivalent ucount infrastructure in pkg/sentry/kernel/auth,
+// so the watch and queue caps below are enforced per-inotify-instance.
+//
+// TODO: add per-user-namespace accounting for max_user_instances and tighten
+// max_user_watches to per-user across all instances rather than per-instance.
+const (
+	// maxInotifyWatchesPerInstance bounds the number of watches a single
+	// inotify instance can hold. Linux fs.inotify.max_user_watches default
+	// is 8192.
+	maxInotifyWatchesPerInstance = 8192
+
+	// maxInotifyQueuedEvents bounds the number of events held in a single
+	// inotify instance's pending-event queue. Linux fs.inotify.max_queued_events
+	// default is 16384. When the cap is reached, gVisor emits a single
+	// IN_Q_OVERFLOW marker and drops subsequent events until the queue drains,
+	// as Linux does in fsnotify_insert_event.
+	maxInotifyQueuedEvents = 16384
+)
+
 // EventType defines different kinds of inotfiy events.
 //
 // The way events are labelled appears somewhat arbitrary, but they must match
@@ -76,6 +98,11 @@ type Inotify struct {
 
 	// A list of pending events for this inotify instance. Protected by evMu.
 	events eventList
+
+	// numQueuedEvents counts the entries in events. Protected by evMu.
+	// Tracked explicitly because eventList is a generic intrusive list with
+	// no built-in length.
+	numQueuedEvents int
 
 	// A scratch buffer, used to serialize inotify events. Allocate this
 	// ahead of time for the sake of performance. Protected by evMu.
@@ -240,6 +267,7 @@ func (i *Inotify) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOpt
 		// buffer space to copy it out, even if the copy below fails. Emulate
 		// this behaviour.
 		i.events.Remove(event)
+		i.numQueuedEvents--
 
 		// Buffer has enough space, copy event to the read buffer.
 		n, err := event.CopyTo(ctx, i.scratch, dst)
@@ -288,7 +316,23 @@ func (i *Inotify) queueEvent(ev *Event) {
 		}
 	}
 
+	// Enforce per-instance queue cap matching Linux fs.inotify.max_queued_events.
+	// When the queue is full, emit a single IN_Q_OVERFLOW marker if the tail of
+	// the queue is not already an overflow marker, and drop subsequent events
+	// until the queue drains. This matches fsnotify_insert_event in Linux.
+	if i.numQueuedEvents >= maxInotifyQueuedEvents {
+		if last := i.events.Back(); last == nil || last.mask&linux.IN_Q_OVERFLOW == 0 {
+			overflow := newEvent(-1, "", linux.IN_Q_OVERFLOW, 0)
+			i.events.PushBack(overflow)
+			i.numQueuedEvents++
+		}
+		i.evMu.Unlock()
+		i.queue.Notify(waiter.ReadableEvents)
+		return
+	}
+
 	i.events.PushBack(ev)
+	i.numQueuedEvents++
 
 	// Release mutex before notifying waiters because we don't control what they
 	// can do.
@@ -324,10 +368,12 @@ func (i *Inotify) nextWatchIDLocked() int32 {
 }
 
 // AddWatch constructs a new inotify watch and adds it to the target. It
-// returns the watch descriptor returned by inotify_add_watch(2).
+// returns the watch descriptor returned by inotify_add_watch(2). When the
+// per-instance watch cap is reached, it returns ENOSPC matching
+// inotify_new_watch in Linux fs/notify/inotify/inotify_user.c.
 //
 // The caller must hold a reference on target.
-func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
+func (i *Inotify) AddWatch(target *Dentry, mask uint32) (int32, error) {
 	// Note: Locking this inotify instance protects the result returned by
 	// Lookup() below. With the lock held, we know for sure the lookup result
 	// won't become stale because it's impossible for *this* instance to
@@ -345,12 +391,17 @@ func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
 			newmask |= existing.mask.Load()
 		}
 		existing.mask.Store(newmask)
-		return existing.wd
+		return existing.wd, nil
+	}
+
+	// Enforce per-instance watch cap before allocating a new Watch.
+	if len(i.watches) >= maxInotifyWatchesPerInstance {
+		return 0, linuxerr.ENOSPC
 	}
 
 	// No existing watch, create a new watch.
 	w := i.newWatchLocked(target, ws, mask)
-	return w.wd
+	return w.wd, nil
 }
 
 // RmWatch looks up an inotify watch for the given 'wd' and configures the
