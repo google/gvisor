@@ -1129,7 +1129,10 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	switch d.inode.fileType() {
 	case linux.S_IFREG:
 		if !d.inode.fs.opts.regularFilesUseSpecialFileFD {
-			if err := d.ensureSharedHandle(ctx, ats.MayRead(), ats.MayWrite(), trunc); err != nil {
+			// Exec opens need a readable handle even without read permission;
+			// the sentry must read the executable to load it.
+			needReadHandle := ats.MayRead() || opts.FileExec
+			if err := d.ensureSharedHandle(ctx, needReadHandle, ats.MayWrite(), trunc); err != nil {
 				return nil, err
 			}
 			fd, err := newRegularFileFD(mnt, d, opts.Flags, rp.Credentials())
@@ -1292,8 +1295,11 @@ func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.
 	// open, not whether the pipe was *previously* opened by a peer that has
 	// since closed its end.
 	isBlockingOpenOfNamedPipe := d.inode.fileType() == linux.S_IFIFO && opts.Flags&linux.O_NONBLOCK == 0
+	// Exec opens need a readable handle even without read permission; the
+	// sentry must read the executable to load it.
+	needReadHandle := ats.MayRead() || opts.FileExec
 retry:
-	h, err := d.openHandle(ctx, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
+	h, err := d.openHandle(ctx, needReadHandle, ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
 	if err != nil {
 		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
