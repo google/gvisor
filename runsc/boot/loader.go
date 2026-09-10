@@ -1088,6 +1088,9 @@ func (l *Loader) Destroy() {
 	if l.root.devGoferFD != nil {
 		_ = l.root.devGoferFD.Close()
 	}
+	if l.fsRestore != nil {
+		l.fsRestore.destroy()
+	}
 
 	l.stopProfiling()
 	// Check all references.
