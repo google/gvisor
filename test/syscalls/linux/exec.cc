@@ -75,6 +75,8 @@ constexpr char kBasicWorkload[] = "test/syscalls/linux/exec_basic_workload";
 constexpr char kCheckEuidProgram[] = "test/syscalls/linux/exec_check_creds";
 constexpr char kExitScript[] = "test/syscalls/linux/exit_script";
 constexpr char kStateWorkload[] = "test/syscalls/linux/exec_state_workload";
+constexpr char kEtxtbsyWorkload[] =
+    "test/syscalls/linux/exec_etxtbsy_workload";
 constexpr char kProcExeWorkload[] =
     "test/syscalls/linux/exec_proc_exe_workload";
 constexpr char kAssertClosedWorkload[] =
@@ -1312,6 +1314,52 @@ bool ValidateProcCmdlineVsArgv(const int argc, const char* const* argv) {
     }
   }
   return true;
+}
+
+
+// A binary that is being executed cannot be written, and becomes writable
+// again once it is not. See fs/exec.c:set_mm_exe_file().
+TEST(ExecTest, RunningBinaryIsNotWritable) {
+  // Copy the workload somewhere we own, so that we may attempt to write it.
+  const std::string blob =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(RunfilePath(kEtxtbsyWorkload)));
+  const TempPath binary = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), blob, 0755));
+  const std::string path = binary.path();
+  EXPECT_NO_ERRNO(Open(path, O_WRONLY));
+
+  // The workload writes a byte to stdout once execve(2) has completed, so that
+  // we do not race against it.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rd(fds[0]);
+  FileDescriptor wr(fds[1]);
+
+  pid_t child;
+  int execve_errno;
+  const int wfd = wr.get();
+  Cleanup kill_child = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+      path, {path}, {}, [wfd] { dup2(wfd, STDOUT_FILENO); }, &child,
+      &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+  wr.reset();
+  char c;
+  ASSERT_THAT(RetryEINTR(read)(rd.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // Writing the contents must fail, whether by open(2) or truncate(2).
+  EXPECT_THAT(open(path.c_str(), O_WRONLY), SyscallFailsWithErrno(ETXTBSY));
+  EXPECT_THAT(open(path.c_str(), O_RDONLY | O_TRUNC),
+              SyscallFailsWithErrno(ETXTBSY));
+  EXPECT_THAT(truncate(path.c_str(), 0), SyscallFailsWithErrno(ETXTBSY));
+
+  // Reads and metadata changes are unaffected.
+  EXPECT_NO_ERRNO(Open(path, O_RDONLY));
+  EXPECT_THAT(chmod(path.c_str(), 0755), SyscallSucceeds());
+
+  // Killing the child reaps it, so the executable is released by the time this
+  // returns. A leaked denial would leave the file permanently unwritable.
+  kill_child.Release()();
+  EXPECT_NO_ERRNO(Open(path, O_WRONLY));
 }
 
 }  // namespace

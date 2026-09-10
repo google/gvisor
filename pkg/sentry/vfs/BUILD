@@ -169,6 +169,7 @@ go_library(
         "save_restore.go",
         "vfs.go",
         "virtual_filesystem_mutex.go",
+        "write_count.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
