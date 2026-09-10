@@ -15,13 +15,17 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"gvisor.dev/gvisor/runsc/cgroup"
 )
 
 func TestIsRunning(t *testing.T) {
@@ -149,6 +153,95 @@ func TestGetGCSURIFromImagePath(t *testing.T) {
 			got := getGCSURIFromImagePath(subDir)
 			if got != tc.want {
 				t.Errorf("getGCSURIFromImagePath(%q) = %q, want %q", subDir, got, tc.want)
+			}
+		})
+	}
+}
+
+type fakeCgroup struct {
+	cgroup.Cgroup
+	numCPU    int
+	numCPUErr error
+	cpuQuota  int64
+	cpuPeriod int64
+}
+
+func (f *fakeCgroup) NumCPU() (int, error) {
+	return f.numCPU, f.numCPUErr
+}
+
+func (f *fakeCgroup) CPUQuota() (int64, error) {
+	return f.cpuQuota, nil
+}
+
+func (f *fakeCgroup) CPUPeriod() (int64, error) {
+	return f.cpuPeriod, nil
+}
+
+func TestCalculateCPUNum(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		numCPU          int
+		numCPUErr       error
+		cpuQuota        int64
+		cpuPeriod       int64
+		cpuNumFromQuota bool
+		want            int
+	}{
+		{
+			name:      "cgroup NumCPU error fallback to runtime.NumCPU",
+			numCPUErr: errors.New("cgroup cpuset read error"),
+			want:      runtime.NumCPU(),
+		},
+		{
+			name:   "cgroup NumCPU success",
+			numCPU: 8,
+			want:   8,
+		},
+		{
+			name:            "cgroup NumCPU error fallback with quota limit",
+			numCPUErr:       errors.New("cgroup cpuset read error"),
+			cpuQuota:        400000,
+			cpuPeriod:       100000,
+			cpuNumFromQuota: true,
+			want:            min(runtime.NumCPU(), 4),
+		},
+		{
+			name:            "cgroup NumCPU error fallback with low quota minCPUs floor",
+			numCPUErr:       errors.New("cgroup cpuset read error"),
+			cpuQuota:        100000,
+			cpuPeriod:       100000,
+			cpuNumFromQuota: true,
+			want:            min(runtime.NumCPU(), 2),
+		},
+		{
+			name:            "cgroup NumCPU success with quota limit",
+			numCPU:          16,
+			cpuQuota:        400000,
+			cpuPeriod:       100000,
+			cpuNumFromQuota: true,
+			want:            4,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cg := &fakeCgroup{
+				numCPU:    tc.numCPU,
+				numCPUErr: tc.numCPUErr,
+				cpuQuota:  tc.cpuQuota,
+				cpuPeriod: tc.cpuPeriod,
+			}
+			gotNum, gotQuota, gotPeriod, err := calculateCPUNum(cg, tc.cpuNumFromQuota)
+			if err != nil {
+				t.Fatalf("calculateCPUNum failed: %v", err)
+			}
+			if gotNum != tc.want {
+				t.Errorf("calculateCPUNum() got cpuNum = %d, want %d", gotNum, tc.want)
+			}
+			if gotQuota != tc.cpuQuota {
+				t.Errorf("calculateCPUNum() got cpuQuota = %d, want %d", gotQuota, tc.cpuQuota)
+			}
+			if gotPeriod != tc.cpuPeriod {
+				t.Errorf("calculateCPUNum() got cpuPeriod = %d, want %d", gotPeriod, tc.cpuPeriod)
 			}
 		})
 	}

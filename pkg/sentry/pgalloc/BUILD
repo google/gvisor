@@ -214,6 +214,7 @@ go_test(
     deps = [
         "//pkg/hostarch",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/usage",
     ],
 )
 
