@@ -70,7 +70,7 @@ def _nogo_stdlib_impl(ctx):
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps = [])
 
     # GOVERSION of std is set by the std go.mod.
-    args.append("-GOVERSION-mod-file=%s" % go_ctx.stdlib_mod)
+    args.append("-GOVERSION-mod-file=%s" % go_ctx.stdlib_mod.path)
 
     # Build the analyzer command.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
