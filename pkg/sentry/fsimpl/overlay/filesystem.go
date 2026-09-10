@@ -1133,6 +1133,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err != nil {
 		return err
 	}
+	if oldParent == newParent && oldName == newName {
+		return nil
+	}
 	if err := oldParent.mayDelete(creds, renamed); err != nil {
 		return err
 	}
@@ -1219,10 +1222,6 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	} else if exchange {
 		// RENAME_EXCHANGE requires that the target file exist.
 		return linuxerr.ENOENT
-	}
-
-	if oldParent == newParent && oldName == newName {
-		return nil
 	}
 
 	// renamed and oldParent need to be copied-up before they're renamed on the
