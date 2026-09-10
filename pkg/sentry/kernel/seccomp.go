@@ -132,6 +132,10 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 		// system call. The exit status of the task will be SIGSYS, not
 		// SIGKILL."
 
+	case linux.SECCOMP_RET_KILL_PROCESS:
+		// "Results in the entire process exiting immediately without
+		// executing the system call."
+
 	default:
 		// consistent with Linux
 		return linux.SECCOMP_RET_KILL_THREAD
