@@ -2473,8 +2473,8 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 		// Container has no thread group assigned, so it has not started yet.
 		return RuntimeStateCreating
 	}
-	if exec.tg.Leader().ExitState() == kernel.TaskExitNone {
-		// Init process is still running.
+	if exec.tg.HasNonExitingTasks() {
+		// Init process thread group is still running.
 		return RuntimeStateRunning
 	}
 	// Init process has stopped, but no one has called wait on it yet.
