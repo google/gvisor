@@ -64,8 +64,8 @@ func TestCreatedStateStartFailureWithoutIO(t *testing.T) {
 	if _, ok := p.initState.(*stoppedState); !ok {
 		t.Errorf("initState = %T, want *stoppedState", p.initState)
 	}
-	if got := p.ExitStatus(); got != internalErrorCode {
-		t.Errorf("ExitStatus() = %d, want %d", got, internalErrorCode)
+	if got := p.ExitStatus(); got != InternalErrorCode {
+		t.Errorf("ExitStatus() = %d, want %d", got, InternalErrorCode)
 	}
 }
 

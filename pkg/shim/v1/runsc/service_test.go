@@ -18,14 +18,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/containerd/console"
 	apievents "github.com/containerd/containerd/api/events"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	coreevents "github.com/containerd/containerd/v2/core/events"
+	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/shim/v1/proc"
+	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
 
@@ -92,6 +97,122 @@ func TestForwardPanicsOnPublishErrorUnderContainerd(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("forward did not complete within timeout")
+	}
+}
+
+// fakeOOMPoller reports a fixed OOM verdict per container id.
+type fakeOOMPoller struct {
+	oom map[string]bool
+}
+
+func (f *fakeOOMPoller) add(string, any) error { return nil }
+func (f *fakeOOMPoller) run(context.Context)   {}
+func (f *fakeOOMPoller) isOOM(id string) bool  { return f.oom[id] }
+func (f *fakeOOMPoller) Close() error          { return nil }
+
+// nopPlatform is a no-op console platform for proc.Init.
+type nopPlatform struct{}
+
+func (nopPlatform) CopyConsole(_ context.Context, cons console.Console, _, _, _, _ string, _ *sync.WaitGroup) (console.Console, error) {
+	return cons, nil
+}
+func (nopPlatform) ShutdownConsole(context.Context, console.Console) error { return nil }
+func (nopPlatform) Close() error                                           { return nil }
+
+// TestCheckProcessesOOMExitStatus verifies the exit status published on init
+// process exit when the container was OOM-killed. When the memcg kill lands on
+// the sentry, `runsc wait` cannot recover the real signal status and reports
+// the synthetic proc.InternalErrorCode; since the cgroup confirms an OOM kill,
+// the shim must publish 128+SIGKILL (137) instead so tooling keyed on the
+// standard OOM exit code works. A real exit status must never be overridden.
+func TestCheckProcessesOOMExitStatus(t *testing.T) {
+	const sigkillStatus = 137 // 128 + SIGKILL
+	for _, tc := range []struct {
+		name        string
+		oom         bool
+		exitStatus  int
+		wantStatus  int
+		wantTaskOOM bool
+	}{
+		{
+			// Sentry OOM-killed: wait failed (128) and cgroup confirms OOM.
+			name:        "oom-internal-error-becomes-137",
+			oom:         true,
+			exitStatus:  proc.InternalErrorCode,
+			wantStatus:  sigkillStatus,
+			wantTaskOOM: true,
+		},
+		{
+			// OOM confirmed but runsc reported a real status: keep it.
+			name:        "oom-real-status-preserved",
+			oom:         true,
+			exitStatus:  2,
+			wantStatus:  2,
+			wantTaskOOM: true,
+		},
+		{
+			// Wait failure without OOM: generic status stays 128.
+			name:        "no-oom-internal-error-preserved",
+			oom:         false,
+			exitStatus:  proc.InternalErrorCode,
+			wantStatus:  proc.InternalErrorCode,
+			wantTaskOOM: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const cid = "test-container"
+			init := proc.New(cid, &runsccmd.Runsc{Command: "/nonexistent/runsc"}, stdio.Stdio{})
+			init.Platform = nopPlatform{}
+			c := &Container{
+				ID:   cid,
+				task: init,
+			}
+			s := &runscService{
+				events:     make(chan any, 4),
+				containers: map[string]*Container{cid: c},
+				oomPoller:  &fakeOOMPoller{oom: map[string]bool{cid: tc.oom}},
+			}
+
+			s.checkProcesses(context.Background(), proc.Exit{
+				Timestamp: time.Now(),
+				ID:        cid,
+				Status:    tc.exitStatus,
+			})
+
+			if got := init.ExitStatus(); got != tc.wantStatus {
+				t.Errorf("init.ExitStatus() = %d, want %d", got, tc.wantStatus)
+			}
+
+			var got []any
+			for len(s.events) > 0 {
+				got = append(got, <-s.events)
+			}
+			want := 1
+			if tc.wantTaskOOM {
+				want = 2
+			}
+			if len(got) != want {
+				t.Fatalf("got %d events (%v), want %d", len(got), got, want)
+			}
+			idx := 0
+			if tc.wantTaskOOM {
+				oomEv, ok := got[idx].(*apievents.TaskOOM)
+				if !ok {
+					t.Fatalf("event %d = %T, want *TaskOOM (must precede TaskExit)", idx, got[idx])
+				}
+				if oomEv.ContainerID != cid {
+					t.Errorf("TaskOOM.ContainerID = %q, want %q", oomEv.ContainerID, cid)
+				}
+				idx++
+			}
+			exitEv, ok := got[idx].(*apievents.TaskExit)
+			if !ok {
+				t.Fatalf("event %d = %T, want *TaskExit", idx, got[idx])
+			}
+			if exitEv.ExitStatus != uint32(tc.wantStatus) {
+				t.Errorf("TaskExit.ExitStatus = %d, want %d", exitEv.ExitStatus, tc.wantStatus)
+			}
+		})
 	}
 }
 
