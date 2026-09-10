@@ -95,7 +95,7 @@ func (pc *passContext) observationsFor(obj types.Object) *objectObservations {
 }
 
 // forAllGlobals applies the given function to all globals.
-func (pc *passContext) forAllGlobals(fn func(ts *ast.ValueSpec)) {
+func (pc *passContext) forAllGlobals(fn func(vs *ast.ValueSpec, decl *ast.GenDecl)) {
 	for _, f := range pc.pass.Files {
 		for _, decl := range f.Decls {
 			d, ok := decl.(*ast.GenDecl)
@@ -103,7 +103,7 @@ func (pc *passContext) forAllGlobals(fn func(ts *ast.ValueSpec)) {
 				continue
 			}
 			for _, gs := range d.Specs {
-				fn(gs.(*ast.ValueSpec))
+				fn(gs.(*ast.ValueSpec), d)
 			}
 		}
 	}
@@ -151,12 +151,12 @@ func run(pass *analysis.Pass) (any, error) {
 	pc.extractLineFailures()
 
 	// Find all struct declarations and export relevant facts.
-	pc.forAllGlobals(func(vs *ast.ValueSpec) {
+	pc.forAllGlobals(func(vs *ast.ValueSpec, decl *ast.GenDecl) {
 		if ss, ok := vs.Type.(*ast.StructType); ok {
 			structType := pc.pass.TypesInfo.TypeOf(vs.Type).Underlying().(*types.Struct)
 			pc.structLockGuardFacts(structType, ss)
 		}
-		pc.globalLockGuardFacts(vs)
+		pc.globalLockGuardFacts(vs, decl)
 	})
 	pc.forAllTypes(func(ts *ast.TypeSpec, decl *ast.GenDecl) {
 		if ss, ok := ts.Type.(*ast.StructType); ok {

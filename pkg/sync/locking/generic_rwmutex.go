@@ -42,14 +42,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *RWMutex) Lock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(genericMarkIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *RWMutex) NestedLock(i lockNameIndex) {
-	locking.AddGLock(genericMarkIndex, int(i))
+	locking.AddGLock(genericMarkIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -57,20 +57,20 @@ func (m *RWMutex) NestedLock(i lockNameIndex) {
 // +checklocksignore
 func (m *RWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(genericMarkIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *RWMutex) NestedUnlock(i lockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(genericMarkIndex, int(i))
+	locking.DelGLock(genericMarkIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *RWMutex) RLock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(genericMarkIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -78,7 +78,7 @@ func (m *RWMutex) RLock() {
 // +checklocksignore
 func (m *RWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(genericMarkIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

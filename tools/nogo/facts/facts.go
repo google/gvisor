@@ -118,6 +118,10 @@ func (p *Package) ReadFrom(pkg *types.Package, r io.Reader) error {
 		return err
 	}
 	for _, fi := range is {
+		objectFacts, ok := fi.Value.([]analysis.Fact)
+		if !ok {
+			return fmt.Errorf("invalid fact payload for %q: %T", fi.Key, fi.Value)
+		}
 		var (
 			obj types.Object
 			err error
@@ -130,7 +134,7 @@ func (p *Package) ReadFrom(pkg *types.Package, r io.Reader) error {
 			// object. We just suppress this error and ignore it.
 			continue
 		}
-		p.Objects[obj] = fi.Value.([]analysis.Fact)
+		p.Objects[obj] = objectFacts
 	}
 	return nil
 }
@@ -229,7 +233,8 @@ func (b *Bundle) Add(path string, facts *Package) {
 	b.decoded[path] = facts
 }
 
-// Package looks up the given package in the bundle.
+// Package looks up the given package in the bundle. It returns nil without an
+// error if the package is absent, or an error if its facts cannot be read.
 func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 	// Already decoded?
 	if facts, ok := b.decoded[pkg.Path()]; ok {
@@ -240,7 +245,7 @@ func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 		// Nothing available.
 		//
 		// N.B. some bundles contain only cached packages.
-		return nil, fmt.Errorf("no facts available for package %q", pkg.Path())
+		return nil, nil
 	}
 
 	// Find based on the reader.
@@ -266,7 +271,7 @@ func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 	}
 
 	// Nothing available.
-	return nil, fmt.Errorf("no facts available for package %q", pkg.Path())
+	return nil, nil
 }
 
 func resolveConstants(pkg *types.Package, localPkg *types.Package, localFacts *Package, allFacts *Bundle) (checkconst.Constants, error) {
@@ -278,10 +283,10 @@ func resolveConstants(pkg *types.Package, localPkg *types.Package, localFacts *P
 	} else {
 		importFacts, err := allFacts.Package(pkg)
 		if err != nil {
-			return c, fmt.Errorf("no facts available for package %q", pkg.Path())
+			return c, fmt.Errorf("loading facts for package %q: %w", pkg.Path(), err)
 		}
 		if importFacts == nil {
-			panic("nil importFacts")
+			return c, fmt.Errorf("no facts available for package %q", pkg.Path())
 		}
 		factSource = importFacts
 	}

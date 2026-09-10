@@ -104,6 +104,8 @@ type ioResult struct {
 // +stateify savable
 type AIOContext struct {
 	// requestReady is the notification channel used for all requests.
+	//
+	// +checklocks:mu
 	requestReady chan struct{} `state:"nosave"`
 
 	// mu protects below.
@@ -133,7 +135,7 @@ func (aio *AIOContext) destroy() {
 	aio.checkForDone()
 }
 
-// Preconditions: ctx.mu must be held by caller.
+// +checklocks:aio.mu
 func (aio *AIOContext) checkForDone() {
 	if aio.dead && aio.outstanding == 0 {
 		close(aio.requestReady)

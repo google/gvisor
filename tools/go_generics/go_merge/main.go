@@ -21,9 +21,12 @@ import (
 	"go/ast"
 	"go/format"
 	"go/parser"
+	"go/printer"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"gvisor.dev/gvisor/tools/constraintutil"
@@ -52,13 +55,17 @@ func main() {
 
 	// Load all files.
 	files := make(map[string]*ast.File)
+	comments := make(ast.CommentMap)
 	fset := token.NewFileSet()
 	var name string
-	for _, fname := range flag.Args() {
+	// Match MergePackageFiles' declaration order when assigning token positions.
+	srcs := slices.Sorted(slices.Values(flag.Args()))
+	for _, fname := range srcs {
 		f, err := parser.ParseFile(fset, fname, nil, parser.ParseComments|parser.DeclarationErrors|parser.SpuriousErrors)
 		if err != nil {
 			fatalf("%v\n", err)
 		}
+		maps.Copy(comments, ast.NewCommentMap(fset, f, f.Comments))
 
 		files[fname] = f
 		if name == "" {
@@ -75,13 +82,13 @@ func main() {
 	}
 	f := ast.MergePackageFiles(pkg, ast.FilterUnassociatedComments|ast.FilterFuncDuplicates|ast.FilterImportDuplicates)
 
-	// Create a new declaration slice with all imports at the top, merging any
-	// redundant imports.
+	// Put imports first and remove redundant specs. Keep the original import
+	// declarations so their comments retain valid positions within each file.
 	imports := make(map[string]*ast.ImportSpec)
-	var importNames []string // Keep imports in the original order to get deterministic output.
-	var anonImports []*ast.ImportSpec
+	newDecls := make([]ast.Decl, 0, len(f.Decls))
 	for _, d := range f.Decls {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.IMPORT {
+			specs := g.Specs[:0]
 			for _, s := range g.Specs {
 				i := s.(*ast.ImportSpec)
 				p, _ := strconv.Unquote(i.Path.Value)
@@ -92,7 +99,7 @@ func main() {
 					n = i.Name.Name
 				}
 				if n == "_" {
-					anonImports = append(anonImports, i)
+					specs = append(specs, i)
 				} else {
 					if i2, ok := imports[n]; ok {
 						if first, second := i.Path.Value, i2.Path.Value; first != second {
@@ -100,28 +107,15 @@ func main() {
 						}
 					} else {
 						imports[n] = i
-						importNames = append(importNames, n)
+						specs = append(specs, i)
 					}
 				}
 			}
+			if len(specs) > 0 {
+				g.Specs = specs
+				newDecls = append(newDecls, g)
+			}
 		}
-	}
-	newDecls := make([]ast.Decl, 0, len(f.Decls))
-	if l := len(imports) + len(anonImports); l > 0 {
-		// Non-NoPos Lparen is needed for Go to recognize more than one spec in
-		// ast.GenDecl.Specs.
-		d := &ast.GenDecl{
-			Tok:    token.IMPORT,
-			Lparen: token.NoPos + 1,
-			Specs:  make([]ast.Spec, 0, l),
-		}
-		for _, i := range importNames {
-			d.Specs = append(d.Specs, imports[i])
-		}
-		for _, i := range anonImports {
-			d.Specs = append(d.Specs, i)
-		}
-		newDecls = append(newDecls, d)
 	}
 	for _, d := range f.Decls {
 		if g, ok := d.(*ast.GenDecl); !ok || g.Tok != token.IMPORT {
@@ -136,10 +130,24 @@ func main() {
 		fatalf("Failed to read build constraints: %v\n", err)
 	}
 
-	// Write the output file.
+	// Print each declaration with only its own comments. Imports moved from
+	// later files must not pull earlier declarations' inline annotations forward.
+	// Template instances omit package documentation; build constraints are
+	// reconstructed separately below.
 	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, f); err != nil {
-		fatalf("formatting: %v\n", err)
+	_, _ = fmt.Fprintf(&buf, "package %s\n\n", name)
+	for _, decl := range f.Decls {
+		if err := format.Node(&buf, fset, &printer.CommentedNode{
+			Node:     decl,
+			Comments: comments.Filter(decl).Comments(),
+		}); err != nil {
+			fatalf("formatting: %v\n", err)
+		}
+		_, _ = buf.WriteString("\n\n")
+	}
+	source, err := format.Source(buf.Bytes())
+	if err != nil {
+		fatalf("formatting merged source: %v\n", err)
 	}
 	outf, err := os.OpenFile(*output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -147,7 +155,7 @@ func main() {
 	}
 	defer outf.Close()
 	outf.WriteString(constraintutil.Lines(bcexpr))
-	if _, err := outf.Write(buf.Bytes()); err != nil {
+	if _, err := outf.Write(source); err != nil {
 		fatalf("write: %v\n", err)
 	}
 }

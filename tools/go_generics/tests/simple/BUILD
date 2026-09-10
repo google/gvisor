@@ -4,7 +4,11 @@ package(default_applicable_licenses = ["//:license"])
 
 go_generics_test(
     name = "simple",
-    inputs = ["input.go"],
+    # Reverse source order to exercise comment positions across merged files.
+    inputs = [
+        "second.go",
+        "input.go",
+    ],
     output = "output.go",
     suffix = "New",
     types = {
@@ -16,4 +20,5 @@ go_generics_test(
 glaze_ignore = [
     "input.go",
     "output.go",
+    "second.go",
 ]
