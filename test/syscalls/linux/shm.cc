@@ -21,6 +21,7 @@
 
 #include "gmock/gmock.h"
 #include "absl/time/clock.h"
+#include "test/util/capability_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
@@ -537,6 +538,21 @@ TEST(ShmTest, MprotectWriteOnWritableSegmentSucceeds) {
   EXPECT_EQ(addr[0], 'y');
 
   ASSERT_NO_ERRNO(Shmdt(addr));
+}
+
+TEST(ShmTest, RmidPermissionCheck) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
+      Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0600));
+
+  auto child = [&] {
+    TEST_CHECK_SUCCESS(syscall(SYS_setuid, 1000));
+    TEST_CHECK_ERRNO(Shmctl<void>(shm.id(), IPC_RMID, nullptr), EPERM);
+    return 0;
+  };
+
+  EXPECT_THAT(InForkedProcess(child), IsPosixErrorOkAndHolds(0));
 }
 
 }  // namespace

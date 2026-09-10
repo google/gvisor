@@ -651,13 +651,18 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 // destroyed once it has no references. MarkDestroyed may be called multiple
 // times, and is safe to call after a segment has already been destroyed. See
 // shmctl(IPC_RMID).
-func (s *Shm) MarkDestroyed(ctx context.Context) {
+func (s *Shm) MarkDestroyed(ctx context.Context) error {
+	creds := auth.CredentialsFromContext(ctx)
+	if !s.obj.CheckOwnership(creds) {
+		return linuxerr.EPERM
+	}
+
 	s.registry.dissociateKey(s)
 
 	s.mu.Lock()
 	if s.pendingDestruction {
 		s.mu.Unlock()
-		return
+		return nil
 	}
 	s.pendingDestruction = true
 	s.mu.Unlock()
@@ -668,4 +673,5 @@ func (s *Shm) MarkDestroyed(ctx context.Context) {
 	// N.B. This cannot be the final DecRef, as the caller also
 	// holds a reference.
 	s.DecRef(ctx)
+	return nil
 }

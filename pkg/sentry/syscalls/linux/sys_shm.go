@@ -145,7 +145,9 @@ func Shmctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, nil, err
 
 	case linux.IPC_RMID:
-		segment.MarkDestroyed(t)
+		if err := segment.MarkDestroyed(t); err != nil {
+			return 0, nil, err
+		}
 		return 0, nil, nil
 
 	case linux.SHM_LOCK, linux.SHM_UNLOCK:
