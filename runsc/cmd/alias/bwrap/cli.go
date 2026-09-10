@@ -53,6 +53,11 @@ const (
 	flagUnshareCgroup = "unshare-cgroup"
 	flagUnshareAll    = "unshare-all"
 	flagShareNet      = "share-net"
+	flagCapDrop       = "cap-drop"
+	flagCapAdd        = "cap-add"
+	flagNewSession    = "new-session"
+	flagDieWithParent = "die-with-parent"
+	flagArgv0         = "argv0"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -77,6 +82,11 @@ type Cli struct {
 	unshareAll    bool
 	hostname      string
 	proc          string
+	capDrop       string
+	capAdd        string
+	newSession    bool
+	dieWithParent bool
+	argv0         string
 }
 
 // Name implements subcommands.Command.Name.
@@ -115,6 +125,11 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.proc, flagProc, "", "Mount new procfs on DEST")
 	f.BoolVar(&c.unshareCgroup, flagUnshareCgroup, false, "Create new cgroup namespace")
 	f.BoolVar(&c.unshareAll, flagUnshareAll, false, "Unshare every namespace we support by default")
+	f.StringVar(&c.capDrop, flagCapDrop, "", "Drop capabilities when running as privileged user")
+	f.StringVar(&c.capAdd, flagCapAdd, "", "Add capabilities when running as privileged user")
+	f.BoolVar(&c.newSession, flagNewSession, false, "Create a new terminal session")
+	f.BoolVar(&c.dieWithParent, flagDieWithParent, false, "Kills with SIGKILL child process (COMMAND) when runsc or runsc's parent dies")
+	f.StringVar(&c.argv0, flagArgv0, "", "Set argv[0] to VALUE before running the program")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -186,12 +201,18 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseUserns(bwrapArgs, i)
 		case flagHostname:
 			i, err = cfg.parseHostname(bwrapArgs, i)
-		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS, flagUnshareCgroup:
+		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS, flagUnshareCgroup, flagNewSession, flagDieWithParent:
 			i, err = cfg.parseNoopZeroArg(bwrapArgs, i)
 		case flagProc:
 			i, err = cfg.parseProc(bwrapArgs, i)
 		case flagUnshareAll:
 			i, err = cfg.parseUnshareAll(bwrapArgs, i)
+		case flagCapDrop:
+			i, err = cfg.parseCapDrop(bwrapArgs, i)
+		case flagCapAdd:
+			i, err = cfg.parseCapAdd(bwrapArgs, i)
+		case flagArgv0:
+			i, err = cfg.parseArgv0(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -383,8 +404,11 @@ func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
 }
 
 // parseNoopZeroArg parses flags that are treated as no-ops.
-// gVisor's Sentry kernel inherently virtualizes and isolates IPC, PID, and UTS
-// namespaces by default. These flags are parsed solely for CLI compatibility
+//
+// Some flags (e.g. IPC, PID, UTS) are inherently isolated by Sentry by default.
+// Others (e.g. --new-session, --die-with-parent) represent process/session lifecycle
+// semantics managed by the host and sandboxexec (which cleans up via Close()).
+// These flags are accepted for bubblewrap CLI compatibility.
 func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
 	return i + 1, nil
 }
@@ -399,4 +423,32 @@ func (c *bwrapConfig) parseUnshareAll(args []string, i int) (int, error) {
 	c.UnshareUser = true
 	c.UnshareNet = true
 	return i + 1, nil
+}
+
+func (c *bwrapConfig) parseCapDrop(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagCapDrop)
+	}
+	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpDrop, Cap: args[i+1]})
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseCapAdd(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("--%s takes 1 argument", flagCapAdd)
+	}
+	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpAdd, Cap: args[i+1]})
+	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseArgv0(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes one argument", flagArgv0)
+	}
+	if c.hasArgv0 {
+		return i, fmt.Errorf("bwrap: --%s used multiple times", flagArgv0)
+	}
+	c.Argv0 = args[i+1]
+	c.hasArgv0 = true
+	return i + 2, nil
 }

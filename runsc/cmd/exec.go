@@ -65,6 +65,8 @@ type Exec struct {
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int
+
+	argv0 string
 }
 
 // Name implements subcommands.Command.Name.
@@ -110,6 +112,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.Var(&ex.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	f.IntVar(&ex.execFD, "exec-fd", -1, "host file descriptor used for program execution")
+	f.StringVar(&ex.argv0, "argv0", "", "override argv[0] of the command")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -378,7 +381,17 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 		kgid = ex.user.kgid
 	}
 
+	execPath := ""
+	if ex.argv0 != "" {
+		if len(argv) == 0 {
+			return nil, fmt.Errorf("command is required")
+		}
+		execPath = argv[0]                             // execPath = argv[0]
+		argv = append([]string{ex.argv0}, argv[1:]...) // argv[0] = opt_argv0
+	}
+
 	return &control.ExecArgs{
+		Filename:         execPath,
 		Argv:             argv,
 		Envv:             envv,
 		WorkingDirectory: cwd,

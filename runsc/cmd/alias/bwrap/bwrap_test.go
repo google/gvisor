@@ -436,6 +436,26 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "NewSession",
+			args: []string{"--new-session", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "DieWithParent",
+			args: []string{"--die-with-parent", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
 			name: "ValidHostname",
 			args: []string{"--hostname", "test-host", "bash"},
 			wantCfg: &bwrapConfig{
@@ -490,6 +510,65 @@ func TestParseFlags(t *testing.T) {
 					{Type: sandbox.MountTypeProc, Destination: "/proc2"},
 				},
 			},
+		},
+		{
+			name: "CapDrop",
+			args: []string{"--cap-drop", "all", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				CapOps: []*CapOp{
+					{Type: CapOpDrop, Cap: "all"},
+				},
+			},
+		},
+		{
+			name: "CapAddAndDrop",
+			args: []string{"--cap-drop", "all", "--cap-add", "net_admin", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				CapOps: []*CapOp{
+					{Type: CapOpDrop, Cap: "all"},
+					{Type: CapOpAdd, Cap: "net_admin"},
+				},
+			},
+		},
+		{
+			name:        "MissingCapAddArg",
+			args:        []string{"--cap-add"},
+			errContains: "--cap-add takes 1 argument",
+		},
+		{
+			name:        "MissingCapDropArg",
+			args:        []string{"--cap-drop"},
+			errContains: "--cap-drop takes 1 argument",
+		},
+		{
+			name: "Argv0",
+			args: []string{"--argv0", "custom-sh", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:      os.Environ(),
+				UID:      -1,
+				GID:      -1,
+				Argv0:    "custom-sh",
+				hasArgv0: true,
+				Args:     []string{"bash"},
+			},
+		},
+		{
+			name:        "MissingArgv0Arg",
+			args:        []string{"--argv0"},
+			errContains: "--argv0 takes one argument",
+		},
+		{
+			name:        "DuplicateArgv0",
+			args:        []string{"--argv0", "foo", "--argv0", "bar", "bash"},
+			errContains: "--argv0 used multiple times",
 		},
 	}
 

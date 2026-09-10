@@ -630,6 +630,7 @@ type ExecOption func(*execOptions)
 // execOptions holds the configuration for one Exec call.
 type execOptions struct {
 	args         []string
+	argv0        string
 	stdin        io.Reader
 	stdout       io.Writer
 	stderr       io.Writer
@@ -649,6 +650,13 @@ func WithExecStdio(stdin io.Reader, stdout, stderr io.Writer) ExecOption {
 func WithExecSignalRelay() ExecOption {
 	return func(o *execOptions) {
 		o.relaySignals = true
+	}
+}
+
+// WithExecArgv0 sets a custom argv[0] for the executed process.
+func WithExecArgv0(argv0 string) ExecOption {
+	return func(o *execOptions) {
+		o.argv0 = argv0
 	}
 }
 
@@ -690,6 +698,9 @@ func (s *Sandbox) Exec(ctx context.Context, argv []string, opts ...ExecOption) (
 		pidFile = filepath.Join(s.bundleDir, "exec-"+newID()+".pid")
 		defer os.Remove(pidFile)
 		args = append(args, "--internal-pid-file", pidFile)
+	}
+	if options.argv0 != "" {
+		args = append(args, "--argv0", options.argv0)
 	}
 	args = append(append(args, s.id), options.args...)
 	cmd := exec.CommandContext(ctx, s.runscPath, args...)
