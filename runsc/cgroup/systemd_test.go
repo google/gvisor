@@ -18,6 +18,8 @@ package cgroup
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	systemdDbus "github.com/coreos/go-systemd/v22/dbus"
@@ -81,6 +83,209 @@ func TestExpandSlice(t *testing.T) {
 	expanded := expandSlice(original)
 	if expanded != want {
 		t.Errorf("expandSlice(%q) = %q, want %q", original, expanded, want)
+	}
+}
+
+func TestTranslateUID(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		uid    int
+		uidMap string
+		want   int
+	}{
+		{
+			name:   "initial user namespace",
+			uid:    1000,
+			uidMap: "         0          0 4294967295\n",
+			want:   1000,
+		},
+		{
+			// Rootless container runtimes map the unprivileged caller to UID 0, so
+			// the UID visible to runsc says nothing about its privileges.
+			name:   "caller mapped to root",
+			uid:    0,
+			uidMap: "         0       1000          1\n         1     100000      65536\n",
+			want:   1000,
+		},
+		{
+			name:   "offset within range",
+			uid:    5,
+			uidMap: "         0       1000          1\n         1     100000      65536\n",
+			want:   100004,
+		},
+		{
+			name:   "unmapped",
+			uid:    99999,
+			uidMap: "         0       1000          1\n",
+			want:   99999,
+		},
+		{
+			name:   "malformed",
+			uid:    7,
+			uidMap: "this is not a uid map\n",
+			want:   7,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "uid_map")
+			if err := os.WriteFile(path, []byte(tc.uidMap), 0644); err != nil {
+				t.Fatalf("os.WriteFile(%q): %v", path, err)
+			}
+			if got := translateUID(tc.uid, path); got != tc.want {
+				t.Errorf("translateUID(%d, %q) = %d, want %d", tc.uid, path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTranslateUIDMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "does-not-exist")
+	if got := translateUID(1000, path); got != 1000 {
+		t.Errorf("translateUID(1000, %q) = %d, want 1000", path, got)
+	}
+}
+
+func TestUserBusAddress(t *testing.T) {
+	t.Run("from environment", func(t *testing.T) {
+		const want = "unix:path=/run/user/1000/bus"
+		t.Setenv("DBUS_SESSION_BUS_ADDRESS", want)
+		t.Setenv("XDG_RUNTIME_DIR", "")
+		got, err := userBusAddress()
+		if err != nil {
+			t.Fatalf("userBusAddress() failed: %v", err)
+		}
+		if got != want {
+			t.Errorf("userBusAddress() = %q, want %q", got, want)
+		}
+	})
+
+	// Container runtimes do not always propagate DBUS_SESSION_BUS_ADDRESS, so the
+	// well-known path under XDG_RUNTIME_DIR must also be found.
+	t.Run("from XDG_RUNTIME_DIR", func(t *testing.T) {
+		dir := t.TempDir()
+		busPath := filepath.Join(dir, "bus")
+		if err := os.WriteFile(busPath, nil, 0644); err != nil {
+			t.Fatalf("os.WriteFile(%q): %v", busPath, err)
+		}
+		t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+		t.Setenv("XDG_RUNTIME_DIR", dir)
+		got, err := userBusAddress()
+		if err != nil {
+			t.Fatalf("userBusAddress() failed: %v", err)
+		}
+		if want := "unix:path=" + dbus.EscapeBusAddressValue(busPath); got != want {
+			t.Errorf("userBusAddress() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+		t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+		if got, err := userBusAddress(); err == nil {
+			t.Errorf("userBusAddress() = %q, want error", got)
+		}
+	})
+}
+
+func TestMakePath(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cg   cgroupSystemd
+		want string
+	}{
+		{
+			name: "system instance",
+			cg: cgroupSystemd{
+				Name:        "123",
+				Parent:      "system.slice",
+				ScopePrefix: "runsc",
+				cgroupV2:    cgroupV2{Mountpoint: "/sys/fs/cgroup"},
+			},
+			want: "/sys/fs/cgroup/system.slice/runsc-123.scope",
+		},
+		{
+			// Units managed by a per-user systemd instance are nested under that
+			// instance's own cgroup.
+			name: "user instance",
+			cg: cgroupSystemd{
+				Name:        "123",
+				Parent:      "user.slice",
+				ScopePrefix: "libpod",
+				Rootless:    true,
+				ManagerCG:   "/user.slice/user-1000.slice/user@1000.service",
+				cgroupV2:    cgroupV2{Mountpoint: "/sys/fs/cgroup"},
+			},
+			want: "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/libpod-123.scope",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cg.MakePath(""); got != tc.want {
+				t.Errorf("MakePath() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckControllers(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		controllers string
+		requested   []string
+		wantErr     bool
+	}{
+		{
+			name:        "nothing requested",
+			controllers: "cpu memory\n",
+			requested:   nil,
+		},
+		{
+			name:        "all available",
+			controllers: "cpuset cpu io memory pids\n",
+			requested:   []string{"cpu", "memory"},
+		},
+		{
+			// systemd accepts properties for controllers it was not delegated and
+			// silently drops them, so this must be caught here.
+			name:        "requested but not delegated",
+			controllers: "cpuset cpu memory pids\n",
+			requested:   []string{"cpu", "io"},
+			wantErr:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cg := cgroupSystemd{
+				Name:            "123",
+				Parent:          "test.slice",
+				ScopePrefix:     "runsc",
+				propControllers: tc.requested,
+				cgroupV2:        cgroupV2{Mountpoint: t.TempDir()},
+			}
+			path := cg.MakePath("")
+			if err := os.MkdirAll(path, 0755); err != nil {
+				t.Fatalf("os.MkdirAll(%q): %v", path, err)
+			}
+			ctrlFile := filepath.Join(path, controllersFile)
+			if err := os.WriteFile(ctrlFile, []byte(tc.controllers), 0644); err != nil {
+				t.Fatalf("os.WriteFile(%q): %v", ctrlFile, err)
+			}
+			err := cg.checkControllers()
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("checkControllers() error = %v, wantErr = %t", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckControllersUnreadable(t *testing.T) {
+	cg := cgroupSystemd{
+		Name:            "123",
+		Parent:          "test.slice",
+		ScopePrefix:     "runsc",
+		propControllers: []string{"cpu"},
+		cgroupV2:        cgroupV2{Mountpoint: t.TempDir()},
+	}
+	if err := cg.checkControllers(); err == nil {
+		t.Error("checkControllers() = nil, want error when cgroup.controllers is missing")
 	}
 }
 
@@ -237,7 +442,9 @@ func TestInstall(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cg := cgroupSystemd{Name: "123", Parent: "parent.slice"}
+			// Rootless is set explicitly because the expected properties and the
+			// dial error below describe the system instance.
+			cg := cgroupSystemd{Name: "123", Parent: "parent.slice", Rootless: false}
 			cg.Controllers = mandatoryControllers
 			err := cg.Install(tc.res)
 			if !errors.Is(err, tc.err) {

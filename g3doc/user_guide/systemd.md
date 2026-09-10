@@ -56,9 +56,15 @@ The resource limits of the systemd unit are set by runsc by translating the
 runtime spec resources to systemd unit properties.
 
 Such translation is by no means complete, as there are some cgroup properties
-that can not be set via systemd. Therefore, runsc systemd cgroup driver is
-backed by fs driver (in other words, cgroup limits are first set via systemd
-unit properties, and when by writing to cgroupfs files).
+that can not be set via systemd. Resources with no systemd equivalent are
+currently not applied; unlike runc, the runsc systemd cgroup driver does not
+fall back to writing them to cgroupfs.
+
+Note that systemd accepts properties for controllers that have not been
+delegated to it, and silently does not apply them. When runsc runs
+unprivileged, controllers other than those delegated to the per-user systemd
+instance are therefore unavailable. See `systemd.resource-control(5)` and the
+`Delegate=` directive in `systemd.exec(5)`.
 
 The set of runtime spec resources which is translated by runsc to systemd unit
 properties depends on kernel cgroup version being used (v1 or v2), and on the
