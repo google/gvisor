@@ -260,6 +260,16 @@ type filesystem struct {
 	// using atomic memory operations.
 	lastIno atomicbitops.Uint64
 
+	// pinnedDentries contains dentries pinned by PinInodeIdentity because a
+	// Landlock rule refers to their inode identity. Each pinned dentry holds
+	// one reference, keeping it (and hence its sentry inode number) alive
+	// across dentry cache eviction and checkpoint/restore, analogously to how
+	// Linux's landlock_object holds an inode reference. Pins on deleted
+	// dentries are dropped in PrepareSave; remaining pins are dropped in
+	// Release. pinnedDentries is protected by pinnedDentriesMu.
+	pinnedDentriesMu sync.Mutex `state:"nosave"`
+	pinnedDentries   map[*dentry]struct{}
+
 	// savedDentryRW records open read/write handles during save/restore.
 	savedDentryRW map[*dentry]savedDentryRW
 
@@ -811,6 +821,16 @@ func (fs *filesystem) Release(ctx context.Context) {
 	// destructors. fs.root may be nil if creating the client or initializing the
 	// root dentry failed in GetFilesystem.
 	if refs.GetLeakMode() != refs.NoLeakChecking && fs.root != nil {
+		// Drop Landlock identity pins first: each holds a dentry reference
+		// that would otherwise be reported as a leak.
+		fs.pinnedDentriesMu.Lock()
+		pinned := fs.pinnedDentries
+		fs.pinnedDentries = nil
+		fs.pinnedDentriesMu.Unlock()
+		for d := range pinned {
+			d.DecRef(ctx)
+		}
+
 		fs.renameMu.Lock()
 		fs.root.releaseExtraRefsRecursiveLocked(ctx)
 		fs.evictAllCachedDentriesLocked(ctx)
@@ -1701,6 +1721,54 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
 
+// InodeIdentity implements vfs.DentryImpl.InodeIdentity.
+//
+// inode.ino is used rather than inode.inoKey because it is unique for synthetic
+// inodes, which have no inoKey, while still being shared between dentries that
+// are hard links to the same remote file: fs.inoFromKey() assigns one ino per
+// inoKey.
+func (d *dentry) InodeIdentity() vfs.InodeIdentity {
+	return vfs.MakeInodeIdentity(&d.inode.fs.vfsfs, d.inode.ino)
+}
+
+// PinInodeIdentity implements the vfs identity pinner interface. It keeps d
+// alive so that d's sentry inode number, to which a Landlock rule is now
+// tied, is not lost to dentry cache eviction (in particular the eviction of
+// all cached dentries in PrepareSave) and reallocated to a different file
+// after a lookup miss.
+func (d *dentry) PinInodeIdentity() {
+	fs := d.inode.fs
+	fs.pinnedDentriesMu.Lock()
+	defer fs.pinnedDentriesMu.Unlock()
+	if _, ok := fs.pinnedDentries[d]; ok {
+		return
+	}
+	if fs.pinnedDentries == nil {
+		fs.pinnedDentries = make(map[*dentry]struct{})
+	}
+	d.IncRef()
+	fs.pinnedDentries[d] = struct{}{}
+}
+
+// releaseDeadPinnedDentries drops pins on deleted dentries. Their rules can
+// never match a path walk again (releaseInoOnDeletion has already retired
+// the sentry inode number), so there is no reason to keep them alive, save
+// them, or recreate their files on restore.
+func (fs *filesystem) releaseDeadPinnedDentries(ctx context.Context) {
+	fs.pinnedDentriesMu.Lock()
+	var dead []*dentry
+	for d := range fs.pinnedDentries {
+		if d.vfsd.IsDead() {
+			delete(fs.pinnedDentries, d)
+			dead = append(dead, d)
+		}
+	}
+	fs.pinnedDentriesMu.Unlock()
+	for _, d := range dead {
+		d.DecRef(ctx)
+	}
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 //
 // If no watches are left on this dentry and it has no references, cache it.
@@ -1984,8 +2052,12 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	d.inode.refs.DecRef(func() {
 		destroyInode = true
 		if !d.isDir() {
-			// Only non-directory inodes are cached in inodeByKey.
-			delete(d.inode.fs.inodeByKey, d.inode.inoKey)
+			// Only non-directory inodes are cached in inodeByKey. The entry is
+			// compared first: releaseInoOnDeletion() may already have retired
+			// this inode's key, and a new file may hold it by now.
+			if cached, ok := d.inode.fs.inodeByKey[d.inode.inoKey]; ok && cached == d.inode {
+				delete(d.inode.fs.inodeByKey, d.inode.inoKey)
+			}
 		}
 	})
 	d.inode.fs.inodeMu.Unlock()
@@ -2013,6 +2085,57 @@ func (d *dentry) isDeleted() bool {
 
 func (d *dentry) setDeleted() {
 	d.deleted.Store(1)
+}
+
+// releaseInoOnDeletion retires the sentry inode number minted for d's file
+// once no link to the file remains, by dropping the file's host inode key
+// from fs.inoByKey and fs.inodeByKey. The host is free to hand the key out
+// again for a file it creates later; without this, that file would inherit
+// the deleted file's inode number, and with it the reach of any Landlock
+// rule keyed by the deleted file's identity, where a rule on Linux dies with
+// the inode it holds. (It would also inherit a misleading st_ino, which
+// pre-dates Landlock and is harmless by comparison.)
+//
+// The caller must have called d.setDeleted() and, for a removed name,
+// d.decLinks() first: a regular file reached by other hard links keeps its
+// number, since the surviving links still name the same file. A remote
+// filesystem that does not report link counts leaves nlink untracked at
+// zero, so its files retire their number on the first unlink; that can only
+// change the st_ino a surviving link reports after its dentry is evicted,
+// which is already not preserved across checkpoint/restore.
+//
+// Deletions the sentry never observes — a file removed on the host behind an
+// InteropModeShared mount — cannot be handled here and remain the documented
+// residual exposure; see pkg/sentry/vfs/g3doc/landlock.md.
+func (d *dentry) releaseInoOnDeletion() {
+	if d.inode.isSynthetic() {
+		// Synthetic inodes take their numbers from fs.nextIno() directly and
+		// are never in the maps.
+		return
+	}
+	if !d.isDir() && d.inode.nlink.Load() > 0 {
+		// Other hard links remain. Directories have no hard links, and their
+		// nlink counts subdirectories, so they retire unconditionally.
+		return
+	}
+	fs := d.inode.fs
+	key := d.inode.inoKey
+	fs.inoMu.Lock()
+	if ino, ok := fs.inoByKey[key]; ok && ino == d.inode.ino {
+		delete(fs.inoByKey, key)
+	}
+	fs.inoMu.Unlock()
+	if !d.isDir() {
+		// Only non-directory inodes are cached in inodeByKey. Remove the
+		// deleted inode so a later file that reuses the key cannot share it;
+		// the entry is compared first because a new file may already have
+		// claimed the key.
+		fs.inodeMu.Lock()
+		if cached, ok := fs.inodeByKey[key]; ok && cached == d.inode {
+			delete(fs.inodeByKey, key)
+		}
+		fs.inodeMu.Unlock()
+	}
 }
 
 func (d *dentry) listXattr(ctx context.Context, size uint64) ([]string, error) {

@@ -723,6 +723,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd) // +checklocksforce: see above.
 		child.setDeleted()
 		child.decLinks()
+		child.releaseInoOnDeletion()
 		// If an extra reference is held on child as described by the comment
 		// for dentry.refs, drop that reference now. We can't race with another
 		// fs.unlinkAt() or invalidation since parent.opMu has been locked for
@@ -1666,6 +1667,11 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	if replaced != nil {
 		replaced.setDeleted()
+		// The rename removed replaced's name, exactly as an unlink would
+		// have: its link count drops, and with the last link gone its
+		// inode number is retired so a later file cannot inherit it.
+		replaced.decLinks()
+		replaced.releaseInoOnDeletion()
 		// If an extra reference is held on replaced as described by the
 		// comment for dentry.refs, drop that reference now. We can't race with
 		// fs.unlinkAt() or invalidation since fs.renameMu has been locked for
@@ -1936,6 +1942,11 @@ func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
 	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+}
+
+// WalkAncestors implements vfs.FilesystemImpl.WalkAncestors.
+func (fs *filesystem) WalkAncestors(ctx context.Context, vd vfs.VirtualDentry, fn func(*vfs.Dentry) bool) {
+	genericWalkAncestors(fs, vd.Mount(), vd.Dentry().Impl().(*dentry), fn)
 }
 
 // IsDescendant implements vfs.FilesystemImpl.IsDescendant.

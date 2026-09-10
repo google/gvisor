@@ -130,6 +130,7 @@ proto_library(
 go_library(
     name = "vfs",
     srcs = [
+        "ancestry.go",
         "anonfs.go",
         "context.go",
         "debug_impl.go",

@@ -1342,10 +1342,29 @@ func (vfs *VirtualFilesystem) getMountpoint(ctx context.Context, creds *auth.Cre
 // mnt. It takes a reference on the returned VirtualDentry. If no such mount
 // point exists (i.e. mnt is a root mount), getMountpointAt returns (nil, nil).
 //
+// getMountpointAt also takes and drops references on intermediate mount points
+// and mounts while it walks a stack of mounts. If toDecRef is non-nil, those
+// references are appended to *toDecRef instead of dropped, for a caller that
+// holds locks under which it cannot drop them: dropping the last reference to
+// a mount point can release the filesystem it is on, which acquires that
+// filesystem's own locks, and a racing umount can make any reference taken
+// here the last one. Such a caller must drop them once it holds no locks.
+// References taken by an attempt that loses the race with a mount table
+// change and retries are deferred the same way rather than dropped, for the
+// same reason, so *toDecRef grows with each retry; the growth lasts only
+// until the caller drains it.
+//
 // Preconditions:
 //   - References are held on mnt and root.
 //   - vfsroot is not (mnt, mnt.root).
-func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry) VirtualDentry {
+func (vfs *VirtualFilesystem) getMountpointAt(ctx context.Context, mnt *Mount, vfsroot VirtualDentry, toDecRef *[]refs.RefCounter) VirtualDentry {
+	decRef := func(rc refs.RefCounter) {
+		if toDecRef != nil {
+			*toDecRef = append(*toDecRef, rc)
+		} else {
+			rc.DecRef(ctx)
+		}
+	}
 	// The first mount is special-cased:
 	//
 	//	- The caller must have already checked mnt against vfsroot.
@@ -1369,12 +1388,12 @@ retryFirst:
 	if !point.TryIncRef() {
 		// Since Mount holds a reference on Mount.key.point, this can only
 		// happen due to a racing change to Mount.key.
-		parent.DecRef(ctx)
+		decRef(parent)
 		goto retryFirst
 	}
 	if !vfs.mounts.seq.ReadOk(epoch) {
-		point.DecRef(ctx)
-		parent.DecRef(ctx)
+		decRef(point)
+		decRef(parent)
 		goto retryFirst
 	}
 	mnt = parent
@@ -1396,16 +1415,16 @@ retryFirst:
 		if !point.TryIncRef() {
 			// Since Mount holds a reference on Mount.key.point, this can
 			// only happen due to a racing change to Mount.key.
-			parent.DecRef(ctx)
+			decRef(parent)
 			goto retryNotFirst
 		}
 		if !vfs.mounts.seq.ReadOk(epoch) {
-			point.DecRef(ctx)
-			parent.DecRef(ctx)
+			decRef(point)
+			decRef(parent)
 			goto retryNotFirst
 		}
-		d.DecRef(ctx)
-		mnt.DecRef(ctx)
+		decRef(d)
+		decRef(mnt)
 		mnt = parent
 		d = point
 	}

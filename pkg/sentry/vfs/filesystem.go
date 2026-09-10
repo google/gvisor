@@ -43,6 +43,11 @@ type Filesystem struct {
 	// fsType is the FilesystemType of this Filesystem.
 	fsType FilesystemType
 
+	// id uniquely identifies this Filesystem for as long as the sentry runs.
+	// Unlike a device number, it is never reused after the Filesystem is
+	// destroyed. See InodeIdentity. id is immutable.
+	id uint64
+
 	// impl is the FilesystemImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in Dentry.
 	impl FilesystemImpl
@@ -53,6 +58,7 @@ func (fs *Filesystem) Init(vfsObj *VirtualFilesystem, fsType FilesystemType, imp
 	fs.InitRefs()
 	fs.vfs = vfsObj
 	fs.fsType = fsType
+	fs.id = vfsObj.lastFilesystemID.Add(1)
 	fs.impl = impl
 	vfsObj.filesystemsMu.Lock()
 	vfsObj.filesystems[fs] = struct{}{}
@@ -533,6 +539,23 @@ type FilesystemImpl interface {
 	//
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
+
+	// WalkAncestors calls fn on vd's Dentry and then on each of its ancestors
+	// within this filesystem, stopping when fn returns false, when
+	// vd.Mount().Root() is reached (which is itself passed to fn), or when a
+	// Dentry with no parent is reached.
+	//
+	// Dentries passed to fn are not referenced and are only valid for the
+	// duration of the call. Implementations may hold filesystem locks across the
+	// walk, so fn must not reenter the filesystem.
+	//
+	// Filesystems for which Dentries do not have meaningful paths should call fn
+	// on vd's Dentry alone.
+	//
+	// Most implementations can use genericfstree.WalkAncestors.
+	//
+	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
+	WalkAncestors(ctx context.Context, vd VirtualDentry, fn func(d *Dentry) bool)
 
 	// IsDescendant returns true if vd is a descendant of vfsroot or if vd and
 	// vfsroot are the same dentry.

@@ -50,6 +50,11 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 		return fmt.Errorf("gofer.filesystem with no UniqueID cannot be saved")
 	}
 
+	// Drop Landlock identity pins on deleted dentries so that they are not
+	// saved (and their files not recreated on restore) solely on behalf of
+	// rules that can never match again.
+	fs.releaseDeadPinnedDentries(ctx)
+
 	// Purge cached dentries, which may not be reopenable after restore due to
 	// permission changes.
 	fs.renameMu.Lock()
