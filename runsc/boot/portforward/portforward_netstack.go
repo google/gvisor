@@ -106,6 +106,8 @@ func (n *netstackConn) Read(ctx context.Context, buf []byte, cancel <-chan struc
 			e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventIn | waiter.EventHUp | waiter.EventErr)
 			n.wq.EventRegister(&e)
 			defer n.wq.EventUnregister(&e)
+			res, tcpErr = n.ep.Read(b, tcpip.ReadOptions{})
+			continue
 		}
 		select {
 		case <-ch:
@@ -134,6 +136,8 @@ func (n *netstackConn) Write(ctx context.Context, buf []byte, cancel <-chan stru
 			e, ch = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventIn | waiter.EventHUp | waiter.EventErr)
 			n.wq.EventRegister(&e)
 			defer n.wq.EventUnregister(&e)
+			res, tcpErr = n.ep.Write(&b, tcpip.WriteOptions{Atomic: true})
+			continue
 		}
 		select {
 		case <-ch:
