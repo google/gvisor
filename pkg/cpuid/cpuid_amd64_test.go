@@ -18,6 +18,8 @@
 package cpuid
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -108,5 +110,52 @@ func TestRemove(t *testing.T) {
 	testFeatures.Function.(Static).Remove(X86FeatureRDRAND)
 	if !testFeatures.HasFeature(X86FeatureFPU) {
 		t.Errorf("Remove failed, got %q want %q", testFeatures.FlagString(), justFPU.FlagString())
+	}
+}
+
+func TestWriteCPUInfoFamilyAndModel(t *testing.T) {
+	testCases := []struct {
+		name       string
+		eax        uint32
+		wantFamily string
+		wantModel  string
+	}{
+		{
+			// AMD EPYC 7R13 (Zen 3):
+			// Base family = 0xf, Extended family = 0x0a -> cpu family = 25 (0x19).
+			// Base model = 0x1, Extended model = 0x0 -> model = 1.
+			// (0x0a << 20) | (0x0 << 16) | (0xf << 8) | (0x1 << 4) | 0x1 = 0x00a00f11
+			name:       "AMD EPYC Zen 3",
+			eax:        0x00a00f11,
+			wantFamily: "cpu family\t: 25\n",
+			wantModel:  "model\t\t: 1\n",
+		},
+		{
+			// Intel Skylake:
+			// Base family = 6, Extended family = 0 -> cpu family = 6.
+			// Base model = 5, Extended model = 5 -> model = 85 (0x55).
+			// (0x0 << 20) | (0x5 << 16) | (0x6 << 8) | (0x5 << 4) | 0x4 = 0x00050654
+			name:       "Intel Skylake",
+			eax:        0x00050654,
+			wantFamily: "cpu family\t: 6\n",
+			wantModel:  "model\t\t: 85\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := make(Static)
+			s[In{Eax: uint32(featureInfo)}] = Out{Eax: tc.eax}
+			fs := FeatureSet{Function: s}
+			var buf bytes.Buffer
+			fs.WriteCPUInfoTo(0, 1, &buf)
+			got := buf.String()
+			if !strings.Contains(got, tc.wantFamily) {
+				t.Errorf("WriteCPUInfoTo() missing %q; got:\n%s", tc.wantFamily, got)
+			}
+			if !strings.Contains(got, tc.wantModel) {
+				t.Errorf("WriteCPUInfoTo() missing %q; got:\n%s", tc.wantModel, got)
+			}
+		})
 	}
 }

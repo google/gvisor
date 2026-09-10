@@ -332,10 +332,18 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	ax, _, _, _ := fs.query(featureInfo)
 	ef, em, _, f, m, _ := signatureSplit(ax)
 	vendor := fs.VendorID()
+	family := uint32(f)
+	if f == 0xf {
+		family += uint32(ef)
+	}
+	model := uint32(m)
+	if f == 0x6 || f == 0xf {
+		model |= uint32(em) << 4
+	}
 	fmt.Fprintf(w, "processor\t: %d\n", cpu)
 	fmt.Fprintf(w, "vendor_id\t: %s\n", string(vendor[:]))
-	fmt.Fprintf(w, "cpu family\t: %d\n", ((ef<<4)&0xff)|f)
-	fmt.Fprintf(w, "model\t\t: %d\n", ((em<<4)&0xff)|m)
+	fmt.Fprintf(w, "cpu family\t: %d\n", family)
+	fmt.Fprintf(w, "model\t\t: %d\n", model)
 	fmt.Fprintf(w, "model name\t: %s\n", "unknown") // Unknown for now.
 	fmt.Fprintf(w, "stepping\t: %s\n", "unknown")   // Unknown for now.
 	fmt.Fprintf(w, "cpu MHz\t\t: %.3f\n", cpuFreqMHz)
