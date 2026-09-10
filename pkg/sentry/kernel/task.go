@@ -364,6 +364,14 @@ type Task struct {
 	// additional synchronization.
 	ptraceTracer atomic.Pointer[Task] `state:".(*Task)"`
 
+	// ptracerCreds is a snapshot of this task's tracer's credentials,
+	// captured when the tracing relationship was established, analogous to
+	// Linux's task_struct::ptracer_cred. It is nil if the task is not being
+	// traced (and may be nil for tasks restored from older saved states).
+	//
+	// ptracerCreds is protected by the TaskSet mutex.
+	ptracerCreds *auth.Credentials
+
 	// ptraceTracees is the set of tasks that this task is ptrace-attached to.
 	//
 	// ptraceTracees is protected by the TaskSet mutex.

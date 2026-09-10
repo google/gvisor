@@ -158,6 +158,12 @@ func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
 		if opts.Flags&linux.O_TRUNC != 0 {
 			return ats | MayRead | MayWrite
 		}
+		if opts.FileExec {
+			// Linux only requires execute permission for execve, see
+			// fs/exec.c:do_open_execat(). Tasks executing non-readable files
+			// are made non-dumpable by the loader.
+			return ats
+		}
 		return ats | MayRead
 	case linux.O_WRONLY:
 		return ats | MayWrite
@@ -294,6 +300,16 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 		return remaining, nil
 	}
 	return size, nil
+}
+
+// XattrReadNeedsFilePermission returns whether getxattr of name requires read
+// permission on the file, per Linux's fs/xattr.c:xattr_permission(): the
+// security.*, system.*, and trusted.* namespaces are exempt from the DAC
+// check; user.* and unrecognized prefixes are not.
+func XattrReadNeedsFilePermission(name string) bool {
+	return !strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) &&
+		!strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) &&
+		!strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX)
 }
 
 // CheckXattrPermissions checks permissions for extended attribute access.

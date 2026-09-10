@@ -105,6 +105,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		// IncRef'd below, once we know that there isn't an error.
 		executable:        mm.executable,
 		dumpability:       atomicbitops.FromInt32(mm.dumpability.Load()),
+		userNS:            mm.userNS,
 		aioManager:        aioManager{contexts: make(map[uint64]*AIOContext)},
 		vdsoSigReturnAddr: mm.vdsoSigReturnAddr,
 	}
