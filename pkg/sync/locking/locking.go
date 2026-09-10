@@ -25,4 +25,8 @@
 // taken before the target one. For each goroutine, we have the list of
 // currently locked mutexes. And finally, all lock methods check that
 // ancestors of currently locked mutexes don't contain the target one.
+//
+// Lockdep bookkeeping may allocate maps and stack traces. Generated mutexes
+// exempt calls to this optional instrumentation from checkescape contracts;
+// the underlying mutex operations and their callers remain checked.
 package locking
