@@ -75,8 +75,42 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 }
 
 // updateSyscallRegs updates registers after finishing sysemu.
-func updateSyscallRegs(regs *arch.Registers) {
-	// No special work is necessary.
+func updateSyscallRegs(regs *arch.Registers, ctxState sysmsg.ContextState) {
+	// The host kernel only rewinds regs.Pc when delivering SIGSYS on the
+	// sighandler path (sysmsg.ContextStateSyscall). If the syscall fastpath
+	// was used (sysmsg.ContextStateSyscallTrap), no host signal was delivered,
+	// so regs.Pc was not rewound and must not be adjusted.
+	if ctxState == sysmsg.ContextStateSyscallTrap {
+		return
+	}
+
+	// In the Linux kernel (arch/arm64/kernel/signal.c:arch_do_signal_or_restart),
+	// if in_syscall(regs) is true and regs[0] matches an internal syscall restart
+	// code, the kernel treats regs[0] as a return value and rewinds regs.Pc by 4
+	// (SyscallWidth) to re-execute the svc instruction.
+	//
+	// Under systrap, seccomp traps the syscall via SIGSYS before the host kernel
+	// executes it. The host kernel's SECCOMP_RET_TRAP path restores regs[0] to
+	// orig_x0 via syscall_rollback(). On the way to delivering SIGSYS,
+	// arch_do_signal_or_restart() misinterprets this first argument as a syscall
+	// return value.
+	//
+	// Because SIGSYS is delivered without SA_RESTART, Linux's get_signal() reverts
+	// the restart decision for -ERESTARTSYS, -ERESTARTNOHAND, and -ERESTART_RESTARTBLOCK,
+	// resetting regs.Pc back to continue_addr. However, for -ERESTARTNOINTR, the
+	// kernel does not revert the restart, leaving regs.Pc pointing at the svc instruction.
+	//
+	// In Linux, regs->regs[0] is assigned to an `int retval` (32-bit signed),
+	// truncating the register before checking for restart codes. Userspace
+	// callers (such as libc wrappers taking a 32-bit argument) may zero-extend
+	// the upper 32 bits into the 64-bit register. Therefore, we must do a
+	// 32-bit comparison to match the kernel's behavior.
+	//
+	// Check if regs[0] matches -ERESTARTNOINTR, and if so, restore the PC to
+	// continue_addr (regs.Pc + 4).
+	if sysno := int32(regs.Regs[8]); sysno >= 0 && int32(regs.Regs[0]) == -int32(ERESTARTNOINTR) {
+		regs.Pc += arch.SyscallWidth
+	}
 }
 
 // syscallReturnValue extracts a sensible return from registers.

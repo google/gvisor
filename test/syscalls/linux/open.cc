@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -666,6 +667,42 @@ TEST_F(OpenTest, TruncateSizeChangeUpdatesTimestamps) {
   EXPECT_TRUE(ts_gt(after3.st_mtim, before3.st_mtim));
   EXPECT_TRUE(ts_gt(after3.st_ctim, before3.st_ctim));
 }
+
+#if defined(__aarch64__)
+// On arm64, if the first argument of a syscall equals one of the kernel's
+// internal restart codes (-513 / `-ERESTARTNOINTR`, etc.), the host kernel's
+// arch_do_signal_or_restart() must not cause the syscall to execute twice.
+// Under POSIX and Linux, openat(dirfd, pathname, ...) ignores dirfd when
+// pathname is an absolute path. This allows passing restart-code arguments in
+// dirfd while performing a real operation. With O_CREAT | O_EXCL, any second
+// execution would fail with EEXIST, verifying single execution without ptrace.
+// Running in a loop also verifies that the syscall fast path (syshandler)
+// handles restart arguments correctly if/when syscall patching is enabled.
+TEST_F(OpenTest, RestartArgumentNotExecutedTwiceLoop) {
+  for (int64_t arg : {-512, -513, -514, -516}) {
+    for (bool use_libc : {false, true}) {
+      for (int i = 0; i < 20; ++i) {
+        const std::string path = NewTempAbsPath();
+        int fd;
+        if (use_libc) {
+          fd = openat(static_cast<int>(arg), path.c_str(),
+                      O_CREAT | O_EXCL | O_RDWR, 0644);
+        } else {
+          fd = syscall(SYS_openat, arg, path.c_str(), O_CREAT | O_EXCL | O_RDWR,
+                       0644);
+        }
+        EXPECT_THAT(fd, SyscallSucceeds())
+            << "for arg " << arg << " (use_libc=" << use_libc << ", iter=" << i
+            << ")";
+        if (fd >= 0) {
+          EXPECT_THAT(close(fd), SyscallSucceeds());
+          EXPECT_THAT(unlink(path.c_str()), SyscallSucceeds());
+        }
+      }
+    }
+  }
+}
+#endif  // defined(__aarch64__)
 
 }  // namespace
 
