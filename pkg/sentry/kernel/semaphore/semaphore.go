@@ -217,9 +217,10 @@ func (r *Registry) Remove(id ipc.ID, creds *auth.Credentials) error {
 	if !found {
 		return linuxerr.EINVAL
 	}
+	if err := r.reg.Remove(id, creds); err != nil {
+		return err
+	}
 	delete(r.indexes, index)
-
-	r.reg.Remove(id, creds)
 
 	return nil
 }
