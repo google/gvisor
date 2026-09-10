@@ -15,17 +15,18 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 
+#include <optional>
+#include <utility>
+#include <vector>
+
 #include "test/syscalls/linux/socket_ip_udp_unbound_external_networking.h"
 
 namespace gvisor {
 namespace testing {
 
-// Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
-// with external networking support.
-class IPv4UDPUnboundExternalNetworkingSocketTest
-    : public IPUDPUnboundExternalNetworkingSocketTest {
+class IPv4UDPUnboundExternalNetworkingSocketTestBase {
  protected:
-  void SetUp() override;
+  void SetUpNetworkInterfaces();
 
   int lo_if_idx() const { return std::get<0>(lo_if_.value()); }
   int eth_if_idx() const { return std::get<0>(eth_if_.value()); }
@@ -38,6 +39,17 @@ class IPv4UDPUnboundExternalNetworkingSocketTest
  private:
   std::optional<std::pair<int, sockaddr_in>> lo_if_, eth_if_;
 };
+
+// Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
+// with external networking support.
+class IPv4UDPUnboundExternalNetworkingSocketTest
+    : public IPUDPUnboundExternalNetworkingSocketTest,
+      protected IPv4UDPUnboundExternalNetworkingSocketTestBase {
+ protected:
+  void SetUp() override;
+};
+
+std::vector<SocketKind> IPv4UDPUnboundExternalNetworkingSocketKinds();
 
 }  // namespace testing
 }  // namespace gvisor
