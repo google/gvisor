@@ -360,10 +360,14 @@ func uint32SliceToInstructions(bytecode32 []uint32) ([]bpf.Instruction, error) {
 	return bpf.ParseBytecode(bytecode)
 }
 
-// Registration outputs Go code that registers this programs in a
-// `map[string]Program` variable named `programsMapVarName` which maps
-// programs names to their `Program` struct.
-// It is used when embedding precompiled programs into a Go library file.
-func (program Program) Registration(indentPrefix, pkgName, programsMapVarName string) string {
-	return fmt.Sprintf("%s%s[%q] = %s\n", indentPrefix, programsMapVarName, program.Name, program.Expr(indentPrefix, pkgName))
+// SwitchCase outputs Go code for a `switch` case in `GetPrecompiled` that
+// lazily constructs this program only when its name is looked up. This avoids
+// eagerly materializing every precompiled program's bytecode at startup, which
+// is expensive when there are hundreds of programs (each sandbox only uses a
+// single one).
+func (program Program) SwitchCase(pkgName string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "\tcase %q:\n", program.Name)
+	fmt.Fprintf(&sb, "\t\treturn %s, true\n", program.Expr("\t\t\t", pkgName))
+	return sb.String()
 }
