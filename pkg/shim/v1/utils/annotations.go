@@ -24,4 +24,19 @@ const (
 	containerTypeSandbox    = "sandbox"
 	// ContainerTypeContainer is the value for container.
 	ContainerTypeContainer = "container"
+
+	// Pod-level resource annotations set by the containerd CRI plugin on the
+	// sandbox (pause) container's OCI config. Because gVisor collapses all
+	// containers in a pod into a single sandbox process, the pod-level limits
+	// carried in these annotations are the only ones that can meaningfully
+	// bound the sandbox's host cgroup. See google/gvisor#13777.
+	//
+	// These match the constants in containerd's pkg/cri/annotations package
+	// (SandboxCPUQuota / SandboxCPUPeriod / SandboxCPUShares / SandboxMem).
+	// They are duplicated here (rather than imported) to avoid a heavy
+	// dependency on containerd internals.
+	SandboxCPUQuotaAnnotation  = "io.kubernetes.cri.sandbox-cpu-quota"
+	SandboxCPUPeriodAnnotation = "io.kubernetes.cri.sandbox-cpu-period"
+	SandboxCPUSharesAnnotation = "io.kubernetes.cri.sandbox-cpu-shares"
+	SandboxMemoryAnnotation    = "io.kubernetes.cri.sandbox-memory"
 )
