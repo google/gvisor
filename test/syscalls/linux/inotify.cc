@@ -2348,6 +2348,97 @@ TEST(Inotify, OneShot) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// The event that fires an IN_ONESHOT watch also removes the watch, while the
+// filesystem is still inside the operation that generated the event. The tests
+// below cover the operations whose notifications used to deadlock the overlay
+// and gofer filesystems when the watched dentry had no other users
+// (github.com/google/gvisor/issues/14680).
+TEST(Inotify, OneShotDirWatchRemovedByMkdir) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir, IN_CREATE | IN_ONESHOT));
+
+  const std::string child = JoinPath(dir, "child");
+  ASSERT_THAT(mkdir(child.c_str(), 0755), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_CREATE | IN_ISDIR, wd, "child"),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, OneShotDirWatchRemovedByRename) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir, IN_MOVE_SELF | IN_ONESHOT));
+
+  const std::string new_dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(rename(dir.c_str(), new_dir.c_str()), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_MOVE_SELF, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, OneShotDirWatchRemovedByRmdir) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir, IN_DELETE_SELF | IN_ONESHOT));
+
+  ASSERT_THAT(rmdir(dir.c_str()), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_DELETE_SELF, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, OneShotFileWatchRemovedByUnlink) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_ATTRIB | IN_ONESHOT));
+
+  file.reset();
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_ATTRIB, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when inotify instances and watch targets are concurrently being
 // destroyed.

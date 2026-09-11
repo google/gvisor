@@ -1701,10 +1701,36 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
 
+// checkCachingListKey is the context key under which withCheckCachingList
+// publishes an operation's list of dentries to check for caching to
+// dentry.OnZeroWatches.
+type checkCachingListKey struct{}
+
+// withCheckCachingList returns ctx carrying ds, the list that the calling
+// operation will pass to renameMuRUnlockAndCheckCaching or
+// renameMuUnlockAndCheckCaching. Use it for Watches.Notify and the
+// vfs.Inotify* helpers while fs.renameMu is held: Notify removes watches the
+// notification expired (IN_ONESHOT) and calls OnZeroWatches on the notifying
+// goroutine, whose checkCachingLocked locks d.vfsd for IsDead() (held by
+// unlinkAt between PrepareDeleteDentry and CommitDeleteDentry) and takes
+// fs.renameMu for writing to destroy a deleted dentry or to evict from a full
+// cache, deadlocking against the caller. OnZeroWatches appends the dentry to
+// ds instead and the caller checks it after the unlock.
+//
+// Preconditions: fs.renameMu must be locked.
+func withCheckCachingList(ctx context.Context, ds **[]*dentry) context.Context {
+	return context.WithValue(ctx, checkCachingListKey{}, ds)
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 //
 // If no watches are left on this dentry and it has no references, cache it.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
+	if ds, ok := ctx.Value(checkCachingListKey{}).(**[]*dentry); ok {
+		// The caller holds fs.renameMu; see withCheckCachingList.
+		*ds = appendDentry(*ds, d)
+		return
+	}
 	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 }
 
