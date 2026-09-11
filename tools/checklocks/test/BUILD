@@ -28,9 +28,12 @@ go_library(
         "rwmutex.go",
         "test.go",
     ],
-    # This ensures that there are no dependencies, since we want to explicitly
-    # control expected failures for analysis.
+    # Disable generated marshal/state sources so they do not add unexpected
+    # diagnostics to this fixture.
     marshal = False,
     stateify = False,
-    deps = ["//tools/checklocks/test/crosspkg"],
+    deps = [
+        "//pkg/atomicbitops",
+        "//tools/checklocks/test/crosspkg",
+    ],
 )

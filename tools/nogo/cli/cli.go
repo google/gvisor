@@ -65,7 +65,7 @@ func closeOutput(w io.Writer) {
 	}
 }
 
-// failure exits with the given failure message.
+// failure prints the given failure message and returns a failure status.
 func failure(fmtStr string, v ...any) subcommands.ExitStatus {
 	fmt.Fprintf(os.Stderr, fmtStr+"\n", v...)
 	return subcommands.ExitFailure
@@ -514,7 +514,7 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 }
 
 // goVersionRe matches a `go VERSION` line in go.mod, capturing VERSION.
-var goVersionRe = regexp.MustCompile(`^go\s+(\S+)`)
+var goVersionRe = regexp.MustCompile(`(?m)^go[ \t]+(\S+)`)
 
 // resolveGOVERSION sets flags.GOVERSION from flags.GOVERSIONModFile, if necessary.
 func resolveGOVERSION() error {
@@ -535,7 +535,7 @@ func resolveGOVERSION() error {
 	if len(m) != 2 {
 		return fmt.Errorf("go line not found in go.mod:\n%s", string(b))
 	}
-	flags.GOVERSION = m[1]
+	flags.GOVERSION = "go" + m[1]
 	return nil
 }
 
@@ -549,7 +549,7 @@ func Main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	flag.CommandLine.Parse(os.Args[1:])
 	if err := resolveGOVERSION(); err != nil {
-		failure("error resolving GOVERSION: %v", err)
+		os.Exit(int(failure("error resolving GOVERSION: %v", err)))
 	}
 	os.Exit(int(subcommands.Execute(context.Background())))
 }

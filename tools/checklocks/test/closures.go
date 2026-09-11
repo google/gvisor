@@ -49,6 +49,9 @@ func testClosureInline(tc *oneGuardStruct) {
 	tc.mu.Lock()
 	func() {
 		tc.guardedField = 1
+		func() {
+			tc.guardedField = 2
+		}()
 	}()
 	tc.mu.Unlock()
 }
@@ -58,8 +61,17 @@ func testClosureIgnore(tc *oneGuardStruct) {
 	// Inherit the checklocksignore.
 	x := func() {
 		tc.guardedField = 1
+		atomicGlobal.RacyStore(1)
 	}
 	x()
+
+	// Passing a closure as an argument is not an inline invocation.
+	callClosure(func() {
+		callPreconditions(tc)
+	})
+	defer callClosure(func() {
+		callPreconditions(tc)
+	})
 }
 
 func testAnonymousInvalid(tc *oneGuardStruct) {

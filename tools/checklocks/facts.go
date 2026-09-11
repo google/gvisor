@@ -106,12 +106,14 @@ func fieldEntryEqual(left, right fieldEntry) bool {
 // fieldList is a simple list of fields, used in two types below.
 type fieldList []fieldEntry
 
-// resolvedValue is an ssa.Value with additional fields.
-//
-// This can be resolved to a string as part of a lock state.
+// resolvedValue identifies a lock through SSA or an exported global identity.
 type resolvedValue struct {
 	value     ssa.Value
 	fieldList fieldList
+
+	// key identifies an imported global whose declaration or package is absent
+	// from SSA. It is synthesized where the declaration's type is available.
+	key string
 }
 
 // makeResolvedValue makes a new resolvedValue.
@@ -124,15 +126,17 @@ func makeResolvedValue(v ssa.Value, fl fieldList) resolvedValue {
 
 // valid indicates whether this is a valid resolvedValue.
 func (rv *resolvedValue) valid() bool {
-	return rv.value != nil
+	return rv.value != nil || rv.key != ""
 }
 
 // valueAndObject returns a string and object.
 //
-// This uses the lockState valueAndObject in order to produce a string and
-// object for the base ssa.Value, then synthesizes a string representation
-// based on the fieldList.
+// An imported identity may have no source object. Otherwise, resolve the base
+// SSA value through lockState and synthesize its field path.
 func (rv *resolvedValue) valueAndObject(ls *lockState) (string, types.Object) {
+	if rv.key != "" {
+		return rv.key, nil
+	}
 	// N.B. obj.Type() and typ should be equal, but a check is omitted
 	// since, 1) we automatically chase through pointers during field
 	// resolution, and 2) obj may be nil if there is no source object.
@@ -172,6 +176,10 @@ type lockGuardFacts struct {
 	// traversal path.
 	GuardedBy map[string]fieldGuardResolver
 
+	// ReadAny allows immediate non-atomic reads with any guard held.
+	// Writes still require all guards exclusively.
+	ReadAny bool
+
 	// AtomicDisposition is the disposition for this field. Note that this
 	// can affect the interpretation of the GuardedBy field above, see the
 	// relevant comment.
@@ -191,6 +199,14 @@ type globalGuard struct {
 
 	// FieldList is the traversal path from object.
 	FieldList fieldList
+
+	// Key preserves the complete lock identity when export data omits the
+	// private global or the caller does not directly import its package.
+	Key string
+}
+
+func globalLockKey(pkgPath, name string) string {
+	return fmt.Sprintf("{global:%s.%s}", pkgPath, name)
 }
 
 // ssaPackager returns the ssa package.
@@ -205,8 +221,12 @@ func (g *globalGuard) resolveCommon(pc *passContext, ls *lockState) resolvedValu
 	if g.PackageName != "" && g.PackageName != state.Pkg.Pkg.Path() {
 		pkg = state.Pkg.Prog.ImportedPackage(g.PackageName)
 	}
-	v := pkg.Members[g.ObjectName].(ssa.Value)
-	return makeResolvedValue(v, g.FieldList)
+	if pkg != nil {
+		if v, ok := pkg.Members[g.ObjectName].(ssa.Value); ok {
+			return makeResolvedValue(v, g.FieldList)
+		}
+	}
+	return resolvedValue{key: g.Key}
 }
 
 // resolveStatic implements functionGuardResolver.resolveStatic.
@@ -730,6 +750,20 @@ func (pc *passContext) fillLockGuardFacts(obj types.Object, cg *ast.CommentGroup
 	}
 	for _, l := range cg.List {
 		pc.extractAnnotations(l.Text, map[string]func(string){
+			checkLocksReadAny: func(p string) {
+				if field, ok := obj.(*types.Var); !ok || !field.IsField() {
+					pc.maybeFail(obj.Pos(), "checklocksreadany is only valid on fields")
+					return
+				}
+				if p != "" {
+					pc.maybeFail(obj.Pos(), "checklocksreadany does not take arguments")
+					return
+				}
+				if lgf.ReadAny {
+					pc.maybeFail(obj.Pos(), "checklocksreadany specified more than once")
+				}
+				lgf.ReadAny = true
+			},
 			checkAtomicAnnotation: func(string) {
 				switch lgf.AtomicDisposition {
 				case atomicRequired:
@@ -773,6 +807,21 @@ func (pc *passContext) fillLockGuardFacts(obj types.Object, cg *ast.CommentGroup
 			},
 		})
 	}
+}
+
+// exportLockGuardFacts validates and exports accumulated lock guard facts.
+// For fields, both the doc comment and trailing comment must have been read.
+func (pc *passContext) exportLockGuardFacts(obj types.Object, lgf *lockGuardFacts) {
+	if lgf.ReadAny {
+		if len(lgf.GuardedBy) == 0 {
+			pc.maybeFail(obj.Pos(), "checklocksreadany requires at least one checklocks guard")
+			lgf.ReadAny = false
+		}
+		if lgf.AtomicDisposition == atomicIgnore {
+			pc.maybeFail(obj.Pos(), "checklocksreadany cannot be combined with checklocksignore")
+			lgf.ReadAny = false
+		}
+	}
 	// Save only if there is something meaningful.
 	if len(lgf.GuardedBy) > 0 || lgf.AtomicDisposition != atomicDisallow {
 		pc.pass.ExportObjectFact(obj, lgf)
@@ -783,9 +832,9 @@ func (pc *passContext) fillLockGuardFacts(obj types.Object, cg *ast.CommentGroup
 func (pc *passContext) findGlobalGuard(pos token.Pos, guardName string) (*globalGuard, types.Object, bool) {
 	// Attempt to resolve the object.
 	parts := strings.Split(guardName, ".")
-	globalObj := pc.pass.Pkg.Scope().Lookup(parts[0])
-	if globalObj == nil {
-		// No global object.
+	globalObj, ok := pc.pass.Pkg.Scope().Lookup(parts[0]).(*types.Var)
+	if !ok {
+		// A type or constant cannot identify a global lock.
 		return nil, nil, false
 	}
 	fl, lockObj, ok := pc.maybeFindFieldListObj(pos, globalObj, parts[1:])
@@ -796,10 +845,18 @@ func (pc *passContext) findGlobalGuard(pos token.Pos, guardName string) (*global
 	if pc.lockKind(pos, lockObj) == nil {
 		return nil, nil, false
 	}
+	key := globalLockKey(pc.pass.Pkg.Path(), globalObj.Name())
+	typ := globalObj.Type()
+	for _, entry := range fl {
+		var obj types.Object
+		key, obj = entry.synthesize(key, typ)
+		typ = obj.Type()
+	}
 	return &globalGuard{
 		ObjectName:  parts[0],
 		PackageName: pc.pass.Pkg.Path(),
 		FieldList:   fl,
+		Key:         key,
 	}, lockObj, true
 }
 
@@ -817,7 +874,6 @@ func (pc *passContext) findGlobalFunctionGuard(pos token.Pos, guardName string) 
 
 // structLockGuardFacts finds all relevant guard information for structures.
 func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.StructType) {
-	var fieldObj *types.Var
 	findLocal := func(pos token.Pos, guardName string) (fieldGuardResolver, bool) {
 		// Try to resolve from the local structure first.
 		if fl, _, objs, ok := pc.resolveFieldListParts(pos, structType, strings.Split(guardName, ".")); ok {
@@ -834,20 +890,28 @@ func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.St
 		// Attempt a global resolution.
 		return pc.findGlobalFieldGuard(pos, guardName)
 	}
-	for i, field := range ss.Fields.List {
-		var lgf lockGuardFacts
-		fieldObj = structType.Field(i) // N.B. Captured above.
-		if field.Doc != nil {
-			pc.fillLockGuardFacts(fieldObj, field.Doc, findLocal, &lgf)
-		}
-		if field.Comment != nil {
-			pc.fillLockGuardFacts(fieldObj, field.Comment, findLocal, &lgf)
-		}
+	fieldIndex := 0
+	for _, field := range ss.Fields.List {
+		// A declaration may name several fields; an embedded field has no
+		// names but still occupies one position in the expanded struct type.
+		for range max(1, len(field.Names)) {
+			fieldObj := structType.Field(fieldIndex)
+			fieldIndex++
+			var lgf lockGuardFacts
+			if field.Doc != nil {
+				pc.fillLockGuardFacts(fieldObj, field.Doc, findLocal, &lgf)
+			}
+			if field.Comment != nil {
+				pc.fillLockGuardFacts(fieldObj, field.Comment, findLocal, &lgf)
+			}
 
-		// See above, for anonymous structure fields.
-		if ss, ok := field.Type.(*ast.StructType); ok {
-			if st, ok := types.Unalias(fieldObj.Type()).(*types.Struct); ok {
-				pc.structLockGuardFacts(st, ss)
+			pc.exportLockGuardFacts(fieldObj, &lgf)
+
+			// See above, for anonymous structure fields.
+			if ss, ok := field.Type.(*ast.StructType); ok {
+				if st, ok := types.Unalias(fieldObj.Type()).(*types.Struct); ok {
+					pc.structLockGuardFacts(st, ss)
+				}
 			}
 		}
 	}
@@ -856,10 +920,21 @@ func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.St
 // globalLockGuardFacts finds all relevant guard information for globals.
 //
 // Note that the Type is checked in checklocks.go at the top-level.
-func (pc *passContext) globalLockGuardFacts(vs *ast.ValueSpec) {
-	var lgf lockGuardFacts
-	globalObj := pc.pass.TypesInfo.ObjectOf(vs.Names[0])
-	pc.fillLockGuardFacts(globalObj, vs.Doc, pc.findGlobalFieldGuard, &lgf)
+func (pc *passContext) globalLockGuardFacts(vs *ast.ValueSpec, decl *ast.GenDecl) {
+	cg := vs.Doc
+	if !decl.Lparen.IsValid() {
+		// Standalone declarations attach their comments to the GenDecl.
+		cg = decl.Doc
+	}
+	for _, name := range vs.Names {
+		if name.Name == "_" {
+			continue
+		}
+		var lgf lockGuardFacts
+		globalObj := pc.pass.TypesInfo.ObjectOf(name)
+		pc.fillLockGuardFacts(globalObj, cg, pc.findGlobalFieldGuard, &lgf)
+		pc.exportLockGuardFacts(globalObj, &lgf)
+	}
 }
 
 // countFields gives an accurate field count, according for unnamed arguments
@@ -984,6 +1059,7 @@ func (pc *passContext) functionFacts(d *ast.FuncDecl) {
 				// extremely rare.
 				lff.Ignore = true
 			},
+			checkLocksReadAny:        func(string) { pc.maybeFail(d.Pos(), "checklocksreadany is only valid on fields") },
 			checkLocksAnnotation:     func(guardName string) { lff.addGuardedBy(pc, d, guardName, true /* exclusive */) },
 			checkLocksAnnotationRead: func(guardName string) { lff.addGuardedBy(pc, d, guardName, false /* exclusive */) },
 			checkLocksAcquires:       func(guardName string) { lff.addAcquires(pc, d, guardName, true /* exclusive */) },
@@ -1011,6 +1087,7 @@ func (pc *passContext) typeAliasFacts(ts *ast.TypeSpec, decl *ast.GenDecl) {
 		}
 		for _, l := range cg.List {
 			pc.extractAnnotations(l.Text, map[string]func(string){
+				checkLocksReadAny: func(string) { pc.maybeFail(ts.Pos(), "checklocksreadany is only valid on fields") },
 				checkLocksAlias: func(guardName string) {
 					if !ok {
 						pc.maybeFail(ts.Pos(), "annotation %s is only valid on struct types", guardName)
