@@ -358,6 +358,19 @@ func (fd *Fd) DoCmdReconfigure(ctx context.Context, vfsObj *vfs.VirtualFilesyste
 		return linuxerr.EPERM
 	}
 
+	// Reconfiguring a superblock changes the mount tree, which no Landlock
+	// domain permits. The domain checked is the calling thread's, not the one
+	// that the fd was opened with, since Landlock restricts whoever performs
+	// the operation.
+	//
+	// Matches Linux [fs/super.c]:reconfigure_super(), which calls
+	// security_sb_remount() after [fs/fsopen.c]:vfs_cmd_reconfigure() has
+	// checked the context phase and CAP_SYS_ADMIN, so EBUSY and EPERM for a
+	// missing capability both take precedence.
+	if err := vfs.CheckLandlockMount(vfs.LandlockDomainFromCredentials(auth.CredentialsFromContext(ctx))); err != nil {
+		return err
+	}
+
 	// TODO(gvisor.dev/issues/13450): properly support reconfiguration on underlying filesystems.
 
 	return nil

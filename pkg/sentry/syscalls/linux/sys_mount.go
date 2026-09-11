@@ -43,15 +43,6 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		flags = flags &^ linux.MS_MGC_MSK
 	}
 
-	const unsupported = linux.MS_UNBINDABLE | linux.MS_NODIRATIME
-
-	// Linux just allows passing any flags to mount(2) - it won't fail when
-	// unknown or unsupported flags are passed. Since we don't implement
-	// everything, we fail explicitly on flags that are unimplemented.
-	if flags&(unsupported) != 0 {
-		return 0, nil, linuxerr.EINVAL
-	}
-
 	// For null-terminated strings related to mount(2), Linux copies in at most
 	// a page worth of data. See fs/namespace.c:copy_mount_string().
 	targetPath, err := copyInPath(t, targetAddr)
@@ -91,6 +82,29 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 	}
 	opts.GetFilesystemOptions.Data = data
+
+	// Landlock denies every form of mount(2), including MS_REMOUNT, MS_BIND and
+	// MS_MOVE, which are dispatched below.
+	//
+	// Matches Linux [fs/namespace.c]:path_mount(), which calls
+	// security_sb_mount() once the strings and the target path have been
+	// resolved by [fs/namespace.c]:SYSCALL_DEFINE5(mount, ...) and do_mount(),
+	// and before it dispatches on the flags. An unreadable argument or a target
+	// that does not exist is therefore reported as such rather than as the
+	// denial, while a flag combination gVisor does not implement is not.
+	if err := t.Kernel().VFS().CheckLandlockMountAt(t, creds, &target.pop); err != nil {
+		return 0, nil, err
+	}
+
+	const unsupported = linux.MS_UNBINDABLE | linux.MS_NODIRATIME
+
+	// Linux just allows passing any flags to mount(2) - it won't fail when
+	// unknown or unsupported flags are passed. Since we don't implement
+	// everything, we fail explicitly on flags that are unimplemented.
+	if flags&(unsupported) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	switch {
 	case flags&linux.MS_REMOUNT != 0:
 		// When MS_REMOUNT is specified, the flags and data should match the values used in the original mount() call,

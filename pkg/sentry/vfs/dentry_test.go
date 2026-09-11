@@ -106,6 +106,10 @@ func (d *dentryTestDentry) Watches() *Watches {
 
 func (d *dentryTestDentry) OnZeroWatches(context.Context) {}
 
+func (d *dentryTestDentry) InodeIdentity() InodeIdentity {
+	return InodeIdentity{}
+}
+
 type dentryTestSystem struct {
 	ctx      context.Context
 	creds    *auth.Credentials
