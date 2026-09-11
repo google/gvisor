@@ -48,7 +48,7 @@ steps:
       queue: "release"
   - <<: *common
     label: ":ship: Release"
-    if: build.branch == "master" || build.tag != null
+    if: build.branch == "master" || (build.tag != null && build.tag =~ /-staging/)
     commands:
       # Stamps the binaries below with release-<name>.
       - ./.buildkite/scripts/release/tag.sh stage
