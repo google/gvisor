@@ -373,6 +373,13 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 			// Force mount read-only if writes are not going to be sent to it.
 			flags |= unix.MS_RDONLY
 		}
+		// Bind mounts do not inherit MS_NOEXEC from the source.
+		var srcStat unix.Statfs_t
+		if err := unix.Statfs(m.Source, &srcStat); err == nil {
+			if srcStat.Flags&unix.ST_NOEXEC == unix.ST_NOEXEC {
+				flags |= unix.MS_NOEXEC
+			}
+		}
 
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x, idMapped: %t", m.Source, dst, flags, specutils.IsIDMappedMount(m))
 		src := m.Source
