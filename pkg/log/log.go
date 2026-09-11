@@ -195,7 +195,12 @@ type Logger interface {
 
 // BasicLogger is the default implementation of Logger.
 type BasicLogger struct {
+	// +checkatomic
 	Level
+
+	// Emitter receives enabled log messages. BasicLogger does not synchronize
+	// access to it. Callers must synchronize field replacement with logging
+	// calls and provide any synchronization needed for concurrent Emit calls.
 	Emitter
 }
 
@@ -257,17 +262,19 @@ func Log() *BasicLogger {
 	return log.Load()
 }
 
-// SetTarget sets the log target.
+// SetTarget atomically replaces the default logger, using target and a snapshot
+// of the previous logger's level. Existing loggers returned by Log retain their
+// target; a concurrent SetLevel may affect only the previous logger.
 //
-// This is not thread safe and shouldn't be called concurrently with any
-// logging calls.
-//
-// SetTarget should be called before any instances of log.Log() to avoid race conditions
+// Set the target before creating loggers that should use it. Callers remain
+// responsible for emitter synchronization and for keeping old targets usable
+// while loggers may still use them.
 func SetTarget(target Emitter) {
 	logMu.Lock()
 	defer logMu.Unlock()
 	oldLog := Log()
-	log.Store(&BasicLogger{Level: oldLog.Level, Emitter: target})
+	level := Level(atomic.LoadUint32((*uint32)(&oldLog.Level)))
+	log.Store(&BasicLogger{Level: level, Emitter: target})
 }
 
 // SetLevel sets the log level.

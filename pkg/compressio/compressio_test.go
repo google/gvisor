@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -203,6 +204,150 @@ func TestCompress(t *testing.T) {
 			NewReader: func(b *bytes.Buffer) (io.Reader, error) {
 				return flate.NewReader(b), nil
 			},
+		})
+	}
+}
+
+func TestReaderOwnsKey(t *testing.T) {
+	doTest(t, testOpts{
+		Name: "reader owns key",
+		Data: bytes.Repeat([]byte{'a'}, 2*bytes.MinRead),
+		NewWriter: func(b *bytes.Buffer) (io.WriteCloser, error) {
+			return NewWriter(b, hashKey, bytes.MinRead, flate.BestSpeed)
+		},
+		NewReader: func(b *bytes.Buffer) (io.Reader, error) {
+			key := bytes.Clone(hashKey)
+			r, err := NewReader(io.NopCloser(b), key)
+			// Lazy worker HMACs must use the same key as the stream header,
+			// even if the caller reuses the constructor's key buffer.
+			clear(key)
+			return r, err
+		},
+	})
+}
+
+func TestReadErrorReleasesBuffer(t *testing.T) {
+	for _, key := range [][]byte{nil, hashKey} {
+		t.Run(fmt.Sprintf("hash=%t", key != nil), func(t *testing.T) {
+			var compressed bytes.Buffer
+			w, err := NewWriter(&compressed, key, bytes.MinRead, flate.BestSpeed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := bytes.Repeat([]byte{'a'}, 2*bytes.MinRead)
+			if _, err := w.Write(data); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// The first chunk can be decoding directly into data when reading
+			// the second chunk's body (or hash) fails.
+			compressed.Truncate(compressed.Len() - 1)
+			r, err := NewReader(io.NopCloser(&compressed), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				r.mu.Lock()
+				defer r.mu.Unlock()
+				r.stop()
+			})
+			if _, err := r.Read(data); err != io.ErrUnexpectedEOF {
+				t.Fatalf("Read: got %v, want %v", err, io.ErrUnexpectedEOF)
+			}
+			// A Reader must release the caller's buffer even on error. Do not
+			// synchronize with workers before reusing it: that hides the race.
+			// Use instrumented byte accesses; clear is not race-instrumented.
+			for i := range data {
+				data[i]++
+			}
+			if n, err := r.Read(data); n != 0 || err != io.ErrUnexpectedEOF {
+				t.Fatalf("Read after error: got (%d, %v), want (0, %v)", n, err, io.ErrUnexpectedEOF)
+			}
+		})
+	}
+}
+
+type failingWriteCloser struct {
+	err      error
+	closeErr error
+	writes   int
+	closes   int
+}
+
+func (w *failingWriteCloser) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == 1 {
+		return len(p), nil // Accept the stream header.
+	}
+	return 0, w.err
+}
+
+func (w *failingWriteCloser) Close() error {
+	w.closes++
+	return w.closeErr
+}
+
+func TestWriteErrorReleasesBuffer(t *testing.T) {
+	out := &failingWriteCloser{
+		err:      errors.New("write failed"),
+		closeErr: errors.New("close failed"),
+	}
+	w, err := NewWriter(out, nil, bytes.MinRead, flate.BestSpeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.stop()
+	})
+	data := bytes.Repeat([]byte{'a'}, 2*bytes.MinRead)
+	if _, err := w.Write(data); err != out.err {
+		t.Fatalf("Write: got %v, want %v", err, out.err)
+	}
+	// As with Read, an error must not leave workers using the caller's slice.
+	// Use instrumented byte accesses; clear is not race-instrumented.
+	for i := range data {
+		data[i]++
+	}
+	if n, err := w.Write(nil); n != 0 || err != out.err {
+		t.Errorf("Write after error: got (%d, %v), want (0, %v)", n, err, out.err)
+	}
+	if err := w.Close(); err != out.err {
+		t.Errorf("Close: got %v, want original write error %v", err, out.err)
+	}
+	if out.closes != 1 {
+		t.Errorf("underlying Close called %d times, want 1", out.closes)
+	}
+}
+
+func TestCloseErrorClosesWriter(t *testing.T) {
+	for _, data := range [][]byte{nil, {'a'}} {
+		t.Run(fmt.Sprintf("buffered=%t", len(data) != 0), func(t *testing.T) {
+			out := &failingWriteCloser{
+				err:      errors.New("write failed"),
+				closeErr: errors.New("close failed"),
+			}
+			w, err := NewWriter(out, nil, bytes.MinRead, flate.BestSpeed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A partial chunk is buffered, so the first flush is in Close.
+			if _, err := w.Write(data); err != nil {
+				t.Fatal(err)
+			}
+			want := out.closeErr
+			if len(data) != 0 {
+				want = out.err
+			}
+			if err := w.Close(); err != want {
+				t.Errorf("Close: got %v, want %v", err, want)
+			}
+			if out.closes != 1 {
+				t.Errorf("underlying Close called %d times, want 1", out.closes)
+			}
 		})
 	}
 }
