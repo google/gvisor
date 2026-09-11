@@ -337,7 +337,16 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 		family += uint32(ef)
 	}
 	model := uint32(m)
-	if f == 0x6 || f == 0xf {
+	if fs.AMD() {
+		// AMD manuals (AMD64 Architecture Programmer's Manual, Vol 3, E.3.2):
+		// "If BaseFamily[3:0] is less than 0Fh, then ExtModel is reserved and
+		// Model is equal to BaseModel[3:0]."
+		if f == 0xf {
+			model |= uint32(em) << 4
+		}
+	} else if f == 0x6 || f == 0xf {
+		// Intel manuals:
+		// Extended model is used if BaseFamily is 0x6 or 0xf.
 		model |= uint32(em) << 4
 	}
 	fmt.Fprintf(w, "processor\t: %d\n", cpu)
