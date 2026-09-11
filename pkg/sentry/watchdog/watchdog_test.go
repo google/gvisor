@@ -17,9 +17,24 @@ package watchdog
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestStuckWatchdogUsesTaskAction(t *testing.T) {
+	w := &Watchdog{
+		Opts: Opts{
+			TaskTimeoutAction:    LogWarning,
+			StartupTimeoutAction: Panic,
+		},
+		// Avoid an unrelated stack dump on the logging path.
+		lastStackDump: time.Now(),
+	}
+	// Reporting a stalled monitoring loop must use the task-timeout policy,
+	// not the unrelated policy for failing to start the watchdog.
+	w.reportStuckWatchdog()
+}
 
 func TestStuckGoroutineStacks(t *testing.T) {
 	innocent0 := `goroutine 124 [select, 1 minutes]:
