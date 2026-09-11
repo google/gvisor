@@ -16,10 +16,13 @@ package scsdk
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -30,9 +33,13 @@ import (
 type Fs struct {
 	content []byte
 	err     error
+	delay   time.Duration
 }
 
 func (f *Fs) Read(o *control.ReadOpts, _ *struct{}) error {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.err != nil {
 		return f.err
 	}
@@ -55,8 +62,13 @@ func (f *Fs) Read(o *control.ReadOpts, _ *struct{}) error {
 
 func setupTestServer(t *testing.T, content []byte, srvErr error) (*SandboxClient, func()) {
 	t.Helper()
+	return setupTestServerWithDelay(t, content, srvErr, 0)
+}
+
+func setupTestServerWithDelay(t *testing.T, content []byte, srvErr error, delay time.Duration) (*SandboxClient, func()) {
+	t.Helper()
 	srv := urpc.NewServer()
-	srv.Register(&Fs{content: content, err: srvErr})
+	srv.Register(&Fs{content: content, err: srvErr, delay: delay})
 
 	clientSock, serverSock, err := unet.SocketPair(false)
 	if err != nil {
@@ -224,5 +236,126 @@ func TestReadSocket(t *testing.T) {
 	}
 	if want := "socket"; string(got) != want {
 		t.Errorf("c.ReadFile got %q, want %q", string(got), want)
+	}
+}
+
+func TestReadFileContextCancel(t *testing.T) {
+	// Provide enough delay so the select statement hits ctx.Done() first.
+	c, cleanup := setupTestServerWithDelay(t, nil, nil, 5*time.Second)
+	defer cleanup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately.
+	cancel()
+
+	_, err := c.ReadFileWithContext(ctx, Options{Path: "/test"})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("ReadFileWithContext got err %v, want context.Canceled", err)
+	}
+}
+
+func TestReadFileContextTimeout(t *testing.T) {
+	c, cleanup := setupTestServerWithDelay(t, nil, nil, 5*time.Second)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := c.ReadFileWithContext(ctx, Options{Path: "/test"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("ReadFileWithContext got err %v, want context.DeadlineExceeded", err)
+	}
+}
+
+func TestReadFileWithOsFile(t *testing.T) {
+	content := []byte("hello file world")
+	c, cleanup := setupTestServer(t, content, nil)
+	defer cleanup()
+
+	// Use an os.File for w to trigger the optimized path in fs.go.
+	f, err := os.CreateTemp("", "testfile")
+	if err != nil {
+		t.Fatalf("os.CreateTemp failed: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	if err := c.ReadFileToWriter(Options{Path: "/test"}, f); err != nil {
+		t.Errorf("ReadFileToWriter failed: %v", err)
+	}
+
+	// Verify the file was written to.
+	out, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("os.ReadFile failed: %v", err)
+	}
+	if string(out) != string(content) {
+		t.Errorf("got %q, want %q", string(out), string(content))
+	}
+}
+
+func TestReadFileErrors(t *testing.T) {
+	// Package level Connect failure
+	if err := ReadFileToWriter("\x00bad", Options{Path: "/test"}, nil); err == nil {
+		t.Errorf("ReadFileToWriter(bad_socket) got nil error")
+	}
+	if _, err := ReadFileWithContext(context.Background(), "\x00bad", Options{Path: "/test"}); err == nil {
+		t.Errorf("ReadFileWithContext(bad_socket) got nil error")
+	}
+
+	c, cleanup := setupTestServer(t, nil, nil)
+	defer cleanup()
+
+	// Nil writer
+	if err := c.ReadFileToWriter(Options{Path: "/test"}, nil); err == nil {
+		t.Errorf("ReadFileToWriter(nil writer) got nil error")
+	}
+
+	// Unconnected client
+	var badClient *SandboxClient
+	if err := badClient.ReadFileToWriter(Options{Path: "/test"}, os.Stdout); err == nil {
+		t.Errorf("ReadFileToWriter on nil client got nil error")
+	}
+}
+
+func TestReadFileWithOsFileContextCancel(t *testing.T) {
+	c, cleanup := setupTestServerWithDelay(t, nil, nil, 5*time.Second)
+	defer cleanup()
+
+	f, err := os.CreateTemp("", "testfile")
+	if err != nil {
+		t.Fatalf("os.CreateTemp failed: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = c.ReadFileToWriterWithContext(ctx, Options{Path: "/test"}, f)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("ReadFileToWriterWithContext got err %v, want context.Canceled", err)
+	}
+}
+
+type errWriter struct {
+	err error
+}
+
+func (w *errWriter) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+func TestReadFileToWriterCopyError(t *testing.T) {
+	content := []byte("hello world")
+	c, cleanup := setupTestServer(t, content, nil)
+	defer cleanup()
+
+	wantErr := errors.New("write failed")
+	w := &errWriter{err: wantErr}
+
+	err := c.ReadFileToWriter(Options{Path: "/test"}, w)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("ReadFileToWriter got %v, want %v", err, wantErr)
 	}
 }
