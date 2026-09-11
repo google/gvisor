@@ -71,11 +71,15 @@ go_test(
     name = "sandbox_test",
     size = "small",
     srcs = [
+        "metrics_test.go",
         "network_test.go",
         "sandbox_test.go",
     ],
     library = ":sandbox",
     deps = [
+        "//pkg/control/server",
+        "//pkg/prometheus",
+        "//pkg/sentry/control",
         "//runsc/boot",
         "//runsc/config",
         "@com_github_vishvananda_netlink//:go_default_library",

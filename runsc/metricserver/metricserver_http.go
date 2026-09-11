@@ -37,6 +37,8 @@ type httpResult struct {
 var httpOK = httpResult{code: http.StatusOK}
 
 // serveIndex serves the index page.
+//
+// +checklocksexclude:m.mu
 func (m *metricServer) serveIndex(w *httpResponseWriter, req *http.Request) httpResult {
 	if req.URL.Path != "/" {
 		if strings.HasPrefix(req.URL.Path, "/metrics?") {
