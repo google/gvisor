@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 
@@ -121,11 +122,9 @@ type runscService struct {
 	// containers maps container id to a container.
 	containers map[string]*Container
 
-	// root is the runsc root directory.
-	root string
-
-	// runtime is runsc runtime configured for sandbox.
-	runtime *runsccmd.Runsc
+	// versionCommand is the runsc executable configured for the sandbox.
+	// A nil pointer or empty command selects the default.
+	versionCommand atomic.Pointer[string]
 
 	shutdown shutdown.Service
 }
@@ -153,8 +152,6 @@ func NewTaskService(ctx context.Context, publisher shim.Publisher, sd shutdown.S
 		ec:         proc.ExitCh,
 		oomPoller:  ep,
 		shutdown:   sd,
-		root:       proc.RunscRoot,
-		runtime:    &runsccmd.Runsc{Root: proc.RunscRoot},
 	}
 	go s.processExits(ctx)
 	runsccmd.Monitor = &runsccmd.LogMonitor{Next: reaper.Default}
@@ -217,8 +214,8 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 		return nil, err
 	}
 	if initProcess, ok := p.(*proc.Init); ok && initProcess.Sandbox {
-		s.root = initProcess.Runtime().Root
-		s.runtime = initProcess.Runtime()
+		command := initProcess.Runtime().Command
+		s.versionCommand.Store(&command)
 	}
 
 	// Set up OOM notification on the sandbox's cgroup. This is done on
@@ -932,10 +929,11 @@ func (g *GvisorTaskServer) State(ctx context.Context, req *pb.StateRequest) (*pb
 
 // Version implements taskServer.GvisorTaskServiceExt.
 func (g *GvisorTaskServer) Version(ctx context.Context, req *pb.VersionRequest) (*pb.VersionResponse, error) {
-	cmd := exec.Command("runsc", "-version")
-	if g.s.runtime.Command != "" {
-		cmd = exec.Command(g.s.runtime.Command, "-version")
+	command := runsccmd.DefaultCommand
+	if configured := g.s.versionCommand.Load(); configured != nil && *configured != "" {
+		command = *configured
 	}
+	cmd := exec.Command(command, "-version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runsc version: %w, output: %s", err, string(out))
