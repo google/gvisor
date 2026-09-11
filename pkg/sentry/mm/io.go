@@ -623,8 +623,9 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 	n := int64(un)
 
 	// Return the first error in order of progress through ar.
-	if err != nil {
-		// Do not convert errors returned by f to EFAULT.
+	if err != nil || un < imbs.NumBytes() {
+		// Do not convert errors returned by f to EFAULT, or report mapping
+		// errors beyond the end of a successful short I/O.
 		return n, err
 	}
 	if imerr != nil {
@@ -691,8 +692,9 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 	n := int64(un)
 
 	// Return the first error in order of progress through ars.
-	if err != nil {
-		// Do not convert errors from f to EFAULT.
+	if err != nil || un < imbs.NumBytes() {
+		// Do not convert errors returned by f to EFAULT, or report mapping
+		// errors beyond the end of a successful short I/O.
 		return n, err
 	}
 	if imerr != nil {

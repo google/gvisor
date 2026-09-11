@@ -4032,6 +4032,8 @@ cc_library(
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
         "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:memory_util",
         "//test/util:socket_util",
         "//test/util:test_util",
         "//test/util:thread_util",
