@@ -262,10 +262,11 @@ func (r *Runsc) start(context context.Context, cio runc.IO, cmd *exec.Cmd) error
 
 // RestoreOpts is a set of options to runsc.Restore().
 type RestoreOpts struct {
-	ImagePath  string
-	Detach     bool
-	Direct     bool
-	Background bool
+	ImagePath        string
+	Detach           bool
+	Direct           bool
+	Background       bool
+	IPRemappingTable map[string]string
 }
 
 func (o *RestoreOpts) args() []string {
@@ -281,6 +282,9 @@ func (o *RestoreOpts) args() []string {
 	}
 	if o.Background {
 		out = append(out, "--background")
+	}
+	for k, v := range o.IPRemappingTable {
+		out = append(out, fmt.Sprintf("--ip-remap=%s=%s", k, v))
 	}
 	return out
 }

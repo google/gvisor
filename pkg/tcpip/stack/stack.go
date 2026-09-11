@@ -196,7 +196,7 @@ type Stack struct {
 	// allowLiveTCPMigration allows TCP connection state to be migrated.
 	// If false, any connected TCP endpoints will be terminated
 	// during save/restore.
-	allowLiveTCPMigration bool `state:"nosave"`
+	allowLiveTCPMigration bool
 
 	// externalNetworkingDisabled indicates whether external networking is
 	// disabled. This means all non-loopback NICs are disabled.
