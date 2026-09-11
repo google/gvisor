@@ -196,6 +196,8 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		table = stack.EmptyFilterTable()
 	case natTable:
 		table = stack.EmptyNATTable()
+	case mangleTable:
+		table = stack.EmptyMangleTable()
 	case rawTable:
 		table = stack.EmptyRawTable()
 	default:
@@ -295,6 +297,7 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 	}
 
 	if err := checkLoopsAndChains(table, ipv6); err != nil {
+		nflog("checkLoopsAndChains failed for table %q (validHooks=%#x, rules=%d): %v", replace.Name.String(), table.ValidHooks(), len(table.Rules), err)
 		return err
 	}
 
@@ -553,11 +556,13 @@ func MatchRevision(t *kernel.Task, revPtr hostarch.Addr) (linux.XTGetRevision, *
 
 	maxSupported, ok := matchMakerRevision(rev.Name.String(), rev.Revision)
 	if !ok {
+		nflog("MatchRevision: no registered matcher named %q (iptables requested rev %d)", rev.Name.String(), rev.Revision)
 		// Return ENOENT if there's no matcher with that name.
 		return linux.XTGetRevision{}, syserr.ErrNoFileOrDir
 	}
 
 	if maxSupported < rev.Revision {
+		nflog("MatchRevision: matcher %q requested rev %d > max supported %d", rev.Name.String(), rev.Revision, maxSupported)
 		// Return EPROTONOSUPPORT if we have an insufficient revision.
 		return linux.XTGetRevision{}, syserr.ErrProtocolNotSupported
 	}
@@ -576,10 +581,12 @@ func TargetRevision(t *kernel.Task, revPtr hostarch.Addr, netProto tcpip.Network
 	}
 	maxSupported, ok := targetRevision(rev.Name.String(), netProto, rev.Revision)
 	if !ok {
+		nflog("TargetRevision: no registered target named %q (iptables requested rev %d)", rev.Name.String(), rev.Revision)
 		// Return ENOENT if there's no target with that name.
 		return linux.XTGetRevision{}, syserr.ErrNoFileOrDir
 	}
 	if maxSupported < rev.Revision {
+		nflog("TargetRevision: target %q requested rev %d > max supported %d", rev.Name.String(), rev.Revision, maxSupported)
 		// Return EPROTONOSUPPORT if we have an insufficient revision.
 		return linux.XTGetRevision{}, syserr.ErrProtocolNotSupported
 	}
