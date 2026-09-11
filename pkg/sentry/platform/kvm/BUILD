@@ -56,6 +56,8 @@ go_library(
         "kvm_const.go",
         "kvm_const_amd64.go",
         "kvm_const_arm64.go",
+        "kvm_const_arm64_4k.go",
+        "kvm_const_arm64_64k.go",
         "kvm_profiling.go",
         "kvm_profiling_fake.go",
         "machine.go",
