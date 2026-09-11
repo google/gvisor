@@ -159,6 +159,7 @@ docs(
         "//g3doc/architecture_guide:security",
         "//g3doc/proposals:gsoc_2021",
         "//g3doc/user_guide:FAQ",
+        "//g3doc/user_guide:bwrap",
         "//g3doc/user_guide:checkpoint_restore",
         "//g3doc/user_guide:compatibility",
         "//g3doc/user_guide:debugging",

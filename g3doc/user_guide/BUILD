@@ -15,6 +15,14 @@ doc(
 )
 
 doc(
+    name = "bwrap",
+    src = "bwrap.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/bwrap/",
+    weight = "52",
+)
+
+doc(
     name = "install",
     src = "install.md",
     category = "User Guide",
