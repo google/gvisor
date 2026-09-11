@@ -47,24 +47,11 @@ func Keyctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 // KEYCTL_GET_KEYRING_ID.
 func keyCtlGetKeyringID(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	keyID := auth.KeySerial(args[1].Int())
-	var key *auth.Key
-	var err error
-	if keyID > 0 {
-		// Not a special key ID, so return as-is.
-		return uintptr(keyID), nil, nil
+	if keyID <= 0 && keyID != linux.KEY_SPEC_SESSION_KEYRING {
+		// Other special key IDs are not implemented.
+		return 0, nil, linuxerr.ENOSYS
 	}
-	switch keyID {
-	case linux.KEY_SPEC_SESSION_KEYRING:
-		key, err = t.SessionKeyring()
-	default:
-		if keyID <= 0 {
-			// Other special key IDs are not implemented.
-			return 0, nil, linuxerr.ENOSYS
-		}
-		// For positive key IDs, KEYCTL_GET_KEYRING_ID can be used as an existence
-		// and permissions check.
-		key, err = t.LookupKey(keyID)
-	}
+	key, err := t.LookupKey(keyID)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -82,14 +69,7 @@ func keyctlDescribe(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		bufSize = math.MaxInt32
 	}
 
-	var key *auth.Key
-	var err error
-	switch keyID {
-	case linux.KEY_SPEC_SESSION_KEYRING:
-		key, err = t.SessionKeyring()
-	default:
-		key, err = t.LookupKey(keyID)
-	}
+	key, err := t.LookupKey(keyID)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -137,16 +117,5 @@ func keyctlJoinSessionKeyring(t *kernel.Task, args arch.SyscallArguments) (uintp
 func keyctlSetPerm(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	keyID := auth.KeySerial(args[1].Int())
 	newPerms := auth.KeyPermissions(args[2].Uint64())
-	var key *auth.Key
-	var err error
-	switch keyID {
-	case linux.KEY_SPEC_SESSION_KEYRING:
-		key, err = t.SessionKeyring()
-	default:
-		key, err = t.UserNamespace().Keys.Lookup(keyID)
-	}
-	if err != nil {
-		return 0, nil, err
-	}
-	return 0, nil, t.SetPermsOnKey(key, newPerms)
+	return 0, nil, t.SetPermsOnKey(keyID, newPerms)
 }
