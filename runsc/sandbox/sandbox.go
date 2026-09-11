@@ -596,7 +596,12 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	// Restore the container and start the root container.
 	if err := conn.Call(boot.ContMgrRestore, &opt, nil); err != nil {
-		return fmt.Errorf("restoring container %q: %v", cid, err)
+		if opt.UseCheckpointGofer {
+			if target := getGCSURIFromImagePath(imagePath); target != "" {
+				return fmt.Errorf("restoring container %q from %s: %w", cid, target, err)
+			}
+		}
+		return fmt.Errorf("restoring container %q: %w", cid, err)
 	}
 	s.Restored = true
 	return nil
@@ -1694,6 +1699,11 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {
+		if opt.UseCheckpointGofer {
+			if target := getGCSURIFromImagePath(imagePath); target != "" {
+				return fmt.Errorf("checkpointing container %q to %s: %w", cid, target, err)
+			}
+		}
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
 	}
 	s.Checkpointed = true
@@ -1815,6 +1825,11 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 	}
 
 	if err := s.call(boot.ContMgrFSSave, &args, nil); err != nil {
+		if args.UseCheckpointGofer {
+			if target := getGCSURIFromImagePath(imagePath); target != "" {
+				return fmt.Errorf("checkpointing filesystem for container %q to %s: %w", cid, target, err)
+			}
+		}
 		return fmt.Errorf("checkpointing filesystem for container %q: %w", cid, err)
 	}
 	return nil
@@ -1909,6 +1924,27 @@ func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([
 
 	closeCleanup.Release()
 	return files[:], nil
+}
+
+// getGCSURIFromImagePath returns the GCS URI (e.g. "gs://bucket" or "gs://bucket/prefix")
+// specified in gcs_opts.json under imagePath, or empty string if not applicable.
+func getGCSURIFromImagePath(imagePath string) string {
+	gcsOptsPath := path.Join(imagePath, checkpointGCSOptsFileName)
+	data, err := os.ReadFile(gcsOptsPath)
+	if err != nil {
+		return ""
+	}
+	var opts struct {
+		Bucket       string `json:"bucket"`
+		ObjectPrefix string `json:"object_prefix"`
+	}
+	if err := json.Unmarshal(data, &opts); err != nil || opts.Bucket == "" {
+		return ""
+	}
+	if opts.ObjectPrefix != "" {
+		return fmt.Sprintf("gs://%s/%s", opts.Bucket, strings.TrimPrefix(opts.ObjectPrefix, "/"))
+	}
+	return fmt.Sprintf("gs://%s", opts.Bucket)
 }
 
 // maybeStartCheckpointGoferAndGetSocket checks if use of a checkpoint gofer is

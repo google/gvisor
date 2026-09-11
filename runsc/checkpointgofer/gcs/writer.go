@@ -20,7 +20,6 @@ import (
 
 	"cloud.google.com/go/storage"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -131,11 +130,7 @@ func (w *Writer) Finalize() error {
 	sw := w.writer
 	w.writer = nil
 	if err := sw.Close(); err != nil {
-		if code, ok := httpCodeFromError(err); ok && isPermissionDeniedCode(code) {
-			log.Infof("gcs.Writer returning EACCES for close error: %v", err)
-			return unix.EACCES
-		}
-		return err
+		return mapGCSError(err, "Writer.Finalize", w.obj.BucketName(), w.obj.ObjectName())
 	}
 	return nil
 }
@@ -158,10 +153,7 @@ func (w *Writer) workerMain(ctx context.Context) {
 				}
 			}
 			if doneErr != nil {
-				if code, ok := httpCodeFromError(doneErr); ok && isPermissionDeniedCode(code) {
-					log.Infof("gcs.Writer returning EACCES for write error: %v", doneErr)
-					doneErr = unix.EACCES
-				}
+				doneErr = mapGCSError(doneErr, "Writer.Write", w.obj.BucketName(), w.obj.ObjectName())
 			}
 			w.cmps <- stateio.Completion{
 				ID:  sub.id,

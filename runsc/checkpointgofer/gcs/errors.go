@@ -21,7 +21,9 @@ import (
 	"net/url"
 	"strings"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/api/googleapi"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // HTTP status codes returned by GCS:
@@ -30,6 +32,10 @@ const (
 	// statusForbidden is returned by the storage API due to various
 	// authorization failures.
 	statusForbidden = 403
+
+	// statusNotFound is returned by the storage API if the requested bucket
+	// or object does not exist.
+	statusNotFound = 404
 
 	// statusRangeNotSatisfiable is returned by the storage API if the first
 	// byte position of a requested range is greater than the length of the
@@ -63,6 +69,34 @@ func httpCodeFromError(err error) (int, bool) {
 
 func isPermissionDeniedCode(code int) bool {
 	return code == statusForbidden || code == statusUnauthorized
+}
+
+func isNotFoundCode(code int) bool {
+	return code == statusNotFound
+}
+
+// mapGCSError converts a GCS error to an appropriate errno (e.g. EACCES,
+// ENOENT) while logging detailed diagnostic context including the full GCS URI
+// and HTTP error code. If the error cannot be mapped, it returns the original error.
+func mapGCSError(err error, op, bucket, object string) error {
+	if err == nil {
+		return nil
+	}
+	if code, ok := httpCodeFromError(err); ok {
+		switch {
+		case isPermissionDeniedCode(code):
+			log.Debugf("gcs.%s on gs://%s/%s failed with permission denied (HTTP %d): %v", op, bucket, object, code, err)
+			return unix.EACCES
+		case isNotFoundCode(code):
+			log.Debugf("gcs.%s on gs://%s/%s failed: bucket or object not found (HTTP 404): %v", op, bucket, object, err)
+			return unix.ENOENT
+		default:
+			log.Debugf("gcs.%s on gs://%s/%s failed with HTTP %d: %v", op, bucket, object, code, err)
+		}
+	} else {
+		log.Debugf("gcs.%s on gs://%s/%s failed: %v", op, bucket, object, err)
+	}
+	return err
 }
 
 func shouldRetry(err error) bool {
