@@ -24,6 +24,7 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
 #include <cassert>
@@ -913,6 +914,14 @@ PosixErrorOr<TempPath> CreateSgidExecutable(std::string path) {
   return TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, mode);
 }
 
+PosixErrorOr<TempPath> CreateExecuteOnlyExecutable(std::string path) {
+  std::string exec_blob;
+  PosixError perr = GetContents(path, &exec_blob);
+  RETURN_IF_ERRNO(perr);
+
+  return TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, 0111);
+}
+
 constexpr int kUnprivilegedUid = 12345;
 constexpr int kUnprivilegedGid = 12345;
 
@@ -970,6 +979,137 @@ TEST(ExecTest, SGIDExecGainsGID) {
         /*want_egid=*/absl::StrCat(privilegedGid),  // gained back original gid
         /*want_dumpability=*/absl::StrCat(SUID_DUMP_DISABLE)};  // but lost this
     CheckExec(suid_exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+}
+
+// Returns the expected dumpability of a task after an exec that enforces
+// non-dumpability: gVisor hardcodes SUID_DUMP_DISABLE, while Linux uses the
+// value of the fs.suid_dumpable sysctl (fs/exec.c:begin_new_exec() =>
+// set_dumpable(current->mm, suid_dumpable)).
+PosixErrorOr<int> WantNonDumpable() {
+  if (IsRunningOnGvisor()) {
+    return SUID_DUMP_DISABLE;
+  }
+  std::string contents;
+  RETURN_IF_ERRNO(GetContents("/proc/sys/fs/suid_dumpable", &contents));
+  return atoi(contents.c_str());
+}
+
+// Mirrors struct posix_acl_xattr_entry.
+struct ACLEntry {
+  uint16_t tag;
+  uint16_t perm;
+  uint32_t id;
+};
+
+// BuildACL builds the raw xattr representation for a POSIX ACL.
+std::string BuildACL(const std::vector<ACLEntry>& entries) {
+  uint32_t version = 2;
+  std::string buf(reinterpret_cast<const char*>(&version), sizeof(version));
+  for (const ACLEntry& e : entries) {
+    buf.append(reinterpret_cast<const char*>(&e), sizeof(e));
+  }
+  return buf;
+}
+
+// A binary whose mode bits permit reading but whose ACL denies it to the
+// executing user must still make the task non-dumpable.
+TEST(ExecTest, ACLExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  std::string exec_blob;
+  ASSERT_NO_ERRNO(GetContents(RunfilePath(kCheckEuidProgram), &exec_blob));
+  TempPath exe = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, 0755));
+
+  // ACL: named user kUnprivilegedUid gets --x, so the named-user entry (not
+  // the readable "other" class) governs its access.
+  constexpr uint16_t kTagUserObj = 0x01, kTagUser = 0x02, kTagGroupObj = 0x04,
+                     kTagMask = 0x10, kTagOther = 0x20;
+  constexpr uint32_t kIdUndef = 0xffffffff;
+  const std::string acl = BuildACL({
+      {kTagUserObj, 7, kIdUndef},
+      {kTagUser, 1, kUnprivilegedUid},
+      {kTagGroupObj, 5, kIdUndef},
+      {kTagMask, 1, kIdUndef},
+      {kTagOther, 5, kIdUndef},
+  });
+  int ret = setxattr(exe.path().c_str(), "system.posix_acl_access", acl.data(),
+                     acl.size(), 0);
+  SKIP_IF(ret < 0 && (errno == ENOTSUP || errno == EOPNOTSUPP));
+  ASSERT_THAT(ret, SyscallSucceeds());
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid/gid we're about to set. The gid must also leave the
+  // file's group class so that only the named-user ACL entry (and not the
+  // group bits, which mirror the ACL mask) denies reading.
+  bool acl_enforced = true;
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setgroups, 0, nullptr), SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_setresgid, kUnprivilegedGid, kUnprivilegedGid,
+                        kUnprivilegedGid),
+                SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+
+    // The ACL must deny reading. Some filesystems (e.g. gVisor's overlay)
+    // accept the ACL xattr but do not enforce ACLs; skip on those.
+    int fd = open(exe.path().c_str(), O_RDONLY);
+    if (fd >= 0) {
+      close(fd);
+      acl_enforced = false;
+      return;
+    }
+    EXPECT_THAT(open(exe.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // ...but the ACL must permit executing, and the resulting task must be
+    // non-dumpable.
+    const int want_dumpability = ASSERT_NO_ERRNO_AND_VALUE(WantNonDumpable());
+    const ExecveArray argv = {
+        exe.path(),
+        /*want_euid=*/absl::StrCat(kUnprivilegedUid),
+        /*want_egid=*/absl::StrCat(kUnprivilegedGid),
+        /*want_dumpability=*/absl::StrCat(want_dumpability)};
+    CheckExec(exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+  if (!acl_enforced) {
+    GTEST_SKIP() << "filesystem does not enforce POSIX ACLs";
+  }
+}
+
+// Linux requires only execute permission (not read) to execve a binary, but
+// marks the resulting task non-dumpable so that the binary's contents cannot
+// be recovered via ptrace or procfs. See gvisor.dev/issue/160.
+TEST(ExecTest, ExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  TempPath exec_only_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateExecuteOnlyExecutable(RunfilePath(kCheckEuidProgram)));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_EQ(geteuid(), kUnprivilegedUid);
+
+    // The binary must not be readable...
+    EXPECT_THAT(open(exec_only_exe.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // ...but must still be executable, and the resulting task must be
+    // non-dumpable.
+    const int want_dumpability = ASSERT_NO_ERRNO_AND_VALUE(WantNonDumpable());
+    const ExecveArray argv = {
+        exec_only_exe.path(),
+        /*want_euid=*/absl::StrCat(kUnprivilegedUid),
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(want_dumpability)};
+    CheckExec(exec_only_exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
               /*expect_stderr=*/"");
   });
 }

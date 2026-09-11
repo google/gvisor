@@ -1078,22 +1078,27 @@ func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error
 }
 
 func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
-	if err := i.checkXattrPrefix(opts.Name); err != nil {
-		return "", err
-	}
 	mode := linux.FileMode(i.mode.Load())
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
+
+	// Linux requires read permission for xattr reads outside the security.*,
+	// system.*, and trusted.* namespaces, and applies the check before any
+	// handler-specific rejection; see fs/xattr.c:xattr_permission().
+	if vfs.XattrReadNeedsFilePermission(opts.Name) {
+		acl := i.accessACL.Load()
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, acl, kuid, kgid); err != nil {
+			return "", err
+		}
+	}
+	if err := i.checkXattrPrefix(opts.Name); err != nil {
+		return "", err
+	}
 
 	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
 		// Handle POSIX ACL xattrs
 		xattr, err := vfs.ACLGetXattr(creds, opts, mode, i.accessACL.Load(), i.defaultACL.Load())
 		return xattr, err
-	}
-
-	acl := i.accessACL.Load()
-	if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, acl, kuid, kgid); err != nil {
-		return "", err
 	}
 
 	return i.xattrs.GetXattr(creds, mode, kuid, opts)

@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -202,14 +203,14 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	// """
 	callerCreds := t.Credentials()
 	targetCreds := target.Credentials()
-	if callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace) {
-		return true
-	}
-	if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
-		return false
-	}
-	if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
-		return false
+	hasPtraceCapInTargetNS := callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace)
+	if !hasPtraceCapInTargetNS {
+		if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
+			return false
+		}
+		if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
+			return false
+		}
 	}
 	var targetMM *mm.MemoryManager
 	var targetUserDumpable bool
@@ -218,7 +219,12 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 		targetUserDumpable = t.userDumpable
 	})
 	if targetMM != nil {
-		if targetMM.Dumpability() != mm.UserDumpable {
+		// The capability against non-dumpable targets must be held in the
+		// MemoryManager's user namespace (Linux: mm_struct::user_ns), which
+		// fs/exec.c:would_dump() may have lowered to an ancestor of the
+		// target's namespace at execve.
+		if targetMM.Dumpability() != mm.UserDumpable &&
+			!callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM, targetCreds)) {
 			return false
 		}
 	} else {
@@ -226,13 +232,52 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 			return false
 		}
 	}
-	if callerCreds.UserNamespace != targetCreds.UserNamespace {
-		return false
-	}
-	if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
-		return false
+	if !hasPtraceCapInTargetNS {
+		if callerCreds.UserNamespace != targetCreds.UserNamespace {
+			return false
+		}
+		if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
+			return false
+		}
 	}
 	return true
+}
+
+// mmUserNamespace returns m's user namespace, falling back to the given
+// credentials' user namespace for MemoryManagers restored from saved states
+// that predate mm_struct::user_ns tracking.
+func mmUserNamespace(m *mm.MemoryManager, creds *auth.Credentials) *auth.UserNamespace {
+	if ns := m.UserNamespace(); ns != nil {
+		return ns
+	}
+	return creds.UserNamespace
+}
+
+// ptraceAccessVM returns whether t, which must be target's tracer, may access
+// target's memory via ptrace requests such as PTRACE_PEEKDATA, per Linux's
+// kernel/ptrace.c:ptrace_access_vm().
+func (t *Task) ptraceAccessVM(target *Task) bool {
+	var targetMM *mm.MemoryManager
+	var tracerCreds *auth.Credentials
+	ts := t.tg.pidns.owner
+	ts.mu.RLock()
+	tracerCreds = target.ptracerCreds
+	target.WithMuLocked(func(t *Task) {
+		targetMM = t.MemoryManager()
+	})
+	ts.mu.RUnlock()
+	if targetMM == nil {
+		return false
+	}
+	if targetMM.Dumpability() == mm.UserDumpable {
+		return true
+	}
+	if tracerCreds == nil {
+		// Tracing relationships restored from older saved states have no
+		// credential snapshot; fall back to the tracer's current credentials.
+		tracerCreds = t.Credentials()
+	}
+	return tracerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM, target.Credentials()))
 }
 
 // canTraceYAMALocked performs ptrace access checks as defined by the YAMA LSM
@@ -474,6 +519,23 @@ func (t *Task) ptraceUnstop(mode ptraceSyscallMode, singlestep bool, sig linux.S
 	return nil
 }
 
+// canTracemeLocked returns true if t's parent may trace t via PTRACE_TRACEME.
+// Unlike attachment, Linux's kernel/ptrace.c:ptrace_traceme() performs no
+// __ptrace_may_access() check (so the target's dumpability is irrelevant);
+// authorization is security_ptrace_traceme(), implemented by
+// security/commoncap.c:cap_ptrace_traceme().
+//
+// Preconditions: t.parent != nil. The TaskSet mutex must be locked.
+func (t *Task) canTracemeLocked() bool {
+	parentCreds := t.parent.Credentials()
+	childCreds := t.Credentials()
+	if parentCreds.UserNamespace == childCreds.UserNamespace &&
+		childCreds.PermittedCaps&^parentCreds.PermittedCaps == 0 {
+		return true
+	}
+	return parentCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, childCreds.UserNamespace)
+}
+
 func (t *Task) ptraceTraceme() error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -493,7 +555,7 @@ func (t *Task) ptraceTraceme() error {
 		// returning nil here is correct.
 		return nil
 	}
-	if !t.parent.canTraceLocked(t, true) {
+	if !t.canTracemeLocked() {
 		return linuxerr.EPERM
 	}
 	if t.parent.exitStateLocked() != TaskExitNone {
@@ -502,6 +564,9 @@ func (t *Task) ptraceTraceme() error {
 		return nil
 	}
 	t.ptraceTracer.Store(t.parent)
+	// Linux's ptrace_traceme() => ptrace_link() snapshots the caller's (i.e.
+	// the tracee's own) credentials.
+	t.ptracerCreds = t.Credentials()
 	t.parent.ptraceTracees[t] = struct{}{}
 	return nil
 }
@@ -529,6 +594,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 		}
 	}
 	target.ptraceTracer.Store(t)
+	target.ptracerCreds = t.Credentials()
 	t.ptraceTracees[target] = struct{}{}
 	target.tg.signalHandlers.mu.Lock()
 	target.ptraceSeized = seize
@@ -610,6 +676,7 @@ func (t *Task) forgetTracerLocked() {
 	t.ptraceSyscallMode = ptraceSyscallNone
 	t.ptraceSinglestep = false
 	t.ptraceTracer.Store(nil)
+	t.ptracerCreds = nil
 	if t.exitTracerNotified && !t.exitTracerAcked {
 		t.exitTracerAcked = true
 		// Don't hold signalHandlers.mu while calling exitNotifyLocked,
@@ -809,6 +876,10 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 		tracer := t.Tracer()
 		if tracer != nil {
 			child.ptraceTracer.Store(tracer)
+			// Automatically attached children inherit the forking tracee's
+			// tracer credential snapshot, as in Linux's
+			// include/linux/ptrace.h:ptrace_init_task().
+			child.ptracerCreds = t.ptracerCreds
 			tracer.ptraceTracees[child] = struct{}{}
 			child.tg.signalHandlers.mu.Lock()
 			// "The "seized" behavior ... is inherited by children that are
@@ -1178,6 +1249,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 
 	switch req {
 	case linux.PTRACE_PEEKTEXT, linux.PTRACE_PEEKDATA:
+		if !t.ptraceAccessVM(target) {
+			return linuxerr.EIO
+		}
 		// "At the system call level, the PTRACE_PEEKTEXT, PTRACE_PEEKDATA, and
 		// PTRACE_PEEKUSER requests have a different API: they store the result
 		// at the address specified by the data parameter, and the return value
@@ -1190,6 +1264,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		return err
 
 	case linux.PTRACE_POKETEXT, linux.PTRACE_POKEDATA:
+		if !t.ptraceAccessVM(target) {
+			return linuxerr.EIO
+		}
 		word := t.Arch().Native(uintptr(data))
 		_, err := word.CopyOut(target.CopyContext(t, usermem.IOOpts{IgnorePermissions: true}), addr)
 		return err

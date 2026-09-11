@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -45,6 +46,20 @@ func (mm *MemoryManager) Dumpability() Dumpability {
 // SetDumpability sets the dumpability.
 func (mm *MemoryManager) SetDumpability(d Dumpability) {
 	mm.dumpability.Store(int32(d))
+}
+
+// UserNamespace returns the user namespace in which CAP_SYS_PTRACE grants
+// access to this MemoryManager when it is not dumpable, analogous to Linux's
+// mm_struct::user_ns. May be nil; see MemoryManager.userNS.
+func (mm *MemoryManager) UserNamespace() *auth.UserNamespace {
+	return mm.userNS
+}
+
+// SetUserNamespace sets the user namespace returned by UserNamespace.
+//
+// Preconditions: The MemoryManager is not yet visible to other tasks.
+func (mm *MemoryManager) SetUserNamespace(ns *auth.UserNamespace) {
+	mm.userNS = ns
 }
 
 // ArgvStart returns the start of the application argument vector.
