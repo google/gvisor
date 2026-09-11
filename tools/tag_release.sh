@@ -83,7 +83,7 @@ git tag -f -F "${message_file}" -a "${tag}" "${commit}"
 
 # Push under a staging name; the release pipeline publishes the real tag once
 # the artifacts are uploaded. A failed release leaves no tag behind.
-git push --force origin "refs/tags/${tag}:refs/tags/staging-${tag}"
+git push --force origin "refs/tags/${tag}:refs/tags/${tag}-staging"
 git tag -d "${tag}" # Not published yet.
 
 set +x
@@ -92,5 +92,5 @@ cat <<EOF
 Staged ${tag}. The release pipeline publishes it once the artifacts are in
 gs://gvisor/releases/:
 
-  https://buildkite.com/gvisor/release/builds?branch=staging-${tag}
+  https://buildkite.com/gvisor/release/builds?branch=${tag}-staging
 EOF

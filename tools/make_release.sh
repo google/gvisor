@@ -94,7 +94,7 @@ else
       fi
       # LINT.ThenChange(../.buildkite/hooks/pre-command)
       # A staging tag names a release that is still being built.
-      if [[ "$tag" == staging-release-* ]]; then
+      if [[ "$tag" == release-*-staging ]]; then
         continue
       fi
       name=$(echo "${tag}" | cut -d'-' -f2)
