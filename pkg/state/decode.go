@@ -290,7 +290,15 @@ func walkChild(path []wire.Dot, obj reflect.Value) reflect.Value {
 	return obj
 }
 
+// maxDecodedObjects bounds the number of objects a single decoded state
+// stream may reference. Real streams are orders of magnitude below this; a
+// value near it almost certainly indicates corruption or a crafted file.
+const maxDecodedObjects = 1 << 24 // ~16.7M objects (~134MB of table)
+
 func (ds *decodeState) growObjectsByID(id objectID) {
+	if id > maxDecodedObjects {
+		Failf("object ID %d exceeds maximum supported object count %d", id, maxDecodedObjects)
+	}
 	if len(ds.objectsByID) < int(id) {
 		ds.objectsByID = append(ds.objectsByID, make([]*objectDecodeState, int(id)-len(ds.objectsByID))...)
 	}
