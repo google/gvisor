@@ -337,10 +337,10 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 		family += uint32(ef)
 	}
 	model := uint32(m)
+	// AMD64 Architecture Programmer's Manual, Vol 3, E.3.2:
+	// "Model is an 8-bit value and is defined as: Model[7:0] = {ExtModel[3:0],BaseModel[3:0]}.
+	// If BaseFamily[3:0] is less than 0Fh, then ExtModel is reserved and Model is equal to BaseModel[3:0]."
 	if fs.AMD() {
-		// AMD manuals (AMD64 Architecture Programmer's Manual, Vol 3, E.3.2):
-		// "If BaseFamily[3:0] is less than 0Fh, then ExtModel is reserved and
-		// Model is equal to BaseModel[3:0]."
 		if f == 0xf {
 			model |= uint32(em) << 4
 		}
