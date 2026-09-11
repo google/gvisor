@@ -911,7 +911,7 @@ func (r *PReadResp) MarshalBytes(dst []byte) []byte {
 // CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
 func (r *PReadResp) CheckedUnmarshal(src []byte) ([]byte, bool) {
 	srcRemain, ok := r.NumBytes.CheckedUnmarshal(src)
-	if !ok || uint32(r.NumBytes) > uint32(len(srcRemain)) || uint32(r.NumBytes) > uint32(len(r.Buf)) {
+	if !ok || uint64(r.NumBytes) > uint64(len(srcRemain)) || uint64(r.NumBytes) > uint64(len(r.Buf)) {
 		return src, false
 	}
 
