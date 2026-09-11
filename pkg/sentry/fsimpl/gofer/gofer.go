@@ -1701,10 +1701,32 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
 
+// contextID is this package's type for context.Context.Value keys.
+type contextID int
+
+const (
+	// CtxCheckCachingList is a Context.Value key for a **[]*dentry. While
+	// fs.renameMu is held, inotify notifications are sent with this key set so
+	// that OnZeroWatches appends dentries to the list instead of checking them
+	// under the caller's lock; the caller checks the list once it unlocks.
+	CtxCheckCachingList contextID = iota
+)
+
+// withCheckCachingList returns ctx with CtxCheckCachingList set to ds.
+//
+// Preconditions: fs.renameMu must be locked.
+func withCheckCachingList(ctx context.Context, ds **[]*dentry) context.Context {
+	return context.WithValue(ctx, CtxCheckCachingList, ds)
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 //
 // If no watches are left on this dentry and it has no references, cache it.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
+	if ds, ok := ctx.Value(CtxCheckCachingList).(**[]*dentry); ok {
+		*ds = appendDentry(*ds, d)
+		return
+	}
 	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 }
 

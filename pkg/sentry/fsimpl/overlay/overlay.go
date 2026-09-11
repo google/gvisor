@@ -843,13 +843,36 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.watches
 }
 
+// contextID is this package's type for context.Context.Value keys.
+type contextID int
+
+const (
+	// CtxDropList is a Context.Value key for a **[]*dentry. While fs.renameMu
+	// is held, inotify notifications are sent with this key set so that
+	// OnZeroWatches appends dentries to the list instead of locking
+	// fs.renameMu itself; the caller drops them once it unlocks.
+	CtxDropList contextID = iota
+)
+
+// withDropList returns ctx with CtxDropList set to ds.
+//
+// Preconditions: fs.renameMu must be locked.
+func withDropList(ctx context.Context, ds **[]*dentry) context.Context {
+	return context.WithValue(ctx, CtxDropList, ds)
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
-	if d.refs.Load() == 0 {
-		d.fs.renameMu.Lock()
-		d.checkDropLocked(ctx)
-		d.fs.renameMu.Unlock()
+	if d.refs.Load() != 0 {
+		return
 	}
+	if ds, ok := ctx.Value(CtxDropList).(**[]*dentry); ok {
+		*ds = appendDentry(*ds, d)
+		return
+	}
+	d.fs.renameMu.Lock()
+	d.checkDropLocked(ctx)
+	d.fs.renameMu.Unlock()
 }
 
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If
