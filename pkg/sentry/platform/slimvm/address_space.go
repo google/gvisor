@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -213,3 +214,8 @@ func (as *addressSpace) PreFork() {}
 
 // PostFork implements platform.AddressSpace.PostFork.
 func (as *addressSpace) PostFork() {}
+
+// UnpatchSyscalls implements platform.AddressSpace.UnpatchSyscalls.
+func (as *addressSpace) UnpatchSyscalls(ctx pkgcontext.Context, mm platform.MemoryManager) error {
+	return nil
+}

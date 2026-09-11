@@ -28,6 +28,12 @@ import (
 
 const iovecLength = 16
 
+// UnpatchSyscalls unpatches any binary patched syscalls and disables future
+// syscall patching for this task's address space.
+func (t *Task) UnpatchSyscalls() error {
+	return t.MemoryManager().UnpatchSyscalls(t)
+}
+
 // CopyInBytes is a legacy wrapper for t.MemoryManager().CopyIn.
 //
 // Preconditions: The caller must be running on the task goroutine.

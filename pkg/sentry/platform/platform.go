@@ -395,6 +395,10 @@ type AddressSpace interface {
 	// PostFork() is called after creating a copy of AddressSpace.
 	PostFork()
 
+	// UnpatchSyscalls unpatches any binary patched syscalls and disables future
+	// syscall patching for this address space.
+	UnpatchSyscalls(ctx context.Context, mm MemoryManager) error
+
 	// AddressSpaceIO methods are supported iff the associated platform's
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this
 	// does not hold may panic if AddressSpaceIO methods are invoked.

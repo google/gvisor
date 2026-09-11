@@ -111,6 +111,12 @@ const (
 	// is used to tell the signal handler that the thread does not yet have a
 	// context.
 	ThreadStateInitializing
+	// ThreadStateFastPathToSlowPath is used when a fast-path stub thread popped a
+	// context that requires signal-frame restoration. This occurs when a ctx that has set its
+	// GS base is resumed by a systhread that had initially taken the fast path. Because the ctx
+	// needs to use its GS register, it cannot remain on the fast path so its transitioned to the
+	// slow path.
+	ThreadStateFastPathToSlowPath
 )
 
 // Msg contains the current state of the sysmsg thread.
@@ -275,7 +281,9 @@ type ThreadContext struct {
 	// (the sentry does not populate this field except to reset it).
 	StateChangedTime uint64
 	// TLS is a pointer to a thread local storage.
-	// It is is only populated on ARM64.
+	// It is is only populated with a pointer on ARM64.
+	// On x86_64 it is used as a flag to indicate whether the GS register is being used
+	// by the user. This works because reg FS already holds the TLS pointer.
 	TLS uint64
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64

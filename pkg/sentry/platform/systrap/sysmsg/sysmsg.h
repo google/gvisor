@@ -44,6 +44,7 @@ enum thread_state {
   THREAD_STATE_PREP,
   THREAD_STATE_ASLEEP,
   THREAD_STATE_INITIALIZING,
+  THREAD_STATE_FAST_PATH_TO_SLOW_PATH,
 };
 
 struct thread_context;
