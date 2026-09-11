@@ -41,10 +41,25 @@ const trapNR = 256
 // trapSize is the size of one trap.
 const trapSize = 80
 
+const (
+	// trapRetAddrOffset is the offset in a trap of the address at which the
+	// patched syscall returns. It is the immediate operand of the "movabs
+	// $ret_addr, %rax" instruction. See addTrapLocked.
+	trapRetAddrOffset = 40
+
+	// trapSysnoOffset is the offset in a trap of the number of the syscall
+	// that the trap invokes. It is the immediate operand of the "mov sysno,
+	// %eax" instruction. See addTrapLocked.
+	trapSysnoOffset = 58
+)
+
 var (
 	// jmpInst is the binary code of "jmp *addr".
 	jmpInst          = [7]byte{0xff, 0x24, 0x25, 0, 0, 0, 0}
 	jmpInstOpcodeLen = 3
+	// movInstOpcode is the first byte of "mov sysno, %eax", i.e. the first
+	// byte of a patchable syscall sequence.
+	movInstOpcode = uint8(0xb8)
 	// faultInst is the single byte invalid instruction.
 	faultInst = [1]byte{0x6}
 	// faultInstOffset is the offset of the syscall instruction.
@@ -69,11 +84,33 @@ type State struct {
 	mu        sync.RWMutex `state:"nosave"`
 	nextTrap  uint32
 	tableAddr hostarch.Addr
+	disabled  bool
+	// patches is a map of the patched syscall instruction address to its original syscall number.
+	// Used to revert the patches when patching is disabled dynamically, and to restart instructions
+	// if a thread faults on an instruction being unpatched.
+	patches map[hostarch.Addr]uint32
 }
 
 // New returns the new state structure.
-func New() *State {
-	return &State{}
+func New(disabled bool) *State {
+	return &State{
+		disabled: disabled,
+		patches:  make(map[hostarch.Addr]uint32),
+	}
+}
+
+// Disabled returns true if syscall patching has been disabled.
+func (s *State) Disabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.disabled
+}
+
+// Disable disables future syscall patching.
+func (s *State) Disable() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disabled = true
 }
 
 // +marshal
@@ -200,6 +237,15 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 		return fmt.Errorf("no task found")
 	}
 
+	// Check if syscall patching is disabled. This occurs if the user has disabled syscall patching
+	// by setting the GS register for their own uses, meaning we cannot safely use it to store the
+	// address of the usertrap table.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disabled {
+		return nil
+	}
+
 	// Skip syscall patching when the task is being ptraced, because
 	// single-stepping and other debugger features are incompatible with
 	// the "syshandler" routine used to handle patched syscalls (see
@@ -209,8 +255,6 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	//     existing patched syscalls, in case the traced program was patched
 	//     before being traced (e.g. PTRACE_ATTACH on an already running
 	//     process).
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if task.Tracer() != nil {
 		if s.nextTrap > 0 && tracerWarnLimiter.Allow() {
 			ctx.Warningf("LIKELY ERROR: Attached tracer to process with patched syscalls (traps %d)! Systrap is not fully compatible with ptrace/debuggers, program may die unexpectedly soon! Use `--systrap-disable-syscall-patching` as a workaround.", s.nextTrap)
@@ -228,7 +272,7 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 
 	// Check that another thread has not patched this syscall yet.
 	// 0xb8 is the first byte of "mov sysno, %eax".
-	if prevCode[0] == uint8(0xb8) {
+	if prevCode[0] == movInstOpcode {
 		ctx.Debugf("Found the pattern at ip %x:sysno %d", patchAddr, sysno)
 
 		trapAddr, err := s.addTrapLocked(ctx, ac, mm, uint32(sysno))
@@ -292,7 +336,226 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, hostarch.Addr(patchAddr), newCode[0:1]); err != nil {
 			return err
 		}
+
+		// s.patches is initialized in New(), but check it just in case.
+		if s.patches == nil {
+			s.patches = make(map[hostarch.Addr]uint32)
+		}
+		s.patches[hostarch.Addr(patchAddr)] = uint32(sysno)
 	}
+	return nil
+}
+
+// loadTableLocked initializes s.tableAddr and s.nextTrap from the trap table
+// mapped in mm. It returns false if the trap table has not been mapped, which
+// means that no syscall has ever been patched in this address space.
+//
+// Preconditions: s.mu must be locked.
+func (s *State) loadTableLocked(ctx context.Context, mm memoryManager) (bool, error) {
+	// The usertrap table has already been mapped and initialized.
+	if s.nextTrap != 0 {
+		return true, nil
+	}
+
+	addr, off, err := mm.FindVMAByName(trapTableAddrRange, tableVMAName)
+	// The usertrap vma does not exist.
+	if err != nil {
+		return false, nil
+	}
+
+	// The usertrap table should not be overmounted.
+	if off != 0 {
+		return false, fmt.Errorf("the usertrap vma has been overmounted")
+	}
+
+	var hdr header
+	if _, err := hdr.CopyIn(&usermem.IOCopyContext{Ctx: ctx, IO: mm}, addr); err != nil {
+		return false, err
+	}
+
+	// The table has been mapped but no trap has been allocated yet.
+	if hdr.nextTrap == 0 {
+		return false, nil
+	}
+
+	s.tableAddr = addr
+	s.nextTrap = hdr.nextTrap
+	return true, nil
+}
+
+// isPatchedWith returns true if code is a syscall that has been patched to
+// jump to trapAddr.
+func isPatchedWith(code []uint8, trapAddr hostarch.Addr) bool {
+	// PatchSyscall writes the first byte of the jmp instruction last, so it
+	// can still be the first byte of the original mov instruction if the
+	// patch has been interrupted. Threads are redirected to trapAddr in both
+	// cases; see HandleFault.
+	if code[0] != jmpInst[0] && code[0] != movInstOpcode {
+		return false
+	}
+
+	for i := 1; i < jmpInstOpcodeLen; i++ {
+		if code[i] != jmpInst[i] {
+			return false
+		}
+	}
+
+	return binary.LittleEndian.Uint32(code[jmpInstOpcodeLen:]) == uint32(trapAddr)
+}
+
+// recoverPatchesLocked adds the patches that are recorded in the trap table,
+// but not in s.patches, to s.patches.
+//
+// s.patches only contains the patches that have been applied through this
+// State. An address space that has been forked or restored inherits both the
+// patched application code and the trap table, but it gets a new State with an
+// empty map, so the trap table is the only remaining record of these patches.
+// Each trap contains the address at which the patched syscall returns and its
+// syscall number, which is all that is needed to revert the patch.
+//
+// Preconditions: s.mu must be locked.
+func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) error {
+	ok, err := s.loadTableLocked(ctx, mm)
+	if err != nil || !ok {
+		return err
+	}
+
+	if s.patches == nil {
+		s.patches = make(map[hostarch.Addr]uint32)
+	}
+
+	cc := &usermem.IOCopyContext{Ctx: ctx, IO: mm}
+	trapBuf := make([]uint8, trapSize)
+	code := make([]uint8, len(jmpInst))
+	nextTrap := s.nextTrap
+	if nextTrap > trapNR {
+		nextTrap = trapNR
+	}
+
+	// The table header is the first entry in the table. Skip it.
+	for trap := uint32(1); trap < nextTrap; trap++ {
+		trapAddr := s.trapAddr(trap)
+		if _, err := primitive.CopyUint8SliceIn(cc, trapAddr, trapBuf); err != nil {
+			return err
+		}
+
+		// The first eight bytes of every trap point to its ninth byte. Some traps
+		// are skipped by NewTrapLocked because they would cross a page boundary.
+		if binary.LittleEndian.Uint64(trapBuf[:8]) != uint64(trapAddr)+8 {
+			continue
+		}
+
+		retAddr := binary.LittleEndian.Uint64(trapBuf[trapRetAddrOffset:])
+		// Protect against underflow.
+		if retAddr < uint64(len(jmpInst)) {
+			continue
+		}
+
+		// Check if the patch has already been restored.
+		patchAddr := hostarch.Addr(retAddr - uint64(len(jmpInst)))
+		if _, ok := s.patches[patchAddr]; ok {
+			continue
+		}
+
+		// Copy the patch instruction.
+		if _, err := primitive.CopyUint8SliceIn(cc, patchAddr, code); err != nil {
+			continue
+		}
+
+		// Check if the patch is still installed.
+		if !isPatchedWith(code, trapAddr) {
+			continue
+		}
+
+		sysno := binary.LittleEndian.Uint32(trapBuf[trapSysnoOffset:])
+		ctx.Debugf("Recovered binary patch addr %x trap addr %x (sysno %d)", patchAddr, trapAddr, sysno)
+		s.patches[patchAddr] = sysno
+	}
+	return nil
+}
+
+// UnpatchSyscalls reverts all applied syscall patches to their original
+// instructions and disables future syscall patching.
+func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if ctx == nil {
+		return fmt.Errorf("no context provided")
+	}
+	task := kernel.TaskFromContext(ctx)
+	if task == nil {
+		return fmt.Errorf("no task found")
+	}
+
+	// This address space can contain patches that were applied before this
+	// State was created (i.e. before it was forked or restored).
+	// This seems expensive but it only happens once per address space.
+	if err := s.recoverPatchesLocked(ctx, mm); err != nil {
+		return err
+	}
+
+	if len(s.patches) == 0 {
+		s.disabled = true
+		return nil
+	}
+
+	ignorePermContext := task.OwnCopyContext(usermem.IOOpts{IgnorePermissions: true})
+
+	// We recreate the original instruction using the sysno stored in the
+	// patch map.
+	for patchAddr, sysno := range s.patches {
+		origCode := make([]byte, len(jmpInst))
+		// 0xb8 is the opcode for "mov sysno, %eax".
+		origCode[0] = movInstOpcode
+		// The next 4 bytes are the sysno.
+		binary.LittleEndian.PutUint32(origCode[1:5], sysno)
+		// 0x0f05 is the opcode for the syscall instruction.
+		origCode[5] = 0x0f
+		origCode[6] = 0x05
+
+		ctx.Debugf("Reverting binary patch addr %x (sysno %d)", patchAddr, sysno)
+
+		// The patch can't be removed atomically, so we need to
+		// guarantee that in each moment other threads will read a
+		// valid set of instructions, detect any inconsistent states
+		// and restart the unpatched code via HandleFault.
+		//
+		// The unpatch is applied in three steps:
+		//
+		// The first step is to replace the first byte of the jmp
+		// instruction with a one-byte invalid instruction (0x06), so that
+		// other threads which attempt to execute at patchAddr fault on
+		// the invalid instruction and restart the unpatched code via HandleFault.
+		faultInstB := primitive.ByteSlice(faultInst[:])
+		if _, err := faultInstB.CopyOut(ignorePermContext, patchAddr); err != nil {
+			ctx.Warningf("Failed to write faultInst when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
+			return err
+		}
+
+		// The second step is to replace all bytes except the first one
+		// with the remainder of the original code, so that bytes 1..4
+		// become the sysno and bytes 5..6 become the syscall opcode (0x0f05).
+		// During this write, the first byte remains 0x06, ensuring any
+		// racing threads fault on the invalid instruction.
+		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, hostarch.Addr(patchAddr+1), origCode[1:]); err != nil {
+			ctx.Warningf("Failed to write remaining code when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
+			return err
+		}
+
+		// The final step is to restore the first byte of the original
+		// instruction (0xb8, the opcode of "mov sysno, %eax").
+		// After this point, all threads will read the valid
+		// "mov sysno, %eax; syscall" instruction sequence.
+		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, patchAddr, origCode[0:1]); err != nil {
+			ctx.Warningf("Failed to restore first byte when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
+			return err
+		}
+	}
+
+	// Disable only after we ensure all patches have been reverted. Otherwise a fail could leave us
+	// in a disabled state with patches still being active.
+	s.disabled = true
 	return nil
 }
 
@@ -308,6 +571,13 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 // invalid instruction (0x6).  And in case of the race, the first thread will
 // fault on the invalid instruction and HandleFault will restart the function
 // call.
+//
+// Similarly, when unpatching syscalls, the first byte of the jmp instruction is
+// replaced with the invalid instruction (0x6) while the remaining bytes are
+// restored. If a thread attempts to execute the unpatched instruction while
+// unpatching is in progress, it faults on the invalid instruction, waits for
+// unpatching to complete (via s.mu), and HandleFault restarts the original
+// syscall instruction.
 func (s *State) HandleFault(ctx context.Context, ac *arch.Context64, mm memoryManager) error {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
@@ -316,6 +586,36 @@ func (s *State) HandleFault(ctx context.Context, ac *arch.Context64, mm memoryMa
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if s.disabled {
+		// All patched syscalls have been unpatched. If the fault was at offset 0 during unpatching,
+		// we need to restart the syscall.
+		if _, ok := s.patches[hostarch.Addr(ac.IP())]; ok {
+			ac.SetIP(ac.IP())
+			return ErrFaultRestart
+		}
+
+		// If the fault was at offset 5 from an earlier uncomplete PatchSyscall() that was
+		// replaced by an unpatch, we need to restart the syscall.
+		if ac.IP() >= faultInstOffset {
+			patchAddr := hostarch.Addr(ac.IP() - faultInstOffset)
+			if _, ok := s.patches[patchAddr]; ok {
+				regs := &ac.StateData().Regs
+				if regs.Rax == uint64(unix.SYS_RESTART_SYSCALL) {
+					regs.Orig_rax = regs.Rax
+					regs.Rip += arch.SyscallWidth
+					return ErrFaultSyscall
+				}
+				ac.SetIP(uintptr(patchAddr))
+				return ErrFaultRestart
+			}
+		}
+		return nil
+	}
+
+	if ac.IP() < faultInstOffset {
+		return nil
+	}
 
 	code := make([]uint8, len(jmpInst))
 	ip := ac.IP() - faultInstOffset

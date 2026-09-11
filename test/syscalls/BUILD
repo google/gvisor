@@ -45,7 +45,10 @@ syscall_test(
     test = "//test/syscalls/linux:alarm_test",
 )
 
+# TODO: b/405441712 - Re-enable save for this test once save and restore is
+# supported for syscall unpatching.
 syscall_test(
+    save = False,
     test = "//test/syscalls/linux:arch_prctl_test",
 )
 
