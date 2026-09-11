@@ -59,6 +59,7 @@ var _ marshal.Marshallable = (*NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV2080_CTRL_GPU_EXEC_REG_OPS_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV2080_CTRL_GPU_REG_OP)(nil)
 var _ marshal.Marshallable = (*NV2080_CTRL_GR_GET_INFO_PARAMS)(nil)
+var _ marshal.Marshallable = (*NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV2081_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV208F_CTRL_GPU_VERIFY_INFOROM_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV503B_ALLOC_PARAMETERS)(nil)
@@ -10075,6 +10076,133 @@ func (p *NV2080_CTRL_GR_GET_INFO_PARAMS) WriteTo(writer io.Writer) (int64, error
     // Since we bypassed the compiler's escape analysis, indicate that p
     // must live until the use above.
     runtime.KeepAlive(p) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) SizeBytes() int {
+    return 16 +
+        4*NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK +
+        4*NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.Alid))
+    dst = dst[4:]
+    for idx := 0; idx < NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK; idx++ {
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.FlaRemapTabAddr[idx]))
+        dst = dst[4:]
+    }
+    for idx := 0; idx < NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK; idx++ {
+        hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.GpaRemapTabAddr[idx]))
+        dst = dst[4:]
+    }
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.RemapTabSize))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.RemapEntryStart))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.RemapEntryEnd))
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) UnmarshalBytes(src []byte) []byte {
+    n.Alid = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    for idx := 0; idx < NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK; idx++ {
+        n.FlaRemapTabAddr[idx] = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+    for idx := 0; idx < NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK; idx++ {
+        n.GpaRemapTabAddr[idx] = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+        src = src[4:]
+    }
+    n.RemapTabSize = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.RemapEntryStart = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    n.RemapEntryEnd = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) MarshalUnsafe(dst []byte) []byte {
+    size := n.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) UnmarshalUnsafe(src []byte) []byte {
+    size := n.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
