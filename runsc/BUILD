@@ -14,11 +14,7 @@ go_binary(
     # Do NOT add new visibility entries here.
     # Users should depend on the gVisor release fileset,
     # not on this target directly.
-    visibility = [
-        "//:__subpackages__",
-        "//devtools/starlark/platform/parser:__subpackages__",
-        "//learning/deepmind/research/sima/projects/gggym:__subpackages__",
-    ],
+    visibility = ["//:__subpackages__"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//runsc/cli/maincli",
