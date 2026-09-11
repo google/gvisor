@@ -76,6 +76,7 @@ go_library(
         "//runsc/boot",
         "//runsc/cmd/metricserver/metricservercmd",
         "//runsc/cmd/sandboxsetup",
+        "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/console",

@@ -1,13 +1,63 @@
-"""Rule assembling the gVisor release binaries in their installed layout."""
+"""Rules assembling the gVisor release binaries in their installed layout."""
+
+load("//tools:defs.bzl", "pkg_tar")
+
+# FLAVORS are the instrumentation flavors of gVisor binaries.
+FLAVORS = [
+    "default",
+    "coverage",
+    "race",
+    "race-coverage",
+]
+
+# RUNSC maps each flavor to the runsc binary target for it.
+RUNSC = {
+    "default": "//runsc",
+    "coverage": "//runsc:runsc_coverage",
+    "race": "//runsc:runsc-race",
+    "race-coverage": "//runsc:runsc_race_coverage",
+}
+
+# SENTRY_SIDECARS maps the filename of each sidecar binary that runs the Sentry
+# (the gVisor kernel) to the set of binary targets for each flavor.
+SENTRY_SIDECARS = {
+    "gvisor_sentry": {
+        "default": "//runsc/cmd/sentry:gvisor_sentry",
+        "coverage": "//runsc/cmd/sentry:gvisor_sentry_coverage",
+        "race": "//runsc/cmd/sentry:gvisor_sentry-race",
+        "race-coverage": "//runsc/cmd/sentry:gvisor_sentry_race_coverage",
+    },
+}
+
+# OTHER_SIDECARS maps each sidecar binary target that does not run the Sentry
+# to the filename that runsc expects to find under the `gvisor-bin/` directory
+# next to its own binary.
+OTHER_SIDECARS = {
+    "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
+    "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
+    "//runsc/prewarmer:gvisor-sentry-prewarmer": "gvisor-sentry-prewarmer",
+}
+
+def sidecars(flavor):
+    """Returns the sidecar binaries of the given flavor.
+
+    Args:
+      flavor: one of FLAVORS.
+
+    Returns:
+      A dict mapping each sidecar binary target to the filename that runsc
+      expects to find under the `gvisor-bin/` directory next to its own binary.
+    """
+    if flavor not in FLAVORS:
+        fail("unknown flavor %r, must be one of %r" % (flavor, FLAVORS))
+    result = dict(OTHER_SIDECARS)
+    for name, targets in SENTRY_SIDECARS.items():
+        result[targets[flavor]] = name
+    return result
 
 # SIDECARS maps each sidecar binary target to the filename that runsc expects
 # to find under the `gvisor-bin/` directory next to its own binary.
-SIDECARS = {
-    "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
-    "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
-    "//runsc/cmd/sentry:gvisor_sentry": "gvisor_sentry",
-    "//runsc/prewarmer:gvisor-sentry-prewarmer": "gvisor-sentry-prewarmer",
-}
+SIDECARS = sidecars("default")
 
 def _single_file(target):
     files = target[DefaultInfo].files.to_list()
@@ -69,3 +119,35 @@ release_files = rule(
           "each of `bins` at the top level and `sidecars` under a " +
           "`gvisor-bin/` directory.",
 )
+
+def instrumented_release_tars(name, flavor, bins = [], visibility = None):
+    """Defines release tarballs of gVisor built with the given instrumentation flavor.
+
+    Defines `<name>-tar-bz2` and `<name>-tar-zstd` targets.
+
+    Args:
+      name: prefix of the tarball target names and of the tarball file names.
+      flavor: one of FLAVORS.
+      bins: additional top-level binaries, e.g. the containerd shim.
+      visibility: visibility of the tarball targets.
+    """
+    runsc = RUNSC[flavor]
+    gvisor_bin = name + "-gvisor-bin"
+    pkg_tar(
+        name = gvisor_bin,
+        files = sidecars(flavor),
+        mode = "0755",
+        package_dir = "gvisor-bin",
+    )
+    for extension, compressor in (("tar.bz2", None), ("tar.zstd", "//tools/zstd:compressor")):
+        pkg_tar(
+            name = "%s-%s" % (name, extension.replace(".", "-")),
+            srcs = bins,
+            compressor = compressor,
+            extension = extension,
+            files = {runsc: "runsc"},
+            mode = "0755",
+            package_file_name = "%s.%s" % (name, extension),
+            visibility = visibility,
+            deps = [":" + gvisor_bin],
+        )

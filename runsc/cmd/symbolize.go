@@ -15,88 +15,43 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/google/subcommands"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"gvisor.dev/gvisor/pkg/coverage"
+	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
-	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 // Symbolize implements subcommands.Command for the "symbolize" command.
 type Symbolize struct {
-	dumpAll bool
-}
-
-// Name implements subcommands.Command.Name.
-func (*Symbolize) Name() string {
-	return "symbolize"
-}
-
-// Synopsis implements subcommands.Command.Synopsis.
-func (*Symbolize) Synopsis() string {
-	return "Convert synthetic instruction pointers from kcov into positions in the runsc source code. Only used when Go coverage is enabled."
-}
-
-// Usage implements subcommands.Command.Usage.
-func (*Symbolize) Usage() string {
-	return `symbolize - converts synthetic instruction pointers into positions in the runsc source code.
-
-This command takes instruction pointers from stdin and converts them into their
-corresponding file names and line/column numbers in the runsc source code. The
-inputs are not interpreted as actual addresses, but as synthetic values that are
-exposed through /sys/kernel/debug/kcov. One can extract coverage information
-from kcov and translate those values into locations in the source code by
-running symbolize on the same runsc binary.
-`
-}
-
-// SetFlags implements subcommands.Command.SetFlags.
-func (c *Symbolize) SetFlags(f *flag.FlagSet) {
-	f.BoolVar(&c.dumpAll, "all", false, "dump information on all coverage blocks along with their synthetic PCs")
-}
-
-// FetchSpec implements util.SubCommand.FetchSpec.
-func (c *Symbolize) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
-	// This command does not operate on a single container, so nothing to fetch.
-	return "", nil, nil
+	sentrycmd.Symbolize
 }
 
 // Execute implements subcommands.Command.Execute.
-func (c *Symbolize) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (c *Symbolize) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
-	if !coverage.Available() {
-		return util.Errorf("symbolize can only be used when coverage is available.")
-	}
-	coverage.InitCoverageData()
-
-	if c.dumpAll {
-		if err := coverage.WriteAllBlocks(os.Stdout); err != nil {
-			return util.Errorf("Failed to write out blocks: %v", err)
+	sentry := &gvisorbinaries.GvisorSentry
+	p, err := sentry.Path()
+	if err != nil {
+		// TODO(gvisor.dev/issues/13718): Remove this branch once sidecars are required
+		if !coverage.Available() {
+			return util.Errorf("symbolize requires coverage-instrumented gVisor binaries: Sentry sidecar binary %q is not available (%v) and this runsc binary was not built with coverage.", sentry.Name, err)
 		}
-		return subcommands.ExitSuccess
+		return c.Symbolize.Execute(ctx, f, args...)
 	}
-
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		// Input is always base 16, but may or may not have a leading "0x".
-		str := strings.TrimPrefix(scanner.Text(), "0x")
-		pc, err := strconv.ParseUint(str, 16 /* base */, 64 /* bitSize */)
-		if err != nil {
-			return util.Errorf("Failed to symbolize \"%s\": %v", scanner.Text(), err)
-		}
-		if err := coverage.Symbolize(os.Stdout, pc); err != nil {
-			return util.Errorf("Failed to symbolize \"%s\": %v", scanner.Text(), err)
-		}
+	argv := []string{p, c.Name()}
+	if c.DumpAll {
+		argv = append(argv, "-all")
 	}
-	return subcommands.ExitSuccess
+	err = sentry.Exec(gvisorbinaries.Options{Argv: argv, Envv: os.Environ()})
+	// Unreachable unless `sentry.Exec` fails.
+	return util.Errorf("Failed to execute %v: %v", argv, err)
 }

@@ -31,6 +31,7 @@ package coverage
 import (
 	"bytes"
 	"fmt"
+	"hash/fnv"
 	icov "internal/coverage"
 	"internal/coverage/cfile"
 	"internal/coverage/decodecounter"
@@ -88,7 +89,12 @@ func KcovSupported() bool {
 }
 
 var globalData struct {
+	// pkgs maps stable package IDs (see packageID) to package coverage data.
 	pkgs map[uint32]*pkg
+
+	// pkgIDs maps package indexes, as found in coverage counter data, to
+	// stable package IDs.
+	pkgIDs []uint32
 
 	// once ensures that globalData is only initialized once.
 	once sync.Once
@@ -267,7 +273,10 @@ func consumeCoverageData(handler func(pc uint64) bool) {
 			if data.Counters[i] == 0 {
 				continue
 			}
-			pc := calculateSyntheticPC(data.PkgIdx, data.FuncIdx, i)
+			if int(data.PkgIdx) >= len(globalData.pkgIDs) {
+				panic(fmt.Sprintf("coverage counter data refers to unknown package index %d", data.PkgIdx))
+			}
+			pc := calculateSyntheticPC(globalData.pkgIDs[data.PkgIdx], data.FuncIdx, i)
 			if !handler(pc) {
 				return
 			}
@@ -281,28 +290,43 @@ func consumeCoverageData(handler func(pc uint64) bool) {
 func InitCoverageData() {
 	globalData.once.Do(func() {
 		cfile.InitHook(false)
-		globalData.pkgs = make(map[uint32]*pkg)
 		ml := rtcov.Meta.List
+		globalData.pkgs = make(map[uint32]*pkg, len(ml))
+		globalData.pkgIDs = make([]uint32, len(ml))
+		paths := make(map[uint32]string, len(ml))
 		for k, b := range ml {
 			byteSlice := unsafe.Slice(b.P, b.Len)
-			p := pkg{}
-			globalData.pkgs[uint32(k)] = &p
-			p.funcs = make(map[uint32]icov.FuncDesc)
 			pd, err := decodemeta.NewCoverageMetaDataDecoder(byteSlice, true)
 			if err != nil {
 				panic(fmt.Sprintf("decodemeta.NewCoverageMetaDataDecoder failed: %s", err))
 			}
-			var fd icov.FuncDesc
+			path := pd.PackagePath()
+			id := packageID(path)
+			if other, ok := paths[id]; ok {
+				panic(fmt.Sprintf("coverage package ID collision: packages %q and %q both have ID %#x", other, path, id))
+			}
+			paths[id] = path
+			globalData.pkgIDs[k] = id
+			p := &pkg{funcs: make(map[uint32]icov.FuncDesc)}
+			globalData.pkgs[id] = p
 			nf := pd.NumFuncs()
 			for fidx := uint32(0); fidx < nf; fidx++ {
+				var fd icov.FuncDesc
 				if err := pd.ReadFunc(fidx, &fd); err != nil {
 					panic(fmt.Sprintf("reading meta-data file: %s", err))
 				}
 				p.funcs[fidx] = fd
 			}
-
 		}
 	})
+}
+
+// packageID returns the ID of the package with the given import path used
+// in synthetic PCs.
+func packageID(path string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(path))
+	return h.Sum32()
 }
 
 // reportOnce ensures that a coverage report is written at most once. For a
@@ -339,9 +363,18 @@ func Symbolize(out io.Writer, pc uint64) error {
 }
 
 func symbolize(out io.Writer, pc uint64) error {
-	pkgIdx, funcIdx, idx := syntheticPCToIndexes(pc)
-	p := globalData.pkgs[uint32(pkgIdx)]
-	fd := p.funcs[uint32(funcIdx)]
+	pkgID, funcIdx, idx := syntheticPCToIndexes(pc)
+	p, ok := globalData.pkgs[pkgID]
+	if !ok {
+		return fmt.Errorf("PC %#x refers to unknown package ID %#x (are you using the same version of gVisor as the one that produced the coverage data?)", pc, pkgID)
+	}
+	fd, ok := p.funcs[funcIdx]
+	if !ok {
+		return fmt.Errorf("PC %#x refers to unknown function index %d", pc, funcIdx)
+	}
+	if idx >= len(fd.Units) {
+		return fmt.Errorf("PC %#x refers to unknown block index %d", pc, idx)
+	}
 	u := fd.Units[idx]
 	_, err := io.WriteString(out, fmt.Sprintf("%s:%d.%d,%d.%d\n", fd.Srcfile, u.StLine, u.StCol, u.EnLine, u.EnCol))
 	return err
@@ -350,10 +383,10 @@ func symbolize(out io.Writer, pc uint64) error {
 // WriteAllBlocks prints all information about all blocks along with their
 // corresponding synthetic PCs.
 func WriteAllBlocks(out io.Writer) error {
-	for pkgIdx, p := range globalData.pkgs {
+	for pkgID, p := range globalData.pkgs {
 		for funcIdx, fd := range p.funcs {
 			for idx := range fd.Units {
-				pc := calculateSyntheticPC(pkgIdx, funcIdx, idx)
+				pc := calculateSyntheticPC(pkgID, funcIdx, idx)
 				err := Symbolize(out, pc)
 				if err != nil {
 					return err
@@ -365,24 +398,27 @@ func WriteAllBlocks(out io.Writer) error {
 	return nil
 }
 
+// Synthetic PCs encode a coverage block as the stable ID of its package (see
+// packageID), the index of its function within the package's coverage
+// metadata, and the index of the block within the function.
 const (
 	blockIdxBits = 8
 	funcIdxBits  = 12
-	pkgIdxShift  = funcIdxBits + blockIdxBits
+	pkgIDShift   = funcIdxBits + blockIdxBits
 	funcIdxShift = blockIdxBits
 	blockIdxMask = (1 << blockIdxBits) - 1
 	funcIdxMask  = (1 << funcIdxBits) - 1
 )
 
-func calculateSyntheticPC(pkgIdx uint32, funcIdx uint32, blockIdx int) uint64 {
-	pc := uint64(blockIdx) | (uint64(funcIdx) << funcIdxShift) | (uint64(pkgIdx) << pkgIdxShift)
+func calculateSyntheticPC(pkgID uint32, funcIdx uint32, blockIdx int) uint64 {
+	pc := uint64(blockIdx) | (uint64(funcIdx) << funcIdxShift) | (uint64(pkgID) << pkgIDShift)
 	return ^pc
 }
 
-func syntheticPCToIndexes(pc uint64) (pkgIdx uint32, funcIdx uint32, blockIdx int) {
+func syntheticPCToIndexes(pc uint64) (pkgID uint32, funcIdx uint32, blockIdx int) {
 	pc = ^pc
 	blockIdx = int(pc & blockIdxMask)
 	funcIdx = uint32((pc >> funcIdxShift) & funcIdxMask)
-	pkgIdx = uint32(pc >> pkgIdxShift)
+	pkgID = uint32(pc >> pkgIDShift)
 	return
 }
