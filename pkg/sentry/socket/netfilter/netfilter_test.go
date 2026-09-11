@@ -139,3 +139,43 @@ func TestCheckLoopsAndChainsValid(t *testing.T) {
 		t.Fatalf("checkLoopsAndChains expected nil for valid table, got %v", err)
 	}
 }
+
+func TestCheckLoopsAndChainsMasqueradeInvalidHook(t *testing.T) {
+	// MASQUERADE target placed in Prerouting hook; must be rejected.
+	table := stack.Table{
+		Rules: []stack.Rule{
+			makeRule(&masqueradeTarget{}),
+		},
+		BuiltinChains: makeBuiltinChains(0),
+		Underflows:    makeUnderflows(0),
+	}
+	if err := checkLoopsAndChains(table, false); err != syserr.ErrInvalidArgument {
+		t.Fatalf("checkLoopsAndChains expected %v for masquerade in Prerouting, got %v", syserr.ErrInvalidArgument, err)
+	}
+}
+
+func TestCheckLoopsAndChainsMasqueradeValidPostrouting(t *testing.T) {
+	// MASQUERADE target placed in Postrouting hook; must be accepted.
+	table := stack.Table{
+		Rules: []stack.Rule{
+			makeRule(&masqueradeTarget{}),
+		},
+		BuiltinChains: [stack.NumHooks]int{
+			stack.Prerouting:  stack.HookUnset,
+			stack.Input:       stack.HookUnset,
+			stack.Forward:     stack.HookUnset,
+			stack.Output:      stack.HookUnset,
+			stack.Postrouting: 0,
+		},
+		Underflows: [stack.NumHooks]int{
+			stack.Prerouting:  stack.HookUnset,
+			stack.Input:       stack.HookUnset,
+			stack.Forward:     stack.HookUnset,
+			stack.Output:      stack.HookUnset,
+			stack.Postrouting: 0,
+		},
+	}
+	if err := checkLoopsAndChains(table, false); err != nil {
+		t.Fatalf("checkLoopsAndChains expected nil for masquerade in Postrouting, got %v", err)
+	}
+}
