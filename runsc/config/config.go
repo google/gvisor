@@ -104,6 +104,22 @@ type Config struct {
 	// DO NOT call it directly, use GetOverlay2() instead.
 	Overlay2 Overlay2 `flag:"overlay2"`
 
+	// FilestoreAdoptDir is the directory containing host filestore files to
+	// adopt as the sandbox's writable-layer backing files, instead of creating
+	// new anonymous ones. It is used together with state checkpoint restore of
+	// a checkpoint saved with --skip-filestore-pages: the adopted files provide
+	// the private MemoryFile contents that the checkpoint does not carry.
+	FilestoreAdoptDir string `flag:"filestore-adopt-dir"`
+
+	// FilestoreCloneOnAdopt makes restore adopt a reflink (FICLONE) private
+	// copy of each filestore artifact instead of the artifact itself. This
+	// keeps the artifact an immutable template: multiple restores from the
+	// same directory get write-isolated copies at O(1) cost, and the restored
+	// sandbox's truncation/mutation never touches the template. It requires a
+	// reflink-capable filesystem; set it to false for a consuming restore that
+	// mutates the artifacts in place (e.g. fd-hold fallbacks on ext4).
+	FilestoreCloneOnAdopt bool `flag:"filestore-clone-on-adopt"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 

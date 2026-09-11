@@ -38,6 +38,8 @@ type Checkpoint struct {
 	leaveRunning              bool
 	compression               CheckpointCompression
 	excludeCommittedZeroPages bool
+	skipFilestorePages        bool
+	filestoreSnapshotDir      string
 	cudaCheckpointPath        string
 	cudaCheckpointSequential  bool
 	saveRestoreExecArgv       string
@@ -72,6 +74,8 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
 	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
 	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", false, "exclude committed zero-filled pages from checkpoint")
+	f.BoolVar(&c.skipFilestorePages, "skip-filestore-pages", false, "skip saving page contents of private (disk-backed) MemoryFiles; only segment metadata is saved and the backing host filestore files must be captured out-of-band and adopted on restore (experimental)")
+	f.StringVar(&c.filestoreSnapshotDir, "filestore-snapshot-dir", "", "directory in which reflink (FICLONE) snapshots of the writable-layer filestores are written inside the checkpoint's freeze window, together with a filestores.json artifact manifest. Requires --skip-filestore-pages, a fresh (empty) directory, and a reflink-capable filesystem (e.g. XFS); valid with --leave-running (snapshots and metadata describe the same instant). Restores adopt the directory via --filestore-adopt-dir (experimental)")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint pages file")
 	f.StringVar(&c.cudaCheckpointPath, "cuda-checkpoint-path", "", "path to the cuda-checkpoint binary in the container")
 	f.BoolVar(&c.cudaCheckpointSequential, "cuda-checkpoint-sequential", false, "run cuda-checkpoint sequentially in the container")
@@ -119,6 +123,8 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		Resume:                     c.leaveRunning,
 		Direct:                     c.direct,
 		ExcludeCommittedZeroPages:  c.excludeCommittedZeroPages,
+		SkipFilestorePages:         c.skipFilestorePages,
+		FilestoreSnapshotDir:       c.filestoreSnapshotDir,
 		CudaCheckpointPath:         c.cudaCheckpointPath,
 		CudaCheckpointSequential:   c.cudaCheckpointSequential,
 		SaveRestoreExecArgv:        c.saveRestoreExecArgv,
