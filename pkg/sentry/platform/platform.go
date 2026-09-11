@@ -503,6 +503,10 @@ type Requirements struct {
 	// RequiresCapSysPtrace indicates that the sandbox has to be started with
 	// the CAP_SYS_PTRACE capability.
 	RequiresCapSysPtrace bool
+
+	// FrequentHostThreadWakeups indicates that the platform wakes sleeping
+	// host threads at a very high rate.
+	FrequentHostThreadWakeups bool
 }
 
 // SeccompInfo represents seccomp-bpf data for a given platform.
