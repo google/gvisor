@@ -3711,19 +3711,29 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 
 	case linux.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		// gVisor doesn't have real hardware, so return zeros.
+		for i := range ifr.Data {
+			ifr.Data[i] = 0
+		}
 
 	case linux.SIOCGIFTXQLEN:
 		// Gets the transmit queue length of the device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		// gVisor doesn't have a TX queue, return 0.
+		hostarch.ByteOrder.PutUint32(ifr.Data[:4], 0)
 
 	case linux.SIOCGIFDSTADDR:
 		// Gets the destination address of a point-to-point device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		// gVisor doesn't support point-to-point devices, return zeros.
+		for i := range ifr.Data {
+			ifr.Data[i] = 0
+		}
 
 	case linux.SIOCGIFBRDADDR:
 		// Gets the broadcast address of a device.
-		// TODO(gvisor.dev/issue/505): Implement.
+		// Return INADDR_ANY (0.0.0.0) for compatibility.
+		for i := range ifr.Data {
+			ifr.Data[i] = 0
+		}
 
 	case linux.SIOCGIFNETMASK:
 		// Gets the network mask of a device.
