@@ -82,6 +82,11 @@ lock must refer to one of:
 *   A global lock (e.g. globalMu).
 *   A lock resolvable from a global struct (e.g. globalX.mu).
 
+An unexported global lock is enforceable only within the package that declares
+it. Export data does not carry unexported package-level variables, so the lock
+cannot be resolved elsewhere and the annotation is silently skipped at use sites
+in other packages. Export the lock if cross-package enforcement is required.
+
 Like atomic access enforcement, checks may be elided on newly allocated objects.
 
 ### Function Annotations
@@ -101,7 +106,9 @@ The field provided in the `+checklocks` annotation must be resolvable as one of:
 *   A lock resolvable from a global struct (e.g. globalX.mu).
 
 This annotation will ensure that the given lock is held for all calls, and all
-analysis of this function will assume that this is the case.
+analysis of this function will assume that this is the case. The limitation on
+unexported global locks described above applies here also: callers in other
+packages cannot resolve the lock, so the annotation is not enforced for them.
 
 Additional variants of the `+checklocks` annotation are supported for functions:
 

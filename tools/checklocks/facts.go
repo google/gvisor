@@ -112,6 +112,11 @@ type fieldList []fieldEntry
 type resolvedValue struct {
 	value     ssa.Value
 	fieldList fieldList
+
+	// unavailable indicates that the guard object does not exist in this
+	// package, and therefore that the guard cannot be enforced here. This
+	// is distinct from a resolution failure: it is not reported.
+	unavailable bool
 }
 
 // makeResolvedValue makes a new resolvedValue.
@@ -119,6 +124,14 @@ func makeResolvedValue(v ssa.Value, fl fieldList) resolvedValue {
 	return resolvedValue{
 		value:     v,
 		fieldList: fl,
+	}
+}
+
+// makeUnavailableValue makes a resolvedValue for a guard that has no object in
+// this package. See globalGuard.resolveCommon.
+func makeUnavailableValue() resolvedValue {
+	return resolvedValue{
+		unavailable: true,
 	}
 }
 
@@ -205,7 +218,19 @@ func (g *globalGuard) resolveCommon(pc *passContext, ls *lockState) resolvedValu
 	if g.PackageName != "" && g.PackageName != state.Pkg.Pkg.Path() {
 		pkg = state.Pkg.Prog.ImportedPackage(g.PackageName)
 	}
-	v := pkg.Members[g.ObjectName].(ssa.Value)
+	// The object may not exist here. Facts travel across packages, but
+	// export data does not include unexported package-level variables, so
+	// an unexported guard has no object outside the package that declares
+	// it. The guard is simply not enforced at this use. Note that this is
+	// not reported: the annotation is valid, and there is no way for this
+	// package to name the lock in any case.
+	if pkg == nil {
+		return makeUnavailableValue()
+	}
+	v, ok := pkg.Members[g.ObjectName].(ssa.Value)
+	if !ok {
+		return makeUnavailableValue()
+	}
 	return makeResolvedValue(v, g.FieldList)
 }
 
