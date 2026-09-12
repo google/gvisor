@@ -218,7 +218,39 @@ func loadPrivateMemoryFiles(ctx context.Context, r io.Reader, mfmap map[checkpoi
 	if _, err := state.Load(ctx, r, &meta); err != nil {
 		return err
 	}
-	// Ensure that it is consistent with mfmap.
+	// Ensure that it is consistent with mfmap, unless we are restoring from
+	// split filesystem checkpoint.
+	if fsCheckpointed := FSCheckpointedMemoryFilesFromContext(ctx); fsCheckpointed != nil {
+		ownersMap := make(map[checkpoint.ResourceID]struct{}, len(meta.owners))
+		for _, fsID := range meta.owners {
+			ownersMap[fsID] = struct{}{}
+		}
+
+		// Check that all expected are loaded.
+		for fsID := range mfmap {
+			_, inFS := fsCheckpointed[fsID]
+			_, inSentry := ownersMap[fsID]
+			if !inFS && !inSentry {
+				return fmt.Errorf("private memory file %q was neither in FS checkpoint nor in Sentry checkpoint", fsID)
+			}
+			if inFS && inSentry {
+				return fmt.Errorf("private memory file %q was present in both FS checkpoint and Sentry checkpoint", fsID)
+			}
+		}
+
+		// Load from sentry checkpoint.
+		for _, fsID := range meta.owners {
+			mf, ok := mfmap[fsID]
+			if !ok {
+				return fmt.Errorf("saved private memory file for %q was not configured on restore", fsID)
+			}
+			err := mf.LoadFrom(ctx, r, opts)
+			if err != nil {
+				return fmt.Errorf("failed to load MemoryFile %p fsID %q from Sentry state: %w", mf, fsID, err)
+			}
+		}
+		return nil
+	}
 	if len(mfmap) != len(meta.owners) {
 		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, mfmap = %v", meta.owners, mfmap)
 	}
@@ -260,7 +292,7 @@ func (k *Kernel) loadMemoryFiles(ctx context.Context, r io.Reader) error {
 type AsyncMFLoader struct {
 	// privateMFsChan is used to tell the background goroutine about private
 	// MemoryFiles, once they are known. This channel is written to exactly once.
-	privateMFsChan chan map[checkpoint.ResourceID]*pgalloc.MemoryFile
+	privateMFsChan chan privateMFsInfo
 
 	mainMFStartWg   sync.WaitGroup
 	mainMetadataErr error
@@ -272,6 +304,11 @@ type AsyncMFLoader struct {
 	loadErr error
 }
 
+type privateMFsInfo struct {
+	ctx   context.Context
+	mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile
+}
+
 // NewAsyncMFLoader creates a new AsyncMFLoader. It takes ownership of
 // pagesMetadata and pagesFile. It creates a background goroutine that will
 // load all the MemoryFiles. The background goroutine immediately starts
@@ -281,7 +318,7 @@ type AsyncMFLoader struct {
 // pages.
 func NewAsyncMFLoader(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) *AsyncMFLoader {
 	mfl := &AsyncMFLoader{
-		privateMFsChan: make(chan map[checkpoint.ResourceID]*pgalloc.MemoryFile, 1),
+		privateMFsChan: make(chan privateMFsInfo, 1),
 	}
 	mfl.mainMFStartWg.Add(1)
 	mfl.metadataWg.Add(1)
@@ -330,10 +367,14 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 		return
 	}
 	timeline.Reached("waiting for privateMF info")
-	privateMFs := <-mfl.privateMFsChan
+	info := <-mfl.privateMFsChan
 	timeline.Reached("received privateMFs info")
-	log.Infof("Loading metadata for %d private MemoryFiles", len(privateMFs))
-	if err := loadPrivateMemoryFiles(ctx, pagesMetadata, privateMFs, &opts); err != nil {
+	log.Infof("Loading metadata for %d private MemoryFiles", len(info.mfmap))
+	ctx = info.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := loadPrivateMemoryFiles(ctx, pagesMetadata, info.mfmap, &opts); err != nil {
 		log.Warningf("Failed to load private MemoryFiles: %v", err)
 		mfl.metadataErr = err
 		return
@@ -355,8 +396,8 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 }
 
 // KickoffPrivate notifies the background goroutine of the private MemoryFiles.
-func (mfl *AsyncMFLoader) KickoffPrivate(mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile) {
-	mfl.privateMFsChan <- mfmap
+func (mfl *AsyncMFLoader) KickoffPrivate(ctx context.Context, mfmap map[checkpoint.ResourceID]*pgalloc.MemoryFile) {
+	mfl.privateMFsChan <- privateMFsInfo{ctx: ctx, mfmap: mfmap}
 }
 
 // WaitMainMFStart waits for the background goroutine to successfully start

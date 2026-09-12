@@ -208,6 +208,10 @@ type Sandbox struct {
 	// to the entire pod.
 	MountHints *boot.PodMountHints `json:"mountHints"`
 
+	// FSRestore indicates whether filesystem restore files were donated to the
+	// sandbox during creation.
+	FSRestore bool `json:"fsRestore"`
+
 	// StartTime is the time the sandbox was started.
 	StartTime time.Time `json:"startTime"`
 
@@ -547,8 +551,17 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
+	if !s.FSRestore && imagePath != "" {
+		fsDir := filepath.Join(imagePath, checkpointfiles.FSCheckpointDir)
+		manifestPath := filepath.Join(fsDir, checkpointfiles.FSCheckpointManifestFileName)
+		if _, err := os.Stat(manifestPath); err == nil {
+			return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
+		}
+	}
+
 	opt := boot.RestoreOpts{
-		Background: background,
+		Background:     background,
+		SplitFSRestore: s.FSRestore,
 	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
@@ -1076,6 +1089,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	if args.FSRestoreImagePath != "" {
+		s.FSRestore = true
 		files, err := s.openFSRestoreFiles(conf, args.FSRestoreImagePath, args.FSRestoreDirect, cmd)
 		if err != nil {
 			return fmt.Errorf("failed to open filesystem checkpoint files: %w", err)
@@ -1670,6 +1684,7 @@ type CheckpointOpts struct {
 	SaveRestoreExecArgv        string
 	SaveRestoreExecTimeout     time.Duration
 	SaveRestoreExecContainerID string
+	SplitFSCheckpointPaths     []checkpoint.ResourceID
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
@@ -1683,6 +1698,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
+		SplitFSCheckpointPaths:         opts.SplitFSCheckpointPaths,
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
@@ -1711,7 +1727,11 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 }
 
 func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
-	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-writes")
+	extraFlags := []string{"-allow-checkpoint-writes"}
+	if len(opts.SplitFSCheckpointPaths) > 0 {
+		extraFlags = append(extraFlags, "-allow-fscheckpoint-writes")
+	}
+	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, extraFlags...)
 	if err != nil {
 		return err
 	}
@@ -1732,6 +1752,28 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 	}
 	opt.FilePayload.Files = files
 	opt.HavePagesFile = len(files) > 1
+
+	if len(opts.SplitFSCheckpointPaths) > 0 {
+		cleanLocalFiles := cleanup.Make(func() {
+			for _, f := range files {
+				_ = f.Close()
+				_ = os.Remove(f.Name())
+			}
+		})
+		defer cleanLocalFiles.Clean()
+
+		fsImagePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointDir)
+		if err := os.MkdirAll(fsImagePath, 0755); err != nil {
+			return fmt.Errorf("creating fs checkpoint directory: %w", err)
+		}
+		fsFiles, err := openFSCheckpointLocalFiles(fsImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, opts.Direct)
+		if err != nil {
+			return fmt.Errorf("creating fs checkpoint files: %w", err)
+		}
+		opt.FilePayload.Files = append(opt.FilePayload.Files, fsFiles...)
+		cleanLocalFiles.Release()
+	}
+
 	return nil
 }
 
@@ -1740,6 +1782,13 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 // RPCs and argument passing to the sandbox.
 func createSaveFiles(path string, direct bool, compression statefile.CompressionLevel) ([]*os.File, error) {
 	var files []*os.File
+	clean := cleanup.Make(func() {
+		for _, f := range files {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+		}
+	})
+	defer clean.Clean()
 
 	stateFilePath := filepath.Join(path, checkpointfiles.StateFileName)
 	f, err := os.OpenFile(stateFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
@@ -1772,6 +1821,7 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 		files = append(files, f)
 	}
 
+	clean.Release()
 	return files, nil
 }
 
@@ -1863,7 +1913,10 @@ func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([
 	closeCleanup := cleanup.Make(func() {
 		for _, f := range files {
 			if f != nil {
-				f.Close()
+				_ = f.Close()
+				if openFlags&os.O_CREATE != 0 {
+					_ = os.Remove(f.Name())
+				}
 			}
 		}
 	})
@@ -1918,7 +1971,7 @@ func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([
 	pagesFilePath := filepath.Join(imagePath, checkpointfiles.PagesFileName)
 	pagesFileFD, err := unix.Open(pagesFilePath, openFlags|maybeODirect, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesFilePath, err)
+		return nil, fmt.Errorf("opening pages file %q: %w", pagesFilePath, err)
 	}
 	files[3] = os.NewFile(uintptr(pagesFileFD), pagesFilePath)
 

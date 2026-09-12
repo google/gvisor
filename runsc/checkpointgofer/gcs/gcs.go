@@ -261,7 +261,7 @@ func (s *FileServer) OpenRead(path string) (stateio.AsyncReader, error) {
 		log.Infof("Opening gs://%s/%s for reading", s.bucket.BucketName(), obj.ObjectName())
 		return NewReader(s.ctx, obj, miscFileMaxReadBytes, 1 /* maxRanges */, miscFileMaxReadParallel), nil
 
-	case checkpointfiles.FSCheckpointManifestFileName:
+	case checkpointfiles.FSCheckpointManifestFileName, checkpointfiles.FSCheckpointManifestPath:
 		if !s.allowFSCheckpointReads {
 			log.Warningf("gcs.FileServer.OpenRead: attempted to open %q with allowFSCheckpointReads disabled", path)
 			return nil, fs.ErrPermission
@@ -270,7 +270,7 @@ func (s *FileServer) OpenRead(path string) (stateio.AsyncReader, error) {
 		log.Infof("Opening gs://%s/%s for reading", s.bucket.BucketName(), obj.ObjectName())
 		return NewReader(s.ctx, obj, manifestFileMaxReadBytes, 1 /* maxRanges */, manifestFileMaxReadParallel), nil
 
-	case checkpointfiles.FSCheckpointMultiTarFileName:
+	case checkpointfiles.FSCheckpointMultiTarFileName, checkpointfiles.FSCheckpointMultiTarPath:
 		if !s.allowFSCheckpointReads {
 			log.Warningf("gcs.FileServer.OpenRead: attempted to open %q with allowFSCheckpointReads disabled", path)
 			return nil, fs.ErrPermission
@@ -288,6 +288,15 @@ func (s *FileServer) OpenRead(path string) (stateio.AsyncReader, error) {
 		log.Infof("Opening gs://%s/%s for reading", s.bucket.BucketName(), obj.ObjectName())
 		return NewReader(s.ctx, obj, miscFileMaxReadBytes, 1 /* maxRanges */, miscFileMaxReadParallel), nil
 
+	case checkpointfiles.FSCheckpointPagesMetadataPath:
+		if !s.allowFSCheckpointReads {
+			log.Warningf("gcs.FileServer.OpenRead: attempted to open %q with allowFSCheckpointReads disabled", path)
+			return nil, fs.ErrPermission
+		}
+		obj := s.bucket.Object(s.objectPrefix + path)
+		log.Infof("Opening gs://%s/%s for reading", s.bucket.BucketName(), obj.ObjectName())
+		return NewReader(s.ctx, obj, miscFileMaxReadBytes, 1 /* maxRanges */, miscFileMaxReadParallel), nil
+
 	case checkpointfiles.PagesFileName:
 		if !s.allowCheckpointReads && !s.allowFSCheckpointReads {
 			log.Warningf("gcs.FileServer.OpenRead: attempted to open %q with allowCheckpointReads and allowFSCheckpointReads disabled", path)
@@ -298,6 +307,16 @@ func (s *FileServer) OpenRead(path string) (stateio.AsyncReader, error) {
 		// Provision one range per page, which is the most that
 		// pgalloc.MemoryFile restore can require. Since Reader doesn't (can't)
 		// use readv, we aren't subject to UIO_MAXIOV.
+		maxRanges := pagesFileMaxReadBytes / os.Getpagesize()
+		return NewReader(s.ctx, obj, pagesFileMaxReadBytes, maxRanges, pagesFileMaxReadParallel), nil
+
+	case checkpointfiles.FSCheckpointPagesPath:
+		if !s.allowFSCheckpointReads {
+			log.Warningf("gcs.FileServer.OpenRead: attempted to open %q with allowFSCheckpointReads disabled", path)
+			return nil, fs.ErrPermission
+		}
+		obj := s.bucket.Object(s.objectPrefix + path)
+		log.Infof("Opening gs://%s/%s for reading", s.bucket.BucketName(), obj.ObjectName())
 		maxRanges := pagesFileMaxReadBytes / os.Getpagesize()
 		return NewReader(s.ctx, obj, pagesFileMaxReadBytes, maxRanges, pagesFileMaxReadParallel), nil
 
@@ -322,7 +341,7 @@ func (s *FileServer) OpenWrite(path string) (stateio.AsyncWriter, error) {
 		log.Infof("Opening gs://%s/%s for writing", s.bucket.BucketName(), obj.ObjectName())
 		return NewWriter(s.ctx, obj, miscFileMaxWriteBytes, 1 /* maxRanges */, miscFileMaxWriteParallel), nil
 
-	case checkpointfiles.FSCheckpointManifestFileName:
+	case checkpointfiles.FSCheckpointManifestFileName, checkpointfiles.FSCheckpointManifestPath:
 		if !s.allowFSCheckpointWrites {
 			log.Warningf("gcs.FileServer.OpenWrite: attempted to open %q with allowFSCheckpointWrites disabled", path)
 			return nil, fs.ErrPermission
@@ -331,7 +350,7 @@ func (s *FileServer) OpenWrite(path string) (stateio.AsyncWriter, error) {
 		log.Infof("Opening gs://%s/%s for writing", s.bucket.BucketName(), obj.ObjectName())
 		return NewWriter(s.ctx, obj, manifestFileMaxWriteBytes, 1 /* maxRanges */, manifestFileMaxWriteParallel), nil
 
-	case checkpointfiles.FSCheckpointMultiTarFileName:
+	case checkpointfiles.FSCheckpointMultiTarFileName, checkpointfiles.FSCheckpointMultiTarPath:
 		if !s.allowFSCheckpointWrites {
 			log.Warningf("gcs.FileServer.OpenWrite: attempted to open %q with allowFSCheckpointWrites disabled", path)
 			return nil, fs.ErrPermission
@@ -349,6 +368,15 @@ func (s *FileServer) OpenWrite(path string) (stateio.AsyncWriter, error) {
 		log.Infof("Opening gs://%s/%s for writing", s.bucket.BucketName(), obj.ObjectName())
 		return NewWriter(s.ctx, obj, miscFileMaxWriteBytes, 1 /* maxRanges */, miscFileMaxWriteParallel), nil
 
+	case checkpointfiles.FSCheckpointPagesMetadataPath:
+		if !s.allowFSCheckpointWrites {
+			log.Warningf("gcs.FileServer.OpenWrite: attempted to open %q with allowFSCheckpointWrites disabled", path)
+			return nil, fs.ErrPermission
+		}
+		obj := s.bucket.Object(s.objectPrefix + path)
+		log.Infof("Opening gs://%s/%s for writing", s.bucket.BucketName(), obj.ObjectName())
+		return NewWriter(s.ctx, obj, miscFileMaxWriteBytes, 1 /* maxRanges */, miscFileMaxWriteParallel), nil
+
 	case checkpointfiles.PagesFileName:
 		if !s.allowCheckpointWrites && !s.allowFSCheckpointWrites {
 			log.Warningf("gcs.FileServer.OpenWrite: attempted to open %q with allowCheckpointWrites and allowFSCheckpointWrites disabled", path)
@@ -360,6 +388,23 @@ func (s *FileServer) OpenWrite(path string) (stateio.AsyncWriter, error) {
 		// pgalloc.MemoryFile saving can require. Since Writer and
 		// ParallelWriter don't (can't) use writev, we aren't subject to
 		// UIO_MAXIOV.
+		maxRanges := int(pagesFileMaxWriteBytes / uint64(os.Getpagesize()))
+		if s.getParallelCompositeUploadEnabled() {
+			w, err := NewParallelWriter(s.ctx, s.bucket, obj, pagesFileMaxWriteBytes, maxRanges, pagesFileMaxPCUWriteParallel)
+			if err == nil {
+				return w, nil
+			}
+			log.Warningf("NewParallelWriter failed: %v; falling back to Writer", err)
+		}
+		return NewWriter(s.ctx, obj, pagesFileMaxWriteBytes, maxRanges, pagesFileMaxWriteParallel), nil
+
+	case checkpointfiles.FSCheckpointPagesPath:
+		if !s.allowFSCheckpointWrites {
+			log.Warningf("gcs.FileServer.OpenWrite: attempted to open %q with allowFSCheckpointWrites disabled", path)
+			return nil, fs.ErrPermission
+		}
+		obj := s.bucket.Object(s.objectPrefix + path)
+		log.Infof("Opening gs://%s/%s for writing", s.bucket.BucketName(), obj.ObjectName())
 		maxRanges := int(pagesFileMaxWriteBytes / uint64(os.Getpagesize()))
 		if s.getParallelCompositeUploadEnabled() {
 			w, err := NewParallelWriter(s.ctx, s.bucket, obj, pagesFileMaxWriteBytes, maxRanges, pagesFileMaxPCUWriteParallel)
