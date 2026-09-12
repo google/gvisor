@@ -24,19 +24,17 @@ import (
 	"strconv"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/dev"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -159,94 +157,91 @@ func collectContainerNvidiaRegularDevices(ctx context.Context, spec *specs.Spec,
 		}
 	}
 	if specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
-		names, err := devClient.DirentNames(ctx)
+		goferMinors, err := nvidiaRegularDeviceMinorsFromGofer(ctx, devClient)
 		if err != nil {
-			return gotAny, fmt.Errorf("failed to get names of dirents from dev gofer: %w", err)
+			return gotAny, err
 		}
-		nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
-		for _, name := range names {
-			ms := nvidiaDeviceRegex.FindStringSubmatch(name)
-			if ms == nil {
-				continue
-			}
-			minor, err := strconv.ParseUint(ms[1], 10, 32)
-			if err != nil {
-				return gotAny, fmt.Errorf("invalid nvidia device name %q: %w", name, err)
-			}
-			if minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
-				return gotAny, fmt.Errorf("invalid nvidia regular minor device number %d", minor)
-			}
-			minors[uint32(minor)] = devClient
+		for _, minor := range goferMinors {
+			minors[minor] = devClient
 			gotAny = true
 		}
 	}
 	return gotAny, nil
 }
 
-func (l *Loader) createRemappedNvproxyDeviceFiles(ctx context.Context) {
-	dr := nvproxy.DeviceRemappingFromContext(ctx)
-	if dr == nil {
-		return
+// nvidiaRegularDeviceMinorsFromGofer returns the minor device numbers of the
+// nvidia regular devices (i.e. /dev/nvidia#) visible in devClient's directory.
+func nvidiaRegularDeviceMinorsFromGofer(ctx context.Context, devClient *devutil.GoferClient) ([]uint32, error) {
+	if devClient == nil {
+		return nil, fmt.Errorf("dev gofer client not found")
 	}
-	newMinors := make(map[uint32]struct{})
-	for _, newID := range dr.NewDeviceByOld {
-		newMinors[newID.Minor] = struct{}{}
+	names, err := devClient.DirentNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get names of dirents from dev gofer: %w", err)
 	}
-	for oldMinor := range dr.OldDeviceByMinor {
-		delete(newMinors, oldMinor)
-	}
-	if len(newMinors) == 0 {
-		return
-	}
-	vfsObj := l.k.VFS()
-	mnts := vfsObj.GetAllMounts(ctx)
-	defer func() {
-		for _, mnt := range mnts {
-			mnt.DecRef(ctx)
-		}
-	}()
-	creds := auth.CredentialsFromContext(ctx)
-	for _, mnt := range mnts {
-		if _, ok := mnt.Filesystem().FilesystemType().(dev.FilesystemType); !ok {
+	nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
+	var minors []uint32
+	for _, name := range names {
+		ms := nvidiaDeviceRegex.FindStringSubmatch(name)
+		if ms == nil {
 			continue
 		}
-		rootVD := vfs.MakeVirtualDentry(mnt, mnt.Root())
-		for oldMinor, oldID := range dr.OldDeviceByMinor {
-			oldBasename := fmt.Sprintf("nvidia%d", oldMinor)
-			stat, err := vfsObj.StatAt(ctx, creds, &vfs.PathOperation{
-				Root:  rootVD,
-				Start: rootVD,
-				Path:  fspath.Parse(oldBasename),
-			}, &vfs.StatOptions{
-				Mask: linux.STATX_TYPE,
-			})
-			if err != nil {
-				if err != linuxerr.ENOENT {
-					log.Warningf("Failed to stat old device file %s: %v", oldBasename, err)
-				}
-				continue
-			}
-			if ftype := stat.Mode & linux.S_IFMT; ftype != linux.S_IFCHR || stat.RdevMajor != nvgpu.NV_MAJOR_DEVICE_NUMBER || stat.RdevMinor != oldMinor {
-				log.Infof("Not creating remapped device file for %s, which has type %v and rdev numbers (%d, %d)", oldBasename, ftype, stat.RdevMajor, stat.RdevMinor)
-				continue
-			}
-			newID := dr.NewDeviceByOld[oldID]
-			newBasename := fmt.Sprintf("nvidia%d", newID.Minor)
-			if err := vfsObj.MknodAt(ctx, creds, &vfs.PathOperation{
-				Root:  rootVD,
-				Start: rootVD,
-				Path:  fspath.Parse(newBasename),
-			}, &vfs.MknodOptions{
-				Mode:     linux.FileMode(linux.S_IFCHR | 0o666),
-				DevMajor: nvgpu.NV_MAJOR_DEVICE_NUMBER,
-				DevMinor: newID.Minor,
-			}); err != nil {
-				if err == linuxerr.EEXIST {
-					log.Debugf("Remapped device file %s already exists", newBasename)
-				} else {
-					log.Warningf("Failed to create remapped device file %s: %v", newBasename, err)
-				}
-			}
+		minor, err := strconv.ParseUint(ms[1], 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid nvidia device name %q: %w", name, err)
+		}
+		if minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
+			return nil, fmt.Errorf("invalid nvidia regular minor device number %d", minor)
+		}
+		minors = append(minors, uint32(minor))
+	}
+	return minors, nil
+}
+
+// createNvproxyDeviceFilesAfterRestore creates device files for GPUs available
+// after restore. The set of GPUs may differ from the set with which the
+// sandbox was saved, in which case restored /dev filesystems lack device files
+// for GPUs that did not exist during save.
+//
+// +checklocks:l.mu
+func (l *Loader) createNvproxyDeviceFilesAfterRestore(ctx context.Context) {
+	for contName, spec := range l.containerSpecs {
+		minorsMap := make(map[uint32]*devutil.GoferClient)
+		devClient := l.k.GetDevGoferClient(contName)
+		if _, err := collectContainerNvidiaRegularDevices(ctx, spec, l.root.conf, devClient, minorsMap); err != nil {
+			log.Warningf("Failed to collect nvidia devices available to container %q after restore: %v", contName, err)
+			continue
+		}
+		if len(minorsMap) == 0 {
+			continue
+		}
+		ep, ok := l.processes[execID{cid: l.containerIDs[contName]}]
+		if !ok || ep.tg == nil {
+			log.Warningf("Failed to find root process of container %q; not creating its nvidia device files", contName)
+			continue
+		}
+		l.createNvproxyDeviceFilesAfterRestoreFor(ctx, contName, ep.tg.Leader(), minorsMap)
+	}
+}
+
+func (l *Loader) createNvproxyDeviceFilesAfterRestoreFor(ctx context.Context, contName string, leader *kernel.Task, minors map[uint32]*devutil.GoferClient) {
+	mntns := leader.GetMountNamespace()
+	if mntns == nil {
+		// The container's root process has already exited.
+		return
+	}
+	defer mntns.DecRef(ctx)
+	rootVD := mntns.Root(ctx)
+	if !rootVD.Ok() {
+		return
+	}
+	defer rootVD.DecRef(ctx)
+	vfsObj := l.k.VFS()
+	creds := auth.CredentialsFromContext(ctx)
+	for minor := range minors {
+		pathname := fmt.Sprintf("/dev/nvidia%d", minor)
+		if err := dev.CreateDeviceFile(ctx, vfsObj, creds, rootVD, pathname, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, linux.FileMode(linux.S_IFCHR|0o666), nil /* uid */, nil /* gid */); err != nil {
+			log.Warningf("Failed to create device file %s in container %q: %v", pathname, contName, err)
 		}
 	}
 }
