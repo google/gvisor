@@ -19,6 +19,7 @@ go_library(
         "//pkg/coretag",
         "//pkg/cpuid",
         "//pkg/fd",
+        "//pkg/garbage",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/metric",

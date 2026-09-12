@@ -51,6 +51,7 @@ go_library(
         "//pkg/flipcall",
         "//pkg/fspath",
         "//pkg/fsutil",
+        "//pkg/garbage",
         "//pkg/gomaxprocs",
         "//pkg/hostarch",
         "//pkg/log",
