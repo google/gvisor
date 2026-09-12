@@ -114,6 +114,10 @@ type Stack struct {
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
 
+	// clockResolution is an upper bound on the quantization interval of
+	// monotonic timestamps returned by clock.
+	clockResolution time.Duration
+
 	// handleLocal allows non-loopback interfaces to loop packets.
 	handleLocal bool
 
@@ -231,6 +235,17 @@ type Options struct {
 	//
 	// If Clock is nil, tcpip.NewStdClock() will be used.
 	Clock tcpip.Clock
+
+	// ClockResolution is an upper bound on the quantization interval of
+	// timestamps returned by Clock.NowMonotonic. It should be set when the
+	// clock advances in discrete steps large enough to affect TCP loss detection;
+	// for example, some Windows monotonic clocks commonly update every 500 us.
+	// TCP RACK uses this value to avoid declaring loss based on timestamp
+	// quantization alone. It does not describe timer wake-up precision.
+	//
+	// A value of zero means that no quantization allowance is needed or known.
+	// Values less than zero are clamped to zero.
+	ClockResolution time.Duration
 
 	// Stats are optional statistic counters.
 	Stats tcpip.Stats
@@ -415,6 +430,11 @@ func New(opts Options) *Stack {
 
 	opts.NUDConfigs.resetInvalidFields()
 
+	clockResolution := opts.ClockResolution
+	if clockResolution < 0 {
+		clockResolution = 0
+	}
+
 	s := &Stack{
 		transportProtocols:           make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:             make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
@@ -424,6 +444,7 @@ func New(opts Options) *Stack {
 		cleanupEndpoints:             make(map[TransportEndpoint]struct{}),
 		PortManager:                  ports.NewPortManager(),
 		clock:                        clock,
+		clockResolution:              clockResolution,
 		stats:                        opts.Stats.FillIn(),
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
@@ -564,6 +585,16 @@ func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h f
 // scheduling work.
 func (s *Stack) Clock() tcpip.Clock {
 	return s.clock
+}
+
+// ClockResolution returns an upper bound on the quantization interval of
+// monotonic timestamps returned by the Stack's clock.
+//
+// A zero value means to trust the clock advances between reads at a precision
+// close to the precision of the value it returns; consuming code should need no
+// corrections for clock resolution.
+func (s *Stack) ClockResolution() time.Duration {
+	return s.clockResolution
 }
 
 // Stats returns a mutable copy of the current stats.
