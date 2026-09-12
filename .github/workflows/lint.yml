@@ -1,4 +1,5 @@
-# Runs the source-level lint suite. See tools/lint.sh.
+# Runs the source-level lint suite on Linux, macOS, and Windows. lint.sh is
+# OS-neutral and runs directly on the host. See tools/lint.sh.
 name: Lint
 
 "on":
@@ -18,7 +19,14 @@ permissions:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       with:
@@ -28,4 +36,6 @@ jobs:
       with:
         go-version-file: 'go.mod'
 
-    - run: make lint
+    - name: Run linters
+      run: bash tools/lint.sh
+      shell: bash
