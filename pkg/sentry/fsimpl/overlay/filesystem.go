@@ -590,7 +590,7 @@ func CreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *a
 
 func (fs *filesystem) cleanupRecreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, pop *vfs.PathOperation) {
 	if err := CreateWhiteout(ctx, vfsObj, fs.creds, pop); err != nil {
-		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate whiteout after failed file creation: %v", err))
+		log.Warningf("overlay: failed to recreate whiteout after failed file creation: %v", err)
 	}
 }
 
@@ -1299,7 +1299,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				Start: replaced.upperVD,
 				Path:  fspath.Parse(whiteoutName),
 			}); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate deleted whiteout after RenameAt failure: %v", err))
+				log.Warningf("overlay: failed to recreate deleted whiteout after RenameAt failure: %v", err)
 			}
 		}
 	}
@@ -1421,7 +1421,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 
 	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
-		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
+		log.Warningf("overlay: failed to create whiteout at origin after RenameAt: %v", err)
 	}
 	if renamed.isDir() {
 		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
@@ -1524,7 +1524,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 					Start: child.upperVD,
 					Path:  fspath.Parse(whiteoutName),
 				}); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
-					panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate deleted whiteout after RmdirAt failure: %v", err))
+					log.Warningf("overlay: failed to recreate deleted whiteout after RmdirAt failure: %v", err)
 				}
 			}
 		}
@@ -1564,7 +1564,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 				// Don't attempt to recover from this: the original directory is
 				// already gone, so any dentries representing it are invalid, and
 				// creating a new directory won't undo that.
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after removing upper layer directory during RmdirAt: %v", err))
+				log.Warningf("overlay: failed to create whiteout after removing upper layer directory during RmdirAt: %v", err)
 			}
 			return err
 		}
@@ -1802,7 +1802,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
 			vfsObj.AbortDeleteDentry(&child.vfsd)
 			if childLayer == lookupLayerUpper {
-				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after unlinking upper layer file during UnlinkAt: %v", err))
+				log.Warningf("overlay: failed to create whiteout after unlinking upper layer file during UnlinkAt: %v", err)
 			}
 			return err
 		}

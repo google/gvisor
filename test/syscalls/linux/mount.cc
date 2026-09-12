@@ -35,6 +35,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -3239,6 +3240,77 @@ TEST(MountTest, OverlayfsOnGoferBehavior) {
                          sizeof(xattr_buf)),
                 SyscallSucceeds());
     EXPECT_STREQ(xattr_buf, "value");
+  }
+}
+
+// Deleting an upper layer file when whiteout creation fails (e.g. concurrent
+// removal of the parent directory on the underlying filesystem) should not
+// cause the sandbox to panic (fixes #14726).
+TEST(MountTest, OverlayfsUnlinkWhiteoutFailureDoesNotPanic) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+
+  // Overlayfs cannot be used as upper layer for another overlayfs mount. If
+  // running in overlayfs, create a tmpfs mount to use as the base directory.
+  if (in_overlayfs) {
+    TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
+                             "mode=1777,size=10m"));
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      umount2(base_dir.path().c_str(), 0);
+    }
+  });
+
+  auto lower = JoinPath(base_dir.path(), "lower");
+  auto upper = JoinPath(base_dir.path(), "upper");
+  auto work = JoinPath(base_dir.path(), "work");
+  auto merged = JoinPath(base_dir.path(), "merged");
+  ASSERT_THAT(mkdir(lower.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(upper.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(work.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(merged.c_str(), 0755), SyscallSucceeds());
+
+  std::string opts = "lowerdir=" + lower + ",upperdir=" + upper +
+                     ",workdir=" + work + ",userxattr";
+  ASSERT_THAT(
+      mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.c_str(), 0); });
+
+  // Repeat the race a few times to ensure unlink does not panic when the
+  // parent upper directory is concurrently removed.
+  for (int i = 0; i < 20; ++i) {
+    std::string dname = absl::StrCat("d", i);
+    std::string lower_d = JoinPath(lower, dname);
+    ASSERT_THAT(mkdir(lower_d.c_str(), 0755), SyscallSucceeds());
+    std::string lower_f = JoinPath(lower_d, "f");
+    ASSERT_NO_ERRNO(CreateWithContents(lower_f, "x", 0644));
+
+    // Modify via merged to copy up to upper layer.
+    std::string merged_f = JoinPath(JoinPath(merged, dname), "f");
+    ASSERT_NO_ERRNO(SetContents(merged_f, "xy"));
+
+    std::string upper_d = JoinPath(upper, dname);
+    std::atomic<bool> stop(false);
+    std::vector<std::unique_ptr<ScopedThread>> threads;
+    for (int t = 0; t < 2; ++t) {
+      threads.push_back(std::make_unique<ScopedThread>([&upper_d, &stop] {
+        while (!stop.load()) {
+          rmdir(upper_d.c_str());
+        }
+      }));
+    }
+
+    // Attempt unlink through merged overlay. Whether it succeeds or fails
+    // with an errno (e.g. ENOENT), the sandbox MUST NOT panic.
+    unlink(merged_f.c_str());
+
+    stop.store(true);
+    threads.clear();
   }
 }
 
