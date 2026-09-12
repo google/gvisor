@@ -629,3 +629,23 @@ func TestFilterInputRejectTCPReset(t *testing.T) {
 func TestFilterInputRejectTCPResetUnmatched(t *testing.T) {
 	singleTest(t, &FilterInputRejectTCPResetUnmatched{})
 }
+
+func TestFilterInputAddrTypeUnicastDrop(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeUnicastDrop{})
+}
+
+func TestFilterInputAddrTypeBroadcastDrop(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeBroadcastDrop{})
+}
+
+func TestFilterInputAddrTypeMulticastDrop(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeMulticastDrop{})
+}
+
+func TestFilterInputAddrTypeInvertBroadcastDrop(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeInvertBroadcastDrop{})
+}
+
+func TestFilterInputAddrTypeFIBReject(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeFIBReject{})
+}
