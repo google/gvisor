@@ -119,6 +119,12 @@ func (ep *Endpoint) RecvFDNonblock() (int, error) {
 func (ep *Endpoint) recvFD(nonblock bool) (int, error) {
 	cmsgLen := unix.CmsgLen(sizeofInt32)
 	ep.msghdr.SetControllen(cmsgLen)
+	ep.msghdr.Flags = 0
+	ep.cmsg.Level = 0
+	ep.cmsg.Type = 0
+	ep.cmsg.SetLen(0)
+	*ep.cmsgData() = -1
+
 	var e unix.Errno
 	if nonblock {
 		_, _, e = unix.RawSyscall(unix.SYS_RECVMSG, uintptr(ep.sockfd), uintptr(unsafe.Pointer(&ep.msghdr)), unix.MSG_TRUNC|unix.MSG_DONTWAIT)
@@ -127,6 +133,9 @@ func (ep *Endpoint) recvFD(nonblock bool) (int, error) {
 	}
 	if e != 0 {
 		return -1, e
+	}
+	if int(ep.msghdr.Flags)&unix.MSG_CTRUNC != 0 {
+		return -1, unix.EMFILE
 	}
 	if int(ep.msghdr.Controllen) != cmsgLen {
 		return -1, fmt.Errorf("received control message has incorrect length: got %d, wanted %d", ep.msghdr.Controllen, cmsgLen)

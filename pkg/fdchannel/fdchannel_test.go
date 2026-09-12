@@ -130,3 +130,58 @@ func TestRecvFDThenShutdown(t *testing.T) {
 	time.Sleep(time.Second) // to ensure recvEP.RecvFD() has blocked
 	recvEP.Shutdown()
 }
+
+func TestRecvFDTruncatedUnderExhaustion(t *testing.T) {
+	sendFile, err := os.CreateTemp("", "fdchannel_test_")
+	if err != nil {
+		t.Fatalf("failed to create temporary file: %v", err)
+	}
+	defer sendFile.Close()
+
+	chanFDs, err := NewConnectedSockets()
+	if err != nil {
+		t.Fatalf("failed to create fdchannel sockets: %v", err)
+	}
+	sendEP := NewEndpoint(chanFDs[0])
+	defer sendEP.Destroy()
+	recvEP := NewEndpoint(chanFDs[1])
+	defer recvEP.Destroy()
+
+	// 1. Prime the receiver buffer with a successful send and receive.
+	if err := sendEP.SendFD(int(sendFile.Fd())); err != nil {
+		t.Fatalf("SendFD failed: %v", err)
+	}
+	firstFD, err := recvEP.RecvFD()
+	if err != nil {
+		t.Fatalf("RecvFD failed: %v", err)
+	}
+	defer unix.Close(firstFD)
+
+	// 2. Query and lower RLIMIT_NOFILE to prevent allocation of subsequent FDs.
+	var origRlim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &origRlim); err != nil {
+		t.Skipf("cannot get rlimit: %v", err)
+	}
+	lowRlim := origRlim
+	lowRlim.Cur = uint64(firstFD + 1)
+	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &lowRlim); err != nil {
+		t.Skipf("cannot lower RLIMIT_NOFILE: %v", err)
+	}
+	defer unix.Setrlimit(unix.RLIMIT_NOFILE, &origRlim)
+
+	// 3. Send another FD from sendEP.
+	if err := sendEP.SendFD(int(sendFile.Fd())); err != nil {
+		t.Fatalf("SendFD failed: %v", err)
+	}
+
+	// 4. RecvFD must fail and must never return the stale firstFD.
+	secondFD, err := recvEP.RecvFD()
+	if err == nil {
+		unix.Close(secondFD)
+		t.Fatalf("RecvFD succeeded unexpectedly under FD exhaustion: got %d, want error", secondFD)
+	}
+	if secondFD == firstFD {
+		t.Fatalf("RecvFD returned stale FD %d from previous receive under FD exhaustion", secondFD)
+	}
+}
+

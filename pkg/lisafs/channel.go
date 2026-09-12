@@ -190,8 +190,10 @@ func (ch *channel) rcvMsg(dataLen uint32) (MID, uint32, error) {
 	for i := 0; i < int(header.numFDs); i++ {
 		fd, err := ch.fdChan.RecvFDNonblock()
 		if err != nil {
+			ch.dead = true
+			closeFDs(ch.ReleaseFDs())
 			log.Warningf("expected %d FDs, received %d successfully, got err after that: %v", header.numFDs, i, err)
-			break
+			return 0, 0, unix.EIO
 		}
 		ch.TrackFD(fd)
 	}
