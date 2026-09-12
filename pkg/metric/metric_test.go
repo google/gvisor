@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
@@ -68,7 +69,8 @@ func verifyPrometheusParsing(t *testing.T) {
 		t.Errorf("failed to get Prometheus snapshot: %v", err)
 		return
 	}
-	if _, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf); err != nil {
+	parser := expfmt.NewTextParser(model.LegacyValidation)
+	if _, err := parser.TextToMetricFamilies(&buf); err != nil {
 		t.Errorf("failed to parse Prometheus output: %v", err)
 	}
 }

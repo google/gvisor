@@ -17,7 +17,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"strings"
 
 	containerdshim "github.com/containerd/containerd/v2/pkg/shim"
 	// This import registers the runsc plugin with containerd.
@@ -25,7 +30,49 @@ import (
 	_ "gvisor.dev/gvisor/pkg/shim/v1/plugin"
 )
 
+type bootstrapParams struct {
+	Version  int    `json:"version"`
+	Address  string `json:"address"`
+	Protocol string `json:"protocol"`
+}
+
 // Main is the main entrypoint.
 func Main() {
+	var isStart bool
+	for _, arg := range os.Args {
+		if arg == "start" {
+			isStart = true
+			break
+		}
+	}
+
+	if isStart {
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err == nil {
+			os.Stdout = w
+			defer func() {
+				_ = w.Close()
+				os.Stdout = oldStdout
+				var buf bytes.Buffer
+				_, _ = io.Copy(&buf, r)
+				_ = r.Close()
+				out := strings.TrimSpace(buf.String())
+				if strings.HasPrefix(out, "unix://") || strings.HasPrefix(out, "/") {
+					bp := bootstrapParams{
+						Version:  2,
+						Address:  out,
+						Protocol: "ttrpc",
+					}
+					if data, err := json.Marshal(bp); err == nil {
+						_, _ = oldStdout.Write(data)
+						return
+					}
+				}
+				_, _ = oldStdout.Write(buf.Bytes())
+			}()
+		}
+	}
+
 	containerdshim.Run(context.Background(), shim.NewShimManager("io.containerd.runsc.v1"))
 }
