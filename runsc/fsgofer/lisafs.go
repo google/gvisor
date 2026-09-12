@@ -1051,15 +1051,9 @@ func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uin
 		// Sockets and symlinks use O_PATH host FDs. However, fgetxattr(2) fails
 		// with EBADF for O_PATH FDs. Use lgetxattr(2) instead.
 		xattrSize, err := unix.Lgetxattr(fd.Node().FilePath(), name, data)
-		if err == nil && xattrSize > math.MaxUint16 {
-			return 0, unix.E2BIG
-		}
 		return uint16(xattrSize), err
 	}
 	xattrSize, err := unix.Fgetxattr(fd.hostFD, name, data)
-	if err == nil && xattrSize > math.MaxUint16 {
-		return 0, unix.E2BIG
-	}
 	return uint16(xattrSize), err
 }
 
