@@ -3242,6 +3242,71 @@ TEST(MountTest, OverlayfsOnGoferBehavior) {
   }
 }
 
+// Test that overlayfs can be mounted with relative lowerdir, upperdir, and
+// workdir paths resolved against the calling process's working directory
+// (fixes #14699).
+TEST(MountTest, OverlayfsRelativePaths) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+
+  // Overlayfs cannot be used as upper layer for another overlayfs mount. If
+  // running in overlayfs, create a tmpfs mount to use as the base directory.
+  if (in_overlayfs) {
+    TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
+                             "mode=1777,size=10m"));
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      umount2(base_dir.path().c_str(), 0);
+    }
+  });
+
+  // Save current working directory so we can restore it upon test completion.
+  char* cwd = getcwd(nullptr, 0);
+  ASSERT_NE(cwd, nullptr);
+  std::string old_cwd(cwd);
+  free(cwd);
+  auto cwd_cleanup = Cleanup([old_cwd] { chdir(old_cwd.c_str()); });
+
+  // Change working directory to base_dir.
+  ASSERT_THAT(chdir(base_dir.path().c_str()), SyscallSucceeds());
+
+  // Create relative directories: l0, l1, u, w, m.
+  ASSERT_THAT(mkdir("l0", 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir("l1", 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir("u", 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir("w", 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir("m", 0755), SyscallSucceeds());
+
+  // Populate lower layers with test files.
+  ASSERT_NO_ERRNO(CreateWithContents("l0/file0", "from_l0", 0644));
+  ASSERT_NO_ERRNO(CreateWithContents("l1/file1", "from_l1", 0644));
+
+  // Mount overlay with relative paths.
+  std::string opts = "lowerdir=l0:l1,upperdir=u,workdir=w,userxattr";
+  ASSERT_THAT(
+      mount("overlay", "m", "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup = Cleanup([] { umount2("m", 0); });
+
+  // Verify that files from both lower layers are accessible through the merged mount.
+  std::string content0;
+  ASSERT_NO_ERRNO(GetContents("m/file0", &content0));
+  EXPECT_EQ(content0, "from_l0");
+
+  std::string content1;
+  ASSERT_NO_ERRNO(GetContents("m/file1", &content1));
+  EXPECT_EQ(content1, "from_l1");
+
+  // Write a new file through the merged mount and verify it is written to upperdir.
+  ASSERT_NO_ERRNO(CreateWithContents("m/newfile", "created_in_overlay", 0644));
+  std::string upper_content;
+  ASSERT_NO_ERRNO(GetContents("u/newfile", &upper_content));
+  EXPECT_EQ(upper_content, "created_in_overlay");
+}
+
 TEST(MountTest, PollMountInfo) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

@@ -97,6 +97,12 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 			defer t.mu.Unlock()
 		}
 		return t.FSContext().RootDirectory()
+	case vfs.CtxWorkingDir:
+		if !isTaskGoroutine {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+		}
+		return t.FSContext().WorkingDirectory()
 	case vfs.CtxMountNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()

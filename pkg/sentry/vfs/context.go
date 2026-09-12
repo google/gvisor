@@ -31,6 +31,9 @@ const (
 	// CtxRoot is a Context.Value key for a VFS root.
 	CtxRoot
 
+	// CtxWorkingDir is a Context.Value key for a VFS working directory.
+	CtxWorkingDir
+
 	// CtxRestoreFilesystemFDMap is a Context.Value key for a
 	// map[checkpoint.ResourceID]int mapping filesystem unique IDs (cf.
 	// gofer.InternalFilesystemOptions.UniqueID) to host FDs.
@@ -115,3 +118,38 @@ func (rc rootContext) Value(key any) any {
 		return rc.Context.Value(key)
 	}
 }
+
+// WorkingDirFromContext returns the VFS working directory used by ctx. It takes a
+// reference on the returned VirtualDentry. If ctx does not have a specific VFS
+// working directory, WorkingDirFromContext returns a zero-value VirtualDentry.
+func WorkingDirFromContext(ctx goContext.Context) VirtualDentry {
+	if v := ctx.Value(CtxWorkingDir); v != nil {
+		return v.(VirtualDentry)
+	}
+	return VirtualDentry{}
+}
+
+type workingDirContext struct {
+	context.Context
+	workingDir VirtualDentry
+}
+
+// WithWorkingDir returns a copy of ctx with the given working directory.
+func WithWorkingDir(ctx context.Context, workingDir VirtualDentry) context.Context {
+	return &workingDirContext{
+		Context:    ctx,
+		workingDir: workingDir,
+	}
+}
+
+// Value implements Context.Value.
+func (wc workingDirContext) Value(key any) any {
+	switch key {
+	case CtxWorkingDir:
+		wc.workingDir.IncRef()
+		return wc.workingDir
+	default:
+		return wc.Context.Value(key)
+	}
+}
+

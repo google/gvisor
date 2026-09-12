@@ -1265,7 +1265,7 @@ func (ctx *createProcessContext) Value(key any) any {
 		return ipcns
 	case auth.CtxCredentials:
 		return ctx.args.Credentials
-	case vfs.CtxRoot:
+	case vfs.CtxRoot, vfs.CtxWorkingDir:
 		if ctx.args.MountNamespace == nil {
 			return nil
 		}
@@ -2182,7 +2182,7 @@ func (ctx *supervisorContext) Value(key any) any {
 	case auth.CtxCredentials:
 		// The supervisor context is global root.
 		return auth.NewRootCredentials(ctx.Kernel.rootUserNamespace)
-	case vfs.CtxRoot:
+	case vfs.CtxRoot, vfs.CtxWorkingDir:
 		if ctx.Kernel.globalInit == nil || ctx.Kernel.globalInit.Leader() == nil {
 			return vfs.VirtualDentry{}
 		}
