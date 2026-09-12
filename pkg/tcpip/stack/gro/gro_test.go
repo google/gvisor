@@ -17,12 +17,51 @@ package gro
 import (
 	"math/bits"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+type countingDispatcher struct {
+	delivered int
+}
+
+func (d *countingDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
+	d.delivered++
+}
+
+func (*countingDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
+}
 
 func TestNBuckets(t *testing.T) {
 	// groNBuckets must be a power of 2 so that we can use groNBuckets-1 as
 	// a mask when indexing into the list of buckets.
 	if bits.OnesCount(groNBuckets) != 1 {
 		t.Fatalf("groNBuckets is not a power of two")
+	}
+}
+
+func TestFlushDrainsBucket(t *testing.T) {
+	dispatcher := &countingDispatcher{}
+	gd := GRO{Dispatcher: dispatcher}
+	gd.Init(true)
+	bucket := &gd.buckets[0]
+	for i := 0; i < groBucketSize; i++ {
+		packet := stack.NewPacketBuffer(stack.PacketBufferOptions{})
+		bucket.insert(packet, nil, nil)
+	}
+	t.Cleanup(func() {
+		for bucket.count != 0 {
+			bucket.removeOldest().DecRef()
+		}
+	})
+
+	gd.Flush()
+
+	if got := dispatcher.delivered; got != groBucketSize {
+		t.Errorf("Flush delivered %d packets, want %d", got, groBucketSize)
+	}
+	if got := bucket.count; got != 0 {
+		t.Errorf("Flush left %d packets in bucket, want 0", got)
 	}
 }
