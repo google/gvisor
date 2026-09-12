@@ -18,6 +18,7 @@
 package plugin
 
 import (
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -68,31 +69,37 @@ func GetPluginStack() PluginStack {
 	return pluginStack
 }
 
-// EventInfo is a struct that holds information necessary to a socket
-// notification mechanisms.
+// EventInfo holds a socket's notification queue and readiness cache.
+//
+// Mask and Waiting are protected by the owning notifier's mutex. EventInfo
+// does not retain that notifier, so checklocks cannot express these guards.
 type EventInfo struct {
-	// Queue is the socket corresponding event queue.
+	// Wq is the socket's event queue, initialized before registration.
+	// The pointer is immutable; the queue synchronizes its own entries.
 	Wq *waiter.Queue
 
 	// Mask represents events this socket registered.
 	Mask waiter.EventMask
 
-	// Ready represents events has been currently reported.
-	Ready waiter.EventMask
+	// Ready caches reported events. The notifier updates it concurrently with
+	// socket readiness checks, which consume cached IN/OUT events.
+	//
+	// +checkatomic
+	Ready atomicbitops.Uint64
 
-	// Waiting represents whether there is any waiting event.
+	// Waiting is the notifier's record of whether this socket is registered
+	// with the plugin stack's epoll instance.
 	Waiting bool
 }
 
 // PluginNotifier represents a set of operations to handle
 // plugin network stack's event notification mechanisms.
 type PluginNotifier interface {
-	// AddFD registers a new socket fd and its corresponding
-	// event notification info into the global fdMap.
+	// AddFD registers a socket fd and its event notification state with
+	// the notifier.
 	AddFD(fd uint32, eventinfo *EventInfo) error
 
-	// RemoveFD unregisters a socket fd and its corresponding
-	// event notification info from the global fdMap.
+	// RemoveFD unregisters a socket fd from the notifier.
 	RemoveFD(fd uint32)
 
 	// UpdateFD updates the set of events the socket fd needs
