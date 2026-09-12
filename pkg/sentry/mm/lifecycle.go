@@ -115,6 +115,9 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	for srcvseg := mm.vmas.FirstSegment(); srcvseg.Ok(); srcvseg = srcvseg.NextSegment() {
 		vma := srcvseg.ValuePtr().copy()
 		vmaAR := srcvseg.Range()
+		// The child must not own the parent's reserved span. Mapping those
+		// pages writable in the child without COW would silently share them.
+		vma.memfileReserved = false
 
 		if vma.dontfork {
 			length := uint64(vmaAR.Length())
@@ -204,7 +207,12 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 			// Since Pin() breaks copy-on-write on the pinned range,
 			// possibly-pinned pages are exactly those in private
 			// non-copy-on-write pmas with more than one reference.
-			if sfr, ok := mm.mf.FirstSharedRange(srcpseg.fileRange()); ok {
+			srcvseg = srcvseg.seekNextLowerBound(srcpseg.Start())
+			baseline := uint64(1)
+			if srcvseg.Ok() {
+				baseline = mm.pmaRefBaseline(srcvseg, srcpseg)
+			}
+			if sfr, ok := mm.mf.FirstRangeWithRefsAbove(srcpseg.fileRange(), baseline); ok {
 				sar := hostarch.AddrRange{
 					Start: srcpseg.Start() + hostarch.Addr(sfr.Start-pma.off),
 					End:   srcpseg.Start() + hostarch.Addr(sfr.End-pma.off),

@@ -33,6 +33,7 @@ message MemAcctRangeProto {
   uint32 kind = 3;
   uint32 mem_cg_id = 4;
   bool known_committed = 5;
+  bool implicit_zero = 6;
 }
 
 message ChunkInfoProto {
