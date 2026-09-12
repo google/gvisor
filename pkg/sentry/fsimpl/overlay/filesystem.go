@@ -1896,7 +1896,7 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_get().
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	top := d.topLayer()
-	return vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, opts)
+	return vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{Root: top, Start: top}, opts)
 }
 
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
@@ -1952,7 +1952,10 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.SetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
+	// Notably, we use the caller's creds here rather than the filesystem's creds,
+	// since setting some xattrs includes additional UID/GID and userns-related checks
+	// and translations.
+	return vfsObj.SetXattrAt(ctx, creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
@@ -2007,7 +2010,7 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.RemoveXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
+	return vfsObj.RemoveXattrAt(ctx, creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
 }
 
 // GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.

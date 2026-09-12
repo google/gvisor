@@ -3059,6 +3059,139 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
+TEST(MountTest, OverlayfsSecurityCapabilityRequiresSetFcap) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "", MNT_DETACH));
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  // Mount the overlayfs.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  auto overlay_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("overlay", merged.path().c_str(),
+                                      "overlay", 0, opts.c_str(), MNT_DETACH));
+
+  struct {
+    uint32_t magic_etc;
+    uint32_t permitted_lo;
+    uint32_t inheritable_lo;
+    uint32_t permitted_hi;
+    uint32_t inheritable_hi;
+  } cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = 1 << CAP_SETUID;
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(merged.path()));
+
+  // Setting security.capability with CAP_SETFCAP should succeed
+  ASSERT_THAT(setxattr(file.path().c_str(), "security.capability", &cap_data,
+                       sizeof(cap_data), 0),
+              SyscallSucceeds());
+
+  // Setting security.capability without CAP_SETFCAP should fail
+  AutoCapability set_fcap(CAP_SETFCAP, false);
+  ASSERT_THAT(setxattr(file.path().c_str(), "security.capability", &cap_data,
+                       sizeof(cap_data), 0),
+              SyscallFailsWithErrno(EPERM));
+}
+
+TEST(MountTest, OverlayfsSecurityCapabilityTranslatesRootID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "", MNT_DETACH));
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  // Mount the overlayfs.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  auto overlay_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("overlay", merged.path().c_str(),
+                                      "overlay", 0, opts.c_str(), MNT_DETACH));
+
+  struct {
+    uint32_t magic_etc;
+    uint32_t permitted_lo;
+    uint32_t inheritable_lo;
+    uint32_t permitted_hi;
+    uint32_t inheritable_hi;
+  } cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = 1 << CAP_SETUID;
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(merged.path()));
+
+  ASSERT_THAT(setxattr(file.path().c_str(), "security.capability", &cap_data,
+                       sizeof(cap_data), 0),
+              SyscallSucceeds());
+
+  constexpr uint32_t kChildUID = 1000;
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+
+        int fd = open("/proc/self/uid_map", O_WRONLY);
+        TEST_PCHECK(fd >= 0);
+        std::string map = absl::StrCat(kChildUID, " 0 1");
+        TEST_PCHECK(write(fd, map.data(), map.size()) ==
+                    static_cast<ssize_t>(map.size()));
+        TEST_PCHECK(close(fd) == 0);
+
+        int setgroups_fd = open("/proc/self/setgroups", O_WRONLY);
+        if (setgroups_fd >= 0) {
+          TEST_PCHECK(write(setgroups_fd, "deny", 4) == 4);
+          TEST_PCHECK(close(setgroups_fd) == 0);
+        }
+        int gid_fd = open("/proc/self/gid_map", O_WRONLY);
+        if (gid_fd >= 0) {
+          std::string gid_map = absl::StrCat(kChildUID, " 0 1");
+          TEST_PCHECK(write(gid_fd, gid_map.data(), gid_map.size()) ==
+                      static_cast<ssize_t>(gid_map.size()));
+          TEST_PCHECK(close(gid_fd) == 0);
+        }
+
+        struct {
+          uint32_t magic_etc;
+          uint32_t permitted_lo;
+          uint32_t inheritable_lo;
+          uint32_t permitted_hi;
+          uint32_t inheritable_hi;
+          uint32_t rootid;
+        } cap_data_v3 = {};
+
+        ssize_t ret = getxattr(file.path().c_str(), "security.capability",
+                               &cap_data_v3, sizeof(cap_data_v3));
+        TEST_CHECK_SUCCESS(ret);
+        TEST_CHECK_MSG(ret == sizeof(cap_data_v3), "wrong size returned");
+        TEST_CHECK_MSG((cap_data_v3.magic_etc & VFS_CAP_REVISION_MASK) ==
+                           VFS_CAP_REVISION_3,
+                       "wrong revision");
+        TEST_CHECK_MSG(cap_data_v3.rootid == kChildUID, "wrong rootid");
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
