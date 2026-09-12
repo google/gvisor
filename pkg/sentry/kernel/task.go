@@ -194,6 +194,30 @@ type Task struct {
 	// groupStopPending is protected by the signal mutex.
 	groupStopPending bool
 
+	// freezeOrdered mirrors t's cgroup's effective cgroup.freeze state;
+	// runInterrupt parks t in frozenStop when set. Relayed by cgroup2fs
+	// (Task.ApplyFreezeTasksLocked) to avoid a signalHandlers.mu ->
+	// fs.tasksMu deadlock.
+	//
+	// Protected by the signal mutex.
+	freezeOrdered bool
+
+	// hasFreezeCredit: t owes a cgroup a resolution, paid by parking,
+	// thaw, exit, or migration. Not inferable from t.stop's type: a
+	// killable stop force-ends (killLocked) even post-resolution, so
+	// t.stop can't distinguish "never parked" from "parked, then killed".
+	//
+	// Protected by the signal mutex.
+	hasFreezeCredit bool
+
+	// freezeCreditCgroup is the cgroup that issued the outstanding
+	// credit -- always use it, never re-derive via Cgroup2(): cgroup2Mu
+	// isn't nested under signalHandlers.mu, so a fresh lookup racing a
+	// migration could credit/debit the wrong cgroup.
+	//
+	// Protected by the signal mutex.
+	freezeCreditCgroup Cgroup2
+
 	// If groupStopAcknowledged is true, the task has already acknowledged that
 	// it is entering the most recent group stop that has been initiated on its
 	// thread group.

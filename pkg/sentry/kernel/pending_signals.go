@@ -118,6 +118,33 @@ func (p *pendingSignals) dequeue(mask linux.SignalSet) *linux.SignalInfo {
 	return p.dequeueSpecific(linux.Signal(lowestPendingUnblockedBit + 1))
 }
 
+// anyFatalPending returns whether pendingSet (masked as dequeue(mask)
+// would) contains any signal fatal by default: SIGKILL, or a
+// SignalActionTerm signal still at SIG_DFL (SignalActionCore is
+// deliberately excluded -- see below). Unlike dequeue, this scans every
+// pending bit, not just the lowest, so a lower-numbered non-fatal signal
+// can't hide a higher-numbered fatal one.
+func anyFatalPending(pendingSet uint64, mask linux.SignalSet, actions map[linux.Signal]linux.SigAction) bool {
+	set := pendingSet &^ uint64(mask)
+	for set != 0 {
+		sig := linux.Signal(bits.TrailingZeros64(set) + 1)
+		if sig == linux.SIGKILL {
+			return true
+		}
+		if act := actions[sig]; act.Handler == linux.SIG_DFL {
+			switch computeAction(sig, act) {
+			case SignalActionTerm:
+				// Excludes SignalActionCore: Linux's complete_signal()
+				// only fast-wakes for !sig_kernel_coredump(sig), core-dump
+				// signals (SIGQUIT etc.) defer until thaw too.
+				return true
+			}
+		}
+		set &= set - 1
+	}
+	return false
+}
+
 func (p *pendingSignals) dequeueSpecific(sig linux.Signal) *linux.SignalInfo {
 	q := &p.signals[sig.Index()]
 	ps := q.pendingSignalList.Front()
