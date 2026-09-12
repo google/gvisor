@@ -1041,18 +1041,25 @@ func (fd *controlFDLisa) Renamed() {
 func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
 	// getxattr(2) called with size 0 should return the attribute size. As a
 	// result, we need to return the entire attribute here so that the sentry
-	// can return the correct value.
-	if size > linux.XATTR_SIZE_MAX || size == 0 {
-		size = linux.XATTR_SIZE_MAX
+	// can return the correct value. The lisafs wire format encodes value length
+	// as uint16, so clamp the maximum size to math.MaxUint16.
+	if size >= linux.XATTR_SIZE_MAX || size == 0 {
+		size = math.MaxUint16
 	}
 	data := getValueBuf(size)
 	if fd.IsSocket() || fd.IsSymlink() {
 		// Sockets and symlinks use O_PATH host FDs. However, fgetxattr(2) fails
 		// with EBADF for O_PATH FDs. Use lgetxattr(2) instead.
 		xattrSize, err := unix.Lgetxattr(fd.Node().FilePath(), name, data)
+		if err == nil && xattrSize > math.MaxUint16 {
+			return 0, unix.E2BIG
+		}
 		return uint16(xattrSize), err
 	}
 	xattrSize, err := unix.Fgetxattr(fd.hostFD, name, data)
+	if err == nil && xattrSize > math.MaxUint16 {
+		return 0, unix.E2BIG
+	}
 	return uint16(xattrSize), err
 }
 

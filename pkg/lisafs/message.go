@@ -244,13 +244,21 @@ type SizedString string
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (s *SizedString) SizeBytes() int {
-	return (*primitive.Uint16)(nil).SizeBytes() + len(*s)
+	strLen := len(*s)
+	if strLen > math.MaxUint16 {
+		strLen = math.MaxUint16
+	}
+	return (*primitive.Uint16)(nil).SizeBytes() + strLen
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (s *SizedString) MarshalBytes(dst []byte) []byte {
-	strLen := primitive.Uint16(len(*s))
-	dst = strLen.MarshalUnsafe(dst)
+	strLen := len(*s)
+	if strLen > math.MaxUint16 {
+		strLen = math.MaxUint16
+	}
+	u16 := primitive.Uint16(strLen)
+	dst = u16.MarshalUnsafe(dst)
 	// Copy without any allocation.
 	return dst[copy(dst[:strLen], *s):]
 }

@@ -106,6 +106,56 @@ TEST_F(XattrTest, XattrLargeName) {
   EXPECT_THAT(removexattr(path, name.c_str()), SyscallFailsWithErrno(ERANGE));
 }
 
+#ifndef XATTR_SIZE_MAX
+#define XATTR_SIZE_MAX 65536
+#endif
+
+TEST_F(XattrTest, XattrLargeValue) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+
+  // Value of size 65535 bytes (math.MaxUint16).
+  std::string val_65535(65535, 'a');
+  int res =
+      setxattr(path, name, val_65535.data(), val_65535.size(), /*flags=*/0);
+  if (res == -1 && (errno == E2BIG || errno == EOPNOTSUPP || errno == ENOSPC)) {
+    // Backing filesystem does not support 64KB xattr values.
+    return;
+  }
+  ASSERT_THAT(res, SyscallSucceeds());
+
+  // Size probe must return the exact length 65535, not 0.
+  EXPECT_THAT(getxattr(path, name, nullptr, 0),
+              SyscallSucceedsWithValue(65535));
+
+  std::string buf(65535, '\0');
+  EXPECT_THAT(getxattr(path, name, buf.data(), buf.size()),
+              SyscallSucceedsWithValue(65535));
+  EXPECT_EQ(buf, val_65535);
+
+  // Value of size XATTR_SIZE_MAX (65536 bytes):
+  // Must either succeed with exact 65536 bytes or fail with E2BIG.
+  // It must never silently write an empty attribute or return 0 bytes.
+  std::string val_65536(65536, 'b');
+  res = setxattr(path, name, val_65536.data(), val_65536.size(), /*flags=*/0);
+  if (res == 0) {
+    EXPECT_THAT(getxattr(path, name, nullptr, 0),
+                SyscallSucceedsWithValue(65536));
+    std::string buf_65536(65536, '\0');
+    EXPECT_THAT(getxattr(path, name, buf_65536.data(), buf_65536.size()),
+                SyscallSucceedsWithValue(65536));
+    EXPECT_EQ(buf_65536, val_65536);
+  } else {
+    EXPECT_EQ(errno, E2BIG);
+  }
+
+  // Value larger than XATTR_SIZE_MAX must fail with E2BIG.
+  std::string val_65537(65537, 'c');
+  EXPECT_THAT(
+      setxattr(path, name, val_65537.data(), val_65537.size(), /*flags=*/0),
+      SyscallFailsWithErrno(E2BIG));
+}
+
 TEST_F(XattrTest, XattrInvalidPrefix) {
   const char* path = test_file_name_.c_str();
   std::string name(XATTR_NAME_MAX, 'a');
