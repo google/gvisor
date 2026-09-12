@@ -63,6 +63,7 @@ func init() {
 	RegisterTestCase(&FilterInputInvertDportDrop{})
 	RegisterTestCase(&FilterInputDropAllSrcPorts{})
 	RegisterTestCase(&FilterInputDropAllExceptOneDstPort{})
+	RegisterTestCase(&FilterInputCommentMatch{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -1241,4 +1242,36 @@ func (*FilterInputDropAllExceptOneDstPort) LocalAction(ctx context.Context, ip n
 	}
 
 	return nil
+}
+
+// FilterInputCommentMatch tests matching with the comment extension.
+type FilterInputCommentMatch struct{ containerCase }
+
+var _ TestCase = (*FilterInputCommentMatch)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterInputCommentMatch) Name() string {
+	return "FilterInputCommentMatch"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*FilterInputCommentMatch) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := filterTable(ipv6, "-A", "INPUT", "-p", "udp", "-m", "udp", "--destination-port", fmt.Sprintf("%d", dropPort), "-m", "comment", "--comment", "drop test port", "-j", "DROP"); err != nil {
+		return err
+	}
+
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := netutils.ListenUDP(timedCtx, dropPort, ipv6); err == nil {
+		return fmt.Errorf("packets on port %d should have been dropped, but got a packet", dropPort)
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("error reading: %v", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*FilterInputCommentMatch) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return netutils.SendUDPLoop(ctx, ip, dropPort, sendloopDuration)
 }
