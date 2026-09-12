@@ -37,13 +37,13 @@ sandboxes on demand. With SandboxExec, you can:
 Each subfolder contains a standalone, well-documented example for a specific
 language binding:
 
-| Language           | Directory            | Description                     |
-| :----------------- | :------------------- | :------------------------------ |
-| **Python**         | [`python/`](python/) | Safe code runner CLI            |
-:                    :                      : demonstrating mounts, timeouts, :
-:                    :                      : and network isolation.          :
-| **Go** *(Planned)* | `go/`                | Go bindings reference           |
-:                    :                      : implementation.                 :
+| Language   | Directory            | Description                              |
+| :--------- | :------------------- | :--------------------------------------- |
+| **Python** | [`python/`](python/) | Safe code runner CLI demonstrating       |
+:            :                      : mounts, timeouts, and network isolation. :
+| **Go**     | [`go/`](go/)         | Safe document processor CLI              |
+:            :                      : demonstrating mounts, timeouts, and      :
+:            :                      : snapshot pre-warming.                    :
 
 --------------------------------------------------------------------------------
 
