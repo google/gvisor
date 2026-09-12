@@ -11,6 +11,7 @@ go_library(
         "go.go",
         "java.go",
         "lib.go",
+        "moby.go",
         "nodejs.go",
         "php.go",
         "python.go",

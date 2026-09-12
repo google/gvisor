@@ -37,6 +37,7 @@ var (
 	runsPerTest       = flag.Int("runs_per_test", testutil.IntFromEnv("RUNTIME_TESTS_RUNS_PER_TEST", 1), "number of times to run each test (a value of 0 is the same as a value of 1, i.e. running once)")
 	flakyIsError      = flag.Bool("flaky_is_error", testutil.BoolFromEnv("RUNTIME_TESTS_FLAKY_IS_ERROR", true), "if true, when running with multiple --runs_per_test, tests with inconsistent status will result in a failure status code for the batch; if false, they will be considered as passing")
 	flakyShortCircuit = flag.Bool("flaky_short_circuit", testutil.BoolFromEnv("RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT", true), "if true, when running with multiple --runs_per_test and a test is detected as flaky, exit immediately rather than running all --runs_per_test")
+	privileged        = flag.Bool("privileged", false, "if true, run the container in privileged mode")
 )
 
 func main() {
@@ -69,5 +70,5 @@ func main() {
 			return tests[test]
 		}
 	}
-	os.Exit(lib.RunTests(*lang, *image, filter, *batchSize, *timeout, proctorSettings))
+	os.Exit(lib.RunTests(*lang, *image, filter, *batchSize, *timeout, proctorSettings, *privileged))
 }

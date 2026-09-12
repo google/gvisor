@@ -17,6 +17,8 @@ def _runtime_test_impl(ctx):
             "--exclude_file",
             ctx.files.exclude_file[0].short_path,
         ]
+    if ctx.attr.privileged:
+        args.append("--privileged")
 
     # Build a runner.
     runner = ctx.actions.declare_file("%s-executer" % ctx.label.name)
@@ -51,6 +53,10 @@ _runtime_test = rule(
         ),
         "batch": attr.int(
             default = 50,
+            mandatory = False,
+        ),
+        "privileged": attr.bool(
+            default = False,
             mandatory = False,
         ),
         "_runner": attr.label(

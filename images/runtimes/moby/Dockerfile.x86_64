@@ -1,0 +1,40 @@
+FROM golang:latest
+
+# Install dependencies.
+RUN apt-get update && apt-get install -y \
+    nftables iptables git libnftables-dev pkg-config \
+    curl iproute2 iputils-ping dnsutils containerd \
+    jq lsb-release gnupg
+
+# Install Docker CLI
+RUN mkdir -p /etc/apt/keyrings
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+RUN echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+RUN apt-get update && apt-get install -y docker-ce-cli
+
+# Pin Moby to <= v29.4.3 due to https://github.com/nestybox/sysbox/issues/1011
+ARG MOBY_VERSION=docker-v29.4.3
+RUN git clone https://github.com/moby/moby.git /moby
+WORKDIR /moby
+RUN git checkout ${MOBY_VERSION}
+
+# Download and bundle images
+# Pin busybox to 1.36 as the dns tests expect output in a specific format
+# which has changed in newer versions.
+RUN mkdir -p /docker-images/hello-world /docker-images/busybox \
+    && bash /moby/contrib/download-frozen-image-v2.sh /docker-images/hello-world hello-world:latest \
+    && tar -cf /docker-images/hello-world.tar -C /docker-images/hello-world . \
+    && rm -rf /docker-images/hello-world \
+    && bash /moby/contrib/download-frozen-image-v2.sh /docker-images/busybox busybox:1.36 \
+    && tar -cf /docker-images/busybox.tar -C /docker-images/busybox . \
+    && rm -rf /docker-images/busybox
+
+# Build dockerd to cache dependencies and warm up the build cache.
+RUN go build ./cmd/dockerd || true
+
+COPY run_moby_tests.sh /usr/local/bin/run_moby_tests.sh
+RUN chmod +x /usr/local/bin/run_moby_tests.sh
+
+
