@@ -4096,6 +4096,85 @@ func TestUserLog(t *testing.T) {
 	}
 }
 
+// TestOCISeccompErrnoRet checks that an OCI seccomp profile's `errnoRet` is
+// honored end-to-end: the errno the application observes must be the one
+// named in the profile, and a rule that omits `errnoRet` must still default
+// to EPERM. This is the pattern glibc >= 2.34 relies on to fall back from
+// clone3(2) to clone(2): it only does so when clone3 fails with ENOSYS.
+// See gvisor.dev/issue/14688.
+func TestOCISeccompErrnoRet(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	spec, conf := sleepSpecConf(t)
+	conf.OCISeccomp = true
+
+	// getsid(2) and getpgid(2) are both fully implemented by the sentry and
+	// are not on the Go runtime's startup path, so the only way test_app can
+	// observe a failure for either is through the seccomp filter below.
+	enosys := uint(unix.ENOSYS)
+	spec.Linux = &specs.Linux{
+		Seccomp: &specs.LinuxSeccomp{
+			DefaultAction: specs.ActAllow,
+			Syscalls: []specs.LinuxSyscall{
+				{
+					Names:    []string{"getsid"},
+					Action:   specs.ActErrno,
+					ErrnoRet: &enosys,
+				},
+				{
+					// No ErrnoRet: must default to EPERM, like runc.
+					Names:  []string{"getpgid"},
+					Action: specs.ActErrno,
+				},
+			},
+		},
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		sysno int
+		want  error
+	}{
+		{name: "errno_ret_honored", sysno: unix.SYS_GETSID, want: unix.ENOSYS},
+		{name: "no_errno_ret_defaults_to_eperm", sysno: unix.SYS_GETPGID, want: unix.EPERM},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// test_app's "syscall" subcommand always exits 0; it prints the
+			// errno it observed, which is what we assert on.
+			out, err := executeCombinedOutput(conf, cont, nil, app, "syscall", "--syscall="+strconv.Itoa(tc.sysno))
+			if err != nil {
+				t.Fatalf("error executing test_app: %v", err)
+			}
+			if want := fmt.Sprintf("failed: %v", tc.want); !strings.Contains(string(out), want) {
+				t.Errorf("syscall(%d) output %q does not contain %q", tc.sysno, out, want)
+			}
+		})
+	}
+}
+
 func TestWaitOnExitedSandbox(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
