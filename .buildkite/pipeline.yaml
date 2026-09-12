@@ -790,9 +790,7 @@ steps:
     <<: *source_test_continuous
     label: ":slot_machine: Syzkaller smoke test"
     commands:
-      # TODO(eperot): Re-enable syzkaller-test once https://github.com/google/syzkaller/pull/7885
-      #               is merged.
-      - 'true'  # make syzkaller-smoke-test
+      - make syzkaller-smoke-test
     agents:
       arch: "amd64"
       queue: "default"

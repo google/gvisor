@@ -1735,7 +1735,7 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 			Payload:            buffer.MakeWithData(d),
 		})
 		if err := r.WritePacket(params, pkt); err != nil {
-			t.Fatalf("WritePacket(...): %s", err)
+			t.Errorf("WritePacket(...): %s", err)
 		}
 		pkt.DecRef()
 	}

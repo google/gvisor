@@ -145,6 +145,10 @@ func (mm *MemoryManager) Executable() *vfs.FileDescription {
 //
 // This takes a reference on d.
 func (mm *MemoryManager) SetExecutable(ctx context.Context, fd *vfs.FileDescription) {
+	// Deny writes to the executable for as long as mm holds it, as Linux does
+	// in fs/exec.c:set_mm_exe_file().
+	fd.DenyWriteAccess()
+
 	mm.metadataMu.Lock()
 
 	// Grab a new reference.
@@ -161,6 +165,7 @@ func (mm *MemoryManager) SetExecutable(ctx context.Context, fd *vfs.FileDescript
 	// Do this without holding the lock, since it may wind up doing some
 	// I/O to sync the dirent, etc.
 	if orig != nil {
+		orig.AllowWriteAccess()
 		orig.DecRef(ctx)
 	}
 }

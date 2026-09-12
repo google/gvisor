@@ -744,6 +744,12 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 	p.IoGID = int(options.IoGID)
 	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
 	p.UserLog = utils.UserLogPath(spec)
+	if uid, err := utils.PodUID(spec, r.Bundle); err == nil {
+		p.K8sPodUID = uid
+	}
+	// Enable FUSE connection abort on teardown if the annotation is set on the
+	// spec or the pod sandbox spec.
+	p.FuseAbort = utils.FuseAbortOnTeardown(spec, r.Bundle)
 	p.Monitor = reaper.Default
 	return p, nil
 }

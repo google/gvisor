@@ -556,9 +556,9 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr
 	// Downgrade to a read-lock on activeMu since we don't need to mutate pmas
 	// anymore.
 	mm.activeMu.DowngradeLock()
+	defer mm.activeMu.RUnlock()
 
 	err = mm.mapASLocked(ctx, pseg, ar, memmap.PlatformEffectDefault)
-	mm.activeMu.RUnlock()
 	return translateIOError(ctx, err)
 }
 
@@ -577,8 +577,8 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 	// mm.mappingMu.
 	mm.activeMu.RLock()
 	if pseg := mm.existingPMAsLocked(ar, at, ignorePermissions, true /* needInternalMappings */); pseg.Ok() {
+		defer mm.activeMu.RUnlock()
 		n, err := f(mm.internalMappingsLocked(pseg, ar))
-		mm.activeMu.RUnlock()
 		// Do not convert errors returned by f to EFAULT.
 		return int64(n), err
 	}
@@ -608,10 +608,10 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 	}
 	imbs, t, imerr := mm.getIOMappingsLocked(pseg, ar, at)
 	mm.activeMu.DowngradeLock()
+	defer mm.activeMu.RUnlock()
 	if imlen := imbs.NumBytes(); imlen < uint64(ar.Length()) {
 		if imlen == 0 {
 			t.flush(0, nil)
-			mm.activeMu.RUnlock()
 			return 0, translateIOError(ctx, imerr)
 		}
 		ar.End = ar.Start + hostarch.Addr(imlen)
@@ -619,7 +619,6 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar hostarch.A
 
 	// Do I/O.
 	un, err := t.flush(f(imbs))
-	mm.activeMu.RUnlock()
 	n := int64(un)
 
 	// Return the first error in order of progress through ar.
@@ -654,8 +653,8 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 	// mm.mappingMu.
 	mm.activeMu.RLock()
 	if mm.existingVecPMAsLocked(ars, at, ignorePermissions, true /* needInternalMappings */) {
+		defer mm.activeMu.RUnlock()
 		n, err := f(mm.vecInternalMappingsLocked(ars))
-		mm.activeMu.RUnlock()
 		// Do not convert errors returned by f to EFAULT.
 		return int64(n), err
 	}
@@ -679,15 +678,14 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 	}
 	imbs, t, imerr := mm.getVecIOMappingsLocked(pars, at)
 	mm.activeMu.DowngradeLock()
+	defer mm.activeMu.RUnlock()
 	if imbs.NumBytes() == 0 {
 		t.flush(0, nil)
-		mm.activeMu.RUnlock()
 		return 0, translateIOError(ctx, imerr)
 	}
 
 	// Do I/O.
 	un, err := t.flush(f(imbs))
-	mm.activeMu.RUnlock()
 	n := int64(un)
 
 	// Return the first error in order of progress through ars.

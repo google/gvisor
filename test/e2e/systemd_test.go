@@ -1118,11 +1118,20 @@ func TestSystemdMultiUser(t *testing.T) {
 
 	t.Run("CrossUserIsolation", func(t *testing.T) {
 		t.Parallel()
-		// Both managers must be alive simultaneously.
+		// Both managers must be alive simultaneously. Parallel subtests
+		// daemon-reload alice's manager (systemctl --user enable/disable
+		// implies a reload), during which the manager transiently
+		// reports "reloading", so poll until the state settles.
 		wantActive := "active"
 		for _, unit := range []string{aliceUnit, bobUnit} {
-			if state := unitState(ctx, t, d, unit); state != wantActive {
-				t.Errorf("%s ActiveState is wrong (got %q, want %q)", unit, state, wantActive)
+			checkManagerActive := func(ctx context.Context) error {
+				if state := unitState(ctx, t, d, unit); state != wantActive {
+					return fmt.Errorf("%s ActiveState is wrong (got %q, want %q)", unit, state, wantActive)
+				}
+				return nil
+			}
+			if err := pollWithTimeout(ctx, daemonPollTimeout, checkManagerActive); err != nil {
+				t.Errorf("user manager is not active: %v", err)
 			}
 		}
 
