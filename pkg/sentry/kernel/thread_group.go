@@ -292,6 +292,18 @@ type ThreadGroup struct {
 	// sigsegvLockCount to 0 requires that the signal mutex is locked.
 	sigsegvLockCount atomicbitops.Int32
 
+	// existedAtCheckpoint is true if this thread group was loaded from a
+	// checkpoint rather than created after the sandbox was restored. It is not
+	// saved: StateLoad() sets it on every load, so a thread group that
+	// survives two checkpoints stays marked, and one created after a restore
+	// and then itself checkpointed is marked on the next restore -- which is
+	// correct, since by then it does hold identities from a checkpoint.
+	//
+	// StateLoad writes while the sandbox is paused. Exec clears it only
+	// after all sibling tasks have exited. Readers are syscalls of this
+	// thread group, so neither write can race a reader.
+	existedAtCheckpoint bool `state:"nosave"`
+
 	// coredumpFilter is used to track which memory regions the process requests to be
 	// saved on core dump. It can be accessed from userspace as /proc/[pid]/coredump_filter.
 	//

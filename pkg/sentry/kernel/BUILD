@@ -439,6 +439,7 @@ go_test(
         "task_signals_test.go",
         "task_syscall_benchmark_test.go",
         "task_test.go",
+        "thread_group_checkpoint_test.go",
         "timekeeper_test.go",
     ],
     library = ":kernel",

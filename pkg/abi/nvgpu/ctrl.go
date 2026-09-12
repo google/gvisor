@@ -81,9 +81,11 @@ const (
 	NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID       = 0x289
 	NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID        = 0x290
 
-	NV0000_CTRL_GPU_INVALID_ID      = 0xffffffff
-	NV0000_CTRL_GPU_MAX_PROBED_GPUS = NV_MAX_DEVICES
-	NV0000_GPU_MAX_GID_LENGTH       = 0x100
+	NV0000_CTRL_GPU_INVALID_ID         = 0xffffffff
+	NV0000_CTRL_GPU_MAX_PROBED_GPUS    = NV_MAX_DEVICES
+	NV0000_CTRL_GPU_MAX_ATTACHED_GPUS  = 32
+	NV0000_CTRL_GPU_MAX_ACTIVE_DEVICES = 256
+	NV0000_GPU_MAX_GID_LENGTH          = 0x100
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gpuacct.h:
@@ -145,6 +147,8 @@ const (
 	NV0000_CTRL_CMD_SYSTEM_GET_FEATURES                     = 0x1f0
 	NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_V2_MAX_STRING_SIZE = 256
 	NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS                    = 32
+	NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS_SQUARED            = 1024
+	NV0000_CTRL_SYSTEM_MAX_P2P_GROUP_GPUS                   = 8
 	NV0000_CTRL_P2P_CAPS_INDEX_TABLE_SIZE                   = 9
 )
 
@@ -186,6 +190,15 @@ const (
 	NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_TO_FD_MAX_OBJECTS = 128
 )
 
+// HasDeviceInstance is implemented by control parameter structs that report a
+// device instance number (NV0080_ALLOC_PARAMETERS::deviceId) back to the
+// caller. nvproxy must translate such a value from the host's device instances
+// to the guest's after a restore that remapped devices.
+type HasDeviceInstance interface {
+	GetDeviceInstance() uint32
+	SetDeviceInstance(uint32)
+}
+
 // +marshal
 type NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS struct {
 	_              structs.HostLayout
@@ -204,6 +217,16 @@ func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) GetFrontendFD() int3
 // SetFrontendFD implements HasFrontendFD.SetFrontendFD.
 func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) SetFrontendFD(fd int32) {
 	p.FD = fd
+}
+
+// GetDeviceInstance implements HasDeviceInstance.GetDeviceInstance.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) GetDeviceInstance() uint32 {
+	return p.DeviceInstance
+}
+
+// SetDeviceInstance implements HasDeviceInstance.SetDeviceInstance.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS) SetDeviceInstance(devInst uint32) {
+	p.DeviceInstance = devInst
 }
 
 // +marshal
@@ -225,6 +248,19 @@ func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) GetFrontendFD()
 // SetFrontendFD implements HasFrontendFD.SetFrontendFD.
 func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) SetFrontendFD(fd int32) {
 	p.FD = fd
+}
+
+// GetDeviceInstance implements HasDeviceInstance.GetDeviceInstance.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) GetDeviceInstance() uint32 {
+	return p.DeviceInstance
+}
+
+// SetDeviceInstance implements HasDeviceInstance.SetDeviceInstance.
+//
+// GpuInstanceID is deliberately not translated: it identifies a MIG instance
+// within a GPU, not a device.
+func (p *NV0000_CTRL_OS_UNIX_GET_EXPORT_OBJECT_INFO_PARAMS_V545) SetDeviceInstance(devInst uint32) {
+	p.DeviceInstance = devInst
 }
 
 // +marshal
@@ -636,6 +672,10 @@ const (
 	NV2080_CTRL_CMD_GPU_RELEASE_COMPUTE_MODE_RESERVATION = 0x20800146 // undocumented; paramSize == 0
 	NV2080_CTRL_CMD_GPU_GET_ENGINE_PARTNERLIST           = 0x20800147
 	NV2080_CTRL_CMD_GPU_GET_GID_INFO                     = 0x2080014a
+	NV2080_GPU_MAX_GID_LENGTH                            = 0x100
+	NV2080_GPU_CMD_GPU_GET_GID_FLAGS_FORMAT_MASK         = 0x3
+	NV2080_GPU_CMD_GPU_GET_GID_FLAGS_FORMAT_ASCII        = 0x0
+	NV2080_GPU_CMD_GPU_GET_GID_FLAGS_FORMAT_BINARY       = 0x2
 	NV2080_CTRL_CMD_GPU_GET_INFOROM_OBJECT_VERSION       = 0x2080014b
 	NV2080_CTRL_CMD_GPU_GET_INFOROM_IMAGE_VERSION        = 0x20800156
 	NV2080_CTRL_CMD_GPU_QUERY_INFOROM_ECC_SUPPORT        = 0x20800157

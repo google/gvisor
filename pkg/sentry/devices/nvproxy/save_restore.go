@@ -18,6 +18,7 @@ import (
 	goContext "context"
 	"fmt"
 	"path/filepath"
+	"sort"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -87,6 +88,17 @@ type DeviceRemapID struct {
 	// invocation of NV2080_CTRL_CMD_GPU_SET_SDM.
 	SubDeviceInstance uint32 `json:"subdevice_instance"`
 
+	// PCIDomain, PCIBus, PCISlot and PCIFunction are the device's PCI address,
+	// from nv_pci_info_t as reported by NV_ESC_CARD_INFO. PCIAddrValid says
+	// whether they were recorded: a checkpoint written before nvproxy recorded
+	// them decodes with all four zero, which is indistinguishable from a
+	// legitimate 0000:00:00.0, so the flag is what the restore checks.
+	PCIDomain    uint32 `json:"pci_domain"`
+	PCIBus       uint8  `json:"pci_bus"`
+	PCISlot      uint8  `json:"pci_slot"`
+	PCIFunction  uint8  `json:"pci_function"`
+	PCIAddrValid bool   `json:"pci_addr_valid"`
+
 	// UUID is the "UUID", including the "GPU-" prefix, as printed by
 	// `nvidia-smi -L`. This is provided by the GSP, and retrieved and
 	// stringified by src/nvidia/src/kernel/gpu/gpu.c:gpuGetGidInfo_IMPL().
@@ -99,7 +111,17 @@ type DeviceRemapID struct {
 
 // String implements fmt.Stringer.String.
 func (id *DeviceRemapID) String() string {
-	return fmt.Sprintf("{Minor:%d PCIVendorID:0x%04x PCIDeviceID:0x%04x GPUID:%#x DeviceInstance:%d SubDeviceInstance:%d UUID:%s}", id.Minor, id.PCIVendorID, id.PCIDeviceID, id.GPUID, id.DeviceInstance, id.SubDeviceInstance, id.UUID)
+	return fmt.Sprintf("{Minor:%d PCIVendorID:0x%04x PCIDeviceID:0x%04x PCIAddr:%s GPUID:%#x DeviceInstance:%d SubDeviceInstance:%d UUID:%s}", id.Minor, id.PCIVendorID, id.PCIDeviceID, id.PCIAddrString(), id.GPUID, id.DeviceInstance, id.SubDeviceInstance, id.UUID)
+}
+
+// PCIAddrString renders the device's PCI address in the conventional
+// domain:bus:slot.function form, or "<unrecorded>" for a device saved before
+// nvproxy recorded it.
+func (id *DeviceRemapID) PCIAddrString() string {
+	if !id.PCIAddrValid {
+		return "<unrecorded>"
+	}
+	return fmt.Sprintf("%04x:%02x:%02x.%x", id.PCIDomain, id.PCIBus, id.PCISlot, id.PCIFunction)
 }
 
 // CheckDevicesRemappable checks that the set of devices in ids can be saved.
@@ -242,6 +264,11 @@ func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 				}
 			}
 		}
+		// Applications keep their own tables keyed by the identifiers they saw
+		// before the checkpoint, so remember how to translate each family of
+		// identifier in both directions. All three come from the same
+		// DeviceRemapID pairs.
+		nvp.composeIDMaps(dr)
 	}
 
 	// Ensure that frontendFDs have host FDs before restoring objects that may
@@ -298,6 +325,89 @@ func (nvp *nvproxy) afterLoad(ctx goContext.Context) {
 		}
 		// Reuse slice across iterations.
 		depHs = depHs[:0]
+	}
+}
+
+// remapPairs returns dr's old->new pairs for each family of identifier, in a
+// deterministic order so that logging and composition do not vary run to run.
+// It is separated from composeIDMaps() so that the composition can be tested
+// without constructing a DeviceRemapping.
+func remapPairs(dr *DeviceRemapping) (devInsts [][2]uint32, gpuIDs [][2]uint32, uuids [][2]string, minors [][2]uint32, pciAddrs [][2]uint64) {
+	olds := make([]*DeviceRemapID, 0, len(dr.NewDeviceByOld))
+	for oldDev := range dr.NewDeviceByOld {
+		olds = append(olds, oldDev)
+	}
+	sort.Slice(olds, func(i, j int) bool { return olds[i].DeviceInstance < olds[j].DeviceInstance })
+	for _, oldDev := range olds {
+		newDev := dr.NewDeviceByOld[oldDev]
+		devInsts = append(devInsts, [2]uint32{oldDev.DeviceInstance, newDev.DeviceInstance})
+		gpuIDs = append(gpuIDs, [2]uint32{oldDev.GPUID, newDev.GPUID})
+		uuids = append(uuids, [2]string{oldDev.UUID, newDev.UUID})
+		minors = append(minors, [2]uint32{oldDev.Minor, newDev.Minor})
+		if oldDev.PCIAddrValid && newDev.PCIAddrValid {
+			pciAddrs = append(pciAddrs, [2]uint64{packPCIAddr(oldDev), packPCIAddr(newDev)})
+		}
+	}
+	return devInsts, gpuIDs, uuids, minors, pciAddrs
+}
+
+// packPCIAddr encodes a device's PCI address as one value, so that it can be
+// mapped with the same machinery as every other identifier.
+func packPCIAddr(id *DeviceRemapID) uint64 {
+	return PackPCIAddr(id.PCIDomain, id.PCIBus, id.PCISlot, id.PCIFunction)
+}
+
+// composeIDMaps folds dr into nvp's identifier translation tables. It runs
+// while the sandbox is paused, so it takes no lock.
+func (nvp *nvproxy) composeIDMaps(dr *DeviceRemapping) {
+	devInsts, gpuIDs, uuids, minors, pciAddrs := remapPairs(dr)
+
+	nvp.hostToGuestDeviceInstance = composeIDMap(nvp.hostToGuestDeviceInstance, devInsts)
+	nvp.guestToHostDeviceInstance = invertIDMap(nvp.hostToGuestDeviceInstance, "device instance")
+	nvp.hostToGuestGPUID = composeIDMap(nvp.hostToGuestGPUID, gpuIDs)
+	nvp.guestToHostGPUID = invertIDMap(nvp.hostToGuestGPUID, "gpuId")
+	nvp.hostToGuestUUID = composeUUIDMap(nvp.hostToGuestUUID, uuids)
+	nvp.guestToHostUUID = invertUUIDMap(nvp.hostToGuestUUID)
+	nvp.hostToGuestMinor = composeIDMap(nvp.hostToGuestMinor, minors)
+	nvp.guestToHostMinor = invertIDMap(nvp.hostToGuestMinor, "device minor")
+	if len(pciAddrs) == len(dr.NewDeviceByOld) {
+		nvp.hostToGuestPCIAddr = composeMap(nvp.hostToGuestPCIAddr, pciAddrs)
+		nvp.guestToHostPCIAddr = invertMap(nvp.hostToGuestPCIAddr, "PCI address")
+	} else {
+		// A checkpoint written before nvproxy recorded PCI addresses. Leave
+		// whatever a previous restore established rather than composing a
+		// partial mapping: a stale PCI address reaching a restored process is
+		// the failure this translation exists to prevent, but a wrong one is
+		// worse.
+		log.Warningf("nvproxy: %d of %d remapped devices have no recorded PCI address, so PCI addresses will not be translated; re-checkpoint with this build to enable it",
+			len(dr.NewDeviceByOld)-len(pciAddrs), len(dr.NewDeviceByOld))
+	}
+
+	if log.IsLogging(log.Debug) {
+		log.Debugf("nvproxy: host-to-guest device instance mapping after restore: %s", formatIDMap(nvp.hostToGuestDeviceInstance))
+		log.Debugf("nvproxy: host-to-guest gpuId mapping after restore: %s", formatIDMap(nvp.hostToGuestGPUID))
+		log.Debugf("nvproxy: host-to-guest UUID mapping after restore: %s", formatUUIDMap(nvp.hostToGuestUUID))
+		log.Debugf("nvproxy: guest-to-host device minor mapping after restore: %s", formatIDMap(nvp.guestToHostMinor))
+		log.Debugf("nvproxy: host-to-guest PCI address mapping after restore: %s", formatPCIAddrMap(nvp.hostToGuestPCIAddr))
+	}
+}
+
+// translateDeviceInstanceToGuest rewrites the device instance reported by
+// ctrlParams from a host device instance to the device instance that the
+// application saw before the most recent checkpoint. It is a no-op if this
+// sandbox has never been restored onto a different set of devices.
+func (nvp *nvproxy) translateDeviceInstanceToGuest(ctrlParams nvgpu.HasDeviceInstance, scope translationScope) {
+	if len(nvp.hostToGuestDeviceInstance) == 0 {
+		return
+	}
+	hostDevInst := ctrlParams.GetDeviceInstance()
+	guestDevInst, ok := nvp.hostToGuestDeviceInstance[hostDevInst]
+	if !ok {
+		return
+	}
+	ctrlParams.SetDeviceInstance(guestDevInst)
+	if log.IsLogging(log.Debug) {
+		log.Debugf("nvproxy: translated device instance %d (host) to %d (guest) [%v]", hostDevInst, guestDevInst, scope)
 	}
 }
 

@@ -15,6 +15,7 @@
 package nvproxy
 
 import (
+	"reflect"
 	"runtime"
 	"unsafe"
 
@@ -25,16 +26,77 @@ import (
 )
 
 func uvmIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams) (uintptr, error) {
+	// UVM names GPUs by UUID. After a restore that remapped devices the
+	// application still holds the UUIDs of the GPUs it had before the
+	// checkpoint, so resolve them to the host's on the way in and report the
+	// host's as the application's on the way out. uvmIoctlInvoke() is the
+	// single choke point every UVM ioctl passes through, so no handler can be
+	// missed.
+	nvp := ui.fd.dev.nvp
+	scope := scopeFor(ui.t)
+	var (
+		uuidOffs []int
+		buf      []byte
+	)
+	if len(nvp.hostToGuestUUID) != 0 && scope.Restored {
+		typ := reflect.TypeOf(ioctlParams).Elem()
+		uuidOffs = uuidOffsetsFor(typ)
+		if len(uuidOffs) != 0 {
+			buf = unsafe.Slice((*byte)(unsafe.Pointer(ioctlParams)), int(typ.Size()))
+			if in := translateUUIDsInBuf(buf, uuidOffs, nvp.guestToHostUUID); len(in) != 0 && log.IsLogging(log.Debug) {
+				for _, pair := range in {
+					ui.ctx.Debugf("nvproxy: uvm %s: translated UUID %s (guest) to %s (host) [%v]", uvmIoctlName(ui.cmd), pair[0], pair[1], scope)
+				}
+			}
+		}
+	}
+
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), uintptr(unsafe.Pointer(ioctlParams)))
+
+	if buf != nil {
+		// Both restores the inbound UUIDs the application passed and
+		// translates any the driver returned, since the two maps are inverses.
+		translateUUIDsInBuf(buf, uuidOffs, nvp.hostToGuestUUID)
+	}
 	if errno != 0 {
 		return n, errno
 	}
-	if log.IsLogging(log.Debug) {
-		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
-			ui.ctx.Debugf("nvproxy: uvm ioctl failed: status=%#x", status)
-		}
+	logUVMIoctl(ui, ioctlParams, scope)
+	if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+		logUVMIoctlStatus(ui, status)
 	}
 	return n, nil
+}
+
+// logUVMIoctl writes the Debug line for the UVM ioctls by which an application
+// builds its view of which GPUs exist and which may reach which memory. Those
+// are the ones a stale UUID breaks, and the UUIDs shown are the guest's, since
+// this runs after the outbound translation.
+func logUVMIoctl[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams, scope translationScope) {
+	if !log.IsLogging(log.Debug) {
+		return
+	}
+	if _, ok := uvmIoctlLogsUUIDs[ui.cmd]; !ok {
+		return
+	}
+	typ := reflect.TypeOf(ioctlParams).Elem()
+	offs := uuidOffsetsFor(typ)
+	if len(offs) == 0 {
+		return
+	}
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(ioctlParams)), int(typ.Size()))
+	status := ioctlParams.GetStatus()
+	switch p := any(ioctlParams).(type) {
+	case *nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS:
+		ui.ctx.Debugf("nvproxy: uvm %s: gpuAttributesCount=%d hClient=%#x hMemory=%#x base=%#x length=%#x uuids=%s rmStatus=%#x (%s) [%v]",
+			uvmIoctlName(ui.cmd), p.GPUAttributesCount, p.HClient, p.HMemory, p.Base, p.Length, describeUUIDsInBuf(buf, offs), status, statusName(status), scope)
+	case *nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550:
+		ui.ctx.Debugf("nvproxy: uvm %s: gpuAttributesCount=%d hClient=%#x hMemory=%#x base=%#x length=%#x uuids=%s rmStatus=%#x (%s) [%v]",
+			uvmIoctlName(ui.cmd), p.GPUAttributesCount, p.HClient, p.HMemory, p.Base, p.Length, describeUUIDsInBuf(buf, offs), status, statusName(status), scope)
+	default:
+		ui.ctx.Debugf("nvproxy: uvm %s: uuids=%s rmStatus=%#x (%s) [%v]",
+			uvmIoctlName(ui.cmd), describeUUIDsInBuf(buf, offs), status, statusName(status), scope)
+	}
 }
 
 // BufferReadAt implements memmap.File.BufferReadAt.
