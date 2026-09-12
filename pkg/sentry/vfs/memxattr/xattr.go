@@ -35,12 +35,15 @@ import (
 //
 // +stateify savable
 type SimpleExtendedAttributes struct {
-	// mu protects the below fields.
-	mu     sync.RWMutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:mu
 	xattrs map[string]string
 }
 
 // GetXattr returns the value at 'name'.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) GetXattr(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, opts *vfs.GetXattrOptions) (string, error) {
 	if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, kuid, opts.Name); err != nil {
 		return "", err
@@ -64,6 +67,8 @@ func (x *SimpleExtendedAttributes) GetXattr(creds *auth.Credentials, mode linux.
 }
 
 // SetXattr sets 'value' at 'name'.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) SetXattr(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid auth.KGID, opts *vfs.SetXattrOptions) error {
 	if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, opts.Name); err != nil {
 		return err
@@ -98,6 +103,8 @@ func (x *SimpleExtendedAttributes) SetXattr(creds *auth.Credentials, mode linux.
 }
 
 // ListXattr returns all names in xattrs.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) ListXattr(creds *auth.Credentials, size uint64) ([]string, error) {
 	// Keep track of the size of the buffer needed in listxattr(2) for the list.
 	listSize := 0
@@ -125,6 +132,8 @@ func (x *SimpleExtendedAttributes) ListXattr(creds *auth.Credentials, size uint6
 // KillPriv removes the "security.capability" xattr if present. No permission
 // check is needed because the caller is removing privileges on behalf of the
 // kernel, not userspace.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) KillPriv() {
 	x.mu.Lock()
 	delete(x.xattrs, linux.XATTR_SECURITY_CAPABILITY)
@@ -132,6 +141,8 @@ func (x *SimpleExtendedAttributes) KillPriv() {
 }
 
 // RemoveXattr removes the xattr at 'name'.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) RemoveXattr(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, name string) error {
 	if err := vfs.CheckXattrPermissions(creds, vfs.MayWrite, mode, kuid, name); err != nil {
 		return err
@@ -148,6 +159,8 @@ func (x *SimpleExtendedAttributes) RemoveXattr(creds *auth.Credentials, mode lin
 
 // RawXattrs returns a copy of the underlying xattr map for serialization.
 // No permission checks are performed.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) RawXattrs() map[string]string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
@@ -156,6 +169,11 @@ func (x *SimpleExtendedAttributes) RawXattrs() map[string]string {
 
 // SetRawXattrs sets the underlying xattr map from deserialized data.
 // No permission checks are performed.
+//
+// SetRawXattrs takes ownership of xattrs; the caller must not access the map
+// afterward. checklocks cannot track ownership through retained map aliases.
+//
+// +checklocksexclude:x.mu
 func (x *SimpleExtendedAttributes) SetRawXattrs(xattrs map[string]string) {
 	x.mu.Lock()
 	defer x.mu.Unlock()

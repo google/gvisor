@@ -237,19 +237,24 @@ type rootInode struct {
 	// master is the master pty inode. Immutable.
 	master *masterInode
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// replicas maps pty ids to replica inodes.
+	//
+	// +checklocks:mu
 	replicas map[uint32]*replicaInode
 
-	// nextIdx is the next pty index to use. Must be accessed atomically.
+	// nextIdx is the next pty index to use.
+	//
+	// +checklocks:mu
 	nextIdx uint32
 }
 
 var _ kernfs.Inode = (*rootInode)(nil)
 
 // allocateTerminal creates a new Terminal and installs a pts node for it.
+//
+// +checklocksexclude:i.mu
 func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credentials) (*Terminal, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -285,6 +290,8 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 }
 
 // masterClose is called when the master end of t is closed.
+//
+// +checklocksexclude:i.mu
 func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
 	// When the master is closed, hang up the slave (replica) side.
 	// This corresponds to Linux's pty_close() calling tty_vhangup(tty->link).
@@ -318,6 +325,8 @@ func (i *rootInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.D
 }
 
 // Lookup implements kernfs.Inode.Lookup.
+//
+// +checklocksexclude:i.mu
 func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
 	// Check if a static entry was looked up.
 	if d, err := i.OrderedChildren.Lookup(ctx, name); err == nil {
@@ -340,6 +349,11 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.
+//
+// cb runs with i.mu held and must not call methods that acquire the same mutex.
+// checklocks cannot convey this receiver's lock through the callback interface.
+//
+// +checklocksexclude:i.mu
 func (i *rootInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.IterDirentsCallback, offset, relOffset int64) (int64, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()

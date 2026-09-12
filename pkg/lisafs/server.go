@@ -82,6 +82,8 @@ func (s *Server) SetHandlers(handlers []RPCHandler) {
 
 // withRenameReadLock invokes fn with the server's rename mutex locked for
 // reading. This ensures that no rename operations occur concurrently.
+//
+// +checklocksexclude:s.renameMu
 func (s *Server) withRenameReadLock(fn func() error) error {
 	s.renameMu.RLock()
 	defer s.renameMu.RUnlock()
@@ -98,6 +100,9 @@ func (s *Server) StartConnection(c *Connection) {
 }
 
 // Wait waits for all connections started via StartConnection() to terminate.
+// Connections may acquire renameMu while handling requests or during cleanup.
+//
+// +checklocksexclude:s.renameMu
 func (s *Server) Wait() {
 	s.connWg.Wait()
 }
