@@ -76,7 +76,11 @@ func (mm *MemoryManager) MapsCallbackFuncForBuffer(buf *bytes.Buffer) MapsCallba
 }
 
 // ReadMapsDataInto is called by fsimpl/proc.mapsData.Generate to
-// implement /proc/[pid]/maps.
+// implement /proc/[pid]/maps. It invokes fn synchronously with mappingMu read
+// locked. The callback must not reacquire mappingMu or violate the lock order;
+// checklocks cannot attach this incoming lock state to the function value.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, fn MapsCallbackFunc) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -98,14 +102,14 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, fn MapsCallbackFu
 // vmaMapsEntryLocked returns a /proc/[pid]/maps entry for the vma iterated by
 // vseg, including the trailing newline.
 //
-// Preconditions: mm.mappingMu must be locked.
+// +checklocksread:mm.mappingMu
 func (mm *MemoryManager) vmaMapsEntryLocked(ctx context.Context, vseg vmaIterator) []byte {
 	var b bytes.Buffer
 	mm.appendVMAMapsEntryLocked(ctx, vseg, mm.MapsCallbackFuncForBuffer(&b))
 	return b.Bytes()
 }
 
-// Preconditions: mm.mappingMu must be locked.
+// +checklocksread:mm.mappingMu
 func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaIterator, fn MapsCallbackFunc) {
 	vma := vseg.ValuePtr()
 	private := "p"
@@ -133,6 +137,9 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
 // implement /proc/[pid]/maps.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffer) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
@@ -149,13 +156,16 @@ func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffe
 // vmaSmapsEntryLocked returns a /proc/[pid]/smaps entry for the vma iterated
 // by vseg, including the trailing newline.
 //
-// Preconditions: mm.mappingMu must be locked.
+// +checklocksread:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) vmaSmapsEntryLocked(ctx context.Context, vseg vmaIterator) []byte {
 	var b bytes.Buffer
 	mm.vmaSmapsEntryIntoLocked(ctx, vseg, &b)
 	return b.Bytes()
 }
 
+// +checklocksread:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIterator, b *bytes.Buffer) {
 	mm.appendVMAMapsEntryLocked(ctx, vseg, mm.MapsCallbackFuncForBuffer(b))
 	vma := vseg.ValuePtr()
