@@ -20,10 +20,10 @@ make rebuild-syzkaller
 Then we need to create a directory with all artifacts that we will need to run a
 syzkaller. Then we will bind-mount this directory to a docker container.
 
-We need to build runsc and place it on the artifact directory:
+We need to build the release tarball and place it on the artifact directory:
 
 ```bash
-make RUNTIME_DIR=/tmp/syzkaller refresh
++make release-tarball DESTINATION=/tmp/syzkaller
 ```
 
 The next step is to create a syzkaller config. We can copy the default one and
