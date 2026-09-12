@@ -17,14 +17,22 @@
 #include <sys/ipc.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include "gmock/gmock.h"
+#include "absl/flags/flag.h"
 #include "absl/time/clock.h"
+#include "test/util/capability_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
+
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_gid, 65534, "scratch GID");
 
 namespace gvisor {
 namespace testing {
@@ -537,6 +545,49 @@ TEST(ShmTest, MprotectWriteOnWritableSegmentSucceeds) {
   EXPECT_EQ(addr[0], 'y');
 
   ASSERT_NO_ERRNO(Shmdt(addr));
+}
+
+TEST(ShmTest, RmidOwnershipPermissionDenied) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const uid_t scratch_uid = absl::GetFlag(FLAGS_scratch_uid);
+  const gid_t scratch_gid = absl::GetFlag(FLAGS_scratch_gid);
+
+  ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
+      Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0600));
+
+  // Drop privileges and change IDs in a separate thread so the test runner's
+  // main thread credentials remain unaffected. AutoCapability must stay in
+  // scope for the shmctl body.
+  auto drop_privs = [&](auto&& body) {
+    AutoCapability cap(CAP_SYS_ADMIN, false);
+    EXPECT_THAT(syscall(SYS_setresgid, -1, scratch_gid, -1), SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_setresuid, -1, scratch_uid, -1), SyscallSucceeds());
+    body();
+  };
+
+  ScopedThread([&] {
+    drop_privs([&] {
+      EXPECT_THAT(Shmctl<void>(shm.id(), IPC_RMID, nullptr),
+                  PosixErrorIs(EPERM, _));
+    });
+  });
+
+  // Verify that the segment was not destroyed and remains valid.
+  struct shmid_ds attr;
+  ASSERT_NO_ERRNO(Shmctl(shm.id(), IPC_STAT, &attr));
+  EXPECT_EQ(attr.shm_perm.mode & 0777, 0600);
+  EXPECT_FALSE(attr.shm_perm.mode & SHM_DEST);
+
+  // Transfer ownership to the scratch user via IPC_SET.
+  attr.shm_perm.uid = scratch_uid;
+  ASSERT_NO_ERRNO(Shmctl(shm.id(), IPC_SET, &attr));
+
+  // In the same dropped-privilege thread (now the owner), IPC_RMID
+  // should succeed.
+  ScopedThread([&] {
+    drop_privs([&] { EXPECT_NO_ERRNO(shm.Rmid()); });
+  });
 }
 
 }  // namespace
