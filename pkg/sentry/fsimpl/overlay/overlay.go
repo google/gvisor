@@ -852,13 +852,39 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.watches
 }
 
+// dropListKey is the context key under which withDropList publishes an
+// operation's drop list to dentry.OnZeroWatches.
+type dropListKey struct{}
+
+// withDropList returns ctx carrying ds, the drop list that the calling
+// operation will pass to renameMuRUnlockAndCheckDrop or
+// renameMuUnlockAndCheckDrop. Use it for Watches.Notify and the
+// vfs.Inotify* helpers while fs.renameMu is held: Notify removes watches the
+// notification expired (IN_ONESHOT) and calls OnZeroWatches on the notifying
+// goroutine, which would otherwise take fs.renameMu for writing and deadlock.
+// The notified dentry is often not on ds already, since a dentry kept alive
+// by its watches is found in its parent's children map rather than
+// instantiated by the walk, so OnZeroWatches appends it to ds and the caller
+// drops it after the unlock.
+//
+// Preconditions: fs.renameMu must be locked.
+func withDropList(ctx context.Context, ds **[]*dentry) context.Context {
+	return context.WithValue(ctx, dropListKey{}, ds)
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
-	if d.refs.Load() == 0 {
-		d.fs.renameMu.Lock()
-		d.checkDropLocked(ctx)
-		d.fs.renameMu.Unlock()
+	if d.refs.Load() != 0 {
+		return
 	}
+	if ds, ok := ctx.Value(dropListKey{}).(**[]*dentry); ok {
+		// The caller holds fs.renameMu; see withDropList.
+		*ds = appendDentry(*ds, d)
+		return
+	}
+	d.fs.renameMu.Lock()
+	d.checkDropLocked(ctx)
+	d.fs.renameMu.Unlock()
 }
 
 // iterLayers invokes yield on each layer comprising d, from top to bottom. If

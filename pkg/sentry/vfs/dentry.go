@@ -139,6 +139,13 @@ type DentryImpl interface {
 	// The caller does not need to hold a reference on the dentry. OnZeroWatches
 	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
 	// be held by the caller.
+	//
+	// Watches.Notify calls OnZeroWatches on the notifying goroutine when the
+	// notification expires the dentry's last watch (IN_ONESHOT). Since
+	// FilesystemImpls call Notify while holding their own locks, an
+	// implementation that needs such a lock in OnZeroWatches must arrange for
+	// the notifying operation to do the work after it releases the lock; see
+	// overlay.withDropList and gofer.withCheckCachingList.
 	OnZeroWatches(ctx context.Context)
 }
 

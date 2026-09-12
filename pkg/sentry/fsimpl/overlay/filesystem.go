@@ -571,7 +571,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	if ct != createNonDirectory {
 		ev |= linux.IN_ISDIR
 	}
-	parent.watches.Notify(ctx, name, uint32(ev), 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
+	parent.watches.Notify(withDropList(ctx, &ds), name, uint32(ev), 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -1057,7 +1057,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		upperFD.DecRef(ctx)
 		return nil, err
 	}
-	parent.watches.Notify(ctx, childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
+	parent.watches.Notify(withDropList(ctx, ds), childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
 	fd.vfsfd.SetCreated()
 	return &fd.vfsfd, nil
 }
@@ -1385,8 +1385,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 
-		vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
-		vfs.InotifyRename(ctx, &replaced.watches, &newParent.watches, &oldParent.watches, newName, oldName, replaced.isDir())
+		nctx := withDropList(ctx, &ds)
+		vfs.InotifyRename(nctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+		vfs.InotifyRename(nctx, &replaced.watches, &newParent.watches, &oldParent.watches, newName, oldName, replaced.isDir())
 		return nil
 	}
 
@@ -1432,7 +1433,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 
-	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+	vfs.InotifyRename(withDropList(ctx, &ds), &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 
@@ -1575,14 +1576,15 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	fs.releaseDirIno(child.dirInoHash)
 	ds = appendDentry(ds, child)
 	parent.dirents = nil
+	nctx := withDropList(ctx, &ds)
 	// Linux sends the parent's IN_DELETE|IN_ISDIR at rmdir() time, but
 	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
 	// dropped. Emit the child notifications now only when no extra refs
 	// remain; otherwise defer to destroyLocked().
 	if child.refs.Load() == 0 {
-		child.watches.HandleDeletion(ctx)
+		child.watches.HandleDeletion(nctx)
 	}
-	parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)
+	parent.watches.Notify(nctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)
 	return nil
 }
 
@@ -1596,15 +1598,13 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		return err
 	}
 	err = d.setStatLocked(ctx, rp, opts)
+	if err == nil {
+		if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+			d.InotifyWithParent(withDropList(ctx, &ds), ev, 0 /* cookie */, vfs.InodeEvent)
+		}
+	}
 	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	if err != nil {
-		return err
-	}
-
-	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ctx, ev, 0 /* cookie */, vfs.InodeEvent)
-	}
-	return nil
+	return err
 }
 
 // Precondition: d.fs.renameMu must be held for reading.
@@ -1819,7 +1819,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		}
 	}
 	ds = appendDentry(ds, child)
-	vfs.InotifyRemoveChild(ctx, &child.watches, &parent.watches, name)
+	vfs.InotifyRemoveChild(withDropList(ctx, &ds), &child.watches, &parent.watches, name)
 	parent.dirents = nil
 	return nil
 }
@@ -1910,13 +1910,11 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	}
 
 	err = fs.setXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), &opts)
-	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	if err != nil {
-		return err
+	if err == nil {
+		d.InotifyWithParent(withDropList(ctx, &ds), linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
 	}
-
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
-	return nil
+	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	return err
 }
 
 // Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
@@ -1966,13 +1964,11 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	}
 
 	err = fs.removeXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), name)
-	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	if err != nil {
-		return err
+	if err == nil {
+		d.InotifyWithParent(withDropList(ctx, &ds), linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
 	}
-
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
-	return nil
+	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	return err
 }
 
 // Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
