@@ -107,3 +107,66 @@ type aliasReceiver struct {
 type aliasRedundantDeep struct { // +checklocksfail=is redundant
 	rc aliasReceiver
 }
+
+// +checklocksalias:inner.mu=mu
+type aliasBranchOuter struct {
+	mu sync.RWMutex
+
+	// +checklocks:mu
+	inner *aliasBranchInner
+}
+
+// +checklocksalias:mu=outer.mu
+type aliasBranchInner struct {
+	mu    *sync.RWMutex
+	outer *aliasBranchOuter
+}
+
+// Visiting the inner type discovers the reverse alias, which can change the
+// held mutex's representative without changing its identity.
+func visitAliasBranchInner(inner *aliasBranchInner) {}
+
+// +checklocks:a.mu
+// +checklocks:b.mu
+func testAliasBranchSameLock(a, b *aliasBranchOuter, visit bool) {
+	if !visit {
+		return
+	}
+	visitAliasBranchInner(a.inner)
+}
+
+// The negative cases return values so exit diagnostics have explicit source
+// positions without requiring implicit-return reporting.
+//
+// +checklocks:a.mu
+func testAliasBranchWrongMode(a *aliasBranchOuter, visit bool) bool { // +checklocksfail=incompatible return states
+	if !visit {
+		return false
+	}
+	visitAliasBranchInner(a.inner)
+	a.mu.Unlock()
+	a.mu.RLock()
+	return true // +checklocksfail=not held exclusively
+}
+
+// +checklocks:a.mu
+// +checklocks:b.mu
+func testAliasBranchWrongOwner(a, b, c *aliasBranchOuter, visit bool) bool { // +checklocksfail=incompatible return states
+	if !visit {
+		return false
+	}
+	visitAliasBranchInner(a.inner)
+	b.mu.Unlock()
+	c.mu.Lock()
+	return true // +checklocksfail=not held exclusively
+}
+
+// +checklocks:a.mu
+func testAliasBranchExtraLock(a, b *aliasBranchOuter, visit bool) bool { // +checklocksfail=incompatible return states
+	if !visit {
+		return false
+	}
+	visitAliasBranchInner(a.inner)
+	b.mu.Lock()
+	return true // +checklocksfail=return with unexpected locks held
+}

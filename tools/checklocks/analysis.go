@@ -257,7 +257,10 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 	var (
 		lgf         lockGuardFacts
 		guardsFound int
-		guardsHeld  = make(map[string]struct{}) // Keyed by resolved string.
+		// guardsResolved contains canonical keys for declared guards,
+		// regardless of whether they are held in the required mode.
+		guardsResolved = make(map[string]struct{})
+		guardsHeld     = make(map[string]struct{}) // Keyed by resolved string.
 	)
 
 	// Load the facts for the object accessed.
@@ -274,6 +277,7 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 			continue
 		}
 		s, ok := ls.isHeld(r, isWrite)
+		guardsResolved[s] = struct{}{}
 		if ok {
 			guardsHeld[s] = struct{}{}
 			continue
@@ -345,9 +349,8 @@ func (pc *passContext) checkGuards(inst almostInst, from ssa.Value, accessObj ty
 			if info.object == nil || accessObj == info.object {
 				continue
 			}
-			// Has this already been held?
-			if _, ok := guardsHeld[s]; ok {
-				oo.counts[info.object]++
+			// Do not infer a guard already declared for this access.
+			if _, ok := guardsResolved[s]; ok {
 				continue
 			}
 			// Is this a global? Record directly.
@@ -821,7 +824,7 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 		// the lock state to ensure that Releases and Acquires are
 		// respected.
 		if pls := pc.checkBasicBlock(fn, succ, lff, ls, seen, rg); pls != nil {
-			if rls != nil && !rls.isCompatible(pls) {
+			if rls != nil && !rls.hasSameLocks(pls) {
 				if _, ok := pc.forced[pc.positionKey(fn.Pos())]; !ok && !lff.Ignore {
 					pc.maybeFail(fn.Pos(), "incompatible return states (first: %s, second: %s)", rls.String(), pls.String())
 				}
@@ -910,7 +913,7 @@ func (pc *passContext) checkInferred() {
 		var lgf lockGuardFacts
 		pc.importLockGuardFacts(obj, &lgf)
 		for other, count := range oo.counts {
-			// Is this already a guard?
+			// Do not suggest an annotation that is already present.
 			if _, ok := lgf.GuardedBy[other.Name()]; ok {
 				continue
 			}
