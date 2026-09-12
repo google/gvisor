@@ -95,7 +95,7 @@ func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.Signal
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) linux.BPFAction {
 	result := linux.BPFAction(t.evaluateSyscallFilters(sysno, args, ip))
-	action := result & linux.SECCOMP_RET_ACTION
+	action := result & linux.SECCOMP_RET_ACTION_FULL
 	switch action {
 	case linux.SECCOMP_RET_TRAP:
 		// "Results in the kernel sending a SIGSYS signal to the triggering
@@ -131,6 +131,11 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 		// "Results in the task exiting immediately without executing the
 		// system call. The exit status of the task will be SIGSYS, not
 		// SIGKILL."
+
+	case linux.SECCOMP_RET_KILL_PROCESS:
+		// "Results in the entire thread group exiting immediately without
+		// executing the system call. The exit status of the thread group
+		// will be SIGSYS, not SIGKILL."
 
 	default:
 		// consistent with Linux
@@ -186,7 +191,12 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 		// "The ordering ensures that a min_t() over composed return values
 		// always selects the least permissive choice." -
 		// include/uapi/linux/seccomp.h
-		if (thisRet & linux.SECCOMP_RET_ACTION) < (ret & linux.SECCOMP_RET_ACTION) {
+		//
+		// In Linux (kernel/seccomp.c), ACTION_ONLY is defined as:
+		// ((s32)((ret) & SECCOMP_RET_ACTION_FULL))
+		// Signed comparison ensures that SECCOMP_RET_KILL_PROCESS (0x80000000,
+		// i.e. -2147483648) has the highest precedence.
+		if int32(thisRet&linux.SECCOMP_RET_ACTION_FULL) < int32(ret&linux.SECCOMP_RET_ACTION_FULL) {
 			ret = thisRet
 		}
 	}
@@ -252,7 +262,7 @@ func (ts *taskSeccomp) populateCache(t *Task) {
 				sysnoIsCacheable = false
 				break
 			}
-			if (linux.BPFAction(result) & linux.SECCOMP_RET_ACTION) < (ret & linux.SECCOMP_RET_ACTION) {
+			if int32(linux.BPFAction(result)&linux.SECCOMP_RET_ACTION_FULL) < int32(ret&linux.SECCOMP_RET_ACTION_FULL) {
 				ret = linux.BPFAction(result)
 			}
 		}
