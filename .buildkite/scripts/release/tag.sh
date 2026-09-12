@@ -39,11 +39,11 @@ if [[ "$#" -ne 1 ]]; then
 fi
 
 declare -r staging_tag="${BUILDKITE_TAG:-}"
-if [[ "${staging_tag}" != staging-release-* ]]; then
+if [[ "${staging_tag}" != release-*-staging ]]; then
   echo "Not a staged release build; nothing to do." >&2
   exit 0
 fi
-declare -r tag="${staging_tag#staging-}"
+declare -r tag="${staging_tag%-staging}"
 
 # The object "${tag}" names in the remote; empty if it does not exist.
 published_object() {

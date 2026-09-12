@@ -18,6 +18,7 @@ package proc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -59,24 +60,29 @@ type Init struct {
 
 	WorkDir string
 
-	id       string
-	Bundle   string
-	console  console.Console
-	Platform stdio.Platform
-	io       runc.IO
-	runtime  *runsccmd.Runsc
-	status   int
-	exited   time.Time
-	pid      int
-	closers  []io.Closer
-	stdin    io.Closer
-	stdio    stdio.Stdio
-	Rootfs   string
-	IoUID    int
-	IoGID    int
-	Sandbox  bool
-	UserLog  string
-	Monitor  ProcessMonitor
+	id        string
+	Bundle    string
+	console   console.Console
+	Platform  stdio.Platform
+	io        runc.IO
+	runtime   *runsccmd.Runsc
+	status    int
+	exited    time.Time
+	pid       int
+	closers   []io.Closer
+	stdin     io.Closer
+	stdio     stdio.Stdio
+	Rootfs    string
+	IoUID     int
+	IoGID     int
+	Sandbox   bool
+	UserLog   string
+	Monitor   ProcessMonitor
+	FuseAbort bool
+	// K8sPodUID is the Kubernetes Pod UID (UUID) used for resolving host volume
+	// mounts under /var/lib/kubelet/pods/<uid>. Note that this is distinct from
+	// containerd's SandboxID.
+	K8sPodUID string
 }
 
 // NewRunsc returns a new runsc instance for a process.
@@ -255,7 +261,7 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 		status, err := p.runtime.Wait(context.Background(), p.id)
 		if err != nil {
 			log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
-			p.killAllLocked(ctx)
+			p.KillAll(ctx)
 			status = InternalErrorCode
 		}
 		ExitCh <- Exit{
@@ -320,7 +326,21 @@ func (p *Init) delete(ctx context.Context) error {
 	p.killAllLocked(ctx)
 	p.wg.Wait()
 
-	err := p.runtime.Delete(ctx, p.id, nil)
+	var err error
+	if p.FuseAbort {
+		// Arm watchdog for delete operation for FUSE mounts. They have been
+		// observed to wedge in Kernel.Pause.
+		watchdogCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		err = p.runtime.Delete(watchdogCtx, p.id, nil)
+		cancel()
+		if err != nil && errors.Is(watchdogCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			log.L.Warningf("Container %q delete wedged in Kernel.Pause, aborting FUSE connections", p.id)
+			p.abortFuse()
+			err = p.runtime.Delete(ctx, p.id, nil)
+		}
+	} else {
+		err = p.runtime.Delete(ctx, p.id, nil)
+	}
 	if err != nil {
 		// ignore errors if a runtime has already deleted the process
 		// but we still hold metadata and pipes
@@ -379,7 +399,12 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 		killErr error
 		backoff = 100 * time.Millisecond
 	)
-	const timeout = time.Second
+	timeout := time.Second
+	if p.FuseAbort {
+		// Increase the timeout for FUSE abort cases so we can attempt to kill the container
+		// gracefully with SIGTERM.
+		timeout = 10 * time.Second
+	}
 	for start := time.Now(); time.Since(start) < timeout; {
 		state, err := p.initState.State(ctx)
 		if err != nil {
@@ -391,7 +416,7 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 		if state == statusStopped {
 			return fmt.Errorf("no such process: %w", errdefs.ErrNotFound)
 		}
-		killErr = p.runtime.Kill(ctx, p.id, int(signal), &runsccmd.KillOpts{All: all})
+		killErr = p.killRuntime(ctx, int(signal), &runsccmd.KillOpts{All: all})
 		if killErr == nil {
 			return nil
 		}
@@ -410,9 +435,55 @@ func (p *Init) KillAll(context context.Context) {
 }
 
 func (p *Init) killAllLocked(context context.Context) {
-	if err := p.runtime.Kill(context, p.id, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
+	if err := p.killRuntime(context, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
 		log.L.Warningf("Ignoring error killing container %q: %v", p.id, err)
 	}
+}
+
+func (p *Init) abortFuse() {
+	if !p.FuseAbort {
+		return
+	}
+	// Abort pod FUSE connections if the pod UID is set.
+	if p.K8sPodUID != "" {
+		if err := utils.AbortPodFuseConnections(p.K8sPodUID); err != nil {
+			log.L.Warningf("Failed to abort pod FUSE connections for container %q (pod %q): %v", p.id, p.K8sPodUID, err)
+		}
+		return
+	}
+	// If we don't have a pod UID, abort the container's FUSE connections by looking
+	// at the OCI spec.
+	if p.Bundle != "" {
+		if s, err := utils.ReadSpec(p.Bundle); err == nil {
+			if err := utils.AbortMountFuseConnections(s.Mounts); err != nil {
+				log.L.Warningf("Failed to abort mount FUSE connections for container %q: %v", p.id, err)
+			}
+		}
+	}
+}
+
+func (p *Init) killRuntime(ctx context.Context, signal int, opts *runsccmd.KillOpts) error {
+	if p.FuseAbort {
+		// Only arm watchdog for forced kills (SIGKILL) or when killing all processes (teardown).
+		// For graceful signals like SIGTERM to a single process, allow standard execution
+		// to respect the application's termination grace period.
+		if signal == int(unix.SIGKILL) || (opts != nil && opts.All) {
+			timeout := 1 * time.Second
+			if opts != nil && opts.All {
+				timeout = 500 * time.Millisecond
+			}
+			watchdogCtx, cancel := context.WithTimeout(ctx, timeout)
+			err := p.runtime.Kill(watchdogCtx, p.id, signal, opts)
+			cancel()
+			if err != nil && errors.Is(watchdogCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+				log.L.Warningf("Container %q kill wedged in Kernel.Pause, aborting FUSE connections", p.id)
+				p.abortFuse()
+				return p.runtime.Kill(ctx, p.id, signal, opts)
+			}
+			return err
+		}
+	}
+	return p.runtime.Kill(ctx, p.id, signal, opts)
 }
 
 // Stdin returns the stdin of the process.
