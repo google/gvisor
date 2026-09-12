@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func TestTypeKind(t *testing.T) {
@@ -105,6 +106,12 @@ func TestCommonPrefixLen(t *testing.T) {
 			a:    net.ParseIP("2001:db8::1"),
 			b:    net.ParseIP("2001:db8::2"),
 			want: 126,
+		},
+		{
+			name: "different lengths",
+			a:    net.ParseIP("2001:db8::1"),
+			b:    net.ParseIP("192.168.1.1").To4(),
+			want: 0,
 		},
 		{
 			name: "empty slices",
@@ -196,6 +203,24 @@ func TestFillRoute(t *testing.T) {
 		}
 		if (rt.Flags & linux.RTM_F_CLONED) == 0 {
 			t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
+		}
+	})
+
+	t.Run("route_without_destination", func(t *testing.T) {
+		routesNoDst := []inet.Route{
+			{
+				Family:          linux.AF_INET,
+				DstLen:          0,
+				OutputInterface: 9,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(routesNoDst, v4Dst)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Dst, err)
+		}
+		if rt.OutputInterface != 9 {
+			t.Errorf("got OutputInterface = %d, want 9", rt.OutputInterface)
 		}
 	})
 
@@ -488,6 +513,40 @@ func TestParseForDestination(t *testing.T) {
 	_, err = parseForDestination(emptyMsg)
 	if err != syserr.ErrInvalidArgument {
 		t.Errorf("got err = %v, want ErrInvalidArgument", err)
+	}
+
+	// 5. Message with an IPv6 RTA_DST attribute.
+	dstIP6 := net.ParseIP("2001:db8::1").To16()
+	msgDst6 := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+		Type: linux.RTM_GETROUTE,
+	})
+	msgDst6.Put(&linux.RouteMessage{
+		Family: linux.AF_INET6,
+	})
+	msgDst6.PutAttr(linux.RTA_DST, primitive.AsByteSlice(dstIP6))
+
+	gotDst, err = parseForDestination(msgDst6)
+	if err != nil {
+		t.Fatalf("parseForDestination with an IPv6 RTA_DST failed: %v", err)
+	}
+	if !bytes.Equal(gotDst, dstIP6) {
+		t.Errorf("got dst = %v, want %v", gotDst, dstIP6)
+	}
+
+	// 6. RTA_DST that is not the size of an address.
+	for _, size := range []int{1, header.IPv4AddressSize + 1, header.IPv6AddressSize + 1} {
+		msgBadDst := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+			Type: linux.RTM_GETROUTE,
+		})
+		msgBadDst.Put(&linux.RouteMessage{
+			Family: linux.AF_INET6,
+		})
+		msgBadDst.PutAttr(linux.RTA_DST, primitive.AsByteSlice(make([]byte, size)))
+
+		_, err = parseForDestination(msgBadDst)
+		if err != syserr.ErrInvalidArgument {
+			t.Errorf("got err = %v for a %d byte RTA_DST, want ErrInvalidArgument", err, size)
+		}
 	}
 }
 
