@@ -133,36 +133,30 @@ build_wheel_sdist() {
   echo "=== [Build] Python build complete! ==="
 }
 
-# ensure_twine_prerequisites checks if twine is available on the system.
-# If missing, it installs python3-pip, keyring, keyrings.google-artifactregistry-auth,
-# and twine>=5.0.0.
+# ensure_twine_prerequisites creates and activates a virtual environment,
+# then installs keyring, keyrings.google-artifactregistry-auth, and twine.
 ensure_twine_prerequisites() {
-  export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH}"
-
-  if command -v twine >/dev/null 2>&1 || python3 -c "import twine" >/dev/null 2>&1; then
+  if command -v twine >/dev/null 2>&1 && python3 -c "import keyrings.google_artifactregistry_auth" >/dev/null 2>&1; then
     return 0
   fi
 
-  echo "=== [Bootstrap] twine not found on PATH. Installing publishing prerequisites... ===" >&2
-  if ! command -v pip3 >/dev/null 2>&1; then
-    echo "pip3 not found. Attempting to install python3-pip..." >&2
-    if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-      sudo apt-get update && sudo apt-get install -y python3-pip
-    elif command -v apt-get >/dev/null 2>&1; then
-      apt-get update && apt-get install -y python3-pip
+  echo "=== [Bootstrap] Setting up Python virtual environment in release-venv... ===" >&2
+  if [[ ! -d "release-venv" ]]; then
+    if ! python3 -m venv release-venv 2>/dev/null; then
+      echo "python3 -m venv failed. Attempting to install python3-venv..." >&2
+      if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update && sudo apt-get install -y python3-venv python3-pip
+      elif command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y python3-venv python3-pip
+      fi
+      python3 -m venv release-venv
     fi
   fi
+  # shellcheck disable=SC1091
+  source release-venv/bin/activate
 
-  if command -v pip3 >/dev/null 2>&1; then
-    echo "Installing keyring, keyrings.google-artifactregistry-auth, and twine..." >&2
-    pip3 install --quiet --no-cache-dir keyring keyrings.google-artifactregistry-auth "twine>=5.0.0" 2>/dev/null || \
-      sudo pip3 install --quiet --no-cache-dir keyring keyrings.google-artifactregistry-auth "twine>=5.0.0" 2>/dev/null || \
-      pip3 install --quiet --user --no-cache-dir keyring keyrings.google-artifactregistry-auth "twine>=5.0.0" 2>/dev/null || true
-  elif command -v pip >/dev/null 2>&1; then
-    pip install --quiet --no-cache-dir keyring keyrings.google-artifactregistry-auth "twine>=5.0.0" 2>/dev/null || true
-  fi
-
-  export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH}"
+  echo "Installing keyring, keyrings.google-artifactregistry-auth, and twine..." >&2
+  pip install --quiet --no-cache-dir keyring keyrings.google-artifactregistry-auth "twine>=5.0.0"
 }
 
 # upload_to_ar uploads staged Python wheel and sdist files to OSS Exit Gate Artifact Registry.

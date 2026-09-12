@@ -12,3 +12,4 @@
 # clangd compilation database
 /.cache/clangd
 /compile_commands.json
+/release-venv
