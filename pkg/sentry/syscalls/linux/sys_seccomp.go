@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
@@ -39,10 +40,40 @@ type userSockFprog struct {
 	Filter uint64
 }
 
+// seccompGetActionAvail implements seccomp(SECCOMP_GET_ACTION_AVAIL).
+func seccompGetActionAvail(t *kernel.Task, flags uint64, addr hostarch.Addr) error {
+	if flags != 0 {
+		return linuxerr.EINVAL
+	}
+	var actionParam primitive.Uint32
+	if _, err := actionParam.CopyIn(t, addr); err != nil {
+		return err
+	}
+	switch linux.BPFAction(actionParam) {
+	case linux.SECCOMP_RET_KILL_PROCESS,
+		linux.SECCOMP_RET_KILL_THREAD,
+		linux.SECCOMP_RET_TRAP,
+		linux.SECCOMP_RET_ERRNO,
+		linux.SECCOMP_RET_TRACE,
+		linux.SECCOMP_RET_LOG,
+		linux.SECCOMP_RET_ALLOW:
+		return nil
+	}
+	// This includes SECCOMP_RET_USER_NOTIF: gVisor does not support seccomp
+	// user notification, so don't advertise it.
+	return linuxerr.EOPNOTSUPP
+}
+
 // seccomp applies a seccomp policy to the current task.
 func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) (*kernel.SyscallControl, error) {
-	// We only support SECCOMP_SET_MODE_FILTER at the moment.
-	if mode != linux.SECCOMP_SET_MODE_FILTER {
+	// We support SECCOMP_SET_MODE_FILTER and SECCOMP_GET_ACTION_AVAIL at the
+	// moment.
+	switch mode {
+	case linux.SECCOMP_SET_MODE_FILTER:
+		// Handled below.
+	case linux.SECCOMP_GET_ACTION_AVAIL:
+		return nil, seccompGetActionAvail(t, flags, addr)
+	default:
 		// Unsupported mode.
 		return nil, linuxerr.EINVAL
 	}

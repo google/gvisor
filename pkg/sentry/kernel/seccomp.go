@@ -34,6 +34,10 @@ const (
 	// It is used as a sentinel value in `taskSeccompFilters.cache` to indicate
 	// that a specific syscall number is uncachable.
 	uncacheableBPFAction = linux.SECCOMP_RET_ACTION_FULL
+
+	// maxSeccompErrno is Linux's MAX_ERRNO (include/linux/err.h), the
+	// largest errno that a SECCOMP_RET_ERRNO filter may return.
+	maxSeccompErrno = 4095
 )
 
 // taskSeccomp holds seccomp-related data for a `Task`.
@@ -95,7 +99,11 @@ func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.Signal
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) linux.BPFAction {
 	result := linux.BPFAction(t.evaluateSyscallFilters(sysno, args, ip))
-	action := result & linux.SECCOMP_RET_ACTION
+	// The action must be masked with SECCOMP_RET_ACTION_FULL rather than
+	// SECCOMP_RET_ACTION; the latter drops the high bit, which would truncate
+	// SECCOMP_RET_KILL_PROCESS (0x80000000) to SECCOMP_RET_KILL_THREAD (0).
+	// Compare Linux's kernel/seccomp.c:__seccomp_filter().
+	action := result & linux.SECCOMP_RET_ACTION_FULL
 	switch action {
 	case linux.SECCOMP_RET_TRAP:
 		// "Results in the kernel sending a SIGSYS signal to the triggering
@@ -109,8 +117,14 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 
 	case linux.SECCOMP_RET_ERRNO:
 		// "Results in the lower 16-bits of the return value being passed to
-		// userland as the errno without executing the system call."
-		t.Arch().SetReturn(-uintptr(result.Data()))
+		// userland as the errno without executing the system call." Linux
+		// caps the errno at MAX_ERRNO; see
+		// kernel/seccomp.c:__seccomp_filter().
+		errno := result.Data()
+		if errno > maxSeccompErrno {
+			errno = maxSeccompErrno
+		}
+		t.Arch().SetReturn(-uintptr(errno))
 
 	case linux.SECCOMP_RET_TRACE:
 		// "When returned, this value will cause the kernel to attempt to
@@ -124,8 +138,31 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 			return linux.SECCOMP_RET_ERRNO
 		}
 
+	case linux.SECCOMP_RET_USER_NOTIF:
+		// gVisor does not support seccomp user notification (there is no
+		// way to attach a listener to a filter), so behave as Linux does
+		// when a filter returns SECCOMP_RET_USER_NOTIF and no listener is
+		// attached: the system call is not executed and fails with ENOSYS.
+		// See kernel/seccomp.c:seccomp_do_user_notification().
+		// This useless-looking temporary is needed because Go.
+		tmp := uintptr(unix.ENOSYS)
+		t.Arch().SetReturn(-tmp)
+		return linux.SECCOMP_RET_ERRNO
+
+	case linux.SECCOMP_RET_LOG:
+		// "Results in the system call being executed after the action has
+		// been logged." Linux logs to the kernel audit log; log to the
+		// sentry debug log instead.
+		t.Debugf("Syscall %d: logged by seccomp filter", sysno)
+		return linux.SECCOMP_RET_ALLOW
+
 	case linux.SECCOMP_RET_ALLOW:
 		// "Results in the system call being executed."
+
+	case linux.SECCOMP_RET_KILL_PROCESS:
+		// "Results in the entire process exiting immediately without executing
+		// the system call. The exit status of the task will be SIGSYS, not
+		// SIGKILL."
 
 	case linux.SECCOMP_RET_KILL_THREAD:
 		// "Results in the task exiting immediately without executing the
@@ -133,8 +170,11 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 		// SIGKILL."
 
 	default:
-		// consistent with Linux
-		return linux.SECCOMP_RET_KILL_THREAD
+		// Unknown actions kill the entire process, not just the thread:
+		// Linux's __seccomp_filter() groups the default case with
+		// SECCOMP_RET_KILL_PROCESS (see commit 4d671d922d51, "seccomp: kill
+		// process instead of thread for unknown actions").
+		return linux.SECCOMP_RET_KILL_PROCESS
 	}
 	return action
 }
@@ -186,7 +226,13 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 		// "The ordering ensures that a min_t() over composed return values
 		// always selects the least permissive choice." -
 		// include/uapi/linux/seccomp.h
-		if (thisRet & linux.SECCOMP_RET_ACTION) < (ret & linux.SECCOMP_RET_ACTION) {
+		//
+		// Note that the comparison is signed over the full action mask,
+		// matching ACTION_ONLY() in Linux's kernel/seccomp.c:
+		// "#define ACTION_ONLY(ret) ((s32)((ret) & (SECCOMP_RET_ACTION_FULL)))"
+		// This gives SECCOMP_RET_KILL_PROCESS (0x80000000, negative as s32)
+		// precedence over all other actions.
+		if int32(thisRet&linux.SECCOMP_RET_ACTION_FULL) < int32(ret&linux.SECCOMP_RET_ACTION_FULL) {
 			ret = thisRet
 		}
 	}
@@ -252,7 +298,7 @@ func (ts *taskSeccomp) populateCache(t *Task) {
 				sysnoIsCacheable = false
 				break
 			}
-			if (linux.BPFAction(result) & linux.SECCOMP_RET_ACTION) < (ret & linux.SECCOMP_RET_ACTION) {
+			if int32(linux.BPFAction(result)&linux.SECCOMP_RET_ACTION_FULL) < int32(ret&linux.SECCOMP_RET_ACTION_FULL) {
 				ret = linux.BPFAction(result)
 			}
 		}

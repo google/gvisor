@@ -74,6 +74,30 @@ var (
 			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
+			name: "default_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActKillProcess,
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
+			name: "match_name_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"getcwd",
+						},
+						Action: specs.ActKillProcess,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
 			name: "deny_arch",
 			config: specs.LinuxSeccomp{
 				DefaultAction: specs.ActAllow,
