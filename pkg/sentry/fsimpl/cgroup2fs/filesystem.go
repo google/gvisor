@@ -65,6 +65,19 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	if cgns != nil {
 		defer cgns.DecRef(ctx)
 	}
+
+	// Mounting requires CAP_SYS_ADMIN in the user namespace that owns the
+	// mounting task's cgroup namespace. Sentry-internal mounts are exempt.
+	if !opts.InternalMount {
+		owner := k.RootUserNamespace()
+		if cgns != nil {
+			owner = cgns.UserNamespace()
+		}
+		if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, owner) {
+			return nil, nil, linuxerr.EPERM
+		}
+	}
+
 	rootD, err := fs.mountRoot(ctx, vfsObj, cgns)
 	if err != nil {
 		return nil, nil, err

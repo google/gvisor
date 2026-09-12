@@ -761,6 +761,27 @@ const (
 	NV2080_CTRL_CMD_NVLINK_SET_NVLE_READY            = 0x208030a5
 )
 
+// Constants from src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080nvlink.h.
+const (
+	NV2080_CTRL_NVLINK_MAX_REMAP_TABLE_ENTRIES_V2 = 4096
+	NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK  = 128
+)
+
+// NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS is the params type for
+// NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080nvlink.h.
+//
+// +marshal
+type NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS struct {
+	_               structs.HostLayout
+	Alid            uint32
+	FlaRemapTabAddr [NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK]uint32
+	GpaRemapTabAddr [NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK]uint32
+	RemapTabSize    uint32
+	RemapEntryStart uint32
+	RemapEntryEnd   uint32
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h:
 const (
 	NV2080_CTRL_CMD_PERF_BOOST                              = 0x2080200a

@@ -558,6 +558,11 @@ type dentry struct {
 	inode *inode
 }
 
+// WriteCount implements vfs.WriteCounter.WriteCount.
+func (d *dentry) WriteCount() *vfs.WriteCount {
+	return &d.inode.writeCount
+}
+
 func (fs *filesystem) newDentry(inode *inode) *dentry {
 	d := &dentry{
 		inode: inode,
@@ -648,6 +653,11 @@ type inode struct {
 	mtime atomicbitops.Int64 // nanoseconds
 
 	locks vfs.FileLocks
+
+	// writeCount tracks write access to this inode's contents, and is used to
+	// prevent a file from being written while it is being executed. See
+	// vfs.WriteCount.
+	writeCount vfs.WriteCount
 
 	// Inotify watches for this inode.
 	watches vfs.Watches
@@ -853,6 +863,14 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 	mode := linux.FileMode(i.mode.Load())
 	if err := vfs.CheckSetStat(ctx, creds, opts, mode, i.accessACL.Load(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 		return err
+	}
+	if opts.NeedWritePerm {
+		// truncate(2), unlike ftruncate(2), acquires write access to the file
+		// and so fails with ETXTBSY if it is being executed. See
+		// fs/open.c:do_sys_truncate().
+		if err := i.writeCount.CheckWrite(); err != nil {
+			return err
+		}
 	}
 
 	i.mu.Lock()

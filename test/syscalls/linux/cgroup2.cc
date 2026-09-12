@@ -2121,6 +2121,54 @@ TEST_F(Cgroup2Test, CgroupNamespaceSetns) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
+// Mounting cgroup2 requires CAP_SYS_ADMIN in the user namespace that owns
+// the mounting task's cgroup namespace. A task that unshares a new user
+// namespace while keeping its cgroup namespace lacks that capability, even
+// though it has CAP_SYS_ADMIN in the user namespace owning its new mount
+// namespace.
+TEST_F(Cgroup2Test, MountFromUnprivilegedUserNamespace) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string mntpoint = dir.path();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0);
+    TEST_CHECK(mount("none", mntpoint.c_str(), "cgroup2", 0, nullptr) < 0);
+    TEST_CHECK_MSG(errno == EPERM, "mount did not fail with EPERM");
+    // The nsdelegate option makes no difference.
+    TEST_CHECK(mount("none", mntpoint.c_str(), "cgroup2", 0, "nsdelegate") < 0);
+    TEST_CHECK_MSG(errno == EPERM, "nsdelegate mount did not fail with EPERM");
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// A task that unshares its cgroup namespace together with the user
+// namespace owns the new cgroup namespace and may mount cgroup2.
+TEST_F(Cgroup2Test, MountFromOwnedCgroupNamespace) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string mntpoint = dir.path();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", mntpoint.c_str(), "cgroup2", 0, nullptr) == 0);
+    struct statfs st;
+    TEST_PCHECK(statfs(mntpoint.c_str(), &st) == 0);
+    TEST_CHECK(st.f_type == CGROUP2_SUPER_MAGIC);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
 TEST_F(Cgroup2Test, CgroupNamespaceSetnsPidfd) {
   Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_pidfd"));
   const std::string procs = cg.Relpath("cgroup.procs");
