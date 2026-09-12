@@ -97,6 +97,11 @@ func TestKernelSyscall(t *testing.T) {
 	})
 }
 
+func TestDummy(t *testing.T) {
+	// Dummy test in KVM platform test suite.
+	t.Log("KVM dummy test executed")
+}
+
 func hostFault() {
 	defer func() {
 		recover()
