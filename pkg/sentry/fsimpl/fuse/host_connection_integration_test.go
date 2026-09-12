@@ -35,6 +35,11 @@ type testFUSEServer struct {
 	backDir   string
 	nextFh    uint64
 	openFiles map[uint64]*os.File
+
+	// gotInitFlags records the flags offered in the FUSE_INIT request.
+	gotInitFlags uint32
+	// initReply, when non-nil, overrides the FUSE_INIT reply.
+	initReply *linux.FUSEInitOut
 }
 
 func newTestFUSEServer(fd int, backDir string) *testFUSEServer {
@@ -78,7 +83,7 @@ func (s *testFUSEServer) serve(t *testing.T, done chan struct{}) {
 func (s *testFUSEServer) handleRequest(hdr *linux.FUSEHeaderIn, payload []byte) []byte {
 	switch hdr.Opcode {
 	case linux.FUSE_INIT:
-		return s.handleInit(hdr)
+		return s.handleInit(hdr, payload)
 	case linux.FUSE_GETATTR:
 		return s.handleGetAttr(hdr)
 	case linux.FUSE_LOOKUP:
@@ -100,11 +105,17 @@ func (s *testFUSEServer) handleRequest(hdr *linux.FUSEHeaderIn, payload []byte) 
 	}
 }
 
-func (s *testFUSEServer) handleInit(hdr *linux.FUSEHeaderIn) []byte {
+func (s *testFUSEServer) handleInit(hdr *linux.FUSEHeaderIn, payload []byte) []byte {
+	var in linux.FUSEInitIn
+	in.UnmarshalUnsafe(payload)
+	s.gotInitFlags = in.Flags
 	out := linux.FUSEInitOut{
 		Major:    linux.FUSE_KERNEL_VERSION,
 		Minor:    linux.FUSE_KERNEL_MINOR_VERSION,
 		MaxWrite: 65536,
+	}
+	if s.initReply != nil {
+		out = *s.initReply
 	}
 	return s.marshalReply(hdr, &out)
 }
@@ -500,5 +511,80 @@ func TestHostFUSEWriteFile(t *testing.T) {
 	}
 	if string(got) != string(writeData) {
 		t.Fatalf("backing file: got %q, want %q", string(got), string(writeData))
+	}
+}
+
+// newTestHostFUSEConnectionWithReply is newTestHostFUSEConnection with a
+// caller-provided FUSE_INIT reply, returning the server for inspection.
+func newTestHostFUSEConnectionWithReply(t *testing.T, backDir string, reply *linux.FUSEInitOut) (*hostConnection, *testFUSEServer, func()) {
+	t.Helper()
+
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
+	if err != nil {
+		t.Fatalf("Socketpair: %v", err)
+	}
+
+	server := newTestFUSEServer(fds[1], backDir)
+	server.initReply = reply
+	serverDone := make(chan struct{})
+	go server.serve(t, serverDone)
+
+	fsopts := filesystemOptions{
+		maxActiveRequests: maxActiveRequestsDefault,
+		maxRead:           65536,
+	}
+	conn, err := newFUSEConnectionOpts(&fsopts)
+	if err != nil {
+		unix.Close(fds[0])
+		unix.Close(fds[1])
+		t.Fatalf("newFUSEConnectionOpts: %v", err)
+	}
+	hc := newHostConnection(conn, int32(fds[0]))
+
+	cleanup := func() {
+		unix.Shutdown(fds[1], unix.SHUT_RDWR)
+		unix.Shutdown(fds[0], unix.SHUT_RDWR)
+		<-serverDone
+		unix.Close(fds[0])
+		unix.Close(fds[1])
+	}
+	return hc, server, cleanup
+}
+
+// TestHostFUSEBigWritesNotNegotiated verifies that the host passthrough
+// connection never negotiates FUSE_BIG_WRITES: each request travels as one
+// SOCK_SEQPACKET datagram, which cannot carry a max_write-sized FUSE_WRITE.
+// The server here misbehaves by echoing FUSE_BIG_WRITES without it being
+// offered; big writes must stay off regardless.
+func TestHostFUSEBigWritesNotNegotiated(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	backDir := t.TempDir()
+	hc, server, cleanup := newTestHostFUSEConnectionWithReply(t, backDir, &linux.FUSEInitOut{
+		Major:    linux.FUSE_KERNEL_VERSION,
+		Minor:    linux.FUSE_KERNEL_MINOR_VERSION,
+		MaxWrite: 1 << 20,
+		MaxPages: 256,
+		Flags:    linux.FUSE_MAX_PAGES | linux.FUSE_ATOMIC_O_TRUNC | linux.FUSE_BIG_WRITES,
+	})
+	defer cleanup()
+
+	creds := auth.CredentialsFromContext(s.Ctx)
+	if err := hc.InitSend(creds, 1, true); err != nil {
+		t.Fatalf("InitSend: %v", err)
+	}
+
+	if server.gotInitFlags&linux.FUSE_BIG_WRITES != 0 {
+		t.Errorf("INIT offered FUSE_BIG_WRITES (flags %#x); the host connection must not offer it", server.gotInitFlags)
+	}
+	if server.gotInitFlags&linux.FUSE_ATOMIC_O_TRUNC == 0 {
+		t.Errorf("INIT did not offer FUSE_ATOMIC_O_TRUNC (flags %#x)", server.gotInitFlags)
+	}
+	if hc.conn.bigWrites {
+		t.Error("bigWrites negotiated on a host connection despite not being offered")
+	}
+	if !hc.conn.atomicOTrunc {
+		t.Error("atomicOTrunc not negotiated; only FUSE_BIG_WRITES should be withheld")
 	}
 }

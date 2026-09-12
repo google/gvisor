@@ -261,6 +261,10 @@ type connection struct {
 	// noOpen if FUSE server doesn't support open operation.
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
+
+	// noCreate if FUSE server doesn't support the create operation. Files are
+	// then created with FUSE_MKNOD followed by FUSE_OPEN, as Linux does.
+	noCreate bool
 }
 
 func linuxError(err error) error {
@@ -531,7 +535,7 @@ func (conn *connection) read(ctx context.Context, dst usermem.IOSequence) (int64
 	// read buffer. It must have the capacity for the fixed parts of any request
 	// header (Linux uses the request header and the FUSEWriteIn header for this
 	// calculation) + the negotiated MaxWrite room for the data.
-	negotiatedMinBuffSize := linux.SizeOfFUSEHeaderIn + linux.SizeOfFUSEHeaderOut + conn.maxWrite
+	negotiatedMinBuffSize := linux.SizeOfFUSEHeaderIn + linux.SizeOfFUSEWriteIn + conn.maxWrite
 	if minBuffSize < negotiatedMinBuffSize {
 		minBuffSize = negotiatedMinBuffSize
 	}

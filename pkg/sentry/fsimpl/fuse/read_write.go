@@ -134,10 +134,15 @@ func (fs *filesystem) ReadCallback(ctx context.Context, i *inode, off uint64, si
 // Write sends FUSE_WRITE requests and return the bytes written according to the
 // response.
 func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64, src usermem.IOSequence) (int64, int64, error) {
-	// One request cannot exceed either maxWrite or maxPages.
+	// One request cannot exceed maxWrite, maxPages, or, unless big writes were
+	// negotiated, one page. Note that the bigWrites flag is obsolete, latest
+	// libfuse always sets it on.
 	maxWrite := uint32(fs.conn.maxPages) << hostarch.PageShift
 	if maxWrite > fs.conn.maxWrite {
 		maxWrite = fs.conn.maxWrite
+	}
+	if !fs.conn.bigWrites && maxWrite > hostarch.PageSize {
+		maxWrite = hostarch.PageSize
 	}
 
 	// Reuse the same struct for unmarshalling to avoid unnecessary memory allocation.
@@ -158,28 +163,28 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 	// Unless a small value for max_write is explicitly used, this loop
 	// is expected to execute only once for the majority of the writes.
 	n := int64(0)
-	end := offset + src.NumBytes()
-	for n < end {
-		writeSize := uint32(end - n)
+	toWrite := src.NumBytes()
 
-		// Limit the write size to one page.
-		// Note that the bigWrites flag is obsolete,
-		// latest libfuse always sets it on.
-		if !fs.conn.bigWrites && writeSize > hostarch.PageSize {
-			writeSize = hostarch.PageSize
-		}
-		// Limit the write size to maxWrite.
-		if writeSize > maxWrite {
-			writeSize = maxWrite
-		}
+	// TODO(gvisor.dev/issue/3237): Add cache support:
+	// buffer cache. Ideally we write from src to our buffer cache first.
+	// The slice passed to fs.Write() should be a slice from buffer cache.
+	//
+	// The buffer is reused for every request: the payload is copied into the
+	// request when it is marshalled, and call() is synchronous.
+	buf := make([]byte, min(int64(maxWrite), toWrite))
 
-		// TODO(gvisor.dev/issue/3237): Add cache support:
-		// buffer cache. Ideally we write from src to our buffer cache first.
-		// The slice passed to fs.Write() should be a slice from buffer cache.
-		data := make([]byte, writeSize)
-		cp, err := src.CopyIn(ctx, data)
-		if err != nil {
-			return n, offset, err
+	for n < toWrite {
+		writeSize := uint32(min(toWrite-n, int64(maxWrite)))
+		data := buf[:writeSize]
+		// CopyIn returns the bytes it copied along with any fault. Write
+		// those bytes: a write that moved some bytes reports the count, not
+		// the fault.
+		cp, cpErr := src.CopyIn(ctx, data)
+		if cp == 0 {
+			if n == 0 {
+				return n, offset, cpErr
+			}
+			break
 		}
 		data = data[:cp]
 
@@ -193,7 +198,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 			return n, offset, err
 		}
 		// Write more than requested? EIO.
-		if out.Size > writeSize {
+		if out.Size > uint32(cp) {
 			return n, offset, linuxerr.EIO
 		}
 
@@ -201,8 +206,9 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		offset += int64(out.Size)
 		src = src.DropFirst64(int64(out.Size))
 
-		// Break if short write. Not necessarily an error.
-		if out.Size != writeSize {
+		// Break if the source faulted, or on a short write. Neither is
+		// necessarily an error.
+		if cpErr != nil || out.Size != writeSize {
 			break
 		}
 	}

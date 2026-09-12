@@ -540,10 +540,14 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	// FOPEN_KEEP_CACHE is the default flag for noOpen.
 	fd.OpenFlag = linux.FOPEN_KEEP_CACHE
 
+	// An open request is sent unless the file handle was already returned by
+	// FUSE_CREATE, or the server does not support open for regular files.
+	willSendOpen := !i.fh.new && (!i.fs.conn.noOpen || i.filemode().IsDir())
+
 	truncateRegFile := opts.Flags&linux.O_TRUNC != 0 && i.filemode().FileType() == linux.S_IFREG
-	if truncateRegFile && (i.fh.new || !i.fs.conn.atomicOTrunc) {
+	if truncateRegFile && !(willSendOpen && i.fs.conn.atomicOTrunc) {
 		// If the regular file needs to be truncated, but the connection doesn't
-		// support O_TRUNC or if we are optimizing away the Open RPC, then manually
+		// support O_TRUNC or if no Open RPC will be sent, then manually
 		// truncate the file *before* Open. As per libfuse, "If [atomic O_TRUNC is]
 		// disabled, and an application specifies O_TRUNC, fuse first calls
 		// truncate() and then open() with O_TRUNC filtered out.".
@@ -557,9 +561,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		fd.OpenFlag = i.fh.flags
 		fd.Fh = i.fh.handle
 		i.fh.new = false
-		// Only send an open request when the FUSE server supports open or is
-		// opening a directory.
-	} else if !i.fs.conn.noOpen || i.filemode().IsDir() {
+	} else if willSendOpen {
 		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
 		// Clear O_TRUNC if the server doesn't support it.
 		if !i.fs.conn.atomicOTrunc {
@@ -570,6 +572,13 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		if err := i.call(ctx, opcode, &in, &out); err != nil {
 			if linuxerr.Equals(linuxerr.ENOSYS, err) && !i.filemode().IsDir() {
 				i.fs.conn.noOpen = true
+				// The open that was to carry O_TRUNC was refused; truncate with SETATTR.
+				if truncateRegFile && i.fs.conn.atomicOTrunc {
+					opts := vfs.SetStatOptions{Stat: linux.Statx{Size: 0, Mask: linux.STATX_SIZE}}
+					if err := i.setAttr(ctx, i.fs.VFSFilesystem(), auth.CredentialsFromContext(ctx), opts, fhOptions{useFh: false}); err != nil {
+						return nil, err
+					}
+				}
 			} else {
 				return nil, err
 			}
@@ -670,15 +679,31 @@ func (*inode) IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.Iter
 func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (kernfs.Inode, error) {
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
 		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
-	in := linux.FUSECreateIn{
-		CreateMeta: linux.FUSECreateMeta{
-			Flags: opts.Flags,
+	if !i.fs.conn.noCreate {
+		in := linux.FUSECreateIn{
+			CreateMeta: linux.FUSECreateMeta{
+				Flags: opts.Flags,
+				Mode:  uint32(opts.Mode) | linux.S_IFREG,
+				Umask: umaskFromContext(ctx),
+			},
+			Name: linux.CString(name),
+		}
+		child, err := i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+		if err == nil || !linuxerr.Equals(linuxerr.ENOSYS, err) {
+			return child, err
+		}
+		i.fs.conn.noCreate = true
+	}
+	// The MKNOD reply carries no file handle, so Open() will issue a FUSE_OPEN.
+	in := linux.FUSEMknodIn{
+		MknodMeta: linux.FUSEMknodMeta{
 			Mode:  uint32(opts.Mode) | linux.S_IFREG,
+			Rdev:  0,
 			Umask: umaskFromContext(ctx),
 		},
 		Name: linux.CString(name),
 	}
-	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_CREATE, &in)
+	return i.newEntry(ctx, name, linux.S_IFREG, linux.FUSE_MKNOD, &in)
 }
 
 // NewNode implements kernfs.Inode.NewNode.
