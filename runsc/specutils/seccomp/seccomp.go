@@ -18,6 +18,7 @@ package seccomp
 
 import (
 	"fmt"
+	"math"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -32,19 +33,15 @@ import (
 var (
 	killThreadAction = seccomp.KillThread
 	trapAction       = seccomp.Trap
-	// runc always returns EPERM as the errorcode for SECCOMP_RET_ERRNO
-	errnoAction = seccomp.ReturnError.Code(uint16(unix.EPERM))
-	// runc always returns EPERM as the errorcode for SECCOMP_RET_TRACE
-	traceAction = seccomp.Trace.Code(uint16(unix.EPERM))
-	allowAction = seccomp.Allow
+	allowAction      = seccomp.Allow
 )
 
 // BuildProgram generates a bpf program based on the given OCI seccomp
 // config.
 func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
-	defaultAction, err := convertAction(s.DefaultAction)
+	defaultAction, err := convertAction(s.DefaultAction, s.DefaultErrnoRet)
 	if err != nil {
-		return bpf.Program{}, fmt.Errorf("secomp default action: %w", err)
+		return bpf.Program{}, fmt.Errorf("seccomp default action: %w", err)
 	}
 	ruleset, err := convertRules(s)
 	if err != nil {
@@ -93,8 +90,8 @@ func lookupSyscallNo(arch uint32, name string) (uint32, error) {
 	return uint32(n), nil
 }
 
-// convertAction converts a LinuxSeccompAction to BPFAction
-func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
+// convertAction converts a LinuxSeccompAction to BPFAction, respecting custom errnoRet if specified.
+func convertAction(act specs.LinuxSeccompAction, errnoRet *uint) (seccomp.Action, error) {
 	// TODO(gvisor.dev/issue/3124): Update specs package to include ActLog and ActKillProcess.
 	// LINT.IfChange
 	switch act {
@@ -102,12 +99,20 @@ func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
 		return killThreadAction, nil
 	case specs.ActTrap:
 		return trapAction, nil
-	case specs.ActErrno:
-		return errnoAction, nil
-	case specs.ActTrace:
-		return traceAction, nil
 	case specs.ActAllow:
 		return allowAction, nil
+	case specs.ActErrno, specs.ActTrace:
+		if errnoRet != nil && *errnoRet > math.MaxUint16 {
+			return seccomp.Default, fmt.Errorf("invalid errnoRet: %d exceeds maximum 16-bit value", *errnoRet)
+		}
+		code := uint16(unix.EPERM)
+		if errnoRet != nil {
+			code = uint16(*errnoRet)
+		}
+		if act == specs.ActErrno {
+			return seccomp.ReturnError.Code(code), nil
+		}
+		return seccomp.Trace.Code(code), nil
 	default:
 		return seccomp.Default, fmt.Errorf("invalid action: %v", act)
 	}
@@ -126,9 +131,9 @@ func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
 	for _, syscall := range s.Syscalls {
 		sysRules := seccomp.NewSyscallRules()
 
-		action, err := convertAction(syscall.Action)
+		action, err := convertAction(syscall.Action, syscall.ErrnoRet)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("seccomp syscall names %v action %q: %w", syscall.Names, syscall.Action, err)
 		}
 
 		// Args

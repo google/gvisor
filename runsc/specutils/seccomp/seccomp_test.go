@@ -16,6 +16,8 @@ package seccomp
 
 import (
 	"fmt"
+	"math"
+	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -46,6 +48,10 @@ func testInput(arch uint32, syscallName string, args *[6]uint64) bpf.Input {
 	return seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes()))
 }
 
+func uintPtr(u uint) *uint {
+	return &u
+}
+
 // testCase holds a seccomp test case.
 type testCase struct {
 	name     string
@@ -72,6 +78,63 @@ var (
 			},
 			input:    testInput(nativeArchAuditNo, "read", nil),
 			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
+		},
+		{
+			name: "default_deny_custom_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(uint(unix.ENOSYS)),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			name: "default_deny_custom_errno_zero",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(0),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0)),
+		},
+		{
+			name: "default_trace_custom_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActTrace,
+				DefaultErrnoRet: uintPtr(42),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(42)),
+		},
+		{
+			// runc compatibility: errnoRet is ignored for actions that do not support DATA (e.g. ActAllow).
+			name: "default_allow_with_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActAllow,
+				DefaultErrnoRet: uintPtr(1),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			// runc compatibility: errnoRet overflow is ignored for actions that do not support DATA.
+			name: "default_allow_with_errno_ret_overflow",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActAllow,
+				DefaultErrnoRet: uintPtr(0x10000),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			// runc compatibility: errnoRet overflow is ignored for ActTrap.
+			name: "default_trap_with_errno_ret_overflow",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActTrap,
+				DefaultErrnoRet: uintPtr(math.MaxUint),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_TRAP),
 		},
 		{
 			name: "deny_arch",
@@ -139,6 +202,263 @@ var (
 			},
 			input:    testInput(nativeArchAuditNo, "write", nil),
 			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.EPERM))),
+		},
+		{
+			// runc compatibility: per-rule errnoRet is ignored for ActAllow.
+			name: "syscall_allow_with_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.ActAllow,
+						ErrnoRet: uintPtr(0),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			// runc compatibility: per-rule errnoRet is ignored for ActKill.
+			name: "syscall_kill_with_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.ActKill,
+						ErrnoRet: uintPtr(1),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
+		},
+		{
+			// runc compatibility: per-rule errnoRet overflow is ignored for ActKill.
+			name: "syscall_kill_with_errno_ret_overflow",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.ActKill,
+						ErrnoRet: uintPtr(0x10000),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
+		},
+		{
+			name: "match_name_custom_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"clone3",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(uint(unix.ENOSYS)),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			// Note: OCI runtime-spec defines errnoRet as uint. In Linux seccomp BPF ABI,
+			// SECCOMP_RET_ERRNO | 0 is legal and returned as-is (not coerced to EPERM).
+			name: "errno_ret_zero",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"clone3",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(0),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0)),
+		},
+		{
+			name: "errno_ret_signed_max",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"clone3",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(0x7fff),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0x7fff)),
+		},
+		{
+			// Verify that 0x8000 (high bit set) is accepted as unsigned 16-bit DATA,
+			// rather than being rejected or treated as negative errno.
+			name: "errno_ret_high_bit",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"clone3",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(0x8000),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0x8000)),
+		},
+		{
+			name: "errno_ret_max",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"clone3",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(0xffff),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0xffff)),
+		},
+		{
+			name: "default_errno_matched_allow",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(uint(unix.ENOSYS)),
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"read",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			name: "default_errno_unmatched_syscall",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(uint(unix.ENOSYS)),
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"read",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			name: "match_name_custom_trace",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action:   specs.ActTrace,
+						ErrnoRet: uintPtr(42),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(42)),
+		},
+		{
+			name: "trace_errno_ret_zero",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action:   specs.ActTrace,
+						ErrnoRet: uintPtr(0),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(0)),
+		},
+		{
+			name: "trace_errno_ret_max",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action:   specs.ActTrace,
+						ErrnoRet: uintPtr(0xffff),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(0xffff)),
+		},
+		{
+			name: "syscall_without_errno_ret_defaults_to_eperm_even_with_default_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(uint(unix.ENOSYS)),
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"read",
+						},
+						Action: specs.ActErrno,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
+		},
+		{
+			name: "syscall_custom_errno_overrides_default_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(uint(unix.ENOSYS)),
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"read",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(uint(unix.EAGAIN)),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EAGAIN))),
 		},
 		{
 			name: "no_match_name_allow",
@@ -403,3 +723,157 @@ func checkProgram(p bpf.Program, in bpf.Input, expected uint32) error {
 
 	return nil
 }
+
+// TestInvalidErrnoRet verifies that BuildProgram returns an error when errnoRet
+// exceeds the 16-bit range or when an unsupported action is supplied.
+func TestInvalidErrnoRet(t *testing.T) {
+	testCases := []struct {
+		name              string
+		config            specs.LinuxSeccomp
+		expectedErrSubstr string
+	}{
+		{
+			name: "default_errno_ret_overflow_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(0x10000),
+			},
+			expectedErrSubstr: "exceeds maximum 16-bit value",
+		},
+		{
+			name: "default_errno_ret_overflow_trace",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActTrace,
+				DefaultErrnoRet: uintPtr(0x10000),
+			},
+			expectedErrSubstr: "exceeds maximum 16-bit value",
+		},
+		{
+			name: "default_errno_ret_overflow_max_uint",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: uintPtr(math.MaxUint),
+			},
+			expectedErrSubstr: "exceeds maximum 16-bit value",
+		},
+		{
+			name: "syscall_errno_ret_overflow_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(0x10000),
+					},
+				},
+			},
+			expectedErrSubstr: "exceeds maximum 16-bit value",
+		},
+		{
+			name: "syscall_errno_ret_overflow_trace",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.ActTrace,
+						ErrnoRet: uintPtr(0x10000),
+					},
+				},
+			},
+			expectedErrSubstr: "exceeds maximum 16-bit value",
+		},
+		{
+			name: "syscall_errno_ret_overflow_max_uint",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.ActTrace,
+						ErrnoRet: uintPtr(math.MaxUint),
+					},
+				},
+			},
+			expectedErrSubstr: "exceeds maximum 16-bit value",
+		},
+		{
+			name: "default_action_unsupported_log_no_errno",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.LinuxSeccompAction("SCMP_ACT_LOG"),
+			},
+			expectedErrSubstr: "invalid action",
+		},
+		{
+			name: "default_action_unsupported_log_with_overflow",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.LinuxSeccompAction("SCMP_ACT_LOG"),
+				DefaultErrnoRet: uintPtr(0x10000),
+			},
+			expectedErrSubstr: "invalid action",
+		},
+		{
+			name: "default_errno_ret_on_unsupported_log",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.LinuxSeccompAction("SCMP_ACT_LOG"),
+				DefaultErrnoRet: uintPtr(1),
+			},
+			expectedErrSubstr: "invalid action",
+		},
+		{
+			name: "syscall_action_unsupported_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:  []string{"read"},
+						Action: specs.LinuxSeccompAction("SCMP_ACT_KILL_PROCESS"),
+					},
+				},
+			},
+			expectedErrSubstr: "invalid action",
+		},
+		{
+			name: "syscall_errno_ret_on_unsupported_notify",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"read"},
+						Action:   specs.LinuxSeccompAction("SCMP_ACT_NOTIFY"),
+						ErrnoRet: uintPtr(1),
+					},
+				},
+			},
+			expectedErrSubstr: "invalid action",
+		},
+		{
+			name: "syscall_action_error_wrapped",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"clone3"},
+						Action:   specs.ActErrno,
+						ErrnoRet: uintPtr(0x10000),
+					},
+				},
+			},
+			expectedErrSubstr: "seccomp syscall names [clone3] action \"SCMP_ACT_ERRNO\"",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := BuildProgram(&tc.config)
+			if err == nil {
+				t.Fatalf("BuildProgram(%+v) succeeded, expected error", tc.config)
+			}
+			if tc.expectedErrSubstr != "" && !strings.Contains(err.Error(), tc.expectedErrSubstr) {
+				t.Errorf("BuildProgram error %q does not contain expected substring %q", err.Error(), tc.expectedErrSubstr)
+			}
+		})
+	}
+}
+
