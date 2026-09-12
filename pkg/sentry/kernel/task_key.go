@@ -47,8 +47,11 @@ func (t *Task) joinNewSessionKeyringLocked(newKeyDesc string, newKeyPerms auth.K
 	var sessionKeyring *auth.Key
 	err := t.UserNamespace().Keys.Do(func(keySet *auth.LockedKeySet) error {
 		creds := t.Credentials()
+		maxKeys := int(t.Kernel().MaxKeySetSize.Load())
 		var err error
-		sessionKeyring, err = keySet.Add(newKeyDesc, creds, newKeyPerms, int(t.Kernel().MaxKeySetSize.Load()))
+		// Do holds keySet.txnMu during this synchronous callback, but
+		// checklocks cannot propagate that fact through its argument.
+		sessionKeyring, err = keySet.Add(newKeyDesc, creds, newKeyPerms, maxKeys) // +checklocksignore
 		return err
 	})
 	if err != nil {
@@ -116,7 +119,9 @@ func (t *Task) SetPermsOnKey(key *auth.Key, perms auth.KeyPermissions) error {
 		if !creds.HasKeyPermission(key, possessed, auth.KeySetAttr) {
 			return linuxerr.EACCES
 		}
-		keySet.SetPerms(key, perms)
+		// Do holds keySet.txnMu during this synchronous callback, but
+		// checklocks cannot propagate that fact through its argument.
+		keySet.SetPerms(key, perms) // +checklocksignore
 		return nil
 	})
 }
