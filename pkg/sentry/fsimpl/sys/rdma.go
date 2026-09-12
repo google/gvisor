@@ -70,6 +70,7 @@ type rdmaDirTree struct {
 	children  map[string]*rdmaDirTree
 	files     map[string]string // static file contents
 	hostFiles map[string]string // file name -> host path read at access time
+	errFiles  map[string]int32  // file name -> errno every read fails with
 	symlinks  map[string]string // link name -> relative target
 }
 
@@ -78,6 +79,7 @@ func newRDMADirTree() *rdmaDirTree {
 		children:  map[string]*rdmaDirTree{},
 		files:     map[string]string{},
 		hostFiles: map[string]string{},
+		errFiles:  map[string]int32{},
 		symlinks:  map[string]string{},
 	}
 }
@@ -228,6 +230,11 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 			for name, val := range nd.Attrs {
 				if rdma.SafeName(name) {
 					nt.files[name] = val
+				}
+			}
+			for name, errno := range nd.ErrAttrs {
+				if rdma.SafeName(name) && errno > 0 {
+					nt.errFiles[name] = errno
 				}
 			}
 			nt.symlinks["device"] = deviceLink
@@ -392,6 +399,9 @@ func (fs *filesystem) buildRDMADir(ctx context.Context, creds *auth.Credentials,
 		// O_RDONLY|O_NOFOLLOW) (sys.hostFile.Generate); the rdmaproxy seccomp
 		// filter allows that openat.
 		entries[name] = fs.newHostFile(ctx, creds, defaultSysMode, hostPath)
+	}
+	for name, errno := range t.errFiles {
+		entries[name] = fs.newErrorFile(ctx, creds, defaultSysMode, errno)
 	}
 	for name, target := range t.symlinks {
 		entries[name] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), target)
