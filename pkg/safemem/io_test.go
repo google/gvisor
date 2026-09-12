@@ -197,3 +197,17 @@ func TestWriteFullToBlocks(t *testing.T) {
 		t.Errorf("dst: got %q, wanted %q", got, want)
 	}
 }
+
+func TestToIOWriter(t *testing.T) {
+	dsts := makeBlocks(make([]byte, 3), make([]byte, 3))
+	w := ToIOWriter{&BlockSeqWriter{BlockSeqFromSlice(dsts)}}
+	n, err := w.Write([]byte("foobar"))
+	if wantN := 6; n != wantN || err != nil {
+		t.Errorf("Write: got (%v, %v), wanted (%v, nil)", n, err, wantN)
+	}
+	for i, want := range [][]byte{[]byte("foo"), []byte("bar")} {
+		if got := dsts[i].ToSlice(); !bytes.Equal(got, want) {
+			t.Errorf("dsts[%d]: got %q, wanted %q", i, got, want)
+		}
+	}
+}

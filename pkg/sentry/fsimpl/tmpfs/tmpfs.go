@@ -30,8 +30,6 @@
 package tmpfs
 
 import (
-	"archive/tar"
-	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -437,14 +435,9 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if tmpfsOptsOk && tmpfsOpts.SourceTar != nil {
 		var cb tarReaderCallbacks
 		if tmpfsOpts.SourceTarFSCheckpoint {
-			cb = &fsckptTarReaderCallbacks{
-				fs:           &fs,
-				regularFiles: make(map[*tar.Header]*fsckptRegularFile),
-			}
+			cb = &fsckptTarReaderCallbacks{fs: &fs}
 		} else {
-			cb = &tarDefaultReaderCallbacks{
-				headerToContent: make(map[*tar.Header]*bytes.Buffer),
-			}
+			cb = tarDefaultReaderCallbacks{}
 		}
 		timeUntarStart := time.Now()
 		if err := fs.tarRead(ctx, tmpfsOpts.SourceTar, cb); err != nil {

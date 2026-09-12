@@ -114,11 +114,10 @@ func (cb *fsckptTarWriterCallbacks) regularFileWrite(ctx context.Context, rf *re
 // fsckptTarReaderCallbacks implements tarReaderCallbacks by storing MemoryFile
 // offsets containing regular file data in the tar archive.
 type fsckptTarReaderCallbacks struct {
-	fs           *filesystem
-	regularFiles map[*tar.Header]*fsckptRegularFile
+	fs *filesystem
 }
 
-func (cb *fsckptTarReaderCallbacks) regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader) error {
+func (cb *fsckptTarReaderCallbacks) regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader, rf *regularFile) error {
 	if hdr.Size < 8 {
 		return fmt.Errorf("header size %d too small for regular file size", hdr.Size)
 	}
@@ -131,29 +130,21 @@ func (cb *fsckptTarReaderCallbacks) regularFileRead(ctx context.Context, hdr *ta
 	if _, err := io.ReadFull(tr, buf[:]); err != nil {
 		return fmt.Errorf("failed to read file size from tar: %w", err)
 	}
-	crf := &fsckptRegularFile{
-		size: binary.LittleEndian.Uint64(buf[:]),
-		data: make([]fsckptRegularFileSegment, remSize/segSize),
-	}
-	if _, err := ReadCheckpointRegularFileSegmentSlice(tr, crf.data); err != nil {
+	size := binary.LittleEndian.Uint64(buf[:])
+	segs := make([]fsckptRegularFileSegment, remSize/segSize)
+	if _, err := ReadCheckpointRegularFileSegmentSlice(tr, segs); err != nil {
 		return fmt.Errorf("failed to read file segments from tar: %w", err)
 	}
-	cb.regularFiles[hdr] = crf
-	return nil
-}
-
-func (cb *fsckptTarReaderCallbacks) regularFileSetContents(ctx context.Context, hdr *tar.Header, rf *regularFile) error {
-	crf := cb.regularFiles[hdr]
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
-	rf.size.Store(uint64(crf.size))
+	rf.size.Store(size)
 	gap := rf.data.FirstGap()
 	n := uint64(0)
-	for _, rfseg := range crf.data {
-		gap = rf.data.Insert(gap, memmap.MappableRange{rfseg.Start, rfseg.End}, rfseg.Value).NextGap()
-		n += (rfseg.End - rfseg.Start) / hostarch.PageSize
+	for _, seg := range segs {
+		gap = rf.data.Insert(gap, memmap.MappableRange{seg.Start, seg.End}, seg.Value).NextGap()
+		n += (seg.End - seg.Start) / hostarch.PageSize
 	}
 	if !cb.fs.accountPages(n) {
 		return fmt.Errorf("restored filesystem would exceed size limit of %d pages", cb.fs.maxSizeInPages)
