@@ -245,7 +245,12 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	// - Add symbol and parameter type definitions to //pkg/abi/nvgpu.
 	// - Add filter to seccomp_filters.go.
 	// - Add handling below.
-	result, err := fd.dev.nvp.abi.frontendIoctl[nr].handle(&fi)
+	handler, ok := fd.dev.nvp.abi.frontendIoctl[nr]
+	if !ok {
+		fi.ctx.Warningf("nvproxy: %s for frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", errUndefinedHandler.Error(), nr, nr, argSize, cmd)
+		return 0, linuxerr.EINVAL
+	}
+	result, err := handler.handle(&fi)
 	if err != nil {
 		if handleErr, ok := err.(*errHandler); ok {
 			fi.ctx.Warningf("nvproxy: %v for frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", handleErr, nr, nr, argSize, cmd)

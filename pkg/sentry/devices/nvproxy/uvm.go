@@ -140,7 +140,12 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		cmd:             cmd,
 		ioctlParamsAddr: argPtr,
 	}
-	result, err := fd.dev.nvp.abi.uvmIoctl[cmd].handle(&ui)
+	handler, ok := fd.dev.nvp.abi.uvmIoctl[cmd]
+	if !ok {
+		ctx.Warningf("nvproxy: %s for uvm ioctl %d == %#x", errUndefinedHandler.Error(), cmd, cmd)
+		return 0, linuxerr.EINVAL
+	}
+	result, err := handler.handle(&ui)
 	if err != nil {
 		if handleErr, ok := err.(*errHandler); ok {
 			ctx.Warningf("nvproxy: %v for uvm ioctl %d = %#x", handleErr, cmd, cmd)
