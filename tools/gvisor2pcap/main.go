@@ -46,8 +46,8 @@ const packetTruncateSize = header.IPv4MaximumHeaderSize + header.TCPHeaderMaximu
 
 // Flags.
 var (
-	inFileName  = flag.String("in", "/dev/stdin", "log file containing sniffer output to be parsed (default: stdin)")
-	outFileName = flag.String("out", "/dev/stdout", "file to write to (default: stdout)")
+	inFileName  = flag.String("in", "", "log file containing sniffer output to be parsed (default: stdin)")
+	outFileName = flag.String("out", "", "file to write to (default: stdout)")
 )
 
 // Regular expression for matching sniffer output.
@@ -64,19 +64,14 @@ func main() {
 func run() error {
 	flag.Parse()
 
-	// Open the input log file.
-	input, err := os.Open(*inFileName)
+	input, err := openInput(*inFileName)
 	if err != nil {
-		return fmt.Errorf("failed to open input file %s: %w", *inFileName, err)
+		return err
 	}
-	defer input.Close()
-
-	// Open the output pcap file.
-	output, err := os.Create(*outFileName)
+	output, err := openOutput(*outFileName)
 	if err != nil {
-		return fmt.Errorf("failed to open output file %s: %w", *outFileName, err)
+		return err
 	}
-	defer output.Close()
 
 	// Write the pcap header.
 	ep, err := sniffer.NewWithWriter(nil, output, packetTruncateSize)
@@ -98,6 +93,33 @@ func run() error {
 	}
 
 	return nil
+}
+
+// openInput opens the input file, or returns os.Stdin if path is empty, to
+// avoid relying on operating-system-specific device files like "/dev/stdin".
+func openInput(path string) (*os.File, error) {
+	if path == "" {
+		return os.Stdin, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open input file %s: %w", path, err)
+	}
+	return f, nil
+}
+
+// openOutput opens the output file for writing, or returns os.Stdout if path
+// is empty, to avoid relying on operating-system-specific device files like
+// "/dev/stdout".
+func openOutput(path string) (*os.File, error) {
+	if path == "" {
+		return os.Stdout, nil
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open output file %s: %w", path, err)
+	}
+	return f, nil
 }
 
 func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
