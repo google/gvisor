@@ -290,15 +290,34 @@ func (c *cgroupInode) PrepareMigrate(t *kernel.Task, src *kernel.Cgroup) error {
 // CommitMigrate implements kernel.CgroupImpl.CommitMigrate.
 func (c *cgroupInode) CommitMigrate(t *kernel.Task, src *kernel.Cgroup) {
 	c.fs.tasksMu.Lock()
-	defer c.fs.tasksMu.Unlock()
 
+	var freeze, thaw bool
 	for srcType, srcCtl := range src.CgroupImpl.(*cgroupInode).controllers {
-		c.controllers[srcType].CommitMigrate(t, srcCtl)
+		ctl := c.controllers[srcType]
+		ctl.CommitMigrate(t, srcCtl)
+		if fc, ok := ctl.(*freezerController); ok {
+			if srcFC, okSrc := srcCtl.(*freezerController); okSrc {
+				srcFrozen := srcFC.effectiveFrozenLocked()
+				dstFrozen := fc.effectiveFrozenLocked()
+				if srcFrozen && !dstFrozen {
+					thaw = true
+				} else if !srcFrozen && dstFrozen {
+					freeze = true
+				}
+			}
+		}
 	}
 
 	srcI := src.CgroupImpl.(*cgroupInode)
 	delete(srcI.ts, t)
 	c.ts[t] = struct{}{}
+	c.fs.tasksMu.Unlock()
+
+	if thaw {
+		t.EndCgroupFreeze()
+	} else if freeze {
+		t.BeginCgroupFreeze()
+	}
 }
 
 // AbortMigrate implements kernel.CgroupImpl.AbortMigrate.

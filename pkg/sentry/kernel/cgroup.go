@@ -43,13 +43,14 @@ const (
 	CgroupControllerCPUAcct = CgroupControllerType("cpuacct")
 	CgroupControllerCPUSet  = CgroupControllerType("cpuset")
 	CgroupControllerDevices = CgroupControllerType("devices")
+	CgroupControllerFreezer = CgroupControllerType("freezer")
 	CgroupControllerJob     = CgroupControllerType("job")
 	CgroupControllerMemory  = CgroupControllerType("memory")
 	CgroupControllerPIDs    = CgroupControllerType("pids")
 )
 
 // CgroupCtrls is the list of cgroup controllers.
-var CgroupCtrls = []CgroupControllerType{"cpu", "cpuacct", "cpuset", "devices", "job", "memory", "pids"}
+var CgroupCtrls = []CgroupControllerType{"cpu", "cpuacct", "cpuset", "devices", "freezer", "job", "memory", "pids"}
 
 // ParseCgroupController parses a string as a CgroupControllerType.
 func ParseCgroupController(val string) (CgroupControllerType, error) {
@@ -62,6 +63,8 @@ func ParseCgroupController(val string) (CgroupControllerType, error) {
 		return CgroupControllerCPUSet, nil
 	case "devices":
 		return CgroupControllerDevices, nil
+	case "freezer":
+		return CgroupControllerFreezer, nil
 	case "job":
 		return CgroupControllerJob, nil
 	case "memory":

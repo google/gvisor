@@ -92,6 +92,10 @@ func (t *Task) killLocked() {
 	if t.stop != nil && t.stop.Killable() {
 		t.endInternalStopLocked()
 	}
+	if t.cgroupFrozen {
+		t.cgroupFrozen = false
+		t.endStopLocked()
+	}
 	t.pendingSignals.enqueue(&linux.SignalInfo{
 		Signo: int32(linux.SIGKILL),
 		// Linux just sets SIGKILL in the pending signal bitmask without

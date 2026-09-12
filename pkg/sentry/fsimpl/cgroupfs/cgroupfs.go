@@ -90,13 +90,14 @@ var allControllers = []kernel.CgroupControllerType{
 	kernel.CgroupControllerCPUAcct,
 	kernel.CgroupControllerCPUSet,
 	kernel.CgroupControllerDevices,
+	kernel.CgroupControllerFreezer,
 	kernel.CgroupControllerJob,
 	kernel.CgroupControllerMemory,
 	kernel.CgroupControllerPIDs,
 }
 
 // SupportedMountOptions is the set of supported mount options for cgroupfs.
-var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "devices", "job", "memory", "pids"}
+var SupportedMountOptions = []string{"all", "cpu", "cpuacct", "cpuset", "devices", "freezer", "job", "memory", "pids"}
 
 // FilesystemType implements vfs.FilesystemType.
 //
@@ -232,6 +233,10 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "devices")
 		wantControllers = append(wantControllers, kernel.CgroupControllerDevices)
 	}
+	if _, ok := mopts["freezer"]; ok {
+		delete(mopts, "freezer")
+		wantControllers = append(wantControllers, kernel.CgroupControllerFreezer)
+	}
 	if _, ok := mopts["job"]; ok {
 		delete(mopts, "job")
 		wantControllers = append(wantControllers, kernel.CgroupControllerJob)
@@ -348,6 +353,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			c = newCPUSetController(k, fs)
 		case kernel.CgroupControllerDevices:
 			c = newDevicesController(fs)
+		case kernel.CgroupControllerFreezer:
+			c = newRootFreezerController(fs)
 		case kernel.CgroupControllerJob:
 			c = newJobController(fs)
 		case kernel.CgroupControllerMemory:
