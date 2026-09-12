@@ -2026,6 +2026,135 @@ TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
               SyscallFailsWithErrno(ENOTTY));
 }
 
+TEST_F(JobControlTest, GetSessionId) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+
+    pid_t sid;
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCGSID, &sid));
+    TEST_PCHECK(sid == getsid(0));
+
+    // TIOCGSID on the master end reports the session of the replica end.
+    pid_t master_sid;
+    TEST_PCHECK(!ioctl(master_.get(), TIOCGSID, &master_sid));
+    TEST_PCHECK(master_sid == sid);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+TEST_F(JobControlTest, GetSessionIdNonControlling) {
+  // At this point there's no controlling terminal, so TIOCGSID should fail on
+  // both ends of the PTY.
+  pid_t sid;
+  ASSERT_THAT(ioctl(replica_.get(), TIOCGSID, &sid),
+              SyscallFailsWithErrno(ENOTTY));
+  ASSERT_THAT(ioctl(master_.get(), TIOCGSID, &sid),
+              SyscallFailsWithErrno(ENOTTY));
+}
+
+// Unlike the replica end, TIOCGSID on the master end does not require the PTY
+// to be the caller's controlling terminal.
+TEST_F(JobControlTest, GetSessionIdMasterOutsideSession) {
+  // child_ready tells us that the child has taken the replica as its
+  // controlling terminal; parent_done tells the child that it may exit.
+  int child_ready[2], parent_done[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  ASSERT_THAT(pipe(parent_done), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (!child) {
+    TEST_PCHECK(!close(child_ready[0]));
+    TEST_PCHECK(!close(parent_done[1]));
+
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+
+    pid_t sid = getsid(0);
+    TEST_PCHECK(write(child_ready[1], &sid, sizeof(sid)) == sizeof(sid));
+
+    // Block until the parent is done querying the master end.
+    char c;
+    TEST_PCHECK(read(parent_done[0], &c, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  ASSERT_THAT(close(child_ready[1]), SyscallSucceeds());
+  ASSERT_THAT(close(parent_done[0]), SyscallSucceeds());
+
+  pid_t child_sid;
+  ASSERT_THAT(read(child_ready[0], &child_sid, sizeof(child_sid)),
+              SyscallSucceedsWithValue(sizeof(child_sid)));
+  ASSERT_EQ(child_sid, child);
+  // We are not part of the child's session, so the replica end must not tell
+  // us anything...
+  pid_t sid;
+  EXPECT_THAT(ioctl(replica_.get(), TIOCGSID, &sid),
+              SyscallFailsWithErrno(ENOTTY));
+  // ...but the master end must.
+  EXPECT_THAT(ioctl(master_.get(), TIOCGSID, &sid), SyscallSucceeds());
+  EXPECT_EQ(sid, child_sid);
+
+  ASSERT_THAT(close(parent_done[1]), SyscallSucceeds());
+  int wstatus;
+  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0);
+  ASSERT_THAT(close(child_ready[0]), SyscallSucceeds());
+}
+
+// TIOCGSID requires the PTY to be the caller's controlling terminal, not that
+// the caller lead the session, so a non-leader member of the session can read
+// the session ID too.
+TEST_F(JobControlTest, GetSessionIdNonLeader) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t sid = getsid(0);
+
+    // Fork a child that inherits the controlling terminal but doesn't lead
+    // the session.
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(getpid() != sid);
+      TEST_PCHECK(getsid(0) == sid);
+
+      pid_t got;
+      TEST_PCHECK(!ioctl(replica_.get(), TIOCGSID, &got));
+      TEST_PCHECK(got == sid);
+      TEST_PCHECK(!ioctl(master_.get(), TIOCGSID, &got));
+      TEST_PCHECK(got == sid);
+      _exit(0);
+    }
+
+    int gcwstatus;
+    TEST_PCHECK(waitpid(grandchild, &gcwstatus, 0) == grandchild);
+    TEST_PCHECK(gcwstatus == 0);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// Giving up the controlling terminal clears the terminal's session, so
+// TIOCGSID fails on both ends afterwards.
+TEST_F(JobControlTest, GetSessionIdAfterRelease) {
+  auto res = RunInChild([=]() {
+    // TIOCNOTTY sends SIGHUP to the foreground process group, which is ours.
+    struct sigaction sa = {};
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    TEST_PCHECK(!sigaction(SIGHUP, &sa, nullptr));
+
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCNOTTY));
+
+    pid_t sid;
+    TEST_PCHECK(ioctl(replica_.get(), TIOCGSID, &sid) < 0 && errno == ENOTTY);
+    TEST_PCHECK(ioctl(master_.get(), TIOCGSID, &sid) < 0 && errno == ENOTTY);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
 // This test:
 // - sets itself as the foreground process group
 // - creates a child process in a new process group

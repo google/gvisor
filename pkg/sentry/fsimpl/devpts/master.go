@@ -221,6 +221,17 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 			return 0, err
 		}
 		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
+	case linux.TIOCGSID:
+		// Get the session id. N.B. TIOCGSID on the master returns the
+		// session of the replica end, and does not require the caller
+		// to be part of that session.
+		sid, err := t.ThreadGroup().SessionID(mfd.t.replicaKTTY, false /* requireCtty */)
+		if err != nil {
+			return 0, err
+		}
+		ret := primitive.Int32(sid)
+		_, err = ret.CopyOut(t, args[2].Pointer())
+		return 0, err
 	case linux.TIOCPKT:
 		// Enable or disable packet mode.
 		var mode primitive.Int32
@@ -307,7 +318,6 @@ func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32)
 		linux.TIOCEXCL,
 		linux.TIOCNXCL,
 		linux.TIOCGEXCL,
-		linux.TIOCGSID,
 		linux.TIOCGETD,
 		linux.TIOCVHANGUP,
 		linux.TIOCGDEV,
