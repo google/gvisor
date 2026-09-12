@@ -221,7 +221,7 @@ func scaledTSC(rawFreq uintptr) int64 {
 func (c *vCPU) setSystemTime() error {
 	// Attempt to set the offset directly. This is supported as of Linux 5.16,
 	// or commit 828ca89628bfcb1b8f27535025f69dd00eb55207.
-	if err := c.setTSCOffset(); err == nil {
+	if err := c.setTSCOffset(c.machine.tscOffset); err == nil {
 		return err
 	}
 
@@ -270,7 +270,7 @@ func (c *vCPU) setSystemTime() error {
 	// calculations result in an offset of zero.
 	lastTSC := scaledTSC(rawFreq)
 	for {
-		if err := c.setTSC(uint64(lastTSC)); err != nil {
+		if err := c.setTSC(uint64(lastTSC) + c.machine.tscOffset); err != nil {
 			return err
 		}
 		nextTSC := scaledTSC(rawFreq)

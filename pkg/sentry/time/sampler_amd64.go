@@ -25,3 +25,11 @@ const (
 	// maxOverheadCycles is the maximum allowed syscall overhead in TSC cycles.
 	maxOverheadCycles = 100 * defaultOverheadCycles
 )
+
+func getcs() uint16
+
+func inKernelMode() bool {
+	return getcs()&3 == 0
+}
+
+func redpill()
