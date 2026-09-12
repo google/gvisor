@@ -306,6 +306,12 @@ func GetRobustList(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 		}
 	}
 
+	// Inspecting another task's robust list requires ptrace read access,
+	// matching Linux's ptrace_may_access(PTRACE_MODE_READ_REALCREDS) check.
+	if ot != t && !t.CanTrace(ot, false /* attach */) {
+		return 0, nil, linuxerr.EPERM
+	}
+
 	// Copy out head pointer.
 	head := t.Arch().Native(uintptr(ot.GetRobustList()))
 	if _, err := head.CopyOut(t, headAddr); err != nil {
