@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -25,6 +26,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
+#include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/pty_util.h"
 #include "test/util/test_util.h"
@@ -33,6 +35,26 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+TEST(HostPtyTest, FchmodPreservesFileType) {
+  char* fd_str = getenv("TEST_HOST_PTY_FD");
+  ASSERT_NE(fd_str, nullptr) << "TEST_HOST_PTY_FD environment variable not set";
+  int fd;
+  ASSERT_TRUE(absl::SimpleAtoi(fd_str, &fd))
+      << "Invalid TEST_HOST_PTY_FD: " << fd_str;
+
+  struct stat initial = {};
+  ASSERT_THAT(fstat(fd, &initial), SyscallSucceeds());
+  ASSERT_EQ(initial.st_mode & S_IFMT, S_IFCHR);
+  const Cleanup restore_mode([&] {
+    EXPECT_THAT(fchmod(fd, initial.st_mode & 07777), SyscallSucceeds());
+  });
+
+  ASSERT_THAT(fchmod(fd, 0600), SyscallSucceeds());
+  struct stat changed = {};
+  ASSERT_THAT(fstat(fd, &changed), SyscallSucceeds());
+  EXPECT_EQ(changed.st_mode, S_IFCHR | 0600);
+}
 
 TEST(HostPtyTest, Termios2) {
   // We expect a host PTY FD to be passed.
