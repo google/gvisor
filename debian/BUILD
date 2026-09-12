@@ -1,6 +1,6 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "pkg_deb", "pkg_tar", "version")
-load("//tools:release.bzl", "SIDECARS")
+load("//tools:release.bzl", "SIDECARS", "instrumented_release_tars")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -77,13 +77,15 @@ pkg_deb(
     ],
 )
 
-# Contents of the downloadable release tarballs.
-RELEASE_TAR_SRCS = [
-    "//runsc",
+# Top-level contents of the downloadable release tarballs, besides runsc.
+RELEASE_TAR_EXTRA_BINS = [
     # containerd shim needs to be at the top level (not gvisor-bin/)
     # because containerd requires it to be in $PATH.
     "//shim:containerd-shim-runsc-v1",
 ]
+
+# Contents of the downloadable release tarballs.
+RELEASE_TAR_SRCS = ["//runsc"] + RELEASE_TAR_EXTRA_BINS
 
 RELEASE_TAR_DEPS = [
     # gvisor-bin/ subdir contents:
@@ -115,4 +117,28 @@ pkg_tar(
     package_file_name = "gvisor.tar.zstd",
     visibility = ["//visibility:public"],
     deps = RELEASE_TAR_DEPS,
+)
+
+# Release tarballs of instrumented gVisor builds, for fuzzing and testing.
+# Same layout as the regular release tarballs, see instrumented_release_tars.
+
+# Go coverage instrumentation (kcov), e.g. for syzkaller.
+instrumented_release_tars(
+    name = "gvisor-release-coverage",
+    bins = RELEASE_TAR_EXTRA_BINS,
+    flavor = "coverage",
+)
+
+# Go race detector.
+instrumented_release_tars(
+    name = "gvisor-release-race",
+    bins = RELEASE_TAR_EXTRA_BINS,
+    flavor = "race",
+)
+
+# Go coverage instrumentation (kcov) and race detector.
+instrumented_release_tars(
+    name = "gvisor-release-race-coverage",
+    bins = RELEASE_TAR_EXTRA_BINS,
+    flavor = "race-coverage",
 )
