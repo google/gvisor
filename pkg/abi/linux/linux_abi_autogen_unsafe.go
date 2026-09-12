@@ -122,6 +122,7 @@ var _ marshal.Marshallable = (*KernelIP6TGetEntries)(nil)
 var _ marshal.Marshallable = (*KernelIPTEntry)(nil)
 var _ marshal.Marshallable = (*KernelIPTGetEntries)(nil)
 var _ marshal.Marshallable = (*KernelTermios)(nil)
+var _ marshal.Marshallable = (*LandlockPathBeneathAttr)(nil)
 var _ marshal.Marshallable = (*Linger)(nil)
 var _ marshal.Marshallable = (*MqAttr)(nil)
 var _ marshal.Marshallable = (*MsgBuf)(nil)
@@ -9713,6 +9714,85 @@ func (i *IPCPerm) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that i
     // must live until the use above.
     runtime.KeepAlive(i) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (l *LandlockPathBeneathAttr) SizeBytes() int {
+    return 12
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (l *LandlockPathBeneathAttr) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(l.AllowedAccess))
+    dst = dst[8:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(l.ParentFD))
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (l *LandlockPathBeneathAttr) UnmarshalBytes(src []byte) []byte {
+    l.AllowedAccess = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    l.ParentFD = int32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (l *LandlockPathBeneathAttr) Packed() bool {
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (l *LandlockPathBeneathAttr) MarshalUnsafe(dst []byte) []byte {
+    // Type LandlockPathBeneathAttr doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return l.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (l *LandlockPathBeneathAttr) UnmarshalUnsafe(src []byte) []byte {
+    // Type LandlockPathBeneathAttr doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return l.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (l *LandlockPathBeneathAttr) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type LandlockPathBeneathAttr doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(l.SizeBytes()) // escapes: okay.
+    l.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (l *LandlockPathBeneathAttr) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return l.CopyOutN(cc, addr, l.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (l *LandlockPathBeneathAttr) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type LandlockPathBeneathAttr doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(l.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    l.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (l *LandlockPathBeneathAttr) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return l.CopyInN(cc, addr, l.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (l *LandlockPathBeneathAttr) WriteTo(writer io.Writer) (int64, error) {
+    // Type LandlockPathBeneathAttr doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, l.SizeBytes())
+    l.MarshalBytes(buf)
+    length, err := writer.Write(buf)
     return int64(length), err
 }
 
