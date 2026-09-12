@@ -173,3 +173,40 @@ If an `ioctl` data structure contains neither pointers nor FDs and has no
 special `mmap` semantics, it requires no translation and is considered "simple".
 Helper utilities exist in nvproxy to proxy these simple ioctls directly, which
 you should use whenever possible. Majority of ioctls proxied today are simple.
+
+## Adding Support for New GPU Architectures
+
+Driver version support and GPU architecture support are separate concerns. A
+driver version can be fully modelled in the version tree while `nvproxy` still
+fails to run workloads on a newly released GPU, because each GPU generation
+brings its own allocation classes (compute, DMA copy, GPFIFO channel, usermode,
+and video engine classes) that must be registered explicitly.
+
+The driver's generated sources state authoritatively which classes each chip
+exposes, so architecture coverage can be checked mechanically rather than
+discovered by a failing workload:
+
+*   `src/nvidia/generated/g_gpu_class_list.c` contains
+    `gpuGetEngClassDescriptorList_<CHIP>()` and `gpuGetNoEngClassList_<CHIP>()`
+    for every chip the driver supports. The union of both lists is the set of
+    classes that chip can allocate.
+*   `src/nvidia/generated/g_allclasses.h` maps every class name to its ID, and
+    is the source of truth for the constants in
+    [`pkg/abi/nvgpu/classes.go`](../../../abi/nvgpu/classes.go).
+*   `src/nvidia/src/kernel/rmapi/resource_list.h` gives each class's alloc param
+    struct, its valid parents, and whether allocation is privileged.
+
+To audit a new architecture, diff the union of its chips' class lists against
+the union for the previous architectures. Classes that are new to the
+architecture are the ones at risk of being missed. Not every new class needs
+proxying: display (`NV*70`/`NV*7D`/`NV*7E` and friends), vGPU, MIG/SMC, and
+classes that only the kernel driver itself allocates are all deliberately out of
+scope. Compute, memory, channel, and video engine classes are in scope.
+
+Register each in-scope class at the version tree node for the driver release
+that introduced it, then add it to `blackwellClasses` (or the equivalent table
+for a newer architecture) in
+[nvproxy_blackwell_test.go](nvproxy_blackwell_test.go), which asserts that
+every driver ABI at or after that release registers the class. That test is
+what keeps a new driver branch from silently dropping support for an
+architecture.

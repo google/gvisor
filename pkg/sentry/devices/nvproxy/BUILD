@@ -102,7 +102,10 @@ go_library(
 
 go_test(
     name = "nvproxy_test",
-    srcs = ["nvproxy_test.go"],
+    srcs = [
+        "nvproxy_blackwell_test.go",
+        "nvproxy_test.go",
+    ],
     library = ":nvproxy",
     deps = [
         "//pkg/abi/nvgpu",
