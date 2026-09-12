@@ -306,7 +306,13 @@ func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 
 // MaxSuportedCUDAVersion returns the maximum supported by the host machine.
 func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, error) {
-	c := MakeContainer(ctx, t)
+	return MaxSuportedCUDAVersionWithImage(ctx, t, "gpu/cuda-tests")
+}
+
+// MaxSuportedCUDAVersionWithImage returns the maximum supported CUDA version by the host machine,
+// executing nvidia-smi inside the given image.
+func MaxSuportedCUDAVersionWithImage(ctx context.Context, tb testing.TB, image string) (*CudaVersion, error) {
+	c := MakeContainer(ctx, tb)
 	defer c.CleanUp(ctx)
 	opts, err := GPURunOpts(SniffGPUOpts{
 		DisableSnifferReason: "Get CUDA Version",
@@ -315,9 +321,12 @@ func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, er
 	if err != nil {
 		return nil, fmt.Errorf("could not create opts: %w", err)
 	}
-	opts.Image = "gpu/cuda-tests"
+	opts.Image = image
+	opts.Entrypoint = []string{"nvidia-smi"}
+	// Clear sniffGPUOpts so c.config doesn't inspect the image and restore its default Cmd.
+	opts.sniffGPUOpts = nil
 
-	out, err := c.Run(ctx, opts, "nvidia-smi")
+	out, err := c.Run(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run container: %w", err)
 	}
