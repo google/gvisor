@@ -381,7 +381,6 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, *syserr.AnnotatedE
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	pdload, err := newPayloadLoad(base, offset, int(blen), reg)
@@ -516,7 +515,6 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, *syserr.AnnotatedEr
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	pdset, err := newPayloadSet(base, offset, blen, reg, csumType, csumOff, csumFlags)
@@ -679,7 +677,6 @@ func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError
 	if err != nil {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse int64 initial bytes: '%s'", tokens[tkIdx]))
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	cntr := newCounter(initialPkts, initialBytes)
@@ -739,7 +736,6 @@ func InterpretRoute(line string, lnIdx int) (operation, *syserr.AnnotatedError) 
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	rt, err := newRoute(key, reg)
@@ -822,7 +818,6 @@ func InterpretByteorder(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	order, err := newByteorder(dreg, sreg, bop, blen, size)
@@ -885,7 +880,6 @@ func InterpretMetaLoad(line string, lnIdx int) (operation, *syserr.AnnotatedErro
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	mtLoad, err := newMetaLoad(key, reg)
@@ -948,7 +942,6 @@ func InterpretMetaSet(line string, lnIdx int) (operation, *syserr.AnnotatedError
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	mtSet, err := newMetaSet(key, reg)
