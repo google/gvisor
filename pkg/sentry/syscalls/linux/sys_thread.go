@@ -1059,6 +1059,8 @@ func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uin
 }
 
 // Ptrace implements linux system call ptrace(2).
+//
+// +checklocksexclude:t.mu
 func Ptrace(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	req := args[0].Int64()
 	pid := kernel.ThreadID(args[1].Int())

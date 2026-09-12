@@ -34,6 +34,9 @@ import (
 //
 // ThreadGroup is a superset of Linux's struct signal_struct.
 //
+// A nonnil leader always belongs to this thread group.
+//
+// +checklocksalias:leader.tg.signalHandlers.mu=signalHandlers.mu
 // +stateify savable
 type ThreadGroup struct {
 	threadGroupNode
@@ -303,6 +306,8 @@ type ThreadGroup struct {
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
+//
+// Preconditions: pidns must be non-nil and belong to k.
 func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	pidns.IncRef()
 	tg := &ThreadGroup{
@@ -351,6 +356,9 @@ func (tg *ThreadGroup) Limits() *limits.LimitSet {
 }
 
 // Release releases the thread group's resources.
+//
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) Release(ctx context.Context) {
 	// Timers must be destroyed without holding the TaskSet or signal mutexes
 	// since timers send signals with Timer.mu locked.
@@ -446,6 +454,10 @@ func (tg *ThreadGroup) GetTTY() *TTY {
 }
 
 // SetControllingTTY sets tty as the controlling terminal of tg.
+//
+// +checklocksexclude:tty.mu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) SetControllingTTY(ctx context.Context, tty *TTY, steal bool, isReadable bool) error {
 	var toDecRef []*TTY
 	defer func() {
@@ -526,6 +538,10 @@ func (tg *ThreadGroup) SetControllingTTY(ctx context.Context, tty *TTY, steal bo
 }
 
 // ReleaseControllingTTY gives up tty as the controlling tty of tg.
+//
+// +checklocksexclude:tty.mu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) ReleaseControllingTTY(ctx context.Context, tty *TTY) error {
 	var toDecRef []*TTY
 	defer func() {
@@ -598,6 +614,10 @@ func (tg *ThreadGroup) ReleaseControllingTTY(ctx context.Context, tty *TTY) erro
 
 // ForegroundProcessGroup returns the foreground process group of the thread
 // group.
+//
+// +checklocksexclude:tty.mu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (*ProcessGroup, error) {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
@@ -618,6 +638,10 @@ func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (*ProcessGroup, error) {
 
 // ForegroundProcessGroupID returns the foreground process group ID of the
 // thread group.
+//
+// +checklocksexclude:tty.mu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error) {
 	pg, err := tg.ForegroundProcessGroup(tty)
 	if err != nil {
@@ -628,6 +652,10 @@ func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error
 
 // SetForegroundProcessGroupID sets the foreground process group of tty to
 // pgid. It corresponds to Linux's drivers/tty/tty_io.c:tiocspgrp().
+//
+// +checklocksexclude:tty.mu
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) SetForegroundProcessGroupID(ctx context.Context, tty *TTY, pgid ProcessGroupID) error {
 	// First check that the change is allowed.
 	if err := tty.CheckChange(ctx, linux.SIGTTOU); err != nil {

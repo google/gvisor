@@ -26,7 +26,9 @@ import (
 )
 
 func executeOps(ctx context.Context, t *testing.T, set *Set, ops []linux.Sembuf, block bool) chan struct{} {
+	set.mu.Lock()
 	ch, _, err := set.executeOps(ctx, ops, 123)
+	set.mu.Unlock()
 	if err != nil {
 		t.Fatalf("ExecuteOps(ops) failed, err: %v, ops: %+v", err, ops)
 	}
@@ -124,6 +126,8 @@ func TestNoWait(t *testing.T) {
 
 	ops[0].SemOp = -2
 	ops[0].SemFlg = linux.IPC_NOWAIT
+	set.mu.Lock()
+	defer set.mu.Unlock()
 	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
 		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
@@ -160,7 +164,10 @@ func TestUnregister(t *testing.T) {
 	if err := r.Remove(set.obj.ID, creds); err != nil {
 		t.Fatalf("Remove(%d) failed, err: %v", set.obj.ID, err)
 	}
-	if !set.dead {
+	set.mu.Lock()
+	dead := set.dead
+	set.mu.Unlock()
+	if !dead {
 		t.Fatalf("set is not dead: %+v", set)
 	}
 	if got := r.FindByID(set.obj.ID); got != nil {

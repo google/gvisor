@@ -45,6 +45,12 @@ const (
 
 // ContextCanTrace returns true if ctx is permitted to trace t, in the same sense
 // as kernel.Task.CanTrace.
+//
+// The function obtained from CtxCanTrace has Task.CanTrace's lock
+// requirements; checklocks does not propagate contracts through this
+// context function value.
+//
+// +checklocksexclude:t.mu
 func ContextCanTrace(ctx context.Context, t *Task, attach bool) bool {
 	if v := ctx.Value(CtxCanTrace); v != nil {
 		return v.(func(*Task, bool) bool)(t, attach)

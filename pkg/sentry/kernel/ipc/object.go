@@ -34,16 +34,22 @@ type ID int32
 // Object represents an abstract IPC object with fields common to all IPC
 // mechanisms.
 //
+// After initialization, mutable fields are protected by the containing
+// msgqueue.Queue.mu, semaphore.Set.mu, or shm.Shm.mu. Object has no pointer
+// to that mechanism, so checklocks cannot resolve its mutex for accesses
+// through an escaped *Object.
+//
 // +stateify savable
 type Object struct {
 	// User namespace which owns the IPC namespace which owns the IPC object.
 	// Immutable.
 	UserNS *auth.UserNamespace
 
-	// ID is a kernel identifier for the IPC object. Immutable.
+	// ID is a kernel identifier assigned during registration, then immutable.
 	ID ID
 
-	// Key is a user-provided identifier for the IPC object. Immutable.
+	// Key is a user-provided identifier for the IPC object. For shared-memory
+	// segments, IPC_RMID changes it to IPC_PRIVATE.
 	Key Key
 
 	// CreatorUID is the UID of user who created the IPC object. Immutable.
@@ -52,19 +58,23 @@ type Object struct {
 	// CreatorGID is the GID of user who created the IPC object. Immutable.
 	CreatorGID auth.KGID
 
-	// OwnerUID is the UID of the current owner of the IPC object. Immutable.
+	// OwnerUID is the UID of the current owner of the IPC object.
 	OwnerUID auth.KUID
 
-	// OwnerGID is the GID of the current owner of the IPC object. Immutable.
+	// OwnerGID is the GID of the current owner of the IPC object.
 	OwnerGID auth.KGID
 
-	// Mode is the access permissions the IPC object.
+	// Mode is the access permissions of the IPC object.
 	Mode linux.FileMode
 }
 
 // Mechanism represents a SysV mechanism that holds an IPC object. It can also
 // be looked at as a container for an ipc.Object, which is by definition a fully
 // functional SysV object.
+//
+// checklocks cannot name the concrete mechanism's mutex through this
+// interface. Concrete Lock/Unlock effects and Destroy preconditions do not
+// propagate through interface calls.
 type Mechanism interface {
 	// Lock behaves the same as Mutex.Lock on the mechanism.
 	Lock()
@@ -72,11 +82,13 @@ type Mechanism interface {
 	// Unlock behaves the same as Mutex.Unlock on the mechanism.
 	Unlock()
 
-	// Object returns a pointer to the mechanism's ipc.Object. Mechanism.Lock,
-	// and Mechanism.Unlock should be used when the object is used.
+	// Object returns a pointer to the mechanism's ipc.Object. After
+	// initialization, access to its mutable fields requires the mechanism's lock.
 	Object() *Object
 
 	// Destroy destroys the mechanism.
+	//
+	// Preconditions: The mechanism's mutex must be held.
 	Destroy()
 }
 
@@ -97,6 +109,8 @@ func NewObject(un *auth.UserNamespace, key Key, creator, owner *auth.Credentials
 
 // CheckOwnership verifies whether an IPC object may be accessed using creds as
 // an owner. See ipc/util.c:ipcctl_obtain_check() in Linux.
+//
+// Preconditions: The containing mechanism's mutex must be held.
 func (o *Object) CheckOwnership(creds *auth.Credentials) bool {
 	if o.OwnerUID == creds.EffectiveKUID || o.CreatorUID == creds.EffectiveKUID {
 		return true
@@ -110,6 +124,8 @@ func (o *Object) CheckOwnership(creds *auth.Credentials) bool {
 
 // CheckPermissions verifies whether an IPC object is accessible using creds for
 // access described by req. See ipc/util.c:ipcperms() in Linux.
+//
+// Preconditions: The containing mechanism's mutex must be held.
 func (o *Object) CheckPermissions(creds *auth.Credentials, req vfs.AccessTypes) bool {
 	perms := uint16(o.Mode.Permissions())
 	if o.OwnerUID == creds.EffectiveKUID {
@@ -126,7 +142,7 @@ func (o *Object) CheckPermissions(creds *auth.Credentials, req vfs.AccessTypes) 
 
 // Set modifies attributes for an IPC object. See *ctl(IPC_SET).
 //
-// Precondition: Mechanism.mu must be held.
+// Preconditions: The containing mechanism's mutex must be held.
 func (o *Object) Set(ctx context.Context, perm *linux.IPCPerm) error {
 	creds := auth.CredentialsFromContext(ctx)
 	uid := creds.UserNamespace.MapToKUID(auth.UID(perm.UID))

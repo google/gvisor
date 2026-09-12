@@ -97,6 +97,8 @@ func postResumeTPU(k *kernel.Kernel) error {
 	return nil
 }
 
+// Callers must not hold any thread-group leader's Task.mu in k.
+// checklocks cannot name the leader mutexes selected by ForEachThreadGroup.
 func findTPUTasks(k *kernel.Kernel) []*tpuTaskInfo {
 	var infos []*tpuTaskInfo
 	sctx := k.SupervisorContext()

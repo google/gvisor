@@ -187,6 +187,8 @@ func (t *Task) endStopLocked() {
 // BeginExternalStop indicates the start of an external stop that applies to
 // all current and future tasks in ts. BeginExternalStop does not wait for
 // task goroutines to stop.
+//
+// +checklocksexclude:ts.mu
 func (ts *TaskSet) BeginExternalStop() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -224,6 +226,8 @@ func (ts *TaskSet) PullFullState() {
 // EndExternalStop indicates the end of an external stop started by a previous
 // call to TaskSet.BeginExternalStop. EndExternalStop does not wait for task
 // goroutines to resume.
+//
+// +checklocksexclude:ts.mu
 func (ts *TaskSet) EndExternalStop() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -243,6 +247,8 @@ func (ts *TaskSet) EndExternalStop() {
 
 // isExternallyStopped returns true if BeginExternalStop() has been called on
 // this TaskSet, without a corresponding call to EndExternalStop().
+//
+// +checklocksexclude:ts.mu
 func (ts *TaskSet) isExternallyStopped() bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()

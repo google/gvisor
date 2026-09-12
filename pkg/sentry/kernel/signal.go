@@ -35,6 +35,9 @@ const SignalPanic = linux.SIGUSR2
 // context is used only for debugging to differentiate these cases.
 //
 // Preconditions: Kernel must have an init process.
+//
+// +checklocksexclude:k.tasks.mu
+// +checklocksexclude:k.globalInit.signalHandlers.mu
 func (k *Kernel) sendExternalSignal(info *linux.SignalInfo, context string) {
 	switch linux.Signal(info.Signo) {
 	case linux.SIGURG:

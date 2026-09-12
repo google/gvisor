@@ -669,6 +669,8 @@ func (*runExitNotify) execute(t *Task) taskRunState {
 // termination signal is.
 //
 // Preconditions: The TaskSet mutex must be locked for writing.
+//
+// +checklocksexclude:t.mu
 func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 	if t.exitStateLocked() != TaskExitZombie {
 		return
@@ -821,6 +823,8 @@ type TaskDestroyAction interface {
 //
 // It returns true if the action was successfully registered.
 // If the task is already terminated, it returns false.
+//
+// +checklocksexclude:t.mu
 func (t *Task) RegisterOnDestroyAction(act TaskDestroyAction) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -833,12 +837,15 @@ func (t *Task) RegisterOnDestroyAction(act TaskDestroyAction) bool {
 
 // UnregisterOnDestroyAction unregisters an action previously registered with
 // RegisterOnDestroyAction.
+//
+// +checklocksexclude:t.mu
 func (t *Task) UnregisterOnDestroyAction(key TaskDestroyAction) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.onDestroyAction, key)
 }
 
+// +checklocksexclude:t.mu
 func (t *Task) execOnDestroyActions() {
 	t.mu.Lock()
 	actions := t.onDestroyAction

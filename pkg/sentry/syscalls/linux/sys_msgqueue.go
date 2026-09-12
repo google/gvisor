@@ -102,9 +102,10 @@ func Msgrcv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	return uintptr(len(buf.Text)), nil, nil
 }
 
-// receive returns a message from the queue with the given ID. If msgCopy is
-// true, a message is copied from the queue without being removed. Otherwise,
-// a message is removed from the queue and returned.
+// receive returns a message from the queue with the given ID. If flags includes
+// MSG_COPY, it returns the original message without removing it. Otherwise,
+// the message is removed. Callers must preserve the payload immutability
+// described by msgqueue.Message.
 func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize uint64, flags int32) (*msgqueue.Message, error) {
 	if flags&linux.MSG_COPY != 0 {
 		if flags&(linux.IPC_NOWAIT|linux.MSG_EXCEPT) != linux.IPC_NOWAIT {

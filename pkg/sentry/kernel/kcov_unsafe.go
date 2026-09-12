@@ -22,7 +22,13 @@ import (
 
 // countBlock provides a safemem.BlockSeq for kcov.count.
 //
-// Like k.count, the block returned is protected by k.mu.
+// The returned block aliases kcov.count and must only be accessed while
+// kcov.mu is held.
+//
+// The entry annotation cannot enforce that requirement on accesses through
+// the returned BlockSeq.
+//
+// +checklocks:kcov.mu
 func (kcov *Kcov) countBlock() safemem.BlockSeq {
 	return safemem.BlockSeqOf(safemem.BlockFromSafePointer(unsafe.Pointer(&kcov.count), int(unsafe.Sizeof(kcov.count))))
 }

@@ -41,6 +41,8 @@ func ProcessVMWritev(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) 
 	return processVMOp(t, args, processVMOpWrite)
 }
 
+// If pid selects another task, callers must not hold that task's mutex.
+// checklocks cannot name the task returned by PIDNamespace.TaskWithID.
 func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType) (uintptr, *kernel.SyscallControl, error) {
 	pid := kernel.ThreadID(args[0].Int())
 	lvec := hostarch.Addr(args[1].Pointer())

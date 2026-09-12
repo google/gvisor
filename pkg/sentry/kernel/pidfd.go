@@ -129,6 +129,9 @@ func (t *Task) pidFDOpen(pid *pid, isThread bool, nonBlock bool) (*vfs.FileDescr
 }
 
 // PIDFDGetFD helps implement the Linux syscall pidfd_getfd(2).
+//
+// Callers must not hold the mutex of the task selected by pidfd.
+// checklocks cannot name that task from the descriptor number.
 func (t *Task) PIDFDGetFD(pidfd int32, targetfd int32, flags uint32) (uintptr, error) {
 	file := t.GetFile(pidfd)
 	if file == nil {
