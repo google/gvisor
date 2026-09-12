@@ -41,9 +41,26 @@ func generateUID() string {
 	return fmt.Sprintf("runsc-bwrap-%06d", rand.Int31n(1000000))
 }
 
+// CapOpType represents the type of capability operation.
+type CapOpType string
+
+const (
+	// CapOpDrop represents a capability drop operation.
+	CapOpDrop CapOpType = "drop"
+	// CapOpAdd represents a capability add operation.
+	CapOpAdd CapOpType = "add"
+)
+
+// CapOp represents a capability operation.
+type CapOp struct {
+	Type CapOpType
+	Cap  string
+}
+
 // bwrapConfig represents the configuration for the bwrap sandbox.
 type bwrapConfig struct {
 	Mounts      []sandbox.Mount
+	CapOps      []*CapOp
 	UnshareNet  bool
 	Args        []string
 	Chdir       string
@@ -240,7 +257,6 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 	opts := []sandbox.Option{
 		sandbox.WithID(generateUID()),
 		sandbox.WithWorkingDir(cwd),
-		sandbox.WithCapabilities(specutils.AllCapabilities()),
 		// A bubblewrap sandbox holds only what the command line asks for.
 		sandbox.WithoutLinuxSystemMounts(),
 		sandbox.WithoutHostBinaryMounts(),
@@ -275,6 +291,21 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 		opts = append(opts, c.userNamespace()...)
 	}
 	opts = append(opts, sandbox.WithNamespaces(namespaces...))
+
+	caps := specutils.AllCapabilities()
+	for _, capOp := range c.CapOps {
+		normCap, err := normalizeCap(capOp.Cap)
+		if err != nil {
+			return nil, err
+		}
+		switch capOp.Type {
+		case CapOpAdd:
+			addCapability(caps, normCap)
+		case CapOpDrop:
+			dropCapability(caps, normCap)
+		}
+	}
+	opts = append(opts, sandbox.WithCapabilities(caps))
 
 	return opts, nil
 }
@@ -336,4 +367,72 @@ func (c *bwrapConfig) resolveEnv() {
 		}
 	}
 	c.Env = env
+}
+
+// normalizeCap normalizes a capability name to uppercase and prepends "CAP_"
+// if necessary. "ALL" is treated as a special CLI keyword and returned as-is.
+func normalizeCap(capName string) (string, error) {
+	normCap := strings.ToUpper(strings.TrimSpace(capName))
+	if normCap != "ALL" {
+		if !strings.HasPrefix(normCap, "CAP_") {
+			normCap = "CAP_" + normCap
+		}
+		if !isKnownCapability(normCap) {
+			return "", fmt.Errorf("bwrap: unknown cap: %s", capName)
+		}
+	}
+	return normCap, nil
+}
+
+// isKnownCapability checks if capName is a valid Linux capability known to gVisor.
+func isKnownCapability(capName string) bool {
+	for _, c := range specutils.AllCapabilities().Bounding {
+		if c == capName {
+			return true
+		}
+	}
+	return false
+}
+
+// addCapability adds a single capability to all 5 capability sets.
+// This is used by bwrap to support re-adding capabilities after --cap-drop ALL.
+// If capName is "ALL" (a CLI keyword for --cap-add ALL), every capability is
+// restored, which is a no-op unless a previous --cap-drop removed some.
+func addCapability(caps *specs.LinuxCapabilities, capName string) {
+	if capName == "ALL" {
+		*caps = *specutils.AllCapabilities()
+		return
+	}
+
+	addUnique := func(set []string) []string {
+		for _, c := range set {
+			if c == capName {
+				return set
+			}
+		}
+		return append(set, capName)
+	}
+	caps.Bounding = addUnique(caps.Bounding)
+	caps.Effective = addUnique(caps.Effective)
+	caps.Inheritable = addUnique(caps.Inheritable)
+	caps.Permitted = addUnique(caps.Permitted)
+	caps.Ambient = addUnique(caps.Ambient)
+}
+
+// dropCapability removes a capability from all 5 capability sets.
+//
+// If capName is "ALL" (a CLI keyword for --cap-drop ALL), all capability
+// sets are cleared. This logic is kept in bwrap rather than specutils because
+// "ALL" is not a valid Linux capability name, and bwrap uniquely supports
+// dropping all capabilities and subsequently re-adding specific ones via --cap-add.
+func dropCapability(caps *specs.LinuxCapabilities, capName string) {
+	if capName == "ALL" {
+		caps.Bounding = nil
+		caps.Effective = nil
+		caps.Inheritable = nil
+		caps.Permitted = nil
+		caps.Ambient = nil
+		return
+	}
+	specutils.DropCapability(caps, capName)
 }
