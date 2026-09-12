@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -2719,6 +2720,34 @@ TEST_F(JobControlTest, SigwinchOnWindowSizeChange) {
   ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
   ASSERT_TRUE(WIFEXITED(wstatus));
   EXPECT_EQ(WEXITSTATUS(wstatus), 42);
+}
+
+TEST_F(PtyTest, PositionalIO) {
+  char buf[32] = {};
+  struct iovec iov = {
+      .iov_base = buf,
+      .iov_len = sizeof(buf),
+  };
+
+  // Positional I/O on master should return ESPIPE.
+  EXPECT_THAT(pread(master_.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(pwrite(master_.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(preadv(master_.get(), &iov, 1, 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(pwritev(master_.get(), &iov, 1, 0),
+              SyscallFailsWithErrno(ESPIPE));
+
+  // Positional I/O on replica should return ESPIPE.
+  EXPECT_THAT(pread(replica_.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(pwrite(replica_.get(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(preadv(replica_.get(), &iov, 1, 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(pwritev(replica_.get(), &iov, 1, 0),
+              SyscallFailsWithErrno(ESPIPE));
 }
 
 }  // namespace
