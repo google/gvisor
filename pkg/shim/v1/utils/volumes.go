@@ -81,20 +81,34 @@ func volumeFieldName(k string) string {
 	return parts[len(parts)-1]
 }
 
-// podUID gets pod UID from the pod log path.
-func podUID(s *specs.Spec) (string, error) {
-	sandboxLogDir := s.Annotations[sandboxLogDirAnnotation]
-	if sandboxLogDir == "" {
-		return "", fmt.Errorf("no sandbox log path annotation")
+// PodUID gets the Kubernetes pod UID from the pod annotations. If not found in
+// the container spec and bundle is non-empty, it falls back to looking up the
+// pod sandbox spec for child containers.
+func PodUID(s *specs.Spec, bundle string) (string, error) {
+	if s != nil && s.Annotations != nil {
+		if uid := s.Annotations[sandboxUIDAnnotation]; uid != "" {
+			return uid, nil
+		}
+		if sandboxLogDir := s.Annotations[sandboxLogDirAnnotation]; sandboxLogDir != "" {
+			fields := strings.Split(filepath.Base(sandboxLogDir), "_")
+			switch len(fields) {
+			case 1: // This is the old CRI logging path.
+				return fields[0], nil
+			case 3: // This is the new CRI logging path.
+				return fields[2], nil
+			}
+		}
+		if bundle != "" {
+			sandboxID := s.Annotations[specutils.ContainerdSandboxIDAnnotation]
+			if sandboxID != "" {
+				sandboxBundle := filepath.Join(filepath.Dir(bundle), sandboxID)
+				if sandboxSpec, err := ReadSpec(sandboxBundle); err == nil {
+					return PodUID(sandboxSpec, "")
+				}
+			}
+		}
 	}
-	fields := strings.Split(filepath.Base(sandboxLogDir), "_")
-	switch len(fields) {
-	case 1: // This is the old CRI logging path.
-		return fields[0], nil
-	case 3: // This is the new CRI logging path.
-		return fields[2], nil
-	}
-	return "", fmt.Errorf("unexpected sandbox log path %q", sandboxLogDir)
+	return "", fmt.Errorf("could not determine pod UID from spec")
 }
 
 // isVolumeKey checks whether an annotation key is for volume.
@@ -172,7 +186,7 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 			// consumed from this container's spec. So fix mount annotations by:
 			// 1. Adding source annotation.
 			// 2. Fixing type annotation.
-			uid, err := podUID(s)
+			uid, err := PodUID(s, "")
 			if err != nil {
 				// Skip if we can't get pod UID, because this doesn't work
 				// for containerd 1.1.

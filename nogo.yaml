@@ -259,10 +259,18 @@ analyzers:
         - pkg/sentry/fs/fs.go          # Intentional.
         - pkg/sentry/fs/gofer/inode.go # Intentional.
         - pkg/refs/refcounter_test.go  # Intentional.
+  SA4006: # Unused value assigned to variable.
+    internal:
+      exclude:
+        - runsc/boot/network.go # Pattern increments fdOffset after every use.
   SA4016: # Useless bitwise operations.
     internal:
       exclude:
         - pkg/gohacks/noescape_unsafe.go # x ^ 0 always equals x.
+  SA4023: # Impossible condition.
+    internal:
+      exclude:
+        - runsc/sandbox/network.go # Stubs in no_xdp.go always return error when built without XDP.
   ST1019: # Multiple imports of the same package.
     generated:
       exclude:
