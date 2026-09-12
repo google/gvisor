@@ -144,7 +144,10 @@ func (t *Task) PIDFDGetFD(pidfd int32, targetfd int32, flags uint32) (uintptr, e
 	if err != nil {
 		return 0, err
 	}
-	if !t.CanTrace(target, true) {
+	// man pidfd_getfd(2): "Permission to duplicate another process's file
+	// descriptor is governed by a ptrace access mode PTRACE_MODE_ATTACH_REALCREDS
+	// check; see ptrace(2)."
+	if !t.CanTraceMode(target, PtraceAccessModeAttach|PtraceAccessModeRealCreds) {
 		return 0, linuxerr.EPERM
 	}
 
