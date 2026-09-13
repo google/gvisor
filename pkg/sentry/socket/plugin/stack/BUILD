@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -19,6 +19,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
+        "//pkg/atomicbitops",
         "//pkg/binary",
         "//pkg/context",
         "//pkg/errors/linuxerr",
@@ -44,4 +45,12 @@ go_library(
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "stack_test",
+    size = "small",
+    srcs = ["socket_test.go"],
+    library = ":stack",
+    deps = ["//pkg/waiter"],
 )
