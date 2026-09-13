@@ -771,7 +771,7 @@ func (e *Endpoint) ResumeWork() {
 // variable locks.
 // +checklocks:locked.mu
 // +checklocksacquire:e.mu
-func (e *Endpoint) AssertLockHeld(locked *Endpoint) {
+func (e *Endpoint) AssertLockHeld(locked *Endpoint) { // +checklocksforce: e.mu is held because e == locked.
 	if e != locked {
 		panic("AssertLockHeld failed: locked endpoint != asserting endpoint")
 	}
