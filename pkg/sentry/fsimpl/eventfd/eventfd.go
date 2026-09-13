@@ -22,20 +22,17 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// lastID is the most recently assigned EventFileDescription.id.
-var lastID atomicbitops.Int32
 
 // EventFileDescription implements vfs.FileDescriptionImpl for file-based event
 // notification (eventfd). Eventfds are usually internal to the Sentry but in
@@ -62,7 +59,7 @@ type EventFileDescription struct {
 	semMode bool
 
 	// id is exposed as "eventfd-id" in /proc/[pid]/fdinfo/[fd]. Immutable.
-	id int32
+	id uint64
 
 	// hostfd indicates whether this eventfd is passed through to the host.
 	hostfd int
@@ -83,7 +80,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, sem
 	efd := &EventFileDescription{
 		val:     initVal,
 		semMode: semMode,
-		id:      lastID.Add(1),
+		id:      uniqueid.GlobalFromContext(ctx),
 		hostfd:  -1,
 	}
 	if err := efd.vfsfd.Init(efd, flags, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
@@ -125,7 +122,7 @@ func (efd *EventFileDescription) Counter() uint64 {
 }
 
 // ID returns the eventfd's unique identifier.
-func (efd *EventFileDescription) ID() int32 { return efd.id }
+func (efd *EventFileDescription) ID() uint64 { return efd.id }
 
 // SemMode returns true if the eventfd was created with EFD_SEMAPHORE.
 func (efd *EventFileDescription) SemMode() bool { return efd.semMode }

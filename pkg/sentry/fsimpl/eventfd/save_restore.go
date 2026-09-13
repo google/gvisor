@@ -37,9 +37,6 @@ func (efd *EventFileDescription) beforeSave() {
 }
 
 func (efd *EventFileDescription) afterLoad(ctx context.Context) {
-	// Don't let eventfds created after restore reuse restored IDs.
-	for cur := lastID.Load(); efd.id > cur && !lastID.CompareAndSwap(cur, efd.id); cur = lastID.Load() {
-	}
 	if efd.hostfd < 0 {
 		return
 	}

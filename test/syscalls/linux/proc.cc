@@ -1377,16 +1377,6 @@ TEST(ProcSelfFdInfo, Ino) {
   EXPECT_THAT(fd_info, ContainsRegex("mnt_id:\t[0-9]+\nino:\t[0-9]+\n"));
 }
 
-// Returns true if the running kernel is at least major.minor. gVisor is
-// treated as new enough.
-PosixErrorOr<bool> KernelAtLeast(int major, int minor) {
-  if (IsRunningOnGvisor()) {
-    return true;
-  }
-  ASSIGN_OR_RETURN_ERRNO(auto kv, GetKernelVersion());
-  return kv.major > major || (kv.major == major && kv.minor >= minor);
-}
-
 TEST(ProcSelfFdInfo, Eventfd) {
   const FileDescriptor efd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0x2a, EFD_SEMAPHORE));
@@ -1394,11 +1384,15 @@ TEST(ProcSelfFdInfo, Eventfd) {
       GetContents(absl::StrCat("/proc/self/fdinfo/", efd.get())));
   // See fs/eventfd.c:eventfd_show_fdinfo(): "eventfd-count: %16llx".
   EXPECT_THAT(fd_info, HasSubstr("eventfd-count:               2a\n"));
-  // eventfd-id was added in Linux 5.2, eventfd-semaphore in 6.3.
-  if (ASSERT_NO_ERRNO_AND_VALUE(KernelAtLeast(5, 2))) {
+  // eventfd-id was added in Linux 5.2 and eventfd-semaphore in 6.3. gVisor
+  // implements both.
+  KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+  if (IsRunningOnGvisor() || version.major > 5 ||
+      (version.major == 5 && version.minor >= 2)) {
     EXPECT_THAT(fd_info, ContainsRegex("eventfd-id: [0-9]+\n"));
   }
-  if (ASSERT_NO_ERRNO_AND_VALUE(KernelAtLeast(6, 3))) {
+  if (IsRunningOnGvisor() || version.major > 6 ||
+      (version.major == 6 && version.minor >= 3)) {
     EXPECT_THAT(fd_info, HasSubstr("eventfd-semaphore: 1\n"));
   }
 }
