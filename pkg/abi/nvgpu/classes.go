@@ -133,12 +133,14 @@ const (
 	BLACKWELL_A                      = 0x0000cd97
 	NVCDB0_VIDEO_DECODER             = 0x0000cdb0
 	BLACKWELL_COMPUTE_A              = 0x0000cdc0
+	TRACE_DEVICE_EVENT               = 0x0000cdcd
 	NVCDD1_VIDEO_NVJPG               = 0x0000cdd1
 	NVCDFA_VIDEO_OFA                 = 0x0000cdfa
 	BLACKWELL_B                      = 0x0000ce97
 	NVCEB0_VIDEO_DECODER             = 0x0000ceb0
 	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
 	BLACKWELL_COMPUTE_B              = 0x0000cec0
+	NVCED0_VIDEO_NVJPG               = 0x0000ced0
 	NVCEFA_VIDEO_OFA                 = 0x0000cefa
 	NVCFB0_VIDEO_DECODER             = 0x0000cfb0
 	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
@@ -897,4 +899,18 @@ type NVB2CC_ALLOC_PARAMETERS struct {
 	_              structs.HostLayout
 	HClientTarget  Handle
 	HContextTarget Handle
+}
+
+// NVCDCD_ALLOC_PARAMETERS is the alloc params type for TRACE_DEVICE_EVENT,
+// from src/common/sdk/nvidia/inc/class/clcdcd.h.
+//
+// +marshal
+type NVCDCD_ALLOC_PARAMETERS struct {
+	_ structs.HostLayout
+	// Despite being NvU64-typed by the driver, capDescriptor is a file
+	// descriptor for the nv-caps device file corresponding to
+	// NV_RM_CAP_SYS_TRACE_DEVICE. See
+	// src/nvidia/src/kernel/gpu/hwpm/trace_device_event.c:traceDeviceEventConstruct_IMPL()
+	// => src/nvidia/arch/nvalloc/unix/src/os.c:osRmCapAcquire().
+	CapDescriptor uint64
 }

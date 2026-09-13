@@ -127,25 +127,53 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		return nil, err
 	}
 
-	if opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0 {
-		if !opts.HostSettings.HaveFabricIMEXManagement {
-			return nil, fmt.Errorf("driver capability %s is enabled, but fabric-imex-mgmt device minor number is unavailable", nvconf.CapFabricIMEXManagement)
-		}
+	// Register the capability files in /dev/nvidia-caps/ that nvproxy supports.
+	// All files in /dev/nvidia-caps/ share a single device major number.
+	wantFabricIMEXManagement := opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0
+	if wantFabricIMEXManagement && !opts.HostSettings.HaveFabricIMEXManagement {
+		return nil, fmt.Errorf("driver capability %s is enabled, but fabric-imex-mgmt device minor number is unavailable", nvconf.CapFabricIMEXManagement)
+	}
+	// TRACE_DEVICE_EVENT, which exists on Blackwell and later GPUs in driver
+	// versions >= 610.43.02, requires a file descriptor for the trace-device
+	// capability. Unlike fabric-imex-mgmt, the capability being unavailable is
+	// not an error: older drivers simply do not have it, and applications that
+	// need it fail at allocation time exactly as they would on the host.
+	wantTraceDevice := opts.DriverCaps&nvconf.CapProfiling != 0 && opts.HostSettings.HaveTraceDevice
+	if wantFabricIMEXManagement || wantTraceDevice {
 		capsDevMajor, err := vfsObj.GetDynamicCharDevMajor()
 		if err != nil {
 			return nil, fmt.Errorf("allocating device major number for nvidia-caps: %w", err)
 		}
 		nvp.devInfo.CapsDevMajor = capsDevMajor
-		if err := vfsObj.RegisterDevice(vfs.CharDevice, capsDevMajor, opts.HostSettings.FabricIMEXManagementDevMinor, &openOnlyDevice{
-			nvp:     nvp,
-			relpath: fmt.Sprintf("nvidia-caps/nvidia-cap%d", opts.HostSettings.FabricIMEXManagementDevMinor),
-		}, &vfs.RegisterDeviceOptions{
-			GroupName: "nvidia-caps",
-		}); err != nil {
-			return nil, err
+		// The host driver assigns a distinct minor number to each capability,
+		// but dedupe defensively since a duplicate registration would fail.
+		registeredCaps := make(map[uint32]struct{}, 2)
+		registerCap := func(devMinor uint32) error {
+			if _, ok := registeredCaps[devMinor]; ok {
+				return nil
+			}
+			registeredCaps[devMinor] = struct{}{}
+			return vfsObj.RegisterDevice(vfs.CharDevice, capsDevMajor, devMinor, &openOnlyDevice{
+				nvp:     nvp,
+				relpath: fmt.Sprintf("nvidia-caps/nvidia-cap%d", devMinor),
+			}, &vfs.RegisterDeviceOptions{
+				GroupName: "nvidia-caps",
+			})
 		}
-		nvp.devInfo.HaveFabricIMEXManagement = true
-		nvp.devInfo.FabricIMEXManagementDevMinor = opts.HostSettings.FabricIMEXManagementDevMinor
+		if wantFabricIMEXManagement {
+			if err := registerCap(opts.HostSettings.FabricIMEXManagementDevMinor); err != nil {
+				return nil, err
+			}
+			nvp.devInfo.HaveFabricIMEXManagement = true
+			nvp.devInfo.FabricIMEXManagementDevMinor = opts.HostSettings.FabricIMEXManagementDevMinor
+		}
+		if wantTraceDevice {
+			if err := registerCap(opts.HostSettings.TraceDeviceDevMinor); err != nil {
+				return nil, err
+			}
+			nvp.devInfo.HaveTraceDevice = true
+			nvp.devInfo.TraceDeviceDevMinor = opts.HostSettings.TraceDeviceDevMinor
+		}
 	}
 
 	if imexChannelCount := opts.HostSettings.IMEXChannelCount(); imexChannelCount != 0 {
@@ -183,6 +211,13 @@ type DeviceInfo struct {
 	// be non-zero and might not match the host's value.)
 	HaveFabricIMEXManagement     bool
 	FabricIMEXManagementDevMinor uint32
+
+	// If HaveTraceDevice is true, TraceDeviceDevMinor is the trace-device
+	// capability's device minor number, which matches the value on the host.
+	// (Its device major number is CapsDevMajor, which must be non-zero and
+	// might not match the host's value.)
+	HaveTraceDevice     bool
+	TraceDeviceDevMinor uint32
 
 	// CapsIMEXChannelsDevMajor is nvidia-caps-imex-channels's device major
 	// number. If CapsIMEXChannelsDevMajor is 0, nvidia-caps-imex-channels is

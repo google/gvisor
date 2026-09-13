@@ -34,6 +34,14 @@ type HostSettings struct {
 	// /proc/driver/nvidia/capabilities/fabric-imex-mgmt.
 	HaveFabricIMEXManagement     bool
 	FabricIMEXManagementDevMinor uint32
+
+	// If HaveTraceDevice is true, TraceDeviceDevMinor is the device minor
+	// number advertised in /proc/driver/nvidia/capabilities/trace-device.
+	// This capability gates allocation of TRACE_DEVICE_EVENT, which only
+	// exists in driver versions >= 610.43.02, so hosts running older drivers
+	// legitimately lack it.
+	HaveTraceDevice     bool
+	TraceDeviceDevMinor uint32
 }
 
 // HostSettingsOptions holds arguments to GetHostSettings.
@@ -42,6 +50,13 @@ type HostSettingsOptions struct {
 	// HaveFabricIMEXManagement and FabricIMEXManagementDevMinor are set in the
 	// returned HostSettings.
 	WantFabricIMEXManagement bool
+
+	// If WantTraceDevice is true, set HaveTraceDevice and TraceDeviceDevMinor
+	// in the returned HostSettings if the host driver advertises the
+	// trace-device capability. Unlike WantFabricIMEXManagement, the capability
+	// being unavailable is not an error, since it does not exist in driver
+	// versions < 610.43.02.
+	WantTraceDevice bool
 }
 
 // GetHostSettings returns HostSettings.
@@ -55,23 +70,54 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 	settings.ProcDriverNvidiaParams = string(params)
 
 	if opts.WantFabricIMEXManagement {
-		fabricImexMgmt, err := os.ReadFile("/proc/driver/nvidia/capabilities/fabric-imex-mgmt")
+		minor, err := capabilityDevMinor("fabric-imex-mgmt")
 		if err != nil {
-			return nil, fmt.Errorf("failed to read /proc/driver/nvidia/capabilities/fabric-imex-mgmt: %w", err)
-		}
-		m := regexp.MustCompile(`DeviceFileMinor: (\d+)`).FindSubmatch(fabricImexMgmt)
-		if m == nil {
-			return nil, fmt.Errorf("failed to find DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt")
-		}
-		minor, err := strconv.ParseUint(string(m[1]), 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse DeviceFileMinor %s: %w", string(m[1]), err)
+			return nil, err
 		}
 		settings.HaveFabricIMEXManagement = true
-		settings.FabricIMEXManagementDevMinor = uint32(minor)
+		settings.FabricIMEXManagementDevMinor = minor
+	}
+
+	if opts.WantTraceDevice {
+		minor, err := capabilityDevMinor("trace-device")
+		if err != nil {
+			// The trace-device capability was added in driver version
+			// 610.43.02; older drivers do not have it. Applications that
+			// require it will fail when allocating TRACE_DEVICE_EVENT, which
+			// is the same behavior as on the host.
+			log.Infof("nvproxy: trace-device capability is unavailable: %v", err)
+		} else {
+			settings.HaveTraceDevice = true
+			settings.TraceDeviceDevMinor = minor
+		}
 	}
 
 	return settings, nil
+}
+
+// deviceFileMinorRE matches the DeviceFileMinor line in files under
+// /proc/driver/nvidia/capabilities/, as written by
+// kernel-open/nvidia/nv-caps.c:nv_cap_procfs_read().
+var deviceFileMinorRE = regexp.MustCompile(`DeviceFileMinor: (\d+)`)
+
+// capabilityDevMinor returns the device minor number in /dev/nvidia-caps/ that
+// corresponds to the capability named by the given file in
+// /proc/driver/nvidia/capabilities/.
+func capabilityDevMinor(name string) (uint32, error) {
+	path := "/proc/driver/nvidia/capabilities/" + name
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	m := deviceFileMinorRE.FindSubmatch(contents)
+	if m == nil {
+		return 0, fmt.Errorf("failed to find DeviceFileMinor in %s", path)
+	}
+	minor, err := strconv.ParseUint(string(m[1]), 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse DeviceFileMinor %s in %s: %w", string(m[1]), path, err)
+	}
+	return uint32(minor), nil
 }
 
 // IMEXChannelCount returns the number of IMEX channels indicated by
