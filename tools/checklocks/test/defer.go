@@ -36,3 +36,23 @@ func testDeferInvalidAccess(tc *oneGuardStruct) {
 	}()
 	tc.mu.Unlock()
 }
+
+func testDeferAnonymousWithLockHeld(tc *oneGuardStruct) {
+	// The deferred anonymous function runs before the deferred Unlock
+	// (defers run LIFO), so tc.mu is legitimately still held when the
+	// anonymous function returns. This must not be reported as a lock
+	// unexpectedly held at return; the lock belongs to the caller.
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	defer func() {
+		tc.guardedField = 1
+	}()
+}
+
+func testDeferEmptyAnonymousWithLockHeld(tc *oneGuardStruct) {
+	// Same as above, with an empty function body.
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	defer func() {
+	}()
+}
