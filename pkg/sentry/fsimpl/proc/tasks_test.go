@@ -27,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -734,6 +736,74 @@ func TestFdInfoContent(t *testing.T) {
 	content = string(buf[:n])
 	if !strings.Contains(content, fmt.Sprintf("pos:\t%d", offset)) {
 		t.Errorf("pos should be %d, got: %q", offset, content)
+	}
+}
+
+// readFdInfo installs file in a fresh task's FD table and returns the
+// contents of /proc/1/fdinfo/[fd] for it.
+func readFdInfo(t *testing.T, s *testutil.System, task *kernel.Task, file *vfs.FileDescription) string {
+	ctx := task.AsyncContext()
+	fdno, err := task.FDTable().NewFD(ctx, 0, file, kernel.FDFlags{})
+	if err != nil {
+		t.Fatalf("NewFD(): %v", err)
+	}
+	path := fmt.Sprintf("/proc/1/fdinfo/%d", fdno)
+	fd, err := s.VFS.OpenAt(ctx, s.Creds, &vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(path)}, &vfs.OpenOptions{})
+	if err != nil {
+		t.Fatalf("OpenAt(%q) failed: %v", path, err)
+	}
+	defer fd.DecRef(ctx)
+	buf := make([]byte, 1024)
+	n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	if err != nil {
+		t.Fatalf("Read(%q) failed: %v", path, err)
+	}
+	return string(buf[:n])
+}
+
+func newFdInfoTask(t *testing.T, s *testutil.System) *kernel.Task {
+	k := kernel.KernelFromContext(s.Ctx)
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	task, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
+	if err != nil {
+		t.Fatalf("CreateTask(): %v", err)
+	}
+	return task
+}
+
+func TestFdInfoEventFD(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+	task := newFdInfoTask(t, s)
+
+	efd, err := eventfd.New(s.Ctx, s.VFS, 42, true /* semMode */, linux.O_RDWR)
+	if err != nil {
+		t.Fatalf("eventfd.New(): %v", err)
+	}
+	defer efd.DecRef(s.Ctx)
+
+	content := readFdInfo(t, s, task, efd)
+	want := fmt.Sprintf("eventfd-count:               2a\neventfd-id: %d\neventfd-semaphore: 1\n", efd.Impl().(*eventfd.EventFileDescription).ID())
+	if !strings.Contains(content, want) {
+		t.Errorf("fdinfo should contain %q, got: %q", want, content)
+	}
+}
+
+func TestFdInfoSignalFD(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+	task := newFdInfoTask(t, s)
+
+	// Like Linux, SIGKILL must not appear in the mask. SIGUSR1 is bit 9.
+	sfd, err := signalfd.New(s.VFS, task, linux.SignalSetOf(linux.SIGUSR1)|linux.SignalSetOf(linux.SIGKILL), linux.O_RDWR)
+	if err != nil {
+		t.Fatalf("signalfd.New(): %v", err)
+	}
+	defer sfd.DecRef(s.Ctx)
+
+	content := readFdInfo(t, s, task, sfd)
+	if want := "sigmask:\t0000000000000200\n"; !strings.Contains(content, want) {
+		t.Errorf("fdinfo should contain %q, got: %q", want, content)
 	}
 }
 

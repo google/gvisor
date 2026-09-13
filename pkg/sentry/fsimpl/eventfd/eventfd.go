@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -32,6 +33,9 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// lastID is the most recently assigned EventFileDescription.id.
+var lastID atomicbitops.Int32
 
 // EventFileDescription implements vfs.FileDescriptionImpl for file-based event
 // notification (eventfd). Eventfds are usually internal to the Sentry but in
@@ -57,6 +61,9 @@ type EventFileDescription struct {
 	// semMode specifies whether the event is in "semaphore" mode.
 	semMode bool
 
+	// id is exposed as "eventfd-id" in /proc/[pid]/fdinfo/[fd]. Immutable.
+	id int32
+
 	// hostfd indicates whether this eventfd is passed through to the host.
 	hostfd int
 
@@ -76,6 +83,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, sem
 	efd := &EventFileDescription{
 		val:     initVal,
 		semMode: semMode,
+		id:      lastID.Add(1),
 		hostfd:  -1,
 	}
 	if err := efd.vfsfd.Init(efd, flags, auth.CredentialsFromContext(ctx), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
@@ -107,6 +115,20 @@ func NewFromHost(ctx context.Context, vfsObj *vfs.VirtualFilesystem, hostfd int,
 	}
 	return fd, nil
 }
+
+// Counter returns the current value of the event counter. For host-backed
+// eventfds this is the value as of when the eventfd was last sentry-owned.
+func (efd *EventFileDescription) Counter() uint64 {
+	efd.mu.Lock()
+	defer efd.mu.Unlock()
+	return efd.val
+}
+
+// ID returns the eventfd's unique identifier.
+func (efd *EventFileDescription) ID() int32 { return efd.id }
+
+// SemMode returns true if the eventfd was created with EFD_SEMAPHORE.
+func (efd *EventFileDescription) SemMode() bool { return efd.semMode }
 
 // HostFD returns the host eventfd associated with this event.
 func (efd *EventFileDescription) HostFD() (int, error) {
