@@ -181,6 +181,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		defer vfsroot.DecRef(ctx)
 	}
 
+	// Used to resolve relative pathnames in the options below; see resolveStart.
+	vfscwd := vfs.WorkingDirectoryFromContext(ctx)
+	if vfscwd.Ok() {
+		defer vfscwd.DecRef(ctx)
+	}
+
 	userXattrVal, userXattr := mopts["userxattr"]
 	if userXattr && userXattrVal != "" {
 		ctx.Infof("overlay.FilesystemType.GetFilesystem: userxattr option does not take a value but got %q", userXattrVal)
@@ -197,17 +203,22 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		// Linux overlayfs also requires a workdir when upperdir is
 		// specified; we don't, so silently ignore this option.
 		if workdir, ok := mopts["workdir"]; ok {
+			if len(workdir) == 0 {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: workdir must not be empty")
+				return nil, nil, linuxerr.EINVAL
+			}
 			// Linux creates the "work" directory in `workdir`.
 			// Docker calls chown on it and fails if it doesn't
 			// exist.
 			workdirPath := fspath.Parse(workdir + "/work")
-			if !workdirPath.Absolute {
-				ctx.Infof("overlay.FilesystemType.GetFilesystem: workdir %q must be absolute", workdir)
-				return nil, nil, linuxerr.EINVAL
+			workdirStart, err := resolveStart(vfsroot, vfscwd, workdirPath)
+			if err != nil {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: workdir %q is relative, but the mount has no working directory", workdir)
+				return nil, nil, err
 			}
 			pop := vfs.PathOperation{
 				Root:               vfsroot,
-				Start:              vfsroot,
+				Start:              workdirStart,
 				Path:               workdirPath,
 				FollowFinalSymlink: false,
 			}
@@ -219,14 +230,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			}
 			delete(mopts, "workdir")
 		}
-		upperPath := fspath.Parse(upperPathname)
-		if !upperPath.Absolute {
-			ctx.Infof("overlay.FilesystemType.GetFilesystem: upperdir %q must be absolute", upperPathname)
+		if len(upperPathname) == 0 {
+			ctx.Infof("overlay.FilesystemType.GetFilesystem: upperdir must not be empty")
 			return nil, nil, linuxerr.EINVAL
+		}
+		upperPath := fspath.Parse(upperPathname)
+		upperStart, err := resolveStart(vfsroot, vfscwd, upperPath)
+		if err != nil {
+			ctx.Infof("overlay.FilesystemType.GetFilesystem: upperdir %q is relative, but the mount has no working directory", upperPathname)
+			return nil, nil, err
 		}
 		upperRoot, err := vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
 			Root:               vfsroot,
-			Start:              vfsroot,
+			Start:              upperStart,
 			Path:               upperPath,
 			FollowFinalSymlink: true,
 		}, &vfs.GetDentryOptions{
@@ -273,14 +289,19 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "lowerdir")
 		lowerPathnames := strings.Split(lowerPathnamesStr, ":")
 		for _, lowerPathname := range lowerPathnames {
-			lowerPath := fspath.Parse(lowerPathname)
-			if !lowerPath.Absolute {
-				ctx.Infof("overlay.FilesystemType.GetFilesystem: lowerdir %q must be absolute", lowerPathname)
+			if len(lowerPathname) == 0 {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: lowerdir must not contain an empty pathname")
 				return nil, nil, linuxerr.EINVAL
+			}
+			lowerPath := fspath.Parse(lowerPathname)
+			lowerStart, err := resolveStart(vfsroot, vfscwd, lowerPath)
+			if err != nil {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: lowerdir %q is relative, but the mount has no working directory", lowerPathname)
+				return nil, nil, err
 			}
 			lowerRoot, err := vfsObj.GetDentryAt(ctx, creds, &vfs.PathOperation{
 				Root:               vfsroot,
-				Start:              vfsroot,
+				Start:              lowerStart,
 				Path:               lowerPath,
 				FollowFinalSymlink: true,
 			}, &vfs.GetDentryOptions{
@@ -445,6 +466,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	rootCleanup.Release()
 	return &fs.vfsfs, &root.vfsd, nil
+}
+
+// resolveStart returns the VirtualDentry that path should be resolved from.
+// Linux resolves relative pathnames in overlayfs mount options against the
+// working directory of the mounting process. Mounts that do not originate from
+// a task have no working directory, in which case relative pathnames are
+// rejected rather than silently resolved against the root.
+//
+// Preconditions: No reference is taken on the returned VirtualDentry, so the
+// caller must keep vfsroot and vfscwd alive for as long as it uses the result.
+func resolveStart(vfsroot, vfscwd vfs.VirtualDentry, path fspath.Path) (vfs.VirtualDentry, error) {
+	if path.Absolute {
+		return vfsroot, nil
+	}
+	if !vfscwd.Ok() {
+		return vfs.VirtualDentry{}, linuxerr.EINVAL
+	}
+	return vfscwd, nil
 }
 
 // clonePrivateMount creates a non-recursive bind mount rooted at vd, not
