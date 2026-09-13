@@ -59,3 +59,22 @@ func testReturnNestedAcquireCall() {
 	tc.val.mu.Unlock()
 	tc.ptr.mu.Unlock()
 }
+
+// Locks held at an implicit return are attributed to the function declaration.
+func testLeakedExclusiveImplicit(tc *oneGuardStruct) { // +checklocksfail
+	tc.mu.Lock()
+}
+
+func testLeakedReadImplicit(tc *oneReadGuardStruct) { // +checklocksfail
+	tc.mu.RLock()
+}
+
+func testLeakedExclusiveExplicit(tc *oneGuardStruct) int {
+	tc.mu.Lock()
+	return tc.guardedField // +checklocksfail
+}
+
+func testLeakedReadExplicit(tc *oneReadGuardStruct) int {
+	tc.mu.RLock()
+	return tc.guardedField // +checklocksfail
+}

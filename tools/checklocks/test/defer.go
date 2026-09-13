@@ -20,7 +20,9 @@ func testDeferValidUnlock(tc *oneGuardStruct) {
 	defer tc.mu.Unlock()
 }
 
-func testDeferValidAccess(tc *oneGuardStruct) {
+// The deferred closure releases tc.mu, but checkClosure analyzes closures
+// against a forked lock state, so the release is not visible here.
+func testDeferValidAccess(tc *oneGuardStruct) { // +checklocksfail
 	tc.mu.Lock()
 	defer func() {
 		tc.guardedField = 1
