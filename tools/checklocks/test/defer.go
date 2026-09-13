@@ -36,3 +36,9 @@ func testDeferInvalidAccess(tc *oneGuardStruct) {
 	}()
 	tc.mu.Unlock()
 }
+
+func testDeferInvalidReturnPosition(tc *oneGuardStruct) {
+	tc.mu.Lock()
+	defer func() { // +checklocksfail=return with unexpected locks held
+	}()
+}
