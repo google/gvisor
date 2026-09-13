@@ -323,6 +323,19 @@ func (fs FeatureSet) HasFeature(feature Feature) bool {
 	return feature.check(fs)
 }
 
+// x86Family returns the CPU family printed in /proc/cpuinfo from a CPUID
+// leaf 1 EAX signature.
+//
+// This matches Linux arch/x86/lib/cpu.c:x86_family(). When the 4-bit
+// family ID is 0xf, the 8-bit extended family is added.
+func x86Family(sig uint32) uint32 {
+	family := (sig >> 8) & 0xf
+	if family == 0xf {
+		family += (sig >> 20) & 0xff
+	}
+	return family
+}
+
 // WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
 // a minimal /proc/cpuinfo, it is missing some fields like "microcode" that are
 // not always printed in Linux. Several fields are simply made up.
@@ -330,11 +343,11 @@ func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	// Avoid many redundant calls here, since this can occasionally appear
 	// in the hot path. Read all basic information up front, see above.
 	ax, _, _, _ := fs.query(featureInfo)
-	ef, em, _, f, m, _ := signatureSplit(ax)
+	_, em, _, _, m, _ := signatureSplit(ax)
 	vendor := fs.VendorID()
 	fmt.Fprintf(w, "processor\t: %d\n", cpu)
 	fmt.Fprintf(w, "vendor_id\t: %s\n", string(vendor[:]))
-	fmt.Fprintf(w, "cpu family\t: %d\n", ((ef<<4)&0xff)|f)
+	fmt.Fprintf(w, "cpu family\t: %d\n", x86Family(ax))
 	fmt.Fprintf(w, "model\t\t: %d\n", ((em<<4)&0xff)|m)
 	fmt.Fprintf(w, "model name\t: %s\n", "unknown") // Unknown for now.
 	fmt.Fprintf(w, "stepping\t: %s\n", "unknown")   // Unknown for now.
