@@ -766,23 +766,21 @@ func TestFdInfoContent(t *testing.T) {
 // readFdInfo installs file in a fresh task's FD table and returns the
 // contents of /proc/1/fdinfo/[fd] for it.
 func readFdInfo(t *testing.T, s *testutil.System, task *kernel.Task, file *vfs.FileDescription) string {
-	ctx := task.AsyncContext()
-	fdno, err := task.FDTable().NewFD(ctx, 0, file, kernel.FDFlags{})
+	fdno, err := task.FDTable().NewFD(task.AsyncContext(), 0, file, kernel.FDFlags{})
 	if err != nil {
 		t.Fatalf("NewFD(): %v", err)
 	}
 	path := fmt.Sprintf("/proc/1/fdinfo/%d", fdno)
-	fd, err := s.VFS.OpenAt(ctx, s.Creds, &vfs.PathOperation{Root: s.Root, Start: s.Root, Path: fspath.Parse(path)}, &vfs.OpenOptions{})
+	fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, s.PathOpAtRoot(path), &vfs.OpenOptions{})
 	if err != nil {
 		t.Fatalf("OpenAt(%q) failed: %v", path, err)
 	}
-	defer fd.DecRef(ctx)
-	buf := make([]byte, 1024)
-	n, err := fd.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	defer fd.DecRef(s.Ctx)
+	content, err := s.ReadToEnd(fd)
 	if err != nil {
-		t.Fatalf("Read(%q) failed: %v", path, err)
+		t.Fatalf("ReadToEnd(%q) failed: %v", path, err)
 	}
-	return string(buf[:n])
+	return content
 }
 
 // TestFdInfoRecursion verifies that accessing fdinfo for a dynamic proc file
