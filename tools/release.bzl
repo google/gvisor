@@ -6,7 +6,8 @@ SIDECARS = {
     "//runsc/checkpointgofer:checkpointgofer_binary": "checkpointgofer",
     "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
     "//runsc/cmd/sentry:gvisor_sentry": "gvisor_sentry",
-    "//runsc/prewarmer:gvisor-sentry-prewarmer": "gvisor-sentry-prewarmer",
+    "//runsc/fdparking:fdparking_binary": "runsc-fd-parking",
+    "//runsc/prewarmer:prewarmer_binary": "gvisor-sentry-prewarmer",
 }
 
 def _single_file(target):

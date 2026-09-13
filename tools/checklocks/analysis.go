@@ -745,7 +745,7 @@ func (pc *passContext) checkInstruction(inst ssa.Instruction, lff *lockFunctionF
 
 // checkBasicBlock traverses the control flow graph starting at a set of given
 // block and checks each instruction for allowed operations.
-func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, lff *lockFunctionFacts, parent *lockState, seen map[*ssa.BasicBlock]*lockState, rg map[*ssa.BasicBlock]struct{}) *lockState {
+func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, lff *lockFunctionFacts, parent *lockState, seen map[*ssa.BasicBlock]*lockState, rg map[*ssa.BasicBlock]struct{}, implicitPos token.Pos) *lockState {
 	// Check for cached results from entering this block from a *different*
 	// execution path. Note that this is not the same path, which is
 	// checked with the recursion guard below.
@@ -787,18 +787,25 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 	for _, inst := range block.Instrs {
 		rv, rls = pc.checkInstruction(inst, lff, ls)
 		if rls != nil {
+			rvPos := rv.Pos()
+			if !rvPos.IsValid() {
+				rvPos = implicitPos
+			}
+			if !rvPos.IsValid() {
+				continue
+			}
 			failed := false
 			// Validate held locks.
 			for fieldName, fg := range lff.HeldOnExit {
 				r := fg.Resolver.resolveStatic(pc, ls, fn, rv)
 				if !r.valid() {
 					// This cannot be forced, since we have no reference.
-					pc.maybeFail(rv.Pos(), "lock %s cannot be resolved", fieldName)
+					pc.maybeFail(rvPos, "lock %s cannot be resolved", fieldName)
 					continue
 				}
 				if s, ok := rls.isHeld(r, fg.Exclusive); !ok {
-					if _, ok := pc.forced[pc.positionKey(rv.Pos())]; !ok && !lff.Ignore {
-						pc.maybeFail(rv.Pos(), "lock %s (%s) not held %s (locks: %s)", fieldName, s, exclusiveStr(fg.Exclusive), rls.String())
+					if _, ok := pc.forced[pc.positionKey(rvPos)]; !ok && !lff.Ignore {
+						pc.maybeFail(rvPos, "lock %s (%s) not held %s (locks: %s)", fieldName, s, exclusiveStr(fg.Exclusive), rls.String())
 						failed = true
 					} else {
 						// Force the lock to be acquired.
@@ -808,7 +815,7 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 			}
 			// Check for other locks, but only if the above didn't trip.
 			if !failed && rls.count() != len(lff.HeldOnExit) && !lff.Ignore {
-				pc.maybeFail(rv.Pos(), "return with unexpected locks held (locks: %s)", rls.String())
+				pc.maybeFail(rvPos, "return with unexpected locks held (locks: %s)", rls.String())
 			}
 		}
 	}
@@ -820,7 +827,7 @@ func (pc *passContext) checkBasicBlock(fn *ssa.Function, block *ssa.BasicBlock, 
 		// above. Note that checkBasicBlock will recursively analyze
 		// the lock state to ensure that Releases and Acquires are
 		// respected.
-		if pls := pc.checkBasicBlock(fn, succ, lff, ls, seen, rg); pls != nil {
+		if pls := pc.checkBasicBlock(fn, succ, lff, ls, seen, rg, implicitPos); pls != nil {
 			if rls != nil && !rls.isCompatible(pls) {
 				if _, ok := pc.forced[pc.positionKey(fn.Pos())]; !ok && !lff.Ignore {
 					pc.maybeFail(fn.Pos(), "incompatible return states (first: %s, second: %s)", rls.String(), pls.String())
@@ -889,12 +896,12 @@ func (pc *passContext) checkFunction(call callCommon, fn *ssa.Function, lff *loc
 	// Scan the blocks.
 	seen := make(map[*ssa.BasicBlock]*lockState)
 	if len(fn.Blocks) > 0 {
-		pc.checkBasicBlock(fn, fn.Blocks[0], lff, ls, seen, nil)
+		pc.checkBasicBlock(fn, fn.Blocks[0], lff, ls, seen, nil, fn.Pos())
 	}
 
-	// Scan the recover block.
+	// Scan the recover block. Locks are not tracked across a panic.
 	if fn.Recover != nil {
-		pc.checkBasicBlock(fn, fn.Recover, lff, ls, seen, nil)
+		pc.checkBasicBlock(fn, fn.Recover, lff, ls, seen, nil, token.NoPos)
 	}
 
 	// Update all lock state accordingly. This will be called only if we

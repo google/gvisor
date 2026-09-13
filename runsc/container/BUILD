@@ -22,7 +22,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/log",
-        "//pkg/pinring",
         "//pkg/sentry/control",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/tmpfs",

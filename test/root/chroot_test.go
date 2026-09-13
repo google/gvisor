@@ -107,8 +107,7 @@ func TestChrootGofer(t *testing.T) {
 	}
 
 	// It's tricky to find gofers. Get sandbox PID first, then find parent. From
-	// parent get all immediate children, remove the sandbox, and everything else
-	// are gofers.
+	// parent get all immediate children, and sort them out by what they are.
 	sandPID, err := d.SandboxPid(ctx)
 	if err != nil {
 		t.Fatalf("Docker.SandboxPid(): %v", err)
@@ -121,7 +120,7 @@ func TestChrootGofer(t *testing.T) {
 	}
 
 	// Get all children from parent.
-	var childrenPIDs []int
+	var goferPIDs []int
 	procfsRoot := procPath()
 	procDirs, err := os.ReadDir(procfsRoot)
 	if err != nil {
@@ -143,28 +142,50 @@ func TestChrootGofer(t *testing.T) {
 			t.Logf("Non-fatal warning: cannot get parent PID of %d (process likely gone): %v", procPID, err)
 			continue
 		}
-		if parent == parentPID {
-			t.Logf("runsc parent PID %d has child PID %d", parentPID, procPID)
-			childrenPIDs = append(childrenPIDs, procPID)
+		if parent != parentPID {
+			continue
 		}
+		t.Logf("runsc parent PID %d has child PID %d", parentPID, procPID)
+		if procPID == sandPID {
+			continue // The sandbox itself.
+		}
+
+		// Filter out runsc-fd-parking sidecars:
+		exe, err := os.Readlink(procPath(procDir.Name(), "exe"))
+		if err != nil {
+			// Skip, this may be a race condition with a process that has since gone away.
+			t.Logf("Non-fatal warning: cannot read exe of %d (process likely gone): %v", procPID, err)
+			continue
+		}
+		if filepath.Base(strings.TrimSuffix(exe, " (deleted)")) == "runsc-fd-parking" {
+			continue
+		}
+
+		// Whatever is left must be a gofer, check in cmdline:
+		cmdline, err := os.ReadFile(procPath(procDir.Name(), "cmdline"))
+		if err != nil {
+			// Skip, this may be a race condition with a process that has since gone away.
+			t.Logf("Non-fatal warning: cannot read cmdline of %d (process likely gone): %v", procPID, err)
+			continue
+		}
+		if argv0, _, _ := strings.Cut(string(cmdline), "\x00"); argv0 != "runsc-gofer" {
+			t.Errorf("unexpected child PID %d of runsc parent PID %d: exe %q, argv[0] %q", procPID, parentPID, exe, argv0)
+			continue
+		}
+		goferPIDs = append(goferPIDs, procPID)
 	}
-	// Ensure we have seen at least one child PID.
-	if len(childrenPIDs) == 0 {
-		t.Fatalf("Found no children of runsc parent PID %d", parentPID)
+	// Ensure we have seen at least one gofer.
+	if len(goferPIDs) == 0 {
+		t.Fatalf("Found no gofer children of runsc parent PID %d", parentPID)
 	}
 
 	// This where the root directory is mapped on the host and that's where the
 	// gofer must have chroot'd to.
 	root := "/root"
 
-	for _, childPID := range childrenPIDs {
-		if childPID == sandPID {
-			// Skip the sandbox, all other immediate children are gofers.
-			continue
-		}
-
+	for _, goferPID := range goferPIDs {
 		// Check that gofer is chroot'ed.
-		chroot, err := filepath.EvalSymlinks(procPath(strconv.Itoa(childPID), "root"))
+		chroot, err := filepath.EvalSymlinks(procPath(strconv.Itoa(goferPID), "root"))
 		if err != nil {
 			t.Fatalf("error resolving /proc/<pid>/root symlink: %v", err)
 		}
@@ -172,7 +193,7 @@ func TestChrootGofer(t *testing.T) {
 			t.Errorf("gofer chroot is wrong, want: %q, got: %q", root, chroot)
 		}
 
-		path, err := filepath.EvalSymlinks(procPath(strconv.Itoa(childPID), "cwd"))
+		path, err := filepath.EvalSymlinks(procPath(strconv.Itoa(goferPID), "cwd"))
 		if err != nil {
 			t.Fatalf("error resolving /proc/<pid>/cwd symlink: %v", err)
 		}

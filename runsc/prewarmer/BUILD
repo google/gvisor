@@ -17,7 +17,7 @@ filegroup(
 # Do NOT rewrite it in Go; it must be single-threaded.
 # Read its comments as to why.
 genrule(
-    name = "gvisor-sentry-prewarmer",
+    name = "prewarmer_binary",
     srcs = ["prewarmer.c"],
     outs = ["gvisor-sentry-prewarmer"],
     cmd = "$(CC) $(CC_FLAGS) " +
@@ -34,8 +34,8 @@ genrule(
           "-Wl,--gc-sections " +
           "-Wl,-s " +
           "-Wl,-n " +
-          "-o $(location gvisor-sentry-prewarmer) " +
-          "$(location prewarmer.c)",
+          "-o $(execpath gvisor-sentry-prewarmer) " +
+          "$(execpath prewarmer.c)",
     executable = True,
     features = ["-pie"],
     toolchains = [
@@ -54,7 +54,7 @@ go_test(
     name = "prewarmer_single_page_test",
     size = "small",
     srcs = ["prewarmer_single_page_test.go"],
-    data = [":gvisor-sentry-prewarmer"],
+    data = [":prewarmer_binary"],
     deps = ["//pkg/test/testutil"],
 )
 
@@ -71,7 +71,7 @@ go_test(
     srcs = ["prewarmer_speedup_test.go"],
     data = [
         ":fdtable_expander",
-        ":gvisor-sentry-prewarmer",
+        ":prewarmer_binary",
         "//:release",
     ],
     deps = ["//pkg/test/testutil"],
