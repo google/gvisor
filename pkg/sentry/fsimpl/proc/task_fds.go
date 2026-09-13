@@ -349,9 +349,9 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		return linuxerr.ENOENT
 	}
 	defer d.fs.SafeDecRefFD(ctx, file)
-	// Currently we output the typical base fields: pos, flags, mnt_id.
-	// TODO(b/121266871): Add ino, lock, and type-specific fields.
-	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
+	// Currently we output the typical base fields: pos, flags, mnt_id, ino.
+	// TODO(b/121266871): Add lock and type-specific fields.
+	// See https://www.kernel.org/doc/Documentation/filesystems/proc.rst
 	var pos int64
 	if fd, ok := file.Impl().(*kernfs.DynamicBytesFD); ok {
 		pos = fd.Offset()
@@ -362,7 +362,8 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	}
 	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
 	mntID := file.Mount().ID
-	fmt.Fprintf(buf, "pos:\t%d\nflags:\t0%o\nmnt_id:\t%d\n", pos, flags, mntID)
+	ino := file.InodeID()
+	fmt.Fprintf(buf, "pos:\t%d\nflags:\t0%o\nmnt_id:\t%d\nino:\t%d\n", pos, flags, mntID, ino)
 
 	if nspids, err := kernel.ObservedTIDsForPIDFD(file, d.task); err == nil {
 		fmt.Fprintf(buf, "Pid:\t%d\n", nspids[len(nspids)-1])

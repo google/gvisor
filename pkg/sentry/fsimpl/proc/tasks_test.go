@@ -672,7 +672,7 @@ func TestFdInfoContent(t *testing.T) {
 	}
 	content := string(buf[:n])
 
-	// Verify that pos, flags, and mnt_id fields are present.
+	// Verify that pos, flags, mnt_id, and ino fields are present.
 	if !strings.HasPrefix(content, "pos:\t") {
 		t.Errorf("fdinfo content should start with 'pos:', got: %q", content)
 	}
@@ -682,11 +682,14 @@ func TestFdInfoContent(t *testing.T) {
 	if !strings.Contains(content, "mnt_id:\t") {
 		t.Errorf("fdinfo content should contain 'mnt_id:', got: %q", content)
 	}
+	if !strings.Contains(content, "ino:\t") {
+		t.Errorf("fdinfo content should contain 'ino:', got: %q", content)
+	}
 
-	// Verify the order: pos, flags, mnt_id (matching Linux's seq_show).
+	// Verify the order: pos, flags, mnt_id, ino (matching Linux's seq_show).
 	lines := strings.Split(strings.TrimSpace(content), "\n")
-	if len(lines) < 3 {
-		t.Fatalf("expected at least 3 lines in fdinfo, got %d: %q", len(lines), content)
+	if len(lines) < 4 {
+		t.Fatalf("expected at least 4 lines in fdinfo, got %d: %q", len(lines), content)
 	}
 	if !strings.HasPrefix(lines[0], "pos:\t") {
 		t.Errorf("first line should be 'pos:', got: %q", lines[0])
@@ -696,6 +699,9 @@ func TestFdInfoContent(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[2], "mnt_id:\t") {
 		t.Errorf("third line should be 'mnt_id:', got: %q", lines[2])
+	}
+	if !strings.HasPrefix(lines[3], "ino:\t") {
+		t.Errorf("fourth line should be 'ino:', got: %q", lines[3])
 	}
 
 	// Verify pos is 0 for a freshly opened file.
