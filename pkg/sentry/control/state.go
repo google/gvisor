@@ -425,20 +425,21 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 // ConfigureSaveRestoreExec sets the configuration for the save/restore binary.
 // If containerID is empty, the global init process will be used for the
 // save/restore binary's leader task.
+//
+// A previously stored configuration is replaced: a sandbox may be
+// checkpointed repeatedly, and the configuration also survives in the kernel
+// state across a restore. The leader task is always resolved anew, since a
+// task stored by an earlier call may have exited.
 func ConfigureSaveRestoreExec(k *kernel.Kernel, argv []string, timeout time.Duration, containerID string) error {
-	if k.SaveRestoreExecConfig != nil {
-		return fmt.Errorf("save/restore binary is already set")
-	}
-	k.SaveRestoreExecConfig = &kernel.SaveRestoreExecConfig{
-		Argv:    argv,
-		Timeout: timeout,
-	}
-
 	leader, err := findContainerInitProcess(k, containerID)
 	if err != nil {
 		return err
 	}
-	k.SaveRestoreExecConfig.LeaderTask = leader
+	k.SaveRestoreExecConfig = &kernel.SaveRestoreExecConfig{
+		Argv:       argv,
+		Timeout:    timeout,
+		LeaderTask: leader,
+	}
 	return nil
 }
 

@@ -2335,6 +2335,31 @@ func (vd *VirtualDentry) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(1, &vd.dentry)
 }
 
+func (wc *WriteCount) StateTypeName() string {
+	return "pkg/sentry/vfs.WriteCount"
+}
+
+func (wc *WriteCount) StateFields() []string {
+	return []string{
+		"execs",
+	}
+}
+
+func (wc *WriteCount) beforeSave() {}
+
+// +checklocksignore
+func (wc *WriteCount) StateSave(stateSinkObject state.Sink) {
+	wc.beforeSave()
+	stateSinkObject.Save(0, &wc.execs)
+}
+
+func (wc *WriteCount) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (wc *WriteCount) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &wc.execs)
+}
+
 func init() {
 	state.Register((*anonFilesystemType)(nil))
 	state.Register((*anonFilesystem)(nil))
@@ -2413,4 +2438,5 @@ func init() {
 	state.Register((*VirtualFilesystem)(nil))
 	state.Register((*PathOperation)(nil))
 	state.Register((*VirtualDentry)(nil))
+	state.Register((*WriteCount)(nil))
 }

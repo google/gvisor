@@ -463,6 +463,7 @@ func (i *inode) StateFields() []string {
 		"endpoint",
 		"pipe",
 		"locks",
+		"writeCount",
 		"watches",
 		"refs",
 		"impl",
@@ -502,9 +503,10 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(25, &i.endpoint)
 	stateSinkObject.Save(26, &i.pipe)
 	stateSinkObject.Save(27, &i.locks)
-	stateSinkObject.Save(28, &i.watches)
-	stateSinkObject.Save(29, &i.refs)
-	stateSinkObject.Save(30, &i.impl)
+	stateSinkObject.Save(28, &i.writeCount)
+	stateSinkObject.Save(29, &i.watches)
+	stateSinkObject.Save(30, &i.refs)
+	stateSinkObject.Save(31, &i.impl)
 }
 
 // +checklocksignore
@@ -537,9 +539,10 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(25, &i.endpoint)
 	stateSourceObject.Load(26, &i.pipe)
 	stateSourceObject.Load(27, &i.locks)
-	stateSourceObject.Load(28, &i.watches)
-	stateSourceObject.Load(29, &i.refs)
-	stateSourceObject.Load(30, &i.impl)
+	stateSourceObject.Load(28, &i.writeCount)
+	stateSourceObject.Load(29, &i.watches)
+	stateSourceObject.Load(30, &i.refs)
+	stateSourceObject.Load(31, &i.impl)
 	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
 }
 

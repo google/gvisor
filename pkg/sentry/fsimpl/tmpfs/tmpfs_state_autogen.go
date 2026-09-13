@@ -561,6 +561,7 @@ func (i *inode) StateFields() []string {
 		"ctime",
 		"mtime",
 		"locks",
+		"writeCount",
 		"watches",
 		"impl",
 	}
@@ -590,8 +591,9 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.ctime)
 	stateSinkObject.Save(13, &i.mtime)
 	stateSinkObject.Save(14, &i.locks)
-	stateSinkObject.Save(15, &i.watches)
-	stateSinkObject.Save(16, &i.impl)
+	stateSinkObject.Save(15, &i.writeCount)
+	stateSinkObject.Save(16, &i.watches)
+	stateSinkObject.Save(17, &i.impl)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -611,8 +613,9 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &i.ctime)
 	stateSourceObject.Load(13, &i.mtime)
 	stateSourceObject.Load(14, &i.locks)
-	stateSourceObject.Load(15, &i.watches)
-	stateSourceObject.Load(16, &i.impl)
+	stateSourceObject.Load(15, &i.writeCount)
+	stateSourceObject.Load(16, &i.watches)
+	stateSourceObject.Load(17, &i.impl)
 	stateSourceObject.LoadValue(4, new(*vfs.PosixACL), func(y any) { i.loadAccessACL(ctx, y.(*vfs.PosixACL)) })
 	stateSourceObject.LoadValue(5, new(*vfs.PosixACL), func(y any) { i.loadDefaultACL(ctx, y.(*vfs.PosixACL)) })
 }

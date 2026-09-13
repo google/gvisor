@@ -263,6 +263,7 @@ func (d *dentry) StateFields() []string {
 		"wrappedMappable",
 		"isMappable",
 		"locks",
+		"writeCount",
 		"watches",
 		"dirInoHash",
 	}
@@ -302,8 +303,9 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(20, &d.wrappedMappable)
 	stateSinkObject.Save(21, &d.isMappable)
 	stateSinkObject.Save(22, &d.locks)
-	stateSinkObject.Save(23, &d.watches)
-	stateSinkObject.Save(24, &d.dirInoHash)
+	stateSinkObject.Save(23, &d.writeCount)
+	stateSinkObject.Save(24, &d.watches)
+	stateSinkObject.Save(25, &d.dirInoHash)
 }
 
 // +checklocksignore
@@ -328,8 +330,9 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(20, &d.wrappedMappable)
 	stateSourceObject.Load(21, &d.isMappable)
 	stateSourceObject.Load(22, &d.locks)
-	stateSourceObject.Load(23, &d.watches)
-	stateSourceObject.Load(24, &d.dirInoHash)
+	stateSourceObject.Load(23, &d.writeCount)
+	stateSourceObject.Load(24, &d.watches)
+	stateSourceObject.Load(25, &d.dirInoHash)
 	stateSourceObject.LoadValue(4, new(*vfs.PosixACL), func(y any) { d.loadAccessACL(ctx, y.(*vfs.PosixACL)) })
 	stateSourceObject.LoadValue(5, new(*vfs.PosixACL), func(y any) { d.loadDefaultACL(ctx, y.(*vfs.PosixACL)) })
 	stateSourceObject.LoadValue(9, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
