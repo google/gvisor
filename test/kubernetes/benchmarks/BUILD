@@ -2,7 +2,10 @@ load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
-    default_visibility = ["//:sandbox"],
+    default_visibility = [
+        "//:sandbox",
+        "//cloud/kubernetes/distro/components/gvisor:__subpackages__",
+    ],
     licenses = ["notice"],
 )
 
