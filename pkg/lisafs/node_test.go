@@ -25,10 +25,12 @@ func TestLookup(t *testing.T) {
 		2 * numStaticChildren, // For dynamic children.
 	} {
 		t.Run(fmt.Sprintf("%dChildren", numChildren), func(t *testing.T) {
-			var root Node
-			root.InitLocked("", nil)
+			s := NewServer()
+			defer s.Destroy()
+			s.renameMu.RLock()
+			defer s.renameMu.RUnlock()
+			root := s.root
 			root.childrenMu.Lock()
-			defer root.childrenMu.Unlock()
 
 			// truth is the source of truth.
 			truth := make(map[string]*Node)
@@ -37,7 +39,7 @@ func TestLookup(t *testing.T) {
 			for i := 0; i < numChildren; i++ {
 				name := fmt.Sprintf("%d", i)
 				var child Node
-				child.InitLocked(name, &root)
+				child.InitLocked(name, root)
 				truth[name] = &child
 			}
 
@@ -47,6 +49,10 @@ func TestLookup(t *testing.T) {
 				if got, want := root.LookupChildLocked(name), truth[name]; got != want {
 					t.Errorf("incorrect child returned by root: want %p, got %p", want, got)
 				}
+			}
+			root.childrenMu.Unlock()
+			for _, child := range truth {
+				child.DecRef(nil)
 			}
 		})
 	}
@@ -58,10 +64,12 @@ func TestDelete(t *testing.T) {
 		2 * numStaticChildren, // For dynamic children.
 	} {
 		t.Run(fmt.Sprintf("%dChildren", numChildren), func(t *testing.T) {
-			var root Node
-			root.InitLocked("", nil)
+			s := NewServer()
+			defer s.Destroy()
+			s.renameMu.RLock()
+			defer s.renameMu.RUnlock()
+			root := s.root
 			root.childrenMu.Lock()
-			defer root.childrenMu.Unlock()
 
 			// truth is the source of truth.
 			truth := make(map[string]*Node)
@@ -70,7 +78,7 @@ func TestDelete(t *testing.T) {
 			for i := 0; i < numChildren; i++ {
 				name := fmt.Sprintf("%d", i)
 				var child Node
-				child.InitLocked(name, &root)
+				child.InitLocked(name, root)
 				truth[name] = &child
 			}
 
@@ -80,6 +88,25 @@ func TestDelete(t *testing.T) {
 				if got, want := root.removeChildLocked(name), truth[name]; got != want {
 					t.Errorf("root deleted incorrect node: want %p, got %p", want, got)
 				}
+			}
+			root.childrenMu.Unlock()
+
+			// Replacing an unlinked node must survive its final DecRef.
+			for name, old := range truth {
+				old.opMu.Lock()
+				old.markDeletedRecursive()
+				old.opMu.Unlock()
+				var replacement Node
+				root.childrenMu.Lock()
+				replacement.InitLocked(name, root)
+				root.childrenMu.Unlock()
+				old.DecRef(nil)
+				root.childrenMu.Lock()
+				if got := root.LookupChildLocked(name); got != &replacement {
+					t.Errorf("final DecRef removed replacement: got %p, want %p", got, &replacement)
+				}
+				root.childrenMu.Unlock()
+				replacement.DecRef(nil)
 			}
 		})
 	}
