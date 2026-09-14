@@ -513,7 +513,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if dir {
 			ev |= linux.IN_ISDIR
 		}
-		parent.inode.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+		parent.inode.watches.Notify(withCheckCachingList(ctx, &ds), name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	}
 	// No cached dentry exists; however, in InteropModeShared there might still be
@@ -545,7 +545,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	if dir {
 		ev |= linux.IN_ISDIR
 	}
-	parent.inode.watches.Notify(ctx, name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
+	parent.inode.watches.Notify(withCheckCachingList(ctx, &ds), name, uint32(ev), 0, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -708,12 +708,13 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		}
 	}
 
+	nctx := withCheckCachingList(ctx, &ds)
 	if !dir {
 		var cw *vfs.Watches
 		if child != nil {
 			cw = &child.inode.watches
 		}
-		vfs.InotifyRemoveChild(ctx, cw, &parent.inode.watches, name)
+		vfs.InotifyRemoveChild(nctx, cw, &parent.inode.watches, name)
 	}
 
 	parent.childrenMu.Lock()
@@ -741,12 +742,12 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			// last reference is dropped. refs==0 means no extra refs
 			// remain, so emit the child notifications now. Otherwise
 			// defer to destroyLocked(). HandleDeletion() is idempotent.
-			child.inode.watches.HandleDeletion(ctx)
+			child.inode.watches.HandleDeletion(nctx)
 		}
 		ds = appendDentry(ds, child)
 	}
 	if dir {
-		parent.inode.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
+		parent.inode.watches.Notify(nctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	}
 	parent.cacheNegativeLookupLocked(name)
 	if parent.inode.cachedMetadataAuthoritative() {
@@ -1394,7 +1395,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		childVFSFD = &fd.vfsfd
 	}
-	d.inode.watches.Notify(ctx, name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
+	d.inode.watches.Notify(withCheckCachingList(ctx, ds), name, linux.IN_CREATE, 0, vfs.PathEvent, false /* unlinked */)
 	childVFSFD.SetCreated()
 	return childVFSFD, nil
 }
@@ -1668,8 +1669,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 		// Sends notifications for both the renamed and replaced dentries.
-		vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
-		vfs.InotifyRename(ctx, &replaced.inode.watches, &newParent.inode.watches, &oldParent.inode.watches, newName, oldName, replaced.isDir())
+		nctx := withCheckCachingList(ctx, &ds)
+		vfs.InotifyRename(nctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
+		vfs.InotifyRename(nctx, &replaced.inode.watches, &newParent.inode.watches, &oldParent.inode.watches, newName, oldName, replaced.isDir())
 		return nil
 	}
 	if replaced != nil {
@@ -1722,7 +1724,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			newParent.incLinks()
 		}
 	}
-	vfs.InotifyRename(ctx, &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
+	vfs.InotifyRename(withCheckCachingList(ctx, &ds), &renamed.inode.watches, &oldParent.inode.watches, &newParent.inode.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 
@@ -1741,15 +1743,13 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		return err
 	}
 	err = d.setStat(ctx, rp.Credentials(), &opts, rp.Mount())
+	if err == nil {
+		if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+			d.InotifyWithParent(withCheckCachingList(ctx, &ds), ev, 0, vfs.InodeEvent)
+		}
+	}
 	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
-	if err != nil {
-		return err
-	}
-
-	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ctx, ev, 0, vfs.InodeEvent)
-	}
-	return nil
+	return err
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
@@ -1890,13 +1890,11 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		return err
 	}
 	err = d.setXattr(ctx, rp.Credentials(), &opts)
-	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
-	if err != nil {
-		return err
+	if err == nil {
+		d.InotifyWithParent(withCheckCachingList(ctx, &ds), linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	}
-
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
-	return nil
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	return err
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
@@ -1909,13 +1907,11 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		return err
 	}
 	err = d.removeXattr(ctx, rp.Credentials(), name)
-	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
-	if err != nil {
-		return err
+	if err == nil {
+		d.InotifyWithParent(withCheckCachingList(ctx, &ds), linux.IN_ATTRIB, 0, vfs.InodeEvent)
 	}
-
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0, vfs.InodeEvent)
-	return nil
+	fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
+	return err
 }
 
 // GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.
