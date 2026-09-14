@@ -19,6 +19,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"testing/synctest"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
@@ -391,5 +392,51 @@ func TestDoCopyDrainsLargeRead(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("copied data mismatch")
+	}
+}
+
+type readinessRaceEndpoint struct {
+	tcpip.Endpoint
+	impl tcpErrImpl
+	wq   waiter.Queue
+}
+
+func (e *readinessRaceEndpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
+	res, err := e.impl.Read(dst, opts)
+	e.wq.Notify(waiter.ReadableEvents)
+	return res, err
+}
+
+func (e *readinessRaceEndpoint) Write(src tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
+	res, err := e.impl.Write(src, opts)
+	e.wq.Notify(waiter.WritableEvents)
+	return res, err
+}
+
+func TestNetstackConnReadinessBeforeRegistration(t *testing.T) {
+	for _, operation := range []string{"Read", "Write"} {
+		t.Run(operation, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ep := &readinessRaceEndpoint{}
+				conn := &netstackConn{ep: ep, wq: &ep.wq}
+				call := conn.Read
+				if operation == "Write" {
+					call = conn.Write
+				}
+				cancel := make(chan struct{})
+				defer close(cancel)
+				done := false
+				go func() {
+					if _, err := call(context.Background(), nil, cancel); err != io.EOF {
+						t.Errorf("%s error = %v, want EOF", operation, err)
+					}
+					done = true
+				}()
+				synctest.Wait()
+				if !done {
+					t.Fatal("operation blocks with readiness pending")
+				}
+			})
+		})
 	}
 }
