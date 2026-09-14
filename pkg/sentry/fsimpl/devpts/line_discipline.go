@@ -166,10 +166,15 @@ func (l *lineDiscipline) getTermios2(task *kernel.Task, args arch.SyscallArgumen
 }
 
 // setTermios2 sets a linux.KernelTermios for the tty.
-func (l *lineDiscipline) setTermios2(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+func (l *lineDiscipline) setTermios2(task *kernel.Task, args arch.SyscallArguments, flushInput bool) (uintptr, error) {
 	var t linux.KernelTermios
 	if _, err := t.CopyIn(task, args[2].Pointer()); err != nil {
 		return 0, err
+	}
+	if flushInput {
+		if err := l.tcFlush(replicaEndpoint, linux.TCIFLUSH); err != nil {
+			return 0, err
+		}
 	}
 
 	l.termiosMu.Lock()
@@ -194,11 +199,16 @@ func (l *lineDiscipline) setTermios2(task *kernel.Task, args arch.SyscallArgumen
 }
 
 // setTermios sets a linux.Termios for the tty.
-func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments) (uintptr, error) {
+func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArguments, flushInput bool) (uintptr, error) {
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
 	if _, err := t.CopyIn(task, args[2].Pointer()); err != nil {
 		return 0, err
+	}
+	if flushInput {
+		if err := l.tcFlush(replicaEndpoint, linux.TCIFLUSH); err != nil {
+			return 0, err
+		}
 	}
 
 	l.termiosMu.Lock()
