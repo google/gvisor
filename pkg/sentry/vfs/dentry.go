@@ -132,9 +132,10 @@ type DentryImpl interface {
 	// The caller does not need to hold a reference on the dentry.
 	Watches() *Watches
 
-	// OnZeroWatches is called whenever the number of watches on a dentry drops
-	// to zero. This is needed by some FilesystemImpls (e.g. gofer) to manage
-	// dentry lifetime.
+	// OnZeroWatches is called whenever the number of watches targeting this
+	// dentry drops to zero; the watch set it shares with its hard link aliases
+	// may still be non-empty. This is needed by some FilesystemImpls (e.g.
+	// gofer) to manage dentry lifetime.
 	//
 	// The caller does not need to hold a reference on the dentry. OnZeroWatches
 	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
@@ -195,8 +196,8 @@ func (d *Dentry) Watches() *Watches {
 	return d.impl.Watches()
 }
 
-// OnZeroWatches performs cleanup tasks whenever the number of watches on a
-// dentry drops to zero.
+// OnZeroWatches performs cleanup tasks whenever the number of watches
+// targeting d drops to zero.
 func (d *Dentry) OnZeroWatches(ctx context.Context) {
 	d.impl.OnZeroWatches(ctx)
 }
