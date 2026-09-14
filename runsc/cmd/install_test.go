@@ -17,9 +17,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/sys/unix"
 )
 
 type runtimeDef struct {
@@ -203,6 +207,40 @@ func TestInstall(t *testing.T) {
 				t.Fatalf("Mismatch output (-want +got): %s", res)
 			}
 		})
+	}
+}
+
+func TestWriteFileWithExplicitMode(t *testing.T) {
+	oldMask := unix.Umask(0077)
+	defer unix.Umask(oldMask)
+	filename := filepath.Join(t.TempDir(), "config")
+	const old = "old"
+	if err := os.WriteFile(filename, []byte(old), 0600); err != nil {
+		t.Fatalf("Failed to create file: %v", err)
+	}
+	stale, err := os.Open(filename)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	defer stale.Close()
+
+	const want = "new"
+	if err := writeFileWithExplicitMode(filename, []byte(want), 0644); err != nil {
+		t.Fatalf("writeFileWithExplicitMode(%q, ..., 0644) = %v, want nil", filename, err)
+	}
+
+	info, err := os.Stat(filename)
+	if err != nil {
+		t.Fatalf("Failed to stat file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0644 {
+		t.Errorf("File mode = %#o, want %#o", got, 0644)
+	}
+	if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+		t.Errorf("File contents = %q, %v, want %q, nil", got, err, want)
+	}
+	if got, err := io.ReadAll(stale); err != nil || string(got) != old {
+		t.Errorf("Contents via the pre-existing descriptor = %q, %v, want %q, nil", got, err, old)
 	}
 }
 
