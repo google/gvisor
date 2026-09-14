@@ -72,6 +72,7 @@ go_test(
     name = "sandbox_test",
     size = "small",
     srcs = [
+        "memory_test.go",
         "network_test.go",
         "sandbox_test.go",
     ],
