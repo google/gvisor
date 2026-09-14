@@ -110,12 +110,14 @@ const (
 
 	_TCR_TXSZ_VA48 = (_TCR_T0SZ_VA48 << _TCR_T0SZ_OFFSET) | (_TCR_T1SZ_VA48 << _TCR_T1SZ_OFFSET)
 
+	// Granule size for TTBR0_EL1. Note that TG0 and TG1 use different
+	// encodings for the same granule sizes.
 	_TCR_TG0_4K  = 0 << _TCR_TG0_SHIFT // 4K
 	_TCR_TG0_64K = 1 << _TCR_TG0_SHIFT // 64K
 
-	_TCR_TG1_4K = 2 << _TCR_TG1_SHIFT
-
-	_TCR_TG_FLAGS = _TCR_TG0_4K | _TCR_TG1_4K
+	// Granule size for TTBR1_EL1.
+	_TCR_TG1_4K  = 2 << _TCR_TG1_SHIFT // 4K
+	_TCR_TG1_64K = 3 << _TCR_TG1_SHIFT // 64K
 
 	_TCR_IRGN0_WBWA = 1 << _TCR_IRGN0_SHIFT
 	_TCR_IRGN1_WBWA = 1 << _TCR_IRGN1_SHIFT
