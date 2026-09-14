@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
@@ -241,6 +242,9 @@ type restorer struct {
 	// the sandbox. Sandbox restore can only happen, after all containers have
 	// been restored.
 	totalContainers int
+
+	// ipRemappingTable stores mapping for ip addresses migrating to new ips
+	ipRemappingTable map[string]string
 
 	// containers is the list of containers restored so far.
 	containers []*containerInfo
@@ -455,12 +459,24 @@ func (r *restorer) restore(l *Loader) error {
 		}
 	}
 
+	autoLocalRemap := computeAutoLocalRemap(r.metadata[savedNetworkInterfacesKey], l.networkArgs)
+	effectiveRemap := make(map[string]string)
+	for oldIP, newIP := range autoLocalRemap {
+		effectiveRemap[oldIP] = newIP
+	}
+	for oldIP, newIP := range r.ipRemappingTable {
+		effectiveRemap[oldIP] = newIP
+	}
+	log.Infof("Effective restore IP remapping table (%d entries, %d auto-local, %d user): %v",
+		len(effectiveRemap), len(autoLocalRemap), len(r.ipRemappingTable), effectiveRemap)
+
 	log.Debugf("Restore using mounts: %v", &restoreMnts)
 	ctx := l.k.SupervisorContext()
 	ctx = context.WithValues(ctx, map[any]any{
 		vfs.CtxRestoreFilesystemFDMap:     restoreMnts.fdmap,
 		pgalloc.CtxMemoryFileMap:          restoreMnts.mfmap,
 		devutil.CtxDevGoferClientProvider: l.k,
+		stack.CtxRestoreIPRemap:           effectiveRemap,
 	})
 
 	if r.asyncMFLoader != nil {
@@ -725,6 +741,9 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		return err
 	}
 	if err := l.setTPUDeviceRemapMetadata(saveOpts); err != nil {
+		return err
+	}
+	if err := l.setNetworkInterfaceMetadata(saveOpts); err != nil {
 		return err
 	}
 

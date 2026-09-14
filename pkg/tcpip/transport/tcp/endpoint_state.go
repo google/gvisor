@@ -17,6 +17,7 @@ package tcp
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
@@ -140,11 +141,74 @@ func (e *Endpoint) afterLoad(ctx context.Context) {
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Restore.
 	e.state = atomicbitops.FromUint32(uint32(StateInitial))
+	if remap, ok := ctx.Value(stack.CtxRestoreIPRemap).(map[string]string); ok {
+		oldID := e.TransportEndpointInfo.ID
+		changed := false
+
+		if newLocal, found := remap[oldID.LocalAddress.String()]; found {
+			parsed := net.ParseIP(newLocal)
+			if parsed != nil {
+				if v4 := parsed.To4(); v4 != nil {
+					e.TransportEndpointInfo.ID.LocalAddress = tcpip.AddrFromSlice(v4)
+				} else {
+					e.TransportEndpointInfo.ID.LocalAddress = tcpip.AddrFromSlice(parsed)
+				}
+				changed = true
+			}
+		}
+		if newRemote, found := remap[oldID.RemoteAddress.String()]; found {
+			parsed := net.ParseIP(newRemote)
+			if parsed != nil {
+				if v4 := parsed.To4(); v4 != nil {
+					e.TransportEndpointInfo.ID.RemoteAddress = tcpip.AddrFromSlice(v4)
+				} else {
+					e.TransportEndpointInfo.ID.RemoteAddress = tcpip.AddrFromSlice(parsed)
+				}
+				changed = true
+			}
+		}
+
+		if changed {
+			log.Infof("Successfully remapped TCP endpoint! IP remap applied: local %s -> %s, remote %s -> %s", oldID.LocalAddress, e.TransportEndpointInfo.ID.LocalAddress, oldID.RemoteAddress, e.TransportEndpointInfo.ID.RemoteAddress)
+			if e.connectingAddress.BitLen() > 0 {
+				if newRemote, ok := remap[e.connectingAddress.String()]; ok {
+					parsed := net.ParseIP(newRemote)
+					if parsed != nil {
+						if v4 := parsed.To4(); v4 != nil {
+							e.connectingAddress = tcpip.AddrFromSlice(v4)
+						} else {
+							e.connectingAddress = tcpip.AddrFromSlice(parsed)
+						}
+					}
+				}
+			}
+			if e.boundDest.Addr.BitLen() > 0 {
+				if newLocal, ok := remap[e.boundDest.Addr.String()]; ok {
+					parsed := net.ParseIP(newLocal)
+					if parsed != nil {
+						if v4 := parsed.To4(); v4 != nil {
+							e.boundDest.Addr = tcpip.AddrFromSlice(v4)
+						} else {
+							e.boundDest.Addr = tcpip.AddrFromSlice(parsed)
+						}
+					}
+				}
+			}
+
+			e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, oldID, e, e.boundPortFlags, e.boundBindToDevice)
+			if err := e.stack.RegisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice); err != nil {
+				log.Warningf("Failed to re-register transport endpoint during restore: %v", err)
+			}
+		}
+	}
+	e.rewriteSegmentQueuesIPs()
+
 	e.stack.RegisterRestoredEndpoint(e)
 }
 
 // Close the endpoint during restore if terminateAtRestore was set for the endpoint.
-func (e *Endpoint) closeEndpointAtRestore() {
+func (e *Endpoint) closeEndpointAtRestore(reason string) {
+	log.Infof("closeEndpointAtRestore called for reason: %s. Endpoint local %s remote %s", reason, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -207,7 +271,7 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 	}
 
 	if terminateAtRestore && !e.stack.AllowLiveTCPMigration() {
-		e.closeEndpointAtRestore()
+		e.closeEndpointAtRestore("terminateAtRestore is true and AllowLiveTCPMigration is false")
 		return
 	}
 
@@ -228,8 +292,8 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 			// else close the connection on our end.
 			r, err := e.stack.FindRoute(0, e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.RemoteAddress, netProto, false /* multicastLoop */)
 			if err != nil {
-				e.closeEndpointAtRestore()
-				log.Infof("Cannot find the route %+v", e.TransportEndpointInfo.ID)
+				e.closeEndpointAtRestore(fmt.Sprintf("cannot find route for endpoint %+v: %v", e.TransportEndpointInfo.ID, err))
+				log.Infof("Cannot find the route %+v: %v", e.TransportEndpointInfo.ID, err)
 				return
 			}
 			e.boundNICID = r.NICID()

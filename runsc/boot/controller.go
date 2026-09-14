@@ -566,6 +566,9 @@ type RestoreOpts struct {
 	HaveDeviceFile bool
 	Background     bool
 
+	// IPRemappingTable is optionally provided to remap IP addresses of restored network connections.
+	IPRemappingTable map[string]string `json:"ip_remapping_table"`
+
 	// If UseCheckpointGofer is true, the first file in FilePayload is a Unix
 	// domain socket connected to a URPC server implementing
 	// stateipc.AsyncFileServer and providing checkpoint files. In this case,
@@ -621,9 +624,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	timer.Reached("got restore readers")
 
 	cm.restorer = &restorer{
-		cm:         cm,
-		background: o.Background,
-		timer:      timer,
+		cm:               cm,
+		background:       o.Background,
+		timer:            timer,
+		ipRemappingTable: o.IPRemappingTable,
 	}
 
 	// Create the main MemoryFile.

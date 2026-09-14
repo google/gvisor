@@ -17,6 +17,7 @@ package tcp
 import (
 	"container/heap"
 	"fmt"
+	"gvisor.dev/gvisor/pkg/log"
 	"io"
 	"math"
 	"runtime"
@@ -28,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -1544,6 +1546,7 @@ func (e *Endpoint) checkReadLocked() tcpip.Error {
 			if err := e.hardErrorLocked(); err != nil {
 				return err
 			}
+			log.Infof("checkReadLocked: returning ErrClosedForReceive. RcvClosed=%v, connected=%v, hardError=%v", e.RcvClosed, e.EndpointState().connected(), e.hardError)
 			return &tcpip.ErrClosedForReceive{}
 		}
 		e.stats.ReadErrors.NotConnected.Increment()
@@ -1552,6 +1555,7 @@ func (e *Endpoint) checkReadLocked() tcpip.Error {
 
 	if e.RcvBufUsed == 0 {
 		if e.RcvClosed || !e.EndpointState().connected() {
+			log.Infof("checkReadLocked: returning ErrClosedForReceive. RcvClosed=%v, connected=%v, hardError=%v", e.RcvClosed, e.EndpointState().connected(), e.hardError)
 			return &tcpip.ErrClosedForReceive{}
 		}
 		return &tcpip.ErrWouldBlock{}
@@ -3489,4 +3493,72 @@ func (e *Endpoint) getExperimentOptionValue(route *stack.Route) uint16 {
 		return e.ops.GetExperimentOptionValue()
 	}
 	return 0
+}
+
+func (e *Endpoint) rewriteSegmentQueuesIPs() {
+	processList := func(list *segmentList, isRcv bool) {
+		if list == nil {
+			return
+		}
+		for s := list.Front(); s != nil; s = s.Next() {
+			pkt := s.pkt
+			if pkt == nil || len(pkt.NetworkHeader().Slice()) == 0 {
+				continue
+			}
+
+			netProto := pkt.NetworkProtocolNumber
+			var srcAddr, dstAddr tcpip.Address
+
+			switch netProto {
+			case header.IPv4ProtocolNumber:
+				ipv4 := header.IPv4(pkt.NetworkHeader().Slice())
+				if isRcv {
+					ipv4.SetSourceAddress(e.TransportEndpointInfo.ID.RemoteAddress)
+					ipv4.SetDestinationAddress(e.TransportEndpointInfo.ID.LocalAddress)
+				} else {
+					ipv4.SetSourceAddress(e.TransportEndpointInfo.ID.LocalAddress)
+					ipv4.SetDestinationAddress(e.TransportEndpointInfo.ID.RemoteAddress)
+				}
+				ipv4.SetChecksum(0)
+				ipv4.SetChecksum(^ipv4.CalculateChecksum())
+				srcAddr = ipv4.SourceAddress()
+				dstAddr = ipv4.DestinationAddress()
+			case header.IPv6ProtocolNumber:
+				ipv6 := header.IPv6(pkt.NetworkHeader().Slice())
+				if isRcv {
+					ipv6.SetSourceAddress(e.TransportEndpointInfo.ID.RemoteAddress)
+					ipv6.SetDestinationAddress(e.TransportEndpointInfo.ID.LocalAddress)
+				} else {
+					ipv6.SetSourceAddress(e.TransportEndpointInfo.ID.LocalAddress)
+					ipv6.SetDestinationAddress(e.TransportEndpointInfo.ID.RemoteAddress)
+				}
+				srcAddr = ipv6.SourceAddress()
+				dstAddr = ipv6.DestinationAddress()
+			}
+
+			if len(pkt.TransportHeader().Slice()) > 0 {
+				tcpHdr := header.TCP(pkt.TransportHeader().Slice())
+				tcpHdr.SetChecksum(0)
+
+				xsum := header.PseudoHeaderChecksum(
+					header.TCPProtocolNumber,
+					srcAddr, dstAddr,
+					uint16(len(tcpHdr)+pkt.Data().Size()),
+				)
+
+				xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+				tcpHdr.SetChecksum(^tcpHdr.CalculateChecksum(xsum))
+
+				s.csumValid = true
+			}
+		}
+	}
+
+	e.segmentQueue.mu.Lock()
+	processList(&e.segmentQueue.list, false)
+	e.segmentQueue.mu.Unlock()
+
+	e.mu.Lock()
+	processList(&e.rcvQueue, true)
+	e.mu.Unlock()
 }
