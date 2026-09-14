@@ -129,6 +129,10 @@ func (m Mount) ociMount() (specs.Mount, error) {
 			opts = append(opts, o.name)
 		}
 	}
+	if m.Type == MountTypeTmpfs && m.Mode != nil {
+		opts = append(opts, fmt.Sprintf("mode=%04o", *m.Mode))
+	}
+
 	return specs.Mount{
 		Destination: filepath.Clean(m.Destination),
 		Source:      source,

@@ -136,6 +136,10 @@ type Mount struct {
 
 	// NoDev adds "nodev".
 	NoDev bool
+
+	// Mode is the permission bits of the mount point, e.g. 0755. A nil Mode
+	// leaves the mount type's own default in place. Only tmpfs honors it.
+	Mode *uint32
 }
 
 // WithRuntimeDir sets a custom runtime directory where bundle and state files are written.
@@ -630,6 +634,7 @@ type ExecOption func(*execOptions)
 // execOptions holds the configuration for one Exec call.
 type execOptions struct {
 	args         []string
+	execPath     string
 	stdin        io.Reader
 	stdout       io.Writer
 	stderr       io.Writer
@@ -649,6 +654,15 @@ func WithExecStdio(stdin io.Reader, stdout, stderr io.Writer) ExecOption {
 func WithExecSignalRelay() ExecOption {
 	return func(o *execOptions) {
 		o.relaySignals = true
+	}
+}
+
+// WithExecPath sets the path of the program to execute. If unset, the program
+// is resolved from argv[0]. Setting it lets the caller pass an argv[0] that
+// differs from the program path, like execve(2) does.
+func WithExecPath(path string) ExecOption {
+	return func(o *execOptions) {
+		o.execPath = path
 	}
 }
 
@@ -690,6 +704,9 @@ func (s *Sandbox) Exec(ctx context.Context, argv []string, opts ...ExecOption) (
 		pidFile = filepath.Join(s.bundleDir, "exec-"+newID()+".pid")
 		defer os.Remove(pidFile)
 		args = append(args, "--internal-pid-file", pidFile)
+	}
+	if options.execPath != "" {
+		args = append(args, "--exec-path", options.execPath)
 	}
 	args = append(append(args, s.id), options.args...)
 	cmd := exec.CommandContext(ctx, s.runscPath, args...)

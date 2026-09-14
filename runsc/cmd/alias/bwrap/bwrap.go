@@ -72,6 +72,9 @@ type bwrapConfig struct {
 	UnshareUser bool
 	Hostname    string
 	ShareNet    bool
+	Argv0       string
+	hasArgv0    bool
+	nextPerms   *uint32
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -331,9 +334,19 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 		}
 	}()
 
-	res, err := sb.Exec(ctx, c.Args,
+	execOpts := []sandbox.ExecOption{
 		sandbox.WithExecStdio(os.Stdin, os.Stdout, os.Stderr),
-		sandbox.WithExecSignalRelay())
+		sandbox.WithExecSignalRelay(),
+	}
+	argv := c.Args
+	if c.hasArgv0 {
+		// bwrap names the program with COMMAND and lets --argv0 replace argv[0],
+		// so pass the program path separately from the argv it runs with.
+		execOpts = append(execOpts, sandbox.WithExecPath(argv[0]))
+		argv = append([]string{c.Argv0}, argv[1:]...)
+	}
+
+	res, err := sb.Exec(ctx, argv, execOpts...)
 	if err != nil {
 		return util.Errorf("bwrap: %v", err)
 	}
@@ -435,4 +448,17 @@ func dropCapability(caps *specs.LinuxCapabilities, capName string) {
 		return
 	}
 	specutils.DropCapability(caps, capName)
+}
+
+const defaultTmpfsPerms = 0755
+
+// takePerms returns the pending --perms value if one was given, otherwise
+// defaultPerms, and clears the pending value either way.
+func (c *bwrapConfig) takePerms(defaultPerms uint32) *uint32 {
+	perms := defaultPerms
+	if c.nextPerms != nil {
+		perms = *c.nextPerms
+		c.nextPerms = nil
+	}
+	return &perms
 }
