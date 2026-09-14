@@ -14,6 +14,7 @@
 
 #include <sched.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -33,6 +34,8 @@ TEST(GetcpuTest, IsValidCpuStress) {
     ASSERT_LT(cpu, num_cpus);
   }
 }
+
+// Temporary change.
 
 TEST(GetcpuTest, IsValidCpu) {
   const int num_cpus = NumCPUs();

@@ -181,12 +181,18 @@ endif
 ifneq (,$(wildcard /lib/modules))
 DOCKER_RUN_OPTIONS += -v "/lib/modules:/lib/modules"
 endif
+# On COS, kernel headers are not present on the host filesystem and out-of-tree
+# modules are compiled prior to running Bazel containers. Mounting
+# non-existent host paths causes Docker to attempt creating directories on the
+# read-only COS rootfs.
+ifeq (,$(shell grep -sE 'ID=cos|ID_LIKE=.*(cos|cros)|Container-Optimized' /proc/1/root/etc/os-release /etc/os-release 2>/dev/null))
 KERNEL_HEADERS_DIR := $(shell $(REALPATH_M) /lib/modules/$(shell uname -r)/build)
 ifneq (,$(wildcard $(KERNEL_HEADERS_DIR)))
 DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR):$(KERNEL_HEADERS_DIR)"
 ifneq ($(shell $(REALPATH_M) $(KERNEL_HEADERS_DIR)/Makefile),$(KERNEL_HEADERS_DIR)/Makefile)
 KERNEL_HEADERS_DIR_LINKED := $(dir $(shell $(REALPATH_M) $(KERNEL_HEADERS_DIR)/Makefile))
 DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINKED)"
+endif
 endif
 endif
 
@@ -240,6 +246,7 @@ endif
 # Add other device file, if specified.
 ifneq ($(DEVICE_FILE),)
 DOCKER_RUN_OPTIONS += --device "$(DEVICE_FILE):$(DEVICE_FILE)"
+TEST_OPTIONS += --sandbox_add_mount_pair="$(DEVICE_FILE)"
 endif
 
 # Check if Docker API version supports cgroupns (supported in >=1.41).
@@ -307,6 +314,7 @@ ifneq (,$(PRE_BAZEL_INIT))
 	@$(call header,PRE_BAZEL_INIT)
 	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
 endif
+	@if test -n "$(DEVICE_FILE)" -a -e "$(DEVICE_FILE)"; then sudo chmod 666 "$(DEVICE_FILE)" 2>/dev/null || chmod 666 "$(DEVICE_FILE)" 2>/dev/null || true; fi
 	@$(call header,DOCKER RUN)
 	@set -x
 	@$(DOCKER_CLI_PATH) rm -f $(DOCKER_NAME) 2>/dev/null || true
