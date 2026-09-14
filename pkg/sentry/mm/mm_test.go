@@ -16,6 +16,7 @@ package mm
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -580,5 +581,641 @@ func TestMRemapMappableOffsetOverflow(t *testing.T) {
 	// We remap with oldSize = PageSize, newSize = 3*PageSize.
 	if _, err := mm.MRemap(ctx, addr, hostarch.PageSize, 3*hostarch.PageSize, MRemapOpts{}); !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("MRemap grow got err %v want EINVAL", err)
+	}
+}
+
+func mmapPrivateAnon(ctx context.Context, t *testing.T, mm *MemoryManager, pages int) hostarch.Addr {
+	t.Helper()
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   uint64(pages) * hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	return addr
+}
+
+func faultPagesErr(ctx context.Context, mm *MemoryManager, addr hostarch.Addr, pages int) error {
+	buf := []byte{1}
+	for i := 0; i < pages; i++ {
+		if _, err := mm.CopyOut(ctx, addr+hostarch.Addr(i)*hostarch.PageSize, buf, usermem.IOOpts{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func faultPages(ctx context.Context, t *testing.T, mm *MemoryManager, addr hostarch.Addr, pages int) {
+	t.Helper()
+	if err := faultPagesErr(ctx, mm, addr, pages); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+}
+
+type reservedVMA struct {
+	ar       hostarch.AddrRange
+	off      uint64
+	reserved bool
+}
+
+func lookupReservedVMA(t *testing.T, mm *MemoryManager, addr hostarch.Addr) reservedVMA {
+	t.Helper()
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+	vseg := mm.vmas.FindSegment(addr)
+	if !vseg.Ok() {
+		t.Fatalf("no vma at %#x", addr)
+	}
+	v := vseg.ValuePtr()
+	return reservedVMA{ar: vseg.Range(), off: v.off, reserved: v.memfileReserved}
+}
+
+func pmaFileOffAt(t *testing.T, mm *MemoryManager, addr hostarch.Addr) uint64 {
+	t.Helper()
+	mm.activeMu.RLock()
+	defer mm.activeMu.RUnlock()
+	pseg := mm.pmas.FindSegment(addr)
+	if !pseg.Ok() {
+		t.Fatalf("no pma at %#x", addr)
+	}
+	return pseg.ValuePtr().off + uint64(addr-pseg.Start())
+}
+
+func TestAnonymousVMAReservesContiguousSpan(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const pages = 4
+	addr := mmapPrivateAnon(ctx, t, mm, pages)
+	v := lookupReservedVMA(t, mm, addr)
+	if !v.reserved {
+		t.Fatal("anonymous vma did not reserve a MemoryFile span")
+	}
+	if v.ar.Length() != pages*hostarch.PageSize {
+		t.Fatalf("vma length got %#x want %#x", v.ar.Length(), pages*hostarch.PageSize)
+	}
+
+	faultPages(ctx, t, mm, addr, pages)
+	for i := 0; i < pages; i++ {
+		pageAddr := addr + hostarch.Addr(i)*hostarch.PageSize
+		got := pmaFileOffAt(t, mm, pageAddr)
+		want := v.off + uint64(i)*hostarch.PageSize
+		if got != want {
+			t.Errorf("page %d file offset got %#x want %#x", i, got, want)
+		}
+	}
+}
+
+func TestAnonymousVMAsDoNotInterleaveOffsets(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const pages = 8
+	addr1 := mmapPrivateAnon(ctx, t, mm, pages)
+	addr2, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   uint64(pages) * hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite.Union(hostarch.Execute),
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap 2 got err %v want nil", err)
+	}
+	v1 := lookupReservedVMA(t, mm, addr1)
+	v2 := lookupReservedVMA(t, mm, addr2)
+	if !v1.reserved || !v2.reserved {
+		t.Fatal("anonymous vmas did not reserve MemoryFile spans")
+	}
+	fr1 := memmap.FileRange{Start: v1.off, End: v1.off + uint64(v1.ar.Length())}
+	fr2 := memmap.FileRange{Start: v2.off, End: v2.off + uint64(v2.ar.Length())}
+	if fr1.Start < fr2.End && fr2.Start < fr1.End {
+		t.Fatalf("reserved spans overlap: %v and %v", fr1, fr2)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errCh <- faultPagesErr(ctx, mm, addr1, pages)
+	}()
+	go func() {
+		defer wg.Done()
+		errCh <- faultPagesErr(ctx, mm, addr2, pages)
+	}()
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent fault: %v", err)
+		}
+	}
+
+	for i := 0; i < pages; i++ {
+		off1 := pmaFileOffAt(t, mm, addr1+hostarch.Addr(i)*hostarch.PageSize)
+		off2 := pmaFileOffAt(t, mm, addr2+hostarch.Addr(i)*hostarch.PageSize)
+		if off1 != v1.off+uint64(i)*hostarch.PageSize {
+			t.Errorf("vma1 page %d offset got %#x want %#x", i, off1, v1.off+uint64(i)*hostarch.PageSize)
+		}
+		if off2 != v2.off+uint64(i)*hostarch.PageSize {
+			t.Errorf("vma2 page %d offset got %#x want %#x", i, off2, v2.off+uint64(i)*hostarch.PageSize)
+		}
+		if i > 0 {
+			prev1 := pmaFileOffAt(t, mm, addr1+hostarch.Addr(i-1)*hostarch.PageSize)
+			if off1 != prev1+hostarch.PageSize {
+				t.Errorf("vma1 page %d offset %#x is not adjacent to previous %#x", i, off1, prev1)
+			}
+		}
+	}
+}
+
+func TestMprotectSplitKeepsLinearFileOffsets(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const pages = 3
+	addr := mmapPrivateAnon(ctx, t, mm, pages)
+	before := lookupReservedVMA(t, mm, addr)
+	if !before.reserved {
+		t.Fatal("anonymous vma did not reserve a MemoryFile span")
+	}
+
+	mid := addr + hostarch.PageSize
+	if err := mm.MProtect(mid, hostarch.PageSize, hostarch.Read, false); err != nil {
+		t.Fatalf("MProtect got err %v want nil", err)
+	}
+
+	left := lookupReservedVMA(t, mm, addr)
+	middle := lookupReservedVMA(t, mm, mid)
+	right := lookupReservedVMA(t, mm, addr+2*hostarch.PageSize)
+	if !left.reserved || !middle.reserved || !right.reserved {
+		t.Fatal("split vmas lost MemoryFile reservation")
+	}
+	if left.off != before.off {
+		t.Errorf("left vma off got %#x want %#x", left.off, before.off)
+	}
+	if middle.off != before.off+hostarch.PageSize {
+		t.Errorf("middle vma off got %#x want %#x", middle.off, before.off+hostarch.PageSize)
+	}
+	if right.off != before.off+2*hostarch.PageSize {
+		t.Errorf("right vma off got %#x want %#x", right.off, before.off+2*hostarch.PageSize)
+	}
+
+	buf := []byte{1}
+	if _, err := mm.CopyOut(ctx, addr, buf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut left got err %v want nil", err)
+	}
+	if _, err := mm.CopyIn(ctx, mid, buf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn middle got err %v want nil", err)
+	}
+	if _, err := mm.CopyOut(ctx, addr+2*hostarch.PageSize, buf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut right got err %v want nil", err)
+	}
+
+	if got, want := pmaFileOffAt(t, mm, addr), before.off; got != want {
+		t.Errorf("left page offset got %#x want %#x", got, want)
+	}
+	if got, want := pmaFileOffAt(t, mm, mid), before.off+hostarch.PageSize; got != want {
+		t.Errorf("middle page offset got %#x want %#x", got, want)
+	}
+	if got, want := pmaFileOffAt(t, mm, addr+2*hostarch.PageSize), before.off+2*hostarch.PageSize; got != want {
+		t.Errorf("right page offset got %#x want %#x", got, want)
+	}
+}
+
+func TestForkDoesNotInheritMemfileReservation(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr := mmapPrivateAnon(ctx, t, mm, 2)
+	if v := lookupReservedVMA(t, mm, addr); !v.reserved {
+		t.Fatal("parent anonymous vma did not reserve a MemoryFile span")
+	}
+
+	mm2, err := mm.Fork(ctx)
+	if err != nil {
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer mm2.DecUsers(ctx)
+
+	if v := lookupReservedVMA(t, mm2, addr); v.reserved {
+		t.Fatal("child inherited parent MemoryFile reservation")
+	}
+	if v := lookupReservedVMA(t, mm, addr); !v.reserved {
+		t.Fatal("parent lost MemoryFile reservation after fork")
+	}
+}
+
+func TestReservedAnonymousDoesNotCountUnfaultedRSS(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	// Mappings larger than a huge page are not eagerly populated.
+	length := uint64(hostarch.HugePageSize + hostarch.PageSize)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   length,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	if v := lookupReservedVMA(t, mm, addr); !v.reserved {
+		t.Fatal("anonymous vma did not reserve a MemoryFile span")
+	}
+	if got := mm.ResidentSetSize(); got != 0 {
+		t.Fatalf("unfaulted reserved mapping RSS got %#x want 0", got)
+	}
+
+	faultPages(ctx, t, mm, addr, 1)
+	if got := mm.ResidentSetSize(); got == 0 {
+		t.Fatal("RSS still 0 after fault")
+	}
+	if got, want := mm.ResidentSetSize(), length; got > want {
+		t.Fatalf("RSS %#x exceeds mapping length %#x", got, want)
+	}
+}
+
+func TestMunmapDropsReservedRSS(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const pages = 4
+	addr := mmapPrivateAnon(ctx, t, mm, pages)
+	faultPages(ctx, t, mm, addr, pages)
+	if got, want := mm.ResidentSetSize(), uint64(pages*hostarch.PageSize); got != want {
+		t.Fatalf("RSS after fault got %#x want %#x", got, want)
+	}
+
+	if err := mm.MUnmap(ctx, addr, uint64(pages)*hostarch.PageSize); err != nil {
+		t.Fatalf("MUnmap got err %v want nil", err)
+	}
+	if got := mm.ResidentSetSize(); got != 0 {
+		t.Fatalf("RSS after munmap got %#x want 0", got)
+	}
+
+	addr2 := mmapPrivateAnon(ctx, t, mm, pages)
+	faultPages(ctx, t, mm, addr2, pages)
+	buf := []byte{0xab}
+	if _, err := mm.CopyOut(ctx, addr2, buf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut after remap got err %v want nil", err)
+	}
+}
+
+func TestMremapInPlaceGrowKeepsLinearFileOffsets(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const oldPages = 2
+	addr := mmapPrivateAnon(ctx, t, mm, oldPages)
+	before := lookupReservedVMA(t, mm, addr)
+
+	newAddr, err := mm.MRemap(ctx, addr, uint64(oldPages)*hostarch.PageSize, uint64(oldPages+1)*hostarch.PageSize, MRemapOpts{
+		Move: MRemapNoMove,
+	})
+	if err != nil {
+		t.Fatalf("MRemap grow got err %v want nil", err)
+	}
+	if newAddr != addr {
+		t.Fatalf("MRemap grow moved mapping to %#x, want in-place %#x", newAddr, addr)
+	}
+
+	after := lookupReservedVMA(t, mm, addr)
+	if !after.reserved {
+		t.Fatal("grown vma lost MemoryFile reservation")
+	}
+	if after.ar.Length() != hostarch.Addr(oldPages+1)*hostarch.PageSize {
+		t.Fatalf("grown vma length got %#x want %#x", after.ar.Length(), uint64(oldPages+1)*hostarch.PageSize)
+	}
+	if after.off != before.off {
+		t.Fatalf("grown vma off got %#x want %#x (merged with original span)", after.off, before.off)
+	}
+
+	faultPages(ctx, t, mm, addr, oldPages+1)
+	for i := 0; i < oldPages+1; i++ {
+		got := pmaFileOffAt(t, mm, addr+hostarch.Addr(i)*hostarch.PageSize)
+		want := after.off + uint64(i)*hostarch.PageSize
+		if got != want {
+			t.Errorf("page %d file offset got %#x want %#x", i, got, want)
+		}
+	}
+}
+
+func TestMremapCopyDoesNotAliasSource(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const pages = 2
+	addr := mmapPrivateAnon(ctx, t, mm, pages)
+	src := lookupReservedVMA(t, mm, addr)
+
+	dst, err := mm.MRemap(ctx, addr, 0, uint64(pages)*hostarch.PageSize, MRemapOpts{
+		Move: MRemapMayMove,
+	})
+	if err != nil {
+		t.Fatalf("MRemap copy got err %v want nil", err)
+	}
+	if dst == addr {
+		t.Fatal("MRemap copy returned the source address")
+	}
+
+	copyV := lookupReservedVMA(t, mm, dst)
+	if copyV.reserved {
+		t.Fatal("copied vma kept source MemoryFile reservation")
+	}
+	srcAfter := lookupReservedVMA(t, mm, addr)
+	if !srcAfter.reserved {
+		t.Fatal("source vma lost MemoryFile reservation after copy")
+	}
+	if srcAfter.off != src.off {
+		t.Fatalf("source off changed %#x -> %#x", src.off, srcAfter.off)
+	}
+
+	faultPages(ctx, t, mm, addr, pages)
+	faultPages(ctx, t, mm, dst, pages)
+	srcPat := []byte{0x11}
+	dstPat := []byte{0x22}
+	if _, err := mm.CopyOut(ctx, addr, srcPat, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut source: %v", err)
+	}
+	if _, err := mm.CopyOut(ctx, dst, dstPat, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut copy: %v", err)
+	}
+	got := make([]byte, 1)
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn source: %v", err)
+	}
+	if got[0] != srcPat[0] {
+		t.Errorf("source page got %#x want %#x; copy shared memory with source", got[0], srcPat[0])
+	}
+	if _, err := mm.CopyIn(ctx, dst, got, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn copy: %v", err)
+	}
+	if got[0] != dstPat[0] {
+		t.Errorf("copy page got %#x want %#x", got[0], dstPat[0])
+	}
+}
+
+func TestAdjacentAnonymousMmapsKeepLinearFileOffsets(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr := mmapPrivateAnon(ctx, t, mm, 1)
+	first := lookupReservedVMA(t, mm, addr)
+	next, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+		Addr:     addr + hostarch.PageSize,
+		Fixed:    true,
+	})
+	if err != nil {
+		t.Fatalf("adjacent MMap got err %v want nil", err)
+	}
+	if next != addr+hostarch.PageSize {
+		t.Fatalf("adjacent MMap got %#x want %#x", next, addr+hostarch.PageSize)
+	}
+
+	merged := lookupReservedVMA(t, mm, addr)
+	if !merged.reserved {
+		t.Fatal("merged mapping lost MemoryFile reservation")
+	}
+	if merged.ar.Length() != 2*hostarch.PageSize {
+		t.Fatalf("adjacent reserved vmas did not merge: length %#x", merged.ar.Length())
+	}
+	if merged.off != first.off {
+		t.Fatalf("merged off got %#x want %#x", merged.off, first.off)
+	}
+
+	faultPages(ctx, t, mm, addr, 2)
+	if got, want := pmaFileOffAt(t, mm, addr), merged.off; got != want {
+		t.Errorf("page 0 file offset got %#x want %#x", got, want)
+	}
+	if got, want := pmaFileOffAt(t, mm, next), merged.off+hostarch.PageSize; got != want {
+		t.Errorf("page 1 file offset got %#x want %#x", got, want)
+	}
+}
+
+func TestMremapMoveAndGrowKeepsLinearFileOffsets(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	const oldPages = 2
+	addr := mmapPrivateAnon(ctx, t, mm, oldPages)
+	before := lookupReservedVMA(t, mm, addr)
+	dst := addr + hostarch.Addr(16)*hostarch.PageSize
+
+	newAddr, err := mm.MRemap(ctx, addr, uint64(oldPages)*hostarch.PageSize, uint64(oldPages+1)*hostarch.PageSize, MRemapOpts{
+		Move:    MRemapMustMove,
+		NewAddr: dst,
+	})
+	if err != nil {
+		t.Fatalf("MRemap move+grow got err %v want nil", err)
+	}
+	if newAddr != dst {
+		t.Fatalf("MRemap move+grow got %#x want %#x", newAddr, dst)
+	}
+
+	after := lookupReservedVMA(t, mm, newAddr)
+	if !after.reserved {
+		t.Fatal("moved+grown vma lost MemoryFile reservation")
+	}
+	if after.ar.Length() != hostarch.Addr(oldPages+1)*hostarch.PageSize {
+		t.Fatalf("moved+grown vma length got %#x want %#x", after.ar.Length(), uint64(oldPages+1)*hostarch.PageSize)
+	}
+	if after.off != before.off {
+		t.Fatalf("moved+grown vma off got %#x want %#x", after.off, before.off)
+	}
+
+	faultPages(ctx, t, mm, newAddr, oldPages+1)
+	for i := 0; i < oldPages+1; i++ {
+		got := pmaFileOffAt(t, mm, newAddr+hostarch.Addr(i)*hostarch.PageSize)
+		want := after.off + uint64(i)*hostarch.PageSize
+		if got != want {
+			t.Errorf("page %d file offset got %#x want %#x", i, got, want)
+		}
+	}
+}
+
+func TestReservedAnonymousForkCopyOnWrite(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr := mmapPrivateAnon(ctx, t, mm, 1)
+	preFork := []byte{'A'}
+	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+
+	mm2, err := mm.Fork(ctx)
+	if err != nil {
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer mm2.DecUsers(ctx)
+
+	if v := lookupReservedVMA(t, mm2, addr); v.reserved {
+		t.Fatal("child inherited parent MemoryFile reservation")
+	}
+
+	if _, err := mm.CopyOut(ctx, addr, []byte{'B'}, usermem.IOOpts{}); err != nil {
+		t.Fatalf("parent CopyOut got err %v want nil", err)
+	}
+	childBuf := make([]byte, 1)
+	if _, err := mm2.CopyIn(ctx, addr, childBuf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("child CopyIn got err %v want nil", err)
+	}
+	if childBuf[0] != 'A' {
+		t.Errorf("child saw %#x want 'A'; parent write was visible in child", childBuf[0])
+	}
+
+	if _, err := mm2.CopyOut(ctx, addr, []byte{'C'}, usermem.IOOpts{}); err != nil {
+		t.Fatalf("child CopyOut got err %v want nil", err)
+	}
+	parentBuf := make([]byte, 1)
+	if _, err := mm.CopyIn(ctx, addr, parentBuf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("parent CopyIn got err %v want nil", err)
+	}
+	if parentBuf[0] != 'B' {
+		t.Errorf("parent saw %#x want 'B'; child write was visible in parent", parentBuf[0])
+	}
+}
+
+func TestDontNeedZerosReservedAnonymous(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr := mmapPrivateAnon(ctx, t, mm, 1)
+	before := lookupReservedVMA(t, mm, addr)
+	if _, err := mm.CopyOut(ctx, addr, []byte{0xab}, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+	off := pmaFileOffAt(t, mm, addr)
+	if off != before.off {
+		t.Fatalf("file offset after fault got %#x want %#x", off, before.off)
+	}
+	if got, want := mm.ResidentSetSize(), uint64(hostarch.PageSize); got != want {
+		t.Fatalf("RSS after fault got %#x want %#x", got, want)
+	}
+
+	if err := mm.Decommit(addr, hostarch.PageSize); err != nil {
+		t.Fatalf("Decommit got err %v want nil", err)
+	}
+	after := lookupReservedVMA(t, mm, addr)
+	if !after.reserved {
+		t.Fatal("DONTNEED dropped MemoryFile reservation")
+	}
+	if after.off != before.off {
+		t.Fatalf("DONTNEED changed file offset %#x -> %#x", before.off, after.off)
+	}
+	if got := mm.ResidentSetSize(); got != 0 {
+		t.Fatalf("RSS after DONTNEED got %#x want 0", got)
+	}
+
+	got := make([]byte, 1)
+	if _, err := mm.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn after DONTNEED got err %v want nil", err)
+	}
+	if got[0] != 0 {
+		t.Errorf("after DONTNEED got %#x want 0", got[0])
+	}
+	if pmaFileOffAt(t, mm, addr) != before.off {
+		t.Errorf("refault file offset got %#x want %#x", pmaFileOffAt(t, mm, addr), before.off)
+	}
+	if got, want := mm.ResidentSetSize(), uint64(hostarch.PageSize); got != want {
+		t.Fatalf("RSS after refault got %#x want %#x", got, want)
+	}
+}
+
+func TestOversizedAnonymousMmapDoesNotReserve(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	length := pgalloc.MaxAnonymousReserve + uint64(hostarch.PageSize)
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   length,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap oversized got err %v want nil", err)
+	}
+	if v := lookupReservedVMA(t, mm, addr); v.reserved {
+		t.Fatal("mmap larger than MaxAnonymousReserve reserved a MemoryFile span")
+	}
+
+	small := mmapPrivateAnon(ctx, t, mm, 1)
+	if v := lookupReservedVMA(t, mm, small); !v.reserved {
+		t.Fatal("small anonymous mmap did not reserve")
+	}
+}
+
+func TestMapFixedBelowReservedKeepsLinearFileOffsets(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManagerWithMmapDirection(ctx, t, arch.MmapTopDown)
+	defer mm.DecUsers(ctx)
+
+	upper := mmapPrivateAnon(ctx, t, mm, 1)
+	if upper < mm.layout.MinAddr+hostarch.PageSize {
+		t.Fatalf("upper mapping %#x has no room below", upper)
+	}
+	uv := lookupReservedVMA(t, mm, upper)
+	if !uv.reserved {
+		t.Fatal("upper mapping did not reserve")
+	}
+	if uv.off < hostarch.PageSize {
+		t.Fatalf("upper file offset %#x has no room below; top-down Reserve should leave a gap", uv.off)
+	}
+
+	lower, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+		Addr:     upper - hostarch.PageSize,
+		Fixed:    true,
+	})
+	if err != nil {
+		t.Fatalf("MAP_FIXED below got err %v want nil", err)
+	}
+	if lower != upper-hostarch.PageSize {
+		t.Fatalf("MAP_FIXED below got %#x want %#x", lower, upper-hostarch.PageSize)
+	}
+
+	merged := lookupReservedVMA(t, mm, lower)
+	if !merged.reserved {
+		t.Fatal("lower mapping did not reserve")
+	}
+	if merged.ar.Length() != 2*hostarch.PageSize {
+		t.Fatalf("adjacent reserved vmas did not merge: length %#x", merged.ar.Length())
+	}
+	if merged.off+uint64(hostarch.PageSize) != uv.off && merged.off != uv.off-hostarch.PageSize {
+		t.Fatalf("file offsets not contiguous: merged off %#x upper off %#x", merged.off, uv.off)
+	}
+
+	faultPages(ctx, t, mm, lower, 2)
+	if got, want := pmaFileOffAt(t, mm, lower), merged.off; got != want {
+		t.Errorf("lower page offset got %#x want %#x", got, want)
+	}
+	if got, want := pmaFileOffAt(t, mm, upper), merged.off+hostarch.PageSize; got != want {
+		t.Errorf("upper page offset got %#x want %#x", got, want)
 	}
 }
