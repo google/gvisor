@@ -96,7 +96,7 @@ func NewFromHost(ctx context.Context, vfsObj *vfs.VirtualFilesystem, hostfd int,
 	if flags&linux.EFD_NONBLOCK != 0 {
 		fileFlags |= linux.O_NONBLOCK
 	}
-	fd, err := New(ctx, vfsObj, 0, semMode, flags)
+	fd, err := New(ctx, vfsObj, 0, semMode, fileFlags)
 	if err != nil {
 		return nil, err
 	}
