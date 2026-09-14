@@ -503,7 +503,7 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 	//     Iterate over the list of return instructions that return this value:
 	//       If the return instruction is unreachable, skip it.
 	//       If the return instruction is reachable by fallthrough (i.e. the
-	//       instruction just before it is not a jump nor a return), skip it.
+	//       instruction just before it is neither a jump nor a return), skip it.
 	//       Otherwise, see if it's possible to move all jump targets of this
 	//       instruction to any other return instruction in the list (starting
 	//       from the end of the sorted list, i.e. the "most popular" return

@@ -64,7 +64,7 @@ func ParseOutput(output string, name string, official bool) (*bigquery.Suite, er
 func parseLine(line string) (*bigquery.Benchmark, error) {
 	fields := strings.Fields(line)
 
-	// Check if this line is a Benchmark line. Otherwise ignore the line.
+	// Check if this line is a Benchmark line. Otherwise, ignore the line.
 	if len(fields) < 2 || !strings.HasPrefix(fields[0], "Benchmark") {
 		return nil, nil
 	}

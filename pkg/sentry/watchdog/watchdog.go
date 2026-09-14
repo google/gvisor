@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package watchdog is responsible for monitoring the sentry for tasks that may
-// potentially be stuck or looping inderterminally causing hard to debug hangs in
+// potentially be stuck or looping indeterminately causing hard to debug hangs in
 // the untrusted app.
 //
 // It works by periodically querying all tasks to check whether they are in user

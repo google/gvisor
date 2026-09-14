@@ -47,7 +47,7 @@ const (
 	InvalidOpcode
 
 	// InvalidRegister indicates that a program contains a load from, or store
-	// to, a non-existent M register (index >= ScratchMemRegisters).
+	// to, a nonexistent M register (index >= ScratchMemRegisters).
 	InvalidRegister
 )
 

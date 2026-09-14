@@ -390,7 +390,7 @@ func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 		//
 		// The buffer size has to be limited to avoid large memory
 		// allocations and long delays. In Linux, the buffer size is
-		// limited by a size of an internl pipe. Here, we repeat this
+		// limited by a size of an internal pipe. Here, we repeat this
 		// behavior.
 		bufPtr := sendfileBufPool.Get().(*[]byte)
 		defer sendfileBufPool.Put(bufPtr)

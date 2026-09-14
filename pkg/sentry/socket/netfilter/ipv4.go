@@ -48,7 +48,7 @@ func convertNetstackToBinary4(stk *stack.Stack, tablename linux.TableName) (linu
 		return linux.KernelIPTGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
 	}
 
-	// Setup the info struct.
+	// Set up the info struct.
 	entries, info := getEntries4(stk.IPTables().GetTable(id, false), tablename)
 	return entries, info, nil
 }

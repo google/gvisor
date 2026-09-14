@@ -206,7 +206,7 @@ type Endpoint interface {
 	// In every other case, the caller retains ownership and must release
 	// them. Ownership of all other arguments stays with the caller.
 	//
-	// If set, notify is a callback that should be called after RecvMesg
+	// If set, notify is a callback that should be called after RecvMsg
 	// completes without mm.activeMu held.
 	SendMsg(context.Context, [][]byte, ControlMessages, BoundEndpoint) (int64, func(), *syserr.Error)
 

@@ -1060,7 +1060,7 @@ TEST(ElfTest, ELFInterpreter) {
              })));
 }
 
-// Test parameter to ElfInterpterStaticTest cases. The first item is a suffix to
+// Test parameter to ElfInterpreterStaticTest cases. The first item is a suffix to
 // add to the end of the interpreter path in the PT_INTERP segment and the
 // second is the expected execve(2) errno.
 using ElfInterpreterStaticParam = std::tuple<std::vector<char>, int>;
@@ -1132,7 +1132,7 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(std::vector<char>({'\0', 'b'}), ENOEXEC),
     }));
 
-// Test parameter to ElfInterpterBadPathTest cases. The first item is the
+// Test parameter to ElfInterpreterBadPathTest cases. The first item is the
 // contents of the PT_INTERP segment and the second is the expected execve(2)
 // errno.
 using ElfInterpreterBadPathParam = std::tuple<std::vector<char>, int>;

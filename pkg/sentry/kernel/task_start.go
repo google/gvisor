@@ -103,7 +103,7 @@ type TaskConfig struct {
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
 
-	// InitialCgroups are the cgroups the container is initialised to.
+	// InitialCgroups are the cgroups to which the container is initialised.
 	InitialCgroups map[Cgroup]struct{}
 
 	// InitialCgroupV2 is the cgroup2 node the new task starts in. Only

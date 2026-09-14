@@ -108,7 +108,7 @@ func TestMultiEmitter(t *testing.T) {
 }
 
 func TestRateLimitedEmitter(t *testing.T) {
-	// Create a RateLimittedEmitter that wraps a testEmitter.
+	// Create a RateLimitedEmitter that wraps a testEmitter.
 	te := &testEmitter{}
 	max := float64(5) // events per second
 	burst := 10       // events

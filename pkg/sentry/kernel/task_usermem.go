@@ -130,7 +130,7 @@ func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) erro
 // Preconditions: Same as usermem.IO.CopyIn, plus:
 // * The caller must be running on the task goroutine.
 func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRangeSeq, error) {
-	// Special case to avoid allocating allocating a single hostaddr.AddrRange.
+	// Special case to avoid allocating a single hostaddr.AddrRange.
 	if numIovecs == 1 {
 		return copyInIovec(t, t, addr)
 	}

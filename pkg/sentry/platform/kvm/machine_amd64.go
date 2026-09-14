@@ -225,7 +225,7 @@ func (c *vCPU) setSystemTime() error {
 		return err
 	}
 
-	// If tsc scaling is not supported, fallback to legacy mode.
+	// If tsc scaling is not supported, fall back to legacy mode.
 	if !c.machine.tscControl {
 		return c.setSystemTimeLegacy()
 	}

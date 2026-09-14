@@ -62,7 +62,7 @@ func uname() (*testbench.DUTUname, error) {
 	}, nil
 }
 
-// DUTInfo gatthers information about the linux DUT.
+// DUTInfo gathers information about the linux DUT.
 func DUTInfo(ifaces dut.Ifaces) (testbench.DUTInfo, error) {
 	_, ctrlIPv4, _, err := netdevs.IfaceInfo(ifaces.Ctrl)
 	if err != nil {

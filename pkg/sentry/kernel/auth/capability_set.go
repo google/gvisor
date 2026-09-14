@@ -60,7 +60,7 @@ func (cs *CapabilitySet) IsSubsetOf(super CapabilitySet) bool {
 
 // VfsCapDataOf returns a VfsCapData containing the file capabilities for the given slice of bytes.
 // For each field of the cap data, which are in the structure of either vfs_cap_data or vfs_ns_cap_data,
-// the bytes are ordered in little endian.
+// the bytes are ordered in little-endian.
 func VfsCapDataOf(data []byte) (linux.VfsNsCapData, error) {
 	size := len(data)
 	if size != linux.XATTR_CAPS_SZ_2 && size != linux.XATTR_CAPS_SZ_3 {

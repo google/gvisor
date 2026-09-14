@@ -52,7 +52,7 @@ package gvisor.common;
 //      it still can do that, remote can accept that sentry is in version 2.
 //      Sentry version 3, remote version 2: remote is not able to process
 //      batched messages. If the sentry can still produce one message at a time
-//      the communication can continue, otherwise the sentry should close the
+//      the communication can continue; otherwise, the sentry should close the
 //      connection.
 //
 // Note that addition of new message types do not require version changes.

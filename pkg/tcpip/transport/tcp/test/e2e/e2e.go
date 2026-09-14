@@ -154,7 +154,7 @@ func SendAndReceiveWithSACK(t *testing.T, c *context.Context, maxPayload int, nu
 	if !enableRACK {
 		SetStackTCPRecovery(t, c, 0)
 	}
-	// The delay should be below initial RTO (1s) otherwise retransimission
+	// The delay should be below initial RTO (1s) otherwise retransmission
 	// will start. Choose a relatively large value so that estimated RTT
 	// keeps high even after a few rounds of undelayed RTT samples.
 	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 800*time.Millisecond /* delay */)

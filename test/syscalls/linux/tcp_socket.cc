@@ -1714,7 +1714,7 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
   ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
               SyscallSucceeds());
 
-  // Get the addresses the socket is bound to because the port is chosen by the
+  // Get the addresses to which the socket is bound because the port is chosen by the
   // stack.
   ASSERT_THAT(
       getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),
@@ -2490,7 +2490,7 @@ void ShutdownConnectingSocket(int domain, int shutdown_mode) {
   // accept queue.
   ASSERT_THAT(listen(bound_s.get(), 0), SyscallSucceeds());
 
-  // Get the addresses the socket is bound to because the port is chosen by the
+  // Get the addresses to which the socket is bound because the port is chosen by the
   // stack.
   ASSERT_THAT(
       getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),
@@ -2602,7 +2602,7 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
       // accept queue.
       ASSERT_THAT(listen(bound_s.get(), 0), SyscallSucceeds());
 
-      // Get the addresses the socket is bound to because the port is chosen by
+      // Get the addresses to which the socket is bound because the port is chosen by
       // the stack.
       ASSERT_THAT(
           getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),
@@ -2650,7 +2650,7 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
   ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
               SyscallSucceeds());
 
-  // Get the addresses the socket is bound to because the port is chosen by the
+  // Get the addresses to which the socket is bound because the port is chosen by the
   // stack.
   ASSERT_THAT(
       getsockname(bound_s.get(), AsSockAddr(&bound_addr), &bound_addrlen),

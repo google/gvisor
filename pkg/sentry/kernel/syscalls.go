@@ -241,7 +241,7 @@ func (e *SyscallFlagsTable) Enable(bit uint32, s map[uintptr]bool, missingEnable
 	}
 }
 
-// EnableAll sets enable bit bit for all syscalls, present and missing.
+// EnableAll sets enable bit for all syscalls, present and missing.
 func (e *SyscallFlagsTable) EnableAll(bit uint32) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

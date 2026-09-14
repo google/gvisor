@@ -471,7 +471,7 @@ func (b *Buffer) Checksum(offset int) uint16 {
 		offset -= v.Size()
 	}
 
-	var cs checksum.Checksumer
+	var cs checksum.Checksummer
 	cs.Add(v.AsSlice()[offset:])
 	for v = v.Next(); v != nil; v = v.Next() {
 		cs.Add(v.AsSlice())

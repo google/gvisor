@@ -188,7 +188,7 @@ TEST(MempolicyTest, QueryAvailableNodes) {
   }
 
   // MPOL_F_ADDR and MPOL_F_NODE flags may not be combined with
-  // MPOL_F_MEMS_ALLLOWED.
+  // MPOL_F_MEMS_ALLOWED.
   for (auto flags :
        {MPOL_F_MEMS_ALLOWED | MPOL_F_ADDR, MPOL_F_MEMS_ALLOWED | MPOL_F_NODE,
         MPOL_F_MEMS_ALLOWED | MPOL_F_ADDR | MPOL_F_NODE}) {

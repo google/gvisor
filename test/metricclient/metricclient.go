@@ -208,7 +208,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config,
 	})
 	defer cu.Clean()
 	c.server.SysProcAttr = &unix.SysProcAttr{
-		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
+		// Detach from this session; otherwise, cmd will get SIGHUP and SIGCONT
 		// when re-parented.
 		Setsid: true,
 	}
@@ -220,7 +220,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config,
 	c.server.Stdin = devnull
 	c.server.Stdout = devnull
 	c.server.Stderr = devnull
-	// Set Args[0] to make easier to spot the sandbox process. Otherwise it's
+	// Set Args[0] to make easier to spot the sandbox process. Otherwise, it's
 	// shown as `exe`.
 	c.server.Args[0] = "runsc-metrics"
 	c.server.Args = append(c.server.Args, "metric-server")

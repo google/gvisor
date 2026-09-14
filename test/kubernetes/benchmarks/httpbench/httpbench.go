@@ -442,7 +442,7 @@ func parseTransfer(s string) (float64, error) {
 			return 0, fmt.Errorf("failed to parse %q: found no unit suffix", s)
 		}
 		// Otherwise, it's just bytes/sec.
-		// But we can't put this in the for loop above, otherwise it would
+		// But we can't put this in the for loop above; otherwise, it would
 		// match every suffix ("KB" ends in "B").
 		suffix = "B"
 		multiplier = 1

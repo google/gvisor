@@ -253,8 +253,8 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	} else if conf.AlsoLogToStderr {
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, os.Stderr))
 	}
-	if ulEmittter, add := userLogEmitter(conf, subCmdName); add {
-		emitters = append(emitters, ulEmittter)
+	if ulEmitter, add := userLogEmitter(conf, subCmdName); add {
+		emitters = append(emitters, ulEmitter)
 	}
 
 	switch len(emitters) {

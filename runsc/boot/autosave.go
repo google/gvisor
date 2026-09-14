@@ -92,7 +92,7 @@ func enableAutosave(l *Loader, isResume bool, files []*fd.FD) error {
 }
 
 // configureInitSyscall sets the trigger for the S/R syscall tests and the callback
-// method to be called after the sycall is executed.
+// method to be called after the syscall is executed.
 func configureInitSyscall(table *kernel.SyscallTable, sys strace.SyscallMap, initSyscall string, syscallFlag uint32) error {
 	sl := make(map[uintptr]bool)
 	sysno, ok := sys.ConvertToSysno(initSyscall)

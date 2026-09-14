@@ -5826,7 +5826,7 @@ func TestFindRoute(t *testing.T) {
 				}
 			}
 
-			// Setup the route table.
+			// Set up the route table.
 			var routeTable []tcpip.Route
 			for _, route := range stackConfig.routes {
 				rt := tcpip.Route{

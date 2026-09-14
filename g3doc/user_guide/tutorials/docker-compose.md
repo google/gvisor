@@ -1,4 +1,4 @@
-# Wordpress with Docker Compose
+# WordPress with Docker Compose
 
 This page shows you how to deploy a sample [WordPress][wordpress] site using
 [Docker Compose][docker-compose].
@@ -12,8 +12,8 @@ name chosen for gVisor is `runsc`.
 ### Configuration
 
 We'll start by creating the `docker-compose.yaml` file to specify our services.
-We will specify two services, a `wordpress` service for the Wordpress Apache
-server, and a `db` service for MySQL. We will configure Wordpress to connect to
+We will specify two services, a `wordpress` service for the WordPress Apache
+server, and a `db` service for MySQL. We will configure WordPress to connect to
 MySQL via the `db` service host name.
 
 > **Note**: This example uses gVisor to sandbox the frontend web server, but not
@@ -24,7 +24,7 @@ MySQL via the `db` service host name.
 > security/performance trade-off makes the most sense. See the
 > [Production guide] for more details.
 
-> **Note**: Docker Compose uses it's own network by default and allows services
+> **Note**: Docker Compose uses its own network by default and allows services
 > to communicate using their service name. Docker Compose does this by setting
 > up a DNS server at IP address 127.0.0.11 and configuring containers to use it
 > via [resolv.conf][resolv.conf]. This IP is not addressable inside a gVisor

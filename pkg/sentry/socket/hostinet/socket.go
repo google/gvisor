@@ -808,7 +808,7 @@ const allowedSendMsgFlags = unix.MSG_DONTWAIT |
 // +checklocksexclude:s.persistentEventMu
 func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	if s.family == linux.AF_PACKET {
-		// Don't allow SendMesg for AF_PACKET.
+		// Don't allow SendMsg for AF_PACKET.
 		return 0, syserr.ErrPermissionDenied
 	}
 

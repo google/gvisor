@@ -196,7 +196,7 @@ func (c *devicesController) removeRule(id deviceID, p permission) error {
 		{controllerType: id.controllerType, major: wildcardDeviceNumber, minor: id.minor},
 		{controllerType: id.controllerType, major: wildcardDeviceNumber, minor: wildcardDeviceNumber},
 	} {
-		// If there is a exact match, the permission needs to be updated.
+		// If there is an exact match, the permission needs to be updated.
 		if id == wildcardDeviceID {
 			continue
 		}

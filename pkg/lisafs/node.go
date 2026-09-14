@@ -56,7 +56,7 @@ type Node struct {
 	//   something hazardous.
 	//
 	// A useful consequence of the above is that holding opMu for reading
-	// guarantees that the Server can not change Nodes on the path until this
+	// guarantees that the Server cannot change Nodes on the path until this
 	// Node. For instance, if the grandparent needs to be renamed or deleted,
 	// the client must first delete this node to avoid ENOTEMPTY error. Deleting
 	// this node is not possible while opMu is read locked.

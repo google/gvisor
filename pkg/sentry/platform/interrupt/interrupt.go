@@ -86,7 +86,7 @@ func (f *Forwarder) Disable() {
 }
 
 // NotifyInterrupt implements Receiver.NotifyInterrupt. If interrupt forwarding
-// is enabled, the configured Receiver will be notified. Otherwise the
+// is enabled, the configured Receiver will be notified. Otherwise, the
 // interrupt will be delivered to the next call to Enable.
 func (f *Forwarder) NotifyInterrupt() {
 	f.mu.Lock()

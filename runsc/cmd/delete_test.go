@@ -33,11 +33,11 @@ func TestNotFound(t *testing.T) {
 
 	d := Delete{}
 	if err := d.execute(f, conf); err == nil {
-		t.Error("Deleting non-existent container should have failed")
+		t.Error("Deleting nonexistent container should have failed")
 	}
 
 	d = Delete{force: true}
 	if err := d.execute(f, conf); err != nil {
-		t.Errorf("Deleting non-existent container with --force should NOT have failed: %v", err)
+		t.Errorf("Deleting nonexistent container with --force should NOT have failed: %v", err)
 	}
 }

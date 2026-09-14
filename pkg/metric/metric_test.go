@@ -1188,7 +1188,7 @@ func TestMetricProfiling(t *testing.T) {
 				t.Fatalf("StartProfilingMetrics error: got '%v' want '%v'", err, test.errOnStartProfiling)
 			}
 			if test.errOnStartProfiling {
-				t.Fatal("did not error out on StartProflingMetrics as expected")
+				t.Fatal("did not error out on StartProfilingMetrics as expected")
 			}
 
 			// Generate some test data

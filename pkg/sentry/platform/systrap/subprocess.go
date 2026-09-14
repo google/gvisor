@@ -184,7 +184,7 @@ type subprocess struct {
 	// aliveMu synchronizes active subprocess operations with termination.
 	aliveMu sync.RWMutex
 
-	// dead indicates whether the subprocess is alive or not.
+	// dead indicates whether or not the subprocess is alive.
 	dead atomicbitops.Bool
 }
 

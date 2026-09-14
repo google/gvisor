@@ -571,7 +571,7 @@ func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 	const maxSyscallArgs = 6
 	numArgs := f.NArg()
 	if numArgs > maxSyscallArgs {
-		fmt.Printf("number of sycall arguments not supported: %d (max is %d)\n", numArgs, maxSyscallArgs)
+		fmt.Printf("number of syscall arguments not supported: %d (max is %d)\n", numArgs, maxSyscallArgs)
 		return subcommands.ExitUsageError
 	}
 	var syscallArgs [maxSyscallArgs]uintptr
@@ -592,7 +592,7 @@ func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 	case 6:
 		_, _, errno = sys.Syscall6(uintptr(s.sysno), syscallArgs[0], syscallArgs[1], syscallArgs[2], syscallArgs[3], syscallArgs[4], syscallArgs[5])
 	default:
-		fmt.Printf("number of sycall arguments not supported: %d\n", numArgs)
+		fmt.Printf("number of syscall arguments not supported: %d\n", numArgs)
 		return subcommands.ExitUsageError
 	}
 	if errno != 0 {

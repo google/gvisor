@@ -31,7 +31,7 @@ const (
 	syscallLink = "https://gvisor.dev/c/linux/amd64"
 )
 
-// newRegs create a empty Registers instance.
+// newRegs create an empty Registers instance.
 func newRegs() *rpb.Registers {
 	return &rpb.Registers{
 		Arch: &rpb.Registers_Amd64{

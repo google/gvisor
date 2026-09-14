@@ -355,7 +355,7 @@ func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, 
 				if !pmnt.parent().neverConnected() {
 					pmnt.parent().ns.pending -= pmnt.countSubmountsLocked()
 				}
-				vfs.abortUncommitedMount(ctx, pmnt)
+				vfs.abortUncommittedMount(ctx, pmnt)
 			}
 			return err
 		}
@@ -715,7 +715,7 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 			}
 			m, err := vfs.cloneMount(c, c.root, nil, cloneType)
 			if err != nil {
-				vfs.abortUncommitedMount(ctx, clone)
+				vfs.abortUncommittedMount(ctx, clone)
 				return nil, err
 			}
 			mp := VirtualDentry{
@@ -822,7 +822,7 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	clone.locked = false
 	if err := vfs.attachTreeLocked(ctx, clone, mp, false); err != nil {
 		vfs.setPropagation(clone, linux.MS_PRIVATE)
-		vfs.abortUncomittedChildren(ctx, clone)
+		vfs.abortUncommittedChildren(ctx, clone)
 		return err
 	}
 	return nil
@@ -1031,7 +1031,7 @@ func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursive
 				oldKey := vfs.disconnectLocked(mnt)
 				vfs.delayDecRef(oldKey)
 			} else {
-				// Restore mnt in it's parent children list with a reference, but leave
+				// Restore mnt in its parent children list with a reference, but leave
 				// it marked as unmounted. These partly unmounted mounts are cleaned up
 				// in vfs.forgetDeadMountpoint and Mount.destroy. We keep the extra
 				// reference on the mount but remove a reference on the mount parent so
@@ -1322,8 +1322,8 @@ func (vfs *VirtualFilesystem) getMountpoint(ctx context.Context, creds *auth.Cre
 	if err != nil {
 		return VirtualDentry{}, err
 	}
-	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to
-	// resolve to the toppmost mount in the stack located at the specified path.
+	// Linux passes the LOOKUP_MOUNTPOINT flag to user_path_at in ksys_umount to
+	// resolve to the topmost mount in the stack located at the specified path.
 	// vfs.GetMountAt() imitates this behavior. See fs/namei.c:user_path_at(...)
 	// and fs/namespace.c:ksys_umount(...).
 	if vd.dentry.isMounted() {

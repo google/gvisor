@@ -289,7 +289,7 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 	}
 	if k.TaskSet().IsExiting() {
 		// This can occur when kernel is saved with control.SaveOpts.Resume=false.
-		// We can not invoke the save/restore binary on such a kernel.
+		// We cannot invoke the save/restore binary on such a kernel.
 		return nil
 	}
 	if err := SaveRestoreExec(k, SaveRestoreExecResume); err != nil {
@@ -315,7 +315,7 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 	}
 	if k.TaskSet().IsExiting() {
 		// This can occur when kernel is saved with control.SaveOpts.Resume=false.
-		// We can not invoke cuda-checkpoint on such a kernel.
+		// We cannot invoke cuda-checkpoint on such a kernel.
 		return nil
 	}
 	if err := SaveRestoreExec(k, SaveRestoreExecRestore); err != nil {
@@ -333,7 +333,7 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 // binary specified by k.SaveRestoreExecConfig and waits for it to finish.
 //
 // Precondition: The kernel should be running; k.SetSaveRestoreExecConfig should
-// be setup with an argv, otherwise this function is a no-op.
+// be setup with an argv; otherwise, this function is a no-op.
 func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 	if k.SaveRestoreExecConfig == nil {
 		return nil

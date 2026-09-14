@@ -55,7 +55,7 @@ func exitsyscall()
 
 // These forwarding functions must be nosplit because 1) we must
 // disallow preemption between entersyscallblock and exitsyscall, and
-// 2) we have an untyped assembly frame on the stack which can not be
+// 2) we have an untyped assembly frame on the stack which cannot be
 // grown or moved.
 
 //go:nosplit

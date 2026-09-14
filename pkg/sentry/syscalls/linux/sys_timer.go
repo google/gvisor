@@ -59,7 +59,7 @@ func Setitimer(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	oldAddr := args[2].Pointer()
 
 	var newitv linux.ItimerVal
-	// A NULL address is allowed because because Linux allows
+	// A NULL address is allowed because Linux allows
 	// setitimer(which, NULL, &old_value) which disables the timer. There is a
 	// KERN_WARN message saying this misfeature will be removed. However, that
 	// hasn't happened as of 3.19, so we continue to support it.

@@ -241,7 +241,7 @@ func (ep *endpoint) LinkAddress() tcpip.LinkAddress {
 	return ep.addr
 }
 
-// SetLinkAddress implemens stack.LinkEndpoint.SetLinkAddress
+// SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress
 func (ep *endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()

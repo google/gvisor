@@ -580,7 +580,7 @@ func (d *transportDemuxer) deliverPacket(protocol tcpip.TransportProtocolNumber,
 		return true
 	}
 
-	// If the packet is a TCP packet with a unspecified source or non-unicast
+	// If the packet is a TCP packet with an unspecified source or non-unicast
 	// destination address, then do nothing further and instruct the caller to do
 	// the same. The network layer handles address validation for specified source
 	// addresses.

@@ -42,7 +42,7 @@ type ProctorSettings struct {
 	// If FlakyIsError is true, a flaky test will be considered as a failure.
 	// If it is false, a flaky test will be considered as passing.
 	FlakyIsError bool
-	// If FlakyShortCircuit is true, when runnins with RunsPerTest > 1 and a test is detected as
+	// If FlakyShortCircuit is true, when running with RunsPerTest > 1 and a test is detected as
 	// flaky, exit immediately rather than running for all RunsPerTest attempts.
 	FlakyShortCircuit bool
 }

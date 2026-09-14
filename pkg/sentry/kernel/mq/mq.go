@@ -190,7 +190,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.F
 }
 
 // newQueueLocked creates a new queue using the given attributes. If attr is nil
-// return a queue with default values, otherwise use attr to create a new queue,
+// return a queue with default values; otherwise, use attr to create a new queue,
 // and return an error if attributes are invalid.
 func (r *Registry) newQueueLocked(creds *auth.Credentials, mode linux.FileMode, attr *linux.MqAttr) (*Queue, error) {
 	if attr == nil {

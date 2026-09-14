@@ -52,7 +52,7 @@ type SockErrCMsg interface {
 }
 
 // SockErrCMsgIPv4 is the IP_RECVERR control message used in
-// recvmsg(MSG_ERRQUEUE) by ipv4 sockets. This is equilavent to `struct errhdr`
+// recvmsg(MSG_ERRQUEUE) by ipv4 sockets. This is equivalent to `struct errhdr`
 // defined in net/ipv4/ip_sockglue.c:ip_recv_error().
 //
 // +marshal
@@ -75,7 +75,7 @@ func (*SockErrCMsgIPv4) CMsgType() uint32 {
 }
 
 // SockErrCMsgIPv6 is the IPV6_RECVERR control message used in
-// recvmsg(MSG_ERRQUEUE) by ipv6 sockets. This is equilavent to `struct errhdr`
+// recvmsg(MSG_ERRQUEUE) by ipv6 sockets. This is equivalent to `struct errhdr`
 // defined in net/ipv6/datagram.c:ipv6_recv_error().
 //
 // +marshal

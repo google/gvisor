@@ -240,7 +240,7 @@ typedefDecl(
     hasName(struct_name),
     // Match and bind to the struct declaration.
     hasType(
-      // Need to specify elaboratedType, otherwise hasType
+      // Need to specify elaboratedType; otherwise, hasType
       // will complain that the type is ambiguous.
       elaboratedType(
         hasDeclaration(recordDecl().bind("struct_decl"))
@@ -263,7 +263,7 @@ typedefDecl(
     hasName(struct_name),
     // Match and bind to the struct declaration.
     hasType(
-      // Need to specify elaboratedType, otherwise hasType
+      // Need to specify elaboratedType; otherwise, hasType
       // will complain that the type is ambiguous.
       elaboratedType(
         hasDeclaration(typedefDecl())
@@ -401,8 +401,8 @@ files. This means that the C++ parser should be run **twice** per driver
 version, for the non-UVM and UVM sources respectively.
 
 To let Clang know about these include paths, a `compile_commands.json` file is
-needed. The format of this file is documented
-[here](https://clang.llvm.org/docs/JSONCompilationDatabase.html), but for the
+needed. The [format of this file is
+documented](https://clang.llvm.org/docs/JSONCompilationDatabase.html), but for the
 use case of this tool, the structure will always look as follows:
 
 ```json

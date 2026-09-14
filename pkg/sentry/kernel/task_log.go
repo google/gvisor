@@ -34,7 +34,7 @@ const (
 	maxCodeDebugBytes = 128
 )
 
-// Infof logs an formatted info message by calling log.Infof.
+// Infof logs a formatted info message by calling log.Infof.
 func (t *Task) Infof(fmt string, v ...any) {
 	if log.IsLogging(log.Info) {
 		log.InfofAtDepth(1, *t.logPrefix.Load()+fmt, v...)

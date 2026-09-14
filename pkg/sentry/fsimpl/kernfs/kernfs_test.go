@@ -455,9 +455,9 @@ func TestDirWalkDentryTree(t *testing.T) {
 	rootD := sys.Root.Dentry().Impl().(*kernfs.Dentry)
 
 	testWalk(rootD, "dir1", "/dir1", nil)
-	testWalk(rootD, "", "/dir-non-existent", linuxerr.ENOENT)
-	testWalk(rootD, "", "/dir1/child-non-existent", linuxerr.ENOENT)
-	testWalk(rootD, "", "/dir2/inner-non-existent/dir3", linuxerr.ENOENT)
+	testWalk(rootD, "", "/dir-nonexistent", linuxerr.ENOENT)
+	testWalk(rootD, "", "/dir1/child-nonexistent", linuxerr.ENOENT)
+	testWalk(rootD, "", "/dir2/inner-nonexistent/dir3", linuxerr.ENOENT)
 
 	testWalk(rootD, "dir2/dir3", "/dir2/../dir2/dir3", nil)
 	testWalk(rootD, "dir2/dir3", "/dir2/././dir3", nil)

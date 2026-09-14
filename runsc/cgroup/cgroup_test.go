@@ -60,7 +60,7 @@ var dindMountinfo = `
 
 func TestUninstallEnoent(t *testing.T) {
 	c := cgroupV1{
-		// Use a non-existent name.
+		// Use a nonexistent name.
 		Name: "runsc-test-uninstall-656e6f656e740a",
 		Own:  make(map[string]bool),
 	}
@@ -422,7 +422,7 @@ func TestCPUSetAncestor(t *testing.T) {
 				t.Fatalf("os.Create(): %v", err)
 			}
 
-			// cgroup files mmust exist.
+			// cgroup files must exist.
 			dir, err := os.MkdirTemp(parent, "child")
 			if err != nil {
 				t.Fatalf("error creating temporary directory: %v", err)
@@ -795,7 +795,7 @@ func TestLoadPaths(t *testing.T) {
 				"0::/system.slice/containerd.service\n",
 			mountinfo: dindMountinfo,
 			// we want relative path to /sys/fs/cgroup inside the nested container.
-			// Subcroup inside the container will be created at /sys/fs/cgroup/cpu
+			// Subcgroup inside the container will be created at /sys/fs/cgroup/cpu
 			// This will be /sys/fs/cgroup/cpu/docker/136/CGROUP_NAME
 			// outside the container
 			want: map[string]string{

@@ -190,7 +190,7 @@ func TestFastRecovery(t *testing.T) {
 		// Acknowledge all the data received so far.
 		c.SendAck(790, bytesRead)
 
-		// In cogestion avoidance, the packets trains increase by 1 in
+		// In congestion avoidance, the packets trains increase by 1 in
 		// each iteration.
 		if i == 0 {
 			// After the first iteration we expect to get the full
@@ -331,7 +331,7 @@ func TestCongestionAvoidance(t *testing.T) {
 		// Acknowledge all the data received so far.
 		c.SendAck(790, bytesRead)
 
-		// In cogestion avoidance, the packets trains increase by 1 in
+		// In congestion avoidance, the packets trains increase by 1 in
 		// each iteration.
 		expected++
 	}
@@ -424,7 +424,7 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		// Cubic grows window independent of ACKs. Cubic Window growth
 		// is a function of time elapsed since last congestion event.
-		// As a result the congestion window does not grow
+		// As a result, the congestion window does not grow
 		// deterministically in response to ACKs.
 		//
 		// We need to roughly estimate what the cwnd of the sender is

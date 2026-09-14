@@ -343,7 +343,7 @@ func collectProfilingMetrics(s *snapshots, valueFuncs []valueFunc, cheapStartTim
 			// Collect one last time before stopping.
 		}
 
-		// For small durations, just spin (and maybe yield). Otherwise sleep.
+		// For small durations, just spin (and maybe yield). Otherwise, sleep.
 		for {
 			const (
 				// When the next collection time is closer than `spinMaxNanos` away,
@@ -546,7 +546,7 @@ func (w *lossyBufferedWriter[T]) Flush() {
 	if w.lines > 0 {
 		// Ensure that we write a complete line atomically, as this
 		// may get parsed while being mixed with other logs that may not
-		// have clean line endings a the time we print this.
+		// have clean line endings when we print this.
 		w.flushBuf.WriteString("\n")
 		w.underlying.WriteString(w.flushBuf.String())
 		if f, isFile := any(w.underlying).(*os.File); isFile {

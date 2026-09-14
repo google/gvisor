@@ -72,11 +72,11 @@ class FileDescriptor {
   ~FileDescriptor() { reset(); }
 
   // If this object is non-empty, returns the owned file descriptor. (Ownership
-  // is retained by the FileDescriptor.) Otherwise returns -1.
+  // is retained by the FileDescriptor.) Otherwise, returns -1.
   int get() const { return fd_; }
 
   // If this object is non-empty, transfers ownership of the file descriptor to
-  // the caller and returns it. Otherwise returns -1.
+  // the caller and returns it. Otherwise, returns -1.
   int release() {
     int const fd = fd_;
     fd_ = -1;

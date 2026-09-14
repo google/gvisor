@@ -37,7 +37,7 @@ func WritePidFile(path string, pid int) error {
 		return fmt.Errorf("stat file %s failed: %w", path, err)
 	}
 
-	// Otherwise write using temp file to make write atomic.
+	// Otherwise, write using temp file to make write atomic.
 	dir := filepath.Dir(path)
 	tempFile, err := os.CreateTemp(dir, "pid-tmp-*")
 	if err != nil {

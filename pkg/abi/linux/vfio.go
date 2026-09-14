@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The package implements VFIOuserspace driver interface.
+// The package implements VFIO userspace driver interface.
 
 package linux
 

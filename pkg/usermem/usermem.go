@@ -581,7 +581,7 @@ func CopyObjectOut(ctx context.Context, uio IO, addr hostarch.Addr, src any, opt
 		Addr: addr,
 		Opts: opts,
 	}
-	// Allocate a byte slice the size of the object being marshaled. This
+	// Allocate a byte slice the size of the object being marshalled. This
 	// adds an extra reflection call, but avoids needing to grow the slice
 	// during encoding, which can result in many heap-allocated slices.
 	b := make([]byte, 0, binary.Size(src))

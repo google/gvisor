@@ -92,7 +92,7 @@ func getExecUserHome(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID
 }
 
 // MaybeAddExecUserHome returns a new slice with the HOME environment
-// variable set if the slice does not already contain it, otherwise it returns
+// variable set if the slice does not already contain it; otherwise, it returns
 // the original slice unmodified.
 func MaybeAddExecUserHome(ctx context.Context, vmns *vfs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
 	// Check if the envv already contains HOME.

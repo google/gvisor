@@ -122,7 +122,7 @@ func TestVethOverflows(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	// Use a unbuffered channel in the dispatcher so that the received packet won't be processed.
+	// Use an unbuffered channel in the dispatcher so that the received packet won't be processed.
 	sink := &testNetworkDispatcher{ch: make(chan *stack.PacketBuffer), wg: &wg}
 	veth2Ethernet := ethernet.New(veth2)
 	veth2Ethernet.Attach(sink)

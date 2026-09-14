@@ -123,7 +123,7 @@ TEST_F(AIOTest, BasicWrite) {
     struct io_event io_events[0];
   };
 
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   // Check that 'ctx_' points to a valid address. libaio uses it to check if
@@ -167,7 +167,7 @@ TEST_F(AIOTest, BadWrite) {
 
   rfd.reset();  // Close the read end.
 
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   struct iocb cb = CreateCallback();
@@ -189,7 +189,7 @@ TEST_F(AIOTest, BadWrite) {
 }
 
 TEST_F(AIOTest, ExitWithPendingIo) {
-  // Setup a context that is 100 entries deep.
+  // Set up a context that is 100 entries deep.
   ASSERT_THAT(SetupContext(100), SyscallSucceeds());
 
   struct iocb cb = CreateCallback();
@@ -216,7 +216,7 @@ int Submitter(void* arg) {
 }
 
 TEST_F(AIOTest, CloneVm) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   const size_t kStackSize = 5 * kPageSize;
@@ -250,7 +250,7 @@ TEST_F(AIOTest, CloneVm) {
 
 // Tests that AIO context can be remapped to a different address.
 TEST_F(AIOTest, Mremap) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
   const size_t ctx_size =
       ASSERT_NO_ERRNO_AND_VALUE(VmaSizeAt(reinterpret_cast<uintptr_t>(ctx_)));
@@ -302,7 +302,7 @@ TEST_F(AIOTest, Mremap) {
 
 // Tests that AIO context cannot be expanded with mremap.
 TEST_F(AIOTest, MremapExpansion) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
   const size_t ctx_size =
       ASSERT_NO_ERRNO_AND_VALUE(VmaSizeAt(reinterpret_cast<uintptr_t>(ctx_)));
@@ -325,7 +325,7 @@ TEST_F(AIOTest, MremapExpansion) {
 
 // Tests that AIO calls fail if context's address is inaccessible.
 TEST_F(AIOTest, Mprotect) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   struct iocb cb = CreateCallback();
@@ -347,7 +347,7 @@ TEST_F(AIOTest, Mprotect) {
 }
 
 TEST_F(AIOTest, Timeout) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   struct timespec timeout;
@@ -361,7 +361,7 @@ class AIOReadWriteParamTest : public AIOTest,
                               public ::testing::WithParamInterface<int> {};
 
 TEST_P(AIOReadWriteParamTest, BadOffset) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   struct iocb cb = CreateCallback();
@@ -400,7 +400,7 @@ class AIOVectorizedParamTest : public AIOTest,
                                public ::testing::WithParamInterface<int> {};
 
 TEST_P(AIOVectorizedParamTest, BadIOVecs) {
-  // Setup a context that is 128 entries deep.
+  // Set up a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
 
   struct iocb cb = CreateCallback();

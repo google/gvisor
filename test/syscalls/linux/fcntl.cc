@@ -984,7 +984,7 @@ TEST_F(FcntlLockTest, SetReadLockThenBlockingWriteLock) {
       << "Exited with code: " << status;
 }
 
-// This test will veirfy that blocking works as expected when another process
+// This test will verify that blocking works as expected when another process
 // holds a write lock when obtaining a read lock. This test will hold the lock
 // for some amount of time and then wait for the second process to send over the
 // socket_fd the amount of time it was blocked for before the lock succeeded.

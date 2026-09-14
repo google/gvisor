@@ -151,7 +151,7 @@ type modelControlRegister struct {
 	data  uint64
 }
 
-// modelControlRegisers is a collection of MSRs.
+// modelControlRegisters is a collection of MSRs.
 //
 // This mirrors kvm_msrs.
 type modelControlRegisters struct {

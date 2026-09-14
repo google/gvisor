@@ -976,7 +976,7 @@ func checkOperationBrackets(tokens []string, lnIdx int) *syserr.AnnotatedError {
 }
 
 // parseUint8 parses the uint8 which should be supposed from the given string.
-// Input starting with "0x" are parsed as base 16, otherwise assumes base 10.
+// Input starting with "0x" are parsed as base 16; otherwise, assumes base 10.
 func parseUint8(regString string, supposed string, lnIdx int, tkIdx int) (uint8, *syserr.AnnotatedError) {
 	var v64 uint64
 	var err error
@@ -1077,8 +1077,8 @@ func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, *syserr.
 	return tkIdx, v, nil
 }
 
-// parseHexData parses little endian hexadecimal data from the given token,
-// converts to big endian, and returns the index of the next token to process.
+// parseHexData parses little-endian hexadecimal data from the given token,
+// converts to big-endian, and returns the index of the next token to process.
 func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, *syserr.AnnotatedError) {
 	var bytes []byte
 	for ; tkIdx < len(tokens); tkIdx++ {
@@ -1091,12 +1091,12 @@ func parseHexData(tokens []string, lnIdx int, tkIdx int) (int, []byte, *syserr.A
 			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hexadecimal data: '%s'", tokens[tkIdx]))
 		}
 
-		// Decodes the little endian hex string into bytes
+		// Decodes the little-endian hex string into bytes
 		bytes4, err := hex.DecodeString(tokens[tkIdx][2:])
 		if err != nil {
 			return 0, nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not decode hexadecimal data: '%s'", tokens[tkIdx]))
 		}
-		// Converts the bytes to big endian and appends to the bytes slice.
+		// Converts the bytes to big-endian and appends to the bytes slice.
 		slices.Reverse(bytes4)
 		bytes = append(bytes, bytes4...)
 	}
@@ -1126,7 +1126,7 @@ func parseCmpOp(copString string, lnIdx int, tkIdx int) (int, *syserr.AnnotatedE
 	return cop, nil
 }
 
-// parseUint8PlusChar parses the a uint8 followed by the given character from
+// parseUint8PlusChar parses a uint8 followed by the given character from
 // the given string.
 func parseUint8PlusChar(numString string, char byte, lnIdx int, tkIdx int) (uint8, *syserr.AnnotatedError) {
 	lastChar := numString[len(numString)-1]

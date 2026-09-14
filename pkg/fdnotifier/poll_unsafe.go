@@ -59,7 +59,7 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 			return 0
 		}
 
-		// Otherwise we got the ready events in the revents field.
+		// Otherwise, we got the ready events in the revents field.
 		return waiter.EventMaskFromLinux(uint32(e.revents))
 	}
 }

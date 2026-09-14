@@ -420,7 +420,7 @@ func (s *State) AfterLoad() {
 	if savedBV&^(supportedBV|ignoredXFeatureStates) != 0 {
 		panic(ErrLoadingState{supportedFeatures: supportedBV, savedFeatures: savedBV})
 	}
-	// ignoredXFeatureStates needs to be cleared from savedXstate, otherwise
+	// ignoredXFeatureStates needs to be cleared from savedXstate; otherwise,
 	// XRSTOR could fault if the current CPU does not support one of these
 	// features.
 	if savedBV&ignoredXFeatureStates != 0 {

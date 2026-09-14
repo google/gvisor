@@ -100,7 +100,7 @@ func TestWarnOn(t *testing.T) {
 
 			testHelperFunc()
 			if len(tw.lines) > 0 {
-				t.Errorf("BugTracebackfOnce printed out a warning a second time when it shouldn't have")
+				t.Errorf("BugTracebackfOnce printed out a warning again when it shouldn't have")
 			}
 		},
 		"testWarnOnceDoesntClobberOthers": func(t *testing.T) {

@@ -160,7 +160,7 @@ var (
 	ErrIO                         = newWithHost("I/O error", errno.EIO, unix.EIO)
 	ErrDeviceOrAddress            = newWithHost("no such device or address", errno.ENXIO, unix.ENXIO)
 	ErrTooManyArgs                = newWithHost("argument list too long", errno.E2BIG, unix.E2BIG)
-	ErrEcec                       = newWithHost("exec format error", errno.ENOEXEC, unix.ENOEXEC)
+	ErrExec                       = newWithHost("exec format error", errno.ENOEXEC, unix.ENOEXEC)
 	ErrBadFD                      = newWithHost("bad file number", errno.EBADF, unix.EBADF)
 	ErrNoChild                    = newWithHost("no child processes", errno.ECHILD, unix.ECHILD)
 	ErrTryAgain                   = newWithHost("try again", errno.EAGAIN, unix.EAGAIN)

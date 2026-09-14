@@ -319,7 +319,7 @@ func captureRmAllocParams[Params any](fd *frontendFD, ioctlParams *nvgpu.NVOS64_
 			allocParamsBuf = make([]byte, allocParamsMarshal.SizeBytes())
 			allocParamsMarshal.MarshalBytes(allocParamsBuf)
 		} else {
-			log.Traceback("nvproxy: allocParams %T is not marshalable")
+			log.Traceback("nvproxy: allocParams %T is not marshallable")
 		}
 	}
 	return capturedRmAllocParams{

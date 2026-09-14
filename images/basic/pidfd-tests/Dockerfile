@@ -37,7 +37,7 @@ RUN sed -i '/PIDFD_NS_TIME,/d' pidfd_setns_test.c && \
 RUN sed -i '/static bool switch_timens(void)/,/^}/c static bool switch_timens(void) { return true; }' pidfd_setns_test.c
 
 # Drop the test_pidfd_send_signal_recycled_pid_fail() test, for it takes long enough
-# to occassionally breach bazel's 15min timeout for "large" tests.
+# to occasionally breach bazel's 15min timeout for "large" tests.
 # If seeking to run this test, comment the line below and uncomment the 
 # PIDFD_MAX_DEFAULT-altering line that follows and also supply "-o 500" to the 
 # run_kselftest.sh command at the end of this file.

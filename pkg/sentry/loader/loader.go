@@ -292,7 +292,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	}
 	args.StartupTimeline.Reached("VDSO mapped")
 
-	// Setup the heap. brk starts at the next page after the end of the
+	// Set up the heap. brk starts at the next page after the end of the
 	// executable. Userspace can assume that the remainder of the page after
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()

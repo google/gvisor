@@ -372,7 +372,7 @@ func (c *chart) Charter() (components.Charter, error) {
 	return lineChart, nil
 }
 
-const connectAllChartsJavascript = `
+const connectAllChartsJavaScript = `
 <script type="text/javascript">
 let all_charts = [];
 document.querySelectorAll('canvas, div').forEach(function(element) {
@@ -515,7 +515,7 @@ func (d *Data) ToHTML(opts HTMLOptions) (string, error) {
 	if endBodyTagIndex == -1 {
 		return "", fmt.Errorf("no </body> tag found in HTML")
 	}
-	pageHTML = pageHTML[:endBodyTagIndex] + connectAllChartsJavascript + pageHTML[endBodyTagIndex:]
+	pageHTML = pageHTML[:endBodyTagIndex] + connectAllChartsJavaScript + pageHTML[endBodyTagIndex:]
 
 	return pageHTML, nil
 }

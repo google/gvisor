@@ -162,7 +162,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_s
       srcs: the library sources.
       deps: the library dependencies.
       imports: imports required for stateify.
-      stateify: whether statify is enabled (default: true).
+      stateify: whether stateify is enabled (default: true).
       force_add_state_pkg: whether to skip checking whether the state package
         is included in `deps`, and to just instead include it outright.
         This allows `go_library` to be used in conjunction with `select`
@@ -357,7 +357,7 @@ def proto_library(name, srcs, deps = None, has_services = 0, **kwargs):
       name: the name to which _proto, _go_proto, etc, will be appended.
       srcs: the proto sources.
       deps: for the proto library and the go_proto_library.
-      has_services: 1 to build gRPC code, otherwise 0.
+      has_services: 1 to build gRPC code; otherwise, 0.
       **kwargs: standard proto_library arguments.
     """
     _proto_library(

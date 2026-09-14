@@ -392,7 +392,7 @@ func (c *Connection) removeControlFDLocked(id FDID) {
 func (c *Connection) stopTrackingFD(id FDID) genericFD {
 	fd := c.fds[id]
 	if fd == nil {
-		log.Warningf("removeFDLocked called on non-existent FDID %d", id)
+		log.Warningf("removeFDLocked called on nonexistent FDID %d", id)
 		return nil
 	}
 	delete(c.fds, id)

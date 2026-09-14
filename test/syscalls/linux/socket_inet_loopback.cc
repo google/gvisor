@@ -1332,7 +1332,7 @@ TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   ASSERT_THAT(close(conn_fd.release()), SyscallSucceeds());
 
   if (IsRunningOnGvisor()) {
-    // Gvisor packet procssing is asynchronous and can take a bit of time in
+    // Gvisor packet processing is asynchronous and can take a bit of time in
     // some cases so we give it a bit of time to process the RST packet before
     // calling accept.
     //

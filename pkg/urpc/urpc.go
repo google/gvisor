@@ -581,7 +581,7 @@ func marshal(s *unet.Socket, v any, fs []*os.File) error {
 	}
 
 	// We're done sending the fds to the client. Explicitly prevent fs from
-	// being GCed until here. Urpc rpcs often unlink the file to send, relying
+	// being GC'd until here. Urpc rpcs often unlink the file to send, relying
 	// on the kernel to automatically delete it once the last reference is
 	// dropped. Until we successfully call sendmsg(2), fs may contain the last
 	// references to these files. Without this explicit reference to fs here,

@@ -134,7 +134,7 @@ An individual contributor can reasonably implement a minimal version of one of
 these two mechanisms within the scope of Google Summer of Code. The System V
 queue may be slightly easier to implement, as gVisor already implements System V
 semaphores and shared memory regions, so the code for managing IPC objects and
-the registry already exist.
+the registry already exists.
 
 [gsoc-2021-site]: https://summerofcode.withgoogle.com
 [gvisor-chat]: https://gitter.im/gvisor/community

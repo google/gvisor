@@ -72,7 +72,7 @@ func TestTCPSynCookie(t *testing.T) {
 			defer withoutSynCookieConn.Close(t)
 			defer withSynCookieConn.Close(t)
 
-			// Setup the 2 connections in SYNRCVD state and verify if one of the
+			// Set up the 2 connections in SYNRCVD state and verify if one of the
 			// connection is indeed using syncookies by checking for absence of
 			// SYNACK retransmits.
 			for _, c := range []struct {

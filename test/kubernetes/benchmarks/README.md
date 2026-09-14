@@ -45,6 +45,6 @@ gVisor-sandboxed pods.
 Once this cluster exists, dump its
 [cluster proto](https://github.com/googleapis/googleapis/blob/master/google/container/v1/cluster_service.proto)
 to a file, and ensure you can run workloads on this cluster via `kubectl`. Then,
-you should be able to run benchmarks by pointing `--cluter-proto-path` to this
+you should be able to run benchmarks by pointing `--cluster-proto-path` to this
 file, and `--kubectl-context-name` (set to the `kubectl` context name that
 connects to this cluster in your `kubectl` config).

@@ -65,7 +65,7 @@ func (ch *channel) PayloadBuf(size uint32) []byte {
 
 // SndRcvMessage implements Communicator.SndRcvMessage.
 func (ch *channel) SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8) (MID, uint32, error) {
-	// Write header. Requests can not donate FDs.
+	// Write header. Requests cannot donate FDs.
 	ch.marshalHdr(m, 0 /* numFDs */)
 
 	// One-shot communication. RPCs are expected to be quick rather than block.

@@ -23,7 +23,7 @@ mkdir --mode=0755 rootfs
 docker export $(docker create hello-world) | sudo tar -xf - -C rootfs --same-owner --same-permissions
 ```
 
-Next, create an specification file called `config.json` that contains our
+Next, create a specification file called `config.json` that contains our
 container specification. We tell the container to run the `/hello` program.
 
 ```bash

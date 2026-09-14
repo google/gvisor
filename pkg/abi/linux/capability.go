@@ -196,14 +196,14 @@ func CapabilityFromString(capability string) (Capability, bool) {
 
 // AllCapabilities returns a list of all defined capabilities.
 func AllCapabilities() []Capability {
-	allCapapabilities := make([]Capability, 0, CAP_LAST_CAP+1)
+	allCapabilities := make([]Capability, 0, CAP_LAST_CAP+1)
 	for cp := Capability(0); cp <= CAP_LAST_CAP; cp++ {
 		if !cp.Ok() {
 			continue
 		}
-		allCapapabilities = append(allCapapabilities, cp)
+		allCapabilities = append(allCapabilities, cp)
 	}
-	return allCapapabilities
+	return allCapabilities
 }
 
 // Version numbers used by the capget/capset syscalls, defined in Linux's
