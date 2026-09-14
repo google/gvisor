@@ -572,7 +572,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		if err != nil {
 			return fmt.Errorf("failed to read iptables blob: %v", err)
 		}
-		fdOffset++
 		if err := netfilter.SetEntries(n.Kernel.RootUserNamespace(), n.Stack, iptReplaceBlob, false); err != nil {
 			return fmt.Errorf("failed to SetEntries: %v", err)
 		}
