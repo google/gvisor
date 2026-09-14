@@ -48,6 +48,11 @@ go_library(
         "frontend_mmap_mutex.go",
         "frontend_mmap_unsafe.go",
         "frontend_unsafe.go",
+        "gpuid.go",
+        "gpuid_frontend.go",
+        "ioctl_log.go",
+        "pciaddr.go",
+        "uuid.go",
         "handlers.go",
         "nvproxy.go",
         "nvproxy_unsafe.go",
@@ -102,9 +107,11 @@ go_library(
 
 go_test(
     name = "nvproxy_test",
-    srcs = ["nvproxy_test.go"],
+    srcs = ["nvproxy_test.go", "save_restore_test.go", "uuid_test.go", "pciaddr_test.go"],
+    data = ["frontend.go", "frontend_unsafe.go", "gpuid_frontend.go", "pciaddr.go", "uvm_unsafe.go"],
     library = ":nvproxy",
     deps = [
+        "//pkg/hostarch",
         "//pkg/abi/nvgpu",
         "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",

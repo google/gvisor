@@ -45,6 +45,7 @@ func (fs *filesystem) newGvisorInode(ctx context.Context, root *auth.Credentials
 		return nil, err
 	}
 	gvisorFiles["checkpoint"] = checkpoint
+	gvisorFiles["gpu_uuid_map"] = fs.newInode(ctx, root, 0444, &gpuUUIDMapData{})
 	gvisorFiles["spec_environ"] = fs.newInode(ctx, root, 0444, &specEnvironData{k: k})
 	if internalData.FSCheckpointEnabled {
 		log.Infof("Setting up fscheckpoint files under [procfs]/gvisor")

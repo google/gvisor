@@ -15,6 +15,8 @@
 package proc
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"path"
 
@@ -103,4 +105,17 @@ func (fs *filesystem) addNvproxyFiles(ctx context.Context, root *auth.Credential
 	contents["driver"] = fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 		"nvidia": inodeFromNode(nvidiaDir),
 	})
+}
+
+// gpuUUIDMapData exposes physical identity for external GPU resource admission.
+// It is evaluated on every read, so a second migration cannot retain a stale map.
+//
+// +stateify savable
+type gpuUUIDMapData struct{ dynamicBytesFileSetAttr }
+
+var _ dynamicInode = (*gpuUUIDMapData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*gpuUUIDMapData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	return json.NewEncoder(buf).Encode(nvproxy.GPUUUIDMapFromContext(ctx))
 }
