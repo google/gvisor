@@ -465,6 +465,40 @@ func TestRdtsc(t *testing.T) {
 	})
 }
 
+func TestRdtscWithOffset(t *testing.T) {
+	const offset = uint64(10_000_000_000)
+	deviceFile, err := OpenDevice("")
+	if err != nil {
+		t.Fatalf("error opening device file: %v", err)
+	}
+	k, err := New(deviceFile, Config{TSCOffset: offset})
+	if err != nil {
+		t.Fatalf("error creating KVM instance: %v", err)
+	}
+	defer k.machine.Destroy()
+
+	var c *vCPU
+	defer func() {
+		redpill()
+		if c != nil {
+			k.machine.Put(c)
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		c = k.machine.Get()
+		start := uint64(ktime.Rdtsc())
+		bluepill(c)
+		guest := uint64(ktime.Rdtsc())
+		redpill()
+		end := uint64(ktime.Rdtsc())
+		if start+offset > guest || guest > end+offset {
+			t.Errorf("inconsistent time with offset: start+offset=%d, guest=%d, end+offset=%d", start+offset, guest, end+offset)
+		}
+		k.machine.Put(c)
+		c = nil
+	}
+}
+
 func TestKernelVDSO(t *testing.T) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(t, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {

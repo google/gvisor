@@ -22,6 +22,24 @@ TEXT ·vdsoClockGettime(SB),NOSPLIT|NOFRAME,$0-24
 	MOVQ runtime·vdsoClockgettimeSym(SB), AX
 	CMPQ AX, $0
 	JEQ fallback
+
+	// When TSC offset is active, host VDSO cannot be called in GR0 because
+	// guest RDTSC includes the offset. Transition to HR3 (redpill).
+	MOVQ ·tscOffset(SB), BX
+	CMPQ BX, $0
+	JEQ call_vdso
+	MOVW CS, BX
+	ANDW $3, BX
+	JNE call_vdso
+
+	// Fallback to HR3.
+	MOVQ $-1, AX
+	SYSCALL
+	MOVL clockid+0(FP), DI
+	MOVQ ts+8(FP), SI
+	MOVQ runtime·vdsoClockgettimeSym(SB), AX
+
+call_vdso:
 	CALL AX
 	MOVQ AX, ret+16(FP)
 	RET
@@ -30,3 +48,4 @@ fallback:
 	SYSCALL
 	MOVQ AX, ret+16(FP)
 	RET
+

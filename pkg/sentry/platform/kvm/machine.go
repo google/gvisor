@@ -91,6 +91,9 @@ type machine struct {
 
 	// useCPUNums indicates whether to enable the use vCPU numbers as CPU numbers.
 	useCPUNums bool
+
+	// tscOffset is the offset to apply to the guest TSC.
+	tscOffset uint64
 }
 
 const (
@@ -281,6 +284,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		fd:               vm,
 		applicationCores: config.ApplicationCores,
 		useCPUNums:       config.UseCPUNums,
+		tscOffset:        config.TSCOffset,
 	}
 	m.available.L = &m.mu
 
@@ -805,7 +809,7 @@ func (c *vCPU) setSystemTimeLegacy() error {
 		// Try to set the TSC to an estimate of where it will be
 		// on the host during a "fast" system call iteration.
 		start := uint64(ktime.Rdtsc())
-		if err := c.setTSC(start + (minimum / 2)); err != nil {
+		if err := c.setTSC(start + (minimum / 2) + c.machine.tscOffset); err != nil {
 			return err
 		}
 		// See if this is our new minimum call time. Note that this

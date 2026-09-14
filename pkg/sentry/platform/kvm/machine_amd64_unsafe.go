@@ -130,9 +130,8 @@ func (c *vCPU) setTSCFreq(freq uintptr) error {
 	return nil
 }
 
-// setTSCOffset sets the TSC offset to zero.
-func (c *vCPU) setTSCOffset() error {
-	offset := uint64(0)
+// setTSCOffset sets the TSC offset.
+func (c *vCPU) setTSCOffset(offset uint64) error {
 	da := struct {
 		flags uint32
 		group uint32

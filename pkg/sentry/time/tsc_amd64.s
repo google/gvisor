@@ -25,3 +25,15 @@ TEXT ·Rdtsc(SB),NOSPLIT|NOFRAME,$0-8
 	ADDQ	DX, AX
 	MOVQ	AX, ret+0(FP)
 	RET
+
+TEXT ·getcs(SB), $0-2
+	MOVW	CS, AX
+	MOVW	AX, ret+0(FP)
+	RET
+
+TEXT ·redpill(SB),NOSPLIT|NOFRAME,$0-0
+	MOVQ	$-1, AX
+	SYSCALL
+	RET
+
+
