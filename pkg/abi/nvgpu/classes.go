@@ -442,6 +442,17 @@ type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS struct {
 	Pad0                        [3]byte
 }
 
+// NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615 is the updated version of
+// NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS since 615.71.09.
+//
+// +marshal
+type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615 struct {
+	_ structs.HostLayout
+	NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS
+	Reserved      uint32
+	InternalFlags uint32
+}
+
 // NV_MEMORY_DESC_PARAMS is from
 // src/common/sdk/nvidia/inc/alloc/alloc_channel.h.
 //
