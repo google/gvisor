@@ -56,7 +56,7 @@ const (
 	//
 	//  * Avoids unreasonably large frequency adjustments required to
 	//    correct large errors over a single update interval.
-	MaxClockError = ReferenceNS(ApproxUpdateInterval) / 4
+	MaxClockError = ReferenceNS(ApproxUpdateInterval)
 )
 
 // Parameters are the timekeeping parameters needed to compute the current
