@@ -208,6 +208,16 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sys
 			return 0, err
 		}
 		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, rfd.inode.t.replicaKTTY, kernel.ProcessGroupID(pgid))
+	case linux.TIOCGSID:
+		// Get the session id. The replica must be the caller's
+		// controlling terminal.
+		sid, err := t.ThreadGroup().SessionID(rfd.inode.t.replicaKTTY, true /* requireCtty */)
+		if err != nil {
+			return 0, err
+		}
+		ret := primitive.Int32(sid)
+		_, err = ret.CopyOut(t, args[2].Pointer())
+		return 0, err
 	default:
 		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
 		return 0, linuxerr.ENOTTY

@@ -125,6 +125,9 @@ func LogSpecCustomLogger(orig *specs.Spec, logSeccomp bool, logf func(format str
 			spec.Linux.Resources.Devices = nil
 		}
 	}
+	if spec.Process != nil {
+		spec.Process.Env = nil
+	}
 
 	out, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
