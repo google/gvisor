@@ -512,11 +512,12 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
 
 // Used to log rejected fifo/uds operations, one time each.
 var (
-	logRejectedFifoOpenOnce    sync.Once
-	logRejectedUdsOpenOnce     sync.Once
-	logRejectedUdsCreateOnce   sync.Once
-	logRejectedUdsConnectOnce  sync.Once
-	logRejectedCharDevOpenOnce sync.Once
+	logRejectedFifoOpenOnce     sync.Once
+	logRejectedUdsOpenOnce      sync.Once
+	logRejectedUdsCreateOnce    sync.Once
+	logRejectedUdsConnectOnce   sync.Once
+	logRejectedCharDevOpenOnce  sync.Once
+	logRejectedBlockDevOpenOnce sync.Once
 )
 
 // Open implements lisafs.ControlFDImpl.Open.
@@ -545,6 +546,16 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 			})
 			return nil, -1, unix.EPERM
 		}
+	case unix.S_IFBLK:
+		// This should be unreachable: checkSupportedFileType() rejects block
+		// devices at Mount/Walk/WalkStat time, and Mknod cannot create them,
+		// so no control FD should refer to one. Check again here for defense
+		// in depth. Unlike character devices, there is deliberately no policy
+		// that allows opening host block devices.
+		logRejectedBlockDevOpenOnce.Do(func() {
+			log.Warningf("Rejecting attempt to open block device from host filesystem: %q.", fd.ControlFD.Node().FilePath())
+		})
+		return nil, -1, unix.EPERM
 	}
 	flags |= openFlags
 	openHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
