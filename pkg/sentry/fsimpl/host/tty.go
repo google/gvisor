@@ -232,6 +232,20 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 
 		return 0, nil
 
+	case linux.TIOCGSID:
+		// Args: pid_t *argp
+		// When successful, equivalent to *argp = tcgetsid(fd).
+		// Get the session ID of this terminal, which must be the calling
+		// process's controlling terminal.
+
+		sid, err := task.ThreadGroup().SessionID(t.TTY(), true /* requireCtty */)
+		if err != nil {
+			return 0, err
+		}
+		sidP := primitive.Int32(sid)
+		_, err = sidP.CopyOut(task, args[2].Pointer())
+		return 0, err
+
 	case linux.TIOCGWINSZ:
 		// Args: struct winsize *argp
 		// Get window size.
@@ -287,7 +301,6 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 		linux.TIOCEXCL,
 		linux.TIOCNXCL,
 		linux.TIOCGEXCL,
-		linux.TIOCGSID,
 		linux.TIOCGETD,
 		linux.TIOCVHANGUP,
 		linux.TIOCGDEV,
