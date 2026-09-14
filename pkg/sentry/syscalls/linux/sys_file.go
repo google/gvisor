@@ -595,7 +595,8 @@ func CloseRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 	fdTable := t.FDTable()
 	fd := int32(first)
 	for {
-		fd, file := fdTable.RemoveNextInRange(t, fd, int32(last))
+		var file *vfs.FileDescription
+		fd, file = fdTable.RemoveNextInRange(t, fd, int32(last))
 		if file == nil {
 			break
 		}
