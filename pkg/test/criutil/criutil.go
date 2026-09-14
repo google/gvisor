@@ -89,14 +89,33 @@ func (cc *Crictl) CleanUp() {
 	cc.cleanup = nil
 }
 
+// cleanOutput strips warning/log messages (e.g. from crictl stderr) from output.
+func cleanOutput(out string) string {
+	var lines []string
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "time=") || strings.HasPrefix(trimmed, "level=") {
+			continue
+		}
+		if len(trimmed) > 1 && (trimmed[0] == 'E' || trimmed[0] == 'W' || trimmed[0] == 'I') && '0' <= trimmed[1] && trimmed[1] <= '9' {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // RunPod creates a sandbox. It corresponds to `crictl runp`.
 func (cc *Crictl) RunPod(runtime, sbSpecFile string) (string, error) {
 	podID, err := cc.run("runp", "--runtime", runtime, sbSpecFile)
 	if err != nil {
 		return "", fmt.Errorf("runp failed: %v", err)
 	}
-	// Strip the trailing newline from crictl output.
-	return strings.TrimSpace(podID), nil
+	// Strip trailing newline and log messages from crictl output.
+	return strings.TrimSpace(cleanOutput(podID)), nil
 }
 
 // Create creates a container within a sandbox. It corresponds to `crictl
@@ -133,14 +152,13 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 	args = append(args, contSpecFile)
 	args = append(args, sbSpecFile)
 
-	podID, err = cc.run(args...)
+	contID, err := cc.run(args...)
 	if err != nil {
-		time.Sleep(10 * time.Minute) // XXX
 		return "", fmt.Errorf("create failed: %v", err)
 	}
 
-	// Strip the trailing newline from crictl output.
-	return strings.TrimSpace(podID), nil
+	// Strip trailing newline and log messages from crictl output.
+	return strings.TrimSpace(cleanOutput(contID)), nil
 }
 
 // Start starts a container. It corresponds to `crictl start`.
@@ -234,7 +252,8 @@ func (cc *Crictl) PodIP(podID string) (string, error) {
 		return "", err
 	}
 	conf := &containerConfig{}
-	if err := json.Unmarshal([]byte(output), conf); err != nil {
+	cleaned := cleanOutput(output)
+	if err := json.Unmarshal([]byte(cleaned), conf); err != nil {
 		return "", fmt.Errorf("failed to unmarshal JSON: %v, %s", err, output)
 	}
 	if conf.Status.Network.IP == "" {

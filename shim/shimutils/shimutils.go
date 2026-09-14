@@ -296,7 +296,7 @@ func NewMockContainerdWithSuffix(t *testing.T, suffix string, shimArgs, runscArg
 
 	s.EventChan = make(chan any, 128)
 	s.eventsImpl = &dummyEventsServer{t: t, ch: s.EventChan}
-	events.RegisterEventsService(server, s.eventsImpl)
+	events.RegisterTTRPCEventsService(server, s.eventsImpl)
 
 	go func() {
 		_ = server.Serve(t.Context(), s.eventListener)
@@ -394,8 +394,8 @@ func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
 }
 
 // GetClient returns a client to the shim socket which can be used to send requests to the shim.
-func (m *MockContainerd) GetClient(t *testing.T) task.TaskService {
-	var client task.TaskService
+func (m *MockContainerd) GetClient(t *testing.T) task.TTRPCTaskService {
+	var client task.TTRPCTaskService
 	m.withShimContext(t, func(t *testing.T) {
 		conn, err := net.DialTimeout("unix", SocketAddress, 2*time.Second)
 		if err != nil {
@@ -404,7 +404,7 @@ func (m *MockContainerd) GetClient(t *testing.T) task.TaskService {
 		t.Cleanup(func() {
 			conn.Close()
 		})
-		client = task.NewTaskClient(ttrpc.NewClient(conn))
+		client = task.NewTTRPCTaskClient(ttrpc.NewClient(conn))
 	})
 	return client
 }

@@ -64,7 +64,7 @@ type Process interface {
 	// Status returns the process status
 	Status(context.Context) (string, error)
 	// Wait blocks until the process has exited
-	Wait()
+	Wait(context.Context) error
 	// Resize resizes the process console
 	Resize(ws console.WinSize) error
 	// Start execution of the process
@@ -95,7 +95,7 @@ type RestoreRequest struct {
 
 // TaskServiceExt extends TaskRequest with extra functionality required by the shim.
 type TaskServiceExt interface {
-	task.TaskService
+	task.TTRPCTaskService
 	CreateWithFSRestore(ctx context.Context, req *CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error)
 	Restore(ctx context.Context, req *RestoreRequest) (*task.StartResponse, error)
 }

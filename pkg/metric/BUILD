@@ -55,6 +55,7 @@ go_test(
         "//pkg/sync",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_prometheus_common//expfmt",
+        "@com_github_prometheus_common//model",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_google_protobuf//testing/protocmp:go_default_library",
     ],

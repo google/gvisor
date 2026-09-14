@@ -33,6 +33,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/prometheus"
@@ -304,7 +305,8 @@ func (m MetricData) GetPrometheusInteger(metricName string, wantLabels map[strin
 	// Parse raw Prometheus-formatted data.
 	var buf bytes.Buffer
 	buf.WriteString(string(m))
-	parsed, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
+	parser := expfmt.NewTextParser(model.LegacyValidation)
+	parsed, err := parser.TextToMetricFamilies(&buf)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
@@ -400,7 +402,8 @@ func (m MetricData) GetPrometheusContainerInteger(want WantMetric) (int64, time.
 func (m MetricData) GetSandboxMetadataMetric(want WantMetric) (map[string]string, error) {
 	var buf bytes.Buffer
 	buf.WriteString(string(m))
-	parsed, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
+	parser := expfmt.NewTextParser(model.LegacyValidation)
+	parsed, err := parser.TextToMetricFamilies(&buf)
 	if err != nil {
 		return nil, err
 	}
