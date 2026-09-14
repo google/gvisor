@@ -947,6 +947,56 @@ func TestNoSpuriousRecoveryWithDSACK(t *testing.T) {
 	verifySpuriousRecoveryMetric(t, c, 0 /* numSpuriousRecovery */, 0 /* numSpuriousRTO */)
 }
 
+// TestSACKedThenAckedSegmentLeavesOutstanding is a regression test for
+// gvisor.dev/issue/14092: a segment SACKed outside of loss recovery and then
+// cumulatively ACKed must be removed from Outstanding. SetPipe() only
+// accounts for SACKed segments during recovery, so before the fix the
+// segment's packet count leaked into Outstanding permanently, throttling
+// long-lived connections on reordering-but-lossless paths.
+func TestSACKedThenAckedSegmentLeavesOutstanding(t *testing.T) {
+	for _, enableRACK := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enableRACK: %v", enableRACK), func(t *testing.T) {
+			const numPackets = 4
+			var c *context.Context
+			outstanding := make(chan int, 1)
+			probe := func(state *tcp.TCPEndpointState) {
+				// Match the cumulative ACK of the first two
+				// segments; the other two are still in flight.
+				if state.Sender.SndUna == c.IRS.Add(1+2*maxPayload) {
+					select {
+					case outstanding <- state.Sender.Outstanding:
+					default:
+					}
+				}
+			}
+			c = context.NewWithProbe(t, uint32(mtu), probe)
+			defer c.Cleanup()
+
+			e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, enableRACK)
+
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			// SACK the second segment. A single duplicate ACK does
+			// not trigger loss recovery: this is benign reordering,
+			// not loss, so SetPipe() never runs to account for the
+			// SACKed segment.
+			c.SendAckWithSACK(seq, 0, []header.SACKBlock{
+				{Start: c.IRS.Add(1 + maxPayload), End: c.IRS.Add(1 + 2*maxPayload)},
+			})
+			// Cumulatively ACK the first two segments, covering the
+			// SACKed one.
+			c.SendAck(seq, 2*maxPayload)
+
+			if got, want := <-outstanding, 2; got != want {
+				t.Errorf("got Sender.Outstanding = %d after a cumulative ACK covering a SACKed segment, want %d", got, want)
+			}
+
+			// ACK the remaining data so the endpoint quiesces for
+			// the leak check.
+			c.SendAck(seq, numPackets*maxPayload)
+		})
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
