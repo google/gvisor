@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -540,4 +541,22 @@ func (fs *filesystem) newHostFile(ctx context.Context, creds *auth.Credentials, 
 	hf := &hostFile{hostPath: hostPath}
 	hf.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), hf, mode)
 	return hf
+}
+
+// errorFile is an inode whose reads fail with a fixed errno.
+//
+// +stateify savable
+type errorFile struct {
+	kernfs.DynamicBytesFile
+	errno int32
+}
+
+func (ef *errorFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	return unix.Errno(ef.errno)
+}
+
+func (fs *filesystem) newErrorFile(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, errno int32) kernfs.Inode {
+	ef := &errorFile{errno: errno}
+	ef.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), ef, mode)
+	return ef
 }
