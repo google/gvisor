@@ -130,30 +130,41 @@ type Watchdog struct {
 	// k is where the tasks come from.
 	k *kernel.Kernel
 
-	// stop is used to notify to watchdog should stop.
+	// stop carries stop requests to the monitoring loop. The channel is
+	// initialized by New and reused across runs; it is never closed or replaced.
 	stop chan struct{}
 
-	// done is used to notify when the watchdog has stopped.
+	// done acknowledges the loop's last access to monitoring state, before its
+	// deferred timer cleanup. Like stop, the channel is immutable and reused.
 	done chan struct{}
 
-	// offenders map contains all tasks that are currently stuck.
+	// offenders contains all tasks that are currently stuck. After initialization
+	// it is used only by the monitoring goroutine. checklocks does not model
+	// goroutine ownership.
 	offenders map[*kernel.Task]*offender
 
 	// lastStackDump tracks the last time a stack dump was generated to prevent
 	// spamming the log.
+	//
+	// The monitoring goroutine owns it after Start. Before the first Start,
+	// waitForStart may access it with mu held and startCalled false. checklocks
+	// cannot express this conditional goroutine/mutex ownership.
 	lastStackDump time.Time
 
 	// lastRun is set to the last time the watchdog executed a monitoring loop.
 	lastRun ktime.Time
 
-	// mu protects the fields below.
 	mu sync.Mutex
 
 	// running is true if the watchdog is running.
+	//
+	// +checklocks:mu
 	running bool
 
 	// startCalled is true if Start has ever been called. It remains true
 	// even if Stop is called.
+	//
+	// +checklocks:mu
 	startCalled bool
 }
 
@@ -184,6 +195,8 @@ func New(k *kernel.Kernel, opts Opts) *Watchdog {
 }
 
 // Start starts the watchdog.
+//
+// +checklocksexclude:w.mu
 func (w *Watchdog) Start() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -204,7 +217,11 @@ func (w *Watchdog) Start() {
 	w.running = true
 }
 
-// Stop requests the watchdog to stop and wait for it.
+// Stop requests the watchdog to stop and waits until the monitoring loop no
+// longer accesses monitoring state. It does not wait for deferred timer
+// cleanup.
+//
+// +checklocksexclude:w.mu
 func (w *Watchdog) Stop() {
 	if w.TaskTimeout == 0 {
 		return
@@ -370,6 +387,10 @@ func (w *Watchdog) reportStuckWatchdog() {
 // doAction will take the given action. If the action is LogWarning, the stack
 // is not always dumped to the log to prevent log flooding. "forceStack"
 // guarantees that the stack will be dumped regardless.
+//
+// Preconditions: The caller must be the monitoring goroutine, or waitForStart
+// with mu held and startCalled false. checklocks cannot express this
+// conditional goroutine/mutex ownership.
 func (w *Watchdog) doAction(action Action, forceStack bool, stuckTasks map[int64]struct{}, msg *bytes.Buffer) {
 	switch action {
 	case LogWarning:

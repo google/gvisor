@@ -19,17 +19,17 @@ import (
 )
 
 // PCIDs is a simple PCID database.
-//
-// This is not protected by locks and is thus suitable for use only with a
-// single CPU at a time.
 type PCIDs struct {
-	// mu protects below.
 	mu sync.Mutex
 
 	// cache are the assigned page tables.
+	//
+	// +checklocks:mu
 	cache map[*PageTables]uint16
 
 	// avail are available PCIDs.
+	//
+	// +checklocks:mu
 	avail []uint16
 }
 
@@ -57,6 +57,8 @@ func NewPCIDs(start, size uint16) *PCIDs {
 //
 // This may overwrite any previous assignment provided. If this in the case,
 // true is returned to indicate that the PCID should be flushed.
+//
+// +checklocksexclude:p.mu
 func (p *PCIDs) Assign(pt *PageTables) (uint16, bool) {
 	p.mu.Lock()
 	if pcid, ok := p.cache[pt]; ok {
@@ -94,6 +96,8 @@ func (p *PCIDs) Assign(pt *PageTables) (uint16, bool) {
 }
 
 // Drop drops references to a set of page tables.
+//
+// +checklocksexclude:p.mu
 func (p *PCIDs) Drop(pt *PageTables) {
 	p.mu.Lock()
 	if pcid, ok := p.cache[pt]; ok {
