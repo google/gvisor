@@ -24,7 +24,7 @@ type contextID int
 
 const (
 	// CtxCanTrace is a Context.Value key for a function with the same
-	// signature and semantics as kernel.Task.CanTrace.
+	// signature and semantics as kernel.Task.CanTraceMode.
 	CtxCanTrace contextID = iota
 
 	// CtxKernel is a Context.Value key for a Kernel.
@@ -43,13 +43,25 @@ const (
 	CtxCgroupNamespace
 )
 
-// ContextCanTrace returns true if ctx is permitted to trace t, in the same sense
-// as kernel.Task.CanTrace.
-func ContextCanTrace(ctx context.Context, t *Task, attach bool) bool {
+// ContextCanTraceMode returns true if ctx is permitted to trace t under the
+// given ptrace access mode, in the same sense as kernel.Task.CanTraceMode.
+func ContextCanTraceMode(ctx context.Context, t *Task, mode PtraceAccessMode) bool {
 	if v := ctx.Value(CtxCanTrace); v != nil {
-		return v.(func(*Task, bool) bool)(t, attach)
+		return v.(func(*Task, PtraceAccessMode) bool)(t, mode)
 	}
 	return false
+}
+
+// ContextCanTrace returns true if ctx is permitted to trace t, in the same
+// sense as kernel.Task.CanTrace. If attach is true, it checks for access mode
+// PTRACE_MODE_ATTACH; otherwise, it checks for access mode PTRACE_MODE_READ.
+// In both cases, the check uses PTRACE_MODE_REALCREDS.
+func ContextCanTrace(ctx context.Context, t *Task, attach bool) bool {
+	mode := PtraceAccessModeRead | PtraceAccessModeRealCreds
+	if attach {
+		mode = PtraceAccessModeAttach | PtraceAccessModeRealCreds
+	}
+	return ContextCanTraceMode(ctx, t, mode)
 }
 
 // KernelFromContext returns the Kernel in which ctx is executing, or nil if

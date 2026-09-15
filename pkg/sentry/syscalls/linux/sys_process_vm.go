@@ -74,7 +74,7 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	// man 2 process_vm_read: "Permission to read from or write to another
 	// process is governed by a ptrace access mode
 	// PTRACE_MODE_ATTACH_REALCREDS check; see ptrace(2)."
-	if !t.CanTrace(remoteTask, true /* attach */) {
+	if !t.CanTraceMode(remoteTask, kernel.PtraceAccessModeAttach|kernel.PtraceAccessModeRealCreds) {
 		return 0, nil, linuxerr.EPERM
 	}
 
