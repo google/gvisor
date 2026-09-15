@@ -19,6 +19,7 @@
 package stopfd
 
 import (
+	"context"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -28,7 +29,14 @@ import (
 //
 // +stateify savable
 type StopFD struct {
-	EFD int
+	// EFD is the eventfd, or -1 once closed. It is not saved: a restored
+	// StopFD would otherwise hold a stale fd number that Close would close.
+	EFD int `state:"nosave"`
+}
+
+// afterLoad is invoked by stateify.
+func (sf *StopFD) afterLoad(context.Context) {
+	sf.EFD = -1
 }
 
 // New returns a new, initialized StopFD.
@@ -43,6 +51,9 @@ func New() (StopFD, error) {
 // Stop writes to the eventfd and notifies the dispatcher to stop. It does not
 // block.
 func (sf *StopFD) Stop() {
+	if sf.EFD < 0 {
+		return
+	}
 	increment := []byte{1, 0, 0, 0, 0, 0, 0, 0}
 	if n, err := unix.Write(sf.EFD, increment); n != len(increment) || err != nil {
 		// There are two possible errors documented in eventfd(2) for writing:
@@ -51,4 +62,14 @@ func (sf *StopFD) Stop() {
 		// thus no EAGAIN.
 		panic(fmt.Sprintf("write(EFD) = (%d, %s), want (%d, nil)", n, err, len(increment)))
 	}
+}
+
+// Close releases the eventfd. It must not be called while a dispatcher may
+// still be polling the eventfd. Calling it more than once is a no-op.
+func (sf *StopFD) Close() {
+	if sf.EFD < 0 {
+		return
+	}
+	unix.Close(sf.EFD)
+	sf.EFD = -1
 }

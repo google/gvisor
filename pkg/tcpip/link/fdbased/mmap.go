@@ -139,6 +139,10 @@ func (d *packetMMapDispatcher) release() {
 	d.mgr.close()
 }
 
+func (d *packetMMapDispatcher) close() {
+	d.StopFD.Close()
+}
+
 func (d *packetMMapDispatcher) readMMappedPackets() (stack.PacketBufferList, bool, tcpip.Error) {
 	var pkts stack.PacketBufferList
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])

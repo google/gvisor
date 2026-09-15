@@ -409,8 +409,13 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 	}
 }
 
-// Close implements stack.LinkEndpoint.
-func (*endpoint) Close() {}
+// Close implements stack.LinkEndpoint. The stack calls it after Attach(nil)
+// has stopped and waited for the dispatch goroutine.
+func (ep *endpoint) Close() {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	ep.stopFD.Close()
+}
 
 // SetOnCloseAction implements stack.LinkEndpoint.
 func (*endpoint) SetOnCloseAction(func()) {}
