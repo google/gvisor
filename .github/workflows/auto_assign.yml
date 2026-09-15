@@ -2,13 +2,15 @@
 name: Auto Assign
 
 "on":
-  pull_request_target:
+  # Requesting reviewers on fork PRs requires a write token. Checkout uses
+  # the trusted base branch; the assigner treats PR metadata as data for
+  # matching and API requests, never as executable code.
+  pull_request_target:  # zizmor: ignore[dangerous-triggers]
     types: [opened, ready_for_review]
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   assign:
@@ -16,13 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Install dependencies
       run: npm install js-yaml
 
     - name: PR Assigner Bot
-      uses: actions/github-script@v9
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       with:
         script: |-
             const autoAssign = require('./.github/workflows/auto_assign.js');
