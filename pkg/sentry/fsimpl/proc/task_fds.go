@@ -23,7 +23,9 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -349,9 +351,10 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		return linuxerr.ENOENT
 	}
 	defer d.fs.SafeDecRefFD(ctx, file)
-	// Currently we output the typical base fields: pos, flags, mnt_id.
-	// TODO(b/121266871): Add ino, lock, and type-specific fields.
-	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
+	// Currently we output the typical base fields: pos, flags, mnt_id, ino,
+	// plus type-specific fields for eventfd and signalfd.
+	// TODO(b/121266871): Add lock and other fields.
+	// See https://www.kernel.org/doc/Documentation/filesystems/proc.rst
 	var pos int64
 	if fd, ok := file.Impl().(*kernfs.DynamicBytesFD); ok {
 		pos = fd.Offset()
@@ -362,7 +365,22 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	}
 	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
 	mntID := file.Mount().ID
-	fmt.Fprintf(buf, "pos:\t%d\nflags:\t0%o\nmnt_id:\t%d\n", pos, flags, mntID)
+	ino := file.InodeID()
+	fmt.Fprintf(buf, "pos:\t%d\nflags:\t0%o\nmnt_id:\t%d\nino:\t%d\n", pos, flags, mntID, ino)
+
+	switch impl := file.Impl().(type) {
+	case *eventfd.EventFileDescription:
+		// See fs/eventfd.c:eventfd_show_fdinfo().
+		sem := 0
+		if impl.SemMode() {
+			sem = 1
+		}
+		fmt.Fprintf(buf, "eventfd-count: %16x\neventfd-id: %d\neventfd-semaphore: %d\n", impl.Counter(), impl.ID(), sem)
+	case *signalfd.SignalFileDescription:
+		// See fs/signalfd.c:signalfd_show_fdinfo(); SIGKILL/SIGSTOP are never shown.
+		mask := impl.Mask() &^ (linux.SignalSetOf(linux.SIGKILL) | linux.SignalSetOf(linux.SIGSTOP))
+		fmt.Fprintf(buf, "sigmask:\t%016x\n", uint64(mask))
+	}
 
 	if nspids, err := kernel.ObservedTIDsForPIDFD(file, d.task); err == nil {
 		fmt.Fprintf(buf, "Pid:\t%d\n", nspids[len(nspids)-1])

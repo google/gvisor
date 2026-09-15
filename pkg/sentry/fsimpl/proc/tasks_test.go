@@ -27,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -672,7 +674,7 @@ func TestFdInfoContent(t *testing.T) {
 	}
 	content := string(buf[:n])
 
-	// Verify that pos, flags, and mnt_id fields are present.
+	// Verify that pos, flags, mnt_id, and ino fields are present.
 	if !strings.HasPrefix(content, "pos:\t") {
 		t.Errorf("fdinfo content should start with 'pos:', got: %q", content)
 	}
@@ -682,11 +684,14 @@ func TestFdInfoContent(t *testing.T) {
 	if !strings.Contains(content, "mnt_id:\t") {
 		t.Errorf("fdinfo content should contain 'mnt_id:', got: %q", content)
 	}
+	if !strings.Contains(content, "ino:\t") {
+		t.Errorf("fdinfo content should contain 'ino:', got: %q", content)
+	}
 
-	// Verify the order: pos, flags, mnt_id (matching Linux's seq_show).
+	// Verify the order: pos, flags, mnt_id, ino (matching Linux's seq_show).
 	lines := strings.Split(strings.TrimSpace(content), "\n")
-	if len(lines) < 3 {
-		t.Fatalf("expected at least 3 lines in fdinfo, got %d: %q", len(lines), content)
+	if len(lines) < 4 {
+		t.Fatalf("expected at least 4 lines in fdinfo, got %d: %q", len(lines), content)
 	}
 	if !strings.HasPrefix(lines[0], "pos:\t") {
 		t.Errorf("first line should be 'pos:', got: %q", lines[0])
@@ -696,6 +701,9 @@ func TestFdInfoContent(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[2], "mnt_id:\t") {
 		t.Errorf("third line should be 'mnt_id:', got: %q", lines[2])
+	}
+	if !strings.HasPrefix(lines[3], "ino:\t") {
+		t.Errorf("fourth line should be 'ino:', got: %q", lines[3])
 	}
 
 	// Verify pos is 0 for a freshly opened file.
@@ -729,6 +737,50 @@ func TestFdInfoContent(t *testing.T) {
 	if !strings.Contains(content, fmt.Sprintf("pos:\t%d", offset)) {
 		t.Errorf("pos should be %d, got: %q", offset, content)
 	}
+
+	// Type-specific fields. See fs/eventfd.c:eventfd_show_fdinfo() and
+	// fs/signalfd.c:signalfd_show_fdinfo().
+	efd, err := eventfd.New(s.Ctx, s.VFS, 42, true /* semMode */, linux.O_RDWR)
+	if err != nil {
+		t.Fatalf("eventfd.New(): %v", err)
+	}
+	defer efd.DecRef(s.Ctx)
+	content = readFdInfo(t, s, task, efd)
+	want := fmt.Sprintf("eventfd-count:               2a\neventfd-id: %d\neventfd-semaphore: 1\n", efd.Impl().(*eventfd.EventFileDescription).ID())
+	if !strings.Contains(content, want) {
+		t.Errorf("eventfd fdinfo should contain %q, got: %q", want, content)
+	}
+
+	// Like Linux, SIGKILL must not appear in the mask. SIGUSR1 is bit 9.
+	sfd, err := signalfd.New(s.VFS, task, linux.SignalSetOf(linux.SIGUSR1)|linux.SignalSetOf(linux.SIGKILL), linux.O_RDWR)
+	if err != nil {
+		t.Fatalf("signalfd.New(): %v", err)
+	}
+	defer sfd.DecRef(s.Ctx)
+	content = readFdInfo(t, s, task, sfd)
+	if want := "sigmask:\t0000000000000200\n"; !strings.Contains(content, want) {
+		t.Errorf("signalfd fdinfo should contain %q, got: %q", want, content)
+	}
+}
+
+// readFdInfo installs file in a fresh task's FD table and returns the
+// contents of /proc/1/fdinfo/[fd] for it.
+func readFdInfo(t *testing.T, s *testutil.System, task *kernel.Task, file *vfs.FileDescription) string {
+	fdno, err := task.FDTable().NewFD(task.AsyncContext(), 0, file, kernel.FDFlags{})
+	if err != nil {
+		t.Fatalf("NewFD(): %v", err)
+	}
+	path := fmt.Sprintf("/proc/1/fdinfo/%d", fdno)
+	fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, s.PathOpAtRoot(path), &vfs.OpenOptions{})
+	if err != nil {
+		t.Fatalf("OpenAt(%q) failed: %v", path, err)
+	}
+	defer fd.DecRef(s.Ctx)
+	content, err := s.ReadToEnd(fd)
+	if err != nil {
+		t.Fatalf("ReadToEnd(%q) failed: %v", path, err)
+	}
+	return content
 }
 
 // TestFdInfoRecursion verifies that accessing fdinfo for a dynamic proc file
