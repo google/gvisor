@@ -325,6 +325,9 @@ func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length 
 	}
 
 	mm.mappingMu.Lock()
+	if mm.reserveOnUnmap {
+		mm.reserveLocked(ar)
+	}
 	_, droppedIDs := mm.unmapLocked(ctx, ar, nil /* droppedIDs */)
 	mm.mappingMu.Unlock()
 
@@ -333,6 +336,23 @@ func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length 
 	}
 
 	return nil
+}
+
+// SetReserveOnUnmap controls whether subsequent calls to MUnmap record
+// the unmapped ranges so that they are not reused for non-MAP_FIXED
+// mappings until ClearReservedAddrRanges is called.
+func (mm *MemoryManager) SetReserveOnUnmap(enable bool) {
+	mm.mappingMu.Lock()
+	defer mm.mappingMu.Unlock()
+	mm.reserveOnUnmap = enable
+}
+
+// ClearReservedAddrRanges makes all ranges recorded due to
+// SetReserveOnUnmap available for reuse.
+func (mm *MemoryManager) ClearReservedAddrRanges() {
+	mm.mappingMu.Lock()
+	defer mm.mappingMu.Unlock()
+	mm.reservedRanges.RemoveAll()
 }
 
 // MRemapOpts specifies options to MRemap.
@@ -801,6 +821,11 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr hostarch.Addr) (hostarch.
 
 	switch {
 	case oldbrkpg < newbrkpg:
+		if mm.isReservedLocked(hostarch.AddrRange{oldbrkpg, newbrkpg}) {
+			addr = mm.brk.End
+			mm.mappingMu.Unlock()
+			return addr, linuxerr.ENOMEM
+		}
 		vseg, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
 			Length: uint64(newbrkpg - oldbrkpg),
 			Addr:   oldbrkpg,

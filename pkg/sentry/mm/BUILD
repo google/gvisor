@@ -85,6 +85,23 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "reserved_set",
+    out = "reserved_set.go",
+    imports = {
+        "hostarch": "gvisor.dev/gvisor/pkg/hostarch",
+    },
+    package = "mm",
+    prefix = "reserved",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "hostarch.Addr",
+        "Range": "hostarch.AddrRange",
+        "Value": "reservedSetValue",
+        "Functions": "reservedSetFunctions",
+    },
+)
+
+go_template_instance(
     name = "io_list",
     out = "io_list.go",
     package = "mm",
@@ -139,6 +156,8 @@ go_library(
         "pma.go",
         "pma_set.go",
         "procfs.go",
+        "reserved.go",
+        "reserved_set.go",
         "save_restore.go",
         "shm.go",
         "special_mappable.go",

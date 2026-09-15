@@ -188,20 +188,22 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 			if opts.Unmap {
 				return ar.Start, nil
 			}
-			vgap := mm.vmas.FindGap(ar.Start)
-			if opts.NoReplace {
-				// MAP_FIXED_NOREPLACE fails with EEXIST iff the requested
-				// range overlaps an existing vma; like Linux, it may map over
-				// guard pages of adjacent MAP_GROWSDOWN mappings. Compare
-				// Linux's mm/mmap.c:do_mmap() => find_vma_intersection().
-				if vgap.Ok() && vgap.Range().IsSupersetOf(ar) {
+			if opts.Fixed || !mm.isReservedLocked(ar) {
+				vgap := mm.vmas.FindGap(ar.Start)
+				if opts.NoReplace {
+					// MAP_FIXED_NOREPLACE fails with EEXIST iff the requested
+					// range overlaps an existing vma; like Linux, it may map over
+					// guard pages of adjacent MAP_GROWSDOWN mappings. Compare
+					// Linux's mm/mmap.c:do_mmap() => find_vma_intersection().
+					if vgap.Ok() && vgap.Range().IsSupersetOf(ar) {
+						return ar.Start, nil
+					}
+					return 0, linuxerr.EEXIST
+				}
+				// Check for the presence of an existing vma or guard page.
+				if vgap.Ok() && vgap.availableRange().IsSupersetOf(ar) {
 					return ar.Start, nil
 				}
-				return 0, linuxerr.EEXIST
-			}
-			// Check for the presence of an existing vma or guard page.
-			if vgap.Ok() && vgap.availableRange().IsSupersetOf(ar) {
-				return ar.Start, nil
 			}
 		}
 	}
@@ -234,17 +236,25 @@ func (mm *MemoryManager) applicationAddrRange() hostarch.AddrRange {
 // Preconditions: mm.mappingMu must be locked.
 func (mm *MemoryManager) findLowestAvailableLocked(length, alignment uint64, bounds hostarch.AddrRange) (hostarch.Addr, error) {
 	for gap := mm.vmas.LowerBoundGap(bounds.Start); gap.Ok() && gap.Start() < bounds.End; gap = gap.NextLargeEnoughGap(hostarch.Addr(length)) {
-		if gr := gap.availableRange().Intersect(bounds); uint64(gr.Length()) >= length {
+		var addr hostarch.Addr
+		if !mm.forEachUnreservedLocked(gap.availableRange().Intersect(bounds), true, func(gr hostarch.AddrRange) bool {
+			if uint64(gr.Length()) < length {
+				return true
+			}
 			// Can we shift up to match the alignment?
 			if offset := uint64(gr.Start) % alignment; offset != 0 {
 				if uint64(gr.Length()) >= length+alignment-offset {
 					// Yes, we're aligned.
-					return gr.Start + hostarch.Addr(alignment-offset), nil
+					addr = gr.Start + hostarch.Addr(alignment-offset)
+					return false
 				}
 			}
 
 			// Either aligned perfectly, or can't align it.
-			return gr.Start, nil
+			addr = gr.Start
+			return false
+		}) {
+			return addr, nil
 		}
 	}
 	return 0, linuxerr.ENOMEM
@@ -253,18 +263,26 @@ func (mm *MemoryManager) findLowestAvailableLocked(length, alignment uint64, bou
 // Preconditions: mm.mappingMu must be locked.
 func (mm *MemoryManager) findHighestAvailableLocked(length, alignment uint64, bounds hostarch.AddrRange) (hostarch.Addr, error) {
 	for gap := mm.vmas.UpperBoundGap(bounds.End); gap.Ok() && gap.End() > bounds.Start; gap = gap.PrevLargeEnoughGap(hostarch.Addr(length)) {
-		if gr := gap.availableRange().Intersect(bounds); uint64(gr.Length()) >= length {
+		var addr hostarch.Addr
+		if !mm.forEachUnreservedLocked(gap.availableRange().Intersect(bounds), false, func(gr hostarch.AddrRange) bool {
+			if uint64(gr.Length()) < length {
+				return true
+			}
 			// Can we shift down to match the alignment?
 			start := gr.End - hostarch.Addr(length)
 			if offset := uint64(start) % alignment; offset != 0 {
 				if gr.Start <= start-hostarch.Addr(offset) {
 					// Yes, we're aligned.
-					return start - hostarch.Addr(offset), nil
+					addr = start - hostarch.Addr(offset)
+					return false
 				}
 			}
 
 			// Either aligned perfectly, or can't align it.
-			return start, nil
+			addr = start
+			return false
+		}) {
+			return addr, nil
 		}
 	}
 	return 0, linuxerr.ENOMEM

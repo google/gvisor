@@ -100,6 +100,20 @@ type MemoryManager struct {
 	// brk is protected by mappingMu.
 	brk hostarch.AddrRange
 
+	// reservedRanges are page-aligned address ranges that must not be reused
+	// for non-MAP_FIXED mappings; see findAvailableLocked. They are recorded
+	// by MUnmap while reserveOnUnmap is set and released by
+	// ClearReservedAddrRanges.
+	//
+	// reservedRanges is protected by mappingMu.
+	reservedRanges reservedSet
+
+	// reserveOnUnmap causes MUnmap to record unmapped ranges in
+	// reservedRanges.
+	//
+	// reserveOnUnmap is protected by mappingMu.
+	reserveOnUnmap bool
+
 	// usageAS is vmas.Span(), cached to accelerate RLIMIT_AS checks.
 	//
 	// usageAS is protected by mappingMu.

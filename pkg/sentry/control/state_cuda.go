@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/timing"
@@ -71,14 +72,25 @@ func preSaveCuda(k *kernel.Kernel, o *state.SaveOpts) error {
 	// FIXME: b/456299722
 	for _, tg := range cudaProcs {
 		tg.SigsegvLock()
+		if m := cudaProcMM(tg); m != nil {
+			m.SetReserveOnUnmap(true)
+		}
 	}
 	err := toggleCudaProcs(sctx, k, o.CudaCheckpointPath, cudaProcs, nil, o.CudaCheckpointSequential)
+	for _, tg := range cudaProcs {
+		if m := cudaProcMM(tg); m != nil {
+			m.SetReserveOnUnmap(false)
+		}
+	}
 	if wasPaused {
 		k.Pause()
 	}
 	if err != nil {
 		// FIXME: b/456299722
 		for _, tg := range cudaProcs {
+			if m := cudaProcMM(tg); m != nil {
+				m.ClearReservedAddrRanges()
+			}
 			tg.SigsegvUnlock()
 		}
 		return err
@@ -157,9 +169,26 @@ func postResumeCuda(k *kernel.Kernel, timeline *timing.Timeline) error {
 	err := toggleCudaProcs(k.SupervisorContext(), k, cudaCheckpointPath, cudaProcs, timeline, cudaCheckpointSequential)
 	// FIXME: b/456299722
 	for _, tg := range cudaProcs {
+		if m := cudaProcMM(tg); m != nil {
+			m.ClearReservedAddrRanges()
+		}
 		tg.SigsegvUnlock()
 	}
 	return err
+}
+
+// cudaProcMM returns the MemoryManager of cudaProc, or nil if it has
+// exited.
+func cudaProcMM(cudaProc *kernel.ThreadGroup) *mm.MemoryManager {
+	leader := cudaProc.Leader()
+	if leader == nil {
+		return nil
+	}
+	var m *mm.MemoryManager
+	leader.WithMuLocked(func(t *kernel.Task) {
+		m = t.MemoryManager()
+	})
+	return m
 }
 
 type checkpointProc struct {
