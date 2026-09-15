@@ -996,6 +996,40 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	return n, nil
 }
 
+// ctrlOsUnixMemacctGetLimits translates cgroupFd. Compare
+// src/nvidia/arch/nvalloc/unix/src/os.c:cliresCtrlCmdOsUnixMemacctGetLimits_IMPL().
+func ctrlOsUnixMemacctGetLimits(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV0000_CTRL_OS_UNIX_MEMACCT_GET_LIMITS_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+
+	origCgroupFD := ctrlParams.CgroupFD
+	if origCgroupFD != nvgpu.NV0000_CTRL_CMD_OS_UNIX_MEMACCT_CURRENT_PROCESS {
+		// The driver only accepts cgroup v2 directory FDs; see (Linux)
+		// kernel/cgroup/cgroup.c:cgroup_get_from_fd().
+		if _, err := fi.t.GetCgroup2NodeFromFD(uint64(origCgroupFD)); err != nil {
+			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		}
+		// The sentry's cgroup is the nearest host ancestor of every sandbox
+		// cgroup, and is what the driver uses for CURRENT_PROCESS.
+		ctrlParams.CgroupFD = nvgpu.NV0000_CTRL_CMD_OS_UNIX_MEMACCT_CURRENT_PROCESS
+	}
+
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.CgroupFD = origCgroupFD
+	if err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlMemoryMulticastFabricAttachGPU(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV00FD_CTRL_ATTACH_GPU_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
@@ -1468,6 +1502,14 @@ func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 		// is enabled, these might not depend on the channel group at all.
 		// Since nvproxy currently does not support MIG, we represent these
 		// dependencies as unconditionally on the channel group instead.
+	})
+}
+
+// rmAllocChannelGroupV615 is the same as rmAllocChannelGroup, but for
+// 615.71.09.
+func rmAllocChannelGroupV615(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
 	})
 }
 
