@@ -179,6 +179,26 @@ go_test(
 )
 
 go_test(
+    name = "natfwd_test",
+    size = "small",
+    srcs = ["natfwd_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/adapters/gonet",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/ethernet",
+        "//pkg/tcpip/link/pipe",
+        "//pkg/tcpip/link/veth",
+        "//pkg/tcpip/network/arp",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
+        "//pkg/tcpip/transport/tcp",
+    ],
+)
+
+go_test(
     name = "multicast_forward_test",
     size = "small",
     srcs = ["multicast_forward_test.go"],
