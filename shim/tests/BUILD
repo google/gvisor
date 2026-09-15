@@ -10,10 +10,13 @@ go_test(
     srcs = [
         "gvisor_task_service_test.go",
         "metric_server_test.go",
+        "restore_test.go",
         "shim_test.go",
     ],
     deps = [
         "//pkg/shim/v1/taskserver:task_server_go_proto",
+        "//pkg/test/testutil",
+        "//runsc/specutils",
         "//shim/shimutils",
         "@com_github_containerd_containerd_api//events:go_default_library",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
