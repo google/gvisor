@@ -83,12 +83,11 @@ type oomPoller interface {
 	add(id string, cg any) error
 	// run monitors oom event and notifies the shim about them
 	run(ctx context.Context)
-	// isOOM synchronously checks if the container was OOM-killed by reading
-	// the cgroup's memory events. This is used at container exit time to
-	// ensure the TaskOOM event is published before TaskExit, even if the
-	// async notification has not yet arrived. This is a one-shot operation:
-	// the cgroup reference is consumed on the first call, and subsequent
-	// calls for the same id return false.
+	// isOOM reports whether the caller should publish TaskOOM before TaskExit.
+	// In cgroups v2 it checks memory.events and claims the count, but does not
+	// wait for an event already claimed by the async path to be published.
+	// The cgroup reference is consumed on the first call, so subsequent calls
+	// for the same id return false.
 	isOOM(id string) bool
 }
 
@@ -119,9 +118,13 @@ type runscService struct {
 	oomPoller oomPoller
 
 	// containers maps container id to a container.
+	//
+	// +checklocks:mu
 	containers map[string]*Container
 
 	// root is the runsc root directory.
+	//
+	// +checklocks:mu
 	root string
 
 	// runtime is runsc runtime configured for sandbox.
@@ -170,6 +173,8 @@ func NewTaskService(ctx context.Context, publisher shim.Publisher, sd shutdown.S
 }
 
 // getContainer returns the container by id.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) getContainer(id string) (*Container, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,6 +187,8 @@ func (s *runscService) getContainer(id string) (*Container, error) {
 
 // Create creates a new initial process and container with the underlying OCI
 // runtime.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Create(ctx context.Context, r *task.CreateTaskRequest) (*task.CreateTaskResponse, error) {
 	return s.CreateWithFSRestore(ctx, &extension.CreateWithFSRestoreRequest{
 		Create: r,
@@ -190,6 +197,8 @@ func (s *runscService) Create(ctx context.Context, r *task.CreateTaskRequest) (*
 
 // CreateWithFSRestore is the same as Create, but it additionally restores the
 // container's filesystem from a snapshot.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -253,6 +262,8 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 }
 
 // Start starts the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Start(ctx context.Context, r *task.StartRequest) (*task.StartResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -281,6 +292,8 @@ func (s *runscService) Start(ctx context.Context, r *task.StartRequest) (*task.S
 }
 
 // Delete deletes the initial process and container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Delete(ctx context.Context, r *task.DeleteRequest) (*task.DeleteResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -310,6 +323,8 @@ func (s *runscService) Delete(ctx context.Context, r *task.DeleteRequest) (*task
 }
 
 // Exec spawns an additional process inside the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Exec(ctx context.Context, r *task.ExecProcessRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -332,6 +347,8 @@ func (s *runscService) Exec(ctx context.Context, r *task.ExecProcessRequest) (*t
 }
 
 // ResizePty resizes the terminal of a process.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) ResizePty(ctx context.Context, r *task.ResizePtyRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -344,6 +361,8 @@ func (s *runscService) ResizePty(ctx context.Context, r *task.ResizePtyRequest) 
 }
 
 // State returns runtime state information for the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) State(ctx context.Context, r *task.StateRequest) (*task.StateResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -388,6 +407,8 @@ func (s *runscService) State(ctx context.Context, r *task.StateRequest) (*task.S
 }
 
 // Pause the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Pause(ctx context.Context, r *task.PauseRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -403,6 +424,8 @@ func (s *runscService) Pause(ctx context.Context, r *task.PauseRequest) (*types.
 }
 
 // Resume the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Resume(ctx context.Context, r *task.ResumeRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -418,6 +441,8 @@ func (s *runscService) Resume(ctx context.Context, r *task.ResumeRequest) (*type
 }
 
 // Kill the container with the provided signal.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Kill(ctx context.Context, r *task.KillRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -430,6 +455,8 @@ func (s *runscService) Kill(ctx context.Context, r *task.KillRequest) (*types.Em
 }
 
 // Pids returns all pids inside the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Pids(ctx context.Context, r *task.PidsRequest) (*task.PidsResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -465,6 +492,8 @@ func (s *runscService) Pids(ctx context.Context, r *task.PidsRequest) (*task.Pid
 }
 
 // CloseIO closes the I/O context of the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) CloseIO(ctx context.Context, r *task.CloseIORequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -482,6 +511,8 @@ func (s *runscService) Checkpoint(ctx context.Context, r *task.CheckpointTaskReq
 }
 
 // Restore restores the container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Restore(ctx context.Context, r *extension.RestoreRequest) (*task.StartResponse, error) {
 	c, err := s.getContainer(r.Start.ID)
 	if err != nil {
@@ -497,6 +528,8 @@ func (s *runscService) Restore(ctx context.Context, r *extension.RestoreRequest)
 }
 
 // Connect returns shim information such as the shim's pid.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Connect(ctx context.Context, r *task.ConnectRequest) (*task.ConnectResponse, error) {
 	var pid int
 	if c, err := s.getContainer(r.ID); err == nil {
@@ -508,6 +541,7 @@ func (s *runscService) Connect(ctx context.Context, r *task.ConnectRequest) (*ta
 	}, nil
 }
 
+// +checklocksexclude:s.mu
 func (s *runscService) Shutdown(ctx context.Context, r *task.ShutdownRequest) (*types.Empty, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -519,6 +553,7 @@ func (s *runscService) Shutdown(ctx context.Context, r *task.ShutdownRequest) (*
 	return empty, nil
 }
 
+// +checklocksexclude:s.mu
 func (s *runscService) Stats(ctx context.Context, r *task.StatsRequest) (*task.StatsResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -536,6 +571,8 @@ func (s *runscService) Stats(ctx context.Context, r *task.StatsRequest) (*task.S
 }
 
 // Update updates a running container.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Update(ctx context.Context, r *task.UpdateTaskRequest) (*types.Empty, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -548,6 +585,8 @@ func (s *runscService) Update(ctx context.Context, r *task.UpdateTaskRequest) (*
 }
 
 // Wait waits for the container to exit.
+//
+// +checklocksexclude:s.mu
 func (s *runscService) Wait(ctx context.Context, r *task.WaitRequest) (*task.WaitResponse, error) {
 	c, err := s.getContainer(r.ID)
 	if err != nil {
@@ -573,6 +612,7 @@ func (s *runscService) processExits(ctx context.Context) {
 	}
 }
 
+// +checklocksexclude:s.mu
 func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	// Find the container whose process exited.
 	s.mu.Lock()
@@ -638,6 +678,7 @@ func (s *runscService) send(event any) {
 	s.events <- event
 }
 
+// +checklocksexclude:s.mu
 func (s *runscService) allProcessesForAllContainers() (o []process.Process) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -810,6 +851,8 @@ func NewGvisorTaskServer(s extension.TaskServiceExt) *GvisorTaskServer {
 }
 
 // Checkpoint implements taskServer.GvisorTaskServiceExt.
+//
+// +checklocksexclude:g.s.mu
 func (g *GvisorTaskServer) Checkpoint(ctx context.Context, req *pb.CheckpointRequest) (*pb.CheckpointResponse, error) {
 	c, err := g.s.getContainer(req.GetId())
 	if err != nil {
@@ -855,6 +898,8 @@ func (g *GvisorTaskServer) Checkpoint(ctx context.Context, req *pb.CheckpointReq
 }
 
 // Wait implements taskServer.GvisorTaskServiceExt.
+//
+// +checklocksexclude:g.s.mu
 func (g *GvisorTaskServer) Wait(ctx context.Context, req *pb.WaitRequest) (*pb.WaitResponse, error) {
 	c, err := g.s.getContainer(req.GetId())
 	if err != nil {
@@ -896,6 +941,8 @@ func (g *GvisorTaskServer) Wait(ctx context.Context, req *pb.WaitRequest) (*pb.W
 }
 
 // State implements taskServer.GvisorTaskServiceExt.
+//
+// +checklocksexclude:g.s.mu
 func (g *GvisorTaskServer) State(ctx context.Context, req *pb.StateRequest) (*pb.StateResponse, error) {
 	if c, err := g.s.getContainer(req.GetId()); err == nil {
 		if p, err := c.Process(""); err == nil {
