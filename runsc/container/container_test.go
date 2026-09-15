@@ -1248,6 +1248,17 @@ func TestSignalProcessGroup(t *testing.T) {
 	}
 }
 
+// killedBySIGKILL reports whether ws says the container's init process was
+// killed by SIGKILL. Killing init can tear the sandbox down before it can
+// respond to the Sandbox.Wait RPC, in which case we fall back to the sandbox
+// process's own exit status, which reports the signal as `128+SIGKILL`.
+func killedBySIGKILL(ws unix.WaitStatus) bool {
+	if ws.Signaled() {
+		return ws.Signal() == unix.SIGKILL
+	}
+	return ws.ExitStatus() == 128+int(unix.SIGKILL)
+}
+
 // TestSignalUnkillablePolicy verifies Linux SIGNAL_UNKILLABLE semantics for PID 1:
 //   - Peer processes in the same PID namespace sending unhandled default-fatal signals
 //     (like SIGKILL) to PID 1 have their signals discarded.
@@ -1310,8 +1321,8 @@ func TestSignalUnkillablePolicy(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed waiting for container after host SIGKILL: %v", err)
 				}
-				if !waitStatus.Signaled() || waitStatus.Signal() != unix.SIGKILL {
-					t.Fatalf("expected container killed by SIGKILL, got %v", waitStatus)
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected container killed by SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
 				}
 			})
 
@@ -1403,7 +1414,7 @@ func TestSignalUnkillablePolicy(t *testing.T) {
 				if err != nil {
 					t.Fatalf("cont.Wait: %v", err)
 				}
-				if (!ws.Signaled() || ws.Signal() != unix.SIGKILL) && ws.ExitStatus() != 128+int(unix.SIGKILL) {
+				if !killedBySIGKILL(ws) {
 					t.Fatalf("expected container killed by SIGKILL under policy=none, got %v (status=%d)", ws, ws.ExitStatus())
 				}
 			})
@@ -1500,8 +1511,8 @@ func TestSignalUnkillablePolicyRestore(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed waiting for restored container after host SIGKILL: %v", err)
 				}
-				if !waitStatus.Signaled() || waitStatus.Signal() != unix.SIGKILL {
-					t.Fatalf("expected restored container killed by host SIGKILL, got %v", waitStatus)
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected restored container killed by host SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
 				}
 			})
 
@@ -1571,7 +1582,7 @@ func TestSignalUnkillablePolicyRestore(t *testing.T) {
 				if err != nil {
 					t.Fatalf("cont2.Wait: %v", err)
 				}
-				if (!ws.Signaled() || ws.Signal() != unix.SIGKILL) && ws.ExitStatus() != 128+int(unix.SIGKILL) {
+				if !killedBySIGKILL(ws) {
 					t.Fatalf("expected container killed by SIGKILL under policy=none after restore, got %v (status=%d)", ws, ws.ExitStatus())
 				}
 			})
@@ -1623,8 +1634,8 @@ func TestSignalUnkillablePolicyForcedSignals(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed waiting for container: %v", err)
 				}
-				if !waitStatus.Signaled() || waitStatus.Signal() != unix.SIGKILL {
-					t.Fatalf("expected container killed by SIGKILL, got %v", waitStatus)
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected container killed by SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
 				}
 			})
 
@@ -1677,8 +1688,8 @@ func TestSignalUnkillablePolicyForcedSignals(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed waiting for container: %v", err)
 				}
-				if !waitStatus.Signaled() || waitStatus.Signal() != unix.SIGKILL {
-					t.Fatalf("expected container killed by SIGKILL, got %v", waitStatus)
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected container killed by SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
 				}
 			})
 
