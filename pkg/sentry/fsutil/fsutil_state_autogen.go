@@ -302,7 +302,6 @@ func (f *MmapPreciseFile) StateFields() []string {
 		"addrMustEqualFileOffset",
 		"mappableReleased",
 		"refs",
-		"mappings",
 	}
 }
 
@@ -317,7 +316,6 @@ func (f *MmapPreciseFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &f.addrMustEqualFileOffset)
 	stateSinkObject.Save(4, &f.mappableReleased)
 	stateSinkObject.Save(5, &f.refs)
-	stateSinkObject.Save(6, &f.mappings)
 }
 
 // +checklocksignore
@@ -328,7 +326,6 @@ func (f *MmapPreciseFile) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(3, &f.addrMustEqualFileOffset)
 	stateSourceObject.Load(4, &f.mappableReleased)
 	stateSourceObject.Load(5, &f.refs)
-	stateSourceObject.Load(6, &f.mappings)
 	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
 }
 

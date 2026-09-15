@@ -193,6 +193,12 @@ func tcpipConnectionID(pkt *stack.PacketBuffer) (connectionID, bool) {
 	switch header.IPVersion(h) {
 	case header.IPv4Version:
 		hdrLen := header.IPv4(h).HeaderLength()
+		if hdrLen < header.IPv4MinimumSize {
+			// The header is too short to hold the addresses and ports that the
+			// connection ID is derived from; reading them would read past the end
+			// of the header. The packet is malformed, so drop it.
+			return cid, true
+		}
 		h, ok = pkt.Data().PullUp(int(hdrLen) + tcpSrcDstPortLen)
 		if !ok {
 			return cid, true

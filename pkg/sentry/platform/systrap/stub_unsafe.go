@@ -16,7 +16,7 @@ package systrap
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -95,7 +95,7 @@ type mapsRegion struct {
 // parseMaps parses the /proc/self/maps file and returns regions where the stub
 // region can be mapped.
 func parseMaps(stubAreaStart, stubAreaEnd, minLen uintptr) ([]mapsRegion, error) {
-	data, err := ioutil.ReadFile("/proc/self/maps")
+	data, err := os.ReadFile("/proc/self/maps")
 	if err != nil {
 		return nil, err
 	}
