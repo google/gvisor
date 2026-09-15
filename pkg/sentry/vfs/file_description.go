@@ -586,9 +586,16 @@ func (fd *FileDescription) Stat(ctx context.Context, opts StatOptions) (linux.St
 	} else {
 		stat, err = fd.impl.Stat(ctx, opts)
 	}
-	if err == nil && opts.Mask&linux.STATX_MNT_ID != 0 {
-		stat.MntID = fd.vd.mount.ID
-		stat.Mask |= linux.STATX_MNT_ID
+	if err == nil {
+		if opts.Mask&linux.STATX_MNT_ID != 0 {
+			stat.MntID = fd.vd.mount.ID
+			stat.Mask |= linux.STATX_MNT_ID
+		}
+		// A statx via this fd uses AT_EMPTY_PATH; set the mount-root bit here.
+		if fd.vd.dentry == fd.vd.mount.root {
+			stat.Attributes |= linux.STATX_ATTR_MOUNT_ROOT
+		}
+		stat.AttributesMask |= linux.STATX_ATTR_MOUNT_ROOT
 	}
 	return stat, err
 }

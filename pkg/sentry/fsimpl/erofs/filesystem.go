@@ -386,6 +386,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	defer d.DecRef(ctx)
 	var stat linux.Statx
 	d.inode.statTo(&stat)
+	rp.AddMountRootAttr(&d.vfsd, &stat)
 	return stat, nil
 }
 
