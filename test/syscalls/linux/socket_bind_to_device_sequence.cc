@@ -193,8 +193,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
   in_port_t port_ = 0;
   // sockets_to_close_ is a map from action index to the socket that was
   // created.
-  absl::node_hash_map<int,
-                      std::unique_ptr<gvisor::testing::FileDescriptor>>
+  absl::node_hash_map<int, std::unique_ptr<gvisor::testing::FileDescriptor>>
       sockets_to_close_;
   int next_socket_id_ = 0;
 };
