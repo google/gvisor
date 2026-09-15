@@ -17,6 +17,8 @@ package kernel
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 )
 
@@ -71,5 +73,45 @@ func TestTaskCPU(t *testing.T) {
 			t.Errorf("assignCPU(%v, %v) got %v, want %v", test.mask, test.tid, assigned, test.cpu)
 		}
 	}
+}
 
+func TestFSRestoreFromContext(t *testing.T) {
+	if got := FSRestoreFromContext(nil); got {
+		t.Errorf("FSRestoreFromContext(nil) = %v, want false", got)
+	}
+	ctx := context.Background()
+	if got := FSRestoreFromContext(ctx); got {
+		t.Errorf("FSRestoreFromContext(ctx) = %v, want false", got)
+	}
+	mfs := make(map[checkpoint.ResourceID]struct{})
+	ctx = WithFSRestore(ctx, mfs)
+	if got := FSRestoreFromContext(ctx); !got {
+		t.Errorf("FSRestoreFromContext(ctx) = %v, want true", got)
+	}
+	if got := FSCheckpointedMemoryFilesFromContext(ctx); got == nil {
+		t.Errorf("FSCheckpointedMemoryFilesFromContext(ctx) = nil, want non-nil")
+	}
+}
+
+func TestMatchesPaths(t *testing.T) {
+	pathsMap := map[checkpoint.ResourceID]struct{}{
+		{ContainerName: "c1", Path: "/data"}: {},
+	}
+	rid := checkpoint.ResourceID{ContainerName: "c1", Path: "/data"}
+	if !matchesPaths(rid, pathsMap, true /* isTmpfs */) {
+		t.Errorf("matchesPaths(%+v, isTmpfs=true) = false, want true", rid)
+	}
+	if matchesPaths(rid, pathsMap, false /* isTmpfs */) {
+		t.Errorf("matchesPaths(%+v, isTmpfs=false) = true, want false", rid)
+	}
+}
+
+func TestMatchesPathsDefaultRoot(t *testing.T) {
+	pathsMap := map[checkpoint.ResourceID]struct{}{
+		{Path: "/"}: {},
+	}
+	rid := checkpoint.ResourceID{Path: "/"}
+	if !matchesPaths(rid, pathsMap, true /* isTmpfs */) {
+		t.Errorf("matchesPaths(%+v, isTmpfs=true) = false, want true", rid)
+	}
 }
