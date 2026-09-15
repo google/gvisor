@@ -15,6 +15,7 @@
 package sandboxsetup
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -84,6 +85,42 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 			got := ShouldExposeTpuDevice(tst.path)
 			if got != tst.want {
 				t.Errorf("ShouldExposeTpuDevice(%q) = %v, want %v", tst.path, got, tst.want)
+			}
+		})
+	}
+}
+
+func TestOptionsWithHostNoExec(t *testing.T) {
+	tests := []struct {
+		name   string
+		opts   []string
+		noexec bool
+		want   []string
+	}{
+		{
+			name:   "adds noexec and drops exec",
+			opts:   []string{"bind", "exec"},
+			noexec: true,
+			want:   []string{"bind", "noexec"},
+		},
+		{
+			name:   "keeps existing noexec",
+			opts:   []string{"bind", "noexec"},
+			noexec: true,
+			want:   []string{"bind", "noexec"},
+		},
+		{
+			name:   "leaves exec when host allows it",
+			opts:   []string{"bind", "exec"},
+			noexec: false,
+			want:   []string{"bind", "exec"},
+		},
+	}
+	for _, tst := range tests {
+		t.Run(tst.name, func(t *testing.T) {
+			got := optionsWithHostNoExec(tst.opts, tst.noexec)
+			if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", tst.want) {
+				t.Errorf("optionsWithHostNoExec(%q, %v) = %q, want %q", tst.opts, tst.noexec, got, tst.want)
 			}
 		})
 	}
