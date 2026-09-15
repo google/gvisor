@@ -161,6 +161,39 @@ static void set_fsbase(uint64_t fsbase) {
   }
 }
 
+// get_gsbase writes the current thread's gsbase value to ptregs.
+static uint64_t get_gsbase(void) {
+  uint64_t gsbase;
+  if (__export_arch_state.fsgsbase) {
+    asm volatile("rdgsbase %0" : "=r"(gsbase));
+  } else {
+    int ret =
+        __syscall(__NR_arch_prctl, ARCH_GET_GS, (long)&gsbase, 0, 0, 0, 0);
+    if (ret) {
+      panic(STUB_ERROR_ARCH_PRCTL, ret);
+    }
+  }
+  return gsbase;
+}
+
+// set_gsbase sets the current thread's gsbase to the gsbase value in ptregs.
+static void set_gsbase(uint64_t gsbase) {
+  if (__export_arch_state.fsgsbase) {
+    asm volatile("wrgsbase %0" : : "r"(gsbase) : "memory");
+  } else {
+    int ret = __syscall(__NR_arch_prctl, ARCH_SET_GS, gsbase, 0, 0, 0, 0);
+    if (ret) {
+      panic(STUB_ERROR_ARCH_PRCTL, ret);
+    }
+  }
+}
+
+// is_syscall_patching_disabled returns true if syscall patching is disabled
+// globally or for the given context.
+static bool is_syscall_patching_disabled(struct thread_context* ctx) {
+  return __export_disable_syscall_patching != 0 || ctx->gs_used_by_app != 0;
+}
+
 // switch_context_amd64 is a wrapper of switch_context() which does checks
 // specific to amd64.
 struct thread_context *switch_context_amd64(
@@ -209,11 +242,21 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct thread_context *ctx = NULL;
   enum context_state ctx_state = CONTEXT_STATE_INVALID;
   long fs_base = 0;
+  long gs_base = (uint64_t)sysmsg;
 
   if (thread_state == THREAD_STATE_INITIALIZING) {
     // Find a new context and exit to restore it.
     init_new_thread();
     goto init;
+  }
+
+  if (thread_state == THREAD_STATE_TRANSITION_TO_SIGHANDLER) {
+    // Thread was transitioned from the fast syshandler path via
+    // transition_syshandler_to_sighandler(). Jump to restore to safely restore
+    // guest registers (including GS base and fpstate) via sigreturn.
+    ctx = sysmsg->context;
+    atomic_store(&sysmsg->state, THREAD_STATE_NONE);
+    goto restore;
   }
 
   ctx = sysmsg->context;
@@ -232,6 +275,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   }
 
   fs_base = get_fsbase();
+  // If the GS register is used by the app, find out what the actual hardware
+  // value is. Use this to compare to the value the thread is using later
+  // on to determine if we need to sync the ctx GS base with the thread GS base.
+  if (ctx->gs_used_by_app != 0) {
+    gs_base = get_gsbase();
+  }
 
   ctx->signo = signo;
   ctx->siginfo = *siginfo;
@@ -241,6 +290,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   if (signo != SIGCHLD ||
       ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
     ctx->ptregs.fs_base = fs_base;
+    // If ctx->gs_used_by_app is non-zero, then we are in a context where the GS
+    // register is used by the application. Thus, set the GS base to the
+    // value in the context.
+    if (ctx->gs_used_by_app != 0) {
+      ctx->ptregs.gs_base = gs_base;
+    }
     ctx->err = 0;
     gregs_to_ptregs(ucontext, &ctx->ptregs);
     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
@@ -254,8 +309,10 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       // Check whether this syscall can be replaced on a function call or not.
       // If a syscall instruction set is "mov sysno, %eax, syscall", it can be
       // replaced on a function call which works much faster.
+      // Syscall patching must be enabled and the GS register must not be used
+      // by the application.
       // Look at pkg/sentry/usertrap for more details.
-      if (__export_disable_syscall_patching == 0 &&
+      if (!is_syscall_patching_disabled(ctx) &&
           siginfo->si_arch == AUDIT_ARCH_X86_64) {
         uint8_t *rip = (uint8_t *)ctx->ptregs.rip;
         // FIXME(b/144063246): Even if all five bytes before the syscall
@@ -337,17 +394,45 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
 init:
   ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
+restore:
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
   }
 
-  if (atomic_load(&ctx->fpstate_changed)) {
+  // Setting gs_base should restore ctx->ptregs.gs_base if syscall patching
+  // is disabled, or the sysmsg struct address if syscall patching is enabled.
+  uint64_t target_gs = is_syscall_patching_disabled(ctx) ? ctx->ptregs.gs_base
+                                                         : (uint64_t)sysmsg;
+  if (gs_base != target_gs) {
+    set_gsbase(target_gs);
+  }
+
+  if (atomic_load(&ctx->fpstate_changed) || is_syscall_patching_disabled(ctx)) {
     prep_fpstate_for_sigframe(
         ctx->fpstate, __export_arch_state.fp_len,
         __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
     ucontext->uc_mcontext.fpregs = (void *)ctx->fpstate;
   }
   ptregs_to_gregs(ucontext, &ctx->ptregs);
+}
+
+// transition_syshandler_to_sighandler transitions the sysmsg thread from the
+// fast syshandler patched syscall path to the slow signal handling path.
+//
+// When syscall patching is disabled dynamically (e.g. the guest calls SET_GS),
+// the thread cannot resume execution directly from the syshandler path because
+// exiting the syshandler path requires the GS register to point to the
+// sysmsg struct.
+//
+// Thus, set the thread state to THREAD_STATE_TRANSITION_TO_SIGHANDLER. Then,
+// by triggering a fault, we can jump back into the sighandler and safely
+// restore the context from there, exiting safely even when GS has been
+// modified.
+static void transition_syshandler_to_sighandler(struct sysmsg* sysmsg) {
+  atomic_store(&sysmsg->state, THREAD_STATE_TRANSITION_TO_SIGHANDLER);
+  for (;;) {
+    asm volatile("ud2");
+  }
 }
 
 void __syshandler() {
@@ -375,6 +460,10 @@ void __syshandler() {
   // only resume the current process, all other actions are
   // prohibited after this point.
 
+  if (is_syscall_patching_disabled(ctx)) {
+    transition_syshandler_to_sighandler(sysmsg);
+  }
+
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
   }
@@ -382,13 +471,6 @@ void __syshandler() {
 
 // asm_restore_state is implemented in syshandler_amd64.S
 void asm_restore_state();
-
-// On x86 restore_state jumps straight to user code and does not return.
-void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
-                   void *unused) {
-  set_fsbase(ctx->ptregs.fs_base);
-  asm_restore_state();
-}
 
 void verify_offsets_amd64() {
 #define PTREGS_OFFSET offsetof(struct thread_context, ptregs)

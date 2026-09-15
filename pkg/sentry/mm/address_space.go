@@ -32,6 +32,12 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 	return mm.as
 }
 
+// UserModifiedGS notifies the address space that the user has modified the GS
+// register.
+func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
+	return mm.AddressSpace().UserModifiedGS(ctx, mm)
+}
+
 // mapASLocked maps addresses in ar into mm.as.
 //
 // Preconditions:
