@@ -1,0 +1,62 @@
+{
+  "auth": {
+    "profiles": {
+      "ollama:default": { "provider": "ollama", "mode": "api_key" }
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://ollama:11434",
+        "api": "ollama",
+        "apiKey": "ollama-local",
+        "timeoutSeconds": 600,
+        "models": [{
+          "id": "qwen3-vl:30b-a3b-instruct",
+          "name": "qwen3-vl:30b-a3b-instruct",
+          "reasoning": false,
+          "input": ["text", "image"],
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+          "contextWindow": 262144,
+          "contextTokens": 65536,
+          "maxTokens": 8192,
+          "params": { "num_ctx": 65536, "keep_alive": "9001h" }
+        }]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model":      { "primary": "ollama/qwen3-vl:30b-a3b-instruct" },
+      "imageModel": { "primary": "ollama/qwen3-vl:30b-a3b-instruct" }
+    }
+  },
+  "mcp": {
+    "servers": {
+      "desktop": {
+        "url": "http://gnome-mcp:8931/mcp",
+        "transport": "streamable-http",
+        "enabled": true,
+        "connectionTimeoutMs": 20000,
+        "requestTimeoutMs": 180000,
+        "codex": { "defaultToolsApprovalMode": "auto" },
+        "toolFilter": { "exclude": ["resources_*", "prompts_*"] }
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "controlUi": {
+      "dangerouslyDisableDeviceAuth": true,
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
+  },
+  "browser": { "enabled": false },
+  "tools": {
+    "profile": "full",
+    "toolSearch": false,
+    "loopDetection": { "enabled": true },
+    "web": { "search": { "enabled": false }, "fetch": { "enabled": false } }
+  }
+}
