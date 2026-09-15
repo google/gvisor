@@ -408,6 +408,12 @@ func TestDeliverPacket(t *testing.T) {
 				}
 				// Make it look like an IPv4 packet.
 				all[0] = 0x40
+				if !eth {
+					// Without an Ethernet header the dispatcher takes the
+					// network protocol from the IPv4 header, which it only
+					// parses if the header length is valid.
+					all[0] = 0x45
+				}
 
 				wantPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.EthernetMinimumSize,
@@ -633,7 +639,18 @@ func TestDispatchPacketFormat(t *testing.T) {
 		{
 			name:          "readVDispatcherNoEth",
 			newDispatcher: newReadVDispatcher,
-			netHdr:        []byte{0x40, 0, 0, 0},
+			// Links without an Ethernet header rely on the IPv4 header to
+			// determine the network protocol, so it must be well formed.
+			netHdr: []byte{
+				0x45, 0, 0, 24, // Version/IHL, DSCP/ECN, total length.
+				0, 0, 0, 0, // ID, flags and fragment offset.
+				64, byte(header.TCPProtocolNumber), 0, 0, // TTL, protocol, checksum.
+				192, 168, 0, 1, // Src addr.
+				192, 168, 0, 2, // Dst addr.
+
+				// TCP source and destination ports.
+				0, 80, 0, 81,
+			},
 		},
 		{
 			name:          "readVDispatcherNoEthIPv6",
