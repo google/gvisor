@@ -125,6 +125,15 @@ type Stack interface {
 	// SetForwarding enables or disables packet forwarding between NICs.
 	SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error
 
+	// GetAllowExternalLoopbackTraffic returns whether acceptance of martian
+	// loopback packets (Linux net.ipv4.conf.*.route_localnet) is enabled for the
+	// protocol.
+	GetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber) (bool, error)
+
+	// SetAllowExternalLoopbackTraffic enables or disables acceptance of martian
+	// loopback packets (Linux net.ipv4.conf.*.route_localnet) for the protocol.
+	SetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber, enable bool) error
+
 	// PortRange returns the UDP and TCP inclusive range of ephemeral ports
 	// used in both IPv4 and IPv6.
 	PortRange() (uint16, uint16)
