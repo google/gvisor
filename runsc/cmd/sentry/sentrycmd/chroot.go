@@ -111,12 +111,20 @@ func setupMinimalProcfs(chroot string, timer *timing.Timer) error {
 		}
 	}
 	// Copy needed files.
-	for _, f := range []string{
-		"/proc/sys/vm/mmap_min_addr",
-		"/proc/sys/kernel/cap_last_cap",
+	for _, f := range []struct {
+		path     string
+		optional bool
+	}{
+		// If mmap_min_addr is unreadable the sentry will probe for the value.
+		{path: "/proc/sys/vm/mmap_min_addr", optional: true},
+		{path: "/proc/sys/kernel/cap_last_cap"},
 	} {
-		if err := sandboxsetup.CopyFile(filepath.Join(chroot, f), f); err != nil {
-			return fmt.Errorf("failed to copy %q -> %q: %w", f, filepath.Join(chroot, f), err)
+		if err := sandboxsetup.CopyFile(filepath.Join(chroot, f.path), f.path); err != nil {
+			if f.optional {
+				log.Infof("Failed to copy %q -> %q: %v; continuing anyway.", f.path, filepath.Join(chroot, f.path), err)
+				continue
+			}
+			return fmt.Errorf("failed to copy %q -> %q: %w", f.path, filepath.Join(chroot, f.path), err)
 		}
 	}
 	// Create symlink for /proc/self.
