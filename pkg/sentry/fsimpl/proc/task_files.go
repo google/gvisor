@@ -544,8 +544,9 @@ type memFD struct {
 
 	inode *memInode
 	mm    *mm.MemoryManager
-	// mu guards the fields below.
-	mu     sync.Mutex `state:"nosave"`
+	mu    sync.Mutex `state:"nosave"`
+
+	// +checklocks:mu
 	offset int64
 }
 
@@ -560,6 +561,8 @@ func (fd *memFD) Init(m *vfs.Mount, d *kernfs.Dentry, inode *memInode, flags uin
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
+//
+// +checklocksexclude:fd.mu
 func (fd *memFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
@@ -630,6 +633,8 @@ func (fd *memFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
+//
+// +checklocksexclude:fd.mu
 func (fd *memFD) Write(ctx context.Context, dst usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	fd.mu.Lock()
 	n, err := fd.PWrite(ctx, dst, fd.offset, opts)
@@ -639,6 +644,8 @@ func (fd *memFD) Write(ctx context.Context, dst usermem.IOSequence, opts vfs.Wri
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
+//
+// +checklocksexclude:fd.mu
 func (fd *memFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	fd.mu.Lock()
 	n, err := fd.PRead(ctx, dst, fd.offset, opts)

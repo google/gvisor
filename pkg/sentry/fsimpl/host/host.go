@@ -166,33 +166,43 @@ type inode struct {
 	queue waiter.Queue
 
 	// virtualOwner caches ownership and permission information to override the
-	// underlying file owner and permission. This is used to allow the unstrusted
+	// underlying file owner and permission. This is used to allow the untrusted
 	// application to change these fields without affecting the host.
 	virtualOwner virtualOwner
 
-	// maps holds application memory mappings of the inode. maps is protected
-	// by mapsMu.
-	mapsMu   sync.Mutex `state:"nosave"`
+	mapsMu sync.Mutex `state:"nosave"`
+
+	// mappings holds application memory mappings of the inode.
+	//
+	// +checklocks:mapsMu
 	mappings memmap.MappingSet
 
 	// mmapFile implements memmap.File for hostFD.
 	mmapFile fsutil.MmapCachedFile
 
+	bufMu sync.Mutex `state:"nosave"`
+
 	// If haveBuf is non-zero, hostFD represents a pipe, and buf contains data
-	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
-	// and buf are protected by bufMu.
-	bufMu   sync.Mutex `state:"nosave"`
+	// read from the pipe from previous calls to inode.beforeSave().
+	//
+	// +checklocks:bufMu
+	// +checkatomic
 	haveBuf atomicbitops.Uint32
-	buf     []byte
+
+	// +checklocks:bufMu
+	buf []byte
 
 	// If the inode corresponds to a TTY, tty is the kernel.TTY.
 	//
 	// This pointer is initialized at creation time and is immutable.
 	tty *kernel.TTY
-	// If the inode corresponds to a TTY, termios is the cached termios
-	// struct. It is protected by termiosMu.
+
 	termiosMu sync.Mutex `state:"nosave"`
-	termios   linux.KernelTermios
+
+	// If the inode corresponds to a TTY, termios is the cached termios struct.
+	//
+	// +checklocks:termiosMu
+	termios linux.KernelTermios
 }
 
 func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
@@ -666,6 +676,8 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 }
 
 // DecRef implements kernfs.Inode.DecRef.
+//
+// +checklocksexclude:i.queue.mu
 func (i *inode) DecRef(ctx context.Context) {
 	i.inodeRefs.DecRef(func() {
 		if i.hostFD >= 0 {
@@ -789,11 +801,12 @@ type fileDescription struct {
 	// inode is immutable after fileDescription creation.
 	inode *inode
 
-	// offsetMu protects offset.
 	offsetMu sync.Mutex `state:"nosave"`
 
 	// offset specifies the current file offset. It is only meaningful when
 	// inode.seekable is true.
+	//
+	// +checklocks:offsetMu
 	offset int64
 }
 
@@ -849,6 +862,9 @@ func (f *fileDescription) PRead(ctx context.Context, dst usermem.IOSequence, off
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
+//
+// +checklocksexclude:f.offsetMu
+// +checklocksexclude:f.inode.bufMu
 func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// Check that flags are supported.
 	//
@@ -884,6 +900,7 @@ func (f *fileDescription) Read(ctx context.Context, dst usermem.IOSequence, opts
 	return n, err
 }
 
+// +checklocksexclude:i.bufMu
 func (i *inode) readFromBuf(ctx context.Context, dst *usermem.IOSequence) (int64, error) {
 	if i.haveBuf.Load() == 0 {
 		return 0, nil
@@ -920,6 +937,8 @@ func (f *fileDescription) PWrite(ctx context.Context, src usermem.IOSequence, of
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
+//
+// +checklocksexclude:f.offsetMu
 func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	i := f.inode
 	if !i.seekable {
@@ -980,6 +999,8 @@ func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSeque
 //
 // Note that we do not support seeking on directories, since we do not even
 // allow directory fds to be imported at all.
+//
+// +checklocksexclude:f.offsetMu
 func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (int64, error) {
 	i := f.inode
 	if !i.seekable {
@@ -1063,6 +1084,8 @@ func (f *fileDescription) ConfigureMMap(_ context.Context, opts *memmap.MMapOpts
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
+//
+// +checklocksexclude:i.mapsMu
 func (i *inode) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	i.mmapFile.AddMapping(ar, offset)
 	i.mapsMu.Lock()
@@ -1072,6 +1095,8 @@ func (i *inode) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hosta
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
+//
+// +checklocksexclude:i.mapsMu
 func (i *inode) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 	i.mmapFile.RemoveMapping(ar, offset)
 	i.mapsMu.Lock()
@@ -1080,6 +1105,8 @@ func (i *inode) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar ho
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
+//
+// +checklocksexclude:i.mapsMu
 func (i *inode) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return i.AddMapping(ctx, ms, dstAR, offset, writable)
 }
@@ -1105,6 +1132,8 @@ func (i *inode) InvalidateUnsavable(ctx context.Context) error {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
+//
+// +checklocksexclude:f.inode.queue.mu
 func (f *fileDescription) EventRegister(e *waiter.Entry) error {
 	f.inode.queue.EventRegister(e)
 	if f.inode.epollable {
@@ -1117,6 +1146,8 @@ func (f *fileDescription) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
+//
+// +checklocksexclude:f.inode.queue.mu
 func (f *fileDescription) EventUnregister(e *waiter.Entry) {
 	f.inode.queue.EventUnregister(e)
 	if f.inode.epollable {
