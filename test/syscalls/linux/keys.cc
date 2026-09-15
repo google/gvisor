@@ -14,6 +14,7 @@
 
 #include <asm-generic/errno.h>
 #include <linux/keyctl.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -35,7 +36,11 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "test/util/capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
 #define KEY_POS_VIEW 0x01000000
@@ -607,6 +612,125 @@ TEST(KeysTest, EnforceKeyPermissions) {
     }).Join();
   }).Join();
 }
+
+TEST(KeysTest, SessionKeyringAfterUnshareUserNamespace) {
+  EXPECT_THAT(InForkedProcess([] {
+                const int64_t id = syscall(SYS_keyctl, KEYCTL_JOIN_SESSION_KEYRING,
+                                           0, 0, 0, 0);
+                TEST_PCHECK(id > 0);
+                TEST_CHECK_SUCCESS(unshare(CLONE_NEWUSER));
+                TEST_CHECK(syscall(SYS_keyctl, KEYCTL_GET_KEYRING_ID,
+                                   KEY_SPEC_SESSION_KEYRING, 0, 0, 0) == id);
+                TEST_CHECK(syscall(SYS_keyctl, KEYCTL_GET_KEYRING_ID, id, 0, 0,
+                                   0) == id);
+                TEST_CHECK_SUCCESS(syscall(SYS_keyctl, KEYCTL_SETPERM, id,
+                                           KEY_USR_SETATTR, 0, 0));
+                // Changing permissions requires SETATTR, even without SEARCH.
+                TEST_CHECK_SUCCESS(syscall(SYS_keyctl, KEYCTL_SETPERM,
+                                           KEY_SPEC_SESSION_KEYRING,
+                                           KEY_USR_SETATTR, 0, 0));
+                TEST_CHECK_SUCCESS(syscall(SYS_keyctl, KEYCTL_SETPERM, id,
+                                           KEY_USR_SEARCH, 0, 0));
+                TEST_CHECK_ERRNO(syscall(SYS_keyctl, KEYCTL_SETPERM, id,
+                                         KEY_USR_SEARCH, 0, 0),
+                                 EACCES);
+                TEST_CHECK_ERRNO(syscall(SYS_keyctl, KEYCTL_SETPERM,
+                                         KEY_SPEC_SESSION_KEYRING,
+                                         KEY_USR_SEARCH, 0, 0),
+                                 EACCES);
+                _exit(0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+enum class KeyAccessor { kOwner, kGroup, kSupplementaryGroup, kOther };
+
+struct KeyPermissionTestCase {
+  const char* name;
+  KeyAccessor accessor;
+  uint64_t permissions;
+  bool searchable;
+};
+
+class KeyPermissionTest
+    : public ::testing::TestWithParam<KeyPermissionTestCase> {};
+
+TEST_P(KeyPermissionTest, SearchPermission) {
+  const auto& test = GetParam();
+  ASSERT_EQ(getuid(), geteuid());
+  ASSERT_EQ(getgid(), getegid());
+  if (test.accessor != KeyAccessor::kOwner) {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+  }
+  ScopedThread([&] {
+    const int64_t id =
+        ASSERT_NO_ERRNO_AND_VALUE(keyctl(KEYCTL_JOIN_SESSION_KEYRING));
+    ASSERT_NO_ERRNO(keyctl(KEYCTL_SETPERM, id, test.permissions));
+
+    if (test.accessor != KeyAccessor::kOwner) {
+      const gid_t key_gid = getegid();
+      const gid_t other_gid = key_gid == 65534 ? 65533 : 65534;
+      const uid_t other_uid = geteuid() == 65534 ? 65533 : 65534;
+      // Use raw syscalls to change only this thread's credentials. Set groups
+      // before changing the UID, which may drop capabilities.
+      ASSERT_THAT(syscall(SYS_setgroups,
+                          test.accessor == KeyAccessor::kSupplementaryGroup,
+                          &key_gid),
+                  SyscallSucceeds());
+      if (test.accessor != KeyAccessor::kGroup) {
+        ASSERT_THAT(syscall(SYS_setresgid, -1, other_gid, -1),
+                    SyscallSucceeds());
+      }
+      ASSERT_THAT(syscall(SYS_setresuid, -1, other_uid, -1), SyscallSucceeds());
+    }
+
+    for (const int64_t key_id : {int64_t{KEY_SPEC_SESSION_KEYRING}, id}) {
+      SCOPED_TRACE(key_id);
+      const auto result = keyctl(KEYCTL_GET_KEYRING_ID, key_id);
+      if (test.searchable) {
+        EXPECT_THAT(result, IsPosixErrorOkAndHolds(id));
+      } else {
+        EXPECT_THAT(result, PosixErrorIs(EACCES));
+      }
+    }
+  }).Join();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    , KeyPermissionTest,
+    ::testing::Values(
+        KeyPermissionTestCase{"Owner", KeyAccessor::kOwner, KEY_USR_SEARCH, true},
+        KeyPermissionTestCase{"OwnerIgnoresGroup", KeyAccessor::kOwner,
+                              KEY_GRP_SEARCH, false},
+        KeyPermissionTestCase{"OwnerIgnoresOther", KeyAccessor::kOwner,
+                              KEY_OTH_SEARCH, false},
+        KeyPermissionTestCase{"OwnerPossessor", KeyAccessor::kOwner,
+                              KEY_POS_SEARCH, true},
+        KeyPermissionTestCase{"Group", KeyAccessor::kGroup, KEY_GRP_SEARCH, true},
+        KeyPermissionTestCase{"GroupIgnoresOther", KeyAccessor::kGroup,
+                              KEY_GRP_VIEW | KEY_OTH_SEARCH, false},
+        KeyPermissionTestCase{"EmptyGroupUsesOther", KeyAccessor::kGroup,
+                              KEY_OTH_SEARCH, true},
+        KeyPermissionTestCase{"GroupPossessor", KeyAccessor::kGroup,
+                              KEY_GRP_VIEW | KEY_POS_SEARCH, true},
+        KeyPermissionTestCase{"SupplementaryGroup",
+                              KeyAccessor::kSupplementaryGroup, KEY_GRP_SEARCH,
+                              true},
+        KeyPermissionTestCase{"SupplementaryGroupIgnoresOther",
+                              KeyAccessor::kSupplementaryGroup,
+                              KEY_GRP_VIEW | KEY_OTH_SEARCH, false},
+        KeyPermissionTestCase{"EmptySupplementaryGroupUsesOther",
+                              KeyAccessor::kSupplementaryGroup, KEY_OTH_SEARCH,
+                              true},
+        KeyPermissionTestCase{"Other", KeyAccessor::kOther, KEY_OTH_SEARCH, true},
+        KeyPermissionTestCase{"OtherIgnoresOwnerAndGroup", KeyAccessor::kOther,
+                              KEY_USR_SEARCH | KEY_GRP_SEARCH, false},
+        KeyPermissionTestCase{"OtherPossessor", KeyAccessor::kOther,
+                              KEY_POS_SEARCH, true}),
+    [](const ::testing::TestParamInfo<KeyPermissionTestCase>& info) {
+      return info.param.name;
+    });
 
 // JoiningNonSearchableNamedKeyring verifies what happens when joining an
 // existing named keyring without the search permission.
