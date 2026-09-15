@@ -1021,7 +1021,12 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		fs.mu.RUnlock()
 		return err
 	}
+	if err := rp.Mount().CheckBeginWrite(); err != nil {
+		fs.mu.RUnlock()
+		return err
+	}
 	err = d.inode.setXattr(rp.Credentials(), &opts)
+	rp.Mount().EndWrite()
 	fs.mu.RUnlock()
 	if err != nil {
 		return err
@@ -1039,7 +1044,12 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 		fs.mu.RUnlock()
 		return err
 	}
+	if err := rp.Mount().CheckBeginWrite(); err != nil {
+		fs.mu.RUnlock()
+		return err
+	}
 	err = d.inode.removeXattr(rp.Credentials(), name)
+	rp.Mount().EndWrite()
 	fs.mu.RUnlock()
 	if err != nil {
 		return err
