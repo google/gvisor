@@ -16,6 +16,7 @@ package seccomp
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -44,6 +45,12 @@ func testInput(arch uint32, syscallName string, args *[6]uint64) bpf.Input {
 		Args: *args,
 	}
 	return seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes()))
+}
+
+// errnoRetPtr returns a pointer to errno, for use as an OCI errnoRet or
+// defaultErrnoRet field.
+func errnoRetPtr(errno uint) *uint {
+	return &errno
 }
 
 // testCase holds a seccomp test case.
@@ -367,8 +374,214 @@ var (
 			input:    testInput(nativeArchAuditNo, "clone", &[6]uint64{0x50f00}),
 			expected: uint32(linux.SECCOMP_RET_ALLOW),
 		},
+		{
+			name: "default_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			// errnoRet: 0 is distinct from an unset errnoRet: it means
+			// "return 0", not "use the EPERM default".
+			name: "default_errno_ret_zero",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: errnoRetPtr(0),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0)),
+		},
+		{
+			// defaultErrnoRet is meaningless for SCMP_ACT_ALLOW; applying it
+			// anyway would panic in BPFAction.WithReturnCode.
+			name: "default_errno_ret_ignored_for_allow",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActAllow,
+				DefaultErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			// Likewise for SCMP_ACT_KILL.
+			name: "default_errno_ret_ignored_for_kill",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActKill,
+				DefaultErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
+		},
+		{
+			// This is the glibc >= 2.34 clone3 fallback pattern: clone3 must
+			// return ENOSYS (not EPERM) or glibc will not fall back to
+			// clone(2). See gvisor.dev/issue/14688.
+			name: "match_name_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"clone3"},
+						Action:   specs.ActErrno,
+						ErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+					},
+					{
+						// No ErrnoRet: must fall back to EPERM, not
+						// whatever the other rule in this profile requested.
+						Names:  []string{"getcwd"},
+						Action: specs.ActErrno,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			// Same profile as match_name_errno_ret: proves errnoRet is
+			// plumbed per rule (per RuleSet), not shared across the profile.
+			name: "match_name_errno_ret_default_eperm",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"clone3"},
+						Action:   specs.ActErrno,
+						ErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+					},
+					{
+						Names:  []string{"getcwd"},
+						Action: specs.ActErrno,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
+		},
+		{
+			name: "match_name_errno_ret_zero",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"clone3"},
+						Action:   specs.ActErrno,
+						ErrnoRet: errnoRetPtr(0),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(0)),
+		},
+		{
+			name: "match_name_trace_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"write"},
+						Action:   specs.ActTrace,
+						ErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			// errnoRet is meaningless for SCMP_ACT_ALLOW; applying it anyway
+			// would panic in BPFAction.WithReturnCode.
+			name: "errno_ret_ignored_for_allow",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"getcwd"},
+						Action:   specs.ActAllow,
+						ErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			// Likewise for SCMP_ACT_TRAP.
+			name: "errno_ret_ignored_for_trap",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"getcwd"},
+						Action:   specs.ActTrap,
+						ErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_TRAP),
+		},
+		{
+			// defaultErrnoRet must not leak into a per-rule action that
+			// doesn't set its own errnoRet.
+			name: "default_errno_ret_does_not_leak_to_rules",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActAllow,
+				DefaultErrnoRet: errnoRetPtr(uint(unix.ENOSYS)),
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:  []string{"getcwd"},
+						Action: specs.ActErrno,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
+		},
 	}
 )
+
+// errnoRetOutOfRangeTests are OCI seccomp profiles with an errnoRet that
+// does not fit in the 16-bit SECCOMP_RET_DATA field, which BuildProgram
+// must reject rather than silently truncate.
+var errnoRetOutOfRangeTests = []testCase{
+	{
+		name: "default",
+		config: specs.LinuxSeccomp{
+			DefaultAction:   specs.ActErrno,
+			DefaultErrnoRet: errnoRetPtr(math.MaxUint16 + 1),
+		},
+	},
+	{
+		name: "rule",
+		config: specs.LinuxSeccomp{
+			DefaultAction: specs.ActAllow,
+			Syscalls: []specs.LinuxSyscall{
+				{
+					Names:    []string{"getcwd"},
+					Action:   specs.ActErrno,
+					ErrnoRet: errnoRetPtr(math.MaxUint16 + 1),
+				},
+			},
+		},
+	},
+}
+
+// TestErrnoRetOutOfRange checks that an errnoRet that does not fit in the
+// 16-bit SECCOMP_RET_DATA field is rejected by BuildProgram rather than
+// silently truncated, which would otherwise reinterpret the rule (e.g.
+// errnoRet: 0x10000 truncates to 0, turning a deny rule into an allow rule).
+func TestErrnoRetOutOfRange(t *testing.T) {
+	for _, tc := range errnoRetOutOfRangeTests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := BuildProgram(&tc.config); err == nil {
+				t.Errorf("BuildProgram(%+v) succeeded, want error", tc.config)
+			}
+		})
+	}
+}
 
 // TestRunscSeccomp generates seccomp programs from OCI config and executes
 // them using runsc's library, comparing against expected results.
