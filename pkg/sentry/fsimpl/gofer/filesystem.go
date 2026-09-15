@@ -1774,6 +1774,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if rp.Done() && opts.Sync == linux.AT_STATX_DONT_SYNC {
 		var stat linux.Statx
 		rp.Start().Impl().(*dentry).statTo(&stat)
+		rp.AddMountRootAttr(rp.Start(), &stat)
 		return stat, nil
 	}
 
@@ -1789,6 +1790,7 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// metadata here regardless of fs.opts.interop.
 	var stat linux.Statx
 	d.statTo(&stat)
+	rp.AddMountRootAttr(&d.vfsd, &stat)
 	return stat, nil
 }
 
