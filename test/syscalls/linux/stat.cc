@@ -34,6 +34,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
@@ -890,6 +891,221 @@ TEST_F(StatTest, StatxMntIdBindMount) {
   EXPECT_TRUE(stx2.stx_mask & STATX_MNT_ID);
   EXPECT_NE(stx1.stx_mnt_id, stx2.stx_mnt_id);
 }
+
+#ifndef STATX_ATTR_MOUNT_ROOT
+#define STATX_ATTR_MOUNT_ROOT 0x00002000U
+#endif  // STATX_ATTR_MOUNT_ROOT
+
+// Returns true if statx() advertises STATX_ATTR_MOUNT_ROOT support in
+// stx_attributes_mask. Used only to skip on old native kernels, never on
+// gVisor.
+bool StatxSupportsMountRoot() {
+  struct kernel_statx stx;
+  if (statx(AT_FDCWD, "/", 0, STATX_TYPE, &stx) < 0) {
+    return false;
+  }
+  return (stx.stx_attributes_mask & STATX_ATTR_MOUNT_ROOT) != 0;
+}
+
+// Expects that statx(path) advertises STATX_ATTR_MOUNT_ROOT support and
+// reports the attribute itself as want_mount_root.
+void ExpectStatxMountRoot(const std::string& path, bool want_mount_root) {
+  SCOPED_TRACE(absl::StrCat("statx of ", path));
+  struct kernel_statx stx;
+  ASSERT_THAT(statx(AT_FDCWD, path.c_str(), 0, STATX_TYPE, &stx),
+              SyscallSucceeds());
+  EXPECT_NE(stx.stx_attributes_mask & STATX_ATTR_MOUNT_ROOT, 0u);
+  EXPECT_EQ((stx.stx_attributes & STATX_ATTR_MOUNT_ROOT) != 0, want_mount_root);
+}
+
+TEST_F(StatTest, StatxMountRootAdvertisedOnRegularFile) {
+  SKIP_IF(!IsRunningOnGvisor() && !StatxSupportsMountRoot());
+  ExpectStatxMountRoot(test_file_name_, false);
+}
+
+TEST_F(StatTest, StatxMountRootOnRootDirectory) {
+  SKIP_IF(!IsRunningOnGvisor() && !StatxSupportsMountRoot());
+  ExpectStatxMountRoot("/", true);
+}
+
+// STATX_ATTR_MOUNT_ROOT follows the mount, not the inode: a bind mount's
+// root reports it only under the new path, and only while mounted.
+TEST_F(StatTest, StatxMountRootBindMountSourceAndUnmount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsRunningOnGvisor() && !StatxSupportsMountRoot());
+
+  const TempPath source = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  Cleanup mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(source.path(), target.path(), "", MS_BIND, "", MNT_DETACH));
+
+  ExpectStatxMountRoot(target.path(), true);
+  ExpectStatxMountRoot(source.path(), false);
+
+  // The attribute clears once the mount goes away. Unmount explicitly here and
+  // release the cleanup so it does not unmount a second time.
+  ASSERT_THAT(umount2(target.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  mount.Release();
+  ExpectStatxMountRoot(target.path(), false);
+}
+
+// A bind mount of a single file makes that file the root of its own mount, so
+// it reports STATX_ATTR_MOUNT_ROOT even though it is not a directory.
+TEST_F(StatTest, StatxMountRootBindMountFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!IsRunningOnGvisor() && !StatxSupportsMountRoot());
+
+  const TempPath source = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const Cleanup mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(source.path(), target.path(), "", MS_BIND, "", MNT_DETACH));
+
+  ExpectStatxMountRoot(target.path(), true);
+  ExpectStatxMountRoot(source.path(), false);
+}
+
+// Each backend puts the mount root on a different filesystem implementation.
+class StatxMountRootTest;
+
+// A backend to exercise: a name for the test instantiation and a method that
+// mounts the filesystem under test and sets root_/inner_.
+struct MountRootBackend {
+  const char* name;
+  void (StatxMountRootTest::*setup)();
+};
+
+class StatxMountRootTest : public ::testing::TestWithParam<MountRootBackend> {
+ public:
+  // procfs and sysfs are premounted.
+  void SetUpProc() {
+    root_ = "/proc";
+    inner_ = "/proc/uptime";
+  }
+  void SetUpSysfs() {
+    root_ = "/sys";
+    inner_ = "/sys/kernel";
+  }
+  void SetUpTmpfs() {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    mount_point_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    ASSERT_THAT(
+        mount("tmpfs", mount_point_.path().c_str(), "tmpfs", 0, "mode=0755"),
+        SyscallSucceeds());
+    mounted_ = true;
+    root_ = mount_point_.path();
+    CreateInnerFile();
+  }
+  // A bind mount of a directory on the filesystem backing the test tmpdir: the
+  // mount root is not the filesystem root.
+  void SetUpBindMount() {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    source_dir_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    mount_point_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    ASSERT_THAT(mount(source_dir_.path().c_str(), mount_point_.path().c_str(),
+                      nullptr, MS_BIND, nullptr),
+                SyscallSucceeds());
+    mounted_ = true;
+    root_ = mount_point_.path();
+    CreateInnerFile();
+  }
+  void SetUpOverlay() {
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    // The layers get their own tmpfs: gVisor does not accept every filesystem
+    // as an overlay layer.
+    layers_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    ASSERT_THAT(mount("tmpfs", layers_.path().c_str(), "tmpfs", 0, "mode=0755"),
+                SyscallSucceeds());
+    layers_mounted_ = true;
+    for (const char* d : {"lower", "upper", "work"}) {
+      ASSERT_THAT(mkdir(JoinPath(layers_.path(), d).c_str(), 0755),
+                  SyscallSucceeds());
+    }
+    mount_point_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+    const std::string opts =
+        absl::StrCat("lowerdir=", JoinPath(layers_.path(), "lower"),
+                     ",upperdir=", JoinPath(layers_.path(), "upper"),
+                     ",workdir=", JoinPath(layers_.path(), "work"));
+    ASSERT_THAT(mount("overlay", mount_point_.path().c_str(), "overlay", 0,
+                      opts.c_str()),
+                SyscallSucceeds());
+    mounted_ = true;
+    root_ = mount_point_.path();
+    CreateInnerFile();
+  }
+
+ protected:
+  void SetUp() override {
+    SKIP_IF(!IsRunningOnGvisor() && !StatxSupportsMountRoot());
+    (this->*GetParam().setup)();
+  }
+
+  void TearDown() override {
+    // Unmount inner-to-outer, before the TempPath destructors remove the
+    // (then empty) mount points.
+    if (mounted_) {
+      EXPECT_THAT(umount2(root_.c_str(), MNT_DETACH), SyscallSucceeds());
+    }
+    if (layers_mounted_) {
+      EXPECT_THAT(umount2(layers_.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  }
+
+  void CreateInnerFile() {
+    inner_ = JoinPath(root_, "file");
+    const FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(inner_, O_CREAT | O_RDWR, 0644));
+  }
+
+  std::string root_;   // root of the mount
+  std::string inner_;  // a path below the mount root
+  TempPath mount_point_;
+  TempPath source_dir_;
+  TempPath layers_;
+  bool mounted_ = false;
+  bool layers_mounted_ = false;
+};
+
+// The root of a mount reports STATX_ATTR_MOUNT_ROOT.
+TEST_P(StatxMountRootTest, SetOnMountRoot) {
+  ExpectStatxMountRoot(root_, true);
+}
+
+// A file below the mount root does not report STATX_ATTR_MOUNT_ROOT.
+TEST_P(StatxMountRootTest, ClearBelowMountRoot) {
+  ExpectStatxMountRoot(inner_, false);
+}
+
+// statx(fd, "", AT_EMPTY_PATH) agrees with the path-based statx.
+TEST_P(StatxMountRootTest, EmptyPathFd) {
+  const struct {
+    std::string path;
+    bool want_mount_root;
+  } cases[] = {{root_, true}, {inner_, false}};
+  for (const auto& tc : cases) {
+    SCOPED_TRACE(absl::StrCat("statx of fd opened on ", tc.path));
+    const FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(tc.path, O_RDONLY));
+    struct kernel_statx stx;
+    ASSERT_THAT(statx(fd.get(), "", AT_EMPTY_PATH, STATX_TYPE, &stx),
+                SyscallSucceeds());
+    EXPECT_NE(stx.stx_attributes_mask & STATX_ATTR_MOUNT_ROOT, 0u);
+    EXPECT_EQ((stx.stx_attributes & STATX_ATTR_MOUNT_ROOT) != 0,
+              tc.want_mount_root);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    All, StatxMountRootTest,
+    ::testing::Values(
+        MountRootBackend{"Proc", &StatxMountRootTest::SetUpProc},
+        MountRootBackend{"Sysfs", &StatxMountRootTest::SetUpSysfs},
+        MountRootBackend{"Tmpfs", &StatxMountRootTest::SetUpTmpfs},
+        MountRootBackend{"BindMount", &StatxMountRootTest::SetUpBindMount},
+        MountRootBackend{"Overlay", &StatxMountRootTest::SetUpOverlay}),
+    [](const ::testing::TestParamInfo<MountRootBackend>& info) -> std::string {
+      return info.param.name;
+    });
 
 }  // namespace
 

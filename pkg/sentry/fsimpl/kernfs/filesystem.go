@@ -966,7 +966,12 @@ func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 // StatAt implements vfs.FilesystemImpl.StatAt.
 func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	if rp.Done() && opts.Sync == linux.AT_STATX_DONT_SYNC {
-		return rp.Start().Impl().(*Dentry).inode.Stat(ctx, fs.VFSFilesystem(), opts)
+		stat, err := rp.Start().Impl().(*Dentry).inode.Stat(ctx, fs.VFSFilesystem(), opts)
+		if err != nil {
+			return linux.Statx{}, err
+		}
+		rp.AddMountRootAttr(rp.Start(), &stat)
+		return stat, nil
 	}
 
 	fs.mu.RLock()
@@ -976,7 +981,12 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	return d.inode.Stat(ctx, fs.VFSFilesystem(), opts)
+	stat, err := d.inode.Stat(ctx, fs.VFSFilesystem(), opts)
+	if err != nil {
+		return linux.Statx{}, err
+	}
+	rp.AddMountRootAttr(d.VFSDentry(), &stat)
+	return stat, nil
 }
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.

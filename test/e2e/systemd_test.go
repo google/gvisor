@@ -186,6 +186,26 @@ func TestSystemdUBI10Init(t *testing.T) {
 	}
 }
 
+// TestSystemdArch boots Arch Linux (systemd v261 in the pinned image), a third
+// systemd lineage. Arch systemd requires statx STATX_ATTR_MOUNT_ROOT support,
+// a hard requirement since v260, without which PID 1 exits during early mount
+// setup.
+func TestSystemdArch(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "arch-systemd")
+	defer d.CleanUp(ctx)
+
+	if out := strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "--failed", "--no-legend", "--plain")); out != "" {
+		t.Errorf("failed units after boot (want none):\n%s", out)
+	}
+	wantEcho := "gv-arch-ok"
+	out, err := transientRun(ctx, d, nil, "/bin/echo", wantEcho)
+	if err != nil || !strings.Contains(out, wantEcho) {
+		t.Errorf("transient unit failed: %v (output does not contain %q): %s", err, wantEcho, out)
+	}
+}
+
 // TestSystemdSimpleDaemon verifies that a custom systemd service can be enabled, started,
 // stopped, and restarted by systemd after an out-of-band kill.
 func TestSystemdSimpleDaemon(t *testing.T) {
