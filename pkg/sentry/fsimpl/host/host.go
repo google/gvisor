@@ -471,6 +471,10 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 		DevMajor:       linux.UNNAMED_MAJOR,
 		DevMinor:       i.devMinor,
 	}
+	// Clear STATX_ATTR_MOUNT_ROOT passed through from the host; the sentry VFS
+	// sets it from its own mounts.
+	ls.Attributes &^= linux.STATX_ATTR_MOUNT_ROOT
+	ls.AttributesMask &^= linux.STATX_ATTR_MOUNT_ROOT
 
 	// Copy other fields that were returned by the host. RdevMajor/RdevMinor
 	// are never copied (and therefore left as zero), so as not to expose host
