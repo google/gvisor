@@ -595,12 +595,11 @@ func CloseRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 	fdTable := t.FDTable()
 	fd := int32(first)
 	for {
-		fd, file := fdTable.RemoveNextInRange(t, fd, int32(last))
+		_, file := fdTable.RemoveNextInRange(t, fd, int32(last))
 		if file == nil {
 			break
 		}
 
-		fd++
 		// Per the close_range(2) documentation, errors upon closing file descriptors are ignored.
 		_ = file.OnClose(t)
 		file.DecRef(t)
