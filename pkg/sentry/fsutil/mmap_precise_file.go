@@ -56,8 +56,11 @@ type MmapPreciseFile struct {
 	// mappings is a set of internal mappings of the device. The value is a
 	// mapping object.
 	//
+	// mappings holds host virtual addresses belonging to the current sentry
+	// process, so it must not be saved.
+	//
 	// +checklocks:mapsMu
-	mappings mappingSet
+	mappings mappingSet `state:"nosave"`
 }
 
 // SetFD implements MmapFile.SetFD.
