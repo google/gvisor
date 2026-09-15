@@ -205,6 +205,7 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 		Stderr:             rfs.Create.Stderr,
 		FSRestoreImagePath: rfs.Conf.ImagePath,
 		FSRestoreDirect:    rfs.Conf.Direct,
+		RestoreImagePath:   rfs.Create.Checkpoint,
 	})
 	if err != nil {
 		return nil, err

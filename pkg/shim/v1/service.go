@@ -57,9 +57,13 @@ func NewShimRedirector(ctx context.Context, publisher shim.Publisher, sd shutdow
 		shutdown:       sd,
 		main:           runsc,
 		runtimeOptions: runtimeOptions,
+		gvisorTasks:    rsc.NewGvisorTaskServer(runsc),
+	}
+	if s.gvisorTasks == nil {
+		log.L.Errorf("Failed to create task server adapter: service is not *runscService")
 	}
 
-	if runtimeOptions.EnableHibernateServer && isDaemon() {
+	if runtimeOptions.EnableHibernateServer && isDaemon() && s.gvisorTasks != nil {
 		idFlag := flag.Lookup("id")
 		if idFlag != nil && idFlag.Value.String() != "" {
 			id := idFlag.Value.String()
@@ -71,22 +75,17 @@ func NewShimRedirector(ctx context.Context, publisher shim.Publisher, sd shutdow
 			if err != nil {
 				log.L.Errorf("Failed to create task server: %v", err)
 			} else {
-				adapter := rsc.NewGvisorTaskServer(runsc)
-				if adapter == nil {
-					log.L.Errorf("Failed to create task server adapter: service is not *runscService")
-				} else {
-					ts.RegisterService(adapter)
-					go func() {
-						log.L.Infof("Starting task server at %s", ts.Address())
-						if err := ts.Serve(ctx); err != nil {
-							log.L.Errorf("Task server failed: %v", err)
-						}
-					}()
-					sd.RegisterCallback(func(ctx context.Context) error {
-						log.L.Infof("Shutting down task server")
-						return ts.Shutdown(ctx)
-					})
-				}
+				ts.RegisterService(s.gvisorTasks)
+				go func() {
+					log.L.Infof("Starting task server at %s", ts.Address())
+					if err := ts.Serve(ctx); err != nil {
+						log.L.Errorf("Task server failed: %v", err)
+					}
+				}()
+				sd.RegisterCallback(func(ctx context.Context) error {
+					log.L.Infof("Shutting down task server")
+					return ts.Shutdown(ctx)
+				})
 			}
 		} else {
 			log.L.Warnf("Task server enabled but ID flag not found or empty")
@@ -130,6 +129,10 @@ type shimRedirector struct {
 
 	// grouping indicates if shim grouping is enabled.
 	grouping bool
+
+	// gvisorTasks serves the gVisor-only task operations, checkpoint among
+	// them. It adapts main, so ext does not intercept them.
+	gvisorTasks *rsc.GvisorTaskServer
 
 	shutdown       shutdown.Service
 	runtimeOptions *rsc.Options
@@ -356,6 +359,11 @@ func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreReques
 func (s *shimRedirector) RegisterTTRPC(server *ttrpc.Server) error {
 	task.RegisterTaskService(server, s)
 	api.RegisterTTRPCSandboxService(server, s)
+	if s.gvisorTasks != nil {
+		// Checkpoint has no equivalent in the containerd task service, so it
+		// rides gVisor's own service on this connection.
+		taskServer.Register(server, s.gvisorTasks)
+	}
 	return nil
 }
 
