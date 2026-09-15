@@ -469,6 +469,16 @@ func (*Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
 	return linuxerr.EACCES
 }
 
+// GetAllowExternalLoopbackTraffic implements inet.Stack.GetAllowExternalLoopbackTraffic.
+func (*Stack) GetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber) (bool, error) {
+	return false, nil
+}
+
+// SetAllowExternalLoopbackTraffic implements inet.Stack.SetAllowExternalLoopbackTraffic.
+func (*Stack) SetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber, bool) error {
+	return linuxerr.EACCES
+}
+
 // PortRange implements inet.Stack.PortRange.
 func (*Stack) PortRange() (uint16, uint16) {
 	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().

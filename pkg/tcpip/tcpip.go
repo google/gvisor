@@ -1067,6 +1067,16 @@ func (*DefaultTTLOption) isGettableNetworkProtocolOption() {}
 
 func (*DefaultTTLOption) isSettableNetworkProtocolOption() {}
 
+// AllowExternalLoopbackTrafficOption enables or disables acceptance of martian
+// loopback packets (packets with a loopback source or destination address
+// arriving on a non-loopback NIC). It mirrors Linux's
+// net.ipv4.conf.*.route_localnet.
+type AllowExternalLoopbackTrafficOption bool
+
+func (*AllowExternalLoopbackTrafficOption) isGettableNetworkProtocolOption() {}
+
+func (*AllowExternalLoopbackTrafficOption) isSettableNetworkProtocolOption() {}
+
 // GettableTransportProtocolOption is a marker interface for transport protocol
 // options that may be queried.
 type GettableTransportProtocolOption interface {
