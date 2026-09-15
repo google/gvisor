@@ -71,6 +71,10 @@ type Container struct {
 
 	// cgroup is the cgroups mode that is being used by the container.
 	cgroup CgroupMode
+
+	// restoreConf makes Start restore the init process instead of starting it.
+	// It is nil unless the container was created from a checkpoint.
+	restoreConf *extension.RestoreConfig
 }
 
 // ContainerConfig contains configuration for creating a container.
@@ -85,6 +89,15 @@ type ContainerConfig struct {
 	Stderr             string
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// RestoreImagePath is the checkpoint the container is restored from. Setting
+	// it makes Start restore the init process rather than start it.
+	//
+	// runsc pairs a container with its state in the image by the name
+	// annotation on the container's spec. Containers whose spec carries no name
+	// are matched by creation order instead, so an unnamed set must be restored
+	// in the order it was created.
+	RestoreImagePath string
 }
 
 // NewContainer returns a new runsc container
@@ -106,6 +119,14 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 			if _, err = toml.DecodeFile(path, &opts); err != nil {
 				return nil, fmt.Errorf("decode config file %q: %w", path, err)
 			}
+		}
+	}
+
+	// Fail here rather than at Start, which would leave a booted sandbox behind
+	// for a restore that was never going to work.
+	if conf.RestoreImagePath != "" {
+		if _, err := os.Stat(conf.RestoreImagePath); err != nil {
+			return nil, fmt.Errorf("checkpoint %q: %w", conf.RestoreImagePath, err)
 		}
 	}
 
@@ -224,6 +245,12 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 		cgroup:    cgroupMode,
 		processes: make(map[string]extension.Process),
 	}
+	if conf.RestoreImagePath != "" {
+		c.restoreConf = &extension.RestoreConfig{
+			ImagePath:  conf.RestoreImagePath,
+			Background: opts.RestoreBackground,
+		}
+	}
 	return &c, nil
 }
 
@@ -295,6 +322,16 @@ func (c *Container) ProcessRemove(id string) {
 
 // Start a container process.
 func (c *Container) Start(ctx context.Context, r *task.StartRequest) (extension.Process, error) {
+	// An exec starts normally even in a restored container.
+	if restoreConf := c.restoreConfig(); restoreConf != nil && r.ExecID == "" {
+		p, err := c.Restore(ctx, &extension.RestoreRequest{Start: r, Conf: *restoreConf})
+		if err != nil {
+			return nil, err
+		}
+		// The init process is back; anything started after it starts normally.
+		c.clearRestoreConfig()
+		return p, nil
+	}
 	p, err := c.Process(r.ExecID)
 	if err != nil {
 		return nil, err
@@ -303,6 +340,21 @@ func (c *Container) Start(ctx context.Context, r *task.StartRequest) (extension.
 		return nil, err
 	}
 	return p, nil
+}
+
+// restoreConfig returns the config Start restores from, or nil if the container
+// was not created from a checkpoint.
+func (c *Container) restoreConfig() *extension.RestoreConfig {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.restoreConf
+}
+
+// clearRestoreConfig drops the config, so that a restore happens at most once.
+func (c *Container) clearRestoreConfig() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.restoreConf = nil
 }
 
 // Delete the container or a process by id
