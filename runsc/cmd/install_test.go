@@ -17,6 +17,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -201,6 +203,61 @@ func TestInstall(t *testing.T) {
 
 			if res := cmp.Diff(string(want), string(got)); res != "" {
 				t.Fatalf("Mismatch output (-want +got): %s", res)
+			}
+		})
+	}
+}
+
+func TestDefaultWriteConfigBackupPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// perm is the mode of the pre-existing config file.
+		perm os.FileMode
+		// stalePerm, when non-zero, is the mode of a stale backup file that
+		// already exists before the config is written.
+		stalePerm os.FileMode
+	}{
+		{name: "root only", perm: 0600},
+		{name: "world readable", perm: 0644},
+		{name: "stale world readable backup", perm: 0600, stalePerm: 0644},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "daemon.json")
+			const secret = `{"secret":"hunter2"}`
+			if err := os.WriteFile(filename, []byte(secret), tc.perm); err != nil {
+				t.Fatalf("Failed to write config file: %v", err)
+			}
+			// os.WriteFile applies the umask, so set the mode explicitly.
+			if err := os.Chmod(filename, tc.perm); err != nil {
+				t.Fatalf("Failed to chmod config file: %v", err)
+			}
+			backup := filename + "~"
+			if tc.stalePerm != 0 {
+				if err := os.WriteFile(backup, []byte("stale"), tc.stalePerm); err != nil {
+					t.Fatalf("Failed to write stale backup file: %v", err)
+				}
+				if err := os.Chmod(backup, tc.stalePerm); err != nil {
+					t.Fatalf("Failed to chmod stale backup file: %v", err)
+				}
+			}
+
+			if err := defaultWriteConfig(map[string]any{"runtimes": map[string]any{}}, filename); err != nil {
+				t.Fatalf("defaultWriteConfig(...) = %v, want nil", err)
+			}
+
+			got, err := os.ReadFile(backup)
+			if err != nil {
+				t.Fatalf("Failed to read backup file: %v", err)
+			}
+			if string(got) != secret {
+				t.Errorf("Backup file contents = %q, want %q", got, secret)
+			}
+			info, err := os.Stat(backup)
+			if err != nil {
+				t.Fatalf("Failed to stat backup file: %v", err)
+			}
+			if gotPerm := info.Mode().Perm(); gotPerm != tc.perm {
+				t.Errorf("Backup file permissions = %#o, want %#o", gotPerm, tc.perm)
 			}
 		})
 	}

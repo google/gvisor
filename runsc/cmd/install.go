@@ -313,8 +313,29 @@ func defaultWriteConfig(c map[string]any, filename string) error {
 			return fmt.Errorf("error reading config file %q: %v", filename, err)
 		}
 	} else {
-		if err := os.WriteFile(filename+"~", old, 0644); err != nil {
+		// The configuration file may hold sensitive data (e.g. registry
+		// credentials or TLS material) and may therefore be readable only by
+		// root. Mirror its permissions onto the backup so that the backup
+		// never exposes the contents more widely than the original does.
+		perm := os.FileMode(0644)
+		if info, err := os.Stat(filename); err == nil {
+			perm = info.Mode().Perm()
+		}
+		backup := filename + "~"
+		// os.WriteFile does not apply the permissions to a file that already
+		// exists, so delete any stale backup left over from a previous run.
+		if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("error removing stale backup file %q: %v", backup, err)
+		}
+		if err := os.WriteFile(backup, old, perm); err != nil {
 			return fmt.Errorf("error backing up config file %q: %v", filename, err)
+		}
+		// The kernel strips the process umask from the mode passed above, so
+		// the backup may have been created more restrictively than the
+		// original. Restore the missing bits so that the backup mirrors the
+		// original rather than the umask of whoever invoked the installer.
+		if err := os.Chmod(backup, perm); err != nil {
+			return fmt.Errorf("error setting permissions on backup file %q: %v", backup, err)
 		}
 	}
 
