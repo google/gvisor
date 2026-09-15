@@ -27,8 +27,7 @@ int main(int argc, char** argv, char** envp) {
   //
   // Therefore, this test simply checks that the /proc/self/exe
   // is absolute and *doesn't* match argv[1].
-  std::string exe =
-      gvisor::testing::ProcessExePath(getpid()).ValueOrDie();
+  std::string exe = gvisor::testing::ProcessExePath(getpid()).ValueOrDie();
   if (exe[0] != '/') {
     std::cerr << "relative path: " << exe << std::endl;
     exit(1);
