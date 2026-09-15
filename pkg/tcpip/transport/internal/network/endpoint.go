@@ -576,13 +576,11 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 		panic(fmt.Sprintf("invalid protocol number = %d", netProto))
 	}
 
-	// Set the DF (Don't Fragment) bit based on the PMTUD strategy,
-	// matching TCP behavior in connect.go.
-	// Note: In gVisor, WANT and DO are treated identically (both set DF).
-	// Linux kernel differentiates them (WANT allows local fragmentation,
-	// DO returns EMSGSIZE), but gVisor's IPv4 layer always allows local
-	// fragmentation for locally-generated packets regardless of DF
-	// (see gvisor.dev/issue/5919).
+	// Set the DF (Don't Fragment) bit based on the PMTUD strategy.
+	// For datagram sockets, Linux sets the DF bit only when PMTU discovery is
+	// explicitly enabled (IP_PMTUDISC_DO or IP_PMTUDISC_PROBE).
+	// Under IP_PMTUDISC_WANT or IP_PMTUDISC_DONT, datagrams exceeding the MTU
+	// are fragmented locally without error.
 	//
 	// PROBE also sets DF, matching Linux ip_dont_fragment(). In Linux,
 	// PROBE differs from DO only in that it ignores incoming ICMP
@@ -590,7 +588,7 @@ func (e *Endpoint) AcquireContextForWrite(opts tcpip.WriteOptions) (WriteContext
 	// route PMTU). Since gVisor does not implement ICMP-based PMTU
 	// feedback for transport sockets, PROBE and DO are functionally
 	// equivalent here.
-	df := e.pmtud == tcpip.PMTUDiscoveryWant || e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe
+	df := e.pmtud == tcpip.PMTUDiscoveryDo || e.pmtud == tcpip.PMTUDiscoveryProbe
 
 	return WriteContext{
 		e:     e,
