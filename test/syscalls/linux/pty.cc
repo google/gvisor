@@ -489,10 +489,45 @@ TEST(BasicPtyTest, SetMode) {
   mount.Release();
 
   struct stat st;
+  // The mode option names the mode of replicas. The root directory keeps a
+  // fixed mode. See fs/devpts/inode.c:devpts_fill_super().
   ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
-  EXPECT_EQ(st.st_mode, 0600 | S_IFDIR);
+  EXPECT_EQ(st.st_mode, 0755 | S_IFDIR);
   ASSERT_THAT(fstatat(fd.get(), "ptmx", &st, 0), SyscallSucceeds());
   EXPECT_EQ(st.st_mode, 0620 | S_IFCHR);
+
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_NONBLOCK));
+  int index = -1;
+  ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &index), SyscallSucceeds());
+  ASSERT_THAT(fstatat(fd.get(), std::to_string(index).c_str(), &st, 0),
+              SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0600 | S_IFCHR);
+}
+
+TEST(BasicPtyTest, SetGid) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("devpts_test", dir.path(), "devpts", 0,
+                                      "newinstance,mode=0620,gid=5", 0));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path()), O_RDONLY | O_DIRECTORY));
+  mount.Release();
+
+  // The gid option names the group of replicas, which is how the tty group
+  // gets write access. See fs/devpts/inode.c:devpts_pty_new().
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_NONBLOCK));
+  int index = -1;
+  ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &index), SyscallSucceeds());
+
+  struct stat st;
+  ASSERT_THAT(fstatat(fd.get(), std::to_string(index).c_str(), &st, 0),
+              SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0620 | S_IFCHR);
+  EXPECT_EQ(st.st_gid, 5);
 }
 
 TEST(BasicPtyTest, OpenDevTTY) {

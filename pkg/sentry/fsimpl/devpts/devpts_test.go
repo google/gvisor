@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -131,5 +132,68 @@ func TestEndOfFileHandling(t *testing.T) {
 	}
 	if nr != 0 {
 		t.Fatalf("read length should be zero: got %d", nr)
+	}
+}
+
+// The mode and gid mount options name the mode and group of replicas, not of
+// the root directory, which keeps a fixed mode. See
+// fs/devpts/inode.c:devpts_fill_super() and fs/devpts/inode.c:devpts_pty_new().
+func TestReplicaModeAndOwner(t *testing.T) {
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+
+	for _, test := range []struct {
+		name     string
+		opts     fileSystemOpts
+		wantMode linux.FileMode
+		wantGID  auth.KGID
+	}{
+		{
+			name:     "replica takes mode and gid from the mount options",
+			opts:     fileSystemOpts{mode: 0620, gid: auth.KGID(5), setgid: true},
+			wantMode: 0620,
+			wantGID:  auth.KGID(5),
+		},
+		{
+			name:     "replica falls back to the creating process without gid",
+			opts:     fileSystemOpts{mode: 0620},
+			wantMode: 0620,
+			wantGID:  creds.EffectiveKGID,
+		},
+		{
+			// The mode option names replicas, so its default is the one Linux
+			// gives them rather than the one it gives the root directory.
+			name:     "replica takes 0600 without the mode option",
+			opts:     fileSystemOpts{mode: defaultReplicaMode},
+			wantMode: 0600,
+			wantGID:  creds.EffectiveKGID,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := &rootInode{
+				opts:     test.opts,
+				replicas: make(map[uint32]*replicaInode),
+			}
+			root.InodeAttrs.InitWithIDs(ctx, test.opts.uid, test.opts.gid, linux.UNNAMED_MAJOR, 0 /* devMinor */, 1, linux.ModeDirectory|rootMode)
+
+			term, err := root.allocateTerminal(ctx, creds)
+			if err != nil {
+				t.Fatalf("allocateTerminal: %v", err)
+			}
+			replica, ok := root.replicas[term.n]
+			if !ok {
+				t.Fatalf("no replica for terminal %d", term.n)
+			}
+
+			if got := replica.InodeAttrs.Mode().Permissions(); got != test.wantMode {
+				t.Errorf("replica mode: got %#o, want %#o", got, test.wantMode)
+			}
+			if got := replica.InodeAttrs.GID(); got != test.wantGID {
+				t.Errorf("replica gid: got %d, want %d", got, test.wantGID)
+			}
+			if got := root.InodeAttrs.Mode().Permissions(); got != rootMode {
+				t.Errorf("root mode: got %#o, want %#o", got, rootMode)
+			}
+		})
 	}
 }
