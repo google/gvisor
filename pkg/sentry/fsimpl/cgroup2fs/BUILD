@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -45,6 +45,17 @@ go_library(
         "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
+    ],
+)
+
+go_test(
+    name = "cgroup2fs_test",
+    size = "small",
+    srcs = ["cgroup_freeze_credit_test.go"],
+    library = ":cgroup2fs",
+    deps = [
+        "//pkg/context",
+        "//pkg/sentry/kernel",
     ],
 )
 
