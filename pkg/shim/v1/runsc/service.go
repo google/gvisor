@@ -77,19 +77,56 @@ const (
 	cgroupParentAnnotation = "dev.gvisor.spec.cgroup-parent"
 )
 
+// oomStatus is the outcome of an exit-time OOM check.
+type oomStatus int
+
+const (
+	// oomNotKilled means no OOM kill was found for the container.
+	oomNotKilled oomStatus = iota
+	// oomKilledPublished means the container was OOM-killed and a TaskOOM
+	// event has already been published for that kill, by the async watcher.
+	oomKilledPublished
+	// oomKilledUnpublished means the container was OOM-killed and no TaskOOM
+	// event has been published for that kill yet.
+	oomKilledUnpublished
+)
+
+// killed reports whether an OOM kill was established, whether or not it has
+// been published.
+func (s oomStatus) killed() bool { return s != oomNotKilled }
+
+func (s oomStatus) String() string {
+	switch s {
+	case oomNotKilled:
+		return "not-killed"
+	case oomKilledPublished:
+		return "killed-published"
+	case oomKilledUnpublished:
+		return "killed-unpublished"
+	default:
+		return fmt.Sprintf("oomStatus(%d)", int(s))
+	}
+}
+
 type oomPoller interface {
 	io.Closer
 	// add adds `cg` cgroup to oom poller. `cg` is cgroups.Cgroup in v1 and
-	// `cgroupsv2.Manager` in v2
+	// `*cgroupV2` in v2
 	add(id string, cg any) error
 	// run monitors oom event and notifies the shim about them
 	run(ctx context.Context)
-	// isOOM reports whether the caller should publish TaskOOM before TaskExit.
-	// In cgroups v2 it checks memory.events and claims the count, but does not
-	// wait for an event already claimed by the async path to be published.
-	// The cgroup reference is consumed on the first call, so subsequent calls
-	// for the same id return false.
-	isOOM(id string) bool
+	// checkOOM synchronously checks if the container was OOM-killed by
+	// reading the cgroup's memory events. This is used at container exit time
+	// to ensure the TaskOOM event is published before TaskExit, even if the
+	// async notification has not yet arrived. It claims the count, but does
+	// not wait for an event already claimed by the async path to be
+	// published. This is a one-shot operation: the cgroup reference is
+	// consumed on the first call, and subsequent calls for the same id report
+	// oomNotKilled.
+	checkOOM(id string) oomStatus
+	// remove drops any state held for the container. Called when containerd
+	// deletes it, after which the id is never seen again.
+	remove(id string)
 }
 
 // runscService is the shim implementation of a remote shim over gRPC. It converts
@@ -237,7 +274,11 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 			var cgPath string
 			cgPath, err = cgroupsv2.PidGroupPath(pid)
 			if err == nil {
-				cg, err = cgroupsv2.Load(cgPath)
+				var mgr *cgroupsv2.Manager
+				mgr, err = cgroupsv2.Load(cgPath)
+				if err == nil {
+					cg = &cgroupV2{mgr: mgr, path: cgPath}
+				}
 			}
 		} else {
 			cg, err = cgroup1.Load(cgroup1.PidPath(pid))
@@ -301,6 +342,7 @@ func (s *runscService) Delete(ctx context.Context, r *task.DeleteRequest) (*task
 
 	// ExecID will be empty for init container process.
 	if len(r.ExecID) == 0 {
+		s.oomPoller.remove(r.ID)
 		s.mu.Lock()
 		delete(s.containers, r.ID)
 		hasCont := len(s.containers) > 0
@@ -647,17 +689,22 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	// exec processes share the sandbox cgroup and would produce spurious
 	// events.
 	// Use the per-container id for TaskOOM routing.
-	isOOM := isInit && s.oomPoller.isOOM(containerID)
+	oom := oomNotKilled
+	if isInit {
+		oom = s.oomPoller.checkOOM(containerID)
+	}
 	// When the memcg kill lands on the sentry itself, `runsc wait` cannot
 	// recover the real signal status and the shim substitutes the generic
 	// InternalErrorCode. Since the cgroup confirms an OOM kill, report the
 	// status tooling expects for SIGKILL (137). A real status reported by
-	// runsc is never overridden.
-	if isOOM && e.Status == proc.InternalErrorCode {
+	// runsc is never overridden. The kill counts even when the async path
+	// already published its TaskOOM, hence killed() rather than a check for
+	// oomKilledUnpublished.
+	if oom.killed() && e.Status == proc.InternalErrorCode {
 		e.Status = 128 + int(unix.SIGKILL)
 	}
 	p.SetExited(e.Status)
-	if isOOM {
+	if oom == oomKilledUnpublished {
 		s.send(&events.TaskOOM{ContainerID: containerID})
 	}
 	s.send(&events.TaskExit{

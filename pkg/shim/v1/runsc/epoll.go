@@ -107,12 +107,16 @@ func (e *epoller) add(id string, cgx any) error {
 	return unix.EpollCtl(e.fd, unix.EPOLL_CTL_ADD, int(fd), &event)
 }
 
-// isOOM is not implemented for cgroups v1. The epoll-based eventfd mechanism
-// used in v1 provides direct kernel notification and is not subject to the
-// same race condition as v2's inotify-based EventChan.
-func (e *epoller) isOOM(id string) bool {
-	return false
+// checkOOM is not implemented for cgroups v1. The epoll-based eventfd
+// mechanism used in v1 provides direct kernel notification and is not subject
+// to the same race condition as v2's inotify-based EventChan.
+func (e *epoller) checkOOM(id string) oomStatus {
+	return oomNotKilled
 }
+
+// remove is a no-op for cgroups v1: epoller state is keyed by eventfd and is
+// reclaimed in process() when the cgroup is reported deleted.
+func (e *epoller) remove(id string) {}
 
 // +checklocksexclude:e.mu
 func (e *epoller) process(ctx context.Context, fd uintptr) {
