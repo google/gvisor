@@ -106,6 +106,54 @@ TEST_F(XattrTest, XattrLargeName) {
   EXPECT_THAT(removexattr(path, name.c_str()), SyscallFailsWithErrno(ERANGE));
 }
 
+TEST_F(XattrTest, XattrLargeValue) {
+  const char* path = test_file_name_.c_str();
+  const char name[] = "user.test";
+
+  // Value of size XATTR_SIZE_MAX - 1 bytes (math.MaxUint16).
+  std::string val_xattr_size_max_minus_1(XATTR_SIZE_MAX - 1, 'a');
+  int res = setxattr(path, name, val_xattr_size_max_minus_1.data(),
+                     val_xattr_size_max_minus_1.size(), /*flags=*/0);
+  if (res == -1 && (errno == E2BIG || errno == EOPNOTSUPP || errno == ENOSPC)) {
+    // Backing filesystem does not support 64KB xattr values.
+    return;
+  }
+  ASSERT_THAT(res, SyscallSucceeds());
+
+  // Size probe must return the exact length XATTR_SIZE_MAX - 1, not 0.
+  EXPECT_THAT(getxattr(path, name, nullptr, 0),
+              SyscallSucceedsWithValue(XATTR_SIZE_MAX - 1));
+
+  std::string buf(XATTR_SIZE_MAX - 1, '\0');
+  EXPECT_THAT(getxattr(path, name, buf.data(), buf.size()),
+              SyscallSucceedsWithValue(XATTR_SIZE_MAX - 1));
+  EXPECT_EQ(buf, val_xattr_size_max_minus_1);
+
+  // Value of size XATTR_SIZE_MAX:
+  // Must either succeed with exact XATTR_SIZE_MAX bytes or fail with E2BIG.
+  // It must never silently write an empty attribute or return 0 bytes.
+  std::string val_xattr_size_max(XATTR_SIZE_MAX, 'b');
+  res = setxattr(path, name, val_xattr_size_max.data(),
+                 val_xattr_size_max.size(), /*flags=*/0);
+  if (res == 0) {
+    EXPECT_THAT(getxattr(path, name, nullptr, 0),
+                SyscallSucceedsWithValue(XATTR_SIZE_MAX));
+    std::string buf_xattr_size_max(XATTR_SIZE_MAX, '\0');
+    EXPECT_THAT(getxattr(path, name, buf_xattr_size_max.data(),
+                         buf_xattr_size_max.size()),
+                SyscallSucceedsWithValue(XATTR_SIZE_MAX));
+    EXPECT_EQ(buf_xattr_size_max, val_xattr_size_max);
+  } else {
+    EXPECT_EQ(errno, E2BIG);
+  }
+
+  // Value larger than XATTR_SIZE_MAX must fail with E2BIG.
+  std::string val_xattr_size_max_plus_1(XATTR_SIZE_MAX + 1, 'c');
+  EXPECT_THAT(setxattr(path, name, val_xattr_size_max_plus_1.data(),
+                       val_xattr_size_max_plus_1.size(), /*flags=*/0),
+              SyscallFailsWithErrno(E2BIG));
+}
+
 TEST_F(XattrTest, XattrInvalidPrefix) {
   const char* path = test_file_name_.c_str();
   std::string name(XATTR_NAME_MAX, 'a');
