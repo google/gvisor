@@ -521,7 +521,9 @@ nftables-syscall-runc-tests: load-nftables
 .PHONY: nftables-syscall-runc-tests
 
 bwrap-tests: $(RUNTIME_BIN)
-	@$(call sudo,//runsc/cmd/alias/bwrap:bwrap_integration_test,-test.v -runsc=$(RUNTIME_BIN))
+	@mkdir -p $(RUNTIME_DIR)/gvisor-bin
+	@cp -af $(RUNTIME_DIR)/gvisor_sentry $(RUNTIME_DIR)/checkpointgofer $(RUNTIME_DIR)/runsc-fd-parking $(RUNTIME_DIR)/runsc-metric-server $(RUNTIME_DIR)/gvisor-sentry-prewarmer $(RUNTIME_DIR)/gvisor-bin/
+	@export GVISOR_SIDECAR_BINARIES_DIR=$(RUNTIME_DIR)/gvisor-bin; $(call sudo,//runsc/cmd/alias/bwrap:bwrap_integration_test,-test.v -runsc=$(RUNTIME_BIN))
 .PHONY: bwrap-tests
 
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
