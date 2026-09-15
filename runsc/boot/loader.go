@@ -1412,8 +1412,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 			for _, p := range l.processes {
 				if ns.Path == p.pidnsPath {
 					log.Debugf("Joining PID namespace named %q", ns.Path)
-					pidns = p.tg.PIDNamespace()
-					break
+					if p.tg != nil {
+						pidns = p.tg.PIDNamespace()
+						break
+					}
 				}
 			}
 		}
