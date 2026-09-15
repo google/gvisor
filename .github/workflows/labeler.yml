@@ -10,7 +10,7 @@ jobs:
       contents: read       # read labeler config
       pull-requests: write # apply labels to the PR
     steps:
-    - uses: actions/labeler@v6
+    - uses: actions/labeler@v7
       if: github.base_ref == null
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
