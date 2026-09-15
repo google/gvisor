@@ -368,6 +368,8 @@ func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
 		if m.shim.Process != nil {
 			m.shim.Process.Kill()
 		}
+		// A killed shim does not remove its socket, so remove it here.
+		os.Remove(filepath.Join(m.wd, SocketAddress))
 	})
 	waitErr := make(chan error, 1)
 	go func() {
@@ -395,7 +397,13 @@ func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
 
 // GetClient returns a client to the shim socket which can be used to send requests to the shim.
 func (m *MockContainerd) GetClient(t *testing.T) task.TaskService {
-	var client task.TaskService
+	return task.NewTaskClient(m.GetTTRPCClient(t))
+}
+
+// GetTTRPCClient returns a raw client to the shim socket, for services with no
+// generated client.
+func (m *MockContainerd) GetTTRPCClient(t *testing.T) *ttrpc.Client {
+	var client *ttrpc.Client
 	m.withShimContext(t, func(t *testing.T) {
 		conn, err := net.DialTimeout("unix", SocketAddress, 2*time.Second)
 		if err != nil {
@@ -404,7 +412,7 @@ func (m *MockContainerd) GetClient(t *testing.T) task.TaskService {
 		t.Cleanup(func() {
 			conn.Close()
 		})
-		client = task.NewTaskClient(ttrpc.NewClient(conn))
+		client = ttrpc.NewClient(conn)
 	})
 	return client
 }
