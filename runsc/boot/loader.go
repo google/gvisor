@@ -1650,16 +1650,13 @@ func (l *Loader) startGoferMonitor(info *containerInfo) {
 			panic(fmt.Sprintf("Error monitoring gofer FDs: %s", err))
 		}
 
-		l.mu.Lock()
-		defer l.mu.Unlock()
-
-		// The gofer could have been stopped due to a normal container shutdown.
-		// Check if the container has not stopped yet.
-		if tg, _ := l.tryThreadGroupFromIDLocked(execID{cid: info.cid}); tg != nil {
-			log.Infof("Gofer socket disconnected, killing container %q", info.cid)
-			if err := l.signalAllProcesses(info.cid, int32(linux.SIGKILL)); err != nil {
-				log.Warningf("Error killing container %q after gofer stopped: %s", info.cid, err)
-			}
+		tg, _ := l.threadGroupFromID(execID{cid: info.cid})
+		if tg == nil {
+			return
+		}
+		log.Infof("Gofer socket disconnected, killing container %q", info.cid)
+		if err := l.signalAllProcesses(info.cid, int32(linux.SIGKILL)); err != nil {
+			log.Warningf("Error killing container %q after gofer stopped: %s", info.cid, err)
 		}
 	}()
 }
