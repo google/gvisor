@@ -200,6 +200,12 @@ func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 				}
 				rejectTarget.Handler = handler
 			}
+			if _, ok := target.(*masqueradeTarget); ok {
+				if replace.Name.String() != natTable {
+					nflog("MASQUERADE target is only supported in the nat table")
+					return nil, syserr.ErrInvalidArgument
+				}
+			}
 			rule.Target = target
 		}
 		optVal = optVal[targetSize:]
