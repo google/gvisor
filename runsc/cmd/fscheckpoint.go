@@ -23,6 +23,7 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -57,21 +58,14 @@ func (p *pathVar) String() string {
 }
 
 func (p *pathVar) Set(value string) error {
-	subparts := strings.SplitN(value, ":", 2)
-	if len(subparts) == 1 {
-		path := strings.TrimSpace(subparts[0])
-		if path == "" {
-			return fmt.Errorf("empty path: %q", value)
-		}
-		*p = append(*p, checkpoint.ResourceID{Path: path})
-	} else {
-		container := strings.TrimSpace(subparts[0])
-		path := strings.TrimSpace(subparts[1])
-		if path == "" {
-			return fmt.Errorf("empty path: %q", value)
-		}
-		*p = append(*p, checkpoint.ResourceID{ContainerName: container, Path: path})
+	paths, err := boot.ParseFSCheckpointPaths(value)
+	if err != nil {
+		return err
 	}
+	if len(paths) == 0 {
+		return fmt.Errorf("empty path: %q", value)
+	}
+	*p = append(*p, paths...)
 	return nil
 }
 
