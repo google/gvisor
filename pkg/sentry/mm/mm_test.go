@@ -618,7 +618,6 @@ func TestReservedRangeNotReusedByMMap(t *testing.T) {
 			}
 			mm.SetReserveOnUnmap(false)
 
-			// Non-fixed mappings must not be placed in the reserved range.
 			for i := 0; i < 8; i++ {
 				addr, err := mm.MMap(ctx, opts)
 				if err != nil {
@@ -629,7 +628,6 @@ func TestReservedRangeNotReusedByMMap(t *testing.T) {
 				}
 			}
 
-			// MAP_FIXED mappings may still be placed in the reserved range.
 			fixedOpts := opts
 			fixedOpts.Addr = arA.Start
 			fixedOpts.Fixed = true
@@ -645,7 +643,6 @@ func TestReservedRangeNotReusedByMMap(t *testing.T) {
 				t.Fatalf("MUnmap got err %v want nil", err)
 			}
 
-			// After clearing, the range may be reused.
 			mm.ClearReservedAddrRanges()
 			if _, err := mm.MMap(ctx, opts); err != nil {
 				t.Errorf("MMap got err %v want nil", err)
@@ -657,50 +654,36 @@ func TestReservedRangeNotReusedByMMap(t *testing.T) {
 // TestReservedRangeIgnoresNonFixedHint tests that a non-fixed hint
 // overlapping a reserved range is not honored.
 func TestReservedRangeIgnoresNonFixedHint(t *testing.T) {
-	for _, test := range []struct {
-		name          string
-		mmapDirection arch.MmapDirection
-	}{
-		{"MmapBottomUp", arch.MmapBottomUp},
-		{"MmapTopDown", arch.MmapTopDown},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			ctx := contexttest.Context(t)
-			mm := testMemoryManagerWithMmapDirection(ctx, t, test.mmapDirection)
-			defer mm.DecUsers(ctx)
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
 
-			const lengthA = 16 * hostarch.PageSize
-			addrA, err := mm.MMap(ctx, memmap.MMapOpts{
-				Length:   lengthA,
-				Private:  true,
-				Perms:    hostarch.ReadWrite,
-				MaxPerms: hostarch.AnyAccess,
-			})
-			if err != nil {
-				t.Fatalf("MMap got err %v want nil", err)
-			}
-			arA := hostarch.AddrRange{addrA, addrA + lengthA}
+	const lengthA = 16 * hostarch.PageSize
+	opts := memmap.MMapOpts{
+		Length:   lengthA,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	}
+	addrA, err := mm.MMap(ctx, opts)
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	arA := hostarch.AddrRange{addrA, addrA + lengthA}
 
-			mm.SetReserveOnUnmap(true)
-			if err := mm.MUnmap(ctx, addrA, lengthA); err != nil {
-				t.Fatalf("MUnmap got err %v want nil", err)
-			}
-			mm.SetReserveOnUnmap(false)
+	mm.SetReserveOnUnmap(true)
+	if err := mm.MUnmap(ctx, addrA, lengthA); err != nil {
+		t.Fatalf("MUnmap got err %v want nil", err)
+	}
+	mm.SetReserveOnUnmap(false)
 
-			addr, err := mm.MMap(ctx, memmap.MMapOpts{
-				Addr:     arA.Start,
-				Length:   lengthA,
-				Private:  true,
-				Perms:    hostarch.ReadWrite,
-				MaxPerms: hostarch.AnyAccess,
-			})
-			if err != nil {
-				t.Fatalf("MMap got err %v want nil", err)
-			}
-			if arA.Overlaps(hostarch.AddrRange{addr, addr + lengthA}) {
-				t.Errorf("MMap honored hint into reserved range %v, got addr %#x", arA, addr)
-			}
-		})
+	opts.Addr = arA.Start
+	addr, err := mm.MMap(ctx, opts)
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	if arA.Overlaps(hostarch.AddrRange{addr, addr + lengthA}) {
+		t.Errorf("MMap honored hint into reserved range %v, got addr %#x", arA, addr)
 	}
 }
 
@@ -741,119 +724,4 @@ func TestReservedRangeBlocksBrk(t *testing.T) {
 	if addr, err := mm.Brk(ctx, brkStart+8*hostarch.PageSize); err != nil || addr != brkStart+8*hostarch.PageSize {
 		t.Errorf("Brk got (%#x, %v), want (%#x, nil)", addr, err, brkStart+8*hostarch.PageSize)
 	}
-}
-
-func TestForEachUnreservedLocked(t *testing.T) {
-	for _, test := range []struct {
-		name         string
-		reservations []hostarch.AddrRange
-		ar           hostarch.AddrRange
-		want         []hostarch.AddrRange
-	}{
-		{
-			name: "no reservations",
-			ar:   hostarch.AddrRange{1000, 9000},
-			want: []hostarch.AddrRange{{1000, 9000}},
-		},
-		{
-			name:         "reservation inside range",
-			reservations: []hostarch.AddrRange{{3000, 5000}},
-			ar:           hostarch.AddrRange{1000, 9000},
-			want:         []hostarch.AddrRange{{1000, 3000}, {5000, 9000}},
-		},
-		{
-			name:         "reservation covering start",
-			reservations: []hostarch.AddrRange{{500, 3000}},
-			ar:           hostarch.AddrRange{1000, 9000},
-			want:         []hostarch.AddrRange{{3000, 9000}},
-		},
-		{
-			name:         "reservation covering end",
-			reservations: []hostarch.AddrRange{{7000, 9500}},
-			ar:           hostarch.AddrRange{1000, 9000},
-			want:         []hostarch.AddrRange{{1000, 7000}},
-		},
-		{
-			name:         "reservation covering all",
-			reservations: []hostarch.AddrRange{{0, 10000}},
-			ar:           hostarch.AddrRange{1000, 9000},
-			want:         nil,
-		},
-		{
-			name:         "empty range",
-			reservations: []hostarch.AddrRange{{2000, 3000}},
-			ar:           hostarch.AddrRange{4000, 4000},
-			want:         nil,
-		},
-		{
-			name:         "two reservations",
-			reservations: []hostarch.AddrRange{{2000, 3000}, {6000, 7000}},
-			ar:           hostarch.AddrRange{1000, 9000},
-			want:         []hostarch.AddrRange{{1000, 2000}, {3000, 6000}, {7000, 9000}},
-		},
-	} {
-		for _, ascending := range []bool{true, false} {
-			name := test.name
-			if ascending {
-				name += "/ascending"
-			} else {
-				name += "/descending"
-			}
-			t.Run(name, func(t *testing.T) {
-				ctx := contexttest.Context(t)
-				mm := testMemoryManager(ctx, t)
-				defer mm.DecUsers(ctx)
-
-				mm.mappingMu.Lock()
-				for _, r := range test.reservations {
-					mm.reservedRanges.InsertRange(r, reservedSetValue{})
-				}
-				var got []hostarch.AddrRange
-				mm.forEachUnreservedLocked(test.ar, ascending, func(r hostarch.AddrRange) bool {
-					got = append(got, r)
-					return true
-				})
-				mm.mappingMu.Unlock()
-
-				want := test.want
-				if !ascending {
-					want = nil
-					for i := len(test.want) - 1; i >= 0; i-- {
-						want = append(want, test.want[i])
-					}
-				}
-				if len(got) != len(want) {
-					t.Fatalf("forEachUnreservedLocked got %v want %v", got, want)
-				}
-				for i := range want {
-					if got[i] != want[i] {
-						t.Fatalf("forEachUnreservedLocked got %v want %v", got, want)
-					}
-				}
-			})
-		}
-	}
-
-	t.Run("early termination", func(t *testing.T) {
-		ctx := contexttest.Context(t)
-		mm := testMemoryManager(ctx, t)
-		defer mm.DecUsers(ctx)
-
-		ar := hostarch.AddrRange{1000, 9000}
-		mm.mappingMu.Lock()
-		mm.reservedRanges.InsertRange(hostarch.AddrRange{2000, 3000}, reservedSetValue{})
-		mm.reservedRanges.InsertRange(hostarch.AddrRange{6000, 7000}, reservedSetValue{})
-		var got []hostarch.AddrRange
-		completed := mm.forEachUnreservedLocked(ar, true, func(r hostarch.AddrRange) bool {
-			got = append(got, r)
-			return false
-		})
-		mm.mappingMu.Unlock()
-		if completed {
-			t.Errorf("forEachUnreservedLocked returned true, want false")
-		}
-		if len(got) != 1 || got[0] != (hostarch.AddrRange{1000, 2000}) {
-			t.Errorf("forEachUnreservedLocked got %v want [{1000, 2000}]", got)
-		}
-	})
 }

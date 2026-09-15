@@ -63,10 +63,8 @@ func (mm *MemoryManager) forEachUnreservedLocked(ar hostarch.AddrRange, ascendin
 	return true
 }
 
-// reservedSetValue is the value type of reservedSet.
 type reservedSetValue struct{}
 
-// reservedSetFunctions implements segment.Functions for reservedSet.
 type reservedSetFunctions struct{}
 
 func (reservedSetFunctions) MinKey() hostarch.Addr {
