@@ -395,6 +395,34 @@ func (hf *hostFile) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(1, &hf.hostPath)
 }
 
+func (ef *errorFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/sys.errorFile"
+}
+
+func (ef *errorFile) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"errno",
+	}
+}
+
+func (ef *errorFile) beforeSave() {}
+
+// +checklocksignore
+func (ef *errorFile) StateSave(stateSinkObject state.Sink) {
+	ef.beforeSave()
+	stateSinkObject.Save(0, &ef.DynamicBytesFile)
+	stateSinkObject.Save(1, &ef.errno)
+}
+
+func (ef *errorFile) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (ef *errorFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ef.DynamicBytesFile)
+	stateSourceObject.Load(1, &ef.errno)
+}
+
 func init() {
 	state.Register((*dirRefs)(nil))
 	state.Register((*kcovInode)(nil))
@@ -408,4 +436,5 @@ func init() {
 	state.Register((*implStatFS)(nil))
 	state.Register((*staticFile)(nil))
 	state.Register((*hostFile)(nil))
+	state.Register((*errorFile)(nil))
 }

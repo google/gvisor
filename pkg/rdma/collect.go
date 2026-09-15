@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
@@ -318,11 +320,24 @@ func (d *Device) collectNetDevs(sysRoot, netDir string) error {
 		if !SafeName(name) {
 			continue
 		}
-		attrs, err := readAttrs(path.Join(sysRoot, "class/net", name), netAttrNames)
-		if err != nil {
-			return err
+		nd := NetDev{Name: name, Attrs: map[string]string{}, ErrAttrs: map[string]int32{}}
+		for _, attr := range netAttrNames {
+			p := path.Join(sysRoot, "class/net", name, attr)
+			content, present, err := readAttr(p)
+			if err != nil {
+				// The kernel fails reads of some attributes with EINVAL while
+				// the link is down. Record the errno so the sandbox reproduces it.
+				if errors.Is(err, unix.EINVAL) {
+					nd.ErrAttrs[attr] = int32(unix.EINVAL)
+					continue
+				}
+				return fmt.Errorf("reading %q: %w", p, err)
+			}
+			if present {
+				nd.Attrs[attr] = content
+			}
 		}
-		d.NetDevs = append(d.NetDevs, NetDev{Name: name, Attrs: attrs})
+		d.NetDevs = append(d.NetDevs, nd)
 	}
 	sort.Slice(d.NetDevs, func(i, j int) bool { return d.NetDevs[i].Name < d.NetDevs[j].Name })
 	return nil
