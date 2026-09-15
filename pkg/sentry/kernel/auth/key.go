@@ -292,6 +292,8 @@ type KeySet struct {
 	// keys maps key IDs to the underlying Key struct.
 	// It is initially nil to save on heap space.
 	// It is only initialized when doing mutable transactions on it using `Do`.
+	//
+	// +checklocks:mu
 	keys map[KeySerial]*Key
 }
 
@@ -305,14 +307,18 @@ type LockedKeySet struct {
 // It returns the error that `fn` returns.
 // This is the only function where functions that lock the KeySet.mu for
 // writing may be called.
+//
+// +checklocksexclude:s.txnMu
+// +checklocksexclude:s.mu
 func (s *KeySet) Do(fn func(*LockedKeySet) error) error {
 	s.txnMu.Lock()
 	defer s.txnMu.Unlock()
 	ls := &LockedKeySet{s}
+	// Keep lock and map accesses on ls; checklocks does not track its alias to s.
 	ls.mu.Lock()
-	if s.keys == nil {
+	if ls.keys == nil {
 		// Initialize the map from its zero value, if it hasn't been done yet.
-		s.keys = make(map[KeySerial]*Key)
+		ls.keys = make(map[KeySerial]*Key)
 	}
 	ls.mu.Unlock()
 	return fn(ls)
@@ -321,6 +327,8 @@ func (s *KeySet) Do(fn func(*LockedKeySet) error) error {
 // Lookup looks up a key by ID.
 // Callers must exercise care to verify that the key can be accessed with
 // proper credentials.
+//
+// +checklocksexclude:s.mu
 func (s *KeySet) Lookup(keyID KeySerial) (*Key, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -334,6 +342,10 @@ func (s *KeySet) Lookup(keyID KeySerial) (*Key, error) {
 // ForEach iterates over all keys.
 // If `fn` returns true, iteration stops immediately.
 // Callers must exercise care to only process keys to which they have access.
+//
+// fn runs with s.mu read-locked and must not reacquire that mutex.
+//
+// +checklocksexclude:s.mu
 func (s *KeySet) ForEach(fn func(*Key) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -361,6 +373,8 @@ func getNewID() (KeySerial, error) {
 }
 
 // Add adds a new Key to the KeySet.
+//
+// +checklocksexclude:s.mu
 func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
 	if len(description) >= MaxKeyDescSize {
 		return nil, linuxerr.EINVAL

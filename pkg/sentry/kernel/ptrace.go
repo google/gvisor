@@ -106,6 +106,8 @@ const (
 //
 // We currently do not implement privileged executables (set-user/group-ID bits
 // and file capabilities), so that case is not reachable.
+//
+// +checklocksexclude:target.mu
 func (t *Task) CanTrace(target *Task, attach bool) bool {
 	// "If the calling thread and the target thread are in the same thread
 	// group, access is always allowed." - ptrace(2)
@@ -135,6 +137,8 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 
 // canTraceLocked is the same as CanTrace, except the caller must already hold
 // the TaskSet mutex (for reading or writing).
+//
+// +checklocksexclude:target.mu
 func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 	if t.tg == target.tg {
 		return true
@@ -156,6 +160,8 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 // kernel/ptrace.c:__ptrace_may_access as well as the commoncap LSM
 // implementation of the security_ptrace_access_check() interface, which is
 // always invoked.
+//
+// +checklocksexclude:target.mu
 func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	// """
 	// TODO(gvisor.dev/issue/260): 1. If the access mode specifies
@@ -474,6 +480,7 @@ func (t *Task) ptraceUnstop(mode ptraceSyscallMode, singlestep bool, sig linux.S
 	return nil
 }
 
+// +checklocksexclude:t.mu
 func (t *Task) ptraceTraceme() error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -508,6 +515,8 @@ func (t *Task) ptraceTraceme() error {
 
 // ptraceAttach implements ptrace(PTRACE_ATTACH, target) if seize is false, and
 // ptrace(PTRACE_SEIZE, target, 0, opts) if seize is true. t is the caller.
+//
+// +checklocksexclude:target.mu
 func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -1042,6 +1051,10 @@ type runPtraceAfterExecveCredsLock struct {
 	data   hostarch.Addr
 }
 
+// The task run loop calls this state without r.target.mu held; the
+// taskRunState interface does not expose the target task.
+//
+// +checklocksexclude:r.target.mu
 func (r *runPtraceAfterExecveCredsLock) execute(t *Task) taskRunState {
 	if t.killed() {
 		// execveCredsMutexUnlock() will not pass us the lock after we were killed, so there is no
@@ -1061,6 +1074,8 @@ func (r *runPtraceAfterExecveCredsLock) execute(t *Task) taskRunState {
 }
 
 // Ptrace implements ptrace(2) excluding PTRACE_ATTACH and PTRACE_SEIZE.
+//
+// +checklocksexclude:t.mu
 func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// PTRACE_TRACEME ignores all other arguments.
 	if req == linux.PTRACE_TRACEME {

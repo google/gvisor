@@ -49,7 +49,7 @@ type TTY struct {
 
 	mu sync.Mutex `state:"nosave"`
 
-	// tg is protected by mu.
+	// +checklocks:mu
 	tg *ThreadGroup
 }
 
@@ -67,6 +67,8 @@ func (tty *TTY) Index() uint32 {
 }
 
 // ThreadGroup returns the ThreadGroup this TTY is associated with.
+//
+// +checklocksexclude:tty.mu
 func (tty *TTY) ThreadGroup() *ThreadGroup {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
@@ -75,6 +77,8 @@ func (tty *TTY) ThreadGroup() *ThreadGroup {
 
 // SignalForegroundProcessGroup sends the signal to the foreground process
 // group of the TTY.
+//
+// +checklocksexclude:tty.mu
 func (tty *TTY) SignalForegroundProcessGroup(info *linux.SignalInfo) {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
@@ -106,6 +110,8 @@ func (tty *TTY) SignalForegroundProcessGroup(info *linux.SignalInfo) {
 // change the state of the TTY.
 //
 // This corresponds to Linux drivers/tty/tty_io.c:tty_check_change().
+//
+// +checklocksexclude:tty.mu
 func (tty *TTY) CheckChange(ctx context.Context, sig linux.Signal) error {
 	task := TaskFromContext(ctx)
 	if task == nil {
@@ -169,6 +175,8 @@ func (tty *TTY) CheckChange(ctx context.Context, sig linux.Signal) error {
 // the foreground process group. This is called on the replica (slave) TTY
 // when the PTY master is closed, corresponding to Linux's pty_close()
 // calling tty_vhangup(tty->link).
+//
+// +checklocksexclude:tty.mu
 func (tty *TTY) Hangup(ctx context.Context) {
 	tty.mu.Lock()
 	tg := tty.tg

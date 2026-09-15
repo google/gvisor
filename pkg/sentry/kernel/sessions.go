@@ -214,13 +214,14 @@ func (pg *ProcessGroup) handleOrphan() {
 	}
 
 	// Deliver appropriate signals to all thread groups.
-	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup, tgLeader *Task) {
+	pg.originator.pidns.owner.forEachThreadGroupLocked(func(tg *ThreadGroup, _ *Task) {
 		if tg.processGroup != pg {
 			return
 		}
 		tg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
-		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
-		tgLeader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
+		leader := tg.leader
+		_ = leader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
+		_ = leader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
 		tg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 	})
 
