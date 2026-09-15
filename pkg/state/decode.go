@@ -670,18 +670,13 @@ func (ds *decodeState) Load(obj reflect.Value) {
 	}
 
 	// Check if we have any deferred objects.
-	numDeferred := 0
 	for id, encoded := range ds.deferred {
-		numDeferred++
 		if s, ok := encoded.(*wire.Struct); ok && s.TypeID != 0 {
 			typ := ds.types.LookupType(typeID(s.TypeID))
 			Failf("unused deferred object: ID %d, type %v", id, typ)
 		} else {
 			Failf("unused deferred object: ID %d, %#v", id, encoded)
 		}
-	}
-	if numDeferred != 0 {
-		Failf("still had %d deferred objects", numDeferred)
 	}
 
 	// Scan and fire all callbacks. We iterate over the list of incomplete
