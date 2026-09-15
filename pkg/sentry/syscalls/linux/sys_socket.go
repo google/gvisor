@@ -16,6 +16,7 @@ package linux
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -369,6 +370,32 @@ func Bind(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	a, err := CaptureAddress(t, addr, addrlen)
 	if err != nil {
 		return 0, nil, err
+	}
+
+	// Enforce restrict-bind-to-loopback policy: reject any bind to a
+	// non-loopback address (including INADDR_ANY / IN6ADDR_ANY) so that
+	// sandboxed processes cannot inadvertently expose services on external
+	// interfaces.
+	if t.Kernel().RestrictBindToLoopback && len(a) >= 2 {
+		family := hostarch.ByteOrder.Uint16(a)
+		switch int(family) {
+		case linux.AF_INET:
+			if len(a) >= linux.SockAddrInetSize {
+				var sa linux.SockAddrInet
+				sa.UnmarshalUnsafe(a)
+				if !net.IP(sa.Addr[:]).IsLoopback() {
+					return 0, nil, linuxerr.EACCES
+				}
+			}
+		case linux.AF_INET6:
+			if len(a) >= linux.SockAddrInet6Size {
+				var sa linux.SockAddrInet6
+				sa.UnmarshalUnsafe(a)
+				if !net.IP(sa.Addr[:]).IsLoopback() {
+					return 0, nil, linuxerr.EACCES
+				}
+			}
+		}
 	}
 
 	return 0, nil, s.Bind(t, a).ToError()
