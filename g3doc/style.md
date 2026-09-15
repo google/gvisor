@@ -62,6 +62,9 @@ function which is commonly used without using its return(s), a wrapper function
 should be declared which explicitly ignores the returns. That said, in many
 cases, it may make sense for the wrapper to check the returns.
 
+As an exception, leave an unused result from `testing.T.Run` unassigned:
+subtest failures already propagate to the parent test.
+
 ### Formatting verbs
 
 Built-in types should use their associated verbs (e.g. %d for integral types),

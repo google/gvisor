@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -19,4 +19,12 @@ go_library(
         "@in_gopkg_yaml_v2//:go_default_library",
         "@org_golang_x_term//:go_default_library",
     ],
+)
+
+go_test(
+    name = "cli_test",
+    size = "small",
+    srcs = ["cli_test.go"],
+    library = ":cli",
+    deps = ["//tools/nogo/flags"],
 )
