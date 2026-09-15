@@ -83,6 +83,7 @@ var metaDataLengths = map[metaKey]int{
 	linux.NFT_META_L4PROTO:   1,
 	linux.NFT_META_SKUID:     4,
 	linux.NFT_META_SKGID:     4,
+	linux.NFT_META_MARK:      4,
 	linux.NFT_META_RTCLASSID: 4,
 	linux.NFT_META_PKTTYPE:   1,
 	linux.NFT_META_PRANDOM:   4,
@@ -98,6 +99,7 @@ func validateMetaKey(key metaKey) *syserr.AnnotatedError {
 	switch key {
 	case linux.NFT_META_LEN, linux.NFT_META_PROTOCOL, linux.NFT_META_NFPROTO,
 		linux.NFT_META_L4PROTO, linux.NFT_META_SKUID, linux.NFT_META_SKGID,
+		linux.NFT_META_MARK,
 		linux.NFT_META_RTCLASSID, linux.NFT_META_PKTTYPE, linux.NFT_META_PRANDOM,
 		linux.NFT_META_TIME_NS, linux.NFT_META_TIME_DAY, linux.NFT_META_TIME_HOUR,
 		linux.NFT_META_OIFNAME, linux.NFT_META_IIFNAME:
