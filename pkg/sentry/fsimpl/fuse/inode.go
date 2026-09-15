@@ -495,14 +495,14 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 
 // Open implements kernfs.Inode.Open.
 func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
-		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY |
-		linux.O_APPEND | linux.O_DIRECT
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
 	if opts.Flags&linux.O_LARGEFILE == 0 && i.size.Load() > linux.MAX_NON_LFS {
 		return nil, linuxerr.EOVERFLOW
 	}
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
+		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY |
+		linux.O_APPEND | linux.O_DIRECT
 
 	var (
 		fd     *fileDescription
