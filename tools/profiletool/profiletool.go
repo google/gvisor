@@ -32,9 +32,9 @@ import (
 
 var (
 	mergeCmd              = flag.NewFlagSet("merge", flag.ContinueOnError)
-	mergeOut              = mergeCmd.String("out", "/dev/stdout", "file to write the merged profile to")
+	mergeOut              = mergeCmd.String("out", "", "file to write the merged profile to (default: stdout)")
 	compactCmd            = flag.NewFlagSet("compact", flag.ContinueOnError)
-	compactOut            = compactCmd.String("out", "/dev/stdout", "file to write the compacted profile to")
+	compactOut            = compactCmd.String("out", "", "file to write the compacted profile to (default: stdout)")
 	runtimeInfoCmd        = flag.NewFlagSet("runtime-info", flag.ContinueOnError)
 	checkSimilarCmd       = flag.NewFlagSet("check-similar", flag.ContinueOnError)
 	checkSimilarQuiet     = checkSimilarCmd.Bool("quiet", false, "if set, do not print any output; comparison result is still provided as exit code")
@@ -118,13 +118,7 @@ func mergeProfiles() error {
 		return fmt.Errorf("cannot merge %q: %w", profilePaths, err)
 	}
 	merged = merged.Compact()
-	mergedFile, err := os.Create(*mergeOut)
-	if err != nil {
-		return fmt.Errorf("cannot create %q: %w", *mergeOut, err)
-	}
-	defer mergedFile.Close()
-	if err := writeMaxCompressionProfile(merged, mergedFile); err != nil {
-		os.Remove(*mergeOut)
+	if err := writeMaxCompressedProfile(*mergeOut, merged); err != nil {
 		return fmt.Errorf("cannot write merged profile to %q: %w", *mergeOut, err)
 	}
 	return nil
@@ -135,10 +129,10 @@ func compactProfile() error {
 	if err := compactCmd.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("invalid flags: %w", err)
 	}
-	if len(mergeCmd.Args()) != 1 {
+	if len(compactCmd.Args()) != 1 {
 		return errors.New("must provide exactly one profile name as positional argument")
 	}
-	profilePath := mergeCmd.Args()[0]
+	profilePath := compactCmd.Args()[0]
 	profileFile, err := os.Open(profilePath)
 	if err != nil {
 		return fmt.Errorf("cannot open %q: %w", profilePath, err)
@@ -149,17 +143,30 @@ func compactProfile() error {
 	}
 	profileFile.Close()
 	prof = prof.Compact()
-	compactedFile, err := os.Create(*compactOut)
-	if err != nil {
-		return fmt.Errorf("cannot create %q: %w", *compactOut, err)
-	}
-	if err := writeMaxCompressionProfile(prof, compactedFile); err != nil {
-		compactedFile.Close()
-		os.Remove(*compactOut)
+	if err := writeMaxCompressedProfile(*compactOut, prof); err != nil {
 		return fmt.Errorf("cannot write compacted profile to %q: %w", *compactOut, err)
 	}
-	if err := compactedFile.Close(); err != nil {
-		return fmt.Errorf("cannot close %q: %w", *compactOut, err)
+	return nil
+}
+
+// writeMaxCompressedProfile writes prof to the file at outPath, or to standard
+// output if outPath is empty. On write failure the file is removed (unless it
+// is standard output).
+func writeMaxCompressedProfile(outPath string, prof *profile.Profile) error {
+	out := os.Stdout
+	if outPath != "" {
+		var err error
+		out, err = os.Create(outPath)
+		if err != nil {
+			return fmt.Errorf("cannot create %q: %w", outPath, err)
+		}
+		defer out.Close()
+	}
+	if err := writeMaxCompressionProfile(prof, out); err != nil {
+		if outPath != "" {
+			os.Remove(outPath)
+		}
+		return err
 	}
 	return nil
 }
