@@ -356,7 +356,7 @@ func Init() {
 					nvgpu.NVB0CC_CTRL_CMD_BIND_PM_RESOURCES:                                ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_UNBIND_PM_RESOURCES:                              ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_PMA_STREAM_UPDATE_GET_PUT:                        ctrlHandler(rmControlSimple, nvconf.CapProfiling),
-					nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS:                                     ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NVB0CC_CTRL_CMD_EXEC_REG_OPS:                                     ctrlHandler(ctrlGpuExecRegOps, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_RESERVE_PM_AREA_PC_SAMPLER:                       ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_RELEASE_PM_AREA_PC_SAMPLER:                       ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_GET_TOTAL_HS_CREDITS:                             ctrlHandler(rmControlSimple, nvconf.CapProfiling),
