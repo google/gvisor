@@ -102,8 +102,8 @@ apps:
 
   - name: "systemd"
     category: "System software"
-    verdict: "experimental"
-    version: "259.5"
+    verdict: "yes"
+    version: "261"
     notes: "Requires the `--in-sandbox-cgroup=v2` runsc flag."
     test_source: "test/e2e/systemd_test.go"
 

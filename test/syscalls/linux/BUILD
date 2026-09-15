@@ -4406,6 +4406,7 @@ cc_binary(
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:mount_util",
         "//test/util:posix_error",
         "//test/util:save_util",
         "//test/util:temp_path",
