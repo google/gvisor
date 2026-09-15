@@ -30,8 +30,8 @@ import (
 
 const stateFileExtension = "state"
 
-// ErrStateFileLocked is returned by Load() when the state file is locked
-// and TryLock is enabled.
+// ErrStateFileLocked indicates that a state file is locked and TryLock is
+// enabled. Callers can identify wrapped lock errors with errors.Is.
 var ErrStateFileLocked = errors.New("state file locked")
 
 // TryLock represents whether we should block waiting for the lock to be acquired or not.
@@ -98,7 +98,7 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 			// Preserve error so that callers can distinguish 'not found' errors.
 			return nil, err
 		}
-		return nil, fmt.Errorf("reading container metadata file %q: %v", state.statePath(), err)
+		return nil, fmt.Errorf("reading container metadata file %q: %w", state.statePath(), err)
 	}
 	c.Sandbox.SetRootDir(rootDir)
 
@@ -189,7 +189,7 @@ func LoadSandbox(rootDir, id string, opts LoadOpts) ([]*Container, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("loading sandbox %q, failed to load container %q: %v", id, cid, err)
+			return nil, fmt.Errorf("loading sandbox %q, failed to load container %q: %w", id, cid, err)
 		}
 		containers = append(containers, container)
 	}
