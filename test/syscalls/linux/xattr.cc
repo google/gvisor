@@ -859,8 +859,7 @@ int main(int argc, char** argv) {
     if (arg == gvisor::testing::kUnshareAndSetTrustedXattrInNewUserns) {
       // The next argument is the path to set the trusted xattr on.
       if (i + 1 < argc) {
-        return gvisor::testing::UnshareAndSetxattrInNewUserns(
-            argv[i + 1]);
+        return gvisor::testing::UnshareAndSetxattrInNewUserns(argv[i + 1]);
       }
       return 4;
     }
