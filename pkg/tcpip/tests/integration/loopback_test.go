@@ -791,3 +791,94 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 		})
 	}
 }
+
+// TestExternalLoopbackTrafficRuntimeToggle verifies that flipping the
+// AllowExternalLoopbackTraffic option at runtime (the path exercised by the
+// /proc/sys/net/ipv4/conf/all/route_localnet sysctl, as opposed to setting it
+// once at protocol construction) actually changes whether martian
+// loopback-sourced packets are accepted on a non-loopback NIC. This mirrors
+// Linux, where writing net.ipv4.conf.all.route_localnet takes effect on
+// subsequently received packets without restarting the stack.
+func TestExternalLoopbackTrafficRuntimeToggle(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+		ttl    = 64
+	)
+	ipv4Loopback := testutil.MustParse4("127.0.0.1")
+
+	// Start with the option disabled (Linux's default route_localnet=0).
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{
+			ipv4.NewProtocolWithOptions(ipv4.Options{AllowExternalLoopbackTraffic: false}),
+		},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
+	})
+	defer s.Destroy()
+
+	e := channel.New(1, header.IPv6MinimumMTU, "")
+	if err := s.CreateNIC(nicID1, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
+	}
+	v4Addr := tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: utils.Ipv4Addr}
+	if err := s.AddProtocolAddress(nicID1, v4Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID1, v4Addr, err)
+	}
+	if err := s.CreateNIC(nicID2, loopback.New()); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
+	}
+	loopbackAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{Address: ipv4Loopback, PrefixLen: 8},
+	}
+	if err := s.AddProtocolAddress(nicID2, loopbackAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, loopbackAddr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{
+		{Destination: header.IPv4EmptySubnet, NIC: nicID1},
+		{Destination: ipv4Loopback.WithPrefix().Subnet(), NIC: nicID2},
+	})
+
+	stats := s.Stats().IP
+	invalidSrc := stats.InvalidSourceAddressesReceived
+	delivered := stats.PacketsDelivered
+
+	rxMartian := func() {
+		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address, ttl)
+	}
+	setOption := func(enable bool) {
+		opt := tcpip.AllowExternalLoopbackTrafficOption(enable)
+		if err := s.SetNetworkProtocolOption(ipv4.ProtocolNumber, &opt); err != nil {
+			t.Fatalf("SetNetworkProtocolOption(ipv4, AllowExternalLoopbackTraffic=%t): %s", enable, err)
+		}
+	}
+
+	// Disabled: the martian loopback-sourced packet is dropped.
+	rxMartian()
+	if got, want := invalidSrc.Value(), uint64(1); got != want {
+		t.Errorf("with option disabled: InvalidSourceAddressesReceived = %d, want %d", got, want)
+	}
+	if got, want := delivered.Value(), uint64(0); got != want {
+		t.Errorf("with option disabled: PacketsDelivered = %d, want %d", got, want)
+	}
+
+	// Enable at runtime (the sysctl path): the next packet is accepted.
+	setOption(true)
+	rxMartian()
+	if got, want := invalidSrc.Value(), uint64(1); got != want {
+		t.Errorf("after enabling: InvalidSourceAddressesReceived = %d, want %d (unchanged)", got, want)
+	}
+	if got, want := delivered.Value(), uint64(1); got != want {
+		t.Errorf("after enabling: PacketsDelivered = %d, want %d", got, want)
+	}
+
+	// Disable again at runtime: subsequent packets are dropped once more.
+	setOption(false)
+	rxMartian()
+	if got, want := invalidSrc.Value(), uint64(2); got != want {
+		t.Errorf("after re-disabling: InvalidSourceAddressesReceived = %d, want %d", got, want)
+	}
+	if got, want := delivered.Value(), uint64(1); got != want {
+		t.Errorf("after re-disabling: PacketsDelivered = %d, want %d (unchanged)", got, want)
+	}
+}

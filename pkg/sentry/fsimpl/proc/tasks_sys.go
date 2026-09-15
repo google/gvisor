@@ -108,6 +108,18 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"tcp_sack":            fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
 				"tcp_wmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
 
+				// conf/{all,default}/route_localnet toggles acceptance of martian
+				// loopback packets on non-loopback NICs (kube-proxy enables this). It
+				// is backed by the IPv4 protocol's AllowExternalLoopbackTraffic option.
+				"conf": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+					"all": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+						"route_localnet": fs.newInode(ctx, root, 0644, &routeLocalnetData{stack: stack}),
+					}),
+					"default": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+						"route_localnet": fs.newInode(ctx, root, 0644, &routeLocalnetData{stack: stack}),
+					}),
+				}),
+
 				// The following files are simple stubs until they are implemented in
 				// netstack, most of these files are configuration related. We use the
 				// value closest to the actual netstack behavior or any empty file, all
@@ -480,6 +492,51 @@ func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src 
 		return 0, err
 	}
 	ipf.enabled = enabled
+	return n, nil
+}
+
+// routeLocalnetData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/conf/{all,default}/route_localnet. Enabling it accepts
+// martian loopback packets (IPv4 AllowExternalLoopbackTraffic), matching
+// Linux's net.ipv4.conf.*.route_localnet.
+//
+// +stateify savable
+type routeLocalnetData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.WritableDynamicBytesSource = (*routeLocalnetData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (rl *routeLocalnetData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	enabled, err := rl.stack.GetAllowExternalLoopbackTraffic(ipv4.ProtocolNumber)
+	if err != nil {
+		return err
+	}
+	val := "0\n"
+	if enabled {
+		val = "1\n"
+	}
+	buf.WriteString(val)
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (rl *routeLocalnetData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if err := rl.stack.SetAllowExternalLoopbackTraffic(ipv4.ProtocolNumber, buf[0] != 0); err != nil {
+		return 0, err
+	}
 	return n, nil
 }
 
