@@ -20,6 +20,8 @@ package runsc
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +29,7 @@ import (
 	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/containerd/containerd/v2/core/events"
 	"github.com/containerd/containerd/v2/core/runtime"
+	"golang.org/x/sys/unix"
 )
 
 // mockPublisher records published events for test assertions.
@@ -57,15 +60,28 @@ func (p *mockPublisher) eventCount() int {
 	return len(p.events)
 }
 
+// testCgroupPath is the unified group path of the container's own cgroup in
+// tests. Its parent, when a test configures one, is "/pod".
+const testCgroupPath = "/pod/c1"
+
+// errCgroupGone is what statPath returns for a cgroup systemd has removed.
+func errCgroupGone(p string) error {
+	return &os.PathError{Op: "open", Path: p, Err: unix.ENOENT}
+}
+
 // newTestWatcherV2 creates a watcherV2 with a mock publisher for testing.
 // The itemCh is unbuffered so sends block until run() reads, providing
-// synchronization without sleeps.
+// synchronization without sleeps. statPath fails by default; tests exercising
+// checkOOM override it.
 func newTestWatcherV2(pub *mockPublisher) *watcherV2 {
 	return &watcherV2{
 		itemCh:    make(chan itemV2),
 		publisher: pub,
-		cgroups:   make(map[string]*cgroupsv2.Manager),
+		cgroups:   make(map[string]*cgroupV2Entry),
 		lastOOM:   make(map[string]uint64),
+		statPath: func(string) (uint64, error) {
+			return 0, fmt.Errorf("statPath not configured in test")
+		},
 	}
 }
 
@@ -140,10 +156,10 @@ func TestWatcherV2AsyncPublishesIncrementedOOMCount(t *testing.T) {
 	}
 }
 
-// TestWatcherV2SyncPreemptsAsync verifies that when the sync path (isOOM)
+// TestWatcherV2SyncPreemptsAsync verifies that when the sync path (checkOOM)
 // claims the publish right first by setting lastOOM, the async path
 // (EventChan -> run) is suppressed. This is the core fix for the aarch64
-// race: isOOM fires at container exit before the async notification arrives.
+// race: checkOOM fires at container exit before the async notification arrives.
 //
 // Before the fix, lastOOMMap was local to run() and could not be shared
 // with any sync path — this test would have been impossible to write.
@@ -154,7 +170,7 @@ func TestWatcherV2SyncPreemptsAsync(t *testing.T) {
 	defer cancel()
 	go w.run(ctx)
 
-	// Simulate sync path (isOOM) claiming the publish right.
+	// Simulate sync path (checkOOM) claiming the publish right.
 	w.mu.Lock()
 	w.lastOOM["c1"] = 1
 	w.mu.Unlock()
@@ -194,32 +210,328 @@ func TestWatcherV2AsyncPreemptsSync(t *testing.T) {
 	if lastOOM != 1 {
 		t.Errorf("expected lastOOM=1 after async publish, got %d", lastOOM)
 	}
-	// At this point, isOOM would check: stats.MemoryEvents.OomKill(=1) > lastOOM(=1)
+	// At this point, checkOOM would check: stats.MemoryEvents.OomKill(=1) > lastOOM(=1)
 	// which is false, so it would return false — no duplicate.
 }
 
-// TestWatcherV2ErrorClearsLastOOM verifies that an error from EventChan
-// clears the lastOOM entry, so future OOM events are not suppressed.
-func TestWatcherV2ErrorClearsLastOOM(t *testing.T) {
+// TestWatcherV2ErrorRetainsStateForExitCheck verifies that an error from
+// EventChan (which fires when the cgroup is deleted — under the systemd
+// cgroup driver, the moment the container's process dies) does NOT clear the
+// watcher state. checkOOM still needs the cgroups entry to check the parent
+// cgroup at exit time, and the lastOOM entry to dedup against events the
+// async path already published.
+func TestWatcherV2ErrorRetainsStateForExitCheck(t *testing.T) {
 	pub := &mockPublisher{}
 	w := newTestWatcherV2(pub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go w.run(ctx)
 
-	// Pre-set lastOOM.
 	w.mu.Lock()
 	w.lastOOM["c1"] = 1
+	w.cgroups["c1"] = &cgroupV2Entry{parentPath: "/parent", parentBase: 0}
 	w.mu.Unlock()
 
-	// Error event should clear lastOOM.
 	w.itemCh <- itemV2{id: "c1", err: fmt.Errorf("cgroup deleted")}
 	waitForProcessing(t, w)
 
 	w.mu.Lock()
-	_, exists := w.lastOOM["c1"]
+	_, lastOOMExists := w.lastOOM["c1"]
+	_, entryExists := w.cgroups["c1"]
+	w.mu.Unlock()
+	if !lastOOMExists {
+		t.Error("expected lastOOM entry to survive EventChan error")
+	}
+	if !entryExists {
+		t.Error("expected cgroups entry to survive EventChan error")
+	}
+}
+
+// TestWatcherV2CheckOOMScopeGone exercises the systemd-cgroup fallback: the
+// container's own cgroup is already removed at exit time, so checkOOM reads the
+// parent cgroup's hierarchical oom_kill counter instead, attributing only
+// kills recorded since the container was added.
+func TestWatcherV2CheckOOMScopeGone(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		parentPath string
+		parentErr  bool
+		parentBase uint64
+		parentKill uint64
+		lastOOM    uint64
+		want       oomStatus
+	}{
+		{
+			// Every cgroup read failed, but the async path already published
+			// a TaskOOM (ledger has a kill): the OOM stands for the exit
+			// status; nothing new to announce.
+			name:       "ledger-rescue-parent-unreadable",
+			parentPath: "/pod",
+			parentErr:  true,
+			lastOOM:    1,
+			want:       oomKilledPublished,
+		},
+		{
+			// No parent baseline and no readable cgroup, but the ledger has
+			// a kill: same rescue.
+			name:       "ledger-rescue-no-parent",
+			parentPath: "",
+			lastOOM:    1,
+			want:       oomKilledPublished,
+		},
+		{
+			// Kill recorded after add: attribute and announce it.
+			name:       "oom-since-add",
+			parentPath: "/pod",
+			parentBase: 2,
+			parentKill: 3,
+			want:       oomKilledUnpublished,
+		},
+		{
+			// Parent count unchanged since add: no OOM.
+			name:       "no-oom-since-add",
+			parentPath: "/pod",
+			parentBase: 2,
+			parentKill: 2,
+		},
+		{
+			// Async path already published this kill: the OOM still stands
+			// (drives the 137 exit status), but no duplicate TaskOOM.
+			name:       "async-already-published",
+			parentPath: "/pod",
+			parentBase: 2,
+			parentKill: 3,
+			lastOOM:    1,
+			want:       oomKilledPublished,
+		},
+		{
+			// No parent baseline captured at add: fallback disabled.
+			name:       "no-parent",
+			parentPath: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newTestWatcherV2(&mockPublisher{})
+			w.statPath = func(p string) (uint64, error) {
+				switch p {
+				case testCgroupPath:
+					return 0, errCgroupGone(p)
+				case tc.parentPath:
+					if tc.parentErr {
+						return 0, fmt.Errorf("permission denied")
+					}
+					return tc.parentKill, nil
+				}
+				t.Errorf("unexpected statPath(%q)", p)
+				return 0, fmt.Errorf("unexpected path %q", p)
+			}
+			w.mu.Lock()
+			w.cgroups["c1"] = &cgroupV2Entry{
+				path:       testCgroupPath,
+				parentPath: tc.parentPath,
+				parentBase: tc.parentBase,
+			}
+			if tc.lastOOM != 0 {
+				w.lastOOM["c1"] = tc.lastOOM
+			}
+			w.mu.Unlock()
+
+			if got := w.checkOOM("c1"); got != tc.want {
+				t.Errorf("checkOOM() = %v, want %v", got, tc.want)
+			}
+			w.mu.Lock()
+			_, exists := w.cgroups["c1"]
+			w.mu.Unlock()
+			if exists {
+				t.Error("expected checkOOM to consume the cgroups entry")
+			}
+		})
+	}
+}
+
+// TestWatcherV2CheckOOMLedgerFastPath verifies that when the async path already
+// recorded a kill, checkOOM answers from the shim's own state without touching
+// the filesystem at all — internal data structures are consulted before
+// files that other actors (systemd) can mutate or remove.
+func TestWatcherV2CheckOOMLedgerFastPath(t *testing.T) {
+	w := newTestWatcherV2(&mockPublisher{})
+	w.statPath = func(p string) (uint64, error) {
+		t.Errorf("statPath(%q) must not be called when the ledger has a kill", p)
+		return 0, nil
+	}
+	w.mu.Lock()
+	w.cgroups["c1"] = &cgroupV2Entry{path: testCgroupPath, parentPath: "/pod"}
+	w.lastOOM["c1"] = 1
+	w.mu.Unlock()
+
+	if got := w.checkOOM("c1"); got != oomKilledPublished {
+		t.Errorf("checkOOM() = %v, want %v", got, oomKilledPublished)
+	}
+	w.mu.Lock()
+	_, exists := w.cgroups["c1"]
 	w.mu.Unlock()
 	if exists {
-		t.Error("expected lastOOM entry to be cleared after error")
+		t.Error("expected checkOOM to consume the cgroups entry")
+	}
+}
+
+// TestWatcherV2CheckOOMScopeAlive verifies the primary path is unchanged: when
+// the container's cgroup is still readable at exit time, its own oom_kill
+// count decides, and the parent is not consulted.
+func TestWatcherV2CheckOOMScopeAlive(t *testing.T) {
+	w := newTestWatcherV2(&mockPublisher{})
+	w.statPath = func(p string) (uint64, error) {
+		if p != testCgroupPath {
+			t.Errorf("parent must not be consulted when the cgroup read succeeds, got statPath(%q)", p)
+			return 0, nil
+		}
+		return 1, nil
+	}
+	w.mu.Lock()
+	w.cgroups["c1"] = &cgroupV2Entry{path: testCgroupPath, parentPath: "/pod"}
+	w.mu.Unlock()
+
+	if got := w.checkOOM("c1"); got != oomKilledUnpublished {
+		t.Errorf("checkOOM() = %v, want %v", got, oomKilledUnpublished)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if got := w.lastOOM["c1"]; got != 1 {
+		t.Errorf("lastOOM = %d, want 1", got)
+	}
+}
+
+// TestWatcherV2CheckOOMReadErrorSkipsParent verifies that an error which does
+// not mean the cgroup is gone keeps the parent out of it. The container cgroup
+// still exists, so its own count is the only sound answer; the parent's count
+// includes other workloads in the pod.
+func TestWatcherV2CheckOOMReadErrorSkipsParent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"permission-denied", &os.PathError{Op: "open", Path: testCgroupPath, Err: unix.EACCES}},
+		{"io-error", &os.PathError{Op: "read", Path: testCgroupPath, Err: unix.EIO}},
+		{"malformed", fmt.Errorf("no oom_kill entry in %s", testCgroupPath)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newTestWatcherV2(&mockPublisher{})
+			w.statPath = func(p string) (uint64, error) {
+				if p != testCgroupPath {
+					t.Errorf("parent must not be consulted for a non-ENOENT error, got statPath(%q)", p)
+					return 0, nil
+				}
+				return 0, tc.err
+			}
+			w.mu.Lock()
+			w.cgroups["c1"] = &cgroupV2Entry{
+				path:       testCgroupPath,
+				parentPath: "/pod",
+				parentBase: 2,
+			}
+			w.mu.Unlock()
+
+			if got := w.checkOOM("c1"); got != oomNotKilled {
+				t.Errorf("checkOOM() = %v, want %v", got, oomNotKilled)
+			}
+		})
+	}
+}
+
+// TestParseOOMKill covers the memory.events parsing that replaced
+// Manager.Stat. A missing oom_kill line is an error rather than a zero count,
+// so it cannot be mistaken for "not OOM-killed".
+func TestParseOOMKill(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    uint64
+		wantErr bool
+	}{
+		{
+			name:    "typical",
+			content: "low 0\nhigh 0\nmax 7\noom 2\noom_kill 1\n",
+			want:    1,
+		},
+		{
+			name:    "zero",
+			content: "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n",
+			want:    0,
+		},
+		{
+			name:    "oom_group_kill-is-not-oom_kill",
+			content: "oom_kill 3\noom_group_kill 9\n",
+			want:    3,
+		},
+		{
+			name:    "missing",
+			content: "low 0\nhigh 0\n",
+			wantErr: true,
+		},
+		{
+			name:    "unparsable",
+			content: "oom_kill not-a-number\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty",
+			content: "",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseOOMKill(strings.NewReader(tc.content), "memory.events")
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("parseOOMKill() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if err == nil && got != tc.want {
+				t.Errorf("parseOOMKill() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCgroupGone verifies which errors arm the parent fallback: only those
+// meaning the cgroup no longer exists.
+func TestCgroupGone(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"enoent", &os.PathError{Op: "open", Err: unix.ENOENT}, true},
+		{"enodev", &os.PathError{Op: "read", Err: unix.ENODEV}, true},
+		{"eacces", &os.PathError{Op: "open", Err: unix.EACCES}, false},
+		{"eio", &os.PathError{Op: "read", Err: unix.EIO}, false},
+		{"wrapped-enoent", fmt.Errorf("read: %w", unix.ENOENT), true},
+		{"plain", fmt.Errorf("malformed"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cgroupGone(tc.err); got != tc.want {
+				t.Errorf("cgroupGone(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestWatcherV2Remove verifies that poller state is reclaimed when containerd
+// deletes the container. checkOOM consumes the cgroups entry at exit, but the
+// lastOOM ledger deliberately outlives it, so remove is what frees it.
+func TestWatcherV2Remove(t *testing.T) {
+	w := newTestWatcherV2(&mockPublisher{})
+	w.mu.Lock()
+	w.cgroups["c1"] = &cgroupV2Entry{parentPath: "/pod"}
+	w.lastOOM["c1"] = 1
+	w.mu.Unlock()
+
+	w.remove("c1")
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, ok := w.cgroups["c1"]; ok {
+		t.Error("remove left a cgroups entry behind")
+	}
+	if _, ok := w.lastOOM["c1"]; ok {
+		t.Error("remove left a lastOOM entry behind")
 	}
 }
