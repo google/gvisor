@@ -1132,8 +1132,12 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		mode := d.inode.Mode()
 		kuid := d.inode.UID()
 		kgid := d.inode.GID()
-		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, nil, kuid, kgid); err != nil {
-			return "", err
+		// Linux only skips the read permission check for reads of security.*,
+		// system.*, and trusted.* xattrs, see fs/xattr.c:xattr_permission().
+		if vfs.XattrReadNeedsFilePermission(opts.Name) {
+			if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, nil, kuid, kgid); err != nil {
+				return "", err
+			}
 		}
 		if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, kuid, opts.Name); err != nil {
 			return "", err

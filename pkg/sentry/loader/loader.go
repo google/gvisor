@@ -108,18 +108,14 @@ type LoadArgs struct {
 // openPath returns an *fs.Dirent and *fs.File for args.Filename, which is not
 // installed in the Task FDTable. The caller takes ownership of both.
 //
-// args.Filename must be a readable, executable, regular file.
+// args.Filename must be an executable, regular file. As on Linux, read
+// permission is not required.
 func openPath(ctx context.Context, args LoadArgs) (*vfs.FileDescription, error) {
 	if args.Filename == "" {
 		ctx.Infof("cannot open empty name")
 		return nil, linuxerr.ENOENT
 	}
 
-	// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
-	// not read. However, our backing filesystems may prevent us from reading
-	// the file without read permission. Additionally, a task with a
-	// non-readable executable has additional constraints on access via
-	// ptrace and procfs.
 	opts := vfs.OpenOptions{
 		Flags:    linux.O_RDONLY,
 		FileExec: true,
@@ -144,6 +140,45 @@ func openPath(ctx context.Context, args LoadArgs) (*vfs.FileDescription, error) 
 		args.AfterOpen(fd)
 	}
 	return fd, nil
+}
+
+// wouldDumpState tracks the effect of Linux's fs/exec.c:would_dump() across
+// the files opened while loading a single image.
+type wouldDumpState struct {
+	// notDumpable is true if some file in the executable/interpreter chain
+	// was not readable by the caller, requiring the task to be made
+	// non-dumpable.
+	notDumpable bool
+
+	// userNS is the value for the image's mm_struct::user_ns: the caller's
+	// user namespace, lowered to the nearest ancestor privileged with respect
+	// to the owner of each non-readable file.
+	userNS *auth.UserNamespace
+}
+
+// wouldDump applies Linux's fs/exec.c:would_dump() for fd: if the credentials
+// in ctx may not read fd, the task must be made non-dumpable and wds.userNS
+// must contain fd's owner.
+func wouldDump(ctx context.Context, fd *vfs.FileDescription, wds *wouldDumpState) {
+	stat, err := fd.Stat(ctx, vfs.StatOptions{
+		Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID,
+	})
+	if err != nil {
+		wds.notDumpable = true
+		wds.userNS = wds.userNS.Root()
+		return
+	}
+	kuid := auth.KUID(stat.UID)
+	kgid := auth.KGID(stat.GID)
+	acl, err := fd.GetPosixACL(ctx, vfs.AccessACL)
+	if err == nil {
+		creds := auth.CredentialsFromContext(ctx)
+		if vfs.GenericCheckPermissions(creds, vfs.MayRead, linux.FileMode(stat.Mode), acl, kuid, kgid) == nil {
+			return
+		}
+	}
+	wds.notDumpable = true
+	wds.userNS = wds.userNS.AncestorPrivilegedWrtIDs(kuid, kgid)
 }
 
 // checkIsRegularFile prevents us from trying to execute a directory, pipe, etc.
@@ -187,7 +222,7 @@ const (
 //   - arch.Context64 matching the binary arch
 //   - fs.Dirent of the binary file
 //   - Possibly updated args.Argv
-func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Context64, *vfs.FileDescription, []string, error) {
+func loadExecutable(ctx context.Context, args LoadArgs, wds *wouldDumpState) (loadedELF, *arch.Context64, *vfs.FileDescription, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
 		if args.File == nil {
 			var err error
@@ -223,7 +258,10 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Contex
 
 		switch {
 		case bytes.Equal(hdr[:], []byte(elfMagic)):
-			loaded, ac, err := loadELF(ctx, args)
+			// Linux applies would_dump() to the terminal binprm file, see
+			// fs/exec.c:begin_new_exec().
+			wouldDump(ctx, args.File, wds)
+			loaded, ac, err := loadELF(ctx, args, wds)
 			if err != nil {
 				ctx.Infof("Error loading ELF: %v", err)
 				return loadedELF{}, nil, nil, nil, err
@@ -263,6 +301,12 @@ type ImageInfo struct {
 	Arch *arch.Context64
 	// The base name of the binary.
 	Name string
+	// NotDumpable is true if the task must be made non-dumpable, see
+	// fs/exec.c:would_dump().
+	NotDumpable bool
+	// UserNamespace is the value for the image's mm_struct::user_ns, see
+	// fs/exec.c:would_dump().
+	UserNamespace *auth.UserNamespace
 }
 
 // Load loads args.File into a MemoryManager. If args.File is nil, the path
@@ -278,7 +322,8 @@ type ImageInfo struct {
 //   - Load is called on the Task goroutine.
 func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (ImageInfo, *auth.Credentials, bool, *syserr.Error) {
 	// Load the executable itself.
-	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)
+	wds := wouldDumpState{userNS: auth.CredentialsFromContext(ctx).UserNamespace}
+	loaded, ac, file, newArgv, err := loadExecutable(ctx, args, &wds)
 	if err != nil {
 		return ImageInfo{}, nil, false, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
@@ -378,8 +423,10 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	}
 
 	return ImageInfo{
-		OS:   loaded.os,
-		Arch: ac,
-		Name: name,
+		OS:            loaded.os,
+		Arch:          ac,
+		Name:          name,
+		NotDumpable:   wds.notDumpable,
+		UserNamespace: wds.userNS,
 	}, c, secureExec, nil
 }

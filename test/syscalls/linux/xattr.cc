@@ -117,6 +117,21 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
+// getxattr of a name outside the security/system/trusted namespaces requires
+// read permission on the file, per Linux's fs/xattr.c:xattr_permission().
+TEST_F(XattrTest, UnknownPrefixRequiresReadPermission) {
+  // A caller-owned mode-0000 file is unreadable even to its owner once the
+  // DAC-bypassing capabilities are dropped, without requiring an ownership
+  // change (which an unprivileged host gofer cannot perform).
+  const char* path = test_file_name_.c_str();
+  ASSERT_THAT(chmod(path, 0000), SyscallSucceeds());
+
+  AutoCapability cap_override(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap_read_search(CAP_DAC_READ_SEARCH, false);
+  EXPECT_THAT(getxattr(path, "ceph.file.layout", nullptr, 0),
+              SyscallFailsWithErrno(EACCES));
+}
+
 TEST_F(XattrTest, SecurityCapacityXattr) {
   SKIP_IF(!IsRunningOnGvisor());
   const char* path = test_file_name_.c_str();
