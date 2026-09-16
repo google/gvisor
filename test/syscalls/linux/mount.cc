@@ -3059,6 +3059,63 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
+// Test a character device through a nested overlayfs.
+//
+// Regression test for StatAt() not fetching the device ID.
+TEST(MountTest, DeviceFileThroughStackedOverlay) {
+  // CAP_SYS_ADMIN needed to mount a tmpfs
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // CAP_MKNOD needed to create a device file
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_MKNOD)));
+
+  // Mount a separate tmpfs to hold overlay layers.
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto layers =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  const auto mountLayers = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", layers.path(), "tmpfs", 0, "mode=0755", 0));
+
+  const auto lower1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers.path()));
+  const auto upper1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers.path()));
+  const auto work1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers.path()));
+  const auto merged1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  const auto dev_path = JoinPath(lower1.path(), "null");
+  const dev_t dev = makedev(1, 3);
+  ASSERT_THAT(mknod(dev_path.c_str(), S_IFCHR | 0666, dev), SyscallSucceeds());
+  ASSERT_THAT(chmod(dev_path.c_str(), 0666), SyscallSucceeds());
+
+  const std::string opts1 = "lowerdir=" + lower1.path() +
+                            ",upperdir=" + upper1.path() +
+                            ",workdir=" + work1.path();
+  const auto mountOverlay1 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", merged1.path(), "overlay", 0, opts1, 0));
+
+  const auto upper2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers.path()));
+  const auto work2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(layers.path()));
+  const auto merged2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  const std::string opts2 = "lowerdir=" + merged1.path() +
+                            ",upperdir=" + upper2.path() +
+                            ",workdir=" + work2.path();
+  const auto mountOverlay2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", merged2.path(), "overlay", 0, opts2, 0));
+
+  const auto stacked_null = JoinPath(merged2.path(), "null");
+  struct stat st = {};
+  ASSERT_THAT(stat(stacked_null.c_str(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISCHR(st.st_mode));
+  EXPECT_EQ(st.st_mode & 0777, 0666);
+  EXPECT_EQ(st.st_rdev, dev);
+}
+
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
@@ -3418,6 +3475,5 @@ TEST(MountTest, MountInfoAfterUnshare) {
 }
 
 }  // namespace
-
 }  // namespace testing
 }  // namespace gvisor
