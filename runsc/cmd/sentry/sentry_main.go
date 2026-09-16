@@ -24,7 +24,8 @@ import (
 
 func main() {
 	cli.Run(&gvisorbinaries.GvisorSentry, map[util.SubCommand]string{
-		new(sentrycmd.Boot):   "internal use only",
-		new(sentrycmd.Umount): "internal use only",
+		new(sentrycmd.Boot):      "internal use only",
+		new(sentrycmd.Symbolize): "internal use only",
+		new(sentrycmd.Umount):    "internal use only",
 	}, nil)
 }

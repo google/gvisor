@@ -58,6 +58,7 @@ go_binary(
     name = "runsc-race",
     srcs = ["main.go"],
     gotags = ["lockdep"],
+    race = "on",
     static = True,
     visibility = [
         "//visibility:public",
@@ -97,6 +98,7 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"false\" ",
+    visibility = ["//debian:__pkg__"],
 )
 
 go_cov(
@@ -119,4 +121,5 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"true\" ",
+    visibility = ["//debian:__pkg__"],
 )

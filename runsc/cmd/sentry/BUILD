@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary", "go_cov")
 load("//tools:deps.bzl", "deps_test")
 
 package(
@@ -19,6 +19,59 @@ go_binary(
         "//runsc/cmd/util",
         "//runsc/gvisorbinaries",
     ],
+)
+
+go_binary(
+    name = "gvisor_sentry-race",
+    srcs = ["sentry_main.go"],
+    gotags = ["lockdep"],
+    noasan = True,
+    race = "on",
+    static = True,
+    visibility = ["//debian:__pkg__"],
+    x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
+    deps = [
+        "//runsc/cli",
+        "//runsc/cmd/sentry/sentrycmd",
+        "//runsc/cmd/util",
+        "//runsc/gvisorbinaries",
+    ],
+)
+
+COVERAGE_SRCS = [
+    "sentry_main.go",
+    "//:go.mod",
+    "//:go.sum",
+    "//:gopath",
+    "//tools:build_cover.sh",
+    "//tools:go-allow-internal.patch",
+]
+
+COVERAGE_CMD = (
+    "\"$(location //tools:build_cover.sh)\" " +
+    "\"$(location %s)\" " +
+    "\"$(location //:gopath)\" " +
+    "\"$(location //:go.mod)\" " +
+    "\"$(location //:go.sum)\" " +
+    "\"$(location sentry_main.go)\" " +
+    "\"$(location //tools:go-allow-internal.patch)\" " +
+    "\"%s\" "
+)
+
+go_cov(
+    name = "gvisor_sentry_coverage",
+    srcs = COVERAGE_SRCS,
+    outs = ["gvisor_sentry_cov"],
+    cmd = COVERAGE_CMD % ("//runsc/cmd/sentry:gvisor_sentry_cov", "false"),
+    visibility = ["//debian:__pkg__"],
+)
+
+go_cov(
+    name = "gvisor_sentry_race_coverage",
+    srcs = COVERAGE_SRCS,
+    outs = ["gvisor_sentry_race_cov"],
+    cmd = COVERAGE_CMD % ("//runsc/cmd/sentry:gvisor_sentry_race_cov", "true"),
+    visibility = ["//debian:__pkg__"],
 )
 
 go_binary(
@@ -94,6 +147,7 @@ deps_test(
     ],
     targets = [
         ":gvisor_sentry",
+        ":gvisor_sentry-race",
         ":gvisor_sentry_plugin_stack",
     ],
 )
