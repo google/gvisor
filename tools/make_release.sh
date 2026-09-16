@@ -40,7 +40,17 @@ done
 
 export DEBIAN_FRONTEND=noninteractive
 # install_raw installs raw artifacts.
+#
+# Usage: install_raw <dest> [include-python]
+#
+# Wheels and sdists carry their version in their filename, so unlike the
+# architecture-specific tarballs they never overwrite the previous build's
+# files. Pass "false" for <include-python> to keep them out of directories that
+# are meant to be a fixed-size pointer to the most recent build; otherwise
+# those directories grow without bound.
 install_raw() {
+  local -r dest="$1"
+  local -r include_python="${2:-true}"
   for binary in "${binaries[@]}"; do
     local arch file_info name
     # Copy the raw file & generate a sha512sum, sorted by architecture.
@@ -59,10 +69,13 @@ install_raw() {
         arch=$(file "${binary}" | cut -d',' -f2 | awk '{print $NF}' | tr '-' '_')
         ;;
     esac
+    if [[ "${arch}" == "python" ]] && [[ "${include_python}" != "true" ]]; then
+      continue
+    fi
     name=$(basename "${binary}")
-    mkdir -p "${root}/$1/${arch}"
-    cp -f "${binary}" "${root}/$1/${arch}"
-    (cd "${root}/$1/${arch}" && sha512sum "${name}" >"${name}.sha512")
+    mkdir -p "${root}/${dest}/${arch}"
+    cp -f "${binary}" "${root}/${dest}/${arch}"
+    (cd "${root}/${dest}/${arch}" && sha512sum "${name}" >"${name}.sha512")
   done
 }
 
@@ -78,8 +91,9 @@ if [[ "${NIGHTLY:-false}" == "true" ]]; then
   # Install the nightly release.
   # https://gvisor.dev/docs/user_guide/install/#nightly
   stamp="$(date -Idate)"
-  install_raw "nightly/latest"
-  install_raw "nightly/${stamp}"
+  # Nightly builds are never published to PyPI, so skip the wheels entirely.
+  install_raw "nightly/latest" false
+  install_raw "nightly/${stamp}" false
   install_apt "nightly"
 else
   # Is it a tagged release? Build that.
@@ -109,7 +123,11 @@ else
       tools/make_python_release.sh upload-wheel "${root}/release/${name}/python"
       # Install the latest release.
       # https://gvisor.dev/docs/user_guide/install/#latest-release
-      install_raw "release/latest"
+      #
+      # Unlike the versioned directories above, this one is overwritten by every
+      # release, so it must not accumulate version-named wheels. PyPI is the
+      # canonical source for the latest Python package.
+      install_raw "release/latest" false
 
       install_apt "release"
       install_apt "${base}"
@@ -117,7 +135,8 @@ else
   else
     # Otherwise, assume it is a raw master commit.
     # https://gvisor.dev/docs/user_guide/install/#head
-    install_raw "master/latest"
+    # HEAD builds are never published to PyPI, so skip the wheels entirely.
+    install_raw "master/latest" false
     install_apt "master"
   fi
 fi
