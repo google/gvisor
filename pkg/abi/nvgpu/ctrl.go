@@ -81,9 +81,10 @@ const (
 	NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID       = 0x289
 	NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID        = 0x290
 
-	NV0000_CTRL_GPU_INVALID_ID      = 0xffffffff
-	NV0000_CTRL_GPU_MAX_PROBED_GPUS = NV_MAX_DEVICES
-	NV0000_GPU_MAX_GID_LENGTH       = 0x100
+	NV0000_CTRL_GPU_INVALID_ID        = 0xffffffff
+	NV0000_CTRL_GPU_MAX_PROBED_GPUS   = NV_MAX_DEVICES
+	NV0000_CTRL_GPU_MAX_ATTACHED_GPUS = 32
+	NV0000_GPU_MAX_GID_LENGTH         = 0x100
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gpuacct.h:
@@ -181,9 +182,12 @@ const (
 	NV0000_CTRL_CMD_OS_UNIX_GET_EXPORT_OBJECT_INFO       = 0x3d08
 	NV0000_CTRL_CMD_OS_UNIX_EXPORT_OBJECTS_TO_FD         = 0x3d0b
 	NV0000_CTRL_CMD_OS_UNIX_IMPORT_OBJECTS_FROM_FD       = 0x3d0c
+	NV0000_CTRL_OS_UNIX_CMD_MEMACCT_GET_LIMITS           = 0x3d0e
+	NV0000_CTRL_OS_UNIX_CMD_MEMACCT_GET_IMPL             = 0x3d0f
 	NV0000_OS_UNIX_EXPORT_OBJECT_FD_BUFFER_SIZE          = 64
 	NV0000_CTRL_OS_UNIX_EXPORT_OBJECTS_TO_FD_MAX_OBJECTS = 512
 	NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_TO_FD_MAX_OBJECTS = 128
+	NV0000_CTRL_CMD_OS_UNIX_MEMACCT_CURRENT_PROCESS      = -1
 )
 
 // +marshal
@@ -311,6 +315,31 @@ func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS) GetFrontendFD() int3
 // SetFrontendFD implements HasFrontendFD.SetFrontendFD.
 func (p *NV0000_CTRL_OS_UNIX_IMPORT_OBJECTS_FROM_FD_PARAMS) SetFrontendFD(fd int32) {
 	p.FD = fd
+}
+
+// NV0000_CTRL_OS_UNIX_MEMACCT_LIMITS is from
+// src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000unix.h.
+//
+// +marshal
+type NV0000_CTRL_OS_UNIX_MEMACCT_LIMITS struct {
+	_       structs.HostLayout
+	GpuID   uint32
+	Pad     [4]byte
+	Soft    uint64
+	Hard    uint64
+	Current uint64
+}
+
+// NV0000_CTRL_OS_UNIX_MEMACCT_GET_LIMITS_PARAMS is the param type for
+// NV0000_CTRL_OS_UNIX_CMD_MEMACCT_GET_LIMITS, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000unix.h.
+//
+// +marshal
+type NV0000_CTRL_OS_UNIX_MEMACCT_GET_LIMITS_PARAMS struct {
+	_        structs.HostLayout
+	CgroupFD int32
+	Count    uint32
+	Limits   [NV0000_CTRL_GPU_MAX_ATTACHED_GPUS]NV0000_CTRL_OS_UNIX_MEMACCT_LIMITS
 }
 
 // +marshal
@@ -554,9 +583,10 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080ce.h:
 const (
-	NV2080_CTRL_CMD_CE_GET_CE_PCE_MASK = 0x20802a02
-	NV2080_CTRL_CMD_CE_GET_CAPS_V2     = 0x20802a03
-	NV2080_CTRL_CMD_CE_GET_ALL_CAPS    = 0x20802a0a
+	NV2080_CTRL_CMD_CE_GET_CE_PCE_MASK   = 0x20802a02
+	NV2080_CTRL_CMD_CE_GET_CAPS_V2       = 0x20802a03
+	NV2080_CTRL_CMD_CE_GET_ALL_CAPS      = 0x20802a0a
+	NV2080_CTRL_CMD_CE_GET_LCE_SHIM_INFO = 0x20802a0c
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080event.h:
