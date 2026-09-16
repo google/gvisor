@@ -3377,6 +3377,25 @@ TEST(MountTest, OverlayfsOnGoferBehavior) {
                 SyscallSucceeds());
     EXPECT_STREQ(xattr_buf, "value");
   }
+
+  // Renaming a file that exists only on the upper layer must not leave a
+  // whiteout at the source, since no lower layer entry needs hiding. See
+  // fs/overlayfs/dir.c:ovl_rename() -> ovl_lower_positive().
+  ASSERT_THAT(rename(new_file.c_str(),
+                     JoinPath(merged.path(), kNewFile + ".moved").c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(stat(upper_new_file.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+
+  // A file that also exists on a lower layer must still be whited out, or it
+  // reappears at its old name.
+  ASSERT_THAT(rename(merged_copyup_file.c_str(),
+                     JoinPath(merged.path(), kCopyUpFile + ".moved").c_str()),
+              SyscallSucceeds());
+  ASSERT_THAT(stat(JoinPath(upper.path(), kCopyUpFile).c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISCHR(st.st_mode));
+  EXPECT_THAT(stat(merged_copyup_file.c_str(), &st),
+              SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(MountTest, PollMountInfo) {

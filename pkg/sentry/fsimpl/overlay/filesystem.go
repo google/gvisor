@@ -1420,8 +1420,14 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	oldParent.dirents = nil
 	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 
-	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
-		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
+	// Determine if the old name exists on any lower layers; if not, we can
+	// skip creating the whiteout. See
+	// fs/overlayfs/dir.c:ovl_rename() -> ovl_lower_positive().
+	oldLayer, oldLayerErr := fs.lookupLayerLocked(ctx, oldParent, oldName)
+	if oldLayerErr != nil || oldLayer != lookupLayerNone {
+		if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
+			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
+		}
 	}
 	if renamed.isDir() {
 		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
