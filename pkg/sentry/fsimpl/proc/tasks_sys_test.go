@@ -318,6 +318,66 @@ func TestPortRangeSharedStack(t *testing.T) {
 	}
 }
 
+// TestConfigureRouteLocalnet tests the implementation of
+// /proc/sys/net/ipv4/conf/{all,default}/route_localnet.
+func TestConfigureRouteLocalnet(t *testing.T) {
+	ctx := context.Background()
+	s := inet.NewTestStack()
+
+	var cases = []struct {
+		comment string
+		initial bool
+		str     string
+		final   bool
+	}{
+		{comment: `disabled; write 1 enables`, initial: false, str: "1", final: true},
+		{comment: `disabled; write 0 stays disabled`, initial: false, str: "0", final: false},
+		{comment: `enabled; write 0 disables`, initial: true, str: "0", final: false},
+		{comment: `enabled; write 1 stays enabled`, initial: true, str: "1", final: true},
+		{comment: `disabled; nonzero enables`, initial: false, str: "2404", final: true},
+	}
+	for _, c := range cases {
+		t.Run(c.comment, func(t *testing.T) {
+			s.AllowExternalLoopbackTraffic = c.initial
+
+			file := &routeLocalnetData{stack: s}
+
+			var initialBuf bytes.Buffer
+			if err := file.Generate(ctx, &initialBuf); err != nil {
+				t.Fatalf("file.Generate(ctx, &initialBuf) = %v, want nil", err)
+			}
+			initialWant := "0\n"
+			if c.initial {
+				initialWant = "1\n"
+			}
+			if got := initialBuf.String(); got != initialWant {
+				t.Errorf("file.Generate initial got %q, want %q", got, initialWant)
+			}
+
+			src := usermem.BytesIOSequence([]byte(c.str))
+			if n, err := file.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
+				t.Errorf("file.Write(ctx, nil, %q, 0) = (%d, %v); want (%d, nil)", c.str, n, err, len(c.str))
+			}
+
+			if got, want := s.AllowExternalLoopbackTraffic, c.final; got != want {
+				t.Errorf("s.AllowExternalLoopbackTraffic incorrect; got: %v, want: %v", got, want)
+			}
+
+			var finalBuf bytes.Buffer
+			if err := file.Generate(ctx, &finalBuf); err != nil {
+				t.Fatalf("file.Generate(ctx, &finalBuf) = %v, want nil", err)
+			}
+			finalWant := "0\n"
+			if c.final {
+				finalWant = "1\n"
+			}
+			if got := finalBuf.String(); got != finalWant {
+				t.Errorf("file.Generate final got %q, want %q", got, finalWant)
+			}
+		})
+	}
+}
+
 func TestParseInt32Vec(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
