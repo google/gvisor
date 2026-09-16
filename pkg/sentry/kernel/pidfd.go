@@ -385,15 +385,15 @@ func (t *Task) PIDFDSendSignal(vfsfd *vfs.FileDescription, sig linux.Signal, inf
 
 	switch effectiveFlags {
 	case linux.PIDFD_SIGNAL_THREAD:
-		return target.SendSignal(info)
+		return target.SendSignalFrom(t, info)
 	case linux.PIDFD_SIGNAL_THREAD_GROUP:
-		return target.SendGroupSignal(info)
+		return target.SendGroupSignalFrom(t, info)
 	case linux.PIDFD_SIGNAL_PROCESS_GROUP:
 		tg := target.ThreadGroup()
 		if tg.ProcessGroup().Originator() != tg {
 			return linuxerr.EINVAL
 		}
-		return tg.ProcessGroup().SendSignal(info)
+		return tg.ProcessGroup().SendSignalFrom(t, info)
 	default: // Unreachable.
 		t.Warningf("Unexpected error in PIDFDSendSignal with flags %d", flags)
 		return linuxerr.EINVAL

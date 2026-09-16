@@ -415,7 +415,7 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 			return fmt.Errorf("%v exited with non-zero status %d", argv[0], tg.ExitStatus())
 		}
 	case <-time.After(timeout):
-		tg.SendSignal(&linux.SignalInfo{Signo: int32(linux.SIGKILL)})
+		tg.SendForcedSignal(&linux.SignalInfo{Signo: int32(linux.SIGKILL)})
 		return fmt.Errorf("%s timed out after %v", argv[0], timeout)
 	}
 	log.Debugf("save/restore binary %s output: %s", argv[0], execOut.String())

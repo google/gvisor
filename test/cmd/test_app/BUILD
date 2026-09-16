@@ -14,6 +14,7 @@ go_binary(
         "fds.go",
         "hostinet_sr.go",
         "main.go",
+        "segfault.go",
         "xattr.go",
         "zombies.go",
     ],
