@@ -1041,14 +1041,9 @@ type inode struct {
 	// vfs.WriteCount.
 	writeCount vfs.WriteCount
 
-	// Inotify watches for this inode.
-	//
-	// Note that inotify may behave unexpectedly in the presence of hard links,
-	// because dentries corresponding to the same file have separate inotify
-	// watches when they should share the same set. This is the case because it is
-	// impossible for us to know for sure whether two dentries correspond to the
-	// same underlying file (see the gofer filesystem section fo vfs/inotify.md for
-	// a more in-depth discussion on this matter).
+	// Inotify watches for this inode, shared by the hard links to it that the
+	// sentry can identify as such. See the gofer filesystem section of
+	// vfs/inotify.md.
 	watches vfs.Watches
 
 	// refs is the reference count of the inode. A dentry holds a reference on the inode
@@ -1794,12 +1789,9 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 		d.evict(ctx)
 		return
 	}
-	// If d still has inotify watches and it is not deleted or invalidated, it
-	// can't be evicted. Otherwise, we will lose its watches, even if a new
-	// dentry is created for the same file in the future. Note that the size of
-	// d.inode.watches cannot concurrently transition from zero to non-zero, because
-	// adding a watch requires holding a reference on d.
-	if d.inode.watches.Size() > 0 {
+	// Watch targets are not cached, so they are never evicted. Their hard link
+	// aliases stay cacheable.
+	if d.inode.watches.HasTarget(&d.vfsd) {
 		// As in the refs > 0 case, removing d is beneficial.
 		d.removeFromCacheLocked()
 		d.cachingMu.Unlock()
@@ -1915,9 +1907,9 @@ func (d *dentry) evict(ctx context.Context) {
 func (d *dentry) evictLocked(ctx context.Context) {
 	d.cachingMu.Lock()
 	d.removeFromCacheLocked()
-	// d.refs or d.inode.watches.Size() may have become non-zero from an earlier path
-	// resolution since it was inserted into fs.dentryCache.dentries.
-	if d.refs.Load() != 0 || d.inode.watches.Size() != 0 {
+	// d.refs may have become non-zero, or d may have become a watch target,
+	// since it was inserted into fs.dentryCache.dentries.
+	if d.refs.Load() != 0 || d.inode.watches.HasTarget(&d.vfsd) {
 		d.cachingMu.Unlock()
 		return
 	}
