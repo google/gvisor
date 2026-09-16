@@ -167,7 +167,7 @@ type rlimitCPUHardListener struct {
 
 // NotifyTimer implements ktime.Listener.NotifyTimer.
 func (l *rlimitCPUHardListener) NotifyTimer(exp uint64) {
-	l.tg.appSysCPUClockLast.Load().SendGroupSignal(SignalInfoPriv(linux.SIGKILL))
+	l.tg.appSysCPUClockLast.Load().sendSignal(SignalInfoPriv(linux.SIGKILL), true /* group */, true /* forced */)
 }
 
 // IOUsage returns the io usage of the thread.

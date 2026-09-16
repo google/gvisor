@@ -143,7 +143,7 @@ func (it *IntervalTimer) NotifyTimer(exp uint64) {
 	//
 	// signalLock returned it.target.tg's current handler with sh.mu held;
 	// checklocks does not relate that result to the thread-group field.
-	if err := it.target.sendSignalTimerLocked(si, it.group, it); err != nil { // +checklocksignore
+	if err := it.target.sendSignalTimerLocked(si, it.group, false /* forced */, it); err != nil { // +checklocksignore
 		it.signalRejectedLocked()
 	}
 }

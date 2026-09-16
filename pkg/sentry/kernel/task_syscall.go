@@ -289,7 +289,7 @@ type runSyscallAfterSyscallEnterStop struct{}
 func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
 	if sig := linux.Signal(t.ptraceCode); sig.IsValid() {
 		t.tg.signalHandlers.mu.Lock()
-		t.sendSignalLocked(SignalInfoPriv(sig), false /* group */)
+		t.sendForcedSignalLocked(SignalInfoPriv(sig), false /* group */)
 		t.tg.signalHandlers.mu.Unlock()
 	}
 	if t.killed() {
@@ -310,7 +310,7 @@ type runSyscallAfterSysemuStop struct{}
 func (*runSyscallAfterSysemuStop) execute(t *Task) taskRunState {
 	if sig := linux.Signal(t.ptraceCode); sig.IsValid() {
 		t.tg.signalHandlers.mu.Lock()
-		t.sendSignalLocked(SignalInfoPriv(sig), false /* group */)
+		t.sendForcedSignalLocked(SignalInfoPriv(sig), false /* group */)
 		t.tg.signalHandlers.mu.Unlock()
 	}
 	if t.killed() {
