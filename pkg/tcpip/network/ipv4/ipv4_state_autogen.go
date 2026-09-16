@@ -355,6 +355,7 @@ func (p *protocol) StateFields() []string {
 		"idTS",
 		"fragmentation",
 		"options",
+		"allowExternalLoopbackTraffic",
 		"multicastRouteTable",
 		"multicastForwardingDisp",
 	}
@@ -374,8 +375,9 @@ func (p *protocol) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &p.idTS)
 	stateSinkObject.Save(7, &p.fragmentation)
 	stateSinkObject.Save(8, &p.options)
-	stateSinkObject.Save(9, &p.multicastRouteTable)
-	stateSinkObject.Save(10, &p.multicastForwardingDisp)
+	stateSinkObject.Save(9, &p.allowExternalLoopbackTraffic)
+	stateSinkObject.Save(10, &p.multicastRouteTable)
+	stateSinkObject.Save(11, &p.multicastForwardingDisp)
 }
 
 func (p *protocol) afterLoad(context.Context) {}
@@ -391,8 +393,9 @@ func (p *protocol) StateLoad(ctx context.Context, stateSourceObject state.Source
 	stateSourceObject.Load(6, &p.idTS)
 	stateSourceObject.Load(7, &p.fragmentation)
 	stateSourceObject.Load(8, &p.options)
-	stateSourceObject.Load(9, &p.multicastRouteTable)
-	stateSourceObject.Load(10, &p.multicastForwardingDisp)
+	stateSourceObject.Load(9, &p.allowExternalLoopbackTraffic)
+	stateSourceObject.Load(10, &p.multicastRouteTable)
+	stateSourceObject.Load(11, &p.multicastForwardingDisp)
 }
 
 func (o *Options) StateTypeName() string {

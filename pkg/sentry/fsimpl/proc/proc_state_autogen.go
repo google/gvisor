@@ -3017,6 +3017,34 @@ func (ipf *ipForwarding) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(2, &ipf.enabled)
 }
 
+func (rl *routeLocalnetData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.routeLocalnetData"
+}
+
+func (rl *routeLocalnetData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"stack",
+	}
+}
+
+func (rl *routeLocalnetData) beforeSave() {}
+
+// +checklocksignore
+func (rl *routeLocalnetData) StateSave(stateSinkObject state.Sink) {
+	rl.beforeSave()
+	stateSinkObject.Save(0, &rl.DynamicBytesFile)
+	stateSinkObject.Save(1, &rl.stack)
+}
+
+func (rl *routeLocalnetData) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (rl *routeLocalnetData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &rl.DynamicBytesFile)
+	stateSourceObject.LoadWait(1, &rl.stack)
+}
+
 func (pr *portRange) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.portRange"
 }
@@ -3199,6 +3227,7 @@ func init() {
 	state.Register((*tcpRecoveryData)(nil))
 	state.Register((*tcpMemData)(nil))
 	state.Register((*ipForwarding)(nil))
+	state.Register((*routeLocalnetData)(nil))
 	state.Register((*portRange)(nil))
 	state.Register((*atomicInt32File)(nil))
 	state.Register((*yamaPtraceScope)(nil))
