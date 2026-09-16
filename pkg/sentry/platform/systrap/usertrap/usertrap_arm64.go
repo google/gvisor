@@ -52,6 +52,11 @@ func New() *State {
 	return &State{}
 }
 
+// Disabled returns true if syscall patching has been disabled.
+func (*State) Disabled() bool {
+	return true
+}
+
 func (*State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryManager) (restart bool, err error) {
 	return false /* restart */, nil
 }
@@ -67,4 +72,9 @@ func (*State) PreFork() {
 
 // PostFork does nothing on arm64 as syscall trapping is not supported.
 func (*State) PostFork() {
+}
+
+// UnpatchSyscalls does nothing on arm64 as syscall trapping is not supported.
+func (*State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
+	return nil
 }

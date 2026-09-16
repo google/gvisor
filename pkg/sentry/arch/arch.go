@@ -131,6 +131,12 @@ type contextInterface interface {
 	// SetTLS sets the current TLS pointer. Returns false if value is invalid.
 	SetTLS(value uintptr) bool
 
+	// GS returns the current GS pointer.
+	GS() uintptr
+
+	// SetGS sets the current GS pointer. Returns false if value is invalid.
+	SetGS(value uintptr) bool
+
 	// SetOldRSeqInterruptedIP sets the register that contains the old IP
 	// when an "old rseq" restartable sequence is interrupted.
 	SetOldRSeqInterruptedIP(value uintptr)

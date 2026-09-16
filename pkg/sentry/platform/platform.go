@@ -198,7 +198,7 @@ func (u UseHostProcessMemoryBarrier) GlobalMemoryBarrier() error {
 // MemoryManager represents an abstraction above the platform address space
 // which manages memory mappings and their contents.
 type MemoryManager interface {
-	//usermem.IO provides access to the contents of a virtual memory space.
+	// usermem.IO provides access to the contents of a virtual memory space.
 	usermem.IO
 	// MMap establishes a memory mapping.
 	MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error)
@@ -394,6 +394,10 @@ type AddressSpace interface {
 
 	// PostFork() is called after creating a copy of AddressSpace.
 	PostFork()
+
+	// UserModifiedGS notifies the address space that the user has modified the GS
+	// register.
+	UserModifiedGS(ctx context.Context, mm MemoryManager) error
 
 	// AddressSpaceIO methods are supported iff the associated platform's
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this
