@@ -61,9 +61,11 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 		ctx.Warningf("accelDevice: failed to open device %s: %v", name, err)
 		return nil, err
 	}
+	writable := vfs.MayWriteFileWithOpenFlags(opts.Flags)
 	fd := &accelFD{
-		hostFD: int32(hostFD),
-		device: dev,
+		hostFD:   int32(hostFD),
+		device:   dev,
+		writable: writable,
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
@@ -77,7 +79,7 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 		return nil, err
 	}
 	fd.memmapFile.SetFD(hostFD)
-	if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
+	if writable {
 		dev.openWriteFDs++
 	}
 	if dev.owner == nil {
