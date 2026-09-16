@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -161,22 +162,7 @@ func cat(k *kernel.Kernel, path string, output *os.File) error {
 }
 
 // ReadOpts contains options for the Read RPC call.
-type ReadOpts struct {
-	// ContainerID identifies which container's filesystem to read from.
-	ContainerID string `json:"container_id"`
-
-	// Path is the filesystem path for the file to read.
-	Path string `json:"path"`
-
-	// Offset is the byte offset in the file to read from.
-	Offset int64 `json:"offset"`
-
-	// Size is the maximum number of bytes to read (0 means unlimited).
-	Size int64 `json:"size"`
-
-	// FilePayload contains the destination for output.
-	urpc.FilePayload
-}
+type ReadOpts = api.ReadOpts
 
 // Read is a RPC stub which prints out and returns the content of the file up to the specified size.
 func (f *Fs) Read(o *ReadOpts, _ *struct{}) error {
