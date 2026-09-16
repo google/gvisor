@@ -15,9 +15,13 @@
 package boot
 
 import (
+	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -252,13 +256,169 @@ func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, opts *kernel.F
 	return nil
 }
 
+// multiTarReader represents a reader for the multi-tar archive supporting
+// random reads by offset.
+type multiTarReader interface {
+	io.ReaderAt
+	io.Closer
+}
+
+// asyncBufferingReaderAt implements multiTarReader by asynchronously streaming
+// an io.ReadCloser (such as stateio.BufReader) into memory in the background,
+// allowing random reads via ReadAt as chunks arrive with maximum pipelining.
+type asyncBufferingReaderAt struct {
+	r         io.ReadCloser
+	chunkSize int
+
+	mu   sync.Mutex
+	cond *sync.Cond
+
+	// +checklocks:mu
+	chunks [][]byte
+	// +checklocks:mu
+	totalRead int64
+	// +checklocks:mu
+	readErr error
+	// +checklocks:mu
+	closed bool
+
+	closeOnce sync.Once
+	closeErr  error
+}
+
+// newAsyncBufferingReaderAt creates a new asyncBufferingReaderAt, takes
+// ownership of r, and spawns a background readLoop goroutine to asynchronously
+// buffer chunks of the given chunkSize.
+func newAsyncBufferingReaderAt(r io.ReadCloser, chunkSize int) *asyncBufferingReaderAt {
+	if r == nil {
+		panic("nil reader")
+	}
+	if chunkSize <= 0 {
+		panic("invalid chunkSize")
+	}
+	abr := &asyncBufferingReaderAt{
+		r:         r,
+		chunkSize: chunkSize,
+	}
+	abr.cond = sync.NewCond(&abr.mu)
+	go abr.readLoop()
+	return abr
+}
+
+func (abr *asyncBufferingReaderAt) closeUnderlying() error {
+	abr.closeOnce.Do(func() {
+		abr.closeErr = abr.r.Close()
+	})
+	return abr.closeErr
+}
+
+func (abr *asyncBufferingReaderAt) readLoop() {
+	defer abr.closeUnderlying()
+	for {
+		chunk := make([]byte, abr.chunkSize)
+		n, err := io.ReadFull(abr.r, chunk)
+		if n > 0 || err != nil {
+			abr.mu.Lock()
+			if abr.closed {
+				abr.mu.Unlock()
+				return
+			}
+			if n > 0 {
+				finalChunk := chunk[:n]
+				if n < abr.chunkSize {
+					finalChunk = bytes.Clone(finalChunk)
+				}
+				abr.chunks = append(abr.chunks, finalChunk)
+				abr.totalRead += int64(n)
+			}
+			if err != nil {
+				if errors.Is(err, io.ErrUnexpectedEOF) {
+					err = io.EOF
+				}
+				abr.readErr = err
+			}
+			abr.cond.Broadcast()
+			abr.mu.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}
+}
+
+// ReadAt implements io.ReaderAt.ReadAt.
+func (abr *asyncBufferingReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if off < 0 {
+		return 0, errors.New("boot.asyncBufferingReaderAt.ReadAt: negative offset")
+	}
+	if math.MaxInt64-off < int64(len(p)) {
+		return 0, errors.New("boot.asyncBufferingReaderAt.ReadAt: offset overflow")
+	}
+	abr.mu.Lock()
+
+	for off+int64(len(p)) > abr.totalRead && abr.readErr == nil && !abr.closed {
+		abr.cond.Wait()
+	}
+	if abr.closed {
+		abr.mu.Unlock()
+		return 0, os.ErrClosed
+	}
+
+	if off >= abr.totalRead {
+		readErr := abr.readErr
+		abr.mu.Unlock()
+		if readErr != nil {
+			return 0, readErr
+		}
+		return 0, io.EOF
+	}
+
+	avail := int(min(int64(len(p)), abr.totalRead-off))
+	done := 0
+	for done < avail {
+		curOff := off + int64(done)
+		chunkIdx := curOff / int64(abr.chunkSize)
+		chunkOff := curOff % int64(abr.chunkSize)
+		chunk := abr.chunks[chunkIdx]
+		n := copy(p[done:avail], chunk[chunkOff:])
+		done += n
+	}
+	readErr := abr.readErr
+	abr.mu.Unlock()
+
+	if done < len(p) {
+		if readErr != nil {
+			return done, readErr
+		}
+		return done, io.EOF
+	}
+	return done, nil
+}
+
+// Close implements io.Closer.Close.
+func (abr *asyncBufferingReaderAt) Close() error {
+	abr.mu.Lock()
+	if abr.closed {
+		abr.mu.Unlock()
+		return nil
+	}
+	abr.closed = true
+	abr.chunks = nil
+	abr.cond.Broadcast()
+	abr.mu.Unlock()
+	return abr.closeUnderlying()
+}
+
 // fsRestore holds the state of a filesystem restore.
 type fsRestore struct {
 	wg sync.WaitGroup
 
 	// immutable
 	getPagesMetadata func() ([]byte, error)
-	getMultiTar      func() ([]byte, error)
+	multiTar         multiTarReader
 
 	// immutable after wg.Wait()
 	manifestErr error
@@ -282,7 +442,7 @@ type fsRestoreOpts struct {
 	// These correspond to files specified by the fscheckpoint package, and are
 	// all required.
 	ManifestFile      io.ReadCloser
-	MultiTarFile      io.ReadCloser
+	MultiTarFile      multiTarReader
 	PagesMetadataFile io.ReadCloser
 	PagesFile         stateio.AsyncReader
 }
@@ -300,7 +460,7 @@ func makeFSRestoreOptsForLocalCheckpoint(args *Args) (fsRestoreOpts, error) {
 	}
 	return fsRestoreOpts{
 		ManifestFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[0].ReleaseToFile(checkpointfiles.FSCheckpointManifestFileName)),
-		MultiTarFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName)),
+		MultiTarFile:      args.FSRestoreFDs[1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName),
 		PagesMetadataFile: stateio.NewBufioReadCloser(args.FSRestoreFDs[2].ReleaseToFile(checkpointfiles.PagesMetadataFileName)),
 		PagesFile:         stateio.NewPagesFileFDReaderDefault(int32(args.FSRestoreFDs[3].Release())),
 	}, nil
@@ -337,10 +497,11 @@ func makeFSRestoreOptsForCheckpointGofer(args *Args) (fsRestoreOpts, error) {
 	if err != nil {
 		return fsRestoreOpts{}, fmt.Errorf("failed to open multi-tar file: %w", err)
 	}
-	multiTarFile, err := stateio.NewBufReader(multiTarFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
+	multiTarFileBuf, err := stateio.NewBufReader(multiTarFileAsync /* transfers ownership */, 8<<20 /* size = 8 MiB */)
 	if err != nil {
 		return fsRestoreOpts{}, fmt.Errorf("failed to buffer multi-tar file: %w", err)
 	}
+	multiTarFile := newAsyncBufferingReaderAt(multiTarFileBuf, 8<<20)
 	closeCleanup.Add(func() { multiTarFile.Close() })
 
 	pagesMetadataFileAsync, err := afc.OpenRead(checkpointfiles.PagesMetadataFileName)
@@ -370,10 +531,12 @@ func makeFSRestoreOptsForCheckpointGofer(args *Args) (fsRestoreOpts, error) {
 // startFSRestore takes ownership of resources in opts.
 func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	fsr := &fsRestore{
-		mfs:     make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
-		tmpfs:   make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
-		waitMap: make(map[string]*fsRestoreContainer),
+		mfs:      make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
+		tmpfs:    make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
+		waitMap:  make(map[string]*fsRestoreContainer),
+		multiTar: opts.MultiTarFile,
 	}
+	opts.MultiTarFile = nil
 
 	// TODO: NOLINT - Currently we read the whole pages metadata file into a
 	// []byte, then pass pieces of that []byte to MemoryFile construction. This
@@ -381,24 +544,6 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 	// sequentially), and tmpfs filesystems and their private MemoryFiles may
 	// be restored in a different order than checkpoint order (disk-backed
 	// filestore files are not available until container creation).
-	//
-	// We could make opts.PagesMetadataFile io.ReaderAt to avoid this copy.
-	// However, when the multi-tar file is accessed via stateio.AsyncReader,
-	// this requires an implementation of io.ReaderAt that wraps
-	// stateio.AsyncReader, akin to stateio.BufReader. AsyncReader already
-	// supports random reads, but has a fixed maximum parallelism per
-	// AsyncReader that would need to be shared between readers. Furthermore,
-	// BufReader asynchronously fills its buffer with reads to minimize
-	// latency; our io.ReaderAt implementation would need to do something
-	// comparable to avoid regressions.
-	//
-	// Alternatively, we could implement io.ReaderAt by asynchronously
-	// buffering the whole file in memory, which is probably better overall
-	// (equivalent to what we are doing now, but permits reading parts of the
-	// file that have been read before the whole file is read) but requires
-	// adding a stateio.AsyncReader method to get file size.
-	//
-	// All of the above also applies to the multi-tar file.
 	readOnce := func(desc string, optsR *io.ReadCloser) func() ([]byte, error) {
 		r := *optsR
 		*optsR = nil
@@ -419,7 +564,6 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 		return f
 	}
 	fsr.getPagesMetadata = readOnce("pages metadata file", &opts.PagesMetadataFile)
-	fsr.getMultiTar = readOnce("multi-tar file", &opts.MultiTarFile)
 
 	// Read and handle the manifest in parallel.
 	fsr.manifestErr = fmt.Errorf("loading manifest panicked")
@@ -549,6 +693,11 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	}, nil
 }
 
+// maxTarBufferSize is the maximum buffer size used per tar reader to minimize
+// IPC and syscall overhead for large archives, while avoiding unnecessary
+// memory allocation for smaller ones.
+const maxTarBufferSize = 1 << 20 // 1 MiB
+
 func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.ReadCloser, error) {
 	if fsr == nil {
 		return nil, nil
@@ -562,18 +711,28 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 	if mt == nil {
 		return nil, nil
 	}
-	multiTar, err := fsr.getMultiTar()
-
-	fsr.waitMu.Lock()
-	defer fsr.waitMu.Unlock()
-	if mt.TarEnd <= uint64(len(multiTar)) {
-		return io.NopCloser(bytes.NewReader(multiTar[mt.TarStart:mt.TarEnd])), nil
+	multiTar := fsr.multiTar
+	if multiTar == nil {
+		fsr.waitMu.Lock()
+		c := fsr.ensureContainer(cid)
+		err := c.setError(fmt.Errorf("multi-tar archive is not available"))
+		fsr.waitMu.Unlock()
+		return nil, err
 	}
-	c := fsr.ensureContainer(cid)
-	if err != nil {
-		return nil, c.setError(fmt.Errorf("failed to read tar archive: %w", err))
+	if mt.TarStart > math.MaxInt64 || mt.TarEnd > math.MaxInt64 || mt.TarStart > mt.TarEnd {
+		fsr.waitMu.Lock()
+		c := fsr.ensureContainer(cid)
+		err := c.setError(fmt.Errorf("tmpfs %q has invalid tar range [%d, %d)", mt.ResourceID, mt.TarStart, mt.TarEnd))
+		fsr.waitMu.Unlock()
+		return nil, err
 	}
-	return nil, c.setError(fmt.Errorf("tmpfs %q has tar range [%d, %d) beyond multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar)))
+	length := int64(mt.TarEnd - mt.TarStart)
+	if length == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	bufSize := int(min(length, maxTarBufferSize))
+	sr := io.NewSectionReader(multiTar, int64(mt.TarStart), length)
+	return io.NopCloser(bufio.NewReaderSize(sr, bufSize)), nil
 }
 
 // wait blocks until either all filesystems have been restored for the
@@ -601,5 +760,13 @@ func (fsr *fsRestore) wait(cid string) error {
 			return nil
 		}
 		c.cond.Wait()
+	}
+}
+
+// destroy releases resources held by fsRestore, such as closing multiTar.
+func (fsr *fsRestore) destroy() {
+	if fsr != nil && fsr.multiTar != nil {
+		fsr.multiTar.Close()
+		fsr.multiTar = nil
 	}
 }
