@@ -1479,7 +1479,7 @@ func TestSignalUnkillablePolicyRestore(t *testing.T) {
 				}
 				defer cont2.Destroy()
 
-				if err := cont2.Restore(&testConf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+				if err := cont2.Restore(&testConf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 					t.Fatalf("error restoring container: %v", err)
 				}
 
@@ -1568,7 +1568,7 @@ func TestSignalUnkillablePolicyRestore(t *testing.T) {
 				}
 				defer cont2.Destroy()
 
-				if err := cont2.Restore(&testConf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+				if err := cont2.Restore(&testConf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 					t.Fatalf("error restoring container: %v", err)
 				}
 
@@ -1832,7 +1832,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1883,7 +1883,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	}
 	defer cont3.Destroy()
 
-	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -2016,7 +2016,7 @@ func TestCheckpointRestoreHostname(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			if err := cont2.Restore(conf, dir, false, false, nil); err != nil {
+			if err := cont2.Restore(conf, dir, false, false, nil, nil); err != nil {
 				t.Fatalf("error restoring: %v", err)
 			}
 
@@ -2145,7 +2145,7 @@ func testCheckpointRestoreHostinet(t *testing.T, conf *config.Config, app string
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 	if !cont2.Sandbox.Restored {
@@ -2307,7 +2307,7 @@ func TestCheckpointHostinetRestoreNetworkMismatch(t *testing.T) {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	err = cont2.Restore(&restoreConf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
+	err = cont2.Restore(&restoreConf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */)
 	if err == nil {
 		t.Fatalf("restore with mismatched network type succeeded, want error")
 	}
@@ -2513,7 +2513,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -2598,7 +2598,7 @@ func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -2710,7 +2710,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -4898,7 +4898,7 @@ func TestUsageFD(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -6302,7 +6302,7 @@ func TestSpecValidation(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			err = cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
+			err = cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* ipRemap */, nil /* networkArgs */)
 			if err == nil {
 				if test.wantErr == "" {
 					return

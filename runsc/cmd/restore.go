@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -30,6 +31,32 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+// stringList is a flag.Value that accumulates a list of strings. The flag may
+// be repeated on the command line, and each occurrence may itself hold a
+// comma-separated list of values.
+type stringList []string
+
+// String implements flag.Value.String.
+//
+// The result must be parseable by Set() so that the flag round-trips.
+func (s *stringList) String() string {
+	return strings.Join(*s, ",")
+}
+
+// Set implements flag.Value.Set.
+func (s *stringList) Set(value string) error {
+	if value == "" {
+		return nil
+	}
+	*s = append(*s, strings.Split(value, ",")...)
+	return nil
+}
+
+// Get implements flag.Getter.Get.
+func (s *stringList) Get() any {
+	return []string(*s)
+}
 
 // Restore implements subcommands.Command for the "restore" command.
 type Restore struct {
@@ -57,6 +84,8 @@ type Restore struct {
 	// uncompressed for background to work; if the checkpoint is compressed,
 	// background has no effect.
 	background bool
+
+	ipRemap stringList
 }
 
 // Name implements subcommands.Command.Name.
@@ -81,6 +110,7 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 	f.BoolVar(&r.direct, "direct", false, "use O_DIRECT for reading checkpoint pages file")
 	f.BoolVar(&r.background, "background", false, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
+	f.Var(&r.ipRemap, "ip-remap", "IP address remapping old=new (may be repeated, or given as a comma-separated list)")
 
 	// Unimplemented flags necessary for compatibility with docker.
 
@@ -183,8 +213,16 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		runArgs.Spec = c.Spec
 	}
 
+	remap := make(map[string]string)
+	for _, pair := range r.ipRemap {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) == 2 {
+			remap[parts[0]] = parts[1]
+		}
+	}
+
 	log.Debugf("Restore: %v", r.imagePath)
-	err = c.Restore(conf, r.imagePath, r.direct, r.background, nil /* networkArgs */)
+	err = c.Restore(conf, r.imagePath, r.direct, r.background, remap, nil /* networkArgs */)
 	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
