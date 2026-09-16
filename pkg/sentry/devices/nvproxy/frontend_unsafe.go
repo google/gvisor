@@ -15,6 +15,7 @@
 package nvproxy
 
 import (
+	"fmt"
 	"runtime"
 	"unsafe"
 
@@ -27,9 +28,9 @@ import (
 
 func frontendIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](fi *frontendIoctlState, ioctlParams PtrParams) (uintptr, error) {
 	n, err := frontendIoctlInvokeNoStatus(fi, ioctlParams)
-	if err == nil && log.IsLogging(log.Debug) {
+	if err == nil {
 		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
-			fi.ctx.Debugf("nvproxy: frontend ioctl failed: status=%#x", status)
+			logFrontendIoctlStatus(fi, status, any(ioctlParams))
 		}
 	}
 	return n, err
@@ -52,6 +53,7 @@ func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS
 	if err != nil {
 		return n, err
 	}
+	logRMControlStatus(fi, ioctlParams)
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
@@ -351,8 +353,11 @@ func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS5
 	}
 	ctrlParams.BusPeerIDs = busPeerIDs
 
+	origGPUIDs := translateP2PGpuIDsToHost(fi, ctrlParams.GpuIDs[:], ctrlParams.GpuCount)
+
 	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
 	ctrlParams.BusPeerIDs = origBusPeerIDs
+	ctrlParams.GpuIDs = origGPUIDs
 	if err != nil {
 		return n, err
 	}
@@ -363,6 +368,34 @@ func ctrlClientSystemGetP2PCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS5
 
 	_, err = ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params))
 	return n, err
+}
+
+// translateP2PGpuIDsToHost resolves the guest gpuIds an application passed to
+// NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS to the host gpuIds the driver knows,
+// returning the original array so the caller can put it back before copying
+// out. NCCL asks this to decide whether two GPUs can reach each other, so a
+// stale gpuId here makes peer access look unavailable.
+func translateP2PGpuIDsToHost(fi *frontendIoctlState, gpuIDs []uint32, gpuCount uint32) [nvgpu.NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS]uint32 {
+	var orig [nvgpu.NV0000_CTRL_SYSTEM_MAX_ATTACHED_GPUS]uint32
+	copy(orig[:], gpuIDs)
+	m := fi.fd.dev.nvp.guestToHostGPUID
+	scope := scopeFor(fi.t)
+	if len(m) == 0 || !scope.Restored {
+		return orig
+	}
+	n := int(gpuCount)
+	if n > len(gpuIDs) {
+		n = len(gpuIDs)
+	}
+	for i := 0; i < n; i++ {
+		if host, ok := translateID(gpuIDs[i], m); ok {
+			if log.IsLogging(log.Debug) {
+				fi.ctx.Debugf("nvproxy: NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS: translated gpuId %d (guest) to %d (host) [%v]", gpuIDs[i], host, scope)
+			}
+			gpuIDs[i] = host
+		}
+	}
+	return orig
 }
 
 func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
@@ -388,9 +421,12 @@ func ctrlClientSystemGetP2PCapsV550(fi *frontendIoctlState, ioctlParams *nvgpu.N
 	}
 	ctrlParams.BusEgmPeerIDs = busEgmPeerIDs
 
+	origGPUIDs := translateP2PGpuIDsToHost(fi, ctrlParams.GpuIDs[:], ctrlParams.GpuCount)
+
 	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
 	ctrlParams.BusPeerIDs = origBusPeerIDs
 	ctrlParams.BusEgmPeerIDs = origBusEgmPeerIDs
+	ctrlParams.GpuIDs = origGPUIDs
 	if err != nil {
 		return n, err
 	}
@@ -441,8 +477,14 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 	fi.ioctlParamsSize = nvgpu.SizeofNVOS64Parameters
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	fi.ioctlParamsSize = origParamsSize
-	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
-		addObjLocked(fi, client, ioctlParams, rightsRequested, allocParams)
+	if err == nil {
+		if ioctlParams.Status == nvgpu.NV_OK {
+			addObjLocked(fi, client, ioctlParams, rightsRequested, allocParams)
+		} else if log.IsLogging(log.Debug) {
+			fi.ctx.Debugf("nvproxy: rm alloc failed: hClass=%v hRoot=%v hObjectParent=%v hObjectNew=%v paramsSize=%d%s status=%#x (%s) [%v]",
+				ioctlParams.HClass, ioctlParams.HRoot, ioctlParams.HObjectParent, ioctlParams.HObjectNew, ioctlParams.ParamsSize,
+				allocParamsNote(ioctlParams.HClass, allocParams), ioctlParams.Status, statusName(ioctlParams.Status), scopeFor(fi.t))
+		}
 	}
 	unlock()
 	ioctlParams.PAllocParms = origPAllocParms
@@ -463,6 +505,35 @@ func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64
 		return n, err
 	}
 	return n, nil
+}
+
+// allocParamsNote renders the identifying field of an allocation's parameters
+// for the failure line, for the classes where it decides whether the call can
+// succeed. allocParams is a typed pointer that may be nil, which for
+// NV01_DEVICE_0 means the application passed none and RM will read the request
+// as naming device instance 0.
+func allocParamsNote(hClass nvgpu.ClassID, allocParams any) string {
+	switch hClass {
+	case nvgpu.NV01_DEVICE_0:
+		p, ok := allocParams.(*nvgpu.NV0080_ALLOC_PARAMETERS)
+		if !ok || p == nil {
+			return " deviceId=null"
+		}
+		return fmt.Sprintf(" deviceId=%d", p.DeviceID)
+	case nvgpu.NV20_SUBDEVICE_0:
+		p, ok := allocParams.(*nvgpu.NV2080_ALLOC_PARAMETERS)
+		if !ok || p == nil {
+			return " subDeviceId=null"
+		}
+		return fmt.Sprintf(" subDeviceId=%d", p.SubDeviceID)
+	case nvgpu.NV_MEMORY_EXPORT:
+		p, ok := allocParams.(*nvgpu.NV00E0_ALLOCATION_PARAMETERS)
+		if !ok || p == nil {
+			return " deviceInstanceMask=null"
+		}
+		return fmt.Sprintf(" deviceInstanceMask=%#x", p.DeviceInstanceMask)
+	}
+	return ""
 }
 
 func rmIdleChannelsInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS30_PARAMETERS, clientsBuf, devicesBuf, channelsBuf *byte) (uintptr, error) {

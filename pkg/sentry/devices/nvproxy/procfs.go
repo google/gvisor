@@ -17,6 +17,8 @@ package nvproxy
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -58,4 +60,24 @@ func procfsCapability(devMinor, mode uint32) string {
 	// consistent with our treatment of ModifyDeviceFiles in
 	// /proc/driver/nvidia/params.
 	return fmt.Sprintf("DeviceFileMinor: %d\nDeviceFileMode: %d\nDeviceFileModify: 0\n", devMinor, mode)
+}
+
+// GPUUUIDMapFromContext returns the restored caller's CUDA UUIDs mapped to
+// physical host UUIDs. External resource admission needs physical identities,
+// while CUDA and NCCL must retain the checkpointed identities. Fresh processes
+// use host identities already and receive an empty map. The result is a copy.
+func GPUUUIDMapFromContext(ctx context.Context) map[string]string {
+	nvp := nvproxyFromVFS(kernel.KernelFromContext(ctx).VFS())
+	return nvp.gpuUUIDMap(scopeFor(kernel.TaskFromContext(ctx)))
+}
+
+func (nvp *nvproxy) gpuUUIDMap(scope translationScope) map[string]string {
+	out := make(map[string]string)
+	if nvp == nil || !scope.Restored {
+		return out
+	}
+	for guest, host := range nvp.guestToHostUUID {
+		out[guest] = host
+	}
+	return out
 }

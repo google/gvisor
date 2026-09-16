@@ -116,3 +116,8 @@ func (p *pid) saveT() *Task {
 func (p *pid) loadT(_ context.Context, t *Task) {
 	p.t.Store(t)
 }
+
+// afterLoad is invoked by stateify.
+func (tg *ThreadGroup) afterLoad(context.Context) {
+	tg.markExistedAtCheckpoint()
+}

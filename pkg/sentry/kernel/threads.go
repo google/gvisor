@@ -634,6 +634,38 @@ func (tg *ThreadGroup) ID() ThreadID {
 	return ThreadID(tg.pidWithinNS.Load())
 }
 
+// ExistedAtCheckpoint returns true if tg was loaded from a checkpoint rather
+// than created after the sandbox was restored.
+//
+// nvproxy uses this to decide whether a process holds device identities from
+// before the checkpoint. A process restored from a checkpoint has a user-mode
+// GPU driver whose tables are keyed by the device instances, gpuIds and UUIDs
+// of the devices the sandbox had then, so nvproxy must translate for it. A
+// process created after the restore -- a forked child, or a helper the
+// checkpointer runs inside the sandbox -- initialises its driver from scratch
+// against the devices that are actually present, so translating for it would
+// hand it identities, and device file names, that do not exist.
+func (tg *ThreadGroup) ExistedAtCheckpoint() bool {
+	return tg.existedAtCheckpoint
+}
+
+// markExistedAtCheckpoint is called by ThreadGroup.StateLoad(). Every thread
+// group loaded from a state file existed when that state file was written, and
+// one created afterwards is constructed with the field unset, so no walk of
+// the task set is needed and no ordering between this and the rest of the
+// restore matters.
+func (tg *ThreadGroup) markExistedAtCheckpoint() {
+	tg.existedAtCheckpoint = true
+}
+
+// clearExistedAtCheckpoint is called when tg execs a new image. execve()
+// replaces the address space, so whatever user-mode driver state held the old
+// device identities is gone, and the new image initialises its own against the
+// devices that are present.
+func (tg *ThreadGroup) clearExistedAtCheckpoint() {
+	tg.existedAtCheckpoint = false
+}
+
 // A taskNode defines the relationship between a task and the rest of the
 // system. The comments on threadGroupNode also apply to taskNode.
 //
