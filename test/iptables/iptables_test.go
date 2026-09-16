@@ -629,3 +629,7 @@ func TestFilterInputRejectTCPReset(t *testing.T) {
 func TestFilterInputRejectTCPResetUnmatched(t *testing.T) {
 	singleTest(t, &FilterInputRejectTCPResetUnmatched{})
 }
+
+func TestFilterInputCommentMatch(t *testing.T) {
+	singleTest(t, &FilterInputCommentMatch{})
+}
