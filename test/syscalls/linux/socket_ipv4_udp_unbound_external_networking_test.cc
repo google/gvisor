@@ -34,6 +34,12 @@ INSTANTIATE_TEST_SUITE_P(IPv4UDPUnboundSockets,
                          IPv4UDPUnboundExternalNetworkingSocketTest,
                          ::testing::ValuesIn(GetSockets()));
 
+INSTANTIATE_TEST_SUITE_P(IPv4UDPUnboundSockets,
+                         IPv4UDPUnboundExternalNetworkingSocketAddressTest,
+                         ::testing::Combine(::testing::ValuesIn(GetSockets()),
+                                            ::testing::Values(V4Broadcast(),
+                                                              V4Any())));
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
