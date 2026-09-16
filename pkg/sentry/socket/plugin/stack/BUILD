@@ -38,6 +38,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/syserr",
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/usermem",

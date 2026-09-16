@@ -16,8 +16,11 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
+#include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+
+#include <cstring>
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
@@ -184,7 +187,8 @@ TEST(NetdeviceTest, InterfaceQLEN) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
 
   // Prepare the request.
-  struct ifreq ifr = {};
+  struct ifreq ifr;
+  memset(&ifr, 0xaa, sizeof(ifr));
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
 
   // Check that SIOCGIFTXQLEN returns without error.
@@ -195,6 +199,58 @@ TEST(NetdeviceTest, InterfaceQLEN) {
   if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
     EXPECT_EQ(ifr.ifr_qlen, 0);
   }
+}
+
+TEST(NetdeviceTest, InterfaceMap) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct ifreq ifr;
+  memset(&ifr, 0xaa, sizeof(ifr));
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFMAP, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_map.mem_start, 0);
+  EXPECT_EQ(ifr.ifr_map.mem_end, 0);
+  EXPECT_EQ(ifr.ifr_map.base_addr, 0);
+  EXPECT_EQ(ifr.ifr_map.irq, 0);
+  EXPECT_EQ(ifr.ifr_map.dma, 0);
+  EXPECT_EQ(ifr.ifr_map.port, 0);
+}
+
+TEST(NetdeviceTest, InterfaceDestinationAddress) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct ifreq ifr;
+  memset(&ifr, 0xaa, sizeof(ifr));
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFDSTADDR, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_dstaddr.sa_family, AF_INET);
+  struct sockaddr_in* sin =
+      reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_dstaddr);
+  const unsigned char* addr =
+      reinterpret_cast<const unsigned char*>(&sin->sin_addr.s_addr);
+  EXPECT_EQ(addr[0], 127);
+  EXPECT_EQ(addr[1], 0);
+  EXPECT_EQ(addr[2], 0);
+  EXPECT_EQ(addr[3], 1);
+}
+
+TEST(NetdeviceTest, InterfaceBroadcastAddress) {
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct ifreq ifr;
+  memset(&ifr, 0xaa, sizeof(ifr));
+  snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
+
+  ASSERT_THAT(ioctl(sock.get(), SIOCGIFBRDADDR, &ifr), SyscallSucceeds());
+  EXPECT_EQ(ifr.ifr_broadaddr.sa_family, AF_INET);
+  struct sockaddr_in* sin =
+      reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_broadaddr);
+  EXPECT_EQ(sin->sin_addr.s_addr, 0);
 }
 
 TEST(NetdeviceTest, EthtoolGetTSInfo) {
