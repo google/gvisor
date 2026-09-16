@@ -50,14 +50,21 @@ type accelFD struct {
 	device     *accelDevice
 	queue      waiter.Queue
 	memmapFile fsutil.MmapNoInternalFile
+
+	// writable is true if this FD was opened with write access and is
+	// therefore counted in device.openWriteFDs. It is immutable after
+	// initialization.
+	writable bool
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *accelFD) Release(context.Context) {
 	fd.device.mu.Lock()
 	defer fd.device.mu.Unlock()
-	fd.device.openWriteFDs--
-	if fd.device.openWriteFDs == 0 {
+	if fd.writable {
+		fd.device.openWriteFDs--
+	}
+	if fd.writable && fd.device.openWriteFDs == 0 {
 		log.Infof("openWriteFDs is zero, unpinning all sentry memory mappings")
 		s := &fd.device.devAddrSet
 		seg := s.FirstSegment()
@@ -133,6 +140,7 @@ func (fd *accelFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, arg
 		gasket.GASKET_IOCTL_NUMBER_PAGE_TABLES, gasket.GASKET_IOCTL_PAGE_TABLE_SIZE,
 		gasket.GASKET_IOCTL_SIMPLE_PAGE_TABLE_SIZE, gasket.GASKET_IOCTL_PARTITION_PAGE_TABLE,
 		gasket.GASKET_IOCTL_MAP_DMA_BUF:
+
 		return 0, linuxerr.ENOSYS
 	case gasket.GASKET_IOCTL_RESET:
 		return util.IOCTLInvoke[gasket.Ioctl, uint64](fd.hostFD, gasket.GASKET_IOCTL_RESET, args[2].Uint64())
