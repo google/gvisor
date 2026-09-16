@@ -65,6 +65,7 @@ func main() {
 	subcommands.Register(new(fsCheckpoint), "")
 	subcommands.Register(new(setXattr), "")
 	subcommands.Register(new(getXattr), "")
+	subcommands.Register(new(segfault), "")
 
 	flag.Parse()
 
