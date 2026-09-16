@@ -92,10 +92,6 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, initVal uint64, sem
 // NewFromHost creates a new event fd from the given host fd.
 func NewFromHost(ctx context.Context, vfsObj *vfs.VirtualFilesystem, hostfd int, flags uint32) (*vfs.FileDescription, error) {
 	semMode := flags&linux.EFD_SEMAPHORE != 0
-	fileFlags := uint32(linux.O_RDWR)
-	if flags&linux.EFD_NONBLOCK != 0 {
-		fileFlags |= linux.O_NONBLOCK
-	}
 	fd, err := New(ctx, vfsObj, 0, semMode, flags)
 	if err != nil {
 		return nil, err
