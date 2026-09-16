@@ -172,6 +172,8 @@ type Server struct {
 	methods map[string]registeredMethod
 
 	// stoppers are all registered stoppers.
+	//
+	// +checklocks:mu
 	stoppers []Stopper
 
 	// clients is a map of clients.
@@ -485,9 +487,15 @@ func (s *Server) StartHandling(client *unet.Socket) {
 // expires, all clients are drained (i.e. their ongoing RPC is allowed to
 // complete) and closed. Any new RPCs will not be processed. Note that ongoing
 // RPCs are *not* interrupted or cancelled.
+//
+// +checklocksexclude:s.mu
 func (s *Server) Stop(timeout time.Duration) {
-	// Call any Stop callbacks.
-	for _, stopper := range s.stoppers {
+	// Snapshot the append-only list. Existing entries never change, so
+	// callbacks can run without mu while registration continues.
+	s.mu.Lock()
+	stoppers := s.stoppers
+	s.mu.Unlock()
+	for _, stopper := range stoppers {
 		stopper.Stop()
 	}
 
