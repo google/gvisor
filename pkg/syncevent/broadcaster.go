@@ -34,18 +34,25 @@ type Broadcaster struct {
 	// efficiently, which matters since the cost of Broadcast is linear in the
 	// size of the table.
 
-	// mu protects the following fields.
 	mu sync.Mutex
 
 	// Invariants: len(table) is 0 or a power of 2.
+	//
+	// +checklocks:mu
 	table []broadcasterSlot
 
 	// load is the number of entries in table with receiver != nil.
+	//
+	// +checklocks:mu
 	load int
 
+	// +checklocks:mu
 	lastID SubscriptionID
 }
 
+// broadcasterSlot fields in a published table are protected by the owning
+// Broadcaster's mu. A slot has no link back to that Broadcaster, so checklocks
+// cannot resolve the owner's mutex from the slot.
 type broadcasterSlot struct {
 	// Invariants: If receiver == nil, then filter == NoEvents and id == 0.
 	// Otherwise, id != 0.
@@ -62,6 +69,8 @@ const (
 )
 
 // SubscribeEvents implements Source.SubscribeEvents.
+//
+// +checklocksexclude:b.mu
 func (b *Broadcaster) SubscribeEvents(r *Receiver, filter Set) SubscriptionID {
 	b.mu.Lock()
 
@@ -111,9 +120,16 @@ func (b *Broadcaster) SubscribeEvents(r *Receiver, filter Set) SubscriptionID {
 	return id
 }
 
+// broadcasterTableInsert inserts a subscription into table.
+//
+// A table slice has no link to its owning Broadcaster, so checklocks cannot
+// resolve that mutex for writes through the slice.
+//
 // Preconditions:
 //   - table must not be full.
 //   - len(table) is a power of 2.
+//   - The caller holds the owning Broadcaster's mu or exclusively owns the
+//     backing storage of an unpublished table.
 func broadcasterTableInsert(table []broadcasterSlot, id SubscriptionID, r *Receiver, filter Set) {
 	entry := broadcasterSlot{
 		receiver: r,
@@ -142,6 +158,8 @@ func broadcasterTableInsert(table []broadcasterSlot, id SubscriptionID, r *Recei
 }
 
 // UnsubscribeEvents implements Source.UnsubscribeEvents.
+//
+// +checklocksexclude:b.mu
 func (b *Broadcaster) UnsubscribeEvents(id SubscriptionID) {
 	b.mu.Lock()
 
@@ -195,6 +213,11 @@ func (b *Broadcaster) UnsubscribeEvents(id SubscriptionID) {
 // Broadcast notifies all Receivers subscribed to the Broadcaster of the subset
 // of events to which they subscribed. The order in which Receivers are
 // notified is unspecified.
+//
+// Receiver callbacks run synchronously with b.mu held and must not reenter b.
+// checklocks cannot recover b's identity through ReceiverCallback.
+//
+// +checklocksexclude:b.mu
 func (b *Broadcaster) Broadcast(events Set) {
 	b.mu.Lock()
 	for i := range b.table {
@@ -209,6 +232,8 @@ func (b *Broadcaster) Broadcast(events Set) {
 
 // FilteredEvents returns the set of events for which Broadcast will notify at
 // least one Receiver, i.e. the union of filters for all subscribed Receivers.
+//
+// +checklocksexclude:b.mu
 func (b *Broadcaster) FilteredEvents() Set {
 	var es Set
 	b.mu.Lock()
