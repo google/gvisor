@@ -118,14 +118,14 @@ type shimRedirector struct {
 	// main is the extension.TaskServiceExt that is used for all calls to the
 	// container's shim, except for the cases where `ext` is set.
 	//
-	// Protected by mu.
+	// +checklocks:mu
 	main extension.TaskServiceExt
 
 	// ext may intercept calls to the container's shim. During the call to create
 	// container, the extension may be created and the shim will start using it
 	// for all calls to the container's shim.
 	//
-	// Protected by mu.
+	// +checklocks:mu
 	ext extension.TaskServiceExt
 
 	// grouping indicates if shim grouping is enabled.
@@ -137,8 +137,7 @@ type shimRedirector struct {
 
 var _ extension.TaskServiceExt = (*shimRedirector)(nil)
 
-// Preconditions:
-//   - s.mu must be locked
+// +checklocks:s.mu
 func (s *shimRedirector) getLocked() extension.TaskServiceExt {
 	if s.ext == nil {
 		return s.main
@@ -148,6 +147,8 @@ func (s *shimRedirector) getLocked() extension.TaskServiceExt {
 
 // get return the extension.TaskServiceExt that should be used for the next
 // call to the container's shim.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) get() extension.TaskServiceExt {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,6 +175,8 @@ func isDaemon() bool {
 }
 
 // initExt initializes the extension that may intercept calls to the container's shim.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) initExt(ctx context.Context, r *task.CreateTaskRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -205,6 +208,8 @@ func (s *shimRedirector) initExt(ctx context.Context, r *task.CreateTaskRequest)
 
 // Create creates a new initial process and container with the underlying OCI
 // runtime.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Create(ctx context.Context, r *task.CreateTaskRequest) (*task.CreateTaskResponse, error) {
 	log.L.Debugf("Create, id: %s, bundle: %q", r.ID, r.Bundle)
 	if err := s.initExt(ctx, r); err != nil {
@@ -215,6 +220,8 @@ func (s *shimRedirector) Create(ctx context.Context, r *task.CreateTaskRequest) 
 }
 
 // CreateWithFSRestore creates a container which restores its filesystem from a snapshot.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) CreateWithFSRestore(ctx context.Context, r *extension.CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error) {
 	log.L.Debugf("CreateWithFSRestore, id: %s, bundle: %q", r.Create.ID, r.Create.Bundle)
 	if err := s.initExt(ctx, r.Create); err != nil {
@@ -225,6 +232,8 @@ func (s *shimRedirector) CreateWithFSRestore(ctx context.Context, r *extension.C
 }
 
 // Start starts the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Start(ctx context.Context, r *task.StartRequest) (*task.StartResponse, error) {
 	log.L.Debugf("Start, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Start(ctx, r)
@@ -232,6 +241,8 @@ func (s *shimRedirector) Start(ctx context.Context, r *task.StartRequest) (*task
 }
 
 // Delete deletes container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Delete(ctx context.Context, r *task.DeleteRequest) (*task.DeleteResponse, error) {
 	log.L.Debugf("Delete, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Delete(ctx, r)
@@ -239,6 +250,8 @@ func (s *shimRedirector) Delete(ctx context.Context, r *task.DeleteRequest) (*ta
 }
 
 // Exec spawns a process inside the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Exec(ctx context.Context, r *task.ExecProcessRequest) (*types.Empty, error) {
 	log.L.Debugf("Exec, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Exec(ctx, r)
@@ -246,6 +259,8 @@ func (s *shimRedirector) Exec(ctx context.Context, r *task.ExecProcessRequest) (
 }
 
 // ResizePty resizes the terminal of a process.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) ResizePty(ctx context.Context, r *task.ResizePtyRequest) (*types.Empty, error) {
 	log.L.Debugf("ResizePty, id: %s, execID: %s, dimension: %dx%d", r.ID, r.ExecID, r.Height, r.Width)
 	resp, err := s.get().ResizePty(ctx, r)
@@ -253,6 +268,8 @@ func (s *shimRedirector) ResizePty(ctx context.Context, r *task.ResizePtyRequest
 }
 
 // State returns runtime state information for the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) State(ctx context.Context, r *task.StateRequest) (*task.StateResponse, error) {
 	log.L.Debugf("State, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().State(ctx, r)
@@ -260,6 +277,8 @@ func (s *shimRedirector) State(ctx context.Context, r *task.StateRequest) (*task
 }
 
 // Pause the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Pause(ctx context.Context, r *task.PauseRequest) (*types.Empty, error) {
 	log.L.Debugf("Pause, id: %s", r.ID)
 	resp, err := s.get().Pause(ctx, r)
@@ -267,6 +286,8 @@ func (s *shimRedirector) Pause(ctx context.Context, r *task.PauseRequest) (*type
 }
 
 // Resume the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Resume(ctx context.Context, r *task.ResumeRequest) (*types.Empty, error) {
 	log.L.Debugf("Resume, id: %s", r.ID)
 	resp, err := s.get().Resume(ctx, r)
@@ -274,6 +295,8 @@ func (s *shimRedirector) Resume(ctx context.Context, r *task.ResumeRequest) (*ty
 }
 
 // Kill the container with the provided signal.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Kill(ctx context.Context, r *task.KillRequest) (*types.Empty, error) {
 	log.L.Debugf("Kill, id: %s, execID: %s, signal: %d, all: %t", r.ID, r.ExecID, r.Signal, r.All)
 	resp, err := s.get().Kill(ctx, r)
@@ -281,6 +304,8 @@ func (s *shimRedirector) Kill(ctx context.Context, r *task.KillRequest) (*types.
 }
 
 // Pids returns all pids inside the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Pids(ctx context.Context, r *task.PidsRequest) (*task.PidsResponse, error) {
 	log.L.Debugf("Pids, id: %s", r.ID)
 	resp, err := s.get().Pids(ctx, r)
@@ -288,6 +313,8 @@ func (s *shimRedirector) Pids(ctx context.Context, r *task.PidsRequest) (*task.P
 }
 
 // CloseIO closes the I/O context of the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) CloseIO(ctx context.Context, r *task.CloseIORequest) (*types.Empty, error) {
 	log.L.Debugf("CloseIO, id: %s, execID: %s, stdin: %t", r.ID, r.ExecID, r.Stdin)
 	resp, err := s.get().CloseIO(ctx, r)
@@ -295,6 +322,8 @@ func (s *shimRedirector) CloseIO(ctx context.Context, r *task.CloseIORequest) (*
 }
 
 // Checkpoint checkpoints the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Checkpoint(ctx context.Context, r *task.CheckpointTaskRequest) (*types.Empty, error) {
 	log.L.Debugf("Checkpoint, id: %s", r.ID)
 	resp, err := s.get().Checkpoint(ctx, r)
@@ -302,12 +331,15 @@ func (s *shimRedirector) Checkpoint(ctx context.Context, r *task.CheckpointTaskR
 }
 
 // Connect returns shim information such as the shim's pid.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Connect(ctx context.Context, r *task.ConnectRequest) (*task.ConnectResponse, error) {
 	log.L.Debugf("Connect, id: %s", r.ID)
 	resp, err := s.get().Connect(ctx, r)
 	return resp, errgrpc.ToGRPC(err)
 }
 
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Shutdown(ctx context.Context, r *task.ShutdownRequest) (*types.Empty, error) {
 	log.L.Debugf("Shutdown, id: %s", r.ID)
 	resp, err := s.get().Shutdown(ctx, r)
@@ -326,6 +358,7 @@ func (s *shimRedirector) Shutdown(ctx context.Context, r *task.ShutdownRequest) 
 	return resp, nil
 }
 
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Stats(ctx context.Context, r *task.StatsRequest) (*task.StatsResponse, error) {
 	log.L.Debugf("Stats, id: %s", r.ID)
 	resp, err := s.get().Stats(ctx, r)
@@ -333,6 +366,8 @@ func (s *shimRedirector) Stats(ctx context.Context, r *task.StatsRequest) (*task
 }
 
 // Update updates a running container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Update(ctx context.Context, r *task.UpdateTaskRequest) (*types.Empty, error) {
 	log.L.Debugf("Update, id: %s", r.ID)
 	resp, err := s.get().Update(ctx, r)
@@ -340,6 +375,8 @@ func (s *shimRedirector) Update(ctx context.Context, r *task.UpdateTaskRequest) 
 }
 
 // Wait waits for the container to exit.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Wait(ctx context.Context, r *task.WaitRequest) (*task.WaitResponse, error) {
 	log.L.Debugf("Wait, id: %s, execID: %s", r.ID, r.ExecID)
 	resp, err := s.get().Wait(ctx, r)
@@ -347,6 +384,8 @@ func (s *shimRedirector) Wait(ctx context.Context, r *task.WaitRequest) (*task.W
 }
 
 // Restore restores the container.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Restore(ctx context.Context, r *extension.RestoreRequest) (*task.StartResponse, error) {
 	log.L.Debugf("Restore, id: %s", r.Start.ID)
 	resp, err := s.get().Restore(ctx, r)
@@ -359,6 +398,7 @@ func (s *shimRedirector) RegisterTTRPC(server *ttrpc.Server) error {
 	return nil
 }
 
+// +checklocksexclude:s.mu
 func (s *shimRedirector) getSandboxService() (api.TTRPCSandboxService, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -372,6 +412,8 @@ func (s *shimRedirector) getSandboxService() (api.TTRPCSandboxService, error) {
 }
 
 // CreateSandbox implements api.TTRPCSandboxService.CreateSandbox.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) CreateSandbox(ctx context.Context, req *api.CreateSandboxRequest) (*api.CreateSandboxResponse, error) {
 	log.L.Debugf("CreateSandbox redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -383,6 +425,8 @@ func (s *shimRedirector) CreateSandbox(ctx context.Context, req *api.CreateSandb
 }
 
 // StartSandbox implements api.TTRPCSandboxService.StartSandbox.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) StartSandbox(ctx context.Context, req *api.StartSandboxRequest) (*api.StartSandboxResponse, error) {
 	log.L.Debugf("StartSandbox redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -394,6 +438,8 @@ func (s *shimRedirector) StartSandbox(ctx context.Context, req *api.StartSandbox
 }
 
 // Platform implements api.TTRPCSandboxService.Platform.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) Platform(ctx context.Context, req *api.PlatformRequest) (*api.PlatformResponse, error) {
 	log.L.Debugf("Platform redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -405,6 +451,8 @@ func (s *shimRedirector) Platform(ctx context.Context, req *api.PlatformRequest)
 }
 
 // StopSandbox implements api.TTRPCSandboxService.StopSandbox.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) StopSandbox(ctx context.Context, req *api.StopSandboxRequest) (*api.StopSandboxResponse, error) {
 	log.L.Debugf("StopSandbox redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -416,6 +464,8 @@ func (s *shimRedirector) StopSandbox(ctx context.Context, req *api.StopSandboxRe
 }
 
 // WaitSandbox implements api.TTRPCSandboxService.WaitSandbox.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) WaitSandbox(ctx context.Context, req *api.WaitSandboxRequest) (*api.WaitSandboxResponse, error) {
 	log.L.Debugf("WaitSandbox redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -427,6 +477,8 @@ func (s *shimRedirector) WaitSandbox(ctx context.Context, req *api.WaitSandboxRe
 }
 
 // SandboxStatus implements api.TTRPCSandboxService.SandboxStatus.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) SandboxStatus(ctx context.Context, req *api.SandboxStatusRequest) (*api.SandboxStatusResponse, error) {
 	log.L.Debugf("SandboxStatus redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -438,6 +490,8 @@ func (s *shimRedirector) SandboxStatus(ctx context.Context, req *api.SandboxStat
 }
 
 // PingSandbox implements api.TTRPCSandboxService.PingSandbox.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) PingSandbox(ctx context.Context, req *api.PingRequest) (*api.PingResponse, error) {
 	log.L.Debugf("PingSandbox redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -449,6 +503,8 @@ func (s *shimRedirector) PingSandbox(ctx context.Context, req *api.PingRequest) 
 }
 
 // ShutdownSandbox implements api.TTRPCSandboxService.ShutdownSandbox.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) ShutdownSandbox(ctx context.Context, req *api.ShutdownSandboxRequest) (*api.ShutdownSandboxResponse, error) {
 	log.L.Debugf("ShutdownSandbox redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
@@ -460,6 +516,8 @@ func (s *shimRedirector) ShutdownSandbox(ctx context.Context, req *api.ShutdownS
 }
 
 // SandboxMetrics implements api.TTRPCSandboxService.SandboxMetrics.
+//
+// +checklocksexclude:s.mu
 func (s *shimRedirector) SandboxMetrics(ctx context.Context, req *api.SandboxMetricsRequest) (*api.SandboxMetricsResponse, error) {
 	log.L.Debugf("SandboxMetrics redirector, id: %s", req.SandboxID)
 	srv, err := s.getSandboxService()
