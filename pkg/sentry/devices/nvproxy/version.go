@@ -466,6 +466,7 @@ func Init() {
 					nvgpu.HOPPER_CHANNEL_GPFIFO_A:    allocHandler(rmAllocChannel, compUtil),
 					nvgpu.TURING_A:                   allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.AMPERE_A:                   allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
+					nvgpu.AMPERE_B:                   allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.ADA_A:                      allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.HOPPER_A:                   allocHandler(rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS], nvconf.CapGraphics),
 					nvgpu.TURING_DMA_COPY_A:          allocHandler(rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS], compUtil),
@@ -794,6 +795,7 @@ func Init() {
 							nvgpu.HOPPER_CHANNEL_GPFIFO_A:    ioctlInfo("HOPPER_CHANNEL_GPFIFO_A", nvgpu.NV_CHANNEL_ALLOC_PARAMS{}),
 							nvgpu.TURING_A:                   ioctlInfo("TURING_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.AMPERE_A:                   ioctlInfo("AMPERE_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
+							nvgpu.AMPERE_B:                   ioctlInfo("AMPERE_B", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.ADA_A:                      ioctlInfo("ADA_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.HOPPER_A:                   ioctlInfo("HOPPER_A", nvgpu.NV_GR_ALLOCATION_PARAMETERS{}),
 							nvgpu.TURING_DMA_COPY_A:          ioctlInfo("TURING_DMA_COPY_A", nvgpu.NVB0B5_ALLOCATION_PARAMETERS{}),
@@ -990,6 +992,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
 			abi.controlCmd[nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL] = ctrlHandler(rmControlSimple, nvconf.CapProfiling)
+			abi.controlCmd[nvgpu.NVB0CC_CTRL_CMD_GET_HS_CREDITS_MAPPING] = ctrlHandler(rmControlSimple, nvconf.CapProfiling)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
@@ -1005,6 +1008,7 @@ func Init() {
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO] = simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO", "NV2080_CTRL_NVLINK_GET_PLATFORM_INFO_PARAMS")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS] = simpleIoctlInfo("NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS", "NV2080_CTRL_CMD_BUS_GET_PCIE_CPL_ATOMICS_CAPS_PARAMS")
 				info.ControlInfos[nvgpu.NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL] = simpleIoctlInfo("NVB0CC_CTRL_CMD_GET_CHIPLET_HS_CREDIT_POOL", "NVB0CC_CTRL_GET_CHIPLET_HS_CREDIT_POOL")
+				info.ControlInfos[nvgpu.NVB0CC_CTRL_CMD_GET_HS_CREDITS_MAPPING] = simpleIoctlInfo("NVB0CC_CTRL_CMD_GET_HS_CREDITS_MAPPING", "NVB0CC_CTRL_GET_HS_CREDITS_POOL_MAPPING_PARAMS")
 				return info
 			}
 			return abi
