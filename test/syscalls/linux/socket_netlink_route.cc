@@ -284,6 +284,12 @@ void CheckLinkMsg(const struct nlmsghdr* hdr, const Link& link) {
     std::string address(reinterpret_cast<const char*>(RTA_DATA(rta_address)));
     EXPECT_EQ(address, link.address);
   }
+  const struct rtattr* rta_operstate = FindRtAttr(hdr, msg, IFLA_OPERSTATE);
+  EXPECT_NE(nullptr, rta_operstate) << "IFLA_OPERSTATE not found in message.";
+  if (rta_operstate != nullptr) {
+    const auto operstate = *(uint8_t*)(RTA_DATA(rta_operstate));
+    EXPECT_EQ(operstate, IF_OPER_UP);
+  }
   EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(LinkKind(hdr, msg)), link.kind);
 }
 
