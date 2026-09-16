@@ -751,12 +751,17 @@ func (r *Runsc) runOrError(cmd *exec.Cmd) error {
 	return nil
 }
 
+// waitDelay force-closes a command's pipes this long after it dies, so Wait
+// cannot stay blocked on fds a grandchild inherited.
+var waitDelay = 5 * time.Second
+
 func (r *Runsc) command(context context.Context, args ...string) *exec.Cmd {
 	command := r.Command
 	if command == "" {
 		command = DefaultCommand
 	}
 	cmd := exec.CommandContext(context, command, append(r.args(), args...)...)
+	cmd.WaitDelay = waitDelay
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		Setpgid: r.Setpgid,
 	}

@@ -17,12 +17,14 @@
 package runsccmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -145,5 +147,26 @@ func TestCmdOutputSeparateStderr(t *testing.T) {
 	}
 	if string(stderr) != "err" {
 		t.Errorf("stderr = %q, want %q", stderr, "err")
+	}
+}
+
+// TestCommandWaitDelayUnblocksWait covers a runsc that dies while a child still
+// holds the pipe cmdOutput gave it. Without WaitDelay, Wait stays blocked on
+// that fd and the caller keeps the container lock.
+func TestCommandWaitDelayUnblocksWait(t *testing.T) {
+	old := waitDelay
+	waitDelay = 200 * time.Millisecond
+	t.Cleanup(func() { waitDelay = old })
+
+	fake := filepath.Join(t.TempDir(), "fake-runsc")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nsleep 60 &\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake runsc: %v", err)
+	}
+
+	r := &Runsc{Command: fake}
+	start := time.Now()
+	cmdOutput(r.command(context.Background()), false)
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Fatalf("cmdOutput returned after %v, want it bounded by waitDelay", elapsed)
 	}
 }
