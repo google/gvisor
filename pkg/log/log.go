@@ -89,17 +89,20 @@ type Writer struct {
 	// Next is where output is written.
 	Next io.Writer
 
-	// mu protects fields below.
 	mu sync.Mutex
 
-	// errors counts failures to write log messages so it can be reported
-	// when writer start to work again. Needs to be accessed using atomics
-	// to make race detector happy because it's read outside the mutex.
-	// +checklocks
+	// atomicErrors counts failed log messages so the count can be reported
+	// when the writer works again.
+	// Atomic reads allow checking for errors without taking mu.
+	//
+	// +checklocks:mu
+	// +checkatomic
 	atomicErrors int32
 }
 
 // Write writes out the given bytes, handling non-blocking sockets.
+//
+// +checklocksexclude:l.mu
 func (l *Writer) Write(data []byte) (int, error) {
 	n := 0
 
@@ -145,6 +148,8 @@ func (l *Writer) Write(data []byte) (int, error) {
 }
 
 // Emit emits the message.
+//
+// +checklocksexclude:l.mu
 func (l *Writer) Emit(_ int, _ Level, _ time.Time, format string, args ...any) {
 	fmt.Fprintf(l, format, args...)
 }
@@ -397,5 +402,6 @@ func init() {
 	// Store the initial value for the log.
 	log.Store(&BasicLogger{Level: Info, Emitter: GoogleEmitter{&Writer{Next: os.Stderr}}})
 
-	warnedSet = make(map[string]struct{})
+	// Package initialization is exclusive, which checklocks does not model.
+	warnedSet = make(map[string]struct{}) // +checklocksignore
 }
