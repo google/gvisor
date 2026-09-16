@@ -223,7 +223,13 @@ func TestHostNoExecBindMountExecReturnsEACCES(t *testing.T) {
 		t.Fatal("exec of /noexecvol/ok.sh succeeded, want EACCES")
 	}
 	var ee *dockerutil.ExecError
-	if errors.As(err, &ee) && (ee.ExitStatus == 139 || ee.ExitStatus == int(unix.SIGSEGV)+128) {
+	if !errors.As(err, &ee) {
+		t.Fatalf("exec failed with unexpected error: %v", err)
+	}
+	if ee.ExitStatus == 139 || ee.ExitStatus == int(unix.SIGSEGV)+128 {
 		t.Fatalf("exec segfaulted, want EACCES: %v", err)
+	}
+	if ee.ExitStatus != 126 {
+		t.Fatalf("exec exit status = %d, want 126 (EACCES)", ee.ExitStatus)
 	}
 }
