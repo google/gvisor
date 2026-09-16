@@ -33,7 +33,7 @@ import (
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
 func NewMemoryManager(p platform.Platform, mf *pgalloc.MemoryFile) (*MemoryManager, error) {
-	as, err := p.NewAddressSpace()
+	as, err := p.NewAddressSpace(platform.AddressSpaceOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,24 @@ func (mm *MemoryManager) SetMmapLayout(ac *arch.Context64, r *limits.LimitSet) (
 // Fork creates a copy of mm with 1 user, as for Linux syscalls fork() or
 // clone() (without CLONE_VM).
 func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
-	as, err := mm.p.NewAddressSpace()
+	// Read the flag before creating the address space to pass into mm2.
+
+	// In systrap, the child process's AddressSpace and MemoryManager must
+	// be synchronized to ensure a consistent view of syscall patching.
+	// Even though a concurrent ARCH_SET_GS may set mm.gsInUse just after this
+	// read, that is ok. The flag is only set once the parent process's syscalls
+	// have already been unpatched, so the child process will either:
+	//   - sees the flag before and inherits an unpatched address space.
+	//   - misses it, unpatch completes, and inherits a clean address space with usertrap enabled.
+	//   This is ok as the calling thread never set its own GS register. The child process/thread
+	//   inherits an accurate value with a completely patchable address space.
+	mm.activeMu.RLock()
+	gsInUse := mm.gsInUse
+	mm.activeMu.RUnlock()
+
+	as, err := mm.p.NewAddressSpace(platform.AddressSpaceOptions{
+		DisableSyscallPatching: gsInUse,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +172,10 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.activeMu.Unlock()
 	mm2.activeMu.NestedLock(activeLockForked)
 	defer mm2.activeMu.NestedUnlock(activeLockForked)
+	// If the application has taken ownership of the GS register, syscall
+	// patching is permanently disabled for mm, and mm's syscalls have already
+	// been unpatched. Disable patching for the child as well.
+	mm2.gsInUse = gsInUse
 	if dontforks || mm.hasPinned {
 		defer mm.pmas.MergeInsideRange(mm.applicationAddrRange())
 	}

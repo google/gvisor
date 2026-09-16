@@ -284,7 +284,7 @@ func (*PTrace) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new subprocess.
-func (p *PTrace) NewAddressSpace() (platform.AddressSpace, error) {
+func (p *PTrace) NewAddressSpace(opts platform.AddressSpaceOptions) (platform.AddressSpace, error) {
 	return newSubprocess(globalPool.master.createStub)
 }
 

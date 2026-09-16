@@ -319,7 +319,8 @@ func New(opts platform.Options) (*Systrap, error) {
 
 		// Create the source process for the global pool. This must be
 		// done before initializing any other processes.
-		source, err := newSubprocess(createStub, mf, false)
+		usesSeccompNotify := false
+		source, err := newSubprocess(createStub, mf, usesSeccompNotify, disableSyscallPatching)
 		if err != nil {
 			stubErr = fmt.Errorf("initialize systrap: %w", err)
 			return
@@ -373,8 +374,8 @@ func (*Systrap) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new subprocess.
-func (p *Systrap) NewAddressSpace() (platform.AddressSpace, error) {
-	return newSubprocess(globalPool.source.createStub, p.memoryFile, true)
+func (p *Systrap) NewAddressSpace(opts platform.AddressSpaceOptions) (platform.AddressSpace, error) {
+	return newSubprocess(globalPool.source.createStub, p.memoryFile, true /* usesSeccomNotify */, opts.DisableSyscallPatching)
 }
 
 // NewContext returns an interruptible platformContext.

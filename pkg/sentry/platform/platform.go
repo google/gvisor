@@ -72,7 +72,7 @@ type Platform interface {
 	MaxUserAddress() hostarch.Addr
 
 	// NewAddressSpace returns a new memory context for this platform.
-	NewAddressSpace() (AddressSpace, error)
+	NewAddressSpace(opts AddressSpaceOptions) (AddressSpace, error)
 
 	// NewContext returns a new execution context.
 	NewContext(context.Context) Context
@@ -198,7 +198,7 @@ func (u UseHostProcessMemoryBarrier) GlobalMemoryBarrier() error {
 // MemoryManager represents an abstraction above the platform address space
 // which manages memory mappings and their contents.
 type MemoryManager interface {
-	//usermem.IO provides access to the contents of a virtual memory space.
+	// usermem.IO provides access to the contents of a virtual memory space.
 	usermem.IO
 	// MMap establishes a memory mapping.
 	MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error)
@@ -395,10 +395,29 @@ type AddressSpace interface {
 	// PostFork() is called after creating a copy of AddressSpace.
 	PostFork()
 
+	// UserModifiedGS notifies the address space that the user has modified the GS
+	// register.
+	UserModifiedGS(ctx context.Context, mm MemoryManager) error
+
 	// AddressSpaceIO methods are supported iff the associated platform's
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this
 	// does not hold may panic if AddressSpaceIO methods are invoked.
 	AddressSpaceIO
+}
+
+// AddressSpaceOptions contains options for Platform.NewAddressSpace.
+//
+// Options describe properties that the address space must have from the moment
+// it is created. Platforms only use options they support.
+type AddressSpaceOptions struct {
+	// DisableSyscallPatching is used by systrap to indicate that the platform must not patch
+	// application syscall instructions in this address space.
+	//
+	// It is set when the application in the corresponding MemoryManager has
+	// decided to use the GS register, meaning we can no longer patch system calls.
+	// Since a MemoryManager acquires a fresh AddressSpace on fork() and after
+	// restore, it must be initialized to match the parent's state.
+	DisableSyscallPatching bool
 }
 
 // AddressSpaceIO supports IO through the memory mappings installed in an

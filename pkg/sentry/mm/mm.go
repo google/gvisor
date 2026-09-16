@@ -165,6 +165,16 @@ type MemoryManager struct {
 	// hasPinned is protected by activeMu.
 	hasPinned bool
 
+	// gsInUse is true if the application uses the
+	// GS register. This means that patched syscalls have been reverted and
+	// syscall patching is permanently disabled for this MemoryManager. It is
+	// inherited by fork() and preserved across save/restore, which is why it
+	// is tracked here rather than in the platform.AddressSpace as address spaces
+	// are recreated for the child and after restore.
+	//
+	// gsInUse is protected by activeMu.
+	gsInUse bool
+
 	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
 	// until users becomes 0, at which point as becomes nil.
 	as platform.AddressSpace `state:"nosave"`
