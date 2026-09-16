@@ -15,6 +15,7 @@
 package unet
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"slices"
@@ -663,6 +664,104 @@ func TestControlMessage(t *testing.T) {
 		if err != nil || !slices.Equal(got, want) {
 			t.Errorf("cm.ExtractFDs() = %v, %v, want = %v, %v", got, err, want, nil)
 		}
+	}
+}
+
+// TestExtractFDsIgnoresCredentials verifies that host-attached
+// SCM_CREDENTIALS (as seen on SO_PASSCRED sockets) do not prevent
+// extracting SCM_RIGHTS file descriptors. This is the failure mode in
+// https://github.com/google/gvisor/issues/14594.
+func TestExtractFDsIgnoresCredentials(t *testing.T) {
+	rights := unix.UnixRights(3, 4)
+	creds := unix.UnixCredentials(&unix.Ucred{
+		Pid: int32(os.Getpid()),
+		Uid: uint32(os.Getuid()),
+		Gid: uint32(os.Getgid()),
+	})
+
+	// Credentials then rights, the order in which Linux writes them when
+	// SO_PASSCRED is set and the peer sent SCM_RIGHTS.
+	cm := ControlMessage(append(append([]byte{}, creds...), rights...))
+	got, err := cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs with SCM_CREDENTIALS+SCM_RIGHTS: %v", err)
+	}
+	want := []int{3, 4}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ExtractFDs = %v, want %v", got, want)
+	}
+
+	// Rights then credentials, to check that the order doesn't matter.
+	cm = ControlMessage(append(append([]byte{}, rights...), creds...))
+	got, err = cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs with SCM_RIGHTS+SCM_CREDENTIALS: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ExtractFDs reverse order = %v, want %v", got, want)
+	}
+
+	// Credentials alone: no FDs, no error (recvmsg with an empty rights
+	// result must still succeed for the payload path).
+	cm = ControlMessage(append([]byte{}, creds...))
+	got, err = cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs with SCM_CREDENTIALS only: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ExtractFDs with credentials only = %v, want nil/empty", got)
+	}
+}
+
+// TestExtractFDsClosesPidfd verifies that ExtractFDs returns the SCM_RIGHTS
+// FDs and closes the FD that Linux installs for SCM_PIDFD.
+func TestExtractFDsClosesPidfd(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("Socketpair failed: %v", err)
+	}
+	defer unix.Close(fds[0])
+	defer unix.Close(fds[1])
+	if err := unix.SetsockoptInt(fds[0], unix.SOL_SOCKET, unix.SO_PASSPIDFD, 1); err != nil {
+		t.Skipf("SO_PASSPIDFD not supported: %v", err)
+	}
+
+	if err := unix.Sendmsg(fds[1], []byte{0}, unix.UnixRights(fds[1]), nil, 0); err != nil {
+		t.Fatalf("Sendmsg failed: %v", err)
+	}
+	oob := make([]byte, 128)
+	_, oobn, _, _, err := unix.Recvmsg(fds[0], make([]byte, 1), oob, 0)
+	if err != nil {
+		t.Fatalf("Recvmsg failed: %v", err)
+	}
+	cm := ControlMessage(oob[:oobn])
+
+	msgs, err := unix.ParseSocketControlMessage(cm)
+	if err != nil {
+		t.Fatalf("ParseSocketControlMessage failed: %v", err)
+	}
+	pidfd := -1
+	for _, msg := range msgs {
+		if msg.Header.Level == unix.SOL_SOCKET && msg.Header.Type == unix.SCM_PIDFD {
+			pidfd = int(int32(binary.NativeEndian.Uint32(msg.Data)))
+		}
+	}
+	if pidfd < 0 {
+		t.Fatalf("no SCM_PIDFD in control messages %+v", msgs)
+	}
+
+	got, err := cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs failed: %v", err)
+	}
+	for _, fd := range got {
+		defer unix.Close(fd)
+	}
+	if len(got) != 1 {
+		t.Errorf("ExtractFDs = %v, want one FD", got)
+	}
+	if _, err := unix.FcntlInt(uintptr(pidfd), unix.F_GETFD, 0); err != unix.EBADF {
+		t.Errorf("pidfd %d still open after ExtractFDs: fcntl error = %v, want EBADF", pidfd, err)
 	}
 }
 

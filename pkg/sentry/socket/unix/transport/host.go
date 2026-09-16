@@ -290,15 +290,20 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
 	var cm unet.ControlMessage
 	if args.NumRights > 0 {
 		cm.EnableFDs(int(args.NumRights))
+		// If the host socket has SO_PASSCRED set, Linux writes
+		// SCM_CREDENTIALS ahead of SCM_RIGHTS. Leave room for it so the
+		// rights are not truncated. The host can change SO_PASSCRED at
+		// any time, so this does not depend on c.passcred.
+		cm = append(cm, make(unet.ControlMessage, unix.CmsgSpace(unix.SizeofUcred))...)
 	}
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
 	//
 	// We ignore args.Creds because we don't translate sandbox socket options to
-	// host socket options, so the fd won't have the SO_PASSCRED option set. By
-	// default, the sentry will always return credentials with PID 0 and UID/GID
-	// 65534 (nobody).
+	// host socket options. An imported host socket may still have SO_PASSCRED
+	// set, but ExtractFDs drops the host credentials. By default, the sentry
+	// will always return credentials with PID 0 and UID/GID 65534 (nobody).
 	out := RecvOutput{Source: Address{Addr: c.addr}}
 	var err error
 	var controlLen uint64
