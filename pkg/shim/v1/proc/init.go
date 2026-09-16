@@ -48,6 +48,9 @@ const (
 	statusRunning = "running"
 )
 
+// runscTimeout bounds Kill, KillAll, Stats and Status, so a wedged sandbox cannot hold p.mu forever.
+var runscTimeout = 30 * time.Second
+
 // Init represents an initial process for a container.
 type Init struct {
 	wg        sync.WaitGroup
@@ -218,6 +221,9 @@ func (p *Init) ExitedAt() time.Time {
 func (p *Init) Status(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
+	defer cancel()
 
 	return p.initState.State(ctx)
 }
@@ -430,6 +436,8 @@ func (p *Init) Kill(ctx context.Context, signal uint32, all bool) error {
 }
 
 func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
+	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
+	defer cancel()
 	var (
 		killErr error
 		backoff = 100 * time.Millisecond
@@ -486,8 +494,10 @@ func (p *Init) KillAll(context context.Context) {
 	p.killAllLocked(context)
 }
 
-func (p *Init) killAllLocked(context context.Context) {
-	if err := p.killRuntime(context, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
+func (p *Init) killAllLocked(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
+	defer cancel()
+	if err := p.killRuntime(ctx, int(unix.SIGKILL), &runsccmd.KillOpts{All: true}); err != nil {
 		log.L.Warningf("Ignoring error killing container %q: %v", p.id, err)
 	}
 }
@@ -563,6 +573,9 @@ func (p *Init) exec(path string, r *ExecConfig) (extension.Process, error) {
 func (p *Init) Stats(ctx context.Context, id string) (*runc.Stats, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, runscTimeout)
+	defer cancel()
 
 	return p.initState.Stats(ctx, id)
 }
