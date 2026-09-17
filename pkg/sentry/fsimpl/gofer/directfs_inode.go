@@ -824,13 +824,13 @@ func (i *directfsInode) getDirentsLocked(recordDirent func(name string, key inoK
 }
 
 // Precondition: fs.renameMu is locked.
-func (i *directfsInode) connect(ctx context.Context, sockType linux.SockType, euid lisafs.UID, egid lisafs.GID, d *dentry) (int, error) {
+func (i *directfsInode) connect(ctx context.Context, sockType linux.SockType, euid lisafs.UID, egid lisafs.GID, groups []lisafs.GID, d *dentry) (int, error) {
 	// There are no filesystems mounted in the sandbox process's mount namespace.
 	// So we can't perform absolute path traversals. So fallback to using lisafs.
 	if err := i.ensureLisafsControlFD(ctx, d); err != nil {
 		return -1, err
 	}
-	return i.controlFDLisa.Connect(ctx, sockType, euid, egid)
+	return i.controlFDLisa.Connect(ctx, sockType, euid, egid, groups)
 }
 
 func (i *directfsInode) readlink() (string, error) {

@@ -491,6 +491,12 @@ type ControlFDImpl interface {
 	// On the server, ConnectWithCreds has a read concurrency guarantee.
 	ConnectWithCreds(sockType uint32, uid UID, gid GID) (int, error)
 
+	// ConnectWithGroups is ConnectWithCreds with the given supplementary groups
+	// applied as well.
+	//
+	// On the server, ConnectWithGroups has a read concurrency guarantee.
+	ConnectWithGroups(sockType uint32, uid UID, gid GID, groups []GID) (int, error)
+
 	// BindAt creates a host unix domain socket of type sockType, bound to
 	// the given namt of type sockType, bound to the given name. It returns
 	// a ControlFD that can be used for path operations on the socket, a
