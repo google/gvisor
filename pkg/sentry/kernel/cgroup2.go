@@ -158,10 +158,14 @@ type Cgroup2FS interface {
 	RUnlockTree()
 
 	// StealControllerLocked transfers ownership of the controller
-	// away from the v2 hierarchy if a v1 hierarchy mounts it.
+	// away from the v2 hierarchy if a v1 hierarchy mounts it. Callers
+	// must have called LockTree, and must not hold CgroupRegistry.mu:
+	// the implementation acquires cgroup2fs task locks, which may not
+	// be taken under the (leaf) registry mutex.
 	StealControllerLocked(ctx context.Context, cType Cgroup2Ctrl) error
 	// ReturnControllerLocked returns ownership of the controller
-	// to the v2 hierarchy when a v1 hierarchy unmounts it.
+	// to the v2 hierarchy when a v1 hierarchy unmounts it. The locking
+	// preconditions of StealControllerLocked apply.
 	ReturnControllerLocked(ctx context.Context, cType Cgroup2Ctrl)
 }
 

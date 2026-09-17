@@ -22,6 +22,7 @@ package cgroup2fs
 //     kernel.TaskSet.mu
 //       cgroup2fs.filesystem.tasksMu
 //         kernel.SignalHandlers.mu
+//           kernel.CgroupRegistry.mu
 //         kernel.Task.cgroup2Mu
 //
 // The treeMu is an analogue to the kernel's cgroup_mutex, whereas
