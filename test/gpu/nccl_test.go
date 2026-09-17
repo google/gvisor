@@ -42,6 +42,15 @@ func runNCCL(ctx context.Context, t *testing.T, testName string) {
 }
 
 func TestNCCL(t *testing.T) {
+	ctx := context.Background()
+	cudaVersion, err := dockerutil.MaxSuportedCUDAVersionWithImage(ctx, t, "gpu/nccl-tests")
+	if err != nil {
+		t.Fatalf("failed to get CUDA version: %v", err)
+	}
+	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
+		t.Skipf("CUDA version %s is not at least 12.8, skipping test", cudaVersion)
+	}
+
 	testNames := []string{
 		"all_gather_perf",
 		"all_reduce_perf",
@@ -55,7 +64,6 @@ func TestNCCL(t *testing.T) {
 		"sendrecv_perf",
 	}
 
-	ctx := context.Background()
 	for _, test := range testNames {
 		t.Run(test, func(t *testing.T) {
 			runNCCL(ctx, t, test)
