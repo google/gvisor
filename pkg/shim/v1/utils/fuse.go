@@ -16,15 +16,19 @@ package utils
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/containerd/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 var (
@@ -204,4 +208,126 @@ func abortFuseConnection(minor uint32) error {
 		return fmt.Errorf("failed to write to fuse abort file %q: %w", abortPath, err)
 	}
 	return nil
+}
+
+// AbortContainerFuse aborts FUSE connections for the container, first attempting
+// via podUID, then falling back to reading the bundle's OCI spec mounts if podUID is empty.
+func AbortContainerFuse(podUID, bundleDir, containerID string) error {
+	log.L.Debugf("AbortContainerFuse called: containerID=%q, podUID=%q, bundleDir=%q", containerID, podUID, bundleDir)
+	if podUID != "" {
+		if err := AbortPodFuseConnections(podUID); err != nil {
+			log.L.Warningf("Failed to abort pod FUSE connections for container %q (pod %q): %v", containerID, podUID, err)
+			return err
+		}
+		log.L.Infof("AbortPodFuseConnections succeeded for container %q (pod %q)", containerID, podUID)
+		return nil
+	}
+	if bundleDir != "" {
+		s, err := ReadSpec(bundleDir)
+		if err != nil {
+			log.L.Warningf("ReadSpec failed for container %q bundle %q: %v", containerID, bundleDir, err)
+			return err
+		}
+		if err := AbortMountFuseConnections(s.Mounts); err != nil {
+			log.L.Warningf("Failed to abort mount FUSE connections for container %q: %v", containerID, err)
+			return err
+		}
+		log.L.Infof("AbortMountFuseConnections succeeded for container %q", containerID)
+		return nil
+	}
+	log.L.Warningf("AbortContainerFuse: neither podUID nor bundleDir provided for container %q", containerID)
+	return fmt.Errorf("neither podUID nor bundleDir provided for container %q", containerID)
+}
+
+type containerStateJSON struct {
+	GoferPid int `json:"goferPid"`
+}
+
+func readGoferPIDFromStateFile(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var s containerStateJSON
+	if err := json.Unmarshal(data, &s); err != nil {
+		log.L.Debugf("FindGoferPID: failed to unmarshal JSON from %s: %v", path, err)
+		return 0
+	}
+	if s.GoferPid > 0 {
+		log.L.Debugf("FindGoferPID: found goferPid=%d in %s", s.GoferPid, path)
+		return s.GoferPid
+	}
+	return 0
+}
+
+// FindGoferPID locates the container state file in rootDir and returns the gofer PID.
+// It checks set paths (OCI bundle spec annotation and root container ID) without globbing.
+// Returns 0 if not found or on error.
+func FindGoferPID(rootDir, bundleDir, containerID string) int {
+	if rootDir == "" || containerID == "" {
+		return 0
+	}
+
+	// 1. For a subcontainer, resolve the sandbox ID from the OCI spec in the bundle.
+	if bundleDir != "" {
+		if s, err := ReadSpec(bundleDir); err == nil {
+			if sbID, ok := specutils.SandboxID(s); ok && sbID != "" && sbID != containerID {
+				path := filepath.Join(rootDir, fmt.Sprintf("%s_sandbox:%s.state", containerID, sbID))
+				if pid := readGoferPIDFromStateFile(path); pid > 0 {
+					return pid
+				}
+			}
+		}
+	}
+
+	// 2. For a root/sandbox container, the sandbox ID matches the container ID.
+	path := filepath.Join(rootDir, fmt.Sprintf("%s_sandbox:%s.state", containerID, containerID))
+	return readGoferPIDFromStateFile(path)
+}
+
+// IsProcessDeadOrZombie checks /proc/<pid>/status to determine if a process is in zombie or dead state.
+// Returns true if the process is dead, zombie, or cannot be read.
+func IsProcessDeadOrZombie(pid int) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return true
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "State:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				state := fields[1]
+				return state == "Z" || state == "X"
+			}
+			break
+		}
+	}
+	return false
+}
+
+// ErrProcessWaitStopped is returned by WaitForProcessExit if stopCh is signaled first.
+var ErrProcessWaitStopped = errors.New("process wait stopped by caller")
+
+// WaitForProcessExit blocks until the process with the given pid exits, becomes a zombie,
+// or stopCh is closed/receives a value.
+func WaitForProcessExit(pid int, stopCh <-chan struct{}) error {
+	if IsProcessDeadOrZombie(pid) {
+		return nil
+	}
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			return ErrProcessWaitStopped
+		case <-ticker.C:
+			if IsProcessDeadOrZombie(pid) {
+				return nil
+			}
+			if err := unix.Kill(pid, 0); errors.Is(err, unix.ESRCH) {
+				return nil
+			}
+		}
+	}
 }

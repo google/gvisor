@@ -43,7 +43,10 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 )
 
-const statusStopped = "stopped"
+const (
+	statusStopped = "stopped"
+	statusRunning = "running"
+)
 
 // Init represents an initial process for a container.
 type Init struct {
@@ -220,6 +223,35 @@ func (p *Init) Status(ctx context.Context) (string, error) {
 }
 
 func (p *Init) state(ctx context.Context) (string, error) {
+	if p.FuseAbort {
+		if p.isExited() {
+			return statusStopped, nil
+		}
+		// State itself can hang if the sandbox is wedged in Kernel.Pause because of
+		// FUSE connections. Ensure we timeout to abort the FUSE connections.
+		stateCtx, stateCancel := context.WithTimeout(ctx, 1*time.Second)
+		c, err := p.runtime.State(stateCtx, p.id)
+		stateCancel()
+		if err != nil {
+			if errors.Is(stateCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+				log.L.Warningf("State query for container %q wedged in Kernel.Pause, aborting FUSE", p.id)
+				p.abortFuse()
+				// Retry state query once with a fresh context now that FUSE connections are aborted.
+				retryCtx, retryCancel := context.WithTimeout(ctx, 1*time.Second)
+				c, retryErr := p.runtime.State(retryCtx, p.id)
+				retryCancel()
+				if retryErr == nil {
+					return p.convertStatus(c.Status), nil
+				}
+				return statusRunning, nil
+			}
+			if strings.Contains(err.Error(), "does not exist") {
+				return statusStopped, nil
+			}
+			return "", p.runtimeError(err, "OCI runtime state failed")
+		}
+		return p.convertStatus(c.Status), nil
+	}
 	c, err := p.runtime.State(ctx, p.id)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
@@ -270,6 +302,9 @@ func (p *Init) start(ctx context.Context, restoreConf *extension.RestoreConfig) 
 			Status:    status,
 		}
 	}()
+	if p.FuseAbort {
+		go p.monitorGofer(ctx)
+	}
 	return nil
 }
 
@@ -406,8 +441,25 @@ func (p *Init) kill(ctx context.Context, signal uint32, all bool) error {
 		timeout = 10 * time.Second
 	}
 	for start := time.Now(); time.Since(start) < timeout; {
-		state, err := p.initState.State(ctx)
-		if err != nil {
+		var (
+			state string
+			err   error
+		)
+		if p.FuseAbort {
+			// State itself can hang if the sandbox is wedged in Kernel.Pause because of
+			// FUSE connections. Ensure we timeout to abort the FUSE connections.
+			stateCtx, stateCancel := context.WithTimeout(ctx, 1*time.Second)
+			state, err = p.initState.State(stateCtx)
+			stateCancel()
+			if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				log.L.Warningf("State query for container %q wedged in Kernel.Pause; aborting FUSE connections", p.id)
+				p.abortFuse()
+				state = statusStopped
+			}
+		} else {
+			state, err = p.initState.State(ctx)
+		}
+		if err != nil && state != statusStopped {
 			return p.runtimeError(err, "OCI runtime state failed")
 		}
 		// For runsc, signal only works when container is running state.
@@ -440,48 +492,27 @@ func (p *Init) killAllLocked(context context.Context) {
 	}
 }
 
-func (p *Init) abortFuse() {
-	if !p.FuseAbort {
-		return
-	}
-	// Abort pod FUSE connections if the pod UID is set.
-	if p.K8sPodUID != "" {
-		if err := utils.AbortPodFuseConnections(p.K8sPodUID); err != nil {
-			log.L.Warningf("Failed to abort pod FUSE connections for container %q (pod %q): %v", p.id, p.K8sPodUID, err)
-		}
-		return
-	}
-	// If we don't have a pod UID, abort the container's FUSE connections by looking
-	// at the OCI spec.
-	if p.Bundle != "" {
-		if s, err := utils.ReadSpec(p.Bundle); err == nil {
-			if err := utils.AbortMountFuseConnections(s.Mounts); err != nil {
-				log.L.Warningf("Failed to abort mount FUSE connections for container %q: %v", p.id, err)
-			}
-		}
-	}
-}
-
 func (p *Init) killRuntime(ctx context.Context, signal int, opts *runsccmd.KillOpts) error {
 	if p.FuseAbort {
-		// Only arm watchdog for forced kills (SIGKILL) or when killing all processes (teardown).
-		// For graceful signals like SIGTERM to a single process, allow standard execution
-		// to respect the application's termination grace period.
-		if signal == int(unix.SIGKILL) || (opts != nil && opts.All) {
-			timeout := 1 * time.Second
-			if opts != nil && opts.All {
-				timeout = 500 * time.Millisecond
-			}
-			watchdogCtx, cancel := context.WithTimeout(ctx, timeout)
-			err := p.runtime.Kill(watchdogCtx, p.id, signal, opts)
-			cancel()
-			if err != nil && errors.Is(watchdogCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-				log.L.Warningf("Container %q kill wedged in Kernel.Pause, aborting FUSE connections", p.id)
-				p.abortFuse()
-				return p.runtime.Kill(ctx, p.id, signal, opts)
-			}
-			return err
+		// Increase the timeout for FUSE abort cases so we can attempt to kill the container
+		// gracefully with SIGTERM.
+		timeout := 2 * time.Second
+		if signal == int(unix.SIGKILL) {
+			timeout = 1 * time.Second
 		}
+		// If all is set, we need to kill all processes in the container.
+		if opts != nil && opts.All {
+			timeout = 500 * time.Millisecond
+		}
+		watchdogCtx, cancel := context.WithTimeout(ctx, timeout)
+		err := p.runtime.Kill(watchdogCtx, p.id, signal, opts)
+		cancel()
+		if err != nil && errors.Is(watchdogCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			log.L.Warningf("Container %q kill (signal %d) wedged in Kernel.Pause, aborting FUSE connections", p.id, signal)
+			p.abortFuse()
+			return p.runtime.Kill(ctx, p.id, signal, opts)
+		}
+		return err
 	}
 	return p.runtime.Kill(ctx, p.id, signal, opts)
 }

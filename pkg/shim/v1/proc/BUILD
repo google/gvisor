@@ -11,6 +11,7 @@ go_library(
         "deleted_state.go",
         "exec.go",
         "exec_state.go",
+        "fuse.go",
         "init.go",
         "init_state.go",
         "io.go",
