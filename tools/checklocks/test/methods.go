@@ -97,7 +97,7 @@ type ptrToTestMethodsWithParameters *testMethodsWithParameters
 // +checklocks:a.mu
 func (t *testMethodsWithParameters) methodLockedWithParameters(a *testMethodsWithParameters, b *testMethodsWithParameters) {
 	t.guardedField = a.guardedField
-	b.guardedField = a.guardedField // +checklocksfail
+	b.guardedField = a.guardedField // +checklocksfail=locks: &({param:a}.mu) exclusively,&({param:t}.mu) exclusively
 }
 
 // +checklocks:t.mu
