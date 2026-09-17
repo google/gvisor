@@ -188,3 +188,13 @@ func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 		c.dieAndDumpExitReason(bluepillArchContext(context))
 	}
 }
+
+// autiaspHandler handles unexpected SIGILL caused by ARM64 pointer authentication
+// (autiasp/autia*/autib*) mismatch when returning from vDSO functions.
+//
+//go:nosplit
+func autiaspHandler(context *arch.SignalContext64) {
+	disableHostPAC()
+	context.Regs[30] &^= 0xffff000000000000
+	context.Pc += 4
+}
