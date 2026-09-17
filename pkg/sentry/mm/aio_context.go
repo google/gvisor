@@ -29,13 +29,15 @@ import (
 //
 // +stateify savable
 type aioManager struct {
-	// mu protects below.
 	mu aioManagerMutex `state:"nosave"`
 
-	// aioContexts is the set of asynchronous I/O contexts.
+	// contexts is the set of asynchronous I/O contexts.
+	//
+	// +checklocks:mu
 	contexts map[uint64]*AIOContext
 }
 
+// +checklocksexclude:mm.aioManager.mu
 func (mm *MemoryManager) destroyAIOManager(ctx context.Context) {
 	mm.aioManager.mu.Lock()
 	defer mm.aioManager.mu.Unlock()
@@ -48,6 +50,8 @@ func (mm *MemoryManager) destroyAIOManager(ctx context.Context) {
 // newAIOContext creates a new context for asynchronous I/O.
 //
 // Returns false if 'id' is currently in use.
+//
+// +checklocksexclude:a.mu
 func (a *aioManager) newAIOContext(events uint32, id uint64) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -63,13 +67,16 @@ func (a *aioManager) newAIOContext(events uint32, id uint64) bool {
 	return true
 }
 
-// destroyAIOContext destroys an asynchronous I/O context. It doesn't wait for
-// for pending requests to complete. Returns the destroyed AIOContext so it can
-// be drained.
+// destroyAIOContextLocked destroys an asynchronous I/O context while holding
+// mm.aioManager.mu. It returns the context for draining without waiting for
+// pending requests to complete.
 //
 // Nil is returned if the context does not exist.
 //
-// Precondition: mm.aioManager.mu is locked.
+// The caller must not hold the target context's mu. checklocks cannot name
+// that mutex in this contract because the context comes from the map.
+//
+// +checklocks:mm.aioManager.mu
 func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64) *AIOContext {
 	aioCtx, ok := mm.aioManager.contexts[id]
 	if !ok {
@@ -84,6 +91,8 @@ func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64)
 // lookupAIOContext looks up the given context.
 //
 // Returns false if context does not exist.
+//
+// +checklocksexclude:a.mu
 func (a *aioManager) lookupAIOContext(id uint64) (*AIOContext, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -106,10 +115,11 @@ type AIOContext struct {
 	// requestReady is the notification channel used for all requests.
 	requestReady chan struct{} `state:"nosave"`
 
-	// mu protects below.
 	mu aioContextMutex `state:"nosave"`
 
 	// results is the set of completed requests.
+	//
+	// +checklocks:mu
 	results ioList
 
 	// maxOutstanding is the maximum number of outstanding entries; this value
@@ -119,13 +129,19 @@ type AIOContext struct {
 	// outstanding is the number of requests outstanding; this will effectively
 	// be the number of entries in the result list or that are expected to be
 	// added to the result list.
+	//
+	// +checklocks:mu
 	outstanding uint32
 
 	// dead is set when the context is destroyed.
+	//
+	// +checklocks:mu
 	dead bool `state:"zerovalue"`
 }
 
 // destroy marks the context dead.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) destroy() {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -133,7 +149,7 @@ func (aio *AIOContext) destroy() {
 	aio.checkForDone()
 }
 
-// Preconditions: ctx.mu must be held by caller.
+// +checklocks:aio.mu
 func (aio *AIOContext) checkForDone() {
 	if aio.dead && aio.outstanding == 0 {
 		close(aio.requestReady)
@@ -143,6 +159,8 @@ func (aio *AIOContext) checkForDone() {
 
 // Prepare reserves space for a new request, returning nil if available.
 // Returns EAGAIN if the context is busy and EINVAL if the context is dead.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) Prepare() error {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -160,6 +178,8 @@ func (aio *AIOContext) Prepare() error {
 
 // PopRequest pops a completed request if available, this function does not do
 // any blocking. Returns false if no request is available.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) PopRequest() (any, bool) {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -179,6 +199,8 @@ func (aio *AIOContext) PopRequest() (any, bool) {
 
 // FinishRequest finishes a pending request. It queues up the data
 // and notifies listeners.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) FinishRequest(data any) {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -197,6 +219,8 @@ func (aio *AIOContext) FinishRequest(data any) {
 // WaitChannel returns a channel that is notified when an AIO request is
 // completed. Returns nil if the context is destroyed and there are no more
 // outstanding requests.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) WaitChannel() chan struct{} {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -204,6 +228,8 @@ func (aio *AIOContext) WaitChannel() chan struct{} {
 }
 
 // Dead returns true if the context has been destroyed.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) Dead() bool {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -211,6 +237,8 @@ func (aio *AIOContext) Dead() bool {
 }
 
 // CancelPendingRequest forgets about a request that hasn't yet completed.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) CancelPendingRequest() {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -223,6 +251,8 @@ func (aio *AIOContext) CancelPendingRequest() {
 }
 
 // Drain drops all completed requests. Pending requests remain untouched.
+//
+// +checklocksexclude:aio.mu
 func (aio *AIOContext) Drain() {
 	aio.mu.Lock()
 	defer aio.mu.Unlock()
@@ -305,6 +335,10 @@ func (m *aioMappable) RemoveMapping(context.Context, memmap.MappingSpace, hostar
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
+//
+// The caller must not hold ms's AIO manager mutex or the source context's
+// mutex. checklocks cannot express these entry exclusions through the
+// interface-typed mapping space and the context map lookup.
 func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
@@ -363,6 +397,10 @@ func (m *aioMappable) InvalidateUnsavable(ctx context.Context) error {
 // NewAIOContext creates a new context for asynchronous I/O.
 //
 // NewAIOContext is analogous to Linux's fs/aio.c:ioctx_alloc().
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+// +checklocksexclude:mm.aioManager.mu
 func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint64, error) {
 	// libaio get_ioevents() expects context "handle" to be a valid address.
 	// libaio peeks inside looking for a magic number. This function allocates
@@ -396,6 +434,10 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 
 // DestroyAIOContext destroys an asynchronous I/O context. It returns the
 // destroyed context. nil if the context does not exist.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+// +checklocksexclude:mm.aioManager.mu
 func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) *AIOContext {
 	if !mm.isValidAddr(ctx, id) {
 		return nil
@@ -417,6 +459,10 @@ func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) *AIOC
 
 // LookupAIOContext looks up the given context. It returns false if the context
 // does not exist.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+// +checklocksexclude:mm.aioManager.mu
 func (mm *MemoryManager) LookupAIOContext(ctx context.Context, id uint64) (*AIOContext, bool) {
 	aioCtx, ok := mm.aioManager.lookupAIOContext(id)
 	if !ok {
@@ -433,6 +479,9 @@ func (mm *MemoryManager) LookupAIOContext(ctx context.Context, id uint64) (*AIOC
 
 // isValidAddr determines if the address `id` is valid. (Linux also reads 4
 // bytes from id).
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) isValidAddr(ctx context.Context, id uint64) bool {
 	var buf [4]byte
 	_, err := mm.CopyIn(ctx, hostarch.Addr(id), buf[:], usermem.IOOpts{})
