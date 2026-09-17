@@ -48,7 +48,7 @@ COMMA := ,
 ##     make build OPTIONS="" TARGETS="//runsc"'
 ##
 help: ## Shows all targets and help from the Makefile (this message).
-	@grep --no-filename -E '^([a-z.A-Z_%-]+:.*?|)##' $(MAKEFILE_LIST) | \
+	@grep -hE '^([a-z.A-Z_%-]+:.*?|)##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = "(:.*?|)## ?"}; { \
 			if (length($$1) > 0) { \
 				printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2; \
@@ -86,6 +86,10 @@ sudo: ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make su
 .PHONY: sudo
 
 # Load image helpers.
+#
+# UNAME_S is defined here (before any includes) and shared with tools/images.mk
+# and tools/bazel.mk, which guard their own definitions with `?=`.
+UNAME_S := $(shell uname -s)
 include tools/images.mk
 
 # Load all bazel wrappers.
@@ -130,8 +134,16 @@ DOCKER_DAEMON_CONFIG_PATH ?= /etc/docker/daemon.json
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
 SYSFS_GROUP_PATH := /sys/fs/cgroup
-ifeq ($(shell stat -f -c "%T" "$(SYSFS_GROUP_PATH)" 2>/dev/null),cgroup2fs)
+# GNU and BSD stat use incompatible flags (-f/-c are swapped), and macos
+# does not have /sys/fs/cgroup at all. Only probe the filesystem type on
+# Linux, where GNU stat is present.
+ifeq ($(UNAME_S),Linux)
+SYSFS_GROUP_FSTYPE := $(shell stat -f -c "%T" "$(SYSFS_GROUP_PATH)" 2>/dev/null)
+ifeq ($(SYSFS_GROUP_FSTYPE),cgroup2fs)
 CGROUPV2 := true
+else
+CGROUPV2 := false
+endif
 else
 CGROUPV2 := false
 endif
@@ -157,7 +169,7 @@ configure_noreload = \
 
 reload_docker = \
   $(call header,DOCKER RELOAD); \
-  ( timeout --kill-after=20s 15s bash -xc "$(DOCKER_RELOAD_COMMAND)" || timeout --kill-after=20s 15s bash -xc "$(DOCKER_RELOAD_COMMAND)" || timeout --kill-after=20s 15s bash -xc "$(DOCKER_RELOAD_COMMAND)" ) && \
+  ( $(call timeout_cmd,--kill-after=20s 15s,bash -xc "$(DOCKER_RELOAD_COMMAND)") || $(call timeout_cmd,--kill-after=20s 15s,bash -xc "$(DOCKER_RELOAD_COMMAND)") || $(call timeout_cmd,--kill-after=20s 15s,bash -xc "$(DOCKER_RELOAD_COMMAND)") ) && \
   sleep 3 && \
   ( $(MAKE) ensure-bazel-server || echo 'Failed to reload bazel-server container' >&2 ) && \
   if test -f /etc/docker/daemon.json; then \

@@ -81,7 +81,10 @@ kind export kubeconfig --name "${KIND_CLUSTER_NAME}" --kubeconfig "${KUBECONFIG_
 # control plane's IP address and rewrite the hostname inside kubeconfig_internal to it.
 CONTROL_PLANE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${KIND_CLUSTER_NAME}-control-plane")
 echo "Rewriting internal kubeconfig to use control plane IP: ${CONTROL_PLANE_IP}"
-sed -i "s/gvisor-e2e-control-plane/${CONTROL_PLANE_IP}/g" "${KUBECONFIG_INTERNAL_PATH}"
+# Use `-i.bak` rather than plain `-i`, which is a GNU-only extension;
+# BSD sed (macOS) requires a non-empty backup suffix.
+sed -i.bak "s/gvisor-e2e-control-plane/${CONTROL_PLANE_IP}/g" "${KUBECONFIG_INTERNAL_PATH}"
+rm -f "${KUBECONFIG_INTERNAL_PATH}.bak"
 
 # Install runsc on the node
 NODE="${KIND_CLUSTER_NAME}-control-plane"

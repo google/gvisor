@@ -62,14 +62,28 @@ PLUGIN_STACK_FLAGS := --config=plugin-tldk
 # Bazel container configuration (see below).
 USER := $(shell whoami)
 REALPATH_M := $(REPO_DIR)/tools/compat/realpath.py
-HASH := $(shell $(REALPATH_M) $(CURDIR) | md5sum | cut -c1-8)
-UNAME_S := $(shell uname -s)
+UNAME_S ?= $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+# macOS has no GNU coreutils; use the native `md5 -q` instead of `md5sum`.
+HASH_CMD := md5 -q
+else
+HASH_CMD := md5sum
+endif
+HASH := $(shell $(REALPATH_M) $(CURDIR) | $(HASH_CMD) | cut -c1-8)
 ifeq ($(UNAME_S),Darwin)
 DOCKER_HOST ?= unix://$(HOME)/.docker/run/docker.sock
 STAT_G := stat -f '%g'
 else
 DOCKER_HOST ?= unix:///var/run/docker.sock
 STAT_G := stat -c '%g'
+endif
+# `xargs -r` (don't run the command with no input) is a GNU extension; BSD
+# xargs (macOS) does not support it. The xargs invocations below guard against
+# empty input in their command bodies, so empty is safe without `-r`.
+ifeq ($(UNAME_S),Darwin)
+XARGS_R :=
+else
+XARGS_R := -r
 endif
 BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
 BUILDER_HOSTNAME := $(BUILDER_NAME)
@@ -257,6 +271,20 @@ endif
 endif
 endif
 
+# `timeout` (GNU coreutils) is not installed on macOS by default. `gtimeout`
+# is what Homebrew's coreutils provides. If neither is available, run commands
+# without a timeout rather than failing.
+TMOUT := $(firstword $(shell command -v timeout 2>/dev/null) $(shell command -v gtimeout 2>/dev/null))
+
+# timeout_cmd runs $(2) through `timeout` with flags $(1); the timeout is
+# dropped entirely when no timeout binary exists (e.g. macOS without
+# coreutils installed).
+ifneq ($(TMOUT),)
+timeout_cmd = $(TMOUT) $(1) $(2)
+else
+timeout_cmd = $(2)
+endif
+
 # Top-level functions.
 #
 # This command runs a bazel server, and the container sticks around
@@ -266,10 +294,10 @@ endif
 # container in order to perform work via the bazel client.
 ifeq ($(DOCKER_BUILD),true)
 wrapper = docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(1)
-wrapper_timeout = timeout $(1) docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(2)
+wrapper_timeout = $(call timeout_cmd,$(1),docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(2))
 else
 wrapper = $(1)
-wrapper_timeout = timeout $(1) $(2)
+wrapper_timeout = $(call timeout_cmd,$(1),$(2))
 endif
 
 bazel-shutdown: ## Shuts down a running bazel server.
@@ -279,7 +307,7 @@ ifeq ($(DOCKER_BUILD),true)
 # already having been terminated. So this uses multiple ways to try to get the
 # container to exit, and ignores which ones work and which ones don't.
 # Instead, it just checks that the container no longer exists by the end of it.
-	@timeout --signal=KILL 10s $(DOCKER_CLI_PATH) wait $(DOCKER_NAME) 2>/dev/null || true
+	@$(call timeout_cmd,--signal=KILL 10s,$(DOCKER_CLI_PATH) wait $(DOCKER_NAME)) 2>/dev/null || true
 	@$(DOCKER_CLI_PATH) stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
 # Double check that the container isn't running.
 	@bash -c "! $(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null"
@@ -353,10 +381,10 @@ build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
   $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(1)) \
-  | $(call wrapper,xargs -r -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"') \
+  | $(call wrapper,xargs $(XARGS_R) -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"') \
   | sed 's~^$(HOME)/\.cache/bazel/~$(patsubst %/,%,$(BAZEL_CACHE))/~' \
-  | xargs -r -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"' \
-  | xargs -r -n 2 bash -c 'set -euo pipefail; $(2)')
+  | xargs $(XARGS_R) -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"' \
+  | xargs $(XARGS_R) -n 2 bash -c 'test -n "$$0" || exit 0; set -euo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0")
