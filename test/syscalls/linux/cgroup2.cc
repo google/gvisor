@@ -1583,6 +1583,83 @@ TEST_F(Cgroup2Test, V1MountSucceedsAndV2OwnershipReturnsOnUnmount) {
   EXPECT_THAT(available, ::testing::HasSubstr("pids"));
 }
 
+// Exercises cgroup.kill while the memory controller is mounted in a v1
+// hierarchy. Stealing the memory controller from v2 acquires the v2 tasks
+// lock under the cgroup registry lock, and cgroup.kill sends signals while
+// holding the same tasks lock; task creation meanwhile enters the initial v1
+// cgroups while holding the signal handlers lock. Together these form a lock
+// order cycle that gVisor builds with lock dependency checking (the "lockdep"
+// go build tag) detect and panic on.
+TEST_F(Cgroup2Test, KillWithV1MemoryMounted) {
+  auto v2_mount = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  Mounter v2_mounter(std::move(v2_mount));
+  auto v2_cg = ASSERT_NO_ERRNO_AND_VALUE(v2_mounter.MountCgroup2fs());
+
+  // Skip if v2 doesn't have memory to begin with.
+  auto available =
+      ASSERT_NO_ERRNO_AND_VALUE(v2_cg.ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(available, "memory"));
+  // Skip if we can't drain memory from below v2 root.
+  PosixError drain =
+      v2_cg.WriteControlFile("cgroup.subtree_control", "-memory");
+  SKIP_IF(drain.errno_value() == EBUSY);
+
+  // Steal the memory controller away from v2 by mounting it in v1.
+  auto v1_mount = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  Mounter v1_mounter(std::move(v1_mount));
+  auto v1_cg = ASSERT_NO_ERRNO_AND_VALUE(v1_mounter.MountCgroupfs("memory"));
+
+  Cgroup child_cg =
+      ASSERT_NO_ERRNO_AND_VALUE(v2_cg.CreateChild("kill_v1mem_test"));
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(wfd.get());
+    char token;
+    if (read(rfd.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  rfd.reset();
+
+  ASSERT_NO_ERRNO(child_cg.Enter(pid));
+
+  // Killing the cgroup sends SIGKILL to its tasks while the stolen memory
+  // controller's v1 hierarchy is mounted.
+  EXPECT_TRUE(child_cg.WriteControlFile("cgroup.kill", "1").ok());
+  wfd.reset();
+
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGKILL);
+
+  // The killed task may leave the cgroup asynchronously; retry the removal.
+  absl::Time deadline = absl::Now() + absl::Seconds(5);
+  PosixError err;
+  while (true) {
+    err = Rmdir(child_cg.Path());
+    if (err.ok() || absl::Now() >= deadline) {
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+  EXPECT_NO_ERRNO(err);
+
+  // Return the memory controller to v2.
+  ASSERT_NO_ERRNO(v1_mounter.Unmount(v1_cg));
+  if (drain.ok()) {
+    v2_cg.WriteControlFile("cgroup.subtree_control", "+memory").IgnoreError();
+  }
+}
+
 TEST_F(Cgroup2Test, MemoryCurrent) {
   DisableSave ds;  // Avoid S/R memory overhead.
   ASSERT_NO_ERRNO(c().Enter(getpid()));

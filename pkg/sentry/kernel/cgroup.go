@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -377,6 +378,17 @@ func (r *CgroupRegistry) FindHierarchy(ctx context.Context, name string, ctypes 
 	c2fs := r.v2fs.Impl().(Cgroup2FS)
 	c2fs.LockTree()
 	defer c2fs.UnlockTree()
+	// If a dying hierarchy is pruned below, its stolen controllers must be
+	// returned to the v2 hierarchy. That updates task state under cgroup2fs
+	// locks, which must not be acquired under the registry mutex, so
+	// it must happen after r.mu is released but while the tree lock is still
+	// held.
+	var pendingReturns []Cgroup2Ctrl
+	defer func() {
+		for _, cType := range pendingReturns {
+			c2fs.ReturnControllerLocked(ctx, cType)
+		}
+	}()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -391,7 +403,7 @@ func (r *CgroupRegistry) FindHierarchy(ctx context.Context, name string, ctypes 
 		if h.match(ctypes) {
 			if !h.fs.TryIncRef() {
 				// May be racing with filesystem destruction, see below.
-				r.unregisterLocked(ctx, h.id)
+				pendingReturns = r.unregisterLocked(h.id)
 				return nil, nil
 			}
 			return h.fs, nil
@@ -420,7 +432,7 @@ func (r *CgroupRegistry) FindHierarchy(ctx context.Context, name string, ctypes 
 				// uniqueness of controllers enforced by Register, drop the
 				// dying hierarchy now. The eventual unregister by the FS
 				// teardown will become a no-op.
-				r.unregisterLocked(ctx, h.id)
+				pendingReturns = r.unregisterLocked(h.id)
 				return nil, nil
 			}
 			return h.fs, nil
@@ -463,16 +475,27 @@ func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerT
 // hierarchy. If any controller is already registered, the function returns an
 // error without modifying the registry. Register sets the hierarchy ID for the
 // filesystem on success.
+//
+// The registry mutex is a leaf: task creation acquires it while holding the
+// new thread group's signal handlers mutex, so no other lock may be acquired
+// under it. Stealing a controller from the v2 hierarchy updates task state
+// under cgroup2fs locks, so the steal runs between two r.mu critical
+// sections: validate, steal, publish. This is safe because every registry
+// mutator (Register, Unregister, FindHierarchy) holds the v2 tree lock
+// exclusively for its full duration, so the registry cannot change between
+// the validation and the publication.
 func (r *CgroupRegistry) Register(ctx context.Context, name string, cs []CgroupController, fs cgroupFS) error {
 	c2fs := r.v2fs.Impl().(Cgroup2FS)
 	c2fs.LockTree()
 	defer c2fs.UnlockTree()
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if name == "" && len(cs) == 0 {
 		return fmt.Errorf("can't register hierarchy with both no controllers and no name")
 	}
+
+	r.mu.Lock()
+	cu := cleanup.Make(r.mu.Unlock)
+	defer cu.Clean()
 
 	for _, c := range cs {
 		n := c.Type()
@@ -489,6 +512,8 @@ func (r *CgroupRegistry) Register(ctx context.Context, name string, cs []CgroupC
 	if err != nil {
 		return err
 	}
+	cu.Release()
+	r.mu.Unlock()
 
 	for i, c := range cs {
 		if c2Type, ok := toCgroup2Ctrl(c.Type()); ok {
@@ -514,6 +539,7 @@ func (r *CgroupRegistry) Register(ctx context.Context, name string, cs []CgroupC
 		controllers: make(map[CgroupControllerType]CgroupController),
 		fs:          fs.VFSFilesystem(),
 	}
+	r.mu.Lock()
 	for _, c := range cs {
 		n := c.Type()
 		r.controllers[n] = c
@@ -523,6 +549,7 @@ func (r *CgroupRegistry) Register(ctx context.Context, name string, cs []CgroupC
 	if name != "" {
 		r.hierarchiesByName[name] = h
 	}
+	r.mu.Unlock()
 	return nil
 }
 
@@ -533,23 +560,36 @@ func (r *CgroupRegistry) Unregister(ctx context.Context, hid uint32) {
 	c2fs.LockTree()
 	defer c2fs.UnlockTree()
 	r.mu.Lock()
-	r.unregisterLocked(ctx, hid)
+	returns := r.unregisterLocked(hid)
 	r.mu.Unlock()
+	// Return stolen controllers to the v2 hierarchy outside r.mu: the return
+	// updates task state under cgroup2fs locks, which must not be acquired
+	// under the (leaf) registry mutex. The exclusive tree lock held across
+	// both steps keeps them atomic with respect to other registry mutators.
+	for _, cType := range returns {
+		c2fs.ReturnControllerLocked(ctx, cType)
+	}
 }
 
+// unregisterLocked removes the hierarchy with the given id from the registry
+// maps. It returns the controllers that were stolen from the v2 hierarchy,
+// which the caller must hand back via Cgroup2FS.ReturnControllerLocked after
+// releasing r.mu, while still holding the v2 tree lock.
+//
 // Precondition: Caller must hold r.mu and must have called c2fs.LockTree().
 // +checklocks:r.mu
-func (r *CgroupRegistry) unregisterLocked(ctx context.Context, hid uint32) {
+func (r *CgroupRegistry) unregisterLocked(hid uint32) []Cgroup2Ctrl {
+	var returns []Cgroup2Ctrl
 	if h, ok := r.hierarchies[hid]; ok {
 		for name := range h.controllers {
 			delete(r.controllers, name)
-			c2fs := r.v2fs.Impl().(Cgroup2FS)
 			if c2Type, isV2Mapped := toCgroup2Ctrl(name); isV2Mapped {
-				c2fs.ReturnControllerLocked(ctx, c2Type)
+				returns = append(returns, c2Type)
 			}
 		}
 		delete(r.hierarchies, hid)
 	}
+	return returns
 }
 
 // computeInitialGroups takes a reference on each of the returned cgroups. The
