@@ -121,6 +121,17 @@ not_casuint32:
 	B handle_fault
 
 not_loaduint32:
+	MOVD ·storeUint64Begin(SB), R8
+	CMP R8, R7
+	BLO not_storeuint64
+	MOVD ·storeUint64End(SB), R8
+	CMP R8, R7
+	BHS not_storeuint64
+
+	MOVD $handleStoreUint64Fault(SB), R7
+	B handle_fault
+
+not_storeuint64:
 original_handler:
 	// Jump to the previous signal handler, which is likely the golang one.
 	MOVD ·savedSigBusHandler(SB), R7
