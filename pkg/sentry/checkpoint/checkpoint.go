@@ -38,5 +38,8 @@ func (id ResourceID) Ok() bool {
 }
 
 func (id ResourceID) String() string {
+	if id.ContainerName == "" {
+		return id.Path
+	}
 	return fmt.Sprintf("%s:%s", id.ContainerName, id.Path)
 }
