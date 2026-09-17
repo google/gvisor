@@ -2500,8 +2500,7 @@ int main(int argc, char** argv) {
   }
 
   if (absl::GetFlag(FLAGS_ptrace_test_prctl_set_ptracer_and_exec_non_leader)) {
-    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(
-        fd);
+    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(fd);
   }
 
   if (absl::GetFlag(
