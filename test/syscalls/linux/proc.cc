@@ -528,9 +528,24 @@ TEST(ProcSelfAuxv, EntryPresence) {
   EXPECT_EQ(auxv_entries.count(AT_SECURE), 1);
   EXPECT_EQ(auxv_entries.count(AT_CLKTCK), 1);
   EXPECT_EQ(auxv_entries.count(AT_RANDOM), 1);
+  EXPECT_EQ(auxv_entries.count(AT_PLATFORM), 1);
   EXPECT_EQ(auxv_entries.count(AT_EXECFN), 1);
   EXPECT_EQ(auxv_entries.count(AT_PAGESZ), 1);
   EXPECT_EQ(auxv_entries.count(AT_SYSINFO_EHDR), 1);
+}
+
+TEST(ProcSelfAuxv, Platform) {
+  auto auxv_entries = ASSERT_NO_ERRNO_AND_VALUE(ReadProcSelfAuxv());
+  ASSERT_EQ(auxv_entries.count(AT_PLATFORM), 1);
+  const char* platform =
+      reinterpret_cast<const char*>(auxv_entries[AT_PLATFORM]);
+#if defined(__x86_64__)
+  EXPECT_STREQ(platform, "x86_64");
+#elif defined(__aarch64__)
+  EXPECT_STREQ(platform, "aarch64");
+#else
+  FAIL() << "unknown architecture";
+#endif
 }
 
 TEST(ProcSelfAuxv, EntryValues) {
