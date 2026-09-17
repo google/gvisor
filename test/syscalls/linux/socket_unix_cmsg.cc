@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_unix_cmsg.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -28,7 +29,9 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/memory_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -63,6 +66,88 @@ TEST_P(UnixSocketPairCmsgTest, BasicFDPass) {
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 
   ASSERT_NO_FATAL_FAILURE(TransferTest(fd, pair->first_fd()));
+}
+
+TEST_P(UnixSocketPairCmsgTest, FDPassWithInaccessibleBufferTail) {
+  for (bool vectored : {false, true}) {
+    SCOPED_TRACE(vectored);
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    auto pair = ASSERT_NO_ERRNO_AND_VALUE(
+        UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+    // The unused tail of a large receive buffer need not be accessible.
+    constexpr size_t kBufferSize = 1 << 20;
+    auto mapping = ASSERT_NO_ERRNO_AND_VALUE(
+        MmapAnon(kBufferSize, PROT_NONE, MAP_PRIVATE));
+    ASSERT_THAT(mprotect(mapping.ptr(), kPageSize, PROT_READ | PROT_WRITE),
+                SyscallSucceeds());
+    char sent_data[] = "hello";
+    ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), pair->second_fd(),
+                                         sent_data, sizeof(sent_data)));
+
+    struct iovec iov[2] = {};
+    iov[0].iov_base = mapping.ptr();
+    iov[0].iov_len = vectored ? kPageSize : kBufferSize;
+    iov[1].iov_base = reinterpret_cast<void*>(mapping.addr() + kPageSize);
+    iov[1].iov_len = kBufferSize - kPageSize;
+    char control[CMSG_SPACE(sizeof(int))] = {};
+    struct msghdr msg = {};
+    msg.msg_iov = iov;
+    msg.msg_iovlen = vectored ? 2 : 1;
+    msg.msg_control = control;
+    msg.msg_controllen = sizeof(control);
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+                SyscallSucceedsWithValue(sizeof(sent_data)));
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    ASSERT_NE(cmsg, nullptr);
+    ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+    ASSERT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
+    ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+    int received_fd;
+    memcpy(&received_fd, CMSG_DATA(cmsg), sizeof(received_fd));
+    FileDescriptor fd(received_fd);
+    EXPECT_EQ(msg.msg_flags & MSG_CTRUNC, 0);
+    EXPECT_EQ(memcmp(mapping.ptr(), sent_data, sizeof(sent_data)), 0);
+    ASSERT_NO_FATAL_FAILURE(TransferTest(fd.get(), pair->first_fd()));
+  }
+}
+
+TEST_P(UnixSocketPairCmsgTest, ReceiveFaultReleasesFD) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor read_end(pipe_fds[0]);
+  FileDescriptor write_end(pipe_fds[1]);
+
+  // This payload reaches the inaccessible page. Receiving it must fail, and
+  // the in-flight write FD must be released.
+  auto mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(2 * kPageSize, PROT_NONE, MAP_PRIVATE));
+  ASSERT_THAT(mprotect(mapping.ptr(), kPageSize, PROT_READ | PROT_WRITE),
+              SyscallSucceeds());
+  std::vector<char> sent_data(2 * kPageSize, 'a');
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), write_end.get(),
+                                       sent_data.data(), sent_data.size()));
+  write_end.reset();
+
+  struct iovec iov = {};
+  iov.iov_base = mapping.ptr();
+  iov.iov_len = mapping.len();
+  char control[CMSG_SPACE(sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallFailsWithErrno(EFAULT));
+
+  // Drop any data still queued on stream sockets. No write FD is installed in
+  // the receiving process, so closing the sockets must leave no pipe writers.
+  sockets.reset();
+  char byte;
+  EXPECT_THAT(RetryEINTR(read)(read_end.get(), &byte, sizeof(byte)),
+              SyscallSucceedsWithValue(0));
 }
 
 TEST_P(UnixSocketPairCmsgTest, BasicTwoFDPass) {
