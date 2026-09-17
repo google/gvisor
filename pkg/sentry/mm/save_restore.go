@@ -69,6 +69,7 @@ const (
 	vmaPrivate
 	vmaGrowsDown
 	vmaIsStack
+	vmaMemfileReserved
 )
 
 func (v *vma) saveRealPerms() int {
@@ -109,6 +110,9 @@ func (v *vma) saveRealPerms() int {
 	if v.isStack {
 		b |= vmaIsStack
 	}
+	if v.memfileReserved {
+		b |= vmaMemfileReserved
+	}
 	return b
 }
 
@@ -148,6 +152,9 @@ func (v *vma) loadRealPerms(_ goContext.Context, b int) {
 	}
 	if b&vmaIsStack > 0 {
 		v.isStack = true
+	}
+	if b&vmaMemfileReserved > 0 {
+		v.memfileReserved = true
 	}
 }
 

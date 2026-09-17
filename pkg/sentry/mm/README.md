@@ -229,6 +229,15 @@ sentry must retain information about the host VMAs that it has created.
 The sentry implements anonymous mappings consistently with Linux, except that
 there is no shared zero page.
 
+Private anonymous mappings reserve a contiguous uncommitted span of the sandbox
+MemoryFile at mmap time. Faults take extra references on subranges of that span
+instead of allocating from the global free list, so adjacent application pages
+get adjacent host file offsets. Linux merges host VMAs only when virtual
+address, protection, fd, and file offset are all contiguous; without a per-VMA
+span, concurrent anonymous allocations interleave offsets and host VMAs
+fragment. The reservation is not RSS. Forked children do not inherit it:
+already-faulted pages are copy-on-write, and unfaulted pages allocate normally.
+
 # Implementation Constructs
 
 In Linux:
