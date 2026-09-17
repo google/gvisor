@@ -23,6 +23,30 @@ message Exit {
   int64 errorno = 2;
 }
 
+// Identifying the process that made the syscall:
+//
+//   Every event message below carries a gvisor.common.ContextData describing
+//   the calling task, but none of them carries the path of the executable that
+//   issued the syscall. The closest field is context_data.process_name, which
+//   holds the task's "comm": the Linux command name exposed as
+//   /proc/<pid>/comm, i.e. the basename of the executable truncated to 15 bytes
+//   (TASK_COMM_LEN-1) at exec and freely overwritten afterwards via
+//   prctl(PR_SET_NAME). It is a short label, not a path.
+//
+//   This is deliberate. Resolving the caller's binary path would require a VFS
+//   path walk on every traced syscall, so the sentry only reports it once, at
+//   exec time, in gvisor.sentry.ExecveInfo.binary_path. There is no optional
+//   field to enable it on syscall points.
+//
+//   Consumers that need the full executable path join the two streams
+//   client-side, keyed on the (thread_group_id, thread_group_start_time_ns)
+//   pair that every ContextData carries and that is stable against PID reuse.
+//   The pkg/seccheck/scsdk package implements this: feed ExecveInfo and
+//   TaskExit messages to scsdk.ProcessTracker, then resolve any event with
+//   ProcessTracker.LookupFromContext. See that package for the caveats (most
+//   notably, processes that never exec'd while tracking was active have no
+//   entry).
+
 message Syscall {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;

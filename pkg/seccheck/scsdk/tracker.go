@@ -17,7 +17,7 @@
 // process information (PipeInputSibling and PipeOutputSibling) when processes are connected via
 // stdin or stdout pipes.
 //
-// Usage:
+// ## Usage:
 //
 //	// Initialize a ProcessTracker in your monitoring daemon:
 //	pt := scsdk.NewProcessTracker()
@@ -47,6 +47,41 @@
 //		// ProcessTaskExit cleans up tracked state when a thread group exits.
 //		pt.ProcessTaskExit(exitEvent)
 //	}
+//
+// ## Resolving the caller's executable path for non-execve events
+//
+// Syscall trace points such as gvisor.syscall.Open only carry
+// gvisor.common.ContextData about the calling task. Its process_name field
+// holds the task's "comm", the Linux command name exposed as /proc/<pid>/comm:
+// the basename of the executable, truncated to 15 bytes (TASK_COMM_LEN-1) at
+// exec and freely overwritten afterwards via prctl(PR_SET_NAME). It is a short
+// label, not a path.
+//
+// The sentry does not resolve the caller's binary path on every syscall, since
+// that would add a VFS path walk to the syscall hot path.
+//
+// The tracker is the client-side answer to this: it caches the binary path
+// reported by the "sentry/execve" point and lets any later event look it up by
+// its ContextData. For example, given an *pb.Open message:
+//
+//	proc := pt.LookupFromContext(scsdk.ToProcessContext(open.GetContextData()))
+//	if proc != nil {
+//		fmt.Printf("%s opened %s\n", proc.BinaryPath, open.GetPathname())
+//	}
+//
+// This requires the consumer to also enable the "sentry/execve" point (to
+// populate the cache) and the "sentry/task_exit" point (to evict entries and
+// bound memory usage).
+//
+// Caveats:
+//   - Lookups return nil for processes that never called execve(2) while the
+//     tracker was running: tasks already alive when tracing started, and forked
+//     children that have not exec'd yet (they inherit the parent's binary but
+//     get a new thread group ID, so they have no entry of their own).
+//   - BinaryPath is the pathname argument passed to execve(2)/execveat(2). It is
+//     not canonicalized: it may be relative to the caller's cwd at exec time, or
+//     of the form "/dev/fd/N" for execveat(2) with a directory fd.
+//   - The cache lives in the consumer's memory only, so it is lost on restart.
 
 package scsdk
 
@@ -105,6 +140,11 @@ func (pt *ProcessTracker) Lookup(key ProcessKey) *ProcessInfo {
 }
 
 // LookupFromContext creates a ProcessKey from a ProcessContext and returns the tracked process.
+//
+// This is how a consumer attaches full process metadata (most notably
+// BinaryPath, which no syscall event carries) to any trace event: convert the
+// event's ContextData with ToProcessContext and look it up here. Returns nil if
+// the process has no cached execve; see the caveats in the package comment.
 func (pt *ProcessTracker) LookupFromContext(ctx ProcessContext) *ProcessInfo {
 	key := ProcessKey{
 		ThreadGroupID:          ctx.ThreadGroupID,
