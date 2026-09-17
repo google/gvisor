@@ -83,6 +83,8 @@ func (opts *FSSaveOpts) Close() error {
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
 // package. FSSave takes ownership of resources in opts.
+//
+// +checklocksexclude:k.fsSaveMu
 func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 	if opts == nil {
 		return fmt.Errorf("FSSaveOpts cannot be nil")
@@ -260,7 +262,10 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave m
 			PagesStart:         prevPagesOffset,
 		})
 		prevPagesMetadataOffset = pagesMetadataWriter.count
-		prevPagesOffset = apfs.PagesFileOffset()
+		// This function serializes all SaveTo calls using apfs. Only those
+		// calls write saveOff; the background saver only reads it.
+		// checklocks cannot express the absence of a concurrent writer here.
+		prevPagesOffset = apfs.PagesFileOffset() // +checklocksignore
 
 		if err := tmpfs.FSCheckpointWrite(ctx, fs, multiTarWriter); err != nil {
 			return fmt.Errorf("failed to write tmpfs with resourceID %s to multi-tar file: %w", resourceID, err)
@@ -343,6 +348,8 @@ func (cw *countingWriter) Write(src []byte) (int, error) {
 //
 // This API is difficult to use without races, but is consistent with
 // k.WaitForCheckpoint().
+//
+// +checklocksexclude:k.fsSaveMu
 func (k *Kernel) WaitForFSSave() error {
 	c := make(chan error, 1)
 	k.fsSaveMu.Lock()
@@ -352,6 +359,8 @@ func (k *Kernel) WaitForFSSave() error {
 }
 
 // SignalAllFSSaveWaiters signals all FS save waiters with err.
+//
+// +checklocksexclude:k.fsSaveMu
 func (k *Kernel) SignalAllFSSaveWaiters(err error) {
 	k.fsSaveMu.Lock()
 	defer k.fsSaveMu.Unlock()

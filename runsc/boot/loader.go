@@ -1048,6 +1048,8 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 // Note that this will block until all open control server connections have
 // been closed. For that reason, this should NOT be called in a defer, because
 // a panic in a control server rpc would then hang forever.
+//
+// +checklocksexclude:l.k.fsSaveMu
 func (l *Loader) Destroy() {
 	if l.stopSignalForwarding != nil {
 		l.stopSignalForwarding()
@@ -1236,6 +1238,9 @@ func (l *Loader) installSeccompFilters() error {
 }
 
 // Run runs the root container.
+//
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) Run() error {
 	err := l.run()
 	l.ctrl.manager.startResultChan <- err
@@ -1250,6 +1255,8 @@ func (l *Loader) Run() error {
 	return nil
 }
 
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) run() error {
 	if l.root.conf.Network == config.NetworkHost {
 		// Delay host network configuration to this point because network namespace
@@ -1396,6 +1403,9 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
+//
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf, rootfsUpperTarFD *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1514,6 +1524,8 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 }
 
 // +checklocks:l.mu
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
