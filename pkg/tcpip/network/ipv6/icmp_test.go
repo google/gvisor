@@ -282,9 +282,11 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 
 			const ident = 1234
 			handlerCalled := false
+			var handlerPkt *stack.PacketBuffer
 			if test.installHandler {
 				s.SetTransportProtocolHandler(icmp.ProtocolNumber6, func(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
 					handlerCalled = true
+					handlerPkt = pkt
 					if got := id.LocalPort; got != ident {
 						t.Errorf("got id.LocalPort = %d, want = %d", got, ident)
 					}
@@ -335,6 +337,14 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 			if got, want := handlerCalled, test.wantHandlerCalled; got != want {
 				t.Fatalf("got handlerCalled = %t, want = %t", got, want)
 			}
+			if test.installHandler {
+				if handlerPkt == nil {
+					t.Fatalf("handler did not save packet")
+				}
+				if stack.ReplyICMPEcho(handlerPkt) {
+					t.Fatalf("got stack.ReplyICMPEcho(handlerPkt) after handler returned = true, want = false")
+				}
+			}
 
 			p := e.Read()
 			if !test.wantReply {
@@ -357,6 +367,281 @@ func TestICMPEchoDefaultHandlerControlsReply(t *testing.T) {
 					checker.ICMPv6Type(header.ICMPv6EchoReply),
 					checker.ICMPv6Code(header.ICMPv6UnusedCode)))
 		})
+	}
+}
+
+func TestICMPEchoForwarderReply(t *testing.T) {
+	localAddr := tcpip.ProtocolAddress{
+		Protocol: ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
+			PrefixLen: 64,
+		},
+	}
+	remoteAddr := tcpip.ProtocolAddress{
+		Protocol: ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
+			PrefixLen: 64,
+		},
+	}
+
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
+	const ident = 1234
+	forwarderCalled := false
+	var request *icmp.ForwarderRequest
+	var requestPkt *stack.PacketBuffer
+	f := icmp.NewForwarder(func(r *icmp.ForwarderRequest) bool {
+		request = r
+		forwarderCalled = true
+		requestPkt = r.PacketBuffer()
+		if got := r.ID().LocalPort; got != ident {
+			t.Errorf("got r.ID().LocalPort = %d, want = %d", got, ident)
+		}
+		if !r.Reply() {
+			t.Errorf("got r.Reply() = false, want = true")
+		}
+		if !r.Reply() {
+			t.Errorf("got second r.Reply() = false, want = true")
+		}
+		clone := r.PacketBuffer().Clone()
+		defer clone.DecRef()
+		if stack.ReplyICMPEcho(clone) {
+			t.Errorf("got stack.ReplyICMPEcho(clone) = true, want = false")
+		}
+		return false
+	})
+	s.SetTransportProtocolHandler(icmp.ProtocolNumber6, f.HandlePacket)
+
+	e := channel.New(1, defaultMTU, "")
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddProtocolAddress(nicID, localAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, localAddr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{{
+		Destination: localAddr.AddressWithPrefix.Subnet(),
+		NIC:         nicID,
+	}})
+
+	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+	hdr := prependable.New(totalLen)
+	icmpH := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+	icmpH.SetIdent(ident)
+	icmpH.SetType(header.ICMPv6EchoRequest)
+	icmpH.SetCode(header.ICMPv6UnusedCode)
+	icmpH.SetChecksum(0)
+	icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmpH,
+		Src:    remoteAddr.AddressWithPrefix.Address,
+		Dst:    localAddr.AddressWithPrefix.Address,
+	}))
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     header.ICMPv6MinimumSize,
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          DefaultTTL,
+		SrcAddr:           remoteAddr.AddressWithPrefix.Address,
+		DstAddr:           localAddr.AddressWithPrefix.Address,
+	})
+	echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	e.InjectInbound(ProtocolNumber, echoPkt)
+	echoPkt.DecRef()
+	c.clock.RunImmediatelyScheduledJobs()
+
+	if !forwarderCalled {
+		t.Fatalf("forwarder was not called")
+	}
+	if request == nil {
+		t.Fatalf("request was not saved")
+	}
+	if request.Reply() {
+		t.Fatalf("got request.Reply() after handler returned = true, want = false")
+	}
+	if stack.ReplyICMPEcho(requestPkt) {
+		t.Fatalf("got stack.ReplyICMPEcho(requestPkt) after handler returned = true, want = false")
+	}
+	p := e.Read()
+	if p == nil {
+		t.Fatalf("expected ICMP echo reply")
+	}
+	defer p.DecRef()
+	payload := stack.PayloadSince(p.NetworkHeader())
+	defer payload.Release()
+	checker.IPv6(t, payload,
+		checker.SrcAddr(localAddr.AddressWithPrefix.Address),
+		checker.DstAddr(remoteAddr.AddressWithPrefix.Address),
+		checker.ICMPv6(
+			checker.ICMPv6Type(header.ICMPv6EchoReply),
+			checker.ICMPv6Code(header.ICMPv6UnusedCode)))
+	if p := e.Read(); p != nil {
+		p.DecRef()
+		t.Fatalf("got unexpected second ICMP echo reply")
+	}
+}
+
+func TestICMPEchoForwarderConsumesWithoutReply(t *testing.T) {
+	localAddr := tcpip.ProtocolAddress{
+		Protocol: ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
+			PrefixLen: 64,
+		},
+	}
+	remoteAddr := tcpip.ProtocolAddress{
+		Protocol: ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
+			PrefixLen: 64,
+		},
+	}
+
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
+	forwarderCalled := false
+	var requestPkt *stack.PacketBuffer
+	f := icmp.NewForwarder(func(r *icmp.ForwarderRequest) bool {
+		forwarderCalled = true
+		requestPkt = r.PacketBuffer()
+		return true
+	})
+	s.SetTransportProtocolHandler(icmp.ProtocolNumber6, f.HandlePacket)
+
+	e := channel.New(1, defaultMTU, "")
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddProtocolAddress(nicID, localAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, localAddr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{{
+		Destination: localAddr.AddressWithPrefix.Subnet(),
+		NIC:         nicID,
+	}})
+
+	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+	hdr := prependable.New(totalLen)
+	icmpH := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+	icmpH.SetType(header.ICMPv6EchoRequest)
+	icmpH.SetCode(header.ICMPv6UnusedCode)
+	icmpH.SetChecksum(0)
+	icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmpH,
+		Src:    remoteAddr.AddressWithPrefix.Address,
+		Dst:    localAddr.AddressWithPrefix.Address,
+	}))
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     header.ICMPv6MinimumSize,
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          DefaultTTL,
+		SrcAddr:           remoteAddr.AddressWithPrefix.Address,
+		DstAddr:           localAddr.AddressWithPrefix.Address,
+	})
+	echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	e.InjectInbound(ProtocolNumber, echoPkt)
+	echoPkt.DecRef()
+	c.clock.RunImmediatelyScheduledJobs()
+
+	if !forwarderCalled {
+		t.Fatalf("forwarder was not called")
+	}
+	if stack.ReplyICMPEcho(requestPkt) {
+		t.Fatalf("got stack.ReplyICMPEcho(requestPkt) after handler returned = true, want = false")
+	}
+	if p := e.Read(); p != nil {
+		p.DecRef()
+		t.Fatalf("got unexpected ICMP echo reply")
+	}
+}
+
+func TestICMPForwarderReplyNonEchoRequest(t *testing.T) {
+	localAddr := tcpip.ProtocolAddress{
+		Protocol: ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
+			PrefixLen: 64,
+		},
+	}
+	remoteAddr := tcpip.ProtocolAddress{
+		Protocol: ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
+			PrefixLen: 64,
+		},
+	}
+
+	c := newTestContext()
+	defer c.cleanup()
+	s := c.s
+
+	forwarderCalled := false
+	f := icmp.NewForwarder(func(r *icmp.ForwarderRequest) bool {
+		forwarderCalled = true
+		if r.Reply() {
+			t.Errorf("got r.Reply() = true for non-Echo-Request packet, want false")
+		}
+		return true
+	})
+	s.SetTransportProtocolHandler(icmp.ProtocolNumber6, f.HandlePacket)
+
+	e := channel.New(1, defaultMTU, "")
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+	}
+	if err := s.AddProtocolAddress(nicID, localAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, localAddr, err)
+	}
+	s.SetRouteTable([]tcpip.Route{{
+		Destination: localAddr.AddressWithPrefix.Subnet(),
+		NIC:         nicID,
+	}})
+
+	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+	hdr := prependable.New(totalLen)
+	icmpH := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
+	icmpH.SetType(header.ICMPv6EchoReply)
+	icmpH.SetCode(header.ICMPv6UnusedCode)
+	icmpH.SetChecksum(0)
+	icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+		Header: icmpH,
+		Src:    remoteAddr.AddressWithPrefix.Address,
+		Dst:    localAddr.AddressWithPrefix.Address,
+	}))
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength:     header.ICMPv6MinimumSize,
+		TransportProtocol: icmp.ProtocolNumber6,
+		HopLimit:          DefaultTTL,
+		SrcAddr:           remoteAddr.AddressWithPrefix.Address,
+		DstAddr:           localAddr.AddressWithPrefix.Address,
+	})
+	echoReplyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr.View()),
+	})
+	e.InjectInbound(ProtocolNumber, echoReplyPkt)
+	echoReplyPkt.DecRef()
+	c.clock.RunImmediatelyScheduledJobs()
+
+	if !forwarderCalled {
+		t.Fatalf("forwarder was not called")
+	}
+	if p := e.Read(); p != nil {
+		p.DecRef()
+		t.Fatalf("got unexpected ICMP echo reply")
 	}
 }
 
