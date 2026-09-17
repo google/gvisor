@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -180,6 +181,26 @@ func TestSystemdUBI10Init(t *testing.T) {
 		t.Errorf("failed units after boot (want none):\n%s", out)
 	}
 	wantEcho := "gv-ubi10-ok"
+	out, err := transientRun(ctx, d, nil, "/bin/echo", wantEcho)
+	if err != nil || !strings.Contains(out, wantEcho) {
+		t.Errorf("transient unit failed: %v (output does not contain %q): %s", err, wantEcho, out)
+	}
+}
+
+// TestSystemdArch boots Arch Linux, a third and usually more recent systemd lineage.
+func TestSystemdArch(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		t.Skip("arch-systemd image is only built for x86_64")
+	}
+	t.Parallel()
+	ctx := t.Context()
+	d := spawnSystemdContainer(ctx, t, "arch-systemd")
+	defer d.CleanUp(ctx)
+
+	if out := strings.TrimSpace(execOrFatal(ctx, t, d, "systemctl", "--failed", "--no-legend", "--plain")); out != "" {
+		t.Errorf("failed units after boot (want none):\n%s", out)
+	}
+	wantEcho := "gv-arch-ok"
 	out, err := transientRun(ctx, d, nil, "/bin/echo", wantEcho)
 	if err != nil || !strings.Contains(out, wantEcho) {
 		t.Errorf("transient unit failed: %v (output does not contain %q): %s", err, wantEcho, out)

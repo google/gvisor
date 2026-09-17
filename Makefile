@@ -277,7 +277,7 @@ integration-tests: do-tests kvm-tests containerd-tests-min
 integration-tests: sandbox-posture-tests
 .PHONY: integration-tests
 
-integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services load-ubi10-init
+integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services load-ubi10-init $(if $(filter x86_64,$(ARCH)),load-arch-systemd)
 .PHONY: integration-test-images
 
 network-tests: ## Run all networking integration tests.

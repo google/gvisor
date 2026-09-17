@@ -1672,8 +1672,13 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return linux.Statx{}, err
 		}
+		// The layer's STATX_ATTR_MOUNT_ROOT refers to the layer mount, not
+		// the overlay mount.
+		stat.Attributes &^= linux.STATX_ATTR_MOUNT_ROOT
+		stat.AttributesMask &^= linux.STATX_ATTR_MOUNT_ROOT
 	}
 	d.statInternalTo(ctx, &opts, &stat)
+	rp.AddMountRootAttr(&d.vfsd, &stat)
 	return stat, nil
 }
 
