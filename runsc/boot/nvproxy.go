@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -181,6 +182,51 @@ func collectContainerNvidiaRegularDevices(ctx context.Context, spec *specs.Spec,
 		}
 	}
 	return gotAny, nil
+}
+
+// cudaCheckpointDeviceMap returns the value to pass to cuda-checkpoint's
+// --device-map flag to restore CUDA state checkpointed on dr's old devices
+// onto its new devices, in the format "oldUuid1=newUuid1,oldUuid2=newUuid2".
+// cuda-checkpoint requires the map to list all checkpointed devices, so all
+// saved devices are included even if only some are remapped. It returns ""
+// if the remapping is an identity, in which case no device map is needed.
+func cudaCheckpointDeviceMap(dr *nvproxy.DeviceRemapping) (string, error) {
+	identity := true
+	pairs := make([]string, 0, len(dr.OldDeviceByMinor))
+	for _, oldMinor := range slices.Sorted(maps.Keys(dr.OldDeviceByMinor)) {
+		oldID := dr.OldDeviceByMinor[oldMinor]
+		newID := dr.NewDeviceByOld[oldID]
+		if oldID.UUID == "" || newID.UUID == "" {
+			return "", fmt.Errorf("device has no UUID: %v => %v", oldID, newID)
+		}
+		if oldID.UUID != newID.UUID {
+			identity = false
+		}
+		pairs = append(pairs, oldID.UUID+"="+newID.UUID)
+	}
+	if identity {
+		return "", nil
+	}
+	return strings.Join(pairs, ","), nil
+}
+
+// setCudaRestoreDeviceMap records the cuda-checkpoint --device-map needed to
+// resume CUDA processes on the restored kernel, if the set of GPUs changed
+// across restore.
+func (l *Loader) setCudaRestoreDeviceMap(ctx context.Context) error {
+	dr := nvproxy.DeviceRemappingFromContext(ctx)
+	if dr == nil {
+		return nil
+	}
+	deviceMap, err := cudaCheckpointDeviceMap(dr)
+	if err != nil {
+		return fmt.Errorf("failed to compute cuda-checkpoint device map: %w", err)
+	}
+	if deviceMap != "" {
+		log.Infof("cuda-checkpoint device map: %s", deviceMap)
+		l.k.SetCudaRestoreDeviceMap(deviceMap)
+	}
+	return nil
 }
 
 func (l *Loader) createRemappedNvproxyDeviceFiles(ctx context.Context) {

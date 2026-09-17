@@ -610,6 +610,9 @@ func (r *restorer) restore(l *Loader) error {
 	l.k.RestoreContainerMapping(l.containerIDs)
 	l.k.SetSaver(l)
 	l.createRemappedNvproxyDeviceFiles(ctx)
+	if err := l.setCudaRestoreDeviceMap(ctx); err != nil {
+		return err
+	}
 
 	// Refresh the control server with the newly created kernel.
 	l.ctrl.refreshHandlers()
