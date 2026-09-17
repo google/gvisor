@@ -21,37 +21,58 @@ import (
 )
 
 // MapFromKUID translates kuid, a UID in the root namespace, to a UID in ns.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) MapFromKUID(kuid KUID) UID {
 	if ns.parent == nil {
 		return UID(kuid)
 	}
-	return UID(ns.mapID(&ns.uidMapFromParent, uint32(ns.parent.MapFromKUID(kuid))))
+	// mapID locks ns.mu; checklocks cannot defer checking this map address.
+	m := &ns.uidMapFromParent // +checklocksignore
+	return UID(ns.mapID(m, uint32(ns.parent.MapFromKUID(kuid))))
 }
 
 // MapFromKGID translates kgid, a GID in the root namespace, to a GID in ns.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) MapFromKGID(kgid KGID) GID {
 	if ns.parent == nil {
 		return GID(kgid)
 	}
-	return GID(ns.mapID(&ns.gidMapFromParent, uint32(ns.parent.MapFromKGID(kgid))))
+	// mapID locks ns.mu; checklocks cannot defer checking this map address.
+	m := &ns.gidMapFromParent // +checklocksignore
+	return GID(ns.mapID(m, uint32(ns.parent.MapFromKGID(kgid))))
 }
 
 // MapToKUID translates uid, a UID in ns, to a UID in the root namespace.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) MapToKUID(uid UID) KUID {
 	if ns.parent == nil {
 		return KUID(uid)
 	}
-	return ns.parent.MapToKUID(UID(ns.mapID(&ns.uidMapToParent, uint32(uid))))
+	// mapID locks ns.mu; checklocks cannot defer checking this map address.
+	m := &ns.uidMapToParent // +checklocksignore
+	return ns.parent.MapToKUID(UID(ns.mapID(m, uint32(uid))))
 }
 
 // MapToKGID translates gid, a GID in ns, to a GID in the root namespace.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) MapToKGID(gid GID) KGID {
 	if ns.parent == nil {
 		return KGID(gid)
 	}
-	return ns.parent.MapToKGID(GID(ns.mapID(&ns.gidMapToParent, uint32(gid))))
+	// mapID locks ns.mu; checklocks cannot defer checking this map address.
+	m := &ns.gidMapToParent // +checklocksignore
+	return ns.parent.MapToKGID(GID(ns.mapID(m, uint32(gid))))
 }
 
+// mapID translates id through m, which must be one of ns's ID maps.
+//
+// checklocks cannot express this owner relationship for a map argument.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) mapID(m *idMapSet, id uint32) uint32 {
 	if id == NoID {
 		return NoID
@@ -67,7 +88,10 @@ func (ns *UserNamespace) mapID(m *idMapSet, id uint32) uint32 {
 // allIDsMapped returns true if all IDs in the range [start, end) are mapped in
 // m.
 //
-// Preconditions: end >= start.
+// Preconditions: end >= start. m is one of ns's ID maps; checklocks cannot
+// express this owner relationship for a map argument.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) allIDsMapped(m *idMapSet, start, end uint32) bool {
 	ns.mu.NestedLock(userNamespaceLockNs)
 	defer ns.mu.NestedUnlock(userNamespaceLockNs)
@@ -95,6 +119,8 @@ type IDMapEntry struct {
 // Note: SetUIDMap does not place an upper bound on the number of entries, but
 // Linux does. This restriction is implemented in SetUIDMap's caller, the
 // implementation of /proc/[pid]/uid_map.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) SetUIDMap(ctx context.Context, entries []IDMapEntry) error {
 	c := CredentialsFromContext(ctx)
 
@@ -192,6 +218,10 @@ func (ns *UserNamespace) verifyRootUserMapping(c *Credentials, entries []IDMapEn
 	return c.HasCapabilityIn(linux.CAP_SETFCAP, ns.parent)
 }
 
+// trySetUIDMap installs the UID mappings. On error, it may leave partial
+// mappings that the caller must remove before releasing ns.mu.
+//
+// +checklocks:ns.mu
 func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 	for _, e := range entries {
 		// Determine upper bounds and check for overflow. This implicitly
@@ -209,7 +239,10 @@ func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 		// Only the root namespace has a nil parent, and root is assigned
 		// mappings when it's created, so SetUIDMap would have returned EPERM
 		// without reaching this point if ns is root.
-		if !ns.parent.allIDsMapped(&ns.parent.uidMapToParent, e.FirstParentID, lastParentID) {
+		//
+		// allIDsMapped locks the parent; checklocks checks the address first.
+		m := &ns.parent.uidMapToParent // +checklocksignore
+		if !ns.parent.allIDsMapped(m, e.FirstParentID, lastParentID) {
 			return linuxerr.EPERM
 		}
 		// If either of these Adds fail, we have an overlapping range.
@@ -224,6 +257,8 @@ func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 }
 
 // SetGIDMap instructs ns to translate GIDs as specified by entries.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) SetGIDMap(ctx context.Context, entries []IDMapEntry) error {
 	c := CredentialsFromContext(ctx)
 
@@ -264,6 +299,10 @@ func (ns *UserNamespace) SetGIDMap(ctx context.Context, entries []IDMapEntry) er
 	return nil
 }
 
+// trySetGIDMap installs the GID mappings. On error, it may leave partial
+// mappings that the caller must remove before releasing ns.mu.
+//
+// +checklocks:ns.mu
 func (ns *UserNamespace) trySetGIDMap(entries []IDMapEntry) error {
 	for _, e := range entries {
 		lastID := e.FirstID + e.Length
@@ -274,7 +313,9 @@ func (ns *UserNamespace) trySetGIDMap(entries []IDMapEntry) error {
 		if lastParentID <= e.FirstParentID {
 			return linuxerr.EINVAL
 		}
-		if !ns.parent.allIDsMapped(&ns.parent.gidMapToParent, e.FirstParentID, lastParentID) {
+		// allIDsMapped locks the parent; checklocks checks the address first.
+		m := &ns.parent.gidMapToParent // +checklocksignore
+		if !ns.parent.allIDsMapped(m, e.FirstParentID, lastParentID) {
 			return linuxerr.EPERM
 		}
 		if !ns.gidMapFromParent.TryInsertRange(idMapRange{e.FirstParentID, lastParentID}, e.FirstID).Ok() {
@@ -289,16 +330,29 @@ func (ns *UserNamespace) trySetGIDMap(entries []IDMapEntry) error {
 
 // UIDMap returns the user ID mappings configured for ns. If no mappings
 // have been configured, UIDMap returns nil.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) UIDMap() []IDMapEntry {
-	return ns.getIDMap(&ns.uidMapToParent)
+	// getIDMap locks ns.mu; checklocks checks the map address before the call.
+	m := &ns.uidMapToParent // +checklocksignore
+	return ns.getIDMap(m)
 }
 
 // GIDMap returns the group ID mappings configured for ns. If no mappings
 // have been configured, GIDMap returns nil.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) GIDMap() []IDMapEntry {
-	return ns.getIDMap(&ns.gidMapToParent)
+	// getIDMap locks ns.mu; checklocks checks the map address before the call.
+	m := &ns.gidMapToParent // +checklocksignore
+	return ns.getIDMap(m)
 }
 
+// getIDMap copies the entries in m, which must be one of ns's ID maps.
+//
+// checklocks cannot express this owner relationship for a map argument.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) getIDMap(m *idMapSet) []IDMapEntry {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
