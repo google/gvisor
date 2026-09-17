@@ -297,6 +297,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("failed to open /proc/self/fd: %v", err)
 	}
 
+	canSetGroups := specutils.SetgroupsAllowed()
+
 	// Look up our own caps (needs procfs).
 	var resolvedCaps *sandboxsetup.ResolvedThreadCaps
 	if g.applyCaps {
@@ -349,7 +351,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	euid := unix.Geteuid()
 	rgid := unix.Getgid()
 	egid := unix.Getegid()
-	log.Debugf("Process running as uid=%d euid=%d gid=%d egid=%d", ruid, euid, rgid, egid)
+	groups, err := unix.Getgroups()
+	if err != nil {
+		util.Fatalf("reading supplementary groups: %v", err)
+	}
+	log.Debugf("Process running as uid=%d euid=%d gid=%d egid=%d groups=%v canSetGroups=%t", ruid, euid, rgid, egid, groups, canSetGroups)
 
 	// Initialize filters.
 	opts := filter.Options{
@@ -367,10 +373,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("installing seccomp filters: %v", err)
 	}
 
-	return g.serve(spec, conf, root, ruid, euid, rgid, egid)
+	return g.serve(spec, conf, root, ruid, euid, rgid, egid, groups, canSetGroups)
 }
 
-func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid int, euid int, rgid int, egid int) subcommands.ExitStatus {
+func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid int, euid int, rgid int, egid int, groups []int, canSetGroups bool) subcommands.ExitStatus {
 	type connectionConfig struct {
 		sock      *unet.Socket
 		mountPath string
@@ -450,6 +456,8 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		EUID:               euid,
 		RGID:               rgid,
 		EGID:               egid,
+		Groups:             groups,
+		CanSetGroups:       canSetGroups,
 	}
 	// The dev gofer connection exists to open host device files on behalf of
 	// the sentry's device proxies (e.g. nvproxy), which mediate all
