@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 // Package embeddedbinary embeds an external binary and provides a function to
 // exec it.
 package embeddedbinary
