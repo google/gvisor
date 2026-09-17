@@ -710,8 +710,8 @@ func (c *Container) Wait() (unix.WaitStatus, error) {
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Wait on process %d in sandbox, cid: %s", pid, c.Sandbox.ID)
-	if !c.IsSandboxRunning() {
-		return 0, fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return 0, err
 	}
 	return c.Sandbox.WaitPID(c.Sandbox.ID, pid)
 }
@@ -720,8 +720,8 @@ func (c *Container) WaitRootPID(pid int32) (unix.WaitStatus, error) {
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Wait on process %d in container, cid: %s", pid, c.ID)
-	if !c.IsSandboxRunning() {
-		return 0, fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return 0, err
 	}
 	return c.Sandbox.WaitPID(c.ID, pid)
 }
@@ -729,8 +729,8 @@ func (c *Container) WaitPID(pid int32) (unix.WaitStatus, error) {
 // WaitCheckpoint waits for the Kernel to have been successfully checkpointed.
 func (c *Container) WaitCheckpoint() error {
 	log.Debugf("Waiting for checkpoint to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitCheckpoint()
 }
@@ -738,8 +738,8 @@ func (c *Container) WaitCheckpoint() error {
 // WaitRestore waits for the Kernel to have been successfully restored.
 func (c *Container) WaitRestore() error {
 	log.Debugf("Waiting for restore to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitRestore()
 }
@@ -748,8 +748,8 @@ func (c *Container) WaitRestore() error {
 // saved.
 func (c *Container) WaitFSCheckpoint() error {
 	log.Debugf("Waiting for filesystem checkpoint to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitFSCheckpoint()
 }
@@ -758,8 +758,8 @@ func (c *Container) WaitFSCheckpoint() error {
 // checkpoint.
 func (c *Container) WaitFSRestore() error {
 	log.Debugf("Waiting for filesystem restore to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitFSRestore(c.ID)
 }
@@ -769,8 +769,8 @@ func (c *Container) WaitFSRestore() error {
 // to outFD.
 func (c *Container) TarRootfsUpperLayer(outFD *os.File) error {
 	log.Debugf("TarRootfsUpperLayer, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.TarRootfsUpperLayer(c.ID, outFD)
 }
@@ -798,8 +798,8 @@ func (c *Container) signalRunning(sig unix.Signal, all bool) error {
 	if err := c.requireStatus("signal", Running, Stopped); err != nil {
 		return err
 	}
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
 }
@@ -849,8 +849,8 @@ func (c *Container) SignalProcess(sig unix.Signal, pid int32) error {
 	if err := c.requireStatus("signal a process inside", Running); err != nil {
 		return err
 	}
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.SignalProcess(c.ID, int32(pid), sig, false)
 }
@@ -862,8 +862,8 @@ func (c *Container) SignalProcessGroup(sig unix.Signal, pgid int32) error {
 	if err := c.requireStatus("signal a process group inside", Running); err != nil {
 		return err
 	}
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.SignalProcessGroup(c.ID, pgid, sig)
 }
@@ -1389,7 +1389,11 @@ func (c *Container) waitForStopped() error {
 		return nil
 	}
 
-	if c.IsSandboxRunning() {
+	running, err := c.IsSandboxRunning()
+	if err != nil {
+		return fmt.Errorf("checking if sandbox is running: %w", err)
+	}
+	if running {
 		if err := c.SignalContainer(unix.Signal(0), false); err == nil {
 			return fmt.Errorf("container is still running")
 		}
@@ -1402,12 +1406,10 @@ func (c *Container) waitForStopped() error {
 		if _, err := unix.Wait4(int(goferPid), nil, 0, nil); err != nil && !errors.Is(err, unix.ECHILD) {
 			return fmt.Errorf("error waiting the gofer process: %v", err)
 		}
-		c.GoferPid.Store(0)
-		return nil
-	}
-
-	if err := specutils.WaitForNonChildExit(int(goferPid), 5*time.Second); err != nil {
-		return fmt.Errorf("waiting for gofer (PID %d) to exit: %v", goferPid, err)
+	} else {
+		if err := specutils.WaitForNonChildExit(int(goferPid), 5*time.Second); err != nil {
+			return fmt.Errorf("waiting for gofer (PID %d) to exit: %v", goferPid, err)
+		}
 	}
 	c.GoferPid.Store(0)
 	return nil
@@ -1864,8 +1866,23 @@ func (c *Container) changeStatus(s Status) {
 }
 
 // IsSandboxRunning returns true if the sandbox exists and is running.
-func (c *Container) IsSandboxRunning() bool {
-	return c.Sandbox != nil && c.Sandbox.IsRunning()
+func (c *Container) IsSandboxRunning() (bool, error) {
+	if c.Sandbox == nil {
+		return false, nil
+	}
+	return c.Sandbox.IsRunning()
+}
+
+// CheckSandboxRunning returns an error if the sandbox does not exist or is not running.
+func (c *Container) CheckSandboxRunning() error {
+	running, err := c.IsSandboxRunning()
+	if err != nil {
+		return fmt.Errorf("checking if sandbox is running: %w", err)
+	}
+	if !running {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return nil
 }
 
 // HasCapabilityInAnySet returns true if the given capability is in any of the
@@ -2448,10 +2465,14 @@ func nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath string) bool {
 }
 
 // CheckStopped checks if the container is stopped and updates its status.
-func (c *Container) CheckStopped() {
+func (c *Container) CheckStopped() error {
 	if state, err := c.Sandbox.ContainerRuntimeState(c.ID); err != nil {
 		log.Warningf("Cannot find if container %v exists, checking if sandbox %v is running, err: %v", c.ID, c.Sandbox.ID, err)
-		if !c.IsSandboxRunning() {
+		running, err := c.IsSandboxRunning()
+		if err != nil {
+			return fmt.Errorf("checking if sandbox %v is running: %w", c.Sandbox.ID, err)
+		}
+		if !running {
 			log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
 			c.changeStatus(Stopped)
 		}
@@ -2461,13 +2482,14 @@ func (c *Container) CheckStopped() {
 			c.changeStatus(Stopped)
 		}
 	}
+	return nil
 }
 
 // GetNetworkConfig returns the network configuration.
 func (c *Container) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
 	log.Debugf("Returns network config, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return nil, fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return nil, err
 	}
 	return c.Sandbox.GetNetworkConfig()
 }

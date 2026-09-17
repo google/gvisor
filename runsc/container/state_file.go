@@ -113,7 +113,9 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 		// This is inherently racy.
 		switch c.Status {
 		case Created, Running:
-			c.CheckStopped()
+			if err := c.CheckStopped(); err != nil {
+				return nil, fmt.Errorf("checking if container is stopped: %w", err)
+			}
 		}
 	}
 
