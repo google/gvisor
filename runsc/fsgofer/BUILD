@@ -36,3 +36,14 @@ go_test(
         "//pkg/log",
     ],
 )
+
+go_test(
+    name = "groups_test",
+    size = "small",
+    srcs = ["groups_test.go"],
+    library = ":fsgofer",
+    deps = [
+        "//pkg/lisafs",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
