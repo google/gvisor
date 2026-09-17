@@ -380,8 +380,10 @@ func (m *metricServer) refreshSandboxesLocked() {
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
-		if !sandbox.sandbox.IsRunning() {
-			log.Infof("Sandbox %s is no longer running, deleting it.", sandboxID)
+		if running, err := sandbox.sandbox.IsRunning(); err != nil {
+			log.Infof("Failed to check if sandbox %s is running: %v", sandboxID, err)
+		} else if !running {
+			log.Infof("Sandbox %s is no longer running, deleting it: %v", sandboxID, err)
 			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
 			continue
@@ -450,10 +452,12 @@ func (m *metricServer) refreshSandboxesLocked() {
 		// This case can be hit when there is a leftover state file for a sandbox that was `kill -9`'d
 		// without an opportunity for it to clean up its state file. This results in a valid state file
 		// but the sandbox PID is gone. We don't want to continuously load this sandbox's state file.
-		if cont.Status == container.Running && !cont.Sandbox.IsRunning() {
-			log.Warningf("Sandbox %q has state file in state Running, yet it isn't actually running. Ignoring it.", sid)
-			m.lastStateFileStat[sid] = stat
-			continue
+		if cont.Status == container.Running {
+			if running, err := cont.Sandbox.IsRunning(); err != nil || !running {
+				log.Warningf("Sandbox %q has state file in state Running, yet it isn't actually running (%v). Ignoring it.", sid, err)
+				m.lastStateFileStat[sid] = stat
+				continue
+			}
 		}
 
 		m.numSandboxes++
@@ -531,6 +535,7 @@ func (m *metricServer) loadSandboxesLocked(ctx context.Context) []sandboxLoadRes
 type sandboxMetricsResult struct {
 	sandboxLoadResult
 	isRunning       bool
+	isRunningErr    error
 	isCheckpointed  bool
 	isRestored      bool
 	cpuTimeSavedMS  int64
@@ -573,6 +578,7 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 			defer wg.Done()
 			for s := range loadedSandboxCh {
 				isRunning := false
+				var isRunningErr error
 				isCheckpointed := false
 				isRestored := false
 				cpuTimeSavedMS := int64(0)
@@ -583,7 +589,10 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 					queryCtx, queryCtxCancel := context.WithTimeout(ctx, perSandboxTime)
 					snapshot, err = querySandboxMetrics(queryCtx, s.sandbox, s.verifier, metricsFilter)
 					queryCtxCancel()
-					isRunning = s.sandbox.IsRunning()
+					isRunning, isRunningErr = s.sandbox.IsRunning()
+					if isRunningErr != nil && err == nil {
+						err = fmt.Errorf("checking if sandbox is running: %w", isRunningErr)
+					}
 					isCheckpointed = s.sandbox.Checkpointed
 					isRestored = s.sandbox.Restored
 					cpuTimeSavedMS = s.sandbox.CPUTimeSaved.Milliseconds()
@@ -592,6 +601,7 @@ func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoad
 				processSandbox(sandboxMetricsResult{
 					sandboxLoadResult: s,
 					isRunning:         isRunning,
+					isRunningErr:      isRunningErr,
 					isCheckpointed:    isCheckpointed,
 					isRestored:        isRestored,
 					cpuTimeSavedMS:    cpuTimeSavedMS,
@@ -731,7 +741,7 @@ func (m *metricServer) serveMetrics(w *httpResponseWriter, req *http.Request) ht
 		} else {
 			// If the sandbox isn't running, it is normal that metrics are not exported for it, so
 			// do not report this case as an error.
-			if r.isRunning {
+			if r.isRunning || r.isRunningErr != nil {
 				meta.numCannotExportSandboxes++
 				log.Warningf("Could not export metrics from sandbox %s: %v", r.served.rootContainerID.SandboxID, r.err)
 			}

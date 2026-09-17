@@ -2286,15 +2286,33 @@ func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Sna
 	return data.Snapshot, nil
 }
 
-// IsRunning returns true if the sandbox or gofer process is running.
-func (s *Sandbox) IsRunning() bool {
+// IsRunning returns true if the sandbox process is running (and not a zombie).
+func (s *Sandbox) IsRunning() (bool, error) {
 	pid := s.Pid.Load()
-	if pid == 0 {
-		return false
+	if pid <= 0 {
+		return false, nil
 	}
-	// Send a signal 0 to the sandbox process. If it succeeds, the sandbox
-	// process is running.
-	return unix.Kill(pid, 0) == nil
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		if err == unix.ESRCH || err == unix.EINVAL {
+			return false, nil
+		}
+		return false, fmt.Errorf("pidfd_open(%d): %w", pid, err)
+	}
+	defer unix.Close(pidfd)
+
+	pfds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(pfds, 0)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("polling pidfd for process %d: %w", pid, err)
+		}
+		// A pidfd becomes readable (POLLIN) when the process exits (including when it is a zombie).
+		return n == 0, nil
+	}
 }
 
 // Stacks collects and returns all stacks for the sandbox.
@@ -2384,7 +2402,11 @@ func (s *Sandbox) DestroyContainer(cid string) error {
 	if err := s.destroyContainer(cid); err != nil {
 		// If the sandbox isn't running, the container has already been destroyed,
 		// ignore the error in this case.
-		if s.IsRunning() {
+		running, runErr := s.IsRunning()
+		if runErr != nil {
+			return fmt.Errorf("checking if sandbox is running after destroy error (%v): %w", err, runErr)
+		}
+		if running {
 			return err
 		}
 	}

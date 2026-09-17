@@ -150,8 +150,8 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		return util.Errorf("loading container: %v", err)
 	}
 
-	if !c.IsSandboxRunning() {
-		return util.Errorf("container sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return util.Errorf("container %v", err)
 	}
 	util.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Getpid())
 

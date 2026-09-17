@@ -15,10 +15,78 @@
 package sandbox
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
+
+func TestIsRunning(t *testing.T) {
+	var s Sandbox
+	// Pid == 0 should not be running.
+	running, err := s.IsRunning()
+	if err != nil {
+		t.Fatalf("IsRunning() error = %v, want nil", err)
+	}
+	if running {
+		t.Errorf("IsRunning() = true for pid 0, want false")
+	}
+
+	// Current process should be running.
+	s.Pid.Store(os.Getpid())
+	running, err = s.IsRunning()
+	if err != nil {
+		t.Fatalf("IsRunning() error = %v, want nil", err)
+	}
+	if !running {
+		t.Errorf("IsRunning() = false for current process, want true")
+	}
+
+	// Spawn a child process that exits immediately and becomes a zombie until reaped.
+	cmd := exec.Command("/bin/true")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("cmd.Start() failed: %v", err)
+	}
+	childPid := cmd.Process.Pid
+	s.Pid.Store(childPid)
+
+	// Wait until child enters zombie state ('Z').
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		statBytes, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", childPid))
+		if err == nil && strings.Contains(string(statBytes), ") Z ") {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = cmd.Wait()
+			t.Fatalf("timed out waiting for child pid %d to become zombie", childPid)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Zombie process must NOT be reported as running.
+	running, err = s.IsRunning()
+	if err != nil {
+		_ = cmd.Wait()
+		t.Fatalf("IsRunning() on zombie error = %v, want nil", err)
+	}
+	if running {
+		t.Errorf("IsRunning() = true for zombie process %d, want false", childPid)
+	}
+
+	// Reap the zombie process.
+	_ = cmd.Wait()
+	running, err = s.IsRunning()
+	if err != nil {
+		t.Fatalf("IsRunning() on reaped process error = %v, want nil", err)
+	}
+	if running {
+		t.Errorf("IsRunning() = true for reaped process %d, want false", childPid)
+	}
+}
 
 func TestGetGCSURIFromImagePath(t *testing.T) {
 	tmpDir := t.TempDir()

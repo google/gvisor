@@ -74,8 +74,8 @@ func (h *heap) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		util.Fatalf("loading sandbox: %v", err)
 	}
 
-	if !cont.IsSandboxRunning() {
-		util.Fatalf("container sandbox is not running")
+	if err := cont.CheckSandboxRunning(); err != nil {
+		util.Fatalf("container %v", err)
 	}
 
 	out := os.Stdout
