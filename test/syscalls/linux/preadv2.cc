@@ -25,6 +25,7 @@
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/pty_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -290,6 +291,44 @@ TEST(Preadv2Test, TestUnseekableFileValid) {
 
   EXPECT_THAT(close(pipe_fds[0]), SyscallSucceeds());
   EXPECT_THAT(close(pipe_fds[1]), SyscallSucceeds());
+}
+
+TEST(Preadv2Test, PtyWithOffset) {
+  SKIP_IF(preadv2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  const FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NOCTTY));
+  const FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  char buf[2] = {};
+  struct iovec iov = {buf, sizeof(buf)};
+
+  const auto check_endpoint = [&](int fd) {
+    EXPECT_THAT(preadv(fd, &iov, /*iovcnt=*/1, /*offset=*/0),
+                SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(preadv2(fd, &iov, /*iovcnt=*/1, /*offset=*/0, /*flags=*/0),
+                SyscallFailsWithErrno(ESPIPE));
+  };
+  check_endpoint(master.get());
+  check_endpoint(replica.get());
+
+  const char replica_output = 'x';
+  ASSERT_THAT(write(replica.get(), &replica_output, sizeof(replica_output)),
+              SyscallSucceedsWithValue(sizeof(replica_output)));
+  iov.iov_len = sizeof(replica_output);
+  EXPECT_THAT(preadv2(master.get(), &iov, /*iovcnt=*/1,
+                      /*offset=*/static_cast<off_t>(-1), /*flags=*/0),
+              SyscallSucceedsWithValue(sizeof(replica_output)));
+  EXPECT_EQ(buf[0], replica_output);
+
+  const char master_input[] = {'y', '\n'};
+  ASSERT_THAT(write(master.get(), master_input, sizeof(master_input)),
+              SyscallSucceedsWithValue(sizeof(master_input)));
+  iov.iov_len = sizeof(master_input);
+  EXPECT_THAT(preadv2(replica.get(), &iov, /*iovcnt=*/1,
+                      /*offset=*/static_cast<off_t>(-1), /*flags=*/0),
+              SyscallSucceedsWithValue(sizeof(master_input)));
+  EXPECT_EQ(std::string(buf, sizeof(buf)),
+            std::string(master_input, sizeof(master_input)));
 }
 
 }  // namespace
