@@ -63,7 +63,7 @@ import (
 	"io"
 	"os"
 
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
@@ -158,7 +158,7 @@ func (c *SandboxClient) ReadFileToWriterWithContext(ctx context.Context, opts Re
 		return fmt.Errorf("offset and size must be non-negative")
 	}
 
-	rpcOpts := control.ReadOpts{
+	rpcOpts := api.ReadOpts{
 		ContainerID: opts.ContainerID,
 		Path:        opts.Path,
 		Offset:      opts.Offset,
