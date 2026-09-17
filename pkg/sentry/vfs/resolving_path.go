@@ -287,6 +287,20 @@ func (rp *ResolvingPath) Start() *Dentry {
 	return rp.start
 }
 
+// AddMountRootAttr sets STATX_ATTR_MOUNT_ROOT in stat.Attributes if d is the
+// root of the Mount at which path resolution ended, and always records the
+// attribute as supported in stat.AttributesMask. FilesystemImpl.StatAt
+// implementations must call it with the resolved Dentry before returning a
+// successful Statx, since the VFS layer does not otherwise observe that Dentry.
+//
+// Preconditions: d is the Dentry to which rp resolved, on rp.Mount().
+func (rp *ResolvingPath) AddMountRootAttr(d *Dentry, stat *linux.Statx) {
+	if d == rp.mount.root {
+		stat.Attributes |= linux.STATX_ATTR_MOUNT_ROOT
+	}
+	stat.AttributesMask |= linux.STATX_ATTR_MOUNT_ROOT
+}
+
 // Done returns true if there are no remaining path components in the stream
 // represented by rp.
 func (rp *ResolvingPath) Done() bool {

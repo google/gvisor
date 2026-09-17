@@ -366,7 +366,9 @@ type FilesystemImpl interface {
 	//	- If opts specifies unsupported options, SetStatAt returns EINVAL.
 	SetStatAt(ctx context.Context, rp *ResolvingPath, opts SetStatOptions) error
 
-	// StatAt returns metadata for the file at rp.
+	// StatAt returns metadata for the file at rp. On success, StatAt must
+	// call rp.AddMountRootAttr() with the resolved Dentry on the returned
+	// Statx.
 	//
 	// If rp.Done() (i.e. rp refers to the dentry rp.Start()) and opts.Sync ==
 	// linux.AT_STATX_DONT_SYNC, StatAt cannot take locks preceding

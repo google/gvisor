@@ -149,6 +149,10 @@ func (fd *regularFileFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux.
 		if err != nil {
 			return linux.Statx{}, err
 		}
+		// The layer's STATX_ATTR_MOUNT_ROOT refers to the layer mount, not
+		// the overlay mount; FileDescription.Stat sets it for fd.
+		stat.Attributes &^= linux.STATX_ATTR_MOUNT_ROOT
+		stat.AttributesMask &^= linux.STATX_ATTR_MOUNT_ROOT
 	}
 	fd.dentry().statInternalTo(ctx, &opts, &stat)
 	return stat, nil
