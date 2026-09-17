@@ -90,7 +90,8 @@ func (rt *RejectIPv4Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ Add
 		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook == Input)
 		return RuleDrop, 0
 	case Prerouting, Postrouting:
-		panic(fmt.Sprintf("%s hook not supported for REDIRECT", hook))
+		log.BugTracebackOnce(fmt.Errorf("%s not supported for REJECT", hook))
+		return RuleDrop, 0
 	default:
 		panic(fmt.Sprintf("unhandled hook = %s", hook))
 	}
@@ -137,7 +138,8 @@ func (rt *RejectIPv6Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ Add
 		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook == Input)
 		return RuleDrop, 0
 	case Prerouting, Postrouting:
-		panic(fmt.Sprintf("%s hook not supported for REDIRECT", hook))
+		log.BugTracebackOnce(fmt.Errorf("%s not supported for REJECT", hook))
+		return RuleDrop, 0
 	default:
 		panic(fmt.Sprintf("unhandled hook = %s", hook))
 	}
@@ -231,7 +233,8 @@ func (rt *DNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addressEP A
 	switch hook {
 	case Prerouting, Output:
 	case Input, Forward, Postrouting:
-		panic(fmt.Sprintf("%s not supported for DNAT", hook))
+		log.BugTracebackOnce(fmt.Errorf("%s not supported for DNAT", hook))
+		return RuleDrop, 0
 	default:
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
@@ -277,8 +280,11 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 	case Prerouting:
 		// addressEP is expected to be set for the prerouting hook.
 		address = addressEP.MainAddress().Address
+	case Input, Forward, Postrouting:
+		log.BugTracebackOnce(fmt.Errorf("%s not supported for REDIRECT", hook))
+		return RuleDrop, 0
 	default:
-		panic("redirect target is supported only on output and prerouting hooks")
+		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
 
 	return dnatAction(pkt, hook, r, rt.Port, address, true /* changePort */, true /* changeAddress */)
@@ -376,7 +382,8 @@ func (st *SNATTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, _ Addressab
 	switch hook {
 	case Postrouting, Input:
 	case Prerouting, Output, Forward:
-		panic(fmt.Sprintf("%s not supported", hook))
+		log.BugTracebackOnce(fmt.Errorf("%s not supported for SNAT", hook))
+		return RuleDrop, 0
 	default:
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
@@ -405,7 +412,8 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addre
 	switch hook {
 	case Postrouting:
 	case Prerouting, Input, Forward, Output:
-		panic(fmt.Sprintf("masquerade target is supported only on postrouting hook; hook = %d", hook))
+		log.BugTracebackOnce(fmt.Errorf("%s not supported for MASQUERADE", hook))
+		return RuleDrop, 0
 	default:
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}

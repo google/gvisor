@@ -30,23 +30,25 @@ func makeRule(target stack.Target, matchers ...stack.Matcher) stack.Rule {
 }
 
 func makeBuiltinChains(prerouting int) [stack.NumHooks]int {
-	return [stack.NumHooks]int{
-		stack.Prerouting:  prerouting,
-		stack.Input:       stack.HookUnset,
-		stack.Forward:     stack.HookUnset,
-		stack.Output:      stack.HookUnset,
-		stack.Postrouting: stack.HookUnset,
-	}
+	return makeHookEntries(map[stack.Hook]int{stack.Prerouting: prerouting})
 }
 
 func makeUnderflows(prerouting int) [stack.NumHooks]int {
-	return [stack.NumHooks]int{
-		stack.Prerouting:  prerouting,
+	return makeHookEntries(map[stack.Hook]int{stack.Prerouting: prerouting})
+}
+
+func makeHookEntries(entries map[stack.Hook]int) [stack.NumHooks]int {
+	hookEntries := [stack.NumHooks]int{
+		stack.Prerouting:  stack.HookUnset,
 		stack.Input:       stack.HookUnset,
 		stack.Forward:     stack.HookUnset,
 		stack.Output:      stack.HookUnset,
 		stack.Postrouting: stack.HookUnset,
 	}
+	for hook, ruleIdx := range entries {
+		hookEntries[hook] = ruleIdx
+	}
+	return hookEntries
 }
 
 func TestCheckLoopsAndChainsDirectLoop(t *testing.T) {
@@ -137,5 +139,135 @@ func TestCheckLoopsAndChainsValid(t *testing.T) {
 	}
 	if err := checkLoopsAndChains(table, false); err != nil {
 		t.Fatalf("checkLoopsAndChains expected nil for valid table, got %v", err)
+	}
+}
+
+func TestCheckTargetHooks(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		table stack.Table
+		want  *syserr.Error
+	}{
+		{
+			name: "redirect on postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&redirectTarget{}), // Rule 0: Postrouting
+					makeRule(&acceptTarget{}),   // Rule 1: Postrouting underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "redirect on output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&redirectTarget{}), // Rule 0: Output
+					makeRule(&acceptTarget{}),   // Rule 1: Output underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Output: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Output: 1}),
+			},
+		},
+		{
+			name: "snat on output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&snatTarget{}),   // Rule 0: Output
+					makeRule(&acceptTarget{}), // Rule 1: Output underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Output: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Output: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "snat on postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&snatTarget{}),   // Rule 0: Postrouting
+					makeRule(&acceptTarget{}), // Rule 1: Postrouting underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+		},
+		{
+			name: "snat on input",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&snatTarget{}),   // Rule 0: Input
+					makeRule(&acceptTarget{}), // Rule 1: Input underflow
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Input: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Input: 1}),
+			},
+		},
+		{
+			name: "redirect in user chain from postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 3}), // Rule 0: Postrouting -> jump to Rule 3
+					makeRule(&acceptTarget{}),         // Rule 1: Postrouting underflow
+					makeRule(&userChainTarget{}),      // Rule 2: user chain header
+					makeRule(&redirectTarget{}),       // Rule 3: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "redirect in user chain from output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 3}), // Rule 0: Output -> jump to Rule 3
+					makeRule(&acceptTarget{}),         // Rule 1: Output underflow
+					makeRule(&userChainTarget{}),      // Rule 2: user chain header
+					makeRule(&redirectTarget{}),       // Rule 3: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Output: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Output: 1}),
+			},
+		},
+		{
+			name: "dnat in user chain from prerouting and postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 0: Prerouting -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 1: Prerouting underflow
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 2: Postrouting -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 3: Postrouting underflow
+					makeRule(&userChainTarget{}),      // Rule 4: user chain header
+					makeRule(&dnatTarget{}),           // Rule 5: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Prerouting: 0, stack.Postrouting: 2}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Prerouting: 1, stack.Postrouting: 3}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "dnat in user chain from prerouting and output",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 0: Prerouting -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 1: Prerouting underflow
+					makeRule(&JumpTarget{RuleNum: 5}), // Rule 2: Output -> jump to Rule 5
+					makeRule(&acceptTarget{}),         // Rule 3: Output underflow
+					makeRule(&userChainTarget{}),      // Rule 4: user chain header
+					makeRule(&dnatTarget{}),           // Rule 5: user chain rule
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Prerouting: 0, stack.Output: 2}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Prerouting: 1, stack.Output: 3}),
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := checkTargetHooks(test.table, false); err != test.want {
+				t.Fatalf("checkTargetHooks expected %v, got %v", test.want, err)
+			}
+		})
 	}
 }
