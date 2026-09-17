@@ -301,7 +301,7 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@$(DOCKER_CLI_PATH) commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
-ifneq (true,$(shell $(wrapper echo true)))
+ifneq (true,$(shell $(call wrapper,echo true) 2>/dev/null))
 bazel-server: bazel-image ## Restart bazel server/container.
 ifneq (,$(PRE_BAZEL_INIT))
 	@$(call header,PRE_BAZEL_INIT)
@@ -337,7 +337,7 @@ endif
 # we make a non-phony version of bazel-server that can be included.
 bazel-server-inc: bazel-server
 
-ifneq (true,$(shell $(wrapper echo true)))
+ifneq (true,$(shell $(call wrapper,echo true) 2>/dev/null))
 ensure-bazel-server:  ## Ensures that the bazel server exists, else restart.
 	@$(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null || $(MAKE) bazel-server
 else
@@ -360,7 +360,7 @@ build_paths = \
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
 build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0")
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi)
+copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p -m 0755 "$$(dirname "$${dest}")" && chmod a+rx "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi)
 run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),"$$0" $(2))
 sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E "$$0" $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))

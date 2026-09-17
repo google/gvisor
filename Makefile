@@ -137,7 +137,7 @@ CGROUPV2 := false
 endif
 
 $(RUNTIME_BIN): # See below.
-	@mkdir -p "$(RUNTIME_DIR)"
+	@mkdir -p -m 0755 "$(RUNTIME_DIR)" && chmod a+rx "$(RUNTIME_DIR)"
 ifeq (,$(STAGED_BINARIES))
 	@$(call copy,//:release,$(RUNTIME_DIR))
 	@$(if $(filter-out //runsc,$(RUNSC_TARGET)),$(call copy,$(RUNSC_TARGET),$(RUNTIME_BIN)))
@@ -153,7 +153,7 @@ endif
 configure_noreload = \
   $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(RUNTIME_ARGS) $(2)); \
   sudo $(RUNTIME_BIN) install --config_file="$(DOCKER_DAEMON_CONFIG_PATH)" --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" --allow-suid $(2) && \
-  sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
+  sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)" && chmod 0777 "$(RUNTIME_LOG_DIR)"
 
 reload_docker = \
   $(call header,DOCKER RELOAD); \
@@ -198,6 +198,7 @@ dev: $(RUNTIME_BIN) ## Installs a set of local runtimes. Requires sudo.
 	@# Docker In Gvisor(ding) version.
 	@$(call configure_noreload,$(RUNTIME)-ding,--TESTONLY-nftables --allow-packet-socket-write=true --net-raw)
 	@$(call reload_docker)
+	@$(call wait_for_runtime,$(RUNTIME))
 .PHONY: dev
 
 governance-regen: ## Regenerates the files derived from governance/maintainers.yaml and governance/areas.yaml.
