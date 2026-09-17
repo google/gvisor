@@ -84,10 +84,8 @@ func (d *Delete) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 func (d *Delete) execute(f *flag.FlagSet, conf *config.Config) error {
 	ids := f.Args()
 	for i, id := range ids {
-		var (
-			c   *container.Container
-			err error
-		)
+		var c *container.Container
+		var err error
 		if i == 0 {
 			// The first container is cached via the FetchSpec() mechanism.
 			c, err = d.loadContainer(conf, f, container.LoadOpts{})
@@ -97,7 +95,7 @@ func (d *Delete) execute(f *flag.FlagSet, conf *config.Config) error {
 		if err != nil {
 			if os.IsNotExist(err) && d.force {
 				log.Warningf("couldn't find container %q: %v", id, err)
-				return nil
+				continue
 			}
 			return fmt.Errorf("loading container %q: %v", id, err)
 		}
