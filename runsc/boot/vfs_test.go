@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -178,5 +179,133 @@ func TestCgroupfsCPUDefaults(t *testing.T) {
 				t.Errorf("period = %d, want %d", got, tc.wantPeriod)
 			}
 		})
+	}
+}
+
+func TestParseFSCheckpointPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		in      string
+		wantErr bool
+		wantLen int
+	}{
+		{
+			name:    "empty",
+			in:      "",
+			wantErr: false,
+			wantLen: 0,
+		},
+		{
+			name:    "all-tmpfs",
+			in:      "all-tmpfs",
+			wantErr: false,
+			wantLen: 1,
+		},
+		{
+			name:    "clean absolute path",
+			in:      "/data",
+			wantErr: false,
+			wantLen: 1,
+		},
+		{
+			name:    "container and clean absolute path",
+			in:      "c1:/data",
+			wantErr: false,
+			wantLen: 1,
+		},
+		{
+			name:    "multiple clean paths",
+			in:      "c1:/data, c2:/tmp, all-tmpfs",
+			wantErr: false,
+			wantLen: 3,
+		},
+		{
+			name:    "uncleaned trailing slash",
+			in:      "/data/",
+			wantErr: true,
+		},
+		{
+			name:    "uncleaned redundant slash",
+			in:      "/data//dir",
+			wantErr: true,
+		},
+		{
+			name:    "uncleaned root slashes",
+			in:      "//",
+			wantErr: true,
+		},
+		{
+			name:    "relative path",
+			in:      "data",
+			wantErr: true,
+		},
+		{
+			name:    "container with empty path",
+			in:      "c1:",
+			wantErr: true,
+		},
+		{
+			name:    "uncleaned dot",
+			in:      "/data/./sub",
+			wantErr: true,
+		},
+		{
+			name:    "uncleaned dot dot",
+			in:      "/data/../sub",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths, err := ParseFSCheckpointPaths(tc.in)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ParseFSCheckpointPaths(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
+			}
+			if err == nil && len(paths) != tc.wantLen {
+				t.Errorf("ParseFSCheckpointPaths(%q) len = %d, want %d", tc.in, len(paths), tc.wantLen)
+			}
+		})
+	}
+}
+
+func TestFindByResourceID(t *testing.T) {
+	type testItem struct {
+		id checkpoint.ResourceID
+	}
+	getID := func(item testItem) checkpoint.ResourceID {
+		return item.id
+	}
+
+	m := map[checkpoint.ResourceID]testItem{
+		{ContainerName: "c1", Path: "/data"}: {id: checkpoint.ResourceID{ContainerName: "c1", Path: "/data"}},
+		{ContainerName: "", Path: "/shared"}: {id: checkpoint.ResourceID{ContainerName: "", Path: "/shared"}},
+	}
+
+	// Exact match.
+	if got, ok, err := findByResourceID(m, checkpoint.ResourceID{ContainerName: "c1", Path: "/data"}, getID, "Test"); err != nil || !ok || got.id.Path != "/data" {
+		t.Errorf("findByResourceID exact match got (%v, %v, %v), want ({c1, /data}, true, nil)", got, ok, err)
+	}
+
+	// Fallback match: query has empty container name, matches c1:/data unambiguously.
+	if got, ok, err := findByResourceID(m, checkpoint.ResourceID{ContainerName: "", Path: "/data"}, getID, "Test"); err != nil || !ok || got.id.Path != "/data" {
+		t.Errorf("findByResourceID fallback match got (%v, %v, %v), want ({c1, /data}, true, nil)", got, ok, err)
+	}
+
+	// Fallback match: query has container name c2, matches :/shared unambiguously.
+	if got, ok, err := findByResourceID(m, checkpoint.ResourceID{ContainerName: "c2", Path: "/shared"}, getID, "Test"); err != nil || !ok || got.id.Path != "/shared" {
+		t.Errorf("findByResourceID fallback match got (%v, %v, %v), want ({, /shared}, true, nil)", got, ok, err)
+	}
+
+	// Conflicting container names: query has c2 for /data, map only has c1. Should not match.
+	if got, ok, err := findByResourceID(m, checkpoint.ResourceID{ContainerName: "c2", Path: "/data"}, getID, "Test"); err != nil || ok {
+		t.Errorf("findByResourceID conflicting container got (%v, %v, %v), want zero, false, nil", got, ok, err)
+	}
+
+	// Ambiguous match: two containers have /multi, query has empty container name. Should error.
+	ambiguousMap := map[checkpoint.ResourceID]testItem{
+		{ContainerName: "c1", Path: "/multi"}: {id: checkpoint.ResourceID{ContainerName: "c1", Path: "/multi"}},
+		{ContainerName: "c2", Path: "/multi"}: {id: checkpoint.ResourceID{ContainerName: "c2", Path: "/multi"}},
+	}
+	if got, ok, err := findByResourceID(ambiguousMap, checkpoint.ResourceID{ContainerName: "", Path: "/multi"}, getID, "Test"); err == nil || ok {
+		t.Errorf("findByResourceID ambiguous match got (%v, %v, %v), want zero, false, error", got, ok, err)
 	}
 }
