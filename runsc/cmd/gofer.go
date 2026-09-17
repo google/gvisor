@@ -349,7 +349,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	euid := unix.Geteuid()
 	rgid := unix.Getgid()
 	egid := unix.Getegid()
-	log.Debugf("Process running as uid=%d euid=%d gid=%d egid=%d", ruid, euid, rgid, egid)
+	groups, err := unix.Getgroups()
+	if err != nil {
+		util.Fatalf("reading supplementary groups: %v", err)
+	}
+	log.Debugf("Process running as uid=%d euid=%d gid=%d egid=%d groups=%v", ruid, euid, rgid, egid, groups)
 
 	// Initialize filters.
 	opts := filter.Options{
@@ -367,10 +371,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("installing seccomp filters: %v", err)
 	}
 
-	return g.serve(spec, conf, root, ruid, euid, rgid, egid)
+	return g.serve(spec, conf, root, ruid, euid, rgid, egid, groups)
 }
 
-func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid int, euid int, rgid int, egid int) subcommands.ExitStatus {
+func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid int, euid int, rgid int, egid int, groups []int) subcommands.ExitStatus {
 	type connectionConfig struct {
 		sock      *unet.Socket
 		mountPath string
@@ -450,6 +454,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		EUID:               euid,
 		RGID:               rgid,
 		EGID:               egid,
+		Groups:             groups,
 	}
 	// The dev gofer connection exists to open host device files on behalf of
 	// the sentry's device proxies (e.g. nvproxy), which mediate all
