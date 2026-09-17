@@ -376,6 +376,8 @@ TEST_F(MMapTest, HintAddress) {
 
 // MAP_FIXED gives us exactly the requested address
 TEST_F(MMapTest, MapFixed) {
+  // TEMP: debugging aid, remove before submit.
+  fprintf(stderr, "TEMP: MMapTest.MapFixed running with tgid %d\n", getpid());
   EXPECT_THAT(Map(0x30000000, kPageSize, PROT_NONE,
                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
               SyscallSucceedsWithValue(0x30000000));
