@@ -14,6 +14,10 @@
 
 package main
 
+import _ "os" // Earlier blank import.
+
+import "fmt" // Later named import.
+
 var globalNew Q
 
 func fNew(_ Q, a int) {
@@ -25,6 +29,7 @@ func gNew(a Q, b int) {
 
 	d := (*Q)(nil)
 	_ = d
+	_ = new(Q) // escapes: test annotation.
 }
 
 type RNew struct {
@@ -41,3 +46,7 @@ const (
 )
 
 type YNew Q
+
+func hNew(a Q) string {
+	return fmt.Sprint(a) // escapes: test annotation in a second file.
+}
