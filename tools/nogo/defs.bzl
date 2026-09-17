@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule", "nogo_extra_proto_deps")
+load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_importpath", "go_rule", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -70,7 +70,7 @@ def _nogo_stdlib_impl(ctx):
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps = [])
 
     # GOVERSION of std is set by the std go.mod.
-    args.append("-GOVERSION-mod-file=%s" % go_ctx.stdlib_mod)
+    args.append("-GOVERSION-mod-file=%s" % go_ctx.stdlib_mod.path)
 
     # Build the analyzer command.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
@@ -135,6 +135,7 @@ NogoInfo = provider(
     "information for nogo analysis",
     fields = {
         "facts": "serialized package facts",
+        "transitive_facts": "depset of (import path, facts file) pairs",
         "raw_findings": "raw package findings (if relevant)",
         "importpath": "package import path",
         "binaries": "package binary files",
@@ -161,14 +162,14 @@ def _select_objfile(files):
         a_files = x_files
     return a_files[0], x_files[0]
 
-def _nogo_config(ctx, deps):
+def _nogo_config(ctx, deps, attr = None):
     # Build a configuration for the given set of deps. This is most basic
     # configuration and is used by the stdlib. For a more complete config, the
     # _nogo_package_config function may be used.
     #
     # Returns (go_ctx, args, inputs, raw_findings).
     nogo_target_info = ctx.attr._target[NogoTargetInfo]
-    go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch)
+    go_ctx = go_context(ctx, goos = nogo_target_info.goos, goarch = nogo_target_info.goarch, attr = attr)
     args = go_ctx.nogo_args + [
         "-go=%s" % go_ctx.go.path,
         "-GOOS=%s" % go_ctx.goos,
@@ -177,6 +178,7 @@ def _nogo_config(ctx, deps):
     ]
     inputs = []
     raw_findings = []
+    fact_sets = []
     for dep in deps:
         extras = nogo_extra_proto_deps(dep)
         for importpath, a_file, x_file in extras:
@@ -198,7 +200,7 @@ def _nogo_config(ctx, deps):
         a_file, x_file = _select_objfile(info.binaries)
         args.append("-archive=%s=%s" % (info.importpath, a_file.path))
         args.append("-import=%s=%s" % (info.importpath, x_file.path))
-        args.append("-facts=%s=%s" % (info.importpath, info.facts.path))
+        fact_sets.append(info.transitive_facts)
 
         # Collect all findings; duplicates are resolved at the end.
         raw_findings.extend(info.raw_findings)
@@ -206,27 +208,26 @@ def _nogo_config(ctx, deps):
         # Ensure the above are available as inputs.
         inputs.append(a_file)
         inputs.append(x_file)
-        inputs.append(info.facts)
+
+    # Export data can expose types and methods from indirect imports. Their
+    # facts must be available even without a direct source import.
+    for importpath, facts_file in depset(transitive = fact_sets).to_list():
+        args.append("-facts=%s=%s" % (importpath, facts_file.path))
+        inputs.append(facts_file)
 
     return (go_ctx, args, inputs, raw_findings)
 
-def _nogo_package_config(ctx, deps, importpath = None, target = None):
+def _nogo_package_config(ctx, deps, importpath = None, objfiles = (None, None), attr = None):
     # See _nogo_config. This includes package details.
     #
     # Returns (go_ctx, args, inputs, raw_findings).
-    go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps)
+    go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps, attr = attr)
 
     # GOVERSION of packages are set by the project language version.
     args.append("-GOVERSION=%s" % go_ctx.lang_version)
 
-    # Add the module itself, for the type sanity check. This applies only to
-    # the libraries, and not binaries or tests.
-    binaries = []
-    if target != None:
-        binaries.extend(target.files.to_list())
-        if hasattr(target.output_groups, "compilation_outputs"):
-            binaries.extend(target.output_groups.compilation_outputs.to_list())
-    target_afile, target_xfile = _select_objfile(binaries)
+    # Add the compiled package itself for analyzers that inspect object code.
+    target_afile, target_xfile = objfiles
     if target_xfile != None:
         args.append("-archive=%s=%s" % (importpath, target_afile.path))
         args.append("-import=%s=%s" % (importpath, target_xfile.path))
@@ -263,7 +264,8 @@ def _nogo_aspect_impl(target, ctx):
     # since there is guaranteed to be no conflict. However for consistency,
     # we should not introduce new go_tool_library dependencies unless strictly
     # necessary.
-    if ctx.rule.kind in ("go_library", "go_tool_library", "go_binary", "go_test"):
+    is_binary = ctx.rule.kind in ("go_binary", "go_non_executable_binary")
+    if is_binary or ctx.rule.kind in ("go_library", "go_tool_library", "go_test"):
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
     elif ctx.rule.kind in ("go_proto_library", "go_wrap_cc"):
@@ -287,14 +289,24 @@ def _nogo_aspect_impl(target, ctx):
         if hasattr(info, "deps"):
             deps = deps + info.deps
 
-    # Extract the importpath for this package.
-    if ctx.rule.kind == "go_test":
-        importpath = "test"
+    # Binary analysis needs the compiled Go archive, not the linked executable:
+    # the linker can remove functions that checkescape still needs to inspect.
+    if is_binary:
+        archive = go_binary_archive(target)
+        importpath = archive.importpath
+        objfiles = (archive.file, archive.export_file)
+        binaries = list(objfiles)
     else:
-        importpath = go_importpath(target)
+        importpath = "test" if ctx.rule.kind == "go_test" else go_importpath(target)
+        binaries = target.files.to_list()
+        compilation_outputs = binaries
+        if hasattr(target.output_groups, "compilation_outputs"):
+            compilation_outputs = compilation_outputs + target.output_groups.compilation_outputs.to_list()
+        objfiles = _select_objfile(compilation_outputs)
 
-    # Build a complete configuration, referring to the library rule.
-    go_ctx, args, inputs, raw_findings = _nogo_package_config(ctx, deps, importpath = importpath, target = target)
+    # Use the analyzed rule's transitioned Go configuration, including its build
+    # tags, rather than the aspect's own attributes.
+    go_ctx, args, inputs, raw_findings = _nogo_package_config(ctx, deps, importpath = importpath, objfiles = objfiles, attr = ctx.rule.attr)
 
     # Build the argument file, and the runner.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
@@ -322,9 +334,17 @@ def _nogo_aspect_impl(target, ctx):
     return [
         NogoInfo(
             facts = facts_file,
+            transitive_facts = depset(
+                [(importpath, facts_file)],
+                transitive = [
+                    dep[NogoInfo].transitive_facts
+                    for dep in deps
+                    if hasattr(dep[NogoInfo], "transitive_facts")
+                ],
+            ),
             raw_findings = raw_findings + [findings_file],
             importpath = importpath,
-            binaries = target.files.to_list(),
+            binaries = binaries,
             srcs = srcs,
             deps = deps,
         ),
@@ -463,9 +483,8 @@ nogo_aspect_tricorder = aspect(
 def _nogo_facts_render_impl(ctx):
     """Extract nogo facts."""
 
-    # Build a complete configuration. Note that we don't care about the import
-    # path, since this will generate facts only. We use ctx as the target here,
-    # since this will refer to ctx.files (which contains no binaries).
+    # Rendering dependency facts needs neither an import path nor an archive
+    # for the package containing the template.
     go_ctx, args, inputs, _ = _nogo_package_config(ctx, ctx.attr.deps)
 
     # Build the runner.
