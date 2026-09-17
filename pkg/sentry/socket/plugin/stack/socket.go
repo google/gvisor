@@ -70,6 +70,7 @@ const (
 	ifLoIndex = 1
 )
 
+// +checklocksexclude:notifier.mu
 func newSocket(t *kernel.Task, family int, skType linux.SockType, protocol int, notifier *Notifier, fd int, flags uint32) (*vfs.FileDescription, *syserr.Error) {
 	mnt := t.Kernel().SocketMount()
 	d := sockfs.NewDentry(t, mnt)
@@ -119,6 +120,8 @@ func (s *socketOperations) Listen(t *kernel.Task, backlog int) *syserr.Error {
 }
 
 // Accept implements socket.Socket.Accept.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
 	peerAddrBuf := make([]byte, sizeofSockaddr)
 	peerAddrlen := uint32(len(peerAddrBuf))
@@ -166,6 +169,8 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 }
 
 // Connect implements socket.Socket.Connect.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
 	var ret int64
 
@@ -249,6 +254,8 @@ func (s *socketOperations) OnClose(ctx context.Context) error {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) EventRegister(e *waiter.Entry) error {
 	s.eventInfo.Wq.EventRegister(e)
 	stack.notifier.UpdateFD(s.fd)
@@ -256,6 +263,8 @@ func (s *socketOperations) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) EventUnregister(e *waiter.Entry) {
 	s.eventInfo.Wq.EventUnregister(e)
 	stack.notifier.UpdateFD(s.fd)
@@ -263,24 +272,21 @@ func (s *socketOperations) EventUnregister(e *waiter.Entry) {
 
 // Readiness implements socket.Socket.Readiness.
 func (s *socketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
-	var events waiter.EventMask
-
-	evInfo := &s.eventInfo
-	iomask := mask & (waiter.EventIn | waiter.EventOut)
-
-	// Fast path condition:
-	// 1. The event needed has been reported by plugin stack io-thread; or
-	// 2. POLLIN or POLLOUT event has been reported by io-thread.
-	// Directly report current event without invoking cgo Readiness again.
-	if evInfo.Ready&iomask == iomask {
-		events = evInfo.Ready & mask
-		// Clear plugin stack eventInfo record after consuming IN/OUT event.
-		evInfo.Ready &= ^iomask
-	} else {
-		events = waiter.EventMask(cgo.Readiness(s.fd, uint64(mask)))
+	iomask := uint64(mask & (waiter.EventIn | waiter.EventOut))
+	// Notification callbacks can check readiness while holding the notifier
+	// mutex, so accessing the cache must not acquire that mutex.
+	for {
+		ready := s.eventInfo.Ready.Load()
+		// Use the cache only if all requested IN/OUT events are present.
+		if ready&iomask != iomask {
+			return waiter.EventMask(cgo.Readiness(s.fd, uint64(mask)))
+		}
+		// Consume requested I/O bits without overwriting unrelated updates.
+		// A failed CAS must recheck whether the cache still suffices.
+		if iomask == 0 || s.eventInfo.Ready.CompareAndSwap(ready, ready&^iomask) {
+			return waiter.EventMask(ready) & mask
+		}
 	}
-
-	return events
 }
 
 // Epollable implements socket.Socket.Epollable.
@@ -615,6 +621,8 @@ func (s *socketOperations) recv(t *kernel.Task, dst usermem.IOSequence, sysflags
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	var addr, control []byte
 	if senderRequested {
@@ -754,6 +762,8 @@ func (s *socketOperations) send(t *kernel.Task, src usermem.IOSequence, to []byt
 }
 
 // SendMsg implements socket.Socket.SendMsg.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	total := src.NumBytes()
 	nonblock := flags & syscall.MSG_DONTWAIT
@@ -816,6 +826,8 @@ func (s *socketOperations) Write(ctx context.Context, src usermem.IOSequence, op
 
 // waitEvent implements blocking wait on given events
 // until one of the events have been reported.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) waitEvent(ctx context.Context, event waiter.EventMask) error {
 	var err error
 	t := ctx.(*kernel.Task)
@@ -835,6 +847,8 @@ func (s *socketOperations) waitEvent(ctx context.Context, event waiter.EventMask
 
 // waitEventT implements blocking wait on given events
 // until one of the events have been reported or timeout based on given deadline.
+//
+// +checklocksexclude:s.eventInfo.Wq.mu
 func (s *socketOperations) waitEventT(ctx context.Context, event waiter.EventMask, deadline ktime.Time) error {
 	var err error
 	t := ctx.(*kernel.Task)
