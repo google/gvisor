@@ -1391,6 +1391,8 @@ TEST(PtraceTest, GetRegSet) {
   // Child called kill(2), with SIGSTOP as arg 2.
   EXPECT_EQ(regs.rsi, SIGSTOP);
 #elif defined(__aarch64__)
+  // TEMP: touching this file forces the presubmit CI to run the system call
+  // tests for this change. Remove before submit.
   EXPECT_EQ(regs.regs[1], SIGSTOP);
 #endif
 
