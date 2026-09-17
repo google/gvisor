@@ -1842,25 +1842,13 @@ func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 	k.sendExternalSignal(info, context)
 }
 
-// maybeForceInitSignal marks external signals to the root-namespace init as
-// privileged (SI_KERNEL) so host/control-plane signals take effect under
-// SIGNAL_UNKILLABLE protection. The input info is not mutated.
-func (k *Kernel) maybeForceInitSignal(tg *ThreadGroup, info *linux.SignalInfo) *linux.SignalInfo {
-	if k.signalUnkillable == SignalUnkillableNone || tg != k.globalInit || info.Code != linux.SI_USER {
-		return info
-	}
-	forced := *info
-	forced.Code = linux.SI_KERNEL
-	return &forced
-}
-
 // SendExternalSignalThreadGroup injects a signal into an specific ThreadGroup.
 //
 // This function doesn't skip signals like SendExternalSignal does.
 func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *linux.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	return tg.SendSignal(k.maybeForceInitSignal(tg, info))
+	return tg.sendSignal(info, true /* forced */)
 }
 
 // SendExternalSignalProcessGroup sends a signal to all ThreadGroups in the
@@ -1877,7 +1865,7 @@ func (k *Kernel) SendExternalSignalProcessGroup(pg *ProcessGroup, info *linux.Si
 		if tg.ProcessGroup() != pg {
 			continue
 		}
-		if err := tg.SendSignal(k.maybeForceInitSignal(tg, info)); err != nil && firstErr == nil {
+		if err := tg.sendSignal(info, true /* forced */); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -1896,8 +1884,8 @@ func (k *Kernel) SendContainerSignal(cid string, info *linux.SignalInfo) error {
 	for tg := range k.tasks.Root.tgids {
 		if tg.leader.ContainerID() == cid {
 			tg.signalHandlers.mu.Lock()
-			infoCopy := *k.maybeForceInitSignal(tg, info)
-			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+			infoCopy := *info
+			if err := tg.leader.sendForcedSignalLocked(&infoCopy, true /*group*/); err != nil {
 				lastErr = err
 			}
 			tg.signalHandlers.mu.Unlock()

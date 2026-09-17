@@ -405,7 +405,7 @@ func (t *Task) exitChildrenLocked() {
 				continue
 			}
 			other.signalHandlers.mu.Lock()
-			other.leader.sendSignalLocked(&linux.SignalInfo{
+			other.leader.sendForcedSignalLocked(&linux.SignalInfo{
 				Signo: int32(linux.SIGKILL),
 			}, true /* group */)
 			other.signalHandlers.mu.Unlock()
@@ -427,7 +427,7 @@ func (t *Task) exitChildrenLocked() {
 			siginfo.SetPID(int32(c.tg.pidns.tids[t]))
 			siginfo.SetUID(int32(t.Credentials().RealKUID.In(c.UserNamespace()).OrOverflow()))
 			c.tg.signalHandlers.mu.Lock()
-			c.sendSignalLocked(siginfo, true /* group */)
+			c.sendSignalTimerLocked(siginfo, true /* group */, c.tg.signalForcedFrom(t), nil)
 			c.tg.signalHandlers.mu.Unlock()
 		}
 		c.reparentLocked(newParent)

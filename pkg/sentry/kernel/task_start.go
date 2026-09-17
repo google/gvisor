@@ -413,6 +413,9 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	if isFirstTask = tg.leader == nil; isFirstTask {
 		// New thread group.
 		tg.leader = t
+		// The init process of a PID namespace ignores signals it does not
+		// handle, analogous to Linux's SIGNAL_UNKILLABLE.
+		tg.signalUnkillable.Store(tg.isInitInLocked(tg.pidns))
 		if parentPG := tg.parentPG(); parentPG == nil {
 			tg.createSession() // +checklocksforce: ts.mu is tg.pidns.owner.mu.
 		} else {
@@ -461,7 +464,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	// Kills occurring after this check will find t in the cgroup's task
 	// list and will kill the task naturally.
 	if t.Cgroup2().KillSeq() != cachedKillSeq {
-		t.SendSignal(SignalInfoPriv(linux.SIGKILL))
+		t.SendSignalFrom(srcT, SignalInfoPriv(linux.SIGKILL))
 	}
 
 	return t, nil

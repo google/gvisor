@@ -535,7 +535,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	// "Unlike PTRACE_ATTACH, PTRACE_SEIZE does not stop the process." -
 	// ptrace(2)
 	if !seize {
-		target.sendSignalLocked(&linux.SignalInfo{
+		target.sendForcedSignalLocked(&linux.SignalInfo{
 			Signo: int32(linux.SIGSTOP),
 			Code:  linux.SI_USER,
 		}, false /* group */)
@@ -579,7 +579,7 @@ func (t *Task) exitPtraceLocked() {
 	for target := range t.ptraceTracees {
 		if target.ptraceOpts.ExitKill {
 			target.tg.signalHandlers.mu.Lock()
-			target.sendSignalLocked(&linux.SignalInfo{
+			target.sendForcedSignalLocked(&linux.SignalInfo{
 				Signo: int32(linux.SIGKILL),
 			}, false /* group */)
 			target.tg.signalHandlers.mu.Unlock()

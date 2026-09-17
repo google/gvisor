@@ -1255,10 +1255,14 @@ func TestSignalProcessGroup(t *testing.T) {
 // respond to the Sandbox.Wait RPC, in which case we fall back to the sandbox
 // process's own exit status, which reports the signal as `128+SIGKILL`.
 func killedBySIGKILL(ws unix.WaitStatus) bool {
+	return killedBySignal(ws, unix.SIGKILL)
+}
+
+func killedBySignal(ws unix.WaitStatus, sig unix.Signal) bool {
 	if ws.Signaled() {
-		return ws.Signal() == unix.SIGKILL
+		return ws.Signal() == sig
 	}
-	return ws.ExitStatus() == 128+int(unix.SIGKILL)
+	return ws.ExitStatus() == 128+int(sig)
 }
 
 // TestSignalUnkillablePolicy verifies Linux SIGNAL_UNKILLABLE semantics for PID 1:
@@ -1746,6 +1750,64 @@ func TestSignalUnkillablePolicyForcedSignals(t *testing.T) {
 					t.Fatalf("expected exit status 42 after handled host signal, got %v", waitStatus)
 				}
 			})
+		})
+	}
+}
+
+// TestSignalUnkillablePolicyFaultKillsInit verifies that a fault in PID 1
+// terminates it under SignalUnkillableLinux. The sentry forces the SIGSEGV,
+// which ends the protection of the init process, analogous to Linux's
+// kernel/signal.c:force_sig_info_to_task().
+func TestSignalUnkillablePolicyFaultKillsInit(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testConf := *conf
+			testConf.SignalUnkillablePolicy = config.SignalUnkillableLinux
+
+			spec := testutil.NewSpecWithArgs(app, "segfault")
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			cont, err := New(&testConf, Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			})
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(&testConf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			type waitResult struct {
+				ws  unix.WaitStatus
+				err error
+			}
+			done := make(chan waitResult, 1)
+			go func() {
+				ws, err := cont.Wait()
+				done <- waitResult{ws, err}
+			}()
+			select {
+			case res := <-done:
+				if res.err != nil {
+					t.Fatalf("cont.Wait: %v", res.err)
+				}
+				if !killedBySignal(res.ws, unix.SIGSEGV) {
+					t.Fatalf("expected container killed by SIGSEGV, got %v (status=%d)", res.ws, res.ws.ExitStatus())
+				}
+			case <-time.After(pollTimeout):
+				t.Fatalf("PID 1 is still running %v after faulting", pollTimeout)
+			}
 		})
 	}
 }
