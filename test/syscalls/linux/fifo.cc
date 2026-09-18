@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -21,12 +22,12 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
@@ -34,7 +35,6 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
-#include "test/util/timer_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -151,41 +151,95 @@ TEST(FifoTest, FifoTruncNoOp) {
   EXPECT_THAT(ftruncate(wfd.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
-void TestSigHandler(int sig, siginfo_t* info, void* ucontext) {}
+std::atomic<int> signals_delivered;
 
-TEST(FifoTest, OpenBlockedAndInterrupted) {
+void CountingSigHandler(int sig, siginfo_t* info, void* ucontext) {
+  signals_delivered.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Interrupts a blocking FIFO open with a handled signal and checks that the
+// open is restarted (SA_RESTART) or fails with EINTR (no SA_RESTART).
+//
+// The interrupting signals come from a second thread rather than a timer, so
+// nothing here depends on wall-clock timing. Without SA_RESTART the peer end is
+// never opened, so the open can only return by being interrupted. With
+// SA_RESTART the peer end is not opened until the handler has run twice during
+// a single open(2), which an open that fails with EINTR cannot reach.
+void FifoOpenInterrupted(int open_flags, bool restart) {
   constexpr int kSigno = SIGUSR1;
-  constexpr int kSigvalue = 42;
+  const int peer_flags = open_flags == O_RDONLY ? O_WRONLY : O_RDONLY;
 
-  // Install our signal handler.
   struct sigaction sa = {};
-  sa.sa_sigaction = TestSigHandler;
+  sa.sa_sigaction = CountingSigHandler;
   sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO;
+  sa.sa_flags = SA_SIGINFO | (restart ? SA_RESTART : 0);
   const auto scoped_sigaction =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(kSigno, sa));
-
-  // Ensure that kSigno is unblocked on at least one thread.
   const auto scoped_sigmask =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, kSigno));
-
-  struct sigevent sev = {};
-  sev.sigev_notify = SIGEV_THREAD;
-  sev.sigev_signo = kSigno;
-  sev.sigev_value.sival_int = kSigvalue;
-  auto timer = ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
-
-  constexpr absl::Duration kPeriod = absl::Seconds(1);
-  struct itimerspec its = {};
-  its.it_value = its.it_interval = absl::ToTimespec(kPeriod);
-  ASSERT_NO_ERRNO(timer.Set(0, its));
 
   const std::string fifo = NewTempAbsPath();
   ASSERT_THAT(mknod(fifo.c_str(), S_IFIFO | S_IRUSR | S_IWUSR, 0),
               SyscallSucceeds());
 
-  EXPECT_THAT(open(fifo.c_str(), O_WRONLY), SyscallFailsWithErrno(EINTR));
-  EXPECT_THAT(open(fifo.c_str(), O_RDONLY), SyscallFailsWithErrno(EINTR));
+  signals_delivered.store(0, std::memory_order_relaxed);
+  std::atomic<bool> returned(false);
+  const pid_t opener = gettid();
+  int peer = -1;
+
+  ScopedThread signaller([&] {
+    // Interrupt the open. With SA_RESTART, stop once the handler has run twice
+    // during a single open(2); without it, the first delivery ends the open.
+    while (!returned.load(std::memory_order_acquire) &&
+           (!restart ||
+            signals_delivered.load(std::memory_order_relaxed) < 2)) {
+      TEST_PCHECK(tgkill(getpid(), opener, kSigno) == 0);
+      sched_yield();
+    }
+    if (!restart) {
+      return;
+    }
+    // Signalling has stopped, so the opener restarts a last time and blocks.
+    // Give it a peer so that the open can complete. Retry, because an
+    // interrupted open drops its reader or writer reference before restarting
+    // and a peer opened in that window fails with ENXIO, and keep the peer open
+    // until the opener returns, because a restart re-samples the pipe's open
+    // counters. O_NONBLOCK so that this cannot block if the opener gave up.
+    while (!returned.load(std::memory_order_acquire) &&
+           (peer = open(fifo.c_str(), peer_flags | O_NONBLOCK)) < 0) {
+      sched_yield();
+    }
+  });
+
+  const int fd = open(fifo.c_str(), open_flags);
+  const int open_errno = errno;
+  returned.store(true, std::memory_order_release);
+  signaller.Join();
+
+  if (fd >= 0) {
+    EXPECT_THAT(close(fd), SyscallSucceeds());
+  }
+  if (peer >= 0) {
+    EXPECT_THAT(close(peer), SyscallSucceeds());
+  }
+  errno = open_errno;
+  if (restart) {
+    EXPECT_THAT(fd, SyscallSucceeds());
+    // Proves the open was interrupted and resumed, not left to complete.
+    EXPECT_GE(signals_delivered.load(std::memory_order_relaxed), 2);
+  } else {
+    EXPECT_THAT(fd, SyscallFailsWithErrno(EINTR));
+  }
+}
+
+TEST(FifoTest, OpenBlockedAndInterrupted) {
+  FifoOpenInterrupted(O_RDONLY, /*restart=*/false);
+  FifoOpenInterrupted(O_WRONLY, /*restart=*/false);
+}
+
+TEST(FifoTest, OpenBlockedAndRestarted) {
+  FifoOpenInterrupted(O_RDONLY, /*restart=*/true);
+  FifoOpenInterrupted(O_WRONLY, /*restart=*/true);
 }
 
 TEST(FifoTest, FifoOpenRDWR) {
