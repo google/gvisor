@@ -25,7 +25,7 @@ inline pid_t gettid() { return syscall(SYS_gettid); }
 //   - 8 byte little endian uint64 containing the size of the proto.
 //   - The proto bytes.
 // This should match the format in sniffer_bridge.go.
-void WriteIoctlProto(gvisor::Ioctl &ioctl);
+void WriteIoctlProto(gvisor::Ioctl& ioctl);
 
 void InitializeSocket();
 

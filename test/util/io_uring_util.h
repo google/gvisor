@@ -161,11 +161,11 @@ using IOUringSqe = struct io_uring_sqe;
 class IOUring {
  public:
   IOUring() = delete;
-  IOUring(FileDescriptor &&fd, unsigned int entries, IOUringParams &params);
+  IOUring(FileDescriptor&& fd, unsigned int entries, IOUringParams& params);
   ~IOUring();
 
   static PosixErrorOr<std::unique_ptr<IOUring>> InitIOUring(
-      unsigned int entries, IOUringParams &params);
+      unsigned int entries, IOUringParams& params);
 
   uint32_t load_cq_head();
   uint32_t load_cq_tail();
@@ -176,49 +176,49 @@ class IOUring {
   void store_cq_head(uint32_t cq_head_val);
   void store_sq_tail(uint32_t sq_tail_val);
   int Enter(unsigned int to_submit, unsigned int min_complete,
-            unsigned int flags, sigset_t *sig);
+            unsigned int flags, sigset_t* sig);
 
-  IOUringCqe *get_cqes();
-  IOUringSqe *get_sqes();
+  IOUringCqe* get_cqes();
+  IOUringSqe* get_sqes();
   uint32_t get_sq_mask();
-  unsigned *get_sq_array();
+  unsigned* get_sq_array();
 
   int Fd() { return iouringfd_.get(); }
 
  private:
-  IOUringCqe *cqes_ = nullptr;
+  IOUringCqe* cqes_ = nullptr;
   FileDescriptor iouringfd_;
   size_t cring_sz_;
   size_t sring_sz_;
   size_t sqes_sz_;
   uint32_t sq_mask_;
-  unsigned *sq_array_ = nullptr;
-  uint32_t *cq_head_ptr_ = nullptr;
-  uint32_t *cq_tail_ptr_ = nullptr;
-  uint32_t *sq_head_ptr_ = nullptr;
-  uint32_t *sq_tail_ptr_ = nullptr;
-  uint32_t *cq_overflow_ptr_ = nullptr;
-  uint32_t *sq_dropped_ptr_ = nullptr;
-  void *sq_ptr_ = nullptr;
-  void *cq_ptr_ = nullptr;
-  void *sqe_ptr_ = nullptr;
+  unsigned* sq_array_ = nullptr;
+  uint32_t* cq_head_ptr_ = nullptr;
+  uint32_t* cq_tail_ptr_ = nullptr;
+  uint32_t* sq_head_ptr_ = nullptr;
+  uint32_t* sq_tail_ptr_ = nullptr;
+  uint32_t* cq_overflow_ptr_ = nullptr;
+  uint32_t* sq_dropped_ptr_ = nullptr;
+  void* sq_ptr_ = nullptr;
+  void* cq_ptr_ = nullptr;
+  void* sqe_ptr_ = nullptr;
 };
 
 // This is a wrapper for the io_uring_setup(2) system call.
-inline int IOUringSetup(uint32_t entries, IOUringParams *params) {
+inline int IOUringSetup(uint32_t entries, IOUringParams* params) {
   return syscall(__NR_io_uring_setup, entries, params);
 }
 
 // This is a wrapper for the io_uring_enter(2) system call.
 inline int IOUringEnter(unsigned int fd, unsigned int to_submit,
                         unsigned int min_complete, unsigned int flags,
-                        sigset_t *sig) {
+                        sigset_t* sig) {
   return syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sig);
 }
 
 // Returns a new iouringfd with the given number of entries.
 inline PosixErrorOr<FileDescriptor> NewIOUringFD(uint32_t entries,
-                                                 IOUringParams &params) {
+                                                 IOUringParams& params) {
   memset(&params, 0, sizeof(params));
   int fd = IOUringSetup(entries, &params);
   MaybeSave();
@@ -229,14 +229,14 @@ inline PosixErrorOr<FileDescriptor> NewIOUringFD(uint32_t entries,
 }
 
 template <typename T>
-static inline void io_uring_atomic_write(T *p, T v) {
-  std::atomic_store_explicit(reinterpret_cast<std::atomic<T> *>(p), v,
+static inline void io_uring_atomic_write(T* p, T v) {
+  std::atomic_store_explicit(reinterpret_cast<std::atomic<T>*>(p), v,
                              std::memory_order_release);
 }
 
 template <typename T>
-static inline T io_uring_atomic_read(const T *p) {
-  return std::atomic_load_explicit(reinterpret_cast<const std::atomic<T> *>(p),
+static inline T io_uring_atomic_read(const T* p) {
+  return std::atomic_load_explicit(reinterpret_cast<const std::atomic<T>*>(p),
                                    std::memory_order_acquire);
 }
 

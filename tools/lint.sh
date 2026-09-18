@@ -42,7 +42,8 @@ declare -ra FIXABLE_CHECKS=(gofmt clang-format buildifier)
 
 declare -r ACTIONLINT_VERSION="1.7.7"
 declare -r CODESPELL_VERSION="2.3.0"
-declare -r CLANG_FORMAT_VERSION="20.1.8"
+declare -r CLANG_FORMAT_VERSION="23.1.1"
+declare -r GOFMT_MINIMUM_GO_VERSION="1.27"
 # Keep in sync with images/default/Dockerfile.
 declare -r BUILDIFIER_VERSION="8.5.1"
 
@@ -56,16 +57,16 @@ case "$(uname -m)" in
     declare -r ACTIONLINT_SHA256="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
     declare -r BUILDIFIER_ARCH="amd64"
     declare -r BUILDIFIER_SHA256="887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
-    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/a6/77/786aa0fc8a75d8ce94966bb33e44c63fec1964cbf343ee862ed6a5be38c1/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
-    declare -r CLANG_FORMAT_SHA256="7c6bcb7e01ba4f05a4c980fda147b330f7e4833c2aea8c92a0c2df9573ae7afe"
+    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/42/ef/3f8e215916e79ecd435b5bc20810443f80fce3fb8bbfe6d2783ceb775c1b/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+    declare -r CLANG_FORMAT_SHA256="64900462c1203cee2fec364536c2dda708baf0619e15b52ceda926648cc82f56"
     ;;
   aarch64|arm64)
     declare -r ACTIONLINT_ARCH="arm64"
     declare -r ACTIONLINT_SHA256="401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
     declare -r BUILDIFIER_ARCH="arm64"
     declare -r BUILDIFIER_SHA256="947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
-    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/06/60/7c2ff3019599ad985d0a61f74ba8226d538c72485b0e3d25b1899601a9f5/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl"
-    declare -r CLANG_FORMAT_SHA256="34de32fe53452a07497793d5faf3fd03f7cf8b960b915417471ae81227461a39"
+    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/0e/b6/1a162e427d912b88653a66e99a22414d798eb885b761ffddb74dbc13963f/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
+    declare -r CLANG_FORMAT_SHA256="09af54d2ef51680b34e36ed71b9f510bd399fb7b10b29a2a40843cd0e0344228"
     ;;
   *)
     echo "lint: unsupported architecture $(uname -m)" >&2
@@ -152,20 +153,60 @@ install_clang_format() {
   echo "${bin}"
 }
 
-find_gofmt() {
-  if command -v gofmt >/dev/null 2>&1; then
-    command -v gofmt
-    return 0
-  fi
-  if command -v go >/dev/null 2>&1; then
-    local -r candidate="$(go env GOROOT)/bin/gofmt"
-    if [[ -x "${candidate}" ]]; then
-      echo "${candidate}"
+version_at_least() {
+  local -r have_major="${1%%.*}" want_major="${2%%.*}"
+  local -r have_rest="${1#*.}" want_rest="${2#*.}"
+  local -r have_minor="${have_rest%%.*}" want_minor="${want_rest%%.*}"
+  if (( have_major != want_major )); then
+    if (( have_major > want_major )); then
       return 0
     fi
+    return 1
   fi
-  echo "lint: gofmt not found; install Go or put gofmt on PATH" >&2
+  if (( have_minor >= want_minor )); then
+    return 0
+  fi
   return 1
+}
+
+go_toolchain() {
+  local version
+  version="$(awk '$1 == "toolchain" { sub(/^go/, "", $2); print $2; exit }' \
+      "${REPO_DIR}/go.mod")"
+  if [[ -z "${version}" ]]; then
+    version="$(awk '$1 == "go" { print $2; exit }' "${REPO_DIR}/go.mod")"
+  fi
+  if [[ -z "${version}" ]]; then
+    echo "lint: no go or toolchain directive in ${REPO_DIR}/go.mod" >&2
+    return 1
+  fi
+  if ! version_at_least "${version}" "${GOFMT_MINIMUM_GO_VERSION}"; then
+    version="${GOFMT_MINIMUM_GO_VERSION}"
+  fi
+  if [[ "${version}" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    version="${version}.0"
+  fi
+  echo "go${version}"
+}
+
+install_gofmt() {
+  if ! command -v go >/dev/null 2>&1; then
+    echo "lint: go not found; install Go or put go on PATH" >&2
+    return 1
+  fi
+  local toolchain
+  toolchain="$(go_toolchain)" || return 1
+  local goroot
+  if ! goroot="$(GOTOOLCHAIN="${toolchain}" go env GOROOT)"; then
+    echo "lint: failed to resolve Go toolchain ${toolchain}" >&2
+    return 1
+  fi
+  local -r bin="${goroot}/bin/gofmt"
+  if [[ ! -x "${bin}" ]]; then
+    echo "lint: no gofmt in Go toolchain ${toolchain}" >&2
+    return 1
+  fi
+  echo "${bin}"
 }
 
 # Only tracked files, to skip bazel-* symlinks and other build output.
@@ -190,7 +231,7 @@ report() {
 
 check_gofmt() {
   local gofmt
-  gofmt="$(find_gofmt)" || return 1
+  gofmt="$(install_gofmt)" || return 1
   if [[ "${FIX}" -eq 1 ]]; then
     go_files | xargs -0 "${gofmt}" -w -l
     return 0
@@ -231,7 +272,7 @@ check_clang_format() {
     # -Werror reports these as "error:" rather than "warning:".
     local file
     while IFS= read -r file; do
-      [[ -n "${file}" ]] || continue
+      [[ -f "${file}" ]] || continue
       diff -u --label "${file}" --label "${file} (formatted)" \
         "${file}" <("${clang_format}" "${file}") || true
     done < <(printf '%s\n' "${warnings}" |
@@ -242,18 +283,26 @@ check_clang_format() {
   fi
 }
 
-# Formatting only. buildifier --lint reports semantic issues (native rule
-# loads, duplicated names) that are out of scope for a formatting check.
+# Native rule loads (native-sh-test, native-sh-binary, native-proto) are
+# excluded because rules_shell / proto_library.bzl loads are not used here.
 check_buildifier() {
   local buildifier
   buildifier="$(install_buildifier)"
+  local -r warnings="-duplicated-name,-list-append,-native-py,-native-sh-binary,-native-sh-library,-native-sh-test,-native-proto"
   if [[ "${FIX}" -eq 1 ]]; then
-    bazel_files | xargs -0 "${buildifier}" --mode=fix
+    bazel_files | xargs -0 "${buildifier}" --mode=fix --lint=fix --warnings="${warnings}"
+    return 0
+  fi
+  local output
+  output="$(bazel_files | xargs -0 "${buildifier}" --mode=check --lint=warn --warnings="${warnings}" 2>&1)" || true
+  if [[ -z "${output}" ]]; then
     return 0
   fi
   local unformatted
-  unformatted="$(bazel_files | xargs -0 "${buildifier}" --mode=check 2>&1 |
-    sed -n 's/^\(.*\) # reformat$/\1/p')"
+  unformatted="$(printf '%s\n' "${output}" | sed -n 's/^\(.*\) # reformat$/\1/p')"
+  local lint_warnings
+  lint_warnings="$(printf '%s\n' "${output}" | grep -v ' # reformat$' || true)"
+  local rc=0
   if [[ -n "${unformatted}" ]]; then
     local file
     while IFS= read -r file; do
@@ -264,8 +313,13 @@ check_buildifier() {
     done <<< "${unformatted}"
     echo
     echo "Run \`make lint-fix\` to reformat these files." >&2
-    return 1
+    rc=1
   fi
+  if [[ -n "${lint_warnings}" ]]; then
+    echo "${lint_warnings}" >&2
+    rc=1
+  fi
+  return "${rc}"
 }
 
 check_actions() {

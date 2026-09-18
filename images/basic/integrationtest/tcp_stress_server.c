@@ -38,8 +38,8 @@ typedef struct {
   int listen_fd;
 } listener_arg_t;
 
-void *listener_thread(void *arg) {
-  listener_arg_t *listener_arg = (listener_arg_t *)arg;
+void* listener_thread(void* arg) {
+  listener_arg_t* listener_arg = (listener_arg_t*)arg;
   int port = listener_arg->port;
   int listen_fd = listener_arg->listen_fd;
 
@@ -86,7 +86,7 @@ int main() {
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
 
-    if (bind(listen_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
+    if (bind(listen_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) <
         0) {
       perror("bind failed");
       exit(EXIT_FAILURE);
@@ -101,7 +101,7 @@ int main() {
     active_listeners++;
 
     // Allocate memory for the argument to pass to the thread
-    listener_arg_t *arg = (listener_arg_t *)malloc(sizeof(listener_arg_t));
+    listener_arg_t* arg = (listener_arg_t*)malloc(sizeof(listener_arg_t));
     if (arg == NULL) {
       close(listen_fd);
       active_listeners--;
@@ -111,7 +111,7 @@ int main() {
     arg->listen_fd = listen_fd;
 
     if (pthread_create(&listener_threads[i], NULL, listener_thread,
-                       (void *)arg) != 0) {
+                       (void*)arg) != 0) {
       perror("pthread_create failed");
       close(listen_fd);
       free(arg);

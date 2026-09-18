@@ -2196,8 +2196,7 @@ int set_lock() {
   if (socket_fd != -1) {
     // Send signal to the parent.
     char c = 0;
-    gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&c),
-                                   sizeof(c));
+    gvisor::testing::WriteFd(socket_fd, &c, sizeof(c));
   }
   // Test the fcntl.
   int err = 0;
@@ -2218,8 +2217,7 @@ int set_lock() {
   // If there is a socket fd let's send back the time in microseconds it took
   // to execute this syscall.
   if (socket_fd != -1) {
-    gvisor::testing::WriteFd(socket_fd, reinterpret_cast<void*>(&usec),
-                                   sizeof(usec));
+    gvisor::testing::WriteFd(socket_fd, &usec, sizeof(usec));
     close(socket_fd);
   }
 

@@ -13,7 +13,7 @@ gbenchmark = "@com_google_benchmark//:benchmark"
 gbenchmark_internal = "@com_google_benchmark//:benchmark"
 grpcpp = "@com_github_grpc_grpc//:grpc++"
 
-def _cc_flags_supplier_impl(ctx):
+def _cc_flags_supplier_impl(_ctx):
     variables = platform_common.TemplateVariableInfo({
         "CC_FLAGS": "",
     })

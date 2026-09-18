@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <asm-generic/errno-base.h>
+#include <fcntl.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstddef>
+#include <memory>
+#include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "test/util/file_descriptor.h"
@@ -65,7 +70,7 @@ class CloseRangeTest : public ::testing::Test {
   void OpenFilesRdwr() {
     fds_.clear();
     fds_.reserve(file_names_.size());
-    for (std::string &file_name : file_names_) {
+    for (std::string& file_name : file_names_) {
       int fd;
       ASSERT_THAT(fd = open(file_name.c_str(), O_RDWR), SyscallSucceeds());
       fds_.push_back(fd);
@@ -74,7 +79,7 @@ class CloseRangeTest : public ::testing::Test {
 
  private:
   void TearDown() override {
-    for (std::string &name : file_names_) {
+    for (std::string& name : file_names_) {
       unlink(name.c_str());
     }
   }

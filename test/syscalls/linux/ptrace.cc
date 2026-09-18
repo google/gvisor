@@ -2473,6 +2473,8 @@ TEST(PtraceTest, ExecvePtraceLockStress) {
 }  // namespace testing
 }  // namespace gvisor
 
+using gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec;
+
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
@@ -2500,8 +2502,7 @@ int main(int argc, char** argv) {
   }
 
   if (absl::GetFlag(FLAGS_ptrace_test_prctl_set_ptracer_and_exec_non_leader)) {
-    gvisor::testing::RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(
-        fd);
+    RunPrctlSetPtracerDoesNotPersistPastNonLeaderExec(fd);
   }
 
   if (absl::GetFlag(

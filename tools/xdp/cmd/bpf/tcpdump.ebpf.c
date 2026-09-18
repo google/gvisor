@@ -42,7 +42,7 @@ struct gvisor_bpf_map_def section("maps") sock_map = {
     .max_entries = 1,
 };
 
-section("xdp") int xdp_prog(struct xdp_md *ctx) {
+section("xdp") int xdp_prog(struct xdp_md* ctx) {
   // Lookup the socket for the current RX queue. Veth devices by default have
   // only one RX queue. If one is found, redirect the packet to that socket.
   // Otherwise pass it on to the kernel network stack.

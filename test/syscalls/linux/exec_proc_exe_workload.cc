@@ -13,9 +13,11 @@
 // limitations under the License.
 
 #include <stdlib.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <iostream>
+#include <string>
 
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
@@ -27,8 +29,8 @@ int main(int argc, char** argv, char** envp) {
   //
   // Therefore, this test simply checks that the /proc/self/exe
   // is absolute and *doesn't* match argv[1].
-  std::string exe =
-      gvisor::testing::ProcessExePath(getpid()).ValueOrDie();
+  const pid_t pid = getpid();
+  std::string exe = gvisor::testing::ProcessExePath(pid).ValueOrDie();
   if (exe[0] != '/') {
     std::cerr << "relative path: " << exe << std::endl;
     exit(1);

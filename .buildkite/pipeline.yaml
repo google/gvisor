@@ -315,14 +315,12 @@ steps:
     agents:
       arch: "arm64"
       queue: "arm64"
-
   - <<: *common
     <<: *source_test
     label: ":scroll: Governance file sync check"
     command: make governance-check
     agents:
       arch: "amd64"
-
   - <<: *common
     <<: *source_test
     label: ":scales: Dependency license check"

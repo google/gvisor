@@ -14,4 +14,46 @@
 
 # gVisor's C and C++ sources follow the Google C++ style guide.
 BasedOnStyle: Google
-SortIncludes: false
+IncludeCategories:
+  - Regex: '^<ext/.*\.h>'
+    Priority: 2
+    SortPriority: 20
+  - Regex: '^<.*\.h>'
+    Priority: 1
+    SortPriority: 10
+  - Regex: '^<.*'
+    Priority: 2
+    SortPriority: 20
+  - Regex: '^"gmock/'
+    Priority: 3
+    SortPriority: 31
+  - Regex: '^"gtest/'
+    Priority: 3
+    SortPriority: 32
+  - Regex: '^"absl/'
+    Priority: 3
+    SortPriority: 33
+  - Regex: '^"benchmark/'
+    Priority: 3
+    SortPriority: 34
+  - Regex: '^"include/grpcpp/'
+    Priority: 3
+    SortPriority: 35
+  - Regex: '^"(examples|images|pkg|runsc|test|tools|vdso|webhook|sysmsg)/'
+    Priority: 3
+    SortPriority: 36
+  - Regex: '^"nlohmann/'
+    Priority: 3
+    SortPriority: 37
+  - Regex: '^"clang/'
+    Priority: 3
+    SortPriority: 38
+  - Regex: '^"llvm/'
+    Priority: 3
+    SortPriority: 39
+  - Regex: '^"google/protobuf/'
+    Priority: 3
+    SortPriority: 40
+  - Regex: '.*'
+    Priority: 3
+    SortPriority: 30

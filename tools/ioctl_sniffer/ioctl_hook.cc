@@ -50,7 +50,7 @@ void init_libc_ioctl_handle() {
 
 extern "C" {
 
-int ioctl(int fd, uint64_t request, void *argp) {
+int ioctl(int fd, uint64_t request, void* argp) {
   if (!libc_ioctl_handle) {
     init_libc_ioctl_handle();
   }

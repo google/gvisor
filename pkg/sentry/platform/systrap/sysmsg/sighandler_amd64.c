@@ -55,8 +55,8 @@ long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   return ret;
 }
 
-long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
-               uint32_t *addr2, int val3) {
+long sys_futex(uint32_t* addr, int op, int val, struct __kernel_timespec* tv,
+               uint32_t* addr2, int val3) {
   return __syscall(__NR_futex, (long)addr, (long)op, (long)val, (long)tv,
                    (long)addr2, (long)val3);
 }
@@ -71,8 +71,8 @@ union csgsfs {
   };
 };
 
-static void gregs_to_ptregs(ucontext_t *ucontext,
-                            struct user_regs_struct *ptregs) {
+static void gregs_to_ptregs(ucontext_t* ucontext,
+                            struct user_regs_struct* ptregs) {
   union csgsfs csgsfs = {.csgsfs = ucontext->uc_mcontext.gregs[REG_CSGSFS]};
 
   // Set all registers except:
@@ -103,8 +103,8 @@ static void gregs_to_ptregs(ucontext_t *ucontext,
   ptregs->gs = csgsfs.gs;
 }
 
-static void ptregs_to_gregs(ucontext_t *ucontext,
-                            struct user_regs_struct *ptregs) {
+static void ptregs_to_gregs(ucontext_t* ucontext,
+                            struct user_regs_struct* ptregs) {
   union csgsfs csgsfs = {.csgsfs = ucontext->uc_mcontext.gregs[REG_CSGSFS]};
 
   ucontext->uc_mcontext.gregs[REG_R15] = ptregs->r15;
@@ -163,11 +163,11 @@ static void set_fsbase(uint64_t fsbase) {
 
 // switch_context_amd64 is a wrapper of switch_context() which does checks
 // specific to amd64.
-struct thread_context *switch_context_amd64(
-    struct sysmsg *sysmsg, struct thread_context *ctx,
+struct thread_context* switch_context_amd64(
+    struct sysmsg* sysmsg, struct thread_context* ctx,
     enum context_state new_context_state) {
   // NOTE: Both ctx and old_ctx may not be valid and should not be dereferenced.
-  struct thread_context *old_ctx = sysmsg->context;
+  struct thread_context* old_ctx = sysmsg->context;
 
   for (;;) {
     ctx = switch_context(sysmsg, ctx, new_context_state);
@@ -196,17 +196,17 @@ struct thread_context *switch_context_amd64(
   return ctx;
 }
 
-static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
+static void prep_fpstate_for_sigframe(void* buf, uint32_t user_size,
                                       bool use_xsave);
 
-void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
-  ucontext_t *ucontext = _ucontext;
-  void *sp = sysmsg_sp();
-  struct sysmsg *sysmsg = sysmsg_addr(sp);
+void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
+  ucontext_t* ucontext = _ucontext;
+  void* sp = sysmsg_sp();
+  struct sysmsg* sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
   int32_t thread_state = atomic_load(&sysmsg->state);
-  struct thread_context *ctx = NULL;
+  struct thread_context* ctx = NULL;
   enum context_state ctx_state = CONTEXT_STATE_INVALID;
   long fs_base = 0;
 
@@ -243,7 +243,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     ctx->ptregs.fs_base = fs_base;
     ctx->err = 0;
     gregs_to_ptregs(ucontext, &ctx->ptregs);
-    memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
+    memcpy(ctx->fpstate, (uint8_t*)ucontext->uc_mcontext.fpregs,
            __export_arch_state.fp_len);
   }
 
@@ -257,13 +257,13 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       // Look at pkg/sentry/usertrap for more details.
       if (__export_disable_syscall_patching == 0 &&
           siginfo->si_arch == AUDIT_ARCH_X86_64) {
-        uint8_t *rip = (uint8_t *)ctx->ptregs.rip;
+        uint8_t* rip = (uint8_t*)ctx->ptregs.rip;
         // FIXME(b/144063246): Even if all five bytes before the syscall
         // instruction match the "mov sysno, %eax" instruction, they can be a
         // part of a longer instruction. Here is not easy way to decode x86
         // instructions in reverse.
         uint64_t syscall_code_int[2];
-        uint8_t *syscall_code = (uint8_t *)&syscall_code_int[0];
+        uint8_t* syscall_code = (uint8_t*)&syscall_code_int[0];
 
         // We need to receive 5 bytes before the syscall instruction, but they
         // are not aligned, so we can't read them atomically. Let's read them
@@ -280,7 +280,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
         }
         // The mov instruction is 5 bytes:  b8 <sysno, 4 bytes>.
         // The syscall instruction is 2 bytes: 0f 05.
-        uint32_t sysno = *(uint32_t *)(syscall_code + 2);
+        uint32_t sysno = *(uint32_t*)(syscall_code + 2);
         int need_trap = *(syscall_code + 6) == 0x0f &&  // syscall
                         *(syscall_code + 7) == 0x05 &&
                         *(syscall_code + 1) == 0xb8 &&  // mov sysno, %eax
@@ -291,7 +291,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
         // syscall instruction set is replaced on a function call, all threads
         // have to call it via the function call. Otherwise the syscall will not
         // be restarted properly if it will be interrupted by signal.
-        syscall_code = (uint8_t *)&syscall_code_int[1];
+        syscall_code = (uint8_t*)&syscall_code_int[1];
         uint8_t syscall_opcode = *(syscall_code + 6);
 
         // A binary patch is built so that the first byte of the syscall
@@ -345,20 +345,20 @@ init:
     prep_fpstate_for_sigframe(
         ctx->fpstate, __export_arch_state.fp_len,
         __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
-    ucontext->uc_mcontext.fpregs = (void *)ctx->fpstate;
+    ucontext->uc_mcontext.fpregs = (void*)ctx->fpstate;
   }
   ptregs_to_gregs(ucontext, &ctx->ptregs);
 }
 
 void __syshandler() {
-  struct sysmsg *sysmsg;
+  struct sysmsg* sysmsg;
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
   int state = atomic_load(&sysmsg->state);
   if (state != THREAD_STATE_PREP) panic(STUB_ERROR_BAD_THREAD_STATE, 0);
 
-  struct thread_context *ctx = sysmsg->context;
+  struct thread_context* ctx = sysmsg->context;
 
   enum context_state ctx_state = CONTEXT_STATE_SYSCALL_TRAP;
   ctx->signo = SIGSYS;
@@ -384,8 +384,8 @@ void __syshandler() {
 void asm_restore_state();
 
 // On x86 restore_state jumps straight to user code and does not return.
-void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
-                   void *unused) {
+void restore_state(struct sysmsg* sysmsg, struct thread_context* ctx,
+                   void* unused) {
   set_fsbase(ctx->ptregs.fs_base);
   asm_restore_state();
 }
@@ -476,14 +476,14 @@ struct __fpstate {
 
 // The kernel expects to see some additional info in an FPU state. More details
 // can be found in arch/x86/kernel/fpu/signal.c:check_xstate_in_sigframe.
-static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
+static void prep_fpstate_for_sigframe(void* buf, uint32_t user_size,
                                       bool use_xsave) {
-  struct __fpstate *fpstate = buf;
-  struct __fpx_sw_bytes *sw_bytes = &fpstate->sw_reserved;
+  struct __fpstate* fpstate = buf;
+  struct __fpx_sw_bytes* sw_bytes = &fpstate->sw_reserved;
 
   sw_bytes->magic1 = FP_XSTATE_MAGIC1;
   sw_bytes->extended_size = user_size + FP_XSTATE_MAGIC2_SIZE;
   sw_bytes->xfeatures = ~(0ULL) ^ (XCR0_DISABLED_MASK);
   sw_bytes->xstate_size = user_size;
-  *(uint32_t *)(buf + user_size) = use_xsave ? FP_XSTATE_MAGIC2 : 0;
+  *(uint32_t*)(buf + user_size) = use_xsave ? FP_XSTATE_MAGIC2 : 0;
 }

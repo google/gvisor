@@ -162,7 +162,7 @@ TEST(MknodTest, Socket) {
 
   struct sockaddr_un addr = {.sun_family = AF_UNIX};
   absl::SNPrintF(addr.sun_path, sizeof(addr.sun_path), "%s", filename.c_str());
-  ASSERT_THAT(connect(sk, (struct sockaddr *)&addr, sizeof(addr)),
+  ASSERT_THAT(connect(sk, (struct sockaddr*)&addr, sizeof(addr)),
               SyscallFailsWithErrno(ECONNREFUSED));
   ASSERT_THAT(unlink(filename.c_str()), SyscallSucceeds());
 }

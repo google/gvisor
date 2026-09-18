@@ -3,7 +3,7 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 
-def _llvm_zlib_impl(ctx):
+def _llvm_zlib_impl(_ctx):
     maybe(
         http_archive,
         name = "llvm_zlib",

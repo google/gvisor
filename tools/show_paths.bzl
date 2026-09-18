@@ -1,6 +1,14 @@
 """Formatter to extract the output files from a target."""
 
 def format(target):
+    """Returns all found output files with their relative destination paths.
+
+    Args:
+      target: the target to extract output files from.
+
+    Returns:
+      Newline-separated string of output file paths and relative destination paths.
+    """
     provider_map = providers(target)
     if not provider_map:
         return ""

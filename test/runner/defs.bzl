@@ -219,7 +219,7 @@ def syscall_test_variants(
         add_directfs = True,
         one_sandbox = True,
         iouring = False,
-        allow_native = True,
+        allow_native = True,  # buildifier: disable=unused-variable
         leak_check = True,
         debug = True,
         container = None,
@@ -262,6 +262,7 @@ def syscall_test_variants(
       netstack_sr: if save is true, add netstack save/restore test variants.
       nftables: if nftables is true, enable nftables.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
+      in_sandbox_cgroup: cgroup version to use inside the sandbox.
       **kwargs: additional test arguments.
     """
     for platform, platform_tags in all_platforms():
@@ -415,7 +416,7 @@ def syscall_test(
         add_directfs = True,
         one_sandbox = True,
         iouring = False,
-        allow_native = True,
+        allow_native = True,  # buildifier: disable=unused-variable
         leak_check = True,
         debug = None,
         container = None,
@@ -456,6 +457,7 @@ def syscall_test(
       nftables: if nftables is true, enable nftables.
       perf: test is a benchmark.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
+      in_sandbox_cgroup: cgroup version to use inside the sandbox.
       **kwargs: additional test arguments.
     """
     if not tags:

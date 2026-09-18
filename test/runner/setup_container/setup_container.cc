@@ -69,7 +69,7 @@ using ::gvisor::testing::SetupContainer;
 // with container=True will run, then execs the actual test binary.
 // Usage:
 //   ./setup_container test_binary [arguments forwarded to test_binary...]
-int main(int argc, char *argv[], char *envp[]) {
+int main(int argc, char* argv[], char* envp[]) {
   if (!SetupContainer().ok()) {
     return 1;
   }

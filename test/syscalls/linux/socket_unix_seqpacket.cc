@@ -14,9 +14,18 @@
 
 #include "test/syscalls/linux/socket_unix_seqpacket.h"
 
+#include <fcntl.h>
 #include <stdio.h>
+#include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <cstring>
+#include <ostream>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -102,7 +111,7 @@ TEST_P(SeqpacketUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {
   if (IsRunningOnGvisor() && (new_buf_size <= buf_size)) {
     GTEST_SKIP() << "Skipping test new send buffer size " << new_buf_size
                  << " is the same as the value before setsockopt, "
-                 << " socket is probably a host backed socket." << std ::endl;
+                 << " socket is probably a host backed socket." << std::endl;
   }
   //  send should succeed again.
   ASSERT_THAT(RetryEINTR(send)(sock, buf.data(), buf.size(), 0),

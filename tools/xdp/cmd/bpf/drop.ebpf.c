@@ -20,4 +20,4 @@ char __license[] section("license") = "Apache-2.0";
 
 // You probably shouldn't change the section or function name. Each is used by
 // BPF tooling, and so changes can cause runtime failures.
-section("xdp") int xdp_prog(struct xdp_md *ctx) { return XDP_DROP; }
+section("xdp") int xdp_prog(struct xdp_md* ctx) { return XDP_DROP; }
