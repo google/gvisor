@@ -18,6 +18,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -25,6 +26,37 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
+
+func TestTarXattrRoundTrip(t *testing.T) {
+	want := map[string]string{
+		"user.empty":  "",
+		"user.binary": "\x00\xff\x80\n=",
+		"user.\xff":   "non-UTF8 name",
+	}
+	d := dentry{inode: &inode{impl: &directory{}}}
+	d.inode.xattrs.SetRawXattrs(want)
+	hdr, err := d.createTarHeader("./", make(map[uint64]string), tarDefaultWriterCallbacks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	hdr, err = tar.NewReader(&buf).Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored inode
+	restored.setXattrsFromPAXRecords(hdr)
+	if got := restored.xattrs.RawXattrs(); !reflect.DeepEqual(got, want) {
+		t.Errorf("restored xattrs = %q, want %q", got, want)
+	}
+}
 
 // TestSourceTarLongSymlinkRelease is a regression test for a bug where
 // symlinkFromTar did not call fs.accountPages(1) for symlinks whose target
