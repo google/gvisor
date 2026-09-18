@@ -59,7 +59,6 @@ type pidsController struct {
 	// since cgroupfs doesn't allow cross directory renames.
 	isRoot bool
 
-	// mu protects the fields below.
 	mu pidsControllerMutex `state:"nosave"`
 
 	// pendingTotal and pendingPool tracks the charge for processes starting
@@ -71,15 +70,21 @@ type pidsController struct {
 	// We also track which task owns the pending charge so we can cancel the
 	// charge if a task creation fails after the Charge call.
 	//
-	// pendingTotal and pendingPool are both protected by mu.
+	// +checklocks:mu
 	pendingTotal int64
-	pendingPool  map[*kernel.Task]int64
+
+	// +checklocks:mu
+	pendingPool map[*kernel.Task]int64
 
 	// committed represent charges for tasks that have already started and
-	// called Enter. Protected by mu.
+	// called Enter.
+	//
+	// +checklocks:mu
 	committed int64
 
-	// max is the PID limit for this cgroup. Protected by mu.
+	// max is the PID limit for this cgroup.
+	//
+	// +checklocks:mu
 	max int64
 }
 
@@ -98,6 +103,8 @@ func newRootPIDsController(fs *filesystem) *pidsController {
 }
 
 // Clone implements controller.Clone.
+//
+// +checklocksexclude:c.mu
 func (c *pidsController) Clone() controller {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -126,6 +133,8 @@ func (c *pidsController) AddControlFiles(ctx context.Context, creds *auth.Creden
 // charge is pending for t, one pending charge is converted to a committed
 // charge, and the net change in total charges is zero. If no charge is pending,
 // a new charge is added directly to the committed pool.
+//
+// +checklocksexclude:c.mu
 func (c *pidsController) Enter(t *kernel.Task) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -149,6 +158,8 @@ func (c *pidsController) Enter(t *kernel.Task) {
 }
 
 // Leave implements controller.Leave.
+//
+// +checklocksexclude:c.mu
 func (c *pidsController) Leave(t *kernel.Task) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -160,6 +171,9 @@ func (c *pidsController) Leave(t *kernel.Task) {
 }
 
 // PrepareMigrate implements controller.PrepareMigrate.
+//
+// The caller must not hold src's controller mutex. checklocks cannot name
+// that concrete mutex through the controller interface.
 func (c *pidsController) PrepareMigrate(t *kernel.Task, src controller) error {
 	srcC := src.(*pidsController)
 	srcC.mu.Lock()
@@ -178,6 +192,11 @@ func (c *pidsController) PrepareMigrate(t *kernel.Task, src controller) error {
 // Migrations can cause a cgroup to exceed its limit. CommitMigrate can only be
 // called for tasks with committed charges, PrepareMigrate will deny migrations
 // prior to Enter.
+//
+// The caller must also not hold src's controller mutex. checklocks cannot
+// name that concrete mutex through the controller interface.
+//
+// +checklocksexclude:c.mu
 func (c *pidsController) CommitMigrate(t *kernel.Task, src controller) {
 	// Note: The charge is allowed to exceed max on migration. The charge may
 	// not exceed max when incurred due to a fork/clone, which will call
@@ -202,6 +221,8 @@ func (c *pidsController) AbortMigrate(t *kernel.Task, src controller) {}
 // pool. Charge are committed from the pending pool by Enter. The caller is
 // responsible for ensuring negative charges correspond to previous positive
 // charges. Negative charges that cause an underflow result in a panic.
+//
+// +checklocksexclude:c.mu
 func (c *pidsController) Charge(t *kernel.Task, d *kernfs.Dentry, res kernel.CgroupResourceType, value int64) error {
 	if res != kernel.CgroupResourcePID {
 		panic(fmt.Sprintf("cgroupfs: pids controller invalid resource type %v", res))
@@ -249,6 +270,8 @@ type pidsCurrentData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.c.mu
 func (d *pidsCurrentData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
@@ -262,6 +285,8 @@ type pidsMaxData struct {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.c.mu
 func (d *pidsMaxData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
@@ -276,11 +301,15 @@ func (d *pidsMaxData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:d.c.mu
 func (d *pidsMaxData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	return d.WriteBackground(ctx, src)
 }
 
 // WriteBackground implements writableControllerFileImpl.WriteBackground.
+//
+// +checklocksexclude:d.c.mu
 func (d *pidsMaxData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	buf := copyScratchBufferFromContext(ctx, hostarch.PageSize)
 	ncpy, err := src.CopyIn(ctx, buf)
