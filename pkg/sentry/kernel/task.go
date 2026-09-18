@@ -222,6 +222,11 @@ type Task struct {
 	// trapNotifyPending is protected by the signal mutex.
 	trapNotifyPending bool
 
+	// cgroupFrozen indicates whether the task is stopped due to cgroup freezing.
+	//
+	// cgroupFrozen is protected by the signal mutex.
+	cgroupFrozen bool
+
 	// If stop is not nil, it is the internally-initiated condition that
 	// currently prevents the task goroutine from running.
 	//
@@ -722,8 +727,15 @@ func (t *Task) afterLoad(gocontext.Context) {
 	}
 	t.interruptChan = make(chan struct{}, 1)
 	t.gostate.Store(uint32(TaskGoroutineNonexistent))
+	var initialStopCount int32
 	if t.stop != nil {
-		t.stopCount = atomicbitops.FromInt32(1)
+		initialStopCount++
+	}
+	if t.cgroupFrozen {
+		initialStopCount++
+	}
+	if initialStopCount > 0 {
+		t.stopCount = atomicbitops.FromInt32(initialStopCount)
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.rseqPreempted = true
