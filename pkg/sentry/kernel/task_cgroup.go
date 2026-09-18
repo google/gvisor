@@ -55,6 +55,140 @@ func (t *Task) EnterInitialV1Cgroups(parent *Task, initCgroups map[Cgroup]struct
 	}
 }
 
+// FreezeCreditDelta indicates how ApplyFreezeTasksLocked changed a task's
+// credit, so the caller (owning cgroup2fs's counter) can adjust it.
+type FreezeCreditDelta int
+
+const (
+	// FreezeCreditNone: no change (state didn't change, or t was already
+	// parked, so its credit was already resolved).
+	FreezeCreditNone FreezeCreditDelta = iota
+	// FreezeCreditIssue: caller must record one new outstanding credit,
+	// charged to the cgroup whose state was just relayed.
+	FreezeCreditIssue
+	// FreezeCreditRetract: caller must retract one outstanding credit --
+	// resolved either by t actually parking, or by t being thawed,
+	// exited, or migrated before it could.
+	FreezeCreditRetract
+)
+
+// ApplyFreezeTasksLocked relays freezeOrdered into t: parks t via an
+// internal stop on freeze, ends that stop on thaw. For callers (freeze(),
+// attach(), commit()) already holding the freeze-credit counter lock, who
+// apply the returned delta themselves.
+//
+// The returned Cgroup2 for a retract is whichever cgroup actually issued
+// the credit -- never assume it's cg, t may have migrated since.
+//
+// Lock ordering: callers hold fs.tasksMu; this takes signalHandlers.mu
+// (fs.tasksMu -> signalHandlers.mu, matching kill() -> SendSignal).
+func (t *Task) ApplyFreezeTasksLocked(cg Cgroup2, freezeOrdered bool) (FreezeCreditDelta, Cgroup2) {
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	return t.applyFreezeSigLocked(cg, freezeOrdered)
+}
+
+// Preconditions: signalHandlers.mu is locked.
+func (t *Task) applyFreezeSigLocked(cg Cgroup2, freezeOrdered bool) (FreezeCreditDelta, Cgroup2) {
+	was := t.freezeOrdered
+	t.freezeOrdered = freezeOrdered
+	delta := FreezeCreditNone
+	var creditCg Cgroup2
+	if freezeOrdered {
+		if !was {
+			if _, ok := t.stop.(*groupStop); !ok {
+				t.hasFreezeCredit = true
+				t.freezeCreditCgroup = cg
+				delta = FreezeCreditIssue
+				creditCg = cg
+			}
+			// else: t is already group-stopped, which Linux counts as
+			// already frozen -- no credit needed (mirrors the reverse
+			// ordering, resolved where t enters *groupStop).
+		}
+		// Self-service enter: t parks itself via runInterrupt. Called
+		// even if already frozen -- interrupt() is deduplicated, and a
+		// group-stop ending relies on this to re-check frozenStop.
+		t.interrupt()
+	} else if was {
+		if _, ok := t.stop.(*frozenStop); ok {
+			// Authoritative end (mirrors endGroupStopLocked on SIGCONT):
+			// a parked task can't leave its own stop; its credit, if
+			// any, was already retracted at park time.
+			t.endInternalStopLocked()
+		} else if t.hasFreezeCredit {
+			// Thawed before parking: runInterrupt will never resolve
+			// this now, so retract here -- from whichever cgroup
+			// actually issued it, not cg (t may have migrated since).
+			creditCg = t.freezeCreditCgroup
+			t.hasFreezeCredit = false
+			t.freezeCreditCgroup = nil
+			delta = FreezeCreditRetract
+		}
+	}
+	return delta, creditCg
+}
+
+// ApplyFreezeForMigrationTasksLocked is attach()'s counterpart for the one
+// case ApplyFreezeTasksLocked's (delta, Cgroup2) pair can't express: a
+// migrating task keeps an unparked credit while changing owning cgroup.
+// Detects that and moves the credit; otherwise the second pair is
+// (FreezeCreditNone, nil).
+//
+// Must be one atomic operation: splitting the read and the act across two
+// signalHandlers.mu acquisitions would race runInterrupt into
+// double-resolving the credit.
+//
+// Lock ordering: callers hold fs.tasksMu; this then takes signalHandlers.mu.
+func (t *Task) ApplyFreezeForMigrationTasksLocked(newCg Cgroup2, newEff bool) (FreezeCreditDelta, Cgroup2, FreezeCreditDelta, Cgroup2) {
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+
+	was := t.freezeOrdered
+	oldOwner := t.freezeCreditCgroup
+	// Read before applyFreezeSigLocked's call below: when t stays frozen
+	// across the migration (t.freezeOrdered was and remains true), that
+	// call only interrupts t and never touches t.freezeCreditCgroup, so
+	// oldOwner is unaffected by it.
+	stillOwed := was && newEff && t.hasFreezeCredit && oldOwner != newCg
+
+	delta1, cg1 := t.applyFreezeSigLocked(newCg, newEff)
+
+	if stillOwed && delta1 == FreezeCreditNone {
+		t.freezeCreditCgroup = newCg
+		t.interrupt()
+		return FreezeCreditRetract, oldOwner, FreezeCreditIssue, newCg
+	}
+	return delta1, cg1, FreezeCreditNone, nil
+}
+
+// resolveFreezeCreditSigLocked clears and returns t's credit; called by
+// runInterrupt once parking pays it off. Never touches t.freezeOrdered/t.stop.
+//
+// Preconditions: signalHandlers.mu is locked.
+func (t *Task) resolveFreezeCreditSigLocked() (FreezeCreditDelta, Cgroup2) {
+	if !t.hasFreezeCredit {
+		return FreezeCreditNone, nil
+	}
+	cg := t.freezeCreditCgroup
+	t.hasFreezeCredit = false
+	t.freezeCreditCgroup = nil
+	return FreezeCreditRetract, cg
+}
+
+// ResolveFreezeCreditTasksLocked is resolveFreezeCreditSigLocked's
+// fs.tasksMu-precondition counterpart, used by Exit() so a task that dies
+// unparked (e.g. SIGKILLed while frozen) doesn't leak its credit. Exit()
+// already holds fs.tasksMu, so the delta is applied inline here rather
+// than deferred like runInterrupt's park path.
+//
+// Lock ordering: callers hold fs.tasksMu; this then takes signalHandlers.mu.
+func (t *Task) ResolveFreezeCreditTasksLocked() (FreezeCreditDelta, Cgroup2) {
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	return t.resolveFreezeCreditSigLocked()
+}
+
 // SetMemCgID sets the given memory cgroup id to the task.
 func (t *Task) SetMemCgID(memCgID uint32) {
 	t.memCgID.Store(memCgID)
