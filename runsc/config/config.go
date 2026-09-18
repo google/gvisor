@@ -175,6 +175,11 @@ type Config struct {
 	// PCAP is a file to which network packets should be logged in PCAP format.
 	PCAP string `flag:"pcap-log"`
 
+	// NetworkUDSPath, if set, is the path of an external UDS that the
+	// sentry attaches its primary network interface to instead of creating
+	// an AF_PACKET socket.
+	NetworkUDSPath string `flag:"network-uds-path"`
+
 	// Platform is the platform to run on.
 	Platform string `flag:"platform"`
 
@@ -492,6 +497,12 @@ type Config struct {
 	SharedRootDir string `flag:"shared-root"`
 }
 
+// UseNetworkUDS reports whether the primary sandbox network interface should
+// be attached to a unix domain socket instead of AF_PACKET socket.
+func (c *Config) UseNetworkUDS() bool {
+	return c.NetworkUDSPath != ""
+}
+
 // Validate checks that the Config is in a consistent state, e.g. that no
 // interdependent or mutually-exclusive flag values conflict. Note that
 // Config.Override does not validate, so callers must call Validate once they
@@ -509,6 +520,17 @@ func (c *Config) Validate() error {
 	}
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")
+	}
+	if c.UseNetworkUDS() {
+		if !filepath.IsAbs(c.NetworkUDSPath) {
+			return fmt.Errorf("network-uds-path must be an absolute path, got %q", c.NetworkUDSPath)
+		}
+		if c.Network != NetworkSandbox {
+			return fmt.Errorf("network-uds-path flag is only supported with sandbox networking")
+		}
+		if c.XDP.Mode != XDPModeOff {
+			return fmt.Errorf("network-uds-path flag is incompatible with XDP")
+		}
 	}
 	if c.TBFBurst > maxQDiscTBFBurst {
 		return fmt.Errorf("qdisc-tbf-burst must be <= %d, got: %d", maxQDiscTBFBurst, c.TBFBurst)
@@ -1305,6 +1327,7 @@ func (o *Overlay2) RootOverlayMedium() OverlayMedium {
 	return o.medium
 }
 
+// RootOverlaySize returns the overlay size config of the root mount.
 func (o *Overlay2) RootOverlaySize() string {
 	if !o.rootMount {
 		return ""
@@ -1320,6 +1343,7 @@ func (o *Overlay2) SubMountOverlayMedium() OverlayMedium {
 	return o.medium
 }
 
+// SubMountOverlaySize returns the overlay size config of submounts.
 func (o *Overlay2) SubMountOverlaySize() string {
 	if !o.subMounts {
 		return ""

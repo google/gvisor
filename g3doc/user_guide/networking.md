@@ -63,6 +63,37 @@ Add the following `runtimeArgs` to your Docker configuration
 }
 ```
 
+## External network proxy (experimental)
+
+Instead of writing packets to the virtual device with an `AF_PACKET` socket, the
+sandbox's primary network interface can be attached to a `SOCK_SEQPACKET` unix
+domain socket owned by an external process. The sentry writes IP packets and the
+external peer is responsible for proxying those packets onward. This works only
+with `network=sandbox` mode.
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--network-uds-path=/run/netproxy.sock"
+            ]
+       }
+    }
+}
+```
+
+The peer must already be listening when the sandbox starts, runsc dials the
+socket once with timeout for 5 seconds and fails sandbox creation if the
+connection cannot be established.
+
+If any egress filtering or blocking of traffic is required, it should be the
+external peer's responsibility. Note also that the primary interface keeps its
+host IP addresses in this mode, since the sentry reaches the network through the
+UDS peer rather than through that interface. Every other interface has its
+addresses removed as usual.
+
 ## Egress traffic shaping (TBF)
 
 gVisor can rate limit outbound sandbox traffic with a
