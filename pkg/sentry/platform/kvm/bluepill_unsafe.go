@@ -275,7 +275,9 @@ func bluepillHandler(context unsafe.Pointer) {
 			c.dieAndDumpExitReason(bluepillArchContext(context))
 			return
 		default:
-			bluepillArchHandleExit(c, context)
+			if bluepillArchHandleExit(c, context) {
+				continue
+			}
 			return
 		}
 	}
