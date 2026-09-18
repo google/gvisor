@@ -161,6 +161,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	}
 	ep.control, err = xdp.NewFromSocket(opts.FD, uint32(opts.InterfaceIndex), opts.QueueID, xdpOpts)
 	if err != nil {
+		ep.stopFD.Close()
 		return nil, fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
 	}
 
