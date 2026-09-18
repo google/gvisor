@@ -190,7 +190,7 @@ func newNetstackImpl(mode, probeFileName string) (impl, func() error, error) {
 		parsedMask6 = tcpip.MaskFromBytes(append([]byte{0xff, 0xff, 0xff}, make([]byte, 13)...))
 	default:
 		// This is just laziness; we don't expect a different mask.
-		return nil, func() error { return nil }, fmt.Errorf("mask %d not supported", mask)
+		return nil, func() error { return nil }, fmt.Errorf("mask %p not supported", mask)
 	}
 
 	var probeFile *os.File
