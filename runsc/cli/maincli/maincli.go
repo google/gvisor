@@ -99,6 +99,7 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		// Internal commands.
 		new(sentrycmd.Boot):   internalGroup,
 		new(cmd.Gofer):        internalGroup,
+		new(cmd.Netgofer):     internalGroup,
 		new(sentrycmd.Umount): internalGroup,
 	}
 
