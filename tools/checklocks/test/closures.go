@@ -44,10 +44,10 @@ func testClosureValid(tc *oneGuardStruct) {
 }
 
 func testClosureInline(tc *oneGuardStruct) {
-	// If the closure is being dispatching inline only, then we should be
-	// able to analyze this call and give it a thumbs up.
+	// Inherited locks are incorrectly reported as leaked at the closure exit.
+	// See https://github.com/google/gvisor/issues/11203.
 	tc.mu.Lock()
-	func() {
+	func() { // +checklocksfail=unexpected locks held
 		tc.guardedField = 1
 	}()
 	tc.mu.Unlock()
@@ -88,11 +88,10 @@ func testAnonymousValid(tc *oneGuardStruct) {
 }
 
 func testAnonymousInline(tc *oneGuardStruct) {
-	// Unlike the closure case, we are able to dynamically infer the set of
-	// preconditions for the function dispatch and assert that this is
-	// a valid call.
+	// Like testClosureInline, this valid call incorrectly reports a leak
+	// of the inherited lock.
 	tc.mu.Lock()
-	func(tc *oneGuardStruct) {
+	func(tc *oneGuardStruct) { // +checklocksfail=unexpected locks held
 		tc.guardedField = 1
 	}(tc)
 	tc.mu.Unlock()
