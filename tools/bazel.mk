@@ -43,7 +43,7 @@
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
 ifneq ($(MAKECMDGOALS),)
-ifeq ($(filter-out help lint lint-%,$(MAKECMDGOALS)),)
+ifeq ($(filter-out help lint lint-fix,$(MAKECMDGOALS)),)
 DOCKER_BUILD := false
 endif
 endif

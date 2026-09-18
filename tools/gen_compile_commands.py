@@ -14,10 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Generates compile_commands.json from Bazel aquery output."""
+
 import argparse
 import json
 import os
-from pathlib import Path
+import pathlib
 import subprocess
 import sys
 
@@ -46,13 +48,13 @@ def main():
   parser.add_argument(
       "targets",
       nargs="*",
-      default=["//test/..."],
+      default=["//test/...", "//tools/..."],
       help="Bazel targets to index (default: %(default)s).",
   )
   args = parser.parse_args()
   targets = args.targets
 
-  workspace = Path(__file__).parent.parent.resolve()
+  workspace = pathlib.Path(__file__).parent.parent.resolve()
   os.chdir(workspace)
 
   _bazel(
@@ -61,7 +63,7 @@ def main():
       "--output_groups=cc_compile_inputs",
       *targets,
   )
-  execroot = Path(_bazel("info", "execution_root").strip())
+  execroot = pathlib.Path(_bazel("info", "execution_root").strip())
 
   database = []
   seen = set()
@@ -69,7 +71,7 @@ def main():
     arguments = action["arguments"]
     if "-c" not in arguments:
       continue
-    source = Path(arguments[arguments.index("-c") + 1])
+    source = pathlib.Path(arguments[arguments.index("-c") + 1])
 
     # Skip third-party code.
     if "external" in source.parts:
