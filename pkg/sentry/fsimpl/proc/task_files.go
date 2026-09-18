@@ -46,6 +46,8 @@ const maxIDMapLines = 5
 // getMM gets the kernel task's MemoryManager. No additional reference is taken on
 // mm here. This is safe because MemoryManager.destroy is required to leave the
 // MemoryManager in a state where it's still usable as a DynamicBytesSource.
+//
+// +checklocksexclude:task.mu
 func getMM(task *kernel.Task) *mm.MemoryManager {
 	var tmm *mm.MemoryManager
 	task.WithMuLocked(func(t *kernel.Task) {
@@ -59,6 +61,8 @@ func getMM(task *kernel.Task) *mm.MemoryManager {
 // getMMIncRef returns t's MemoryManager. If getMMIncRef succeeds, the
 // MemoryManager's users count is incremented, and must be decremented by the
 // caller when it is no longer in use.
+//
+// +checklocksexclude:task.mu
 func getMMIncRef(task *kernel.Task) (*mm.MemoryManager, error) {
 	var m *mm.MemoryManager
 	task.WithMuLocked(func(t *kernel.Task) {
@@ -233,6 +237,8 @@ type cmdlineData struct {
 var _ dynamicInode = (*cmdlineData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:d.task.mu
 func (d *cmdlineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if d.task.ExitState() == kernel.TaskExitDead {
 		return linuxerr.ESRCH
@@ -499,6 +505,8 @@ func (f *memInode) init(ctx context.Context, creds *auth.Credentials, devMajor, 
 }
 
 // Open implements kernfs.Inode.Open.
+//
+// +checklocksexclude:f.task.mu
 func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	m := getMM(f.task)
 	for {
@@ -726,6 +734,8 @@ func (f *mmFile) Init(ctx context.Context, creds *auth.Credentials, devMajor, de
 }
 
 // DataSource implements kernfs.DataSourceProvider.DataSource()
+//
+// +checklocksexclude:f.task.mu
 func (f *mmFile) DataSource(ctx context.Context) (vfs.DynamicBytesSource, error) {
 	m := getMM(f.task)
 	for {
@@ -812,6 +822,8 @@ type taskStatData struct {
 var _ dynamicInode = (*taskStatData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:s.task.mu
 func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "%d ", s.pidns.IDOfTask(s.task))
 	fmt.Fprintf(buf, "(%s) ", s.task.Name())
@@ -883,6 +895,8 @@ type statmData struct {
 var _ dynamicInode = (*statmData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:s.task.mu
 func (s *statmData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	var vss, rss uint64
 	if mm := getMM(s.task); mm != nil {
@@ -984,6 +998,8 @@ func (s *statusFD) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
 }
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:s.task.mu
 func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "Name:\t%s\n", s.task.Name())
 	fmt.Fprintf(buf, "State:\t%s\n", s.task.StateStatus())
@@ -1171,6 +1187,8 @@ func (fs *filesystem) newExeSymlink(ctx context.Context, task *kernel.Task, ino 
 }
 
 // Readlink implements kernfs.Inode.Readlink.
+//
+// +checklocksexclude:s.task.mu
 func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	exec, _, err := s.Getlink(ctx, nil)
 	if err != nil {
@@ -1190,6 +1208,8 @@ func (s *exeSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 }
 
 // Getlink implements kernfs.Inode.Getlink.
+//
+// +checklocksexclude:s.task.mu
 func (s *exeSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
@@ -1245,6 +1265,8 @@ func (fs *filesystem) newCwdSymlink(ctx context.Context, task *kernel.Task, ino 
 }
 
 // Readlink implements kernfs.Inode.Readlink.
+//
+// +checklocksexclude:s.task.mu
 func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	cwd, _, err := s.Getlink(ctx, nil)
 	if err != nil {
@@ -1264,6 +1286,8 @@ func (s *cwdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error)
 }
 
 // Getlink implements kernfs.Inode.Getlink.
+//
+// +checklocksexclude:s.task.mu
 func (s *cwdSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
@@ -1308,6 +1332,8 @@ func (fs *filesystem) newRootSymlink(ctx context.Context, task *kernel.Task, ino
 }
 
 // Readlink implements kernfs.Inode.Readlink.
+//
+// +checklocksexclude:s.task.mu
 func (s *rootSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
 	root, _, err := s.Getlink(ctx, nil)
 	if err != nil {
@@ -1327,6 +1353,8 @@ func (s *rootSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error
 }
 
 // Getlink implements kernfs.Inode.Getlink.
+//
+// +checklocksexclude:s.task.mu
 func (s *rootSymlink) Getlink(ctx context.Context, _ *vfs.Mount) (vfs.VirtualDentry, string, error) {
 	if !kernel.ContextCanTrace(ctx, s.task, false) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
@@ -1357,6 +1385,8 @@ var _ dynamicInode = (*mountInfoData)(nil)
 var _ vfs.PollableDynamicBytesSource = (*mountInfoData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:i.task.mu
 func (i *mountInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	var fsctx *kernel.FSContext
 	i.task.WithMuLocked(func(t *kernel.Task) {
@@ -1398,6 +1428,8 @@ var _ dynamicInode = (*mountsData)(nil)
 var _ vfs.PollableDynamicBytesSource = (*mountsData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
+//
+// +checklocksexclude:i.task.mu
 func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	var fsctx *kernel.FSContext
 	i.task.WithMuLocked(func(t *kernel.Task) {

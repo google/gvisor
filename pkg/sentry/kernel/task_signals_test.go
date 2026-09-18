@@ -260,7 +260,7 @@ func TestDeliverSignalToInit(t *testing.T) {
 	{
 		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
 		task := newTask(k, initTG)
-		if err := task.sendSignalTimerLocked(peerKill, false /* group */, nil); err != nil {
+		if err := task.SendSignal(peerKill); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() != 0 {
@@ -273,7 +273,10 @@ func TestDeliverSignalToInit(t *testing.T) {
 		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
 		task := newTask(k, initTG)
 		timer := &IntervalTimer{}
-		if err := task.sendSignalTimerLocked(peerKill, false /* group */, timer); err != nil {
+		task.tg.signalHandlers.mu.Lock()
+		err := task.sendSignalTimerLocked(peerKill, false /* group */, timer)
+		task.tg.signalHandlers.mu.Unlock()
+		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if timer.overrunCur != 1 {
@@ -288,7 +291,7 @@ func TestDeliverSignalToInit(t *testing.T) {
 	{
 		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
 		task := newTask(k, initTG)
-		if err := task.sendSignalTimerLocked(peerTerm, false /* group */, nil); err != nil {
+		if err := task.SendSignal(peerTerm); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() != 0 {
@@ -300,7 +303,7 @@ func TestDeliverSignalToInit(t *testing.T) {
 	{
 		k := &Kernel{signalUnkillable: SignalUnkillableNone}
 		task := newTask(k, initTG)
-		if err := task.sendSignalTimerLocked(peerKill, false /* group */, nil); err != nil {
+		if err := task.SendSignal(peerKill); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() == 0 {
@@ -312,7 +315,7 @@ func TestDeliverSignalToInit(t *testing.T) {
 	{
 		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
 		task := newTask(k, nonInitTG)
-		if err := task.sendSignalTimerLocked(peerKill, false /* group */, nil); err != nil {
+		if err := task.SendSignal(peerKill); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() == 0 {
@@ -325,7 +328,7 @@ func TestDeliverSignalToInit(t *testing.T) {
 		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
 		task := newTask(k, initTG)
 		task.ptraceTracer.Store(&Task{})
-		if err := task.sendSignalTimerLocked(peerKill, false /* group */, nil); err != nil {
+		if err := task.SendSignal(peerKill); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() == 0 {
@@ -337,7 +340,7 @@ func TestDeliverSignalToInit(t *testing.T) {
 	{
 		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
 		task := newTask(k, initTG)
-		if err := task.sendSignalTimerLocked(forcedKill, false /* group */, nil); err != nil {
+		if err := task.SendSignal(forcedKill); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() == 0 {
@@ -351,10 +354,12 @@ func TestDeliverSignalToInit(t *testing.T) {
 		handledTG := &ThreadGroup{
 			signalHandlers: NewSignalHandlers(),
 		}
+		handledTG.signalHandlers.mu.Lock()
 		handledTG.signalHandlers.actions[linux.SIGTERM] = linux.SigAction{Handler: 0x1000}
+		handledTG.signalHandlers.mu.Unlock()
 		handledTG.pidWithinNS.Store(int32(initTID))
 		task := newTask(k, handledTG)
-		if err := task.sendSignalTimerLocked(peerTerm, false /* group */, nil); err != nil {
+		if err := task.SendSignal(peerTerm); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if task.pendingSignals.pendingSet.Load() == 0 {
