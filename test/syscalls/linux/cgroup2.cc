@@ -1698,6 +1698,29 @@ TEST_F(Cgroup2Test, MemoryCurrent) {
   EXPECT_LE(usage_after, usage + kMemSize + kMemCeilingSlack);
 }
 
+TEST_F(Cgroup2Test, MemoryFilesNotOnRoot) {
+  // The memory controller's interface files are CFTYPE_NOT_ON_ROOT in Linux:
+  // they must not exist on the root cgroup of a cgroup2 hierarchy, only on
+  // non-root cgroups.
+  const std::string available =
+      ASSERT_NO_ERRNO_AND_VALUE(root().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(available, "memory"));
+
+  // Absent on the root cgroup.
+  for (const char* name :
+       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+    EXPECT_THAT(Exists(root().Relpath(name)), IsPosixErrorOkAndHolds(false))
+        << name << " should not exist on the root cgroup";
+  }
+
+  // Present on a non-root cgroup that has the memory controller.
+  for (const char* name :
+       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+    EXPECT_THAT(Exists(c().Relpath(name)), IsPosixErrorOkAndHolds(true))
+        << name << " should exist on a non-root cgroup";
+  }
+}
+
 TEST_F(Cgroup2Test, MemoryIsChargedToNearestAncestorWithController) {
   DisableSave ds;                                // Avoid S/R memory overhead.
   constexpr size_t kMemSize = 10 * 1024 * 1024;  // 10 MB

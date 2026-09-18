@@ -1165,6 +1165,16 @@ func (c *cgroup) updateTaskMemoryCgIDsLocked() {
 // ReadControl implements kernel.Cgroup2.ReadControl.
 // It allows reading from control files from outside the sandbox.
 func (c *cgroup) ReadControl(ctx context.Context, name string) (string, error) {
+	// The true root cgroup does not expose memory.current as a file, but
+	// external queries of the root's usage are still answered here.
+	if c.parent == nil && name == "memory.current" {
+		memCgIDs := make(map[uint32]struct{})
+		c.fs.treeMu.RLock()
+		collectMemCgIDs(c, memCgIDs)
+		c.fs.treeMu.RUnlock()
+		total := getUsage(kernel.KernelFromContext(ctx), memCgIDs)
+		return fmt.Sprintf("%d\n", total), nil
+	}
 	cfi, err := c.Lookup(ctx, name)
 	if err != nil {
 		return "", fmt.Errorf("no such control file")
