@@ -108,6 +108,7 @@ const (
 	AMPERE_COMPUTE_A                 = 0x0000c6c0
 	NVC6FA_VIDEO_OFA                 = 0x0000c6fa
 	BLACKWELL_USERMODE_A             = 0x0000c761
+	AMPERE_B                         = 0x0000c797
 	NVC7B0_VIDEO_DECODER             = 0x0000c7b0
 	AMPERE_DMA_COPY_B                = 0x0000c7b5
 	NVC7B7_VIDEO_ENCODER             = 0x0000c7b7
