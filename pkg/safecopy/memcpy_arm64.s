@@ -59,8 +59,10 @@ check:
 	ADD R3, R7, R9      // R9 points just past where we copy by word.
 
 forwardlargeloop:
-	MOVD.P 8(R4), R8       // R8 is just a scratch register.
-	MOVD.P R8, 8(R3)
+	MOVD (R4), R8       // R8 is just a scratch register.
+	ADD $8, R4
+	MOVD R8, (R3)
+	ADD $8, R3
 	CMP R3, R9
 	BNE forwardlargeloop
 
@@ -73,8 +75,10 @@ forwardtail:
 	ADD R3, R6, R9      // R9 points just past the destination memory.
 
 forwardtailloop:
-	MOVBU.P 1(R4), R8
-	MOVBU.P R8, 1(R3)
+	MOVBU (R4), R8
+	ADD $1, R4
+	MOVBU R8, (R3)
+	ADD $1, R3
 	CMP R3, R9
 	BNE forwardtailloop
 	RET

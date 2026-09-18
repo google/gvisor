@@ -178,13 +178,16 @@ func bluepillReadyStopGuest(c *vCPU) bool {
 }
 
 // bluepillArchHandleExit checks architecture specific exitcode.
+// It returns true if the exit was handled and the vCPU should be rerun.
 //
 //go:nosplit
-func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
+func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) bool {
 	switch c.runData.exitReason {
 	case _KVM_EXIT_ARM_NISV:
 		bluepillExtDabt(c)
+		return true
 	default:
 		c.dieAndDumpExitReason(bluepillArchContext(context))
+		return false
 	}
 }
