@@ -287,7 +287,7 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 		}
 		return fmt.Sprintf("{param:%s}", x.Name()), x.Object()
 	case *ssa.Global:
-		return fmt.Sprintf("{global:%s}", x.Name()), x.Object()
+		return globalLockKey(x.Pkg.Pkg.Path(), x.Name()), x.Object()
 	case *ssa.FreeVar:
 		// Attempt to resolve this, in case we are being invoked in a
 		// scope where all the variables are bound.
