@@ -139,6 +139,10 @@ type DentryImpl interface {
 	// The caller does not need to hold a reference on the dentry. OnZeroWatches
 	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
 	// be held by the caller.
+	//
+	// Watches.Notify may call OnZeroWatches synchronously (IN_ONESHOT), from
+	// a filesystem operation that holds filesystem locks, so OnZeroWatches
+	// must not acquire those locks.
 	OnZeroWatches(ctx context.Context)
 }
 
