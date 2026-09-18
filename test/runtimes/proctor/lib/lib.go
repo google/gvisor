@@ -52,6 +52,8 @@ func TestRunnerForRuntime(runtime string) (TestRunner, error) {
 		return phpRunner{}, nil
 	case "python":
 		return pythonRunner{}, nil
+	case "moby":
+		return mobyRunner{}, nil
 	}
 	return nil, fmt.Errorf("invalid runtime %q", runtime)
 }
