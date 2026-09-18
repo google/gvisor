@@ -254,11 +254,13 @@ func (k *Key) beforeSave() {}
 // +checklocksignore
 func (k *Key) StateSave(stateSinkObject state.Sink) {
 	k.beforeSave()
+	permsValue := k.savePerms()
+	_ = (KeyPermissions)(permsValue)
+	stateSinkObject.SaveValue(4, permsValue)
 	stateSinkObject.Save(0, &k.ID)
 	stateSinkObject.Save(1, &k.Description)
 	stateSinkObject.Save(2, &k.kuid)
 	stateSinkObject.Save(3, &k.kgid)
-	stateSinkObject.Save(4, &k.perms)
 }
 
 func (k *Key) afterLoad(context.Context) {}
@@ -269,7 +271,7 @@ func (k *Key) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &k.Description)
 	stateSourceObject.Load(2, &k.kuid)
 	stateSourceObject.Load(3, &k.kgid)
-	stateSourceObject.Load(4, &k.perms)
+	stateSourceObject.LoadValue(4, new(KeyPermissions), func(y any) { k.loadPerms(ctx, y.(KeyPermissions)) })
 }
 
 func (s *KeySet) StateTypeName() string {

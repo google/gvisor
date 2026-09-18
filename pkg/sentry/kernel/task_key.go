@@ -26,13 +26,9 @@ import (
 //
 // +checklocks:t.mu
 func (t *Task) joinNewSessionKeyringLocked(newKeyDesc string, newKeyPerms auth.KeyPermissions) (*auth.Key, error) {
-	var sessionKeyring *auth.Key
-	err := t.UserNamespace().Keys.Do(func(keySet *auth.LockedKeySet) error {
-		creds := t.Credentials()
-		var err error
-		sessionKeyring, err = keySet.Add(newKeyDesc, creds, newKeyPerms, int(t.Kernel().MaxKeySetSize.Load()))
-		return err
-	})
+	creds := t.Credentials()
+	maxKeys := int(t.Kernel().MaxKeySetSize.Load())
+	sessionKeyring, err := t.UserNamespace().Keys.Add(newKeyDesc, creds, newKeyPerms, maxKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -120,11 +116,5 @@ func (t *Task) SetPermsOnKey(keyID auth.KeySerial, perms auth.KeyPermissions) er
 	}
 	creds := t.Credentials()
 	possessed := creds.PossessedKeys(t.sessionKeyring, nil, nil)
-	return creds.UserNamespace.Keys.Do(func(keySet *auth.LockedKeySet) error {
-		if !creds.HasKeyPermission(key, possessed, auth.KeySetAttr) {
-			return linuxerr.EACCES
-		}
-		keySet.SetPerms(key, perms)
-		return nil
-	})
+	return key.SetPermsIfAllowed(creds, possessed, perms)
 }
