@@ -92,8 +92,13 @@ func OpenDevice(devicePath string) (*fd.FD, error) {
 
 // New returns a new KVM-based implementation of the platform interface.
 func New(deviceFile *fd.FD, config Config) (*KVM, error) {
-	if hostarch.PageSize != 4096 {
-		return nil, fmt.Errorf("KVM platform does not support %dK page size", hostarch.PageSize/1024)
+	// Host virtual addresses are mapped into guest physical memory at the
+	// sentry's page granularity, so a sentry built for one page size
+	// cannot run on a host using another: the host cannot back mappings
+	// smaller than its own page size, and a larger granule would map host
+	// memory that may not exist.
+	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
+		return nil, fmt.Errorf("KVM platform requires a %d-byte page host, but the host page size is %d bytes", hostarch.PageSize, hostPageSize)
 	}
 	mbCh := hostmm.Probe(true)
 	fd := deviceFile.FD()
