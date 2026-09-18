@@ -16,7 +16,6 @@ package tmpfs
 
 import (
 	"archive/tar"
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -29,9 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // tarRead creates the corresponding dentry and its children from the given
@@ -56,6 +55,16 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
 	fileToHeader := map[string]*tar.Header{}
 	symlinkToHeader := map[string]*tar.Header{}
 	linkToHeader := map[string]*tar.Header{}
+	// Regular file contents are streamed from tr into a detached inode as each
+	// entry is read, since tr is sequential. The inode is attached to its parent
+	// directory below, once all directories exist.
+	headerToRegularFile := map[*tar.Header]*inode{}
+	defer func() {
+		// Release regular files that were not attached because of an error.
+		for _, ino := range headerToRegularFile {
+			ino.decRef(ctx)
+		}
+	}()
 	for {
 		header, err := tr.Next()
 		if err != nil {
@@ -69,8 +78,13 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
 		case tar.TypeDir:
 			directoryToHeader[header.Name] = header
 		case tar.TypeReg:
-			if err := cb.regularFileRead(ctx, header, tr); err != nil {
+			ino, err := fs.newRegularFile(auth.KUID(header.Uid), auth.KGID(header.Gid), linux.FileMode(header.Mode), nil /* parentDir */)
+			if err != nil {
 				return err
+			}
+			headerToRegularFile[header] = ino
+			if err := cb.regularFileRead(ctx, header, tr, ino.impl.(*regularFile)); err != nil {
+				return fmt.Errorf("failed to read file %v: %w", header.Name, err)
 			}
 			fileToHeader[header.Name] = header
 		case tar.TypeFifo, tar.TypeBlock, tar.TypeChar:
@@ -91,9 +105,10 @@ func (fs *filesystem) readFromTar(ctx context.Context, tr *tar.Reader, cb tarRea
 	}
 	// Re-create all regular files, FIFOs, block devices, and character devices.
 	for path, hdr := range fileToHeader {
-		if err := fs.mknodFromTar(ctx, hdr, pathToInode, cb); err != nil {
+		if err := fs.mknodFromTar(hdr, pathToInode, headerToRegularFile); err != nil {
 			return fmt.Errorf("failed to make file %v: %w", path, err)
 		}
+		delete(headerToRegularFile, hdr)
 	}
 	// Re-create all symlinks.
 	for path, hdr := range symlinkToHeader {
@@ -194,10 +209,10 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	return childDir.dentry.inode, nil
 }
 
-// mknodFromTar creates a regular file,FIFO, block device, or character device file using
-// the provided header. It also writes the file content to the corresponding regular file if it
-// exists.
-func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToInode map[string]*inode, cb tarReaderCallbacks) error {
+// mknodFromTar creates a FIFO, block device, or character device file using
+// the provided header, or attaches the regular file already created for it in
+// headerToRegularFile.
+func (fs *filesystem) mknodFromTar(hdr *tar.Header, pathToInode map[string]*inode, headerToRegularFile map[*tar.Header]*inode) error {
 	dir, name := filepath.Split(hdr.Name)
 	parentInode, ok := pathToInode[dir]
 	if !ok {
@@ -211,7 +226,7 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	var err error
 	switch hdr.Typeflag {
 	case tar.TypeReg:
-		childInode, err = fs.newRegularFile(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), nil /* parentDir */)
+		childInode = headerToRegularFile[hdr]
 	case tar.TypeFifo:
 		childInode, err = fs.newNamedPipe(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), nil /* parentDir */)
 	case tar.TypeBlock:
@@ -235,14 +250,6 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	child := fs.newDentry(childInode)
 	parentDir.insertChildLocked(child, name)
 	pathToInode[hdr.Name] = childInode
-
-	// Write file contents to the corresponding regular files.
-	if rf, _ := childInode.impl.(*regularFile); rf != nil {
-		if err := cb.regularFileSetContents(ctx, hdr, rf); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -311,53 +318,29 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 }
 
 type tarReaderCallbacks interface {
-	// regularFileRead reads information about the regular file with header hdr
-	// from tr.
-	regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader) error
-
-	// regularFileSetContents sets the contents and size of rf, using what was
-	// previously read for hdr.
-	regularFileSetContents(ctx context.Context, hdr *tar.Header, rf *regularFile) error
+	// regularFileRead reads the regular file with header hdr from tr, and sets
+	// the contents and size of rf accordingly.
+	regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader, rf *regularFile) error
 }
 
 // tarDefaultReaderCallbacks implements tarReaderCallbacks by reading regular
 // file contents from the tar archive.
-type tarDefaultReaderCallbacks struct {
-	headerToContent map[*tar.Header]*bytes.Buffer
-}
+type tarDefaultReaderCallbacks struct{}
 
-func (cb *tarDefaultReaderCallbacks) regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader) error {
-	var buf bytes.Buffer
-	n, err := io.Copy(&buf, tr)
-	if err != nil {
-		return fmt.Errorf("failed to read file content: %w", err)
-	}
-	if n != hdr.Size {
-		return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, hdr.Size)
-	}
-	if hdr.Size > 0 {
-		cb.headerToContent[hdr] = &buf
-	}
-	return nil
-}
-
-func (cb *tarDefaultReaderCallbacks) regularFileSetContents(ctx context.Context, hdr *tar.Header, rf *regularFile) error {
-	buf, ok := cb.headerToContent[hdr]
-	if !ok {
-		return nil
-	}
+func (tarDefaultReaderCallbacks) regularFileRead(ctx context.Context, hdr *tar.Header, tr *tar.Reader, rf *regularFile) error {
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
-	src := usermem.BytesIOSequence(buf.Bytes())
 	rw := getRegularFileReadWriter(rf, 0, 0)
-	n, err := src.CopyInTo(ctx, rw)
+	// Copy in fixed-size chunks, so that memory use does not depend on the size
+	// of the file.
+	n, err := io.Copy(safemem.ToIOWriter{Writer: rw}, tr)
+	putRegularFileReadWriter(rw)
 	if err != nil {
 		return fmt.Errorf("failed to write file content: %w", err)
 	}
-	if size := int64(len(buf.Bytes())); n != size {
-		return fmt.Errorf("failed to write all file content to %v, got %d bytes, want %d", hdr.Name, n, size)
+	if n != hdr.Size {
+		return fmt.Errorf("failed to write all file content, got %d bytes, want %d", n, hdr.Size)
 	}
-	putRegularFileReadWriter(rw)
 	return nil
 }
 
@@ -534,19 +517,17 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
 	// it is safe to lock here to ensure no concurrent writes occur.
 	rf.inode.mu.Lock()
 	defer rf.inode.mu.Unlock()
-	data := make([]byte, rf.size.RacyLoad())
-	dst := usermem.BytesIOSequence(data)
+	size := int64(rf.size.RacyLoad())
 	rw := getRegularFileReadWriter(rf, 0, 0)
-	n, err := dst.CopyOutFrom(ctx, rw)
-	putRegularFileReadWriter(rw)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("failed to read file content: %w", err)
-	}
-	if n != int64(len(data)) {
-		return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, len(data))
-	}
-	if _, err := tw.Write(data); err != nil {
+	defer putRegularFileReadWriter(rw)
+	// Copy in fixed-size chunks, so that memory use does not depend on the size
+	// of the file. ReadToBlocks stops at the file size.
+	n, err := io.Copy(tw, safemem.ToIOReader{Reader: rw})
+	if err != nil {
 		return fmt.Errorf("failed to write file content to tar: %w", err)
+	}
+	if n != size {
+		return fmt.Errorf("failed to read all file content, got %d bytes, want %d", n, size)
 	}
 	return nil
 }
