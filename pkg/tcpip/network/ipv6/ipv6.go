@@ -782,6 +782,19 @@ func packetMustBeFragmented(pkt *stack.PacketBuffer, networkMTU uint32) bool {
 	return pkt.GSOOptions.Type == stack.GSONone && uint32(payload) > networkMTU
 }
 
+// gsoSegmentFitsNetworkMTU checks if a GSO packet's per-segment size would fit
+// within the network MTU. This is equivalent to Linux's skb_gso_validate_network_len.
+func gsoSegmentFitsNetworkMTU(pkt *stack.PacketBuffer, networkMTU uint32) bool {
+	if pkt.GSOOptions.Type == stack.GSONone {
+		return false
+	}
+	// For GSO packets, check if the per-segment size (MSS + headers) fits MTU.
+	// The MSS is the data portion per segment; we need to add transport and network headers.
+	transportHdrLen := uint32(len(pkt.TransportHeader().Slice()))
+	perSegmentSize := uint32(pkt.GSOOptions.MSS) + transportHdrLen
+	return perSegmentSize <= networkMTU
+}
+
 // handleFragments fragments pkt and calls the handler function on each
 // fragment. It returns the number of fragments handled and the number of
 // fragments left to be processed. The IP header must already be present in the
@@ -1002,6 +1015,13 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 			// As per RFC 2460, section 4.5:
 			//   Unlike IPv4, fragmentation in IPv6 is performed only by source nodes,
 			//   not by routers along a packet's delivery path.
+			// However, for GSO packets whose per-segment size fits the MTU, allow
+			// re-segmentation at transmit time instead of dropping.
+			if gsoSegmentFitsNetworkMTU(pkt, networkMTU) {
+				// GSO packet with segments that fit MTU - skip fragmentation.
+				// The NIC will handle segmentation at transmit time.
+				goto skipFragmentation
+			}
 			return &tcpip.ErrMessageTooLong{}
 		}
 		sent, remain, err := e.handleFragments(r, networkMTU, pkt, protocol, func(fragPkt *stack.PacketBuffer) tcpip.Error {
@@ -1016,6 +1036,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer, protocol
 		return err
 	}
 
+skipFragmentation:
 	if err := e.nic.WritePacket(r, pkt); err != nil {
 		stats.OutgoingPacketErrors.Increment()
 		return err
