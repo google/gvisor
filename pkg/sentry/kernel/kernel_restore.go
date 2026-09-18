@@ -71,6 +71,25 @@ func (k *Kernel) PopCheckpointState(key any) any {
 	return nil
 }
 
+// SetCudaRestoreDeviceMap records the cuda-checkpoint --device-map value to
+// use when resuming CUDA processes after restore. See
+// Kernel.cudaRestoreDeviceMap.
+func (k *Kernel) SetCudaRestoreDeviceMap(deviceMap string) {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	k.cudaRestoreDeviceMap = deviceMap
+}
+
+// PopCudaRestoreDeviceMap returns the value set by SetCudaRestoreDeviceMap
+// and clears it. It returns "" if no device map was set.
+func (k *Kernel) PopCudaRestoreDeviceMap() string {
+	k.checkpointMu.Lock()
+	defer k.checkpointMu.Unlock()
+	dm := k.cudaRestoreDeviceMap
+	k.cudaRestoreDeviceMap = ""
+	return dm
+}
+
 // SetSaver sets the kernel's Saver.
 // Thread-compatible.
 func (k *Kernel) SetSaver(s Saver) {

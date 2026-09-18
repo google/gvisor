@@ -416,6 +416,14 @@ type Kernel struct {
 	// asynchronous checkpointing. It's protected by checkpointMu.
 	saver Saver `state:"nosave"`
 
+	// cudaRestoreDeviceMap is the value of the --device-map flag to pass to
+	// cuda-checkpoint when resuming CUDA processes after this kernel was
+	// restored onto a different set of GPUs than it was saved with. It is set
+	// by the restorer and consumed once by post-restore/post-resume work. It
+	// is not saved since it only describes the most recent restore. It's
+	// protected by checkpointMu.
+	cudaRestoreDeviceMap string `state:"nosave"`
+
 	// CheckpointWait is used to wait for a checkpoint to complete.
 	CheckpointWait CheckpointWaitable
 
