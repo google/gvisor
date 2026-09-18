@@ -823,7 +823,7 @@ syzkaller-smoke-test: $(RUNTIME_BIN)
 		--hostname="$(SYZKALLER_CONTAINER)" \
 		$(DOCKER_PRIVILEGED) \
 		--pid=host \
-		-v "$(RUNTIME_BIN):$(RUNTIME_BIN):ro" \
+		-v "$(RUNTIME_DIR):$(RUNTIME_DIR):ro" \
 		-e "GOPATH=/__w/syzkaller/syzkaller/gopath" \
 		-e "GVISOR_VMLINUX_PATH=$(RUNTIME_BIN)" \
 		"$(SYZKALLER_IMAGE)" \
