@@ -15,10 +15,12 @@
 package auth
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/rand"
 )
@@ -93,16 +95,33 @@ type Key struct {
 	Description string
 
 	// kuid is the owner of the key in the root namespace.
-	// kuid is only mutable in KeySet transactions.
+	// It is immutable.
 	kuid KUID
 
 	// kgid is the group of the key in the root namespace.
-	// kgid is only mutable in KeySet transactions.
+	// It is immutable.
 	kgid KGID
 
 	// perms is a bitfield of key permissions.
-	// perms is only mutable in KeySet transactions.
-	perms KeyPermissions
+	//
+	// Readers may access shared keys concurrently with permission updates.
+	//
+	// A task can retain a session key across a user-namespace switch. Tasks
+	// in different namespaces may then update the same key without sharing
+	// a KeySet lock.
+	//
+	// +checkatomic
+	perms atomicbitops.Uint64 `state:".(KeyPermissions)"`
+}
+
+// savePerms is invoked by stateify.
+func (k *Key) savePerms() KeyPermissions {
+	return k.Permissions()
+}
+
+// loadPerms is invoked by stateify.
+func (k *Key) loadPerms(_ context.Context, perms KeyPermissions) {
+	k.perms.Store(uint64(perms))
 }
 
 // Type returns the type of this key.
@@ -117,13 +136,23 @@ func (k *Key) KUID() KUID { return k.kuid }
 func (k *Key) KGID() KGID { return k.kgid }
 
 // Permissions returns the permission bits of the key.
-func (k *Key) Permissions() KeyPermissions { return k.perms }
+func (k *Key) Permissions() KeyPermissions { return KeyPermissions(k.perms.Load()) }
+
+// SetPermsIfAllowed sets the permissions if creds has SetAttr permission.
+// possessed is the caller's possession snapshot.
+func (k *Key) SetPermsIfAllowed(creds *Credentials, possessed *PossessedKeys, newPerms KeyPermissions) error {
+	if !creds.HasKeyPermission(k, possessed, KeySetAttr) {
+		return linuxerr.EACCES
+	}
+	k.perms.Store(uint64(newPerms))
+	return nil
+}
 
 // String is a human-friendly representation of the key.
 // Notably, this is *not* the string returned to userspace when requested
 // using `KEYCTL_DESCRIBE`.
 func (k *Key) String() string {
-	return fmt.Sprintf("id=%d,perms=0x%x,desc=%q", k.ID, k.perms, k.Description)
+	return fmt.Sprintf("id=%d,perms=0x%x,desc=%q", k.ID, k.Permissions(), k.Description)
 }
 
 // Bitmasks for permission checks.
@@ -232,7 +261,7 @@ func (c *Credentials) PossessedKeys(sessionKeyring, processKeyring, threadKeyrin
 			continue
 		}
 		// The possessor still needs "search" permission in order to actually possess anything.
-		if ((k.perms&keyPossessorPermissionsMask)>>keyPossessorPermissionsShift)&keyPermissionSearch != 0 {
+		if ((k.Permissions()&keyPossessorPermissionsMask)>>keyPossessorPermissionsShift)&keyPermissionSearch != 0 {
 			possessed.possessed[k.ID] = struct{}{}
 		}
 	}
@@ -284,43 +313,13 @@ func (c *Credentials) HasKeyPermission(k *Key, possessed *PossessedKeys, permiss
 //
 // +stateify savable
 type KeySet struct {
-	// txnMu is used for transactionality of key changes.
-	// This blocks multiple tasks for concurrently changing the keyset or the
-	// permissions of any keys.
-	txnMu keysetTransactionMutex `state:"nosave"`
-
-	// mu protects the fields below.
-	// Within functions on `KeySet`, `mu` may only be locked for reading.
-	// Locking `mu` for writing may only be done in `LockedKeySet` functions.
+	// mu protects the keys map.
 	mu keysetRWMutex `state:"nosave"`
 
 	// keys maps key IDs to the underlying Key struct.
-	// It is initially nil to save on heap space.
-	// It is only initialized when doing mutable transactions on it using `Do`.
+	// It is initialized on the first successful Add.
+	// +checklocks:mu
 	keys map[KeySerial]*Key
-}
-
-// LockedKeySet is a KeySet in a transaction.
-// It exposes functions that can mutate the KeySet or its keys.
-type LockedKeySet struct {
-	*KeySet
-}
-
-// Do executes the given function as a transaction on the KeySet.
-// It returns the error that `fn` returns.
-// This is the only function where functions that lock the KeySet.mu for
-// writing may be called.
-func (s *KeySet) Do(fn func(*LockedKeySet) error) error {
-	s.txnMu.Lock()
-	defer s.txnMu.Unlock()
-	ls := &LockedKeySet{s}
-	ls.mu.Lock()
-	if s.keys == nil {
-		// Initialize the map from its zero value, if it hasn't been done yet.
-		s.keys = make(map[KeySerial]*Key)
-	}
-	ls.mu.Unlock()
-	return fn(ls)
 }
 
 // Lookup looks up a key by ID.
@@ -366,7 +365,7 @@ func getNewID() (KeySerial, error) {
 }
 
 // Add adds a new Key to the KeySet.
-func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
+func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
 	if len(description) >= MaxKeyDescSize {
 		return nil, linuxerr.EINVAL
 	}
@@ -385,19 +384,16 @@ func (s *LockedKeySet) Add(description string, creds *Credentials, perms KeyPerm
 			return nil, err
 		}
 	}
+	if s.keys == nil {
+		s.keys = make(map[KeySerial]*Key)
+	}
 	k := &Key{
 		ID:          newID,
 		Description: description,
 		kuid:        creds.EffectiveKUID,
 		kgid:        creds.EffectiveKGID,
-		perms:       perms,
+		perms:       atomicbitops.FromUint64(uint64(perms)),
 	}
 	s.keys[newID] = k
 	return k, nil
-}
-
-// SetPerms sets the permissions on a given key.
-// The caller must have SetAttr permission on the key.
-func (s *LockedKeySet) SetPerms(key *Key, newPerms KeyPermissions) {
-	key.perms = newPerms
 }
