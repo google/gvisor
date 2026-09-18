@@ -189,6 +189,11 @@ KERNEL_HEADERS_DIR_LINKED := $(dir $(shell $(REALPATH_M) $(KERNEL_HEADERS_DIR)/M
 DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINKED)"
 endif
 endif
+# If /etc/gitconfig is available, pass it through so in-container clones
+# respect host gitconfig (e.g. authentication)
+ifneq (,$(wildcard /etc/gitconfig))
+DOCKER_RUN_OPTIONS += -v "/etc/gitconfig:/etc/gitconfig:ro"
+endif
 
 # Add basic UID/GID options.
 #
