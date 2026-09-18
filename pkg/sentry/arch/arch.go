@@ -50,6 +50,19 @@ func (a Arch) String() string {
 	}
 }
 
+// Platform returns the platform identifier exposed to userspace via
+// AT_PLATFORM, matching the Linux ELF_PLATFORM for the architecture.
+func (a Arch) Platform() string {
+	switch a {
+	case AMD64:
+		return "x86_64"
+	case ARM64:
+		return "aarch64"
+	default:
+		return "unknown"
+	}
+}
+
 // contextInterface provides architecture-dependent information for a thread.
 // This is currently not referenced, because there exists only one concrete
 // implementation of this interface (*Context64), which we reference directly
