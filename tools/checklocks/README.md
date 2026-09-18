@@ -23,6 +23,17 @@ And, if installed to the default path, run it via:
 go vet -vettool=$HOME/go/bin/checklocks ./...
 ```
 
+To exclude test files, invoke checklocks directly:
+
+```sh
+$HOME/go/bin/checklocks -test=false ./...
+```
+
+The `-test` flag controls package loading in the standalone driver. When using
+`go vet -vettool=...`, `go vet` selects the packages and includes their test
+files; passing `-test=false` to the analyzer does not change that selection.
+See [issue #8596](https://github.com/google/gvisor/issues/8596).
+
 ## Annotations
 
 This analyzer supports annotations for atomic access and lock enforcement, in
