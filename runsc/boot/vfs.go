@@ -1291,9 +1291,10 @@ func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf 
 	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 	pop := vfs.PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse("/tmp"),
+		Root:               root,
+		Start:              root,
+		Path:               fspath.Parse("/tmp"),
+		FollowFinalSymlink: true,
 	}
 	fd, err := c.l.k.VFS().OpenAt(ctx, creds, &pop, &vfs.OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY})
 	switch {
