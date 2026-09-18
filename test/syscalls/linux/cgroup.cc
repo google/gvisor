@@ -500,6 +500,16 @@ TEST(Cgroup, NamedHierarchies) {
   EXPECT_NO_ERRNO(c2.ContainsCallingProcess());
 }
 
+TEST(Cgroup, NamedHierarchyRemount) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h1"));
+  ASSERT_NO_ERRNO(m.Unmount(c));
+  // Once the hierarchy is gone, its name is free for reuse.
+  EXPECT_NO_ERRNO(m.MountCgroupfs("none,name=h1"));
+}
+
 TEST(Cgroup, NoneExclusiveWithAnyController) {
   SKIP_IF(!CgroupsAvailable());
 

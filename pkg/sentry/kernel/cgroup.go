@@ -588,6 +588,9 @@ func (r *CgroupRegistry) unregisterLocked(hid uint32) []Cgroup2Ctrl {
 			}
 		}
 		delete(r.hierarchies, hid)
+		if h.name != "" {
+			delete(r.hierarchiesByName, h.name)
+		}
 	}
 	return returns
 }
