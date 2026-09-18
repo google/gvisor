@@ -212,7 +212,9 @@ func (hc *hostConnection) InitSend(creds *auth.Credentials, pid uint32, hasSysAd
 		Major:        linux.FUSE_KERNEL_VERSION,
 		Minor:        linux.FUSE_KERNEL_MINOR_VERSION,
 		MaxReadahead: fuseDefaultMaxReadahead,
-		Flags:        fuseDefaultInitFlags,
+		// Each request is a single SOCK_SEQPACKET datagram, which
+		// writeRequest cannot fragment.
+		Flags: fuseDefaultInitFlags &^ fuseDatagramUnsafeInitFlags,
 	}
 
 	req := hc.conn.NewRequest(creds, pid, 0, linux.FUSE_INIT, &in)
@@ -244,6 +246,9 @@ func (hc *hostConnection) InitSend(creds *auth.Credentials, pid uint32, hasSysAd
 	if err := hc.conn.InitRecv(res, hasSysAdminCap); err != nil {
 		return err
 	}
+	// Big writes stay off even if the server echoes the flag unsolicited;
+	// the transport cannot carry them.
+	hc.conn.bigWrites = false
 
 	hc.startReader()
 	return nil
