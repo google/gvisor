@@ -666,6 +666,52 @@ func TestControlMessage(t *testing.T) {
 	}
 }
 
+// TestExtractFDsIgnoresCredentials verifies that host-attached
+// SCM_CREDENTIALS (as seen on SO_PASSCRED sockets) do not prevent
+// extracting SCM_RIGHTS file descriptors. This is the failure mode in
+// https://github.com/google/gvisor/issues/14594.
+func TestExtractFDsIgnoresCredentials(t *testing.T) {
+	rights := unix.UnixRights(3, 4)
+	creds := unix.UnixCredentials(&unix.Ucred{
+		Pid: int32(os.Getpid()),
+		Uid: uint32(os.Getuid()),
+		Gid: uint32(os.Getgid()),
+	})
+
+	// Credentials then rights, matching a typical host recvmsg payload
+	// when SO_PASSCRED is enabled and the peer also sent SCM_RIGHTS.
+	cm := ControlMessage(append(append([]byte{}, creds...), rights...))
+	got, err := cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs with SCM_CREDENTIALS+SCM_RIGHTS: %v", err)
+	}
+	want := []int{3, 4}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ExtractFDs = %v, want %v", got, want)
+	}
+
+	// Rights then credentials (ordering is not guaranteed).
+	cm = ControlMessage(append(append([]byte{}, rights...), creds...))
+	got, err = cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs with SCM_RIGHTS+SCM_CREDENTIALS: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ExtractFDs reverse order = %v, want %v", got, want)
+	}
+
+	// Credentials alone: no FDs, no error (recvmsg with an empty rights
+	// result must still succeed for the payload path).
+	cm = ControlMessage(append([]byte{}, creds...))
+	got, err = cm.ExtractFDs()
+	if err != nil {
+		t.Fatalf("ExtractFDs with SCM_CREDENTIALS only: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ExtractFDs with credentials only = %v, want nil/empty", got)
+	}
+}
+
 func benchmarkSendRecv(b *testing.B, packet bool) {
 	server, client, err := SocketPair(packet)
 	if err != nil {
