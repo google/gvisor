@@ -252,7 +252,7 @@ smoke-race-tests: $(RUNTIME_BIN) ## Runs a smoke test after build building runsc
 .PHONY: smoke-race-tests
 
 nogo-tests:
-	@$(call test,--test_tag_filters=nogo //:all pkg/... tools/...)
+	@$(call test,--test_tag_filters=nogo --build_tests_only //...)
 .PHONY: nogo-tests
 
 # For unit tests, we take everything in the root, pkg/... and tools/..., and

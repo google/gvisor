@@ -164,8 +164,9 @@ func main() {
 			}
 		}
 		// Start packet capture.
+		dut := d
 		g.Go(func() error {
-			return d.writePcap(ctx, filepath.Base(testBinary))
+			return dut.writePcap(ctx, filepath.Base(testBinary))
 		})
 	}
 
