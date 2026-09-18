@@ -246,6 +246,10 @@ func (t *Task) doSyscall() taskRunState {
 			t.Debugf("Syscall %d: killed by seccomp", sysno)
 			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 			return (*runExit)(nil)
+		case linux.SECCOMP_RET_KILL_PROCESS:
+			t.Debugf("Syscall %d: process killed by seccomp", sysno)
+			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
+			return (*runExit)(nil)
 		case linux.SECCOMP_RET_TRACE:
 			t.Debugf("Syscall %d: stopping for PTRACE_EVENT_SECCOMP", sysno)
 			return (*runSyscallAfterPtraceEventSeccomp)(nil)
@@ -402,6 +406,10 @@ func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
 		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("vsyscall %d: killed by seccomp", sysno)
 			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
+			return (*runExit)(nil)
+		case linux.SECCOMP_RET_KILL_PROCESS:
+			t.Debugf("vsyscall %d: process killed by seccomp", sysno)
+			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 			return (*runExit)(nil)
 		default:
 			panic(fmt.Sprintf("Unknown seccomp result %d", r))
