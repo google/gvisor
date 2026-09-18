@@ -1692,6 +1692,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 			specutils.SetUIDGIDMappings(cmd, c.Spec)
 			// We need to set UID and GID to have capabilities in a new user namespace.
 			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			if conf.GetHostUDS().AllowOpen() && len(cmd.SysProcAttr.GidMappings) > 0 {
+				// Connecting to a host socket applies the application's supplementary
+				// groups, which setgroups(2) refuses in a user namespace that denies
+				// it. Allowing it makes os/exec reset our own groups, so keep them.
+				cmd.SysProcAttr.GidMappingsEnableSetgroups = true
+				cmd.SysProcAttr.Credential.NoSetGroups = true
+			}
 		}
 	} else {
 		userNS, ok := specutils.GetNS(specs.UserNamespace, c.Spec)

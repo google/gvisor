@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -76,6 +77,9 @@ type Config struct {
 
 	// Gofer process's EGID.
 	EGID int
+
+	// Gofer process's supplementary groups.
+	Groups []int
 }
 
 var procSelfFD *rwfd.FD
@@ -199,6 +203,7 @@ func (i *connectionImpl) SupportedMessages() []lisafs.MID {
 		lisafs.Accept,
 		lisafs.ConnectWithCreds,
 		lisafs.RenameAt2,
+		lisafs.ConnectWithGroups,
 	}
 }
 
@@ -939,6 +944,46 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 	}()
 
 	return fd.Connect(sockType)
+}
+
+// ConnectWithGroups implements lisafs.ControlFDImpl.ConnectWithGroups.
+func (fd *controlFDLisa) ConnectWithGroups(sockType uint32, uid lisafs.UID, gid lisafs.GID, groups []lisafs.GID) (int, error) {
+	impl := fd.Conn().Impl().(*connectionImpl)
+	if !impl.config.HostUDS.AllowOpen() {
+		logRejectedUdsConnectOnce.Do(func() {
+			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+		})
+		return -1, unix.EPERM
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// setgroups(2) needs CAP_SETGID in the effective set, which ConnectWithCreds
+	// clears while the euid is changed. So the supplementary groups are changed
+	// before it and restored after it.
+	gids := make([]int, len(groups))
+	for i, group := range groups {
+		gids[i] = int(group)
+	}
+	groupsChanged := false
+	if !slices.Equal(gids, impl.config.Groups) {
+		if err := unix.Setgroups(gids); err != nil {
+			log.Warningf("Failed to set supplementary groups; err: %v", err)
+		} else {
+			log.Debugf("Successfully set supplementary groups to %v", gids)
+			groupsChanged = true
+		}
+	}
+	defer func() {
+		if groupsChanged {
+			if err := unix.Setgroups(impl.config.Groups); err != nil {
+				panic(fmt.Sprintf("Failed to restore supplementary groups; err: %v", err))
+			}
+			log.Debugf("Successfully restored supplementary groups to %v", impl.config.Groups)
+		}
+	}()
+
+	return fd.ConnectWithCreds(sockType, uid, gid)
 }
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.
