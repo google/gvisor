@@ -42,7 +42,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
-#include <regex>
+#include <regex>  // NOLINT
 #include <string>
 #include <unordered_set>
 #include <utility>

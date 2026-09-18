@@ -36,20 +36,23 @@ cd "${REPO_DIR}"
 declare -r CACHE_DIR="${LINT_CACHE_DIR:-${HOME}/.cache/gvisor/lint}"
 
 # Every check, in run order, named as tools/lint.sh accepts it.
-declare -ra ALL_CHECKS=(gofmt clang-format buildifier actions spelling)
+declare -ra ALL_CHECKS=(gofmt clang-format cpplint buildifier actions spelling)
 # Only the formatters can rewrite a file; the rest have no safe autofix.
 declare -ra FIXABLE_CHECKS=(gofmt clang-format buildifier)
 
 declare -r ACTIONLINT_VERSION="1.7.7"
 declare -r CODESPELL_VERSION="2.3.0"
+declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
 declare -r GOFMT_MINIMUM_GO_VERSION="1.27"
 # Keep in sync with images/default/Dockerfile.
 declare -r BUILDIFIER_VERSION="8.5.1"
 
-# The codespell wheel is architecture-independent.
+# The codespell and cpplint wheels are architecture-independent.
 declare -r CODESPELL_URL="https://files.pythonhosted.org/packages/0e/20/b6019add11e84f821184234cea0ad91442373489ef7ccfa3d73a71b908fa/codespell-${CODESPELL_VERSION}-py3-none-any.whl"
 declare -r CODESPELL_SHA256="a9c7cef2501c9cfede2110fd6d4e5e62296920efe9abfb84648df866e47f58d1"
+declare -r CPPLINT_URL="https://files.pythonhosted.org/packages/6a/52/4ec97b6e4f55549973ce668285228ff0bb1913f058265ff7549c65b3a97d/cpplint-${CPPLINT_VERSION}-py3-none-any.whl"
+declare -r CPPLINT_SHA256="5031cb9671cd5bb3dbb4d3243eebd0d42cdf76388ab49c0d276f8a2d116e9928"
 
 case "$(uname -m)" in
   x86_64|amd64)
@@ -130,6 +133,19 @@ install_codespell() {
   if [[ ! -d "${dir}" ]]; then
     local -r wheel="${CACHE_DIR}/codespell.whl"
     fetch "${CODESPELL_URL}" "${CODESPELL_SHA256}" "${wheel}"
+    rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
+    unzip -q "${wheel}" -d "${dir}.tmp"
+    mv "${dir}.tmp" "${dir}"
+    rm -f "${wheel}"
+  fi
+  echo "${dir}"
+}
+
+install_cpplint() {
+  local -r dir="${CACHE_DIR}/cpplint-${CPPLINT_VERSION}"
+  if [[ ! -d "${dir}" ]]; then
+    local -r wheel="${CACHE_DIR}/cpplint.whl"
+    fetch "${CPPLINT_URL}" "${CPPLINT_SHA256}" "${wheel}"
     rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
     unzip -q "${wheel}" -d "${dir}.tmp"
     mv "${dir}.tmp" "${dir}"
@@ -339,6 +355,16 @@ check_spelling() {
       --config "${REPO_DIR}/tools/.codespellrc"
 }
 
+check_cpplint() {
+  local cpplint_dir
+  cpplint_dir="$(install_cpplint)"
+  local -r jobs="$(nproc 2>/dev/null || echo 1)"
+  cc_files |
+    PYTHONPATH="${cpplint_dir}" xargs -0 -P "${jobs}" -n 32 python3 -W ignore::DeprecationWarning -m cpplint \
+      --quiet --filter=-,+build/include_order,+build/c++11
+}
+
+
 contains() {
   local -r needle="$1"
   shift
@@ -404,6 +430,7 @@ main() {
     case "${check}" in
       gofmt)        run_check gofmt check_gofmt "gofmt" ;;
       clang-format) run_check clang-format check_clang_format "clang-format" ;;
+      cpplint)      run_check cpplint check_cpplint "cpplint" ;;
       buildifier)   run_check buildifier check_buildifier "buildifier" ;;
       actions)      run_check actions check_actions "actionlint" ;;
       spelling)     run_check spelling check_spelling "codespell" ;;
