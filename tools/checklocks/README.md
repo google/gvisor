@@ -187,6 +187,13 @@ func foo(ts *testStruct) {
 This pattern often applies to defer usage, which allows deferred functions to be
 fully analyzed with the lock state at time of execution.
 
+Inline calls propagate acquired and released locks back to their caller. Their
+normal return paths must agree on which locks are held and in which mode. Each
+call runs its own deferred functions; a caller's deferred calls remain pending
+until that caller returns. Arguments retain their values from call or defer
+registration, while closures can observe and modify captured variables when they
+execute.
+
 However, if a closure is passed to another function, the anonymous function
 backing that closure will be analyzed assuming no available lock state. For
 example, the following will report violations:
