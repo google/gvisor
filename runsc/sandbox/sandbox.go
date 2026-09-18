@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -85,6 +86,17 @@ const (
 	// checkpointGCSOptsFileName is a file that may exist in an image-path
 	// directory that specifies options for storing checkpoint files in GCS.
 	checkpointGCSOptsFileName = "gcs_opts.json"
+
+	// sentryBootstrapGOMAXPROCS caps the sentry's GOMAXPROCS during early boot.
+	// Early boot performs a lot of blocking work, and with a large GOMAXPROCS
+	// the Go runtime creates one OS thread per blocked goroutine. Several early
+	// boot steps operate on every OS thread, most expensively the capability
+	// bounding set trim, which issues a stop-the-world syscall per dropped
+	// capability per thread. On a many-core host the resulting thread count
+	// dominates sandbox startup. The sentry raises GOMAXPROCS to the configured
+	// value once the Loader is created (runsc/boot/loader.go), so this only
+	// bounds the thread count during the early boot window.
+	sentryBootstrapGOMAXPROCS = 8
 )
 
 func controlSocketName(id string) string {
@@ -1023,6 +1035,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	} else {
 		// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
 		cmd.Env = []string{}
+	}
+	// Start the sentry with a modest GOMAXPROCS to avoid creating a large
+	// number of OS threads during early boot. See sentryBootstrapGOMAXPROCS.
+	if n := min(runtime.NumCPU(), sentryBootstrapGOMAXPROCS); n > 0 {
+		cmd.Env = append(cmd.Env, "GOMAXPROCS="+strconv.Itoa(n))
 	}
 	if bootBinPath != specutils.ExePath {
 		cmd.Env = gvisorbinaries.WithEnforceRelease(cmd.Env)
