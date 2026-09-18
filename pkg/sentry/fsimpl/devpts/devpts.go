@@ -35,6 +35,10 @@ import (
 // Name is the filesystem name.
 const Name = "devpts"
 
+// rootMode is the mode of the root directory. Linux fixes it and never applies
+// the mode mount option to it. See fs/devpts/inode.c:devpts_fill_super().
+const rootMode = linux.FileMode(0755)
+
 // FilesystemType implements vfs.FilesystemType.
 //
 // +stateify savable
@@ -48,11 +52,18 @@ type FilesystemType struct {
 	root *vfs.Dentry
 }
 
+// +stateify savable
 type fileSystemOpts struct {
 	mode     linux.FileMode
 	ptmxMode linux.FileMode
 	uid      auth.KUID
 	gid      auth.KGID
+
+	// setuid and setgid record whether the uid and gid mount options were
+	// given. Replicas fall back to the credentials of the process creating
+	// them when they were not. See fs/devpts/inode.c:devpts_pty_new().
+	setuid bool
+	setgid bool
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -100,6 +111,7 @@ func (fstype *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Vir
 			return nil, nil, linuxerr.EINVAL
 		}
 		fsOpts.uid = kuid
+		fsOpts.setuid = true
 	}
 	if gidStr, ok := mopts["gid"]; ok {
 		delete(mopts, "gid")
@@ -114,6 +126,7 @@ func (fstype *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Vir
 			return nil, nil, linuxerr.EINVAL
 		}
 		fsOpts.gid = kgid
+		fsOpts.setgid = true
 	}
 	newinstance := false
 	if _, ok := mopts["newinstance"]; ok {
@@ -180,9 +193,12 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 
 	// Construct the root directory. This is always inode id 1.
 	root := &rootInode{
+		opts:     opts,
 		replicas: make(map[uint32]*replicaInode),
 	}
-	root.InodeAttrs.InitWithIDs(ctx, opts.uid, opts.gid, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|opts.mode)
+	// The mode option applies to replicas, not to this directory, which Linux
+	// fixes at 0755. See fs/devpts/inode.c:devpts_fill_super().
+	root.InodeAttrs.InitWithIDs(ctx, opts.uid, opts.gid, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|rootMode)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	root.InitRefs()
 
@@ -240,6 +256,9 @@ type rootInode struct {
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
+	// opts is the mount options this filesystem was created with. Immutable.
+	opts fileSystemOpts
+
 	// replicas maps pty ids to replica inodes.
 	replicas map[uint32]*replicaInode
 
@@ -276,9 +295,18 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 		root: i,
 		t:    t,
 	}
+	// The uid and gid options name the owner of a replica. Without them it is
+	// owned by whoever created it. See fs/devpts/inode.c:devpts_pty_new().
+	uid, gid := creds.EffectiveKUID, creds.EffectiveKGID
+	if i.opts.setuid {
+		uid = i.opts.uid
+	}
+	if i.opts.setgid {
+		gid = i.opts.gid
+	}
 	// Linux always uses pty index + 3 as the inode id. See
 	// fs/devpts/inode.c:devpts_pty_new().
-	replica.InodeAttrs.Init(ctx, creds, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|0600)
+	replica.InodeAttrs.InitWithIDs(ctx, uid, gid, i.InodeAttrs.DevMajor(), i.InodeAttrs.DevMinor(), uint64(idx+3), linux.ModeCharacterDevice|i.opts.mode)
 	i.replicas[idx] = replica
 
 	return t, nil
