@@ -720,6 +720,22 @@ func TestPids(t *testing.T) {
 	}
 }
 
+func TestTransformSystemdPathRejectsCgroupfsPath(t *testing.T) {
+	_, err := TransformSystemdPath("/kubepods/burstable/pod123/container456", "container456", false)
+	if err == nil {
+		t.Fatalf("TransformSystemdPath succeeded for cgroupfs path")
+	}
+	for _, want := range []string{
+		"--systemd-cgroup requires cgroupsPath",
+		"slice:prefix:name",
+		"leave --systemd-cgroup disabled",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("TransformSystemdPath error %q does not contain %q", err, want)
+		}
+	}
+}
+
 func TestLoadPaths(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
