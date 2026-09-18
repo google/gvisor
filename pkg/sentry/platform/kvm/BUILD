@@ -62,6 +62,7 @@ go_library(
         "machine_amd64.go",
         "machine_amd64_unsafe.go",
         "machine_arm64.go",
+        "machine_arm64.s",
         "machine_arm64_unsafe.go",
         "machine_cgo.go",
         "machine_unsafe.go",

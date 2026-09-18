@@ -22,6 +22,7 @@ go_library(
         "network.go",
         "nvproxy.go",
         "restore.go",
+        "restore_impl.go",
         "seccheck.go",
         "seccomp.go",
         "strace.go",
