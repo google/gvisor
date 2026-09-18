@@ -19,7 +19,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1878,23 +1877,11 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 		if devClient == nil {
 			return fmt.Errorf("dev gofer client not found in context")
 		}
-		names, err := devClient.DirentNames(ctx)
+		minors, err := nvidiaRegularDeviceMinorsFromGofer(ctx, devClient)
 		if err != nil {
-			return fmt.Errorf("failed to get names of dirents from dev gofer: %w", err)
+			return err
 		}
-		nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
-		for _, name := range names {
-			ms := nvidiaDeviceRegex.FindStringSubmatch(name)
-			if ms == nil {
-				continue
-			}
-			minor, err := strconv.ParseUint(ms[1], 10, 32)
-			if err != nil {
-				return fmt.Errorf("invalid nvidia device name %q: %w", name, err)
-			}
-			if minor > nvgpu.NV_MINOR_DEVICE_NUMBER_REGULAR_MAX {
-				return fmt.Errorf("invalid nvidia regular minor device number %d", minor)
-			}
+		for _, minor := range minors {
 			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor)})
 		}
 		for _, nvidiaDev := range nvidiaDevs {
