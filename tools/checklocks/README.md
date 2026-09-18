@@ -82,7 +82,30 @@ lock must refer to one of:
 *   A global lock (e.g. globalMu).
 *   A lock resolvable from a global struct (e.g. globalX.mu).
 
+Annotations apply to every named field in a declaration, including fields of
+anonymous structs and structs declared inside functions.
+
 Like atomic access enforcement, checks may be elided on newly allocated objects.
+
+### Global Variable Annotations
+
+Global variables also support lock and atomic annotations. Put annotations above
+or after a standalone declaration or an individual entry in a `var` block:
+
+```go
+var globalMu sync.Mutex
+
+// +checklocks:globalMu
+var first, second int
+
+var (
+    third int // +checklocks:globalMu
+)
+```
+
+Annotations apply to every named variable in that declaration or block entry.
+Annotations above a `var (...)` block apply to every variable in the block and
+combine with annotations on individual entries.
 
 ### Function Annotations
 

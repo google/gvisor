@@ -773,6 +773,10 @@ func (pc *passContext) fillLockGuardFacts(obj types.Object, cg *ast.CommentGroup
 			},
 		})
 	}
+}
+
+// exportLockGuardFacts exports the facts after all declaration comments are read.
+func (pc *passContext) exportLockGuardFacts(obj types.Object, lgf *lockGuardFacts) {
 	// Save only if there is something meaningful.
 	if len(lgf.GuardedBy) > 0 || lgf.AtomicDisposition != atomicDisallow {
 		pc.pass.ExportObjectFact(obj, lgf)
@@ -817,7 +821,6 @@ func (pc *passContext) findGlobalFunctionGuard(pos token.Pos, guardName string) 
 
 // structLockGuardFacts finds all relevant guard information for structures.
 func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.StructType) {
-	var fieldObj *types.Var
 	findLocal := func(pos token.Pos, guardName string) (fieldGuardResolver, bool) {
 		// Try to resolve from the local structure first.
 		if fl, _, objs, ok := pc.resolveFieldListParts(pos, structType, strings.Split(guardName, ".")); ok {
@@ -834,32 +837,34 @@ func (pc *passContext) structLockGuardFacts(structType *types.Struct, ss *ast.St
 		// Attempt a global resolution.
 		return pc.findGlobalFieldGuard(pos, guardName)
 	}
-	for i, field := range ss.Fields.List {
-		var lgf lockGuardFacts
-		fieldObj = structType.Field(i) // N.B. Captured above.
-		if field.Doc != nil {
+	fieldIndex := 0
+	for _, field := range ss.Fields.List {
+		// One AST declaration can expand to multiple struct fields. Embedded
+		// fields have no names but still occupy one position.
+		for range max(1, len(field.Names)) {
+			fieldObj := structType.Field(fieldIndex)
+			fieldIndex++
+			var lgf lockGuardFacts
 			pc.fillLockGuardFacts(fieldObj, field.Doc, findLocal, &lgf)
-		}
-		if field.Comment != nil {
 			pc.fillLockGuardFacts(fieldObj, field.Comment, findLocal, &lgf)
-		}
-
-		// See above, for anonymous structure fields.
-		if ss, ok := field.Type.(*ast.StructType); ok {
-			if st, ok := types.Unalias(fieldObj.Type()).(*types.Struct); ok {
-				pc.structLockGuardFacts(st, ss)
-			}
+			pc.exportLockGuardFacts(fieldObj, &lgf)
 		}
 	}
 }
 
 // globalLockGuardFacts finds all relevant guard information for globals.
-//
-// Note that the Type is checked in checklocks.go at the top-level.
-func (pc *passContext) globalLockGuardFacts(vs *ast.ValueSpec) {
-	var lgf lockGuardFacts
-	globalObj := pc.pass.TypesInfo.ObjectOf(vs.Names[0])
-	pc.fillLockGuardFacts(globalObj, vs.Doc, pc.findGlobalFieldGuard, &lgf)
+func (pc *passContext) globalLockGuardFacts(vs *ast.ValueSpec, decl *ast.GenDecl) {
+	for _, name := range vs.Names {
+		if name.Name == "_" {
+			continue
+		}
+		var lgf lockGuardFacts
+		obj := pc.pass.TypesInfo.ObjectOf(name)
+		pc.fillLockGuardFacts(obj, decl.Doc, pc.findGlobalFieldGuard, &lgf)
+		pc.fillLockGuardFacts(obj, vs.Doc, pc.findGlobalFieldGuard, &lgf)
+		pc.fillLockGuardFacts(obj, vs.Comment, pc.findGlobalFieldGuard, &lgf)
+		pc.exportLockGuardFacts(obj, &lgf)
+	}
 }
 
 // countFields gives an accurate field count, according for unnamed arguments
