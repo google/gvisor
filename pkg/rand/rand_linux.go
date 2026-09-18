@@ -25,7 +25,10 @@ import (
 
 // reader implements an io.Reader that returns pseudorandom bytes.
 type reader struct {
-	once         sync.Once
+	once sync.Once
+
+	// useGetrandom is initialized by once.Do; every read follows Do's return.
+	// checklocks does not model publication through sync.Once.
 	useGetrandom bool
 }
 
@@ -47,10 +50,14 @@ func (r *reader) Read(p []byte) (int, error) {
 // bufferedReader implements a threadsafe buffered io.Reader.
 type bufferedReader struct {
 	mu sync.Mutex
-	r  *bufio.Reader
+
+	// +checklocks:mu
+	r *bufio.Reader
 }
 
 // Read implements io.Reader.Read.
+//
+// +checklocksexclude:b.mu
 func (b *bufferedReader) Read(p []byte) (int, error) {
 	// In Linux, reads of up to page size bytes will always complete fully.
 	// See drivers/char/random.c:get_random_bytes_user().

@@ -27,14 +27,17 @@ import (
 //
 // +stateify savable
 type syslog struct {
-	// mu protects the below.
 	mu sync.Mutex `state:"nosave"`
 
 	// msg is the syslog message buffer. It is lazily initialized.
+	//
+	// +checklocks:mu
 	msg []byte
 }
 
 // Log returns a copy of the syslog.
+//
+// +checklocksexclude:s.mu
 func (s *syslog) Log() []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
