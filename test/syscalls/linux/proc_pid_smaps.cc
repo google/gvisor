@@ -35,7 +35,6 @@
 #include "test/util/test_util.h"
 
 using ::testing::Contains;
-using ::testing::ElementsAreArray;
 using ::testing::IsSupersetOf;
 using ::testing::Not;
 using ::testing::Optional;

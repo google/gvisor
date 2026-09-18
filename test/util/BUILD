@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "default_net_util", "gbenchmark_internal", "select_gtest", "select_system")
+load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "default_net_util", "gbenchmark", "gbenchmark_internal", "select_gtest", "select_system")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -67,8 +67,6 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         ":save_util",
-        "//test/util:temp_path",
-        "//test/util:test_util",
     ],
 )
 
@@ -307,6 +305,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
+        gbenchmark,
         gbenchmark_internal,
     ],
 )
@@ -410,7 +409,6 @@ cc_library(
         ":cleanup",
         ":fs_util",
         ":mount_util",
-        ":posix_error",
         ":temp_path",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

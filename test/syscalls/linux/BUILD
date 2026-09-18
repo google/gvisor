@@ -1222,10 +1222,8 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:io_uring_util",
-        "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:multiprocess_util",
-        "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3037,7 +3035,6 @@ cc_library(
     hdrs = ["socket_unix_seqpacket.h"],
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
-        "//test/util:posix_error",
         "//test/util:socket_util",
         "//test/util:test_util",
         "@com_google_absl//absl/time",
