@@ -160,6 +160,8 @@ analyzers:
         - codes/codes.go # go.opentelemetry.io/otel
         - yaml.go # github.com/go-openapi/swag/yamlutils
         - staticcheck/sa1030/sa1030.go # staticcheck
+        # Starting in 1.27, printf reports misuse of %d with pointers.
+        - route.go # github.com/vishvananda/netlink
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
