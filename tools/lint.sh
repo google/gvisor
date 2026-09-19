@@ -15,7 +15,8 @@
 # limitations under the License.
 
 # lint.sh runs gVisor's source-level lint checks. It runs without Bazel or a
-# builder container. Deep Go analysis is owned by gVisor nogo.
+# builder container, on Linux, macOS, or Windows (Git Bash / MSYS2 / Cygwin).
+# Deep Go analysis is owned by gVisor nogo.
 #
 # Usage:
 #   tools/lint.sh                     # run every check
@@ -62,35 +63,158 @@ declare -r CODESPELL_SHA256="a9c7cef2501c9cfede2110fd6d4e5e62296920efe9abfb84648
 declare -r CPPLINT_URL="https://files.pythonhosted.org/packages/6a/52/4ec97b6e4f55549973ce668285228ff0bb1913f058265ff7549c65b3a97d/cpplint-${CPPLINT_VERSION}-py3-none-any.whl"
 declare -r CPPLINT_SHA256="5031cb9671cd5bb3dbb4d3243eebd0d42cdf76388ab49c0d276f8a2d116e9928"
 
-case "$(uname -m)" in
+# Map the host OS and architecture to the naming used by each linter's release
+# assets. Linux, macOS and Windows (Git Bash / MSYS2 / Cygwin) are supported;
+# lint.sh runs outside the Bazel container, directly on the host.
+declare -r HOST_OS="$(uname -s)"
+case "${HOST_OS}" in
+  Linux)
+    declare -r HOST_OS_KIND="linux"
+    declare -r EXE_SUFFIX=""
+    ;;
+  Darwin)
+    declare -r HOST_OS_KIND="darwin"
+    declare -r EXE_SUFFIX=""
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    declare -r HOST_OS_KIND="windows"
+    declare -r EXE_SUFFIX=".exe"
+    ;;
+  *)
+    echo "lint: unsupported operating system ${HOST_OS}" >&2
+    exit 1
+    ;;
+esac
+
+declare -r HOST_ARCH="$(uname -m)"
+case "${HOST_ARCH}" in
   x86_64|amd64)
-    declare -r ACTIONLINT_ARCH="amd64"
+    declare -r HOST_ARCH_KIND="amd64"
+    ;;
+  aarch64|arm64)
+    declare -r HOST_ARCH_KIND="arm64"
+    ;;
+  *)
+    echo "lint: unsupported architecture ${HOST_ARCH}" >&2
+    exit 1
+    ;;
+esac
+
+case "${HOST_OS_KIND}/${HOST_ARCH_KIND}" in
+  linux/amd64)
     declare -r ACTIONLINT_SHA256="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
-    declare -r BUILDIFIER_ARCH="amd64"
     declare -r BUILDIFIER_SHA256="887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/42/ef/3f8e215916e79ecd435b5bc20810443f80fce3fb8bbfe6d2783ceb775c1b/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     declare -r CLANG_FORMAT_SHA256="64900462c1203cee2fec364536c2dda708baf0619e15b52ceda926648cc82f56"
     declare -r CLANG_TIDY_URL="https://files.pythonhosted.org/packages/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-${CLANG_TIDY_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     declare -r CLANG_TIDY_SHA256="1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1"
     ;;
-  aarch64|arm64)
-    declare -r ACTIONLINT_ARCH="arm64"
+  linux/arm64)
     declare -r ACTIONLINT_SHA256="401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
-    declare -r BUILDIFIER_ARCH="arm64"
     declare -r BUILDIFIER_SHA256="947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/0e/b6/1a162e427d912b88653a66e99a22414d798eb885b761ffddb74dbc13963f/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
     declare -r CLANG_FORMAT_SHA256="09af54d2ef51680b34e36ed71b9f510bd399fb7b10b29a2a40843cd0e0344228"
     declare -r CLANG_TIDY_URL="https://files.pythonhosted.org/packages/ac/b7/61ed8c319f2d9ddb9762a550a6fee434bdef7bdc46d5a4b50929f1c90ec0/clang_tidy-${CLANG_TIDY_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
     declare -r CLANG_TIDY_SHA256="1eaddaa7415e8c5e39aeefbfd15174f1ab2a671c86f7ebb200eb523cf9465559"
     ;;
+  darwin/amd64)
+    declare -r ACTIONLINT_SHA256="28e5de5a05fc558474f638323d736d822fff183d2d492f0aecb2b73cc44584f5"
+    declare -r BUILDIFIER_SHA256="31de189e1a3fe53aa9e8c8f74a0309c325274ad19793393919e1ca65163ca1a4"
+    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/45/a3/e45ab75ae0fbe8f90a637af146978d1ef3799c26252163a8068b19a46e03/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-macosx_10_9_x86_64.whl"
+    declare -r CLANG_FORMAT_SHA256="8f8ea1e02f7cab8dace82a0d56733e532ffc3e6e41e658edc28261029e94c499"
+    ;;
+  darwin/arm64)
+    declare -r ACTIONLINT_SHA256="2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db"
+    declare -r BUILDIFIER_SHA256="62836a9667fa0db309b0d91e840f0a3f2813a9c8ea3e44b9cd58187c90bc88ba"
+    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/29/da/f354b637650ae04854d9096c252d08f03ccda7044b1f005861a4ddba28cf/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-macosx_11_0_arm64.whl"
+    declare -r CLANG_FORMAT_SHA256="d64a1788759c4cbc08a0aca21dd2bd38605c0758543aa15b8c0636508f0ebae7"
+    ;;
+  windows/amd64)
+    declare -r ACTIONLINT_SHA256="7f12f1801bca3d480d67aaf7774f4c2a6359a3ca8eebe382c95c10c9704aa731"
+    declare -r BUILDIFIER_SHA256="f4ecb9c73de2bc38b845d4ee27668f6248c4813a6647db4b4931a7556052e4e1"
+    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/4e/98/bcf1d46d62b63f92e8ee513dc2c3caa5c3168206af3785ada76ce994c96b/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-win_amd64.whl"
+    declare -r CLANG_FORMAT_SHA256="eaf3075d7e2bf477c150c6d53bfff040eca851365c0429a06b9bec0de65186d5"
+    ;;
+  windows/arm64)
+    declare -r ACTIONLINT_SHA256="76e9514cfac18e5677aa04f3a89873c981f16a2f2353bb97372a86cd09b1f5a8"
+    declare -r BUILDIFIER_SHA256="55a276ad8b1ff46be48bf64e432264034ea69a45aa3914e89c1d1936f5c2d85c"
+    declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/90/4c/3ae3671f91d181bfda6148c684c3514c878767c0fbbb3793d4d804103d3a/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-win_arm64.whl"
+    declare -r CLANG_FORMAT_SHA256="7f81856d845b6274b888d0d5f51a1f819f38f080a5b9637a38873f6e0e2cde3b"
+    ;;
   *)
-    echo "lint: unsupported architecture $(uname -m)" >&2
+    echo "lint: unsupported platform ${HOST_OS_KIND}/${HOST_ARCH_KIND}" >&2
     exit 1
     ;;
 esac
 
 # FIX is set by --fix; checks that can rewrite files consult it.
 declare FIX=0
+
+# find_python returns an absolute path to a usable Python 3 interpreter.
+find_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+  elif command -v python >/dev/null 2>&1; then
+    command -v python
+  else
+    echo "lint: python3 not found on PATH" >&2
+    return 1
+  fi
+}
+
+# sha256_of prints the hex-encoded sha256 of a file. macOS ships `shasum
+# -a 256` instead of GNU coreutils' `sha256sum`; both print "<hash>  <file>".
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# extract_zip extracts archive into dir. Windows Git Bash does not ship
+# `unzip`, so fall back to Python's zipfile module.
+extract_zip() {
+  local -r archive="$1" dir="$2"
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q "${archive}" -d "${dir}"
+    return 0
+  fi
+  local python
+  python="$(find_python)" || return 1
+  "${python}" -m zipfile -e "${archive}" "${dir}"
+}
+
+# extract_archive extracts archive into dir. .zip files are handled by
+# extract_zip; everything else is treated as .tar.gz.
+extract_archive() {
+  local -r archive="$1" dir="$2"
+  if [[ "${archive}" == *.zip ]]; then
+    extract_zip "${archive}" "${dir}"
+  else
+    tar -xzf "${archive}" -C "${dir}"
+  fi
+}
+
+# make_executable adds +x to a file when running on a platform that uses
+# permission bits (Unix-like). Windows uses extension-based dispatch instead.
+make_executable() {
+  if [[ "${HOST_OS_KIND}" != "windows" ]]; then
+    chmod +x "$1"
+  fi
+}
+
+# cpu_count prints the number of CPUs. macOS has no GNU coreutils, so `nproc`
+# is replaced by `sysctl`; Windows (Git Bash) reads ${NUMBER_OF_PROCESSORS}.
+cpu_count() {
+  if [[ "${HOST_OS_KIND}" == "darwin" ]]; then
+    sysctl -n hw.ncpu 2>/dev/null || echo 1
+  elif [[ "${HOST_OS_KIND}" == "windows" ]]; then
+    echo "${NUMBER_OF_PROCESSORS:-1}"
+  else
+    nproc 2>/dev/null || echo 1
+  fi
+}
 
 # fetch <url> <sha256> <output> downloads a file and verifies its checksum,
 # leaving <output> in place only if the checksum matches.
@@ -104,7 +228,7 @@ fetch() {
     return 1
   fi
   local got
-  got="$(sha256sum "${tmp}" | cut -d' ' -f1)"
+  got="$(sha256_of "${tmp}")"
   if [[ "${got}" != "${want}" ]]; then
     rm -f "${tmp}"
     echo "lint: checksum mismatch for ${url}" >&2
@@ -116,26 +240,32 @@ fetch() {
 }
 
 install_actionlint() {
-  local -r bin="${CACHE_DIR}/actionlint-${ACTIONLINT_VERSION}"
+  local -r bin="${CACHE_DIR}/actionlint-${ACTIONLINT_VERSION}${EXE_SUFFIX}"
   if [[ ! -x "${bin}" ]]; then
-    local -r tarball="${CACHE_DIR}/actionlint.tar.gz"
+    # actionlint ships .tar.gz archives everywhere except Windows, where it
+    # publishes a .zip containing `actionlint.exe`.
+    local archive_ext="tar.gz"
+    if [[ "${HOST_OS_KIND}" == "windows" ]]; then
+      archive_ext="zip"
+    fi
+    local -r archive="${CACHE_DIR}/actionlint.${archive_ext}"
     local -r dir="${CACHE_DIR}/actionlint.d"
-    fetch "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${ACTIONLINT_ARCH}.tar.gz" \
-      "${ACTIONLINT_SHA256}" "${tarball}"
+    fetch "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_${HOST_OS_KIND}_${HOST_ARCH_KIND}.${archive_ext}" \
+      "${ACTIONLINT_SHA256}" "${archive}"
     rm -rf "${dir}" && mkdir -p "${dir}"
-    tar -xzf "${tarball}" -C "${dir}"
-    mv "${dir}/actionlint" "${bin}"
-    rm -rf "${dir}" "${tarball}"
+    extract_archive "${archive}" "${dir}"
+    mv "${dir}/actionlint${EXE_SUFFIX}" "${bin}"
+    rm -rf "${dir}" "${archive}"
   fi
   echo "${bin}"
 }
 
 install_buildifier() {
-  local -r bin="${CACHE_DIR}/buildifier-${BUILDIFIER_VERSION}"
+  local -r bin="${CACHE_DIR}/buildifier-${BUILDIFIER_VERSION}${EXE_SUFFIX}"
   if [[ ! -x "${bin}" ]]; then
-    fetch "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-${BUILDIFIER_ARCH}" \
+    fetch "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-${HOST_OS_KIND}-${HOST_ARCH_KIND}${EXE_SUFFIX}" \
       "${BUILDIFIER_SHA256}" "${bin}"
-    chmod +x "${bin}"
+    make_executable "${bin}"
   fi
   echo "${bin}"
 }
@@ -146,7 +276,7 @@ install_codespell() {
     local -r wheel="${CACHE_DIR}/codespell.whl"
     fetch "${CODESPELL_URL}" "${CODESPELL_SHA256}" "${wheel}"
     rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
-    unzip -q "${wheel}" -d "${dir}.tmp"
+    extract_zip "${wheel}" "${dir}.tmp"
     mv "${dir}.tmp" "${dir}"
     rm -f "${wheel}"
   fi
@@ -159,7 +289,7 @@ install_cpplint() {
     local -r wheel="${CACHE_DIR}/cpplint.whl"
     fetch "${CPPLINT_URL}" "${CPPLINT_SHA256}" "${wheel}"
     rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
-    unzip -q "${wheel}" -d "${dir}.tmp"
+    extract_zip "${wheel}" "${dir}.tmp"
     mv "${dir}.tmp" "${dir}"
     rm -f "${wheel}"
   fi
@@ -167,28 +297,32 @@ install_cpplint() {
 }
 
 install_clang_format() {
-  local -r bin="${CACHE_DIR}/clang-format-${CLANG_FORMAT_VERSION}"
+  local -r bin="${CACHE_DIR}/clang-format-${CLANG_FORMAT_VERSION}${EXE_SUFFIX}"
   if [[ ! -x "${bin}" ]]; then
     local -r wheel="${CACHE_DIR}/clang-format.whl"
     local -r dir="${CACHE_DIR}/clang-format.d"
     fetch "${CLANG_FORMAT_URL}" "${CLANG_FORMAT_SHA256}" "${wheel}"
     rm -rf "${dir}" && mkdir -p "${dir}"
-    unzip -q "${wheel}" -d "${dir}"
-    mv "${dir}/clang_format/data/bin/clang-format" "${bin}"
-    chmod +x "${bin}"
+    extract_zip "${wheel}" "${dir}"
+    mv "${dir}/clang_format/data/bin/clang-format${EXE_SUFFIX}" "${bin}"
+    make_executable "${bin}"
     rm -rf "${dir}" "${wheel}"
   fi
   echo "${bin}"
 }
 
 install_clang_tidy() {
+  if [[ "${HOST_OS_KIND}" != "linux" ]]; then
+    echo "lint: the clang-tidy check is only supported on Linux" >&2
+    return 1
+  fi
   local -r dir="${CACHE_DIR}/clang-tidy-${CLANG_TIDY_VERSION}"
   local -r bin="${dir}/clang_tidy/data/bin/clang-tidy"
   if [[ ! -x "${bin}" ]]; then
     local -r wheel="${CACHE_DIR}/clang-tidy.whl"
     fetch "${CLANG_TIDY_URL}" "${CLANG_TIDY_SHA256}" "${wheel}"
     rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
-    unzip -q "${wheel}" -d "${dir}.tmp"
+    extract_zip "${wheel}" "${dir}.tmp"
     chmod +x "${dir}.tmp/clang_tidy/data/bin/clang-tidy"
     rm -rf "${dir}" && mv "${dir}.tmp" "${dir}"
     rm -f "${wheel}"
@@ -237,14 +371,18 @@ install_gofmt() {
     echo "lint: go not found; install Go or put go on PATH" >&2
     return 1
   fi
-  local toolchain
+  local toolchain goroot
   toolchain="$(go_toolchain)" || return 1
-  local goroot
   if ! goroot="$(GOTOOLCHAIN="${toolchain}" go env GOROOT)"; then
     echo "lint: failed to resolve Go toolchain ${toolchain}" >&2
     return 1
   fi
-  local -r bin="${goroot}/bin/gofmt"
+  # On Windows, `go env GOROOT` prints a native path; convert it to a form
+  # Bash can use.
+  if command -v cygpath >/dev/null 2>&1; then
+    goroot="$(cygpath -u "${goroot}")"
+  fi
+  local -r bin="${goroot}/bin/gofmt${EXE_SUFFIX}"
   if [[ ! -x "${bin}" ]]; then
     echo "lint: no gofmt in Go toolchain ${toolchain}" >&2
     return 1
@@ -283,7 +421,8 @@ check_gofmt() {
   unformatted="$(go_files | xargs -0 "${gofmt}" -l)"
   if [[ -n "${unformatted}" ]]; then
     # -d shows what would change; -l alone only names the files.
-    echo "${unformatted}" | xargs -d '\n' "${gofmt}" -d
+    # Use NUL-delimited input instead of `xargs -d` (a GNU extension).
+    printf '%s' "${unformatted}" | tr '\n' '\0' | xargs -0 "${gofmt}" -d
     echo
     echo "Run \`make lint-fix\` to reformat these files." >&2
     return 1
@@ -301,7 +440,7 @@ check_clang_format() {
   local clang_format
   clang_format="$(install_clang_format)"
   # clang-format is single-threaded and each file is independent.
-  local -r jobs="$(nproc 2>/dev/null || echo 1)"
+  local -r jobs="$(cpu_count)"
   if [[ "${FIX}" -eq 1 ]]; then
     cc_files | xargs -0 -P "${jobs}" -n 32 "${clang_format}" -i
     return 0
@@ -346,7 +485,7 @@ check_clang_tidy() {
     --clang-tidy="${clang_tidy}" \
     --config-file="${REPO_DIR}/.clang-tidy" \
     --database="${database}" \
-    --jobs="$(nproc 2> /dev/null || echo 1)"
+    --jobs="$(cpu_count)"
 }
 
 # Native rule loads (native-sh-test, native-sh-binary, native-proto) are
@@ -396,21 +535,23 @@ check_actions() {
 }
 
 check_spelling() {
-  local codespell_dir
+  local codespell_dir python
   codespell_dir="$(install_codespell)"
+  python="$(find_python)" || return 1
   # Source is included, so identifiers codespell reads as prose (offsetP,
   # FillIn, ...) need entries in tools/.codespellrc.
   { doc_files; go_files; cc_files; } |
-    PYTHONPATH="${codespell_dir}" xargs -0 python3 -m codespell_lib \
+    PYTHONPATH="${codespell_dir}" xargs -0 "${python}" -m codespell_lib \
       --config "${REPO_DIR}/tools/.codespellrc"
 }
 
 check_cpplint() {
-  local cpplint_dir
+  local cpplint_dir python jobs
   cpplint_dir="$(install_cpplint)"
-  local -r jobs="$(nproc 2>/dev/null || echo 1)"
+  python="$(find_python)" || return 1
+  jobs="$(cpu_count)"
   cc_files |
-    PYTHONPATH="${cpplint_dir}" xargs -0 -P "${jobs}" -n 32 python3 -W ignore::DeprecationWarning -m cpplint \
+    PYTHONPATH="${cpplint_dir}" xargs -0 -P "${jobs}" -n 32 "${python}" -W ignore::DeprecationWarning -m cpplint \
       --quiet --filter=-,+build/include_order,+build/c++11
 }
 
