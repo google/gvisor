@@ -104,6 +104,16 @@ func (ns *UserNamespace) Root() *UserNamespace {
 	return ns
 }
 
+// AncestorPrivilegedWrtIDs returns the closest ancestor of ns (possibly ns
+// itself) into which both kuid and kgid are mapped, per Linux's
+// fs/exec.c:privileged_wrt_inode_uidgid().
+func (ns *UserNamespace) AncestorPrivilegedWrtIDs(kuid KUID, kgid KGID) *UserNamespace {
+	for ns.parent != nil && (!kuid.In(ns).Ok() || !kgid.In(ns).Ok()) {
+		ns = ns.parent
+	}
+	return ns
+}
+
 // Type implements vfs.Namespace.Type.
 func (ns *UserNamespace) Type() string {
 	return "user"

@@ -50,6 +50,10 @@ type TaskImage struct {
 
 	// st is the task's syscall table.
 	st *SyscallTable `state:".(syscallTableInfo)"`
+
+	// NotDumpable is true if the task must be made non-dumpable, see
+	// fs/exec.c:would_dump().
+	NotDumpable bool
 }
 
 // release releases all resources held by the TaskImage. release is called by
@@ -71,9 +75,10 @@ func (image *TaskImage) release(ctx context.Context) {
 // of the original's.
 func (image *TaskImage) Fork(ctx context.Context, k *Kernel, shareAddressSpace bool) (*TaskImage, error) {
 	newImage := &TaskImage{
-		Name: image.Name,
-		Arch: image.Arch.Fork(),
-		st:   image.st,
+		Name:        image.Name,
+		Arch:        image.Arch.Fork(),
+		st:          image.st,
+		NotDumpable: image.NotDumpable,
 	}
 	if shareAddressSpace {
 		newImage.MemoryManager = image.MemoryManager
@@ -162,6 +167,14 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 		return nil, nil, false, errNoSyscalls
 	}
 
+	// Apply non-dumpability here as well as in execve (which recomputes
+	// dumpability from the old and new creds): this is the only place it can
+	// be applied for directly created processes.
+	if info.NotDumpable {
+		m.SetDumpability(mm.NotDumpable)
+	}
+	m.SetUserNamespace(info.UserNamespace)
+
 	if !m.IncUsers() {
 		panic("Failed to increment users count on new MM")
 	}
@@ -171,5 +184,6 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*Task
 		MemoryManager: m,
 		fu:            k.futexes.Fork(),
 		st:            st,
+		NotDumpable:   info.NotDumpable,
 	}, creds, secureExec, nil
 }

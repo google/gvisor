@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include <elf.h>
+#include <fcntl.h>
+#include <grp.h>
+#include <sched.h>
 #include <signal.h>
 #include <stddef.h>
 #include <sys/prctl.h>
@@ -44,6 +47,7 @@
 #include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
+#include "test/util/cleanup.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 #include "test/util/time_util.h"
@@ -248,6 +252,131 @@ TEST(PtraceTest, AttachSameThreadGroup) {
   ScopedThread([&] {
     EXPECT_THAT(ptrace(PTRACE_ATTACH, tid, 0, 0), SyscallFailsWithErrno(EPERM));
   });
+}
+
+// Memory access to a tracee that became non-dumpable after attach is governed
+// by the tracer credentials captured when tracing began, not the tracer's
+// current credentials; see Linux's kernel/ptrace.c:ptrace_access_vm().
+volatile long ptrace_access_vm_marker = 0x123456789abcdef;
+
+void CheckPeekAfterEffectiveCapChange(bool cap_at_attach) {
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    close(fds[0]);
+    raise(SIGSTOP);
+    // Resumed by the (now attached) tracer.
+    if (prctl(PR_SET_DUMPABLE, 0) != 0) {
+      _exit(30);
+    }
+    if (write(fds[1], "r", 1) != 1) {
+      _exit(31);
+    }
+    close(fds[1]);
+    raise(SIGSTOP);
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  close(fds[1]);
+  auto cleanup = Cleanup([child_pid, &fds] {
+    close(fds[0]);
+    kill(child_pid, SIGKILL);
+    RetryEINTR(waitpid)(child_pid, nullptr, 0);
+  });
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << status;
+
+  {
+    AutoCapability cap(CAP_SYS_PTRACE, cap_at_attach);
+    ASSERT_THAT(ptrace(PTRACE_ATTACH, child_pid, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+                SyscallSucceedsWithValue(child_pid));
+    ASSERT_TRUE(WIFSTOPPED(status)) << status;
+
+    // Resume the tracee until it has made itself non-dumpable and stopped
+    // again. It may stop several times first to have pending SIGSTOPs
+    // delivered.
+    bool ready = false;
+    for (int i = 0; i < 5 && !ready; i++) {
+      ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+      ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+                  SyscallSucceedsWithValue(child_pid));
+      ASSERT_TRUE(WIFSTOPPED(status)) << status;
+      char b;
+      ready = ReadFd(fds[0], &b, 1) == 1;
+    }
+    ASSERT_TRUE(ready) << "tracee never became non-dumpable";
+  }
+
+  {
+    AutoCapability cap(CAP_SYS_PTRACE, !cap_at_attach);
+    errno = 0;
+    long const peeked = ptrace(PTRACE_PEEKDATA, child_pid,
+                               &ptrace_access_vm_marker, 0);
+    long const peek_errno = (peeked == -1) ? errno : 0;
+    errno = 0;
+    long const poked = ptrace(PTRACE_POKEDATA, child_pid,
+                              &ptrace_access_vm_marker, 0x11223344);
+    long const poke_errno = (poked == -1) ? errno : 0;
+    if (cap_at_attach) {
+      EXPECT_EQ(peek_errno, 0);
+      EXPECT_EQ(poke_errno, 0);
+    } else {
+      EXPECT_EQ(peek_errno, EIO);
+      EXPECT_EQ(poke_errno, EIO);
+    }
+  }
+}
+
+TEST(PtraceTest, AccessVmUsesAttachCreds_CapDroppedAfterAttach) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_PTRACE)));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 2);
+  CheckPeekAfterEffectiveCapChange(/*cap_at_attach=*/true);
+}
+
+TEST(PtraceTest, AccessVmUsesAttachCreds_CapGainedAfterAttach) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_PTRACE)));
+  // The attach happens without effective CAP_SYS_PTRACE, which Yama scope 2
+  // forbids.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 1);
+  CheckPeekAfterEffectiveCapChange(/*cap_at_attach=*/false);
+}
+
+// PTRACE_TRACEME performs no dumpability check: Linux authorizes it via
+// security_ptrace_traceme() (commoncap.c:cap_ptrace_traceme()), not
+// __ptrace_may_access(), so it succeeds even for a non-dumpable child whose mm
+// belongs to an outer user namespace.
+TEST(PtraceTest, TracemeNonDumpableInUserns) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  // The helper must be single-threaded to unshare a user namespace, so fork
+  // before dropping privileges.
+  pid_t helper = fork();
+  if (helper == 0) {
+    if (setgroups(0, nullptr) != 0) _exit(20);
+    if (setresgid(12345, 12345, 12345) != 0) _exit(21);
+    if (setresuid(12345, 12345, 12345) != 0) _exit(22);
+    if (unshare(CLONE_NEWUSER) != 0) _exit(23);
+    if (prctl(PR_SET_DUMPABLE, 0) != 0) _exit(24);
+    pid_t child = fork();
+    if (child == 0) {
+      _exit(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0 ? 0 : 1);
+    }
+    int status;
+    if (waitpid(child, &status, 0) != child) _exit(25);
+    _exit(WIFEXITED(status) ? WEXITSTATUS(status) : 26);
+  }
+  ASSERT_GT(helper, 0);
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(helper, &status, 0),
+              SyscallSucceedsWithValue(helper));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "helper status: " << status;
 }
 
 TEST(PtraceTest, TraceParentNotAllowed) {
