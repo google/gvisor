@@ -8,7 +8,9 @@ package(
 go_library(
     name = "gonet",
     srcs = ["gonet.go"],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//pkg/sync",
         "//pkg/tcpip",
