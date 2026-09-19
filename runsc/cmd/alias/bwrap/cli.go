@@ -55,6 +55,10 @@ const (
 	flagShareNet      = "share-net"
 	flagCapDrop       = "cap-drop"
 	flagCapAdd        = "cap-add"
+	flagNewSession    = "new-session"
+	flagDieWithParent = "die-with-parent"
+	flagArgv0         = "argv0"
+	flagPerms         = "perms"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -81,6 +85,10 @@ type Cli struct {
 	proc          string
 	capDrop       string
 	capAdd        string
+	newSession    bool
+	dieWithParent bool
+	argv0         string
+	perms         string
 }
 
 // Name implements subcommands.Command.Name.
@@ -121,6 +129,10 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.unshareAll, flagUnshareAll, false, "Unshare every namespace we support by default")
 	f.StringVar(&c.capDrop, flagCapDrop, "", "Drop capabilities when running as privileged user")
 	f.StringVar(&c.capAdd, flagCapAdd, "", "Add capabilities when running as privileged user")
+	f.BoolVar(&c.newSession, flagNewSession, false, "Create a new terminal session")
+	f.BoolVar(&c.dieWithParent, flagDieWithParent, false, "Kills with SIGKILL child process (COMMAND) when runsc or runsc's parent dies")
+	f.StringVar(&c.argv0, flagArgv0, "", "Set argv[0] to VALUE before running the program")
+	f.StringVar(&c.perms, flagPerms, "", "Set permissions of the next argument (--tmpfs)")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -147,6 +159,12 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 	var err error
 	for i := 0; i < len(bwrapArgs); {
 		arg := bwrapArgs[i]
+
+		// --perms only modifies the operation that immediately follows it.
+		if cfg.nextPerms != nil && !acceptsPerms(strings.TrimPrefix(arg, "--")) {
+			return nil, fmt.Errorf("bwrap: --%s must be followed by an option that creates a file", flagPerms)
+		}
+
 		// Bwrap passes the rest of the arguments to the command.
 		if arg == "--" {
 			cfg.Args = bwrapArgs[i+1:]
@@ -192,7 +210,7 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseUserns(bwrapArgs, i)
 		case flagHostname:
 			i, err = cfg.parseHostname(bwrapArgs, i)
-		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS, flagUnshareCgroup:
+		case flagUnshareIPC, flagUnsharePID, flagUnshareUTS, flagUnshareCgroup, flagNewSession, flagDieWithParent:
 			i, err = cfg.parseNoopZeroArg(bwrapArgs, i)
 		case flagProc:
 			i, err = cfg.parseProc(bwrapArgs, i)
@@ -202,6 +220,10 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseCapDrop(bwrapArgs, i)
 		case flagCapAdd:
 			i, err = cfg.parseCapAdd(bwrapArgs, i)
+		case flagArgv0:
+			i, err = cfg.parseArgv0(bwrapArgs, i)
+		case flagPerms:
+			i, err = cfg.parsePerms(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -281,6 +303,7 @@ func (c *bwrapConfig) parseTmpfs(args []string, i int) (int, error) {
 	if err != nil {
 		return i, err
 	}
+	mnt.Mode = c.takePerms(defaultTmpfsPerms)
 	c.Mounts = append(c.Mounts, mnt)
 	return i + 2, nil
 }
@@ -393,8 +416,21 @@ func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
 }
 
 // parseNoopZeroArg parses flags that are treated as no-ops.
-// gVisor's Sentry kernel inherently virtualizes and isolates IPC, PID, and UTS
-// namespaces by default. These flags are parsed solely for CLI compatibility
+//
+// --unshare-ipc, --unshare-pid, --unshare-uts and --unshare-cgroup are no-ops
+// because the Sentry already virtualizes those namespaces in every sandbox.
+//
+// --new-session is a no-op because its purpose is to block TIOCSTI input
+// injection into the host terminal, and the Sentry leaves TIOCSTI
+// unimplemented (see pkg/sentry/fsimpl/host/tty.go).
+//
+// --die-with-parent is a no-op because the sandbox init process is a
+// /bin/sleep placeholder (see sandboxexec/sandbox/oci.go) and COMMAND runs as
+// an exec inside it, so there is no parent-child relationship for
+// PR_SET_PDEATHSIG to act on. do() instead bounds the sandbox lifetime with
+// sandbox.Close(), which does not run if runsc is SIGKILLed.
+//
+// All are accepted for bubblewrap CLI compatibility.
 func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
 	return i + 1, nil
 }
@@ -425,4 +461,48 @@ func (c *bwrapConfig) parseCapAdd(args []string, i int) (int, error) {
 	}
 	c.CapOps = append(c.CapOps, &CapOp{Type: CapOpAdd, Cap: args[i+1]})
 	return i + 2, nil
+}
+
+func (c *bwrapConfig) parseArgv0(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes one argument", flagArgv0)
+	}
+
+	if args[i+1] == "" {
+		return i, fmt.Errorf("bwrap: --%s does not support an empty value", flagArgv0)
+	}
+
+	if c.hasArgv0 {
+		return i, fmt.Errorf("bwrap: --%s used multiple times", flagArgv0)
+	}
+	c.Argv0 = args[i+1]
+	c.hasArgv0 = true
+	return i + 2, nil
+}
+
+const maxPerms = 07777
+
+func (c *bwrapConfig) parsePerms(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagPerms)
+	}
+	if c.nextPerms != nil {
+		return i, fmt.Errorf("bwrap: --%s given twice for the same action", flagPerms)
+	}
+	perms, err := strconv.ParseUint(args[i+1], 8, 32)
+	if err != nil || perms > maxPerms {
+		return i, fmt.Errorf("bwrap: --%s takes an octal argument <= %#o", flagPerms, maxPerms)
+	}
+	p := uint32(perms)
+	c.nextPerms = &p
+	return i + 2, nil
+}
+
+// acceptsPerms reports whether the flag consumes a pending --perms value.
+// --perms itself is included so that repeating it reports its own error.
+//
+// TODO(rexren): bubblewrap also accepts --perms before --dir, --file,
+// --bind-data and --ro-bind-data. Add them here as they are implemented.
+func acceptsPerms(flagName string) bool {
+	return flagName == flagTmpfs || flagName == flagPerms
 }
