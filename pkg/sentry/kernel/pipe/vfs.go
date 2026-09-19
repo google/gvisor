@@ -116,7 +116,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 			tWriters == vp.pipe.totalWriters.Load() {
 			if !ctx.BlockOn((*waitWriters)(&vp.pipe), waiter.EventInternal) {
 				fd.DecRef(ctx)
-				return nil, linuxerr.EINTR
+				return nil, linuxerr.ERESTARTSYS
 			}
 		}
 
@@ -133,7 +133,7 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 			}
 			if !ctx.BlockOn((*waitReaders)(&vp.pipe), waiter.EventInternal) {
 				fd.DecRef(ctx)
-				return nil, linuxerr.EINTR
+				return nil, linuxerr.ERESTARTSYS
 			}
 		}
 
