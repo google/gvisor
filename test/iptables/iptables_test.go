@@ -629,3 +629,15 @@ func TestFilterInputRejectTCPReset(t *testing.T) {
 func TestFilterInputRejectTCPResetUnmatched(t *testing.T) {
 	singleTest(t, &FilterInputRejectTCPResetUnmatched{})
 }
+
+func TestManglePreroutingRuleContinue(t *testing.T) {
+	singleTest(t, &ManglePreroutingRuleContinue{})
+}
+
+func TestMangleMarkPropagateToFilter(t *testing.T) {
+	singleTest(t, &MangleMarkPropagateToFilter{})
+}
+
+func TestMangleInputDrop(t *testing.T) {
+	singleTest(t, &MangleInputDrop{})
+}
