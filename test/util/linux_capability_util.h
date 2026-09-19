@@ -134,6 +134,7 @@ inline PosixError DropPermittedCapability(int cap) {
 }
 
 PosixErrorOr<bool> CanCreateUserNamespace();
+PosixErrorOr<bool> InInitialUserNamespace();
 
 class AutoCapability {
  public:

@@ -1220,11 +1220,13 @@ TEST(PidfdTest, FasyncIsUnsupported) {
   ASSERT_THAT(fcntl(pidfd.get(), F_SETFL, flags | FASYNC), SyscallSucceeds());
   int who = getpid();
 
-  int want_errno = EINVAL;
+  int want_errno = ENOTTY;
   if (!IsRunningOnGvisor()) {
     KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major < 6 || (version.major == 6 && version.minor < 9)) {
-      want_errno = ENOTTY;
+    if (version.major == 6 && version.minor >= 11 && version.minor <= 13) {
+      // For some strange reason, between commit 5b08bd408534 and 8ce352818820,
+      // Linux returns EINVAL instead of ENOTTY here.
+      want_errno = EINVAL;
     }
   }
 
