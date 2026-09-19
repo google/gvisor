@@ -14,11 +14,21 @@
 
 #include <fcntl.h>
 #include <linux/unistd.h>
+#include <signal.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+#include <atomic>
+#include <cerrno>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -27,7 +37,10 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"

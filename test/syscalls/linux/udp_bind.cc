@@ -13,11 +13,19 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <cerrno>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

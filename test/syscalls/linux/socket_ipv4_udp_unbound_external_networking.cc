@@ -14,9 +14,25 @@
 
 #include "test/syscalls/linux/socket_ipv4_udp_unbound_external_networking.h"
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <net/if.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <ostream>
+#include <utility>
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/cleanup/cleanup.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

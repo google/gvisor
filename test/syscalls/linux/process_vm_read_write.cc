@@ -17,7 +17,10 @@
 #include <bits/types/struct_iovec.h>
 #include <errno.h>
 #include <linux/futex.h>
+#include <signal.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/wait.h>

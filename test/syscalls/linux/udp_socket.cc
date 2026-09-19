@@ -33,12 +33,15 @@
 #ifdef __linux__
 #include <linux/errqueue.h>
 #include <linux/filter.h>
+#include <netinet/ip.h>
 #endif  // __linux__
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
 #include "absl/strings/str_format.h"
 #ifndef SIOCGSTAMP

@@ -14,9 +14,11 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/prctl.h>
 #include <linux/sched.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sched.h>
 #include <signal.h>
 #include <sys/epoll.h>

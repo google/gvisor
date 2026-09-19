@@ -15,16 +15,21 @@
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 
+#include <cerrno>
 #include <climits>
 #include <csignal>
 #include <cstdio>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/base_poll_test.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/rlimit_util.h"

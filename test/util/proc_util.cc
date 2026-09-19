@@ -14,21 +14,29 @@
 
 #include "test/util/proc_util.h"
 
+#include <sched.h>
 #include <stdint.h>
 #include <sys/prctl.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
 #include <iostream>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

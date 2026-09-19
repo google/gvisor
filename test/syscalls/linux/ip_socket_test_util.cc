@@ -14,12 +14,27 @@
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
 
+#include <arpa/inet.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
 #include <sys/socket.h>
 
+#include <algorithm>
+#include <cerrno>
+#include <cstdint>
 #include <cstring>
+#include <ios>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
+#include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {

@@ -27,6 +27,7 @@
 
 #include <ctime>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"

@@ -14,6 +14,10 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
+#ifdef __linux__
+#include <linux/if_ether.h>
+#endif  // __linux__
 #include <net/ethernet.h>
 #include <net/if_arp.h>
 #include <netinet/in.h>
@@ -25,6 +29,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 
 #include "gmock/gmock.h"

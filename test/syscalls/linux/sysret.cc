@@ -16,11 +16,23 @@
 // 'sysret' returns to bad (aka non-canonical) %rip or %rsp.
 
 #include <linux/elf.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdlib.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
+#include <csignal>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

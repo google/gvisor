@@ -16,8 +16,13 @@
 
 #include <linux/fib_rules.h>
 #include <linux/if.h>
+#include <linux/if_addr.h>
+#include <linux/if_arp.h>
+#include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <string.h>
+#include <sys/socket.h>
 
 #include <cerrno>
 #include <cstdint>

@@ -14,16 +14,23 @@
 
 #include "test/util/multiprocess_util.h"
 
+#ifdef __linux__
 #include <asm/unistd.h>
+#include <linux/prctl.h>
+#include <sys/prctl.h>
+#endif  // __linux__
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
-#include <sys/prctl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
@@ -77,9 +84,11 @@ PosixErrorOr<Cleanup> ForkAndExecHelper(const std::function<void()>& exec_fn,
     close(parent_stderr);
 
     // Clean ourself up in case the parent doesn't.
+#ifdef __linux__
     if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
       _exit(3);
     }
+#endif  // __linux__
 
     if (fn) {
       fn();
@@ -142,6 +151,7 @@ PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
   return ForkAndExecHelper(exec_fn, fn, child, execve_errno);
 }
 
+#ifdef __linux__
 PosixErrorOr<Cleanup> ForkAndExecveat(const int32_t dirfd,
                                       const std::string& pathname,
                                       const ExecveArray& argv,
@@ -156,6 +166,7 @@ PosixErrorOr<Cleanup> ForkAndExecveat(const int32_t dirfd,
   };
   return ForkAndExecHelper(exec_fn, fn, child, execve_errno);
 }
+#endif  // __linux__
 
 PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn) {
   pid_t pid = fork();
@@ -179,6 +190,7 @@ PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn) {
   return status;
 }
 
+#ifdef __linux__
 PosixErrorOr<int> InForkedUserMountNamespace(
     const std::function<void()>& parent, const std::function<void()>& child) {
   std::string umap_str = absl::StrFormat("0 %lu 1", geteuid());
@@ -246,6 +258,7 @@ PosixErrorOr<int> InForkedUserMountNamespace(
   }
   return status;
 }
+#endif  // __linux__
 
 }  // namespace testing
 }  // namespace gvisor

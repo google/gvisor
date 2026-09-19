@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <linux/openat2.h>
+#include <stdio.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>

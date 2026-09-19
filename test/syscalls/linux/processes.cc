@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdint.h>
@@ -23,7 +24,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iostream>
 #include <memory>
+#include <ostream>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -33,7 +36,10 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

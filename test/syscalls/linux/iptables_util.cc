@@ -14,6 +14,15 @@
 
 #include "test/syscalls/linux/iptables_util.h"
 
+// Netfilter headers require <netinet/in.h> to precede them.
+// clang-format off
+#include <netinet/in.h>
+// clang-format on
+
+#include <linux/netfilter.h>
+#include <linux/netfilter/x_tables.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/netfilter_ipv6.h>
 #include <stdio.h>
 #include <string.h>
 

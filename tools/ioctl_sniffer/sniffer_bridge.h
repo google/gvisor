@@ -15,7 +15,9 @@
 #ifndef TOOLS_IOCTL_SNIFFER_SNIFFER_BRIDGE_H_
 #define TOOLS_IOCTL_SNIFFER_SNIFFER_BRIDGE_H_
 
+#include <sys/types.h>
 #include <syscall.h>
+#include <unistd.h>
 
 #include "tools/ioctl_sniffer/ioctl.pb.h"
 

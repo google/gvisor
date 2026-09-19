@@ -14,6 +14,7 @@
 
 // netinet/in.h must be included before netfilter.h.
 // clang-format off
+#include <sys/socket.h>
 #include <linux/netfilter/nf_tables.h>
 #include <netinet/in.h>
 #include <linux/netfilter.h>
@@ -23,6 +24,10 @@
 #include <linux/netfilter/xt_conntrack.h>
 #include <linux/netfilter/nf_nat.h>
 #include <linux/netfilter/xt_tcpudp.h>
+#include <endian.h>
+#include <sched.h>
+#include <linux/capability.h>
+#include <linux/netfilter/nfnetlink_compat.h>
 // clang-format on
 
 #include <cerrno>

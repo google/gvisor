@@ -16,6 +16,14 @@
 
 #include <endian.h>
 #include <errno.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter/nf_tables.h>
+#include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_compat.h>
+#include <linux/netlink.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <sys/socket.h>
 
 #include <cstddef>
 #include <cstdint>

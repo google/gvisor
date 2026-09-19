@@ -103,6 +103,7 @@ inline PosixErrorOr<Cleanup> ForkAndExec(const std::string& filename,
   return ForkAndExec(filename, argv, envv, [] {}, child, execve_errno);
 }
 
+#ifdef __linux__
 // Equivalent to ForkAndExec, except using dirfd and flags with execveat.
 PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
                                       const std::string& pathname,
@@ -119,6 +120,7 @@ inline PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
   return ForkAndExecveat(
       dirfd, pathname, argv, envv, flags, [] {}, child, execve_errno);
 }
+#endif  // __linux__
 
 // Calls fn in a forked subprocess and returns the exit status of the
 // subprocess.
@@ -127,6 +129,7 @@ inline PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
 // Use TEST_CHECK variants instead.
 PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn);
 
+#ifdef __linux__
 // Sets up a new user and mount namespace in a forked subprocess using unshare,
 // then runs the parent function in the parent subprocess. Once that returns, it
 // runs the child function in the child process and returns the exit status of
@@ -136,6 +139,7 @@ PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn);
 // ASSERT/EXPECT functions is prohibited. Use TEST_CHECK variants instead.
 PosixErrorOr<int> InForkedUserMountNamespace(
     const std::function<void()>& parent, const std::function<void()>& child);
+#endif  // __linux__
 
 }  // namespace testing
 }  // namespace gvisor

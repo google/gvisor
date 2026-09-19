@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/ipc.h>

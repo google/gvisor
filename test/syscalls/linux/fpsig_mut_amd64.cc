@@ -20,9 +20,11 @@
 #include <sys/time.h>
 #include <sys/ucontext.h>
 #include <ucontext.h>
+#include <unistd.h>
 
 #include <cstdint>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/log/log.h"
 #include "test/util/test_util.h"

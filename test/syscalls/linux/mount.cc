@@ -17,7 +17,9 @@
 #include <linux/capability.h>
 #include <linux/magic.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -31,6 +33,7 @@
 #include <sys/sysmacros.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
+#include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 

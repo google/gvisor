@@ -13,20 +13,33 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/capability.h>
+#include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 #include <syscall.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <cerrno>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <deque>
+#include <functional>
 #include <iostream>
 #include <list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -43,6 +56,8 @@
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"

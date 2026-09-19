@@ -15,6 +15,8 @@
 #include "test/syscalls/linux/socket_unix_cmsg.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <linux/capability.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -23,12 +25,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstring>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

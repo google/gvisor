@@ -13,28 +13,39 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <fcntl.h>
 #include <linux/futex.h>
 #include <linux/types.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <ctime>
 #include <iterator>
 #include <memory>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"

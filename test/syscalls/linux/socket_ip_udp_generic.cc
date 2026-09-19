@@ -18,6 +18,7 @@
 #ifdef __linux__
 #include <linux/errqueue.h>
 #include <linux/in6.h>
+#include <netinet/ip_icmp.h>
 #endif  // __linux__
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -28,7 +29,14 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/logging.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

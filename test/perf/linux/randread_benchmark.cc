@@ -18,10 +18,15 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 #include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

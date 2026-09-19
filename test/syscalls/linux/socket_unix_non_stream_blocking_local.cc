@@ -18,10 +18,13 @@
 
 #include <vector>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_non_stream_blocking.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"

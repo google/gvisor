@@ -15,13 +15,23 @@
 #include "test/syscalls/linux/socket_ipv6_udp_unbound_netlink.h"
 
 #include <arpa/inet.h>
+#include <linux/capability.h>
+#include <linux/netlink.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
+#include <cerrno>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {

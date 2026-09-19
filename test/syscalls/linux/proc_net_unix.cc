@@ -12,8 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
@@ -21,6 +36,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

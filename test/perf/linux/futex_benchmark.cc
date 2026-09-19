@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include <linux/futex.h>
+#include <sys/syscall.h>
+#include <time.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cerrno>

@@ -17,11 +17,14 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
 #include <poll.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>

@@ -17,6 +17,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstring>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"

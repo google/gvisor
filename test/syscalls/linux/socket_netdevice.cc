@@ -12,16 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
 #include <linux/ethtool.h>
+#include <linux/if.h>
+#include <linux/if_addr.h>
+#include <linux/if_arp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
+#include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <ios>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -122,7 +134,7 @@ TEST(NetdeviceTest, Netmask) {
   // Netmask is stored big endian in struct sockaddr_in, so we do the same for
   // comparison.
   uint32_t mask = 0xffffffff << (32 - prefixlen);
-  mask = absl::gbswap_32(mask);
+  mask = htonl(mask);
 
   // Check that the loopback interface has the correct subnet mask.
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");

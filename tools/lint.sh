@@ -345,7 +345,6 @@ check_clang_tidy() {
   python3 "${REPO_DIR}/tools/clang_tidy/clang_tidy.py" \
     --clang-tidy="${clang_tidy}" \
     --config-file="${REPO_DIR}/.clang-tidy" \
-    --allowlist="${REPO_DIR}/tools/clang_tidy/clang_tidy_allowlist.txt" \
     --database="${database}" \
     --jobs="$(nproc 2> /dev/null || echo 1)"
 }

@@ -230,8 +230,10 @@ PosixErrorOr<bool> IsTmpfs(const std::string& path);
 // IsOverlayfs returns true if the file at path is backed by overlayfs.
 PosixErrorOr<bool> IsOverlayfs(const std::string& path);
 
+#ifdef __linux__
 // IsGoferfs returns true if the file at path is backed by goferfs.
 PosixErrorOr<bool> IsGoferfs(const std::string& path);
+#endif  // __linux__
 
 // IsNosuid returns true if the file at path is on a filesystem mounted with
 // nosuid.

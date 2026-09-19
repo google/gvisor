@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,9 +23,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 

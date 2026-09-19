@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 
 namespace gvisor {

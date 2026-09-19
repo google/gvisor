@@ -15,12 +15,16 @@
 // All tests in this file rely on being about to mount and unmount cgroupfs,
 // which isn't expected to work, or be safe on a general linux system.
 
+#include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
 #include <linux/magic.h>
 #include <poll.h>
 #include <sys/inotify.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cerrno>

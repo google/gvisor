@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <iostream>
@@ -21,6 +24,8 @@
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"

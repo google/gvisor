@@ -15,9 +15,15 @@
 #include <errno.h>
 #include <grp.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
@@ -26,6 +32,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 #include "test/util/uid_util.h"

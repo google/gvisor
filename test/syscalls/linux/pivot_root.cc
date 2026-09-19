@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <vector>

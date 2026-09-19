@@ -13,6 +13,7 @@
 // limitations under the License.
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_stream_nonblock.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/socket_util.h"

@@ -14,6 +14,7 @@
 
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_generic.h"
 #include "test/syscalls/linux/socket_ip_udp_generic.h"

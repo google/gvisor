@@ -16,6 +16,7 @@
 
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_stream_blocking.h"
 #include "test/util/socket_util.h"

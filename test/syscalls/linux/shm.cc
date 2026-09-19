@@ -18,9 +18,18 @@
 #include <sys/mman.h>
 #include <sys/shm.h>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <csignal>
+#include <cstdint>
+#include <ctime>
 
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"

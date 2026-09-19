@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_ipv4_udp_unbound.h"
+#include "test/util/socket_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {

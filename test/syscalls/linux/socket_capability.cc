@@ -15,12 +15,20 @@
 // Subset of socket tests that need Linux-specific headers (compared to POSIX
 // headers).
 
+#include <linux/capability.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <unistd.h>
+
 #include <cerrno>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

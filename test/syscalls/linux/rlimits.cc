@@ -14,8 +14,10 @@
 
 #include <errno.h>
 #include <linux/capability.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -24,11 +26,14 @@
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
 #include "absl/strings/str_format.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/test_util.h"

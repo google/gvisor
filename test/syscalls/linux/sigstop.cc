@@ -15,10 +15,14 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 
 #include "gmock/gmock.h"
@@ -26,6 +30,7 @@
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"

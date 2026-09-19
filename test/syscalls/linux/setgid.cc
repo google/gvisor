@@ -12,14 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
+#include <linux/limits.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_format.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"

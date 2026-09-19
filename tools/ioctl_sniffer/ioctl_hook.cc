@@ -18,6 +18,7 @@
 #include <asm/ioctl.h>
 #include <dlfcn.h>
 #include <limits.h>
+#include <linux/limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

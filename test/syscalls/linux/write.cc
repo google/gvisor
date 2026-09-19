@@ -20,15 +20,22 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

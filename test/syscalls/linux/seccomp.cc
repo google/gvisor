@@ -14,20 +14,28 @@
 
 #include <errno.h>
 #include <linux/audit.h>
+#include <linux/bpf_common.h>
+#include <linux/capability.h>
 #include <linux/filter.h>
+#include <linux/prctl.h>
 #include <linux/seccomp.h>
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/ucontext.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
 #include <iterator>
 
 #include "gmock/gmock.h"
@@ -40,6 +48,7 @@
 #include "test/util/platform_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 

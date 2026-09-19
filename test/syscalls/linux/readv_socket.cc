@@ -16,8 +16,12 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
+#include <cstdlib>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/readv_common.h"
 #include "test/util/test_util.h"

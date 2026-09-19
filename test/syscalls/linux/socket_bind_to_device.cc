@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <linux/capability.h>
 #include <linux/if_tun.h>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -21,10 +22,12 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -32,9 +35,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_bind_to_device_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

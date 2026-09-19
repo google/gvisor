@@ -14,20 +14,37 @@
 
 #include <arpa/inet.h>
 #include <asm-generic/errno.h>
+#include <fcntl.h>
 #include <linux/capability.h>
+#include <linux/if.h>
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
+#include <linux/if_packet.h>
 #include <linux/if_tun.h>
+#include <linux/netlink.h>
+#include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <poll.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <iostream>
+#include <ostream>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

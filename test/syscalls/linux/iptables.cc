@@ -16,7 +16,9 @@
 
 #include <arpa/inet.h>
 #include <linux/capability.h>
+#include <linux/netfilter.h>
 #include <linux/netfilter/x_tables.h>
+#include <linux/netfilter_ipv4.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>

@@ -12,10 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <csignal>
+#include <cstddef>
+#include <memory>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/synchronization/barrier.h"
 #include "benchmark/benchmark.h"

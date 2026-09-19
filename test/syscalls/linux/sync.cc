@@ -17,9 +17,13 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

@@ -12,19 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/capability.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/rlimit_util.h"
 #include "test/util/test_util.h"
 

@@ -20,6 +20,8 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/vfs.h>
 #include <unistd.h>

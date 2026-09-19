@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <signal.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -19,6 +20,7 @@
 #include <cerrno>
 #include <csignal>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
 #include "test/util/test_util.h"

@@ -16,6 +16,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <sys/eventfd.h>
 #include <sys/inotify.h>
@@ -27,7 +28,9 @@
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstdio>

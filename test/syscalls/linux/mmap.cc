@@ -30,8 +30,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -45,11 +49,10 @@
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
-using ::testing::AnyOf;
-using ::testing::Eq;
 using ::testing::Gt;
 
 #ifndef MAP_FIXED_NOREPLACE

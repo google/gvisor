@@ -13,6 +13,11 @@
 // limitations under the License.
 
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <memory>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "test/syscalls/linux/socket_generic.h"
@@ -22,17 +27,23 @@
 
 #ifdef __linux__
 #include <linux/capability.h>
+#include <sys/syscall.h>
 #endif  // __linux__
+#include <sched.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/base/attributes.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"

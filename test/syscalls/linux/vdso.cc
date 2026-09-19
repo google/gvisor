@@ -16,7 +16,9 @@
 #include <sys/mman.h>
 
 #include <algorithm>
+#include <cerrno>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
 #include "test/util/fs_util.h"

@@ -17,6 +17,9 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <ctime>
+
 #include "absl/time/time.h"
 
 namespace gvisor {

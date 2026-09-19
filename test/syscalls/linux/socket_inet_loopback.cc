@@ -13,15 +13,22 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <string>
 #include <tuple>

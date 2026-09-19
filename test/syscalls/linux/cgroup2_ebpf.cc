@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/bpf.h>
+#include <linux/bpf_common.h>
 #include <linux/capability.h>
 #include <stddef.h>
 #include <stdint.h>

@@ -20,6 +20,7 @@
 
 #include <atomic>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"

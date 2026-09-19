@@ -18,6 +18,7 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>

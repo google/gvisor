@@ -12,14 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <climits>
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

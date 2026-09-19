@@ -16,9 +16,13 @@
 #include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/sendfile.h>
+#include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstddef>
 #include <string_view>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -27,6 +31,7 @@
 #include "absl/time/time.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"

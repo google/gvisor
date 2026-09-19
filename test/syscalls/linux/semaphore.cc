@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include <linux/capability.h>
+#include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <atomic>

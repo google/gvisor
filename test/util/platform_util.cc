@@ -14,8 +14,12 @@
 
 #include "test/util/platform_util.h"
 
+#include <cstdlib>
+#include <iostream>
+#include <ostream>
 #include <vector>
 
+#include "test/util/logging.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

@@ -21,6 +21,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstddef>
+#include <limits>
 #include <string>
 
 #include "gmock/gmock.h"

@@ -16,14 +16,17 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <syscall.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <atomic>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"

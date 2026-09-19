@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -19,9 +20,16 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
+#include <cerrno>
+#include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
@@ -30,6 +38,7 @@
 #include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

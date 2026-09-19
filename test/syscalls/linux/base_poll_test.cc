@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/base_poll_test.h"
 
+#include <signal.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <syscall.h>
@@ -25,7 +26,9 @@
 #include "absl/memory/memory.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/logging.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {

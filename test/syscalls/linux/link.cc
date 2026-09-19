@@ -15,8 +15,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
+#include <sched.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 

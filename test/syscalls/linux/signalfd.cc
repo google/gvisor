@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>

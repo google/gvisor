@@ -92,6 +92,7 @@ cc_test(
     size = "small",
     srcs = ["proc_util_test.cc"],
     deps = select_gtest() + [
+        ":posix_error",
         ":proc_util",
         ":test_main",
         ":test_util",
@@ -114,6 +115,7 @@ cc_library(
         ":file_descriptor",
         ":posix_error",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
     ],
 )
@@ -159,12 +161,15 @@ cc_library(
     hdrs = ["mount_util.h"],
     deps = select_gtest() + [
         ":cleanup",
+        ":fs_util",
+        ":logging",
         ":posix_error",
         ":temp_path",
         ":test_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -175,6 +180,7 @@ cc_test(
     srcs = ["mount_util_test.cc"],
     deps = select_gtest() + [
         ":mount_util",
+        ":posix_error",
         ":test_main",
         ":test_util",
     ],
@@ -218,7 +224,10 @@ cc_library(
     testonly = 1,
     srcs = ["platform_util.cc"],
     hdrs = ["platform_util.h"],
-    deps = [":test_util"],
+    deps = [
+        ":logging",
+        ":test_util",
+    ],
 )
 
 cc_library(
@@ -265,6 +274,7 @@ cc_library(
         ":cleanup",
         ":file_descriptor",
         ":posix_error",
+        ":save_util",
         ":test_util",
     ],
 )
@@ -336,6 +346,7 @@ cc_library(
         ":cleanup",
         ":logging",
         ":posix_error",
+        ":save_util",
         ":test_util",
         "@com_google_absl//absl/time",
     ],
@@ -346,6 +357,7 @@ cc_test(
     size = "small",
     srcs = ["test_util_test.cc"],
     deps = select_gtest() + [
+        ":posix_error",
         ":test_main",
         ":test_util",
     ],
@@ -405,14 +417,20 @@ cc_library(
     testonly = 1,
     srcs = ["cgroup_util.cc"],
     hdrs = ["cgroup_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":cleanup",
+        ":file_descriptor",
         ":fs_util",
         ":mount_util",
+        ":posix_error",
+        ":save_util",
         ":temp_path",
+        ":test_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -427,6 +445,7 @@ cc_library(
     defines = select_system(),
     deps = default_net_util() + select_gtest() + [
         ":file_descriptor",
+        ":fs_util",
         ":posix_error",
         ":save_util",
         ":temp_path",

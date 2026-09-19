@@ -13,11 +13,21 @@
 // limitations under the License.
 
 #include <linux/capability.h>
+#include <linux/if.h>
+#include <linux/sockios.h>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+#include <ostream>
 
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 

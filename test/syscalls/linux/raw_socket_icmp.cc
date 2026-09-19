@@ -21,13 +21,19 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iterator>
+#include <limits>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

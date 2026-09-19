@@ -14,15 +14,22 @@
 
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <iterator>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

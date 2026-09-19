@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <elf.h>
+#include <linux/prctl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -23,6 +25,7 @@
 #include <iostream>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include "absl/strings/numbers.h"
 

@@ -13,13 +13,21 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdio>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/temp_umask.h"
 #include "test/util/test_util.h"

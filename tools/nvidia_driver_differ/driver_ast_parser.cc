@@ -24,6 +24,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "nlohmann/json.hpp"
+#include "nlohmann/json_fwd.hpp"
 #include "clang/include/clang/AST/ASTContext.h"
 #include "clang/include/clang/AST/Decl.h"
 #include "clang/include/clang/AST/Expr.h"

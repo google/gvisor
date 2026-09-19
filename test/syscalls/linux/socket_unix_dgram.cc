@@ -14,9 +14,12 @@
 
 #include "test/syscalls/linux/socket_unix_dgram.h"
 
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
+#include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <vector>

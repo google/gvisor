@@ -14,12 +14,14 @@
 
 #include "test/util/pty_util.h"
 
+#include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 
 #include <cctype>
+#include <cerrno>
 #include <cstring>
 #include <iterator>
 #include <ostream>

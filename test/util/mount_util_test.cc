@@ -16,6 +16,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

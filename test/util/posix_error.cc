@@ -14,11 +14,16 @@
 
 #include "test/util/posix_error.h"
 
+#include <string.h>
+
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+#include <ostream>
 #include <string>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 
 namespace gvisor {

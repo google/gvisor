@@ -14,17 +14,27 @@
 
 #include <fcntl.h>
 #include <grp.h>
+#include <linux/capability.h>
+#include <linux/prctl.h>
+#include <stdio.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdint>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

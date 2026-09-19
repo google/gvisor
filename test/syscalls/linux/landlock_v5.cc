@@ -17,6 +17,7 @@
 #include <asm/ioctls.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 

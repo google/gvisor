@@ -13,13 +13,16 @@
 // limitations under the License.
 
 #include <asm-generic/errno.h>
+#include <linux/capability.h>
 #include <linux/keyctl.h>
 #include <sched.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <cstdint>

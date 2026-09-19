@@ -18,6 +18,7 @@
 #include <linux/if_ether.h>
 #include <netinet/in.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/wait.h>

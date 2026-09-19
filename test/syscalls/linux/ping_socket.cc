@@ -22,15 +22,22 @@
 #include <unistd.h>
 
 #include <cctype>
+#include <cstdint>
 #include <cstring>
+#include <tuple>
+#include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
+#include "absl/base/attributes.h"
 #include "absl/strings/str_join.h"
 #include "absl/types/optional.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

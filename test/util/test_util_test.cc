@@ -16,10 +16,12 @@
 
 #include <errno.h>
 
+#include <cstdint>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/posix_error.h"
 
 using ::testing::AnyOf;
 using ::testing::Gt;

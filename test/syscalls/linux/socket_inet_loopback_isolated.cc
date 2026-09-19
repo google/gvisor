@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 
 #include "gmock/gmock.h"
@@ -24,6 +27,8 @@
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"

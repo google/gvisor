@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <cerrno>
+
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 

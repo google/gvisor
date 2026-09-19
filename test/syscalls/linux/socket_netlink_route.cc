@@ -15,17 +15,29 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
+#include <poll.h>
+#include <sched.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+// Linux network headers require <net/if.h> and <netinet/in.h> to precede them.
+// clang-format off
+#include <net/if.h>
+#include <netinet/in.h>
+// clang-format on
+
+#include <linux/capability.h>
 #include <linux/fib_rules.h>
+#include <linux/if_addr.h>
+#include <linux/if_arp.h>
 #include <linux/if_ether.h>
+#include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/veth.h>
-#include <net/if.h>
-#include <poll.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>

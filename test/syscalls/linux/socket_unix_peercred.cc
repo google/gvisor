@@ -15,7 +15,10 @@
 #include "test/syscalls/linux/socket_unix_peercred.h"
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <sched.h>
+#include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>

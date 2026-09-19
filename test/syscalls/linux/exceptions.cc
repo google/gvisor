@@ -13,10 +13,14 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <sys/syscall.h>
+
+#include <cstdint>
 
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
 #include "test/util/platform_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 
