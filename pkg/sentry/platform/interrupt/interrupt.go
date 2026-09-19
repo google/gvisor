@@ -15,15 +15,16 @@
 // Package interrupt provides an interrupt helper.
 package interrupt
 
-import (
-	"fmt"
-
-	"gvisor.dev/gvisor/pkg/sync"
-)
+import "gvisor.dev/gvisor/pkg/sync"
 
 // Receiver receives interrupt notifications from a Forwarder.
 type Receiver interface {
 	// NotifyInterrupt is called when the Receiver receives an interrupt.
+	//
+	// Forwarder calls this synchronously with its mutex held. It must not
+	// synchronously call back into that Forwarder. This interface does not
+	// identify the calling Forwarder, so checklocks cannot express the
+	// nonreentry requirement here.
 	NotifyInterrupt()
 }
 
@@ -31,13 +32,17 @@ type Receiver interface {
 //
 // This helps platform implementations with Interrupt semantics.
 type Forwarder struct {
-	// mu protects the below.
 	mu sync.Mutex
 
-	// dst is the function to be called when NotifyInterrupt() is called. If
-	// dst is nil, pending will be set instead, causing the next call to
-	// Enable() to return false.
-	dst     Receiver
+	// dst receives forwarded interrupts. It is nil while forwarding is disabled.
+	//
+	// +checklocks:mu
+	dst Receiver
+
+	// pending records an interrupt received while forwarding was disabled.
+	// The next Enable consumes it and returns false.
+	//
+	// +checklocks:mu
 	pending bool
 }
 
@@ -58,6 +63,8 @@ type Forwarder struct {
 // Preconditions:
 //   - r must not be nil.
 //   - f must not already be forwarding interrupts to a Receiver.
+//
+// +checklocksexclude:f.mu
 func (f *Forwarder) Enable(r Receiver) bool {
 	if r == nil {
 		panic("nil Receiver")
@@ -65,7 +72,7 @@ func (f *Forwarder) Enable(r Receiver) bool {
 	f.mu.Lock()
 	if f.dst != nil {
 		f.mu.Unlock()
-		panic(fmt.Sprintf("already forwarding interrupts to %+v", f.dst))
+		panic("already forwarding interrupts")
 	}
 	if f.pending {
 		f.pending = false
@@ -79,6 +86,8 @@ func (f *Forwarder) Enable(r Receiver) bool {
 
 // Disable stops interrupt forwarding. If interrupt forwarding is already
 // disabled, Disable is a no-op.
+//
+// +checklocksexclude:f.mu
 func (f *Forwarder) Disable() {
 	f.mu.Lock()
 	f.dst = nil
@@ -88,6 +97,8 @@ func (f *Forwarder) Disable() {
 // NotifyInterrupt implements Receiver.NotifyInterrupt. If interrupt forwarding
 // is enabled, the configured Receiver will be notified. Otherwise the
 // interrupt will be delivered to the next call to Enable.
+//
+// +checklocksexclude:f.mu
 func (f *Forwarder) NotifyInterrupt() {
 	f.mu.Lock()
 	if f.dst != nil {
@@ -101,6 +112,8 @@ func (f *Forwarder) NotifyInterrupt() {
 // Preempt preempts the running context. Preempt is a weaker version of
 // NotifyInterrupt, it doesn't set the pending flag which is set when a context
 // isn't actually running at this moment.
+//
+// +checklocksexclude:f.mu
 func (f *Forwarder) Preempt() {
 	f.mu.Lock()
 	if f.dst != nil {

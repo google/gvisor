@@ -76,7 +76,7 @@ const (
 	defaultBufSize = 256 * 1024
 )
 
-// NewSimpleReader returns a new (uncompressed) reader. If key is non-nil, the
+// NewSimpleReader returns a new (uncompressed) reader. If key is non-empty, the
 // data stream is assumed to contain expected hash values. See package comments
 // for details.
 func NewSimpleReader(in io.ReadCloser, key []byte) *SimpleReader {
@@ -199,8 +199,8 @@ type SimpleWriter struct {
 var _ io.Writer = (*SimpleWriter)(nil)
 var _ io.Closer = (*SimpleWriter)(nil)
 
-// NewSimpleWriter returns a new non-compressing writer. If key is non-nil,
-// hash values are generated and written out for compressed bytes. See package
+// NewSimpleWriter returns a new non-compressing writer. If key is non-empty,
+// hash values are generated and written out for data. See package
 // comments for details. chunkSize is the buffer size used for buffering. Large
 // writes are not buffered and written out directly as a single chunk.
 func NewSimpleWriter(out io.Writer, key []byte, chunkSize uint32) *SimpleWriter {
