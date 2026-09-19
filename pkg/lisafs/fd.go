@@ -87,6 +87,9 @@ var _ genericFD = (*ControlFD)(nil)
 // DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
+//
+// +checklocksexclude:fd.node.controlFDsMu
+// +checklocksexclude:fd.node.parent.childrenMu
 func (fd *ControlFD) DecRef(context.Context) {
 	fd.controlFDRefs.DecRef(func() {
 		fd.conn.server.renameMu.RLock()
@@ -98,6 +101,9 @@ func (fd *ControlFD) DecRef(context.Context) {
 // decRefLocked is the same as DecRef except the added precondition.
 //
 // Precondition: server's rename mutex must be at least read locked.
+//
+// +checklocksexclude:fd.node.controlFDsMu
+// +checklocksexclude:fd.node.parent.childrenMu
 func (fd *ControlFD) decRefLocked() {
 	fd.controlFDRefs.DecRef(func() {
 		fd.destroyLocked()
@@ -105,6 +111,9 @@ func (fd *ControlFD) decRefLocked() {
 }
 
 // Precondition: server's rename mutex must be at least read locked.
+//
+// +checklocksexclude:fd.node.controlFDsMu
+// +checklocksexclude:fd.node.parent.childrenMu
 func (fd *ControlFD) destroyLocked() {
 	// Update node's control FD list.
 	fd.node.removeFD(fd)
@@ -122,6 +131,8 @@ func (fd *ControlFD) destroyLocked() {
 // Preconditions:
 //   - server's rename mutex must be at least read locked.
 //   - The caller must take a ref on node which is transferred to fd.
+//
+// +checklocksexclude:node.controlFDsMu
 func (fd *ControlFD) Init(c *Connection, node *Node, mode linux.FileMode, impl ControlFDImpl) {
 	fd.conn = c
 	fd.node = node
@@ -175,6 +186,9 @@ func (fd *ControlFD) Node() *Node {
 //   - fd should not have been returned to the client. Otherwise the client can
 //     still refer to it.
 //   - server's rename mutex must at least be read locked.
+//
+// +checklocksexclude:fd.node.controlFDsMu
+// +checklocksexclude:fd.node.parent.childrenMu
 func (fd *ControlFD) RemoveFromConn() {
 	fd.conn.removeControlFDLocked(fd.id)
 }
@@ -257,6 +271,9 @@ func (fd *OpenFD) ControlFD() ControlFDImpl {
 // DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
+//
+// +checklocksexclude:fd.controlFD.node.controlFDsMu
+// +checklocksexclude:fd.controlFD.node.parent.childrenMu
 func (fd *OpenFD) DecRef(context.Context) {
 	fd.openFDRefs.DecRef(func() {
 		fd.controlFD.openFDsMu.Lock()
@@ -314,6 +331,9 @@ func (fd *BoundSocketFD) ControlFD() ControlFDImpl {
 // DecRef implements refs.RefCounter.DecRef. Note that the context
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
+//
+// +checklocksexclude:fd.controlFD.node.controlFDsMu
+// +checklocksexclude:fd.controlFD.node.parent.childrenMu
 func (fd *BoundSocketFD) DecRef(context.Context) {
 	fd.boundSocketFDRefs.DecRef(func() {
 		fd.controlFD.DecRef(nil) // Drop the ref on the control FD.

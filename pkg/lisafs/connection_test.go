@@ -55,6 +55,8 @@ type testConnImpl struct{}
 var _ lisafs.ConnectionImpl = (*testConnImpl)(nil)
 
 // Mount implements lisafs.Mount.
+//
+// +checklocksexclude:mountNode.controlFDsMu
 func (s *testConnImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	dummyRoot := &testControlFD{}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
