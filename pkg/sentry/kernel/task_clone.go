@@ -601,7 +601,7 @@ func (nss *namespaceSet) initFromTask(t *Task, target *Task, flags int32) error 
 	if (uint32(flags) & ^supported) != 0 || flags == 0 {
 		return linuxerr.EINVAL
 	}
-	if !t.CanTrace(target, false) {
+	if !t.CanTraceMode(target, PtraceAccessModeRead|PtraceAccessModeRealCreds) {
 		return linuxerr.EPERM
 	}
 
