@@ -86,8 +86,13 @@ func (s *GvisorTaskServiceEndpoint) Shutdown(ctx context.Context) error {
 
 // RegisterService registers the given services with the ttrpc server.
 func (s *GvisorTaskServiceEndpoint) RegisterService(srvc GvisorTaskServiceExt) {
+	Register(s.server, srvc)
+}
+
+// Register registers the gVisor task service with the given ttrpc server.
+func Register(server *ttrpc.Server, srvc GvisorTaskServiceExt) {
 	// Register the custom gVisor TaskService methods
-	s.server.RegisterService("gvisor.task.TaskService", &ttrpc.ServiceDesc{
+	server.RegisterService("gvisor.task.TaskService", &ttrpc.ServiceDesc{
 		Methods: map[string]ttrpc.Method{
 			"Checkpoint": func(ctx context.Context, unmarshal func(any) error) (any, error) {
 				req := &pb.CheckpointRequest{}

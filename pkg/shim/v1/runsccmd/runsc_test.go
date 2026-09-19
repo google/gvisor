@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,5 +146,72 @@ func TestCmdOutputSeparateStderr(t *testing.T) {
 	}
 	if string(stderr) != "err" {
 		t.Errorf("stderr = %q, want %q", stderr, "err")
+	}
+}
+
+// TestRunscRestoreCLI verifies the argv Restore builds, --bundle above all.
+func TestRunscRestoreCLI(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts *RestoreOpts
+		want []string
+	}{
+		{
+			name: "all options",
+			opts: &RestoreOpts{
+				Bundle:     "/bundles/app-1",
+				ImagePath:  "/ckpt",
+				Detach:     true,
+				Direct:     true,
+				Background: true,
+			},
+			want: []string{
+				"restore", "--bundle=/bundles/app-1", "--image-path=/ckpt",
+				"--detach", "--direct", "--background", "cid-1",
+			},
+		},
+		{
+			name: "no bundle",
+			opts: &RestoreOpts{ImagePath: "/ckpt", Detach: true},
+			want: []string{"restore", "--image-path=/ckpt", "--detach", "cid-1"},
+		},
+		{
+			name: "no options",
+			opts: nil,
+			want: []string{"restore", "cid-1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			argsLog := filepath.Join(dir, "args.txt")
+			script := filepath.Join(dir, "fake-runsc")
+			scriptBody := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >%q\nexit 0\n", argsLog)
+			if err := os.WriteFile(script, []byte(scriptBody), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			r := &Runsc{Command: script, Root: filepath.Join(dir, "root")}
+			// A nil runc.IO leaves the command's stdio unset, which keeps
+			// Restore on the synchronous path.
+			if err := r.Restore(t.Context(), "cid-1", nil, tc.opts); err != nil {
+				t.Fatalf("Restore: %v", err)
+			}
+
+			rawArgs, err := os.ReadFile(argsLog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Drop the global flags Runsc prepends before the subcommand.
+			args := strings.Fields(string(rawArgs))
+			for i, a := range args {
+				if a == "restore" {
+					args = args[i:]
+					break
+				}
+			}
+			if !slices.Equal(args, tc.want) {
+				t.Errorf("argv = %v, want %v", args, tc.want)
+			}
+		})
 	}
 }
