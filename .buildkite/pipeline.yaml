@@ -317,6 +317,18 @@ steps:
       queue: "arm64"
   - <<: *common
     <<: *source_test
+    label: ":broom: Lint"
+    command: make lint
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *source_test
+    label: ":soap: Lint (C++)"
+    command: make lint-cc
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *source_test
     label: ":scroll: Governance file sync check"
     command: make governance-check
     agents:
