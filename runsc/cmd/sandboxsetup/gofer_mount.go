@@ -303,20 +303,8 @@ func safeSetupAndMoveMount(srcFileFD int, src, dst, procPath string) error {
 	if err != nil {
 		return fmt.Errorf("stat(%q) failed: %v", src, err)
 	}
-	if fi.IsDir() {
-		if err := os.MkdirAll(dst, 0777); err != nil {
-			return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
-		}
-	} else {
-		parent := filepath.Dir(dst)
-		if err := os.MkdirAll(parent, 0777); err != nil {
-			return fmt.Errorf("mkdir(%q) failed: %v", parent, err)
-		}
-		f, err := os.OpenFile(dst, unix.O_CREAT, 0777)
-		if err != nil {
-			return fmt.Errorf("open(%q) failed: %v", dst, err)
-		}
-		f.Close()
+	if err := specutils.SafeCreateMountPoint(dst, fi.IsDir()); err != nil {
+		return err
 	}
 
 	fd, err := unix.Open(dst, unix.O_PATH|unix.O_CLOEXEC, 0)
