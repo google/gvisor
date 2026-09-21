@@ -209,7 +209,7 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		return 0, t.ThreadGroup().ReleaseControllingTTY(ctx, mfd.t.masterKTTY)
 	case linux.TIOCGPGRP:
 		// Get the foreground process group id.
-		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(mfd.t.masterKTTY)
+		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(mfd.t.replicaKTTY)
 		if err != nil {
 			return 0, err
 		}
@@ -222,7 +222,7 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 		if _, err := pgid.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
+		return 0, t.ThreadGroup().SetForegroundProcessGroupID(ctx, mfd.t.replicaKTTY, kernel.ProcessGroupID(pgid))
 	case linux.TIOCGSID:
 		// Get the session id. N.B. TIOCGSID on the master returns the
 		// session of the replica end, and does not require the caller
