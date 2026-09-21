@@ -74,15 +74,24 @@ using ::testing::ValuesIn;
 using SockOptTest = ::testing::TestWithParam<
     std::tuple<int, std::function<bool(int)>, std::string>>;
 
+static bool in_initial_userns = false;
+
 // Environment to create a new network namespace.
 // Enables isolated nftables modification.
 class NetnsEnvironment : public ::testing::Environment {
  public:
   void SetUp() override {
-    if (unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0) {
+    // Prefer net ns in the initial user namespace as there we have
+    // more privilege.
+    if (ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()) &&
+        unshare(CLONE_NEWNET) == 0) {
+      in_initial_userns = true;
       return;
     }
-    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+    // If we can't, fall back to a user namespace
+    ASSERT_THAT(unshare(CLONE_NEWUSER | CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
   }
 };
 // Load the environment to create a new network namespace.
@@ -745,10 +754,18 @@ TEST(NetlinkNetfilterTest, ErrAddTableWithUnsupportedFlags) {
           .SeqEnd(kSeq + 2)
           .Build();
 
+  int want_errno = ENOTSUP;
+  if (!IsRunningOnGvisor()) {
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major > 7 || (version.major == 7 && version.minor >= 1)) {
+      // Behavior changed in Linux 7.1; see Linux commit 66b75e6bbeeb.
+      want_errno = EINVAL;
+    }
+  }
   ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(fd, kSeq, kSeq + 2,
                                                      add_request_buffer.data(),
                                                      add_request_buffer.size()),
-              PosixErrorIs(ENOTSUP, _));
+              PosixErrorIs(want_errno, _));
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
@@ -1430,10 +1447,20 @@ TEST(NetlinkNetfilterTest, ErrNewBaseChainWithInvalidFlags) {
   ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
       fd, kSeq, kSeq + 2, add_table_request_buffer.data(),
       add_table_request_buffer.size()));
+
+  int want_errno = ENOTSUP;
+  if (!IsRunningOnGvisor()) {
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    if (version.major > 7 || (version.major == 7 && version.minor >= 1)) {
+      // Behavior changed in Linux 7.1; see Linux commit 66b75e6bbeeb.
+      want_errno = EINVAL;
+    }
+  }
   ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
                   fd, kSeq + 3, kSeq + 5, add_chain_request_buffer.data(),
                   add_chain_request_buffer.size()),
-              PosixErrorIs(ENOTSUP, _));
+              PosixErrorIs(want_errno, _));
+
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
@@ -4718,6 +4745,12 @@ struct RuleWithExprTestParams {
   std::string expr_name;
   NlNestedAttr expr_attrs;
   int expected_error_no;
+  // If non-null, the expected errno is determined by this function
+  // rather than the above expected_error_no
+  int (*expected_error_fn)(const KernelVersion&) = nullptr;
+  // Whether or not we should ignore EPERM in a non-initial user namespace
+  // for this rule. Only has effect for native tests.
+  bool tolerate_eperm_in_userns = false;
   // List of registers to initialize to zero before accessing in a rule.
   std::vector<uint32_t> regs_to_init = {};
   std::string chain_type;
@@ -4791,15 +4824,23 @@ TEST_P(AddRuleWithExprTest, AddRuleWithExpr) {
                        .chain_type = test_chain_type,
                        .hook_num = GetParam().hook_num,
                        .family_name = GetParam().family_name});
-  if (GetParam().expected_error_no != 0) {
-    ASSERT_THAT(NetlinkNetfilterBatchRequestAckOrError(
-                    fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
-                    add_rule_request_buffer.size()),
-                PosixErrorIs(GetParam().expected_error_no, _));
+  PosixError result = NetlinkNetfilterBatchRequestAckOrError(
+      fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
+      add_rule_request_buffer.size());
+  if (!IsRunningOnGvisor() && GetParam().tolerate_eperm_in_userns &&
+      !in_initial_userns && result.errno_value() == EPERM) {
+    GTEST_SKIP() << "got EPERM in non-initial userns, cannot conclusively test "
+                    "in this environment";
+  }
+  int expected_error_no = GetParam().expected_error_no;
+  if (GetParam().expected_error_fn != nullptr) {
+    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    expected_error_no = GetParam().expected_error_fn(version);
+  }
+  if (expected_error_no != 0) {
+    ASSERT_THAT(result, PosixErrorIs(expected_error_no, _));
   } else {
-    ASSERT_NO_ERRNO(NetlinkNetfilterBatchRequestAckOrError(
-        fd, kSeq + 6, kSeq + 8, add_rule_request_buffer.data(),
-        add_rule_request_buffer.size()));
+    ASSERT_NO_ERRNO(result);
   }
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
@@ -4824,6 +4865,7 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG32_00),
+          .tolerate_eperm_in_userns = true,
           .regs_to_init = {NFT_REG32_00}},
       RuleWithExprTestParams{
           .test_name = "SetWithCsumValid",
@@ -4836,6 +4878,7 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_1)
                   .U32Attr(NFTA_PAYLOAD_CSUM_TYPE, NFT_PAYLOAD_CSUM_INET)
                   .U32Attr(NFTA_PAYLOAD_CSUM_OFFSET, 1),
+          .tolerate_eperm_in_userns = true,
           .regs_to_init = {NFT_REG_1}},
       RuleWithExprTestParams{
           .test_name = "LoadWithInvalidRegister",
@@ -4847,7 +4890,8 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   // Verdict register is not supported for payload load.
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .tolerate_eperm_in_userns = true},
       RuleWithExprTestParams{
           .test_name = "LoadWithInvalidOffset",
           .expr_name = "payload",
@@ -4857,7 +4901,8 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_OFFSET, UINT32_MAX)
                   .U32Attr(NFTA_PAYLOAD_LEN, 4)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
-          .expected_error_no = ERANGE},
+          .expected_error_no = ERANGE,
+          .tolerate_eperm_in_userns = true},
       RuleWithExprTestParams{
           .test_name = "LoadWithInvalidLen",
           .expr_name = "payload",
@@ -4867,7 +4912,8 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .tolerate_eperm_in_userns = true},
       RuleWithExprTestParams{
           .test_name = "SetWithInvalidRegister",
           .expr_name = "payload",
@@ -4887,7 +4933,8 @@ std::vector<RuleWithExprTestParams> GetPayloadRuleTestParams() {
                   .U32Attr(NFTA_PAYLOAD_OFFSET, 1)
                   .U32Attr(NFTA_PAYLOAD_LEN, NFT_REG_SIZE + 1)
                   .U32Attr(NFTA_PAYLOAD_SREG, NFT_REG_VERDICT),
-          .expected_error_no = EINVAL},
+          .expected_error_no = EINVAL,
+          .tolerate_eperm_in_userns = true},
       RuleWithExprTestParams{
           .test_name = "WithSregAndDregSet",
           .expr_name = "payload",
@@ -5511,13 +5558,19 @@ std::vector<RuleWithExprTestParams> GetCTRuleTestParams() {
                             .U32Attr(NFTA_CT_DREG, NFT_REG_1)
                             .U32Attr(NFTA_CT_KEY, NFT_CT_SRC),
           .expected_error_no = EINVAL},
-      RuleWithExprTestParams{.test_name = "InvalidDirection",
-                             .expr_name = "ct",
-                             .expr_attrs = NlNestedAttr()
-                                               .U32Attr(NFTA_CT_DREG, NFT_REG_1)
-                                               .U32Attr(NFTA_CT_KEY, NFT_CT_SRC)
-                                               .U8Attr(NFTA_CT_DIRECTION, 2),
-                             .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "InvalidDirection",
+          .expr_name = "ct",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_CT_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_CT_KEY, NFT_CT_SRC)
+                            .U8Attr(NFTA_CT_DIRECTION, 2),
+          .expected_error_no = EINVAL,
+          .expected_error_fn =
+              [](const KernelVersion& v) {
+                return (v.major > 7 || (v.major == 7 && v.minor >= 1)) ? ERANGE
+                                                                       : EINVAL;
+              }},
       RuleWithExprTestParams{.test_name = "InvalidKeyTooLarge",
                              .expr_name = "ct",
                              .expr_attrs = NlNestedAttr()

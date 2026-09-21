@@ -116,7 +116,9 @@ TEST(LandlockV6Test, AbstractUnixScopeAllowsPathnameSocket) {
   SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(LandlockAbiVersion() < 6);
 
-  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Create dir in /tmp rather than TEST_TMPDIR which is generally too long to
+  // fit in sun_path
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn("/tmp"));
   const std::string sock_path = JoinPath(dir.path(), "sock");
   struct sockaddr_un addr = {};
   addr.sun_family = AF_UNIX;

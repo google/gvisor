@@ -18,6 +18,7 @@ cc_library(
         "linux_capability_util.h",
     ],
     deps = [
+        ":fs_util",
         ":memory_util",
         ":posix_error",
         ":save_util",

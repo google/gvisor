@@ -48,7 +48,9 @@ DOCKER_BUILD := false
 endif
 endif
 ifeq ($(DOCKER_BUILD),true)
+ifneq (bazel-shutdown,$(MAKECMDGOALS))
 -include bazel-server-inc
+endif
 endif
 
 # See base Makefile.
@@ -285,9 +287,9 @@ ifeq ($(DOCKER_BUILD),true)
 # container to exit, and ignores which ones work and which ones don't.
 # Instead, it just checks that the container no longer exists by the end of it.
 	@timeout --signal=KILL 10s $(DOCKER_CLI_PATH) wait $(DOCKER_NAME) 2>/dev/null || true
-	@$(DOCKER_CLI_PATH) stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
+	@timeout --signal=KILL 30s $(DOCKER_CLI_PATH) stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
 # Double check that the container isn't running.
-	@bash -c "! $(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null"
+	@bash -c "! timeout --signal=KILL 10s $(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null"
 endif
 .PHONY: bazel-shutdown
 
@@ -296,6 +298,7 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 .PHONY: bazel-alias
 
 bazel-image: load-default ## Ensures that the local builder exists.
+	@echo "$$(date -u +%H:%M:%S) ENTER bazel-image" >>$(BAZEL_DEBUG_LOG)
 	@$(call header,DOCKER BUILD)
 	@$(DOCKER_CLI_PATH) rm -f $(BUILDER_NAME) 2>/dev/null || true
 	@$(DOCKER_CLI_PATH) run --user 0:0 --entrypoint "" \
@@ -304,10 +307,21 @@ bazel-image: load-default ## Ensures that the local builder exists.
     gvisor.dev/images/default \
 	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
 	@$(DOCKER_CLI_PATH) commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
+	@echo "$$(date -u +%H:%M:%S) EXIT bazel-image" >>$(BAZEL_DEBUG_LOG)
 .PHONY: bazel-image
 
-ifneq (true,$(shell $(call wrapper,echo true) 2>/dev/null))
+BAZEL_DEBUG_LOG := /tmp/bazelmk-debug.log
+BAZEL_SERVER_ALIVE := $(shell \
+  s=$$(date +%s%3N); \
+	r=$$(timeout --foreground --signal=KILL 15s $(call wrapper,echo true) </dev/null 2>>$(BAZEL_DEBUG_LOG)); rc=$$?; \
+  e=$$(date +%s%3N); \
+  echo "$$(date -u +%H:%M:%S) probe goals='$(MAKECMDGOALS)' took=$$((e-s))ms rc=$$rc result=[$$r]" >>$(BAZEL_DEBUG_LOG); \
+  printf '%s' "$$r")
+$(shell echo "$$(date -u +%H:%M:%S) branch goals='$(MAKECMDGOALS)' -> $(if $(filter true,$(BAZEL_SERVER_ALIVE)),server-noop,SERVER-REBUILD)" >>$(BAZEL_DEBUG_LOG))
+
+ifneq (true,$(BAZEL_SERVER_ALIVE))
 bazel-server: bazel-image ## Restart bazel server/container.
+	@echo "$$(date -u +%H:%M:%S) ENTER bazel-server (rebuild path)" >>$(BAZEL_DEBUG_LOG)
 ifneq (,$(PRE_BAZEL_INIT))
 	@$(call header,PRE_BAZEL_INIT)
 	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
@@ -342,7 +356,7 @@ endif
 # we make a non-phony version of bazel-server that can be included.
 bazel-server-inc: bazel-server
 
-ifneq (true,$(shell $(call wrapper,echo true) 2>/dev/null))
+ifneq (true,$(BAZEL_SERVER_ALIVE))
 ensure-bazel-server:  ## Ensures that the bazel server exists, else restart.
 	@$(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null || $(MAKE) bazel-server
 else
@@ -380,9 +394,11 @@ runsc-race:
 	@$(call build,--config=race runsc:runsc-race)
 
 testlogs: ## Returns the most recent set of test logs.
+	@echo "$$(date -u +%H:%M:%S) ENTER testlogs bep=$$(stat -c%s .build_events.json 2>/dev/null || echo none)" >>$(BAZEL_DEBUG_LOG)
 	@if test -f .build_events.json; then \
 	  cat .build_events.json | jq -r \
 	    'select(.testSummary?.overallStatus? | tostring | test("(FAILED|FLAKY|TIMEOUT)")) | "\(.id.testSummary.label) \(.testSummary.failed[].uri)"' | \
 	    sed -e 's|file://||'; \
 	fi
+	@echo "$$(date -u +%H:%M:%S) EXIT testlogs" >>$(BAZEL_DEBUG_LOG)
 .PHONY: testlogs

@@ -192,7 +192,7 @@ TEST(Preadv2Test, TestInvalidFlag) {
   iov.iov_len = buf.size();
 
   EXPECT_THAT(preadv2(fd.get(), &iov, /*iovcnt=*/1,
-                      /*offset=*/0, /*flags=*/0xF0),
+                      /*offset=*/0, /*flags=*/1 << 24),
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 

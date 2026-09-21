@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <string>
+#include <vector>
+
+#include "absl/strings/ascii.h"
+#include "absl/strings/str_split.h"
+#include "test/util/fs_util.h"
+
 #ifdef __linux__
 
 #include <linux/capability.h>
@@ -19,6 +26,7 @@
 #include <netinet/in.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -124,6 +132,14 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
     // Unexpected error code; indicate an actual error.
     return PosixError(errno, "clone(CLONE_NEWUSER)");
   }
+}
+
+PosixErrorOr<bool> InInitialUserNamespace() {
+  ASSIGN_OR_RETURN_ERRNO(std::string id_map, GetContents("/proc/self/uid_map"));
+  absl::StripTrailingAsciiWhitespace(&id_map);
+  std::vector<std::string> id_map_parts =
+      absl::StrSplit(id_map, ' ', absl::SkipEmpty());
+  return id_map_parts == std::vector<std::string>({"0", "0", "4294967295"});
 }
 
 }  // namespace testing
