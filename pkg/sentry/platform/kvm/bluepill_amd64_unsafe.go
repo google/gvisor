@@ -167,10 +167,12 @@ func bluepillReadyStopGuest(c *vCPU) bool {
 }
 
 // bluepillArchHandleExit checks architecture specific exitcode.
+// It returns true if the exit was handled and the vCPU should be rerun.
 //
 //go:nosplit
-func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
+func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) bool {
 	c.dieAndDumpExitReason(bluepillArchContext(context))
+	return false
 }
 
 func addrOfBluepillUserHandler() uintptr
