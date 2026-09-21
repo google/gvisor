@@ -29,21 +29,28 @@ import (
 type FSContext struct {
 	FSContextRefs
 
-	// mu protects below.
 	mu fsContextMutex `state:"nosave"`
 
 	// root is the filesystem root.
+	//
+	// +checklocks:mu
 	root vfs.VirtualDentry
 
 	// cwd is the current working directory.
+	//
+	// +checklocks:mu
 	cwd vfs.VirtualDentry
 
 	// umask is the current file mode creation mask. When a thread using this
 	// context invokes a syscall that creates a file, bits set in umask are
 	// removed from the permissions that the file is created with.
+	//
+	// +checklocks:mu
 	umask uint
 
 	// preventSharing is true for the duration of an associated Task's execve
+	//
+	// +checklocks:mu
 	preventSharing bool
 }
 
@@ -63,6 +70,8 @@ func NewFSContext(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
 // destroy destroys the FSContext.
 //
 // Preconditions: f must have no refcount.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) destroy(ctx context.Context) {
 	// Hold f.mu so that we don't race with RootDirectory() and
 	// WorkingDirectory().
@@ -84,6 +93,8 @@ func (f *FSContext) destroy(ctx context.Context) {
 // Note that there may still be calls to WorkingDirectory() or RootDirectory()
 // (that return nil).  This is because valid references may still be held via
 // proc files or other mechanisms.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) DecRef(ctx context.Context) {
 	f.FSContextRefs.DecRef(func() {
 		f.destroy(ctx)
@@ -93,6 +104,8 @@ func (f *FSContext) DecRef(ctx context.Context) {
 // Fork forks this FSContext.
 //
 // This is not a valid call after f is destroyed.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) Fork() *FSContext {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -116,6 +129,8 @@ func (f *FSContext) Fork() *FSContext {
 //
 // This will return an empty vfs.VirtualDentry if called after f is
 // destroyed, otherwise it will return a Dirent with a reference taken.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) WorkingDirectory() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -130,6 +145,8 @@ func (f *FSContext) WorkingDirectory() vfs.VirtualDentry {
 // This will take an extra reference on the VirtualDentry.
 //
 // This is not a valid call after f is destroyed.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) SetWorkingDirectory(ctx context.Context, d vfs.VirtualDentry) {
 	f.mu.Lock()
 
@@ -149,6 +166,8 @@ func (f *FSContext) SetWorkingDirectory(ctx context.Context, d vfs.VirtualDentry
 //
 // This will return an empty vfs.VirtualDentry if called after f is
 // destroyed, otherwise it will return a Dirent with a reference taken.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) RootDirectory() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -162,6 +181,8 @@ func (f *FSContext) RootDirectory() vfs.VirtualDentry {
 // SetRootDirectory sets the root directory. It takes a reference on vd.
 //
 // This is not a valid call after f is destroyed.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) SetRootDirectory(ctx context.Context, vd vfs.VirtualDentry) {
 	if !vd.Ok() {
 		panic("FSContext.SetRootDirectory called with zero-value VirtualDentry")
@@ -182,6 +203,8 @@ func (f *FSContext) SetRootDirectory(ctx context.Context, vd vfs.VirtualDentry) 
 }
 
 // Umask returns the current umask.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) Umask() uint {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -189,6 +212,8 @@ func (f *FSContext) Umask() uint {
 }
 
 // SwapUmask atomically sets the current umask and returns the old umask.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) SwapUmask(mask uint) uint {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -204,6 +229,9 @@ func (f *FSContext) SwapUmask(mask uint) uint {
 // fsContext.allowSharing() is called.
 //
 // See Linux's fs_struct->in_exec.
+//
+// +checklocksexclude:f.mu
+// +checklocksexclude:tg.pidns.owner.mu
 func (f *FSContext) checkAndPreventSharingOutsideTG(tg *ThreadGroup) bool {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
@@ -225,6 +253,8 @@ func (f *FSContext) checkAndPreventSharingOutsideTG(tg *ThreadGroup) bool {
 }
 
 // allowSharing allows the FSContext to be shared again via clone(2).
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) allowSharing() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -233,6 +263,8 @@ func (f *FSContext) allowSharing() {
 
 // share is a wrapper around IncRef. It returns false if a concurrent execve(2) in one of
 // the thread groups that uses this FSContext has prevented sharing.
+//
+// +checklocksexclude:f.mu
 func (f *FSContext) share() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -245,12 +277,15 @@ func (f *FSContext) share() bool {
 
 // unshareFromTask removes the FSContext f from the given Task t and replaces it with newF.
 // It returns a bool indicating whether f needs to be destroyed.
-
+//
 // This func operates without compromising a concurrent checkAndPreventSharingOutsideTG(): t's
 // association with f is severed atomically by holding f.mu, allowing the concurrent func to
 // correctly ascribe extra ref counts to tasks outside of t's thread group.
 //
-// Preconditions: The caller must be on the task goroutine and must hold t.mu.
+// Preconditions: The caller must be on the task goroutine.
+//
+// +checklocks:t.mu
+// +checklocksexclude:f.mu
 func (f *FSContext) unshareFromTask(t *Task, newF *FSContext) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

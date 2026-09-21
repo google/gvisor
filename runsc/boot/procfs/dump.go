@@ -112,6 +112,8 @@ type ProcessProcfsDump struct {
 // getMM returns t's MemoryManager. On success, the MemoryManager's users count
 // is incremented, and must be decremented by the caller when it is no longer
 // in use.
+//
+// +checklocksexclude:t.mu
 func getMM(t *kernel.Task) *mm.MemoryManager {
 	var mm *mm.MemoryManager
 	t.WithMuLocked(func(*kernel.Task) {
@@ -168,6 +170,7 @@ func getCWD(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) string {
 	return name
 }
 
+// +checklocksexclude:t.mu
 func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
 	type fdInfo struct {
 		fd *vfs.FileDescription
@@ -289,6 +292,8 @@ func getMappings(ctx context.Context, mm *mm.MemoryManager) []Mapping {
 }
 
 // Dump returns a procfs dump for process pid. t must be a task in process pid.
+//
+// +checklocksexclude:t.mu
 func Dump(t *kernel.Task, pid kernel.ThreadID, pidns *kernel.PIDNamespace) (ProcessProcfsDump, error) {
 	ctx := t.AsyncContext()
 

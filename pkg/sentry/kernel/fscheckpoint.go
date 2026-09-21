@@ -83,6 +83,10 @@ func (opts *FSSaveOpts) Close() error {
 
 // FSSave collects a filesystem checkpoint as specified by the fscheckpoint
 // package. FSSave takes ownership of resources in opts.
+//
+// +checklocksexclude:k.extMu
+// +checklocksexclude:k.tasks.mu
+// +checklocksexclude:k.runningTasksMu
 func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 	if opts == nil {
 		return fmt.Errorf("FSSaveOpts cannot be nil")
