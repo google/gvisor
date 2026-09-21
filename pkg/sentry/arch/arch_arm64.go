@@ -39,18 +39,17 @@ const (
 	minMmapRand64VA39            hostarch.Addr = (1 << 18) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MIN=18
 	preferredTopDownAllocMinVA39 hostarch.Addr = 0x5800000000                  // ~352 GB, ~68.8%
 	preferredAllocationGapVA39   hostarch.Addr = 16 << 30                      // 16 GB
-	preferredPIELoadAddrVA39     hostarch.Addr = maxAddr64VA39 / 6 * 5
+	preferredPIELoadAddrVA39     hostarch.Addr = maxAddr64VA39 / 3 * 2
 )
 
 // --- 48-bit VA (4-level page tables, 256 TB) ---
 const (
-	maxAddr64VA48 hostarch.Addr = 1 << 48
-	// The following 2 value is synced from 2bdc95b
-	maxMmapRand64VA48            hostarch.Addr = 1 << 45 // ARCH_MMAP_RND_BITS_MAX=33
+	maxAddr64VA48                hostarch.Addr = 1 << 48
+	maxMmapRand64VA48            hostarch.Addr = (1 << 28) * hostarch.PageSize // CONFIG_ARCH_MMAP_RND_BITS=28
 	minMmapRand64VA48            hostarch.Addr = 1 << 30
-	preferredTopDownAllocMinVA48 hostarch.Addr = 0x7e8000000000
+	preferredTopDownAllocMinVA48 hostarch.Addr = 0xfc8000000000
 	preferredAllocationGapVA48   hostarch.Addr = 128 << 30 // 128 GB
-	preferredPIELoadAddrVA48     hostarch.Addr = maxAddr64VA48 / 6 * 5
+	preferredPIELoadAddrVA48     hostarch.Addr = maxAddr64VA48 / 3 * 2
 )
 
 // --- 52-bit VA (5-level page tables, 4 PB) ---
@@ -69,11 +68,11 @@ const (
 //     same process can mix 48-bit and 52-bit mmap calls.
 const (
 	maxAddr64VA52                hostarch.Addr = 1 << 52
-	maxMmapRand64VA52            hostarch.Addr = 1 << 45 // same as 48-bit
+	maxMmapRand64VA52            hostarch.Addr = (1 << 28) * hostarch.PageSize // same as 48-bit
 	minMmapRand64VA52            hostarch.Addr = 1 << 30
 	preferredTopDownAllocMinVA52 hostarch.Addr = 0x7e80000000000 // ~2024 TB
 	preferredAllocationGapVA52   hostarch.Addr = 128 << 30
-	preferredPIELoadAddrVA52     hostarch.Addr = maxAddr64VA52 / 6 * 5
+	preferredPIELoadAddrVA52     hostarch.Addr = maxAddr64VA48 / 3 * 2
 )
 
 // --- VA-width independent constants ---
@@ -193,7 +192,7 @@ func (c *Context64) Fork() *Context64 {
 // General purpose registers usage on Arm64:
 // R0...R7: parameter/result registers.
 // R8: indirect result location register.
-// R9...R15: temporary rgisters.
+// R9...R15: temporary registers.
 // R16: the first intra-procedure-call scratch register.
 // R17: the second intra-procedure-call scratch register.
 // R18: the platform register.
