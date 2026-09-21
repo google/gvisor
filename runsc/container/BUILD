@@ -124,3 +124,34 @@ go_test(
         "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
+
+go_test(
+    name = "lifecycle_benchmark_test",
+    size = "large",
+    srcs = ["lifecycle_bench_test.go"],
+    args = [
+        "-test.bench=.",
+        "-test.run=^$$",
+        "-test.benchtime=30x",  # A fixed iteration count.
+        "-test.v",
+        "--test_platforms=kvm,systrap",
+    ],
+    data = [
+        "//:release",
+        "//test/cmd/test_app",
+    ],
+    library = ":container",
+    tags = [
+        "manual",
+        "requires-kvm",
+    ],
+    deps = [
+        "//pkg/log",
+        "//pkg/sentry/platform",
+        "//pkg/test/testutil",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)

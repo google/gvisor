@@ -288,6 +288,36 @@ func TestConfig(t *testing.T) *config.Config {
 	return conf
 }
 
+// ConfigForBenchmark returns the default configuration to use in benchmarks.
+// Debugging, tracing, and logging are disabled to ensure accurate performance
+// measurements.
+func ConfigForBenchmark(b *testing.B) *config.Config {
+	testFlags := flag.NewFlagSet("bench", flag.ContinueOnError)
+	config.RegisterFlags(testFlags)
+	conf, err := config.NewFromFlags(testFlags)
+	if err != nil {
+		b.Fatalf("error loading configuration from flags: %v", err)
+	}
+	conf.Debug = false
+	conf.Strace = false
+	conf.LogPackets = false
+	conf.Network = config.NetworkNone
+	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
+	conf.WatchdogAction = "panic"
+	return conf
+}
+
+// Measure executes fn while the benchmark timer is running. It starts the timer
+// immediately before calling fn, pauses it when fn returns (even if fn panics or
+// fails), and returns the elapsed duration of fn.
+func Measure(b *testing.B, fn func()) time.Duration {
+	b.StartTimer()
+	start := time.Now()
+	defer b.StopTimer()
+	fn()
+	return time.Since(start)
+}
+
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
 // in tests.
 func NewSpecWithArgs(args ...string) *specs.Spec {
