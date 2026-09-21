@@ -3,7 +3,7 @@
 load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
-load("@io_bazel_rules_go//go:def.bzl", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_library = "go_library", _go_path = "go_path", _go_test = "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "GoArchive", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_library = "go_library", _go_path = "go_path", _go_test = "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", _go_proto_library = "go_proto_library")
 load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 
@@ -89,6 +89,23 @@ def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
 
+def go_binary_archive(target):
+    """Returns compiled Go archive metadata for a binary target."""
+    return target[GoArchive].data
+
+def go_binary_nogo_dep(name, noasan = False):  # buildifier: disable=unused-variable
+    """Returns the target that nogo should analyze for the given go_binary.
+
+    Args:
+        name: the go_binary rule name.
+        noasan: whether the binary disables sanitizers. Unused here; the bazel
+            go_binary rule is always analyzable directly.
+
+    Returns:
+        A label relative to the current package.
+    """
+    return ":" + name
+
 def go_library(name, bazel_cgo = False, bazel_cdeps = [], bazel_clinkopts = [], bazel_copts = [], **kwargs):
     """Wrapper for `go_library` rule.
 
@@ -160,13 +177,14 @@ def go_embed_libraries(target):
         return target.attr.embed
     return []
 
-def go_context(ctx, goos = None, goarch = None):
+def go_context(ctx, goos = None, goarch = None, attr = None):
     """Extracts a standard Go context struct.
 
     Args:
       ctx: the starlark context (required).
       goos: the GOOS value.
       goarch: the GOARCH value.
+      attr: the analyzed rule's attributes for aspect callers.
 
     Returns:
       A context Go struct with pointers to Go toolchain components.
@@ -175,7 +193,7 @@ def go_context(ctx, goos = None, goarch = None):
     # We don't change anything for the standard library analysis. All Go files
     # are available in all instances. Note that this includes the standard
     # library sources, which are analyzed by nogo.
-    go_ctx = _go_context(ctx)
+    go_ctx = _go_context(ctx, attr = attr)
 
     nogo_args = []
     if go_ctx.mode.race:

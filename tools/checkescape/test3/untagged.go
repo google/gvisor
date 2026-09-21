@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,31 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !checkescape_binary
+
 package main
 
-type FooNew struct {
-	Q
-	Bar map[string]Q `json:"bar,omitempty"`
-}
-
-type BazNew struct {
-	T someTypeNotT
-}
-
-func (f FooNew) GetBar(name string) Q {
-	b, ok := f.Bar[name]
-	if ok {
-		b = f.Apply(b)
-	} else {
-		b = f.Q
-	}
-	return b
-}
-
-func foobarNew() {
-	a := BazNew{}
-	a.Q = 0 // should not be renamed, this is a limitation
-
-	b := otherpkg.UnrelatedType{}
-	b.Q = 0 // should not be renamed, this is a limitation
-}
+// Fallback for build systems that do not support per-target Go build tags. The
+// tagged variant in tagged.go carries the escape annotations that are actually
+// exercised; here there is nothing to analyze.
+const taggedValue = false
