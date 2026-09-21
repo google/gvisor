@@ -141,11 +141,11 @@ func lookupSchema(object, method uint16) *MethodSchema {
 func buildSchemas() map[uint32]*MethodSchema {
 	m := map[uint32]*MethodSchema{
 		SchemaKey(ib.UVERBS_OBJECT_DEVICE, ib.UVERBS_METHOD_INVOKE_WRITE): {
-			// The compatibility wrapper for the legacy write ABI. CORE_IN /
-			// CORE_OUT are opaque command/response blobs (the kernel validates
-			// their contents); the DMA-relevant write commands are handled by
-			// DmaInvokeWrite. This one entry covers alloc_pd, dealloc_pd,
-			// modify_qp, query_qp, query_device, create_ah, etc.
+			// Wrapper for the legacy write ABI. The generic loop validates attr
+			// IDs but not the WRITE_CMD value, so DmaInvokeWrite gates on the
+			// command: REG_MR/DEREG_MR translate and track their buffers, an
+			// allowlist of commands needing no address translation or fd
+			// wrapping is forwarded as-is, and any other command is rejected.
 			Dma: DmaInvokeWrite,
 			Attrs: map[uint16]AttrType{
 				ib.UVERBS_ATTR_CORE_IN:   AttrPtrIn,
@@ -322,4 +322,69 @@ func buildSchemas() map[uint32]*MethodSchema {
 		}
 	})
 	return m
+}
+
+// invokeWriteAllowlist holds the legacy write-ABI commands (enum
+// ib_uverbs_write_cmds, carried inline in the INVOKE_WRITE WRITE_CMD attribute)
+// that DmaInvokeWrite forwards as-is: control commands whose CORE_IN and driver
+// UHW_IN need no address translation or fd wrapping. REG_MR and DEREG_MR are
+// handled separately, and any command in neither set is rejected. rdma-core
+// issues the buffer-bearing objects (MR/CQ/QP/SRQ create) through the modern
+// object methods the proxy already handles, so their legacy write forms are
+// unused here.
+//
+// Keys are the full u32 WRITE_CMD, including the IB_USER_VERBS_CMD_FLAG_EXTENDED
+// bit for the _EX forms.
+var invokeWriteAllowlist = map[uint32]struct{}{
+	ib.IB_USER_VERBS_CMD_QUERY_DEVICE:  {},
+	ib.IB_USER_VERBS_CMD_QUERY_PORT:    {},
+	ib.IB_USER_VERBS_CMD_ALLOC_PD:      {},
+	ib.IB_USER_VERBS_CMD_DEALLOC_PD:    {},
+	ib.IB_USER_VERBS_CMD_CREATE_AH:     {},
+	ib.IB_USER_VERBS_CMD_DESTROY_AH:    {},
+	ib.IB_USER_VERBS_CMD_ALLOC_MW:      {},
+	ib.IB_USER_VERBS_CMD_DEALLOC_MW:    {},
+	ib.IB_USER_VERBS_CMD_REQ_NOTIFY_CQ: {},
+	ib.IB_USER_VERBS_CMD_QUERY_QP:      {},
+	ib.IB_USER_VERBS_CMD_MODIFY_QP:     {},
+	ib.IB_USER_VERBS_CMD_ATTACH_MCAST:  {},
+	ib.IB_USER_VERBS_CMD_DETACH_MCAST:  {},
+	ib.IB_USER_VERBS_CMD_MODIFY_SRQ:    {},
+	ib.IB_USER_VERBS_CMD_QUERY_SRQ:     {},
+	ib.IB_USER_VERBS_CMD_CLOSE_XRCD:    {},
+	ib.IB_USER_VERBS_CMD_OPEN_QP:       {},
+
+	ib.IB_USER_VERBS_CMD_FLAG_EXTENDED | ib.IB_USER_VERBS_CMD_QUERY_DEVICE: {},
+	ib.IB_USER_VERBS_CMD_FLAG_EXTENDED | ib.IB_USER_VERBS_CMD_MODIFY_QP:    {},
+}
+
+// invokeWriteForwardable reports whether an allowlisted INVOKE_WRITE command
+// (i.e. not REG_MR or DEREG_MR) may be forwarded as-is.
+func invokeWriteForwardable(cmd uint32) bool {
+	_, ok := invokeWriteAllowlist[cmd]
+	return ok
+}
+
+// invokeWriteDisposition selects how DmaInvokeWrite handles a WRITE_CMD.
+type invokeWriteDisposition int
+
+const (
+	invokeWriteRejected invokeWriteDisposition = iota // not forwarded
+	invokeWriteRegMR                                  // translate + track MR pages
+	invokeWriteDeregMR                                // release tracked mirror post-call
+	invokeWriteOpaque                                 // forward as-is
+)
+
+// classifyInvokeWrite maps a legacy WRITE_CMD to its DmaInvokeWrite handling.
+func classifyInvokeWrite(cmd uint32) invokeWriteDisposition {
+	switch {
+	case cmd == ib.IB_USER_VERBS_CMD_REG_MR:
+		return invokeWriteRegMR
+	case cmd == ib.IB_USER_VERBS_CMD_DEREG_MR:
+		return invokeWriteDeregMR
+	case invokeWriteForwardable(cmd):
+		return invokeWriteOpaque
+	default:
+		return invokeWriteRejected
+	}
 }
