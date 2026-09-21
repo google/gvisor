@@ -52,7 +52,6 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -761,10 +760,6 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	}
 	defer fsCleanup.Clean()
 
-	if hostarch.PageSize != 4096 {
-		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
-	}
-
 	return k.quiescePausedAnd(ctx, func() error {
 		return k.saveToLocked(ctx, stateFile, pagesMetadata, pagesFile, appMFExcludeCommittedZeroPages, resume, fsOpts, &stateFileCleanup, &pagesCleanup, &fsCleanup)
 	})
@@ -996,9 +991,6 @@ func (k *Kernel) invalidateUnsavableMappings(ctx context.Context) error {
 // LoadFrom returns a new Kernel loaded from args.
 func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, networkArgs inet.NetworkArgs, clocks sentrytime.Clocks, vfsOpts *vfs.CompleteRestoreOptions, timeline *timing.Timeline) error {
 	defer timeline.End()
-	if hostarch.PageSize != 4096 {
-		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
-	}
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
@@ -1101,9 +1093,6 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 // ExtractRootfsUpperLayer partially restores the kernel state and extracts the
 // rootfs upper layer to the provided file.
 func (k *Kernel) ExtractRootfsUpperLayer(ctx context.Context, r io.Reader, asyncMFLoader *AsyncMFLoader, timeReady chan struct{}, clocks sentrytime.Clocks, outFD *os.File) error {
-	if hostarch.PageSize != 4096 {
-		return fmt.Errorf("restore is not supported with %dK page size", hostarch.PageSize/1024)
-	}
 	loadStart := time.Now()
 
 	k.runningTasksCond.L = &k.runningTasksMu
