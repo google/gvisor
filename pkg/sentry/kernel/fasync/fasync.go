@@ -51,7 +51,10 @@ func New(fd int) func() vfs.FileAsync {
 //
 // +stateify savable
 type FileAsync struct {
-	// e is immutable after first use (which is protected by mu below).
+	// e is reinitialized for each registration. The waitable synchronizes
+	// accesses through its retained reference.
+	//
+	// +checklocks:regMu
 	e waiter.Entry
 
 	// fd is the file descriptor to notify about.
@@ -68,24 +71,34 @@ type FileAsync struct {
 	// Lock ordering: regMu, mu.
 	regMu regMutex `state:"nosave"`
 
-	// mu protects all following fields.
-	//
-	// Lock ordering: e.mu, mu.
-	mu         fileMutex `state:"nosave"`
-	requester  *auth.Credentials
+	// Wait queue locks precede mu because notification callbacks acquire mu.
+	// Register and Unregister must release mu before calling the waitable.
+	mu fileMutex `state:"nosave"`
+
+	// +checklocks:mu
+	requester *auth.Credentials
+	// +checklocks:mu
 	registered bool
 	// signal is the signal to deliver upon I/O being available.
 	// The default value ("zero signal") means the default SIGIO signal will be
 	// delivered.
+	//
+	// +checklocks:mu
 	signal linux.Signal
 
 	// Only one of the following is allowed to be non-nil.
+	//
+	// +checklocks:mu
 	recipientPG *kernel.ProcessGroup
+	// +checklocks:mu
 	recipientTG *kernel.ThreadGroup
-	recipientT  *kernel.Task
+	// +checklocks:mu
+	recipientT *kernel.Task
 }
 
 // NotifyEvent implements waiter.EventListener.NotifyEvent.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 	a.mu.Lock()
 	if !a.registered {
@@ -145,6 +158,9 @@ func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 // Register sets the file which will be monitored for IO events.
 //
 // The file must not be currently registered.
+//
+// +checklocksexclude:a.mu
+// +checklocksexclude:a.regMu
 func (a *FileAsync) Register(w waiter.Waitable) error {
 	a.regMu.Lock()
 	defer a.regMu.Unlock()
@@ -167,6 +183,9 @@ func (a *FileAsync) Register(w waiter.Waitable) error {
 // Unregister stops monitoring a file.
 //
 // The file must be currently registered.
+//
+// +checklocksexclude:a.mu
+// +checklocksexclude:a.regMu
 func (a *FileAsync) Unregister(w waiter.Waitable) {
 	a.regMu.Lock()
 	defer a.regMu.Unlock()
@@ -185,6 +204,8 @@ func (a *FileAsync) Unregister(w waiter.Waitable) {
 
 // Owner returns who is currently getting signals. All return values will be
 // nil if no one is set to receive signals.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) Owner() (*kernel.Task, *kernel.ThreadGroup, *kernel.ProcessGroup) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -193,6 +214,8 @@ func (a *FileAsync) Owner() (*kernel.Task, *kernel.ThreadGroup, *kernel.ProcessG
 
 // SetOwnerTask sets the owner (who will receive signals) to a specified task.
 // Only this owner will receive signals.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) SetOwnerTask(requester *kernel.Task, recipient *kernel.Task) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -204,6 +227,8 @@ func (a *FileAsync) SetOwnerTask(requester *kernel.Task, recipient *kernel.Task)
 
 // SetOwnerThreadGroup sets the owner (who will receive signals) to a specified
 // thread group. Only this owner will receive signals.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) SetOwnerThreadGroup(requester *kernel.Task, recipient *kernel.ThreadGroup) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -215,6 +240,8 @@ func (a *FileAsync) SetOwnerThreadGroup(requester *kernel.Task, recipient *kerne
 
 // SetOwnerProcessGroup sets the owner (who will receive signals) to a
 // specified process group. Only this owner will receive signals.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) SetOwnerProcessGroup(requester *kernel.Task, recipient *kernel.ProcessGroup) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -225,6 +252,8 @@ func (a *FileAsync) SetOwnerProcessGroup(requester *kernel.Task, recipient *kern
 }
 
 // ClearOwner unsets the current signal recipient.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) ClearOwner() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -237,6 +266,8 @@ func (a *FileAsync) ClearOwner() {
 // Signal returns which signal will be sent to the signal recipient.
 // A value of zero means the signal to deliver wasn't customized, which means
 // the default signal (SIGIO) will be delivered.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) Signal() linux.Signal {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -246,6 +277,8 @@ func (a *FileAsync) Signal() linux.Signal {
 // SetSignal overrides which signal to send when I/O is available.
 // The default behavior can be reset by specifying signal zero, which means
 // to send SIGIO.
+//
+// +checklocksexclude:a.mu
 func (a *FileAsync) SetSignal(signal linux.Signal) error {
 	if signal != 0 && !signal.IsValid() {
 		return linuxerr.EINVAL

@@ -325,6 +325,8 @@ type KeySet struct {
 // Lookup looks up a key by ID.
 // Callers must exercise care to verify that the key can be accessed with
 // proper credentials.
+//
+// +checklocksexclude:s.mu
 func (s *KeySet) Lookup(keyID KeySerial) (*Key, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -338,6 +340,10 @@ func (s *KeySet) Lookup(keyID KeySerial) (*Key, error) {
 // ForEach iterates over all keys.
 // If `fn` returns true, iteration stops immediately.
 // Callers must exercise care to only process keys to which they have access.
+//
+// fn runs with s.mu read-locked and must not reacquire that mutex.
+//
+// +checklocksexclude:s.mu
 func (s *KeySet) ForEach(fn func(*Key) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -365,6 +371,8 @@ func getNewID() (KeySerial, error) {
 }
 
 // Add adds a new Key to the KeySet.
+//
+// +checklocksexclude:s.mu
 func (s *KeySet) Add(description string, creds *Credentials, perms KeyPermissions, keySizeLimit int) (*Key, error) {
 	if len(description) >= MaxKeyDescSize {
 		return nil, linuxerr.EINVAL

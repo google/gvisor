@@ -39,7 +39,7 @@ type UserNamespace struct {
 	// Keys is the set of keys in this namespace.
 	Keys KeySet
 
-	// mu protects the following fields.
+	// mu protects the ID maps, setgroupsAllowed, and inode.
 	//
 	// If mu will be locked in multiple UserNamespaces, it must be locked in
 	// descendant namespaces before ancestors.
@@ -49,21 +49,33 @@ type UserNamespace struct {
 	//
 	// All ID maps, once set, cannot be changed. This means that successful
 	// UID/GID translations cannot be racy.
+	//
+	// +checklocks:mu
 	uidMapFromParent idMapSet
-	uidMapToParent   idMapSet
-	gidMapFromParent idMapSet
-	gidMapToParent   idMapSet
 
-	// parentHadSetfcap is true if the parent namespace had the CAP_SETFCAP
-	// capability when this namespace was created. Similar to
+	// +checklocks:mu
+	uidMapToParent idMapSet
+
+	// +checklocks:mu
+	gidMapFromParent idMapSet
+
+	// +checklocks:mu
+	gidMapToParent idMapSet
+
+	// parentHadSetfcap is true if the creator had CAP_SETFCAP in the parent
+	// namespace when this namespace was created. It is immutable, like
 	// user_namespace.parent_could_setfcap in Linux.
 	parentHadSetfcap bool
 
-	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux. Protected by mu.
+	// setgroupsAllowed mirrors USERNS_SETGROUPS_ALLOWED in Linux.
+	//
+	// +checklocks:mu
 	setgroupsAllowed bool
 
 	// inode is the nsfs inode associated with this namespace. This is stored as
 	// refs.TryRefCounter instead of *nsfs.Inode because nsfs imports auth.
+	//
+	// +checklocks:mu
 	inode refs.TryRefCounter
 }
 
@@ -120,6 +132,8 @@ func (ns *UserNamespace) UserNamespace() *UserNamespace {
 // SetInode sets the nsfs inode associated with ns. The initial ref on inode is
 // the task or kernel ref for a newly-created user namespace, so those callers
 // don't need a separate IncRef.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) SetInode(inode refs.TryRefCounter) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -127,6 +141,8 @@ func (ns *UserNamespace) SetInode(inode refs.TryRefCounter) {
 }
 
 // IncRef increments ns's inode refcount.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) IncRef() {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -136,6 +152,8 @@ func (ns *UserNamespace) IncRef() {
 }
 
 // TryGetInode returns ns's inode with an incremented refcount.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) TryGetInode() refs.TryRefCounter {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -146,6 +164,8 @@ func (ns *UserNamespace) TryGetInode() refs.TryRefCounter {
 }
 
 // DecRef decrements ns's inode refcount.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) DecRef(ctx context.Context) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -169,6 +189,8 @@ func (ns *UserNamespace) depth() int {
 
 // NewChildUserNamespace returns a new user namespace created by a caller with
 // credentials c.
+//
+// +checklocksexclude:c.UserNamespace.mu
 func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	if c.UserNamespace.depth() >= maxUserNamespaceDepth {
 		// "... Calls to unshare(2) or clone(2) that would cause this limit to
@@ -202,6 +224,8 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 }
 
 // SetgroupsAllowed returns ns's USERNS_SETGROUPS_ALLOWED bit.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) SetgroupsAllowed() bool {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -209,6 +233,8 @@ func (ns *UserNamespace) SetgroupsAllowed() bool {
 }
 
 // MaySetgroups mirrors userns_may_setgroups in Linux.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) MaySetgroups() bool {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -216,6 +242,8 @@ func (ns *UserNamespace) MaySetgroups() bool {
 }
 
 // SetSetgroupsAllowed mirrors proc_setgroups_write in Linux.
+//
+// +checklocksexclude:ns.mu
 func (ns *UserNamespace) SetSetgroupsAllowed(ctx context.Context, allow bool) error {
 	c := CredentialsFromContext(ctx)
 	if !c.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns) {
