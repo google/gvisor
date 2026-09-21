@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
@@ -36,7 +36,7 @@ type Fs struct {
 	delay   time.Duration
 }
 
-func (f *Fs) Read(o *control.ReadOpts, _ *struct{}) error {
+func (f *Fs) Read(o *api.ReadOpts, _ *struct{}) error {
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}

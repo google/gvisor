@@ -47,6 +47,7 @@ go_library(
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/control/api",
         "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fd",
