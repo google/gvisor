@@ -26,6 +26,19 @@ go_library(
 )
 
 go_test(
+    name = "latebind_test",
+    size = "small",
+    srcs = ["latebind_test.go"],
+    library = ":fsgofer",
+    deps = [
+        "//pkg/context",
+        "//pkg/lisafs",
+        "//pkg/unet",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
     name = "lisafs_test",
     size = "small",
     srcs = ["lisafs_test.go"],
