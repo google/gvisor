@@ -351,3 +351,153 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+func TestBmsaiNvleControlCommandsRegistered(t *testing.T) {
+	Init()
+
+	var remapParams nvgpu.NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS
+	const wantRemapParamsSize = 4 + 2*nvgpu.NV2080_CTRL_NVLINK_REMAP_TABLE_ENTRIES_CHUNK*4 + 3*4 // 1040 bytes
+	if got := remapParams.SizeBytes(); got != wantRemapParamsSize {
+		t.Errorf("NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS.SizeBytes() = %d, want %d", got, wantRemapParamsSize)
+	}
+
+	v620_30_00 := nvconf.NewDriverVersion(620, 30, 0)
+	foundV620_30_00 := false
+	foundMajor620 := 0
+
+	baseV620Cmds := []struct {
+		cmd        uint32
+		name       string
+		structName string
+		wantCap    nvconf.DriverCaps
+	}{
+		{
+			cmd:        nvgpu.NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE,
+			name:       "NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE",
+			structName: "NV2080_CTRL_NVLINK_LOCK_REMAP_TABLE_AND_MSE_PARAMS",
+			wantCap:    nvconf.CapFabricIMEXManagement,
+		},
+		{
+			cmd:        nvgpu.NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY,
+			name:       "NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY",
+			structName: "NV2080_CTRL_NVLINK_SETUP_NVLE_ENCRYPTION_KEY_PARAMS",
+			wantCap:    nvconf.CapFabricIMEXManagement,
+		},
+		{
+			cmd:        nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2,
+			name:       "NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2",
+			structName: "NV2080_CTRL_NVLINK_GET_REMAP_TABLE_INFO_V2_PARAMS",
+			wantCap:    nvconf.CapFabricIMEXManagement,
+		},
+		{
+			cmd:        nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2,
+			name:       "NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V2",
+			structName: "NV2080_CTRL_NVLINK_GET_UPDATE_NVLE_LIDS_V2_PARAMS",
+			wantCap:    nvconf.CapFabricIMEXManagement,
+		},
+		{
+			cmd:        nvgpu.NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V3,
+			name:       "NV2080_CTRL_CMD_NVLINK_GET_UPDATE_NVLE_LIDS_V3",
+			structName: "NV2080_CTRL_NVLINK_GET_UPDATE_NVLE_LIDS_V3_PARAMS",
+			wantCap:    nvconf.CapFabricIMEXManagement,
+		},
+		{
+			cmd:        nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES,
+			name:       "NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES",
+			structName: "NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES_PARAMS",
+			wantCap:    compUtil,
+		},
+		{
+			cmd:        nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE,
+			name:       "NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE",
+			structName: "NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE_PARAMS",
+			wantCap:    compUtil,
+		},
+		{
+			cmd:        nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS,
+			name:       "NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS",
+			structName: "NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS_PARAMS",
+			wantCap:    compUtil,
+		},
+		{
+			cmd:        nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE,
+			name:       "NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE",
+			structName: "NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE_PARAMS",
+			wantCap:    compUtil,
+		},
+	}
+
+	for version, abiEntry := range abis {
+		if !abiEntry.supported || version.Major() < 620 {
+			continue
+		}
+		foundMajor620++
+		if version.Equals(v620_30_00) {
+			foundV620_30_00 = true
+		}
+
+		t.Run(version.String(), func(t *testing.T) {
+			abi := abiEntry.cons()
+			info := abi.getInfo()
+
+			cmds := append([]struct {
+				cmd        uint32
+				name       string
+				structName string
+				wantCap    nvconf.DriverCaps
+			}(nil), baseV620Cmds...)
+
+			if version.IsGreaterThan(v620_30_00) {
+				cmds = append(cmds, struct {
+					cmd        uint32
+					name       string
+					structName string
+					wantCap    nvconf.DriverCaps
+				}{
+					cmd:        nvgpu.NV2080_CTRL_CMD_NVLINK_SET_NVLE_READY,
+					name:       "NV2080_CTRL_CMD_NVLINK_SET_NVLE_READY",
+					structName: "NV2080_CTRL_NVLINK_SET_NVLE_READY_PARAMS",
+					wantCap:    nvconf.CapFabricIMEXManagement,
+				})
+			}
+
+			for _, tc := range cmds {
+				handler, ok := abi.controlCmd[tc.cmd]
+				if !ok {
+					t.Errorf("version %s missing controlCmd[%#x] (%s)", version, tc.cmd, tc.name)
+					continue
+				}
+				if handler.handler == nil {
+					t.Errorf("version %s controlCmd[%#x] (%s) has nil handler", version, tc.cmd, tc.name)
+				}
+				if handler.capSet != tc.wantCap {
+					t.Errorf("version %s controlCmd[%#x] (%s) capSet = %v, want %v", version, tc.cmd, tc.name, handler.capSet, tc.wantCap)
+				}
+
+				ctrlInfo, ok := info.ControlInfos[tc.cmd]
+				if !ok {
+					t.Errorf("version %s missing ControlInfos[%#x] (%s)", version, tc.cmd, tc.name)
+					continue
+				}
+				if ctrlInfo.Name != tc.name {
+					t.Errorf("version %s ControlInfos[%#x].Name = %q, want %q", version, tc.cmd, ctrlInfo.Name, tc.name)
+				}
+				if len(ctrlInfo.Structs) == 0 || ctrlInfo.Structs[0].Name != tc.structName {
+					t.Errorf("version %s ControlInfos[%#x].Structs = %+v, want first struct %q", version, tc.cmd, ctrlInfo.Structs, tc.structName)
+				}
+				if tc.cmd == nvgpu.NV2080_CTRL_CMD_NVLINK_GET_REMAP_TABLE_INFO_V2 && len(ctrlInfo.Structs) > 0 {
+					if ctrlInfo.Structs[0].Type == nil || int(ctrlInfo.Structs[0].Type.Size()) != wantRemapParamsSize {
+						t.Errorf("version %s ControlInfos[%#x] struct Type = %v, want size %d", version, tc.cmd, ctrlInfo.Structs[0].Type, wantRemapParamsSize)
+					}
+				}
+			}
+		})
+	}
+
+	if foundMajor620 == 0 {
+		t.Fatalf("no supported driver ABIs found with major version >= 620")
+	}
+	if !foundV620_30_00 {
+		t.Fatalf("driver ABI %s not found or not supported in abis", v620_30_00)
+	}
+}
