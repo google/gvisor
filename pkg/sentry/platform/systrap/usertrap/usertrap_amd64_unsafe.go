@@ -19,6 +19,7 @@ package usertrap
 
 import (
 	"encoding/binary"
+	"fmt"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -46,38 +47,38 @@ func (s *State) addTrapLocked(ctx context.Context, ac *arch.Context64, mm memory
 	// sysmsg. And we need to guarantee that the current thread will not be
 	// interrupted in syshandler, because the sysmsg struct isn't saved on
 	// S/R.
-	// A thread stack can't be change, so the call instruction can't be
-	// used and we need to save values of stack and instruction registers,
-	// switch to the syshandler stack and call the jmp instruction to
-	// syshandler:
+	// A thread stack can't be changed, so the call instruction can't be
+	// used and we need to save the value of the instruction register and
+	// generate a jmp instruction to syshandler:
 	// mov    sysmsg.ThreadStatePrep, %gs:offset(msg.State)
-	// mov    %rsp,%gs:0x20 // msg.AppStack
-	// mov    %gs:0x18,%rsp // msg.SyshandlerStack
 	// movabs $ret_addr, %rax
 	// mov    %rax,%gs:0x8  // msg.RetAddr
 	// mov    sysno,%eax
 	// jmpq   *%gs:0x10     // msg.Syshandler
+	//
+	// Switching to the syshandler stack is not done here but at the beginning of
+	// __export_syshandler. A stack switch here is not idempotent, so it can't be part
+	// of a restartable sequence.
 	trap := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		// msg.State = sysmsg.ThreadStatePrep
 		/*08*/ 0x65, 0xc7, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov $X, %gs:OFFSET
-		/*20*/ 0x65, 0x48, 0x89, 0x24, 0x25, 0x20, 0x00, 0x00, 0x00, // mov    %rsp,%gs:0x20
-		/*29*/ 0x65, 0x48, 0x8b, 0x24, 0x25, 0x18, 0x00, 0x00, 0x00, // mov    %gs:0x18,%rsp
-		/*38*/ 0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // movabs $ret_addr, %rax
-		/*48*/ 0x65, 0x48, 0x89, 0x04, 0x25, 0x08, 0x00, 0x00, 0x00, // mov    %rax,%gs:0x8
-		/*57*/ 0xb8, 0x00, 0x00, 0x00, 0x00, // mov    sysno,%eax
-		/*62*/ 0x65, 0xff, 0x24, 0x25, 0x10, 0x00, 0x00, 0x00, // jmpq *%gs:0x10
+		/*20*/ 0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // movabs $ret_addr, %rax
+		/*30*/ 0x65, 0x48, 0x89, 0x04, 0x25, 0x08, 0x00, 0x00, 0x00, // mov    %rax,%gs:0x8
+		/*39*/ 0xb8, 0x00, 0x00, 0x00, 0x00, // mov    sysno,%eax
+		/*44*/ 0x65, 0xff, 0x24, 0x25, 0x10, 0x00, 0x00, 0x00, // jmpq *%gs:0x10
 	}
-	binary.LittleEndian.PutUint64(trap[40:48], uint64(ac.IP()))
-	binary.LittleEndian.PutUint32(trap[58:62], sysno)
-	binary.LittleEndian.PutUint64(trap[:8], uint64(trapAddr)+8)
+	if len(trap) != trapCodeOffset+trapCodeSize {
+		return 0, fmt.Errorf("the trampoline is %d bytes, but trapCodeOffset+trapCodeSize is %d", len(trap), trapCodeOffset+trapCodeSize)
+	}
+	binary.LittleEndian.PutUint64(trap[22:30], uint64(ac.IP()))
+	binary.LittleEndian.PutUint32(trap[40:44], sysno)
+	binary.LittleEndian.PutUint64(trap[:8], uint64(trapAddr)+trapCodeOffset)
 
 	var msg *sysmsg.Msg
 	binary.LittleEndian.PutUint32(trap[12:16], uint32(unsafe.Offsetof(msg.State)))
 	binary.LittleEndian.PutUint32(trap[16:20], uint32(sysmsg.ThreadStatePrep))
-	binary.LittleEndian.PutUint32(trap[25:29], uint32(unsafe.Offsetof(msg.AppStack)))
-	binary.LittleEndian.PutUint32(trap[34:38], uint32(unsafe.Offsetof(msg.SyshandlerStack)))
-	binary.LittleEndian.PutUint32(trap[53:57], uint32(unsafe.Offsetof(msg.RetAddr)))
-	binary.LittleEndian.PutUint32(trap[66:70], uint32(unsafe.Offsetof(msg.Syshandler)))
+	binary.LittleEndian.PutUint32(trap[35:39], uint32(unsafe.Offsetof(msg.RetAddr)))
+	binary.LittleEndian.PutUint32(trap[48:52], uint32(unsafe.Offsetof(msg.Syshandler)))
 
 	iocc := usermem.IOCopyContext{
 		Ctx: ctx,

@@ -183,14 +183,26 @@ fpu_restored:
 .type __export_syshandler, @function;
 .align 4, 0x00;
 __export_syshandler:
-  // The start of this function is in a usertrap trampoline:
+  // The start of this function is in an idempotent usertrap trampoline.
+  // A thread can fault in the middle of the trampoline because the trap table
+  // page can become temporarily unmapped (i.e. another thread calls
+  // mprotect). switchToApp rewinds RIP to the first instruction of the
+  // trampoline
   // mov    sysmsg.ThreadStatePrep, %gs:offset(msg.State)
-  // mov    %rsp,%gs:0x20 // msg.AppStack
-  // mov    %gs:0x18,%rsp // msg.SyshandlerStack
   // movabs $ret_addr, %rax
   // mov    %rax,%gs:0x8  // msg.RetAddr
   // mov    sysno,%eax
   // jmpq   *%gs:0x10     // msg.Syshandler
+
+  // Saving App rsp and switching to Syshandler rsp is not idempotent, so it is
+  // done here instead. The stub runs with the application stack still in %rsp
+  // up until this point, but that is ok because we do not clobber rsp or the
+  // red zone. Signal frames are pushed into the alt signal handler stack
+  // installed in sysmsg_thread_unsafe.go. Finally, we cannot fault here
+  // because sysmsg struct and the stub code are always mapped in.
+  movq %rsp, %gs:offsetof_sysmsg_app_stack
+  movq %gs:offsetof_sysmsg_syshandler_stack, %rsp
+
   prepare_enter_syshandler
   save_fpstate
 
