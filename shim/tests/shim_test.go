@@ -245,16 +245,7 @@ func killAndWaitForContainer(ctx context.Context, client task.TaskService, conta
 	defer cancel()
 
 	errGroup.Go(func() error {
-		for {
-			select {
-			case evt := <-containerd.EventChan:
-				if exitEvt, ok := evt.(*eventtypes.TaskExit); ok && exitEvt.ContainerID == containerID {
-					return nil
-				}
-			case <-ctx.Done():
-				return fmt.Errorf("timed out waiting for TaskExit event for container %s", containerID)
-			}
-		}
+		return containerd.WaitForExit(ctx, containerID)
 	})
 
 	errGroup.Go(func() error {

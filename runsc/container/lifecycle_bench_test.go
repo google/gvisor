@@ -88,18 +88,6 @@ func benchmarkConfigs(b *testing.B) map[string]*config.Config {
 	return cs
 }
 
-// reportPercentiles sorts the recorded iteration durations and reports p50 and p90 metrics.
-func reportPercentiles(b *testing.B, samples []time.Duration) {
-	if len(samples) == 0 {
-		return
-	}
-	slices.Sort(samples)
-	for _, p := range []int{50, 90} {
-		idx := (len(samples) - 1) * p / 100
-		b.ReportMetric(float64(samples[idx].Nanoseconds()), fmt.Sprintf("p%d.ns", p))
-	}
-}
-
 // BenchmarkOCICreate benchmarks container creation.
 func BenchmarkOCICreate(b *testing.B) {
 	for platformName, conf := range benchmarkConfigs(b) {
@@ -133,7 +121,7 @@ func BenchmarkOCICreate(b *testing.B) {
 					defer cont.Destroy()
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -173,7 +161,7 @@ func BenchmarkOCIStart(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -231,7 +219,7 @@ func BenchmarkOCIPause(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -262,7 +250,7 @@ func BenchmarkOCIResume(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -291,7 +279,7 @@ func BenchmarkOCIKill(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -343,7 +331,7 @@ func BenchmarkOCIDestroy(b *testing.B) {
 					cont = nil
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -418,7 +406,7 @@ func BenchmarkTimeToReady(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -481,7 +469,7 @@ func BenchmarkEndToEnd(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }

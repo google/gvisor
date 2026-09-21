@@ -18,6 +18,7 @@ go_library(
     deps = [
         "//pkg/rand",
         "//pkg/sync",
+        "//runsc/cgroup",
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",
