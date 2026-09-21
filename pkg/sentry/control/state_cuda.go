@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -94,21 +95,35 @@ func preSaveCuda(k *kernel.Kernel, o *state.SaveOpts) error {
 // any CUDA device.
 func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string, nvidiaDriverVersionMajor int) []*kernel.ThreadGroup {
 	var procs []*kernel.ThreadGroup
-	k.TaskSet().ForEachThreadGroup(func(tg *kernel.ThreadGroup, tgLeader *kernel.Task) {
+	k.TaskSet().ForEachThreadGroup(func(tg *kernel.ThreadGroup, _ *kernel.Task) {
 		found := false
-		// Note that it is possible for tasks in a thread group to have various FD
-		// tables (via clone(2) with CLONE_THREAD set and CLONE_FILES *not* set).
-		// However, we don't expect this to happen in practice for CUDA processes.
-		// So for efficiency, we just check the tgLeader's FD table, instead of
-		// iterating over all tasks' FD tables in all thread groups.
-		tgLeader.WithMuLocked(func(t *kernel.Task) {
-			t.FDTable().ForEach(sctx, func(_ int32, file *vfs.FileDescription, _ kernel.FDFlags) bool {
-				if _, ok := file.Impl().(nvproxy.NvidiaDeviceFD); ok {
-					found = true
-					return false
+		// Tasks in a thread group can have distinct FD tables (clone(2) with
+		// CLONE_THREAD but not CLONE_FILES), so a CUDA-using thread's device FDs
+		// may be invisible from the leader's table. Missing a process here is
+		// silent: its GPU state is left out of the snapshot and only fails at
+		// restore. Tables are shared in the common case, so skip ones already
+		// inspected.
+		seen := make(map[*kernel.FDTable]struct{}, 1)
+		// ForEachThreadGroup holds the TaskSet lock, hence the Locked variant.
+		tg.ForEachTaskLocked(func(t *kernel.Task) bool {
+			t.WithMuLocked(func(t *kernel.Task) {
+				fdt := t.FDTable()
+				if fdt == nil {
+					return
 				}
-				return true
+				if _, dup := seen[fdt]; dup {
+					return
+				}
+				seen[fdt] = struct{}{}
+				fdt.ForEach(sctx, func(_ int32, file *vfs.FileDescription, _ kernel.FDFlags) bool {
+					if _, ok := file.Impl().(nvproxy.NvidiaDeviceFD); ok {
+						found = true
+						return false
+					}
+					return true
+				})
 			})
+			return !found
 		})
 		if found {
 			procs = append(procs, tg)
@@ -137,6 +152,11 @@ func cudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath string
 	} else {
 		procs = filterCudaProcsUsingGetState(sctx, k, cudaCheckpointPath, procs)
 	}
+	// ForEachThreadGroup iterates a map, so without this the order in which
+	// processes are locked, checkpointed and restored -- and in which any
+	// failure is reported -- differs from run to run. Sort last so nothing
+	// after this line can reorder the slice.
+	sort.Slice(procs, func(i, j int) bool { return procs[i].ID() < procs[j].ID() })
 	return procs
 }
 
