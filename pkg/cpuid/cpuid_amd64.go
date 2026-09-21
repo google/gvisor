@@ -527,3 +527,14 @@ func (fs FeatureSet) AllowedHWCap2() uint64 {
 	// HWCAPS are not supported on amd64.
 	return 0
 }
+
+// UnsetFSGSBASE unsets features that should not be exposed to the guest workload.
+func (fs FeatureSet) UnsetFSGSBASE() FeatureSet {
+	s := fs.ToStatic()
+	// Disable FSGSBASE for guest processes. If userspace uses WRGSBASE without the Sentry's
+	// knowledge, it would corrupt the GS register used by Systrap for syscall patching.
+	X86FeatureFSGSBase.Unset(s)
+	sfs := s.ToFeatureSet()
+	sfs.hwCap = fs.hwCap
+	return sfs
+}
