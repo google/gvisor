@@ -189,3 +189,11 @@ TEXT ·AddrOfPACLoop(SB),NOSPLIT,$0-8
 	MOVD $·pacLoop(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
+
+// func LoadPair(addr uintptr) (uint64, uint64)
+TEXT ·LoadPair(SB),NOSPLIT,$0-24
+	MOVD addr+0(FP), R0
+	LDP 0(R0), (R1, R2)
+	MOVD R1, ret+8(FP)
+	MOVD R2, ret1+16(FP)
+	RET
