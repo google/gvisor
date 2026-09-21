@@ -96,7 +96,7 @@ type frontendFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
-	memmap.MappableNoTrackMappings
+	trackedMappings
 
 	dev           *frontendDevice
 	containerName string
