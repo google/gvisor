@@ -152,3 +152,8 @@ func (fs FeatureSet) AllowedHWCap2() uint64 {
 	allowed := 0
 	return fs.hwCap.hwCap2 & uint64(allowed)
 }
+
+// UnsetFSGSBASE unsets features that should not be exposed to the guest workload.
+func (fs FeatureSet) UnsetFSGSBASE() FeatureSet {
+	return fs
+}
