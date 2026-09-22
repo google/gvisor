@@ -354,10 +354,7 @@ func (fs *Filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	if err := d.inode.CheckPermissions(ctx, creds, ats); err != nil {
 		return err
 	}
-	if ats.MayWrite() && rp.Mount().ReadOnly() {
-		return linuxerr.EROFS
-	}
-	return nil
+	return vfs.CheckMountAccess(rp, ats, d.inode.Mode())
 }
 
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.

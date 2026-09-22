@@ -606,12 +606,12 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	if err := d.checkPermissions(creds, ats); err != nil {
 		return err
 	}
+	if err := vfs.CheckMountAccess(rp, ats, linux.FileMode(d.mode.Load())); err != nil {
+		return err
+	}
 	if !ats.MayWrite() {
 		// Not requesting write permission.  Allow it.
 		return nil
-	}
-	if rp.Mount().ReadOnly() {
-		return linuxerr.EROFS
 	}
 	if !d.upperVD.Ok() && !d.canBeCopiedUp() {
 		// A lower layer file that can not be copied up, can not be written to.

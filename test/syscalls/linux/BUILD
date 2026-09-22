@@ -279,6 +279,7 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:fs_util",
         "//test/util:logging",
+        "//test/util:mount_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",

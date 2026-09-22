@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <stdlib.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -31,6 +32,7 @@
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -265,6 +267,32 @@ TEST(Faccessat2Test, SymlinkFollowedByDefault) {
   close(fd);
   EXPECT_THAT(sys_faccessat2(-1, symlink_path.c_str(), F_OK, 0 /* flags */),
               SyscallSucceeds());
+}
+
+// faccessat2(X_OK) on a regular file must fail with EACCES when the file lives
+// on a filesystem mounted noexec, even if the permission bits allow execution.
+TEST(Faccessat2Test, NoexecMountDeniesExec) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(Faccessat2Supported()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", dir.path(), "tmpfs", 0, "", MNT_DETACH));
+
+  const std::string bin = JoinPath(dir.path(), "program");
+  int fd;
+  ASSERT_THAT(fd = open(bin.c_str(), O_CREAT | O_RDWR, 0644),
+              SyscallSucceeds());
+  ASSERT_THAT(fchmod(fd, 0755), SyscallSucceeds());
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  EXPECT_THAT(sys_faccessat2(-1, bin.c_str(), X_OK, 0), SyscallSucceeds());
+
+  ASSERT_THAT(mount("", dir.path().c_str(), "", MS_REMOUNT | MS_NOEXEC, ""),
+              SyscallSucceeds());
+  EXPECT_THAT(sys_faccessat2(-1, bin.c_str(), X_OK, 0),
+              SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(sys_faccessat2(-1, bin.c_str(), R_OK, 0), SyscallSucceeds());
 }
 
 TEST(Faccessat2Test, SymlinkNofollow) {
