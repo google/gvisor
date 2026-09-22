@@ -1222,16 +1222,14 @@ TEST(PidfdTest, FasyncIsUnsupported) {
   ASSERT_THAT(fcntl(pidfd.get(), F_SETFL, flags | FASYNC), SyscallSucceeds());
   int who = getpid();
 
-  int want_errno = EINVAL;
-  if (!IsRunningOnGvisor()) {
-    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major < 6 || (version.major == 6 && version.minor < 9)) {
-      want_errno = ENOTTY;
-    }
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
+                SyscallFailsWithErrno(EINVAL));
+  } else {
+    // Linux < 6.9 and >= 6.11 return ENOTTY; Linux 6.9-6.10 returns EINVAL.
+    EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
+                SyscallFailsWithErrno(::testing::AnyOf(EINVAL, ENOTTY)));
   }
-
-  EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
-              SyscallFailsWithErrno(want_errno));
 }
 
 // This reproduces the race condition where pidfd_send_signal can target
