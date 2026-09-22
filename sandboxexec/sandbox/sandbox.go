@@ -136,6 +136,10 @@ type Mount struct {
 
 	// NoDev adds "nodev".
 	NoDev bool
+
+	// Mode is the permission bits of the mount point.
+	// A nil Mode leaves the mount type's own default in place.
+	Mode *uint32
 }
 
 // WithRuntimeDir sets a custom runtime directory where bundle and state files are written.
