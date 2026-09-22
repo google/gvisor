@@ -19,14 +19,20 @@
 #include <netinet/in.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 
 #include <cerrno>
 #include <iostream>
+#include <string>
+#include <vector>
 
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
+#include "test/util/fs_util.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -124,6 +130,14 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
     // Unexpected error code; indicate an actual error.
     return PosixError(errno, "clone(CLONE_NEWUSER)");
   }
+}
+
+PosixErrorOr<bool> InInitialUserNamespace() {
+  ASSIGN_OR_RETURN_ERRNO(std::string id_map, GetContents("/proc/self/uid_map"));
+  absl::StripTrailingAsciiWhitespace(&id_map);
+  std::vector<std::string> id_map_parts =
+      absl::StrSplit(id_map, ' ', absl::SkipEmpty());
+  return id_map_parts == std::vector<std::string>({"0", "0", "4294967295"});
 }
 
 }  // namespace testing
