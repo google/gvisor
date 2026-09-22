@@ -2754,8 +2754,8 @@ func (e *Endpoint) listen(backlog int) tcpip.Error {
 		e.acceptMu.Lock()
 		defer e.acceptMu.Unlock()
 
-		// Adjust the size of the backlog iff we can fit
-		// existing pending connections into the new one.
+		// The new capacity must accommodate the completed accept queue.
+		// Pending handshakes are preserved even if they exceed the new SYN backlog.
 		if e.acceptQueue.endpoints.Len() > backlog {
 			return &tcpip.ErrInvalidEndpointState{}
 		}
