@@ -102,6 +102,23 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 	return linuxerr.EACCES
 }
 
+// CheckMountAccess checks access restrictions imposed by the mount on which an
+// access check resolves, given the resolved file's mode. It denies execute
+// access to a regular file when the mount does not allow execution, and denies
+// write access when the mount is read-only.
+//
+// FilesystemImpl.AccessAt implementations should call CheckMountAccess after
+// checking the file's own permission bits.
+func CheckMountAccess(rp *ResolvingPath, ats AccessTypes, mode linux.FileMode) error {
+	if ats.MayExec() && mode.FileType() == linux.ModeRegular && rp.Mount().Options().Flags.NoExec {
+		return linuxerr.EACCES
+	}
+	if ats.MayWrite() && rp.Mount().ReadOnly() {
+		return linuxerr.EROFS
+	}
+	return nil
+}
+
 // MayLink determines whether creating a hard link to a file with the given
 // mode, kuid, and kgid is permitted.
 //

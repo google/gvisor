@@ -187,6 +187,9 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 		return err
 	}
 	defer d.DecRef(ctx)
+	if err := vfs.CheckMountAccess(rp, ats, linux.FileMode(d.inode.Mode())); err != nil {
+		return err
+	}
 	if ats.MayWrite() {
 		return linuxerr.EROFS
 	}
