@@ -116,6 +116,12 @@ type filesystem struct {
 	// is immutable.
 	dirDevMinor uint32
 
+	// stackDepth is this filesystem's stacking depth, Linux's
+	// super_block.s_stack_depth. It is one more than the greatest stackDepth
+	// among its lower layers. If a lower layer is not an overlay, it has a
+	// depth 0. So stackDepth is equal to 1 when no lower layer is an overlay.
+	stackDepth int
+
 	// lowerDevMinors maps device numbers from lower layer filesystems to
 	// device minor numbers assigned to non-directory files originating from
 	// that filesystem. (This remapping is necessary for lower layers because a
@@ -320,6 +326,27 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, linuxerr.EINVAL
 	}
 
+	// Linux refuses an overlay as the upper layer, see
+	// fs/overlayfs/params.c:ovl_mount_dir_check(), and allows an overlay as a
+	// lower layer only up to a stacking depth of FILESYSTEM_MAX_STACK_DEPTH,
+	// see fs/overlayfs/super.c:ovl_get_lowerstack().
+	if fsopts.UpperRoot.Ok() {
+		if _, ok := fsopts.UpperRoot.Mount().Filesystem().Impl().(*filesystem); ok {
+			ctx.Infof("overlay.FilesystemType.GetFilesystem: an overlay is not supported as the upper layer")
+			return nil, nil, linuxerr.EINVAL
+		}
+	}
+	stackDepth := 1
+	for _, lowerRoot := range fsopts.LowerRoots {
+		if lowerFS, ok := lowerRoot.Mount().Filesystem().Impl().(*filesystem); ok {
+			stackDepth = max(stackDepth, lowerFS.stackDepth+1)
+		}
+	}
+	if stackDepth > linux.FILESYSTEM_MAX_STACK_DEPTH {
+		ctx.Infof("overlay.FilesystemType.GetFilesystem: maximum fs stacking depth exceeded")
+		return nil, nil, linuxerr.EINVAL
+	}
+
 	// Allocate dirDevMinor. lowerDevMinors are allocated dynamically.
 	dirDevMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
@@ -348,6 +375,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		xattrPrefix:    xattrPrefix,
 		xattrOpaque:    xattrPrefix + "opaque",
 		dirDevMinor:    dirDevMinor,
+		stackDepth:     stackDepth,
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
 		maxFilenameLen: linux.NAME_MAX,

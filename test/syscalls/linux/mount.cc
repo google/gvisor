@@ -3062,6 +3062,87 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
+// OverlayMount is an overlay mounted at merged, unmounted when cleanup is
+// destroyed.
+struct OverlayMount {
+  std::string merged;
+  Cleanup cleanup;
+};
+
+// MountOverlayIn mounts an overlay whose lower layers are lowerdirs, topmost
+// first, with fresh upper and work directories, at base/<name>.
+PosixErrorOr<OverlayMount> MountOverlayIn(const std::string& base,
+                                          const std::string& name,
+                                          const std::string& lowerdirs) {
+  const std::string upper = JoinPath(base, name + "_upper");
+  const std::string work = JoinPath(base, name + "_work");
+  const std::string merged = JoinPath(base, name);
+  for (const std::string& dir : {upper, work, merged}) {
+    if (mkdir(dir.c_str(), 0755) != 0) {
+      return PosixError(errno, absl::StrCat("mkdir ", dir));
+    }
+  }
+  const std::string opts =
+      "lowerdir=" + lowerdirs + ",upperdir=" + upper + ",workdir=" + work;
+  ASSIGN_OR_RETURN_ERRNO(Cleanup cleanup,
+                         Mount("overlay", merged, "overlay", 0, opts, 0));
+  return OverlayMount{merged, std::move(cleanup)};
+}
+
+// An overlay may be a lower layer of another, but not of a third stacked on
+// that: FILESYSTEM_MAX_STACK_DEPTH is 2. The lower layer with the greatest
+// stacking depth sets the depth, wherever it is in the list.
+TEST(MountTest, OverlayfsStackingDepthLimit) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Start from a tmpfs, since the temporary directory may itself be on an
+  // overlay and count toward the depth.
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "mode=1777", MNT_DETACH));
+  const std::string lower = JoinPath(base_dir.path(), "lower");
+  ASSERT_THAT(mkdir(lower.c_str(), 0755), SyscallSucceeds());
+
+  auto depth1 =
+      ASSERT_NO_ERRNO_AND_VALUE(MountOverlayIn(base_dir.path(), "d1", lower));
+  auto depth2 = ASSERT_NO_ERRNO_AND_VALUE(
+      MountOverlayIn(base_dir.path(), "d2", depth1.merged));
+
+  EXPECT_THAT(MountOverlayIn(base_dir.path(), "d3", depth2.merged),
+              PosixErrorIs(EINVAL));
+  EXPECT_THAT(
+      MountOverlayIn(base_dir.path(), "deep", lower + ":" + depth2.merged),
+      PosixErrorIs(EINVAL));
+  auto mixed = ASSERT_NO_ERRNO_AND_VALUE(
+      MountOverlayIn(base_dir.path(), "mixed", lower + ":" + depth1.merged));
+}
+
+// An overlay cannot be the upper layer of another.
+TEST(MountTest, OverlayfsRejectedAsUpperdir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Start from a tmpfs, since the temporary directory may itself be on an
+  // overlay, which would fail the first mount too.
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "mode=1777", MNT_DETACH));
+  const std::string lower = JoinPath(base_dir.path(), "lower");
+  ASSERT_THAT(mkdir(lower.c_str(), 0755), SyscallSucceeds());
+  auto overlay =
+      ASSERT_NO_ERRNO_AND_VALUE(MountOverlayIn(base_dir.path(), "ovl", lower));
+
+  const std::string upper = JoinPath(overlay.merged, "upper");
+  const std::string work = JoinPath(overlay.merged, "work");
+  const std::string merged = JoinPath(base_dir.path(), "merged");
+  for (const std::string& dir : {upper, work, merged}) {
+    ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  }
+  const std::string opts =
+      "lowerdir=" + lower + ",upperdir=" + upper + ",workdir=" + work;
+  EXPECT_THAT(Mount("overlay", merged, "overlay", 0, opts, 0),
+              PosixErrorIs(EINVAL));
+}
+
 TEST(MountTest, OverlayfsSecurityCapabilityRequiresSetFcap) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
