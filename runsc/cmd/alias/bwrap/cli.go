@@ -58,6 +58,7 @@ const (
 	flagNewSession    = "new-session"
 	flagDieWithParent = "die-with-parent"
 	flagArgv0         = "argv0"
+	flagPerms         = "perms"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -87,6 +88,7 @@ type Cli struct {
 	newSession    bool
 	dieWithParent bool
 	argv0         string
+	perms         string
 }
 
 // Name implements subcommands.Command.Name.
@@ -130,6 +132,7 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.newSession, flagNewSession, false, "Create a new terminal session")
 	f.BoolVar(&c.dieWithParent, flagDieWithParent, false, "Kills with SIGKILL child process (COMMAND) when runsc or runsc's parent dies")
 	f.StringVar(&c.argv0, flagArgv0, "", "Set argv[0] to VALUE before running the program")
+	f.StringVar(&c.perms, flagPerms, "", "Set permissions of the next argument (--tmpfs)")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -156,6 +159,12 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 	var err error
 	for i := 0; i < len(bwrapArgs); {
 		arg := bwrapArgs[i]
+
+		// --perms only modifies the operation that immediately follows it.
+		if cfg.nextPerms != nil && (!strings.HasPrefix(arg, "--") || !acceptsPerms(strings.TrimPrefix(arg, "--"))) {
+			return nil, fmt.Errorf("bwrap: --%s must be followed by an option that creates a file", flagPerms)
+		}
+
 		// Bwrap passes the rest of the arguments to the command.
 		if arg == "--" {
 			cfg.Args = bwrapArgs[i+1:]
@@ -213,6 +222,8 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseCapAdd(bwrapArgs, i)
 		case flagArgv0:
 			i, err = cfg.parseArgv0(bwrapArgs, i)
+		case flagPerms:
+			i, err = cfg.parsePerms(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -292,6 +303,7 @@ func (c *bwrapConfig) parseTmpfs(args []string, i int) (int, error) {
 	if err != nil {
 		return i, err
 	}
+	mnt.Mode = c.takePerms()
 	c.Mounts = append(c.Mounts, mnt)
 	return i + 2, nil
 }
@@ -466,4 +478,31 @@ func (c *bwrapConfig) parseArgv0(args []string, i int) (int, error) {
 	c.Argv0 = args[i+1]
 	c.hasArgv0 = true
 	return i + 2, nil
+}
+
+const maxPerms = 07777
+
+func (c *bwrapConfig) parsePerms(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagPerms)
+	}
+	if c.nextPerms != nil {
+		return i, fmt.Errorf("bwrap: --%s given twice for the same action", flagPerms)
+	}
+	perms, err := strconv.ParseUint(args[i+1], 8, 32)
+	if err != nil || perms > maxPerms {
+		return i, fmt.Errorf("bwrap: --%s takes an octal argument <= %#o", flagPerms, maxPerms)
+	}
+	p := uint32(perms)
+	c.nextPerms = &p
+	return i + 2, nil
+}
+
+// acceptsPerms reports whether the flag consumes a pending --perms value.
+// --perms itself is included so that repeating it reports its own error.
+//
+// TODO(rexren): bubblewrap also accepts --perms before --dir, --file,
+// --bind-data and --ro-bind-data. Add them here as they are implemented.
+func acceptsPerms(flagName string) bool {
+	return flagName == flagTmpfs || flagName == flagPerms
 }

@@ -34,6 +34,9 @@ const (
 	sudoGID = 4343
 )
 
+// permsPtr returns a pointer to perms, for sandbox.Mount.Mode.
+func permsPtr(perms uint32) *uint32 { return &perms }
+
 // wantIDMappings returns the mappings bwrap is expected to build for an
 // unshared user namespace that runs as containerID.
 func wantIDMappings(containerID, hostID uint32) []specs.LinuxIDMapping {
@@ -573,6 +576,55 @@ func TestParseFlags(t *testing.T) {
 			name:        "EmptyArgv0",
 			args:        []string{"--argv0", "", "bash"},
 			errContains: "--argv0 does not support an empty value",
+		},
+		{
+			name: "PermsTmpfs",
+			args: []string{"--perms", "0700", "--tmpfs", "/foo", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo", Mode: permsPtr(0700)}},
+				Args:   []string{"bash"},
+			},
+		},
+		{
+			// Without --perms the mount carries no mode, leaving gVisor's tmpfs
+			// default of 01777 in place.
+			name: "TmpfsDefaultPerms",
+			args: []string{"--tmpfs", "/foo", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo"}},
+				Args:   []string{"bash"},
+			},
+		},
+		{
+			name:        "MissingPermsArg",
+			args:        []string{"--perms"},
+			errContains: "--perms takes 1 argument",
+		},
+		{
+			name:        "NonOctalPerms",
+			args:        []string{"--perms", "0799", "--tmpfs", "/foo", "bash"},
+			errContains: "--perms takes an octal argument",
+		},
+		{
+			name:        "PermsTooLarge",
+			args:        []string{"--perms", "10000", "--tmpfs", "/foo", "bash"},
+			errContains: "--perms takes an octal argument",
+		},
+		{
+			name:        "DuplicatePerms",
+			args:        []string{"--perms", "0700", "--perms", "0700", "--tmpfs", "/foo", "bash"},
+			errContains: "--perms given twice",
+		},
+		{
+			name:        "PermsWithoutOperation",
+			args:        []string{"--perms", "0700", "--ro-bind", "/", "/", "--", "bash"},
+			errContains: "--perms must be followed by",
 		},
 	}
 

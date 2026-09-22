@@ -74,6 +74,7 @@ type bwrapConfig struct {
 	ShareNet    bool
 	Argv0       string
 	hasArgv0    bool
+	nextPerms   *uint32
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -447,4 +448,13 @@ func dropCapability(caps *specs.LinuxCapabilities, capName string) {
 		return
 	}
 	specutils.DropCapability(caps, capName)
+}
+
+// takePerms returns the pending --perms value if one was given, otherwise nil,
+// and clears the pending value either way. A nil result leaves the mount at the
+// filesystem's own default mode, which is 01777 for tmpfs.
+func (c *bwrapConfig) takePerms() *uint32 {
+	perms := c.nextPerms
+	c.nextPerms = nil
+	return perms
 }

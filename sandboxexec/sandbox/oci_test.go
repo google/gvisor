@@ -17,6 +17,7 @@ package sandbox_test
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -144,5 +145,69 @@ func TestSpecWorkingDir(t *testing.T) {
 
 	if spec.Process.Cwd != customCwd {
 		t.Errorf("spec.Process.Cwd = %q, want %q", spec.Process.Cwd, customCwd)
+	}
+}
+
+func modePtr(mode uint32) *uint32 { return &mode }
+
+func TestSpecMountMode(t *testing.T) {
+	const dst = "/mnt/foo"
+
+	tests := []struct {
+		name    string
+		mount   sandbox.Mount
+		wantOpt string
+	}{
+		{
+			name:    "TmpfsWithMode",
+			mount:   sandbox.Mount{Destination: dst, Type: sandbox.MountTypeTmpfs, Mode: modePtr(0700)},
+			wantOpt: "mode=0700",
+		},
+		{
+			name:    "TmpfsWithDefaultMode",
+			mount:   sandbox.Mount{Destination: dst, Type: sandbox.MountTypeTmpfs, Mode: modePtr(01777)},
+			wantOpt: "mode=1777",
+		},
+		{
+			// ociMount translates whatever Mode it is given; restricting Mode to
+			// tmpfs is the caller's job.
+			name:    "ModePassedThroughForBind",
+			mount:   sandbox.Mount{Source: "/tmp", Destination: dst, Type: sandbox.MountTypeBind, Mode: modePtr(0700)},
+			wantOpt: "mode=0700",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, err := sandbox.DebugSpec(sandbox.WithMount(tc.mount))
+			if err != nil {
+				t.Fatalf("DebugSpec failed: %v", err)
+			}
+
+			var opts []string
+			found := false
+			for _, m := range spec.Mounts {
+				if m.Destination == dst {
+					opts = m.Options
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("no mount with destination %q, got mounts: %+v", dst, spec.Mounts)
+			}
+
+			hasMode := slices.ContainsFunc(opts, func(o string) bool {
+				return strings.HasPrefix(o, "mode=")
+			})
+			if tc.wantOpt == "" {
+				if hasMode {
+					t.Errorf("mount options = %v, want no mode= option", opts)
+				}
+				return
+			}
+			if !slices.Contains(opts, tc.wantOpt) {
+				t.Errorf("mount options = %v, want it to contain %q", opts, tc.wantOpt)
+			}
+		})
 	}
 }

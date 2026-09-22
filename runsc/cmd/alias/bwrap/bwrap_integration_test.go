@@ -454,3 +454,108 @@ func TestArgv0(t *testing.T) {
 		})
 	}
 }
+
+func TestPerms(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "TmpfsPerms",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--tmpfs", "/foo",
+				"--",
+				"/bin/sh", "-c", "stat -c %a /foo",
+			},
+			wantOutput: "700",
+		},
+		{
+			// Without --perms the tmpfs keeps gVisor's default mode, which is
+			// 0777 plus the sticky bit.
+			name: "TmpfsDefaultPerms",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/foo",
+				"--",
+				"/bin/sh", "-c", "stat -c %a /foo",
+			},
+			wantOutput: "1777",
+		},
+		{
+			// --perms is consumed by the mount that follows it, so /b falls back
+			// to the tmpfs default instead of inheriting the 0700.
+			name: "PermsDoNotApplyToNextTmpfs",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--tmpfs", "/a",
+				"--tmpfs", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "700 1777",
+		},
+		{
+			name: "PermsApplyIndependentlyPerTmpfs",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--tmpfs", "/a",
+				"--perms", "0500", "--tmpfs", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "700 500",
+		},
+		{
+			// --perms only ever affects what follows it, so the mount declared
+			// before it keeps the default mode.
+			name: "PermsDoNotApplyToEarlierTmpfs",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/a",
+				"--perms", "0700", "--tmpfs", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "1777 700",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
