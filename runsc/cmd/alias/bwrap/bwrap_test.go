@@ -436,6 +436,26 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "NewSession",
+			args: []string{"--new-session", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
+			name: "DieWithParent",
+			args: []string{"--die-with-parent", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+			},
+		},
+		{
 			name: "ValidHostname",
 			args: []string{"--hostname", "test-host", "bash"},
 			wantCfg: &bwrapConfig{
@@ -527,6 +547,32 @@ func TestParseFlags(t *testing.T) {
 			name:        "MissingCapDropArg",
 			args:        []string{"--cap-drop"},
 			errContains: "--cap-drop takes 1 argument",
+		},
+		{
+			name: "Argv0",
+			args: []string{"--argv0", "custom-sh", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:   os.Environ(),
+				UID:   -1,
+				GID:   -1,
+				Argv0: "custom-sh",
+				Args:  []string{"bash"},
+			},
+		},
+		{
+			name:        "MissingArgv0Arg",
+			args:        []string{"--argv0"},
+			errContains: "--argv0 takes one argument",
+		},
+		{
+			name:        "DuplicateArgv0",
+			args:        []string{"--argv0", "foo", "--argv0", "bar", "bash"},
+			errContains: "--argv0 used multiple times",
+		},
+		{
+			name:        "EmptyArgv0",
+			args:        []string{"--argv0", "", "bash"},
+			errContains: "--argv0 does not support an empty value",
 		},
 	}
 

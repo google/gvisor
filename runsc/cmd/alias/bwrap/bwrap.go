@@ -72,6 +72,8 @@ type bwrapConfig struct {
 	UnshareUser bool
 	Hostname    string
 	ShareNet    bool
+	Argv0       string
+	hasArgv0    bool
 }
 
 // String returns a string representation of the bwrapConfig.
@@ -331,9 +333,19 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 		}
 	}()
 
-	res, err := sb.Exec(ctx, c.Args,
+	execOpts := []sandbox.ExecOption{
 		sandbox.WithExecStdio(os.Stdin, os.Stdout, os.Stderr),
-		sandbox.WithExecSignalRelay())
+		sandbox.WithExecSignalRelay(),
+	}
+	argv := c.Args
+	if c.hasArgv0 {
+		// bwrap names the program with COMMAND and lets --argv0 replace argv[0],
+		// so pass the program path separately from the argv it runs with.
+		execOpts = append(execOpts, sandbox.WithExecPath(argv[0]))
+		argv = append([]string{c.Argv0}, argv[1:]...)
+	}
+
+	res, err := sb.Exec(ctx, argv, execOpts...)
 	if err != nil {
 		return util.Errorf("bwrap: %v", err)
 	}
