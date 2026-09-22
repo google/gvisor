@@ -18,26 +18,36 @@ import (
 const RaceEnabled = true
 
 // RaceDisable has the same semantics as runtime.RaceDisable.
+//
+//go:nosplit
 func RaceDisable() {
 	runtime.RaceDisable()
 }
 
 // RaceEnable has the same semantics as runtime.RaceEnable.
+//
+//go:nosplit
 func RaceEnable() {
 	runtime.RaceEnable()
 }
 
 // RaceAcquire has the same semantics as runtime.RaceAcquire.
+//
+//go:nosplit
 func RaceAcquire(addr unsafe.Pointer) {
 	runtime.RaceAcquire(addr)
 }
 
 // RaceRelease has the same semantics as runtime.RaceRelease.
+//
+//go:nosplit
 func RaceRelease(addr unsafe.Pointer) {
 	runtime.RaceRelease(addr)
 }
 
 // RaceReleaseMerge has the same semantics as runtime.RaceReleaseMerge.
+//
+//go:nosplit
 func RaceReleaseMerge(addr unsafe.Pointer) {
 	runtime.RaceReleaseMerge(addr)
 }
