@@ -107,3 +107,32 @@ type aliasReceiver struct {
 type aliasRedundantDeep struct { // +checklocksfail=is redundant
 	rc aliasReceiver
 }
+
+// +checklocksalias:inner.mu=mu
+type aliasRWOuter struct {
+	mu    sync.RWMutex
+	inner struct{ mu *sync.RWMutex }
+}
+
+// +checklocks:mu
+func aliasRequireWrite(mu *sync.RWMutex) {}
+
+// +checklocksread:mu
+func aliasRequireRead(mu *sync.RWMutex) {}
+
+// A read lock must retain its mode when reached through a type alias.
+// +checklocksread:a.mu
+func testAliasReadMode(a *aliasRWOuter) {
+	aliasRequireRead(a.inner.mu)
+	aliasRequireWrite(a.inner.mu) // +checklocksfail=must hold mu exclusively
+}
+
+// +checklocks:a.mu
+func testAliasWriteMode(a *aliasRWOuter) {
+	aliasRequireRead(a.inner.mu)
+	aliasRequireWrite(a.inner.mu)
+}
+
+func testAliasUnlocked(a *aliasRWOuter) {
+	aliasRequireRead(a.inner.mu) // +checklocksfail=must hold mu non-exclusively
+}
