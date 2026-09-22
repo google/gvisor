@@ -79,6 +79,14 @@ fi
 # Tag the given commit (annotated, to record the committer). Note that the tag
 # here is applied as a force, in case the tag already exists and is the same.
 declare -r tag="release-${release}"
+
+# Refuse to restage a published release. The pipeline would reject it, but
+# only after leaving the new staging tag behind.
+if [[ -n "$(git ls-remote origin "refs/tags/${tag}")" ]]; then
+  echo "error: ${tag} is already published."
+  exit 1
+fi
+
 git tag -f -F "${message_file}" -a "${tag}" "${commit}"
 
 # Push under a staging name; the release pipeline publishes the real tag once
