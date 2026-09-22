@@ -203,6 +203,10 @@ The project maintains the following channels:
     project, subject to the [security disclosure](#security-disclosure) policy
     below. It is private so that vulnerabilities can be fixed before they are
     disclosed publicly.
+*   [GitHub security advisories](https://github.com/google/gvisor/security/advisories):
+    **private** vulnerability reporting via GitHub. Reports are visible only to
+    the reporter and the Security Response Team until disclosed, subject to the
+    [security disclosure](#security-disclosure) policy below.
 *   [gvisor-syzkaller](mailto:gvisor-syzkaller@googlegroups.com): **private**
     syzkaller bug tracking list. It is private because automated fuzzing reports
     may contain undisclosed vulnerabilities. Access is not limited to
@@ -235,8 +239,9 @@ disclosure process described below.
 ### Security disclosure
 
 Security issues reach the team either through external reports to the security
-list or through internal project audits. Access to the list and to audit results
-is limited to the Security Response Team.
+list or GitHub security advisories, or through internal project audits. Access
+to the list, to non-public advisories, and to audit results is limited to the
+Security Response Team.
 
 Once the team becomes aware of a potential security issue, they will assess the
 scope and potential impact. If reported externally, they will determine a
