@@ -32,6 +32,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,6 +136,11 @@ func IsRunningWithNetRaw() bool {
 // IsRunningWithOverlay returns the relevant command line flag.
 func IsRunningWithOverlay() bool {
 	return *isRunningWithOverlay
+}
+
+// RunscPath returns the relevant command line flag.
+func RunscPath() string {
+	return *runscPath
 }
 
 // ImageByName mangles the image name used locally. This depends on the image
@@ -316,6 +322,18 @@ func Measure(b *testing.B, fn func()) time.Duration {
 	defer b.StopTimer()
 	fn()
 	return time.Since(start)
+}
+
+// ReportPercentiles sorts the recorded iteration durations and reports p50 and p90 metrics.
+func ReportPercentiles(b *testing.B, samples []time.Duration) {
+	if len(samples) == 0 {
+		return
+	}
+	slices.Sort(samples)
+	for _, p := range []int{50, 90} {
+		idx := (len(samples) - 1) * p / 100
+		b.ReportMetric(float64(samples[idx].Nanoseconds()), fmt.Sprintf("p%d.ns", p))
+	}
 }
 
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
