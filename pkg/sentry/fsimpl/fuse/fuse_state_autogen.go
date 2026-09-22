@@ -44,6 +44,7 @@ func (conn *connection) StateFields() []string {
 		"bigWrites",
 		"dontMask",
 		"noOpen",
+		"noCreate",
 	}
 }
 
@@ -86,6 +87,7 @@ func (conn *connection) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(27, &conn.bigWrites)
 	stateSinkObject.Save(28, &conn.dontMask)
 	stateSinkObject.Save(29, &conn.noOpen)
+	stateSinkObject.Save(30, &conn.noCreate)
 }
 
 // +checklocksignore
@@ -118,6 +120,7 @@ func (conn *connection) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(27, &conn.bigWrites)
 	stateSourceObject.Load(28, &conn.dontMask)
 	stateSourceObject.Load(29, &conn.noOpen)
+	stateSourceObject.Load(30, &conn.noCreate)
 	stateSourceObject.LoadValue(2, new(bool), func(y any) { conn.loadInitializedChan(ctx, y.(bool)) })
 	stateSourceObject.LoadValue(4, new(int), func(y any) { conn.loadFullQueueCh(ctx, y.(int)) })
 	stateSourceObject.AfterLoad(func() { conn.afterLoad(ctx) })
