@@ -248,17 +248,28 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		}
 
 	case DmaInvokeWrite:
-		// Legacy write-path REG_MR carries the guest MR address in its CORE_IN
-		// blob; mirror it just like the modern REG_MR method. Other write
-		// commands need no DMA handling and are forwarded opaquely.
-		mp, err := fd.prepareInvokeWriteRegMR(t, attrs, staged)
-		if err != nil {
-			log.Warningf("rdmaproxy: INVOKE_WRITE REG_MR page mirroring: %v", err)
-			return 0, err
-		}
-		if mp != nil {
-			mrMirror = mp
-			dmaCleanup.Add(func() { mp.Release(t) })
+		// The generic loop does not vet the WRITE_CMD value; gate on it here.
+		// REG_MR mirrors its guest pages, DEREG_MR releases its mirror
+		// post-call, allowlisted commands forward as-is, and the rest are
+		// rejected.
+		cmd := invokeWriteCmd(attrs)
+		switch classifyInvokeWrite(cmd) {
+		case invokeWriteRegMR:
+			mp, err := fd.prepareInvokeWriteRegMR(t, staged)
+			if err != nil {
+				log.Warningf("rdmaproxy: INVOKE_WRITE REG_MR page mirroring: %v", err)
+				return 0, err
+			}
+			if mp != nil {
+				mrMirror = mp
+				dmaCleanup.Add(func() { mp.Release(t) })
+			}
+		case invokeWriteDeregMR:
+			// Mirror released post-call once the host reports success.
+		case invokeWriteOpaque:
+		default: // invokeWriteRejected
+			log.Warningf("rdmaproxy: unsupported INVOKE_WRITE cmd=%#x", cmd)
+			return 0, linuxerr.EINVAL
 		}
 	}
 
@@ -470,12 +481,9 @@ func invokeWriteCmd(attrs []ib.UverbsAttr) uint32 {
 // prepareInvokeWriteRegMR mirrors the guest MR pages for a legacy write-path
 // REG_MR (the guest start/length live in the CORE_IN ib_uverbs_reg_mr blob,
 // which the generic loop already copied into a sentry buffer). It rewrites the
-// start field in that buffer to the sentry-side address. Returns nil for any
-// non-REG_MR write command or a zero-length registration.
-func (fd *uverbsFD) prepareInvokeWriteRegMR(t *kernel.Task, attrs []ib.UverbsAttr, staged map[uint16][]byte) (*MirroredPages, error) {
-	if invokeWriteCmd(attrs) != ib.IB_USER_VERBS_CMD_REG_MR {
-		return nil, nil
-	}
+// start field in that buffer to the sentry-side address. Returns nil for a
+// zero-length registration.
+func (fd *uverbsFD) prepareInvokeWriteRegMR(t *kernel.Task, staged map[uint16][]byte) (*MirroredPages, error) {
 	var cmd ib.UverbsRegMR
 	coreIn := staged[ib.UVERBS_ATTR_CORE_IN]
 	if coreIn == nil || len(coreIn) < cmd.SizeBytes() {
