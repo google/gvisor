@@ -287,16 +287,37 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 
 HOST_KERNEL ?= $(shell uname -r)
 
-# `make syscall-tests` runs all system call tests.
+# To run all system call tests:
+#   make syscall-tests
 # To run a single syscall test:
 #   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared
 # To run a single syscall test without caching:
 #   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared OPTIONS=--nocache_test_results
 # To run multiple specific syscall tests:
 #   make syscall-tests TARGETS="//test/syscalls:signalfd_test_runsc_systrap_shared //test/syscalls:link_test_runsc_systrap_shared"
+# To run a single syscall test with the lockdep lock-order checker (use
+# BAZEL_OPTIONS, not OPTIONS, so the runtime under test is rebuilt):
+#   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared BAZEL_OPTIONS=--config=lockdep OPTIONS=--nocache_test_results
+# To find the boot log of a run (e.g. to read a sentry panic). TEST= is a
+# substring of the test name, so a prefix like "signalfd" matches
+# signalfd_test_runsc_systrap_shared:
+#   make syscall-test-boot-log TEST=signalfd
+# To run a native (non-runsc) test's root cases as real root on the host
+# (sudo make syscall-tests strips privileges, so use the sudo rule; ARGS are
+# gtest flags):
+#   make sudo TARGETS=//test/syscalls/linux:chown_test ARGS='--gtest_filter=*Root*'
 syscall-tests: $(RUNTIME_BIN)
 	@$(call test,$(OPTIONS) --test_env=RUNTIME=$(RUNTIME_BIN) --test_env=GVISOR_SIDECAR_BINARIES_DIR=$(RUNTIME_DIR)/gvisor-bin --test_env=HOST_KERNEL=$(HOST_KERNEL) --cxxopt=-Werror $(PARTITIONS) $(if $(TARGETS),-- $(TARGETS),test/syscalls/... test/rtnetlink/...))
 .PHONY: syscall-tests
+
+# `make syscall-test-boot-log` prints the newest runsc boot log written by a
+# syscall test, so you can inspect a sentry panic or crash. Optionally filter by
+# TEST=, a substring of the test name, e.g.
+# `make syscall-test-boot-log TEST=uidgid`.
+syscall-test-boot-log: ## Print the path to the newest runsc boot log. Usage: make syscall-test-boot-log [TEST=<name>].
+	@find $(HOME)/.cache/bazel/*/*/execroot/_main/bazel-out/*/testlogs/test/syscalls/*$(TEST)*/test.outputs \
+	  -name 'runsc.log.*.boot.txt' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-
+.PHONY: syscall-test-boot-log
 
 packetimpact-tests:
 	@$(call test,--jobs=HOST_CPUS*3 --local_test_jobs=HOST_CPUS*3 //test/packetimpact/tests:all_tests)
