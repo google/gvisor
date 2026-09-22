@@ -933,7 +933,7 @@ TEST(WaitTest, NonConsumingWaitPrefersGroupExitStatus) {
     }
   }
 
-  char thread_stack[65536];
+  alignas(16) char thread_stack[65536];
   int group_status_cnt = 0;
   int thread_status_cnt = 0;
   constexpr int kThreadStatus = 42;
