@@ -264,19 +264,13 @@ TEST(MemfdTest, SealGrowPartialWriteTruncated) {
   // 3/4 page would require growing the file.
   const std::vector<char> buf(kPageSize);
 
-  // TODO(b/527998184): Determine what Linux change causes us to see EPERM.
-  // gVisor should evolve to match the latest Linux behavior.
-  bool is_new_linux = false;
+  // TODO(b/565008812): Starting in Linux 6.12, generic_perform_write() returns
+  // EPERM when shmem large folios are enabled. Consider aligning gVisor.
   if (!IsRunningOnGvisor()) {
-    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major > 6 || (version.major == 6 && version.minor >= 12)) {
-      is_new_linux = true;
-    }
-  }
-
-  if (is_new_linux) {
+    // Native Linux may return EPERM starting in 6.12.
     EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
-                SyscallFailsWithErrno(EPERM));
+                ::testing::AnyOf(SyscallSucceedsWithValue(kPageSize / 4),
+                                 SyscallFailsWithErrno(EPERM)));
   } else {
     EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(kPageSize / 4));
