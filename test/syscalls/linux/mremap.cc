@@ -325,6 +325,7 @@ TEST_P(MremapParamTest, Fixed_ShrinkingAcrossVMAs) {
   Mapping const dst =
       ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(2 * kPageSize, PROT_NONE, GetParam()));
 
+  KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
   const auto rest = [&] {
     // Unlike flags=0, MREMAP_FIXED requires that [old_address,
     // old_address+new_size) only spans a single vma.
@@ -336,12 +337,21 @@ TEST_P(MremapParamTest, Fixed_ShrinkingAcrossVMAs) {
 
     TEST_CHECK(IsMapped(src.addr()));
     TEST_CHECK(IsMapped(src.addr() + kPageSize));
-    // Despite failing, mremap should have unmapped [old_address+new_size,
-    // old_address+old_size) (i.e. the third page).
-    TEST_CHECK(!IsMapped(src.addr() + 2 * kPageSize));
-    // Despite failing, mremap should have unmapped the destination pages.
-    TEST_CHECK(!IsMapped(dst.addr()));
-    TEST_CHECK(!IsMapped(dst.addr() + kPageSize));
+
+    if (IsRunningOnGvisor() || version.major < 6 ||
+        (version.major == 6 && version.minor <= 16)) {
+      // The following checks apply only to Linux <= 6.16, and gVisor
+      // which matches the old Linux behavior.
+      //
+      // See Linux commit a85dc37186a5.
+
+      // Despite failing, mremap should have unmapped [old_address+new_size,
+      // old_address+old_size) (i.e. the third page).
+      TEST_CHECK(!IsMapped(src.addr() + 2 * kPageSize));
+      // Despite failing, mremap should have unmapped the destination pages.
+      TEST_CHECK(!IsMapped(dst.addr()));
+      TEST_CHECK(!IsMapped(dst.addr() + kPageSize));
+    }
   };
 
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
