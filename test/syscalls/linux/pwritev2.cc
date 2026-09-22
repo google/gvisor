@@ -319,7 +319,7 @@ TEST(Pwritev2Test, InvalidFlag) {
   iov.iov_len = sizeof(buf);
 
   EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1,
-                       /*offset=*/0, /*flags=*/0xF0),
+                       /*offset=*/0, /*flags=*/1 << 24),
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
