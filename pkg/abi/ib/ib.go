@@ -302,9 +302,30 @@ const (
 // include/uapi/rdma/ib_user_verbs.h), as carried by the INVOKE_WRITE
 // WRITE_CMD attribute.
 const (
-	IB_USER_VERBS_CMD_REG_MR   = 9
-	IB_USER_VERBS_CMD_DEREG_MR = 13
+	IB_USER_VERBS_CMD_QUERY_DEVICE  = 1
+	IB_USER_VERBS_CMD_QUERY_PORT    = 2
+	IB_USER_VERBS_CMD_ALLOC_PD      = 3
+	IB_USER_VERBS_CMD_DEALLOC_PD    = 4
+	IB_USER_VERBS_CMD_CREATE_AH     = 5
+	IB_USER_VERBS_CMD_DESTROY_AH    = 8
+	IB_USER_VERBS_CMD_REG_MR        = 9
+	IB_USER_VERBS_CMD_DEREG_MR      = 13
+	IB_USER_VERBS_CMD_ALLOC_MW      = 14
+	IB_USER_VERBS_CMD_DEALLOC_MW    = 16
+	IB_USER_VERBS_CMD_REQ_NOTIFY_CQ = 23
+	IB_USER_VERBS_CMD_QUERY_QP      = 25
+	IB_USER_VERBS_CMD_MODIFY_QP     = 26
+	IB_USER_VERBS_CMD_ATTACH_MCAST  = 30
+	IB_USER_VERBS_CMD_DETACH_MCAST  = 31
+	IB_USER_VERBS_CMD_MODIFY_SRQ    = 33
+	IB_USER_VERBS_CMD_QUERY_SRQ     = 34
+	IB_USER_VERBS_CMD_CLOSE_XRCD    = 38
+	IB_USER_VERBS_CMD_OPEN_QP       = 40
 )
+
+// IB_USER_VERBS_CMD_FLAG_EXTENDED is OR'd into the WRITE_CMD value to select the
+// extended (_EX) form of a command (include/uapi/rdma/ib_user_verbs.h).
+const IB_USER_VERBS_CMD_FLAG_EXTENDED = 0x80000000
 
 // UverbsRegMR is struct ib_uverbs_reg_mr, the legacy write-path REG_MR
 // command (include/uapi/rdma/ib_user_verbs.h). Variable-length driver data
