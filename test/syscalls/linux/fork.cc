@@ -469,7 +469,8 @@ TEST(CloneTest, NewUserMountNamespace) {
       << "status = " << status;
 }
 
-// Clone with CLONE_SETTLS and a non-canonical TLS address is rejected.
+// Clone with CLONE_SETTLS and a non-canonical TLS address is rejected only on
+// x86-64 due to canonical address checks.
 TEST(CloneTest, NonCanonicalTLS) {
   constexpr uintptr_t kNonCanonical = 1ull << 63;
 
@@ -493,7 +494,7 @@ TEST(CloneTest, NonCanonicalTLS) {
 #elif defined(__aarch64__) || defined(__riscv)
   EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
                       kNonCanonical, nullptr),
-              SyscallFailsWithErrno(EPERM));
+              SyscallSucceeds());
 #endif
 }
 
