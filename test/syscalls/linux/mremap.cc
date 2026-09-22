@@ -336,12 +336,20 @@ TEST_P(MremapParamTest, Fixed_ShrinkingAcrossVMAs) {
 
     TEST_CHECK(IsMapped(src.addr()));
     TEST_CHECK(IsMapped(src.addr() + kPageSize));
-    // Despite failing, mremap should have unmapped [old_address+new_size,
-    // old_address+old_size) (i.e. the third page).
-    TEST_CHECK(!IsMapped(src.addr() + 2 * kPageSize));
-    // Despite failing, mremap should have unmapped the destination pages.
-    TEST_CHECK(!IsMapped(dst.addr()));
-    TEST_CHECK(!IsMapped(dst.addr() + kPageSize));
+    bool unmaps_on_error = IsRunningOnGvisor();
+    if (!unmaps_on_error) {
+      auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+      unmaps_on_error =
+          version.major < 6 || (version.major == 6 && version.minor < 15);
+    }
+    if (unmaps_on_error) {
+      // Prior to Linux 6.15, mremap unmapped [old_address+new_size,
+      // old_address+old_size) and the destination pages before checking VMA
+      // boundaries.
+      TEST_CHECK(!IsMapped(src.addr() + 2 * kPageSize));
+      TEST_CHECK(!IsMapped(dst.addr()));
+      TEST_CHECK(!IsMapped(dst.addr() + kPageSize));
+    }
   };
 
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
