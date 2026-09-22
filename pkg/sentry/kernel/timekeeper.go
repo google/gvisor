@@ -720,17 +720,15 @@ func (timer *timekeeperTimer) Stop() bool {
 
 // Reset implements tcpip.Timer.Reset.
 func (timer *timekeeperTimer) Reset(d time.Duration) {
+	now := timer.tk.pausableClock.Now()
 	nsec, err := timer.tk.GetTime(sentrytime.Monotonic)
 	if err != nil {
 		panic(fmt.Sprintf("timekeeperTimer.Reset: GetTime(Monotonic): %v", err))
 	}
-	next := ktime.FromNanoseconds(nsec).Add(d)
-	if d > 0 {
-		now := timer.tk.pausableClock.Now()
-		if !next.After(now) {
-			log.BugTracebackfOnce("timekeeperTimer.Reset(%v): deadline %v <= pausableClock %v (monotonic time went backwards)", d, next, now)
-		}
+	if ktime.FromNanoseconds(nsec).Before(now) {
+		log.BugTracebackfOnce("timekeeperTimer.Reset(%v): monotonic time %v < pausableClock %v (monotonic time went backwards)", d, nsec, now)
 	}
+	next := ktime.FromNanoseconds(nsec).Add(d)
 	timer.Set(ktime.Setting{
 		Enabled: true,
 		Next:    next,
