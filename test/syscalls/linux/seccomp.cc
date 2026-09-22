@@ -558,7 +558,7 @@ TEST(SeccompTest, ProgramTooLargeIsRejected) {
 
 TEST(SeccompTest, SeccompValidatesAllFilterFlags) {
   // LINT.IfChange
-  SKIP_IF(!IsRunningOnGvisor() || GvisorPlatform() == Platform::kStarnix);
+  SKIP_IF(!IsRunningOnGvisor());
   TEST_PCHECK(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0);
   struct sock_filter filter[] = {
       BPF_STMT(BPF_LD | BPF_ABS | BPF_W, 0),
