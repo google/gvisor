@@ -178,7 +178,10 @@ func (r *runExecveAfterExecveCredsLock) execute(t *Task) taskRunState {
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
 		// Retain the first executable file that is opened (which may open
 		// multiple executable files while resolving interpreter scripts).
-		if r.executable == nil {
+		if r.executable != nil {
+			// Already opened by execveat; match the AfterOpen path.
+			r.pathname = r.executable.MappedName(t)
+		} else {
 			loadArgs.AfterOpen = func(f *vfs.FileDescription) {
 				if r.executable == nil {
 					f.IncRef()
