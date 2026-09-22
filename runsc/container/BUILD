@@ -145,6 +145,7 @@ go_test(
     library = ":container",
     tags = [
         "manual",
+        "notap",
         "requires-kvm",
     ],
     deps = [

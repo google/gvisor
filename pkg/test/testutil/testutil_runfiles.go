@@ -40,6 +40,15 @@ func FindFile(path string) (string, error) {
 			break
 		}
 		if len(dir) == 0 {
+			// If we couldn't find __main__, try to find the runfiles directory
+			// alongside the executable binary.
+			if exe, err := os.Executable(); err == nil {
+				runfilesRoot := filepath.Join(exe+".runfiles", "_main")
+				if info, err := os.Stat(runfilesRoot); err == nil && info.IsDir() {
+					root = runfilesRoot
+					break
+				}
+			}
 			return "", fmt.Errorf("directory __main__ not found in %q", wd)
 		}
 		// Remove ending slash to loop around.
