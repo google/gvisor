@@ -17,9 +17,15 @@
 
 package linux
 
-// Only 4K page size is supported on arm64. In this case, TASK_SIZE can
-// be one of three values, corresponding to 3-level, 4-level and
-// 5-level paging.
+// TASK_SIZE on arm64 depends on the kernel's configured VA width rather than
+// on the page size, so TaskSize probes for it at runtime. These three values
+// correspond to 3-level, 4-level and 5-level paging with a 4K granule, and are
+// also the values a 64K granule reaches for VA_BITS of 48 and 52.
+//
+// TODO(b/259222138): a 64K granule can additionally be configured with
+// VA_BITS=42, which is missing here; on such a kernel the probe falls back to
+// 1<<39, which is conservative but wastes address space. Adding it would also
+// require arch.ConfigureAddressSpace to accept it.
 //
 // The array has to be sorted in decreasing order.
 var feasibleTaskSizes = []uintptr{1 << 52, 1 << 48, 1 << 39}

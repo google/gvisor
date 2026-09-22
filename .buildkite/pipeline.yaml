@@ -421,6 +421,14 @@ steps:
     agents:
       arch: "arm64"
       queue: "arm64"
+  - <<: *common
+    <<: *source_test
+    label: ":muscle: System call tests (ARM64 64K)"
+    command: "make BAZEL_OPTIONS='--test_tag_filters=-allsave,runsc_ptrace,runsc_systrap --define=pagesize=64k' syscall-tests"
+    parallelism: 10
+    agents:
+      arch: "arm64"
+      queue: "arm64-64k"
   # Against Linux release candidates on AMD64.
   - <<: *common
     <<: *source_test_continuous
