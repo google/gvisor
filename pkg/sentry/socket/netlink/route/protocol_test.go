@@ -503,9 +503,12 @@ func TestParseForDestination(t *testing.T) {
 	})
 	msgNoDst.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(2))
 
-	_, _, err = parseForDestination(msgNoDst)
-	if err != syserr.ErrInvalidArgument {
-		t.Errorf("got err = %v, want ErrInvalidArgument", err)
+	_, gotDst, err = parseForDestination(msgNoDst)
+	if err != nil {
+		t.Fatalf("parseForDestination without RTA_DST failed: %v", err)
+	}
+	if !bytes.Equal(gotDst, net.IPv4zero.To4()) {
+		t.Errorf("got dst = %v, want %v", gotDst, net.IPv4zero.To4())
 	}
 
 	// 4. Empty message.
@@ -610,6 +613,16 @@ func TestParseForDestinationFamily(t *testing.T) {
 			wantErr: syserr.ErrNotSupported,
 		},
 		{
+			name:    "ipv4 without a destination",
+			family:  linux.AF_INET,
+			wantDst: net.IPv4zero.To4(),
+		},
+		{
+			name:    "ipv6 without a destination",
+			family:  linux.AF_INET6,
+			wantDst: net.IPv6zero,
+		},
+		{
 			name:    "unspecified family without a destination",
 			family:  linux.AF_UNSPEC,
 			wantErr: syserr.ErrNotSupported,
@@ -640,6 +653,70 @@ func TestParseForDestinationFamily(t *testing.T) {
 			}
 			if !bytes.Equal(gotDst, test.wantDst) {
 				t.Errorf("got dst = %v, want %v", gotDst, test.wantDst)
+			}
+		})
+	}
+}
+
+func TestLoopbackRoute(t *testing.T) {
+	lo := inet.Interface{Flags: linux.IFF_UP | linux.IFF_LOOPBACK}
+	eth := inet.Interface{Flags: linux.IFF_UP}
+
+	tests := []struct {
+		name       string
+		interfaces map[int32]inet.Interface
+		dst        []byte
+		wantOK     bool
+	}{
+		{
+			name:       "ipv4 zero address",
+			interfaces: map[int32]inet.Interface{3: lo},
+			dst:        net.IPv4zero.To4(),
+			wantOK:     true,
+		},
+		{
+			name:       "ipv6 zero address",
+			interfaces: map[int32]inet.Interface{3: lo},
+			dst:        net.IPv6zero,
+		},
+		{
+			name:       "ipv4 address",
+			interfaces: map[int32]inet.Interface{3: lo},
+			dst:        net.ParseIP("192.168.1.1").To4(),
+		},
+		{
+			name:       "no loopback interface",
+			interfaces: map[int32]inet.Interface{2: eth},
+			dst:        net.IPv4zero.To4(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stack := inet.NewTestStack()
+			stack.InterfacesMap = test.interfaces
+
+			rt, ok := loopbackRoute(stack, test.dst)
+			if ok != test.wantOK {
+				t.Fatalf("got ok = %t, want %t", ok, test.wantOK)
+			}
+			if !test.wantOK {
+				return
+			}
+			if rt.Type != linux.RTN_LOCAL {
+				t.Errorf("got Type = %d, want %d", rt.Type, linux.RTN_LOCAL)
+			}
+			if rt.OutputInterface != 3 {
+				t.Errorf("got OutputInterface = %d, want 3", rt.OutputInterface)
+			}
+			if rt.DstLen != 32 {
+				t.Errorf("got DstLen = %d, want 32", rt.DstLen)
+			}
+			if !bytes.Equal(rt.DstAddr, test.dst) {
+				t.Errorf("got DstAddr = %v, want %v", rt.DstAddr, test.dst)
+			}
+			if (rt.Flags & linux.RTM_F_CLONED) == 0 {
+				t.Errorf("expected RTM_F_CLONED flag to be set, got %x", rt.Flags)
 			}
 		})
 	}

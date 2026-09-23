@@ -1661,12 +1661,170 @@ TEST(NetlinkRouteTest, GetRouteUnreachable) {
   EXPECT_TRUE(errorFound);
 }
 
+TEST(NetlinkRouteTest, GetRouteZeroDestination) {
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in_addr sin_addr;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET;
+  req.rtm.rtm_dst_len = 32;
+  req.rtm.rtm_src_len = 0;
+  req.rtm.rtm_tos = 0;
+  req.rtm.rtm_table = RT_TABLE_UNSPEC;
+  req.rtm.rtm_protocol = RTPROT_UNSPEC;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNSPEC;
+
+  req.nla.nla_len = 8;
+  req.nla.nla_type = RTA_DST;
+  inet_aton("0.0.0.0", &req.sin_addr);
+
+  bool oifFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
+      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+        ASSERT_EQ(hdr->nlmsg_type, RTM_NEWROUTE);
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+
+        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct rtmsg)));
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+
+        EXPECT_EQ(msg->rtm_family, AF_INET);
+        EXPECT_EQ(msg->rtm_type, RTN_LOCAL);
+
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_OIF) {
+            EXPECT_EQ(*reinterpret_cast<const int*>(RTA_DATA(attr)),
+                      loopback_link.index);
+            oifFound = true;
+          }
+        }
+      }));
+  EXPECT_TRUE(oifFound);
+}
+
 // NetlinkRouteTest with a single parameter that must be AF_INET or AF_INET6.
 using NetlinkRouteIpInvariantTest = ::testing::TestWithParam<int>;
 
 INSTANTIATE_TEST_SUITE_P(NetlinkRouteIpv4AndIpv6Tests,
                          NetlinkRouteIpInvariantTest,
                          ::testing::Values(AF_INET, AF_INET6));
+
+TEST_P(NetlinkRouteIpInvariantTest, GetRouteNoDestination) {
+  int family = GetParam();
+  int dst_len;
+  switch (family) {
+    case AF_INET:
+      dst_len = sizeof(struct in_addr);
+      break;
+    case AF_INET6:
+      dst_len = sizeof(struct in6_addr);
+      break;
+    default:
+      FAIL() << "address family must be AF_INET or AF_INET6";
+  }
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in6_addr dst;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+
+  req.rtm.rtm_family = family;
+  req.rtm.rtm_dst_len = dst_len * 8;
+  req.rtm.rtm_src_len = 0;
+  req.rtm.rtm_tos = 0;
+  req.rtm.rtm_table = RT_TABLE_UNSPEC;
+  req.rtm.rtm_protocol = RTPROT_UNSPEC;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNSPEC;
+
+  req.nla.nla_len = sizeof(req.nla) + dst_len;
+  req.nla.nla_type = RTA_DST;
+
+  struct reply {
+    uint16_t type = 0;
+    int error = 0;
+    int oif = 0;
+    std::string dst;
+  };
+
+  auto get_route = [&](size_t msg_len, uint32_t seq, struct reply* out) {
+    req.hdr.nlmsg_len = msg_len;
+    req.hdr.nlmsg_seq = seq;
+    ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
+        fd, &req, msg_len, [&](const struct nlmsghdr* hdr) {
+          EXPECT_EQ(hdr->nlmsg_seq, seq);
+          EXPECT_EQ(hdr->nlmsg_pid, port);
+          out->type = hdr->nlmsg_type;
+
+          if (hdr->nlmsg_type == NLMSG_ERROR) {
+            ASSERT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+            const struct nlmsgerr* msg =
+                reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+            out->error = msg->error;
+            return;
+          }
+
+          ASSERT_EQ(hdr->nlmsg_type, RTM_NEWROUTE);
+          const struct rtmsg* msg =
+              reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+          EXPECT_EQ(msg->rtm_family, family);
+
+          int len = RTM_PAYLOAD(hdr);
+          for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+               attr = RTA_NEXT(attr, len)) {
+            if (attr->rta_type == RTA_DST) {
+              out->dst.assign(reinterpret_cast<const char*>(RTA_DATA(attr)),
+                              RTA_PAYLOAD(attr));
+            } else if (attr->rta_type == RTA_OIF) {
+              out->oif = *reinterpret_cast<const int*>(RTA_DATA(attr));
+            }
+          }
+        }));
+  };
+
+  struct reply no_dst;
+  get_route(sizeof(req.hdr) + sizeof(req.rtm), kSeq, &no_dst);
+
+  struct reply zero_dst;
+  get_route(sizeof(req.hdr) + sizeof(req.rtm) + sizeof(req.nla) + dst_len,
+            kSeq + 1, &zero_dst);
+
+  EXPECT_EQ(no_dst.type, zero_dst.type);
+  EXPECT_EQ(no_dst.error, zero_dst.error);
+  EXPECT_EQ(no_dst.oif, zero_dst.oif);
+  EXPECT_EQ(no_dst.dst, zero_dst.dst);
+}
 
 TEST_P(NetlinkRouteIpInvariantTest, NewRoute) {
   // CAP_NET_ADMIN is required to modify the routing table.
