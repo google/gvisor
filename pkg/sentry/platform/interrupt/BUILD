@@ -11,7 +11,7 @@ go_library(
         "interrupt.go",
     ],
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/sync"],
+    deps = ["//pkg/atomicbitops"],
 )
 
 go_test(

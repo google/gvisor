@@ -143,7 +143,7 @@ func TestSwitchThreadIDVisibility(t *testing.T) {
 		ac.SetReturn(0) // Emulate the syscall return value.
 
 		if i == 0 {
-			startSampler(pctx.sharedContext.shared)
+			startSampler(pctx.sharedContext.Load().shared)
 		}
 	}
 

@@ -227,9 +227,11 @@ func (k *KVM) PreemptCPU(cpu int32) error {
 
 // NewContext returns an interruptible context.
 func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
-	return &platformContext{
+	c := &platformContext{
 		machine: k.machine,
 	}
+	c.interrupt.Dst = c
+	return c
 }
 
 type constructor struct{}
