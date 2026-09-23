@@ -88,6 +88,14 @@ type Options struct {
 	// EnableHibernateServer indicates if the hibernate server should be started.
 	EnableHibernateServer bool `toml:"enable_hibernate_server" json:"enableHibernateServer"`
 
+	// RestoreBackground passes --background to `runsc restore`, which returns
+	// once checkpoint metadata is loaded and pages in the rest on demand. It has
+	// no effect on a compressed checkpoint.
+	//
+	// It applies to every restore driven by this config; a caller needing it to
+	// differ points each create request at its own config file.
+	RestoreBackground bool `toml:"restore_background" json:"restoreBackground"`
+
 	// RunscConfig is a key/value map of all runsc flags.
 	RunscConfig map[string]string `toml:"runsc_config" json:"runscConfig"`
 }
