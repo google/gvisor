@@ -329,6 +329,31 @@ func (cf *cgroupKill) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(0, &cf.c)
 }
 
+func (cf *cgroupFreeze) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroup2fs.cgroupFreeze"
+}
+
+func (cf *cgroupFreeze) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (cf *cgroupFreeze) beforeSave() {}
+
+// +checklocksignore
+func (cf *cgroupFreeze) StateSave(stateSinkObject state.Sink) {
+	cf.beforeSave()
+	stateSinkObject.Save(0, &cf.c)
+}
+
+func (cf *cgroupFreeze) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (cf *cgroupFreeze) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &cf.c)
+}
+
 func (cf *cgroupEvents) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroup2fs.cgroupEvents"
 }
@@ -387,6 +412,9 @@ func (c *cgroup) StateFields() []string {
 		"maxDepth",
 		"nrDescendants",
 		"killSeq",
+		"freezeRequested",
+		"nrFreezeCredits",
+		"nrChildrenWithCredits",
 		"xattrs",
 		"bpf",
 	}
@@ -426,8 +454,11 @@ func (c *cgroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(24, &c.maxDepth)
 	stateSinkObject.Save(25, &c.nrDescendants)
 	stateSinkObject.Save(26, &c.killSeq)
-	stateSinkObject.Save(27, &c.xattrs)
-	stateSinkObject.Save(28, &c.bpf)
+	stateSinkObject.Save(27, &c.freezeRequested)
+	stateSinkObject.Save(28, &c.nrFreezeCredits)
+	stateSinkObject.Save(29, &c.nrChildrenWithCredits)
+	stateSinkObject.Save(30, &c.xattrs)
+	stateSinkObject.Save(31, &c.bpf)
 }
 
 func (c *cgroup) afterLoad(context.Context) {}
@@ -460,8 +491,11 @@ func (c *cgroup) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(24, &c.maxDepth)
 	stateSourceObject.Load(25, &c.nrDescendants)
 	stateSourceObject.Load(26, &c.killSeq)
-	stateSourceObject.Load(27, &c.xattrs)
-	stateSourceObject.Load(28, &c.bpf)
+	stateSourceObject.Load(27, &c.freezeRequested)
+	stateSourceObject.Load(28, &c.nrFreezeCredits)
+	stateSourceObject.Load(29, &c.nrChildrenWithCredits)
+	stateSourceObject.Load(30, &c.xattrs)
+	stateSourceObject.Load(31, &c.bpf)
 	stateSourceObject.LoadValue(21, new(*ctrlSet), func(y any) { c.loadClosestCtrls(ctx, y.(*ctrlSet)) })
 }
 
@@ -1156,6 +1190,7 @@ func init() {
 	state.Register((*cgroupMaxDescendants)(nil))
 	state.Register((*cgroupMaxDepth)(nil))
 	state.Register((*cgroupKill)(nil))
+	state.Register((*cgroupFreeze)(nil))
 	state.Register((*cgroupEvents)(nil))
 	state.Register((*cgroup)(nil))
 	state.Register((*cpu)(nil))

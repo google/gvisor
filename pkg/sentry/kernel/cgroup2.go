@@ -116,6 +116,11 @@ type Cgroup2 interface {
 	// It helps prevent fork()s racing with cgroup.kill.
 	KillSeq() uint64
 
+	// ApplyFreezeCreditDelta adjusts this cgroup's freeze-credit counter
+	// by delta, self-acquiring its lock. Caller must pass the cgroup a
+	// prior applyFreezeSigLocked/resolveFreezeCreditSigLocked returned.
+	ApplyFreezeCreditDelta(ctx context.Context, delta FreezeCreditDelta)
+
 	// Deleted returns true if the cgroup has been deleted.
 	Deleted() bool
 
