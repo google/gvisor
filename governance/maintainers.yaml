@@ -145,7 +145,7 @@ maintainers:
     github: shailend-g
     affiliation: Google
     started: 2025-08-12
-    status: ACTIVE
+    status: HIATUS_SINCE:2026-09-28
   - name: Parth Sarthi
     github: parth-opensrc
     affiliation: Google
