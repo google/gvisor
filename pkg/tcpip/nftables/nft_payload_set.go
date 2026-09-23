@@ -126,6 +126,12 @@ func (op payloadSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	if slices.Equal(regData, payload[offset:offset+op.blen]) {
 		return
 	}
+	// A failed checksum lookup must not modify the packet. Check before the
+	// deferred payload write, which also runs when evaluation returns early.
+	if op.csumType == linux.NFT_PAYLOAD_CSUM_INET && int(op.csumOffset)+2 > len(payload) {
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
+		return
+	}
 
 	// Sets payload data to source register data after checksum updates.
 	defer copy(payload[offset:offset+op.blen], regData)
