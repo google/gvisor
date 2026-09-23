@@ -259,12 +259,8 @@ nogo-tests:
 # pull in all directories in runsc except runsc/container.
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
-#
-# examples/sandboxexec/go:doc_processor_test embeds the doc_processor go_binary
-# via library=, which rules_go rejects (no GoInfo). Re-enable once the example
-# is split into a go_library.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//examples/sandboxexec/go:doc_processor_test -//test/trace:trace_test)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
