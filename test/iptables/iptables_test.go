@@ -38,9 +38,6 @@ func isNFTMode() bool {
 
 // TODO: b/542649081 - Fix and remove skipIfNFTMode.
 func skipIfNFTMode(test TestCase, ipv6 bool) (reason string, skip bool) {
-	if ipv6 {
-		return "IPv6 is not tested in nftables currently", true
-	}
 	switch test.Name() {
 	case
 		// REJECT tests
