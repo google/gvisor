@@ -219,3 +219,21 @@ func initFaultBlocks() {
 }
 
 func archOverrideFaultBlocks() {}
+
+// tcrTGFlags returns the TCR_EL1 translation granule flags (TG0 and TG1)
+// matching the compiled hostarch.PageSize.
+//
+// In ARM64, TCR_EL1 controls the translation granule for both TTBR0 (lower/user
+// space, configured via TG0) and TTBR1 (upper/kernel space, configured via TG1).
+// These must match hostarch.PageSize so the hardware MMU walks the page tables
+// with the level dimensions expected by pkg/ring0/pagetables.
+func tcrTGFlags() uint64 {
+	switch hostarch.PageSize {
+	case 4096:
+		return _TCR_TG0_4K | _TCR_TG1_4K
+	case 65536:
+		return _TCR_TG0_64K | _TCR_TG1_64K
+	default:
+		panic(fmt.Sprintf("unsupported page size: %d", hostarch.PageSize))
+	}
+}
