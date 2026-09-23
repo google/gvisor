@@ -34,7 +34,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -101,7 +103,7 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 	if stack := k.RootNetworkNamespace().Stack(); stack != nil {
 		contents = map[string]kernfs.Inode{
 			"ipv4": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-				"ip_forward":          fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack}),
+				"ip_forward":          fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv4.ProtocolNumber}),
 				"ip_local_port_range": fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
 				"tcp_recovery":        fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
 				"tcp_rmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
@@ -176,6 +178,15 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"ip6frag_time":     fs.newInode(ctx, root, 0444, newStaticFile("60")),
 				"ip_nonlocal_bind": fs.newInode(ctx, root, 0444, newStaticFile("0")),
 				"auto_flowlabels":  fs.newInode(ctx, root, 0444, newStaticFile("1")),
+				"conf": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+					"all": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+						"forwarding": fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv6.ProtocolNumber}),
+					}),
+					// Stub for conf/default/forwarding; doesn't affect behavior.
+					"default": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+						"forwarding": fs.newInode(ctx, root, 0644, &atomicInt32File{val: new(atomicbitops.Int32), min: 0, max: 1}),
+					}),
+				}),
 			}),
 		}
 	}
@@ -436,14 +447,15 @@ func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 }
 
 // ipForwarding implements vfs.WritableDynamicBytesSource for
-// /proc/sys/net/ipv4/ip_forward.
+// /proc/sys/net/ipv4/ip_forward and /proc/sys/net/ipv6/conf/all/forwarding.
 //
 // +stateify savable
 type ipForwarding struct {
 	kernfs.DynamicBytesFile
 
-	stack inet.Stack `state:"wait"`
-	mu    sync.Mutex `state:"nosave"`
+	stack    inet.Stack `state:"wait"`
+	mu       sync.Mutex `state:"nosave"`
+	protocol tcpip.NetworkProtocolNumber
 
 	// enabled is the last value successfully written here, which may differ
 	// from the forwarding state of individual interfaces.
@@ -488,7 +500,7 @@ func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src 
 	enabled := buf[0] != 0
 	ipf.mu.Lock()
 	defer ipf.mu.Unlock()
-	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, enabled); err != nil {
+	if err := ipf.stack.SetForwarding(ipf.protocol, enabled); err != nil {
 		return 0, err
 	}
 	ipf.enabled = enabled

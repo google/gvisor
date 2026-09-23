@@ -28,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -163,13 +165,26 @@ func TestTCPSACKReadback(t *testing.T) {
 	}
 }
 
+type forwardingTestStack struct {
+	*inet.TestStack
+	forwarding map[tcpip.NetworkProtocolNumber]bool
+}
+
+func (s *forwardingTestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	s.forwarding[protocol] = enable
+	return s.TestStack.SetForwarding(protocol, enable)
+}
+
 // TestConfigureIPForwarding tests the implementation of
-// /proc/sys/net/ipv4/ip_forward.
+// /proc/sys/net/ipv4/ip_forward and /proc/sys/net/ipv6/conf/{all,default}/forwarding.
 func TestConfigureIPForwarding(t *testing.T) {
 	ctx := context.Background()
-	s := inet.NewTestStack()
+	s := &forwardingTestStack{
+		TestStack:  inet.NewTestStack(),
+		forwarding: make(map[tcpip.NetworkProtocolNumber]bool),
+	}
 
-	var cases = []struct {
+	cases := []struct {
 		comment string
 		initial bool
 		str     string
@@ -212,21 +227,32 @@ func TestConfigureIPForwarding(t *testing.T) {
 			final:   true,
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.comment, func(t *testing.T) {
-			s.IPForwarding = c.initial
+	for _, proto := range []struct {
+		name     string
+		protocol tcpip.NetworkProtocolNumber
+	}{
+		{name: "IPv4", protocol: ipv4.ProtocolNumber},
+		{name: "IPv6", protocol: ipv6.ProtocolNumber},
+	} {
+		t.Run(proto.name, func(t *testing.T) {
+			for _, c := range cases {
+				t.Run(c.comment, func(t *testing.T) {
+					clear(s.forwarding)
+					s.forwarding[proto.protocol] = c.initial
 
-			file := &ipForwarding{stack: s, enabled: c.initial}
+					file := &ipForwarding{stack: s, protocol: proto.protocol, enabled: c.initial}
 
-			// Write the values.
-			src := usermem.BytesIOSequence([]byte(c.str))
-			if n, err := file.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
-				t.Errorf("file.Write(ctx, nil, %q, 0) = (%d, %v); want (%d, nil)", c.str, n, err, len(c.str))
-			}
+					// Write the values.
+					src := usermem.BytesIOSequence([]byte(c.str))
+					if n, err := file.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
+						t.Errorf("file.Write(ctx, nil, %q, 0) = (%d, %v); want (%d, nil)", c.str, n, err, len(c.str))
+					}
 
-			// Read the values from the stack and check them.
-			if got, want := s.IPForwarding, c.final; got != want {
-				t.Errorf("s.IPForwarding incorrect; got: %v, want: %v", got, want)
+					// Read the values from the stack and check them.
+					if got, want := s.forwarding[proto.protocol], c.final; got != want {
+						t.Errorf("s.forwarding[%v] incorrect; got: %v, want: %v", proto.protocol, got, want)
+					}
+				})
 			}
 		})
 	}
