@@ -322,6 +322,11 @@ const (
 	RTM_F_FIB_MATCH    = 0x2000
 )
 
+// Next hop flags, from uapi/linux/rtnetlink.h.
+const (
+	RTNH_F_ONLINK = 0x4
+)
+
 // Route tables, from uapi/linux/rtnetlink.h.
 const (
 	RT_TABLE_UNSPEC  = 0
