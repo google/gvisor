@@ -1015,9 +1015,6 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 			}
 			route.DstAddr = value
 		case linux.RTA_SRC:
-			if len(value) < 1 {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
 			route.SrcAddr = value
 		case linux.RTA_OIF:
 			oif := nlmsg.BytesView(value)
@@ -1040,31 +1037,48 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 			return tcpip.Route{}, syserr.ErrNotSupported
 		}
 	}
+	var zero []byte
+	switch route.Family {
+	case linux.AF_INET:
+		zero = tcpip.IPv4Zero
+		if route.SrcAddr != nil && len(route.SrcAddr) < header.IPv4AddressSize {
+			return tcpip.Route{}, syserr.ErrRange
+		}
+	case linux.AF_INET6:
+		zero = tcpip.IPv6Zero
+		if route.SrcAddr != nil && len(route.SrcAddr)*8 < int(route.SrcLen) {
+			return tcpip.Route{}, syserr.ErrInvalidArgument
+		}
+		if route.SrcLen != 0 && msg.Header().Type == linux.RTM_NEWROUTE {
+			return tcpip.Route{}, syserr.ErrInvalidArgument
+		}
+	default:
+		return tcpip.Route{}, syserr.ErrNotSupported
+	}
+	if route.DstAddr == nil && route.GatewayAddr == nil {
+		return tcpip.Route{}, syserr.ErrInvalidArgument
+	}
+	if route.GatewayAddr != nil {
+		if len(route.GatewayAddr) < len(zero) {
+			return tcpip.Route{}, syserr.ErrRange
+		}
+		route.GatewayAddr = route.GatewayAddr[:len(zero)]
+	}
 	var dest tcpip.Subnet
 	// When no destination address is provided, the new route might be the default route.
 	if route.DstAddr == nil {
-		if route.GatewayAddr == nil {
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(zero), tcpip.MaskFromBytes(zero))
+		if err != nil {
 			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
-		switch len(route.GatewayAddr) {
-		case header.IPv4AddressSize:
-			subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(tcpip.IPv4Zero), tcpip.MaskFromBytes(tcpip.IPv4Zero))
-			if err != nil {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
-			dest = subnet
-		case header.IPv6AddressSize:
-			subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(tcpip.IPv6Zero), tcpip.MaskFromBytes(tcpip.IPv6Zero))
-			if err != nil {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
-			dest = subnet
-		default:
-			return tcpip.Route{}, syserr.ErrInvalidArgument
-		}
+		dest = subnet
 	} else {
+		dst := make([]byte, len(zero))
+		if copy(dst, route.DstAddr)*8 < int(route.DstLen) {
+			return tcpip.Route{}, syserr.ErrInvalidArgument
+		}
 		dest = tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFromSlice(route.DstAddr),
+			Address:   tcpip.AddrFromSlice(dst),
 			PrefixLen: int(route.DstLen)}.Subnet()
 	}
 
@@ -1072,10 +1086,6 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 		Destination: dest,
 		Gateway:     tcpip.AddrFromSlice(route.GatewayAddr),
 		NIC:         tcpip.NICID(route.OutputInterface),
-	}
-
-	if len(route.SrcAddr) != 0 {
-		localRoute.SourceHint = tcpip.AddrFromSlice(route.SrcAddr)
 	}
 
 	return localRoute, nil
