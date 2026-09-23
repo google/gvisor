@@ -251,10 +251,33 @@ func (i *directfsInode) openHandle(ctx context.Context, flags uint32, d *dentry)
 	// The only way to re-open an FD with different flags is via procfs or
 	// openat(2) from the parent. Procfs does not exist here. So use parent.
 	// TODO(b/431481259): This does not work for deleted files.
+	if d.isDeleted() {
+		return noHandle, unix.ENOENT
+	}
 	flags |= hostOpenFlags
-	openFD, err := unix.Openat(parent.inode.impl.(*directfsInode).controlFD, d.name, int(flags), 0)
+	trunc := flags&unix.O_TRUNC != 0
+	openFlags := flags &^ unix.O_TRUNC
+	openFD, err := unix.Openat(parent.inode.impl.(*directfsInode).controlFD, d.name, int(openFlags), 0)
 	if err != nil {
 		return noHandle, err
+	}
+
+	var stat unix.Statx_t
+	if err := unix.Statx(openFD, "", unix.AT_EMPTY_PATH, unix.STATX_INO, &stat); err != nil {
+		_ = unix.Close(openFD)
+		return noHandle, err
+	}
+
+	if inoKeyFromUnixStatx(&stat) != i.inoKey {
+		_ = unix.Close(openFD)
+		return noHandle, unix.ESTALE
+	}
+
+	if trunc {
+		if err := unix.Ftruncate(openFD, 0); err != nil {
+			_ = unix.Close(openFD)
+			return noHandle, err
+		}
 	}
 	return handle{fd: int32(openFD)}, nil
 }
