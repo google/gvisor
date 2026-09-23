@@ -125,20 +125,21 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 	return entries, info
 }
 
-func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
+func modifyEntries4(mapper IDMapper, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, map[int][]byte, *syserr.Error) {
 	nflog("set entries: setting entries in table %q", replace.Name.String())
 
 	// Convert input into a list of rules and their offsets.
 	var offset uint32
 	// offsets maps rule byte offsets to their position in table.Rules.
 	offsets := map[uint32]int{}
+	targets := map[int][]byte{}
 	for entryIdx := uint32(0); entryIdx < replace.NumEntries; entryIdx++ {
 		nflog("set entries: processing entry at offset %d", offset)
 
 		// Get the struct ipt_entry.
 		if len(optVal) < linux.SizeOfIPTEntry {
 			nflog("optVal has insufficient size for entry %d", len(optVal))
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 		initialOptValLen := len(optVal)
 		var entry linux.IPTEntry
@@ -146,25 +147,25 @@ func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 
 		if entry.TargetOffset < linux.SizeOfIPTEntry {
 			nflog("entry has too-small target offset %d", entry.TargetOffset)
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 
 		filter, err := filterFromIPTIP(entry.IP)
 		if err != nil {
 			nflog("bad iptip: %v", err)
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 
 		// Get matchers.
 		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
 		if len(optVal) < int(matchersSize) {
 			nflog("entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 		matchers, err := parseMatchers(mapper, filter, optVal[:matchersSize])
 		if err != nil {
 			nflog("failed to parse matchers: %v", err)
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 		optVal = optVal[matchersSize:]
 
@@ -172,7 +173,7 @@ func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 		targetSize := entry.NextOffset - entry.TargetOffset
 		if len(optVal) < int(targetSize) {
 			nflog("entry doesn't have enough room for its target (only %d bytes remain)", len(optVal))
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 
 		rule := stack.Rule{
@@ -180,23 +181,16 @@ func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 			Matchers: matchers,
 		}
 
-		{
+		switch targetName(optVal[:targetSize]) {
+		case "", ErrorTargetName:
 			target, err := parseTarget(filter, optVal[:targetSize], false /* ipv6 */, replace.Name.String())
 			if err != nil {
 				nflog("failed to parse target: %v", err)
-				return nil, err
-			}
-			// Set the handler for REJECT targets.
-			if rejectTarget, ok := target.(*rejectIPv4Target); ok {
-				netProto := stk.NetworkProtocolInstance(header.IPv4ProtocolNumber)
-				handler, ok := netProto.(stack.RejectIPv4WithHandler)
-				if !ok {
-					nflog("modifyEntries4: expected %T to implement stack.RejectIPv4WithHandler", netProto)
-					return nil, syserr.ErrInvalidArgument
-				}
-				rejectTarget.Handler = handler
+				return nil, nil, err
 			}
 			rule.Target = target
+		default:
+			targets[int(entryIdx)] = optVal[:targetSize]
 		}
 		optVal = optVal[targetSize:]
 
@@ -206,10 +200,10 @@ func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 
 		if initialOptValLen-len(optVal) != int(entry.NextOffset) {
 			nflog("entry NextOffset is %d, but entry took up %d bytes", entry.NextOffset, initialOptValLen-len(optVal))
-			return nil, syserr.ErrInvalidArgument
+			return nil, nil, syserr.ErrInvalidArgument
 		}
 	}
-	return offsets, nil
+	return offsets, targets, nil
 }
 
 func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {

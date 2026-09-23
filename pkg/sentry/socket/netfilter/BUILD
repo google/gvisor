@@ -71,6 +71,8 @@ go_test(
         "//pkg/marshal",
         "//pkg/syserr",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
     ],
 )
