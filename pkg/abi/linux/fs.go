@@ -49,10 +49,6 @@ const (
 	PATH_MAX = 4096
 )
 
-// FILESYSTEM_MAX_STACK_DEPTH is the maximum depth to which stacking
-// filesystems, such as overlayfs, may be stacked, from include/linux/fs.h.
-const FILESYSTEM_MAX_STACK_DEPTH = 2
-
 // The bit mask f_flags in struct statfs, from include/linux/statfs.h
 const (
 	ST_RDONLY      = 0x0001
