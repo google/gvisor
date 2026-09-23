@@ -28,7 +28,10 @@ go_binary(
     noasan = True,
     race = "on",
     static = True,
-    visibility = ["//debian:__pkg__"],
+    visibility = [
+        "//:__pkg__",
+        "//debian:__pkg__",
+    ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//runsc/cli",

@@ -997,7 +997,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	lfOpts.Command = "boot" // Revert command to "boot".
 
 	sentryBin := &gvisorbinaries.GvisorSentry
-	sentryUsesCgo := false
+	// runsc cannot tell whether the Sentry sidecar uses cgo, so assume it
+	// does if runsc does: race builds pair a race runsc with a race Sentry.
+	// Caveats: a cgo runsc booting a pure Sentry (e.g. a cgo test binary)
+	// sets GLIBC_TUNABLES needlessly, which is harmless. A pure runsc
+	// booting a cgo Sentry other than the plugin stack does not set it,
+	// so that Sentry's stubs would crash; no build pairs them today.
+	sentryUsesCgo := config.CgoEnabled
 	if conf.Network == config.NetworkPlugin {
 		sentryBin = &gvisorbinaries.GvisorSentryPluginStack
 		sentryUsesCgo = true
