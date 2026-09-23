@@ -1362,9 +1362,6 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 
 		switch ahdr.Type {
 		case linux.RTA_DST:
-			if len(value) < 1 {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
 			route.DstAddr = value
 		case linux.RTA_SRC:
 			if len(value) < 1 {
@@ -1382,9 +1379,6 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 			}
 			route.OutputInterface = outputInterface
 		case linux.RTA_GATEWAY:
-			if len(value) < 1 {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
 			route.GatewayAddr = value
 		case linux.RTA_PRIORITY:
 		default:
@@ -1427,22 +1421,27 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 	} else if route.DstAddr == nil && route.OutputInterface == 0 && msg.Header().Type == linux.RTM_NEWROUTE {
 		return tcpip.Route{}, syserr.ErrNoDevice
 	}
-	var dest tcpip.Subnet
 	// When no destination address is provided, the new route might be the default route.
 	if route.DstAddr == nil {
-		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(zero), tcpip.MaskFromBytes(zero))
-		if err != nil {
-			return tcpip.Route{}, syserr.ErrInvalidArgument
-		}
-		dest = subnet
-	} else {
-		dst := make([]byte, len(zero))
-		if copy(dst, route.DstAddr)*8 < int(route.DstLen) {
-			return tcpip.Route{}, syserr.ErrInvalidArgument
-		}
-		dest = tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFromSlice(dst),
-			PrefixLen: int(route.DstLen)}.Subnet()
+		route.DstAddr = zero
+	}
+	if route.Family == linux.AF_INET && len(route.DstAddr) < len(zero) {
+		return tcpip.Route{}, syserr.ErrRange
+	}
+	if int(route.DstLen) > len(zero)*8 {
+		return tcpip.Route{}, syserr.ErrInvalidArgument
+	}
+	if len(route.DstAddr)*8 < int(route.DstLen) {
+		return tcpip.Route{}, syserr.ErrInvalidArgument
+	}
+	dst := make([]byte, len(zero))
+	copy(dst, route.DstAddr)
+	addr := tcpip.AddrFromSlice(dst)
+	dest := tcpip.AddressWithPrefix{
+		Address:   addr,
+		PrefixLen: int(route.DstLen)}.Subnet()
+	if route.Family == linux.AF_INET && !dest.ID().Equal(addr) {
+		return tcpip.Route{}, syserr.ErrInvalidArgument
 	}
 
 	localRoute := tcpip.Route{
