@@ -3185,6 +3185,65 @@ TEST(NetlinkRouteTest, DeleteIpv6RouteIgnoresType) {
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1, &req, sizeof(req)));
 }
 
+TEST_P(NetlinkRouteIpInvariantTest, NewRouteWithoutDevice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  int family = GetParam();
+  int dst_len =
+      family == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct rtattr rtattr;
+    struct in6_addr dst;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = family;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+
+  req.rtattr.rta_type = RTA_DST;
+  req.rtattr.rta_len = RTA_LENGTH(dst_len);
+  req.hdr.nlmsg_len =
+      NLMSG_LENGTH(sizeof(req.rtm)) + NLMSG_ALIGN(req.rtattr.rta_len);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(ENODEV, _));
+
+  req.rtm.rtm_type = RTN_UNSPEC;
+  req.hdr.nlmsg_seq = kSeq + 1;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(family == AF_INET ? EINVAL : ENODEV, _));
+
+  req.rtm.rtm_type = RTN_UNICAST;
+  req.rtm.rtm_dst_len = dst_len * 8 + 1;
+  req.hdr.nlmsg_seq = kSeq + 2;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(EINVAL, _));
+}
+
 // GetRuleDump tests a RTM_GETRULE + NLM_F_DUMP request.
 TEST(NetlinkRouteTest, GetRuleDump) {
   // Gvisor does not support `RTM_GETRULE`
