@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func TestTypeKind(t *testing.T) {
@@ -107,6 +108,12 @@ func TestCommonPrefixLen(t *testing.T) {
 			want: 126,
 		},
 		{
+			name: "different lengths",
+			a:    net.ParseIP("2001:db8::1"),
+			b:    net.ParseIP("192.168.1.1").To4(),
+			want: 0,
+		},
+		{
 			name: "empty slices",
 			a:    []byte{},
 			b:    []byte{},
@@ -162,7 +169,7 @@ func TestFillRoute(t *testing.T) {
 	}
 
 	t.Run("longest_prefix_match", func(t *testing.T) {
-		rt, err := fillRoute(routes, v4Dst)
+		rt, err := fillRoute(routes, linux.AF_INET, v4Dst)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Dst, err)
 		}
@@ -181,7 +188,7 @@ func TestFillRoute(t *testing.T) {
 	})
 
 	t.Run("default_route_match", func(t *testing.T) {
-		rt, err := fillRoute(routes, v4Other)
+		rt, err := fillRoute(routes, linux.AF_INET, v4Other)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
 		}
@@ -199,6 +206,24 @@ func TestFillRoute(t *testing.T) {
 		}
 	})
 
+	t.Run("route_without_destination", func(t *testing.T) {
+		routesNoDst := []inet.Route{
+			{
+				Family:          linux.AF_INET,
+				DstLen:          0,
+				OutputInterface: 9,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+			},
+		}
+		rt, err := fillRoute(routesNoDst, linux.AF_INET, v4Dst)
+		if err != nil {
+			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Dst, err)
+		}
+		if rt.OutputInterface != 9 {
+			t.Errorf("got OutputInterface = %d, want 9", rt.OutputInterface)
+		}
+	})
+
 	t.Run("fallback_non_host_route", func(t *testing.T) {
 		routesNoDefault := []inet.Route{
 			{
@@ -209,7 +234,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_UNIVERSE,
 			},
 		}
-		rt, err := fillRoute(routesNoDefault, v4Other)
+		rt, err := fillRoute(routesNoDefault, linux.AF_INET, v4Other)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
 		}
@@ -244,7 +269,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_UNIVERSE,
 			},
 		}
-		rt, err := fillRoute(mixedRoutes, v4Other)
+		rt, err := fillRoute(mixedRoutes, linux.AF_INET, v4Other)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
 		}
@@ -279,7 +304,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_HOST,
 			},
 		}
-		rt, err := fillRoute(hostOnlyRoutes, v4Other)
+		rt, err := fillRoute(hostOnlyRoutes, linux.AF_INET, v4Other)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
 		}
@@ -307,7 +332,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_UNIVERSE,
 			},
 		}
-		rt, err := fillRoute(v6OnlyRoutes, v4Other)
+		rt, err := fillRoute(v6OnlyRoutes, linux.AF_INET, v4Other)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v4Other, err)
 		}
@@ -335,7 +360,7 @@ func TestFillRoute(t *testing.T) {
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				_, err := fillRoute(tc.routes, v4Dst)
+				_, err := fillRoute(tc.routes, linux.AF_INET, v4Dst)
 				if err != syserr.ErrHostUnreachable {
 					t.Errorf("fillRoute(%v, %v) = %v, want %v", tc.routes, v4Dst, err, syserr.ErrHostUnreachable)
 				}
@@ -355,7 +380,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_UNIVERSE,
 			},
 		}
-		rt, err := fillRoute(v6Routes, v6Dst)
+		rt, err := fillRoute(v6Routes, linux.AF_INET6, v6Dst)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v6Dst, err)
 		}
@@ -384,7 +409,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_UNIVERSE,
 			},
 		}
-		rt, err := fillRoute(v6RoutesNoDefault, v6Other)
+		rt, err := fillRoute(v6RoutesNoDefault, linux.AF_INET6, v6Other)
 		if err != nil {
 			t.Fatalf("fillRoute(%v) unexpected error: %v", v6Other, err)
 		}
@@ -404,7 +429,7 @@ func TestFillRoute(t *testing.T) {
 
 	t.Run("ipv6_empty_routes_returns_err_host_unreachable", func(t *testing.T) {
 		v6Dst := net.ParseIP("2001:db8::1")
-		_, err := fillRoute(nil, v6Dst)
+		_, err := fillRoute(nil, linux.AF_INET6, v6Dst)
 		if err != syserr.ErrHostUnreachable {
 			t.Errorf("fillRoute(nil, %v) = %v, want %v", v6Dst, err, syserr.ErrHostUnreachable)
 		}
@@ -424,7 +449,7 @@ func TestFillRoute(t *testing.T) {
 				Scope:           linux.RT_SCOPE_UNIVERSE,
 			},
 		}
-		_, err := fillRoute(routesNoDefault, v4Other)
+		_, err := fillRoute(routesNoDefault, linux.AF_INET, v4Other)
 		if err != syserr.ErrNetworkUnreachable {
 			t.Errorf("fillRoute(%v, %v) with fallback disabled = %v, want %v", routesNoDefault, v4Other, err, syserr.ErrNetworkUnreachable)
 		}
@@ -443,7 +468,7 @@ func TestParseForDestination(t *testing.T) {
 	})
 	msg.PutAttr(linux.RTA_DST, primitive.AsByteSlice(dstIP))
 
-	gotDst, err := parseForDestination(msg)
+	_, gotDst, err := parseForDestination(msg)
 	if err != nil {
 		t.Fatalf("parseForDestination failed: %v", err)
 	}
@@ -461,7 +486,7 @@ func TestParseForDestination(t *testing.T) {
 	msgMulti.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(2))
 	msgMulti.PutAttr(linux.RTA_DST, primitive.AsByteSlice(dstIP))
 
-	gotDst, err = parseForDestination(msgMulti)
+	_, gotDst, err = parseForDestination(msgMulti)
 	if err != nil {
 		t.Fatalf("parseForDestination with multiple attrs failed: %v", err)
 	}
@@ -478,16 +503,163 @@ func TestParseForDestination(t *testing.T) {
 	})
 	msgNoDst.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(2))
 
-	_, err = parseForDestination(msgNoDst)
+	_, _, err = parseForDestination(msgNoDst)
 	if err != syserr.ErrInvalidArgument {
 		t.Errorf("got err = %v, want ErrInvalidArgument", err)
 	}
 
 	// 4. Empty message.
 	emptyMsg := nlmsg.NewMessage(linux.NetlinkMessageHeader{})
-	_, err = parseForDestination(emptyMsg)
+	_, _, err = parseForDestination(emptyMsg)
 	if err != syserr.ErrInvalidArgument {
 		t.Errorf("got err = %v, want ErrInvalidArgument", err)
+	}
+
+	// 5. Message with an IPv6 RTA_DST attribute.
+	dstIP6 := net.ParseIP("2001:db8::1").To16()
+	msgDst6 := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+		Type: linux.RTM_GETROUTE,
+	})
+	msgDst6.Put(&linux.RouteMessage{
+		Family: linux.AF_INET6,
+	})
+	msgDst6.PutAttr(linux.RTA_DST, primitive.AsByteSlice(dstIP6))
+
+	_, gotDst, err = parseForDestination(msgDst6)
+	if err != nil {
+		t.Fatalf("parseForDestination with an IPv6 RTA_DST failed: %v", err)
+	}
+	if !bytes.Equal(gotDst, dstIP6) {
+		t.Errorf("got dst = %v, want %v", gotDst, dstIP6)
+	}
+
+	// 6. RTA_DST shorter than the address of the requested family.
+	for _, size := range []int{1, header.IPv4AddressSize, header.IPv6AddressSize - 1} {
+		msgBadDst := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+			Type: linux.RTM_GETROUTE,
+		})
+		msgBadDst.Put(&linux.RouteMessage{
+			Family: linux.AF_INET6,
+		})
+		msgBadDst.PutAttr(linux.RTA_DST, primitive.AsByteSlice(make([]byte, size)))
+
+		_, _, err = parseForDestination(msgBadDst)
+		if err != syserr.ErrInvalidArgument {
+			t.Errorf("got err = %v for a %d byte RTA_DST, want ErrInvalidArgument", err, size)
+		}
+	}
+}
+
+func TestParseForDestinationFamily(t *testing.T) {
+	v4 := net.ParseIP("192.168.1.1").To4()
+	v6 := net.ParseIP("2001:db8::1").To16()
+
+	tests := []struct {
+		name       string
+		family     uint8
+		familyOnly bool
+		dst        []byte
+		wantDst    []byte
+		wantErr    *syserr.Error
+	}{
+		{
+			name:    "ipv4",
+			family:  linux.AF_INET,
+			dst:     v4,
+			wantDst: v4,
+		},
+		{
+			name:    "ipv6",
+			family:  linux.AF_INET6,
+			dst:     v6,
+			wantDst: v6,
+		},
+		{
+			name:    "ipv4 with an ipv6 sized destination",
+			family:  linux.AF_INET,
+			dst:     v6,
+			wantDst: v6[:header.IPv4AddressSize],
+		},
+		{
+			name:    "ipv6 with an ipv4 sized destination",
+			family:  linux.AF_INET6,
+			dst:     v4,
+			wantErr: syserr.ErrInvalidArgument,
+		},
+		{
+			name:    "destination longer than an ipv6 address",
+			family:  linux.AF_INET6,
+			dst:     append(append([]byte{}, v6...), 9),
+			wantDst: v6,
+		},
+		{
+			name:    "destination shorter than an ipv4 address",
+			family:  linux.AF_INET,
+			dst:     v4[:3],
+			wantErr: syserr.ErrInvalidArgument,
+		},
+		{
+			name:    "unspecified family",
+			family:  linux.AF_UNSPEC,
+			dst:     v4,
+			wantErr: syserr.ErrNotSupported,
+		},
+		{
+			name:    "packet family",
+			family:  linux.AF_PACKET,
+			dst:     v4,
+			wantErr: syserr.ErrNotSupported,
+		},
+		{
+			name:       "unspecified family with only the family byte",
+			family:     linux.AF_UNSPEC,
+			familyOnly: true,
+			wantErr:    syserr.ErrNotSupported,
+		},
+		{
+			name:       "ipv4 with only the family byte",
+			family:     linux.AF_INET,
+			familyOnly: true,
+			wantErr:    syserr.ErrInvalidArgument,
+		},
+		{
+			name:    "unspecified family without a destination",
+			family:  linux.AF_UNSPEC,
+			wantErr: syserr.ErrNotSupported,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			msg := nlmsg.NewMessage(linux.NetlinkMessageHeader{
+				Type: linux.RTM_GETROUTE,
+			})
+			if test.familyOnly {
+				family := primitive.Uint8(test.family)
+				msg.Put(&family)
+			} else {
+				msg.Put(&linux.RouteMessage{
+					Family: test.family,
+				})
+			}
+			if test.dst != nil {
+				msg.PutAttr(linux.RTA_DST, primitive.AsByteSlice(test.dst))
+			}
+
+			gotFamily, gotDst, err := parseForDestination(msg)
+			if err != test.wantErr {
+				t.Fatalf("got err = %v, want %v", err, test.wantErr)
+			}
+			if test.wantErr != nil {
+				return
+			}
+			if gotFamily != test.family {
+				t.Errorf("got family = %d, want %d", gotFamily, test.family)
+			}
+			if !bytes.Equal(gotDst, test.wantDst) {
+				t.Errorf("got dst = %v, want %v", gotDst, test.wantDst)
+			}
+		})
 	}
 }
 
