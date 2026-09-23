@@ -2994,6 +2994,7 @@ func (ipf *ipForwarding) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
 		"stack",
+		"protocol",
 		"enabled",
 	}
 }
@@ -3005,7 +3006,8 @@ func (ipf *ipForwarding) StateSave(stateSinkObject state.Sink) {
 	ipf.beforeSave()
 	stateSinkObject.Save(0, &ipf.DynamicBytesFile)
 	stateSinkObject.Save(1, &ipf.stack)
-	stateSinkObject.Save(2, &ipf.enabled)
+	stateSinkObject.Save(2, &ipf.protocol)
+	stateSinkObject.Save(3, &ipf.enabled)
 }
 
 func (ipf *ipForwarding) afterLoad(context.Context) {}
@@ -3014,7 +3016,8 @@ func (ipf *ipForwarding) afterLoad(context.Context) {}
 func (ipf *ipForwarding) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ipf.DynamicBytesFile)
 	stateSourceObject.LoadWait(1, &ipf.stack)
-	stateSourceObject.Load(2, &ipf.enabled)
+	stateSourceObject.Load(2, &ipf.protocol)
+	stateSourceObject.Load(3, &ipf.enabled)
 }
 
 func (rl *routeLocalnetData) StateTypeName() string {

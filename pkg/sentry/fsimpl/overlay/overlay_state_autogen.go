@@ -108,7 +108,6 @@ func (fs *filesystem) StateFields() []string {
 		"xattrOpaque",
 		"createCreds",
 		"dirDevMinor",
-		"stackDepth",
 		"lowerDevMinors",
 		"dirInoCache",
 		"lastDirIno",
@@ -128,11 +127,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fs.xattrOpaque)
 	stateSinkObject.Save(5, &fs.createCreds)
 	stateSinkObject.Save(6, &fs.dirDevMinor)
-	stateSinkObject.Save(7, &fs.stackDepth)
-	stateSinkObject.Save(8, &fs.lowerDevMinors)
-	stateSinkObject.Save(9, &fs.dirInoCache)
-	stateSinkObject.Save(10, &fs.lastDirIno)
-	stateSinkObject.Save(11, &fs.maxFilenameLen)
+	stateSinkObject.Save(7, &fs.lowerDevMinors)
+	stateSinkObject.Save(8, &fs.dirInoCache)
+	stateSinkObject.Save(9, &fs.lastDirIno)
+	stateSinkObject.Save(10, &fs.maxFilenameLen)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -146,11 +144,10 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(4, &fs.xattrOpaque)
 	stateSourceObject.Load(5, &fs.createCreds)
 	stateSourceObject.Load(6, &fs.dirDevMinor)
-	stateSourceObject.Load(7, &fs.stackDepth)
-	stateSourceObject.Load(8, &fs.lowerDevMinors)
-	stateSourceObject.Load(9, &fs.dirInoCache)
-	stateSourceObject.Load(10, &fs.lastDirIno)
-	stateSourceObject.Load(11, &fs.maxFilenameLen)
+	stateSourceObject.Load(7, &fs.lowerDevMinors)
+	stateSourceObject.Load(8, &fs.dirInoCache)
+	stateSourceObject.Load(9, &fs.lastDirIno)
+	stateSourceObject.Load(10, &fs.maxFilenameLen)
 }
 
 func (l *layerDevNumber) StateTypeName() string {
