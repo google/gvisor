@@ -269,7 +269,7 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 		p.pkt.IncRef()
 	} else {
 		e.rcvList.Remove(p)
-		e.rcvBufSize -= p.pkt.Data().Size()
+		e.rcvBufSize -= p.pkt.MemSize()
 	}
 	defer p.pkt.DecRef()
 	e.rcvMu.Unlock()
@@ -1047,7 +1047,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketB
 		pkt: pkt.Clone(),
 	}
 	e.rcvList.PushBack(packet)
-	e.rcvBufSize += pkt.Data().Size()
+	e.rcvBufSize += packet.pkt.MemSize()
 
 	// Save any useful information from the network header to the packet.
 	packet.tosOrTClass, _ = pkt.Network().TOS()
