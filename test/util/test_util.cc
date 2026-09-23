@@ -55,7 +55,14 @@ namespace testing {
 constexpr char kGvisorNetwork[] = "GVISOR_NETWORK";
 constexpr char kIOUringEnabled[] = "IOURING_ENABLED";
 
-bool IsRunningOnGvisor() { return GvisorPlatform() != Platform::kNative; }
+bool IsRunningOnGvisor() {
+  auto platform = GvisorPlatform();
+  if (platform == Platform::kNative || platform == Platform::kFuchsia ||
+      platform == Platform::kStarnix) {
+    return false;
+  }
+  return true;
+}
 
 const std::string GvisorPlatform() {
   // Set by runner.go.
