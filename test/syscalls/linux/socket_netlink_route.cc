@@ -2448,6 +2448,383 @@ TEST(NetlinkRouteTest, LinkInfoKind) {
   EXPECT_EQ(link_kinds["lo"], "");
 }
 
+struct RouteRequest {
+  struct nlmsghdr hdr;
+  struct rtmsg rtm;
+  char buf[64];
+};
+
+struct RouteRequest GetNewRouteRequest(uint32_t seq, int family,
+                                       const char* dst, int dst_len,
+                                       const char* gateway, int oif,
+                                       unsigned int flags) {
+  struct RouteRequest req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = seq;
+  req.rtm.rtm_family = family;
+  req.rtm.rtm_dst_len = dst_len;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+  req.rtm.rtm_flags = flags;
+
+  int addr_len =
+      family == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
+  char addr[sizeof(struct in6_addr)];
+  if (dst != nullptr) {
+    TEST_CHECK(inet_pton(family, dst, addr) == 1);
+    addattr(&req.hdr, sizeof(req), RTA_DST, addr, addr_len);
+  }
+  TEST_CHECK(inet_pton(family, gateway, addr) == 1);
+  addattr(&req.hdr, sizeof(req), RTA_GATEWAY, addr, addr_len);
+  if (oif != 0) {
+    addattr(&req.hdr, sizeof(req), RTA_OIF, &oif, sizeof(oif));
+  }
+  return req;
+}
+
+TEST(NetlinkRouteTest, NewRouteGatewayNotOnLink) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24, &local,
+                                   sizeof(local)));
+
+  RouteRequest req =
+      GetNewRouteRequest(kSeq, AF_INET, nullptr, 0, "203.0.113.1", 0, 0);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(ENETUNREACH, _));
+
+  req = GetNewRouteRequest(kSeq + 1, AF_INET, "198.51.100.0", 24, "192.0.2.2",
+                           0, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len));
+  req = GetNewRouteRequest(kSeq + 2, AF_INET, "10.0.0.0", 8, "198.51.100.1", 0,
+                           0);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(ENETUNREACH, _));
+
+  req = GetNewRouteRequest(kSeq + 3, AF_INET6, nullptr, 0, "2001:db8::2", 0, 0);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 3, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(EHOSTUNREACH, _));
+}
+
+TEST(NetlinkRouteTest, NewRouteGatewayOnLink) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24, &local,
+                                   sizeof(local)));
+
+  RouteRequest req =
+      GetNewRouteRequest(kSeq, AF_INET, "10.1.0.0", 16, "203.0.113.1",
+                         loopback_link.index, RTNH_F_ONLINK);
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+
+  req =
+      GetNewRouteRequest(kSeq + 1, AF_INET, "10.2.0.0", 16, "127.0.0.2", 0, 0);
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len));
+
+  req = GetNewRouteRequest(kSeq + 2, AF_INET, "10.3.0.0", 16, "0.0.0.0",
+                           loopback_link.index, 0);
+  req.rtm.rtm_scope = RT_SCOPE_LINK;
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len));
+
+  req = GetNewRouteRequest(kSeq + 3, AF_INET, "10.9.0.0", 16, "10.3.0.1", 0, 0);
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 3, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, NewRouteGatewayOnOtherLink) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24, &local,
+                                   sizeof(local)));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+  int veth_index = if_nametoindex("veth1");
+  ASSERT_NE(veth_index, 0);
+
+  RouteRequest req = GetNewRouteRequest(kSeq + 1, AF_INET, nullptr, 0,
+                                        "192.0.2.2", veth_index, 0);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(ENETUNREACH, _));
+
+  req = GetNewRouteRequest(kSeq + 2, AF_INET, nullptr, 0, "192.0.2.2",
+                           loopback_link.index, 0);
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len));
+}
+
+TEST(NetlinkRouteTest, NewRouteLinkLocalGateway) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+  int veth_index = if_nametoindex("veth1");
+  ASSERT_NE(veth_index, 0);
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth_index, IFF_UP, IFF_UP));
+
+  RouteRequest req = GetNewRouteRequest(kSeq + 1, AF_INET6, nullptr, 0,
+                                        "fe80::2", veth_index, 0);
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len));
+}
+
+PosixError AddNoDadAddr(FileDescriptor& fd, int index, int family,
+                        int prefixlen, const char* local) {
+  struct {
+    struct nlmsghdr hdr;
+    struct ifaddrmsg ifa;
+    char buf[64];
+  } req = {};
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.ifa));
+  req.hdr.nlmsg_type = RTM_NEWADDR;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifa.ifa_family = family;
+  req.ifa.ifa_prefixlen = prefixlen;
+  req.ifa.ifa_flags = IFA_F_NODAD;
+  req.ifa.ifa_index = index;
+
+  int addr_len =
+      family == AF_INET ? sizeof(struct in_addr) : sizeof(struct in6_addr);
+  char addr[sizeof(struct in6_addr)];
+  TEST_CHECK(inet_pton(family, local, addr) == 1);
+  addattr(&req.hdr, sizeof(req), IFA_LOCAL, addr, addr_len);
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+TEST_P(NetlinkRouteIpInvariantTest, NewRouteWithoutOif) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+  int veth_index = if_nametoindex("veth1");
+  ASSERT_NE(veth_index, 0);
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth_index, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(if_nametoindex("veth2"), IFF_UP, IFF_UP));
+
+  const int family = GetParam();
+  const bool ipv4 = family == AF_INET;
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, veth_index, family, ipv4 ? 24 : 64,
+                               ipv4 ? "192.0.2.1" : "2001:db8::1"));
+  const TestAddress remote = (ipv4 ? V4AddrStr("remote", "203.0.113.1")
+                                   : V6AddrStr("remote", "2001:db8:1::1"))
+                                 .WithPort(9);
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_DGRAM, 0));
+  const char* gateway = ipv4 ? "192.0.2.2" : "2001:db8::2";
+
+  RouteRequest req =
+      GetNewRouteRequest(kSeq + 1, family, nullptr, 0, gateway, veth_index, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len));
+  EXPECT_THAT(
+      sendto(sock.get(), "x", 1, 0, AsSockAddr(&remote.addr), remote.addr_len),
+      SyscallSucceedsWithValue(1));
+
+  req.hdr.nlmsg_type = RTM_DELROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq + 2;
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len));
+  EXPECT_THAT(
+      sendto(sock.get(), "x", 1, 0, AsSockAddr(&remote.addr), remote.addr_len),
+      SyscallFailsWithErrno(ENETUNREACH));
+
+  req = GetNewRouteRequest(kSeq + 3, family, nullptr, 0, gateway, 0, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 3, &req, req.hdr.nlmsg_len));
+  EXPECT_THAT(
+      sendto(sock.get(), "x", 1, 0, AsSockAddr(&remote.addr), remote.addr_len),
+      SyscallSucceedsWithValue(1));
+}
+
+TEST_P(NetlinkRouteIpInvariantTest, NewRouteViaAddress) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+  int veth_index = if_nametoindex("veth1");
+  ASSERT_NE(veth_index, 0);
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth_index, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(if_nametoindex("veth2"), IFF_UP, IFF_UP));
+
+  const int family = GetParam();
+  const bool ipv4 = family == AF_INET;
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, veth_index, family, ipv4 ? 24 : 64,
+                               ipv4 ? "10.0.0.1" : "2001:db8:5::1"));
+  RouteRequest req = GetNewRouteRequest(
+      kSeq + 1, family, ipv4 ? "192.0.2.0" : "2001:db8::", ipv4 ? 24 : 64,
+      ipv4 ? "10.0.0.2" : "2001:db8:5::2", veth_index, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &req, req.hdr.nlmsg_len));
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, veth_index, family, ipv4 ? 24 : 64,
+                               ipv4 ? "192.0.2.1" : "2001:db8::1"));
+  req = GetNewRouteRequest(kSeq + 2, family, nullptr, 0,
+                           ipv4 ? "192.0.2.2" : "2001:db8::2", 0, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len));
+
+  const TestAddress remote = (ipv4 ? V4AddrStr("remote", "203.0.113.1")
+                                   : V6AddrStr("remote", "2001:db8:1::1"))
+                                 .WithPort(9);
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_DGRAM, 0));
+  EXPECT_THAT(
+      sendto(sock.get(), "x", 1, 0, AsSockAddr(&remote.addr), remote.addr_len),
+      SyscallSucceedsWithValue(1));
+}
+
+TEST_P(NetlinkRouteIpInvariantTest, NewRouteLowestIndex) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+  veth_req = GetVethRequest(kSeq + 1, "veth3", "veth4");
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1, &veth_req,
+                                           veth_req.hdr.nlmsg_len));
+  int first = if_nametoindex("veth1");
+  ASSERT_NE(first, 0);
+  int second = if_nametoindex("veth3");
+  ASSERT_NE(second, 0);
+  for (const char* name : {"veth1", "veth2", "veth3", "veth4"}) {
+    ASSERT_NO_ERRNO(LinkChangeFlags(if_nametoindex(name), IFF_UP, IFF_UP));
+  }
+
+  const int family = GetParam();
+  const bool ipv4 = family == AF_INET;
+  const int prefixlen = ipv4 ? 24 : 64;
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, first, family, prefixlen,
+                               ipv4 ? "10.0.0.1" : "2001:db8:5::1"));
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, second, family, prefixlen,
+                               ipv4 ? "10.0.1.1" : "2001:db8:6::1"));
+  RouteRequest req = GetNewRouteRequest(
+      kSeq + 2, family, ipv4 ? "192.0.2.0" : "2001:db8::", prefixlen,
+      ipv4 ? "10.0.0.2" : "2001:db8:5::2", first, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &req, req.hdr.nlmsg_len));
+  req = GetNewRouteRequest(kSeq + 3, family,
+                           ipv4 ? "192.0.2.0" : "2001:db8::", prefixlen,
+                           ipv4 ? "10.0.1.2" : "2001:db8:6::2", second, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 3, &req, req.hdr.nlmsg_len));
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, first, family, prefixlen,
+                               ipv4 ? "192.0.2.1" : "2001:db8::1"));
+  ASSERT_NO_ERRNO(AddNoDadAddr(fd, second, family, prefixlen,
+                               ipv4 ? "192.0.2.3" : "2001:db8::3"));
+
+  const char* gateway = ipv4 ? "192.0.2.2" : "2001:db8::2";
+  req = GetNewRouteRequest(kSeq + 4, family, nullptr, 0, gateway, 0, 0);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 4, &req, req.hdr.nlmsg_len));
+  req = GetNewRouteRequest(kSeq + 5, family, nullptr, 0, gateway, first, 0);
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 5, &req, req.hdr.nlmsg_len),
+              PosixErrorIs(EEXIST, _));
+}
+
 TEST(NetlinkRouteTest, LookupAllAddrOrder) {
   // Run the test multiple times to identify any flakiness with the order of
   // addresses returned. The order should be IPv4(AF_INET = 2) addresses
