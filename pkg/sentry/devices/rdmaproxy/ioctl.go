@@ -236,10 +236,10 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 		}
 		defer fdRelease()
 
-	case DmaCQCreate, DmaQPCreate:
+	case DmaCQCreate, DmaQPCreate, DmaSRQCreate:
 		mp, err := fd.prepareCreateDMA(t, staged)
 		if err != nil {
-			log.Warningf("rdmaproxy: CQ/QP CREATE page mirroring: %v", err)
+			log.Warningf("rdmaproxy: CQ/QP/SRQ CREATE page mirroring: %v", err)
 			return 0, err
 		}
 		if mp != nil {
@@ -250,8 +250,8 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 	case DmaInvokeWrite:
 		// The generic loop does not vet the WRITE_CMD value; gate on it here.
 		// REG_MR mirrors its guest pages, DEREG_MR releases its mirror
-		// post-call, allowlisted commands forward as-is, and the rest are
-		// rejected.
+		// post-call, CREATE_COMP_CHANNEL wraps its response fd post-call,
+		// allowlisted commands forward as-is, and the rest are rejected.
 		cmd := invokeWriteCmd(attrs)
 		switch classifyInvokeWrite(cmd) {
 		case invokeWriteRegMR:
@@ -266,6 +266,15 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 			}
 		case invokeWriteDeregMR:
 			// Mirror released post-call once the host reports success.
+		case invokeWriteCompChannel:
+			// The kernel responds with the new completion-channel fd. The
+			// kernel commits the fd before copying the response out, so a
+			// short response buffer would leak the FD. Hence, reject short
+			// buffers here to avoid leaking the host fd.
+			if len(staged[ib.UVERBS_ATTR_CORE_OUT]) < (*ib.UverbsCreateCompChannelResp)(nil).SizeBytes() {
+				log.Warningf("rdmaproxy: CREATE_COMP_CHANNEL with short response buffer")
+				return 0, linuxerr.EINVAL
+			}
 		case invokeWriteOpaque:
 		default: // invokeWriteRejected
 			log.Warningf("rdmaproxy: unsupported INVOKE_WRITE cmd=%#x", cmd)
@@ -325,16 +334,16 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 					mp.Release(t)
 				}
 			}
-		case DmaCQCreate, DmaQPCreate:
+		case DmaCQCreate, DmaQPCreate, DmaSRQCreate:
 			if cqqpMirror != nil {
 				dmaCleanup.Release()
 				if haveHandle {
 					fd.pinned.addDMABufs(handle, cqqpMirror)
 				} else {
-					log.Warningf("rdmaproxy: CQ/QP CREATE succeeded but handle attr missing; leaking mirror")
+					log.Warningf("rdmaproxy: CQ/QP/SRQ CREATE succeeded but handle attr missing; leaking mirror")
 				}
 			}
-		case DmaCQDestroy, DmaQPDestroy:
+		case DmaCQDestroy, DmaQPDestroy, DmaSRQDestroy:
 			if haveHandle {
 				if bufs := fd.pinned.removeDMABufs(handle); bufs != nil {
 					bufs.Release(t)
@@ -349,6 +358,13 @@ func (fd *uverbsFD) handleRDMAVerbsIoctl(t *kernel.Task, argPtr hostarch.Addr) (
 			}
 		case DmaInvokeWrite:
 			switch invokeWriteCmd(attrs) {
+			case ib.IB_USER_VERBS_CMD_CREATE_COMP_CHANNEL:
+				undo, err := fd.wrapCompChannelFD(t, staged[ib.UVERBS_ATTR_CORE_OUT])
+				if err != nil {
+					log.Warningf("rdmaproxy: comp channel fd wrap: %v", err)
+				} else if undo != nil {
+					asyncFDCleanup.Add(undo)
+				}
 			case ib.IB_USER_VERBS_CMD_REG_MR:
 				if mrMirror != nil {
 					// The MR was created and the hardware now references the
@@ -417,9 +433,10 @@ func (fd *uverbsFD) copyInPtr(t *kernel.Task, guestPtr uint64, length uint16) ([
 	return sb, nil
 }
 
-// translateInputFD resolves an app fd referencing a proxied async-event FD to
-// its underlying host fd. The caller takes a ref on the returned file, which
-// must be released once the host fd is no longer needed.
+// translateInputFD resolves an app fd referencing a proxied RDMA event FD
+// (async event or completion channel) to its underlying host fd. The caller
+// takes a ref on the returned file, which must be released once the host fd
+// is no longer needed.
 func (fd *uverbsFD) translateInputFD(t *kernel.Task, appFD int32) (int, *vfs.FileDescription, error) {
 	if appFD < 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -428,7 +445,7 @@ func (fd *uverbsFD) translateInputFD(t *kernel.Task, appFD int32) (int, *vfs.Fil
 	if file == nil {
 		return 0, nil, linuxerr.EBADF
 	}
-	afd, ok := file.Impl().(*asyncEventFD)
+	afd, ok := file.Impl().(*eventFD)
 	if !ok {
 		log.Warningf("rdmaproxy: unsupported input fd=%d type %T (not a proxied RDMA fd)", appFD, file.Impl())
 		file.DecRef(t)
@@ -538,8 +555,8 @@ func (fd *uverbsFD) prepareDMABufFD(t *kernel.Task, attrs []ib.UverbsAttr, xlats
 }
 
 // prepareCreateDMA hands the copied-in UHW_IN driver payload to the vendor
-// driver so it can mirror the CQ/QP work-queue and doorbell buffers and rewrite
-// the embedded addresses in place.
+// driver so it can mirror the CQ/QP/SRQ work-queue and doorbell buffers and
+// rewrite the embedded addresses in place.
 func (fd *uverbsFD) prepareCreateDMA(t *kernel.Task, staged map[uint16][]byte) (*PinnedDMABufs, error) {
 	uhw := staged[ib.UVERBS_ATTR_UHW_IN]
 	if uhw == nil {
@@ -561,12 +578,41 @@ func (fd *uverbsFD) wrapAsyncEventFD(t *kernel.Task, a *ib.UverbsAttr) (func(), 
 	if hostFD < 0 {
 		return nil, fmt.Errorf("kernel returned invalid async event fd %d", hostFD)
 	}
-	sentryFD, err := newAsyncEventFD(t, hostFD) // takes ownership of hostFD.
+	sentryFD, err := newEventFD(t, hostFD, "[rdma-async-event]") // takes ownership of hostFD.
 	if err != nil {
 		return nil, err
 	}
 	a.Data = uint64(uint32(sentryFD))
 	log.Infof("rdmaproxy: installed async event fd -> app fd %d", sentryFD)
+	return func() {
+		if f := t.FDTable().Remove(t, sentryFD); f != nil {
+			f.DecRef(t)
+		}
+	}, nil
+}
+
+// wrapCompChannelFD wraps the host completion-channel fd the kernel wrote into
+// the CREATE_COMP_CHANNEL response staged in coreOut, installs a sentry FD, and
+// rewrites the response's fd field to the app fd number. Returns an undo
+// closure to be run only if the subsequent copy-out to the guest fails.
+func (fd *uverbsFD) wrapCompChannelFD(t *kernel.Task, coreOut []byte) (func(), error) {
+	var resp ib.UverbsCreateCompChannelResp
+	if len(coreOut) < resp.SizeBytes() {
+		// Unreachable: the pre-call gate rejected short response buffers.
+		return nil, fmt.Errorf("CREATE_COMP_CHANNEL response buffer too short")
+	}
+	resp.UnmarshalBytes(coreOut)
+	hostFD := int(int32(resp.FD))
+	if hostFD < 0 {
+		return nil, fmt.Errorf("kernel returned invalid comp channel fd %d", hostFD)
+	}
+	sentryFD, err := newEventFD(t, hostFD, "[rdma-comp-channel]") // takes ownership of hostFD.
+	if err != nil {
+		return nil, err
+	}
+	resp.FD = uint32(sentryFD)
+	resp.MarshalBytes(coreOut)
+	log.Infof("rdmaproxy: installed comp channel fd -> app fd %d", sentryFD)
 	return func() {
 		if f := t.FDTable().Remove(t, sentryFD); f != nil {
 			f.DecRef(t)
@@ -587,8 +633,8 @@ func (fd *uverbsFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.
 	return 0, linuxerr.EINVAL
 }
 
-// Read implements vfs.FileDescriptionImpl.Read for asyncEventFD.
-func (fd *asyncEventFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
+// Read implements vfs.FileDescriptionImpl.Read for eventFD.
+func (fd *eventFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	return readProxiedEventFD(ctx, fd.hostFD, dst)
 }
 
