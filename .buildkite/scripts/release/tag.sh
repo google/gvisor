@@ -50,6 +50,19 @@ published_object() {
   git ls-remote "${repo_url}" "refs/tags/${tag}" | head -n 1 | cut -f1
 }
 
+github_login() {
+  gh auth login --with-token <"${HOME}/.github-token"
+  gh auth setup-git
+}
+
+# Keeps `git describe` unambiguous on later builds.
+delete_staging_tag() {
+  if git ls-remote --exit-code "${repo_url}" \
+      "refs/tags/${staging_tag}" >/dev/null; then
+    git push --delete "${repo_url}" "refs/tags/${staging_tag}"
+  fi
+}
+
 case "$1" in
   stage)
     git fetch --no-tags --force "${repo_url}" \
@@ -64,22 +77,20 @@ case "$1" in
     declare -r published="$(published_object)"
     if [[ -n "${published}" && "${published}" != "$(git rev-parse "${staged_ref}")" ]]; then
       echo "error: ${tag} already exists and names something else." >&2
+      # Nothing will ever publish this staging tag, so don't leave it behind.
+      github_login
+      delete_staging_tag
       exit 1
     fi
     ;;
 
   publish)
-    gh auth login --with-token <"${HOME}/.github-token"
-    gh auth setup-git
+    github_login
     # Pushes the tag unless it is already published.
     if [[ "$(published_object)" != "$(git rev-parse "${staged_ref}")" ]]; then
       git push "${repo_url}" "${staged_ref}:refs/tags/${tag}"
     fi
-    # Keeps `git describe` unambiguous on later builds.
-    if git ls-remote --exit-code "${repo_url}" \
-        "refs/tags/${staging_tag}" >/dev/null; then
-      git push --delete "${repo_url}" "refs/tags/${staging_tag}"
-    fi
+    delete_staging_tag
     ;;
 
   *)
