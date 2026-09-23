@@ -1691,6 +1691,1037 @@ TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
       PosixErrorIs(ESRCH, _));
 }
 
+TEST(NetlinkRouteTest, NewRouteFamilyMismatch) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct v4request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in_addr gateway;
+  };
+
+  struct v6request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in6_addr gateway;
+  };
+
+  struct in_addr gateway;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &gateway), 1);
+
+  struct v4request shortReq = {};
+  shortReq.hdr.nlmsg_len = sizeof(shortReq);
+  shortReq.hdr.nlmsg_type = RTM_NEWROUTE;
+  shortReq.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  shortReq.hdr.nlmsg_seq = kSeq;
+
+  shortReq.rtm.rtm_family = AF_INET6;
+  shortReq.rtm.rtm_table = RT_TABLE_MAIN;
+  shortReq.rtm.rtm_protocol = RTPROT_BOOT;
+  shortReq.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  shortReq.rtm.rtm_type = RTN_UNICAST;
+
+  shortReq.nla.nla_len = sizeof(shortReq.nla) + sizeof(shortReq.gateway);
+  shortReq.nla.nla_type = RTA_GATEWAY;
+  shortReq.gateway = gateway;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &shortReq, sizeof(shortReq)),
+              PosixErrorIs(ERANGE, _));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24, &local,
+                                   sizeof(local)));
+
+  struct v6request longReq = {};
+  longReq.hdr.nlmsg_len = sizeof(longReq);
+  longReq.hdr.nlmsg_type = RTM_NEWROUTE;
+  longReq.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  longReq.hdr.nlmsg_seq = kSeq + 1;
+
+  longReq.rtm.rtm_family = AF_INET;
+  longReq.rtm.rtm_table = RT_TABLE_MAIN;
+  longReq.rtm.rtm_protocol = RTPROT_BOOT;
+  longReq.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  longReq.rtm.rtm_type = RTN_UNICAST;
+
+  longReq.nla.nla_len = sizeof(longReq.nla) + sizeof(longReq.gateway);
+  longReq.nla.nla_type = RTA_GATEWAY;
+  memcpy(&longReq.gateway, &gateway, sizeof(gateway));
+
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &longReq, sizeof(longReq)));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+  };
+
+  struct request dumpReq = {};
+  dumpReq.hdr.nlmsg_len = sizeof(dumpReq);
+  dumpReq.hdr.nlmsg_type = RTM_GETROUTE;
+  dumpReq.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  dumpReq.hdr.nlmsg_seq = kSeq + 2;
+  dumpReq.rtm.rtm_family = AF_UNSPEC;
+
+  bool gatewayFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &dumpReq, sizeof(dumpReq),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type != RTM_NEWROUTE) {
+          return;
+        }
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+        if (msg->rtm_dst_len != 0) {
+          return;
+        }
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_GATEWAY) {
+            EXPECT_EQ(msg->rtm_family, AF_INET);
+            EXPECT_EQ(RTA_PAYLOAD(attr), sizeof(gateway));
+            EXPECT_EQ(memcmp(RTA_DATA(attr), &gateway, sizeof(gateway)), 0);
+            gatewayFound = true;
+          }
+        }
+      },
+      false));
+  EXPECT_TRUE(gatewayFound);
+
+  struct v4request delReq = {};
+  delReq.hdr.nlmsg_len = sizeof(delReq);
+  delReq.hdr.nlmsg_type = RTM_DELROUTE;
+  delReq.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  delReq.hdr.nlmsg_seq = kSeq + 3;
+
+  delReq.rtm.rtm_family = AF_INET;
+  delReq.rtm.rtm_table = RT_TABLE_MAIN;
+  delReq.rtm.rtm_protocol = RTPROT_BOOT;
+  delReq.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  delReq.rtm.rtm_type = RTN_UNICAST;
+
+  delReq.nla.nla_len = sizeof(delReq.nla) + sizeof(delReq.gateway);
+  delReq.nla.nla_type = RTA_GATEWAY;
+  delReq.gateway = gateway;
+
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 3, &delReq, sizeof(delReq)));
+}
+
+TEST(NetlinkRouteTest, NewRouteUnsupportedFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr nla;
+    struct in_addr gateway;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_UNSPEC;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+
+  req.nla.nla_len = sizeof(req.nla) + sizeof(req.gateway);
+  req.nla.nla_type = RTA_GATEWAY;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &req.gateway), 1);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(EOPNOTSUPP, _));
+}
+
+TEST(NetlinkRouteTest, NewRouteWithDestinationUnsupportedFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in_addr dst;
+    struct nlattr gateway_nla;
+    struct in_addr gateway;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_UNSPEC;
+  req.rtm.rtm_dst_len = 24;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+
+  req.dst_nla.nla_len = sizeof(req.dst_nla) + sizeof(req.dst);
+  req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &req.dst), 1);
+
+  req.gateway_nla.nla_len = sizeof(req.gateway_nla) + sizeof(req.gateway);
+  req.gateway_nla.nla_type = RTA_GATEWAY;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &req.gateway), 1);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(EOPNOTSUPP, _));
+
+  req.hdr.nlmsg_type = RTM_DELROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq + 1;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq + 1, &req, sizeof(req)),
+              PosixErrorIs(EOPNOTSUPP, _));
+}
+
+TEST(NetlinkRouteTest, NewRouteWithDestinationGatewayFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct ShortGatewayRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr gateway_nla;
+    struct in_addr gateway;
+  };
+
+  struct ShortGatewayRequest short_req = {};
+  short_req.hdr.nlmsg_len = sizeof(short_req);
+  short_req.hdr.nlmsg_type = RTM_NEWROUTE;
+  short_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  short_req.hdr.nlmsg_seq = kSeq;
+
+  short_req.rtm.rtm_family = AF_INET6;
+  short_req.rtm.rtm_dst_len = 48;
+  short_req.rtm.rtm_table = RT_TABLE_MAIN;
+  short_req.rtm.rtm_protocol = RTPROT_BOOT;
+  short_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  short_req.rtm.rtm_type = RTN_UNICAST;
+
+  short_req.dst_nla.nla_len = sizeof(short_req.dst_nla) + sizeof(short_req.dst);
+  short_req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET6, "2001:db8:1::", &short_req.dst), 1);
+
+  short_req.gateway_nla.nla_len =
+      sizeof(short_req.gateway_nla) + sizeof(short_req.gateway);
+  short_req.gateway_nla.nla_type = RTA_GATEWAY;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &short_req.gateway), 1);
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &short_req, sizeof(short_req)),
+              PosixErrorIs(ERANGE, _));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24, &local,
+                                   sizeof(local)));
+
+  struct LongGatewayRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in_addr dst;
+    struct nlattr gateway_nla;
+    struct in6_addr gateway;
+  };
+
+  struct in_addr gateway;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &gateway), 1);
+
+  struct LongGatewayRequest long_req = {};
+  long_req.hdr.nlmsg_len = sizeof(long_req);
+  long_req.hdr.nlmsg_type = RTM_NEWROUTE;
+  long_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  long_req.hdr.nlmsg_seq = kSeq + 1;
+
+  long_req.rtm.rtm_family = AF_INET;
+  long_req.rtm.rtm_dst_len = 24;
+  long_req.rtm.rtm_table = RT_TABLE_MAIN;
+  long_req.rtm.rtm_protocol = RTPROT_BOOT;
+  long_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  long_req.rtm.rtm_type = RTN_UNICAST;
+
+  long_req.dst_nla.nla_len = sizeof(long_req.dst_nla) + sizeof(long_req.dst);
+  long_req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &long_req.dst), 1);
+
+  long_req.gateway_nla.nla_len =
+      sizeof(long_req.gateway_nla) + sizeof(long_req.gateway);
+  long_req.gateway_nla.nla_type = RTA_GATEWAY;
+  memcpy(&long_req.gateway, &gateway, sizeof(gateway));
+
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &long_req, sizeof(long_req)));
+
+  struct DumpRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+  };
+
+  struct DumpRequest dump_req = {};
+  dump_req.hdr.nlmsg_len = sizeof(dump_req);
+  dump_req.hdr.nlmsg_type = RTM_GETROUTE;
+  dump_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  dump_req.hdr.nlmsg_seq = kSeq + 2;
+  dump_req.rtm.rtm_family = AF_UNSPEC;
+
+  bool gateway_found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &dump_req, sizeof(dump_req),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type != RTM_NEWROUTE) {
+          return;
+        }
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+        if (msg->rtm_dst_len != 24) {
+          return;
+        }
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_GATEWAY) {
+            EXPECT_EQ(msg->rtm_family, AF_INET);
+            EXPECT_EQ(RTA_PAYLOAD(attr), sizeof(gateway));
+            EXPECT_EQ(memcmp(RTA_DATA(attr), &gateway, sizeof(gateway)), 0);
+            gateway_found = true;
+          }
+        }
+      },
+      false));
+  EXPECT_TRUE(gateway_found);
+}
+
+TEST(NetlinkRouteTest, NewRouteDestinationFamily) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24, &local,
+                                   sizeof(local)));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr gateway_nla;
+    struct in_addr gateway;
+  };
+
+  struct in_addr dst;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &dst), 1);
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET;
+  req.rtm.rtm_dst_len = 24;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+
+  req.dst_nla.nla_len = sizeof(req.dst_nla) + sizeof(req.dst);
+  req.dst_nla.nla_type = RTA_DST;
+  memcpy(&req.dst, &dst, sizeof(dst));
+
+  req.gateway_nla.nla_len = sizeof(req.gateway_nla) + sizeof(req.gateway);
+  req.gateway_nla.nla_type = RTA_GATEWAY;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &req.gateway), 1);
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+
+  struct DumpRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+  };
+
+  struct DumpRequest dump_req = {};
+  dump_req.hdr.nlmsg_len = sizeof(dump_req);
+  dump_req.hdr.nlmsg_type = RTM_GETROUTE;
+  dump_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  dump_req.hdr.nlmsg_seq = kSeq + 1;
+  dump_req.rtm.rtm_family = AF_UNSPEC;
+
+  bool destination_found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &dump_req, sizeof(dump_req),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type != RTM_NEWROUTE) {
+          return;
+        }
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+        if (msg->rtm_dst_len != 24) {
+          return;
+        }
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type != RTA_DST || RTA_PAYLOAD(attr) != sizeof(dst) ||
+              memcmp(RTA_DATA(attr), &dst, sizeof(dst)) != 0) {
+            continue;
+          }
+          EXPECT_EQ(msg->rtm_family, AF_INET);
+          destination_found = true;
+        }
+      },
+      false));
+  EXPECT_TRUE(destination_found);
+}
+
+TEST(NetlinkRouteTest, NewRouteDestinationShorterThanPrefix) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in_addr dst;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET6;
+  req.rtm.rtm_dst_len = 48;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+
+  req.dst_nla.nla_len = sizeof(req.dst_nla) + sizeof(req.dst);
+  req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &req.dst), 1);
+
+  req.oif_nla.nla_len = sizeof(req.oif_nla) + sizeof(req.oif);
+  req.oif_nla.nla_type = RTA_OIF;
+  req.oif = loopback_link.index;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(EINVAL, _));
+
+  req.rtm.rtm_dst_len = 24;
+  req.hdr.nlmsg_seq = kSeq + 1;
+
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 1, &req, sizeof(req)));
+}
+
+TEST(NetlinkRouteTest, NewRouteIpv4SourceIgnored) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+  struct in_addr first_local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.1", &first_local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24,
+                                   &first_local, sizeof(first_local)));
+  struct in_addr second_local;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.5", &second_local), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(fd, loopback_link.index, AF_INET, 24,
+                                   &second_local, sizeof(second_local)));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in_addr dst;
+    struct nlattr src_nla;
+    struct in_addr src;
+    struct nlattr gateway_nla;
+    struct in_addr gateway;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rtm.rtm_family = AF_INET;
+  req.rtm.rtm_dst_len = 24;
+  req.rtm.rtm_src_len = 32;
+  req.rtm.rtm_table = RT_TABLE_MAIN;
+  req.rtm.rtm_protocol = RTPROT_BOOT;
+  req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.rtm.rtm_type = RTN_UNICAST;
+
+  req.dst_nla.nla_len = sizeof(req.dst_nla) + sizeof(req.dst);
+  req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &req.dst), 1);
+
+  req.src_nla.nla_len = sizeof(req.src_nla) + sizeof(req.src);
+  req.src_nla.nla_type = RTA_SRC;
+  req.src = second_local;
+
+  req.gateway_nla.nla_len = sizeof(req.gateway_nla) + sizeof(req.gateway);
+  req.gateway_nla.nla_type = RTA_GATEWAY;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.2", &req.gateway), 1);
+
+  req.oif_nla.nla_len = sizeof(req.oif_nla) + sizeof(req.oif);
+  req.oif_nla.nla_type = RTA_OIF;
+  req.oif = loopback_link.index;
+
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+
+  FileDescriptor udp_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct sockaddr_in remote = {};
+  remote.sin_family = AF_INET;
+  remote.sin_port = htons(9);
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.7", &remote.sin_addr), 1);
+  ASSERT_THAT(connect(udp_fd.get(), reinterpret_cast<struct sockaddr*>(&remote),
+                      sizeof(remote)),
+              SyscallSucceeds());
+
+  struct sockaddr_in local = {};
+  socklen_t local_len = sizeof(local);
+  ASSERT_THAT(
+      getsockname(udp_fd.get(), reinterpret_cast<struct sockaddr*>(&local),
+                  &local_len),
+      SyscallSucceeds());
+  EXPECT_EQ(local.sin_addr.s_addr, first_local.s_addr);
+}
+
+TEST(NetlinkRouteTest, NewRouteIpv4SourceTooShort) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  struct ShortSourceRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in_addr dst;
+    struct nlattr src_nla;
+    uint8_t src[4];
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct ShortSourceRequest short_req = {};
+  short_req.hdr.nlmsg_len = sizeof(short_req);
+  short_req.hdr.nlmsg_type = RTM_NEWROUTE;
+  short_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  short_req.hdr.nlmsg_seq = kSeq;
+
+  short_req.rtm.rtm_family = AF_INET;
+  short_req.rtm.rtm_dst_len = 24;
+  short_req.rtm.rtm_table = RT_TABLE_MAIN;
+  short_req.rtm.rtm_protocol = RTPROT_BOOT;
+  short_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  short_req.rtm.rtm_type = RTN_UNICAST;
+
+  short_req.dst_nla.nla_len = sizeof(short_req.dst_nla) + sizeof(short_req.dst);
+  short_req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &short_req.dst), 1);
+
+  short_req.src_nla.nla_len = sizeof(short_req.src_nla) + 3;
+  short_req.src_nla.nla_type = RTA_SRC;
+  short_req.src[0] = 192;
+  short_req.src[1] = 0;
+  short_req.src[2] = 2;
+
+  short_req.oif_nla.nla_len = sizeof(short_req.oif_nla) + sizeof(short_req.oif);
+  short_req.oif_nla.nla_type = RTA_OIF;
+  short_req.oif = loopback_link.index;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &short_req, sizeof(short_req)),
+              PosixErrorIs(ERANGE, _));
+
+  struct EmptySourceRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in_addr dst;
+    struct nlattr src_nla;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct EmptySourceRequest empty_req = {};
+  empty_req.hdr.nlmsg_len = sizeof(empty_req);
+  empty_req.hdr.nlmsg_type = RTM_NEWROUTE;
+  empty_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  empty_req.hdr.nlmsg_seq = kSeq + 1;
+
+  empty_req.rtm.rtm_family = AF_INET;
+  empty_req.rtm.rtm_dst_len = 24;
+  empty_req.rtm.rtm_table = RT_TABLE_MAIN;
+  empty_req.rtm.rtm_protocol = RTPROT_BOOT;
+  empty_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  empty_req.rtm.rtm_type = RTN_UNICAST;
+
+  empty_req.dst_nla.nla_len = sizeof(empty_req.dst_nla) + sizeof(empty_req.dst);
+  empty_req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET, "198.51.100.0", &empty_req.dst), 1);
+
+  empty_req.src_nla.nla_len = sizeof(empty_req.src_nla);
+  empty_req.src_nla.nla_type = RTA_SRC;
+
+  empty_req.oif_nla.nla_len = sizeof(empty_req.oif_nla) + sizeof(empty_req.oif);
+  empty_req.oif_nla.nla_type = RTA_OIF;
+  empty_req.oif = loopback_link.index;
+
+  EXPECT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &empty_req, sizeof(empty_req)),
+      PosixErrorIs(ERANGE, _));
+}
+
+TEST(NetlinkRouteTest, NewRouteIpv6SourcePrefix) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  struct PrefixRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr src_nla;
+    struct in6_addr src;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct PrefixRequest prefix_req = {};
+  prefix_req.hdr.nlmsg_len = sizeof(prefix_req);
+  prefix_req.hdr.nlmsg_type = RTM_NEWROUTE;
+  prefix_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  prefix_req.hdr.nlmsg_seq = kSeq;
+
+  prefix_req.rtm.rtm_family = AF_INET6;
+  prefix_req.rtm.rtm_dst_len = 48;
+  prefix_req.rtm.rtm_src_len = 64;
+  prefix_req.rtm.rtm_table = RT_TABLE_MAIN;
+  prefix_req.rtm.rtm_protocol = RTPROT_BOOT;
+  prefix_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  prefix_req.rtm.rtm_type = RTN_UNICAST;
+
+  prefix_req.dst_nla.nla_len =
+      sizeof(prefix_req.dst_nla) + sizeof(prefix_req.dst);
+  prefix_req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET6, "2001:db8:1::", &prefix_req.dst), 1);
+
+  prefix_req.src_nla.nla_len =
+      sizeof(prefix_req.src_nla) + sizeof(prefix_req.src);
+  prefix_req.src_nla.nla_type = RTA_SRC;
+  ASSERT_EQ(inet_pton(AF_INET6, "2001:db8:ff::", &prefix_req.src), 1);
+
+  prefix_req.oif_nla.nla_len =
+      sizeof(prefix_req.oif_nla) + sizeof(prefix_req.oif);
+  prefix_req.oif_nla.nla_type = RTA_OIF;
+  prefix_req.oif = loopback_link.index;
+
+  PosixError err =
+      NetlinkRequestAckOrError(fd, kSeq, &prefix_req, sizeof(prefix_req));
+  if (!err.ok()) {
+    EXPECT_THAT(err, PosixErrorIs(EINVAL, _));
+  } else {
+    struct DumpRequest {
+      struct nlmsghdr hdr;
+      struct rtmsg rtm;
+    };
+
+    struct DumpRequest dump_req = {};
+    dump_req.hdr.nlmsg_len = sizeof(dump_req);
+    dump_req.hdr.nlmsg_type = RTM_GETROUTE;
+    dump_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    dump_req.hdr.nlmsg_seq = kSeq + 1;
+    dump_req.rtm.rtm_family = AF_INET6;
+
+    bool destination_found = false;
+    ASSERT_NO_ERRNO(NetlinkRequestResponse(
+        fd, &dump_req, sizeof(dump_req),
+        [&](const struct nlmsghdr* hdr) {
+          if (hdr->nlmsg_type != RTM_NEWROUTE) {
+            return;
+          }
+          const struct rtmsg* msg =
+              reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+          if (msg->rtm_family != AF_INET6 || msg->rtm_dst_len != 48) {
+            return;
+          }
+          int len = RTM_PAYLOAD(hdr);
+          for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+               attr = RTA_NEXT(attr, len)) {
+            if (attr->rta_type != RTA_DST ||
+                RTA_PAYLOAD(attr) != sizeof(prefix_req.dst) ||
+                memcmp(RTA_DATA(attr), &prefix_req.dst,
+                       sizeof(prefix_req.dst)) != 0) {
+              continue;
+            }
+            EXPECT_EQ(msg->rtm_src_len, 64);
+            destination_found = true;
+          }
+        },
+        false));
+    EXPECT_TRUE(destination_found);
+  }
+
+  struct EmptySourceRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr src_nla;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct EmptySourceRequest empty_req = {};
+  empty_req.hdr.nlmsg_len = sizeof(empty_req);
+  empty_req.hdr.nlmsg_type = RTM_NEWROUTE;
+  empty_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+  empty_req.hdr.nlmsg_seq = kSeq + 2;
+
+  empty_req.rtm.rtm_family = AF_INET6;
+  empty_req.rtm.rtm_dst_len = 48;
+  empty_req.rtm.rtm_table = RT_TABLE_MAIN;
+  empty_req.rtm.rtm_protocol = RTPROT_BOOT;
+  empty_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  empty_req.rtm.rtm_type = RTN_UNICAST;
+
+  empty_req.dst_nla.nla_len = sizeof(empty_req.dst_nla) + sizeof(empty_req.dst);
+  empty_req.dst_nla.nla_type = RTA_DST;
+  ASSERT_EQ(inet_pton(AF_INET6, "2001:db8:2::", &empty_req.dst), 1);
+
+  empty_req.src_nla.nla_len = sizeof(empty_req.src_nla);
+  empty_req.src_nla.nla_type = RTA_SRC;
+
+  empty_req.oif_nla.nla_len = sizeof(empty_req.oif_nla) + sizeof(empty_req.oif);
+  empty_req.oif_nla.nla_type = RTA_OIF;
+  empty_req.oif = loopback_link.index;
+
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &empty_req, sizeof(empty_req)));
+}
+
+TEST(NetlinkRouteTest, DeleteRouteIpv6SourcePrefix) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  const DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(loopback_link.index, IFF_UP, IFF_UP));
+
+  struct in6_addr dst;
+  ASSERT_EQ(inet_pton(AF_INET6, "2001:db8:1::", &dst), 1);
+  ASSERT_NO_ERRNO(
+      AddUnicastRoute(loopback_link.index, AF_INET6, 48, &dst, sizeof(dst)));
+
+  struct ShortSourceRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr src_nla;
+    struct in_addr src;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct ShortSourceRequest short_req = {};
+  short_req.hdr.nlmsg_len = sizeof(short_req);
+  short_req.hdr.nlmsg_type = RTM_DELROUTE;
+  short_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  short_req.hdr.nlmsg_seq = kSeq;
+
+  short_req.rtm.rtm_family = AF_INET6;
+  short_req.rtm.rtm_dst_len = 48;
+  short_req.rtm.rtm_src_len = 64;
+  short_req.rtm.rtm_table = RT_TABLE_MAIN;
+  short_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  short_req.rtm.rtm_type = RTN_UNICAST;
+
+  short_req.dst_nla.nla_len = sizeof(short_req.dst_nla) + sizeof(short_req.dst);
+  short_req.dst_nla.nla_type = RTA_DST;
+  short_req.dst = dst;
+
+  short_req.src_nla.nla_len = sizeof(short_req.src_nla) + sizeof(short_req.src);
+  short_req.src_nla.nla_type = RTA_SRC;
+  ASSERT_EQ(inet_pton(AF_INET, "192.0.2.5", &short_req.src), 1);
+
+  short_req.oif_nla.nla_len = sizeof(short_req.oif_nla) + sizeof(short_req.oif);
+  short_req.oif_nla.nla_type = RTA_OIF;
+  short_req.oif = loopback_link.index;
+
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &short_req, sizeof(short_req)),
+              PosixErrorIs(EINVAL, _));
+
+  struct EmptySourceRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr src_nla;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct EmptySourceRequest empty_req = {};
+  empty_req.hdr.nlmsg_len = sizeof(empty_req);
+  empty_req.hdr.nlmsg_type = RTM_DELROUTE;
+  empty_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  empty_req.hdr.nlmsg_seq = kSeq + 1;
+
+  empty_req.rtm.rtm_family = AF_INET6;
+  empty_req.rtm.rtm_dst_len = 48;
+  empty_req.rtm.rtm_src_len = 64;
+  empty_req.rtm.rtm_table = RT_TABLE_MAIN;
+  empty_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  empty_req.rtm.rtm_type = RTN_UNICAST;
+
+  empty_req.dst_nla.nla_len = sizeof(empty_req.dst_nla) + sizeof(empty_req.dst);
+  empty_req.dst_nla.nla_type = RTA_DST;
+  empty_req.dst = dst;
+
+  empty_req.src_nla.nla_len = sizeof(empty_req.src_nla);
+  empty_req.src_nla.nla_type = RTA_SRC;
+
+  empty_req.oif_nla.nla_len = sizeof(empty_req.oif_nla) + sizeof(empty_req.oif);
+  empty_req.oif_nla.nla_type = RTA_OIF;
+  empty_req.oif = loopback_link.index;
+
+  EXPECT_THAT(
+      NetlinkRequestAckOrError(fd, kSeq + 1, &empty_req, sizeof(empty_req)),
+      PosixErrorIs(EINVAL, _));
+
+  struct PrefixRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr src_nla;
+    struct in6_addr src;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct PrefixRequest prefix_req = {};
+  prefix_req.hdr.nlmsg_len = sizeof(prefix_req);
+  prefix_req.hdr.nlmsg_type = RTM_DELROUTE;
+  prefix_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  prefix_req.hdr.nlmsg_seq = kSeq + 2;
+
+  prefix_req.rtm.rtm_family = AF_INET6;
+  prefix_req.rtm.rtm_dst_len = 48;
+  prefix_req.rtm.rtm_src_len = 64;
+  prefix_req.rtm.rtm_table = RT_TABLE_MAIN;
+  prefix_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  prefix_req.rtm.rtm_type = RTN_UNICAST;
+
+  prefix_req.dst_nla.nla_len =
+      sizeof(prefix_req.dst_nla) + sizeof(prefix_req.dst);
+  prefix_req.dst_nla.nla_type = RTA_DST;
+  prefix_req.dst = dst;
+
+  prefix_req.src_nla.nla_len =
+      sizeof(prefix_req.src_nla) + sizeof(prefix_req.src);
+  prefix_req.src_nla.nla_type = RTA_SRC;
+  ASSERT_EQ(inet_pton(AF_INET6, "2001:db8:ff::", &prefix_req.src), 1);
+
+  prefix_req.oif_nla.nla_len =
+      sizeof(prefix_req.oif_nla) + sizeof(prefix_req.oif);
+  prefix_req.oif_nla.nla_type = RTA_OIF;
+  prefix_req.oif = loopback_link.index;
+
+  EXPECT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq + 2, &prefix_req, sizeof(prefix_req)));
+
+  ASSERT_NO_ERRNO(
+      AddUnicastRoute(loopback_link.index, AF_INET6, 48, &dst, sizeof(dst)));
+
+  struct NoSourceRequest {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+    struct nlattr dst_nla;
+    struct in6_addr dst;
+    struct nlattr oif_nla;
+    int32_t oif;
+  };
+
+  struct NoSourceRequest no_source_req = {};
+  no_source_req.hdr.nlmsg_len = sizeof(no_source_req);
+  no_source_req.hdr.nlmsg_type = RTM_DELROUTE;
+  no_source_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  no_source_req.hdr.nlmsg_seq = kSeq + 3;
+
+  no_source_req.rtm.rtm_family = AF_INET6;
+  no_source_req.rtm.rtm_dst_len = 48;
+  no_source_req.rtm.rtm_src_len = 64;
+  no_source_req.rtm.rtm_table = RT_TABLE_MAIN;
+  no_source_req.rtm.rtm_scope = RT_SCOPE_UNIVERSE;
+  no_source_req.rtm.rtm_type = RTN_UNICAST;
+
+  no_source_req.dst_nla.nla_len =
+      sizeof(no_source_req.dst_nla) + sizeof(no_source_req.dst);
+  no_source_req.dst_nla.nla_type = RTA_DST;
+  no_source_req.dst = dst;
+
+  no_source_req.oif_nla.nla_len =
+      sizeof(no_source_req.oif_nla) + sizeof(no_source_req.oif);
+  no_source_req.oif_nla.nla_type = RTA_OIF;
+  no_source_req.oif = loopback_link.index;
+
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq + 3, &no_source_req,
+                                           sizeof(no_source_req)));
+}
+
 // GetRuleDump tests a RTM_GETRULE + NLM_F_DUMP request.
 TEST(NetlinkRouteTest, GetRuleDump) {
   // Gvisor does not support `RTM_GETRULE`
