@@ -538,7 +538,7 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 
 	for _, rt := range routeTables {
 		var prefSrc []byte
-		if rt.OutputInterface != 0 && (!ms.Multi || (rt.Flags&linux.RTM_F_CLONED) != 0) {
+		if len(rt.PrefSrcAddr) == 0 && rt.OutputInterface != 0 && (!ms.Multi || (rt.Flags&linux.RTM_F_CLONED) != 0) {
 			for _, a := range stack.InterfaceAddrs()[rt.OutputInterface] {
 				if a.Family == rt.Family {
 					prefSrc = a.Addr
@@ -583,6 +583,9 @@ func (p *Protocol) AddRouteMessage(ms *nlmsg.MessageSet, typ uint16, nlFlags uin
 	}
 	if rt.SrcLen > 0 {
 		m.PutAttr(linux.RTA_SRC, primitive.AsByteSlice(rt.SrcAddr))
+	}
+	if len(rt.PrefSrcAddr) > 0 {
+		m.PutAttr(linux.RTA_PREFSRC, primitive.AsByteSlice(rt.PrefSrcAddr))
 	}
 	if rt.OutputInterface != 0 {
 		m.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(rt.OutputInterface))
