@@ -71,7 +71,6 @@ type bwrapConfig struct {
 	GID         int
 	UnshareUser bool
 	Hostname    string
-	ShareNet    bool
 	Argv0       string
 	hasArgv0    bool
 	nextPerms   *uint32
