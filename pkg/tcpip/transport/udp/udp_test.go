@@ -2421,6 +2421,41 @@ func TestSetExperimentOptionIPv6(t *testing.T) {
 	checker.IPv6WithExtHdr(t, v, checker.IPv6ExtHdr(checker.IPv6ExperimentHeader(expval)))
 }
 
+func TestForwarder(t *testing.T) {
+	c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
+	defer c.Cleanup()
+
+	var handledEP tcpip.Endpoint
+	shouldHandle := true
+	fwd := udp.NewForwarder(c.Stack, func(r *udp.ForwarderRequest) bool {
+		if !shouldHandle {
+			return false
+		}
+		ep, err := r.CreateEndpoint(&c.WQ)
+		if err != nil {
+			t.Fatalf("r.CreateEndpoint(&c.WQ) failed: %s", err)
+		}
+		handledEP = ep
+		return true
+	})
+	c.Stack.SetTransportProtocolHandler(udp.ProtocolNumber, fwd.HandlePacket)
+
+	flow := context.UnicastV4
+	payload := newRandomPayload(arbitraryPayloadSize)
+	c.InjectPacket(flow.NetProto(), context.BuildUDPPacket(payload, flow, context.Incoming, testTOS, testTTL, false))
+	if handledEP == nil {
+		t.Fatal("Forwarder did not create endpoint")
+	}
+	c.EP = handledEP
+	c.ReadFromEndpointExpectSuccess(payload, flow)
+	handledEP.Close()
+	c.EP = nil
+
+	// Also test unhandled forwarder request (returning false) to ensure no PacketBuffer leak.
+	shouldHandle = false
+	c.InjectPacket(flow.NetProto(), context.BuildUDPPacket(payload, flow, context.Incoming, testTOS, testTTL, false))
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
