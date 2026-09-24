@@ -16,26 +16,44 @@ const yaml = require('js-yaml');
  *   github: !Object,
  *   context: !Object,
  *   core: !Object,
+ *   delayMs: (number|undefined),
  * }} params - The injected actions/github-script objects.
  *     github: An authenticated Octokit REST client.
  *     context: The GitHub Actions workflow context and payload.
  *     core: The GitHub Actions core toolkit for logging/errors.
+ *     delayMs: How long to wait before assigning, so humans can pick
+ *         reviewers first. Defaults to 5 minutes.
  */
-module.exports = async ({github, context, core}) => {
+module.exports = async ({github, context, core, delayMs = 5 * 60 * 1000}) => {
   const {owner, repo} = context.repo;
   const prNum = context.payload.pull_request.number;
-  const pr = context.payload.pull_request;
+
+  // Filter out automated PRs
+  if (context.payload.pull_request.user.type === 'Bot') {
+    return;
+  }
+
+  // Give humans time to pick reviewers manually before the bot steps in
+  if (delayMs > 0) {
+    console.log(`Waiting ${delayMs / 1000}s before assigning PR #${prNum}`);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+
+  // Fetch the latest PR state
+  const {data: pr} =
+      await github.rest.pulls.get({owner, repo, pull_number: prNum});
   const author = pr.user.login;
   const authorLower = author.toLowerCase();
 
-  // Filter out automated PRs
-  if (pr.user.type === 'Bot') {
+  if (pr.state !== 'open' || pr.draft) {
     return;
   }
 
   // Check if already assigned
   if ((pr.requested_reviewers || []).length > 0 ||
+      (pr.requested_teams || []).length > 0 ||
       (pr.assignees || []).length > 0) {
+    console.log(`PR #${prNum} already has reviewers or assignees; skipping.`);
     return;
   }
 

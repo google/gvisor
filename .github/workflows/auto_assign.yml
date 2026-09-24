@@ -14,6 +14,7 @@ jobs:
   assign:
     if: github.event.pull_request.draft == false && github.repository == 'google/gvisor'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
