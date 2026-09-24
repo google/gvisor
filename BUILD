@@ -127,6 +127,7 @@ build_test(
     targets = [
         "//test/e2e:integration_test",
         "//test/image:image_test",
+        "//test/root:crictl_test",
         "//test/root:root_test",
         "//test/benchmarks/base:startup_test",
         "//test/benchmarks/base:size_test",

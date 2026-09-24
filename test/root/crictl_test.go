@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,7 +34,10 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/criutil"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/sandboxposture"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Tests for crictl have to be run as root (rather than in a user namespace)
@@ -565,8 +569,9 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 	}()
 	cu.Add(func() {
 		wg.Wait()
-		t.Logf("containerd stdout: %s", stdout.String())
-		t.Logf("containerd stderr: %s", stderr.String())
+		_ = os.MkdirAll("/tmp/shim-logs", 0755)
+		logFile := fmt.Sprintf("/tmp/shim-logs/containerd-%s.log", strings.ReplaceAll(t.Name(), "/", "_"))
+		_ = os.WriteFile(logFile, stderr.Bytes(), 0644)
 	})
 
 	// Start the process.
@@ -1074,4 +1079,209 @@ func getContainerd() string {
 // e.g. enable sandbox API in containerd or not.
 var getContainerdConfig = func(major, minor uint64) string {
 	return containerdConfig
+}
+
+// TestCrictlSandboxPosture checks the security posture of a containerd sandbox.
+func TestCrictlSandboxPosture(t *testing.T) {
+	if missing := sandboxposture.UnsupportedFeatures(); len(missing) > 0 {
+		t.Skipf("This kernel cannot report %s, so a collected posture would not be exhaustive", strings.Join(missing, ", "))
+	}
+	crictl, cleanup, err := setup(t, false /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox(testutil.RandomID("posture-pod")), SimpleSpec("sleep", "basic/busybox", []string{"sleep", "1000"}, nil))
+	if err != nil {
+		t.Fatalf("StartPodAndContainer: %v", err)
+	}
+	defer func() {
+		_ = crictl.StopPodAndContainers(podID, []string{contID})
+	}()
+
+	shims, err := getShimPIDs(podID)
+	if err != nil || len(shims) == 0 {
+		t.Fatalf("failed to find shim PIDs for pod %s: %v", podID, err)
+	}
+	shimPID, err := strconv.Atoi(shims[0])
+	if err != nil {
+		t.Fatalf("parsing shim PID %q: %v", shims[0], err)
+	}
+
+	var sandboxPID int
+	if err := testutil.Poll(func() error {
+		var err error
+		sandboxPID, err = findSandboxUnder(shimPID)
+		return err
+	}, 10*time.Second); err != nil {
+		t.Fatalf("finding sandbox PID under shim %d: %v", shimPID, err)
+	}
+	t.Logf("Sandbox is PID %d; its parent, the runsc shim, is PID %d", sandboxPID, shimPID)
+
+	ref, err := sandboxposture.ReferenceOf(shimPID, "/proc")
+	if err != nil {
+		t.Fatalf("Describing reference process %d: %v", shimPID, err)
+	}
+
+	conf, err := config.NewFromFlags(flag.CommandLine)
+	if err != nil {
+		t.Fatalf("Building a configuration from flags: %v", err)
+	}
+
+	var extraFDs []string
+	if conf.Platform == "kvm" {
+		extraFDs = sandboxposture.KVMFDClasses()
+	}
+
+	want := sandboxposture.Expected(sandboxposture.ExpectedOpts{
+		DirectFS:             true, // containerd config uses file-access = shared
+		NetworkMode:          "sandbox",
+		EnableRaw:            conf.EnableRaw,
+		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
+		GoDebug:              sandboxposture.PlatformGoDebug[conf.Platform],
+		ExtraFDClasses:       extraFDs,
+		CgoEnabled:           config.CgoEnabled,
+		ChildOfRef:           true,
+		Ref:                  ref,
+	})
+
+	got, err := sandboxposture.Collect(sandboxposture.Opts{
+		PID:      sandboxPID,
+		RefPID:   shimPID,
+		ProcRoot: "/proc",
+	})
+	if err != nil {
+		t.Fatalf("Collecting posture of sandbox %d: %v", sandboxPID, err)
+	}
+
+	if d := sandboxposture.Diff(want, got); d != "" {
+		t.Errorf("Sandbox %d posture diff: %s", sandboxPID, d)
+	}
+	if !got.Threads.Uniform {
+		t.Errorf("Sandbox %d threads divergent:\n  %s", sandboxPID, strings.Join(got.Threads.Divergences, "\n  "))
+	}
+}
+
+// TestCrictlCgroups checks that containerd properly applies cgroup limits and hierarchy to sandboxes and containers.
+func TestCrictlCgroups(t *testing.T) {
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	const memLimit = int64(64 * 1024 * 1024)
+	spec := SimpleSpec("cgroup-test", "basic/busybox", []string{"sleep", "1000"}, map[string]any{
+		"linux": map[string]any{
+			"resources": map[string]any{
+				"memory_limit_in_bytes": memLimit,
+				"cpu_quota":             int64(50000),
+				"cpu_period":            int64(100000),
+			},
+		},
+	})
+
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox(testutil.RandomID("cgroup-pod")), spec)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer func() {
+		_ = crictl.StopPodAndContainers(podID, []string{contID})
+	}()
+
+	// Verify memory limit through crictl inspect.
+	inspectedMem, err := criInspectMemoryLimitBytes(crictl, contID)
+	if err != nil {
+		t.Fatalf("inspect memory limit: %v", err)
+	}
+	if inspectedMem != memLimit {
+		t.Errorf("got memory limit %d, want %d", inspectedMem, memLimit)
+	}
+
+	shims, err := getShimPIDs(podID)
+	if err != nil || len(shims) == 0 {
+		t.Fatalf("failed to find shim PIDs for pod %s: %v", podID, err)
+	}
+	shimPID, err := strconv.Atoi(shims[0])
+	if err != nil {
+		t.Fatalf("parsing shim PID: %v", err)
+	}
+	var sandboxPID int
+	if err := testutil.Poll(func() error {
+		var err error
+		sandboxPID, err = findSandboxUnder(shimPID)
+		return err
+	}, 10*time.Second); err != nil {
+		t.Fatalf("finding sandbox PID under shim %d: %v", shimPID, err)
+	}
+
+	// Verify the sandbox PID is associated with a cgroup.
+	cgroupPath := filepath.Join("/proc", strconv.Itoa(sandboxPID), "cgroup")
+	cgroupData, err := os.ReadFile(cgroupPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", cgroupPath, err)
+	}
+	if len(strings.TrimSpace(string(cgroupData))) == 0 {
+		t.Errorf("cgroup file %s is empty", cgroupPath)
+	}
+	t.Logf("Sandbox %d cgroups:\n%s", sandboxPID, string(cgroupData))
+}
+
+// findSandboxUnder returns the PID of the sandbox process descended from root.
+func findSandboxUnder(root int) (int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, err
+	}
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		cmdline, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+		if err != nil {
+			continue
+		}
+		if argv0, _, _ := strings.Cut(string(cmdline), "\x00"); argv0 != "runsc-sandbox" {
+			continue
+		}
+		if descendsFrom(pid, root) {
+			return pid, nil
+		}
+	}
+	return 0, fmt.Errorf("no sandbox found under %d", root)
+}
+
+// descendsFrom reports whether pid is root or a descendant of root.
+func descendsFrom(pid, root int) bool {
+	const maxDepth = 32
+	for i := 0; pid > 1 && i < maxDepth; i++ {
+		if pid == root {
+			return true
+		}
+		parent, err := getParentPID(pid)
+		if err != nil {
+			return false
+		}
+		pid = parent
+	}
+	return false
+}
+
+// getParentPID returns the parent PID of the given process.
+func getParentPID(pid int) (int, error) {
+	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return 0, err
+	}
+	closeParen := strings.LastIndex(string(stat), ")")
+	if closeParen < 0 {
+		return 0, fmt.Errorf("malformed stat for %d: %q", pid, string(stat))
+	}
+	fields := strings.Fields(string(stat[closeParen+1:]))
+	if len(fields) < 2 {
+		return 0, fmt.Errorf("too few fields in stat for %d: %q", pid, string(stat))
+	}
+	return strconv.Atoi(fields[1])
 }

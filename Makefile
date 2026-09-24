@@ -275,7 +275,7 @@ tests: unit-tests nogo-tests container-tests syscall-tests
 integration-tests: ## Run all standard integration tests.
 integration-tests: docker-tests overlay-tests hostnet-tests swgso-tests
 integration-tests: do-tests kvm-tests containerd-tests-min
-integration-tests: sandbox-posture-tests
+integration-tests: root-tests sandbox-posture-tests
 .PHONY: integration-tests
 
 integration-test-images: load-image-test load-basic load-systemd-integ load-systemd-services load-ubi10-init $(if $(filter x86_64,$(ARCH)),load-arch-systemd)
@@ -453,6 +453,11 @@ sandbox-posture-tests: load-basic_alpine $(RUNTIME_BIN)
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME)-posture-kvm --platform=kvm $(POSTURE_TEST_ARGS) $(ARGS))
 .PHONY: sandbox-posture-tests
 
+root-tests: load-basic_alpine $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: root-tests
+
 # Standard integration targets.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
@@ -568,21 +573,14 @@ install_containerd = \
 	sudo -H "PATH=$$PATH" $$T/install_containerd.sh $(1); \
 	rm -rf $$T)
 
-# Specific containerd version tests.
-containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_symlink-resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
-	@$(call install_containerd,$*)
-ifeq (,$(STAGED_BINARIES))
-	@sudo cp -fa "$(RUNTIME_DIR)"/* "$$(dirname $$(which containerd))/"
-else
-	@gcloud storage cat "$(STAGED_BINARIES)" | \
-		sudo tar -C "$$(dirname $$(which containerd))" -zxvf -
-endif
-	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
+containerd-test-%: load-containerd_harness load-basic_alpine load-basic_python load-basic_busybox load-basic_symlink-resolv load-basic_httpd load-basic_ubuntu
+	@$(call test_runtime,$(RUNTIME),--test_output=streamed --test_arg=-test.v --test_arg=--containerd_version=$* $(ARGS) -- //test/root:crictl_test)
 containerd-tests-min: containerd-test-1.7.31
+containerd-tests: containerd-test-1.7.31 containerd-test-2.0.8 containerd-test-2.1.7 containerd-test-2.2.3
+.PHONY: containerd-test-% containerd-tests-min containerd-tests
 
 containerd-performance-test-%:
-	@export RUN_SHIM_GROUPING_PERFORMANCE_TEST=true; $(MAKE) containerd-test-$*
+	@$(call test_runtime,$(RUNTIME),--test_output=streamed --test_arg=-test.v --test_arg=--containerd_version=$* --test_env=RUN_SHIM_GROUPING_PERFORMANCE_TEST=true $(ARGS) -- //test/root:crictl_test)
 .PHONY: containerd-performance-test-%
 
 

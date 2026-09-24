@@ -7,7 +7,17 @@ package(
 
 go_library(
     name = "root",
-    srcs = ["root.go"],
+    testonly = True,
+    srcs = [
+        "containerd_harness.go",
+        "root.go",
+    ],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+        "//runsc/flag",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
 )
 
 go_test(
@@ -16,8 +26,6 @@ go_test(
     srcs = [
         "cgroup_test.go",
         "chroot_test.go",
-        "crictl_sandbox_test.go",
-        "crictl_test.go",
         "main_test.go",
         "oom_score_adj_test.go",
         "runsc_test.go",
@@ -35,7 +43,6 @@ go_test(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",
-        "//pkg/test/criutil",
         "//pkg/test/dockerutil",
         "//pkg/test/sandboxposture",
         "//pkg/test/testutil",
@@ -49,6 +56,37 @@ go_test(
         "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "crictl_test",
+    size = "large",
+    srcs = [
+        "crictl_main_test.go",
+        "crictl_sandbox_test.go",
+        "crictl_test.go",
+    ],
+    data = [
+        "//:release",
+    ],
+    library = ":root",
+    pure = True,
+    tags = [
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/cleanup",
+        "//pkg/test/criutil",
+        "//pkg/test/dockerutil",
+        "//pkg/test/sandboxposture",
+        "//pkg/test/testutil",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_moby_sys_capability//:go_default_library",
     ],
 )
 

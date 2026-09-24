@@ -96,6 +96,10 @@ type RunOpts struct {
 	// Privileged enables privileged mode.
 	Privileged bool
 
+	Init bool
+
+	CgroupnsMode string
+
 	// Sets network mode for the container. See container.NetworkMode for types. Several options will
 	// not work w/ gVisor. For example, you can't set the "sandbox" network option for gVisor using
 	// this handle.
@@ -373,7 +377,7 @@ func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*cont
 func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 	c.mounts = append(c.mounts, r.Mounts...)
 
-	return &container.HostConfig{
+	hc := &container.HostConfig{
 		Runtime:         c.runtime,
 		Mounts:          c.mounts,
 		Tmpfs:           r.Tmpfs,
@@ -385,6 +389,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		SecurityOpt:     r.SecurityOpts,
 		ReadonlyRootfs:  r.ReadOnly,
 		NetworkMode:     container.NetworkMode(r.NetworkMode),
+		CgroupnsMode:    container.CgroupnsMode(r.CgroupnsMode),
 		Resources: container.Resources{
 			Memory:         int64(r.Memory), // In bytes.
 			CpusetCpus:     r.CpusetCpus,
@@ -393,6 +398,11 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		},
 		Annotations: r.Annotations,
 	}
+	if r.Init {
+		init := true
+		hc.Init = &init
+	}
+	return hc
 }
 
 // Start is analogous to 'docker start'.
@@ -490,6 +500,18 @@ func (c *Container) StreamLogs(ctx context.Context, w io.Writer) error {
 	}
 	defer reader.Close()
 	_, err = stdcopy.StdCopy(w, w, reader)
+	return err
+}
+
+// StreamOutput streams stdout and stderr to the given writers.
+func (c *Container) StreamOutput(ctx context.Context, stdout, stderr io.Writer) error {
+	opts := container.LogsOptions{ShowStdout: true, ShowStderr: true, Follow: true}
+	reader, err := c.client.ContainerLogs(ctx, c.id, opts)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	_, err = stdcopy.StdCopy(stdout, stderr, reader)
 	return err
 }
 

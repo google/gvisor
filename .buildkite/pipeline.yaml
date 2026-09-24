@@ -578,6 +578,15 @@ steps:
   - <<: *common
     <<: *docker
     <<: *source_test
+    label: ":lock: Root tests"
+    command: make root-tests
+    agents:
+      arch: "amd64"
+      kernel: "modern"
+      queue: "default"
+  - <<: *common
+    <<: *docker
+    <<: *source_test
     label: ":rocket: Systrap tests"
     parallelism: 8
     command: make systrap-tests

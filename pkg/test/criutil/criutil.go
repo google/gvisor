@@ -18,6 +18,7 @@
 package criutil
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -95,8 +96,8 @@ func (cc *Crictl) RunPod(runtime, sbSpecFile string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("runp failed: %v", err)
 	}
-	// Strip the trailing newline from crictl output.
-	return strings.TrimSpace(podID), nil
+	lines := strings.Split(strings.TrimSpace(podID), "\n")
+	return strings.TrimSpace(lines[len(lines)-1]), nil
 }
 
 // Create creates a container within a sandbox. It corresponds to `crictl
@@ -133,14 +134,13 @@ func (cc *Crictl) Create(podID, contSpecFile, sbSpecFile string) (string, error)
 	args = append(args, contSpecFile)
 	args = append(args, sbSpecFile)
 
-	podID, err = cc.run(args...)
+	contID, err := cc.run(args...)
 	if err != nil {
-		time.Sleep(10 * time.Minute) // XXX
 		return "", fmt.Errorf("create failed: %v", err)
 	}
 
-	// Strip the trailing newline from crictl output.
-	return strings.TrimSpace(podID), nil
+	lines := strings.Split(strings.TrimSpace(contID), "\n")
+	return strings.TrimSpace(lines[len(lines)-1]), nil
 }
 
 // Start starts a container. It corresponds to `crictl start`.
@@ -249,8 +249,41 @@ func (cc *Crictl) RmPod(podID string) error {
 	return err
 }
 
-// Import imports the given container from the local Docker instance.
+// ImageDirEnv is the environment variable naming the image tarball directory.
+const ImageDirEnv = "GVISOR_CRI_IMAGE_DIR"
+
+func tarNameForImage(image string) string {
+	return strings.ReplaceAll(image, "/", "_") + ".tar"
+}
+
+// Import imports the given container from the local Docker instance, or from a
+// directory of pre-exported tarballs if ImageDirEnv is set.
 func (cc *Crictl) Import(image string) error {
+	if dir := os.Getenv(ImageDirEnv); dir != "" {
+		tarball := path.Join(dir, tarNameForImage(image))
+		out, err := cc.runCmd(ResolvePath("ctr"),
+			fmt.Sprintf("--connect-timeout=%s", 30*time.Second),
+			fmt.Sprintf("--address=%s", cc.endpoint),
+			"-n", "k8s.io", "images", "import", "--all-platforms", tarball)
+		if err != nil {
+			return fmt.Errorf("importing %q from %q: %v (%s)", image, tarball, err, out)
+		}
+		return nil
+	}
+	return cc.importFromDocker(image)
+}
+
+func (cc *Crictl) runCmd(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cc.logger.Logf("command %s %v failed: %v (output: %q)", name, args, err, string(out))
+	}
+	return string(out), err
+}
+
+// importFromDocker streams `docker save` into `ctr images import`.
+func (cc *Crictl) importFromDocker(image string) error {
 	// Note that we provide a 10 minute timeout after connect because we may
 	// be pushing a lot of bytes in order to import the image. The connect
 	// timeout stays the same and is inherited from the Crictl instance.
@@ -410,7 +443,6 @@ func (cc *Crictl) ContainerStatusCTR(contID string) (string, error) {
 	return "", fmt.Errorf("container %q not found in ctr tasks list", contID)
 }
 
-// runCTR runs ctr with the given args.
 func (cc *Crictl) runCTR(args ...string) (string, error) {
 	defaultArgs := []string{
 		ResolvePath("ctr"),
@@ -418,11 +450,14 @@ func (cc *Crictl) runCTR(args ...string) (string, error) {
 		"-n", "k8s.io",
 	}
 	fullArgs := append(defaultArgs, args...)
-	out, err := testutil.Command(cc.logger, fullArgs...).CombinedOutput()
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cc.logger.Logf("ctr %v failed: %v (output: %q)", args, err, string(out))
+	}
 	return string(out), err
 }
 
-// run runs crictl with the given args.
 func (cc *Crictl) run(args ...string) (string, error) {
 	defaultArgs := []string{
 		ResolvePath("crictl"),
@@ -430,9 +465,15 @@ func (cc *Crictl) run(args ...string) (string, error) {
 		"--runtime-endpoint", fmt.Sprintf("unix://%s", cc.endpoint),
 	}
 	fullArgs := append(defaultArgs, args...)
-	out, err := testutil.Command(cc.logger, fullArgs...).CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("command %v failed: %w (output: %q)", fullArgs, err, string(out))
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		cc.logger.Logf("command %v failed: %v\nstderr: %s\nstdout: %s",
+			fullArgs, err, stderr.String(), stdout.String())
+		return stdout.String(), fmt.Errorf("command %v failed: %w (stderr: %q, stdout: %q)",
+			fullArgs, err, stderr.String(), stdout.String())
 	}
-	return string(out), nil
+	return stdout.String(), nil
 }
