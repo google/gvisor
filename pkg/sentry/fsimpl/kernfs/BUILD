@@ -174,6 +174,7 @@ go_test(
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
+        "//pkg/state",
         "//pkg/usermem",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

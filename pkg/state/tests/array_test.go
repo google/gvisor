@@ -118,17 +118,20 @@ func TestArrayContainers(t *testing.T) {
 
 func TestSliceContainers(t *testing.T) {
 	var (
-		nilSlice   []any
-		emptySlice = make([]any, 0)
-		fullSlice  = []any{nil}
+		nilSlice            []any
+		emptySlice          = make([]any, 0)
+		fullSlice           = []any{nil}
+		unusedCapacitySlice = []any{savableEmptyStruct{}, unregisteredEmptyStruct{}}[:1]
 	)
 	runTestCases(t, false, "", []any{
 		sliceContainer{v: nilSlice},
 		sliceContainer{v: emptySlice},
 		sliceContainer{v: fullSlice},
+		sliceContainer{v: unusedCapacitySlice},
 		slicePtrContainer{v: nil},
 		slicePtrContainer{v: &nilSlice},
 		slicePtrContainer{v: &emptySlice},
 		slicePtrContainer{v: &fullSlice},
+		slicePtrContainer{v: &unusedCapacitySlice},
 	})
 }

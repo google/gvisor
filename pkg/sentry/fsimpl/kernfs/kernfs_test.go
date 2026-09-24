@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -568,5 +569,32 @@ func TestRmdirInotifyWithOpenFDDefersDeleteSelf(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantTail, got[len(got)-2:]); diff != "" {
 		t.Fatalf("unexpected trailing inotify events after close (-want +got):\n%s\nall events: %+v", diff, got)
+	}
+}
+
+func TestProcessDeferredDecRefsClearsSliceForSave(t *testing.T) {
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newReadonlyDir(ctx, creds, 0755, nil)
+	})
+	defer sys.Destroy()
+
+	var fs filesystem
+	var d kernfs.Dentry
+	d.Init(&fs.Filesystem, fs.newFile(sys.Ctx, sys.Creds, staticFileContent))
+
+	// Enqueue d onto fs.deferredDecRefs, then drain fs.deferredDecRefs via
+	// Invalidate so that d is DecRef'd and destroyed while the backing array of
+	// fs.deferredDecRefs remains allocated (len=0, cap>0).
+	mnt := sys.Root.Mount()
+	mnt.IncRef()
+	fs.SafeDecRef(sys.Ctx, vfs.MakeVirtualDentry(mnt, d.VFSDentry()))
+	d.Invalidate(sys.Ctx)
+
+	// stateify encodes slice backing arrays up to cap(slice). Verify that
+	// state.Save clears the unused slice capacity (cap-len) so it does not
+	// traverse the destroyed dentry (whose test inode is not stateify-savable).
+	var buf bytes.Buffer
+	if _, err := state.Save(sys.Ctx, &buf, &fs.Filesystem); err != nil {
+		t.Fatalf("state.Save(&fs.Filesystem) failed: %v", err)
 	}
 }
