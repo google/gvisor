@@ -109,3 +109,21 @@ func testCrosspkgGlobalValid() {
 func testCrosspkgGlobalInvalid() {
 	crosspkg.Foo = 1 // +checklocksfail
 }
+
+func testCrosspkgGlobalExcludeValid() {
+	crosspkg.CallFoo()
+}
+
+func testCrosspkgGlobalExcludeInvalid() {
+	crosspkg.FooMu.Lock()
+	crosspkg.CallFoo() // +checklocksfail
+	crosspkg.FooMu.Unlock()
+}
+
+// The guard for the objects below is a package-level variable that crosspkg
+// does not export, so it cannot be resolved here. It is not enforced from this
+// package, and must not crash the analyzer.
+func testCrosspkgUnexportedGlobalValid() {
+	crosspkg.CallBar()
+	crosspkg.Bar = 1
+}

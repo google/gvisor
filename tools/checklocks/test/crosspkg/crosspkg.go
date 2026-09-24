@@ -25,6 +25,37 @@ var (
 	FooMu sync.Mutex
 )
 
+// CallFoo requires that FooMu is not held.
+//
+// +checklocksexclude:FooMu
+func CallFoo() {}
+
+var (
+	// barMu is deliberately not exported. Export data does not include
+	// unexported package-level variables, so other packages import the
+	// facts below but cannot resolve barMu itself. The guard is enforced
+	// within this package only.
+	barMu sync.Mutex
+
+	// +checklocks:barMu
+	Bar int
+)
+
+// CallBar requires that barMu is not held.
+//
+// +checklocksexclude:barMu
+func CallBar() {}
+
+func testUnexportedGlobalInvalid() {
+	Bar = 1 // +checklocksfail
+}
+
+func testUnexportedGlobalExcludeInvalid() {
+	barMu.Lock()
+	CallBar() // +checklocksfail
+	barMu.Unlock()
+}
+
 // GenericGuard is a generic type with a guarded field. This is used to verify
 // that facts exported by this package are correctly imported when another
 // package instantiates GenericGuard[T].
