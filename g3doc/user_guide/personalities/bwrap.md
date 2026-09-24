@@ -37,33 +37,16 @@ line unchanged.
 
 ### Filesystem & Mount Operations
 
-| Flag        | Arguments      | Description & OCI   | Difference from `bwrap` |
-:             :                : Mapping             :                         :
-| :---------- | :------------- | :------------------ | :---------------------- |
-| `--bind`    | `<SRC> <DEST>` | Bind mounts `SRC`   | —                       |
-:             :                : to `DEST`. When     :                         :
-:             :                : `SRC` is the host   :                         :
-:             :                : root (`/`) and      :                         :
-:             :                : `DEST` is not, the  :                         :
-:             :                : mount also gets     :                         :
-:             :                : `rbind, rprivate,   :                         :
-:             :                : nosuid, nodev`.     :                         :
-| `--ro-bind` | `<SRC> <DEST>` | Read-only bind      | —                       |
-:             :                : mounts `SRC` to     :                         :
-:             :                : `DEST`. Sets        :                         :
-:             :                : `spec.Root.Readonly :                         :
-:             :                : = true` if `DEST`   :                         :
-:             :                : is `/`.             :                         :
-| `--tmpfs`   | `<DEST>`       | Mounts a fresh      | —                       |
-:             :                : `tmpfs` filesystem  :                         :
-:             :                : at `DEST`.          :                         :
-| `--proc`    | `<DEST>`       | Mounts a new        | `/proc` is mounted in   |
-:             :                : `procfs` filesystem : every sandbox whether   :
-:             :                : at `DEST`.          : or not you pass the     :
-:             :                : Repeating the same  : flag.                   :
-:             :                : `DEST` on one       :                         :
-:             :                : command line is a   :                         :
-:             :                : no-op.              :                         :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Flag | Arguments | Description & OCI Mapping | Difference from `bwrap` |
+| :--- | :--- | :--- | :--- |
+| `--bind` | `<SRC> <DEST>` | Bind mounts `SRC` to `DEST`. When `SRC` is the host root (`/`) and `DEST` is not, the mount also gets `rbind, rprivate, nosuid, nodev`. | — |
+| `--ro-bind` | `<SRC> <DEST>` | Read-only bind mounts `SRC` to `DEST`. Sets `spec.Root.Readonly = true` if `DEST` is `/`. | — |
+| `--tmpfs` | `<DEST>` | Mounts a fresh `tmpfs` filesystem at `DEST`. | — |
+| `--proc` | `<DEST>` | Mounts a new `procfs` filesystem at `DEST`. Repeating the same `DEST` on one command line is a no-op. | `/proc` is mounted in every sandbox whether or not you pass the flag. |
+
+<!-- mdformat on -->
 
 > **NOTE:** A mount whose `DEST` is `/` becomes the sandbox root filesystem.
 > Only its source and its read-only bit carry over, so the `rbind, rprivate,
@@ -101,52 +84,19 @@ the Sentry makes the call on the host through `hostinet`. What changes is how
 the Sentry serves the call on the application's behalf, never whether the
 application itself sits in a host namespace.
 
-| Flag               | Arguments | Behavior in gVisor      | Difference from   |
-:                    :           :                         : `bwrap`           :
-| :----------------- | :-------- | :---------------------- | :---------------- |
-| `--unshare-user`   | None      | Host-side only. Runs    | Nothing implies   |
-:                    :           : the sandbox processes   : this flag. Omit   :
-:                    :           : (Sentry and Gofer) in a : it and the        :
-:                    :           : new Linux user          : specification     :
-:                    :           : namespace               : carries no        :
-:                    :           : (`specs.UserNamespace`) : namespaces at     :
-:                    :           : with UID/GID mappings   : all, and the      :
-:                    :           : back to the invoking    : command runs as   :
-:                    :           : user, which is what     : UID/GID 0 in      :
-:                    :           : allows rootless         : gVisor's own user :
-:                    :           : execution.              : namespace.        :
-| `--unshare-net`    | None      | Disables networking     | —                 |
-:                    :           : entirely                :                   :
-:                    :           : (`--network=none`). The :                   :
-:                    :           : sandbox gets a loopback :                   :
-:                    :           : interface and no host   :                   :
-:                    :           : connectivity.           :                   :
-| `--unshare-all`    | None      | Implies                 | Only those two    |
-:                    :           : `--unshare-user` and    : parts do          :
-:                    :           : `--unshare-net`.        : anything. Every   :
-:                    :           :                         : other namespace   :
-:                    :           :                         : it would unshare  :
-:                    :           :                         : under native      :
-:                    :           :                         : `bwrap` is        :
-:                    :           :                         : already isolated. :
-| `--unshare-ipc`    | None      | The Sentry always       | No-op. The        |
-:                    :           : implements its own      : isolation is      :
-:                    :           : System V IPC and POSIX  : already there, so :
-:                    :           : message queues.         : the flag has      :
-:                    :           :                         : nothing left to   :
-:                    :           :                         : do.               :
-| `--unshare-pid`    | None      | The Sentry always runs  | No-op, as above.  |
-:                    :           : the command in its own  :                   :
-:                    :           : process tree; host PIDs :                   :
-:                    :           : are never visible.      :                   :
-| `--unshare-uts`    | None      | The Sentry always owns  | No-op, as above.  |
-:                    :           : the sandbox hostname;   :                   :
-:                    :           : use `--hostname` to set :                   :
-:                    :           : it.                     :                   :
-| `--unshare-cgroup` | None      | The Sentry always       | No-op, as above.  |
-:                    :           : presents its own        :                   :
-:                    :           : `cgroupfs` at           :                   :
-:                    :           : `/sys/fs/cgroup`.       :                   :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Flag | Arguments | Behavior in gVisor | Difference from `bwrap` |
+| :--- | :--- | :--- | :--- |
+| `--unshare-user` | None | Host-side only. Runs the sandbox processes (Sentry and Gofer) in a new Linux user namespace (`specs.UserNamespace`) with UID/GID mappings back to the invoking user, which is what allows rootless execution. | Nothing implies this flag. Omit it and the specification carries no namespaces at all, and the command runs as UID/GID 0 in gVisor's own user namespace. |
+| `--unshare-net` | None | Disables networking entirely (`--network=none`). The sandbox gets a loopback interface and no host connectivity. | — |
+| `--unshare-all` | None | Implies `--unshare-user` and `--unshare-net`. | Only those two parts do anything. Every other namespace it would unshare under native `bwrap` is already isolated. |
+| `--unshare-ipc` | None | The Sentry always implements its own System V IPC and POSIX message queues. | No-op. The isolation is already there, so the flag has nothing left to do. |
+| `--unshare-pid` | None | The Sentry always runs the command in its own process tree; host PIDs are never visible. | No-op, as above. |
+| `--unshare-uts` | None | The Sentry always owns the sandbox hostname; use `--hostname` to set it. | No-op, as above. |
+| `--unshare-cgroup` | None | The Sentry always presents its own `cgroupfs` at `/sys/fs/cgroup`. | No-op, as above. |
+
+<!-- mdformat on -->
 
 > **NOTE:** Without `--unshare-net` the sandbox runs with `runsc
 > --network=host`, which forwards the application's socket calls to host
@@ -158,43 +108,17 @@ application itself sits in a host namespace.
 
 ### Process & Identity Settings
 
-| Flag         | Arguments | Description & OCI Mapping  | Difference     |
-:              :           :                            : from `bwrap`   :
-| :----------- | :-------- | :------------------------- | :------------- |
-| `--chdir`    | `<DIR>`   | Sets the initial working   | `DIR` is a     |
-:              :           : directory                  : host path,     :
-:              :           : (`spec.Process.Cwd`).      : translated to  :
-:              :           :                            : the sandbox    :
-:              :           :                            : path through   :
-:              :           :                            : the bind       :
-:              :           :                            : mounts, so     :
-:              :           :                            : `--bind        :
-:              :           :                            : /home/me/work  :
-:              :           :                            : /work --chdir  :
-:              :           :                            : /home/me/work` :
-:              :           :                            : starts in      :
-:              :           :                            : `/work`. A     :
-:              :           :                            : path under no  :
-:              :           :                            : bind mount     :
-:              :           :                            : source leaves  :
-:              :           :                            : the working    :
-:              :           :                            : directory at   :
-:              :           :                            : `/`.           :
-| `--hostname` | `<NAME>`  | Sets the hostname the      | —              |
-:              :           : Sentry reports inside the  :                :
-:              :           : sandbox (`spec.Hostname`). :                :
-| `--uid`      | `<UID>`   | Custom UID in the sandbox  | —              |
-:              :           : (`spec.Process.User.UID`). :                :
-:              :           : Requires `--unshare-user`. :                :
-| `--gid`      | `<GID>`   | Custom GID in the sandbox  | —              |
-:              :           : (`spec.Process.User.GID`). :                :
-:              :           : Requires `--unshare-user`. :                :
-| `--argv0`    | `<VALUE>` | Runs the program named by  | —              |
-:              :           : the command but passes     :                :
-:              :           : `VALUE` as its `argv[0]`.  :                :
-:              :           : May appear at most once,   :                :
-:              :           : and rejects an empty       :                :
-:              :           : value.                     :                :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Flag | Arguments | Description & OCI Mapping | Difference from `bwrap` |
+| :--- | :--- | :--- | :--- |
+| `--chdir` | `<DIR>` | Sets the initial working directory (`spec.Process.Cwd`). | `DIR` is a host path, translated to the sandbox path through the bind mounts, so `--bind /home/me/work /work --chdir /home/me/work` starts in `/work`. A path under no bind mount source leaves the working directory at `/`. |
+| `--hostname` | `<NAME>` | Sets the hostname the Sentry reports inside the sandbox (`spec.Hostname`). | — |
+| `--uid` | `<UID>` | Custom UID in the sandbox (`spec.Process.User.UID`). Requires `--unshare-user`. | — |
+| `--gid` | `<GID>` | Custom GID in the sandbox (`spec.Process.User.GID`). Requires `--unshare-user`. | — |
+| `--argv0` | `<VALUE>` | Runs the program named by the command but passes `VALUE` as its `argv[0]`. May appear at most once, and rejects an empty value. | — |
+
+<!-- mdformat on -->
 
 > **NOTE:** Without `--uid` and `--gid`, the sandbox UID depends on
 > `--unshare-user`. With it, the command runs as the UID/GID that invoked
@@ -204,27 +128,14 @@ application itself sits in a host namespace.
 
 ### Process Lifetime & Terminal
 
-| Flag                | Arguments | Behavior in gVisor | Difference from       |
-:                     :           :                    : `bwrap`               :
-| :------------------ | :-------- | :----------------- | :-------------------- |
-| `--new-session`     | None      | No-op. The flag    | No-op. The protection |
-:                     :           : exists to block    : it asks for is        :
-:                     :           : `TIOCSTI` input    : already in place.     :
-:                     :           : injection into the :                       :
-:                     :           : host terminal, and :                       :
-:                     :           : the Sentry leaves  :                       :
-:                     :           : `TIOCSTI`          :                       :
-:                     :           : unimplemented.     :                       :
-| `--die-with-parent` | None      | No-op. The sandbox | Accepted and ignored. |
-:                     :           : init process is a  : Nothing signals the   :
-:                     :           : placeholder and    : command when          :
-:                     :           : the command runs   : `runsc`'s parent      :
-:                     :           : as an exec inside  : dies.                 :
-:                     :           : it, so there is no :                       :
-:                     :           : parent-child       :                       :
-:                     :           : relationship for   :                       :
-:                     :           : `PR_SET_PDEATHSIG` :                       :
-:                     :           : to act on.         :                       :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Flag | Arguments | Behavior in gVisor | Difference from `bwrap` |
+| :--- | :--- | :--- | :--- |
+| `--new-session` | None | No-op. The flag exists to block `TIOCSTI` input injection into the host terminal, and the Sentry leaves `TIOCSTI` unimplemented. | No-op. The protection it asks for is already in place. |
+| `--die-with-parent` | None | No-op. The sandbox init process is a placeholder and the command runs as an exec inside it, so there is no parent-child relationship for `PR_SET_PDEATHSIG` to act on. | Accepted and ignored. Nothing signals the command when `runsc`'s parent dies. |
+
+<!-- mdformat on -->
 
 > **WARNING:** `--die-with-parent` carries no cleanup guarantee here. `runsc`
 > tears the sandbox down when it exits normally, but a `runsc` killed with
@@ -235,22 +146,14 @@ application itself sits in a host namespace.
 By default the command holds every capability, in all five sets. Use
 `--cap-drop` to narrow that down.
 
-| Flag         | Arguments | Description & OCI Mapping    | Difference from    |
-:              :           :                              : `bwrap`            :
-| :----------- | :-------- | :--------------------------- | :----------------- |
-| `--cap-drop` | `<CAP>`   | Removes `CAP` from all five  | —                  |
-:              :           : capability sets in           :                    :
-:              :           : `spec.Process.Capabilities`. :                    :
-:              :           : The keyword `ALL` clears     :                    :
-:              :           : every set. Names are         :                    :
-:              :           : case-insensitive and the     :                    :
-:              :           : `CAP_` prefix is optional.   :                    :
-| `--cap-add`  | `<CAP>`   | Adds `CAP` back to all five  | `CAP_NET_RAW` is   |
-:              :           : capability sets. The keyword : not restored,      :
-:              :           : `ALL` restores the full set. : because raw        :
-:              :           :                              : sockets are        :
-:              :           :                              : disabled by        :
-:              :           :                              : default; see note. :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Flag | Arguments | Description & OCI Mapping | Difference from `bwrap` |
+| :--- | :--- | :--- | :--- |
+| `--cap-drop` | `<CAP>` | Removes `CAP` from all five capability sets in `spec.Process.Capabilities`. The keyword `ALL` clears every set. Names are case-insensitive and the `CAP_` prefix is optional. | — |
+| `--cap-add` | `<CAP>` | Adds `CAP` back to all five capability sets. The keyword `ALL` restores the full set. | `CAP_NET_RAW` is not restored, because raw sockets are disabled by default; see note. |
+
+<!-- mdformat on -->
 
 Capability operations apply in command-line order, so `--cap-drop ALL --cap-add
 NET_ADMIN` leaves the sandbox with exactly one capability.
@@ -269,21 +172,15 @@ NET_ADMIN` leaves the sandbox with exactly one capability.
 The sandbox inherits the host environment, and the personality adds nothing of
 its own to it.
 
-| Flag         | Arguments       | Description & OCI   | Difference from |
-:              :                 : Mapping             : `bwrap`         :
-| :----------- | :-------------- | :------------------ | :-------------- |
-| `--setenv`   | `<VAR> <VALUE>` | Appends `VAR=VALUE` | —               |
-:              :                 : to                  :                 :
-:              :                 : `spec.Process.Env`. :                 :
-| `--unsetenv` | `<VAR>`         | Removes an entry    | —               |
-:              :                 : for `VAR` from      :                 :
-:              :                 : `spec.Process.Env`. :                 :
-| `--clearenv` | None            | Clears the          | —               |
-:              :                 : environment except  :                 :
-:              :                 : `PWD=<cwd>`, and    :                 :
-:              :                 : discards any        :                 :
-:              :                 : earlier             :                 :
-:              :                 : `--unsetenv`.       :                 :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Flag | Arguments | Description & OCI Mapping | Difference from `bwrap` |
+| :--- | :--- | :--- | :--- |
+| `--setenv` | `<VAR> <VALUE>` | Appends `VAR=VALUE` to `spec.Process.Env`. | — |
+| `--unsetenv` | `<VAR>` | Removes an entry for `VAR` from `spec.Process.Env`. | — |
+| `--clearenv` | None | Clears the environment except `PWD=<cwd>`, and discards any earlier `--unsetenv`. | — |
+
+<!-- mdformat on -->
 
 > **NOTE:** One combination does not carry over. Native `bwrap` applies
 > `--setenv` and `--unsetenv` in command-line order, while this personality
