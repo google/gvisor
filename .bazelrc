@@ -26,6 +26,10 @@ build --stamp --workspace_status_command tools/workspace_status.sh
 build:race --@io_bazel_rules_go//go/config:race --@io_bazel_rules_go//go/config:pure=false
 test:race --@io_bazel_rules_go//go/config:race --@io_bazel_rules_go//go/config:pure=false
 
+# Build with the runtime lock-order checker (the "lockdep" go build tag).
+build:lockdep --define=lockdep=true
+test:lockdep --define=lockdep=true
+
 build --@io_bazel_rules_go//go/config:pure
 test --@io_bazel_rules_go//go/config:pure
 

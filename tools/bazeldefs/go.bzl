@@ -77,6 +77,9 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
         "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
         "//tools:debug": base_gotags + ["debug"],
         "//conditions:default": base_gotags,
+    }) + select({
+        "//tools:lockdep": ["lockdep"],
+        "//conditions:default": [],
     })
     _go_binary(
         name = name,
@@ -131,6 +134,9 @@ def go_test(name, static = False, pure = False, library = None, **kwargs):
         "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
         "//tools:debug": base_gotags + ["debug"],
         "//conditions:default": base_gotags,
+    }) + select({
+        "//tools:lockdep": ["lockdep"],
+        "//conditions:default": [],
     })
     _go_test(
         name = name,
