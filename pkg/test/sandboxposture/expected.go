@@ -42,6 +42,10 @@ type Reference struct {
 	// StdioFDs holds the FD classes of the reference process's own
 	// stdin/stdout/stderr.
 	StdioFDs []string
+
+	// TMPDIR is the value of the reference process's `TMPDIR` environment
+	// variable, or empty if it is unset.
+	TMPDIR string
 }
 
 // SelfReference builds a `Reference` from the calling process.
@@ -76,12 +80,32 @@ func ReferenceOf(pid int, procRoot string) (Reference, error) {
 	if err != nil {
 		return Reference{}, fmt.Errorf("limits of %d: %w", pid, err)
 	}
+	tmpDir, err := envValue(p, "TMPDIR")
+	if err != nil {
+		return Reference{}, fmt.Errorf("reading environment of %d: %w", pid, err)
+	}
 	return Reference{
 		Umask:         umask,
 		PermittedCaps: perm,
 		Limits:        limits,
 		StdioFDs:      stdioClasses(p),
+		TMPDIR:        tmpDir,
 	}, nil
+}
+
+// envValue returns the value of the environment variable `name` of a process,
+// or the empty string if the process does not have it set.
+func envValue(p *proc, name string) (string, error) {
+	env, err := p.readNUL("environ")
+	if err != nil {
+		return "", err
+	}
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, name+"="); ok {
+			return v, nil
+		}
+	}
+	return "", nil
 }
 
 // stdioClasses classifies a process's stdin/stdout/stderr.
@@ -353,6 +377,9 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 	}
 	if opts.GoDebug != "" {
 		env = append(env, "GODEBUG="+opts.GoDebug)
+	}
+	if opts.Ref.TMPDIR != "" {
+		env = append(env, "TMPDIR="+opts.Ref.TMPDIR)
 	}
 	sort.Strings(env)
 
