@@ -68,7 +68,6 @@ type Cli struct {
 	roBind        string
 	tmpfs         string
 	unshareNet    bool
-	shareNet      bool
 	chdir         string
 	setEnv        string
 	clearEnv      bool
@@ -112,7 +111,6 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.roBind, flagRoBind, "", "Read-only bind mount SRC to DEST.")
 	f.StringVar(&c.tmpfs, flagTmpfs, "", "Mount tmpfs at DEST.")
 	f.BoolVar(&c.unshareNet, flagUnshareNet, false, "Unshare network namespace.")
-	f.BoolVar(&c.shareNet, flagShareNet, false, "Share network namespace.")
 	f.StringVar(&c.chdir, flagChdir, "", "Change directory to DIR.")
 	f.StringVar(&c.setEnv, flagSetEnv, "", "Set an environment variable")
 	f.BoolVar(&c.clearEnv, flagClearEnv, false, "Unset all environment variables")
@@ -435,9 +433,9 @@ func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
 	return i + 1, nil
 }
 
+// TODO: Support --share-net once netstack has a rootless mode.
 func (c *bwrapConfig) parseShareNet(args []string, i int) (int, error) {
-	c.ShareNet = true
-	return i + 1, nil
+	return i + 1, fmt.Errorf("bwrap: --%s is currently not supported by runsc", flagShareNet)
 }
 
 // Todo: - set unshare-user-try to true also after implementing it.

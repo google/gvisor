@@ -409,6 +409,11 @@ func TestParseFlags(t *testing.T) {
 			errContains: "--userns is currently not supported by runsc",
 		},
 		{
+			name:        "ShareNet",
+			args:        []string{"--share-net", "bash"},
+			errContains: "--share-net is currently not supported by runsc",
+		},
+		{
 			name: "UnshareIPC",
 			args: []string{"--unshare-ipc", "bash"},
 			wantCfg: &bwrapConfig{
