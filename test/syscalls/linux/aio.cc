@@ -14,19 +14,32 @@
 
 #include <fcntl.h>
 #include <linux/aio_abi.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <memory>
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"

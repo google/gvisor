@@ -24,6 +24,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "nlohmann/json.hpp"
+#include "nlohmann/json_fwd.hpp"
 #include "clang/include/clang/AST/ASTContext.h"
 #include "clang/include/clang/AST/Decl.h"
 #include "clang/include/clang/AST/Expr.h"
@@ -89,10 +90,10 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
     return varDecl(hasName(constant_name)).bind("constant_decl");
   }
 
-  void run(const MatchFinder::MatchResult &result) override {
-    const auto *ctx = result.Context;
+  void run(const MatchFinder::MatchResult& result) override {
+    const auto* ctx = result.Context;
 
-    const auto *constant_decl =
+    const auto* constant_decl =
         result.Nodes.getNodeAs<clang::VarDecl>("constant_decl");
     if (constant_decl) {
       std::string name = constant_decl->getNameAsString();
@@ -109,7 +110,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
       return;
     }
 
-    const auto *typedef_decl =
+    const auto* typedef_decl =
         result.Nodes.getNodeAs<clang::TypedefDecl>("typedef_decl");
     if (typedef_decl == nullptr) {
       std::cerr << "Unable to find a matched declaration\n";
@@ -119,7 +120,7 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
 
     // If struct_decl doesn't exist, then we know it's a typedef to an existing
     // struct.
-    const auto *struct_decl =
+    const auto* struct_decl =
         result.Nodes.getNodeAs<clang::RecordDecl>("struct_decl");
     if (struct_decl == nullptr) {
       // Generate the definition for the underlying type, then copy it for
@@ -142,8 +143,8 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
   // Adds the type definition of `type` to either `RecordDefinitions` or
   // `TypeAliases`, mapped to `name`. Recursively adds the type definitions
   // of any nested types.
-  void add_type_definition(const clang::QualType &type, const std::string &name,
-                           const clang::ASTContext *ctx) {
+  void add_type_definition(const clang::QualType& type, const std::string& name,
+                           const clang::ASTContext* ctx) {
     // We've already handled this type.
     if (ParsedTypes.contains(name)) {
       return;
@@ -167,18 +168,18 @@ struct DriverStructReporter : public MatchFinder::MatchCallback {
 
   // Adds the type definition of `record_decl` to `RecordDefinitions`, mapped
   // to `name`. Recursively adds the type definitions of any nested types.
-  void add_record_definition(const clang::RecordDecl *record_decl,
-                             const std::string &name,
-                             const clang::ASTContext *ctx) {
+  void add_record_definition(const clang::RecordDecl* record_decl,
+                             const std::string& name,
+                             const clang::ASTContext* ctx) {
     json fields;
-    for (const auto *field : record_decl->fields()) {
+    for (const auto* field : record_decl->fields()) {
       auto field_type = field->getType();
 
       // If this is an array type, save the array size then get the underlying
       // element type to recurse on later.
       uint64_t array_size = 0;
       if (field_type->isConstantArrayType()) {
-        const auto *CAT = llvm::dyn_cast<clang::ConstantArrayType>(
+        const auto* CAT = llvm::dyn_cast<clang::ConstantArrayType>(
             field_type->castAsArrayTypeUnsafe());
         if (CAT == nullptr) {
           std::cerr << "Unable to cast to ConstantArrayType\n";
@@ -250,7 +251,7 @@ static llvm::cl::opt<std::string> OutputFile(
                    "By default, will print to stdout."),
     llvm::cl::cat(DriverASTParserCategory));
 
-int main(int argc, const char **argv) {
+int main(int argc, const char** argv) {
   auto ExpectedParser = clang::tooling::CommonOptionsParser::create(
       argc, argv, DriverASTParserCategory);
   if (!ExpectedParser) {
@@ -259,7 +260,7 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  clang::tooling::CommonOptionsParser &OptionsParser = ExpectedParser.get();
+  clang::tooling::CommonOptionsParser& OptionsParser = ExpectedParser.get();
   clang::tooling::ClangTool Tool(OptionsParser.getCompilations(),
                                  OptionsParser.getSourcePathList());
 

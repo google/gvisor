@@ -15,6 +15,8 @@
 #include "test/syscalls/linux/socket_netlink_util.h"
 
 #include <linux/if_arp.h>
+#include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_compat.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <sys/socket.h>

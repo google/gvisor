@@ -12,10 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 
+#include <csignal>
+#include <cstdint>
+
 #include "gtest/gtest.h"
+#include "absl/base/attributes.h"
 #include "absl/base/macros.h"
 #include "test/util/memory_util.h"
 #include "test/util/platform_util.h"

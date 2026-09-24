@@ -13,10 +13,16 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/capability.h>
+#include <sched.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

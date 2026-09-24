@@ -215,10 +215,9 @@ func extractPorts(pkt *stack.PacketBuffer) (uint16, uint16, bool) {
 		return extractTransportHeaderPorts(transportHdr, prot)
 
 	case header.IPv6ProtocolNumber:
-		// Similar to IPv4.
-		ipv6 := header.IPv6(pkt.NetworkHeader().Slice())
-		prot := ipv6.TransportProtocol()
-		return extractTransportHeaderPorts(transportHdr, prot)
+		// Similar to IPv4, but use the protocol resolved during parsing
+		// (see IPv6.TransportProtocol).
+		return extractTransportHeaderPorts(transportHdr, pkt.TransportProtocolNumber)
 
 	default:
 		// Unsupported network protocol; cannot extract ports.

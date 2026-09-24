@@ -58,7 +58,7 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 	// exponentially increasing intervals. The timeout intervals are function
 	// of the recorded first zero probe transmission duration.
 	//
-	// Advertize zero receive window along with a payload.
+	// Advertise zero receive window along with a payload.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagPsh), WindowSize: testbench.Uint16(0)}, samplePayload)
 	if _, err := conn.ExpectData(t, &testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, nil, time.Second); err != nil {
 		t.Fatalf("expected packet was not received: %s", err)
@@ -106,7 +106,7 @@ func TestZeroWindowProbeRetransmit(t *testing.T) {
 		// Acknowledge the zero-window probes from the dut.
 		conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.TCPFlags(header.TCPFlagAck), WindowSize: testbench.Uint16(0)})
 	}
-	// Advertize non-zero window.
+	// Advertise non-zero window.
 	conn.Send(t, testbench.TCP{AckNum: ackProbe, Flags: testbench.TCPFlags(header.TCPFlagAck)})
 	// Expect the dut to recover and transmit data.
 	if _, err := conn.ExpectData(t, &testbench.TCP{SeqNum: ackProbe}, samplePayload, time.Second); err != nil {

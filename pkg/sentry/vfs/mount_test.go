@@ -19,6 +19,13 @@ import (
 	"runtime"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -52,6 +59,270 @@ func TestMountTableInsertLookup(t *testing.T) {
 	otherPoint := &Dentry{}
 	if m := mt.Lookup(mount.parent(), otherPoint); m != nil {
 		t.Errorf("mountTable lookup with wrong mount point: got %p, wanted nil", m)
+	}
+}
+
+// mountTestFilesystemType is a FilesystemType for filesystems that only exist
+// to be mounted by tests.
+type mountTestFilesystemType struct{}
+
+// GetFilesystem implements FilesystemType.GetFilesystem.
+func (fstype mountTestFilesystemType) GetFilesystem(ctx context.Context, vfsObj *VirtualFilesystem, creds *auth.Credentials, source string, opts GetFilesystemOptions) (*Filesystem, *Dentry, error) {
+	fs := &mountTestFilesystem{}
+	fs.vfsfs.Init(vfsObj, fstype, fs)
+	return &fs.vfsfs, newMountTestDentry().dentry(), nil
+}
+
+// Name implements FilesystemType.Name.
+func (mountTestFilesystemType) Name() string {
+	return "mounttest"
+}
+
+// Release implements FilesystemType.Release.
+func (mountTestFilesystemType) Release(ctx context.Context) {}
+
+// mountTestFilesystem implements the parts of FilesystemImpl that mounting and
+// unmounting need. All other methods panic if called.
+type mountTestFilesystem struct {
+	FilesystemImpl
+
+	vfsfs Filesystem
+}
+
+// GetDentryAt implements FilesystemImpl.GetDentryAt.
+func (*mountTestFilesystem) GetDentryAt(ctx context.Context, rp *ResolvingPath, opts GetDentryOptions) (*Dentry, error) {
+	if !rp.Done() {
+		// mountTestFilesystem has no directory structure, so only the dentry
+		// that path resolution starts at can be resolved.
+		return nil, linuxerr.ENOENT
+	}
+	d := rp.Start()
+	d.IncRef()
+	return d, nil
+}
+
+// Release implements FilesystemImpl.Release.
+func (*mountTestFilesystem) Release(ctx context.Context) {}
+
+// mountTestDentry is a Dentry that does nothing except count references, so
+// that tests can check the references that VFS holds on it.
+type mountTestDentry struct {
+	vfsd    Dentry
+	watches Watches
+
+	refs atomicbitops.Int64
+}
+
+func newMountTestDentry() *mountTestDentry {
+	d := &mountTestDentry{refs: atomicbitops.FromInt64(1)}
+	d.vfsd.Init(d)
+	return d
+}
+
+func (d *mountTestDentry) dentry() *Dentry {
+	return &d.vfsd
+}
+
+// IncRef implements DentryImpl.IncRef.
+func (d *mountTestDentry) IncRef() {
+	d.refs.Add(1)
+}
+
+// TryIncRef implements DentryImpl.TryIncRef.
+func (d *mountTestDentry) TryIncRef() bool {
+	for {
+		r := d.refs.Load()
+		if r <= 0 {
+			return false
+		}
+		if d.refs.CompareAndSwap(r, r+1) {
+			return true
+		}
+	}
+}
+
+// DecRef implements DentryImpl.DecRef.
+func (d *mountTestDentry) DecRef(ctx context.Context) {
+	d.refs.Add(-1)
+}
+
+// InotifyWithParent implements DentryImpl.InotifyWithParent.
+func (d *mountTestDentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {
+}
+
+// Watches implements DentryImpl.Watches.
+func (d *mountTestDentry) Watches() *Watches {
+	return &d.watches
+}
+
+// OnZeroWatches implements DentryImpl.OnZeroWatches.
+func (d *mountTestDentry) OnZeroWatches(context.Context) {}
+
+// mountTestSystem is a VirtualFilesystem with a single mount namespace whose
+// root mount is a mountTestFilesystem.
+type mountTestSystem struct {
+	t     *testing.T
+	ctx   context.Context
+	creds *auth.Credentials
+	vfs   *VirtualFilesystem
+	mntns *MountNamespace
+	root  VirtualDentry
+}
+
+func newMountTestSystem(t *testing.T) *mountTestSystem {
+	t.Helper()
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj := &VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
+	vfsObj.MustRegisterFilesystemType("mounttest", mountTestFilesystemType{}, &RegisterFilesystemTypeOptions{
+		AllowUserMount: true,
+	})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "" /* source */, "mounttest", &MountOptions{}, nil /* nsfs */)
+	if err != nil {
+		t.Fatalf("failed to create mount namespace: %v", err)
+	}
+	ctx = WithMountNamespace(ctx, mntns)
+	return &mountTestSystem{
+		t:     t,
+		ctx:   ctx,
+		creds: creds,
+		vfs:   vfsObj,
+		mntns: mntns,
+		root:  mntns.Root(ctx),
+	}
+}
+
+func (s *mountTestSystem) destroy() {
+	s.root.DecRef(s.ctx)
+	s.mntns.DecRef(s.ctx)
+}
+
+// popAt returns a PathOperation that resolves to (mnt, d) without walking any
+// path components.
+func (s *mountTestSystem) popAt(mnt *Mount, d *mountTestDentry) *PathOperation {
+	return &PathOperation{
+		Root:  s.root,
+		Start: MakeVirtualDentry(mnt, d.dentry()),
+		Path:  fspath.Parse(""),
+	}
+}
+
+// mount mounts a new mountTestFilesystem at (mnt, mp).
+func (s *mountTestSystem) mount(mnt *Mount, mp *mountTestDentry, locked bool) *Mount {
+	s.t.Helper()
+	newMnt, err := s.vfs.MountAt(s.ctx, s.creds, "" /* source */, s.popAt(mnt, mp), "mounttest", &MountOptions{Locked: locked})
+	if err != nil {
+		s.t.Fatalf("MountAt() failed: %v", err)
+	}
+	return newMnt
+}
+
+// lazyUmount umounts the mount at (mnt, mp) with MNT_DETACH.
+func (s *mountTestSystem) lazyUmount(mnt *Mount, mp *mountTestDentry) {
+	s.t.Helper()
+	if err := s.vfs.UmountAt(s.ctx, s.creds, s.popAt(mnt, mp), &UmountOptions{Flags: linux.MNT_DETACH}); err != nil {
+		s.t.Fatalf("UmountAt() failed: %v", err)
+	}
+}
+
+// mountState returns whether mnt is marked as umounted and its mount parent.
+func (s *mountTestSystem) mountState(mnt *Mount) (bool, *Mount) {
+	s.vfs.lockMounts()
+	defer s.vfs.unlockMounts(s.ctx)
+	return mnt.umounted, mnt.parent()
+}
+
+// TestPartlyUmountedMountKeepsMountpointRef tests that VFS holds a reference
+// on a mount point for as long as a mount is connected to it, even after that
+// mount has been marked as umounted.
+//
+// The mount is disconnected here by the destruction of its parent in Mount.destroy().
+func TestPartlyUmountedMountKeepsMountpointRef(t *testing.T) {
+	s := newMountTestSystem(t)
+	defer s.destroy()
+
+	// Mount a filesystem at pmp, a dentry in the root mount, and a locked
+	// filesystem at mp, a dentry in the first one.
+	pmp := newMountTestDentry()
+	parent := s.mount(s.root.Mount(), pmp, false /* locked */)
+	mp := newMountTestDentry()
+	wantRefs := mp.refs.Load() + 1
+	mnt := s.mount(parent, mp, true /* locked */)
+	if got := mp.refs.Load(); got != wantRefs {
+		t.Fatalf("mount point has %d references after being mounted on, want %d", got, wantRefs)
+	}
+
+	// Hold a reference on the parent mount, simulating an open file on the mount.
+	// Otherwise the parent would be destroyed by the umount below.
+	parent.IncRef()
+
+	// mnt is locked, so umounting its parent leaves it marked as umounted but
+	// still connected, until the parent is destroyed.
+	s.lazyUmount(s.root.Mount(), pmp)
+
+	umounted, mntParent := s.mountState(mnt)
+	if !umounted {
+		t.Errorf("mount was not marked as umounted")
+	}
+	if mntParent != parent {
+		t.Fatalf("mount was disconnected from its parent; test no longer exercises the intended path")
+	}
+	if got := mp.refs.Load(); got != wantRefs {
+		t.Errorf("mount point has %d references while a mount is connected to it, want %d", got, wantRefs)
+	}
+
+	// Dropping the last reference on the parent mount destroys it, which
+	// disconnects mnt and releases the mount point reference, exactly once.
+	parent.DecRef(s.ctx)
+	if _, mntParent := s.mountState(mnt); mntParent != nil {
+		t.Errorf("mount is still connected after its parent was destroyed")
+	}
+	if got, want := mp.refs.Load(), wantRefs-1; got != want {
+		t.Errorf("mount point has %d references after the mount was disconnected, want %d", got, want)
+	}
+}
+
+// TestForgetDeadMountpointReleasesMountpointRef is like
+// TestPartlyUmountedMountKeepsMountpointRef, except that the mount is
+// disconnected by the invalidation of its mount point, i.e. by
+// VFS.forgetDeadMountpoint().
+func TestForgetDeadMountpointReleasesMountpointRef(t *testing.T) {
+	s := newMountTestSystem(t)
+	defer s.destroy()
+
+	pmp := newMountTestDentry()
+	parent := s.mount(s.root.Mount(), pmp, false /* locked */)
+	mp := newMountTestDentry()
+	wantRefs := mp.refs.Load() + 1
+	mnt := s.mount(parent, mp, true /* locked */)
+	if got := mp.refs.Load(); got != wantRefs {
+		t.Fatalf("mount point has %d references after being mounted on, want %d", got, wantRefs)
+	}
+
+	parent.IncRef()
+	defer parent.DecRef(s.ctx)
+	s.lazyUmount(s.root.Mount(), pmp)
+
+	if _, mntParent := s.mountState(mnt); mntParent != parent {
+		t.Fatalf("mount was disconnected from its parent; test no longer exercises the intended path")
+	}
+	if got := mp.refs.Load(); got != wantRefs {
+		t.Errorf("mount point has %d references while a mount is connected to it, want %d", got, wantRefs)
+	}
+
+	// A filesystem invalidating the mount point disconnects mnt
+	// and releases the mount point reference exactly once.
+	for _, rc := range s.vfs.InvalidateDentry(s.ctx, mp.dentry()) {
+		rc.DecRef(s.ctx)
+	}
+	if _, mntParent := s.mountState(mnt); mntParent != nil {
+		t.Errorf("mount is still connected after its mount point was invalidated")
+	}
+	if got, want := mp.refs.Load(), wantRefs-1; got != want {
+		t.Errorf("mount point has %d references after the mount was disconnected, want %d", got, want)
 	}
 }
 

@@ -14,8 +14,17 @@
 
 #include <asm/prctl.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <string>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 // glibc does not provide a prototype for arch_prctl() so declare it here.
@@ -40,6 +49,17 @@ TEST(ArchPrctlTest, GetSetFS) {
   // Trying to set FS.base to a non-canonical value should return an error.
   ASSERT_THAT(arch_prctl(ARCH_SET_FS, kNonCanonicalFsbase),
               SyscallFailsWithErrno(EPERM));
+}
+
+// Tests that /proc/cpuinfo advertised to the workload has FSGSBASE disabled
+// under Systrap, so workloads do not execute WRGSBASE directly.
+TEST(ArchPrctlTest, FSGSBaseDisabledInCpuInfo) {
+  SKIP_IF(GvisorPlatform() != Platform::kSystrap);
+  std::string cpuinfo;
+  ASSERT_NO_ERRNO(GetContents("/proc/cpuinfo", &cpuinfo));
+  EXPECT_THAT(cpuinfo,
+              ::testing::Not(::testing::ContainsRegex(R"(\bfsgsbase\b)")))
+      << "gVisor must not advertise fsgsbase in /proc/cpuinfo under systrap";
 }
 
 }  // namespace

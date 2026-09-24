@@ -51,13 +51,13 @@ struct gvisor_bpf_map_def section("maps") sock_map = {
 //
 //   - SSH (IPv4 TCP port 22) traffic.
 //   - Some obviously broken packets.
-section("xdp") int xdp_prog(struct xdp_md *ctx) {
-  void *cursor = (void *)(long)ctx->data;
-  void *data_end = (void *)(long)ctx->data_end;
+section("xdp") int xdp_prog(struct xdp_md* ctx) {
+  void* cursor = (void*)(long)ctx->data;
+  void* data_end = (void*)(long)ctx->data_end;
 
   // Ensure there's space for an ethernet header.
-  struct ethhdr *eth = cursor;
-  if ((void *)(eth + 1) > data_end) {
+  struct ethhdr* eth = cursor;
+  if ((void*)(eth + 1) > data_end) {
     return XDP_PASS;
   }
   cursor += sizeof(*eth);
@@ -68,8 +68,8 @@ section("xdp") int xdp_prog(struct xdp_md *ctx) {
   }
 
   // IP packets get inspected to allow SSH traffic to the host.
-  struct iphdr *ip = cursor;
-  if ((void *)(ip + 1) > data_end) {
+  struct iphdr* ip = cursor;
+  if ((void*)(ip + 1) > data_end) {
     return XDP_PASS;
   }
   cursor += sizeof(*ip);
@@ -77,8 +77,8 @@ section("xdp") int xdp_prog(struct xdp_md *ctx) {
   if (ip->protocol != IPPROTO_TCP) {
     return bpf_redirect_map(&sock_map, ctx->rx_queue_index, XDP_PASS);
   }
-  struct tcphdr *tcp = cursor;
-  if ((void *)(tcp + 1) > data_end) {
+  struct tcphdr* tcp = cursor;
+  if ((void*)(tcp + 1) > data_end) {
     return XDP_PASS;
   }
 

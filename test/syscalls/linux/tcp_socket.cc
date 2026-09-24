@@ -15,30 +15,47 @@
 #include <fcntl.h>
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
 
 #ifdef __linux__
+#include <linux/capability.h>
 #include <linux/filter.h>
 #include <sys/epoll.h>
+#include <sys/types.h>
 #endif  // __linux__
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
+#include <time.h>
 #include <unistd.h>
 
+#include <array>
+#include <cstddef>
+#include <cstring>
+#include <ctime>
 #include <limits>
+#include <optional>
+#include <thread>  // NOLINT
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -2293,17 +2310,42 @@ TEST_P(SimpleTcpSocketTest, SetSocketAttachDetachFilter) {
       {0x6, 0, 0, 0x00040000},   {0x6, 0, 0, 0x00000000},
   };
   struct sock_fprog bpf = {
-      .len = ABSL_ARRAYSIZE(code),
+      .len = std::size(code),
       .filter = code,
   };
-  ASSERT_THAT(
-      setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf)),
-      SyscallSucceeds());
+  int ret =
+      setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+  if (ret < 0 && errno == EPERM) {
+    // Linux 5d39580f68e6 ("tcp: restrict SO_ATTACH_FILTER to priv users")
+    // requires CAP_NET_ADMIN over the socket's network namespace.
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  }
+  ASSERT_THAT(ret, SyscallSucceeds());
 
   constexpr int val = 0;
   ASSERT_THAT(
       setsockopt(s.get(), SOL_SOCKET, SO_DETACH_FILTER, &val, sizeof(val)),
       SyscallSucceeds());
+}
+
+TEST_P(SimpleTcpSocketTest, SetSocketAttachFilterWithoutNetAdmin) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  struct sock_filter code[] = {{0x6, 0, 0, 0x00040000}};  // ret 0x40000
+  struct sock_fprog bpf = {
+      .len = std::size(code),
+      .filter = code,
+  };
+  AutoCapability cap(CAP_NET_ADMIN, false);
+  int ret =
+      setsockopt(s.get(), SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+  if (!IsRunningOnGvisor() || IsRunningWithHostinet()) {
+    // Only Linux 5d39580f68e6 ("tcp: restrict SO_ATTACH_FILTER to priv
+    // users") and later requires CAP_NET_ADMIN, so this can succeed on
+    // old kernels (including with hostinet on an old kernel).
+    SKIP_IF(ret == 0);
+  }
+  EXPECT_THAT(ret, SyscallFailsWithErrno(EPERM));
 }
 
 #endif  // __linux__

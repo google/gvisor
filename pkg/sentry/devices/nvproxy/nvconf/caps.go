@@ -41,6 +41,7 @@ const (
 	// requiring to be enabled explicitly.
 	CapFabricIMEXManagement // NV_RM_CAP_SYS_FABRIC_IMEX_MGMT
 	CapProfiling            // GPU hardware performance counter access (Nsight Compute/Systems)
+	CapRDMA                 // GPUDirect RDMA: exporting GPU memory to a dma-buf fd
 
 	numValidCaps int = iota
 )
@@ -55,13 +56,13 @@ const (
 
 	// SupportedDriverCaps is the set of driver capabilities that are supported by
 	// nvproxy.
-	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement | CapProfiling
+	SupportedDriverCaps = AllContainerDriverCaps | CapFabricIMEXManagement | CapProfiling | CapRDMA
 
 	// AllContainerDriverCaps is the subset of SupportedDriverCaps that are
 	// enabled when enabling "all" capabilities is requested, which excludes
 	// "privileged" capabilities that are usually not intended. Similar to
 	// nvidia-container-toolkit/internal/config/image/capabilities.go:SupportedDriverCapabilities.
-	AllContainerDriverCaps = CapCompute | CapUtility | CapGraphics | CapVideo
+	AllContainerDriverCaps = CapCompute | CapUtility | CapGraphics | CapVideo | CapNGX
 
 	// DefaultDriverCaps is the set of driver capabilities that are enabled by
 	// default in the absence of any other configuration. See
@@ -91,6 +92,8 @@ func (c DriverCaps) individualString() string {
 		return "fabric-imex-mgmt"
 	case CapProfiling:
 		return "profiling"
+	case CapRDMA:
+		return "rdma"
 	default:
 		panic(fmt.Sprintf("capability has no string mapping: %x", uint16(c)))
 	}
@@ -193,19 +196,11 @@ func (c DriverCaps) NVIDIAFlags() []string {
 // PopularCapabilitySets returns the most commonly used capability sets.
 func PopularCapabilitySets() []DriverCaps {
 	capSets := make(map[DriverCaps]struct{})
-	capSets[SupportedDriverCaps] = struct{}{}
 	capSets[DefaultDriverCaps] = struct{}{}
-	// Add every individual supported capability together with CapUtility.
-	for i := 0; i < numValidCaps; i++ {
-		cap := DriverCaps(1 << i)
-		if cap == CapUtility {
-			continue
-		}
-		if cap&SupportedDriverCaps == 0 {
-			continue
-		}
-		capSets[cap|CapUtility] = struct{}{}
-	}
+	capSets[DefaultDriverCaps|CapGraphics] = struct{}{}
+	capSets[DefaultDriverCaps|CapVideo] = struct{}{}
+	capSets[AllContainerDriverCaps] = struct{}{}
+	capSets[AllContainerDriverCaps|CapProfiling] = struct{}{}
 	// Return as a sorted list.
 	return slices.Sorted(maps.Keys(capSets))
 }

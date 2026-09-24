@@ -57,6 +57,39 @@ const (
 	FMODE_CREATED = 0x100000
 )
 
+// Constants for openat2(2).
+const (
+	RESOLVE_NO_XDEV       = 0x1
+	RESOLVE_NO_MAGICLINKS = 0x2
+	RESOLVE_NO_SYMLINKS   = 0x4
+	RESOLVE_BENEATH       = 0x8
+	RESOLVE_IN_ROOT       = 0x10
+	RESOLVE_CACHED        = 0x20
+)
+
+// OpenHow represents struct open_how, which specifies
+// how openat2(2) should resolve the specified path.
+//
+// +marshal
+type OpenHow struct {
+	_       structs.HostLayout
+	Flags   uint64
+	Mode    uint64
+	Resolve uint64
+}
+
+// Sizes for various versions of the kernel OpenHow structure.
+const (
+	OPEN_HOW_SIZE_VER0   = 24
+	OPEN_HOW_SIZE_LATEST = OPEN_HOW_SIZE_VER0
+)
+
+// ValidOpenFlags represent all valid flags for the open(2) family.
+const ValidOpenFlags = O_ACCMODE | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | O_APPEND | O_NONBLOCK | O_DSYNC | O_ASYNC | O_DIRECT | O_LARGEFILE | O_DIRECTORY | O_NOFOLLOW | O_NOATIME | O_SYNC | O_PATH | O_TMPFILE | O_CLOEXEC
+
+// ValidOPathFlags represent all flags that are valid alongside O_PATH for the open(2) family.
+const ValidOPathFlags = O_DIRECTORY | O_NOFOLLOW | O_PATH | O_CLOEXEC
+
 // Constants for fstatat(2).
 const (
 	AT_SYMLINK_NOFOLLOW = 0x100
@@ -352,6 +385,7 @@ const (
 	STATX_ATTR_NODUMP     = 0x00000040
 	STATX_ATTR_ENCRYPTED  = 0x00000800
 	STATX_ATTR_AUTOMOUNT  = 0x00001000
+	STATX_ATTR_MOUNT_ROOT = 0x00002000
 )
 
 // Statx represents struct statx.

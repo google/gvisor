@@ -14,13 +14,20 @@
 
 #include "test/util/io_uring_util.h"
 
+#include <sys/mman.h>
+
+#include <cstdint>
 #include <memory>
+#include <utility>
+
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
 
 PosixErrorOr<std::unique_ptr<IOUring>> IOUring::InitIOUring(
-    unsigned int entries, IOUringParams &params) {
+    unsigned int entries, IOUringParams& params) {
   PosixErrorOr<FileDescriptor> fd = NewIOUringFD(entries, params);
   if (!fd.ok()) {
     return fd.error();
@@ -29,8 +36,8 @@ PosixErrorOr<std::unique_ptr<IOUring>> IOUring::InitIOUring(
   return std::make_unique<IOUring>(std::move(fd.ValueOrDie()), entries, params);
 }
 
-IOUring::IOUring(FileDescriptor &&fd, unsigned int entries,
-                 IOUringParams &params)
+IOUring::IOUring(FileDescriptor&& fd, unsigned int entries,
+                 IOUringParams& params)
     : iouringfd_(std::move(fd)) {
   cring_sz_ = params.cq_off.cqes + params.cq_entries * sizeof(IOUringCqe);
   sring_sz_ = params.sq_off.array + params.sq_entries * sizeof(unsigned);
@@ -45,26 +52,26 @@ IOUring::IOUring(FileDescriptor &&fd, unsigned int entries,
   sqe_ptr_ = mmap(0, sqes_sz_, PROT_READ | PROT_WRITE,
                   MAP_SHARED | MAP_POPULATE, iouringfd_.get(), IORING_OFF_SQES);
 
-  cqes_ = reinterpret_cast<IOUringCqe *>(reinterpret_cast<char *>(cq_ptr_) +
-                                         params.cq_off.cqes);
+  cqes_ = reinterpret_cast<IOUringCqe*>(reinterpret_cast<char*>(cq_ptr_) +
+                                        params.cq_off.cqes);
 
-  cq_head_ptr_ = reinterpret_cast<uint32_t *>(
-      reinterpret_cast<char *>(cq_ptr_) + params.cq_off.head);
-  cq_tail_ptr_ = reinterpret_cast<uint32_t *>(
-      reinterpret_cast<char *>(cq_ptr_) + params.cq_off.tail);
-  sq_head_ptr_ = reinterpret_cast<uint32_t *>(
-      reinterpret_cast<char *>(sq_ptr_) + params.sq_off.head);
-  sq_tail_ptr_ = reinterpret_cast<uint32_t *>(
-      reinterpret_cast<char *>(sq_ptr_) + params.sq_off.tail);
-  cq_overflow_ptr_ = reinterpret_cast<uint32_t *>(
-      reinterpret_cast<char *>(cq_ptr_) + params.cq_off.overflow);
-  sq_dropped_ptr_ = reinterpret_cast<uint32_t *>(
-      reinterpret_cast<char *>(sq_ptr_) + params.sq_off.dropped);
+  cq_head_ptr_ = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(cq_ptr_) +
+                                             params.cq_off.head);
+  cq_tail_ptr_ = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(cq_ptr_) +
+                                             params.cq_off.tail);
+  sq_head_ptr_ = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(sq_ptr_) +
+                                             params.sq_off.head);
+  sq_tail_ptr_ = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(sq_ptr_) +
+                                             params.sq_off.tail);
+  cq_overflow_ptr_ = reinterpret_cast<uint32_t*>(
+      reinterpret_cast<char*>(cq_ptr_) + params.cq_off.overflow);
+  sq_dropped_ptr_ = reinterpret_cast<uint32_t*>(
+      reinterpret_cast<char*>(sq_ptr_) + params.sq_off.dropped);
 
-  sq_mask_ = *(reinterpret_cast<uint32_t *>(reinterpret_cast<char *>(sq_ptr_) +
-                                            params.sq_off.ring_mask));
-  sq_array_ = reinterpret_cast<unsigned *>(reinterpret_cast<char *>(sq_ptr_) +
-                                           params.sq_off.array);
+  sq_mask_ = *(reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(sq_ptr_) +
+                                           params.sq_off.ring_mask));
+  sq_array_ = reinterpret_cast<unsigned*>(reinterpret_cast<char*>(sq_ptr_) +
+                                          params.sq_off.array);
 }
 
 IOUring::~IOUring() {
@@ -98,19 +105,19 @@ void IOUring::store_sq_tail(uint32_t sq_tail_val) {
 }
 
 int IOUring::Enter(unsigned int to_submit, unsigned int min_complete,
-                   unsigned int flags, sigset_t *sig) {
+                   unsigned int flags, sigset_t* sig) {
   return IOUringEnter(iouringfd_.get(), to_submit, min_complete, flags, sig);
 }
 
-IOUringCqe *IOUring::get_cqes() { return cqes_; }
+IOUringCqe* IOUring::get_cqes() { return cqes_; }
 
-IOUringSqe *IOUring::get_sqes() {
-  return reinterpret_cast<IOUringSqe *>(sqe_ptr_);
+IOUringSqe* IOUring::get_sqes() {
+  return reinterpret_cast<IOUringSqe*>(sqe_ptr_);
 }
 
 uint32_t IOUring::get_sq_mask() { return sq_mask_; }
 
-unsigned *IOUring::get_sq_array() { return sq_array_; }
+unsigned* IOUring::get_sq_array() { return sq_array_; }
 
 }  // namespace testing
 }  // namespace gvisor

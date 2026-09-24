@@ -13,20 +13,24 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/magic.h>
 #include <sys/mount.h>
 #include <sys/statfs.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/mount_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

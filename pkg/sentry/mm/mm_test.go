@@ -15,11 +15,13 @@
 package mm
 
 import (
+	"bytes"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -341,5 +343,242 @@ func TestGetAllocationDirection(t *testing.T) {
 				t.Errorf("Unexpected allocation direction. Expected: %s, Actual: %s", test.expected, actual)
 			}
 		})
+	}
+}
+
+// readPinnedRange returns the current contents of the pinned range pr.
+func readPinnedRange(t *testing.T, pr PinnedRange) []byte {
+	t.Helper()
+	ims, err := pr.File.MapInternal(pr.FileRange(), hostarch.Read)
+	if err != nil {
+		t.Fatalf("MapInternal got err %v want nil", err)
+	}
+	buf := make([]byte, pr.Source.Length())
+	if _, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf)), ims); err != nil {
+		t.Fatalf("CopySeq got err %v want nil", err)
+	}
+	return buf
+}
+
+// TestPinnedPagesCopiedOnFork tests that Fork copies pinned pages to the
+// child immediately instead of making them copy-on-write, so that the
+// parent's mappings never diverge from pages registered for DMA.
+func TestPinnedPagesCopiedOnFork(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	// Map 3 pages, but pin only the middle page, so that Fork must handle
+	// both the pinned page and the copy-on-write pages surrounding it.
+	const npages = 3
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   npages * hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	preFork := bytes.Repeat([]byte{'A'}, npages*hostarch.PageSize)
+	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+
+	pinAR := hostarch.AddrRange{
+		Start: addr + hostarch.PageSize,
+		End:   addr + 2*hostarch.PageSize,
+	}
+	prs, err := mm.Pin(ctx, pinAR, hostarch.ReadWrite, false /* ignorePermissions */)
+	if err != nil {
+		t.Fatalf("Pin got err %v want nil", err)
+	}
+	defer Unpin(prs)
+
+	// Fork twice so that both the first fork of a pinned pma, and the fork
+	// of the resulting parent pma state, are tested.
+	for i := 0; i < 2; i++ {
+		mm2, err := mm.Fork(ctx)
+		if err != nil {
+			t.Fatalf("Fork got err %v want nil", err)
+		}
+		defer mm2.DecUsers(ctx)
+
+		// The parent's writes to the pinned page must be visible through the
+		// pinned range, i.e. the parent must not have been moved to a new
+		// copy of the page by copy-on-write.
+		postFork := bytes.Repeat([]byte{'B' + byte(i)}, npages*hostarch.PageSize)
+		if _, err := mm.CopyOut(ctx, addr, postFork, usermem.IOOpts{}); err != nil {
+			t.Fatalf("CopyOut got err %v want nil", err)
+		}
+		if got, want := readPinnedRange(t, prs[0]), postFork[:hostarch.PageSize]; !bytes.Equal(got, want) {
+			t.Errorf("pinned page contains %q..., want %q...; parent's mapping of the pinned page diverged", got[:4], want[:4])
+		}
+
+		// The child must see the pre-fork contents of all pages.
+		childBuf := make([]byte, npages*hostarch.PageSize)
+		if _, err := mm2.CopyIn(ctx, addr, childBuf, usermem.IOOpts{}); err != nil {
+			t.Fatalf("CopyIn got err %v want nil", err)
+		}
+		if !bytes.Equal(childBuf, preFork) {
+			t.Errorf("child read %q..., want %q...", childBuf[:4], preFork[:4])
+		}
+
+		// The child's writes must not be visible through the pinned range.
+		if _, err := mm2.CopyOut(ctx, addr, bytes.Repeat([]byte{'z'}, npages*hostarch.PageSize), usermem.IOOpts{}); err != nil {
+			t.Fatalf("CopyOut got err %v want nil", err)
+		}
+		if got, want := readPinnedRange(t, prs[0]), postFork[:hostarch.PageSize]; !bytes.Equal(got, want) {
+			t.Errorf("pinned page contains %q..., want %q...; child's writes are visible through the pinned range", got[:4], want[:4])
+		}
+
+		preFork = postFork
+	}
+}
+
+// TestPinUnsharesCopyOnWritePages tests that pinning copy-on-write pages
+// breaks copy-on-write, so that the pinned pages are those mapped by the
+// pinning process, even if the pin does not require write access.
+func TestPinUnsharesCopyOnWritePages(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	preFork := bytes.Repeat([]byte{'A'}, hostarch.PageSize)
+	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+
+	// Make the page copy-on-write by forking, then pin it for reading only.
+	mm2, err := mm.Fork(ctx)
+	if err != nil {
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer mm2.DecUsers(ctx)
+	ar := hostarch.AddrRange{
+		Start: addr,
+		End:   addr + hostarch.PageSize,
+	}
+	prs, err := mm.Pin(ctx, ar, hostarch.Read, false /* ignorePermissions */)
+	if err != nil {
+		t.Fatalf("Pin got err %v want nil", err)
+	}
+	defer Unpin(prs)
+
+	// The parent's writes must be visible through the pinned range, and must
+	// not be visible to the child.
+	postFork := bytes.Repeat([]byte{'B'}, hostarch.PageSize)
+	if _, err := mm.CopyOut(ctx, addr, postFork, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+	if got := readPinnedRange(t, prs[0]); !bytes.Equal(got, postFork) {
+		t.Errorf("pinned page contains %q..., want %q...; pin did not unshare the copy-on-write page", got[:4], postFork[:4])
+	}
+	childBuf := make([]byte, hostarch.PageSize)
+	if _, err := mm2.CopyIn(ctx, addr, childBuf, usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyIn got err %v want nil", err)
+	}
+	if !bytes.Equal(childBuf, preFork) {
+		t.Errorf("child read %q..., want %q...", childBuf[:4], preFork[:4])
+	}
+}
+
+// TestUnpinnedPagesCopyOnWriteAfterFork tests that pages that were pinned but
+// have been unpinned are once again made copy-on-write by Fork.
+func TestUnpinnedPagesCopyOnWriteAfterFork(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   hostarch.PageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	if _, err := mm.CopyOut(ctx, addr, bytes.Repeat([]byte{'A'}, hostarch.PageSize), usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+
+	ar := hostarch.AddrRange{
+		Start: addr,
+		End:   addr + hostarch.PageSize,
+	}
+	prs, err := mm.Pin(ctx, ar, hostarch.ReadWrite, false /* ignorePermissions */)
+	if err != nil {
+		t.Fatalf("Pin got err %v want nil", err)
+	}
+	Unpin(prs)
+
+	mm2, err := mm.Fork(ctx)
+	if err != nil {
+		t.Fatalf("Fork got err %v want nil", err)
+	}
+	defer mm2.DecUsers(ctx)
+
+	// Since no pages remain pinned, all pages should be copy-on-write, not
+	// copied for the child.
+	mm.activeMu.RLock()
+	pseg := mm.pmas.FindSegment(addr)
+	if !pseg.Ok() {
+		mm.activeMu.RUnlock()
+		t.Fatalf("no pma for addr %#x", addr)
+	}
+	needCOW := pseg.ValuePtr().needCOW
+	mm.activeMu.RUnlock()
+	if !needCOW {
+		t.Errorf("pma is not copy-on-write after fork of unpinned page")
+	}
+}
+
+func TestMRemapMappableOffsetOverflow(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(3*hostarch.PageSize, pgalloc.AllocOpts{})
+	if err != nil {
+		t.Fatalf("failed to allocate memory file range: %v", err)
+	}
+	mappable := NewSpecialMappable("test_mappable", mf, fr)
+	defer mappable.DecRef(ctx)
+
+	// Map a page at a high offset (2^64 - 2*PageSize).
+	// This mapping itself is valid because offset + length (2^64 - PageSize) does not overflow.
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:          hostarch.PageSize,
+		MappingIdentity: mappable,
+		Mappable:        mappable,
+		Offset:          ^uint64(0) - 2*hostarch.PageSize + 1,
+		Private:         true,
+		MaxPerms:        hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+
+	// 1. A shrink should succeed, even if offset+newSize overflows.
+	// We remap with oldSize = 3*PageSize, newSize = 2*PageSize.
+	if _, err := mm.MRemap(ctx, addr, 3*hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{}); err != nil {
+		t.Errorf("MRemap shrink got err %v want nil", err)
+	}
+
+	// 2. A grow should fail if offset+newSize overflows.
+	// We remap with oldSize = PageSize, newSize = 3*PageSize.
+	if _, err := mm.MRemap(ctx, addr, hostarch.PageSize, 3*hostarch.PageSize, MRemapOpts{}); !linuxerr.Equals(linuxerr.EINVAL, err) {
+		t.Errorf("MRemap grow got err %v want EINVAL", err)
 	}
 }

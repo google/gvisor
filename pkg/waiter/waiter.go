@@ -211,6 +211,8 @@ func NewFunctionEntry(mask EventMask, fn func(EventMask)) (e Entry) {
 }
 
 // NoopListener is an EventListener that does nothing.
+//
+// +stateify savable
 type NoopListener struct{}
 
 // NotifyEvent implements EventListener.NotifyEvent.

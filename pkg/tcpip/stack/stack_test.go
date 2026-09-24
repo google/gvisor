@@ -44,6 +44,25 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
+func TestClockResolution(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		got  time.Duration
+		want time.Duration
+	}{
+		{name: "default"},
+		{name: "positive", got: 500 * time.Microsecond, want: 500 * time.Microsecond},
+		{name: "negative", got: -time.Nanosecond},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{ClockResolution: test.got})
+			if got := s.ClockResolution(); got != test.want {
+				t.Errorf("ClockResolution() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 const (
 	fakeNetNumber        tcpip.NetworkProtocolNumber = math.MaxUint32
 	fakeNetHeaderLen                                 = 12
@@ -84,8 +103,13 @@ type fakeNetworkEndpoint struct {
 	mu struct {
 		sync.RWMutex
 
-		enabled             bool
-		forwarding          bool
+		// +checklocks:RWMutex
+		enabled bool
+
+		// +checklocks:RWMutex
+		forwarding bool
+
+		// +checklocks:RWMutex
 		multicastForwarding bool
 	}
 
@@ -1057,7 +1081,7 @@ func TestRouteWithDownNIC(t *testing.T) {
 	nic2Dst := tcpip.AddrFrom4Slice([]byte("\x06\x00\x00\x00"))
 	nic1RouteMTU := 1500
 	nic2RouteMTU := 1460
-	// These are set in setup function, because they depend on protocl being used.
+	// These are set in setup function, because they depend on protocol being used.
 	nic1RouteMTUAtNetworkLayer := 0
 	nic2RouteMTUAtNetworkLayer := 0
 
@@ -2682,6 +2706,49 @@ func TestNICContextPreservation(t *testing.T) {
 			}
 			if got, want := nicinfo.Context == test.want, true; got != want {
 				t.Fatalf("got nicinfo.Context == ctx = %t, want %t; nicinfo.Context = %p, ctx = %p", got, want, nicinfo.Context, test.want)
+			}
+		})
+	}
+}
+
+// TestNICKindPreservation tests the NIC kind is present in NICInfo.
+func TestNICKindPreservation(t *testing.T) {
+	tests := []struct {
+		name string
+		opts stack.NICOptions
+		want string
+	}{
+		{
+			"veth",
+			stack.NICOptions{Kind: "veth"},
+			"veth",
+		},
+		{
+			"bridge",
+			stack.NICOptions{Kind: "bridge"},
+			"bridge",
+		},
+		{
+			"not_set",
+			stack.NICOptions{},
+			"",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{})
+			id := tcpip.NICID(1)
+			ep := channel.New(0, 0, "\x00\x00\x00\x00\x00\x00")
+			if err := s.CreateNICWithOptions(id, ep, test.opts); err != nil {
+				t.Fatalf("got stack.CreateNICWithOptions(%d, %+v, %+v) = %s, want nil", id, ep, test.opts, err)
+			}
+			nicinfos := s.NICInfo()
+			nicinfo, ok := nicinfos[id]
+			if !ok {
+				t.Fatalf("id: %d not found in NICInfo: %+v", id, nicinfos)
+			}
+			if got, want := nicinfo.Kind, test.want; got != want {
+				t.Fatalf("got nicinfo.Kind = %q, want %q", got, want)
 			}
 		})
 	}

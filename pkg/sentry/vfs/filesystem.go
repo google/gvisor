@@ -366,7 +366,9 @@ type FilesystemImpl interface {
 	//	- If opts specifies unsupported options, SetStatAt returns EINVAL.
 	SetStatAt(ctx context.Context, rp *ResolvingPath, opts SetStatOptions) error
 
-	// StatAt returns metadata for the file at rp.
+	// StatAt returns metadata for the file at rp. On success, StatAt must
+	// call rp.AddMountRootAttr() with the resolved Dentry on the returned
+	// Statx.
 	//
 	// If rp.Done() (i.e. rp refers to the dentry rp.Start()) and opts.Sync ==
 	// linux.AT_STATX_DONT_SYNC, StatAt cannot take locks preceding
@@ -476,6 +478,33 @@ type FilesystemImpl interface {
 	//	- If name does not exist, ENODATA is returned.
 	RemoveXattrAt(ctx context.Context, rp *ResolvingPath, name string) error
 
+	// GetPosixACLAt fetches the POSIX ACL from the file at rp.
+	//
+	// GetPosixACLAt does not correspond to a Linux syscall. It is used by internal
+	// sentry callers for two reasons:
+	//
+	// (1) to fetch an file's ACL without needing a serialization/deserialization
+	//     round trip through GetXattrAt/ParsePosixACL;
+	// (2) to resolve KUIDs and KGIDs in an ACL without than needing to perform
+	//     userns translation (e.g. when using the caller's userns would not be
+	//     appropriate)
+	//
+	// GetPosixACLAt performs no permission checks.
+	GetPosixACLAt(ctx context.Context, rp *ResolvingPath, t ACLType) (*PosixACL, error)
+
+	// SetPosixACLAt sets the POSIX ACL from the file at rp.
+	// For access ACLs, the ACL and mode are re-computed together, so the resulting
+	// ACL (which may be nil) and mode are returned together.
+	//
+	// SetPosixACLAt does not correspond to a Linux syscall. It is used by internal
+	// sentry callers to set the ACL without worrying about translating KUIDs/KGIDs.
+	//
+	// For access ACLs: if clearSGID is set, the filesystem may clear the setgid bit
+	// of the file depending on rp's creds, as described in chmod(2).
+	//
+	// SetPosixACLAt performs no permission checks.
+	SetPosixACLAt(ctx context.Context, rp *ResolvingPath, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error)
+
 	// BoundEndpointAt returns the Unix socket endpoint bound at the path rp.
 	//
 	// Errors:
@@ -571,4 +600,11 @@ func (PrependPathSyntheticError) Error() string {
 // HostFDProvider is implemented by VFS objects backed by a host FD.
 type HostFDProvider interface {
 	HostFD() int
+}
+
+// MountRootPathProvider is an interface for filesystems that customize the
+// root path of a mount as displayed in /proc/<pid>/mountinfo.
+type MountRootPathProvider interface {
+	// MountRootPath returns the root path of the mount rooted at vd in mountinfo.
+	MountRootPath(ctx context.Context, vd VirtualDentry) string
 }

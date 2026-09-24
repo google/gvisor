@@ -15,12 +15,16 @@
 #ifndef GVISOR_TEST_UTIL_POSIX_ERROR_H_
 #define GVISOR_TEST_UTIL_POSIX_ERROR_H_
 
+#include <ostream>
 #include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/base/attributes.h"
-#include "absl/strings/string_view.h"
-#include "absl/types/variant.h"
 #include "test/util/logging.h"
 
 namespace gvisor {
@@ -109,7 +113,7 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   void IgnoreError() const {}
 
  private:
-  absl::variant<T, PosixError> value_;
+  std::variant<T, PosixError> value_;
 
   friend class PosixErrorIsMatcherCommonImpl;
 };
@@ -131,11 +135,11 @@ PosixErrorOr<T>::PosixErrorOr(T&& value) : value_(std::move(value)) {}
 template <typename T>
 template <typename U>
 inline PosixErrorOr<T>::PosixErrorOr(PosixErrorOr<U> other) {
-  if (absl::holds_alternative<U>(other.value_)) {
+  if (std::holds_alternative<U>(other.value_)) {
     // T is convertible from U.
-    value_ = absl::get<U>(std::move(other.value_));
-  } else if (absl::holds_alternative<PosixError>(other.value_)) {
-    value_ = absl::get<PosixError>(std::move(other.value_));
+    value_ = std::get<U>(std::move(other.value_));
+  } else if (std::holds_alternative<PosixError>(other.value_)) {
+    value_ = std::get<PosixError>(std::move(other.value_));
   } else {
     TEST_CHECK_MSG(false, "PosixErrorOr does not contain PosixError or value");
   }
@@ -144,11 +148,11 @@ inline PosixErrorOr<T>::PosixErrorOr(PosixErrorOr<U> other) {
 template <typename T>
 template <typename U>
 inline PosixErrorOr<T>& PosixErrorOr<T>::operator=(PosixErrorOr<U> other) {
-  if (absl::holds_alternative<U>(other.value_)) {
+  if (std::holds_alternative<U>(other.value_)) {
     // T is convertible from U.
-    value_ = absl::get<U>(std::move(other.value_));
-  } else if (absl::holds_alternative<PosixError>(other.value_)) {
-    value_ = absl::get<PosixError>(std::move(other.value_));
+    value_ = std::get<U>(std::move(other.value_));
+  } else if (std::holds_alternative<PosixError>(other.value_)) {
+    value_ = std::get<PosixError>(std::move(other.value_));
   } else {
     TEST_CHECK_MSG(false, "PosixErrorOr does not contain PosixError or value");
   }
@@ -157,39 +161,39 @@ inline PosixErrorOr<T>& PosixErrorOr<T>::operator=(PosixErrorOr<U> other) {
 
 template <typename T>
 PosixError PosixErrorOr<T>::error() const {
-  if (!absl::holds_alternative<PosixError>(value_)) {
+  if (!std::holds_alternative<PosixError>(value_)) {
     return PosixError();
   }
-  return absl::get<PosixError>(value_);
+  return std::get<PosixError>(value_);
 }
 
 template <typename T>
 bool PosixErrorOr<T>::ok() const {
-  return absl::holds_alternative<T>(value_);
+  return std::holds_alternative<T>(value_);
 }
 
 template <typename T>
 const T& PosixErrorOr<T>::ValueOrDie() const& {
-  TEST_CHECK(absl::holds_alternative<T>(value_));
-  return absl::get<T>(value_);
+  TEST_CHECK(std::holds_alternative<T>(value_));
+  return std::get<T>(value_);
 }
 
 template <typename T>
 T& PosixErrorOr<T>::ValueOrDie() & {
-  TEST_CHECK(absl::holds_alternative<T>(value_));
-  return absl::get<T>(value_);
+  TEST_CHECK(std::holds_alternative<T>(value_));
+  return std::get<T>(value_);
 }
 
 template <typename T>
 const T&& PosixErrorOr<T>::ValueOrDie() const&& {
-  TEST_CHECK(absl::holds_alternative<T>(value_));
-  return std::move(absl::get<T>(value_));
+  TEST_CHECK(std::holds_alternative<T>(value_));
+  return std::move(std::get<T>(value_));
 }
 
 template <typename T>
 T&& PosixErrorOr<T>::ValueOrDie() && {
-  TEST_CHECK(absl::holds_alternative<T>(value_));
-  return std::move(absl::get<T>(value_));
+  TEST_CHECK(std::holds_alternative<T>(value_));
+  return std::move(std::get<T>(value_));
 }
 
 extern ::std::ostream& operator<<(::std::ostream& os, const PosixError& e);

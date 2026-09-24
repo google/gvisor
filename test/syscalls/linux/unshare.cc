@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <linux/if_ether.h>
 #include <linux/mempolicy.h>
 #include <linux/prctl.h>
@@ -20,6 +21,8 @@
 #include <sched.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

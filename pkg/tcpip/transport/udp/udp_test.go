@@ -22,6 +22,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -323,6 +324,54 @@ func TestV4ReadOnV4(t *testing.T) {
 
 	// Test acceptance.
 	testRead(c, context.UnicastV4)
+
+	// Leave Resume and packet delivery unordered so race builds check thaw.
+	payload := []byte("resume")
+	packet := context.BuildUDPPacket(payload, context.UnicastV4, context.Incoming, testTOS, testTTL, false)
+	resumable := c.EP.(stack.ResumableEndpoint)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		resumable.Resume()
+	})
+	wg.Go(func() {
+		<-start
+		c.InjectPacket(ipv4.ProtocolNumber, packet)
+	})
+	close(start)
+	wg.Wait()
+	c.ReadFromEndpointExpectSuccess(payload, context.UnicastV4)
+}
+
+// TestV4ReadOnV4WithTrailingPadding tests that IP payload padding is trimmed
+// from UDP packets.
+func TestV4ReadOnV4WithTrailingPadding(t *testing.T) {
+	c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4})
+	defer c.Cleanup()
+
+	c.CreateEndpointForFlow(context.UnicastV4, udp.ProtocolNumber)
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		c.T.Fatalf("Bind failed: %s", err)
+	}
+
+	payload := newRandomPayload(arbitraryPayloadSize)
+	pkt := context.BuildUDPPacket(payload, context.UnicastV4, context.Incoming, testTOS, testTTL, false)
+
+	// Append extra padding bytes to the packet.
+	padding := make([]byte, 10)
+	pktWithPadding := append(pkt, padding...)
+
+	// Update IPv4 TotalLength and Checksum so the IP layer doesn't trim the padding.
+	ip := header.IPv4(pktWithPadding)
+	ip.SetTotalLength(uint16(len(pktWithPadding)))
+	ip.SetChecksum(0)
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	c.InjectPacket(header.IPv4ProtocolNumber, pktWithPadding)
+	c.ReadFromEndpointExpectSuccess(payload, context.UnicastV4)
 }
 
 // TestReadOnBoundToMulticast checks that an endpoint can bind to a multicast

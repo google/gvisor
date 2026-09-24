@@ -15,13 +15,17 @@
 package sys_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -33,7 +37,7 @@ const (
 	vfioDev = "vfio-dev"
 )
 
-func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
+func tryNewTestSystem(t *testing.T, idata *sys.InternalData) (*testutil.System, error) {
 	k, err := testutil.Boot()
 	if err != nil {
 		t.Fatalf("Failed to create test kernel: %v", err)
@@ -46,18 +50,30 @@ func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 
 	mountOpts := &vfs.MountOptions{
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			InternalData: &sys.InternalData{
-				EnableTPUProxyPaths: pciTestDir != "",
-				TestSysfsPathPrefix: pciTestDir,
-			},
+			InternalData: idata,
 		},
 	}
 
 	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, mountOpts, nil)
 	if err != nil {
+		return nil, err
+	}
+	return testutil.NewSystem(ctx, t, k.VFS(), mns), nil
+}
+
+func newTestSystemWithInternalData(t *testing.T, idata *sys.InternalData) *testutil.System {
+	s, err := tryNewTestSystem(t, idata)
+	if err != nil {
 		t.Fatalf("Failed to create new mount namespace: %v", err)
 	}
-	return testutil.NewSystem(ctx, t, k.VFS(), mns)
+	return s
+}
+
+func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
+	return newTestSystemWithInternalData(t, &sys.InternalData{
+		EnableTPUProxyPaths: pciTestDir != "",
+		TestSysfsPathPrefix: pciTestDir,
+	})
 }
 
 func TestReadCPUFile(t *testing.T) {
@@ -307,5 +323,205 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
 			path.Base(device.pciAddress): linux.DT_LNK,
 		})
+	}
+}
+
+// rdmaTestPCIConfig is a fake raw PCI config space blob; deliberately not
+// valid UTF-8 to check binary-faithful mirroring.
+var rdmaTestPCIConfig = []byte{0x86, 0x80, 0x0d, 0x02, 0x00, 0x00, 0x10, 0x00}
+
+// newRDMATestSnapshot returns a snapshot with a ConnectX NIC behind a bridge
+// on domain 0000 and a GPU on an extended (VMD-style, 5-hex-digit) domain.
+func newRDMATestSnapshot() *rdma.Snapshot {
+	const nicLeaf = "devices/pci0000:07/0000:07:01.0/0000:0c:00.0"
+	return &rdma.Snapshot{
+		VerbsABIVersion: "6\n",
+		PCINodes: []rdma.PCINode{
+			{Path: "devices/pci0000:07"},
+			{Path: "devices/pci0000:07/0000:07:01.0", Attrs: map[string]string{"class": "0x060400\n"}, Config: rdmaTestPCIConfig},
+			{Path: nicLeaf, Attrs: map[string]string{
+				"vendor": "0x15b3\n",
+				"uevent": "DRIVER=mlx5_core\nPCI_SLOT_NAME=0000:0c:00.0\n",
+				// Host-view CPU affinity: must be rewritten to the sandbox's
+				// single-node view.
+				"numa_node":     "1\n",
+				"local_cpus":    "ffffffff,ffffff00,00000000\n",
+				"local_cpulist": "56-111\n",
+			}},
+			{Path: "devices/pci10000:e0"},
+			{Path: "devices/pci10000:e0/10000:e0:06.0", Attrs: map[string]string{
+				"class":  "0x030200\n",
+				"vendor": "0x10de\n",
+				// A device on no NUMA node stays that way.
+				"numa_node": "-1\n",
+			}},
+		},
+		Devices: []rdma.Device{{
+			Uverbs:     "uverbs0",
+			IBDev:      "mlx5_0",
+			LeafPCI:    nicLeaf,
+			Dev:        "231:192\n",
+			ABIVersion: "1\n",
+			IBAttrs:    map[string]string{"node_guid": "0011:2233:4455:6677\n"},
+			Ports: map[string]rdma.Port{
+				"1": {
+					StaticAttrs:  map[string]string{"link_layer": "Ethernet\n"},
+					LiveAttrs:    []string{"state"},
+					GIDNames:     []string{"0", "1"},
+					CounterNames: []string{"port_rcv_data"},
+				},
+			},
+			NetDevs: []rdma.NetDev{{
+				Name:     "eth1",
+				Attrs:    map[string]string{"mtu": "9000\n"},
+				ErrAttrs: map[string]int32{"speed": int32(unix.EINVAL)},
+			}},
+		}},
+		NUMA: &rdma.NUMA{
+			// Two-node host (aggregate ranges "0-1"): the sandbox must
+			// advertise a single node covering the sandbox's CPUs.
+			Aggregate: map[string]string{"online": "0-1\n", "possible": "0-1\n"},
+		},
+	}
+}
+
+func readTestFile(s *testutil.System, p string) (string, error) {
+	pop := s.PathOpAtRoot(p)
+	fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
+	if err != nil {
+		return "", err
+	}
+	defer fd.DecRef(s.Ctx)
+	return s.ReadToEnd(fd)
+}
+
+func TestRDMASysfs(t *testing.T) {
+	s := newTestSystemWithInternalData(t, &sys.InternalData{RDMASysfs: newRDMATestSnapshot()})
+	defer s.Destroy()
+
+	const nicLeaf = "/devices/pci0000:07/0000:07:01.0/0000:0c:00.0"
+	for p, want := range map[string]map[string]testutil.DirentType{
+		"/devices/pci0000:07": {
+			"0000:07:01.0": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+		},
+		"/devices/pci0000:07/0000:07:01.0": {
+			"0000:0c:00.0": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+			"subsystem":    linux.DT_LNK,
+			"class":        linux.DT_REG,
+			"config":       linux.DT_REG,
+		},
+		nicLeaf: {
+			"infiniband":       linux.DT_DIR,
+			"infiniband_verbs": linux.DT_DIR,
+			"net":              linux.DT_DIR,
+			"subsystem":        linux.DT_LNK,
+			"driver":           linux.DT_LNK,
+			"vendor":           linux.DT_REG,
+			"uevent":           linux.DT_REG,
+			"numa_node":        linux.DT_REG,
+			"local_cpus":       linux.DT_REG,
+			"local_cpulist":    linux.DT_REG,
+		},
+		nicLeaf + "/infiniband/mlx5_0": {
+			"device":    linux.DT_LNK,
+			"node_guid": linux.DT_REG,
+			"ports":     linux.DT_DIR,
+		},
+		nicLeaf + "/infiniband/mlx5_0/ports/1": {
+			"link_layer": linux.DT_REG,
+			"state":      linux.DT_REG,
+			"gids":       linux.DT_DIR,
+			"gid_attrs":  linux.DT_DIR,
+			"counters":   linux.DT_DIR,
+		},
+		nicLeaf + "/infiniband/mlx5_0/ports/1/gids": {
+			"0": linux.DT_REG,
+			"1": linux.DT_REG,
+		},
+		nicLeaf + "/infiniband_verbs/uverbs0": {
+			"ibdev":       linux.DT_REG,
+			"abi_version": linux.DT_REG,
+			"dev":         linux.DT_REG,
+			"device":      linux.DT_LNK,
+		},
+		nicLeaf + "/net/eth1": {
+			"mtu":    linux.DT_REG,
+			"speed":  linux.DT_REG,
+			"device": linux.DT_LNK,
+		},
+		// Extended-domain (VMD-style) GPU root.
+		"/devices/pci10000:e0": {
+			"10000:e0:06.0": linux.DT_DIR,
+			"pci_bus":       linux.DT_DIR,
+		},
+		"/class/infiniband":       {"mlx5_0": linux.DT_LNK},
+		"/class/infiniband_verbs": {"uverbs0": linux.DT_LNK, "abi_version": linux.DT_REG},
+		"/class/net":              {"eth1": linux.DT_LNK},
+		"/class/pci_bus": {
+			"0000:07":  linux.DT_LNK,
+			"0000:0c":  linux.DT_LNK,
+			"10000:e0": linux.DT_LNK,
+		},
+		"/bus/pci/devices": {
+			"0000:07:01.0":  linux.DT_LNK,
+			"0000:0c:00.0":  linux.DT_LNK,
+			"10000:e0:06.0": linux.DT_LNK,
+		},
+		"/bus/pci/drivers":           {"mlx5_core": linux.DT_DIR},
+		"/bus/pci/drivers/mlx5_core": {"0000:0c:00.0": linux.DT_LNK},
+		// The two host nodes collapse into a single sandbox node.
+		"/devices/system/node": {"online": linux.DT_REG, "possible": linux.DT_REG, "node0": linux.DT_DIR},
+		"/devices/system/node/node0": {
+			"cpumap":   linux.DT_REG,
+			"cpulist":  linux.DT_REG,
+			"distance": linux.DT_REG,
+		},
+	} {
+		pop := s.PathOpAtRoot(p)
+		s.AssertAllDirentTypes(s.ListDirents(pop), want)
+	}
+
+	// The advertised NUMA view is a single node covering the sandbox's CPUs.
+	wantCPUList := "0\n"
+	if cores := kernel.KernelFromContext(s.Ctx).ApplicationCores(); cores > 1 {
+		wantCPUList = fmt.Sprintf("0-%d\n", cores-1)
+	}
+
+	// Attribute contents, including via a /sys/class symlink (the path
+	// consumers actually resolve).
+	for p, want := range map[string]string{
+		"/class/infiniband/mlx5_0/node_guid":                   "0011:2233:4455:6677\n",
+		"/class/infiniband_verbs/abi_version":                  "6\n",
+		nicLeaf + "/infiniband_verbs/uverbs0/ibdev":            "mlx5_0\n",
+		"/class/infiniband/mlx5_0/ports/1/../../device/vendor": "0x15b3\n",
+		"/devices/system/node/online":                          "0\n",
+		"/devices/system/node/node0/cpulist":                   wantCPUList,
+		"/devices/system/node/node0/distance":                  "10\n",
+		nicLeaf + "/numa_node":                                 "0\n",
+		nicLeaf + "/local_cpulist":                             wantCPUList,
+		"/devices/pci10000:e0/10000:e0:06.0/numa_node":         "-1\n",
+		// Raw PCI config space is mirrored byte-faithfully.
+		"/devices/pci0000:07/0000:07:01.0/config": string(rdmaTestPCIConfig),
+		// The device/driver symlink and the /sys/bus/pci/drivers back-symlink
+		// resolve to the same PCI function (libfabric realpath's the former
+		// during EFA discovery).
+		nicLeaf + "/driver/0000:0c:00.0/vendor":          "0x15b3\n",
+		"/bus/pci/drivers/mlx5_core/0000:0c:00.0/vendor": "0x15b3\n",
+	} {
+		got, err := readTestFile(s, p)
+		if err != nil {
+			t.Fatalf("reading %q: %v", p, err)
+		}
+		if got != want {
+			t.Errorf("%q contains %q, want %q", p, got, want)
+		}
+	}
+
+	// An attribute whose host read failed exists but fails reads with the
+	// host's errno.
+	if _, err := readTestFile(s, nicLeaf+"/net/eth1/speed"); !errors.Is(err, unix.EINVAL) {
+		t.Errorf("reading speed of a down link returned %v, want EINVAL", err)
 	}
 }

@@ -142,7 +142,9 @@ type SocketOptions struct {
 	// StackHandler is initialized at the creation time and will not change.
 	stackHandler StackHandler `state:"manual"`
 
-	// These fields are accessed and modified using atomic operations.
+	// The boolean option fields below are accessed atomically. Their setters
+	// pass field addresses through storeAtomicBool; checklocks cannot verify
+	// that helper's atomic operation at those call sites.
 
 	// broadcastEnabled determines whether datagram sockets are allowed to
 	// send packets to a broadcast address.
@@ -230,11 +232,16 @@ type SocketOptions struct {
 	// passing is enabled for IPv6.
 	ipv6RecvErrEnabled atomicbitops.Uint32
 
-	// errQueue is the per-socket error queue. It is protected by errQueueMu.
 	errQueueMu sync.Mutex `state:"nosave"`
-	errQueue   sockErrorList
+
+	// errQueue is the per-socket error queue.
+	//
+	// +checklocks:errQueueMu
+	errQueue sockErrorList
 
 	// bindToDevice determines the device to which the socket is bound.
+	//
+	// +checkatomic
 	bindToDevice atomicbitops.Int32
 
 	// getSendBufferLimits provides the handler to get the min, default and max
@@ -243,6 +250,8 @@ type SocketOptions struct {
 	getSendBufferLimits GetSendBufferLimits `state:"manual"`
 
 	// sendBufferSize determines the send buffer size for this socket.
+	//
+	// +checkatomic
 	sendBufferSize atomicbitops.Int64
 
 	// getReceiveBufferLimits provides the handler to get the min, default and
@@ -251,24 +260,33 @@ type SocketOptions struct {
 	getReceiveBufferLimits GetReceiveBufferLimits `state:"manual"`
 
 	// receiveBufferSize determines the receive buffer size for this socket.
+	//
+	// +checkatomic
 	receiveBufferSize atomicbitops.Int64
 
 	// rcvlowat specifies the minimum number of bytes which should be
 	// received to indicate the socket as readable.
+	//
+	// +checkatomic
 	rcvlowat atomicbitops.Int32
 
 	// experimentOptionValue is the value set for the IP option experiment header
 	// if it is not zero.
+	//
+	// +checkatomic
 	experimentOptionValue atomicbitops.Uint32
 
 	// mark is the mark value set for the socket.
+	//
+	// +checkatomic
 	mark atomicbitops.Uint32
 
-	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
 
 	// linger determines the amount of time the socket should linger before
 	// close. We currently implement this option for TCP socket only.
+	//
+	// +checklocks:mu
 	linger LingerOption
 }
 
@@ -497,6 +515,8 @@ func (so *SocketOptions) GetIPv4RecvError() bool {
 }
 
 // SetIPv4RecvError sets value for IP_RECVERR option.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) SetIPv4RecvError(v bool) {
 	storeAtomicBool(&so.ipv4RecvErrEnabled, v)
 	if !v {
@@ -510,6 +530,8 @@ func (so *SocketOptions) GetIPv6RecvError() bool {
 }
 
 // SetIPv6RecvError sets value for IPV6_RECVERR option.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) SetIPv6RecvError(v bool) {
 	storeAtomicBool(&so.ipv6RecvErrEnabled, v)
 	if !v {
@@ -532,6 +554,8 @@ func (*SocketOptions) GetOutOfBandInline() bool {
 func (*SocketOptions) SetOutOfBandInline(bool) {}
 
 // GetLinger gets value for SO_LINGER option.
+//
+// +checklocksexclude:so.mu
 func (so *SocketOptions) GetLinger() LingerOption {
 	so.mu.Lock()
 	linger := so.linger
@@ -540,6 +564,8 @@ func (so *SocketOptions) GetLinger() LingerOption {
 }
 
 // SetLinger sets value for SO_LINGER option.
+//
+// +checklocksexclude:so.mu
 func (so *SocketOptions) SetLinger(linger LingerOption) {
 	so.mu.Lock()
 	so.linger = linger
@@ -643,6 +669,8 @@ type SockError struct {
 }
 
 // pruneErrQueue resets the queue.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) pruneErrQueue() {
 	so.errQueueMu.Lock()
 	so.errQueue.Reset()
@@ -651,6 +679,8 @@ func (so *SocketOptions) pruneErrQueue() {
 
 // DequeueErr dequeues a socket extended error from the error queue and returns
 // it. Returns nil if queue is empty.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) DequeueErr() *SockError {
 	so.errQueueMu.Lock()
 	defer so.errQueueMu.Unlock()
@@ -664,6 +694,8 @@ func (so *SocketOptions) DequeueErr() *SockError {
 
 // PeekErr returns the error in the front of the error queue. Returns nil if
 // the error queue is empty.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) PeekErr() *SockError {
 	so.errQueueMu.Lock()
 	defer so.errQueueMu.Unlock()
@@ -673,6 +705,8 @@ func (so *SocketOptions) PeekErr() *SockError {
 // QueueErr inserts the error at the back of the error queue.
 //
 // Preconditions: so.GetIPv4RecvError() or so.GetIPv6RecvError() is true.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) QueueErr(err *SockError) {
 	so.errQueueMu.Lock()
 	defer so.errQueueMu.Unlock()
@@ -680,6 +714,8 @@ func (so *SocketOptions) QueueErr(err *SockError) {
 }
 
 // QueueLocalErr queues a local error onto the local queue.
+//
+// +checklocksexclude:so.errQueueMu
 func (so *SocketOptions) QueueLocalErr(err Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload *buffer.View) {
 	so.QueueErr(&SockError{
 		Err:      err,

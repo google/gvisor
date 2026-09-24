@@ -28,6 +28,12 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
       echo " * [${target}](artifact://${log#/}) (${BUILDKITE_LABEL})" | \
         buildkite-agent annotate --style error --context failures --append
 
+      # Upload any boot log files found in the test's directory (e.g. undeclared outputs).
+      log_dir=$(dirname "${log}")
+      find "${log_dir}" -iname "*.boot.txt" -print 2>/dev/null | while read -r boot_log; do
+        buildkite-agent artifact upload "${boot_log}"
+      done
+
       # List the first 5 specific failing go tests as sub-bullets.
       sed -n '/^--- FAIL:/ {s/^--- FAIL: \([^ ]*\) (.*)/\1/p}' "${log}" | \
         grep -v 'main_test' | head -n 5 | xargs -I {} echo "   * {}" | \
@@ -91,6 +97,13 @@ else
   rm -f "${CONSECUTIVE_FAILURES_FILE}"
 fi
 
+# Track last job completed time and job assignment.
+JOB_ASSIGNED_FILE="/tmp/job_assigned"
+touch "${JOB_ASSIGNED_FILE}"
+LAST_JOB_COMPLETED_FILE="/tmp/last_job_completed_time"
+date +%s > "${LAST_JOB_COMPLETED_FILE}.tmp"
+mv "${LAST_JOB_COMPLETED_FILE}.tmp" "${LAST_JOB_COMPLETED_FILE}"
+
 clear_docker_containers
 
 set -euo pipefail
@@ -107,6 +120,7 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
     echo 'Removed all Docker runtimes; reloading Docker daemon with this new configuration:' >&2
     cat /etc/docker/daemon.json >&2
     bash -c "$DOCKER_RELOAD_COMMAND"
+    sleep 3  # Give some time for Docker to actually reload.
   fi
 fi
 

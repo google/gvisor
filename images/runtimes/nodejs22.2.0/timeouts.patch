@@ -1,0 +1,31 @@
+diff --git a/test/common/index.js b/test/common/index.js
+index 4fbaf91f..0d789fd7 100644
+--- a/test/common/index.js
++++ b/test/common/index.js
+@@ -267,6 +267,8 @@ function platformTimeout(ms) {
+   const multipliers = typeof ms === 'bigint' ?
+     { two: 2n, four: 4n, seven: 7n } : { two: 2, four: 4, seven: 7 };
+ 
++  ms = multipliers.two * ms;
++
+   if (process.features.debug)
+     ms = multipliers.two * ms;
+ 
+diff --git a/test/parallel/test-http-outgoing-end-cork.js b/test/parallel/test-http-outgoing-end-cork.js
+index 6a217238..4d9afe1b 100644
+--- a/test/parallel/test-http-outgoing-end-cork.js
++++ b/test/parallel/test-http-outgoing-end-cork.js
+@@ -3,11 +3,11 @@ const common = require('../common');
+ const assert = require('assert');
+ const http = require('http');
+ 
+-const REQ_TIMEOUT = 500; // Set max ms of request time before abort
++const REQ_TIMEOUT = 1000; // Set max ms of request time before abort
+ 
+ // Set total allowed test timeout to avoid infinite loop
+ // that will hang test suite
+-const TOTAL_TEST_TIMEOUT = 1000;
++const TOTAL_TEST_TIMEOUT = 2000;
+ 
+ // Placeholder for sockets handled, to make sure that we
+ // will reach a socket re-use case.

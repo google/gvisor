@@ -25,6 +25,7 @@ benchmark_test(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
         "//test/benchmarks/base",
         "//test/benchmarks/harness",
         "//test/metricsviz",

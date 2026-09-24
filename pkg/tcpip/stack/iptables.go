@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -647,7 +648,7 @@ func check(it *IPTables, table Table, hook Hook, pkt *PacketBuffer, r *Route, ad
 // Precondition: The packet's network and transport header must be set.
 func (it *IPTables) check(table Table, hook Hook, pkt *PacketBuffer, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) bool {
 	ruleIdx := table.BuiltinChains[hook]
-	switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName); verdict {
+	switch verdict := it.checkChain(hook, pkt, table, ruleIdx, r, addressEP, inNicName, outNicName, 0 /* depth */); verdict {
 	// If the table returns Accept, move on to the next table.
 	case chainAccept:
 		return true
@@ -695,10 +696,19 @@ func (it *IPTables) startReaper(interval time.Duration) {
 	})
 }
 
+// maxJumps is the maximum allowed depth of recursion when jumping between
+// chains in iptables. This prevents stack overflows from jump loops or deep
+// recursion. Linux kernel uses XT_JUMP_STACK_MAX = 16.
+const maxJumps = 16
+
 // Preconditions:
 //   - pkt is a IPv4 packet of at least length header.IPv4MinimumSize.
 //   - pkt.NetworkHeader is not nil.
-func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string) chainVerdict {
+func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleIdx int, r *Route, addressEP AddressableEndpoint, inNicName, outNicName string, depth int) chainVerdict {
+	if depth >= maxJumps {
+		log.Warningf("iptables: jump depth exceeded max %d", maxJumps)
+		return chainDrop
+	}
 	// Start from ruleIdx and walk the list of rules until a rule gives us
 	// a verdict.
 	for ruleIdx < len(table.Rules) {
@@ -719,7 +729,7 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 				ruleIdx++
 				continue
 			}
-			switch verdict := it.checkChain(hook, pkt, table, jumpTo, r, addressEP, inNicName, outNicName); verdict {
+			switch verdict := it.checkChain(hook, pkt, table, jumpTo, r, addressEP, inNicName, outNicName, depth+1); verdict {
 			case chainAccept:
 				return chainAccept
 			case chainDrop:

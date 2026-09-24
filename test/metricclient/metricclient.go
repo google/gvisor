@@ -197,7 +197,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config,
 		RandomizationFactor: 0.1,
 		Clock:               backoff.SystemClock,
 	}, bindCtx)
-	// Overriden metric server address with the address this metric client is configured to use.
+	// Overridden metric server address with the address this metric client is configured to use.
 	// This should be the same but may contain string replacements (e.g. "%ID%").
 	overriddenConf := *baseConf
 	overriddenConf.MetricServer = c.addr
@@ -247,7 +247,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config,
 }
 
 // ShutdownServer asks the metrics server to shut itself down.
-// It blocks until the server process has exitted or the context expires.
+// It blocks until the server process has exited or the context expires.
 func (c *MetricClient) ShutdownServer(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -139,17 +139,17 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 		return d, d.topLookupLayer(), false, nil
 	}
 	if name == ".." {
+		parent := d.parent.Load()
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
-		} else if isRoot || d.parent.Load() == nil {
+		} else if isRoot || parent == nil {
 			rp.Advance()
 			return d, d.topLookupLayer(), false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &parent.vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
 		}
 		rp.Advance()
-		parent := d.parent.Load()
 		return parent, parent.topLookupLayer(), false, nil
 	}
 	if uint64(len(name)) > fs.maxFilenameLen {
@@ -226,10 +226,11 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			// the topmost layer on which the file exists.
 			mask |= linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
 		}
-		stat, err := vfsObj.StatAt(ctx, fs.creds, &vfs.PathOperation{
+		childPop := &vfs.PathOperation{
 			Root:  childVD,
 			Start: childVD,
-		}, &vfs.StatOptions{
+		}
+		stat, err := vfsObj.StatAt(ctx, fs.creds, childPop, &vfs.StatOptions{
 			Mask: mask,
 		})
 		if err != nil {
@@ -273,7 +274,22 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			} else {
 				topLookupLayer = lookupLayerLower
 			}
+
+			// Fetch POSIX ACLs.
+			acl, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.AccessACL)
+			if err != nil {
+				lookupErr = err
+				return false
+			}
+			defaultACL, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.DefaultACL)
+			if err != nil {
+				lookupErr = err
+				return false
+			}
+
 			child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+			child.accessACL.Store(acl)
+			child.defaultACL.Store(defaultACL)
 			child.uid = atomicbitops.FromUint32(stat.UID)
 			child.gid = atomicbitops.FromUint32(stat.GID)
 			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
@@ -488,7 +504,7 @@ const (
 // Preconditions:
 //   - !rp.Done().
 //   - For the final path component in rp, !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct createType, create func(parent *dentry, name string, haveUpperWhiteout bool) error) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct createType, create func(parent *dentry, name string, haveUpperWhiteout bool, ds **[]*dentry) error) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
@@ -546,7 +562,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	}
 
 	// Finally create the new file.
-	if err := create(parent, name, childLayer == lookupLayerUpperWhiteout); err != nil {
+	if err := create(parent, name, childLayer == lookupLayerUpperWhiteout, &ds); err != nil {
 		return err
 	}
 
@@ -555,7 +571,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	if ct != createNonDirectory {
 		ev |= linux.IN_ISDIR
 	}
-	parent.watches.Notify(ctx, name, uint32(ev), 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
+	parent.watches.Notify(withDropList(ctx, &ds), name, uint32(ev), 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
 	return nil
 }
 
@@ -590,12 +606,12 @@ func (fs *filesystem) AccessAt(ctx context.Context, rp *vfs.ResolvingPath, creds
 	if err := d.checkPermissions(creds, ats); err != nil {
 		return err
 	}
+	if err := vfs.CheckMountAccess(rp, ats, linux.FileMode(d.mode.Load())); err != nil {
+		return err
+	}
 	if !ats.MayWrite() {
 		// Not requesting write permission.  Allow it.
 		return nil
-	}
-	if rp.Mount().ReadOnly() {
-		return linuxerr.EROFS
 	}
 	if !d.upperVD.Ok() && !d.canBeCopiedUp() {
 		// A lower layer file that can not be copied up, can not be written to.
@@ -661,7 +677,7 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool, ds **[]*dentry) error {
 		if rp.Mount() != vd.Mount() {
 			return linuxerr.EXDEV
 		}
@@ -693,7 +709,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 			}
 			return err
 		}
-		old.watches.Notify(ctx, "", linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
+		old.watches.Notify(withDropList(ctx, ds), "", linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent, false /* unlinked */)
 		return nil
 	})
 }
@@ -704,7 +720,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if opts.ForSyntheticMountpoint {
 		ct = createSyntheticMountpoint
 	}
-	return fs.doCreateAt(ctx, rp, ct, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, ct, func(parent *dentry, childName string, haveUpperWhiteout bool, ds **[]*dentry) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
 			Root:  parent.upperVD,
@@ -763,7 +779,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool, ds **[]*dentry) error {
 		// Disallow attempts to create whiteouts.
 		if opts.Mode&linux.S_IFMT == linux.S_IFCHR && opts.DevMajor == 0 && opts.DevMinor == 0 {
 			return linuxerr.EPERM
@@ -899,6 +915,19 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 	if !ats.MayWrite() {
 		return nil
 	}
+	// Reject writes to a file that is currently being executed, as Linux does
+	// in fs/namei.c:may_open() and fs/open.c:handle_truncate(). This must
+	// happen before copy-up, since copying up would otherwise create a fresh
+	// upper file with a zero write count and silently bypass the check.
+	if err := d.writeCount.CheckWrite(); err != nil {
+		return err
+	}
+	if !d.upperVD.Ok() && !d.canBeCopiedUp() {
+		return linuxerr.EPERM
+	}
+	if linux.FileMode(d.mode.Load()).IsSpecialFile() {
+		return nil
+	}
 
 	// Copy up!
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
@@ -908,8 +937,8 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 	return d.copyUpLocked(ctx)
 }
 
-// Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite(), then d has
-// been copied up.
+// Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite() and d is not a
+// special file, then d has been copied up.
 func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	mnt := rp.Mount()
 
@@ -1028,7 +1057,7 @@ func (fs *filesystem) createAndOpenLocked(ctx context.Context, rp *vfs.Resolving
 		upperFD.DecRef(ctx)
 		return nil, err
 	}
-	parent.watches.Notify(ctx, childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
+	parent.watches.Notify(withDropList(ctx, ds), childName, linux.IN_CREATE, 0 /* cookie */, vfs.PathEvent, false /* unlinked */)
 	fd.vfsfd.SetCreated()
 	return &fd.vfsfd, nil
 }
@@ -1068,9 +1097,13 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
-	if opts.Flags&^linux.RENAME_NOREPLACE != 0 {
+	if opts.Flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) != 0 {
 		return linuxerr.EINVAL
 	}
+	if opts.Flags&(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE) == linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE {
+		return linuxerr.EINVAL
+	}
+	exchange := opts.Flags&linux.RENAME_EXCHANGE != 0
 
 	newName := rp.Component()
 	if newName == "." || newName == ".." {
@@ -1120,7 +1153,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	} else {
-		if opts.MustBeDir || rp.MustBeDir() {
+		if !exchange && (opts.MustBeDir || rp.MustBeDir()) {
 			return linuxerr.ENOTDIR
 		}
 	}
@@ -1153,7 +1186,26 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return err
 		}
 		replacedVFSD = &replaced.vfsd
-		if replaced.isDir() {
+		if exchange {
+			// The exchanged files may differ in type, and a directory being
+			// exchanged may be non-empty; but exchanging a file with an
+			// ancestor directory would disconnect the latter from the tree.
+			if genericIsAncestorDentry(fs, replaced, renamed) {
+				return linuxerr.EINVAL
+			}
+			if rp.MustBeDir() && !replaced.isDir() {
+				return linuxerr.ENOTDIR
+			}
+			if opts.MustBeDir && !renamed.isDir() {
+				return linuxerr.ENOTDIR
+			}
+			if oldParent != newParent && replaced.isDir() {
+				// Writability is needed to change replaced's "..".
+				if err := replaced.checkPermissions(creds, vfs.MayWrite); err != nil {
+					return err
+				}
+			}
+		} else if replaced.isDir() {
 			if !renamed.isDir() {
 				return linuxerr.EISDIR
 			}
@@ -1171,6 +1223,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 				return linuxerr.ENOTDIR
 			}
 		}
+	} else if exchange {
+		// RENAME_EXCHANGE requires that the target file exist.
+		return linuxerr.ENOENT
 	}
 
 	if oldParent == newParent && oldName == newName {
@@ -1194,10 +1249,24 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	if err := newParent.copyUpLocked(ctx); err != nil {
 		return err
 	}
-	// If replaced exists, it doesn't need to be copied-up, but we do need to
-	// serialize with copy-up. Holding renameMu for writing should be
-	// sufficient, but out of an abundance of caution...
-	if replaced != nil {
+	if exchange {
+		// replaced is also renamed on the upper layer, so it (and all of its
+		// descendants if it's a directory) must be copied-up too.
+		if err := replaced.copyUpLocked(ctx); err != nil {
+			return err
+		}
+		if replaced.isDir() {
+			replaced.dirMu.NestedLock(dirLockReplaced)
+			err := replaced.copyUpDescendantsLocked(ctx, &ds)
+			replaced.dirMu.NestedUnlock(dirLockReplaced)
+			if err != nil {
+				return err
+			}
+		}
+	} else if replaced != nil {
+		// replaced doesn't need to be copied-up, but we do need to serialize
+		// with copy-up. Holding renameMu for writing should be sufficient, but
+		// out of an abundance of caution...
 		replaced.copyMu.RLock()
 		defer replaced.copyMu.RUnlock()
 	}
@@ -1205,7 +1274,8 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
-	if err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD); err != nil {
+	handle, err := vfsObj.PrepareRenameDentry(mntns, &renamed.vfsd, replacedVFSD)
+	if err != nil {
 		return err
 	}
 
@@ -1233,7 +1303,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			}
 		}
 	}
-	if renamed.isDir() {
+	if !exchange && renamed.isDir() {
 		if replacedLayer == lookupLayerUpper {
 			// Remove whiteouts from the directory being replaced.
 			needRecreateWhiteouts = true
@@ -1246,7 +1316,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 					Start: replaced.upperVD,
 					Path:  fspath.Parse(whiteoutName),
 				}); err != nil {
-					vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+					vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 					cleanupRecreateWhiteouts()
 					return err
 				}
@@ -1255,7 +1325,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			// We need to explicitly remove the whiteout since otherwise rename
 			// on the upper layer will fail with ENOTDIR.
 			if err := vfsObj.UnlinkAt(ctx, fs.creds, &newpop); err != nil {
-				vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+				vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 				return err
 			}
 		}
@@ -1276,15 +1346,55 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		Path:  fspath.Parse(oldName),
 	}
 	if err := vfsObj.RenameAt(ctx, creds, &oldpop, &newpop, &opts); err != nil {
-		vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
+		vfsObj.AbortRenameDentry(&handle, &renamed.vfsd, replacedVFSD)
 		cleanupRecreateWhiteouts()
 		return err
+	}
+
+	if exchange {
+		// Below this point, renamed is at newpop and replaced is at oldpop.
+		// Commit the exchange, update the overlay filesystem tree, and abandon
+		// attempts to recover from errors.
+		vfsObj.RenameBegin(&handle)
+		genericSetParentAndName(fs, renamed, newParent, newName)
+		genericSetParentAndName(fs, replaced, oldParent, oldName)
+		// References held by renamed and replaced on their parents are
+		// exchanged as well; the counts on each parent are unchanged.
+		oldParent.children[oldName] = replaced
+		newParent.children[newName] = renamed
+		oldParent.dirents = nil
+		newParent.dirents = nil
+		vfsObj.CommitRenameExchangeDentry(&handle, &renamed.vfsd, replacedVFSD)
+
+		// An exchanged directory's contents can no longer be merged with
+		// lower layer directories at its new location.
+		if renamed.isDir() {
+			if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
+				Name:  fs.xattrOpaque,
+				Value: "y",
+			}); err != nil {
+				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make exchanged directory opaque: %v", err))
+			}
+		}
+		if replaced.isDir() {
+			if err := vfsObj.SetXattrAt(ctx, fs.creds, &oldpop, &vfs.SetXattrOptions{
+				Name:  fs.xattrOpaque,
+				Value: "y",
+			}); err != nil {
+				panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to make exchanged directory opaque: %v", err))
+			}
+		}
+
+		nctx := withDropList(ctx, &ds)
+		vfs.InotifyRename(nctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+		vfs.InotifyRename(nctx, &replaced.watches, &newParent.watches, &oldParent.watches, newName, oldName, replaced.isDir())
+		return nil
 	}
 
 	// Below this point, the renamed dentry is now at newpop, and anything we
 	// replaced is gone forever. Commit the rename, update the overlay
 	// filesystem tree, and abandon attempts to recover from errors.
-	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
+	vfsObj.RenameBegin(&handle)
 	delete(oldParent.children, oldName)
 	if replaced != nil {
 		// Lower dentries of replaced are not reachable from the overlay anymore.
@@ -1309,6 +1419,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	}
 	newParent.children[newName] = renamed
 	oldParent.dirents = nil
+	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 
 	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
 		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
@@ -1322,7 +1433,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 
-	vfs.InotifyRename(ctx, &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
+	vfs.InotifyRename(withDropList(ctx, &ds), &renamed.watches, &oldParent.watches, &newParent.watches, oldName, newName, renamed.isDir())
 	return nil
 }
 
@@ -1465,14 +1576,15 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	fs.releaseDirIno(child.dirInoHash)
 	ds = appendDentry(ds, child)
 	parent.dirents = nil
+	nctx := withDropList(ctx, &ds)
 	// Linux sends the parent's IN_DELETE|IN_ISDIR at rmdir() time, but
 	// defers the child's IN_DELETE_SELF/IN_IGNORED until the last ref is
 	// dropped. Emit the child notifications now only when no extra refs
 	// remain; otherwise defer to destroyLocked().
 	if child.refs.Load() == 0 {
-		child.watches.HandleDeletion(ctx)
+		child.watches.HandleDeletion(nctx)
 	}
-	parent.watches.Notify(ctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)
+	parent.watches.Notify(nctx, name, linux.IN_DELETE|linux.IN_ISDIR, 0 /* cookie */, vfs.InodeEvent, true /* unlinked */)
 	return nil
 }
 
@@ -1486,22 +1598,28 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 		return err
 	}
 	err = d.setStatLocked(ctx, rp, opts)
+	if err == nil {
+		if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
+			d.InotifyWithParent(withDropList(ctx, &ds), ev, 0 /* cookie */, vfs.InodeEvent)
+		}
+	}
 	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	if err != nil {
-		return err
-	}
-
-	if ev := vfs.InotifyEventFromStatMask(opts.Stat.Mask); ev != 0 {
-		d.InotifyWithParent(ctx, ev, 0 /* cookie */, vfs.InodeEvent)
-	}
-	return nil
+	return err
 }
 
 // Precondition: d.fs.renameMu must be held for reading.
 func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	mode := linux.FileMode(d.mode.Load())
-	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, rp.Credentials(), &opts, mode, d.accessACL.Load(), auth.KUID(d.uid.Load()), auth.KGID(d.gid.Load())); err != nil {
 		return err
+	}
+	if opts.NeedWritePerm {
+		// truncate(2), unlike ftruncate(2), acquires write access to the file
+		// and so fails with ETXTBSY if it is being executed. See
+		// fs/open.c:do_sys_truncate().
+		if err := d.writeCount.CheckWrite(); err != nil {
+			return err
+		}
 	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -1554,8 +1672,13 @@ func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return linux.Statx{}, err
 		}
+		// The layer's STATX_ATTR_MOUNT_ROOT refers to the layer mount, not
+		// the overlay mount.
+		stat.Attributes &^= linux.STATX_ATTR_MOUNT_ROOT
+		stat.AttributesMask &^= linux.STATX_ATTR_MOUNT_ROOT
 	}
 	d.statInternalTo(ctx, &opts, &stat)
+	rp.AddMountRootAttr(&d.vfsd, &stat)
 	return stat, nil
 }
 
@@ -1573,7 +1696,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool) error {
+	return fs.doCreateAt(ctx, rp, createNonDirectory, func(parent *dentry, childName string, haveUpperWhiteout bool, ds **[]*dentry) error {
 		vfsObj := fs.vfsfs.VirtualFilesystem()
 		pop := vfs.PathOperation{
 			Root:  parent.upperVD,
@@ -1701,7 +1824,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		}
 	}
 	ds = appendDentry(ds, child)
-	vfs.InotifyRemoveChild(ctx, &child.watches, &parent.watches, name)
+	vfs.InotifyRemoveChild(withDropList(ctx, &ds), &child.watches, &parent.watches, name)
 	parent.dirents = nil
 	return nil
 }
@@ -1758,6 +1881,13 @@ func (fs *filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 }
 
 func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
+	// Handle POSIX access ACL xattr
+	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
+		// Handle POSIX ACL xattrs
+		xattr, err := vfs.ACLGetXattr(creds, opts, linux.FileMode(d.mode.Load()), d.accessACL.Load(), d.defaultACL.Load())
+		return xattr, err
+	}
+
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
 	}
@@ -1771,7 +1901,7 @@ func (fs *filesystem) getXattr(ctx context.Context, d *dentry, creds *auth.Crede
 	// Analogous to fs/overlayfs/super.c:ovl_other_xattr_get().
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	top := d.topLayer()
-	return vfsObj.GetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: top, Start: top}, opts)
+	return vfsObj.GetXattrAt(ctx, creds, &vfs.PathOperation{Root: top, Start: top}, opts)
 }
 
 // SetXattrAt implements vfs.FilesystemImpl.SetXattrAt.
@@ -1785,17 +1915,27 @@ func (fs *filesystem) SetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 	}
 
 	err = fs.setXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), &opts)
+	if err == nil {
+		d.InotifyWithParent(withDropList(ctx, &ds), linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
+	}
 	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	if err != nil {
+	return err
+}
+
+// Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
+func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
+	// Handle POSIX ACLs separately
+	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
+		acl, aclType, err := vfs.ACLSetXattr(creds, opts, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()))
+		if err != nil {
+			return err
+		}
+
+		// Set the appropriate POSIX ACL
+		_, _, err = fs.setPosixACLLocked(ctx, d, creds, mnt, aclType, acl, true /* clearSGID */)
 		return err
 	}
 
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
-	return nil
-}
-
-// Precondition: fs.renameMu must be locked.
-func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -1815,7 +1955,10 @@ func (fs *filesystem) setXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mo
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.SetXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
+	// Notably, we use the caller's creds here rather than the filesystem's creds,
+	// since setting some xattrs includes additional UID/GID and userns-related checks
+	// and translations.
+	return vfsObj.SetXattrAt(ctx, creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, opts)
 }
 
 // RemoveXattrAt implements vfs.FilesystemImpl.RemoveXattrAt.
@@ -1829,17 +1972,26 @@ func (fs *filesystem) RemoveXattrAt(ctx context.Context, rp *vfs.ResolvingPath, 
 	}
 
 	err = fs.removeXattrLocked(ctx, d, rp.Mount(), rp.Credentials(), name)
+	if err == nil {
+		d.InotifyWithParent(withDropList(ctx, &ds), linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
+	}
 	fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-	if err != nil {
+	return err
+}
+
+// Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
+func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, name string) error {
+	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
+		aclType, err := vfs.ACLRemoveXattr(creds, name, linux.FileMode(d.mode.Load()), auth.KUID(d.uid.Load()))
+		if err != nil {
+			return err
+		}
+
+		// Clear the appropriate POSIX ACL
+		_, _, err = fs.setPosixACLLocked(ctx, d, creds, mnt, aclType, nil, true /* clearSGID */)
 		return err
 	}
 
-	d.InotifyWithParent(ctx, linux.IN_ATTRIB, 0 /* cookie */, vfs.InodeEvent)
-	return nil
-}
-
-// Precondition: fs.renameMu must be locked.
-func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs.Mount, creds *auth.Credentials, name string) error {
 	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -1859,7 +2011,94 @@ func (fs *filesystem) removeXattrLocked(ctx context.Context, d *dentry, mnt *vfs
 		return err
 	}
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
-	return vfsObj.RemoveXattrAt(ctx, fs.creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
+	return vfsObj.RemoveXattrAt(ctx, creds, &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}, name)
+}
+
+// GetPosixACLAt implements vfs.FilesystemImpl.GetPosixACLAt.
+func (fs *filesystem) GetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType) (*vfs.PosixACL, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, err
+	}
+	return fs.getPosixACLLocked(ctx, d, t)
+}
+
+func (fs *filesystem) getPosixACLLocked(ctx context.Context, d *dentry, t vfs.ACLType) (*vfs.PosixACL, error) {
+	switch t {
+	case vfs.AccessACL:
+		return d.accessACL.Load(), nil
+	case vfs.DefaultACL:
+		return d.defaultACL.Load(), nil
+	default:
+		return nil, linuxerr.EINVAL
+	}
+}
+
+// SetPosixACLAt implements vfs.FilesystemImpl.SetPosixACLAt.
+func (fs *filesystem) SetPosixACLAt(ctx context.Context, rp *vfs.ResolvingPath, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	defer fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+	d, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, 0, err
+	}
+	newACL, mode, err := fs.setPosixACLLocked(ctx, d, rp.Credentials(), rp.Mount(), t, acl, clearSGID)
+	return newACL, mode, err
+}
+
+// Precondition: fs.renameMu must be locked, d.copyMu must be unlocked.
+func (fs *filesystem) setPosixACLLocked(ctx context.Context, d *dentry, creds *auth.Credentials, mnt *vfs.Mount, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	// Skip ACL update when clearing an already-missing ACL (to prevent unnecessary copy-up)
+	oldACL, err := fs.getPosixACLLocked(ctx, d, t)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Take copyMu to check d.upperVD. Technically d could be copied up between here and the later
+	// call to d.copyUpLocked(), but this would have no effect.
+	d.copyMu.RLock()
+	copiedUp := d.upperVD.Ok()
+	d.copyMu.RUnlock()
+	if acl == nil && oldACL == nil && !copiedUp {
+		mode := linux.FileMode(d.mode.Load())
+		if t == vfs.DefaultACL && !mode.IsDir() {
+			return nil, 0, nil
+		}
+		// ENODATA to match Linux.
+		return nil, 0, linuxerr.ENODATA
+	}
+
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return nil, 0, err
+	}
+	defer mnt.EndWrite()
+	if err := d.copyUpLocked(ctx); err != nil {
+		return nil, 0, err
+	}
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	upperPop := &vfs.PathOperation{Root: d.upperVD, Start: d.upperVD}
+
+	// First, set the ACL on the underlying filesystem
+	d.copyMu.Lock()
+	defer d.copyMu.Unlock()
+	newACL, mode, err := vfsObj.SetPosixACLAt(ctx, creds, upperPop, t, acl, clearSGID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Next, update the ACL in our dentry
+	switch t {
+	case vfs.AccessACL:
+		d.accessACL.Store(newACL)
+		d.mode.Store(uint32(mode))
+	case vfs.DefaultACL:
+		d.defaultACL.Store(newACL)
+	}
+
+	return newACL, mode, nil
 }
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.

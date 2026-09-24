@@ -18,6 +18,7 @@ package dev
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -137,6 +138,46 @@ func CreateDeviceFile(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds 
 		if err := vfsObj.SetStatAt(ctx, creds, pop, &opts); err != nil {
 			return fmt.Errorf("failed to set UID/GID for device file %q: %w", pathname, err)
 		}
+	}
+	return createDeviceNumberSymlink(ctx, vfsObj, creds, root, pathname, major, minor, mode)
+}
+
+// createDeviceNumberSymlink creates a /dev/{char,block}/<major>:<minor>
+// symlink to the device special file at pathname. On Linux, udev maintains
+// these symlinks for all device nodes it manages (systemd: src/udev/udev-node.c).
+func createDeviceNumberSymlink(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, root vfs.VirtualDentry, pathname string, major, minor uint32, mode linux.FileMode) error {
+	var subdir string
+	switch mode.FileType() {
+	case linux.S_IFCHR:
+		subdir = "char"
+	case linux.S_IFBLK:
+		subdir = "block"
+	default:
+		return nil
+	}
+	// pathname is relative to the devtmpfs root, or absolute (with a /dev/
+	// prefix) when root is a container root.
+	prefix := ""
+	relPath := pathname
+	if path.IsAbs(pathname) {
+		const devDir = "/dev/"
+		if !strings.HasPrefix(pathname, devDir) {
+			// udev only manages device nodes under /dev.
+			return nil
+		}
+		prefix = devDir
+		relPath = pathname[len(devDir):]
+	}
+	linkDir := prefix + subdir
+	if err := vfsObj.MkdirAllAt(ctx, linkDir, root, creds, &vfs.MkdirOptions{
+		Mode: 0755,
+	}, true /* mustBeDir */); err != nil {
+		return fmt.Errorf("failed to create directory %q: %v", linkDir, err)
+	}
+	linkPath := fmt.Sprintf("%s/%d:%d", linkDir, major, minor)
+	target := "../" + relPath
+	if err := vfsObj.SymlinkAt(ctx, creds, pathOperationAt(root, linkPath), target); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
+		return fmt.Errorf("failed to create symlink %q => %q: %v", linkPath, target, err)
 	}
 	return nil
 }

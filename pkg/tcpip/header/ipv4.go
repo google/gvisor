@@ -170,7 +170,7 @@ var (
 	// https://www.iana.org/assignments/multicast-addresses/multicast-addresses.xhtml.
 	IPv4AllSystems = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x01})
 
-	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
+	// IPv4Broadcast is the broadcast address of the IPv4 protocol.
 	IPv4Broadcast = tcpip.AddrFrom4([4]byte{0xff, 0xff, 0xff, 0xff})
 
 	// IPv4Any is the non-routable IPv4 "any" meta address.

@@ -15,17 +15,24 @@
 #include "test/syscalls/linux/socket_unix.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <linux/sockios.h>
 #include <net/if.h>
 #include <stdio.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cstring>
+#include <ctime>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/epoll_util.h"

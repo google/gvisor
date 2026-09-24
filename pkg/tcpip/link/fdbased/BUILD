@@ -64,7 +64,10 @@ go_library(
 go_test(
     name = "fdbased_test",
     size = "small",
-    srcs = ["endpoint_test.go"],
+    srcs = [
+        "endpoint_test.go",
+        "processors_test.go",
+    ],
     library = ":fdbased",
     deps = [
         "//pkg/buffer",

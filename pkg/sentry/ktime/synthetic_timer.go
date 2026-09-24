@@ -156,6 +156,18 @@ func (c *SyntheticClock) NewTimer(listener Listener) Timer {
 	return NewSyntheticTimer(c, listener)
 }
 
+// NextExpiration returns the expiration time of the earliest enqueued timer.
+// Returns false if no timers are enqueued.
+func (c *SyntheticClock) NextExpiration() (Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seg := c.timers.FirstSegment()
+	if !seg.Ok() {
+		return Time{}, false
+	}
+	return FromNanoseconds(int64(seg.Start())), true
+}
+
 // Store sets c's current time to now and notifies expired timers.
 //
 // Preconditions:

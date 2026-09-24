@@ -53,6 +53,12 @@ func (op *metaSet) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *metaSet) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (op *metaSet) destroy() {}
+
 // evaluate for metaSet sets specific meta data to the value in the source
 // register.
 func (op metaSet) evaluate(regs *registerSet, evalCtx opEvalCtx) {
@@ -75,7 +81,7 @@ func (op metaSet) GetExprName() string {
 func (op metaSet) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
 	m.PutAttr(linux.NFTA_META_KEY, nlmsg.PutU32(uint32(op.key)))
-	m.PutAttr(linux.NFTA_META_SREG, nlmsg.PutU32(formatRegIdxForDump(op.sregIdx)))
+	m.PutAttr(linux.NFTA_META_SREG, formatRegIdxForDump(op.sregIdx))
 	return m.Buffer(), nil
 }
 

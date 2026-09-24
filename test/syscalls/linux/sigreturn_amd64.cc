@@ -13,12 +13,19 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <stdlib.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/ucontext.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdint>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
+#include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/timer_util.h"

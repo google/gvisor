@@ -16,17 +16,31 @@
 
 #include <dirent.h>
 #ifdef __linux__
+#include <linux/limits.h>
 #include <linux/magic.h>
 #endif  // __linux__
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstring>
+#include <functional>
+#include <initializer_list>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
@@ -717,6 +731,7 @@ PosixErrorOr<bool> IsOverlayfs(const std::string& path) {
   return stat.f_type == OVERLAYFS_SUPER_MAGIC;
 }
 
+#ifdef __linux__
 PosixErrorOr<bool> IsGoferfs(const std::string& path) {
   struct statfs stat;
   if (statfs(path.c_str(), &stat)) {
@@ -730,6 +745,7 @@ PosixErrorOr<bool> IsGoferfs(const std::string& path) {
   }
   return stat.f_type == V9FS_MAGIC;
 }
+#endif  // __linux__
 
 PosixError CheckSameFile(const FileDescriptor& fd1, const FileDescriptor& fd2) {
   struct stat stat_result1, stat_result2;

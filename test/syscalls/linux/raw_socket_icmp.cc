@@ -21,12 +21,19 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <limits>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -198,8 +205,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
   char recv_buf1[2][kBufSize];
   struct sockaddr_in src;
   for (int i = 0; i < 2; i++) {
-    ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1[i],
-                                        ABSL_ARRAYSIZE(recv_buf1[i]),
+    ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1[i], std::size(recv_buf1[i]),
                                         sizeof(struct icmphdr), &src));
     EXPECT_EQ(memcmp(&src, &addr_, sizeof(src)), 0);
   }
@@ -208,7 +214,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
   char recv_buf2[2][kBufSize];
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(
-        ReceiveICMPFrom(recv_buf2[i], ABSL_ARRAYSIZE(recv_buf2[i]),
+        ReceiveICMPFrom(recv_buf2[i], std::size(recv_buf2[i]),
                         sizeof(struct icmphdr), &src, s2.get()));
     EXPECT_EQ(memcmp(&src, &addr_, sizeof(src)), 0);
   }
@@ -490,7 +496,7 @@ void RawSocketICMPTest::ExpectICMPSuccess(const struct icmphdr& icmp) {
 
   for (int i = 0; i < 2; i++) {
     // Receive the packet.
-    ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
+    ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf, std::size(recv_buf),
                                         sizeof(struct icmphdr), &src));
     EXPECT_EQ(memcmp(&src, &addr_, sizeof(src)), 0);
     struct icmphdr* recvd_icmp =

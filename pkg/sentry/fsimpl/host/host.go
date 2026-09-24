@@ -412,7 +412,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	if err := i.stat(&s); err != nil {
 		return err
 	}
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), auth.KUID(s.Uid), auth.KGID(s.Gid))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(s.Mode), nil, auth.KUID(s.Uid), auth.KGID(s.Gid))
 }
 
 // Mode implements kernfs.Inode.Mode.
@@ -471,6 +471,10 @@ func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOp
 		DevMajor:       linux.UNNAMED_MAJOR,
 		DevMinor:       i.devMinor,
 	}
+	// Clear STATX_ATTR_MOUNT_ROOT passed through from the host; the sentry VFS
+	// sets it from its own mounts.
+	ls.Attributes &^= linux.STATX_ATTR_MOUNT_ROOT
+	ls.AttributesMask &^= linux.STATX_ATTR_MOUNT_ROOT
 
 	// Copy other fields that were returned by the host. RdevMajor/RdevMinor
 	// are never copied (and therefore left as zero), so as not to expose host
@@ -607,7 +611,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if err := i.stat(&hostStat); err != nil {
 		return err
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, &opts, linux.FileMode(hostStat.Mode), nil, auth.KUID(hostStat.Uid), auth.KGID(hostStat.Gid)); err != nil {
 		return err
 	}
 
@@ -724,7 +728,9 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, file
 		fd := &fileDescription{inode: i}
 		fd.LockFD.Init(&i.locks)
 		vfsfd := &fd.vfsfd
-		if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+		if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d.VFSDentry(), &vfs.FileDescriptionOptions{
+			SpecialFile: linux.FileMode(fileType).IsSpecialFile(),
+		}); err != nil {
 			return nil, err
 		}
 		return vfsfd, nil
@@ -742,12 +748,17 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 	}
 
 	flags := opts.Flags & supportedOpenFlags
+	// Every TTYFileDescription holds an explicit reference on the inode.
+	i.IncRef()
 	fd := &TTYFileDescription{
 		fileDescription: fileDescription{inode: i},
 	}
 	fd.LockFD.Init(&i.locks)
 	vfsfd := &fd.vfsfd
-	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := vfsfd.Init(fd, flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
+		SpecialFile: true,
+	}); err != nil {
+		i.DecRef(ctx)
 		return nil, err
 	}
 	return vfsfd, nil
@@ -758,7 +769,7 @@ func (i *inode) OpenTTY(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts
 func newEndpoint(ctx context.Context, hostFD int, queue *waiter.Queue) (transport.Endpoint, error) {
 	// Set up an external transport.Endpoint using the host fd.
 	addr := fmt.Sprintf("hostfd:[%d]", hostFD)
-	e, err := transport.NewHostConnectedEndpoint(hostFD, addr)
+	e, err := transport.NewHostSender(hostFD, addr)
 	if err != nil {
 		return nil, err.ToError()
 	}
@@ -954,10 +965,16 @@ func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSeque
 	writer := hostfd.GetReadWriterAt(int32(hostFD), offset, flags)
 	n, err := src.CopyInTo(ctx, writer)
 	hostfd.PutReadWriterAt(writer)
-	// NOTE(gvisor.dev/issue/2979): We always sync everything, even for O_DSYNC.
-	if n > 0 && f.vfsfd.StatusFlags()&(linux.O_DSYNC|linux.O_SYNC) != 0 {
-		if syncErr := unix.Fsync(hostFD); syncErr != nil {
-			return int64(n), syncErr
+	if n > 0 {
+		statusFlags := f.vfsfd.StatusFlags()
+		if statusFlags&linux.O_SYNC != 0 {
+			if syncErr := unix.Fsync(hostFD); syncErr != nil {
+				return int64(n), syncErr
+			}
+		} else if statusFlags&linux.O_DSYNC != 0 {
+			if syncErr := unix.Fdatasync(hostFD); syncErr != nil {
+				return int64(n), syncErr
+			}
 		}
 	}
 	return int64(n), err
@@ -1029,11 +1046,13 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 }
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
-func (f *fileDescription) Sync(ctx context.Context) error {
+func (f *fileDescription) Sync(ctx context.Context, opts vfs.SyncOptions) error {
 	if f.inode.readonly {
 		return linuxerr.EPERM
 	}
-	// TODO(gvisor.dev/issue/1897): Currently, we always sync everything.
+	if opts.DataOnly {
+		return unix.Fdatasync(f.inode.hostFD)
+	}
 	return unix.Fsync(f.inode.hostFD)
 }
 

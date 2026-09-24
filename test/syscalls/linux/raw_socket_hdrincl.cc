@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -22,12 +23,16 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdint>
 #include <cstring>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -87,7 +92,7 @@ struct iphdr RawHDRINCL::LoopbackHeader() {
   hdr.ihl = 5;
   hdr.version = 4;
   hdr.tos = 0;
-  hdr.tot_len = absl::gbswap_16(sizeof(hdr));
+  hdr.tot_len = htons(sizeof(hdr));
   hdr.id = 0;
   hdr.frag_off = 0;
   hdr.ttl = 7;
@@ -109,9 +114,9 @@ bool RawHDRINCL::FillPacket(char* buf, size_t buf_size, int port,
   ip.protocol = IPPROTO_UDP;
 
   struct udphdr udp = {};
-  udp.source = absl::gbswap_16(port);
-  udp.dest = absl::gbswap_16(port);
-  udp.len = absl::gbswap_16(sizeof(udp) + payload_size);
+  udp.source = htons(port);
+  udp.dest = htons(port);
+  udp.len = htons(sizeof(udp) + payload_size);
   udp.check = 0;
 
   memcpy(buf, reinterpret_cast<char*>(&ip), sizeof(ip));
@@ -270,7 +275,7 @@ TEST_F(RawHDRINCL, SendAndReceive) {
       0);
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
-  EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(src.sin_addr.s_addr), INADDR_LOOPBACK);
 }
 
 // Send and receive a packet where the sendto address is not the same as the
@@ -321,7 +326,7 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
       0);
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
-  EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(src.sin_addr.s_addr), INADDR_LOOPBACK);
   struct iphdr recv_iphdr = {};
   memcpy(&recv_iphdr, recv_buf, sizeof(recv_iphdr));
   // The destination address is kUnreachable despite arriving via loopback.
@@ -381,7 +386,7 @@ TEST_F(RawHDRINCL, SendAndReceiveIPHdrIncl) {
       0);
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
-  EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(src.sin_addr.s_addr), INADDR_LOOPBACK);
   struct iphdr iphdr = {};
   memcpy(&iphdr, recv_buf, sizeof(iphdr));
 

@@ -18,6 +18,7 @@
 #include <asm/ioctl.h>
 #include <dlfcn.h>
 #include <limits.h>
+#include <linux/limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,7 +51,7 @@ void init_libc_ioctl_handle() {
 
 extern "C" {
 
-int ioctl(int fd, uint64_t request, void *argp) {
+int ioctl(int fd, uint64_t request, void* argp) {
   if (!libc_ioctl_handle) {
     init_libc_ioctl_handle();
   }

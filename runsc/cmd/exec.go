@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -60,10 +61,14 @@ type Exec struct {
 
 	// passFDs are user-supplied FDs from the host to be exposed to the
 	// sandboxed app.
-	passFDs fdMappings
+	passFDs sandboxsetup.FDMappings
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int
+
+	// execPath is the path of the program to execute. If empty, the program is
+	// resolved from argv[0]. Mutually exclusive with --exec-fd.
+	execPath string
 }
 
 // Name implements subcommands.Command.Name.
@@ -109,6 +114,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.Var(&ex.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	f.IntVar(&ex.execFD, "exec-fd", -1, "host file descriptor used for program execution")
+	f.StringVar(&ex.execPath, "exec-path", "", "path of the program to execute; if unset, it is resolved from argv[0]. Mutually exclusive with --exec-fd")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -325,6 +331,9 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 // parseArgs parses exec information from the command line or a JSON file
 // depending on whether the --process flag was used.
 func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+	if ex.execPath != "" && ex.execFD >= 0 {
+		return nil, fmt.Errorf("--exec-path and --exec-fd are mutually exclusive")
+	}
 	if ex.processPath == "" {
 		// Requires at least a container ID and command.
 		if f.NArg() < 2 {
@@ -332,6 +341,9 @@ func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*c
 			return nil, fmt.Errorf("both a container-id and command are required")
 		}
 		return ex.argsFromCLI(p, f.Args()[1:], enableRaw)
+	}
+	if ex.execPath != "" {
+		return nil, fmt.Errorf("--exec-path cannot be used with --process, the process file already contains the program to execute")
 	}
 	// Requires only the container ID.
 	if f.NArg() != 1 {
@@ -378,6 +390,7 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 	}
 
 	return &control.ExecArgs{
+		Filename:         ex.execPath,
 		Argv:             argv,
 		Envv:             envv,
 		WorkingDirectory: cwd,

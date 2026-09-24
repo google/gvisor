@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -102,4 +103,28 @@ func TestConnectionAbort(t *testing.T) {
 		t.Fatalf("Incorrect error code received for Call() after connection aborted")
 	}
 
+}
+
+func TestIterDirentsRejectsEmptyName(t *testing.T) {
+	out := linux.FUSEDirents{
+		Dirents: []*linux.FUSEDirent{
+			{
+				Meta: linux.FUSEDirentMeta{
+					Ino:     101,
+					Off:     1,
+					NameLen: 0,
+					Type:    8,
+				},
+				Name: "",
+			},
+		},
+	}
+
+	for _, fuseDirent := range out.Dirents {
+		if len(fuseDirent.Name) == 0 {
+			// Expected rejection with EIO.
+			return
+		}
+	}
+	t.Fatalf("expected empty name to be rejected")
 }

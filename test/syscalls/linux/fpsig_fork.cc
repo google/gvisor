@@ -15,8 +15,16 @@
 // This test verifies that fork(2) in a signal handler will correctly
 // restore floating point state after the signal handler returns in both
 // the child and parent.
+#include <sched.h>
+#include <signal.h>
+#include <stdlib.h>
 #include <sys/time.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
+#include <cstdint>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
 #include "test/util/test_util.h"

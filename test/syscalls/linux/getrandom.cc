@@ -16,6 +16,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
 

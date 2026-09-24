@@ -16,7 +16,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "gtest/gtest.h"
+#include <cstdint>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "benchmark/benchmark.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -149,7 +152,10 @@ void BM_PageFault(benchmark::State& state) {
       state.ResumeTiming();
     }
     const uintptr_t addr = m.addr() + (2 * cur_page * kPageSize);
-    const char c = *reinterpret_cast<volatile char*>(addr);
+    // 'c' must be non-const to use the non-deprecated
+    // benchmark::DoNotOptimize(Tp&) signature, as the const-ref version permits
+    // undesired compiler optimizations.
+    char c = *reinterpret_cast<volatile char*>(addr);
     benchmark::DoNotOptimize(c);
     cur_page++;
   }

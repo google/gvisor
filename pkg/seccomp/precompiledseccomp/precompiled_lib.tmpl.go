@@ -17,20 +17,15 @@
 package precompiled
 
 import (
-	"sort"
-
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 var (
-	// precompiledPrograms holds registered programs.
-	// It is populated in `registerPrograms`.
-	precompiledPrograms map[string]precompiledseccomp.Program = nil
-
-	// registerPrecompiledProgramsOnce ensures that program registration
-	// happens only once.
-	registerPrecompiledProgramsOnce sync.Once
+	// precompiledProgramNames is the sorted list of all precompiled program
+	// names. It is populated at generation time and used by `ListPrecompiled`.
+	precompiledProgramNames = []string{
+		// PROGRAM_NAMES_LIST_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT
+	}
 )
 
 // PrecompilationDisabledAtBuildTime is a constant that is used to
@@ -40,25 +35,13 @@ const PrecompilationDisabledAtBuildTime = false // PRECOMPILATION_DISABLED_AT_BU
 // GetPrecompiled returns the precompiled program for the given name,
 // and whether that program name exists.
 func GetPrecompiled(programName string) (precompiledseccomp.Program, bool) {
-	registerPrecompiledProgramsOnce.Do(registerPrograms)
-	program, ok := precompiledPrograms[programName]
-	return program, ok
+	switch programName {
+	// PROGRAM_REGISTRATION_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT
+	}
+	return precompiledseccomp.Program{}, false
 }
 
 // ListPrecompiled returns a list of all registered program names.
 func ListPrecompiled() []string {
-	registerPrecompiledProgramsOnce.Do(registerPrograms)
-	programNames := make([]string, 0, len(precompiledPrograms))
-	for name := range precompiledPrograms {
-		programNames = append(programNames, name)
-	}
-	sort.Strings(programNames)
-	return programNames
-}
-
-// registerPrograms registers available programs inside `precompiledPrograms`.
-func registerPrograms() {
-	programs := make(map[string]precompiledseccomp.Program)
-	// PROGRAM_REGISTRATION_GOES_HERE_THIS_IS_A_LOAD_BEARING_COMMENT
-	precompiledPrograms = programs
+	return append([]string(nil), precompiledProgramNames...)
 }

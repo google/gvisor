@@ -15,6 +15,10 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdint>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
 

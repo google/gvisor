@@ -47,6 +47,11 @@ func NewVFSPipe(isNamed bool, sizeBytes int64) *VFSPipe {
 	return &vp
 }
 
+// Pipe returns the underlying Pipe object.
+func (vp *VFSPipe) Pipe() *Pipe {
+	return &vp.pipe
+}
+
 // ReaderWriterPair returns read-only and write-only FDs for vp.
 //
 // Preconditions: statusFlags should not contain an open access mode.
@@ -173,6 +178,11 @@ type VFSPipeFD struct {
 	// lastAddr is the last hostarch.Addr at which a call to a
 	// VFSPipeFD.(usermem.IO) method ended. lastAddr is protected by pipe.mu.
 	lastAddr hostarch.Addr
+}
+
+// Pipe returns the underlying Pipe object.
+func (fd *VFSPipeFD) Pipe() *Pipe {
+	return fd.pipe
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

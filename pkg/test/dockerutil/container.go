@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path"
@@ -132,6 +133,21 @@ type RunOpts struct {
 	Annotations map[string]string
 }
 
+func ensureShouldRun(logger testutil.Logger) {
+	// Only apply sharding to test loggers (*testing.T / *testing.B) that support Skipf.
+	// Non-test loggers (like testutil.DefaultLogger used by test/runtimes/runner/lib/lib.go)
+	// launch shared containers and manage their own sharding, so they must not be skipped or panicked.
+	s, ok := logger.(interface {
+		Skipf(format string, args ...any)
+	})
+	if !ok {
+		return
+	}
+	if !testutil.ShouldRun(logger.Name()) {
+		s.Skipf("Skipping test %q for shard %d of %d", logger.Name(), testutil.Partition(), testutil.TotalPartitions())
+	}
+}
+
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
 	// Slashes and pluses are not allowed in container names.
 	name := testutil.RandomID(logger.Name())
@@ -156,12 +172,14 @@ func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) 
 //
 // Containers will check flags for profiling requests.
 func MakeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	ensureShouldRun(logger)
 	return makeContainer(ctx, logger, *runtime)
 }
 
 // MakeContainerWithRuntime is like MakeContainer, but allows for a runtime
 // to be specified by suffix.
 func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffix string) *Container {
+	ensureShouldRun(logger)
 	return makeContainer(ctx, logger, *runtime+suffix)
 }
 
@@ -171,6 +189,7 @@ func MakeContainerWithRuntime(ctx context.Context, logger testutil.Logger, suffi
 //
 // Native containers aren't profiled.
 func MakeNativeContainer(ctx context.Context, logger testutil.Logger) *Container {
+	ensureShouldRun(logger)
 	unsandboxedRuntime := "runc"
 	if override, found := os.LookupEnv("UNSANDBOXED_RUNTIME"); found {
 		unsandboxedRuntime = override
@@ -462,6 +481,18 @@ func (c *Container) logs(ctx context.Context, stdout, stderr *bytes.Buffer) erro
 	return err
 }
 
+// StreamLogs streams the container's combined stdout and stderr to the given writer.
+func (c *Container) StreamLogs(ctx context.Context, w io.Writer) error {
+	opts := container.LogsOptions{ShowStdout: true, ShowStderr: true, Follow: true}
+	reader, err := c.client.ContainerLogs(ctx, c.id, opts)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	_, err = stdcopy.StdCopy(w, w, reader)
+	return err
+}
+
 // ID returns the container id.
 func (c *Container) ID() string {
 	return c.id
@@ -493,6 +524,17 @@ func (c *Container) SandboxPid(ctx context.Context) (int, error) {
 		return -1, err
 	}
 	return resp.ContainerJSONBase.State.Pid, nil
+}
+
+// NetworkSandboxKey returns the path of the network namespace Docker created
+// for the container, e.g. "/var/run/docker/netns/<key>". It is empty for a
+// container that shares the host's network namespace.
+func (c *Container) NetworkSandboxKey(ctx context.Context) (string, error) {
+	resp, err := c.client.ContainerInspect(ctx, c.id)
+	if err != nil {
+		return "", err
+	}
+	return resp.NetworkSettings.SandboxKey, nil
 }
 
 // ErrNoIP indicates that no IP address is available.

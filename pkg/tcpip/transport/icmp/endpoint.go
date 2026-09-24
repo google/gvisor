@@ -64,20 +64,23 @@ type endpoint struct {
 	stats       tcpip.TransportEndpointStats
 	ops         tcpip.SocketOptions
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
-	rcvMu      sync.Mutex `state:"nosave"`
-	rcvReady   bool
-	rcvList    icmpPacketList
+	// The following fields are used to manage the receive queue.
+	rcvMu sync.Mutex `state:"nosave"`
+	// +checklocks:rcvMu
+	rcvReady bool
+	// +checklocks:rcvMu
+	rcvList icmpPacketList
+	// +checklocks:rcvMu
 	rcvBufSize int
-	rcvClosed  bool
-
-	// The following fields are protected by the mu mutex.
-	mu sync.RWMutex `state:"nosave"`
-	// frozen indicates if the packets should be delivered to the endpoint
-	// during restore.
+	// +checklocks:rcvMu
+	rcvClosed bool
+	// frozen prevents packet delivery during save/restore.
+	// +checklocks:rcvMu
 	frozen bool
-	ident  uint16
+
+	mu sync.RWMutex `state:"nosave"`
+	// +checklocks:mu
+	ident uint16
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
@@ -176,11 +179,13 @@ func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult
 	}
 
 	p := e.rcvList.Front()
-	if !opts.Peek {
+	if opts.Peek {
+		p.data.IncRef()
+	} else {
 		e.rcvList.Remove(p)
-		defer p.data.DecRef()
 		e.rcvBufSize -= p.data.Data().Size()
 	}
+	defer p.data.DecRef()
 
 	e.rcvMu.Unlock()
 
@@ -497,20 +502,22 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	ident := e.ident
 	err := e.net.ConnectAndThen(addr, func(netProto tcpip.NetworkProtocolNumber, previousID, nextID stack.TransportEndpointID) tcpip.Error {
-		nextID.LocalPort = e.ident
+		nextID.LocalPort = ident
 
 		nextID, err := e.registerWithStack(netProto, nextID)
 		if err != nil {
 			return err
 		}
 
-		e.ident = nextID.LocalPort
+		ident = nextID.LocalPort
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+	e.ident = ident
 
 	e.rcvMu.Lock()
 	e.rcvReady = true
@@ -593,6 +600,7 @@ func (e *endpoint) registerWithStack(netProto tcpip.NetworkProtocolNumber, id st
 	return id, err
 }
 
+// +checklocks:e.mu
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
@@ -600,6 +608,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
+	var ident uint16
 	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address) tcpip.Error {
 		id := stack.TransportEndpointID{
 			LocalPort:    addr.Port,
@@ -610,12 +619,13 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 			return err
 		}
 
-		e.ident = id.LocalPort
+		ident = id.LocalPort
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+	e.ident = ident
 
 	e.rcvMu.Lock()
 	e.rcvReady = true
@@ -814,15 +824,15 @@ func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 
 // freeze prevents any more packets from being delivered to the endpoint.
 func (e *endpoint) freeze() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = true
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }
 
 // thaw unfreezes a previously frozen endpoint using endpoint.freeze() allows
 // new packets to be delivered again.
 func (e *endpoint) thaw() {
-	e.mu.Lock()
+	e.rcvMu.Lock()
 	e.frozen = false
-	e.mu.Unlock()
+	e.rcvMu.Unlock()
 }

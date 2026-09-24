@@ -17,11 +17,15 @@
 #include <signal.h>
 #include <sys/signalfd.h>
 
+#include <cerrno>
 #include <ostream>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace {

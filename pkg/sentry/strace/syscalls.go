@@ -162,6 +162,9 @@ const (
 	// OpenFlags are open(2) flags.
 	OpenFlags
 
+	// OpenHow is how for openat2(2).
+	OpenHow
+
 	// Mode is a mode_t.
 	Mode
 

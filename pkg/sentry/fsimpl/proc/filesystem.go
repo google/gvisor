@@ -13,6 +13,10 @@
 // limitations under the License.
 
 // Package proc implements a partial in-memory file system for procfs.
+//
+// Task-mutex exclusions on concrete proc methods also apply through
+// kernfs.Inode, kernfs.DataSourceProvider, and vfs.DynamicBytesSource.
+// These interfaces do not expose the concrete task owner to checklocks.
 package proc
 
 import (
@@ -102,7 +106,11 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 		internalData = opts.InternalData.(*InternalData)
 	}
 
-	inode := procfs.newTasksInode(ctx, k, pidns, internalData)
+	inode, err := procfs.newTasksInode(ctx, k, pidns, internalData)
+	if err != nil {
+		procfs.VFSFilesystem().DecRef(ctx)
+		return nil, nil, err
+	}
 	var dentry kernfs.Dentry
 	dentry.InitRoot(&procfs.Filesystem, inode)
 	return procfs.VFSFilesystem(), dentry.VFSDentry(), nil
@@ -158,10 +166,6 @@ func (fs *filesystem) newStaticDir(ctx context.Context, creds *auth.Credentials,
 //
 // +stateify savable
 type InternalData struct {
-	// AppDrivenCheckpointEnabled indicates whether application driven
-	// checkpointing functionality is enabled via files in /proc/gvisor/.
-	AppDrivenCheckpointEnabled bool
-
 	// SaveTriggerEnabled indicates whether the application can trigger a
 	// checkpoint by writing to /proc/gvisor/checkpoint.
 	SaveTriggerEnabled bool

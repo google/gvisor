@@ -93,7 +93,7 @@ func Boot() (*kernel.Kernel, error) {
 	// Create timekeeper.
 	tk := kernel.NewTimekeeper()
 	params := kernel.NewVDSOParamPage(k.MemoryFile(), vdso.ParamPage.FileRange())
-	tk.SetClocks(time.NewCalibratedClocks(), params)
+	tk.SetClocks(time.NewCalibratedClocks(false), params)
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
 
@@ -130,6 +130,11 @@ func Boot() (*kernel.Kernel, error) {
 }
 
 // CreateTask creates a new bare bones task for tests.
+//
+// Preconditions: tc must belong to the Kernel in ctx.
+//
+// +checklocksexclude:tc.pidns.owner.mu
+// +checklocksexclude:tc.signalHandlers.mu
 func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns *vfs.MountNamespace, root, cwd vfs.VirtualDentry) (*kernel.Task, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
@@ -156,12 +161,14 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		AllowedCPUMask:   sched.NewFullCPUSet(k.ApplicationCores()),
 		UTSNamespace:     kernel.UTSNamespaceFromContext(ctx),
 		IPCNamespace:     kernel.IPCNamespaceFromContext(ctx),
+		CgroupNamespace:  k.RootCgroupNamespace(),
 		MountNamespace:   mntns,
 		FSContext:        kernel.NewFSContext(root, cwd, 0022),
 		FDTable:          k.NewFDTable(),
 		UserCounters:     k.GetUserCounters(creds.RealKUID),
 	}
 	config.NetworkNamespace.IncRef()
+	config.CgroupNamespace.IncRef()
 	config.Credentials.UserNamespace.IncRef()
 	t, err := k.TaskSet().NewTask(ctx, config)
 	if err != nil {

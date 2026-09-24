@@ -28,6 +28,11 @@ type namedPipe struct {
 	pipe *pipe.VFSPipe
 }
 
+// newNamedPipe creates a new named pipe.
+//
+// If parentDir is not nil, certain fields (such as setgid and default ACL) will be inherited
+// from parentDir.
+//
 // Preconditions:
 //   - fs.mu must be locked.
 //   - rp.Mount().CheckBeginWrite() has been called successfully.

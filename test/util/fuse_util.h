@@ -28,7 +28,7 @@ namespace testing {
 // std::string or std::vector<char>, it will call specialized versions as
 // implemented below.
 template <typename T>
-std::vector<struct iovec> FuseGenerateIovecs(T &first) {
+std::vector<struct iovec> FuseGenerateIovecs(T& first) {
   return {(struct iovec){.iov_base = &first, .iov_len = sizeof(first)}};
 }
 
@@ -37,9 +37,9 @@ std::vector<struct iovec> FuseGenerateIovecs(T &first) {
 // data structure, we have to drop const qualification. Usually used with
 // variable-length payload data.
 template <typename T = std::string>
-std::vector<struct iovec> FuseGenerateIovecs(std::string &first) {
+std::vector<struct iovec> FuseGenerateIovecs(std::string& first) {
   // Pad one byte for null-terminate c-string.
-  return {(struct iovec){.iov_base = const_cast<char *>(first.c_str()),
+  return {(struct iovec){.iov_base = const_cast<char*>(first.c_str()),
                          .iov_len = first.size() + 1}};
 }
 
@@ -47,7 +47,7 @@ std::vector<struct iovec> FuseGenerateIovecs(std::string &first) {
 // scenario and the size of the variable must be greater than or equal to the
 // size of the expected data. Usually used with variable-length payload data.
 template <typename T = std::vector<char>>
-std::vector<struct iovec> FuseGenerateIovecs(std::vector<char> &first) {
+std::vector<struct iovec> FuseGenerateIovecs(std::vector<char>& first) {
   return {(struct iovec){.iov_base = first.data(), .iov_len = first.size()}};
 }
 
@@ -55,7 +55,7 @@ std::vector<struct iovec> FuseGenerateIovecs(std::vector<char> &first) {
 // Use variadic class template to generalize different numbers and different
 // types of FUSE structs.
 template <typename T, typename... Types>
-std::vector<struct iovec> FuseGenerateIovecs(T &first, Types &...args) {
+std::vector<struct iovec> FuseGenerateIovecs(T& first, Types&... args) {
   auto first_iovec = FuseGenerateIovecs(first);
   auto iovecs = FuseGenerateIovecs(args...);
   first_iovec.insert(std::end(first_iovec), std::begin(iovecs),

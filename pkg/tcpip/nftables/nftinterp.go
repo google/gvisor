@@ -24,7 +24,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // SyntaxError is an interpretation error due to incorrect syntax.
@@ -382,7 +381,6 @@ func InterpretPayloadLoad(line string, lnIdx int) (operation, *syserr.AnnotatedE
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	pdload, err := newPayloadLoad(base, offset, int(blen), reg)
@@ -517,7 +515,6 @@ func InterpretPayloadSet(line string, lnIdx int) (operation, *syserr.AnnotatedEr
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	pdset, err := newPayloadSet(base, offset, blen, reg, csumType, csumOff, csumFlags)
@@ -626,7 +623,7 @@ func InterpretBitwiseBool(line string, lnIdx int) (operation, *syserr.AnnotatedE
 	}
 
 	// Create the operation with the specified arguments.
-	bitwiseBool, err := newBitwiseBool(sreg, dreg, mask, xor)
+	bitwiseBool, err := newBitwiseBool(sreg, dreg, mask, xor, len(mask))
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +677,6 @@ func InterpretCounter(line string, lnIdx int) (operation, *syserr.AnnotatedError
 	if err != nil {
 		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("could not parse int64 initial bytes: '%s'", tokens[tkIdx]))
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	cntr := newCounter(initialPkts, initialBytes)
@@ -740,7 +736,6 @@ func InterpretRoute(line string, lnIdx int) (operation, *syserr.AnnotatedError) 
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	rt, err := newRoute(key, reg)
@@ -823,7 +818,6 @@ func InterpretByteorder(line string, lnIdx int) (operation, *syserr.AnnotatedErr
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	order, err := newByteorder(dreg, sreg, bop, blen, size)
@@ -886,7 +880,6 @@ func InterpretMetaLoad(line string, lnIdx int) (operation, *syserr.AnnotatedErro
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	mtLoad, err := newMetaLoad(key, reg)
@@ -949,7 +942,6 @@ func InterpretMetaSet(line string, lnIdx int) (operation, *syserr.AnnotatedError
 	if err != nil {
 		return nil, err
 	}
-	tkIdx++
 
 	// Create the operation with the specified arguments.
 	mtSet, err := newMetaSet(key, reg)
@@ -1007,12 +999,12 @@ func parseRegister(regString string, lnIdx int, tkIdx int) (uint8, *syserr.Annot
 // parseRegisterData parses the register data from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
 // Note: assumes the register index is valid (was checked in parseRegister).
-func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, []byte, stack.NFVerdict, *syserr.AnnotatedError) {
+func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, []byte, Verdict, *syserr.AnnotatedError) {
 	// Handles verdict data.
 	if isVerdictRegister(reg) {
 		nextIdx, verdict, err := parseVerdict(tokens, lnIdx, tkIdx)
 		if err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
 		return nextIdx, nil, verdict, nil
 	}
@@ -1020,20 +1012,20 @@ func parseRegisterData(reg uint8, tokens []string, lnIdx int, tkIdx int) (int, [
 	if len(tokens[tkIdx]) > 1 && tokens[tkIdx][:2] == "0x" {
 		nextIdx, data, err := parseHexData(tokens, lnIdx, tkIdx)
 		if err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
 		bytesData := data
 		regIdx, err := regNumToIdx(reg, len(data))
 		if err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
 		if err := validateDataRegister(regIdx, len(data)); err != nil {
-			return 0, nil, stack.NFVerdict{}, err
+			return 0, nil, Verdict{}, err
 		}
-		return nextIdx, bytesData, stack.NFVerdict{}, nil
+		return nextIdx, bytesData, Verdict{}, nil
 	}
 	// TODO(b/345684870): cases will be added here as more types are supported.
-	return 0, nil, stack.NFVerdict{}, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
+	return 0, nil, Verdict{}, syserr.NewAnnotatedError(syserr.ErrNotSupported, fmt.Sprintf("unsupported register data type for register %d", reg))
 }
 
 // verdictCodeFromKeyword is a map of verdict keyword to its corresponding enum value.
@@ -1048,8 +1040,8 @@ var verdictCodeFromKeyword = map[string]int32{
 
 // parseVerdict parses the verdict from the given token and returns
 // the index of the next token to process (can consume multiple tokens).
-func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, *syserr.AnnotatedError) {
-	v := stack.NFVerdict{}
+func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, Verdict, *syserr.AnnotatedError) {
+	v := Verdict{}
 
 	vcString := tokens[tkIdx]
 	vc, ok := verdictCodeFromKeyword[vcString]
@@ -1071,7 +1063,7 @@ func parseVerdict(tokens []string, lnIdx int, tkIdx int) (int, stack.NFVerdict, 
 		if err := validateIdentifier(tokens[tkIdx], lnIdx, tkIdx); err != nil {
 			return 0, v, err
 		}
-		v.ChainName = tokens[tkIdx]
+		v.Chain = &Chain{name: tokens[tkIdx]}
 		tkIdx++
 	}
 

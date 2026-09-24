@@ -15,30 +15,48 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <sched.h>
+#include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/xattr.h>
+#include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <list>
+#include <ostream>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -2344,6 +2362,95 @@ TEST(Inotify, OneShot) {
                       }));
 
   // The watch should already have been removed.
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// The event that fires an IN_ONESHOT watch also removes the watch while the
+// filesystem is still inside the operation that generated the event.
+// Regression tests for github.com/google/gvisor/issues/14680.
+TEST(Inotify, OneShotDirWatchRemovedByMkdir) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir, IN_CREATE | IN_ONESHOT));
+
+  const std::string child = JoinPath(dir, "child");
+  ASSERT_THAT(mkdir(child.c_str(), 0755), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_CREATE | IN_ISDIR, wd, "child"),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, OneShotDirWatchRemovedByRename) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir, IN_MOVE_SELF | IN_ONESHOT));
+
+  const std::string new_dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(rename(dir.c_str(), new_dir.c_str()), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_MOVE_SELF, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, OneShotDirWatchRemovedByRmdir) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = NewTempAbsPathInDir(root.path());
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), dir, IN_DELETE_SELF | IN_ONESHOT));
+
+  ASSERT_THAT(rmdir(dir.c_str()), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_DELETE_SELF, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+  EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Inotify, OneShotFileWatchRemovedByUnlink) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), file.path(), IN_ATTRIB | IN_ONESHOT));
+
+  file.reset();
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_ATTRIB, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
   EXPECT_THAT(inotify_rm_watch(inotify_fd.get(), wd),
               SyscallFailsWithErrno(EINVAL));
 }

@@ -158,6 +158,13 @@ type MemoryManager struct {
 	// maxRSS is protected by activeMu.
 	maxRSS uint64
 
+	// hasPinned is true if pages in this MemoryManager have ever been pinned
+	// by Pin. It is never cleared, even if all pinned pages are unpinned;
+	// compare Linux's MMF_HAS_PINNED.
+	//
+	// hasPinned is protected by activeMu.
+	hasPinned bool
+
 	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
 	// until users becomes 0, at which point as becomes nil.
 	as platform.AddressSpace `state:"nosave"`

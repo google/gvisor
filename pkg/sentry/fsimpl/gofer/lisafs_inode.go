@@ -120,7 +120,7 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	// and its inode together in the heap. This will help reduce allocations and memory
 	// fragmentation. This is more cache friendly too.
 	// Obviously in case of hard link and if the inode already exists,
-	// we just re-use the inode and heap allocate just the dentry struct.
+	// we just reuse the inode and heap allocate just the dentry struct.
 	temp := struct {
 		d dentry
 		i lisafsInode
@@ -137,6 +137,8 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 					fs:        fs,
 					inoKey:    inoKey,
 					ino:       fs.inoFromKey(inoKey),
+					rdevMajor: ino.Stat.RdevMajor,
+					rdevMinor: ino.Stat.RdevMinor,
 					mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
 					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
@@ -194,6 +196,13 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 		})
 
 	temp.d.init()
+	// If this dentry adopted a cached inode that already carries a bound-socket
+	// endpoint (a hard link to, or re-walk of, an existing bound socket), hold
+	// the extra reference that dentry.refs keeps for endpoint-bearing dentries.
+	// The bind path takes this reference itself, over a fresh inode.
+	if temp.d.inode.endpoint != nil {
+		temp.d.IncRef()
+	}
 	fs.syncMu.Lock()
 	fs.syncableDentries.PushBack(&temp.d.syncableListEntry)
 	fs.syncMu.Unlock()

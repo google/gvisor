@@ -69,7 +69,7 @@ func main() {
     available):
 
     ```bash
-    go get gvisor.dev/gvisor/sandboxexec/sandbox
+    go get gvisor.dev/gvisor/sandboxexec/sandbox@go
     ```
 
 4.  Run the application:

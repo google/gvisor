@@ -24,6 +24,13 @@ bzl_library(
     visibility = ["//visibility:private"],
 )
 
+bzl_library(
+    name = "go_bzl",
+    srcs = ["go.bzl"],
+    visibility = ["//visibility:private"],
+    deps = [":defs_bzl"],
+)
+
 config_setting(
     name = "amd64",
     constraint_values = [

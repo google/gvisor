@@ -21,7 +21,7 @@ import (
 
 // TestNVIDIAFlagsSkipsPrivilegedCaps is a regression test for the
 // container-startup bug seen when NVIDIA_DRIVER_CAPABILITIES=all is combined
-// with --nvproxy-allowed-driver-capabilities using priviledged capabilities.
+// with --nvproxy-allowed-driver-capabilities using privileged capabilities.
 //
 // In that configuration, NVProxyDriverCapsFromEnv returns the full allowed set,
 // which includes CapProfiling. nvproxySetup then calls NVIDIAFlags() on that set
@@ -38,7 +38,7 @@ func TestNVIDIAFlagsSkipsPrivilegedCaps(t *testing.T) {
 		{
 			name: "all_plus_profiling",
 			caps: AllContainerDriverCaps | CapProfiling,
-			want: []string{"--compute", "--graphics", "--utility", "--video"},
+			want: []string{"--compute", "--graphics", "--ngx", "--utility", "--video"},
 		},
 		{
 			name: "profiling_only",

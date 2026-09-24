@@ -71,19 +71,24 @@ type TaskSet struct {
 
 	// stopCount is the number of active external stops applicable to all tasks
 	// in the TaskSet (calls to TaskSet.BeginExternalStop that have not been
-	// paired with a call to TaskSet.EndExternalStop). stopCount is protected
-	// by mu.
+	// paired with a call to TaskSet.EndExternalStop).
 	//
 	// stopCount is not saved for the same reason as Task.stopCount; it is
 	// always reset to zero after restore.
+	//
+	// +checklocks:mu
 	stopCount int32 `state:"nosave"`
 
 	// liveTasks is the number of tasks in the TaskSet whose goroutines have
-	// not exited. liveTasks is protected by mu.
+	// not exited.
+	//
+	// +checklocks:mu
 	liveTasks uint32
 
 	// If noNewTasksIfZeroLive is true and liveTasks is zero, calls to
-	// Kernel.NewTask() will fail. noNewTasksIfZeroLive is protected by mu.
+	// TaskSet.newTask will fail.
+	//
+	// +checklocks:mu
 	noNewTasksIfZeroLive bool
 
 	// zeroLiveTasksCond is broadcast when liveTasks transitions from non-zero
@@ -132,7 +137,7 @@ func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup, tgLeader *Ta
 
 // forEachTaskLocked applies f to each Task in ts.
 //
-// Preconditions: ts.mu must be locked (for reading or writing).
+// +checklocksread:ts.mu
 func (ts *TaskSet) forEachTaskLocked(f func(t *Task)) {
 	for t := range ts.Root.tids {
 		f(t)
@@ -293,12 +298,11 @@ func (ns *PIDNamespace) ID() uint64 {
 	return ns.id
 }
 
-// ThreadGroupWithID returns the thread group led by the task with thread ID
-// tid in PID namespace ns. If no task has that TID, or if the task with that
-// TID is not a thread group leader, ThreadGroupWithID returns nil.
-func (ns *PIDNamespace) ThreadGroupWithID(tid ThreadID) *ThreadGroup {
-	ns.owner.mu.RLock()
-	defer ns.owner.mu.RUnlock()
+// threadGroupWithIDLocked returns the thread group led by the task with thread ID
+// tid in PID namespace ns.
+//
+// Preconditions: ns.owner.mu must be locked (for reading or writing).
+func (ns *PIDNamespace) threadGroupWithIDLocked(tid ThreadID) *ThreadGroup {
 	t := ns.tasks[tid]
 	if t == nil {
 		return nil
@@ -307,6 +311,15 @@ func (ns *PIDNamespace) ThreadGroupWithID(tid ThreadID) *ThreadGroup {
 		return nil
 	}
 	return t.tg
+}
+
+// ThreadGroupWithID returns the thread group led by the task with thread ID
+// tid in PID namespace ns. If no task has that TID, or if the task with that
+// TID is not a thread group leader, ThreadGroupWithID returns nil.
+func (ns *PIDNamespace) ThreadGroupWithID(tid ThreadID) *ThreadGroup {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+	return ns.threadGroupWithIDLocked(tid)
 }
 
 // IDOfTask returns the TID assigned to the given task in PID namespace ns. If
@@ -356,18 +369,11 @@ func (ns *PIDNamespace) IDOfThreadGroup(tg *ThreadGroup) ThreadID {
 	return id
 }
 
-// PIDNamespacedIDs returns a snapshot mapping each PID namespace in which tg's
-// leader is visible (tg's PID namespace and every ancestor) to tg's ID (PID)
-// in that namespace.
+// pidNamespacedIDsLocked returns a PID-namespaced snapshot of thread IDs
+// for tg's PID namespace and every ancestor.
 //
-// The returned map is intended to be indexed by a PID namespace to which the
-// caller holds a reference. Because the returned map does not hold references
-// on its own, the other keys in the map *MUST NOT* be dereferenced.
-//
-// tg must be visible in its own PID namespace.
-func (tg *ThreadGroup) PIDNamespacedIDs() map[*PIDNamespace]ThreadID {
-	tg.pidns.owner.mu.RLock()
-	defer tg.pidns.owner.mu.RUnlock()
+// Preconditions: tg.pidns.owner.mu must be locked (for reading or writing).
+func (tg *ThreadGroup) pidNamespacedIDsLocked() map[*PIDNamespace]ThreadID {
 	ids := make(map[*PIDNamespace]ThreadID)
 	for ns := tg.pidns; ns != nil; ns = ns.parent {
 		id, ok := ns.tgids[tg]
@@ -379,6 +385,46 @@ func (tg *ThreadGroup) PIDNamespacedIDs() map[*PIDNamespace]ThreadID {
 		ids[ns] = id
 	}
 	return ids
+}
+
+// PIDNamespacedIDs returns a snapshot mapping each PID namespace in which t's
+// thread group is visible (its PID namespace and every ancestor) to the thread
+// group's ID (PID) in that namespace.
+//
+// The returned map is intended to be indexed by a PID namespace to which the
+// caller holds a reference. Because the returned map does not hold references
+// on its own, the other keys in the map *MUST NOT* be dereferenced.
+//
+// Preconditions: t MUST not be reaped for the duration of this method.
+// Generally, t should be the current task from a syscall context.
+func (t *Task) PIDNamespacedIDs() map[*PIDNamespace]ThreadID {
+	tg := t.ThreadGroup()
+	tg.pidns.owner.mu.RLock()
+	defer tg.pidns.owner.mu.RUnlock()
+
+	return tg.pidNamespacedIDsLocked()
+}
+
+// PIDNamespacedIDs returns a snapshot mapping each PID namespace in which tid's
+// ThreadGroup is visible (tid's PID namespace and every ancestor) to tg's ID (PID)
+// in that namespace.
+//
+// tid is looked up in ns.
+//
+// The returned map is intended to be indexed by a PID namespace to which the
+// caller holds a reference. Because the returned map does not hold references
+// on its own, the other keys in the map *MUST NOT* be dereferenced.
+//
+// If no thread group tid exists in ns, the nil map is returned.
+func (ns *PIDNamespace) PIDNamespacedIDs(tid ThreadID) map[*PIDNamespace]ThreadID {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+	tg := ns.threadGroupWithIDLocked(tid)
+	if tg == nil {
+		return nil
+	}
+
+	return tg.pidNamespacedIDsLocked()
 }
 
 // Tasks returns a snapshot of the tasks in ns.

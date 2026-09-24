@@ -15,43 +15,21 @@
 package sandbox_test
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
 
-func TestNewBundle(t *testing.T) {
-	for _, enableNetworking := range []bool{false, true} {
-		t.Run(t.Name(), func(t *testing.T) {
-			tempDir := t.TempDir()
-			sandboxID := "test-sandbox"
-
-			bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, enableNetworking, nil, nil)
+func TestSpec(t *testing.T) {
+	for _, netMode := range []sandbox.NetworkMode{sandbox.NetworkModeNone, sandbox.NetworkModeHost, sandbox.NetworkModeSandbox} {
+		t.Run(string(netMode), func(t *testing.T) {
+			spec, err := sandbox.DebugSpec(sandbox.WithNetwork(netMode))
 			if err != nil {
-				t.Fatalf("NewBundle(enableNet=%v) failed: %v", enableNetworking, err)
-			}
-			defer os.RemoveAll(bundleDir)
-			expectedBundleDir := filepath.Join(tempDir, sandboxID)
-			if bundleDir != expectedBundleDir {
-				t.Fatalf("NewBundle(%v, %v) = %q, want %q", sandboxID, tempDir, bundleDir, expectedBundleDir)
-			}
-
-			// Verify config.json was created and contains valid OCI spec.
-			configPath := filepath.Join(bundleDir, "config.json")
-			configFile, err := os.Open(configPath)
-			if err != nil {
-				t.Fatalf("failed to open config.json: %v", err)
-			}
-			defer configFile.Close()
-
-			var spec specs.Spec
-			if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-				t.Fatalf("failed to decode config.json: %v", err)
+				t.Fatalf("DebugSpec(netMode=%v) failed: %v", netMode, err)
 			}
 
 			if spec.Version != "1.0.0" {
@@ -60,13 +38,16 @@ func TestNewBundle(t *testing.T) {
 			if spec.Root == nil || spec.Root.Path != "rootfs" {
 				t.Errorf("spec.Root.Path is not 'rootfs', got: %+v", spec.Root)
 			}
+			if spec.Root.Readonly {
+				t.Errorf("spec.Root.Readonly is true, want false")
+			}
 			if spec.Linux == nil {
 				t.Fatalf("spec.Linux is nil")
 			}
 
 			var expectedNamespaces []specs.LinuxNamespace
 			expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.PIDNamespace})
-			if enableNetworking {
+			if netMode == sandbox.NetworkModeSandbox {
 				expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 			}
 			expectedNamespaces = append(expectedNamespaces, specs.LinuxNamespace{Type: specs.MountNamespace})
@@ -77,7 +58,7 @@ func TestNewBundle(t *testing.T) {
 			}
 
 			if len(spec.Linux.Namespaces) != len(expectedNamespaces) {
-				t.Errorf("enableNetworking=%v: Namespaces length = %d, want %d. Got: %+v, Want: %+v", enableNetworking, len(spec.Linux.Namespaces), len(expectedNamespaces), spec.Linux.Namespaces, expectedNamespaces)
+				t.Errorf("netMode=%v: Namespaces length = %d, want %d. Got: %+v, Want: %+v", netMode, len(spec.Linux.Namespaces), len(expectedNamespaces), spec.Linux.Namespaces, expectedNamespaces)
 			}
 			namespaceComparator := func(a, b specs.LinuxNamespace) int {
 				if a.Type == b.Type && a.Path == b.Path {
@@ -91,47 +72,30 @@ func TestNewBundle(t *testing.T) {
 			slices.SortFunc(spec.Linux.Namespaces, namespaceComparator)
 			slices.SortFunc(expectedNamespaces, namespaceComparator)
 			if !slices.Equal(spec.Linux.Namespaces, expectedNamespaces) {
-				t.Errorf("enableNetworking=%v: spec.Linux.Namespaces=%+v, want: %+v", enableNetworking, spec.Linux.Namespaces, expectedNamespaces)
+				t.Errorf("netMode=%v: spec.Linux.Namespaces=%+v, want: %+v", netMode, spec.Linux.Namespaces, expectedNamespaces)
 			}
 		})
 	}
 }
 
-func TestNewBundleNormalization(t *testing.T) {
-	tempDir := t.TempDir()
-	sandboxID := "test-sandbox"
-
-	mounts := []sandbox.Mount{
-		{
-			Source:      "/tmp/foo/../bar",
-			Destination: "/mnt/foo/./bar",
-			Type:        sandbox.MountTypeBind,
-		},
-		{
-			Destination: "/mnt/baz/..",
-			Type:        sandbox.MountTypeTmpfs,
-		},
-	}
-
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, mounts, nil)
+func TestSpecMountNormalization(t *testing.T) {
+	spec, err := sandbox.DebugSpec(
+		sandbox.WithMount(
+			sandbox.Mount{
+				Source:      "/tmp/foo/../bar",
+				Destination: "/mnt/foo/./bar",
+				Type:        sandbox.MountTypeBind,
+			},
+			sandbox.Mount{
+				Destination: "/mnt/baz/..",
+				Type:        sandbox.MountTypeTmpfs,
+			},
+		),
+	)
 	if err != nil {
-		t.Fatalf("NewBundle failed: %v", err)
-	}
-	defer os.RemoveAll(bundleDir)
-
-	configPath := filepath.Join(bundleDir, "config.json")
-	configFile, err := os.Open(configPath)
-	if err != nil {
-		t.Fatalf("failed to open config.json: %v", err)
-	}
-	defer configFile.Close()
-
-	var spec specs.Spec
-	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-		t.Fatalf("failed to decode config.json: %v", err)
+		t.Fatalf("DebugSpec failed: %v", err)
 	}
 
-	// Verify our custom mounts are present and normalized
 	var foundBind, foundTmpfs bool
 	for _, m := range spec.Mounts {
 		if m.Type == "bind" && m.Destination == "/mnt/foo/bar" {
@@ -153,32 +117,97 @@ func TestNewBundleNormalization(t *testing.T) {
 	}
 }
 
-func TestNewBundleWithAnnotations(t *testing.T) {
-	tempDir := t.TempDir()
-	sandboxID := "test-sandbox-annotations"
-	annotations := map[string]string{
-		"dev.gvisor.tar.rootfs.upper": "/tmp/test.tar",
-	}
-
-	bundleDir, err := sandbox.NewBundle(sandboxID, tempDir, false, nil, annotations)
+func TestSpecEnv(t *testing.T) {
+	spec, err := sandbox.DebugSpec(sandbox.WithEnv("TEST_VAR=A", "TEST_VAR=B"))
 	if err != nil {
-		t.Fatalf("NewBundle failed: %v", err)
+		t.Fatalf("DebugSpec failed: %v", err)
 	}
-	defer os.RemoveAll(bundleDir)
 
-	configPath := filepath.Join(bundleDir, "config.json")
-	configFile, err := os.Open(configPath)
+	expectedEnv := []string{
+		"PATH=/bin:/usr/bin:/usr/local/bin",
+		"TEST_VAR=A",
+		"TEST_VAR=B",
+	}
+
+	// Verify default env vars
+	if !slices.Equal(spec.Process.Env, expectedEnv) {
+		t.Errorf("spec.Process.Env = %+v, want %+v", spec.Process.Env, expectedEnv)
+	}
+}
+
+func TestSpecWorkingDir(t *testing.T) {
+	customCwd := "/custom/absolute/path"
+
+	spec, err := sandbox.DebugSpec(sandbox.WithWorkingDir(customCwd))
 	if err != nil {
-		t.Fatalf("failed to open config.json: %v", err)
-	}
-	defer configFile.Close()
-
-	var spec specs.Spec
-	if err := json.NewDecoder(configFile).Decode(&spec); err != nil {
-		t.Fatalf("failed to decode config.json: %v", err)
+		t.Fatalf("DebugSpec failed: %v", err)
 	}
 
-	if val, ok := spec.Annotations["dev.gvisor.tar.rootfs.upper"]; !ok || val != "/tmp/test.tar" {
-		t.Errorf("expected annotation 'dev.gvisor.tar.rootfs.upper' with value '/tmp/test.tar', got spec.Annotations: %+v", spec.Annotations)
+	if spec.Process.Cwd != customCwd {
+		t.Errorf("spec.Process.Cwd = %q, want %q", spec.Process.Cwd, customCwd)
+	}
+}
+
+func modePtr(mode uint32) *uint32 { return &mode }
+
+func TestSpecMountMode(t *testing.T) {
+	const dst = "/mnt/foo"
+
+	tests := []struct {
+		name    string
+		mount   sandbox.Mount
+		wantOpt string
+	}{
+		{
+			name:    "TmpfsWithMode",
+			mount:   sandbox.Mount{Destination: dst, Type: sandbox.MountTypeTmpfs, Mode: modePtr(0700)},
+			wantOpt: "mode=0700",
+		},
+		{
+			name:    "TmpfsWithDefaultMode",
+			mount:   sandbox.Mount{Destination: dst, Type: sandbox.MountTypeTmpfs, Mode: modePtr(01777)},
+			wantOpt: "mode=1777",
+		},
+		{
+			// ociMount translates whatever Mode it is given; restricting Mode to
+			// tmpfs is the caller's job.
+			name:    "ModePassedThroughForBind",
+			mount:   sandbox.Mount{Source: "/tmp", Destination: dst, Type: sandbox.MountTypeBind, Mode: modePtr(0700)},
+			wantOpt: "mode=0700",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, err := sandbox.DebugSpec(sandbox.WithMount(tc.mount))
+			if err != nil {
+				t.Fatalf("DebugSpec failed: %v", err)
+			}
+
+			var opts []string
+			found := false
+			for _, m := range spec.Mounts {
+				if m.Destination == dst {
+					opts = m.Options
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("no mount with destination %q, got mounts: %+v", dst, spec.Mounts)
+			}
+
+			hasMode := slices.ContainsFunc(opts, func(o string) bool {
+				return strings.HasPrefix(o, "mode=")
+			})
+			if tc.wantOpt == "" {
+				if hasMode {
+					t.Errorf("mount options = %v, want no mode= option", opts)
+				}
+				return
+			}
+			if !slices.Contains(opts, tc.wantOpt) {
+				t.Errorf("mount options = %v, want it to contain %q", opts, tc.wantOpt)
+			}
+		})
 	}
 }

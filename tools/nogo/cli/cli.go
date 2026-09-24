@@ -44,7 +44,7 @@ func openOutput(filename string, def *os.File) (*os.File, error) {
 		if def != nil {
 			return def, nil
 		}
-		filename = "/dev/null" // Sink.
+		filename = os.DevNull // Sink.
 	}
 	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
@@ -316,7 +316,7 @@ func loadFindings(filename string) (check.FindingSet, error) {
 	inputFindings, err := check.ExtractFindingsFrom(r, false /* json */)
 	if err != nil {
 		// Seek to reread the file.
-		if _, err := r.Seek(0, os.SEEK_SET); err != nil {
+		if _, err := r.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("unable to reseek in findings %q: %w", filename, err)
 		}
 		// Attempt to interpret as a json input.

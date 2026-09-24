@@ -17,6 +17,8 @@
 package seccheck
 
 import (
+	"sync/atomic"
+
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -223,6 +225,42 @@ type State struct {
 	syscallFlagListeners []SyscallFlagListener
 
 	pointFields map[Point]FieldSet
+
+	// execveHashCache holds an atomic pointer to the active ExecveHashCache.
+	// Nil indicates that execve binary hash caching/computation is unregistered.
+	execveHashCache atomic.Pointer[ExecveHashCache]
+}
+
+// ExecveHashCache returns the active ExecveHashCache, or nil if unconfigured.
+func (s *State) ExecveHashCache() *ExecveHashCache {
+	return s.execveHashCache.Load()
+}
+
+// SetExecveHashCache atomically sets the active ExecveHashCache.
+func (s *State) SetExecveHashCache(cache *ExecveHashCache) {
+	s.execveHashCache.Store(cache)
+}
+
+// SetupExecveHashCache initializes ExecveHashCache for the given point requirements and capacity.
+func (s *State) SetupExecveHashCache(capacity int, reqs []PointReq) {
+	s.registrationMu.Lock()
+	defer s.registrationMu.Unlock()
+
+	var opts ExecveHashOptions
+	for _, req := range reqs {
+		if req.Pt == PointExecve {
+			if req.Fields.Local.Contains(FieldSentryExecveBinarySHA256) {
+				opts.SHA256 = true
+			}
+			if req.Fields.Local.Contains(FieldSentryExecveBinarySHA1) {
+				opts.SHA1 = true
+			}
+		}
+	}
+	if !opts.SHA256 && !opts.SHA1 {
+		return
+	}
+	s.SetExecveHashCache(NewExecveHashCache(capacity, opts))
 }
 
 // AppendSink registers the given Sink to execute at checkpoints. The
@@ -270,6 +308,7 @@ func (s *State) clearSink() {
 		}
 	}
 	s.pointFields = nil
+	s.SetExecveHashCache(nil)
 
 	oldSinks := s.getSinks()
 	s.registrationSeq.BeginWrite()

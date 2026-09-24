@@ -252,8 +252,9 @@ func (fd *pciDeviceFD) vfioSetIrqs(ctx context.Context, t *kernel.Task, arg host
 	if _, err := irqSet.CopyIn(t, arg); err != nil {
 		return 0, err
 	}
-	// Callers must set the payload's size.
-	if irqSet.Argsz == 0 {
+	// Callers must set the payload's size, which must be at least the header size.
+	headerSize := uint32(irqSet.SizeBytes())
+	if irqSet.Argsz < headerSize {
 		return 0, linuxerr.EINVAL
 	}
 	// Invalidate unknown flags.
@@ -282,29 +283,46 @@ func (fd *pciDeviceFD) vfioSetIrqs(ctx context.Context, t *kernel.Task, arg host
 	// VFIO_IRQ_SET_DATA_BOOL indicates that the data field is an array of uint8.
 	// The action will be performed if the corresponding boolean is true.
 	case linux.VFIO_IRQ_SET_DATA_BOOL:
-		payloadSize := uint32(irqSet.SizeBytes()) + irqSet.Count
-		payload := make([]uint8, payloadSize)
-		if _, err := primitive.CopyUint8SliceIn(t, arg, payload); err != nil {
-			return 0, err
+		if uint64(irqSet.Argsz)-uint64(headerSize) < uint64(irqSet.Count) {
+			return 0, linuxerr.EINVAL
 		}
-		// Prevent TOCTOU by overwriting the header with the validated values
-		irqSet.MarshalUnsafe(payload[:irqSet.SizeBytes()])
+		payloadSize := headerSize + irqSet.Count
+		payload := make([]uint8, payloadSize)
+		irqSet.MarshalUnsafe(payload[:headerSize])
+		if irqSet.Count > 0 {
+			dataAddr, ok := arg.AddLength(uint64(headerSize))
+			if !ok {
+				return 0, linuxerr.EFAULT
+			}
+			if _, err := primitive.CopyUint8SliceIn(t, dataAddr, payload[headerSize:]); err != nil {
+				return 0, err
+			}
+		}
 		return util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_SET_IRQS, &payload[0])
 	// VFIO_IRQ_SET_DATA_EVENTFD indicates that the data field is an array
 	// of int32 (or event file descriptors). These descriptors will be
 	// signalled when an action in the flags happens.
 	case linux.VFIO_IRQ_SET_DATA_EVENTFD:
-		payloadSize := uint32(irqSet.SizeBytes())/4 + irqSet.Count
-		payload := make([]int32, payloadSize)
-		if _, err := primitive.CopyInt32SliceIn(t, arg, payload); err != nil {
-			return 0, err
+		if uint64(irqSet.Argsz)-uint64(headerSize) < uint64(irqSet.Count)*4 {
+			return 0, linuxerr.EINVAL
 		}
-		// Prevent TOCTOU by overwriting the header with the validated values
+		headerWords := headerSize / 4
+		payloadSize := headerWords + irqSet.Count
+		payload := make([]int32, payloadSize)
 		payload[0] = int32(irqSet.Argsz)
 		payload[1] = int32(irqSet.Flags)
 		payload[2] = int32(irqSet.Index)
 		payload[3] = int32(irqSet.Start)
 		payload[4] = int32(irqSet.Count)
+		if irqSet.Count > 0 {
+			dataAddr, ok := arg.AddLength(uint64(headerSize))
+			if !ok {
+				return 0, linuxerr.EFAULT
+			}
+			if _, err := primitive.CopyInt32SliceIn(t, dataAddr, payload[headerWords:]); err != nil {
+				return 0, err
+			}
+		}
 		// Transform the input FDs to host FDs.
 		for i := 0; i < int(irqSet.Count); i++ {
 			index := len(payload) - 1 - i

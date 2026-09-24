@@ -67,6 +67,8 @@ const (
 	_KVM_CAP_MAX_MEMSLOTS          = 0x0a
 	_KVM_CAP_MAX_VCPUS             = 0x42
 	_KVM_CAP_ARM_VM_IPA_SIZE       = 0xa5
+	_KVM_CAP_ARM_PTRAUTH_ADDRESS   = 0xab
+	_KVM_CAP_ARM_PTRAUTH_GENERIC   = 0xac
 	_KVM_CAP_VCPU_EVENTS           = 0x29
 	_KVM_CAP_ARM_INJECT_SERROR_ESR = 0x9e
 	_KVM_CAP_TSC_CONTROL           = 0x3c

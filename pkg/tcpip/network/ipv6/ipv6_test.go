@@ -26,10 +26,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
@@ -2680,6 +2682,7 @@ func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string, string)
 	return false, false
 }
 
+// +checklocksread:proto.mu.RWMutex
 func knownNICIDs(proto *protocol) []tcpip.NICID {
 	var nicIDs []tcpip.NICID
 
@@ -4118,5 +4121,453 @@ func TestForwardingTCPChecksum(t *testing.T) {
 	payloadCsum := checksum.Checksum(tcpHeader.Payload(), 0)
 	if !tcpHeader.IsChecksumValid(src, dst, payloadCsum, payloadLength) {
 		t.Errorf("expected valid TCP checksum, but got invalid")
+	}
+}
+
+func TestRecalculateChecksum(t *testing.T) {
+	clock := faketime.NewManualClock()
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+		Clock:              clock,
+	})
+	defer func() {
+		s.Close()
+		s.Wait()
+		clock.RunImmediatelyScheduledJobs()
+		refs.DoRepeatedLeakCheck()
+	}()
+
+	ep := channel.New(10, header.IPv6MinimumMTU, "")
+	defer ep.Close()
+
+	src := testutil.MustParse6("2001:db8::1")
+	dst := testutil.MustParse6("2001:db8::2")
+
+	if err := s.CreateNIC(1, ep); err != nil {
+		t.Fatalf("CreateNIC(1, _) failed: %s", err)
+	}
+	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: src.WithPrefix(),
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress failed: %s", err)
+	}
+	s.SetRouteTable([]tcpip.Route{{
+		Destination: dst.WithPrefix().Subnet(),
+		NIC:         1,
+	}})
+	r, err := s.FindRoute(1, src, dst, ProtocolNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(1, %s, %s, %d, false) failed: %s", src, dst, ProtocolNumber, err)
+	}
+	defer r.Release()
+
+	// Expected checksums below are precomputed using a Python scapy lib.
+	tests := []struct {
+		name         string
+		pkt          *stack.PacketBuffer
+		wantChecksum uint16
+		wantErr      bool
+	}{
+		{
+			name: "UDP Zero Checksum (RFC 768 / RFC 8200 maps 0 to 0xFFFF)",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x89, 0x65}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
+				header.UDP(transportHdr).Encode(&header.UDPFields{
+					SrcPort: 1234,
+					DstPort: 5678,
+					Length:  uint16(header.UDPMinimumSize + len(payload)),
+				})
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(header.UDPMinimumSize + len(payload)),
+					TransportProtocol: header.UDPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantChecksum: 0xFFFF,
+		},
+		{
+			name: "UDP Non Zero Checksum",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
+				header.UDP(transportHdr).Encode(&header.UDPFields{
+					SrcPort: 1234,
+					DstPort: 5678,
+					Length:  uint16(header.UDPMinimumSize + len(payload)),
+				})
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(header.UDPMinimumSize + len(payload)),
+					TransportProtocol: header.UDPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x7843,
+		},
+		{
+			name: "TCP",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + header.TCPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.TCPProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.TCPMinimumSize)
+				header.TCP(transportHdr).Encode(&header.TCPFields{
+					SrcPort:    1234,
+					DstPort:    5678,
+					SeqNum:     1,
+					AckNum:     1,
+					DataOffset: uint8(header.TCPMinimumSize),
+				})
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(header.TCPMinimumSize + len(payload)),
+					TransportProtocol: header.TCPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x284a,
+		},
+		{
+			name: "TCP with IPv6 Extension Headers (Hop-by-Hop)",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + 8 + header.TCPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.TCPProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.TCPMinimumSize)
+				header.TCP(transportHdr).Encode(&header.TCPFields{
+					SrcPort:    1234,
+					DstPort:    5678,
+					SeqNum:     1,
+					AckNum:     1,
+					DataOffset: uint8(header.TCPMinimumSize),
+				})
+
+				// Push IPv6 base header and 8-byte Hop-by-Hop extension header into NetworkHeader.
+				netHdr := pkt.NetworkHeader().Push(header.IPv6MinimumSize + 8)
+				ipHeader := header.IPv6(netHdr[:header.IPv6MinimumSize])
+				ipHeader.Encode(&header.IPv6Fields{
+					// Total IPv6 payload includes extension header (8 bytes) + TCP header + data.
+					PayloadLength:     uint16(8 + header.TCPMinimumSize + len(payload)),
+					TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6HopByHopOptionsExtHdrIdentifier),
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				copy(netHdr[header.IPv6MinimumSize:], []byte{
+					uint8(header.TCPProtocolNumber), // Next header
+					0,                               // Hdr Ext Len (0 means 8 bytes total)
+					1, 4, 0, 0, 0, 0,                // PadN option
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x284a,
+		},
+		{
+			name: "UDP with IPv6 Extension Headers (Destination Options)",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + 8 + header.UDPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.UDPMinimumSize)
+				header.UDP(transportHdr).Encode(&header.UDPFields{
+					SrcPort: 1234,
+					DstPort: 5678,
+					Length:  uint16(header.UDPMinimumSize + len(payload)),
+				})
+
+				// Push IPv6 base header and 8-byte Destination Options extension header into NetworkHeader.
+				netHdr := pkt.NetworkHeader().Push(header.IPv6MinimumSize + 8)
+				ipHeader := header.IPv6(netHdr[:header.IPv6MinimumSize])
+				ipHeader.Encode(&header.IPv6Fields{
+					// Total IPv6 payload includes extension header (8 bytes) + UDP header + data.
+					PayloadLength:     uint16(8 + header.UDPMinimumSize + len(payload)),
+					TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6DestinationOptionsExtHdrIdentifier),
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				copy(netHdr[header.IPv6MinimumSize:], []byte{
+					uint8(header.UDPProtocolNumber), // Next header
+					0,                               // Hdr Ext Len (0 means 8 bytes total)
+					1, 4, 0, 0, 0, 0,                // PadN option
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x7843,
+		},
+		{
+			name: "Invalid UDP packet (transport header too short)",
+			pkt: func() *stack.PacketBuffer {
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + 4,
+					Payload:            buffer.MakeWithView(buffer.NewViewSize(0)),
+				})
+				pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+				// Insufficient transport header size (< header.UDPMinimumSize).
+				pkt.TransportHeader().Push(4)
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     4,
+					TransportProtocol: header.UDPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "Invalid TCP packet (transport header too short)",
+			pkt: func() *stack.PacketBuffer {
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + 10,
+					Payload:            buffer.MakeWithView(buffer.NewViewSize(0)),
+				})
+				pkt.TransportProtocolNumber = header.TCPProtocolNumber
+
+				// Insufficient transport header size (< header.TCPMinimumSize).
+				pkt.TransportHeader().Push(10)
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     10,
+					TransportProtocol: header.TCPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "Invalid ICMPv6 packet (transport header too short)",
+			pkt: func() *stack.PacketBuffer {
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + 4,
+					Payload:            buffer.MakeWithView(buffer.NewViewSize(0)),
+				})
+				pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+
+				// Insufficient transport header size (< header.ICMPv6MinimumSize).
+				pkt.TransportHeader().Push(4)
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     4,
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "GSO NeedsCsum skips recalculation",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + header.TCPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.TCPProtocolNumber
+				pkt.GSOOptions = stack.GSO{
+					Type:      stack.GSOTCPv6,
+					NeedsCsum: true,
+				}
+
+				transportHdr := pkt.TransportHeader().Push(header.TCPMinimumSize)
+				tcpHdr := header.TCP(transportHdr)
+				tcpHdr.Encode(&header.TCPFields{
+					SrcPort:    1234,
+					DstPort:    5678,
+					DataOffset: uint8(header.TCPMinimumSize),
+				})
+				tcpHdr.SetChecksum(0x1234)
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(header.TCPMinimumSize + len(payload)),
+					TransportProtocol: header.TCPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x1234,
+		},
+		{
+			name: "ICMPv6 Echo Request",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + header.ICMPv6MinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.ICMPv6MinimumSize)
+				icmpHdr := header.ICMPv6(transportHdr)
+				icmpHdr.SetType(header.ICMPv6EchoRequest)
+				icmpHdr.SetIdent(1234)
+				icmpHdr.SetSequence(1)
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(header.ICMPv6MinimumSize + len(payload)),
+					TransportProtocol: header.ICMPv6ProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x0e51,
+		},
+		{
+			name: "ICMPv6 with IPv6 Extension Headers (Hop-by-Hop)",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + 8 + header.ICMPv6MinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.ICMPv6MinimumSize)
+				icmpHdr := header.ICMPv6(transportHdr)
+				icmpHdr.SetType(header.ICMPv6EchoRequest)
+				icmpHdr.SetIdent(1234)
+				icmpHdr.SetSequence(1)
+
+				// Push IPv6 base header and 8-byte Hop-by-Hop extension header into NetworkHeader.
+				netHdr := pkt.NetworkHeader().Push(header.IPv6MinimumSize + 8)
+				ipHeader := header.IPv6(netHdr[:header.IPv6MinimumSize])
+				ipHeader.Encode(&header.IPv6Fields{
+					// Total IPv6 payload includes extension header (8 bytes) + ICMPv6 header + data.
+					PayloadLength:     uint16(8 + header.ICMPv6MinimumSize + len(payload)),
+					TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6HopByHopOptionsExtHdrIdentifier),
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				copy(netHdr[header.IPv6MinimumSize:], []byte{
+					uint8(header.ICMPv6ProtocolNumber), // Next header
+					0,                                  // Hdr Ext Len (0 means 8 bytes total)
+					1, 4, 0, 0, 0, 0,                   // PadN option
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x0e51,
+		},
+		{
+			name: "RXChecksumValidated skips recalculation",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + header.TCPMinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.TCPProtocolNumber
+				pkt.RXChecksumValidated = true
+
+				transportHdr := pkt.TransportHeader().Push(header.TCPMinimumSize)
+				tcpHdr := header.TCP(transportHdr)
+				tcpHdr.Encode(&header.TCPFields{
+					SrcPort:    1234,
+					DstPort:    5678,
+					DataOffset: uint8(header.TCPMinimumSize),
+				})
+				tcpHdr.SetChecksum(0x4321)
+
+				ipHeader := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+				ipHeader.Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(header.TCPMinimumSize + len(payload)),
+					TransportProtocol: header.TCPProtocolNumber,
+					HopLimit:          64,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				return pkt
+			}(),
+			wantChecksum: 0x4321,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pkt := test.pkt
+			defer pkt.DecRef()
+			err := recalculateChecksum(pkt, r)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("recalculateChecksum succeeded, wanted error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("recalculateChecksum failed: %s", err)
+			}
+
+			var gotChecksum uint16
+			switch pkt.TransportProtocolNumber {
+			case header.UDPProtocolNumber:
+				gotChecksum = header.UDP(pkt.TransportHeader().Slice()).Checksum()
+			case header.TCPProtocolNumber:
+				gotChecksum = header.TCP(pkt.TransportHeader().Slice()).Checksum()
+			case header.ICMPv6ProtocolNumber:
+				gotChecksum = header.ICMPv6(pkt.TransportHeader().Slice()).Checksum()
+			}
+
+			if gotChecksum != test.wantChecksum {
+				t.Errorf("got checksum = 0x%04x, want 0x%04x", gotChecksum, test.wantChecksum)
+			}
+		})
 	}
 }

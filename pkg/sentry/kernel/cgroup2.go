@@ -18,9 +18,12 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/ebpf"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Cgroup2Ctrl represents a supported cgroup v2 controller.
@@ -39,11 +42,63 @@ const (
 	Cgroup2NumControllers
 )
 
+// Cgroup2BPFProgram represents a single cgroup2 eBPF program.
+//
+// +stateify savable
+type Cgroup2BPFProgram struct {
+	// Prog represents the program attached at this slot.
+	Prog *ebpf.Program
+
+	// Flags is the full set of per-program flags.
+	Flags uint32
+}
+
+// Cgroup2BPFAttachmentSlot stores a single slot where programs can be attached.
+// There is one slot per attachment type.
+//
+// +stateify savable
+type Cgroup2BPFAttachmentSlot struct {
+	// Progs represents the programs attached at this slot.
+	//
+	// Linux uses a linked list here, but since BPF_CGROUP_MAX_PROGS=64,
+	// the removal cost shouldn't be too bad.
+	Progs []*Cgroup2BPFProgram
+
+	// Flags stores the slot-wide attachment flags for this attachment slot.
+	Flags uint8
+
+	// Revision stores the current revision for this attachment slot.
+	//
+	// To match Linux, the revision reported to userspace is 1 larger than
+	// the revision stored here.
+	Revision uint64
+}
+
+// Cgroup2BPF stores eBPF programs associated with a cgroup2 node.
+//
+// +stateify savable
+type Cgroup2BPF struct {
+	// Slots stores the programs slot for each cgroup attachment type.
+	Slots [ebpf.MAX_CGROUP_BPF_ATTACH_TYPE]Cgroup2BPFAttachmentSlot
+}
+
 // Cgroup2 is an interface representing a cgroup v2 node.
 type Cgroup2 interface {
 	// Path returns the root-relative path of the cgroup.
 	// Used by procfs.
 	Path() string
+
+	// ReadControl implements background accessible reading for cgroup v2 control files.
+	ReadControl(ctx context.Context, name string) (string, error)
+
+	// WriteControl implements background accessible writing for cgroup v2 control files.
+	WriteControl(ctx context.Context, name string, val string) error
+
+	// PathFrom returns the path of the cgroup relative to nsRoot, following
+	// Linux's cgroup_path_ns() semantics: the result always starts with '/',
+	// and contains leading "/.." components if the cgroup is not a descendant
+	// of nsRoot. Used by procfs for cgroup namespace path virtualization.
+	PathFrom(nsRoot Cgroup2) string
 
 	// The following are used by clone() and CreateProcess().
 	// CanEnter checks if a task can enter the cgroup.
@@ -53,12 +108,38 @@ type Cgroup2 interface {
 	// Called by exiting tasks.
 	Exit(ctx context.Context, t *Task)
 
-	// Called by clone() to check permissions for CLONE_CGROUP_INTO.
-	CanCloneInto(ctx context.Context, creds *auth.Credentials) error
+	// Called by clone() to check permissions for CLONE_CGROUP_INTO. ns is
+	// the forking task's cgroup namespace.
+	CanCloneInto(ctx context.Context, creds *auth.Credentials, ns *CgroupNamespace) error
 
 	// KillSeq returns the kill sequence number of the cgroup.
 	// It helps prevent fork()s racing with cgroup.kill.
 	KillSeq() uint64
+
+	// ApplyFreezeCreditDelta adjusts this cgroup's freeze-credit counter
+	// by delta, self-acquiring its lock. Caller must pass the cgroup a
+	// prior applyFreezeSigLocked/resolveFreezeCreditSigLocked returned.
+	ApplyFreezeCreditDelta(ctx context.Context, delta FreezeCreditDelta)
+
+	// Deleted returns true if the cgroup has been deleted.
+	Deleted() bool
+
+	// IfBPF runs f if the cgroup has eBPF filters present.
+	//
+	// f may access the eBPF structure as read-only.
+	IfBPF(f func(*Cgroup2BPF))
+
+	// WriteBPF initializes the cgroup's eBPF filter structure if it
+	// is not present, then runs f.
+	//
+	// f may access the eBPF structure for reading or writing, or its
+	// ancestors' eBPF structures for reading.
+	//
+	// If an eBPF structure was not present, and f returns an error,
+	// the initialization of the eBPF structure is not applied.
+	//
+	// WriteBPF returns the error returned by f.
+	WriteBPF(f func(*Cgroup2BPF, []*Cgroup2BPF) error) error
 }
 
 // Cgroup2FS is the public interface to cgroup2fs.
@@ -68,6 +149,9 @@ type Cgroup2FS interface {
 
 	// RootCgroup returns the root cgroup v2 node.
 	RootCgroup() Cgroup2
+
+	// FindCgroup returns the cgroup v2 node at the specified root-relative path.
+	FindCgroup(ctx context.Context, path string) (Cgroup2, error)
 
 	// LockTree locks the cgroup2fs tree for writing.
 	LockTree()
@@ -79,10 +163,14 @@ type Cgroup2FS interface {
 	RUnlockTree()
 
 	// StealControllerLocked transfers ownership of the controller
-	// away from the v2 hierarchy if a v1 hierarchy mounts it.
+	// away from the v2 hierarchy if a v1 hierarchy mounts it. Callers
+	// must have called LockTree, and must not hold CgroupRegistry.mu:
+	// the implementation acquires cgroup2fs task locks, which may not
+	// be taken under the (leaf) registry mutex.
 	StealControllerLocked(ctx context.Context, cType Cgroup2Ctrl) error
 	// ReturnControllerLocked returns ownership of the controller
-	// to the v2 hierarchy when a v1 hierarchy unmounts it.
+	// to the v2 hierarchy when a v1 hierarchy unmounts it. The locking
+	// preconditions of StealControllerLocked apply.
 	ReturnControllerLocked(ctx context.Context, cType Cgroup2Ctrl)
 }
 
@@ -105,9 +193,9 @@ func (t *Task) Cgroup2() Cgroup2 {
 	return t.cgroup2
 }
 
-// getCgroup2NodeFromFD returns the cgroup v2 node associated with the cgroupFD.
+// GetCgroup2NodeFromFD returns the cgroup v2 node associated with the cgroupFD.
 // If the cgroupFD is not valid, returns an error.
-func (t *Task) getCgroup2NodeFromFD(cgroupFD uint64) (Cgroup2, error) {
+func (t *Task) GetCgroup2NodeFromFD(cgroupFD uint64) (Cgroup2, error) {
 	if cgroupFD > math.MaxInt32 {
 		return nil, linuxerr.EINVAL
 	}
@@ -132,18 +220,133 @@ func (t *Task) getCgroup2NodeFromFD(cgroupFD uint64) (Cgroup2, error) {
 	return c, nil
 }
 
-// GetCgroup2Entry returns the cgroup v2 entry if cgroup v2 is mounted.
-func (t *Task) GetCgroup2Entry() *TaskCgroupEntry {
+// GetCgroup2Entry returns the cgroup v2 entry if cgroup v2 is mounted. The
+// cgroup path is expressed relative to the root of readerNS, the cgroup
+// namespace of the task reading the entry. If readerNS is nil (e.g. for
+// background contexts), the absolute path is used.
+func (t *Task) GetCgroup2Entry(readerNS *CgroupNamespace) *TaskCgroupEntry {
 	var path string
 	if c := t.Cgroup2(); c != nil {
-		path = c.Path()
+		if readerNS != nil {
+			path = c.PathFrom(readerNS.Root())
+		} else {
+			path = c.Path()
+		}
+		if c.Deleted() {
+			path += " (deleted)"
+		}
 	}
 	if path == "" {
 		path = "/"
 	}
 	return &TaskCgroupEntry{
 		HierarchyID: 0,
-		Controllers: "",
 		Path:        path,
 	}
+}
+
+// CgroupNamespace represents a cgroup namespace. A cgroup namespace
+// virtualizes the view of a task's cgroups: paths in /proc/<pid>/cgroup are
+// shown relative to the namespace root, and cgroup2 mounts created from
+// within the namespace are rooted at the namespace root.
+//
+// +stateify savable
+type CgroupNamespace struct {
+	// root is the cgroup2 node this namespace is rooted at. It was the
+	// creating task's cgroup at the time the namespace was created, and does
+	// not change even if that task subsequently migrates. Immutable.
+	root Cgroup2
+
+	// userns is the user namespace that owns this cgroup namespace. Immutable.
+	userns *auth.UserNamespace
+
+	// mu protects inode.
+	mu sync.Mutex `state:"nosave"`
+
+	// inode is the nsfs inode backing /proc/<pid>/ns/cgroup for this
+	// namespace. It also holds this namespace's reference count.
+	// +checklocks:mu
+	inode *nsfs.Inode
+}
+
+// newCgroupNamespace creates a new cgroup namespace rooted at root and owned
+// by userns.
+func newCgroupNamespace(root Cgroup2, userns *auth.UserNamespace) *CgroupNamespace {
+	return &CgroupNamespace{
+		root:   root,
+		userns: userns,
+	}
+}
+
+// NewCgroupNamespace creates a new cgroup namespace rooted at root and owned
+// by userns, along with its backing nsfs inode. The returned namespace holds
+// one reference, owned by the caller.
+func (k *Kernel) NewCgroupNamespace(ctx context.Context, root Cgroup2, userns *auth.UserNamespace) *CgroupNamespace {
+	ns := newCgroupNamespace(root, userns)
+	ns.SetInode(nsfs.NewInode(ctx, k.nsfsMount, ns))
+	return ns
+}
+
+// Root returns the cgroup2 node this namespace is rooted at.
+func (ns *CgroupNamespace) Root() Cgroup2 {
+	return ns.root
+}
+
+// UserNamespace returns the user namespace that owns this cgroup namespace.
+func (ns *CgroupNamespace) UserNamespace() *auth.UserNamespace {
+	return ns.userns
+}
+
+// Type implements vfs.Namespace.Type.
+func (ns *CgroupNamespace) Type() string {
+	return "cgroup"
+}
+
+// Destroy implements vfs.Namespace.Destroy.
+func (ns *CgroupNamespace) Destroy(ctx context.Context) {}
+
+// SetInode sets the nsfs inode of the cgroup namespace.
+func (ns *CgroupNamespace) SetInode(inode *nsfs.Inode) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode = inode
+}
+
+// GetInode returns the nsfs inode associated with the cgroup namespace.
+func (ns *CgroupNamespace) GetInode() *nsfs.Inode {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	return ns.inode
+}
+
+// IncRef increments the namespace's reference count.
+func (ns *CgroupNamespace) IncRef() {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode.IncRef()
+}
+
+// DecRef decrements the namespace's reference count.
+func (ns *CgroupNamespace) DecRef(ctx context.Context) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.inode.DecRef(ctx)
+}
+
+// CgroupNamespace returns the task's cgroup namespace.
+func (t *Task) CgroupNamespace() *CgroupNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.cgroupns
+}
+
+// GetCgroupNamespace takes a reference on the task's cgroup namespace and
+// returns it. It returns nil if the task has exited.
+func (t *Task) GetCgroupNamespace() *CgroupNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.cgroupns != nil {
+		t.cgroupns.IncRef()
+	}
+	return t.cgroupns
 }

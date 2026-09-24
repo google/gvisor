@@ -1353,7 +1353,7 @@ func (ls *Layers) linkLayers() {
 }
 
 // ToBytes converts the Layers into bytes. It creates a linked list of the Layer
-// structs and then concatentates the output of ToBytes on each Layer.
+// structs and then concatenates the output of ToBytes on each Layer.
 func (ls *Layers) ToBytes() ([]byte, error) {
 	ls.linkLayers()
 	outBytes := []byte{}

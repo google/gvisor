@@ -12,21 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifdef __linux__
+#include <linux/capability.h>
+#include <linux/if_ether.h>
+#include <sys/syscall.h>
+#endif  // __linux__
 #include <net/if.h>
+#include <net/if_arp.h>
 #include <netinet/if_ether.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
 #include <netpacket/packet.h>
 #include <poll.h>
+#include <sched.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <limits>
+#include <tuple>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"

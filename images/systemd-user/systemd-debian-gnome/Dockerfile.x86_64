@@ -1,0 +1,192 @@
+# A Debian container that boots systemd and runs a headless Wayland GNOME
+# session, accessible over RDP from port 3389.
+#
+#   docker build -t systemd-debian-gnome - < Dockerfile.x86_64
+#   docker run -d --runtime=runsc --name gnome --privileged \
+#     -p 127.0.0.1:3389:3389 \
+#     systemd-debian-gnome
+#   xfreerdp3 /v:localhost:3389 /u:gnome /p:gnome /cert:ignore /sound
+
+# Download the VS Code .deb in a throwaway stage.
+FROM scratch AS vscode-deb
+ADD https://go.microsoft.com/fwlink/?LinkID=760868 /code.deb
+
+# Tell systemd and friends they are running inside a container.
+FROM debian:trixie
+ENV container=docker
+
+# systemd, the GNOME desktop, the RDP server, and audio.
+RUN set -eux; \
+    export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update; \
+    apt-get install -y \
+        systemd systemd-sysv dbus-user-session sudo \
+        gnome-core gnome-remote-desktop gnome-terminal \
+        libgl1-mesa-dri pipewire-audio wireplumber openssl; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+# Google's APT signing key, used by the Chrome repository below.
+ADD https://dl.google.com/linux/linux_signing_key.pub \
+    /etc/apt/keyrings/google-chrome.asc
+RUN chmod 0644 /etc/apt/keyrings/google-chrome.asc
+
+# Install Chrome from Google's repository, and drop Firefox.
+RUN set -eux; \
+    export DEBIAN_FRONTEND=noninteractive; \
+    printf '%s\n' \
+        'Types: deb' \
+        'URIs: https://dl.google.com/linux/chrome/deb/' \
+        'Suites: stable' \
+        'Components: main' \
+        'Architectures: amd64' \
+        'Signed-By: /etc/apt/keyrings/google-chrome.asc' \
+        > /etc/apt/sources.list.d/google-chrome.sources; \
+    apt-get update; \
+    apt-get install -y google-chrome-stable; \
+    apt-get purge -y firefox-esr; \
+    apt-get autoremove --purge -y; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+# Install VS Code from the .deb fetched above.
+COPY --from=vscode-deb /code.deb /tmp/code.deb
+RUN set -eux; \
+    export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update; \
+    apt-get install -y /tmp/code.deb; \
+    rm -f /tmp/code.deb; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+# Mask units that are pointless or broken in a container.
+RUN set -eu; \
+    ln -sf /dev/null /etc/systemd/system/gdm3.service; \
+    ln -sf /dev/null /etc/systemd/system/display-manager.service; \
+    ln -sf /dev/null /etc/systemd/system/dbus-org.freedesktop.ModemManager1.service; \
+    ln -sf /dev/null /etc/systemd/system/fwupd.service; \
+    ln -sf /dev/null /etc/systemd/system/systemd-networkd.service; \
+    ln -sf /dev/null /etc/systemd/system/systemd-networkd.socket; \
+    ln -sf /dev/null /etc/systemd/system/systemd-resolved.service
+
+# Disable wireplumber libcamera
+RUN set -eu; \
+    mkdir -p /etc/wireplumber/wireplumber.conf.d; \
+    printf '%s\n' \
+        'wireplumber.profiles = {' \
+        '  main = {' \
+        '    monitor.libcamera = disabled' \
+        '    monitor.libcamera.reserve-device = disabled' \
+        '  }' \
+        '}' \
+        > /etc/wireplumber/wireplumber.conf.d/50-no-libcamera.conf
+
+# Autostart a headless, software-rendered Wayland GNOME session.
+RUN set -eu; \
+    mkdir -p /etc/environment.d; \
+    printf '%s\n' \
+        'XDG_SESSION_TYPE=wayland' \
+        'XDG_CURRENT_DESKTOP=GNOME' \
+        'GNOME_SHELL_SESSION_MODE=gnome' \
+        'LIBGL_ALWAYS_SOFTWARE=1' \
+        > /etc/environment.d/90-gnome-headless.conf; \
+    mkdir -p /etc/systemd/user/org.gnome.Shell@wayland.service.d; \
+    printf '%s\n' \
+        '[Service]' \
+        'ExecStart=' \
+        'ExecStart=/usr/bin/gnome-shell --wayland --headless' \
+        > /etc/systemd/user/org.gnome.Shell@wayland.service.d/headless.conf; \
+    printf '%s\n' \
+        '[Unit]' \
+        'Description=Headless GNOME session' \
+        'After=dbus.socket' \
+        '[Service]' \
+        'Type=simple' \
+        'ExecStart=/usr/bin/gnome-session --session=gnome' \
+        'Restart=no' \
+        '[Install]' \
+        'WantedBy=default.target' \
+        > /etc/systemd/user/gnome-headless-session.service; \
+    mkdir -p /etc/systemd/user/default.target.wants \
+        /etc/systemd/user/gnome-session.target.wants; \
+    ln -sf /etc/systemd/user/gnome-headless-session.service \
+        /etc/systemd/user/default.target.wants/gnome-headless-session.service; \
+    ln -sf /usr/lib/systemd/user/gnome-remote-desktop-headless.service \
+        /etc/systemd/user/gnome-session.target.wants/gnome-remote-desktop-headless.service
+
+# Turn on RDP over TLS, and turn off idling, locking, and sleep.
+RUN set -eu; \
+    printf '%s\n' \
+        '[org.gnome.shell]' \
+        "favorite-apps=['google-chrome.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Software.desktop', 'org.gnome.TextEditor.desktop', 'org.gnome.Calculator.desktop', 'yelp.desktop']" \
+        '' \
+        '[org.gnome.desktop.remote-desktop.rdp]' \
+        'enable=true' \
+        'view-only=false' \
+        'negotiate-port=false' \
+        "tls-cert='/etc/gnome-remote-desktop/rdp-tls.crt'" \
+        "tls-key='/etc/gnome-remote-desktop/rdp-tls.key'" \
+        '' \
+        '[org.gnome.desktop.session]' \
+        'idle-delay=0' \
+        '' \
+        '[org.gnome.desktop.screensaver]' \
+        'idle-activation-enabled=false' \
+        'lock-enabled=false' \
+        '' \
+        '[org.gnome.settings-daemon.plugins.power]' \
+        "sleep-inactive-ac-type='nothing'" \
+        "sleep-inactive-battery-type='nothing'" \
+        'idle-dim=false' \
+        > /usr/share/glib-2.0/schemas/90_gnome-headless-rdp.gschema.override; \
+    glib-compile-schemas /usr/share/glib-2.0/schemas
+
+# Login credentials for the RDP session.
+ARG RDP_USER=gnome
+ARG RDP_PASSWORD=gnome
+
+# Create the user; lingering starts its session at boot.
+RUN set -eu; \
+    useradd -m -s /bin/bash -G sudo "$RDP_USER"; \
+    echo "$RDP_USER:$RDP_PASSWORD" | chpasswd; \
+    mkdir -p /var/lib/systemd/linger; \
+    touch "/var/lib/systemd/linger/$RDP_USER"
+
+# Self-signed TLS certificate and stored RDP credentials.
+RUN set -eu; \
+    mkdir -p /etc/gnome-remote-desktop; \
+    openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
+        -subj "/C=US/ST=NA/L=NA/O=gvisordemo/CN=gnome-headless" \
+        -out /etc/gnome-remote-desktop/rdp-tls.crt \
+        -keyout /etc/gnome-remote-desktop/rdp-tls.key 2>/dev/null; \
+    chgrp "$RDP_USER" /etc/gnome-remote-desktop/rdp-tls.key; \
+    chmod 640 /etc/gnome-remote-desktop/rdp-tls.key; \
+    HOME_DIR="$(getent passwd "$RDP_USER" | cut -d: -f6)"; \
+    mkdir -p "$HOME_DIR/.local/share/gnome-remote-desktop"; \
+    printf '%s\n' \
+        '[RDP]' \
+        "credentials={'username': <'$RDP_USER'>, 'password': <'$RDP_PASSWORD'>}" \
+        > "$HOME_DIR/.local/share/gnome-remote-desktop/credentials.ini"; \
+    chmod 600 "$HOME_DIR/.local/share/gnome-remote-desktop/credentials.ini"; \
+    chown -R "$RDP_USER:$RDP_USER" "$HOME_DIR/.local"
+
+# Entrypoint shim: make /sys/fs/cgroup writable before systemd.
+RUN set -eu; \
+    printf '%s\n' \
+        '#!/bin/sh' \
+        'if [ ! -w /sys/fs/cgroup ]; then' \
+        '  mount -o remount,rw /sys/fs/cgroup 2>/dev/null || echo "oci-init: warning: /sys/fs/cgroup is read-only and could not be remounted; systemd will fail to start. Needs CAP_SYS_ADMIN, and the AppArmor docker-default profile must not be blocking mount()." >&2' \
+        'fi' \
+        'exec "$@"' \
+        > /usr/local/sbin/oci-init; \
+    chmod +x /usr/local/sbin/oci-init
+
+# The RDP port.
+EXPOSE 3389
+
+# systemd shuts down cleanly on SIGRTMIN+3, not SIGTERM.
+STOPSIGNAL SIGRTMIN+3
+
+# Boot systemd as PID 1.
+ENTRYPOINT ["/usr/local/sbin/oci-init"]
+CMD ["/sbin/init"]

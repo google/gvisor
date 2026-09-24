@@ -45,7 +45,9 @@ type dynamicCacheEntry struct {
 type neighborCacheMu struct {
 	neighborCacheRWMutex `state:"nosave"`
 
-	cache   map[tcpip.Address]*neighborEntry
+	// +checklocks:neighborCacheRWMutex
+	cache map[tcpip.Address]*neighborEntry
+	// +checklocks:neighborCacheRWMutex
 	dynamic dynamicCacheEntry
 }
 

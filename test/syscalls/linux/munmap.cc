@@ -14,6 +14,10 @@
 
 #include <sys/mman.h>
 
+#include <cerrno>
+#include <cstddef>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
 

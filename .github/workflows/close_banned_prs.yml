@@ -1,0 +1,48 @@
+# This workflow closes and locks PRs opened by users that are banned from
+# contributing.
+name: Close Banned PRs
+
+"on":
+  # `pull_request_target` is needed because PRs from forks only get a
+  # read-only token under `pull_request`. This workflow never checks out or
+  # runs any PR content, and never interpolates it into an expression, so the
+  # usual `pull_request_target` risks do not apply.
+  pull_request_target:  # zizmor: ignore[dangerous-triggers]
+    types: [opened, reopened]
+
+jobs:
+  close:
+    if: github.repository == 'google/gvisor'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # comment / close the PR
+      issues: write        # lock the PR conversation
+    steps:
+    - name: Close and lock PR if its author is banned
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        # Whitespace-separated list of banned GitHub usernames.
+        BANNED_USERS: 'Rajkaran-122'
+      with:
+        script: |-
+            const banned = process.env.BANNED_USERS.split(/\s+/)
+                .filter((user) => user !== '')
+                .map((user) => user.toLowerCase());
+            const author = context.payload.pull_request.user.login;
+            if (!banned.includes(author.toLowerCase())) {
+              core.info(`${author} is not banned; leaving PR open.`);
+              return;
+            }
+            const pr = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            };
+            await github.rest.issues.createComment({
+              ...pr,
+              body: 'This PR was closed automatically because its author is ' +
+                  'not allowed to contribute to this repository.',
+            });
+            await github.rest.issues.update({...pr, state: 'closed'});
+            await github.rest.issues.lock({...pr, lock_reason: 'spam'});
+            core.info(`Closed and locked PR #${pr.issue_number} from ${author}.`);

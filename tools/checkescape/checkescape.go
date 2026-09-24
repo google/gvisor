@@ -392,7 +392,7 @@ func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 			return nil, fmt.Errorf("unable to populate temp file: %w", err)
 		}
 		// Seek to the beginning.
-		if _, err := f.Seek(0, os.SEEK_SET); err != nil {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("unable to seek in temp file: %w", err)
 		}
 		input = f
@@ -738,7 +738,7 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 				}
 
 				// If this package is the atomic package, the implementation
-				// may be replaced by instrinsics that don't have analysis.
+				// may be replaced by intrinsics that don't have analysis.
 				if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
 					return
 				}

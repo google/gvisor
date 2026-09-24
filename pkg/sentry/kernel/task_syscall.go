@@ -173,7 +173,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 				Errorno: int64(ExtractErrno(err, int(sysno))),
 			},
 		}
-		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallRawEnter, sysno))
+		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallRawExit, sysno))
 		if !fields.Context.Empty() {
 			info.ContextData = &pb.ContextData{}
 			LoadSeccheckData(t, fields.Context, info.ContextData)

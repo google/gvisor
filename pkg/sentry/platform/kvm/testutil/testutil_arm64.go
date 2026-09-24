@@ -29,6 +29,17 @@ import (
 // It returns true or false.
 func TLSWorks() bool
 
+// AddrOfPACLoop returns the address of a function that executes non-hint
+// pointer authentication instructions and then performs a syscall, in a
+// loop.
+func AddrOfPACLoop() uintptr
+func pacLoop()
+
+// LoadPair loads two 64-bit values from addr using LDP (which does not set
+// ESR_EL2.ISV on a Stage-2 fault, triggering KVM_EXIT_ARM_NISV if unmapped in
+// Stage-2).
+func LoadPair(addr uintptr) (uint64, uint64)
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn uintptr) {
 	regs.Pc = uint64(fn)

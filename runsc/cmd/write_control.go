@@ -47,12 +47,17 @@ func (*WriteControl) Usage() string {
 	return `write-control <container-id> <controller> <cgroup-path> <control-value-name> <data-to-write>
 
 Where "<container-id>" is the name for the instance of the container,
-"<controller>" is the name of an active cgroupv1 controller, <cgroup-path> is
-the path to the cgroup to write and <control-value-name> is the name of the
-control file to write.
+"<controller>" is the name of an active cgroup controller (used for cgroup v1
+hierarchies; ignored for cgroup v2 unified hierarchy), <cgroup-path> is the path
+to the cgroup to write and <control-value-name> is the name of the control file
+to write.
 
 EXAMPLE:
+       # cgroup v1:
        # runsc write-control <container-id> memory / memory.limit_in_bytes 536870912
+       # cgroup v2:
+       # runsc write-control <container-id> memory /subcgroup memory.max 524288000
+       # runsc write-control <container-id> memory /subcgroup memory.max max
 `
 }
 

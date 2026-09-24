@@ -13,7 +13,7 @@ go_test(
         "trace_test.go",
     ],
     data = [
-        "//runsc",
+        "//:release",
         "//test/trace/workload",
     ],
     library = ":trace",

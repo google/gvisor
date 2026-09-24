@@ -34,6 +34,9 @@ func TestDefault(t *testing.T) {
 	// "--root" is always set to something different than the default. Reset it
 	// to make it easier to test that default values do not generate flags.
 	c.RootDir = ""
+	if c.GoferNetworkNamespace != GoferNetworkNamespaceNull {
+		t.Errorf("GoferNetworkNamespace=%q, want null", c.GoferNetworkNamespace)
+	}
 
 	// All defaults doesn't require setting flags.
 	flags := c.ToFlags()
@@ -57,6 +60,9 @@ func TestFromFlags(t *testing.T) {
 	if err := testFlags.Lookup("network").Value.Set("none"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
+	if err := testFlags.Lookup("gofer-network-namespace").Value.Set("host"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
 
 	c, err := NewFromFlags(testFlags)
 	if err != nil {
@@ -74,6 +80,9 @@ func TestFromFlags(t *testing.T) {
 	if want := NetworkNone; c.Network != want {
 		t.Errorf("Network=%v, want: %v", c.Network, want)
 	}
+	if want := GoferNetworkNamespaceHost; c.GoferNetworkNamespace != want {
+		t.Errorf("GoferNetworkNamespace=%v, want: %v", c.GoferNetworkNamespace, want)
+	}
 }
 
 func TestToFlagsFromFlags(t *testing.T) {
@@ -84,14 +93,15 @@ func TestToFlagsFromFlags(t *testing.T) {
 	testFlags.Set("profile", "false") // Matches default value.
 	testFlags.Set("num-network-channels", "123")
 	testFlags.Set("network", "none")
+	testFlags.Set("gofer-network-namespace", "host")
 	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	flags := c.ToFlags()
-	if len(flags) != 5 {
-		t.Errorf("wrong number of flags set, want: 5, got: %d: %s", len(flags), flags)
+	if len(flags) != 6 {
+		t.Errorf("wrong number of flags set, want: 6, got: %d: %s", len(flags), flags)
 	}
 	t.Logf("Flags: %s", flags)
 	fm := map[string]string{}
@@ -100,11 +110,12 @@ func TestToFlagsFromFlags(t *testing.T) {
 		fm[kv[0]] = kv[1]
 	}
 	for name, want := range map[string]string{
-		"--root":                 "some-path",
-		"--debug":                "true",
-		"--profile":              "false",
-		"--num-network-channels": "123",
-		"--network":              "none",
+		"--root":                    "some-path",
+		"--debug":                   "true",
+		"--profile":                 "false",
+		"--num-network-channels":    "123",
+		"--network":                 "none",
+		"--gofer-network-namespace": "host",
 	} {
 		if got, ok := fm[name]; ok {
 			if got != want {
@@ -118,11 +129,12 @@ func TestToFlagsFromFlags(t *testing.T) {
 
 func TestToFlagsFromManual(t *testing.T) {
 	c := &Config{
-		RootDir:            "some-path",
-		Debug:              true,
-		ProfileEnable:      false, // Matches default flag value.
-		NumNetworkChannels: 123,
-		Network:            NetworkNone,
+		RootDir:               "some-path",
+		Debug:                 true,
+		ProfileEnable:         false, // Matches default flag value.
+		NumNetworkChannels:    123,
+		Network:               NetworkNone,
+		GoferNetworkNamespace: GoferNetworkNamespaceHost,
 	}
 
 	// Create a second config with flag-default values that we'll copy from.
@@ -144,15 +156,15 @@ func TestToFlagsFromManual(t *testing.T) {
 			// No flag set for this field.
 			continue
 		}
-		if name == "root" || name == "debug" || name == "profile" || name == "num-network-channels" || name == "network" {
+		if name == "root" || name == "debug" || name == "profile" || name == "num-network-channels" || name == "network" || name == "gofer-network-namespace" {
 			continue
 		}
 		cfgReflect.Field(i).Set(cfgDefaultReflect.Field(i))
 	}
 
 	flags := c.ToFlags()
-	if len(flags) != 4 {
-		t.Errorf("wrong number of flags set, want: 4, got: %d: %s", len(flags), flags)
+	if len(flags) != 5 {
+		t.Errorf("wrong number of flags set, want: 5, got: %d: %s", len(flags), flags)
 	}
 	t.Logf("Flags: %s", flags)
 	fm := map[string]string{}
@@ -161,10 +173,11 @@ func TestToFlagsFromManual(t *testing.T) {
 		fm[kv[0]] = kv[1]
 	}
 	for name, want := range map[string]string{
-		"--root":                 "some-path",
-		"--debug":                "true",
-		"--num-network-channels": "123",
-		"--network":              "none",
+		"--root":                    "some-path",
+		"--debug":                   "true",
+		"--num-network-channels":    "123",
+		"--network":                 "none",
+		"--gofer-network-namespace": "host",
 	} {
 		if got, ok := fm[name]; ok {
 			if got != want {
@@ -195,6 +208,11 @@ func TestInvalidFlags(t *testing.T) {
 			name:  "network",
 			value: "invalid",
 			error: "invalid network type",
+		},
+		{
+			name:  "gofer-network-namespace",
+			value: "invalid",
+			error: "invalid gofer network namespace",
 		},
 		{
 			name:  "qdisc",
@@ -230,6 +248,16 @@ func TestInvalidFlags(t *testing.T) {
 			name:  "overlay2",
 			value: "root:memory,sz=sdg",
 			error: "expected format is --overlay2",
+		},
+		{
+			name:  "sidecar-usage-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be DEFAULT, STRICT, or LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK",
+		},
+		{
+			name:  "sidecar-release-enforcement-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be NEVER, ALWAYS, or IF_RELEASE_BUILD",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -423,6 +451,11 @@ func TestOverrideError(t *testing.T) {
 			value: "invalid",
 			error: "invalid file access type",
 		},
+		{
+			name:  "in-sandbox-cgroup",
+			value: "invalid",
+			error: "invalid in-sandbox-cgroup",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := c.Override(testFlags, tc.name, tc.value, false); err == nil || !strings.Contains(err.Error(), tc.error) {
@@ -453,6 +486,14 @@ func TestOverrideAllowlist(t *testing.T) {
 			flag:  "debug",
 			value: "123",
 			error: "error setting flag",
+		},
+		{
+			flag:  "in-sandbox-cgroup",
+			value: "v1",
+		},
+		{
+			flag:  "in-sandbox-cgroup",
+			value: "v2",
 		},
 		{
 			flag:  "oci-seccomp",
@@ -923,5 +964,52 @@ func TestParseSerializeOverlay2(t *testing.T) {
 		if o.String() != "root:memory,size=1g" {
 			t.Fatalf("String mismatch, expecting ll:memory,size=1g, got %q", o.String())
 		}
+	})
+}
+
+func TestSignalUnkillablePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		val     string
+		want    SignalUnkillablePolicy
+		wantErr bool
+	}{
+		{val: "none", want: SignalUnkillableNone},
+		{val: "linux", want: SignalUnkillableLinux},
+		{val: "invalid", wantErr: true},
+	} {
+		t.Run(tc.val, func(t *testing.T) {
+			var p SignalUnkillablePolicy
+			err := p.Set(tc.val)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("p.Set(%q) succeeded, want error", tc.val)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("p.Set(%q) failed: %v", tc.val, err)
+			}
+			if p != tc.want {
+				t.Errorf("got %v, want %v", p, tc.want)
+			}
+			if p.String() != tc.val {
+				t.Errorf("p.String() = %q, want %q", p.String(), tc.val)
+			}
+			if p.Get() != tc.want {
+				t.Errorf("p.Get() = %v, want %v", p.Get(), tc.want)
+			}
+			if *p.Ptr() != tc.want {
+				t.Errorf("*p.Ptr() = %v, want %v", *p.Ptr(), tc.want)
+			}
+		})
+	}
+
+	t.Run("InvalidStringPanics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("expected panic for invalid policy string, got none")
+			}
+		}()
+		_ = SignalUnkillablePolicy(-1).String()
 	})
 }

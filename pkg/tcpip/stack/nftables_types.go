@@ -147,24 +147,3 @@ func (f AddressFamily) String() string {
 	}
 	panic(fmt.Sprintf("invalid address family: %d", int(f)))
 }
-
-//
-// Verdict Implementation.
-// There are two types of verdicts:
-// 1. Netfilter (External) Verdicts: Drop, Accept, Stolen, Queue, Repeat, Stop
-// 		These are terminal verdicts that are returned to the kernel.
-// 2. Nftable (Internal) Verdicts:, Continue, Break, Jump, Goto, Return
-// 		These are internal verdicts that only exist within the nftables library.
-// Both share the same numeric space (uint32 Verdict Code).
-//
-
-// NFVerdict represents the result of evaluating a packet against a rule or chain.
-type NFVerdict struct {
-	// Code is the numeric code that represents the verdict issued.
-	Code uint32
-
-	// ChainName is the name of the chain to continue evaluation if the verdict is
-	// Jump or Goto.
-	// Note: the chain must be in the same table as the current chain.
-	ChainName string
-}

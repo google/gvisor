@@ -40,6 +40,12 @@ type vdsoParams struct {
 	realtimeBaseCycles int64
 	realtimeBaseRef    int64
 	realtimeFrequency  uint64
+
+	monotonicRawAlias      uint64
+	monotonicRawReady      uint64
+	monotonicRawBaseCycles int64
+	monotonicRawBaseRef    int64
+	monotonicRawFrequency  uint64
 }
 
 // VDSOParamPage manages a VDSO parameter page.

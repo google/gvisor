@@ -39,7 +39,7 @@ func (*fdSender) Name() string {
 	return "fd_sender"
 }
 
-// Synopsis implements subcommands.Command.Synopsys.
+// Synopsis implements subcommands.Command.Synopsis.
 func (*fdSender) Synopsis() string {
 	return "creates a file and sends the FD over the socket"
 }
@@ -106,7 +106,7 @@ func (*fdReceiver) Name() string {
 	return "fd_receiver"
 }
 
-// Synopsis implements subcommands.Command.Synopsys.
+// Synopsis implements subcommands.Command.Synopsis.
 func (*fdReceiver) Synopsis() string {
 	return "reads an FD from a unix socket, and then does things to it"
 }

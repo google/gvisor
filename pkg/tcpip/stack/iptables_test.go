@@ -429,3 +429,47 @@ func TestNATConflict(t *testing.T) {
 		})
 	}
 }
+
+type jumpTarget struct {
+	target int
+}
+
+func (jt *jumpTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (RuleVerdict, int) {
+	return RuleJump, jt.target
+}
+
+func TestIPTablesJumpLoop(t *testing.T) {
+	iptables := DefaultTables(faketime.NewManualClock(), rand.New(rand.NewSource(0)))
+	table := Table{
+		Rules: []Rule{
+			// Rule 0 jumps to itself, forming an infinite loop.
+			{
+				Target: &jumpTarget{target: 0},
+			},
+			{
+				Target: &AcceptTarget{},
+			},
+		},
+		BuiltinChains: [NumHooks]int{
+			Prerouting:  0,
+			Input:       0,
+			Forward:     0,
+			Output:      0,
+			Postrouting: 0,
+		},
+		Underflows: [NumHooks]int{
+			Prerouting:  1,
+			Input:       1,
+			Forward:     1,
+			Output:      1,
+			Postrouting: 1,
+		},
+	}
+	iptables.ReplaceTable(FilterID, table, true /* ipv6 */)
+
+	// This should drop the packet (due to exceeding maxJumps) without a stack overflow.
+	pkt := v6PacketBuffer()
+	if iptables.CheckInput(pkt, "") {
+		t.Errorf("CheckInput with jump loop expected to drop packet, but got accept")
+	}
+}

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/capability.h>
 #include <sched.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -19,8 +20,12 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <climits>
+#include <cstddef>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_split.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"

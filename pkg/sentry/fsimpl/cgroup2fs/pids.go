@@ -163,13 +163,18 @@ func (p *pids) attach(ctx context.Context, actx *attachCtx) {
 
 	for curr, change := range netChange {
 		if change != 0 {
-			curr.mu.Lock()
-			curr.committed += change
-			if curr.committed > curr.peak {
-				curr.peak = curr.committed
-			}
-			curr.mu.Unlock()
+			curr.charge(change)
 		}
+	}
+}
+
+// charge adjusts the committed pid count by n and updates peak if increased.
+func (p *pids) charge(n int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.committed += n
+	if p.committed > p.peak {
+		p.peak = p.committed
 	}
 }
 

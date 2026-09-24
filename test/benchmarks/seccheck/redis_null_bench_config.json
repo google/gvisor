@@ -1,0 +1,18 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "points": [
+      {
+        "name": "syscall/read/enter"
+      },
+      {
+        "name": "syscall/write/enter"
+      }
+    ],
+    "sinks": [
+      {
+        "name": "null"
+      }
+    ]
+  }
+}

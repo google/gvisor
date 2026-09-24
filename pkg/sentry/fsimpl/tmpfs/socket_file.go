@@ -29,6 +29,10 @@ type socketFile struct {
 	ep    transport.BoundEndpoint
 }
 
+// newSocketFile creates a new socket file.
+//
+// If parentDir is not nil, certain fields (such as setgid and default ACL) will be inherited
+// from parentDir.
 func (fs *filesystem) newSocketFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, ep transport.BoundEndpoint, parentDir *directory) (*inode, error) {
 	file := &socketFile{ep: ep}
 	err := file.inode.init(file, fs, kuid, kgid, mode, parentDir)

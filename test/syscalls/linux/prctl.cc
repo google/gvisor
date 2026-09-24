@@ -12,18 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <linux/capability.h>
+#include <linux/prctl.h>
+#include <signal.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <cerrno>
+#include <csignal>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/signal_util.h"

@@ -44,9 +44,20 @@ DOCKER_BUILD_ARGS ?=
 # tests are using locally-defined images (that are consistent and idempotent).
 REMOTE_IMAGE_PREFIX ?= us-central1-docker.pkg.dev/gvisor-presubmit/gvisor-presubmit-images
 LOCAL_IMAGE_PREFIX  ?= gvisor.dev/images
-ALL_IMAGES          := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq)))
+ALL_IMAGES          := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | sort -u)))
 NON_TEST_IMAGES     := gpu/ollama/bench\|gpu/vllm\|gpu/triton\|tpu/vllm
-TEST_IMAGES         := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq | grep -v "$(NON_TEST_IMAGES)")))
+TEST_IMAGES         := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | sort -u | grep -v "$(NON_TEST_IMAGES)")))
+GPU_TEST_IMAGES     := $(filter gpu_% tpu_%,$(TEST_IMAGES))
+CPU_TEST_IMAGES     := $(filter-out gpu_% tpu_%,$(TEST_IMAGES))
+
+# Partitioning defaults (1-indexed; populated in CI via .buildkite/hooks/pre-command).
+PARTITION           ?= 1
+TOTAL_PARTITIONS    ?= 1
+
+# Shard image lists across available partitions (using round-robin 1-based indexing).
+SHARDED_CPU_IMAGES  := $(shell echo "$(CPU_TEST_IMAGES)" | tr ' ' '\n' | sort | awk 'NR % $(TOTAL_PARTITIONS) == ($(PARTITION) % $(TOTAL_PARTITIONS))' | tr '\n' ' ')
+SHARDED_GPU_IMAGES  := $(shell echo "$(GPU_TEST_IMAGES)" | tr ' ' '\n' | sort | awk 'NR % $(TOTAL_PARTITIONS) == ($(PARTITION) % $(TOTAL_PARTITIONS))' | tr '\n' ' ')
+SHARDED_ALL_IMAGES  := $(shell echo "$(TEST_IMAGES)" | tr ' ' '\n' | sort | awk 'NR % $(TOTAL_PARTITIONS) == ($(PARTITION) % $(TOTAL_PARTITIONS))' | tr '\n' ' ')
 SUB_IMAGES          := $(foreach image,$(ALL_IMAGES),$(if $(findstring _,$(image)),$(image),))
 IMAGE_GROUPS        := $(sort $(foreach image,$(SUB_IMAGES),$(firstword $(subst _, ,$(image)))))
 
@@ -72,6 +83,14 @@ list-all-test-images: ## List all test images.
 	@for image in $(TEST_IMAGES); do echo $${image}; done
 .PHONY: list-all-test-images
 
+list-cpu-images: ## List CPU test images.
+	@for image in $(SHARDED_CPU_IMAGES); do echo $${image}; done
+.PHONY: list-cpu-images
+
+list-gpu-images: ## List GPU test images.
+	@for image in $(SHARDED_GPU_IMAGES); do echo $${image}; done
+.PHONY: list-gpu-images
+
 load-all-images: ## Load all images.
 load-all-images: $(patsubst %,load-%,$(ALL_IMAGES))
 .PHONY: load-all-images
@@ -80,8 +99,16 @@ load-all-test-images: ## Load all test images.
 load-all-test-images: $(patsubst %,load-%,$(TEST_IMAGES))
 .PHONY: load-all-test-images
 
+test-cpu-images: ## Test CPU test images.
+test-cpu-images: $(patsubst %,test-%,$(SHARDED_CPU_IMAGES))
+.PHONY: test-cpu-images
+
+test-gpu-images: ## Test GPU/ML test images.
+test-gpu-images: $(patsubst %,test-%,$(SHARDED_GPU_IMAGES))
+.PHONY: test-gpu-images
+
 test-all-test-images: ## Test all test images.
-test-all-test-images: $(patsubst %,test-%,$(TEST_IMAGES))
+test-all-test-images: $(patsubst %,test-%,$(SHARDED_ALL_IMAGES))
 .PHONY: test-all-test-images
 
 push-all-images: ## Push all images.

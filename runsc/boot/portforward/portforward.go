@@ -82,7 +82,7 @@ func (pf *Proxy) readFrom(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// writeTo writes to the application's vfs.FileDescription and reads from the shim.
+// readTo writes to the application's vfs.FileDescription and reads from the shim.
 func (pf *Proxy) readTo(ctx context.Context) error {
 	buf := make([]byte, 16384 /* 16kb buffer size */)
 	for ctx.Err() == nil {
@@ -142,11 +142,11 @@ func (pf *Proxy) AddCleanup(cu func()) {
 // and their goroutines exit.
 func (pf *Proxy) Close() {
 	pf.once.Do(func() {
-		pf.cu.Clean()
 		pf.cancelFrom <- struct{}{}
-		defer close(pf.cancelFrom)
+		close(pf.cancelFrom)
 		pf.cancelTo <- struct{}{}
-		defer close(pf.cancelTo)
+		close(pf.cancelTo)
+		pf.wg.Wait()
+		pf.cu.Clean()
 	})
-	pf.wg.Wait()
 }

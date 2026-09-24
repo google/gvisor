@@ -14,13 +14,35 @@
 
 #include "test/util/cgroup_util.h"
 
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <ostream>
+#include <utility>
+#include <vector>
+
+#include "gtest/gtest.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/mount_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
+#include "test/util/temp_path.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {

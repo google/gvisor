@@ -14,6 +14,7 @@
 
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_generic.h"
 #include "test/syscalls/linux/socket_unix.h"
 #include "test/syscalls/linux/socket_unix_cmsg.h"

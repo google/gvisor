@@ -104,6 +104,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 }
 
 // +checklocks:sr.s.ep.mu
+// +checklocksexclude:sr.s.rtt.rttMutex
 func (sr *sackRecovery) DoRecovery(rcvdSeg *segment, fastRetransmit bool) {
 	snd := sr.s
 	if fastRetransmit {

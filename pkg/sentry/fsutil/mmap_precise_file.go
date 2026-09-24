@@ -56,8 +56,11 @@ type MmapPreciseFile struct {
 	// mappings is a set of internal mappings of the device. The value is a
 	// mapping object.
 	//
+	// mappings holds host virtual addresses belonging to the current sentry
+	// process, so it must not be saved.
+	//
 	// +checklocks:mapsMu
-	mappings mappingSet
+	mappings mappingSet `state:"nosave"`
 }
 
 // SetFD implements MmapFile.SetFD.
@@ -113,7 +116,7 @@ func (f *MmapPreciseFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 			}
 			*refs = newRefs
 		} else if gap.Ok() {
-			seg = f.refs.Insert(gap, fr.Intersect(gap.Range()), 1)
+			seg = f.refs.InsertWithoutMerging(gap, fr.Intersect(gap.Range()), 1)
 		}
 		if seg.End() >= fr.End {
 			break

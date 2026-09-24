@@ -87,6 +87,12 @@ func (op *payloadLoad) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *payloadLoad) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (op *payloadLoad) destroy() {}
+
 // evaluate for PayloadLoad loads data from the packet payload into the
 // destination register.
 func (op payloadLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
@@ -95,7 +101,7 @@ func (op payloadLoad) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 
 	// Breaks if could not retrieve packet data.
 	if payload == nil || len(payload) < int(op.offset)+op.blen {
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 		return
 	}
 
@@ -131,7 +137,7 @@ func (op payloadLoad) GetExprName() string {
 
 func (op payloadLoad) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_PAYLOAD_DREG, nlmsg.PutU32(formatRegIdxForDump(op.dregIdx)))
+	m.PutAttr(linux.NFTA_PAYLOAD_DREG, formatRegIdxForDump(op.dregIdx))
 	m.PutAttr(linux.NFTA_PAYLOAD_BASE, nlmsg.PutU32(uint32(op.base)))
 	m.PutAttr(linux.NFTA_PAYLOAD_OFFSET, nlmsg.PutU32(uint32(op.offset)))
 	m.PutAttr(linux.NFTA_PAYLOAD_LEN, nlmsg.PutU32(uint32(op.blen)))

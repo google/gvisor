@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -71,6 +72,8 @@ func (rw *pluginStackRW) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		rc = 0
 	} else if dsts.NumBlocks() == 1 {
 		rc = cgo.Read(rw.handle, dsts.Head().Addr(), dsts.Head().Len())
+		// Prevent Go GC from freeing memory during CGO call.
+		runtime.KeepAlive(dsts)
 	} else {
 		rc = cgo.Readv(rw.handle, iovecsFromBlockSeq(dsts, rw))
 	}
@@ -91,6 +94,8 @@ func (rw *pluginStackRW) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) 
 			rc = cgo.Sendto(rw.handle, 0, 0, 0, rw.to)
 		} else if srcs.NumBlocks() == 1 {
 			rc = cgo.Sendto(rw.handle, srcs.Head().Addr(), srcs.Head().Len(), 0, rw.to)
+			// Prevent Go GC from freeing memory during CGO call.
+			runtime.KeepAlive(srcs)
 		} else {
 			iovs := iovecsFromBlockSeq(srcs, rw)
 			rc = cgo.Sendmsg(rw.handle, iovs, rw.to, 0)
@@ -102,6 +107,8 @@ func (rw *pluginStackRW) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) 
 			rc = cgo.Write(rw.handle, 0, 0)
 		} else if srcs.NumBlocks() == 1 {
 			rc = cgo.Write(rw.handle, srcs.Head().Addr(), srcs.Head().Len())
+			// Prevent Go GC from freeing memory during CGO call.
+			runtime.KeepAlive(srcs)
 		} else {
 			rc = cgo.Writev(rw.handle, iovecsFromBlockSeq(srcs, rw))
 		}

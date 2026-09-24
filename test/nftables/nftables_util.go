@@ -70,3 +70,11 @@ func chainCmd(cmd string, args []string) error {
 func ruleCmd(cmd string, args []string) error {
 	return nftCmd(append([]string{cmd, "rule"}, args...))
 }
+
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("cmd %s %v failed: %v, output: %s", name, args, err, string(out))
+	}
+	return nil
+}

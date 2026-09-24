@@ -17,7 +17,12 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstring>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/logging.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 

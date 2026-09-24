@@ -17,6 +17,7 @@ package boot
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -99,7 +100,7 @@ type CPUUsage struct {
 	PerCPU []uint64 `json:"percpu,omitempty"`
 }
 
-func (cm *containerManager) getUsageFromCgroups(file control.CgroupControlFile) (uint64, error) {
+func (cm *containerManager) readControlFile(file control.CgroupControlFile) (string, error) {
 	var out control.CgroupsResults
 	args := control.CgroupsReadArgs{
 		Args: []control.CgroupsReadArg{
@@ -110,20 +111,20 @@ func (cm *containerManager) getUsageFromCgroups(file control.CgroupControlFile) 
 	}
 	cgroups := control.Cgroups{Kernel: cm.l.k}
 	if err := cgroups.ReadControlFiles(&args, &out); err != nil {
-		return 0, err
+		return "", err
 	}
 	if len(out.Results) != 1 {
-		return 0, fmt.Errorf("expected 1 result, got %d, raw: %+v", len(out.Results), out)
+		return "", fmt.Errorf("expected 1 result, got %d, raw: %+v", len(out.Results), out)
 	}
-	val, err := out.Results[0].Unpack()
+	return out.Results[0].Unpack()
+}
+
+func (cm *containerManager) getUsageFromCgroups(file control.CgroupControlFile) (uint64, error) {
+	val, err := cm.readControlFile(file)
 	if err != nil {
 		return 0, err
 	}
-	usage, err := strconv.ParseUint(val, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return usage, nil
+	return strconv.ParseUint(val, 10, 64)
 }
 
 // Event gets the events from the container.
@@ -158,6 +159,9 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 		Controller: "memory",
 		Path:       "/" + *cid,
 		Name:       "memory.usage_in_bytes",
+	}
+	if cm.l.k.Cgroup2FS().EverMounted() {
+		memFile.Name = "memory.current"
 	}
 	memUsage, err := cm.getUsageFromCgroups(memFile)
 	if err != nil {
@@ -204,17 +208,48 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 	cm.l.mu.Lock()
 	defer cm.l.mu.Unlock()
 
-	for cid := range cm.l.containerIDs {
-		cpuacctFile := control.CgroupControlFile{
+	isV2 := cm.l.k.Cgroup2FS().EverMounted()
+	for name, cid := range cm.l.containerIDs {
+		// Before the introduction of cgroup v2, the container name, not the ID, was incorrectly used in
+		// the cgroup path. For avoiding behavior changes when cgroup v1 is in use, we use the container
+		// ID only for cgroup v2.
+		id := name
+		if isV2 {
+			id = cid
+		}
+		file := control.CgroupControlFile{
 			Controller: "cpuacct",
-			Path:       "/" + cid,
+			Path:       "/" + id,
 			Name:       "cpuacct.usage",
 		}
-		cpuUsage, err := cm.getUsageFromCgroups(cpuacctFile)
+		if isV2 {
+			file.Controller = "cpu"
+			file.Name = "cpu.stat"
+		}
+		valStr, err := cm.readControlFile(file)
 		if err != nil {
 			return nil, err
 		}
-		usage[cid] = cpuUsage
+		var cpuUsage uint64
+		if isV2 {
+			for _, line := range strings.Split(valStr, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "usage_usec ") {
+					usec, err := strconv.ParseUint(strings.TrimPrefix(line, "usage_usec "), 10, 64)
+					if err != nil {
+						return nil, fmt.Errorf("parsing usage_usec in cpu.stat: %w", err)
+					}
+					cpuUsage = usec * 1000
+					break
+				}
+			}
+		} else {
+			cpuUsage, err = strconv.ParseUint(valStr, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+		}
+		usage[id] = cpuUsage
 	}
 	return usage, nil
 }

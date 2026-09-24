@@ -22,10 +22,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/net/nettest"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -764,18 +764,11 @@ func makePipe() (c1, c2 net.Conn, stop func(), err error) {
 }
 
 func TestTCPConnTransfer(t *testing.T) {
-	c1, c2, _, err := makePipe()
+	c1, c2, stop, err := makePipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := c1.Close(); err != nil {
-			t.Error("c1.Close():", err)
-		}
-		if err := c2.Close(); err != nil {
-			t.Error("c2.Close():", err)
-		}
-	}()
+	t.Cleanup(stop)
 
 	c1.SetDeadline(time.Now().Add(time.Second))
 	c2.SetDeadline(time.Now().Add(time.Second))
@@ -1011,22 +1004,19 @@ func TestNetTest(t *testing.T) {
 
 // NOTE(gvisor.dev/issue/9885): Regression test.
 func TestDeadlineTimerAfterZeroValue(t *testing.T) {
-	timer := &deadlineTimer{}
-	timer.init()
-
-	wg := sync.WaitGroup{}
-	ch := timer.readCancel()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	synctest.Test(t, func(t *testing.T) {
+		timer := newDeadlineTimer()
+		ch := timer.readCancel()
+		// Keep the future timer pending even if the host deschedules this test.
+		for _, deadline := range []time.Time{time.Now().Add(10 * time.Second), {}, time.Unix(1, 0)} {
+			if err := timer.SetReadDeadline(deadline); err != nil {
+				t.Fatalf("SetReadDeadline(%v): %v", deadline, err)
+			}
+		}
 		select {
 		case <-ch:
-		case <-time.After(1 * time.Second):
-			t.Fail()
+		default:
+			t.Fatal("original cancellation channel was not closed")
 		}
-	}()
-	timer.SetReadDeadline(time.Now().Add(10 * time.Second))
-	timer.SetReadDeadline(time.Time{})
-	timer.SetReadDeadline(time.Unix(1, 0))
-	wg.Wait()
+	})
 }

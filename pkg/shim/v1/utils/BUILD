@@ -9,6 +9,7 @@ go_library(
     name = "utils",
     srcs = [
         "annotations.go",
+        "fuse.go",
         "utils.go",
         "volumes.go",
     ],
@@ -19,15 +20,20 @@ go_library(
         "//runsc/specutils",
         "@com_github_containerd_log//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
 go_test(
     name = "utils_test",
     size = "small",
-    srcs = ["volumes_test.go"],
+    srcs = [
+        "fuse_test.go",
+        "volumes_test.go",
+    ],
     library = ":utils",
     deps = [
+        "//runsc/specutils",
         "@com_github_mohae_deepcopy//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],

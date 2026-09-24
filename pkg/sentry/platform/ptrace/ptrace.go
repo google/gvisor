@@ -234,10 +234,16 @@ type PTrace struct {
 
 // New returns a new ptrace-based implementation of the platform interface.
 func New() (*PTrace, error) {
+	return NewWithOptions(platform.Options{})
+}
+
+// NewWithOptions returns a new ptrace-based implementation of the platform interface with custom options.
+func NewWithOptions(opts platform.Options) (*PTrace, error) {
 	mbCh := hostmm.Probe(false)
 	stubInitialized.Do(func() {
 		// Initialize the stub.
 		stubInit()
+		opts.StartupTimer.Reached("ptrace stub initialized")
 
 		// Create the master process for the global pool. This must be
 		// done before initializing any other processes.
@@ -246,12 +252,16 @@ func New() (*PTrace, error) {
 			// Should never happen.
 			panic("unable to initialize ptrace master: " + err.Error())
 		}
+		opts.StartupTimer.Reached("ptrace master process created")
 
 		// Set the master on the globalPool.
 		globalPool.master = master
 	})
+	opts.StartupTimer.Reached("waiting for membarrier")
+	memBarrier := <-mbCh
+	opts.StartupTimer.Reached("host membarrier probed")
 	return &PTrace{
-		UseHostGlobalMemoryBarrier: platform.UseHostGlobalMemoryBarrier{MemBarrier: <-mbCh},
+		UseHostGlobalMemoryBarrier: platform.UseHostGlobalMemoryBarrier{MemBarrier: memBarrier},
 	}, nil
 }
 
@@ -285,8 +295,8 @@ func (*PTrace) ConcurrencyCount() int {
 
 type constructor struct{}
 
-func (*constructor) New(platform.Options) (platform.Platform, error) {
-	return New()
+func (*constructor) New(opts platform.Options) (platform.Platform, error) {
+	return NewWithOptions(opts)
 }
 
 func (*constructor) OpenDevice(_ string) (*fd.FD, error) {

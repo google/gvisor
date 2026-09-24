@@ -17,10 +17,12 @@ package container
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -36,6 +38,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -194,6 +197,38 @@ func waitForProcessCount(cont *Container, want int) error {
 	}
 	// Gives plenty of time as tests can run slow under --race.
 	return testutil.Poll(cb, pollTimeout)
+}
+
+// waitForStableProcessList waits for the container to have exactly want
+// processes and returns them. The same PIDs must be observed in two
+// consecutive poll samples: a single sample can count a transient task in
+// place of a process that has not been forked yet.
+func waitForStableProcessList(cont *Container, want int) ([]*control.Process, error) {
+	var prev []kernel.ThreadID
+	var procs []*control.Process
+	cb := func() error {
+		var err error
+		procs, err = cont.Processes()
+		if err != nil {
+			err = fmt.Errorf("error getting process data from container: %w", err)
+			return &backoff.PermanentError{Err: err}
+		}
+		// Processes() returns the list sorted by PID.
+		pids := make([]kernel.ThreadID, 0, len(procs))
+		for _, p := range procs {
+			pids = append(pids, p.PID)
+		}
+		stable := slices.Equal(pids, prev)
+		prev = pids
+		if len(pids) != want || !stable {
+			return fmt.Errorf("waiting for a stable list of %d processes, got %v", want, pids)
+		}
+		return nil
+	}
+	if err := testutil.Poll(cb, pollTimeout); err != nil {
+		return nil, err
+	}
+	return procs, nil
 }
 
 func blockUntilWaitable(pid int) error {
@@ -477,6 +512,44 @@ func sleepSpecConf(t *testing.T) (*specs.Spec, *config.Config) {
 	return testutil.NewSpecWithArgs("sleep", "1000"), testutil.TestConfig(t)
 }
 
+func TestPostStartHookFailure(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			spec, _ := sleepSpecConf(t)
+			spec.Hooks = &specs.Hooks{
+				Poststart: []specs.Hook{{
+					Path: "/bin/sh",
+					Args: []string{"/bin/sh", "-c", "exit 1"},
+				}},
+			}
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer func() {
+				if c != nil {
+					_ = c.Destroy()
+				}
+			}()
+
+			if err := c.Start(conf); err == nil {
+				t.Fatal("container start succeeded with a failing poststart hook")
+			}
+		})
+	}
+}
+
 func TestGetNetworkConfig(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -621,12 +694,18 @@ func TestLifecycle(t *testing.T) {
 			}
 
 			// Load the container from disk and check the status.
-			c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
-			if err != nil {
-				t.Fatalf("error loading container: %v", err)
-			}
-			if got, want := c.Status, Stopped; got != want {
-				t.Errorf("container status got %v, want %v", got, want)
+			if err := testutil.Poll(func() error {
+				var err error
+				c, err = Load(rootDir, fullID, LoadOpts{Exact: true})
+				if err != nil {
+					return err
+				}
+				if got, want := c.Status, Stopped; got != want {
+					return fmt.Errorf("container status got %v, want %v", got, want)
+				}
+				return nil
+			}, pollTimeout); err != nil {
+				t.Fatalf("container status check failed: %v", err)
 			}
 
 			// Destroy the container.
@@ -1037,17 +1116,17 @@ func TestKillPid(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Verify that all processes are running.
-			if err := waitForProcessCount(cont, nProcs); err != nil {
+			// Verify that all processes are running. The PID list must be
+			// stable across poll samples so that transient tasks are not
+			// miscounted as members of the task tree.
+			procs, err := waitForStableProcessList(cont, nProcs)
+			if err != nil {
 				t.Fatalf("timed out waiting for processes to start: %v", err)
 			}
+			t.Logf("current process list:\n%v", control.ProcessListToTable(procs))
 
-			// Kill the child process with the largest PID.
-			procs, err := cont.Processes()
-			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
-			}
-			t.Logf("current process list: %v", procs)
+			// Kill the child process with the largest PID. Processes are
+			// created in a chain, so this is the deepest child.
 			var pid int32
 			for _, p := range procs {
 				if pid < int32(p.PID) {
@@ -1058,20 +1137,26 @@ func TestKillPid(t *testing.T) {
 				t.Fatalf("failed to signal process %d: %v", pid, err)
 			}
 
-			// Verify that one process is gone.
-			if err := waitForProcessCount(cont, nProcs-1); err != nil {
-				procs, procsErr := cont.Processes()
-				t.Fatalf("error waiting for processes: %v; current processes: %v / %v", err, procs, procsErr)
-			}
-
-			procs, err = cont.Processes()
-			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
-			}
-			for _, p := range procs {
-				if pid == int32(p.PID) {
-					t.Fatalf("pid %d is still alive, which should be killed", pid)
+			// Verify that the killed process is gone. It stays visible as a
+			// zombie until its parent reaps it, so poll.
+			if err := testutil.Poll(func() error {
+				procs, err := cont.Processes()
+				if err != nil {
+					err = fmt.Errorf("error getting process data from container: %w", err)
+					return &backoff.PermanentError{Err: err}
 				}
+				if got, want := len(procs), nProcs-1; got != want {
+					return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
+				}
+				for _, p := range procs {
+					if pid == int32(p.PID) {
+						return fmt.Errorf("pid %d is still alive, but should have been killed", pid)
+					}
+				}
+				return nil
+			}, pollTimeout); err != nil {
+				procs, procsErr := cont.Processes()
+				t.Fatalf("error waiting for process %d to be killed: %v; current processes (err: %v):\n%v", pid, err, procsErr, control.ProcessListToTable(procs))
 			}
 		})
 	}
@@ -1109,15 +1194,14 @@ func TestSignalProcessGroup(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Wait for all 3 processes: init, child, grandchild.
-			if err := waitForProcessCount(cont, 3); err != nil {
-				t.Fatalf("timed out waiting for processes: %v", err)
-			}
-
-			// Collect PGIDs.
-			procs, err := cont.Processes()
+			// Wait for all 3 processes: init, child, grandchild. The PID
+			// list must be stable across poll samples so that transient
+			// tasks are not miscounted as members of the task tree: a
+			// transient task forked by the child even shares its PGID, which
+			// would make the group signal below miss the grandchild.
+			procs, err := waitForStableProcessList(cont, 3)
 			if err != nil {
-				t.Fatalf("failed to get process list: %v", err)
+				t.Fatalf("timed out waiting for processes: %v", err)
 			}
 			t.Logf("before signal: %s", procListToString(procs))
 
@@ -1164,481 +1248,441 @@ func TestSignalProcessGroup(t *testing.T) {
 	}
 }
 
-// testCheckpointRestore creates a container that continuously writes successive
-// integers to a file. To test checkpoint and restore functionality, the
-// container is checkpointed and the last number printed to the file is
-// recorded. Then, it is restored in two new containers and the first number
-// printed from these containers is checked. Both should be the next consecutive
-// number after the last number from the checkpointed container.
-func testCheckpointRestore(t *testing.T, conf *config.Config, compression statefile.CompressionLevel, newSpecWithScript func(string) *specs.Spec) {
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp failed: %v", err)
+// killedBySIGKILL reports whether ws says the container's init process was
+// killed by SIGKILL. Killing init can tear the sandbox down before it can
+// respond to the Sandbox.Wait RPC, in which case we fall back to the sandbox
+// process's own exit status, which reports the signal as `128+SIGKILL`.
+func killedBySIGKILL(ws unix.WaitStatus) bool {
+	if ws.Signaled() {
+		return ws.Signal() == unix.SIGKILL
 	}
-	defer os.RemoveAll(dir)
-	if err := os.Chmod(dir, 0777); err != nil {
-		t.Fatalf("error chmoding file: %q, %v", dir, err)
-	}
-
-	outputPath := filepath.Join(dir, "output")
-	outputFile, err := createWriteableOutputFile(outputPath)
-	if err != nil {
-		t.Fatalf("error creating output file: %v", err)
-	}
-	defer outputFile.Close()
-
-	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
-	spec := newSpecWithScript(script)
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer cleanup()
-
-	// Create and start the container.
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont.Destroy()
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
-	}
-
-	// Wait until application has ran.
-	if err := waitForFileNotEmpty(outputFile); err != nil {
-		t.Fatalf("Failed to wait for output file: %v", err)
-	}
-
-	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
-		t.Fatalf("error checkpointing container to empty file: %v", err)
-	}
-
-	lastNum, err := readOutputNum(outputPath, -1)
-	if err != nil {
-		t.Fatalf("error with outputFile: %v", err)
-	}
-
-	// Delete and recreate file before restoring.
-	if err := os.Remove(outputPath); err != nil {
-		t.Fatalf("error removing file")
-	}
-	outputFile2, err := createWriteableOutputFile(outputPath)
-	if err != nil {
-		t.Fatalf("error creating output file: %v", err)
-	}
-	defer outputFile2.Close()
-
-	// Restore into a new container with different ID (e.g. clone). Keep the
-	// initial container running to ensure no conflict with it.
-	args2 := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-	cont2, err := New(conf, args2)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont2.Destroy()
-
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
-		t.Fatalf("error restoring container: %v", err)
-	}
-
-	if !cont2.Sandbox.Restored {
-		t.Fatalf("sandbox returned wrong value for Sandbox.Restored, got: false, want: true")
-	}
-
-	if cont2.Sandbox.Checkpointed {
-		t.Fatalf("sandbox returned wrong value for Sandbox.Checkpointed, got: true, want: false")
-	}
-
-	// Wait until application has ran.
-	if err := waitForFileNotEmpty(outputFile2); err != nil {
-		t.Fatalf("Failed to wait for output file: %v", err)
-	}
-
-	firstNum, err := readOutputNum(outputPath, 0)
-	if err != nil {
-		t.Fatalf("error with outputFile: %v", err)
-	}
-
-	// Check that lastNum is one less than firstNum and that the container
-	// picks up from where it left off.
-	if lastNum+1 != firstNum {
-		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
-	}
-	cont2.Destroy()
-	cont2 = nil
-
-	// Restore into a container using the same ID (e.g. save/resume). It requires
-	// the original container to cease to exist because they share the same identity.
-	cont.Destroy()
-	cont = nil
-
-	// Delete and recreate file before restoring.
-	if err := os.Remove(outputPath); err != nil {
-		t.Fatalf("error removing file")
-	}
-	outputFile3, err := createWriteableOutputFile(outputPath)
-	if err != nil {
-		t.Fatalf("error creating output file: %v", err)
-	}
-	defer outputFile3.Close()
-
-	cont3, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont3.Destroy()
-
-	if err := cont3.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
-		t.Fatalf("error restoring container: %v", err)
-	}
-
-	// Wait until application has ran.
-	if err := waitForFileNotEmpty(outputFile3); err != nil {
-		t.Fatalf("Failed to wait for output file: %v", err)
-	}
-
-	firstNum2, err := readOutputNum(outputPath, 0)
-	if err != nil {
-		t.Fatalf("error with outputFile: %v", err)
-	}
-
-	// Check that lastNum is one less than firstNum and that the container
-	// picks up from where it left off.
-	if lastNum+1 != firstNum2 {
-		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
-	}
-	cont3.Destroy()
+	return ws.ExitStatus() == 128+int(unix.SIGKILL)
 }
 
-// TestCheckpointRestore does the checkpoint/restore test on each platform.
-func TestCheckpointRestore(t *testing.T) {
-	// Skip overlay because test requires writing to host file.
+// TestSignalUnkillablePolicy verifies Linux SIGNAL_UNKILLABLE semantics for PID 1:
+//   - Peer processes in the same PID namespace sending unhandled default-fatal signals
+//     (like SIGKILL) to PID 1 have their signals discarded.
+//   - Peer processes sending handled signals to PID 1 have their signals delivered.
+//   - External/host signals sent to PID 1 (via cont.SignalProcess) are forced and
+//     take effect normally.
+//   - Under SignalUnkillableNone, peer signals kill PID 1 normally.
+func TestSignalUnkillablePolicy(t *testing.T) {
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			compressionLevels := []statefile.CompressionLevel{
-				statefile.CompressionLevelNone,
-				statefile.CompressionLevelFlateBestSpeed,
-			}
-			for _, compression := range compressionLevels {
-				t.Run(string(compression), func(t *testing.T) {
-					testCheckpointRestore(t, conf, compression, func(script string) *specs.Spec {
-						return testutil.NewSpecWithArgs("bash", "-c", script)
-					})
+			t.Run("LinuxPolicyPeerSIGKILLDiscarded", func(t *testing.T) {
+				testConf := *conf
+				testConf.SignalUnkillablePolicy = config.SignalUnkillableLinux
+
+				spec, _ := sleepSpecConf(t)
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+
+				cont, err := New(&testConf, Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
 				})
-			}
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(&testConf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+
+				if err := waitForProcessCount(cont, 1); err != nil {
+					t.Fatalf("timed out waiting for init process: %v", err)
+				}
+
+				// Exec a peer process in the container that sends SIGKILL to PID 1.
+				ws, err := execute(&testConf, cont, "/bin/sh", "-c", "kill -9 1")
+				if err != nil {
+					t.Fatalf("execute kill -9 1 failed: %v", err)
+				}
+				if ws.ExitStatus() != 0 {
+					t.Fatalf("kill command exited with status %d, want 0", ws.ExitStatus())
+				}
+
+				// Verify PID 1 survived the peer SIGKILL.
+				time.Sleep(100 * time.Millisecond)
+				procs, err := cont.Processes()
+				if err != nil || len(procs) != 1 || procs[0].PID != 1 {
+					t.Fatalf("expected PID 1 to survive peer SIGKILL, got err=%v, procs=%s", err, procListToString(procs))
+				}
+
+				// Now send host SIGKILL to PID 1; external signals bypass SIGNAL_UNKILLABLE.
+				if err := cont.SignalProcess(unix.SIGKILL, 1); err != nil {
+					t.Fatalf("failed to send host SIGKILL: %v", err)
+				}
+				waitStatus, err := cont.Wait()
+				if err != nil {
+					t.Fatalf("failed waiting for container after host SIGKILL: %v", err)
+				}
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected container killed by SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
+				}
+			})
+
+			t.Run("LinuxPolicyPeerHandledSignalDelivered", func(t *testing.T) {
+				testConf := *conf
+				testConf.SignalUnkillablePolicy = config.SignalUnkillableLinux
+
+				readyFile := filepath.Join(testutil.TmpDir(), fmt.Sprintf("ready-%s", testutil.RandomContainerID()))
+				defer os.Remove(readyFile)
+
+				spec := testutil.NewSpecWithArgs(
+					"/bin/sh", "-c",
+					"trap 'exit 0' USR1; touch \"$1\"; while true; do sleep 0.05; done",
+					"sh", readyFile,
+				)
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+
+				cont, err := New(&testConf, Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
+				})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(&testConf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+
+				// Wait for container to install its trap handler and create the ready file.
+				if err := testutil.Poll(func() error {
+					_, err := os.Stat(readyFile)
+					return err
+				}, pollTimeout); err != nil {
+					t.Fatalf("timed out waiting for container to install signal handler: %v", err)
+				}
+
+				// Exec peer process to send SIGUSR1 to PID 1.
+				if _, err := execute(&testConf, cont, "/bin/sh", "-c", "kill -USR1 1"); err != nil {
+					t.Fatalf("execute kill -USR1 1 failed: %v", err)
+				}
+
+				// Wait for PID 1 to handle the signal and exit with status 0.
+				waitStatus, err := cont.Wait()
+				if err != nil {
+					t.Fatalf("cont.Wait: %v", err)
+				}
+				if waitStatus.ExitStatus() != 0 {
+					t.Fatalf("expected exit status 0 after handled signal, got %v", waitStatus)
+				}
+			})
+
+			t.Run("NonePolicyPeerKillsInit", func(t *testing.T) {
+				testConf := *conf
+				testConf.SignalUnkillablePolicy = config.SignalUnkillableNone
+
+				spec, _ := sleepSpecConf(t)
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+
+				cont, err := New(&testConf, Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
+				})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(&testConf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+
+				if err := waitForProcessCount(cont, 1); err != nil {
+					t.Fatalf("timed out waiting for init process: %v", err)
+				}
+
+				// Peer sends SIGKILL; under None policy this kills PID 1 immediately.
+				_, _ = execute(&testConf, cont, "/bin/sh", "-c", "kill -9 1")
+				ws, err := cont.Wait()
+				if err != nil {
+					t.Fatalf("cont.Wait: %v", err)
+				}
+				if !killedBySIGKILL(ws) {
+					t.Fatalf("expected container killed by SIGKILL under policy=none, got %v (status=%d)", ws, ws.ExitStatus())
+				}
+			})
 		})
 	}
 }
 
-// TestCheckpointRestoreHostname verifies that hostname is updated on restore
-// if it was not changed inside the container, and is NOT updated if it was changed.
-func TestCheckpointRestoreHostname(t *testing.T) {
-	for _, changed := range []bool{false, true} {
-		t.Run(fmt.Sprintf("changed_%t", changed), func(t *testing.T) {
-			spec, conf := sleepSpecConf(t)
-			spec.Hostname = "old-host"
+// TestSignalUnkillablePolicyForcedSignals verifies forced signal delivery to PID 1
+// from the host under SignalUnkillableLinux:
+//   - Host SIGKILL is forced and terminates PID 1.
+//   - Host unhandled SIGTERM is forced but discarded for PID 1 with default handler.
+//   - Host handled signals (e.g. SIGUSR1 with installed handler) are forced and delivered.
+func TestSignalUnkillablePolicyForcedSignals(t *testing.T) {
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			t.Run("HostForcedSIGKILLTerminatesInit", func(t *testing.T) {
+				testConf := *conf
+				testConf.SignalUnkillablePolicy = config.SignalUnkillableLinux
 
-			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer cleanup()
-
-			args := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
-			}
-			cont, err := New(conf, args)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont.Destroy()
-			if err := cont.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-
-			// Verify initial hostname.
-			out, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "read -r name < /proc/sys/kernel/hostname && echo $name")
-			if err != nil {
-				t.Fatalf("exec failed: %v", err)
-			}
-			if got, want := strings.TrimSpace(string(out)), "old-host"; got != want {
-				t.Fatalf("hostname got %q, want %q", got, want)
-			}
-
-			if changed {
-				// Change hostname inside container.
-				_, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "echo user-host > /proc/sys/kernel/hostname")
+				spec, _ := sleepSpecConf(t)
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
 				if err != nil {
-					t.Logf("Failed to write to /proc/sys/kernel/hostname: %v, trying hostname command", err)
-					_, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "hostname user-host")
-					if err != nil {
-						t.Fatalf("Failed to change hostname: %v", err)
-					}
+					t.Fatalf("error setting up container: %v", err)
 				}
+				defer cleanup()
 
-				// Verify it changed.
-				out, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "read -r name < /proc/sys/kernel/hostname && echo $name")
+				cont, err := New(&testConf, Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
+				})
 				if err != nil {
-					t.Fatalf("exec failed: %v", err)
+					t.Fatalf("error creating container: %v", err)
 				}
-				if got, want := strings.TrimSpace(string(out)), "user-host"; got != want {
-					t.Fatalf("hostname got %q, want %q", got, want)
+				defer cont.Destroy()
+				if err := cont.Start(&testConf); err != nil {
+					t.Fatalf("error starting container: %v", err)
 				}
-			}
 
-			// Checkpoint.
-			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
-			if err != nil {
-				t.Fatalf("os.MkdirTemp failed: %v", err)
-			}
-			defer os.RemoveAll(dir)
-			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
-				t.Fatalf("error checkpointing: %v", err)
-			}
+				if err := waitForProcessCount(cont, 1); err != nil {
+					t.Fatalf("timed out waiting for init process: %v", err)
+				}
 
-			cont.Destroy()
+				// Host sends forced SIGKILL to PID 1.
+				if err := cont.SignalProcess(unix.SIGKILL, 1); err != nil {
+					t.Fatalf("failed to send host SIGKILL: %v", err)
+				}
+				waitStatus, err := cont.Wait()
+				if err != nil {
+					t.Fatalf("failed waiting for container: %v", err)
+				}
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected container killed by SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
+				}
+			})
 
-			// Restore with new spec.
-			spec2, _ := sleepSpecConf(t)
-			spec2.Hostname = "new-host"
+			t.Run("HostForcedUnhandledSIGTERMDiscarded", func(t *testing.T) {
+				testConf := *conf
+				testConf.SignalUnkillablePolicy = config.SignalUnkillableLinux
 
-			_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec2, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer cleanup2()
+				spec, _ := sleepSpecConf(t)
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
 
-			args2 := Args{
-				ID:        args.ID,
-				Spec:      spec2,
-				BundleDir: bundleDir2,
-			}
-			cont2, err := New(conf, args2)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont2.Destroy()
+				cont, err := New(&testConf, Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
+				})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(&testConf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
 
-			if err := cont2.Restore(conf, dir, false, false, nil); err != nil {
-				t.Fatalf("error restoring: %v", err)
-			}
+				if err := waitForProcessCount(cont, 1); err != nil {
+					t.Fatalf("timed out waiting for init process: %v", err)
+				}
 
-			// Verify hostname.
-			out, err = executeCombinedOutput(conf, cont2, nil, "/bin/sh", "-c", "read -r name < /proc/sys/kernel/hostname && echo $name")
-			if err != nil {
-				t.Fatalf("exec failed: %v", err)
-			}
-			want := "new-host"
-			if changed {
-				want = "user-host"
-			}
-			if got, want := strings.TrimSpace(string(out)), want; got != want {
-				t.Fatalf("hostname got %q, want %q", got, want)
-			}
+				// Host sends forced SIGTERM to PID 1. Since PID 1 has default action,
+				// the signal must be discarded per Linux SIGNAL_UNKILLABLE semantics.
+				if err := cont.SignalProcess(unix.SIGTERM, 1); err != nil {
+					t.Fatalf("failed to send host SIGTERM: %v", err)
+				}
+
+				// Verify PID 1 survived.
+				time.Sleep(100 * time.Millisecond)
+				procs, err := cont.Processes()
+				if err != nil || len(procs) != 1 || procs[0].PID != 1 {
+					t.Fatalf("expected PID 1 to survive unhandled host SIGTERM, got err=%v, procs=%s", err, procListToString(procs))
+				}
+
+				// Now terminate container with host SIGKILL.
+				if err := cont.SignalProcess(unix.SIGKILL, 1); err != nil {
+					t.Fatalf("failed to send host SIGKILL: %v", err)
+				}
+				waitStatus, err := cont.Wait()
+				if err != nil {
+					t.Fatalf("failed waiting for container: %v", err)
+				}
+				if !killedBySIGKILL(waitStatus) {
+					t.Fatalf("expected container killed by SIGKILL, got %v (status=%d)", waitStatus, waitStatus.ExitStatus())
+				}
+			})
+
+			t.Run("HostForcedHandledSignalDelivered", func(t *testing.T) {
+				testConf := *conf
+				testConf.SignalUnkillablePolicy = config.SignalUnkillableLinux
+
+				readyFile := filepath.Join(testutil.TmpDir(), fmt.Sprintf("ready-host-%s", testutil.RandomContainerID()))
+				defer os.Remove(readyFile)
+
+				spec := testutil.NewSpecWithArgs(
+					"/bin/sh", "-c",
+					"trap 'exit 42' USR1; touch \"$1\"; while true; do sleep 0.05; done",
+					"sh", readyFile,
+				)
+				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, &testConf)
+				if err != nil {
+					t.Fatalf("error setting up container: %v", err)
+				}
+				defer cleanup()
+
+				cont, err := New(&testConf, Args{
+					ID:        testutil.RandomContainerID(),
+					Spec:      spec,
+					BundleDir: bundleDir,
+				})
+				if err != nil {
+					t.Fatalf("error creating container: %v", err)
+				}
+				defer cont.Destroy()
+				if err := cont.Start(&testConf); err != nil {
+					t.Fatalf("error starting container: %v", err)
+				}
+
+				if err := testutil.Poll(func() error {
+					_, err := os.Stat(readyFile)
+					return err
+				}, pollTimeout); err != nil {
+					t.Fatalf("timed out waiting for signal handler to be installed: %v", err)
+				}
+
+				// Host sends forced SIGUSR1 to PID 1.
+				if err := cont.SignalProcess(unix.SIGUSR1, 1); err != nil {
+					t.Fatalf("failed to send host SIGUSR1: %v", err)
+				}
+
+				waitStatus, err := cont.Wait()
+				if err != nil {
+					t.Fatalf("cont.Wait: %v", err)
+				}
+				if waitStatus.ExitStatus() != 42 {
+					t.Fatalf("expected exit status 42 after handled host signal, got %v", waitStatus)
+				}
+			})
 		})
 	}
 }
 
-// TestCheckpointRestoreExecKilled checks that exec'd processes are killed
-// after the container is restored.
-func TestCheckpointRestoreExecKilled(t *testing.T) {
-	spec, conf := sleepSpecConf(t)
-	_, bundleDir, cu, err := testutil.SetupContainer(spec, conf)
+// startHostinetSRServer starts a TCP server and returns its address, a
+// channel signaled when it observes a connection closing, and a stop func.
+func startHostinetSRServer(t *testing.T) (string, chan struct{}, func()) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
+		t.Fatalf("error listening: %v", err)
 	}
-	defer cu()
-
-	// Create and start the container.
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont.Destroy()
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
-	}
-
-	execArgs := &control.ExecArgs{
-		Filename: "/bin/sleep",
-		Argv:     []string{"/bin/sleep", "10000"},
-	}
-	pid1, err := cont.Execute(conf, execArgs)
-	if err != nil {
-		t.Fatalf("error executing in container: %v", err)
-	}
-
-	// Test exec process with stdio FDs. FDs will not be present after restore and
-	// should be ignored.
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdioCleanup := cleanup.Make(func() {
-		r.Close()
-		w.Close()
-	})
-	defer stdioCleanup.Clean()
-
-	fdMap := map[int]*os.File{0: r, 1: w, 2: w}
-	execArgs.FilePayload = control.NewFilePayload(fdMap, nil)
-	pid2, err := cont.Execute(conf, execArgs)
-	if err != nil {
-		t.Fatalf("error executing in container: %v", err)
-	}
-
-	// Since both share the same process name, ensure that the exec'd process
-	// has a different PID than the init process.
-	if pid1 == 1 || pid2 == 1 {
-		t.Fatalf("exec'd PID cannot be 1")
-	}
-	// Wait until the init process and exec'd processes are present.
-	expectedPL := []*control.Process{
-		newProcessBuilder().Cmd("sleep").PID(1).Process(),
-		newProcessBuilder().Cmd("sleep").PID(kernel.ThreadID(pid1)).Process(),
-		newProcessBuilder().Cmd("sleep").PID(kernel.ThreadID(pid2)).Process(),
-	}
-	if err := waitForProcessList(cont, expectedPL); err != nil {
-		t.Fatalf("Failed to kill exec'ed process, err: %v", err)
-	}
-
-	// Set the image path, which is where the checkpoint image will be saved.
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp failed: %v", err)
-	}
-	defer os.RemoveAll(dir)
-	if err := os.Chmod(dir, 0777); err != nil {
-		t.Fatalf("error chmoding file: %q, %v", dir, err)
-	}
-
-	// Checkpoint running container.
-	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
-		t.Fatalf("error checkpointing container: %v", err)
-	}
-	cont.Destroy()
-	cont = nil
-	stdioCleanup.Clean()
-
-	cont2, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont2.Destroy()
-
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
-		t.Fatalf("error restoring container: %v", err)
-	}
-
-	// Check that only the init process is present and the exec'ed
-	// processes were killed.
-	expectedPL = []*control.Process{
-		newProcessBuilder().Cmd("sleep").PID(1).Process(),
-	}
-	if err := waitForProcessList(cont2, expectedPL); err != nil {
-		t.Fatalf("Failed to kill exec'ed process, err: %v", err)
+	done := make(chan struct{})
+	connClosed := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				io.Copy(io.Discard, c)
+				// Only the first observed close matters.
+				select {
+				case connClosed <- struct{}{}:
+				default:
+				}
+			}()
+		}
+	}()
+	return ln.Addr().String(), connClosed, func() {
+		ln.Close()
+		<-done
 	}
 }
 
-// TestCheckpointRestoreCreateMountPoint tests that mountpoints created during
-// container creation are re-created after checkpoint/restore.
-func TestCheckpointRestoreCreateMountPoint(t *testing.T) {
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+// waitForHostinetSRLog waits for all wanted strings to show up in the
+// hostinet-sr test app's log.
+func waitForHostinetSRLog(path string, wants ...string) error {
+	return testutil.Poll(func() error {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		got := string(b)
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				return fmt.Errorf("log missing %q in:\n%s", want, got)
+			}
+		}
+		return nil
+	}, 30*time.Second)
+}
+
+// waitForHostinetSRCountAfter waits for the hostinet-sr test app's iteration
+// counter to advance past prev.
+func waitForHostinetSRCountAfter(path string, prev int) error {
+	return testutil.Poll(func() error {
+		count, err := lastHostinetSRCount(path)
+		if err != nil {
+			return err
+		}
+		if count <= prev {
+			return fmt.Errorf("last COUNT=%d, want > %d", count, prev)
+		}
+		return nil
+	}, 30*time.Second)
+}
+
+// hostinetSRListenerAddr returns the hostinet-sr test app's logged listener
+// address.
+func hostinetSRListenerAddr(path string) (string, error) {
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("os.MkdirTemp() failed: %v", err)
+		return "", err
 	}
-	defer os.RemoveAll(dir)
-	if err := os.Chmod(dir, 0777); err != nil {
-		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	for _, line := range strings.Split(string(b), "\n") {
+		if addr, ok := strings.CutPrefix(line, "LISTENER_ADDR="); ok {
+			return addr, nil
+		}
 	}
+	return "", fmt.Errorf("no LISTENER_ADDR line in:\n%s", b)
+}
 
-	spec, conf := sleepSpecConf(t)
-
-	mountDest := filepath.Join(dir, "/foo-dir")
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: mountDest,
-		Type:        "tmpfs",
-	})
-
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+// lastHostinetSRCount returns the hostinet-sr test app's last logged
+// iteration count.
+func lastHostinetSRCount(path string) (int, error) {
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
+		return 0, err
 	}
-	defer cleanup()
-
-	// Create and start the container.
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
+	last := -1
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "COUNT=") {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimPrefix(line, "COUNT="))
+		if err != nil {
+			return 0, err
+		}
+		last = n
 	}
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
+	if last < 0 {
+		return 0, fmt.Errorf("no COUNT line in:\n%s", b)
 	}
-	defer cont.Destroy()
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
-	}
-	if err := waitForProcessCount(cont, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	// Check that mount point was created.
-	if ws, err := execute(conf, cont, "/usr/bin/test", "-d", mountDest); err != nil {
-		t.Fatal(err)
-	} else if ws != 0 {
-		t.Fatalf("directory was not re-created upon restore, ws: %v", ws)
-	}
-
-	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelDefault}); err != nil {
-		t.Fatalf("error checkpointing container to file: %v", err)
-	}
-
-	// Remove directory created by the container.
-	if err := os.RemoveAll(mountDest); err != nil {
-		t.Fatalf("error removing mount point directory: %v", err)
-	}
-
-	// Destroy the original container to restore it in place.
-	cont.Destroy()
-	cont = nil
-
-	cont2, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer cont2.Destroy()
-
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
-		t.Fatalf("error restoring container: %v", err)
-	}
-
-	// Check that mount point was re-created after restore.
-	if ws, err := execute(conf, cont2, "/usr/bin/test", "-d", mountDest); err != nil {
-		t.Fatal(err)
-	} else if ws != 0 {
-		t.Fatalf("directory was not re-created upon restore, ws: %v", ws)
-	}
+	return last, nil
 }
 
 // TestUnixDomainSockets checks that Checkpoint/Restore works in cases
@@ -2059,6 +2103,95 @@ func TestMountNewDir(t *testing.T) {
 				t.Fatalf("error running sandbox: %v", err)
 			}
 		})
+	}
+}
+
+const (
+	unimplementedCharDevSrc  = "/dev/port"
+	unimplementedCharDevRdev = "1:4"
+)
+
+func TestBindMountCharDevice(t *testing.T) {
+	// Skip if the unimplemented device is not present in the test
+	// environment (e.g. a sandboxed /dev), since it cannot be bind-mounted then.
+	if _, err := os.Stat(unimplementedCharDevSrc); err != nil {
+		t.Skipf("%s not available to bind mount: %v", unimplementedCharDevSrc, err)
+	}
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// Overlay configs are excluded: with --overlay2=all, file mounts are
+	// wrapped in an overlay, which does not support device files as the
+	// lower layer's root (a pre-existing, separate limitation). Both gofer
+	// modes are covered: they cache the device numbers and open device files
+	// through independent code paths.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		for _, directfs := range []bool{true, false} {
+			modeName := "lisafs"
+			if directfs {
+				modeName = "directfs"
+			}
+			for _, policy := range []config.CharacterDevicePolicy{
+				config.CharDevEmulatedOnly,
+				config.CharDevPreferEmulated,
+				config.CharDevPassthrough,
+			} {
+				t.Run(name+"/"+modeName+"/"+policy.String(), func(t *testing.T) {
+					conf.DirectFS = directfs
+					conf.CharacterDevicePolicy = policy
+					checkBindMountCharDevices(t, conf, app)
+				})
+			}
+		}
+	}
+}
+
+// checkBindMountCharDevices runs the container once per device, checking with
+// chardev-check that the bind-mounted node has the expected device numbers
+// and open behavior under conf's --character-device-policy.
+func checkBindMountCharDevices(t *testing.T, conf *config.Config, app string) {
+	// The mount destinations must be under a writable directory so that the
+	// gofer can create the mount point files (with docker, dockerd
+	// pre-creates the mount points in the container rootfs).
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "chardev-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+
+	var wantUnimplementedOpen string
+	switch conf.CharacterDevicePolicy {
+	case config.CharDevEmulatedOnly:
+		wantUnimplementedOpen = "enxio"
+	case config.CharDevPreferEmulated:
+		wantUnimplementedOpen = "not-enxio"
+	case config.CharDevPassthrough:
+		wantUnimplementedOpen = "not-enxio"
+	default:
+		t.Fatalf("unexpected character device policy: %v", conf.CharacterDevicePolicy)
+	}
+	for _, check := range []struct {
+		src  string
+		args []string
+	}{
+		{
+			src:  "/dev/null",
+			args: []string{"--want-rdev=1:3", "--want-open=ok", "--check-null-rw"},
+		},
+		{
+			src:  unimplementedCharDevSrc,
+			args: []string{"--want-rdev=" + unimplementedCharDevRdev, "--want-open=" + wantUnimplementedOpen},
+		},
+	} {
+		dst := path.Join(dir, path.Base(check.src))
+		args := append([]string{app, "chardev-check", "--path=" + dst}, check.args...)
+		spec := testutil.NewSpecWithArgs(args...)
+		spec.Mounts = append(spec.Mounts,
+			specs.Mount{Destination: dst, Source: check.src, Type: "bind"})
+		if err := run(spec, conf); err != nil {
+			t.Fatalf("chardev-check of %s failed: %v", check.src, err)
+		}
 	}
 }
 
@@ -3125,6 +3258,95 @@ func TestDestroyNotStarted(t *testing.T) {
 	}
 }
 
+// TestSignalCreated verifies that a container that was created but never started
+// can be killed. Per the OCI runtime spec, kill must work on created containers;
+// otherwise a never-started sandbox becomes unkillable under containerd, whose
+// stop path (kill, wait, delete) never reaches delete if kill is rejected.
+func TestSignalCreated(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create the container, but never call Start.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if got, want := c.Status, Created; got != want {
+		t.Fatalf("container status got %v, want %v", got, want)
+	}
+
+	// SIGKILL of a created container must succeed and leave it Stopped so that
+	// the containerd stop/wait/delete sequence can complete.
+	if err := c.SignalContainer(unix.SIGKILL, true /* all */); err != nil {
+		t.Fatalf("SignalContainer(SIGKILL) on created container failed: %v", err)
+	}
+	c, err = Load(rootDir, FullID{ContainerID: args.ID}, LoadOpts{})
+	if err != nil {
+		t.Fatalf("error loading container after kill: %v", err)
+	}
+	if got, want := c.Status, Stopped; got != want {
+		t.Errorf("container status after SIGKILL got %v, want %v", got, want)
+	}
+}
+
+// TestStateNonLeaderExec verifies that a container whose init process
+// continuously execs from non-leader threads is never reported Stopped.
+// During such an execve the old thread group leader exits before the execing
+// thread is promoted in its place; the leader alone must not be used as a
+// liveness signal. A single transient "stopped" answer from `runsc state` is
+// treated as terminal by container shims, permanently wedging teardown.
+func TestStateNonLeaderExec(t *testing.T) {
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+	spec := testutil.NewSpecWithArgs(app, "exec-from-thread")
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Poll state the same way `runsc state` does (Load + CheckStopped) while
+	// init re-execs from non-leader threads, and verify the container is
+	// never reported Stopped.
+	polls := 0
+	for start := time.Now(); time.Since(start) < 10*time.Second; polls++ {
+		cLoaded, err := Load(conf.RootDir, FullID{ContainerID: args.ID}, LoadOpts{})
+		if err != nil {
+			t.Fatalf("error loading container after %d polls: %v", polls, err)
+		}
+		if cLoaded.Status == Stopped {
+			t.Fatalf("container transiently reported Stopped after %d polls while init is alive", polls)
+		}
+	}
+}
+
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
 	for i := 0; i < 10; i++ {
@@ -3805,6 +4027,139 @@ func TestProfile(t *testing.T) {
 	}
 }
 
+// TestProfileLive checks that live CPU and Heap profiling on a running sandbox.
+func TestProfileLive(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	conf.ProfileEnable = true
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Test live CPU profiling (runsc profile cpu).
+	cpuFile, err := os.Create(filepath.Join(t.TempDir(), "live_cpu.pprof"))
+	if err != nil {
+		t.Fatalf("creating cpu file: %v", err)
+	}
+	defer cpuFile.Close()
+
+	if err := cont.Sandbox.CPUProfile(cpuFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("CPUProfile: %v", err)
+	}
+	fi, err := cpuFile.Stat()
+	if err != nil {
+		t.Fatalf("stat cpu file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live CPU profile file is empty")
+	}
+
+	// Test live Heap profiling (runsc profile heap).
+	heapFile, err := os.Create(filepath.Join(t.TempDir(), "live_heap.pprof"))
+	if err != nil {
+		t.Fatalf("creating heap file: %v", err)
+	}
+	defer heapFile.Close()
+
+	if err := cont.Sandbox.HeapProfile(heapFile, 0); err != nil {
+		t.Fatalf("HeapProfile: %v", err)
+	}
+	fi, err = heapFile.Stat()
+	if err != nil {
+		t.Fatalf("stat heap file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Heap profile file is empty")
+	}
+
+	// Test live Goroutine profiling (runsc profile goroutine).
+	goroutineFile, err := os.Create(filepath.Join(t.TempDir(), "live_goroutine.txt"))
+	if err != nil {
+		t.Fatalf("creating goroutine file: %v", err)
+	}
+	defer goroutineFile.Close()
+
+	if err := cont.Sandbox.GoroutineProfile(goroutineFile); err != nil {
+		t.Fatalf("GoroutineProfile: %v", err)
+	}
+	fi, err = goroutineFile.Stat()
+	if err != nil {
+		t.Fatalf("stat goroutine file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Goroutine profile file is empty")
+	}
+
+	// Test live Block profiling (runsc profile block).
+	blockFile, err := os.Create(filepath.Join(t.TempDir(), "live_block.pprof"))
+	if err != nil {
+		t.Fatalf("creating block file: %v", err)
+	}
+	defer blockFile.Close()
+
+	if err := cont.Sandbox.BlockProfile(blockFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("BlockProfile: %v", err)
+	}
+	fi, err = blockFile.Stat()
+	if err != nil {
+		t.Fatalf("stat block file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Block profile file is empty")
+	}
+
+	// Test live Mutex profiling (runsc profile mutex).
+	mutexFile, err := os.Create(filepath.Join(t.TempDir(), "live_mutex.pprof"))
+	if err != nil {
+		t.Fatalf("creating mutex file: %v", err)
+	}
+	defer mutexFile.Close()
+
+	if err := cont.Sandbox.MutexProfile(mutexFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("MutexProfile: %v", err)
+	}
+	fi, err = mutexFile.Stat()
+	if err != nil {
+		t.Fatalf("stat mutex file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Mutex profile file is empty")
+	}
+
+	// Test live Trace profiling (runsc profile trace).
+	traceFile, err := os.Create(filepath.Join(t.TempDir(), "live_trace.out"))
+	if err != nil {
+		t.Fatalf("creating trace file: %v", err)
+	}
+	defer traceFile.Close()
+
+	if err := cont.Sandbox.Trace(traceFile, 500*time.Millisecond); err != nil {
+		t.Fatalf("Trace: %v", err)
+	}
+	fi, err = traceFile.Stat()
+	if err != nil {
+		t.Fatalf("stat trace file: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Errorf("live Trace profile file is empty")
+	}
+}
+
 // TestSaveSystemdCgroup emulates a sandbox saving while configured with the
 // systemd cgroup driver.
 func TestSaveSystemdCgroup(t *testing.T) {
@@ -4351,7 +4706,7 @@ func TestMountEROFS(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	// When running this test inside a user namespace without host root mapped, like bazel is wont to
+	// When running this test inside a user namespace without host root mapped, as bazel tends to
 	// do, /bin/umount appears as a setuid binary owned by (host) overflow-uid inside the container,
 	// and thus would rob the execing process of its exalted (sandbox) root EUID. So we make a copy.
 	copiedUmount := filepath.Join(testutil.TmpDir(), "umount")
@@ -4460,7 +4815,7 @@ func createRootfsEROFS(dir string) (string, string, error) {
 	// Handcraft the following mount points that the sentry mounts need, because EROFS
 	// does not support creating synthetic directories yet and we may not want to use
 	// overlay in some tests.
-	for _, dir := range []string{"dev", "proc", "sys", "tmp"} {
+	for _, dir := range []string{"data", "dev", "proc", "sys", "tmp"} {
 		if err := os.Mkdir(filepath.Join(rootfsDir, dir), 0755); err != nil {
 			return "", "", fmt.Errorf("os.Mkdir() failed: %v", err)
 		}
@@ -4523,6 +4878,17 @@ func TestRootfsEROFS(t *testing.T) {
 				Source:      mountDir,
 			},
 		},
+
+		// Case 3: EROFS rootfs with an EROFS backed config mount. This stays
+		// in goferless mode and requires donating both EROFS image FDs.
+		{
+			{
+				Type:        erofs.Name,
+				Destination: "/data",
+				Source:      rootfsImage,
+				Options:     []string{"ro"},
+			},
+		},
 	} {
 		spec.Mounts = mounts
 
@@ -4546,48 +4912,6 @@ func TestRootfsEROFS(t *testing.T) {
 		if ws.ExitStatus() != 0 {
 			t.Errorf("got exit status %v want %v", ws.ExitStatus(), 0)
 		}
-	}
-}
-
-// TestCheckpointRestoreEROFS does the checkpoint/restore test on each platform using
-// an EROFS image as the rootfs.
-func TestCheckpointRestoreEROFS(t *testing.T) {
-	// Skip this test if mkfs.erofs or busybox are not available.
-	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
-
-	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp() failed: %v", err)
-	}
-	defer os.RemoveAll(testDir)
-
-	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
-	if err != nil {
-		t.Fatalf("failed to create EROFS rootfs image: %v", err)
-	}
-
-	// Skip overlay because test requires writing to host file.
-	for name, conf := range configs(t, true /* noOverlay */) {
-		t.Run(name, func(t *testing.T) {
-			testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, func(script string) *specs.Spec {
-				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
-				spec.Root = &specs.Root{
-					Path:     rootfsDir,
-					Readonly: false,
-				}
-				if spec.Annotations == nil {
-					spec.Annotations = make(map[string]string)
-				}
-				spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
-				spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
-				// EROFS does not support creating synthetic directories yet, so let's add
-				// a writeable and savable overlay for rootfs, which allows the sentry to
-				// create the mount point for the bind mount of the temporary directory shared
-				// between host and test container.
-				spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
-				return spec
-			})
-		})
 	}
 }
 
@@ -5283,6 +5607,162 @@ func TestTarRootfsUpperLayerOpaqueDir(t *testing.T) {
 	t.Logf("/usr/share in restored container correctly contains only: %v", restoredFiles)
 }
 
+// buildACLXattr serializes entries into the system.posix_acl_access /
+// system.posix_acl_default xattr wire format (a little-endian version header
+// followed by 8-byte entries).
+func buildACLXattr(entries []linux.PosixACLXattrEntry) []byte {
+	x := linux.PosixACLXattr{Version: linux.POSIX_ACL_XATTR_VERSION, Entries: entries}
+	buf := make([]byte, x.SizeBytes())
+	x.MarshalBytes(buf)
+	return buf
+}
+
+// TestTarRootfsUpperLayerACL verifies that POSIX ACLs set on files in the overlay's
+// tmpfs layer are preserved across tar serialization and restoration.
+func TestTarRootfsUpperLayerACL(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	conf.Overlay2.Set("root:memory")
+
+	spec, _ := sleepSpecConf(t)
+	spec.Root.Readonly = false
+
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Paths in the writable (upper) layer that will receive ACLs.
+	const (
+		aclFile = "/acltest-file"
+		aclDir  = "/acltest-dir"
+	)
+
+	// Use ACLs with named users to ensure that the ACL is actually stored as an ACL
+	// rather than folded into the mode
+	accessACL := base64.StdEncoding.EncodeToString(buildACLXattr([]linux.PosixACLXattrEntry{
+		{Tag: linux.ACL_USER_OBJ, Perm: linux.ACL_READ | linux.ACL_WRITE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_USER, Perm: linux.ACL_READ, ID: 1000},
+		{Tag: linux.ACL_GROUP_OBJ, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_MASK, Perm: linux.ACL_READ | linux.ACL_WRITE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_OTHER, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+	}))
+	defaultACL := base64.StdEncoding.EncodeToString(buildACLXattr([]linux.PosixACLXattrEntry{
+		{Tag: linux.ACL_USER_OBJ, Perm: linux.ACL_READ | linux.ACL_WRITE | linux.ACL_EXECUTE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_USER, Perm: linux.ACL_READ | linux.ACL_EXECUTE, ID: 1001},
+		{Tag: linux.ACL_GROUP_OBJ, Perm: linux.ACL_READ | linux.ACL_EXECUTE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_MASK, Perm: linux.ACL_READ | linux.ACL_WRITE | linux.ACL_EXECUTE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_OTHER, Perm: 0, ID: linux.ACL_UNDEFINED_ID},
+	}))
+
+	// Create the file and directory in the writable (upper) layer.
+	if out, err := executeCombinedOutput(conf, cont, nil, "/bin/touch", aclFile); err != nil {
+		t.Fatalf("error creating ACL test file: %v, output: %s", err, out)
+	}
+	if out, err := executeCombinedOutput(conf, cont, nil, "/bin/mkdir", aclDir); err != nil {
+		t.Fatalf("error creating ACL test directory: %v, output: %s", err, out)
+	}
+
+	// setACL sets an ACL xattr on path via test_app.
+	setACL := func(path, name, b64 string) {
+		t.Helper()
+		if out, err := executeCombinedOutput(conf, cont, nil, app, "setxattr",
+			"--path="+path, "--name="+name, "--value="+b64); err != nil {
+			t.Fatalf("error setting %s on %s: %v, output: %s", name, path, err, out)
+		}
+	}
+	// getACL returns the base64-encoded ACL xattr on path in container c.
+	getACL := func(c *Container, path, name string) string {
+		t.Helper()
+		out, err := executeCombinedOutput(conf, c, nil, app, "getxattr",
+			"--path="+path, "--name="+name)
+		if err != nil {
+			t.Fatalf("error getting %s on %s: %v, output: %s", name, path, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	setACL(aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS, accessACL)
+	wantFileAccess := getACL(cont, aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+
+	setACL(aclDir, linux.XATTR_NAME_POSIX_ACL_ACCESS, accessACL)
+	wantDirAccess := getACL(cont, aclDir, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+
+	setACL(aclDir, linux.XATTR_NAME_POSIX_ACL_DEFAULT, defaultACL)
+	wantDirDefault := getACL(cont, aclDir, linux.XATTR_NAME_POSIX_ACL_DEFAULT)
+
+	for name, v := range map[string]string{"file access": wantFileAccess, "dir access": wantDirAccess, "dir default": wantDirDefault} {
+		if v == "" {
+			t.Fatalf("%s ACL was unexpectedly empty", name)
+		}
+	}
+
+	// Tar the upper layer.
+	tarFile, err := os.CreateTemp(testutil.TmpDir(), "tarfile-acl-*.tar")
+	if err != nil {
+		t.Fatalf("error creating temp file: %v", err)
+	}
+	defer os.Remove(tarFile.Name())
+	defer tarFile.Close()
+	if err := cont.TarRootfsUpperLayer(tarFile); err != nil {
+		t.Fatalf("error serializing rootfs upper layer to tar: %v", err)
+	}
+
+	// Restore the tar into a new container.
+	spec.Annotations[specutils.AnnotationRootfsUpperTar] = tarFile.Name()
+	conf.AllowRootfsTarAnnotation = true
+	_, bundleDir2, cleanup2, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up restored container: %v", err)
+	}
+	defer cleanup2()
+
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir2,
+	}
+	newCont, err := New(conf, args2)
+	if err != nil {
+		t.Fatalf("error creating restored container: %v", err)
+	}
+	defer newCont.Destroy()
+	if err := newCont.Start(conf); err != nil {
+		t.Fatalf("error starting restored container: %v", err)
+	}
+
+	// Verify the ACLs survived the round-trip.
+	if got := getACL(newCont, aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS); got != wantFileAccess {
+		t.Errorf("file access ACL mismatch after restore:\n got %q\nwant %q", got, wantFileAccess)
+	}
+	if got := getACL(newCont, aclDir, linux.XATTR_NAME_POSIX_ACL_ACCESS); got != wantDirAccess {
+		t.Errorf("dir access ACL mismatch after restore:\n got %q\nwant %q", got, wantDirAccess)
+	}
+	if got := getACL(newCont, aclDir, linux.XATTR_NAME_POSIX_ACL_DEFAULT); got != wantDirDefault {
+		t.Errorf("dir default ACL mismatch after restore:\n got %q\nwant %q", got, wantDirDefault)
+	}
+}
+
 func TestSpecValidationIgnore(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	if err := conf.RestoreSpecValidation.Set("ignore"); err != nil {
@@ -5381,69 +5861,6 @@ func TestSpecValidationForCapabilities(t *testing.T) {
 
 	if err := specutils.RestoreValidateSpec(oldSpecs, newSpecs, conf); err != nil {
 		t.Errorf("spec validation failed, got: %v, want: nil", err)
-	}
-}
-
-func TestCheckpointResume(t *testing.T) {
-	for name, conf := range configs(t, true /* noOverlay */) {
-		t.Run(name, func(t *testing.T) {
-			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
-			if err != nil {
-				t.Fatalf("os.MkdirTemp failed: %v", err)
-			}
-			defer os.RemoveAll(dir)
-			if err := os.Chmod(dir, 0777); err != nil {
-				t.Fatalf("error chmoding file: %q, %v", dir, err)
-			}
-
-			outputPath := filepath.Join(dir, "output")
-			outputFile, err := createWriteableOutputFile(outputPath)
-			if err != nil {
-				t.Fatalf("error creating output file: %v", err)
-			}
-			defer outputFile.Close()
-
-			script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
-			spec := testutil.NewSpecWithArgs("bash", "-c", script)
-			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer cleanup()
-
-			// Create and start the container.
-			args := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
-			}
-			cont, err := New(conf, args)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			if err := cont.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-
-			// Wait until application has ran.
-			if err := waitForFileNotEmpty(outputFile); err != nil {
-				t.Fatalf("Failed to wait for output file: %v", err)
-			}
-
-			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Resume: true}); err != nil {
-				t.Fatalf("error checkpointing container to empty file: %v", err)
-			}
-
-			if !cont.Sandbox.Checkpointed {
-				t.Fatalf("sandbox returned wrong value for Sandbox.Checkpointed, got: false, want: true")
-			}
-
-			if cont.Sandbox.Restored {
-				t.Fatalf("sandbox returned wrong value for Sandbox.Restored, got: true, want: false")
-			}
-			cont.Destroy()
-		})
 	}
 }
 
@@ -5563,7 +5980,7 @@ func TestReadFile(t *testing.T) {
 	defer os.Remove(tmpFile1.Name())
 	defer tmpFile1.Close()
 
-	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, tmpFile1); err != nil {
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, 0, tmpFile1); err != nil {
 		t.Fatalf("Failed to read /proc/version: %v", err)
 	}
 	content1, err := os.ReadFile(tmpFile1.Name())
@@ -5582,7 +5999,7 @@ func TestReadFile(t *testing.T) {
 	defer os.Remove(tmpFile2.Name())
 	defer tmpFile2.Close()
 
-	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 5, tmpFile2); err != nil {
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 0, 5, tmpFile2); err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 	content2, err := os.ReadFile(tmpFile2.Name())
@@ -5591,5 +6008,24 @@ func TestReadFile(t *testing.T) {
 	}
 	if string(content2) != "Linux" {
 		t.Errorf("Got %q (%d bytes), want 'Linux' (5 bytes)", string(content2), len(content2))
+	}
+
+	// Test reading /proc/version with an offset of 1 and size of 4 bytes.
+	tmpFile3, err := os.CreateTemp(testutil.TmpDir(), "readfile-3-*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile3.Name())
+	defer tmpFile3.Close()
+
+	if err := cont.Sandbox.ReadFile(cont.ID, "/proc/version", 1, 4, tmpFile3); err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content3, err := os.ReadFile(tmpFile3.Name())
+	if err != nil {
+		t.Fatalf("Failed to read temp file: %v", err)
+	}
+	if string(content3) != "inux" {
+		t.Errorf("Got %q (%d bytes), want 'inux' (4 bytes)", string(content3), len(content3))
 	}
 }

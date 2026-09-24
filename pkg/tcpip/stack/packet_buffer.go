@@ -158,6 +158,10 @@ type PacketBuffer struct {
 	// NICID is the ID of the last interface the network packet was handled at.
 	NICID tcpip.NICID
 
+	// InputNICID is the ID of the interface that the network packet
+	// was received on.
+	InputNICID tcpip.NICID
+
 	// RXChecksumValidated indicates that checksum verification may be
 	// safely skipped.
 	RXChecksumValidated bool
@@ -397,6 +401,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.TransportProtocolNumber = pk.TransportProtocolNumber
 	newPk.PktType = pk.PktType
 	newPk.NICID = pk.NICID
+	newPk.InputNICID = pk.InputNICID
 	newPk.RXChecksumValidated = pk.RXChecksumValidated
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
@@ -477,6 +482,7 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 
 	newPk.tuple = pk.tuple
 	newPk.Mark = pk.Mark
+	newPk.InputNICID = pk.InputNICID
 
 	return newPk
 }
@@ -484,6 +490,24 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 // IsConnTrackConfigured returns whether connection tracking is configured for this packet.
 func (pk *PacketBuffer) IsConnTrackConfigured() bool {
 	return pk.tuple != nil && pk.tuple.conn != nil
+}
+
+// FillConnTrackInfo fills connection tracking information for the packet.
+func (pk *PacketBuffer) FillConnTrackInfo(opts ConnTrackInfoOpts, info *ConnTrackInfo) bool {
+	t := pk.tuple
+	if t == nil || t.conn == nil {
+		return false
+	}
+	return t.conn.FillConnTrackInfo(opts, info)
+}
+
+// IsReplyPacket returns whether the packet is a reply packet.
+func (pk *PacketBuffer) IsReplyPacket() bool {
+	t := pk.tuple
+	if t == nil {
+		return false
+	}
+	return t.reply
 }
 
 // IsNATConfigured returns whether NAT is configured for this packet.
@@ -511,6 +535,14 @@ func (pk *PacketBuffer) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress 
 		return false
 	}
 	return pk.tuple.conn.ConfigureNAT(portsOrIdents, natAddress, natType, changePort, changeAddress)
+}
+
+// ConfigureMasquerade configures NAT masquerade for the packet.
+func (pk *PacketBuffer) ConfigureMasquerade(portsOrIdents PortOrIdentRange, route *Route, stk *Stack, changePort bool) bool {
+	if !pk.IsConnTrackConfigured() {
+		return false
+	}
+	return pk.tuple.conn.configureMasquerade(pk, route, stk, portsOrIdents, changePort)
 }
 
 // FinalizeConnTrack finalizes the connection tracking state for the packet.
@@ -911,20 +943,26 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return pk.Network(), icmpHeader, false, true
 		case header.ICMPv4DstUnreachable, header.ICMPv4TimeExceeded, header.ICMPv4ParamProblem:
 		default:
-			panic(fmt.Sprintf("unexpected ICMPv4 type = %d", icmpType))
+			return nil, nil, false, false
 		}
 
 		h, ok := pk.Data().PullUp(header.IPv4MinimumSize)
 		if !ok {
-			panic(fmt.Sprintf("should have a valid IPv4 packet; only have %d bytes, want at least %d bytes", pk.Data().Size(), header.IPv4MinimumSize))
+			return nil, nil, false, false
 		}
 
-		if header.IPv4(h).HeaderLength() > header.IPv4MinimumSize {
-			// TODO(https://gvisor.dev/issue/6765): Handle IPv4 options.
-			panic("should have dropped packets with IPv4 options")
+		hdrLength := int(header.IPv4(h).HeaderLength())
+		// Pull up the full IPv4 header which might include options.
+		if hdrLength > header.IPv4MinimumSize {
+			// TODO(https://gvisor.dev/issue/6765): Handle IPv4
+			// options.
+			h, ok = pk.Data().PullUp(hdrLength)
+			if !ok {
+				return nil, nil, false, false
+			}
 		}
 
-		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv4MinimumSize, v4NetAndTransHdr, pk.tuple.tupleID.transProto); ok {
+		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(hdrLength, v4NetAndTransHdr, tcpip.TransportProtocolNumber(header.IPv4(h).Protocol())); ok {
 			return netHdr, transHdr, true, true
 		}
 		return nil, nil, false, false
@@ -939,23 +977,19 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return pk.Network(), icmpHeader, false, true
 		case header.ICMPv6DstUnreachable, header.ICMPv6PacketTooBig, header.ICMPv6TimeExceeded, header.ICMPv6ParamProblem:
 		default:
-			panic(fmt.Sprintf("unexpected ICMPv6 type = %d", icmpType))
+			return nil, nil, false, false
 		}
 
 		h, ok := pk.Data().PullUp(header.IPv6MinimumSize)
 		if !ok {
-			panic(fmt.Sprintf("should have a valid IPv6 packet; only have %d bytes, want at least %d bytes", pk.Data().Size(), header.IPv6MinimumSize))
+			return nil, nil, false, false
 		}
 
 		// We do not support extension headers in ICMP errors so the next header
 		// in the IPv6 packet should be a tracked protocol if we reach this point.
 		//
 		// TODO(https://gvisor.dev/issue/6789): Support extension headers.
-		transProto := pk.tuple.tupleID.transProto
-		if got := header.IPv6(h).TransportProtocol(); got != transProto {
-			panic(fmt.Sprintf("got TransportProtocol() = %d, want = %d", got, transProto))
-		}
-
+		transProto, _ := header.IPv6(h).TryParseTransportProtocol()
 		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv6MinimumSize, v6NetAndTransHdr, transProto); ok {
 			return netHdr, transHdr, true, true
 		}

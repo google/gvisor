@@ -417,6 +417,8 @@ type TCPSndBufState struct {
 
 	// AutoTuneSndBufDisabled indicates that the auto tuning of send buffer
 	// is disabled.
+	//
+	// +checkatomic
 	AutoTuneSndBufDisabled atomicbitops.Uint32
 }
 

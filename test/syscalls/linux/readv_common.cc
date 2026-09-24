@@ -16,9 +16,17 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
+#include <cstddef>
+#include <cstring>
+#include <utility>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/string_view.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

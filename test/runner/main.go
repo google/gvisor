@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -36,6 +37,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/state/pretty"
@@ -77,7 +79,7 @@ var (
 	netstackSR       = flag.Bool("netstack-sr", false, "enables netstack s/r")
 	nftables         = flag.Bool("nftables", false, "enables nftables")
 	kvmUseCPUNums    = flag.Bool("kvm-use-cpu-nums", false, "use cpu numbers in kvm platform")
-	mountCgroupV2    = flag.Bool("mount-cgroup-v2", false, "mount cgroups v2")
+	inSandboxCgroup  = flag.String("in-sandbox-cgroup", "v1", "cgroup setup to use inside the sandbox (v1 or v2)")
 )
 
 const (
@@ -131,6 +133,16 @@ func removeShardAndXMLEnvVars(env []string, tc *gtest.TestCase) []string {
 	return env
 }
 
+// addHostKernelVersionEnv adds the GVISOR_HOST_KERNEL_VERSION environment variable to env.
+func addHostKernelVersionEnv(env []string) []string {
+	if hostVer, err := hostos.KernelVersion(); err == nil {
+		env = append(env, "GVISOR_HOST_KERNEL_VERSION="+hostVer.String())
+	} else {
+		log.Warningf("Failed to get host kernel version: %v", err)
+	}
+	return env
+}
+
 // runTestCaseNative runs the test case directly on the host machine.
 func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *testing.T) {
 	// These tests might be running in parallel, so make sure they have a
@@ -157,6 +169,7 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 		env = append(env, newEnvVar)
 	}
 	env = removeShardAndXMLEnvVars(env, tc)
+	env = addHostKernelVersionEnv(env)
 
 	if *addHostUDS {
 		socketDir, cleanup, err := uds.CreateBoundUDSTree("/tmp")
@@ -431,10 +444,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	} else {
 		args = append(args, "-kvm-use-cpu-nums=false")
 	}
-	if *mountCgroupV2 {
-		args = append(args, "-mount-cgroup-v2=true")
-	} else {
-		args = append(args, "-mount-cgroup-v2=false")
+	if *inSandboxCgroup != "" {
+		args = append(args, "-in-sandbox-cgroup="+*inSandboxCgroup)
 	}
 
 	testLogDir := ""
@@ -741,6 +752,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	return err
 }
 
+// Regex matching some performance-related warnings that are safe to ignore in tests.
+var performanceWarningRegexp = regexp.MustCompile(`(?i).*(slows?|slowing).*(startup|teardown).*`)
+
 func isWarning(line string) bool {
 	if len(line) >= 5 && line[:5] == "panic" {
 		return true
@@ -811,6 +825,9 @@ func isWarning(line string) bool {
 	// TODO(gvisor.dev/issue/11649): Systrap needs to roll back created
 	// patches for traced procs.
 	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
+
+	// Performance-related warnings.
+	case performanceWarningRegexp.MatchString(line):
 
 	case *save:
 		// Ignore these warnings for S/R tests as we try to delete the sandbox
@@ -1000,6 +1017,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		saveVar     = "GVISOR_SAVE_TEST"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network, runtimeVar+"=runsc")
+	env = addHostKernelVersionEnv(env)
 	if *platformSupport != "" {
 		env = append(env, fmt.Sprintf("%s=%s", platformSupportEnvVar, *platformSupport))
 	}

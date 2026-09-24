@@ -15,12 +15,16 @@
 // All tests in this file rely on being about to mount and unmount cgroupfs,
 // which isn't expected to work, or be safe on a general linux system.
 
+#include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
 #include <linux/magic.h>
 #include <poll.h>
 #include <sys/inotify.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -240,6 +244,25 @@ TEST(Cgroup, UnmountRepeated) {
   // First unmount should succeed.
   EXPECT_THAT(umount(c.Path().c_str()), SyscallSucceeds());
   EXPECT_THAT(umount(c.Path().c_str()), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Cgroup, DetachedMountBindFails) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
+
+  // Hold an open fd on the mount so that it survives the lazy umount, then
+  // name it again through /proc/self/fd.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(c.Path(), O_RDONLY | O_DIRECTORY));
+  ASSERT_THAT(umount2(c.Path().c_str(), MNT_DETACH), SyscallSucceeds());
+  m.release(c);
+
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string fd_path = absl::StrFormat("/proc/self/fd/%d", fd.get());
+  EXPECT_THAT(mount(fd_path.c_str(), target.path().c_str(), "", MS_BIND, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(Cgroup, Create) {
@@ -479,6 +502,16 @@ TEST(Cgroup, NamedHierarchies) {
   EXPECT_TRUE(entries.contains("name=h2"));
   EXPECT_NO_ERRNO(c1.ContainsCallingProcess());
   EXPECT_NO_ERRNO(c2.ContainsCallingProcess());
+}
+
+TEST(Cgroup, NamedHierarchyRemount) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h1"));
+  ASSERT_NO_ERRNO(m.Unmount(c));
+  // Once the hierarchy is gone, its name is free for reuse.
+  EXPECT_NO_ERRNO(m.MountCgroupfs("none,name=h1"));
 }
 
 TEST(Cgroup, NoneExclusiveWithAnyController) {

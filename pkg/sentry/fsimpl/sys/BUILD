@@ -22,6 +22,7 @@ go_library(
         "dir_refs.go",
         "kcov.go",
         "pci.go",
+        "rdma.go",
         "save_restore.go",
         "sys.go",
     ],
@@ -35,6 +36,7 @@ go_library(
         "//pkg/fspath",
         "//pkg/fsutil",
         "//pkg/log",
+        "//pkg/rdma",
         "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/host",
@@ -61,10 +63,12 @@ go_test(
     deps = [
         ":sys",
         "//pkg/abi/linux",
+        "//pkg/rdma",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
         "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

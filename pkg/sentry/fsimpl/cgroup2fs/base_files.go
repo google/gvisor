@@ -46,6 +46,46 @@ func (f *cgroupInterfaceFile) SetStat(ctx context.Context, fs *vfs.Filesystem, c
 	return f.InodeAttrs.SetStat(ctx, fs, creds, opts)
 }
 
+// Open implements kernfs.Inode.Open, overriding the DynamicBytesFile method
+// to capture the opener's cgroup namespace.
+func (f *cgroupInterfaceFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	data, err := f.Data(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ns *kernel.CgroupNamespace
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		ns = t.GetCgroupNamespace() // ref taken
+	}
+	fd := &interfaceFD{ns: ns}
+	if err := fd.InitWithImpl(fd, rp.Mount(), d, data, f.Locks(), opts.Flags, rp.Credentials()); err != nil {
+		if ns != nil {
+			ns.DecRef(ctx)
+		}
+		return nil, err
+	}
+	return fd.VFSFileDescription(), nil
+}
+
+// interfaceFD implements vfs.FileDescriptionImpl for cgroup2 interface
+// files. It is kernfs.DynamicBytesFD plus the opener's cgroup namespace.
+//
+// +stateify savable
+type interfaceFD struct {
+	kernfs.DynamicBytesFD
+
+	// ns is the cgroup namespace of the task that opened this fd at open time.
+	ns *kernel.CgroupNamespace
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *interfaceFD) Release(ctx context.Context) {
+	if fd.ns != nil {
+		fd.ns.DecRef(ctx)
+	}
+	fd.DynamicBytesFD.Release(ctx)
+}
+
 // +stateify savable
 type cgroupSourceReadOnly struct {
 	c    *cgroup
@@ -65,9 +105,14 @@ func (s *cgroupSourceReadOnly) Generate(ctx context.Context, buf *bytes.Buffer) 
 
 // +stateify savable
 type cgroupSourceWritable struct {
-	c    *cgroup
+	// The hosting cgroup.
+	c *cgroup
+	// The backing controller.
 	ctrl controller
-	src  vfs.WritableDynamicBytesSource
+	// The backing writable source.
+	src vfs.WritableDynamicBytesSource
+	// Whether the source is delegatable to a child namespace.
+	nsDelegatable bool
 }
 
 func (s *cgroupSourceWritable) Generate(ctx context.Context, buf *bytes.Buffer) error {
@@ -87,6 +132,11 @@ func (s *cgroupSourceWritable) Write(ctx context.Context, fd *vfs.FileDescriptio
 	if s.ctrl != nil && !s.ctrl.isActive() {
 		return 0, linuxerr.ENODEV
 	}
+	if !s.nsDelegatable {
+		if err := s.c.checkNSDelegateWrite(ctx, fd); err != nil {
+			return 0, err
+		}
+	}
 	return s.src.Write(ctx, fd, src, offset)
 }
 
@@ -101,7 +151,7 @@ func (fs *filesystem) newInode(ctx context.Context, uid auth.KUID, gid auth.KGID
 	f := &cgroupInterfaceFile{c: c}
 	var src vfs.DynamicBytesSource
 	if ws, ok := def.source.(vfs.WritableDynamicBytesSource); ok {
-		src = &cgroupSourceWritable{c: c, ctrl: def.ctrl, src: ws}
+		src = &cgroupSourceWritable{c: c, ctrl: def.ctrl, src: ws, nsDelegatable: def.nsDelegatable}
 	} else {
 		src = &cgroupSourceReadOnly{c: c, ctrl: def.ctrl, src: def.source}
 	}
@@ -111,9 +161,9 @@ func (fs *filesystem) newInode(ctx context.Context, uid auth.KUID, gid auth.KGID
 
 func (fs *filesystem) rootInodes(ctx context.Context, uid auth.KUID, gid auth.KGID, c *cgroup) map[string]kernfs.Inode {
 	contents := make(map[string]kernfs.Inode)
-	contents["cgroup.procs"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.procs", source: &cgroupProcs{c: c}, perm: 0644})
+	contents["cgroup.procs"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.procs", source: &cgroupProcs{c: c}, perm: 0644, nsDelegatable: true})
 	contents["cgroup.controllers"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.controllers", source: &cgroupControllers{c: c}, perm: 0444})
-	contents["cgroup.subtree_control"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.subtree_control", source: &cgroupSubtreeControl{c: c}, perm: 0644})
+	contents["cgroup.subtree_control"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.subtree_control", source: &cgroupSubtreeControl{c: c}, perm: 0644, nsDelegatable: true})
 	contents["cgroup.max.descendants"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.max.descendants", source: &cgroupMaxDescendants{c: c}, perm: 0644})
 	contents["cgroup.max.depth"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.max.depth", source: &cgroupMaxDepth{c: c}, perm: 0644})
 	contents["cgroup.stat"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.stat", source: &cgroupStat{c: c}, perm: 0444})
@@ -122,14 +172,15 @@ func (fs *filesystem) rootInodes(ctx context.Context, uid auth.KUID, gid auth.KG
 
 func (fs *filesystem) cgroupInodes(ctx context.Context, uid auth.KUID, gid auth.KGID, c *cgroup) map[string]kernfs.Inode {
 	contents := make(map[string]kernfs.Inode)
-	contents["cgroup.procs"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.procs", source: &cgroupProcs{c: c}, perm: 0644})
+	contents["cgroup.procs"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.procs", source: &cgroupProcs{c: c}, perm: 0644, nsDelegatable: true})
 	contents["cgroup.controllers"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.controllers", source: &cgroupControllers{c: c}, perm: 0444})
-	contents["cgroup.subtree_control"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.subtree_control", source: &cgroupSubtreeControl{c: c}, perm: 0644})
+	contents["cgroup.subtree_control"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.subtree_control", source: &cgroupSubtreeControl{c: c}, perm: 0644, nsDelegatable: true})
 	contents["cgroup.max.descendants"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.max.descendants", source: &cgroupMaxDescendants{c: c}, perm: 0644})
 	contents["cgroup.max.depth"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.max.depth", source: &cgroupMaxDepth{c: c}, perm: 0644})
 	contents["cgroup.stat"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.stat", source: &cgroupStat{c: c}, perm: 0444})
 	contents["cgroup.type"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.type", source: &cgroupType{c: c}, perm: 0444})
 	contents["cgroup.kill"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.kill", source: &cgroupKill{c: c}, perm: 0200})
+	contents["cgroup.freeze"] = fs.newInode(ctx, uid, gid, c, interfaceFile{name: "cgroup.freeze", source: &cgroupFreeze{c: c}, perm: 0644})
 
 	contents["cgroup.events"] = fs.newInode(ctx, uid, gid, c, interfaceFile{
 		name:    "cgroup.events",
@@ -154,12 +205,13 @@ func (cf *cgroupProcs) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if cf.c.deleted.Load() {
 		return linuxerr.ENODEV
 	}
-	t := kernel.TaskFromContext(ctx)
-	if t == nil {
-		return nil
+	var currPidns *kernel.PIDNamespace
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		currPidns = t.PIDNamespace()
+	} else if k := kernel.KernelFromContext(ctx); k != nil {
+		currPidns = k.RootPIDNamespace()
 	}
-
-	pids := cf.c.getPIDs(t)
+	pids := cf.c.getPIDsInNamespace(currPidns)
 	for _, pid := range pids {
 		fmt.Fprintf(buf, "%d\n", pid)
 	}
@@ -182,7 +234,22 @@ func (cf *cgroupProcs) Write(ctx context.Context, fd *vfs.FileDescription, src u
 		return 0, linuxerr.EINVAL
 	}
 
-	if err := cf.c.attachProcess(ctx, fd.Credentials(), pid); err != nil {
+	var nsRoot *cgroup
+	var creds *auth.Credentials
+	if fd != nil {
+		creds = fd.Credentials()
+		if ifd, ok := fd.Impl().(*interfaceFD); ok && ifd.ns != nil {
+			nsRoot = ifd.ns.Root().(*cgroup)
+		}
+	} else {
+		// If fd is nil, this write originates from outside the sandbox
+		// (e.g. via WriteControl or control RPCs) rather than through a
+		// sandboxed VFS file descriptor. Credentials come from ctx, and
+		// nsRoot remains nil so migration is unconfined by any cgroup
+		// namespace delegation boundary.
+		creds = auth.CredentialsFromContext(ctx)
+	}
+	if err := cf.c.attachProcess(ctx, creds, nsRoot, pid); err != nil {
 		return 0, err
 	}
 
@@ -451,6 +518,53 @@ func (cf *cgroupKill) Write(ctx context.Context, fd *vfs.FileDescription, src us
 	return src.NumBytes(), nil
 }
 
+// cgroupFreeze implements vfs.WritableDynamicBytesSource for "cgroup.freeze":
+// readable (self-requested state), accepts 0 (thaw) or 1 (freeze).
+// +stateify savable
+type cgroupFreeze struct{ c *cgroup }
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (cf *cgroupFreeze) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if cf.c.deleted.Load() {
+		return linuxerr.ENODEV
+	}
+	// Reports this cgroup's own requested state, not the ancestor-inherited
+	// effective state (surfaced via cgroup.events' "frozen" line). Matches Linux.
+	cf.c.fs.tasksMu.RLock()
+	requested := cf.c.freezeRequested
+	cf.c.fs.tasksMu.RUnlock()
+	if requested {
+		fmt.Fprintf(buf, "1\n")
+	} else {
+		fmt.Fprintf(buf, "0\n")
+	}
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (cf *cgroupFreeze) Write(ctx context.Context, fd *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if cf.c.deleted.Load() {
+		return 0, linuxerr.ENODEV
+	}
+	data := make([]byte, src.NumBytes())
+	if _, err := src.CopyIn(ctx, data); err != nil {
+		return 0, err
+	}
+	val, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, linuxerr.EINVAL
+	}
+	// Match Linux cgroup_freeze_write: a non-integer is EINVAL (above), but an
+	// out-of-range integer is ERANGE.
+	if val != 0 && val != 1 {
+		return 0, linuxerr.ERANGE
+	}
+	if err := cf.c.freeze(ctx, val == 1); err != nil {
+		return 0, err
+	}
+	return src.NumBytes(), nil
+}
+
 // cgroupEvents implements vfs.DynamicBytesSource for "cgroup.events".
 // +stateify savable
 type cgroupEvents struct {
@@ -466,6 +580,13 @@ func (cf *cgroupEvents) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if cf.c.populated() {
 		populated = 1
 	}
-	fmt.Fprintf(buf, "populated %d\nfrozen 0\n", populated)
+	// Reports settled state (frozen(), not freezeOrderedLocked()): true only
+	// once every task that was asked to freeze has actually finished doing
+	// so, matching Linux's CGRP_FROZEN semantics.
+	frozen := 0
+	if cf.c.frozen() {
+		frozen = 1
+	}
+	fmt.Fprintf(buf, "populated %d\nfrozen %d\n", populated, frozen)
 	return nil
 }

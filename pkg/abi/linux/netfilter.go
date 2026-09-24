@@ -380,10 +380,13 @@ const (
 	NF_NAT_RANGE_PROTO_RANDOM       = 1 << 2
 	NF_NAT_RANGE_PERSISTENT         = 1 << 3
 	NF_NAT_RANGE_PROTO_RANDOM_FULLY = 1 << 4
+	NF_NAT_RANGE_PROTO_OFFSET       = 1 << 5
+	NF_NAT_RANGE_NETMAP             = 1 << 6
 	NF_NAT_RANGE_PROTO_RANDOM_ALL   = (NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
 	NF_NAT_RANGE_MASK               = (NF_NAT_RANGE_MAP_IPS |
 		NF_NAT_RANGE_PROTO_SPECIFIED | NF_NAT_RANGE_PROTO_RANDOM |
-		NF_NAT_RANGE_PERSISTENT | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+		NF_NAT_RANGE_PERSISTENT | NF_NAT_RANGE_PROTO_RANDOM_FULLY |
+		NF_NAT_RANGE_PROTO_OFFSET | NF_NAT_RANGE_NETMAP)
 )
 
 // NfNATIPV4Range corresponds to struct nf_nat_ipv4_range
@@ -457,10 +460,12 @@ type XTNATTargetV2 struct {
 	_      structs.HostLayout
 	Target XTEntryTarget
 	Range  NFNATRange2
+	// Padding for 8-byte alignment.
+	_ [4]byte
 }
 
 // SizeOfXTNATTargetV2 is the size of an XTNATTargetV2.
-const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2
+const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2 + 4
 
 // XTCTTargetInfoV0 corresponds to struct xt_ct_target_info (revision 0) in
 // include/uapi/linux/netfilter/xt_CT.h. The CT target is used in the raw
@@ -845,6 +850,124 @@ const SizeOfXTMultiport = 2 + (XT_MULTI_PORTS * 2)
 // SizeOfXTMultiportV1 is the size of XTMultiportV1 (in bytes).
 const SizeOfXTMultiportV1 = SizeOfXTMultiport + XT_MULTI_PORTS + 1
 
+// XT_CONNTRACK flags indicate which fields of the connection tracking state to match.
+const (
+	XT_CONNTRACK_STATE        = 1 << 0
+	XT_CONNTRACK_PROTO        = 1 << 1
+	XT_CONNTRACK_ORIGSRC      = 1 << 2
+	XT_CONNTRACK_ORIGDST      = 1 << 3
+	XT_CONNTRACK_REPLSRC      = 1 << 4
+	XT_CONNTRACK_REPLDST      = 1 << 5
+	XT_CONNTRACK_STATUS       = 1 << 6
+	XT_CONNTRACK_EXPIRES      = 1 << 7
+	XT_CONNTRACK_ORIGSRC_PORT = 1 << 8
+	XT_CONNTRACK_ORIGDST_PORT = 1 << 9
+	XT_CONNTRACK_REPLSRC_PORT = 1 << 10
+	XT_CONNTRACK_REPLDST_PORT = 1 << 11
+	XT_CONNTRACK_DIRECTION    = 1 << 12
+	XT_CONNTRACK_STATE_ALIAS  = 1 << 13
+)
+
+const (
+	XT_CONNTRACK_STATE_INVALID = 1 << 0
+	// The following constants use a modulo operation that matches the Linux kernel
+	// macro XT_CONNTRACK_STATE_BIT(ctinfo) (1 << ((ctinfo)%IP_CT_IS_REPLY+1))
+	// in include/uapi/linux/netfilter/xt_conntrack.h.
+	XT_CONNTRACK_STATE_ESTABLISHED = 1 << (IP_CT_ESTABLISHED%IP_CT_IS_REPLY + 1)
+	XT_CONNTRACK_STATE_RELATED     = 1 << (IP_CT_RELATED%IP_CT_IS_REPLY + 1)
+	XT_CONNTRACK_STATE_NEW         = 1 << (IP_CT_NEW%IP_CT_IS_REPLY + 1)
+	XT_CONNTRACK_STATE_SNAT        = 1 << (IP_CT_NUMBER + 1)
+	XT_CONNTRACK_STATE_DNAT        = 1 << (IP_CT_NUMBER + 2)
+	XT_CONNTRACK_STATE_UNTRACKED   = 1 << (IP_CT_NUMBER + 3)
+)
+
+// XTConntrackMtinfo corresponds to struct xt_conntrack_mtinfo1 in
+// include/uapi/linux/netfilter/xt_conntrack.h.
+//
+// +marshal
+type XTConntrackMtinfo struct {
+	_           structs.HostLayout
+	OrigSrcAddr [16]byte
+	OrigSrcMask [16]byte
+	OrigDstAddr [16]byte
+	OrigDstMask [16]byte
+	ReplSrcAddr [16]byte
+	ReplSrcMask [16]byte
+	ReplDstAddr [16]byte
+	ReplDstMask [16]byte
+	ExpiresMin  uint32
+	ExpiresMax  uint32
+	L4Proto     uint16
+	OrigSrcPort uint16
+	OrigDstPort uint16
+	ReplSrcPort uint16
+	ReplDstPort uint16
+	MatchFlags  uint16
+	InvertFlags uint16
+	StateMask   uint8
+	StatusMask  uint8
+}
+
+// XTConntrackMtinfo2 corresponds to struct xt_conntrack_mtinfo2 in
+// include/uapi/linux/netfilter/xt_conntrack.h.
+//
+// +marshal
+type XTConntrackMtinfo2 struct {
+	_           structs.HostLayout
+	OrigSrcAddr [16]byte
+	OrigSrcMask [16]byte
+	OrigDstAddr [16]byte
+	OrigDstMask [16]byte
+	ReplSrcAddr [16]byte
+	ReplSrcMask [16]byte
+	ReplDstAddr [16]byte
+	ReplDstMask [16]byte
+	ExpiresMin  uint32
+	ExpiresMax  uint32
+	L4Proto     uint16
+	OrigSrcPort uint16
+	OrigDstPort uint16
+	ReplSrcPort uint16
+	ReplDstPort uint16
+	MatchFlags  uint16
+	InvertFlags uint16
+	StateMask   uint16
+	StatusMask  uint16
+	_           [2]byte
+}
+
+// XTConntrackMtinfo3 corresponds to struct xt_conntrack_mtinfo3 in
+// include/uapi/linux/netfilter/xt_conntrack.h.
+//
+// +marshal
+type XTConntrackMtinfo3 struct {
+	_               structs.HostLayout
+	OrigSrcAddr     [16]byte
+	OrigSrcMask     [16]byte
+	OrigDstAddr     [16]byte
+	OrigDstMask     [16]byte
+	ReplSrcAddr     [16]byte
+	ReplSrcMask     [16]byte
+	ReplDstAddr     [16]byte
+	ReplDstMask     [16]byte
+	ExpiresMin      uint32
+	ExpiresMax      uint32
+	L4Proto         uint16
+	OrigSrcPort     uint16
+	OrigDstPort     uint16
+	ReplSrcPort     uint16
+	ReplDstPort     uint16
+	MatchFlags      uint16
+	InvertFlags     uint16
+	StateMask       uint16
+	StatusMask      uint16
+	OrigSrcPortHigh uint16
+	OrigDstPortHigh uint16
+	ReplSrcPortHigh uint16
+	ReplDstPortHigh uint16
+	_               [2]byte
+}
+
 // XTMarkMtinfo1 holds data for matching packets against a mark.
 // It corresponds to struct xt_mark_mtinfo1 in include/uapi/linux/netfilter/xt_mark.h.
 //
@@ -909,3 +1032,50 @@ type IP6TRejectInfo struct {
 
 // SizeOfIP6TRejectInfo is the size of an IP6TRejectInfo.
 const SizeOfIP6TRejectInfo = 4
+
+// Constants for addrtype match.
+// Matches Linux include/uapi/linux/netfilter/xt_addrtype.h
+const (
+	XT_ADDRTYPE_INVERT_SOURCE   = 0x0001
+	XT_ADDRTYPE_INVERT_DEST     = 0x0002
+	XT_ADDRTYPE_LIMIT_IFACE_IN  = 0x0004
+	XT_ADDRTYPE_LIMIT_IFACE_OUT = 0x0008
+)
+
+const (
+	XT_ADDRTYPE_UNSPEC      = 1 << 0
+	XT_ADDRTYPE_UNICAST     = 1 << 1
+	XT_ADDRTYPE_LOCAL       = 1 << 2
+	XT_ADDRTYPE_BROADCAST   = 1 << 3
+	XT_ADDRTYPE_ANYCAST     = 1 << 4
+	XT_ADDRTYPE_MULTICAST   = 1 << 5
+	XT_ADDRTYPE_BLACKHOLE   = 1 << 6
+	XT_ADDRTYPE_UNREACHABLE = 1 << 7
+	XT_ADDRTYPE_PROHIBIT    = 1 << 8
+	XT_ADDRTYPE_THROW       = 1 << 9
+	XT_ADDRTYPE_NAT         = 1 << 10
+	XT_ADDRTYPE_XRESOLVE    = 1 << 11
+)
+
+// XTAddrtypeInfoV1 corresponds to struct xt_addrtype_info_v1 in
+// include/uapi/linux/netfilter/xt_addrtype.h.
+//
+// +marshal
+type XTAddrtypeInfoV1 struct {
+	_      structs.HostLayout
+	Source uint16
+	Dest   uint16
+	Flags  uint32
+}
+
+// XTAddrtypeInfo corresponds to struct xt_addrtype_info in
+// include/uapi/linux/netfilter/xt_addrtype.h.
+//
+// +marshal
+type XTAddrtypeInfo struct {
+	_            structs.HostLayout
+	Source       uint16
+	Dest         uint16
+	InvertSource uint32
+	InvertDest   uint32
+}

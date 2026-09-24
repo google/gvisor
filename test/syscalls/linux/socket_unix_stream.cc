@@ -12,16 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <climits>
+#include <cstdint>
+#include <functional>
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -51,9 +64,7 @@ TEST_P(StreamUnixSocketPairTest, RecvmsgOneSideClosed) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   // Set timeout so that it will not wait for ever.
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv,
                          sizeof(tv)),
               SyscallSucceeds());
@@ -248,6 +259,161 @@ TEST_P(StreamUnixSocketPairTest, GetAcceptConn) {
       getsockopt(bound.get(), SOL_SOCKET, SO_ACCEPTCONN, &opt, &opt_len),
       SyscallSucceeds());
   ASSERT_EQ(opt, 1);
+}
+
+// All MSG_PEEK/MSG_TRUNC combinations, as exercised by the zero-length
+// receive tests below.
+constexpr int kZeroLengthRecvFlagCombos[] = {0, MSG_PEEK, MSG_TRUNC,
+                                             MSG_PEEK | MSG_TRUNC};
+
+// A zero-length receive on a stream socket with data pending returns 0
+// without consuming any data, whatever the combination of
+// MSG_PEEK/MSG_TRUNC: stream sockets ignore MSG_TRUNC (both as a length
+// probe and in msg_flags), and there is no message boundary to consume.
+TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvPendingData) {
+  char sent_data[3] = {'a', 'b', 'c'};
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    SCOPED_TRACE(::testing::Message() << "flags=" << flags);
+    auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+    ASSERT_THAT(
+        RetryEINTR(send)(sockets->second_fd(), sent_data, sizeof(sent_data), 0),
+        SyscallSucceedsWithValue(sizeof(sent_data)));
+
+    struct msghdr msg = {};
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(msg.msg_flags & MSG_TRUNC, 0);
+
+    // The data is still there.
+    char received_data[sizeof(sent_data)] = {};
+    ASSERT_THAT(RetryEINTR(recv)(sockets->first_fd(), received_data,
+                                 sizeof(received_data), MSG_DONTWAIT),
+                SyscallSucceedsWithValue(sizeof(sent_data)));
+    EXPECT_EQ(memcmp(sent_data, received_data, sizeof(sent_data)), 0);
+  }
+}
+
+// A zero-length non-blocking receive on an empty stream socket must fail
+// with EAGAIN rather than return 0, whatever the combination of
+// MSG_PEEK/MSG_TRUNC and control message space. Returning 0 on a zero-length
+// request is a read(2) behavior; recvmsg(2) waits for data.
+TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvEmptyQueue) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    for (bool control_space : {false, true}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "flags=" << flags << " control_space=" << control_space);
+      char control[CMSG_SPACE(sizeof(int))];
+      struct msghdr msg = {};
+      if (control_space) {
+        msg.msg_control = control;
+        msg.msg_controllen = sizeof(control);
+      }
+      EXPECT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg,
+                                      flags | MSG_DONTWAIT | MSG_CMSG_CLOEXEC),
+                  SyscallFailsWithErrno(EAGAIN));
+    }
+  }
+}
+
+// A zero-length receive on an empty stream socket returns 0, not EAGAIN,
+// once the peer has shut down writes, whatever the combination of
+// MSG_PEEK/MSG_TRUNC.
+TEST_P(StreamUnixSocketPairTest, ZeroLengthRecvPeerShutdown) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_WR), SyscallSucceeds());
+
+  for (int flags : kZeroLengthRecvFlagCombos) {
+    SCOPED_TRACE(::testing::Message() << "flags=" << flags);
+    struct msghdr msg = {};
+    EXPECT_THAT(
+        RetryEINTR(recvmsg)(sockets->first_fd(), &msg, flags | MSG_DONTWAIT),
+        SyscallSucceedsWithValue(0));
+  }
+}
+
+constexpr int kBlockedPollTimeoutMs = 3000;
+
+struct BlockedPollResult {
+  int ret;
+  int16_t revents;
+};
+
+// Blocks a poller on fd in a background thread — with an events mask that
+// contains no data events, only POLLRDHUP or the implicit POLLHUP/POLLERR
+// (events=0) — then runs trigger() and reports how poll returned. A kernel
+// that fails to wake hangup-only waiters on shutdown makes poll ride out
+// its full timeout and return 0.
+BlockedPollResult PollDuringTrigger(int fd, int16_t events,
+                                    const std::function<void()>& trigger) {
+  BlockedPollResult res = {};
+  struct pollfd pfd = {fd, events, 0};
+  ScopedThread t([&] {
+    res.ret = RetryEINTR(poll)(&pfd, 1, kBlockedPollTimeoutMs);
+    res.revents = pfd.revents;
+  });
+  // Give the poller time to block. If the trigger still wins the race, the
+  // test degrades to checking poll's entry-time readiness.
+  absl::SleepFor(absl::Milliseconds(300));
+  trigger();
+  t.Join();
+  return res;
+}
+
+// A blocked poller interested only in hangup events (events=0; POLLHUP is
+// unmaskable) must be woken by a concurrent full shutdown of the socket:
+// unix_shutdown() wakes all waiters via sk_state_change(), and the poller
+// re-evaluates to POLLHUP.
+TEST_P(StreamUnixSocketPairTest, ShutdownWakesHangupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int fd = sockets->first_fd();
+
+  BlockedPollResult res = PollDuringTrigger(
+      fd, 0, [fd] { ASSERT_THAT(shutdown(fd, SHUT_RDWR), SyscallSucceeds()); });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLHUP);
+}
+
+// A blocked POLLRDHUP-only poller must likewise be woken by a concurrent
+// read shutdown.
+TEST_P(StreamUnixSocketPairTest, ReadShutdownWakesRdHupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int fd = sockets->first_fd();
+
+  BlockedPollResult res = PollDuringTrigger(fd, POLLRDHUP, [fd] {
+    ASSERT_THAT(shutdown(fd, SHUT_RD), SyscallSucceeds());
+  });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLRDHUP);
+}
+
+// A stream peer's full shutdown propagates both directions to this socket
+// (see unix_shutdown() in net/unix/af_unix.c), so a blocked hangup-only
+// poller here must be woken with POLLHUP.
+TEST_P(StreamUnixSocketPairTest, PeerShutdownWakesHangupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int peer = sockets->second_fd();
+
+  BlockedPollResult res = PollDuringTrigger(sockets->first_fd(), 0, [peer] {
+    ASSERT_THAT(shutdown(peer, SHUT_RDWR), SyscallSucceeds());
+  });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLHUP);
+}
+
+// A stream peer's write shutdown propagates to this socket's read side, so
+// a blocked POLLRDHUP-only poller here must be woken.
+TEST_P(StreamUnixSocketPairTest, PeerWriteShutdownWakesRdHupOnlyPoller) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const int peer = sockets->second_fd();
+
+  BlockedPollResult res = PollDuringTrigger(
+      sockets->first_fd(), POLLRDHUP,
+      [peer] { ASSERT_THAT(shutdown(peer, SHUT_WR), SyscallSucceeds()); });
+  EXPECT_EQ(res.ret, 1);
+  EXPECT_EQ(res.revents, POLLRDHUP);
 }
 
 INSTANTIATE_TEST_SUITE_P(

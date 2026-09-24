@@ -55,6 +55,8 @@ type SessionConfig struct {
 	IgnoreMissing bool `json:"ignore_missing,omitempty"`
 	// Sinks are the sinks that will process the points enabled above.
 	Sinks []SinkConfig `json:"sinks,omitempty"`
+	// Options holds session-level configuration options.
+	Options map[string]any `json:"options,omitempty"`
 }
 
 // PointConfig describes a point to be enabled in a given session.
@@ -103,6 +105,14 @@ func Create(conf *SessionConfig, force bool) error {
 	}
 	state := &Global
 
+	capacity := DefaultExecveHashCacheCapacity
+	if val, ok := conf.Options["execve_hash_cache_capacity"]; ok {
+		if cnt, ok := val.(float64); ok {
+			capacity = int(cnt)
+		} else if cnt, ok := val.(int); ok {
+			capacity = cnt
+		}
+	}
 	var reqs []PointReq
 	for _, ptConfig := range conf.Points {
 		desc, err := findPointDesc(ptConfig.Name)
@@ -141,7 +151,9 @@ func Create(conf *SessionConfig, force bool) error {
 		}
 		state.AppendSink(sink, reqs)
 	}
-
+	if len(conf.Sinks) > 0 {
+		state.SetupExecveHashCache(capacity, reqs)
+	}
 	sessions[conf.Name] = state
 	sessionCounter.Increment()
 	return nil

@@ -17,6 +17,11 @@
 
 package kvm
 
+import (
+	"gvisor.dev/gvisor/pkg/pinring"
+	"gvisor.dev/gvisor/pkg/timing"
+)
+
 // Config sets configuration options for each platform instance.
 type Config struct {
 	// ApplicationCores is the same parameter passed into
@@ -27,6 +32,12 @@ type Config struct {
 	// UseCPUNums use KVM vCPU numbers as CPU numbers in the sentry.
 	// This is necessary to support features like RSEQ and CPU preemption detection.
 	UseCPUNums bool
+
+	// StartupTimer is used to track KVM initialization milestones.
+	StartupTimer *timing.Timer
+
+	// PinRing is used to pin the VM FD and to release it asynchronously.
+	PinRing *pinring.PinRing
 }
 
 func (*machine) applyConfig(config *Config) error { return nil }

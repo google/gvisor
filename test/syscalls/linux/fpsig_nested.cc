@@ -15,8 +15,13 @@
 // This program verifies that application floating point state is restored
 // correctly after a signal handler returns. It also verifies that this works
 // with nested signals.
+#include <signal.h>
 #include <sys/time.h>
+#include <unistd.h>
 
+#include <cstdint>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

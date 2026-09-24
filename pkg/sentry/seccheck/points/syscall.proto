@@ -23,6 +23,30 @@ message Exit {
   int64 errorno = 2;
 }
 
+// Identifying the process that made the syscall:
+//
+//   Every event message below carries a gvisor.common.ContextData describing
+//   the calling task, but none of them carries the path of the executable that
+//   issued the syscall. The closest field is context_data.process_name, which
+//   holds the task's "comm": the Linux command name exposed as
+//   /proc/<pid>/comm, i.e. the basename of the executable truncated to 15 bytes
+//   (TASK_COMM_LEN-1) at exec and freely overwritten afterwards via
+//   prctl(PR_SET_NAME). It is a short label, not a path.
+//
+//   This is deliberate. Resolving the caller's binary path would require a VFS
+//   path walk on every traced syscall, so the sentry only reports it once, at
+//   exec time, in gvisor.sentry.ExecveInfo.binary_path. There is no optional
+//   field to enable it on syscall points.
+//
+//   Consumers that need the full executable path join the two streams
+//   client-side, keyed on the (thread_group_id, thread_group_start_time_ns)
+//   pair that every ContextData carries and that is stable against PID reuse.
+//   The pkg/seccheck/scsdk package implements this: feed ExecveInfo and
+//   TaskExit messages to scsdk.ProcessTracker, then resolve any event with
+//   ProcessTracker.LookupFromContext. See that package for the caveats (most
+//   notably, processes that never exec'd while tracking was active have no
+//   entry).
+
 message Syscall {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;
@@ -35,14 +59,111 @@ message Syscall {
   uint64 arg6 = 10;
 }
 
+// Open contains information for file open and creation system calls:
+// open(2), openat(2), and creat(2).
+//
+// NOTE: `fd` and `fd_path` apply exclusively to openat(2).
+// Neither open(2) nor creat(2) accepts an input file descriptor argument:
+//   - For open(2) and creat(2), `fd` is populated with the sentinel value
+//     AT_FDCWD (-100), and `fd_path` is never populated (always empty "").
+//   - For openat(2), `fd` conveys the caller's directory file descriptor
+//     argument (dirfd), and `fd_path` is the resolved VFS path of that directory.
+//
+// Determining the target file path:
+//   - If pathname is absolute (starts with '/'), the target file is pathname
+//     (resolved from the process's root).
+//   - If pathname is relative and fd is AT_FDCWD (-100), the target file is
+//     relative to the process's current working directory (context_data.cwd).
+//   - If pathname is relative and fd >= 0 (openat with a directory fd), the
+//     target file is relative to fd_path.
+//
+// Distinguishing fields:
+//   - pathname: the target file path string passed to the syscall.
+//   - fd / fd_path: directory descriptor (dirfd) and its resolved directory
+//     path for openat(2) only. NOT the file being opened, and NOT the process
+//     binary.
+//   - context_data.process_name: the command name (comm, up to 16 bytes) of the
+//     calling process/thread executing the syscall (e.g. "cat", "nginx"). It
+//     identifies the actor, NOT the target file or directory. Full executable
+//     paths of the process are available at exec time via
+//     gvisor.sentry.ExecveInfo.binary_path.
+//   - exit.result: on successful syscall exit, this contains the newly opened
+//     file descriptor. Do NOT confuse this with the fd field below.
 message Open {
+  // context_data contains contextual information about the calling task/process
+  // executing the syscall (timestamp, thread/group IDs, container ID,
+  // credentials, cwd, process_name, etc.).
   gvisor.common.ContextData context_data = 1;
+
+  // exit contains the syscall exit result and errno.
+  //
+  // Availability: This field is populated ONLY when the trace point is
+  // configured to trigger on syscall exit (e.g. "syscall/openat/exit"). On
+  // syscall enter (e.g. "syscall/openat/enter"), this field is unset/nil.
+  //
+  // On success, exit.result contains the newly allocated file descriptor
+  // (result >= 0). On failure, exit.result is -1 and exit.errorno contains
+  // the Linux errno.
   Exit exit = 2;
+
+  // sysno is the system call number (e.g. SYS_open, SYS_openat, SYS_creat).
+  // Because message Open is shared across open(2), openat(2), and creat(2),
+  // sysno distinguishes which syscall triggered this event.
   uint64 sysno = 3;
+
+  // fd is the directory file descriptor (dirfd) input argument to the syscall.
+  //
+  // NOTE: This field is applicable only to openat(2). Neither open(2) nor
+  // creat(2) accepts an fd argument in Linux; for open(2) and creat(2),
+  // fd is populated with the sentinel value AT_FDCWD (-100) to denote that
+  // path resolution is relative to the process's current working directory.
+  //
+  // IMPORTANT: This is NOT the newly opened file descriptor returned by the
+  // syscall! The newly opened file descriptor is returned in exit.result.
+  //
+  // For openat(2), fd is the first argument (dirfd). It may be a valid open
+  // directory file descriptor (>= 0) or the special constant AT_FDCWD (-100).
   int64 fd = 4;
+
+  // fd_path is the resolved path of the directory descriptor in fd.
+  //
+  // NOTE: This field is applicable only to openat(2) when an explicit directory
+  // file descriptor is provided. Neither open(2) nor creat(2) accepts an fd
+  // argument, so fd_path is never populated for them. For openat(2), it is
+  // populated only when fd >= 0.
+  //
+  // Availability:
+  //   1. fd_path is an optional field. It is only collected if explicitly
+  //      requested in the trace configuration's optional_fields list.
+  //   2. It is resolved by looking up fd in the task's file descriptor table.
+  //      Therefore, it is available (non-empty) ONLY for openat(2) when fd is a
+  //      valid directory file descriptor (fd >= 0).
+  //   3. When fd is AT_FDCWD (-100) (always true for open(2) and creat(2), and
+  //      common for openat(2)), fd_path is NOT available (remains empty "").
+  //
+  // Usage:
+  //   fd_path is the base directory path for relative pathname resolution in
+  //   openat(2). It is NOT the path of the file being opened (use pathname),
+  //   nor is it the binary path of the executing process (use
+  //   context_data.process_name for process comm, or ExecveInfo.binary_path).
   string fd_path = 5;
+
+  // pathname is the target file path string argument passed to the syscall by
+  // userspace (args[0] for open/creat, args[1] for openat).
+  //
+  // This is the raw string passed from userspace and is not canonicalized.
+  // It may be an absolute path (starting with '/') or a relative path (to be
+  // resolved against context_data.cwd if fd == AT_FDCWD, or against fd_path
+  // if fd >= 0).
   string pathname = 6;
+
+  // flags contains the file status and access mode flags passed to the syscall
+  // (e.g. O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND, etc.).
+  // For creat(2), flags are synthesized as O_WRONLY | O_CREAT | O_TRUNC.
   uint32 flags = 7;
+
+  // mode contains the file creation permissions mode (e.g. 0644).
+  // Set when O_CREAT or O_TMPFILE is present in flags, or for creat(2).
   uint32 mode = 8;
 }
 
@@ -231,6 +352,18 @@ message Accept {
   int32 flags = 7;
 }
 
+message Listen {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 backlog = 6;
+  bytes address = 7;
+  int32 socket_family = 8;
+  int32 socket_type = 9;
+}
+
 message TimerfdCreate {
   gvisor.common.ContextData context_data = 1;
   Exit exit = 2;
@@ -239,14 +372,9 @@ message TimerfdCreate {
   int32 flags = 5;
 }
 
-message Timespec {
-  int64 sec = 1;
-  int64 nsec = 2;
-}
-
 message ItimerSpec {
-  Timespec interval = 1;
-  Timespec value = 2;
+  gvisor.common.Timespec interval = 1;
+  gvisor.common.Timespec value = 2;
 }
 
 message TimerfdSetTime {
@@ -323,4 +451,12 @@ message Mmap {
   uint32 prot = 8;
   uint32 flags = 9;
   int64 offset = 10;
+}
+
+message Ptrace {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 request = 4;
+  int32 pid = 5;
 }

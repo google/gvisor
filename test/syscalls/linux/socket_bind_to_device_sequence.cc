@@ -22,10 +22,12 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -34,9 +36,13 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/node_hash_map.h"
+#include "absl/strings/str_cat.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_bind_to_device_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -193,9 +199,7 @@ class BindToDeviceSequenceTest : public ::testing::TestWithParam<SocketKind> {
   in_port_t port_ = 0;
   // sockets_to_close_ is a map from action index to the socket that was
   // created.
-  absl::node_hash_map<int,
-                      std::unique_ptr<gvisor::testing::FileDescriptor>>
-      sockets_to_close_;
+  absl::node_hash_map<int, std::unique_ptr<FileDescriptor>> sockets_to_close_;
   int next_socket_id_ = 0;
 };
 

@@ -57,6 +57,10 @@ type Config struct {
 	// HostFifo signals whether the gofer can connect to host FIFOs.
 	HostFifo config.HostFifo
 
+	// CharDevicePolicy signals whether the gofer can open host character
+	// devices.
+	CharDevicePolicy config.CharacterDevicePolicy
+
 	// DonateMountPointFD indicates whether a host FD to the mount point should
 	// be donated to the client on Mount RPC.
 	DonateMountPointFD bool
@@ -272,7 +276,12 @@ func (fd *controlFDLisa) getParentFD() (int, string, error) {
 		log.Warningf("getParentFD() call on the root")
 		return -1, "", unix.EINVAL
 	}
-	parent, err := unix.Open(path.Dir(filePath), openFlags|unix.O_PATH, 0)
+	// As a defense-in-depth measure, do not follow symlinks in the parent's path
+	// to prevent attackers from redirecting the parent to a different location.
+	parent, err := unix.Openat2(unix.AT_FDCWD, path.Dir(filePath), &unix.OpenHow{
+		Flags:   uint64(openFlags | unix.O_PATH),
+		Resolve: unix.RESOLVE_NO_SYMLINKS,
+	})
 	return parent, path.Base(filePath), err
 }
 
@@ -503,10 +512,12 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(lisaf
 
 // Used to log rejected fifo/uds operations, one time each.
 var (
-	logRejectedFifoOpenOnce   sync.Once
-	logRejectedUdsOpenOnce    sync.Once
-	logRejectedUdsCreateOnce  sync.Once
-	logRejectedUdsConnectOnce sync.Once
+	logRejectedFifoOpenOnce     sync.Once
+	logRejectedUdsOpenOnce      sync.Once
+	logRejectedUdsCreateOnce    sync.Once
+	logRejectedUdsConnectOnce   sync.Once
+	logRejectedCharDevOpenOnce  sync.Once
+	logRejectedBlockDevOpenOnce sync.Once
 )
 
 // Open implements lisafs.ControlFDImpl.Open.
@@ -528,6 +539,23 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 			})
 			return nil, -1, unix.EPERM
 		}
+	case unix.S_IFCHR:
+		if !impl.config.CharDevicePolicy.AllowsPassthrough() {
+			logRejectedCharDevOpenOnce.Do(func() {
+				log.Warningf("Rejecting attempt to open character device from host filesystem: %q. If you want to allow this, set flag --character-device-policy=prefer-emulated or --character-device-policy=passthrough", fd.ControlFD.Node().FilePath())
+			})
+			return nil, -1, unix.EPERM
+		}
+	case unix.S_IFBLK:
+		// This should be unreachable: checkSupportedFileType() rejects block
+		// devices at Mount/Walk/WalkStat time, and Mknod cannot create them,
+		// so no control FD should refer to one. Check again here for defense
+		// in depth. Unlike character devices, there is deliberately no policy
+		// that allows opening host block devices.
+		logRejectedBlockDevOpenOnce.Do(func() {
+			log.Warningf("Rejecting attempt to open block device from host filesystem: %q.", fd.ControlFD.Node().FilePath())
+		})
+		return nil, -1, unix.EPERM
 	}
 	flags |= openFlags
 	openHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
@@ -545,11 +573,12 @@ func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 		ftype == unix.S_IFCHR,
 		fd.isMountPoint && impl.config.DonateMountPointFD:
 
-		// Character devices and pipes can block indefinitely during reads/writes,
-		// which is not allowed for gofer operations. Ensure that it donates an FD
-		// back to the caller, so it can wait on the FD when reads/writes return
-		// EWOULDBLOCK. For mount points, if DonateMountPointFD option is set, an
-		// FD must be donated.
+		// Pipes and character devices (which only get here when
+		// --character-device-policy allows passthrough) can block indefinitely
+		// during reads/writes, which is not allowed for gofer operations.
+		// Ensure that it donates an FD back to the caller, so it can wait on
+		// the FD when reads/writes return EWOULDBLOCK. For mount points, if
+		// DonateMountPointFD option is set, an FD must be donated.
 		var err error
 		hostFDToDonate, err = unix.Dup(openHostFD)
 		if err != nil {

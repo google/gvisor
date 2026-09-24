@@ -87,6 +87,9 @@ type TaskConfig struct {
 	// IPCNamespace is the IPCNamespace of the new task.
 	IPCNamespace *IPCNamespace
 
+	// CgroupNamespace is the CgroupNamespace of the new task.
+	CgroupNamespace *CgroupNamespace
+
 	// MountNamespace is the MountNamespace of the new task.
 	MountNamespace *vfs.MountNamespace
 
@@ -102,6 +105,11 @@ type TaskConfig struct {
 
 	// InitialCgroups are the cgroups the container is initialised to.
 	InitialCgroups map[Cgroup]struct{}
+
+	// InitialCgroupV2 is the cgroup2 node the new task starts in. Only
+	// consulted when the task is created from a non-task context (i.e.
+	// CreateProcess); if nil, the root cgroup is used.
+	InitialCgroupV2 Cgroup2
 
 	// UserCounters is user resource counters.
 	UserCounters *UserCounters
@@ -132,6 +140,12 @@ type TaskConfig struct {
 //
 // If successful, NewTask transfers references held by cfg to the new task.
 // Otherwise, NewTask releases them.
+//
+// Preconditions: cfg.Kernel.tasks must be ts. cfg.ThreadGroup and any
+// non-nil cfg.Parent or cfg.InheritParent must belong to ts.
+//
+// +checklocksexclude:ts.mu
+// +checklocksexclude:cfg.ThreadGroup.signalHandlers.mu
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	var err error
 	cleanup := func() {
@@ -141,6 +155,7 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cfg.FDTable.DecRef(ctx)
 		cfg.UTSNamespace.DecRef(ctx)
 		cfg.IPCNamespace.DecRef(ctx)
+		cfg.CgroupNamespace.DecRef(ctx)
 		cfg.NetworkNamespace.DecRef(ctx)
 		if cfg.MountNamespace != nil {
 			cfg.MountNamespace.DecRef(ctx)
@@ -161,10 +176,25 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 
 // newTask is a helper for TaskSet.NewTask that only takes ownership of parts
 // of cfg if it succeeds.
+//
+// Preconditions: As for NewTask.
+//
+// +checklocksexclude:ts.mu
+// +checklocksexclude:cfg.ThreadGroup.signalHandlers.mu
 func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	srcT := TaskFromContext(ctx)
 	tg := cfg.ThreadGroup
 	image := cfg.TaskImage
+
+	// inhTTY is the controlling terminal a new thread group inherits.
+	// Register the defer early so that DecRef is called after all locks are
+	// released.
+	var inhTTY *TTY
+	defer func() {
+		if inhTTY != nil {
+			inhTTY.DecRef(ctx)
+		}
+	}()
 
 	var cu cleanup.Cleanup
 	defer cu.Clean()
@@ -173,10 +203,11 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	var cachedKillSeq uint64 // To avoid racing with cgroup.kill.
 
 	if cfg.cloneIntoCgroup {
-		c, err := srcT.getCgroup2NodeFromFD(cfg.cgroupFD)
+		c, err := srcT.GetCgroup2NodeFromFD(cfg.cgroupFD)
 		if err != nil {
 			return nil, err
 		}
+		srcCgroupNS := srcT.CgroupNamespace()
 		// We must lock the cgroup2 tree down to avoid racing with another
 		// thread that might destroy the destination cgroup. Note that we
 		// only lock this after we have extracted the destination cgroup to
@@ -190,7 +221,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 			// committing the entry of the new task into the cgroup.
 			srcT.k.Cgroup2FS().RUnlockTree()
 		})
-		if err := c.CanCloneInto(ctx, srcT.Credentials()); err != nil {
+		if err := c.CanCloneInto(ctx, srcT.Credentials(), srcCgroupNS); err != nil {
 			return nil, err
 		}
 		cgroup2 = c
@@ -216,6 +247,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		niceness:        cfg.Niceness,
 		utsns:           cfg.UTSNamespace,
 		ipcns:           cfg.IPCNamespace,
+		cgroupns:        cfg.CgroupNamespace,
 		mountNamespace:  cfg.MountNamespace,
 		rseqCPU:         -1,
 		rseqAddr:        cfg.RSeqAddr,
@@ -288,6 +320,21 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
+	// GetTTY takes the bond reference under srcT's signal mutex, so
+	// the IncRef cannot race with a final DecRef.
+	//
+	// It must be called after ts.mu.Lock: hangup/setsid/TIOCNOTTY all take
+	// TaskSet.mu, so the tty cannot be disassociated before the child
+	// commits; and before tg.signalHandlers.mu is locked below, since it
+	// acquires srcT's signal mutex, which must not nest with the child's.
+	//
+	// From srcT, not t.parent: Linux's copy_process() inherits
+	// current->signal->tty, which differs from the parent's under
+	// CLONE_PARENT.
+	if srcT != nil {
+		inhTTY = srcT.tg.GetTTY() // Takes a ref, balanced in defer, or transferred to tg.tty.
+	}
+
 	// For the standard, non-cloneIntoCgroup fork case, we have to do this
 	// after acquiring the TaskSet mutex to guard against a racing cgroup.procs
 	// write that might migrate the parent to a different cgroup. Note that
@@ -296,6 +343,12 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	if !cfg.cloneIntoCgroup {
 		if srcT != nil {
 			cgroup2 = srcT.Cgroup2()
+		} else if cfg.InitialCgroupV2 != nil {
+			// Container start or exec into an existing container.
+			cgroup2 = cfg.InitialCgroupV2
+		} else if cfg.CgroupNamespace != nil {
+			// Container start with dedicated cgroup namespace.
+			cgroup2 = cfg.CgroupNamespace.Root()
 		} else {
 			// Direct exec into the sandbox.
 			cgroup2 = cfg.Kernel.Cgroup2FS().RootCgroup()
@@ -372,12 +425,13 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		// New thread group.
 		tg.leader = t
 		if parentPG := tg.parentPG(); parentPG == nil {
-			tg.createSession()
+			tg.createSession() // +checklocksforce: ts.mu is tg.pidns.owner.mu.
 		} else {
 			// Inherit the process group and terminal.
 			parentPG.incRefWithParent(parentPG)
 			tg.processGroup = parentPG
-			tg.tty = t.parent.tg.tty
+			tg.tty = inhTTY
+			inhTTY = nil // Neuter the deferred DecRef, ref transferred to tg.tty.
 		}
 
 		// If our parent is a child subreaper, or if it has a child

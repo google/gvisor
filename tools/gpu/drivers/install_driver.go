@@ -264,7 +264,11 @@ func ListSupportedDrivers(outfile string) error {
 	}
 
 	var list []string
-	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, _ nvproxy.Checksums) {
+	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
+		checksum, err := checksums.Checksum()
+		if err != nil || checksum == nvproxy.ChecksumNoDriver || checksum == "" {
+			return
+		}
 		list = append(list, version.String())
 	})
 	sort.Strings(list)

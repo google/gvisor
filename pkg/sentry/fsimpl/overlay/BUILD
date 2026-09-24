@@ -114,10 +114,15 @@ go_library(
         "req_file_fd_mutex.go",
         "save_restore.go",
     ],
+    imports = [
+        "gvisor.dev/gvisor/pkg/sentry/checkpoint",
+        "gvisor.dev/gvisor/pkg/sentry/vfs",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",

@@ -1,0 +1,56 @@
+[codespell]
+skip = .git,tags,go.mod,go.sum,*/latin10k.txt,*website/assets/images/*
+# One entry per line; indentation continues the value. Lowercase entries match
+# case-insensitively; entries with a capital letter match that casing only.
+ignore-words-list =
+  # maintainer given names, see MAINTAINERS.md.
+  adin,
+  parth,
+  # Go identifiers and struct fields that codespell reads as prose.
+  addOpt,
+  appAR,
+  appendEnd,
+  canBe,
+  copyin,
+  FileTest,
+  FillIn,
+  nowns,
+  offsetP,
+  openIn,
+  pevents,
+  prevEnd,
+  readIn,
+  refErr,
+  savable,
+  sReturns,
+  startIn,
+  writeN,
+  # short local variables and loop indices.
+  fo,
+  nd,
+  ot,
+  ser,
+  te,
+  tru,
+  # abbreviations that are correct in context.
+  cacl,
+  flate,
+  hart,
+  iif,
+  ist,
+  mmaped,
+  PENDIN,
+  reord,
+  VAs,
+  # AtLeast is version.AtLeast; lowercase "atleast" stays a typo.
+  AtLeast,
+  # truncated words in test data and expected output.
+  hel,
+  packe,
+  protestors,
+  retrival,
+  stopp,
+  # as in "raison d'etre".
+  raison,
+  # verbatim text from the Contributor Covenant.
+  socio-economic,

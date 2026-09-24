@@ -19,17 +19,21 @@ package platform
 
 import (
 	"fmt"
+	"sort"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -400,7 +404,7 @@ type AddressSpace interface {
 // AddressSpaceIO supports IO through the memory mappings installed in an
 // AddressSpace.
 //
-// AddressSpaceIO implementors are responsible for ensuring that address ranges
+// AddressSpaceIO implementers are responsible for ensuring that address ranges
 // are application-mappable.
 type AddressSpaceIO interface {
 	// CopyOut copies len(src) bytes from src to the memory mapped at addr. It
@@ -499,6 +503,10 @@ type Requirements struct {
 	// RequiresCapSysPtrace indicates that the sandbox has to be started with
 	// the CAP_SYS_PTRACE capability.
 	RequiresCapSysPtrace bool
+
+	// FrequentHostThreadWakeups indicates that the platform wakes sleeping
+	// host threads at a very high rate.
+	FrequentHostThreadWakeups bool
 }
 
 // SeccompInfo represents seccomp-bpf data for a given platform.
@@ -603,6 +611,15 @@ type Options struct {
 	// SandboxID is the sandbox identifier, used by slimvm to pass to the
 	// host kernel module for sandbox identification.
 	SandboxID string
+
+	// StartupTimer is the timer tracking overall sandbox startup.
+	// Platform constructors should record any relevant midpoints on it.
+	StartupTimer *timing.Timer
+
+	// PinRing is as an accumulator for host FDs that are expensive to release.
+	// It allows releasing them asynchronously.
+	// See `//pkg/pinring`.
+	PinRing *pinring.PinRing
 }
 
 // Constructor represents a platform type.
@@ -640,6 +657,7 @@ func List() (available []string) {
 	for name := range platforms {
 		available = append(available, name)
 	}
+	sort.Strings(available)
 	return
 }
 

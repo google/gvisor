@@ -21,6 +21,7 @@ go_library(
         "//pkg/shim/v1/proc",
         "//pkg/shim/v1/runsc",
         "//pkg/shim/v1/runsccmd",
+        "//pkg/shim/v1/taskserver",
         "//pkg/sync",
         "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/sandbox/v1:go_default_library",
@@ -49,6 +50,7 @@ go_test(
     ],
     library = ":v1",
     deps = [
+        "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/shim:go_default_library",

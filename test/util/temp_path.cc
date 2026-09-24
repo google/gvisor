@@ -14,13 +14,20 @@
 
 #include "test/util/temp_path.h"
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <string>
+#include <utility>
 
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/fs_util.h"

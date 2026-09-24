@@ -42,6 +42,11 @@
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
+ifneq ($(MAKECMDGOALS),)
+ifeq ($(filter-out help lint lint-fix,$(MAKECMDGOALS)),)
+DOCKER_BUILD := false
+endif
+endif
 ifeq ($(DOCKER_BUILD),true)
 -include bazel-server-inc
 endif
@@ -184,6 +189,11 @@ KERNEL_HEADERS_DIR_LINKED := $(dir $(shell $(REALPATH_M) $(KERNEL_HEADERS_DIR)/M
 DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINKED)"
 endif
 endif
+# If /etc/gitconfig is available, pass it through so in-container clones
+# respect host gitconfig (e.g. authentication)
+ifneq (,$(wildcard /etc/gitconfig))
+DOCKER_RUN_OPTIONS += -v "/etc/gitconfig:/etc/gitconfig:ro"
+endif
 
 # Add basic UID/GID options.
 #
@@ -296,8 +306,8 @@ bazel-image: load-default ## Ensures that the local builder exists.
 	@$(DOCKER_CLI_PATH) commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
-ifneq (true,$(shell $(wrapper echo true)))
-bazel-server: bazel-image ## Ensures that the server exists.
+ifneq (true,$(shell $(call wrapper,echo true) 2>/dev/null))
+bazel-server: bazel-image ## Restart bazel server/container.
 ifneq (,$(PRE_BAZEL_INIT))
 	@$(call header,PRE_BAZEL_INIT)
 	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
@@ -332,6 +342,15 @@ endif
 # we make a non-phony version of bazel-server that can be included.
 bazel-server-inc: bazel-server
 
+ifneq (true,$(shell $(call wrapper,echo true) 2>/dev/null))
+ensure-bazel-server:  ## Ensures that the bazel server exists, else restart.
+	@$(DOCKER_CLI_PATH) inspect $(DOCKER_NAME) &>/dev/null || $(MAKE) bazel-server
+else
+ensure-bazel-server:
+	@
+endif
+.PHONY: ensure-bazel-server
+
 # build_paths extracts the built binary from the bazel stderr output.
 #
 # The last line is used to prevent terminal shenanigans.
@@ -339,18 +358,19 @@ build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
   $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(1)) \
-  | $(call wrapper,xargs -r -I {} bash -c 'test -e "{}" || exit 0; $(REALPATH_M) "{}"') \
+  | $(call wrapper,xargs -r -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"') \
   | sed 's~^$(HOME)/\.cache/bazel/~$(patsubst %/,%,$(BAZEL_CACHE))/~' \
-  | xargs -r -I {} bash -c 'test -e "{}" || exit 0; $(REALPATH_M) "{}"' \
-  | xargs -r -I {} bash -c 'set -euo pipefail; $(2)')
+  | xargs -r -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"' \
+  | xargs -r -n 2 bash -c 'set -euo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
-build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
-run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
-sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
+build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0")
+copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p -m 0755 "$$(dirname "$${dest}")" && chmod a+rx "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi)
+run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),"$$0" $(2))
+sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E "$$0" $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
 query = $(call wrapper,$(BAZEL) query $(BAZEL_OPTIONS) $(1))
+mod   = $(call wrapper,$(BAZEL) mod $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1))
 
 clean: ## Cleans the bazel cache.
 	@$(call clean)

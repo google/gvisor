@@ -139,6 +139,7 @@ func (n *Namespace) NewPod(name string) *v13.Pod {
 
 // GetPersistentVolume gets a persistent volume spec for benchmarks.
 func (n *Namespace) GetPersistentVolume(name, size string) *v13.PersistentVolumeClaim {
+	storageClass := "standard-rwo"
 	pvc := &v13.PersistentVolumeClaim{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "PersistentVolumeClaim",
@@ -149,7 +150,8 @@ func (n *Namespace) GetPersistentVolume(name, size string) *v13.PersistentVolume
 			Namespace: n.Namespace,
 		},
 		Spec: v13.PersistentVolumeClaimSpec{
-			AccessModes: []v13.PersistentVolumeAccessMode{v13.ReadWriteOnce},
+			StorageClassName: &storageClass,
+			AccessModes:      []v13.PersistentVolumeAccessMode{v13.ReadWriteOnce},
 		},
 	}
 
@@ -376,6 +378,7 @@ const (
 	RuntimeTypeKataQEMU            = RuntimeType("kata-qemu")
 	RuntimeTypeKataCloudHypervisor = RuntimeType("kata-cloudhypervisor")
 	RuntimeTypeKataFirecracker     = RuntimeType("kata-firecracker")
+	RuntimeTypeMicroVM             = RuntimeType("microvm")
 )
 
 // AllRuntimes is the list of all runtime types.
@@ -389,12 +392,13 @@ var AllRuntimes = []RuntimeType{
 	RuntimeTypeKataQEMU,
 	RuntimeTypeKataCloudHypervisor,
 	RuntimeTypeKataFirecracker,
+	RuntimeTypeMicroVM,
 }
 
 // IsValid returns true if the runtime type is valid.
 func (t RuntimeType) IsValid() bool {
 	switch t {
-	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped, RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
+	case RuntimeTypeGVisor, RuntimeTypeGVisorCapped, RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped, RuntimeTypeGVisorTPU, RuntimeTypeUnsandboxedTPU, RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker, RuntimeTypeMicroVM:
 		return true
 	default:
 		return false
@@ -409,6 +413,11 @@ func (t RuntimeType) IsGVisor() bool {
 // IsKata returns true if the runtime is a Kata-based runtime.
 func (t RuntimeType) IsKata() bool {
 	return t == RuntimeTypeKataQEMU || t == RuntimeTypeKataCloudHypervisor || t == RuntimeTypeKataFirecracker
+}
+
+// IsMicroVM returns true if the runtime is a GKE Sandbox MicroVM runtime.
+func (t RuntimeType) IsMicroVM() bool {
+	return t == RuntimeTypeMicroVM
 }
 
 // KataShimName returns the Kata shim name for the runtime type.
@@ -428,8 +437,8 @@ func (t RuntimeType) KataShimName() (string, error) {
 // RequiresExplicitResourceLimits returns true if the runtime requires
 // explicit resource limits on pods in order to function correctly.
 func (t RuntimeType) RequiresExplicitResourceLimits() bool {
-	// Kata containers requires VMs which require explicit sizing.
-	if t.IsKata() {
+	// Kata containers and MicroVM require VMs which require explicit sizing.
+	if t.IsKata() || t.IsMicroVM() {
 		return true
 	}
 	// Capped runtimes require explicit sizing.
@@ -465,6 +474,14 @@ func MaxSupportedCoresAcrossRuntimes() int {
 	return maxSeen
 }
 
+const (
+	microvmNodepoolKey  = "sandbox.gke.io/runtime"
+	microvmRuntimeClass = "microvm"
+	// sandboxConfigMicroVM corresponds to cspb.SandboxConfig_MICROVM (value 3),
+	// which is restricted to internal proto releases and not yet exposed in public genproto.
+	sandboxConfigMicroVM = cspb.SandboxConfig_Type(3)
+)
+
 // ApplyNodepool modifies the nodepool to configure it to use the runtime.
 func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 	if nodepool.GetConfig().GetLabels() == nil {
@@ -477,6 +494,11 @@ func (t RuntimeType) ApplyNodepool(nodepool *cspb.NodePool) {
 			Type: cspb.SandboxConfig_GVISOR,
 		}
 		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
+	case RuntimeTypeMicroVM:
+		nodepool.Config.SandboxConfig = &cspb.SandboxConfig{
+			Type: sandboxConfigMicroVM,
+		}
+		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(RuntimeTypeMicroVM)
 	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		nodepool.GetConfig().Labels[NodepoolRuntimeKey] = string(t)
 		// Do nothing.
@@ -550,6 +572,15 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Key:      "nvidia.com/gpu",
 			Operator: v13.TolerationOpExists,
 		})
+	case RuntimeTypeMicroVM:
+		podSpec.RuntimeClassName = proto.String(microvmRuntimeClass)
+		podSpec.NodeSelector[NodepoolRuntimeKey] = string(t)
+		addToleration(podSpec, v13.Toleration{
+			Effect:   v13.TaintEffectNoSchedule,
+			Key:      microvmNodepoolKey,
+			Operator: v13.TolerationOpEqual,
+			Value:    microvmRuntimeClass,
+		})
 	case RuntimeTypeUnsandboxed, RuntimeTypeUnsandboxedCapped:
 		podSpec.RuntimeClassName = nil
 		podSpec.Tolerations = append(podSpec.Tolerations, v13.Toleration{
@@ -564,6 +595,13 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Key:      gvisorNodepoolKey,
 			Operator: v13.TolerationOpEqual,
 			Value:    gvisorRuntimeClass,
+		})
+		// Also allow the pod to schedule on MicroVM nodes.
+		addToleration(podSpec, v13.Toleration{
+			Effect:   v13.TaintEffectNoSchedule,
+			Key:      microvmNodepoolKey,
+			Operator: v13.TolerationOpEqual,
+			Value:    microvmRuntimeClass,
 		})
 	case RuntimeTypeGVisorTPU:
 		podSpec.RuntimeClassName = proto.String(gvisorRuntimeClass)
@@ -582,6 +620,12 @@ func (t RuntimeType) ApplyPodSpec(podSpec *v13.PodSpec) {
 			Key:      gvisorNodepoolKey,
 			Operator: v13.TolerationOpEqual,
 			Value:    gvisorRuntimeClass,
+		})
+		addToleration(podSpec, v13.Toleration{
+			Effect:   v13.TaintEffectNoSchedule,
+			Key:      microvmNodepoolKey,
+			Operator: v13.TolerationOpEqual,
+			Value:    microvmRuntimeClass,
 		})
 	case RuntimeTypeKataQEMU, RuntimeTypeKataCloudHypervisor, RuntimeTypeKataFirecracker:
 		shimName, err := t.KataShimName()

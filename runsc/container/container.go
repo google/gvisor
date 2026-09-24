@@ -17,12 +17,12 @@ package container
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -30,9 +30,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -198,6 +199,10 @@ type Args struct {
 	// for containers in a new Sandbox process.
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// CheckpointDirPath is the path to the sentry checkpoint directory.
+	// Used to default FSRestoreImagePath if it is empty.
+	CheckpointDirPath string
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -205,6 +210,15 @@ type Args struct {
 // Destroy() on the container.
 func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
+
+	if specutils.IsRootContainer(args.Spec) && args.FSRestoreImagePath == "" && args.CheckpointDirPath != "" {
+		defaultFSDir := filepath.Join(args.CheckpointDirPath, checkpointfiles.FSCheckpointDir)
+		manifestPath := filepath.Join(defaultFSDir, checkpointfiles.FSCheckpointManifestFileName)
+		if _, err := os.Stat(manifestPath); err == nil {
+			args.FSRestoreImagePath = defaultFSDir
+		}
+	}
+
 	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
@@ -367,8 +381,8 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 	if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
 		return err
 	}
-	if err := cgroup.RunInCgroup(containerCgroup, func() error {
-		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached)
+	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
+		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached, cloneIntoCgroupFD)
 		if err != nil {
 			return fmt.Errorf("cannot create gofer process: %w", err)
 		}
@@ -385,6 +399,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			DevIOFile:           devIOFile,
 			MountsFile:          specFile,
 			Cgroup:              containerCgroup,
+			CloneIntoCgroupFD:   cloneIntoCgroupFD,
 			Attached:            args.Attached,
 			GoferFilestoreFiles: goferFilestores,
 			GoferMountConfs:     c.GoferMountConfs,
@@ -475,9 +490,9 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
+		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
-			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */)
+			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
 			if err != nil {
 				return err
 			}
@@ -517,11 +532,12 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		}
 	}
 
-	// "If any poststart hook fails, the runtime MUST log a warning, but
-	// the remaining hooks and lifecycle continue as if the hook had
-	// succeeded" -OCI spec.
+	// "If any poststart hook fails, the runtime MUST generate an error,
+	// stop the container, and continue the lifecycle at step 12" - OCI spec.
 	if c.Spec.Hooks != nil {
-		specutils.ExecuteHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
+		if err := specutils.ExecuteHooks(c.Spec.Hooks.Poststart, c.State()); err != nil {
+			return err
+		}
 	}
 
 	c.changeStatus(Running)
@@ -694,8 +710,8 @@ func (c *Container) Wait() (unix.WaitStatus, error) {
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Wait on process %d in sandbox, cid: %s", pid, c.Sandbox.ID)
-	if !c.IsSandboxRunning() {
-		return 0, fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return 0, err
 	}
 	return c.Sandbox.WaitPID(c.Sandbox.ID, pid)
 }
@@ -704,8 +720,8 @@ func (c *Container) WaitRootPID(pid int32) (unix.WaitStatus, error) {
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32) (unix.WaitStatus, error) {
 	log.Debugf("Wait on process %d in container, cid: %s", pid, c.ID)
-	if !c.IsSandboxRunning() {
-		return 0, fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return 0, err
 	}
 	return c.Sandbox.WaitPID(c.ID, pid)
 }
@@ -713,8 +729,8 @@ func (c *Container) WaitPID(pid int32) (unix.WaitStatus, error) {
 // WaitCheckpoint waits for the Kernel to have been successfully checkpointed.
 func (c *Container) WaitCheckpoint() error {
 	log.Debugf("Waiting for checkpoint to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitCheckpoint()
 }
@@ -722,8 +738,8 @@ func (c *Container) WaitCheckpoint() error {
 // WaitRestore waits for the Kernel to have been successfully restored.
 func (c *Container) WaitRestore() error {
 	log.Debugf("Waiting for restore to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitRestore()
 }
@@ -732,8 +748,8 @@ func (c *Container) WaitRestore() error {
 // saved.
 func (c *Container) WaitFSCheckpoint() error {
 	log.Debugf("Waiting for filesystem checkpoint to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitFSCheckpoint()
 }
@@ -742,8 +758,8 @@ func (c *Container) WaitFSCheckpoint() error {
 // checkpoint.
 func (c *Container) WaitFSRestore() error {
 	log.Debugf("Waiting for filesystem restore to complete in container, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.WaitFSRestore(c.ID)
 }
@@ -753,8 +769,8 @@ func (c *Container) WaitFSRestore() error {
 // to outFD.
 func (c *Container) TarRootfsUpperLayer(outFD *os.File) error {
 	log.Debugf("TarRootfsUpperLayer, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.TarRootfsUpperLayer(c.ID, outFD)
 }
@@ -765,6 +781,15 @@ func (c *Container) TarRootfsUpperLayer(outFD *os.File) error {
 // TODO(b/113680494): Distinguish different error types.
 func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 	log.Debugf("Signal container, cid: %s, signal: %v (%d)", c.ID, sig, sig)
+	if c.Status == Created {
+		return c.signalCreated(sig, all)
+	}
+	return c.signalRunning(sig, all)
+}
+
+// signalRunning delivers a signal to the processes of a Running (or Stopped)
+// container via the sandbox.
+func (c *Container) signalRunning(sig unix.Signal, all bool) error {
 	// Signaling container in Stopped state is allowed. When all=false,
 	// an error will be returned anyway; when all=true, this allows
 	// sending signal to other processes inside the container even
@@ -773,10 +798,49 @@ func (c *Container) SignalContainer(sig unix.Signal, all bool) error {
 	if err := c.requireStatus("signal", Running, Stopped); err != nil {
 		return err
 	}
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
+}
+
+// signalCreated handles a signal sent to a container that appears to be in the
+// Created state (start was never called). Such a container has no process to
+// receive the signal, so a terminating signal (SIGKILL/SIGTERM) is honored by
+// stopping the container.
+func (c *Container) signalCreated(sig unix.Signal, all bool) error {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
+		return err
+	}
+	defer c.Saver.UnlockOrDie()
+	// The status read before acquiring the lock may be stale: a concurrent start
+	// could have moved the container to Running (or a kill/delete to Stopped).
+	// Re-read the persisted state under the lock before acting on it.
+	reloaded := &Container{}
+	if err := c.Saver.loadLocked(reloaded); err != nil {
+		return err
+	}
+	c.Status = reloaded.Status
+	if c.Status != Created {
+		// The container now has a process (or has already stopped), so deliver
+		// the signal normally.
+		return c.signalRunning(sig, all)
+	}
+	// Still Created: only a terminating signal is actionable; there is nothing
+	// to deliver other signals to, so drop them.
+	if sig != unix.SIGKILL && sig != unix.SIGTERM {
+		return nil
+	}
+	// Tear down the container. For the root container this SIGKILLs the sandbox
+	// (boot) process; for a subcontainer it destroys the not-yet-started
+	// container in the sentry.
+	if c.Sandbox != nil {
+		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
+			return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+		}
+	}
+	c.changeStatus(Stopped)
+	return c.saveLocked()
 }
 
 // SignalProcess sends sig to a specific process in the container.
@@ -785,8 +849,8 @@ func (c *Container) SignalProcess(sig unix.Signal, pid int32) error {
 	if err := c.requireStatus("signal a process inside", Running); err != nil {
 		return err
 	}
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.SignalProcess(c.ID, int32(pid), sig, false)
 }
@@ -798,8 +862,8 @@ func (c *Container) SignalProcessGroup(sig unix.Signal, pgid int32) error {
 	if err := c.requireStatus("signal a process group inside", Running); err != nil {
 		return err
 	}
-	if !c.IsSandboxRunning() {
-		return fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return err
 	}
 	return c.Sandbox.SignalProcessGroup(c.ID, pgid, sig)
 }
@@ -1183,31 +1247,56 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 
 func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
 	// Create the self filestore file.
-	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC
+	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
 	if hint := mountHints.FindMount(mountSrc); hint == nil || !hint.ShouldShareMount() {
 		// Allow shared mounts to reuse existing filestore. A previous shared user
 		// may have already set up the filestore.
 		createFlags |= unix.O_EXCL
 	}
-	filestorePath := path.Join(goferRootfs, boot.SelfFilestorePath(mountSrc, c.sandboxID()))
-	filestoreFD, err := unix.Open(filestorePath, createFlags, 0666)
+	dirPath := path.Join(goferRootfs, mountSrc)
+	fileName := boot.SelfFilestoreName(c.sandboxID())
+
+	dirFD, err := unix.Open(dirPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open directory %q: %v", dirPath, err)
+	}
+	defer unix.Close(dirFD)
+
+	filestoreFD, err := unix.Openat2(dirFD, fileName, &unix.OpenHow{
+		Flags:   uint64(createFlags),
+		Mode:    0666,
+		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_XDEV,
+	})
 	if err != nil {
 		if err == unix.EEXIST {
 			// Note that if the same submount is mounted multiple times within the
 			// same sandbox, and is not shared, then the overlay option doesn't work
 			// correctly. Because each overlay mount is independent and changes to
 			// one are not visible to the other.
-			return nil, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
+			return nil, fmt.Errorf("%q mount source already has a filestore file %q; repeated submounts are not supported with overlay optimizations", mountSrc, fileName)
 		}
-		return nil, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+		return nil, fmt.Errorf("failed to create filestore file %q inside %q: %v", fileName, mountSrc, err)
 	}
-	log.Debugf("Created filestore file at %q for mount source %q", filestorePath, mountSrc)
+	var stat unix.Stat_t
+	if err := unix.Fstat(filestoreFD, &stat); err != nil {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("failed to stat filestore file %q inside %q: %v", fileName, mountSrc, err)
+	}
+	if (stat.Mode & unix.S_IFMT) != unix.S_IFREG {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("filestore file %q inside %q is not a regular file (mode: %o)", fileName, mountSrc, stat.Mode)
+	}
+	if stat.Nlink != 1 {
+		_ = unix.Close(filestoreFD)
+		return nil, fmt.Errorf("filestore file %q inside %q has unexpected link count: %d", fileName, mountSrc, stat.Nlink)
+	}
+	log.Debugf("Created filestore file %q for mount source %q", fileName, mountSrc)
 	// Filestore in self should be a named path because it needs to be
 	// discoverable via path traversal so that k8s can scan the filesystem
 	// and apply any limits appropriately (like local ephemeral storage
 	// limits). So don't delete it. These files will be unlinked when the
 	// container is destroyed. This makes self medium appropriate for k8s.
-	return os.NewFile(uintptr(filestoreFD), filestorePath), nil
+	return os.NewFile(uintptr(filestoreFD), fileName), nil
 }
 
 func (c *Container) createGoferFilestoreInDir(goferRootfs string, filestoreDir string) (*os.File, error) {
@@ -1300,7 +1389,11 @@ func (c *Container) waitForStopped() error {
 		return nil
 	}
 
-	if c.IsSandboxRunning() {
+	running, err := c.IsSandboxRunning()
+	if err != nil {
+		return fmt.Errorf("checking if sandbox is running: %w", err)
+	}
+	if running {
 		if err := c.SignalContainer(unix.Signal(0), false); err == nil {
 			return fmt.Errorf("container is still running")
 		}
@@ -1313,27 +1406,19 @@ func (c *Container) waitForStopped() error {
 		if _, err := unix.Wait4(int(goferPid), nil, 0, nil); err != nil && !errors.Is(err, unix.ECHILD) {
 			return fmt.Errorf("error waiting the gofer process: %v", err)
 		}
-		c.GoferPid.Store(0)
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-	op := func() error {
-		if err := unix.Kill(goferPid, 0); err == nil {
-			return fmt.Errorf("gofer is still running")
+	} else {
+		if err := specutils.WaitForNonChildExit(int(goferPid), 5*time.Second); err != nil {
+			return fmt.Errorf("waiting for gofer (PID %d) to exit: %v", goferPid, err)
 		}
-		c.GoferPid.Store(0)
-		return nil
 	}
-	return backoff.Retry(op, b)
+	c.GoferPid.Store(0)
+	return nil
 }
 
 // shouldCreateDeviceGofer indicates whether a device gofer connection should
 // be created.
 func shouldCreateDeviceGofer(spec *specs.Spec, conf *config.Config) bool {
-	return specutils.GPUFunctionalityRequested(spec, conf) || specutils.TPUFunctionalityRequested(spec, conf)
+	return specutils.GPUFunctionalityRequested(spec, conf) || specutils.TPUFunctionalityRequested(spec, conf) || specutils.RDMAEnabled(spec, conf)
 }
 
 // shouldSpawnGofer indicates whether the gofer process should be spawned.
@@ -1367,7 +1452,7 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
 	rootfsHint, err := boot.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1389,7 +1474,29 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
 		}
-		return []*os.File{ioFile}, nil, nil, nil, nil
+		ioFiles := []*os.File{ioFile}
+		cu := cleanup.Make(func() {
+			for _, f := range ioFiles {
+				_ = f.Close()
+			}
+		})
+		defer cu.Clean()
+		cfgIdx := 1
+		for _, m := range c.Spec.Mounts {
+			if !specutils.HasMountConfig(m) {
+				continue
+			}
+			if c.GoferMountConfs[cfgIdx].ShouldUseErofs() {
+				f, err := os.Open(m.Source)
+				if err != nil {
+					return nil, nil, nil, nil, fmt.Errorf("opening EROFS image %q: %v", m.Source, err)
+				}
+				ioFiles = append(ioFiles, f)
+			}
+			cfgIdx++
+		}
+		cu.Release()
+		return ioFiles, nil, nil, nil, nil
 	}
 
 	// Ensure we don't leak FDs to the gofer process.
@@ -1439,12 +1546,16 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 		// will also be forwarded by this process, resulting in duplicate signals.
 		Setsid: true,
 	}
+	if cloneIntoCgroupFD != nil {
+		cmd.SysProcAttr.UseCgroupFD = true
+		cmd.SysProcAttr.CgroupFD = int(cloneIntoCgroupFD.Fd())
+	}
 
 	// Set Args[0] to make easier to spot the gofer process. Otherwise it's
 	// shown as `exe`.
 	cmd.Args[0] = "runsc-gofer"
 
-	// Tranfer FDs that need to be present before the "gofer" command.
+	// Transfer FDs that need to be present before the "gofer" command.
 	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := donations.Transfer(cmd, 3)
 
@@ -1558,9 +1669,16 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	nss := []specs.LinuxNamespace{
 		{Type: specs.IPCNamespace},
 		{Type: specs.MountNamespace},
-		{Type: specs.NetworkNamespace},
 		{Type: specs.PIDNamespace},
 		{Type: specs.UTSNamespace},
+	}
+	goferNetNS, goferNetNSFile, pinGoferNetNS := goferNetworkNamespace(conf)
+	if goferNetNSFile != nil {
+		// goferNetNS.Path must remain open until the gofer has started.
+		defer goferNetNSFile.Close()
+	}
+	if goferNetNS != nil {
+		nss = append(nss, *goferNetNS)
 	}
 
 	rootlessEUID := unix.Geteuid() != 0
@@ -1629,6 +1747,16 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	c.goferIsChild = true
 	rpcPidCh <- cmd.Process.Pid
 
+	if pinGoferNetNS {
+		// The gofer was started in a new empty network namespace.
+		// Pin it, future gofers will join it instead of creating a new one.
+		if err := pinNullNetNS(conf, cmd.Process.Pid); err != nil {
+			log.Warningf("Unable to pin the gofer's network namespace at %q (%v); future gofers will create new network namespaces. This slows down gVisor startup.", nullNetNSPath(conf), err)
+		} else {
+			log.Infof("Pinned null network namespace at %q", nullNetNSPath(conf))
+		}
+	}
+
 	// Set up and synchronize rootless mode userns mappings.
 	if setUserMappings {
 		if err := sandbox.SetUserMappings(c.Spec, cmd.Process.Pid); err != nil {
@@ -1650,6 +1778,50 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	}
 
 	return sandEnds, goferFilestores, devSandEnd, mountsSand, nil
+}
+
+// goferNetworkNamespace returns the network namespace that the gofer process
+// should be started in.
+// A nil namespace means to stay in the current network namespace.
+// The returned `os.File` keeps the namespace referred to by the returned
+// namespace's Path alive, so it must be kept open until gofer start.
+// If `pinNetNS` is true, the gofer should be started in a new network
+// namespace, which should then be pinned as the shared "null" network
+// namespace (see `pinNullNetNS`) once the gofer starts.
+func goferNetworkNamespace(conf *config.Config) (ns *specs.LinuxNamespace, nsFile *os.File, pinNetNS bool) {
+	switch conf.GoferNetworkNamespace {
+	case config.GoferNetworkNamespaceNew:
+		return &specs.LinuxNamespace{Type: specs.NetworkNamespace}, nil, false
+	case config.GoferNetworkNamespaceHost:
+		return nil, nil, false
+	case config.GoferNetworkNamespaceNull:
+		nsFile, err := openNullNetNS(nullNetNSPath(conf))
+		if err != nil {
+			if !os.IsNotExist(err) {
+				// Unexpected error.
+				log.Warningf("No usable null network namespace at %q (%v); creating a new one. This issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err)
+			} else if conf.SharedRootDir == "" && conf.RootDir != config.DefaultRootDir() {
+				// User has customized `--root` but not `--shared-root`, so they are likely missing out on
+				// the performance benefits of a shared root directory.
+				log.Warningf("gVisor startup is slower if `--root` (or `--shared-root`) is not reused across multiple sandboxes. You can speed up sandbox startup by setting `--shared-root` to a shared system-wide directory so that the null gofer network namespace is reused across sandboxes.")
+			} else {
+				// Informational-only as this is expected on first sandbox creation.
+				log.Infof("No usable null network namespace at %q (%v); creating a new one. This is expected if this sandbox is the first sandbox to start with this `--shared-root` directory (%v). If this is not the first sandbox, this issue is slowing down your sandboxes' startup.", nullNetNSPath(conf), err, conf.SharedRoot())
+			}
+			return &specs.LinuxNamespace{Type: specs.NetworkNamespace}, nil, true
+		}
+		return &specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			// Refer to the namespace through our own open FD so that
+			// it stays valid even if racing with an unmount.
+			Path: fmt.Sprintf("/proc/self/fd/%d", nsFile.Fd()),
+		}, nsFile, false
+	default:
+		return &specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
+			Path: string(conf.GoferNetworkNamespace),
+		}, nil, false
+	}
 }
 
 // changeStatus transitions from one status to another ensuring that the
@@ -1694,8 +1866,23 @@ func (c *Container) changeStatus(s Status) {
 }
 
 // IsSandboxRunning returns true if the sandbox exists and is running.
-func (c *Container) IsSandboxRunning() bool {
-	return c.Sandbox != nil && c.Sandbox.IsRunning()
+func (c *Container) IsSandboxRunning() (bool, error) {
+	if c.Sandbox == nil {
+		return false, nil
+	}
+	return c.Sandbox.IsRunning()
+}
+
+// CheckSandboxRunning returns an error if the sandbox does not exist or is not running.
+func (c *Container) CheckSandboxRunning() error {
+	running, err := c.IsSandboxRunning()
+	if err != nil {
+		return fmt.Errorf("checking if sandbox is running: %w", err)
+	}
+	if !running {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return nil
 }
 
 // HasCapabilityInAnySet returns true if the given capability is in any of the
@@ -2278,10 +2465,14 @@ func nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath string) bool {
 }
 
 // CheckStopped checks if the container is stopped and updates its status.
-func (c *Container) CheckStopped() {
+func (c *Container) CheckStopped() error {
 	if state, err := c.Sandbox.ContainerRuntimeState(c.ID); err != nil {
 		log.Warningf("Cannot find if container %v exists, checking if sandbox %v is running, err: %v", c.ID, c.Sandbox.ID, err)
-		if !c.IsSandboxRunning() {
+		running, err := c.IsSandboxRunning()
+		if err != nil {
+			return fmt.Errorf("checking if sandbox %v is running: %w", c.Sandbox.ID, err)
+		}
+		if !running {
 			log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
 			c.changeStatus(Stopped)
 		}
@@ -2291,13 +2482,14 @@ func (c *Container) CheckStopped() {
 			c.changeStatus(Stopped)
 		}
 	}
+	return nil
 }
 
 // GetNetworkConfig returns the network configuration.
 func (c *Container) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
 	log.Debugf("Returns network config, cid: %s", c.ID)
-	if !c.IsSandboxRunning() {
-		return nil, fmt.Errorf("sandbox is not running")
+	if err := c.CheckSandboxRunning(); err != nil {
+		return nil, err
 	}
 	return c.Sandbox.GetNetworkConfig()
 }

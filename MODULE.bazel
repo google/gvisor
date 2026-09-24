@@ -671,6 +671,11 @@ go_deps.module(
     sum = "h1:H2TDz8ibqkAF6YGhCdN3jS9O0/s90v0rJh3X/OLHEUk=",
     version = "v0.0.0-20220907171357-04be3eba64a2",
 )
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["//tools:protobuf.disable-binary-reading-on-init.patch"],
+    path = "google.golang.org/protobuf",
+)
 go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",

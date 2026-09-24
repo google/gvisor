@@ -14,10 +14,14 @@
 
 #include <fcntl.h>
 #include <linux/capability.h>
+#include <linux/prctl.h>
+#include <signal.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/vfs.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>

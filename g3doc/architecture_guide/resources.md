@@ -125,6 +125,16 @@ application usage will not appear as anonymous memory usage, and will instead be
 accounted to the `memfd`. All anonymous memory will correspond to Sentry usage,
 and host memory charged to the container will work as standard.
 
+This has a confusing consequence when reading `memory.stat` (or
+`memory.current`) for a gVisor sandbox's cgroup: since application memory is
+backed by a `memfd`, the kernel accounts it as **shmem**, not **anon**. So the
+`anon` field in `memory.stat` will stay low even for a container running a
+memory-hungry application, while `shmem` (or `file`, depending on the kernel
+version) reflects most of the application's actual memory usage. If you need a
+breakdown of application memory usage from inside the sandbox, look at
+`memory.current` for the total, or use the Sentry's own accounting via `runsc
+usage <container id>`.
+
 The cgroups can be monitored for standard signals: pressure indicators,
 threshold notifiers, etc. and can also be adjusted dynamically. Note that the
 Sentry itself may listen for pressure signals in its containing cgroup, in order

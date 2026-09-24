@@ -17,7 +17,9 @@
 #include <linux/capability.h>
 #include <linux/magic.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -31,6 +33,7 @@
 #include <sys/sysmacros.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
+#include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
@@ -83,6 +86,7 @@ namespace {
 
 using ::testing::AnyOf;
 using ::testing::Contains;
+using ::testing::IsSupersetOf;
 using ::testing::Pair;
 
 constexpr char kTmpfs[] = "tmpfs";
@@ -546,6 +550,55 @@ TEST(MountTest, DeviceFileWritableOnReadonlyMount) {
   EXPECT_THAT(write(dev_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
 }
 
+TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfCharDevice) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string const nullPath = JoinPath(dir.path(), "null");
+  FileDescriptor create_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_CREAT | O_RDWR, 0666));
+  create_fd.reset();
+
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("/dev/null", nullPath, "", MS_BIND, "", 0));
+  ASSERT_THAT(mount("/dev/null", nullPath.c_str(), nullptr,
+                    MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+
+  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_WRONLY));
+  char msg[] = "hello";
+  EXPECT_THAT(write(wfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+
+  FileDescriptor rwfd = ASSERT_NO_ERRNO_AND_VALUE(Open(nullPath, O_RDWR));
+  EXPECT_THAT(write(rwfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+}
+
+TEST(MountTest, ReadOnlyBindMountAllowsWriteOpenOfFIFO) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string const fifoPath = JoinPath(dir.path(), "fifo");
+  ASSERT_THAT(mkfifo(fifoPath.c_str(), 0666), SyscallSucceeds());
+
+  auto const bindDir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), bindDir.path(), "", MS_BIND, "", 0));
+  ASSERT_THAT(mount(dir.path().c_str(), bindDir.path().c_str(), nullptr,
+                    MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+
+  std::string const boundFifoPath = JoinPath(bindDir.path(), "fifo");
+  FileDescriptor rfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(boundFifoPath, O_RDONLY | O_NONBLOCK));
+  FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(boundFifoPath, O_WRONLY | O_NONBLOCK));
+  char msg[] = "hello";
+  EXPECT_THAT(write(wfd.get(), msg, sizeof(msg)),
+              SyscallSucceedsWithValue(sizeof(msg)));
+}
+
 // Test that bind mounting a directory onto a regular file fails with ENOTDIR.
 TEST(MountTest, BindMountDirectoryOntoFileFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
@@ -771,6 +824,44 @@ TEST(MountTest, MountInfo) {
                                Contains(Pair("mode", "123"))));
     }
   }
+}
+
+TEST(MountTest, MountFlagsShownInProcMounts) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs,
+            MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, "", 0));
+
+  // The per-mount flags must be reflected in both /proc/self/mounts and
+  // /proc/self/mountinfo: userspace (e.g. systemd) reads them back to
+  // preserve locked flags across bind-remounts in user namespaces.
+  bool found_mounts = false;
+  const std::vector<ProcMountsEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  for (const auto& e : mounts) {
+    if (e.mount_point != dir.path()) continue;
+    found_mounts = true;
+    auto mopts = ParseMountOptions(e.mount_opts);
+    EXPECT_THAT(mopts, IsSupersetOf({Pair("nosuid", ""), Pair("nodev", ""),
+                                     Pair("noexec", ""), Pair("noatime", "")}))
+        << "/proc/self/mounts options: " << e.mount_opts;
+  }
+  EXPECT_TRUE(found_mounts);
+
+  bool found_mountinfo = false;
+  const std::vector<ProcMountInfoEntry> mountinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  for (auto const& e : mountinfo) {
+    if (e.mount_point != dir.path()) continue;
+    found_mountinfo = true;
+    auto mopts = ParseMountOptions(e.mount_opts);
+    EXPECT_THAT(mopts, IsSupersetOf({Pair("nosuid", ""), Pair("nodev", ""),
+                                     Pair("noexec", ""), Pair("noatime", "")}))
+        << "/proc/self/mountinfo options: " << e.mount_opts;
+  }
+  EXPECT_TRUE(found_mountinfo);
 }
 
 TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
@@ -1784,6 +1875,150 @@ TEST(MountTest, MakeSlave) {
   ASSERT_NE(optionals[dir2.path()][0].master, 0);
 }
 
+// Regression test: a bind mount that fails midway through attachment (e.g.
+// because the mount namespace is at its mount limit) must not leave its
+// half-constructed clone linked into the source's peer group. If it does, the
+// dead clone can later be selected as a slave's master, silently breaking
+// mount propagation to that slave.
+TEST(MountTest, FailedBindDoesNotBreakPropagation) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // Mount A: a shared tmpfs.
+  auto const dir_a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt_a = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir_a.path(), kTmpfs, 0, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir_a.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  // Create the future mountpoint inside A so that it exists in all of A's
+  // peers.
+  std::string const sub_a = JoinPath(dir_a.path(), "sub");
+  ASSERT_THAT(mkdir(sub_a.c_str(), 0755), SyscallSucceeds());
+
+  // Mount B: a bind of A, and its peer.
+  auto const dir_b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt_b = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir_a.path(), dir_b.path(), "", MS_BIND, "", MNT_DETACH));
+
+  // The default mount limits (100k on Linux, 10k on gVisor) can make this test
+  // slow. Try and lower it if we're allowed to.
+  constexpr char kMountMax[] = "/proc/sys/fs/mount-max";
+  bool changed_mount_max = false;
+  int lower_mount_max = 100;
+  Cleanup restore_mount_max;
+  if (access(kMountMax, W_OK) == 0) {
+    std::string const old_max =
+        ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
+    ASSERT_NO_ERRNO(SetContents(kMountMax, absl::StrCat(lower_mount_max)));
+    changed_mount_max = true;
+    restore_mount_max = Cleanup([old_max, &kMountMax]() {
+      EXPECT_NO_ERRNO(SetContents(kMountMax, old_max));
+    });
+  }
+
+  // Fill the mount namespace up to its mount limit with private bind mounts,
+  // each on its own directory in the outer tmpfs. All of them are children of
+  // the outer mount, so detaching outer releases all of them with a single
+  // umount2() call.
+  auto const outer = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", outer.path().c_str(), kTmpfs, 0, 0), SyscallSucceeds());
+  auto outer_cleanup = Cleanup([&outer]() {
+    EXPECT_THAT(umount2(outer.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  });
+  if (!changed_mount_max) {
+    // Repeatedly double the mounts in outer via recursive bind mounts of outer
+    // onto subdirectories within outer. Each successful step doubles the total
+    // number of mounts in outer.
+    std::vector<std::string> subdirs;
+    while (true) {
+      std::string const d = absl::StrCat(outer.path(), "/d", subdirs.size());
+      ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+      if (mount(outer.path().c_str(), d.c_str(), nullptr, MS_BIND | MS_REC,
+                nullptr) != 0) {
+        break;
+      }
+      subdirs.push_back(d);
+    }
+
+    // Binary fill: try adding powers of 2 from largest to smallest to top off
+    // the namespace without exceeding the limit.
+    for (int i = static_cast<int>(subdirs.size()) - 1; i >= 0; i--) {
+      std::string const d = absl::StrCat(outer.path(), "/fill", i);
+      ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+      mount(subdirs[i].c_str(), d.c_str(), nullptr, MS_BIND | MS_REC, nullptr);
+    }
+  }
+
+  bool full = false;
+  for (int i = 0; i < lower_mount_max; i++) {
+    std::string const d = absl::StrCat(outer.path(), "/single", i);
+    ASSERT_THAT(mkdir(d.c_str(), 0755), SyscallSucceeds());
+    if (mount(d.c_str(), d.c_str(), nullptr, MS_BIND, nullptr) != 0) {
+      const int err = errno;
+      ASSERT_EQ(err, ENOSPC) << strerror(err);
+      full = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(full) << "couldn't fill up the mount namespace";
+
+  // Binding A while the namespace is at its mount limit must fail, and must
+  // not leave any trace of the aborted mount in A's peer group.
+  auto const dir_c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount(dir_a.path().c_str(), dir_c.path().c_str(), nullptr,
+                    MS_BIND, nullptr),
+              SyscallFailsWithErrno(ENOSPC));
+
+  // Release the mount budget again.
+  outer_cleanup.Release()();
+
+  // Make A a slave. Its new master must be B, its only remaining peer.
+  ASSERT_THAT(mount("", dir_a.path().c_str(), 0, MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  // A mount under the shared peer B must propagate to the slave A.
+  std::string const sub_b = JoinPath(dir_b.path(), "sub");
+  ASSERT_THAT(mount("", sub_b.c_str(), kTmpfs, 0, 0), SyscallSucceeds());
+  auto sub_cleanup = Cleanup([&sub_b, &sub_a]() {
+    EXPECT_THAT(umount2(sub_b.c_str(), MNT_DETACH), SyscallSucceeds());
+    // The umount of sub_b may or may not have propagated to sub_a depending
+    // on whether the mount propagated there in the first place.
+    umount2(sub_a.c_str(), MNT_DETACH);
+  });
+
+  struct stat st_a, st_b;
+  ASSERT_THAT(stat(sub_b.c_str(), &st_b), SyscallSucceeds());
+  ASSERT_THAT(stat(sub_a.c_str(), &st_a), SyscallSucceeds());
+  EXPECT_EQ(st_a.st_dev, st_b.st_dev)
+      << "mount under shared peer B did not propagate to slave A";
+}
+
+TEST(MountTest, MountMax) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr char kMountMax[] = "/proc/sys/fs/mount-max";
+  SKIP_IF(access(kMountMax, W_OK) != 0);
+
+  std::string const old_max = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
+  auto const restore =
+      Cleanup([&]() { EXPECT_NO_ERRNO(SetContents(kMountMax, old_max)); });
+
+  // The limit must be at least 1 (Linux: proc_dointvec_minmax with
+  // extra1 == SYSCTL_ONE).
+  EXPECT_THAT(SetContents(kMountMax, "0"), PosixErrorIs(EINVAL));
+
+  // Lower the limit to the current number of mounts; any new mount must then
+  // fail with ENOSPC.
+  auto const mounts = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+  ASSERT_NO_ERRNO(SetContents(kMountMax, absl::StrCat(mounts.size())));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, 0),
+              SyscallFailsWithErrno(ENOSPC));
+
+  // Mounting works again once the limit is restored.
+  ASSERT_NO_ERRNO(SetContents(kMountMax, old_max));
+  auto const mnt =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+}
+
 TEST(MountTest, MakeSharedSlave) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
@@ -2608,6 +2843,85 @@ TEST(MountTest, ChangeMountFlags) {
   ASSERT_EQ(st.f_flags & flag, 0);
 }
 
+constexpr int kLockableFlags = MS_RDONLY | MS_NOEXEC | MS_NODEV | MS_NOSUID;
+
+// Sets kLockableFlags on the mount at `path`.
+void SetLockableFlags(const std::string& path) {
+  ASSERT_THAT(mount("", path.c_str(), nullptr,
+                    MS_REMOUNT | MS_BIND | kLockableFlags, ""),
+              SyscallSucceeds());
+}
+
+TEST(MountTest, ChangeMountFlagsOfLockedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const Cleanup mount_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+  ASSERT_NO_FATAL_FAILURE(SetLockableFlags(dir.path()));
+  const std::string path = dir.path();
+  const std::string file_path = JoinPath(path, "foo");
+
+  const std::function<void()> child = [&] {
+    // The mount was copied into a new user namespace, so none of its flags may
+    // be cleared.
+    for (const int flag : {MS_RDONLY, MS_NOEXEC, MS_NODEV, MS_NOSUID}) {
+      TEST_CHECK_ERRNO(
+          mount("", path.c_str(), nullptr,
+                MS_REMOUNT | MS_BIND | (kLockableFlags & ~flag), ""),
+          EPERM);
+    }
+    TEST_CHECK_ERRNO(mount("", path.c_str(), nullptr, MS_REMOUNT | MS_BIND, ""),
+                     EPERM);
+    // The mount is still read-only.
+    TEST_CHECK_ERRNO(open(file_path.c_str(), O_CREAT | O_RDWR, 0666), EROFS);
+    // A remount that keeps all of the locked flags set is allowed.
+    TEST_CHECK_SUCCESS(mount("", path.c_str(), nullptr,
+                             MS_REMOUNT | MS_BIND | kLockableFlags, ""));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, child),
+              IsPosixErrorOkAndHolds(0));
+
+  // The flags are not locked in the namespace that owns the mount.
+  EXPECT_THAT(mount("", path.c_str(), nullptr, MS_REMOUNT | MS_BIND, ""),
+              SyscallSucceeds());
+  struct statfs st;
+  ASSERT_THAT(statfs(path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_flags & kLockableFlags, 0);
+}
+
+TEST(MountTest, LockedMountFlagsAreInheritedByBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const Cleanup mount_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
+  ASSERT_NO_FATAL_FAILURE(SetLockableFlags(dir.path()));
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string path = dir.path();
+  const std::string target_path = target.path();
+
+  const std::function<void()> child = [&] {
+    // Binding the locked mount elsewhere must not result in a mount for which
+    // flags can be cleared.
+    TEST_CHECK_SUCCESS(
+        mount(path.c_str(), target_path.c_str(), "", MS_BIND, ""));
+    for (const int flag : {MS_RDONLY, MS_NOEXEC, MS_NODEV, MS_NOSUID}) {
+      TEST_CHECK_ERRNO(
+          mount("", target_path.c_str(), nullptr,
+                MS_REMOUNT | MS_BIND | (kLockableFlags & ~flag), ""),
+          EPERM);
+    }
+    TEST_CHECK_SUCCESS(mount("", target_path.c_str(), nullptr,
+                             MS_REMOUNT | MS_BIND | kLockableFlags, ""));
+    // The bind mount itself was created in this namespace, so unlike the mount
+    // it was cloned from, it can be unmounted.
+    TEST_CHECK_SUCCESS(umount2(target_path.c_str(), MNT_DETACH));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
 TEST(MountTest, RemountUnmounted) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
@@ -2748,9 +3062,149 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   }
 }
 
+TEST(MountTest, OverlayfsSecurityCapabilityRequiresSetFcap) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "", MNT_DETACH));
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  // Mount the overlayfs.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  auto overlay_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("overlay", merged.path().c_str(),
+                                      "overlay", 0, opts.c_str(), MNT_DETACH));
+
+  struct {
+    uint32_t magic_etc;
+    uint32_t permitted_lo;
+    uint32_t inheritable_lo;
+    uint32_t permitted_hi;
+    uint32_t inheritable_hi;
+  } cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = 1 << CAP_SETUID;
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(merged.path()));
+
+  // Setting security.capability with CAP_SETFCAP should succeed
+  ASSERT_THAT(setxattr(file.path().c_str(), "security.capability", &cap_data,
+                       sizeof(cap_data), 0),
+              SyscallSucceeds());
+
+  // Setting security.capability without CAP_SETFCAP should fail
+  AutoCapability set_fcap(CAP_SETFCAP, false);
+  ASSERT_THAT(setxattr(file.path().c_str(), "security.capability", &cap_data,
+                       sizeof(cap_data), 0),
+              SyscallFailsWithErrno(EPERM));
+}
+
+TEST(MountTest, OverlayfsSecurityCapabilityTranslatesRootID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "", MNT_DETACH));
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  // Mount the overlayfs.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  auto overlay_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("overlay", merged.path().c_str(),
+                                      "overlay", 0, opts.c_str(), MNT_DETACH));
+
+  struct {
+    uint32_t magic_etc;
+    uint32_t permitted_lo;
+    uint32_t inheritable_lo;
+    uint32_t permitted_hi;
+    uint32_t inheritable_hi;
+  } cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.permitted_lo = 1 << CAP_SETUID;
+
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(merged.path()));
+
+  ASSERT_THAT(setxattr(file.path().c_str(), "security.capability", &cap_data,
+                       sizeof(cap_data), 0),
+              SyscallSucceeds());
+
+  constexpr uint32_t kChildUID = 1000;
+  const uint32_t parent_uid = geteuid();
+  const uint32_t parent_gid = getegid();
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+
+        int fd = open("/proc/self/uid_map", O_WRONLY);
+        TEST_PCHECK(fd >= 0);
+        std::string map = absl::StrCat(kChildUID, " ", parent_uid, " 1");
+        TEST_PCHECK(write(fd, map.data(), map.size()) ==
+                    static_cast<ssize_t>(map.size()));
+        TEST_PCHECK(close(fd) == 0);
+
+        // Denying setgroups is a prerequisite for writing gid_map without
+        // CAP_SETGID in the parent user namespace.
+        int setgroups_fd = open("/proc/self/setgroups", O_WRONLY);
+        if (setgroups_fd >= 0) {
+          TEST_PCHECK(write(setgroups_fd, "deny", 4) == 4);
+          TEST_PCHECK(close(setgroups_fd) == 0);
+        }
+        int gid_fd = open("/proc/self/gid_map", O_WRONLY);
+        if (gid_fd >= 0) {
+          std::string gid_map = absl::StrCat(kChildUID, " ", parent_gid, " 1");
+          TEST_PCHECK(write(gid_fd, gid_map.data(), gid_map.size()) ==
+                      static_cast<ssize_t>(gid_map.size()));
+          TEST_PCHECK(close(gid_fd) == 0);
+        }
+
+        struct {
+          uint32_t magic_etc;
+          uint32_t permitted_lo;
+          uint32_t inheritable_lo;
+          uint32_t permitted_hi;
+          uint32_t inheritable_hi;
+          uint32_t rootid;
+        } cap_data_v3 = {};
+
+        ssize_t ret = getxattr(file.path().c_str(), "security.capability",
+                               &cap_data_v3, sizeof(cap_data_v3));
+        TEST_CHECK_SUCCESS(ret);
+        TEST_CHECK_MSG(ret == sizeof(cap_data_v3), "wrong size returned");
+        TEST_CHECK_MSG((cap_data_v3.magic_etc & VFS_CAP_REVISION_MASK) ==
+                           VFS_CAP_REVISION_3,
+                       "wrong revision");
+        TEST_CHECK_MSG(cap_data_v3.rootid == kChildUID, "wrong rootid");
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
+  // Test fails in gVisor running on <6.0 due to fsgofer getting permission
+  // errors on `mknod`.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
@@ -2829,6 +3283,10 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
+  // Test fails in gVisor running on <6.0 due to fsgofer getting permission
+  // errors on `mknod`.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(GetHostKernelVersion()).major < 6);
+
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());

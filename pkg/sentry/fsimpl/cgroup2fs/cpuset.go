@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -35,7 +34,7 @@ type cpuset struct {
 	parent   *cpuset
 	detached atomicbitops.Bool
 
-	mu sync.Mutex `state:"nosave"`
+	mu cpusetMutex `state:"nosave"`
 
 	cpus *bitmap.Bitmap
 	mems *bitmap.Bitmap

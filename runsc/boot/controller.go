@@ -25,12 +25,14 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -160,11 +162,12 @@ const (
 
 // Profiling related commands (see pprof.go for more details).
 const (
-	ProfileCPU   = "Profile.CPU"
-	ProfileHeap  = "Profile.Heap"
-	ProfileBlock = "Profile.Block"
-	ProfileMutex = "Profile.Mutex"
-	ProfileTrace = "Profile.Trace"
+	ProfileCPU       = "Profile.CPU"
+	ProfileHeap      = "Profile.Heap"
+	ProfileGoroutine = "Profile.Goroutine"
+	ProfileBlock     = "Profile.Block"
+	ProfileMutex     = "Profile.Mutex"
+	ProfileTrace     = "Profile.Trace"
 )
 
 // Logging related commands (see logging.go for more details).
@@ -525,6 +528,7 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
+	o.RunscVersion = version.Version()
 	return cm.l.save(o)
 }
 
@@ -569,6 +573,10 @@ type RestoreOpts struct {
 	// RestoreOpts.HavePagesFile is unknown and must be determined by
 	// containerManager.Restore.
 	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
+
+	// SplitFSRestore indicates if we should restore the filesystem from a
+	// split filesystem checkpoint.
+	SplitFSRestore bool `json:"split_fsrestore"`
 }
 
 // Restore loads a container from a statefile.
@@ -593,9 +601,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
-	if cm.l.fsRestore != nil {
-		return fmt.Errorf("cannot restore sandbox when filesystem restore is enabled")
+
+	// If filesystem restore files were donated to the loader during sandbox
+	// creation, we must perform a split filesystem restore. Restoring a split
+	// checkpoint without split-fsrestore enabled is not supported.
+	if (cm.l.fsRestore != nil) != o.SplitFSRestore {
+		if o.SplitFSRestore {
+			return fmt.Errorf("split filesystem restore requested, but sandbox was created without filesystem restore files")
+		}
+		return fmt.Errorf("filesystem restore files were donated during sandbox creation, but split filesystem restore was not requested")
 	}
+
 	if len(o.Files) == 0 {
 		return fmt.Errorf("at least one file must be passed to Restore")
 	}
@@ -1069,6 +1085,10 @@ func (cm *containerManager) ListTraceSessions(_ *struct{}, out *[]seccheck.Sessi
 }
 
 // ProcfsDump dumps procfs state of the sandbox.
+//
+// Callers must not hold any thread-group leader's Task.mu in the sandbox.
+// checklocks cannot name the leader mutexes in the slice returned by
+// PIDNamespace.ThreadGroups.
 func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsDump) error {
 	log.Debugf("containerManager.ProcfsDump")
 	ts := cm.l.k.TaskSet()
@@ -1197,8 +1217,8 @@ type FSSaveArgs struct {
 	// 4. pages file
 	urpc.FilePayload
 
-	// Path is the path inside the container to save.
-	Path string `json:"path"`
+	// Paths are the paths inside the containers to save to the checkpoint.
+	Paths []checkpoint.ResourceID `json:"paths"`
 
 	// Equivalent to kernel.FSSaveOpts fields.
 	ExitAfterSaving bool `json:"exit_after_saving"`
@@ -1281,6 +1301,7 @@ func (cm *containerManager) SetNetworkArgs(args *CreateLinksAndRoutesArgs, _ *st
 			}
 			f := dupedFDs[fdIdx]
 			fdIdx++
+			cm.l.pinRing.Add(f.FD())
 
 			isSocket, err := fdbased.IsSocketFD(f.FD())
 			if err != nil {

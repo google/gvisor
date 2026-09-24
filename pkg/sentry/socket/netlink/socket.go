@@ -98,7 +98,7 @@ type Socket struct {
 
 	// connection is the kernel's connection to ep, used to write messages
 	// sent to userspace.
-	connection transport.ConnectedEndpoint
+	connection transport.Sender
 
 	// netns is the network namespace associated with the socket.
 	// A netlink socket is immutably bound to a network namespace.
@@ -835,7 +835,7 @@ func (s *Socket) sendBufs(ctx context.Context, bufs [][]byte, cms transport.Cont
 		return err
 	}
 	if notify {
-		s.connection.SendNotify()
+		s.connection.NotifyDataReady()
 	}
 	return nil
 }

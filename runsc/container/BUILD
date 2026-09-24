@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "container.go",
         "gofer_to_host_rpc.go",
+        "null_netns.go",
         "state_file.go",
         "status.go",
     ],
@@ -25,6 +26,7 @@ go_library(
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/sighandling",
         "//pkg/sync",
         "//pkg/unet",
@@ -38,7 +40,6 @@ go_library(
         "//runsc/sandbox",
         "//runsc/specutils",
         "//runsc/starttime",
-        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_gofrs_flock//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
@@ -50,8 +51,10 @@ go_test(
     size = "large",
     srcs = [
         "console_test.go",
+        "container_save_restore_test.go",
         "container_test.go",
         "metric_server_test.go",
+        "multi_container_save_restore_test.go",
         "multi_container_test.go",
         "shared_volume_test.go",
         "trace_test.go",
@@ -67,7 +70,7 @@ go_test(
         ],
     }),
     data = [
-        "//runsc",
+        "//:release",
         "//test/cmd/test_app",
     ],
     library = ":container",
@@ -78,8 +81,11 @@ go_test(
         "//pkg/cleanup",
         "//pkg/hostos",
         "//pkg/log",
+        "//pkg/seccheck/scsdk",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
         "//pkg/sentry/fscheckpoint",
+        "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -88,6 +94,7 @@ go_test(
         "//pkg/sentry/seccheck",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/seccheck/sinks/remote/test",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/test/testutil",
@@ -117,5 +124,36 @@ go_test(
         ":container",
         "//runsc/sandbox",
         "@org_golang_google_protobuf//proto:go_default_library",
+    ],
+)
+
+go_test(
+    name = "lifecycle_benchmark_test",
+    size = "large",
+    srcs = ["lifecycle_bench_test.go"],
+    args = [
+        "-test.bench=.",
+        "-test.run=^$$",
+        "-test.benchtime=30x",  # A fixed iteration count.
+        "-test.v",
+        "--test_platforms=kvm,systrap",
+    ],
+    data = [
+        "//:release",
+        "//test/cmd/test_app",
+    ],
+    library = ":container",
+    tags = [
+        "manual",
+        "requires-kvm",
+    ],
+    deps = [
+        "//pkg/log",
+        "//pkg/sentry/platform",
+        "//pkg/test/testutil",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

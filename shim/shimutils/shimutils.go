@@ -56,12 +56,12 @@ var (
 
 // GetRunscPath returns the path to the runsc binary.
 func GetRunscPath() (string, error) {
-	return testutil.FindFile("runsc/runsc")
+	return testutil.FindRunsc()
 }
 
 // GetShimPath returns the path to the containerd-shim-runsc-v1 binary.
 func GetShimPath() (string, error) {
-	return testutil.FindFile("shim/containerd-shim-runsc-v1")
+	return testutil.FindFile("release/containerd-shim-runsc-v1")
 }
 
 // NewSandboxSpec returns a new sandbox spec.

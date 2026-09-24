@@ -23,6 +23,7 @@ package sysmsg
 import (
 	"fmt"
 	"strings"
+	"structs"
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
@@ -114,6 +115,8 @@ const (
 
 // Msg contains the current state of the sysmsg thread.
 type Msg struct {
+	_ structs.HostLayout
+
 	// The next batch of fields is used to call the syshandler stub
 	// function. A system call can be replaced with a function call. When
 	// a function call is executed, it can't change the current process
@@ -227,6 +230,8 @@ const (
 // This is OK because as a rule we do not trust this data; if any funny business
 // is going on the sentry simply kills the subprocess.
 type ThreadContext struct {
+	_ structs.HostLayout
+
 	// FPState is a region of memory where:
 	//   - syshandler saves FPU state to using xsave/fxsave
 	//   - sighandler copies FPU state to from ucontext->uc_mcontext.fpregs

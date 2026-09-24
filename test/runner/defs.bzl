@@ -83,7 +83,7 @@ def _syscall_test(
         netstack_sr = False,
         nftables = False,
         kvm_use_cpu_nums = True,
-        mount_cgroup_v2 = False,
+        in_sandbox_cgroup = "v1",
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -184,10 +184,8 @@ def _syscall_test(
         "--kvm-use-cpu-nums=" + str(kvm_use_cpu_nums),
     ]
 
-    if mount_cgroup_v2:
-        runner_args.append("--mount-cgroup-v2=true")
-    else:
-        runner_args.append("--mount-cgroup-v2=false")
+    if in_sandbox_cgroup:
+        runner_args.append("--in-sandbox-cgroup=" + in_sandbox_cgroup)
 
     # Trace points are platform agnostic, so enable them for ptrace only.
     if platform == "ptrace":
@@ -221,7 +219,7 @@ def syscall_test_variants(
         add_directfs = True,
         one_sandbox = True,
         iouring = False,
-        allow_native = True,
+        allow_native = True,  # buildifier: disable=unused-variable
         leak_check = True,
         debug = True,
         container = None,
@@ -234,7 +232,7 @@ def syscall_test_variants(
         netstack_sr = False,
         nftables = False,
         kvm_use_cpu_nums = False,
-        mount_cgroup_v2 = False,
+        in_sandbox_cgroup = "v1",
         **kwargs):
     """Generates syscall tests for all variants.
 
@@ -264,6 +262,7 @@ def syscall_test_variants(
       netstack_sr: if save is true, add netstack save/restore test variants.
       nftables: if nftables is true, enable nftables.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
+      in_sandbox_cgroup: cgroup version to use inside the sandbox.
       **kwargs: additional test arguments.
     """
     for platform, platform_tags in all_platforms():
@@ -292,7 +291,7 @@ def syscall_test_variants(
             netstack_sr = netstack_sr,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
 
@@ -319,12 +318,13 @@ def syscall_test_variants(
             netstack_sr = netstack_sr,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
 
-    # TODO(b/192114729): hostinet is not supported with S/R.
-    if add_hostinet and not (save or save_resume):
+    # Connected host sockets do not survive restore, so the save tests are
+    # skipped and only the save_resume tests are generated.
+    if add_hostinet and not save:
         _syscall_test(
             test = test,
             platform = default_platform,
@@ -347,7 +347,7 @@ def syscall_test_variants(
             netstack_sr = netstack_sr,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
     if not use_tmpfs:
@@ -374,7 +374,7 @@ def syscall_test_variants(
             netstack_sr = netstack_sr,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
     if add_fusefs:
@@ -399,7 +399,7 @@ def syscall_test_variants(
             netstack_sr = netstack_sr,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
 
@@ -416,7 +416,7 @@ def syscall_test(
         add_directfs = True,
         one_sandbox = True,
         iouring = False,
-        allow_native = True,
+        allow_native = True,  # buildifier: disable=unused-variable
         leak_check = True,
         debug = None,
         container = None,
@@ -428,7 +428,7 @@ def syscall_test(
         nftables = False,
         perf = False,
         kvm_use_cpu_nums = False,
-        mount_cgroup_v2 = False,
+        in_sandbox_cgroup = "v1",
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -457,6 +457,7 @@ def syscall_test(
       nftables: if nftables is true, enable nftables.
       perf: test is a benchmark.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
+      in_sandbox_cgroup: cgroup version to use inside the sandbox.
       **kwargs: additional test arguments.
     """
     if not tags:
@@ -487,7 +488,7 @@ def syscall_test(
             container = container,
             one_sandbox = one_sandbox,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
 
@@ -516,7 +517,7 @@ def syscall_test(
         netstack_sr = False,
         nftables = nftables,
         kvm_use_cpu_nums = kvm_use_cpu_nums,
-        mount_cgroup_v2 = mount_cgroup_v2,
+        in_sandbox_cgroup = in_sandbox_cgroup,
         **kwargs
     )
 
@@ -549,7 +550,7 @@ def syscall_test(
             netstack_sr = False,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )
 
@@ -608,6 +609,6 @@ def syscall_test(
             netstack_sr = False,
             nftables = nftables,
             kvm_use_cpu_nums = kvm_use_cpu_nums,
-            mount_cgroup_v2 = mount_cgroup_v2,
+            in_sandbox_cgroup = in_sandbox_cgroup,
             **kwargs
         )

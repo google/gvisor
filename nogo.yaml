@@ -93,8 +93,6 @@ analyzers:
     internal:
       suppress:
         # Valid reasons to break the rules.
-        - "xsetbv: invalid MOVL of value"
-        - "xsetbv: invalid offset value"
         - "xgetbv: invalid MOVL of ret"
         - "xgetbv: invalid offset ret"
         - "wrmsr: invalid MOVL of value"
@@ -162,6 +160,8 @@ analyzers:
         - codes/codes.go # go.opentelemetry.io/otel
         - yaml.go # github.com/go-openapi/swag/yamlutils
         - staticcheck/sa1030/sa1030.go # staticcheck
+        # Starting in 1.27, printf reports misuse of %d with pointers.
+        - route.go # github.com/vishvananda/netlink
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
@@ -261,10 +261,18 @@ analyzers:
         - pkg/sentry/fs/fs.go          # Intentional.
         - pkg/sentry/fs/gofer/inode.go # Intentional.
         - pkg/refs/refcounter_test.go  # Intentional.
+  SA4006: # Unused value assigned to variable.
+    internal:
+      exclude:
+        - runsc/boot/network.go # Pattern increments fdOffset after every use.
   SA4016: # Useless bitwise operations.
     internal:
       exclude:
         - pkg/gohacks/noescape_unsafe.go # x ^ 0 always equals x.
+  SA4023: # Impossible condition.
+    internal:
+      exclude:
+        - runsc/sandbox/network.go # Stubs in no_xdp.go always return error when built without XDP.
   ST1019: # Multiple imports of the same package.
     generated:
       exclude:

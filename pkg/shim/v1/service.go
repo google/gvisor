@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"flag"
 	"os"
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
@@ -26,6 +27,7 @@ import (
 	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	"github.com/containerd/log"
 	"github.com/containerd/ttrpc"
+	taskServer "gvisor.dev/gvisor/pkg/shim/v1/taskserver"
 
 	api "github.com/containerd/containerd/api/runtime/sandbox/v1"
 	"github.com/containerd/errdefs"
@@ -56,6 +58,41 @@ func NewShimRedirector(ctx context.Context, publisher shim.Publisher, sd shutdow
 		main:           runsc,
 		runtimeOptions: runtimeOptions,
 	}
+
+	if runtimeOptions.EnableHibernateServer && isDaemon() {
+		idFlag := flag.Lookup("id")
+		if idFlag != nil && idFlag.Value.String() != "" {
+			id := idFlag.Value.String()
+			rootDir := runtimeOptions.Root
+			if rootDir == "" {
+				rootDir = "/run/containerd/runsc"
+			}
+			ts, err := taskServer.NewServer(rootDir, id)
+			if err != nil {
+				log.L.Errorf("Failed to create task server: %v", err)
+			} else {
+				adapter := rsc.NewGvisorTaskServer(runsc)
+				if adapter == nil {
+					log.L.Errorf("Failed to create task server adapter: service is not *runscService")
+				} else {
+					ts.RegisterService(adapter)
+					go func() {
+						log.L.Infof("Starting task server at %s", ts.Address())
+						if err := ts.Serve(ctx); err != nil {
+							log.L.Errorf("Task server failed: %v", err)
+						}
+					}()
+					sd.RegisterCallback(func(ctx context.Context) error {
+						log.L.Infof("Shutting down task server")
+						return ts.Shutdown(ctx)
+					})
+				}
+			}
+		} else {
+			log.L.Warnf("Task server enabled but ID flag not found or empty")
+		}
+	}
+
 	if address, _ := shim.ReadAddress(shimAddressPath); len(address) > 0 {
 		sd.RegisterCallback(func(context.Context) error {
 			shim.RemoveSocket(address)

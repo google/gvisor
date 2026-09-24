@@ -656,7 +656,7 @@ func sentryOnStubOn(s *fastPathState) {
 		if s.disableStubFP() {
 			s.curState = sentryOnStubOff
 		}
-	} else if s.shouldDisableSentryFP(latencies.stubBound.getMedian(), latencies.sentryBound.getMedian()) {
+	} else if s.shouldDisableSentryFP(periodStubBoundMedian, periodSentryBoundMedian) {
 		if s.disableSentryFP() {
 			s.curState = sentryOffStubOn
 		}

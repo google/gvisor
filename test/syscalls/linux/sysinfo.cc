@@ -14,11 +14,15 @@
 
 // This is a very simple sanity test to validate that the sysinfo syscall is
 // supported by gvisor and returns sane values.
+#include <linux/sysinfo.h>
 #include <sys/syscall.h>
 #include <sys/sysinfo.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"

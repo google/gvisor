@@ -14,6 +14,7 @@
 
 #include <vector>
 
+#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_non_stream.h"
 #include "test/syscalls/linux/socket_unix_dgram.h"
 #include "test/syscalls/linux/socket_unix_non_stream.h"

@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/stat.h>
+
 #include <iostream>
 #include <string>
 
+#include "absl/strings/str_cat.h"
 #include "test/util/fs_util.h"
 #include "test/util/test_util.h"
 #include "tools/cpp/runfiles/runfiles.h"

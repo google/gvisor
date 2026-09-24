@@ -13,15 +13,20 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <atomic>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "benchmark/benchmark.h"
+#include "test/util/logging.h"
 #include "test/util/platform_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

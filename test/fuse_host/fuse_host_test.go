@@ -30,9 +30,9 @@ import (
 const guestFD = 101
 
 func TestFuseHostPassthrough(t *testing.T) {
-	runscPath, err := testutil.FindFile("runsc/runsc")
+	runscPath, err := testutil.FindRunsc()
 	if err != nil {
-		t.Fatalf("FindFile(runsc): %v", err)
+		t.Fatalf("FindRunsc(): %v", err)
 	}
 	workloadPath, err := testutil.FindFile("test/fuse_host/workload/workload")
 	if err != nil {

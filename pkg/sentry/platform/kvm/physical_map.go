@@ -32,7 +32,8 @@ type region struct {
 
 type specialVirtualRegion struct {
 	region
-	mmio bool // if false, region is excluded
+	filename string
+	mmio     bool // if false, region is excluded
 }
 
 type physicalRegion struct {
@@ -67,22 +68,25 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	pSize -= reservedMemory
 
 	// Add specifically excluded regions; see excludeVirtualRegion.
-	if err := applyVirtualRegions(func(vr virtualRegion) {
+	if err := applyVirtualRegions(func(vr virtualRegion) bool {
 		if excludeVirtualRegion(vr) {
 			specialRegions = append(specialRegions, specialVirtualRegion{
-				region: vr.region,
+				region:   vr.region,
+				filename: vr.filename,
 			})
 			vSize -= vr.length
 			log.Infof("excluded: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
 		} else if mmioVirtualRegion(vr) {
 			specialRegions = append(specialRegions, specialVirtualRegion{
-				region: vr.region,
-				mmio:   true,
+				region:   vr.region,
+				filename: vr.filename,
+				mmio:     true,
 			})
 			log.Infof("mmio: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
 		} else {
 			archSpecialRegion(vr)
 		}
+		return false // never stop
 	}); err != nil {
 		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
 	}
@@ -172,6 +176,7 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 					virtual: addr,
 					length:  current,
 				},
+				filename: "[anon]",
 			})
 			// See comment above.
 			if filled != required {
@@ -181,12 +186,13 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 	}
 	if current == 0 {
 		log.Warningf("Filling address space failed (VirtualAddressBits=%d PhysicalAddressBits=%d vSize=%#x pSize=%#x faultBlockSize=%#x required=%#x filled=%#x); last mmap errno: %v; VMAs:", ring0.VirtualAddressBits, ring0.PhysicalAddressBits, vSize, pSize, faultBlockSize, required, filled, lastMmapErrno)
-		err := applyVirtualRegions(func(vr virtualRegion) {
+		err := applyVirtualRegions(func(vr virtualRegion) bool {
 			ps := "p"
 			if vr.shared {
 				ps = "s"
 			}
 			log.Warningf("%x-%x %v%s %08x %s", vr.region.virtual, vr.region.virtual+vr.region.length, vr.accessType, ps, vr.offset, vr.filename)
+			return false
 		})
 		if err != nil {
 			log.Warningf("Failed to get all VMAs: %v", err)
@@ -197,7 +203,7 @@ func fillAddressSpace() (specialRegions []specialVirtualRegion) {
 		return specialRegions[i].virtual < specialRegions[j].virtual
 	})
 	for _, r := range specialRegions {
-		log.Infof("special region: virtual [%x,%x)", r.virtual, r.virtual+r.length)
+		log.Infof("special region %s: virtual [%x,%x)", r.filename, r.virtual, r.virtual+r.length)
 	}
 	return specialRegions
 }

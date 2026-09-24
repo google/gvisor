@@ -264,7 +264,7 @@ type MappingIdentity interface {
 	// int64(mr.Start), int64(mr.End-1), fs.SyncData).
 	// (fs.FileOperations.Fsync() takes an inclusive end, but mr.End is
 	// exclusive, hence mr.End-1.) It is defined rather than Fsync so that
-	// implementors don't need to depend on the fs package for fs.SyncType.
+	// implementers don't need to depend on the fs package for fs.SyncType.
 	Msync(ctx context.Context, mr MappableRange) error
 }
 
@@ -332,6 +332,12 @@ type MMapOpts struct {
 	// Unmap specifies whether existing mappings in the range being mapped may
 	// be replaced. If Unmap is true, Fixed must be true.
 	Unmap bool
+
+	// NoReplace is true if MAP_FIXED_NOREPLACE semantics apply: the mapping
+	// must be located at Addr, and EEXIST (rather than ENOMEM) is returned if
+	// any mapping already exists in the range. If NoReplace is true, Fixed
+	// must be true and Unmap must be false.
+	NoReplace bool
 
 	// If Map32Bit is true, all addresses in the created mapping must fit in a
 	// 32-bit integer. (Note that the "end address" of the mapping, i.e. the
@@ -448,7 +454,7 @@ type File interface {
 	//	* fr.Length() > 0.
 	//	* At least one reference must be held on all pages in fr. (The File
 	//		interface does not provide a way to acquire an initial reference;
-	//		implementors may define mechanisms for doing so.)
+	//		implementers may define mechanisms for doing so.)
 	IncRef(fr FileRange, memCgID uint32)
 
 	// DecRef decrements the reference count on all pages in fr.

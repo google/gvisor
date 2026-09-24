@@ -16,6 +16,8 @@ package tcp
 
 import (
 	"time"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // renoState stores the variables related to TCP New Reno congestion
@@ -81,7 +83,7 @@ func (r *renoState) reduceSlowStartThreshold() {
 // Update implements congestionControl.Update.
 //
 // +checklocks:r.s.ep.mu
-func (r *renoState) Update(packetsAcked int, _ time.Duration) {
+func (r *renoState) Update(packetsAcked int, _ time.Duration, _ tcpip.MonotonicTime) {
 	if r.s.SndCwnd < r.s.Ssthresh {
 		packetsAcked = r.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {

@@ -58,6 +58,18 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		return nil, linuxerr.ESRCH
 	}
 
+	nsEntries := map[string]kernfs.Inode{
+		"net":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWNET),
+		"mnt":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWNS),
+		"pid":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWPID),
+		"user": fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWUSER),
+		"ipc":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWIPC),
+		"uts":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWUTS),
+	}
+	if task.Kernel().Cgroup2FS().EverMounted() {
+		nsEntries["cgroup"] = fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWCGROUP)
+	}
+
 	contents := map[string]kernfs.Inode{
 		"auxv":            fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, &mmFile{task: task, ftype: auxvMMFile}),
 		"cmdline":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &cmdlineData{task: task}),
@@ -76,23 +88,16 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"mountinfo":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountInfoData{fs: fs, task: task}),
 		"mounts":          fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountsData{fs: fs, task: task}),
 		"net":             fs.newTaskNetDir(ctx, task),
-		"ns": fs.newTaskOwnedDir(ctx, task, fs.NextIno(), 0511, map[string]kernfs.Inode{
-			"net":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWNET),
-			"mnt":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWNS),
-			"pid":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWPID),
-			"user": fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWUSER),
-			"ipc":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWIPC),
-			"uts":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWUTS),
-		}),
-		"oom_score":     fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
-		"oom_score_adj": fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
-		"root":          fs.newRootSymlink(ctx, task, fs.NextIno()),
-		"setgroups":     fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &setgroupsData{task: task}),
-		"smaps":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mmFile{task: task, ftype: smapsMMFile}),
-		"stat":          fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
-		"statm":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &statmData{task: task}),
-		"status":        fs.newStatusInode(ctx, task, pidns, fs.NextIno(), 0444),
-		"uid_map":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &idMapData{task: task, gids: false}),
+		"ns":              fs.newTaskOwnedDir(ctx, task, fs.NextIno(), 0511, nsEntries),
+		"oom_score":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
+		"oom_score_adj":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
+		"root":            fs.newRootSymlink(ctx, task, fs.NextIno()),
+		"setgroups":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &setgroupsData{task: task}),
+		"smaps":           fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mmFile{task: task, ftype: smapsMMFile}),
+		"stat":            fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),
+		"statm":           fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &statmData{task: task}),
+		"status":          fs.newStatusInode(ctx, task, pidns, fs.NextIno(), 0444),
+		"uid_map":         fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &idMapData{task: task, gids: false}),
 	}
 	if isThreadGroup {
 		contents["task"] = fs.newSubtasks(ctx, task, pidns, fakeCgroupControllers)
@@ -241,6 +246,8 @@ func (i *taskOwnedInode) Valid(ctx context.Context, parent *kernfs.Dentry, name 
 }
 
 // Stat implements kernfs.Inode.Stat.
+//
+// +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	stat, err := i.Inode.Stat(ctx, fs, opts)
 	if err != nil {
@@ -259,12 +266,15 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 }
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
+//
+// +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
 	uid, gid := i.getOwner(mode)
-	return vfs.GenericCheckPermissions(creds, ats, mode, uid, gid)
+	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
 }
 
+// +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {
 	// By default, set the task owner as the file owner.
 	creds := i.owner.Credentials()

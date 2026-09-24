@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -113,11 +114,19 @@ type Config struct {
 	// HostFifo controls permission to access host FIFO (or named pipes).
 	HostFifo HostFifo `flag:"host-fifo"`
 
+	// CharacterDevicePolicy controls how character device files on gofer
+	// mounts (the rootfs and bind mounts) are handled.
+	CharacterDevicePolicy CharacterDevicePolicy `flag:"character-device-policy"`
+
 	// HostSettings controls how host settings are handled.
 	HostSettings HostSettingsPolicy `flag:"host-settings"`
 
 	// Network indicates what type of network to use.
 	Network NetworkType `flag:"network"`
+
+	// GoferNetworkNamespace controls the network namespace used by gofer
+	// processes. The default is the shared empty "null" network namespace.
+	GoferNetworkNamespace GoferNetworkNamespace `flag:"gofer-network-namespace"`
 
 	// EnableRaw indicates whether raw sockets should be enabled. Raw
 	// sockets are disabled by stripping CAP_NET_RAW from the list of
@@ -129,6 +138,10 @@ type Config struct {
 
 	// AllowLiveTCPMigration allows TCP connection state to be migrated.
 	AllowLiveTCPMigration bool `flag:"allow-live-tcp-migration"`
+
+	// SignalUnkillablePolicy controls protection of PID namespace init processes
+	// from signals under Linux SIGNAL_UNKILLABLE semantics (see SignalUnkillablePolicy).
+	SignalUnkillablePolicy SignalUnkillablePolicy `flag:"signal-unkillable-policy"`
 
 	// HostGSO indicates that host segmentation offload is enabled.
 	HostGSO bool `flag:"gso"`
@@ -180,6 +193,14 @@ type Config struct {
 	// an indication that the container being created wishes that its metrics should be exported).
 	// The value of this flag must also match across the two command lines.
 	MetricServer string `flag:"metric-server"`
+
+	// SidecarReleaseEnforcementPolicy controls when spawned sidecar binaries
+	// must match `runsc`'s build label.
+	SidecarReleaseEnforcementPolicy SidecarReleasePolicy `flag:"sidecar-release-enforcement-policy"`
+
+	// SidecarUsagePolicy controls when to use sidecar binaries vs embedded
+	// fallbacks.
+	SidecarUsagePolicy SidecarUsagePolicy `flag:"sidecar-usage-policy"`
 
 	// FinalMetricsLog is the file to which all metric data should be written
 	// upon sandbox termination.
@@ -304,8 +325,8 @@ type Config struct {
 	// Don't configure cgroups.
 	IgnoreCgroups bool `flag:"ignore-cgroups"`
 
-	// Mount cgroup v2 instead of cgroup v1 inside the sandbox.
-	MountCgroupV2 bool `flag:"mount-cgroup-v2"`
+	// InSandboxCgroup indicates the cgroup setup inside the sandbox.
+	InSandboxCgroup InSandboxCgroupType `flag:"in-sandbox-cgroup"`
 
 	// Use systemd to configure cgroups.
 	SystemdCgroup bool `flag:"systemd-cgroup"`
@@ -366,6 +387,12 @@ type Config struct {
 
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
+
+	// RDMAProxy enables RDMA support for containers with
+	// /dev/infiniband/uverbs* devices. It currently gates only the RDMA
+	// device sysfs topology; the verbs device proxy that makes it usable is
+	// still in development.
+	RDMAProxy bool `flag:"rdmaproxy"`
 
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
@@ -456,6 +483,13 @@ type Config struct {
 	// once their current RPC finishes. Setting this to 0 closes idle clients
 	// immediately.
 	ControlRPCStopTimeout time.Duration `flag:"control-rpc-stop-timeout"`
+
+	// SharedRootDir is the directory used for state shared across sandboxes
+	// regardless of their runtime root directory (e.g. the null gofer network
+	// namespace bind mount). If empty, RootDir is used.
+	// Access to SharedRootDir grants the ability to identify sandboxes, but
+	// not to control them.
+	SharedRootDir string `flag:"shared-root"`
 }
 
 // Validate checks that the Config is in a consistent state, e.g. that no
@@ -554,6 +588,15 @@ func (c *Config) Log() {
 			}
 		}
 	}
+}
+
+// SharedRoot returns the effective directory for state shared across
+// sandboxes: SharedRootDir if set, otherwise RootDir.
+func (c *Config) SharedRoot() string {
+	if c.SharedRootDir != "" {
+		return c.SharedRootDir
+	}
+	return c.RootDir
 }
 
 // GetHostUDS returns the FS gofer communication that is allowed, taking into
@@ -755,6 +798,99 @@ func (n NetworkType) String() string {
 	panic(fmt.Sprintf("Invalid network type %d", n))
 }
 
+// GoferNetworkNamespace controls the network namespace used by gofer processes.
+type GoferNetworkNamespace string
+
+const (
+	// GoferNetworkNamespaceNew creates an empty network namespace for each gofer.
+	GoferNetworkNamespaceNew GoferNetworkNamespace = "new"
+
+	// GoferNetworkNamespaceHost runs gofers in runsc's current network namespace.
+	GoferNetworkNamespaceHost GoferNetworkNamespace = "host"
+
+	// GoferNetworkNamespaceNull runs gofers in a shared empty network
+	// namespace. The namespace is pinned by a bind mount under the shared
+	// root directory (`--shared-root`, defaulting to `--root`; same hack as
+	// `ip netns add`), and shared by all gofers using the same directory.
+	// This provides the same isolation as `GoferNetworkNamespaceNew`
+	// without the cost of a new nets per gofer.
+	// Falls back to `GoferNetworkNamespaceNew` if the shared namespace cannot
+	// be set up (e.g. rootless).
+	GoferNetworkNamespaceNull GoferNetworkNamespace = "null"
+)
+
+func goferNetworkNamespacePtr(v GoferNetworkNamespace) *GoferNetworkNamespace {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (n *GoferNetworkNamespace) Set(v string) error {
+	switch v {
+	case string(GoferNetworkNamespaceHost), string(GoferNetworkNamespaceNew), string(GoferNetworkNamespaceNull):
+		*n = GoferNetworkNamespace(v)
+	default:
+		if !filepath.IsAbs(v) {
+			return fmt.Errorf("invalid gofer network namespace %q; must be new, host, null, or an absolute path", v)
+		}
+		*n = GoferNetworkNamespace(v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (n *GoferNetworkNamespace) Get() any {
+	return *n
+}
+
+// String implements flag.Value.
+func (n GoferNetworkNamespace) String() string {
+	return string(n)
+}
+
+// InSandboxCgroupType tells which cgroup setup to use inside the sandbox.
+type InSandboxCgroupType int
+
+const (
+	// InSandboxCgroupV1 mounts cgroup v1 inside the sandbox.
+	InSandboxCgroupV1 InSandboxCgroupType = iota
+
+	// InSandboxCgroupV2 mounts cgroup v2 inside the sandbox.
+	InSandboxCgroupV2
+)
+
+func inSandboxCgroupTypePtr(v InSandboxCgroupType) *InSandboxCgroupType {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (c *InSandboxCgroupType) Set(v string) error {
+	switch v {
+	case "v1":
+		*c = InSandboxCgroupV1
+	case "v2":
+		*c = InSandboxCgroupV2
+	default:
+		return fmt.Errorf("invalid in-sandbox-cgroup %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (c *InSandboxCgroupType) Get() any {
+	return *c
+}
+
+// String implements flag.Value.
+func (c InSandboxCgroupType) String() string {
+	switch c {
+	case InSandboxCgroupV1:
+		return "v1"
+	case InSandboxCgroupV2:
+		return "v2"
+	}
+	panic(fmt.Sprintf("Invalid in-sandbox cgroup type %d", c))
+}
+
 // QueueingDiscipline is used to specify the kind of Queueing Discipline to
 // apply for a give FDBasedLink.
 type QueueingDiscipline int
@@ -929,6 +1065,72 @@ func (g HostFifo) String() string {
 // AllowOpen returns true if it can consume FIFOs from the host.
 func (g HostFifo) AllowOpen() bool {
 	return g&HostFifoOpen != 0
+}
+
+// CharacterDevicePolicy tells how character device files on gofer mounts are
+// handled. It does not affect device files on sentry-internal filesystems
+// like devtmpfs, which are always dispatched to the sentry's device registry.
+type CharacterDevicePolicy int
+
+const (
+	// CharDevEmulatedOnly dispatches opens of character device files to the
+	// sentry's device registry: a device implemented by the sentry is served
+	// by the sentry, and opening an unimplemented device fails with ENXIO.
+	// Host character devices are never opened on the container's behalf.
+	CharDevEmulatedOnly CharacterDevicePolicy = iota
+
+	// CharDevPreferEmulated behaves like CharDevEmulatedOnly for devices the
+	// sentry implements, but falls back to opening the host device through
+	// the gofer for device numbers the sentry has no implementation for.
+	CharDevPreferEmulated
+
+	// CharDevPassthrough opens all character device files through the gofer,
+	// exposing the host device to the container.
+	CharDevPassthrough
+)
+
+func charDevicePolicyPtr(v CharacterDevicePolicy) *CharacterDevicePolicy {
+	return &v
+}
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *CharacterDevicePolicy) Set(v string) error {
+	switch v {
+	case "", "emulated-only":
+		*p = CharDevEmulatedOnly
+	case "prefer-emulated":
+		*p = CharDevPreferEmulated
+	case "passthrough":
+		*p = CharDevPassthrough
+	default:
+		return fmt.Errorf("invalid character device policy %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (p *CharacterDevicePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p CharacterDevicePolicy) String() string {
+	switch p {
+	case CharDevEmulatedOnly:
+		return "emulated-only"
+	case CharDevPreferEmulated:
+		return "prefer-emulated"
+	case CharDevPassthrough:
+		return "passthrough"
+	default:
+		panic(fmt.Sprintf("Invalid character device policy %d", p))
+	}
+}
+
+// AllowsPassthrough returns true if the policy permits opening host character
+// devices through the gofer.
+func (p CharacterDevicePolicy) AllowsPassthrough() bool {
+	return p != CharDevEmulatedOnly
 }
 
 // OverlayMedium describes how overlay medium is configured.
@@ -1210,6 +1412,107 @@ func (p HostSettingsPolicy) String() string {
 	}
 }
 
+// SidecarReleasePolicy controls sidecar release version enforcement policy.
+type SidecarReleasePolicy string
+
+// SidecarPolicy values.
+const (
+	SidecarReleaseNever          SidecarReleasePolicy = "NEVER"
+	SidecarReleaseAlways         SidecarReleasePolicy = "ALWAYS"
+	SidecarReleaseIfReleaseBuild SidecarReleasePolicy = "IF_RELEASE_BUILD"
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SidecarReleasePolicy) Set(v string) error {
+	sp := SidecarReleasePolicy(strings.ToUpper(v))
+	switch sp {
+	case SidecarReleaseNever, SidecarReleaseAlways, SidecarReleaseIfReleaseBuild:
+		*p = sp
+		return nil
+	}
+	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarReleaseNever, SidecarReleaseAlways, SidecarReleaseIfReleaseBuild)
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SidecarReleasePolicy) Ptr() *SidecarReleasePolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SidecarReleasePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SidecarReleasePolicy) String() string {
+	return string(p)
+}
+
+// Applies returns whether the policy is in effect for this runsc build.
+func (p SidecarReleasePolicy) Applies() bool {
+	return p == SidecarReleaseAlways || (p == SidecarReleaseIfReleaseBuild && IsReleaseVersion(version.Version()))
+}
+
+// SidecarUsagePolicy controls when to use sidecar binaries vs embedded fallbacks.
+type SidecarUsagePolicy string
+
+// SidecarUsagePolicy values.
+const (
+	SidecarUsageDefault        SidecarUsagePolicy = "DEFAULT"
+	SidecarUsageStrict         SidecarUsagePolicy = "STRICT"
+	SidecarUsageLegacyEmbedded SidecarUsagePolicy = "LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK"
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SidecarUsagePolicy) Set(v string) error {
+	sp := SidecarUsagePolicy(strings.ToUpper(v))
+	switch sp {
+	case SidecarUsageDefault, SidecarUsageStrict, SidecarUsageLegacyEmbedded:
+		*p = sp
+		return nil
+	}
+	return fmt.Errorf("invalid value %q; must be %s, %s, or %s", v, SidecarUsageDefault, SidecarUsageStrict, SidecarUsageLegacyEmbedded)
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SidecarUsagePolicy) Ptr() *SidecarUsagePolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SidecarUsagePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SidecarUsagePolicy) String() string {
+	return string(p)
+}
+
+// AllowEmbeddedFallback returns whether embedded fallback binaries can be used
+// if the on-disk sidecar binaries are not found.
+func (p SidecarUsagePolicy) AllowEmbeddedFallback() bool {
+	switch p {
+	case SidecarUsageDefault, SidecarUsageStrict:
+		return false
+	case SidecarUsageLegacyEmbedded:
+		return true
+	default:
+		panic(fmt.Sprintf("invalid sidecar usage policy: %q", p))
+	}
+}
+
+// releaseVersionRE matches the version strings of production release builds:
+// a `release-` or `g<lowercase>-` prefix, then the release date.
+var releaseVersionRE = regexp.MustCompile(`^(?:release|g[a-z]*)-\d{8}(?:\.\d+)?$`)
+
+// IsReleaseVersion returns whether ver is a tagged-release version string.
+func IsReleaseVersion(ver string) bool {
+	return releaseVersionRE.MatchString(ver)
+}
+
 // RestoreSpecValidationPolicy dictates how spec validation should be handled.
 type RestoreSpecValidationPolicy int
 
@@ -1264,6 +1567,59 @@ func (p RestoreSpecValidationPolicy) String() string {
 		return "enforce"
 	default:
 		panic(fmt.Sprintf("invalid restore spec validation policy %d", p))
+	}
+}
+
+// SignalUnkillablePolicy dictates whether PID namespace init processes (PID 1)
+// are protected from signals under Linux SIGNAL_UNKILLABLE semantics.
+type SignalUnkillablePolicy int
+
+// SignalUnkillablePolicy values.
+const (
+	// SignalUnkillableNone disables the protection: init follows standard
+	// signal semantics and can be killed or stopped from within the sandbox.
+	SignalUnkillableNone SignalUnkillablePolicy = iota
+
+	// SignalUnkillableLinux implements Linux SIGNAL_UNKILLABLE semantics:
+	// unhandled default-fatal/stop signals from peers in the same PID namespace
+	// are discarded, handled signals run their handlers, and signals from
+	// outside the namespace take effect normally.
+	SignalUnkillableLinux
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+func (p *SignalUnkillablePolicy) Set(v string) error {
+	switch v {
+	case "none":
+		*p = SignalUnkillableNone
+	case "linux":
+		*p = SignalUnkillableLinux
+	default:
+		return fmt.Errorf("invalid signal-unkillable policy %q (must be one of: linux, none)", v)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to `p`.
+// Useful in flag declaration line.
+func (p SignalUnkillablePolicy) Ptr() *SignalUnkillablePolicy {
+	return &p
+}
+
+// Get implements flag.Get.
+func (p *SignalUnkillablePolicy) Get() any {
+	return *p
+}
+
+// String implements flag.String.
+func (p SignalUnkillablePolicy) String() string {
+	switch p {
+	case SignalUnkillableNone:
+		return "none"
+	case SignalUnkillableLinux:
+		return "linux"
+	default:
+		panic(fmt.Sprintf("invalid signal unkillable policy %d", p))
 	}
 }
 

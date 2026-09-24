@@ -25,10 +25,12 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 )
 
-const (
-	internalErrorCode = 128
-	bufferSize        = 32
-)
+// InternalErrorCode is the exit status reported when the shim cannot
+// determine the real exit status of a process, e.g. because `runsc wait`
+// failed after the sandbox died.
+const InternalErrorCode = 128
+
+const bufferSize = 32
 
 // ExitCh is the exit events channel for containers and exec processes
 // inside the sandbox.
@@ -44,6 +46,7 @@ func getLastRuntimeError(r *runsccmd.Runsc) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer f.Close()
 
 	var (
 		errMsg string

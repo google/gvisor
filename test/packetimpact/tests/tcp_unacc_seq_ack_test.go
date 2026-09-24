@@ -108,7 +108,7 @@ func TestPassiveCloseUnaccSeqAck(t *testing.T) {
 			conn.Connect(t)
 			acceptFD, _ := dut.Accept(t, listenFD)
 
-			// Send a FIN to DUT to intiate the passive close.
+			// Send a FIN to DUT to initiate the passive close.
 			conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck | header.TCPFlagFin)})
 			gotTCP, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second)
 			if err != nil {

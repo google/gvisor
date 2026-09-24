@@ -22,10 +22,13 @@ import (
 
 // lockedRandomSource provides a threadsafe rand.Source.
 type lockedRandomSource struct {
-	mu  sync.Mutex
+	mu sync.Mutex
+
+	// +checklocks:mu
 	src rand.Source
 }
 
+// +checklocksexclude:r.mu
 func (r *lockedRandomSource) Int63() (n int64) {
 	r.mu.Lock()
 	n = r.src.Int63()
@@ -33,6 +36,7 @@ func (r *lockedRandomSource) Int63() (n int64) {
 	return n
 }
 
+// +checklocksexclude:r.mu
 func (r *lockedRandomSource) Seed(seed int64) {
 	r.mu.Lock()
 	r.src.Seed(seed)

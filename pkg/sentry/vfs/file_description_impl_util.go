@@ -133,7 +133,7 @@ func (FileDescriptionDefaultImpl) Seek(ctx context.Context, offset int64, whence
 
 // Sync implements FileDescriptionImpl.Sync analogously to
 // file_operations::fsync == NULL in Linux.
-func (FileDescriptionDefaultImpl) Sync(ctx context.Context) error {
+func (FileDescriptionDefaultImpl) Sync(ctx context.Context, opts SyncOptions) error {
 	return linuxerr.EINVAL
 }
 
@@ -178,6 +178,18 @@ func (FileDescriptionDefaultImpl) SetXattr(ctx context.Context, opts SetXattrOpt
 // inode::i_opflags & IOP_XATTR == 0 in Linux.
 func (FileDescriptionDefaultImpl) RemoveXattr(ctx context.Context, name string) error {
 	return linuxerr.ENOTSUP
+}
+
+// GetPosixACL implements FileDescriptionImpl.GetPosixACL for filesystems that
+// do not support POSIX ACLs.
+func (FileDescriptionDefaultImpl) GetPosixACL(ctx context.Context, t ACLType) (*PosixACL, error) {
+	return nil, nil
+}
+
+// SetPosixACL implements FileDescriptionImpl.SetPosixACL for filesystems that
+// do not support POSIX ACLs.
+func (FileDescriptionDefaultImpl) SetPosixACL(ctx context.Context, t ACLType, acl *PosixACL, clearSGID bool) (*PosixACL, linux.FileMode, error) {
+	return nil, 0, linuxerr.EOPNOTSUPP
 }
 
 // RegisterFileAsyncHandler implements FileDescriptionImpl.RegisterFileAsyncHandler.

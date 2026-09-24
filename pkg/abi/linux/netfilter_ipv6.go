@@ -315,8 +315,8 @@ type NFNATRange2 struct {
 	MinProto  uint16 // Network byte order.
 	MaxProto  uint16 // Network byte order.
 	BaseProto uint16 // Network byte order.
-	_         [6]byte
+	_         [2]byte
 }
 
 // SizeOfNFNATRange2 is the size of NFNATRange2.
-const SizeOfNFNATRange2 = 48
+const SizeOfNFNATRange2 = 44

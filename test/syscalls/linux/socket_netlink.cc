@@ -17,6 +17,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstring>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
@@ -152,15 +154,11 @@ TEST_P(NetlinkTest, GetSendTimeout) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_NETLINK, SOCK_RAW, protocol));
 
   // tv_usec should be a multiple of 4000 to work on most systems.
-  struct timeval tv_to_set {
-    .tv_sec = 1, .tv_usec = 40000
-  };
+  struct timeval tv_to_set{.tv_sec = 1, .tv_usec = 40000};
   EXPECT_THAT(setsockopt(fd.get(), SOL_SOCKET, SO_SNDTIMEO, &tv_to_set,
                          sizeof(tv_to_set)),
               SyscallSucceeds());
-  struct timeval tv {
-    .tv_sec = -1, .tv_usec = -1
-  };
+  struct timeval tv{.tv_sec = -1, .tv_usec = -1};
   socklen_t len = sizeof(tv);
   EXPECT_THAT(getsockopt(fd.get(), SOL_SOCKET, SO_SNDTIMEO, &tv, &len),
               SyscallSucceeds());
@@ -175,15 +173,11 @@ TEST_P(NetlinkTest, GetReceiveTimeout) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_NETLINK, SOCK_RAW, protocol));
 
   // tv_usec should be a multiple of 4000 to work on most systems.
-  struct timeval tv_to_set {
-    .tv_sec = 1, .tv_usec = 8000
-  };
+  struct timeval tv_to_set{.tv_sec = 1, .tv_usec = 8000};
   EXPECT_THAT(setsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO, &tv_to_set,
                          sizeof(tv_to_set)),
               SyscallSucceeds());
-  struct timeval tv {
-    .tv_sec = -1, .tv_usec = -1
-  };
+  struct timeval tv{.tv_sec = -1, .tv_usec = -1};
   socklen_t len = sizeof(tv);
   EXPECT_THAT(getsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO, &tv, &len),
               SyscallSucceeds());

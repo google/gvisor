@@ -1,19 +1,18 @@
-FROM ubuntu:26.04
+FROM ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e
 
 # Tell systemd it is running inside a container.
 ENV container=docker
 
 # Install systemd and some utils.
 RUN apt-get update && \
-    apt-get install -y systemd systemd-sysv dbus dbus-user-session libpam-systemd sudo vim jq && \
+    apt-get install -y systemd systemd-sysv systemd-container dbus dbus-user-session libpam-systemd sudo vim jq acl gnupg && \
     apt-get clean
 
-# Mask services that don't work in gVisor.
+# Mask services that do not work in gVisor.
 RUN ln -s /dev/null /etc/systemd/system/systemd-sysctl.service
 RUN ln -s /dev/null /etc/systemd/system/e2scrub_reap.service
 RUN ln -s /dev/null /etc/systemd/system/getty@tty1.service
 RUN ln -s /dev/null /etc/systemd/system/systemd-resolved.service
-RUN ln -s /dev/null /etc/systemd/system/tmp.mount
 
 # Write a test daemon script.
 RUN printf '#!/bin/bash\nwhile true; do\n    echo "Hello from test daemon at $(date)"\n    sleep 5\ndone\n' > /usr/local/bin/test-daemon.sh && \

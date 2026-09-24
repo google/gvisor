@@ -42,6 +42,6 @@ struct gvisor_bpf_map_def section("maps") dev_map = {
 };
 
 // Redirect all incoming traffic to go out another device.
-section("xdp") int xdp_veth_prog(struct xdp_md *ctx) {
+section("xdp") int xdp_veth_prog(struct xdp_md* ctx) {
   return bpf_redirect_map(&dev_map, ctx->rx_queue_index, XDP_PASS);
 }

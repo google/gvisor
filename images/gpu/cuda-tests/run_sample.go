@@ -686,6 +686,9 @@ func (st *SampleTest) State(ctx context.Context) (*SampleState, error) {
 	executables := make(map[string]struct{})
 	err := filepath.Walk(st.dir(), func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return fmt.Errorf("cannot walk %q (%q): %w", st.dir(), path, err)
 		}
 		if !info.IsDir() && info.Mode()&0111 != 0 {

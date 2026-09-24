@@ -14,9 +14,11 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/prctl.h>
 #include <linux/sched.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sched.h>
 #include <signal.h>
 #include <sys/epoll.h>
@@ -1220,16 +1222,14 @@ TEST(PidfdTest, FasyncIsUnsupported) {
   ASSERT_THAT(fcntl(pidfd.get(), F_SETFL, flags | FASYNC), SyscallSucceeds());
   int who = getpid();
 
-  int want_errno = EINVAL;
-  if (!IsRunningOnGvisor()) {
-    KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major < 6 || (version.major == 6 && version.minor < 9)) {
-      want_errno = ENOTTY;
-    }
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
+                SyscallFailsWithErrno(EINVAL));
+  } else {
+    // Linux < 6.9 and >= 6.11 return ENOTTY; Linux 6.9-6.10 returns EINVAL.
+    EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
+                SyscallFailsWithErrno(::testing::AnyOf(EINVAL, ENOTTY)));
   }
-
-  EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
-              SyscallFailsWithErrno(want_errno));
 }
 
 // This reproduces the race condition where pidfd_send_signal can target
@@ -1283,6 +1283,56 @@ TEST(PidfdTest, SendSignalToStartingTaskRace) {
   }
 
   stop_signal_thread.store(true, std::memory_order_relaxed);
+}
+
+TEST(PidfdTest, PidfdGetfdNonDumpableExitingRace) {
+  // Skip when running natively because the host kernel may be vulnerable to
+  // CVE-2026-46333, which would cause the test to fail. We only want to verify
+  // the fix inside the gVisor sandbox.
+  SKIP_IF(!IsRunningOnGvisor());
+  AutoCapability cap(CAP_SYS_PTRACE, false);
+  for (int iter = 0; iter < 100; ++iter) {
+    int pfd[2];
+    ASSERT_THAT(pipe(pfd), SyscallSucceeds());
+    FileDescriptor read_pipe(pfd[0]);
+    FileDescriptor write_pipe(pfd[1]);
+
+    pid_t child = -1;
+    auto pidfd = ASSERT_NO_ERRNO_AND_VALUE(
+        Clone3Pidfd(child, [&write_pipe, &read_pipe]() {
+          read_pipe.reset();
+          TEST_PCHECK(prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) == 0);
+          char c = 'r';
+          TEST_PCHECK(write(write_pipe.get(), &c, 1) == 1);
+          write_pipe.reset();
+          _exit(0);
+        }));
+    ScopedChildReaper reaper(child);
+    write_pipe.reset();
+
+    char c;
+    ASSERT_THAT(read(read_pipe.get(), &c, 1), SyscallSucceedsWithValue(1));
+    read_pipe.reset();
+
+    bool succeeded = false;
+    for (;;) {
+      auto res = PidfdGetfd(pidfd.get(), 0, 0);
+      if (res.ok()) {
+        succeeded = true;
+        break;
+      } else {
+        if (res.error().errno_value() == ESRCH) {
+          break;
+        }
+      }
+    }
+    EXPECT_FALSE(succeeded) << "Unexpectedly succeeded calling pidfd_getfd on "
+                               "non-dumpable exiting process at iteration "
+                            << iter;
+    if (succeeded) {
+      break;
+    }
+  }
 }
 
 }  // namespace

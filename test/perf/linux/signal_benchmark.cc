@@ -14,6 +14,7 @@
 
 #include <signal.h>
 #include <string.h>
+#include <sys/ucontext.h>
 
 #include "gtest/gtest.h"
 #include "benchmark/benchmark.h"

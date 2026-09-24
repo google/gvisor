@@ -50,6 +50,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		Stack:     opts.Stack,
 		Private:   opts.Private,
 		Unmap:     opts.Unmap,
+		NoReplace: opts.NoReplace,
 		Map32Bit:  opts.Map32Bit,
 	})
 	if err != nil {
@@ -148,6 +149,9 @@ type findAvailableOpts struct {
 	//	- Addr must be page-aligned.
 	//
 	//	- Unmap allows existing guard pages in the returned range.
+	//
+	//	- NoReplace allows existing guard pages (but not existing vmas) in the
+	//		returned range.
 
 	Addr      hostarch.Addr
 	Fixed     bool
@@ -155,6 +159,7 @@ type findAvailableOpts struct {
 	Stack     bool
 	Private   bool
 	Unmap     bool
+	NoReplace bool
 	Map32Bit  bool
 }
 
@@ -183,8 +188,19 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 			if opts.Unmap {
 				return ar.Start, nil
 			}
+			vgap := mm.vmas.FindGap(ar.Start)
+			if opts.NoReplace {
+				// MAP_FIXED_NOREPLACE fails with EEXIST iff the requested
+				// range overlaps an existing vma; like Linux, it may map over
+				// guard pages of adjacent MAP_GROWSDOWN mappings. Compare
+				// Linux's mm/mmap.c:do_mmap() => find_vma_intersection().
+				if vgap.Ok() && vgap.Range().IsSupersetOf(ar) {
+					return ar.Start, nil
+				}
+				return 0, linuxerr.EEXIST
+			}
 			// Check for the presence of an existing vma or guard page.
-			if vgap := mm.vmas.FindGap(ar.Start); vgap.Ok() && vgap.availableRange().IsSupersetOf(ar) {
+			if vgap.Ok() && vgap.availableRange().IsSupersetOf(ar) {
 				return ar.Start, nil
 			}
 		}
@@ -603,7 +619,7 @@ func (vseg vmaIterator) seekNextLowerBound(addr hostarch.Addr) vmaIterator {
 }
 
 // availableRange returns the subset of vgap.Range() in which new vmas may be
-// created without MMapOpts.Unmap == true.
+// created without MMapOpts.Unmap or MMapOpts.NoReplace set.
 func (vgap vmaGapIterator) availableRange() hostarch.AddrRange {
 	ar := vgap.Range()
 	next := vgap.NextSegment()

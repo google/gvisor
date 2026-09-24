@@ -13,14 +13,18 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <linux/capability.h>
+#include <linux/netlink.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -30,7 +34,9 @@
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 

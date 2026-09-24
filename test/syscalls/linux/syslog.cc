@@ -16,6 +16,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
 

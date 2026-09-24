@@ -61,6 +61,26 @@ func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 	d.parent.Store(parent)
 }
 
+// saveAccessACL is called by stateify.
+func (i *inode) saveAccessACL() *vfs.PosixACL {
+	return i.accessACL.Load()
+}
+
+// loadAccessACL is called by stateify.
+func (i *inode) loadAccessACL(_ goContext.Context, acl *vfs.PosixACL) {
+	i.accessACL.Store(acl)
+}
+
+// saveDefaultACL is called by stateify.
+func (i *inode) saveDefaultACL() *vfs.PosixACL {
+	return i.defaultACL.Load()
+}
+
+// loadDefaultACL is called by stateify.
+func (i *inode) loadDefaultACL(_ goContext.Context, defaultACL *vfs.PosixACL) {
+	i.defaultACL.Store(defaultACL)
+}
+
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	resourceID := fs.mf.ResourceID()

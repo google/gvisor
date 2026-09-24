@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/overlay"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -46,6 +47,7 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	flags := args[3].Int()
 	fd := args[4].Int()
 	fixed := flags&linux.MAP_FIXED != 0
+	noReplace := flags&linux.MAP_FIXED_NOREPLACE != 0
 	private := flags&linux.MAP_PRIVATE != 0
 	shared := flags&linux.MAP_SHARED != 0
 	anon := flags&linux.MAP_ANONYMOUS != 0
@@ -57,13 +59,14 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 	}
 
 	opts := memmap.MMapOpts{
-		Length:   args[1].Uint64(),
-		Offset:   args[5].Uint64(),
-		Addr:     args[0].Pointer(),
-		Fixed:    fixed,
-		Unmap:    fixed,
-		Map32Bit: map32bit,
-		Private:  private,
+		Length:    args[1].Uint64(),
+		Offset:    args[5].Uint64(),
+		Addr:      args[0].Pointer(),
+		Fixed:     fixed || noReplace,
+		Unmap:     fixed && !noReplace,
+		NoReplace: noReplace,
+		Map32Bit:  map32bit,
+		Private:   private,
 		Perms: hostarch.AccessType{
 			Read:    linux.PROT_READ&prot != 0,
 			Write:   linux.PROT_WRITE&prot != 0,
@@ -368,8 +371,13 @@ func traceMmap(t *kernel.Task, file *vfs.FileDescription) error {
 	info := &ppb.MmapInfo{}
 	if file != nil {
 		info.MappedPath = file.MappedName(t)
+		// Note that despite the method name IsCopiedUp, this returns true for any file located on the
+		// upper layer, including files created or downloaded directly on the upper layer that were
+		// never copied up from a lower layer.
+		info.OverlayfsUpper = overlay.IsCopiedUp(file.Dentry())
+		info.OverlayfsLower = overlay.IsOnLower(file.Dentry())
 		statOpts := vfs.StatOptions{
-			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO,
+			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_CTIME,
 		}
 		if stat, err := file.Stat(t, statOpts); err == nil {
 			if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
@@ -383,6 +391,12 @@ func traceMmap(t *kernel.Task, file *vfs.FileDescription) error {
 			}
 			if stat.Mask&linux.STATX_INO != 0 {
 				info.MappedIno = stat.Ino
+			}
+			if stat.Mask&linux.STATX_CTIME != 0 {
+				info.MappedCtime = &ppb.Timespec{
+					Sec:  stat.Ctime.Sec,
+					Nsec: int64(stat.Ctime.Nsec),
+				}
 			}
 		}
 	}

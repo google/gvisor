@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <dirent.h>
 #include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
+#include <linux/limits.h>
 #include <linux/magic.h>
+#include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stddef.h>
@@ -30,7 +34,9 @@
 #include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <syscall.h>
 #include <unistd.h>
 
@@ -42,7 +48,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
-#include <regex>
+#include <regex>  // NOLINT
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -51,6 +57,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
+#include "absl/base/thread_annotations.h"
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_set.h"
@@ -74,11 +81,13 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -528,9 +537,24 @@ TEST(ProcSelfAuxv, EntryPresence) {
   EXPECT_EQ(auxv_entries.count(AT_SECURE), 1);
   EXPECT_EQ(auxv_entries.count(AT_CLKTCK), 1);
   EXPECT_EQ(auxv_entries.count(AT_RANDOM), 1);
+  EXPECT_EQ(auxv_entries.count(AT_PLATFORM), 1);
   EXPECT_EQ(auxv_entries.count(AT_EXECFN), 1);
   EXPECT_EQ(auxv_entries.count(AT_PAGESZ), 1);
   EXPECT_EQ(auxv_entries.count(AT_SYSINFO_EHDR), 1);
+}
+
+TEST(ProcSelfAuxv, Platform) {
+  auto auxv_entries = ASSERT_NO_ERRNO_AND_VALUE(ReadProcSelfAuxv());
+  ASSERT_EQ(auxv_entries.count(AT_PLATFORM), 1);
+  const char* platform =
+      reinterpret_cast<const char*>(auxv_entries[AT_PLATFORM]);
+#if defined(__x86_64__)
+  EXPECT_STREQ(platform, "x86_64");
+#elif defined(__aarch64__)
+  EXPECT_STREQ(platform, "aarch64");
+#else
+  FAIL() << "unknown architecture";
+#endif
 }
 
 TEST(ProcSelfAuxv, EntryValues) {
@@ -1934,6 +1958,31 @@ TEST(ProcPidStatusTest, HasBasicFields) {
             // stripped.
             Pair("Groups", StartsWith(absl::StrJoin(supplementary_gids, " "))),
         }));
+  });
+}
+
+TEST(ProcPidStatusTest, NoNewPrivs) {
+  // no_new_privs is per-thread and cannot be cleared once set, so exercise it
+  // on a scratch thread to avoid contaminating the main thread.
+  ScopedThread([] {
+    const pid_t tid = syscall(SYS_gettid);
+
+    // The NoNewPrivs line must reflect prctl(PR_GET_NO_NEW_PRIVS).
+    int nnp;
+    ASSERT_THAT(nnp = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
+                SyscallSucceeds());
+    std::string status_str = ASSERT_NO_ERRNO_AND_VALUE(
+        GetContents(absl::StrCat("/proc/", tid, "/status")));
+    EXPECT_THAT(ParseProcStatus(status_str),
+                IsPosixErrorOkAndHolds(
+                    Contains(Pair("NoNewPrivs", absl::StrCat(nnp)))));
+
+    // Setting the bit must be reflected in this thread's status file.
+    ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
+    status_str = ASSERT_NO_ERRNO_AND_VALUE(
+        GetContents(absl::StrCat("/proc/", tid, "/status")));
+    EXPECT_THAT(ParseProcStatus(status_str),
+                IsPosixErrorOkAndHolds(Contains(Pair("NoNewPrivs", "1"))));
   });
 }
 

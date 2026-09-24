@@ -19,14 +19,23 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_format.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -255,19 +264,13 @@ TEST(MemfdTest, SealGrowPartialWriteTruncated) {
   // 3/4 page would require growing the file.
   const std::vector<char> buf(kPageSize);
 
-  // TODO(b/527998184): Determine what Linux change causes us to see EPERM.
-  // gVisor should evolve to match the latest Linux behavior.
-  bool is_new_linux = false;
+  // TODO(b/565008812): Starting in Linux 6.12, generic_perform_write() returns
+  // EPERM when shmem large folios are enabled. Consider aligning gVisor.
   if (!IsRunningOnGvisor()) {
-    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
-    if (version.major > 6 || (version.major == 6 && version.minor >= 12)) {
-      is_new_linux = true;
-    }
-  }
-
-  if (is_new_linux) {
+    // Native Linux may return EPERM starting in 6.12.
     EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
-                SyscallFailsWithErrno(EPERM));
+                ::testing::AnyOf(SyscallSucceedsWithValue(kPageSize / 4),
+                                 SyscallFailsWithErrno(EPERM)));
   } else {
     EXPECT_THAT(write(memfd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(kPageSize / 4));

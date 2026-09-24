@@ -5,37 +5,10 @@ package(
     licenses = ["notice"],
 )
 
-config_setting(
-    name = "metric_server_elided",
-    values = {
-        "compilation_mode": "fastbuild",
-    },
-)
-
-# @unused
-glaze_ignore = [
-    "metric_server_elided.go",
-    "metric_server_embedded.go",
-]
-
-# Use either metric_server_elided.go or metric_server_embedded.go
-# as metric_server.go.
-genrule(
-    name = "metricserver_cmd",
-    srcs = select({
-        ":metric_server_elided": ["metric_server_elided.go"],
-        "//conditions:default": ["metric_server_embedded.go"],
-    }),
-    outs = ["metric_server.go"],
-    cmd = "cat < $(SRCS) > $(OUTS)",
-)
-
 go_library(
     name = "cmd",
     srcs = [
-        "boot.go",
         "checkpoint.go",
-        "chroot.go",
         "cmd.go",
         "cpu_features.go",
         "create.go",
@@ -44,11 +17,11 @@ go_library(
         "do.go",
         "events.go",
         "exec.go",
-        "fd_mapping.go",
         "features.go",
         "fscheckpoint.go",
         "gofer.go",
         "install.go",
+        "install_sidecars.go",
         "kill.go",
         "list.go",
         "metric_export.go",
@@ -75,7 +48,6 @@ go_library(
         "symbolize.go",
         "syscalls.go",
         "tar.go",
-        "umount_unsafe.go",
         "update.go",
         "usage.go",
         "wait.go",
@@ -84,36 +56,26 @@ go_library(
     force_add_state_pkg = True,
     visibility = ["//runsc:__subpackages__"],
     deps = [
-        "//pkg/abi/linux",
-        "//pkg/abi/tpu",
         "//pkg/cleanup",
-        "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/cpuid",
-        "//pkg/fd",
-        "//pkg/hostarch",
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/prometheus",
-        "//pkg/ring0",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control",
-        "//pkg/sentry/devices/nvproxy/nvconf",
-        "//pkg/sentry/devices/tpuproxy",
-        "//pkg/sentry/hostmm",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/platform",
-        "//pkg/sentry/socket/plugin",
-        "//pkg/sentry/syscalls/linux",
         "//pkg/state/pretty",
         "//pkg/state/statefile",
-        "//pkg/tcpip/nftables",
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/cmd/metricserver/metricservercmd",
         "//runsc/cmd/sandboxsetup",
+        "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/console",
@@ -122,36 +84,28 @@ go_library(
         "//runsc/fsgofer",
         "//runsc/fsgofer/extension",
         "//runsc/fsgofer/filter",
+        "//runsc/gvisorbinaries",
         "//runsc/metricserver/containermetrics",
         "//runsc/mitigate",
         "//runsc/profile",
         "//runsc/sandbox",
         "//runsc/specutils",
-        "//runsc/specutils/seccomp",
-        "//runsc/starttime",
         "//runsc/version",
         "//sandboxexec/proto:sandbox_options_go_proto",
         "@com_github_google_subcommands//:go_default_library",
-        "@com_github_moby_sys_capability//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
-        "@com_github_opencontainers_runtime_spec//specs-go/features:go_default_library",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
-    ] + select({
-        ":metric_server_elided": [],
-        "//conditions:default": [
-            "//runsc/cmd/metricserver",
-        ],
-    }),
+    ],
 )
 
 go_test(
     name = "cmd_test",
-    size = "small",
+    size = "medium",
     srcs = [
+        "bootposture_test.go",
         "capability_test.go",
-        "chroot_test.go",
         "delete_test.go",
         "exec_test.go",
         "features_test.go",
@@ -165,7 +119,8 @@ go_test(
         "spec_test.go",
     ],
     data = [
-        "//runsc",
+        "//:release",  # keep
+        "//runsc",  # keep
     ],
     library = ":cmd",
     deps = [
@@ -173,9 +128,12 @@ go_test(
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sync",
+        "//pkg/test/sandboxposture",
         "//pkg/test/testutil",
         "//runsc/boot",
         "//runsc/cmd/sandboxsetup",
+        "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/container",

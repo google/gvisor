@@ -40,14 +40,19 @@ type fakeEndpoint struct {
 	gsoMaxSize      uint32
 	supportedGSO    stack.SupportedGSO
 
-	mu             sync.Mutex
-	batchSizes     []int
-	bytesWritten   int
+	mu sync.Mutex
+
+	// +checklocks:mu
+	batchSizes []int
+	// +checklocks:mu
+	bytesWritten int
+	// +checklocks:mu
 	packetsWritten int
 	packetsWanted  int // 0 disables the done signal
 	done           chan struct{}
 }
 
+// +checklocksexclude:e.mu
 func (e *fakeEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
 	bytes := 0
@@ -88,6 +93,8 @@ func (e *fakeEndpoint) GSOMaxSize() uint32                           { return e.
 func (e *fakeEndpoint) SupportedGSO() stack.SupportedGSO             { return e.supportedGSO }
 
 // snapshot returns a copy of stats taken under lock.
+//
+// +checklocksexclude:e.mu
 func (e *fakeEndpoint) snapshot() (packets, bytes int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -96,6 +103,8 @@ func (e *fakeEndpoint) snapshot() (packets, bytes int) {
 
 // maxBatchSize returns the largest batch ever written to the endpoint, or 0
 // if no writes have been observed.
+//
+// +checklocksexclude:e.mu
 func (e *fakeEndpoint) maxBatchSize() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -119,6 +128,8 @@ func newPkt(size int) *stack.PacketBuffer {
 // waitForPackets returns true if ep observed at least n packets within d.
 // Polls instead of relying on the done channel so callers can poll for
 // arbitrary thresholds without re-instrumenting the endpoint.
+//
+// +checklocksexclude:ep.mu
 func waitForPackets(t *testing.T, ep *fakeEndpoint, n int, d time.Duration) bool {
 	t.Helper()
 	deadline := time.Now().Add(d)
@@ -135,6 +146,8 @@ func waitForPackets(t *testing.T, ep *fakeEndpoint, n int, d time.Duration) bool
 // pollMax polls ep over d, returning early as soon as the packet count
 // exceeds limit (the test would fail anyway), otherwise returning the
 // final observed count. Used to assert "no more than `limit` drained".
+//
+// +checklocksexclude:ep.mu
 func pollMax(t *testing.T, ep *fakeEndpoint, limit int, d time.Duration) int {
 	t.Helper()
 	deadline := time.Now().Add(d)

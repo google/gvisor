@@ -20,6 +20,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <string>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/rseq/test.h"
 #include "test/syscalls/linux/rseq/uapi.h"

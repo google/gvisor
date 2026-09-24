@@ -78,7 +78,27 @@ fi
 
 # Tag the given commit (annotated, to record the committer). Note that the tag
 # here is applied as a force, in case the tag already exists and is the same.
-# The push will fail in this case (because it is not forced).
 declare -r tag="release-${release}"
-git tag -f -F "${message_file}" -a "${tag}" "${commit}" && \
-  git push origin tag "${tag}"
+
+# Refuse to restage a published release. The pipeline would reject it, but
+# only after leaving the new staging tag behind.
+if [[ -n "$(git ls-remote origin "refs/tags/${tag}")" ]]; then
+  echo "error: ${tag} is already published."
+  exit 1
+fi
+
+git tag -f -F "${message_file}" -a "${tag}" "${commit}"
+
+# Push under a staging name; the release pipeline publishes the real tag once
+# the artifacts are uploaded. A failed release leaves no tag behind.
+git push --force origin "refs/tags/${tag}:refs/tags/${tag}-staging"
+git tag -d "${tag}" # Not published yet.
+
+set +x
+cat <<EOF
+
+Staged ${tag}. The release pipeline publishes it once the artifacts are in
+gs://gvisor/releases/:
+
+  https://buildkite.com/gvisor/release/builds?branch=${tag}-staging
+EOF

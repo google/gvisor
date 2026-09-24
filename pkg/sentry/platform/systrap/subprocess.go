@@ -69,9 +69,10 @@ var (
 //
 // These constants are only used in subprocess.go.
 const (
-	ERESTARTSYS    = unix.Errno(512)
-	ERESTARTNOINTR = unix.Errno(513)
-	ERESTARTNOHAND = unix.Errno(514)
+	ERESTARTSYS           = unix.Errno(512)
+	ERESTARTNOINTR        = unix.Errno(513)
+	ERESTARTNOHAND        = unix.Errno(514)
+	ERESTART_RESTARTBLOCK = unix.Errno(516)
 )
 
 // thread is a traced thread; it is a thread identifier.
@@ -179,6 +180,9 @@ type subprocess struct {
 	// contextQueue is a queue of all contexts that are ready to switch back to
 	// user mode.
 	contextQueue *contextQueue
+
+	// aliveMu synchronizes active subprocess operations with termination.
+	aliveMu sync.RWMutex
 
 	// dead indicates whether the subprocess is alive or not.
 	dead atomicbitops.Bool
@@ -338,7 +342,7 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 // The create function will be called in the latter case, which is guaranteed
 // to happen with the runtime thread locked.
 //
-// seccompNotify indicates a ways of comunications with syscall threads.
+// seccompNotify indicates a ways of communications with syscall threads.
 // If it is false, futex-s are used. Otherwise, seccomp-unotify is used.
 // seccomp-unotify can't be used for the source pool process, because it is a
 // parent of all other stub processes, but only one filter can be installed
@@ -499,31 +503,63 @@ func (s *subprocess) unmap() {
 	}
 }
 
-// Release kills the subprocess.
-//
-// Just kidding! We can't safely coordinate the detaching of all the
-// tracees (since the tracers are random runtime threads, and the process
-// won't exit until tracers have been notifier).
-//
-// Therefore we simply unmap everything in the subprocess and return it to the
-// globalPool. This has the added benefit of reducing creation time for new
-// subprocesses.
+// Release makes the subprocess available for reuse, or cleans it up if it died
+// an unexpected death.
 func (s *subprocess) Release() {
-	if !s.alive() {
-		return
+	if s.alive() {
+		s.unmap()
 	}
-	s.unmap()
 	s.DecRef(s.release)
 }
 
-// release returns the subprocess to the global pool.
 func (s *subprocess) release() {
 	if s.alive() {
 		globalPool.markAvailable(s)
 		return
 	}
-	if s.syscallThread != nil && s.syscallThread.seccompNotify != nil {
-		s.syscallThread.seccompNotify.Close()
+	if s.syscallThread != nil {
+		if s.syscallThread.seccompNotify != nil {
+			s.syscallThread.seccompNotify.Close()
+		}
+		wstatus := unix.WaitStatus(0)
+		unix.Wait4(int(s.syscallThread.thread.tid), &wstatus, unix.WNOHANG, nil)
+	}
+}
+
+// withAliveRLock executes fn while holding aliveMu.RLock(), ensuring the subprocess is alive.
+func (s *subprocess) withAliveRLock(fn func() error) error {
+	if s.dead.Load() {
+		return errDeadSubprocess
+	}
+	s.aliveMu.RLock()
+	defer s.aliveMu.RUnlock()
+	if s.dead.Load() {
+		return errDeadSubprocess
+	}
+	return fn()
+}
+
+// kill marks the subprocess dead, terminates the stub process, and unblocks
+// all contexts waiting in waitOnState or sleepOnState.
+//
+// This is only done on expected events that indicate we can't proceed using this
+// subprocess (e.g. stub threads unexpectedly die during execution). Well-behaved
+// subprocesses do no call this.
+func (s *subprocess) kill() {
+	if !s.dead.CompareAndSwap(false, true) {
+		return
+	}
+
+	// Broadcast to sleeping task goroutines that it's time to go.
+	s.wakeAllContexts()
+
+	// Ensure in-flight createSysmsgThread and syscalls (MapFile/Unmap)
+	// complete before killing.
+	s.aliveMu.Lock()
+	defer s.aliveMu.Unlock()
+
+	if s.syscallThread != nil && s.syscallThread.thread != nil {
+		s.syscallThread.thread.kill()
 	}
 }
 
@@ -843,12 +879,17 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	}
 
 	if err := s.waitOnState(ctx); err != nil {
+		if errors.Is(err, errDeadSubprocess) {
+			return false, false, hostarch.NoAccess, errDeadSubprocessContext
+		}
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(err.Error())
 	}
 
+	ctxState := ctx.state()
+
 	// Check if there's been an error.
-	threadID := ctx.threadID()
-	if threadID != invalidThreadID {
+	if ctxState == sysmsg.ContextStateUnexpectedDeath {
+		threadID := ctx.threadID()
 		s.sysmsgThreadsMu.RLock()
 		sysThread, ok := s.sysmsgThreads[threadID]
 		s.sysmsgThreadsMu.RUnlock()
@@ -857,7 +898,10 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 			log.BugTraceback(sysmsgErr)
 			return false, false, hostarch.NoAccess, sysmsgErr
 		}
-		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID))
+		return false, false, hostarch.NoAccess, &platform.ContextError{
+			Err:   fmt.Errorf("systrap unexpected death"),
+			Errno: unix.ECHILD,
+		}
 	}
 
 	// Copy register state locally.
@@ -868,7 +912,6 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	// either delivered from the kernel or from this process. We
 	// don't respect other signals.
 	c.signalInfo = ctx.shared.SignalInfo
-	ctxState := ctx.state()
 	if ctxState == sysmsg.ContextStateSyscallCanBePatched {
 		ctxState = sysmsg.ContextStateSyscall
 		shouldPatchSyscall = true
@@ -877,13 +920,8 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		if maybePatchSignalInfo(regs, &c.signalInfo) {
 			return false, false, hostarch.Execute, nil
 		}
-		updateSyscallRegs(regs)
+		updateSyscallRegs(regs, ctxState)
 		return true, shouldPatchSyscall, hostarch.NoAccess, nil
-	} else if ctxState == sysmsg.ContextStateUnexpectedDeath {
-		return false, shouldPatchSyscall, hostarch.NoAccess, &platform.ContextError{
-			Err:   fmt.Errorf("systrap unexpected death"),
-			Errno: unix.ECHILD,
-		}
 	} else if ctxState != sysmsg.ContextStateFault {
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
 	}
@@ -896,6 +934,9 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 }
 
 func (s *subprocess) waitOnState(ctx *sharedContext) error {
+	if s.dead.Load() {
+		return errDeadSubprocess
+	}
 	ctx.kicked = false
 	slowPath := false
 	if !s.contextQueue.fastPathEnabled() || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
@@ -945,6 +986,9 @@ func (s *subprocess) waitOnState(ctx *sharedContext) error {
 // The second return value is the expected number of threads after kicking a
 // new one.
 func (s *subprocess) canKickSysmsgThread() (bool, uint32) {
+	if s.dead.Load() {
+		return false, 0
+	}
 	// numActiveContexts and numActiveThreads can be changed from stub
 	// threads that handles the contextQueue without any locks. The idea
 	// here is that any stub thread that gets CPU time can make some
@@ -1001,10 +1045,15 @@ func (s *subprocess) kickSysmsgThread() bool {
 
 // syscall executes the given system call without handling interruptions.
 func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
-	s.syscallThreadMu.Lock()
-	defer s.syscallThreadMu.Unlock()
-
-	return s.syscallThread.syscall(sysno, args...)
+	var ret uintptr
+	err := s.withAliveRLock(func() error {
+		s.syscallThreadMu.Lock()
+		defer s.syscallThreadMu.Unlock()
+		r, err := s.syscallThread.syscall(sysno, args...)
+		ret = r
+		return err
+	})
+	return ret, err
 }
 
 // MapFile implements platform.AddressSpace.MapFile.
@@ -1069,6 +1118,11 @@ func initSysmsgThreadPriority() {
 // createSysmsgThread creates a new sysmsg thread.
 // The thread starts processing any available context in the context queue.
 func (s *subprocess) createSysmsgThread() error {
+	return s.withAliveRLock(s.createSysmsgThreadLocked)
+}
+
+// +checklocksread:s.aliveMu
+func (s *subprocess) createSysmsgThreadLocked() error {
 	// Create a new seccomp process.
 	var r requestThread
 	r.thread = make(chan *thread)
@@ -1199,14 +1253,14 @@ func (s *subprocess) createSysmsgThread() error {
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
 		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
+	s.sysmsgThreadsMu.Lock()
+	s.sysmsgThreads[threadID] = sysThread
+	s.sysmsgThreadsMu.Unlock()
+
 	// Resume the BPF process.
 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(p.tid), 0); errno != 0 {
 		panic(fmt.Sprintf("can't detach new clone: %v", errno))
 	}
-
-	s.sysmsgThreadsMu.Lock()
-	s.sysmsgThreads[threadID] = sysThread
-	s.sysmsgThreadsMu.Unlock()
 
 	return nil
 }

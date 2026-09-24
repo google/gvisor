@@ -27,15 +27,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-make copy TARGETS=runsc DESTINATION="${test_dir}"
+make copy TARGETS=//:release DESTINATION="${test_dir}"
 cat > "${podman_runtime}" <<EOF
 #!/bin/bash
 
 exec $test_dir/runsc --ignore-cgroups --debug --debug-log ${test_dir}/runsc.log ${RUNTIME_ARGS:-} "\$@"
 EOF
 chmod ugo+x "${podman_runtime}"
-chmod ugo+x "${test_dir}/runsc"
-chmod ugo+xwr "${test_dir}"
+chmod -R ugo+xwr "${test_dir}"
 grep podman-testuser /etc/passwd || \
 adduser   --disabled-login  --disabled-password podman-testuser < /dev/null
 (

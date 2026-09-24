@@ -17,6 +17,7 @@ package pgalloc
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -35,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/ringdeque"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	pgallocpb "gvisor.dev/gvisor/pkg/sentry/pgalloc/pgalloc_metadata_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
@@ -63,17 +66,103 @@ func (f *MemoryFile) ResourceID() checkpoint.ResourceID {
 	return f.opts.ResourceID
 }
 
-// memoryFileSaved is the subset of MemoryFile that is stored in checkpoints.
-//
-// +stateify savable
-type memoryFileSaved struct {
-	unwasteSmall *unwasteSet
-	unwasteHuge  *unwasteSet
-	unfreeSmall  *unfreeSet
-	unfreeHuge   *unfreeSet
-	subreleased  map[uint64]uint64
-	memAcct      *memAcctSet
-	chunks       []chunkInfo
+func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
+	pb := &pgallocpb.MemoryFileMetadataProto{
+		Version:     1,
+		Subreleased: make(map[uint64]uint64, len(f.subreleased)),
+	}
+	for k, v := range f.subreleased {
+		pb.Subreleased[k] = v
+	}
+	chunks := f.chunksLoad()
+	pb.Chunks = make([]*pgallocpb.ChunkInfoProto, len(chunks))
+	for i, c := range chunks {
+		pb.Chunks[i] = &pgallocpb.ChunkInfoProto{
+			Huge: c.huge,
+		}
+	}
+	for s := f.memAcct.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		val := s.Value()
+		pb.MemAcct = append(pb.MemAcct, &pgallocpb.MemAcctRangeProto{
+			Start:          s.Start(),
+			End:            s.End(),
+			Kind:           uint32(val.kind),
+			MemCgId:        val.memCgID,
+			KnownCommitted: val.knownCommitted,
+		})
+	}
+	for s := f.unfreeSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		val := s.Value()
+		pb.UnfreeSmall = append(pb.UnfreeSmall, &pgallocpb.UnfreeRangeProto{
+			Start: s.Start(),
+			End:   s.End(),
+			Refs:  val.refs,
+		})
+	}
+	for s := f.unfreeHuge.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		val := s.Value()
+		pb.UnfreeHuge = append(pb.UnfreeHuge, &pgallocpb.UnfreeRangeProto{
+			Start: s.Start(),
+			End:   s.End(),
+			Refs:  val.refs,
+		})
+	}
+	for s := f.unwasteSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		pb.UnwasteSmall = append(pb.UnwasteSmall, &pgallocpb.FileRangeProto{
+			Start: s.Start(),
+			End:   s.End(),
+		})
+	}
+	for s := f.unwasteHuge.FirstSegment(); s.Ok(); s = s.NextSegment() {
+		pb.UnwasteHuge = append(pb.UnwasteHuge, &pgallocpb.FileRangeProto{
+			Start: s.Start(),
+			End:   s.End(),
+		})
+	}
+	return pb
+}
+
+func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) error {
+	if pb.Version != 1 {
+		return fmt.Errorf("unsupported MemoryFileMetadataProto version %d", pb.Version)
+	}
+	f.subreleased = make(map[uint64]uint64, len(pb.Subreleased))
+	for k, v := range pb.Subreleased {
+		f.subreleased[k] = v
+	}
+	chunks := make([]chunkInfo, len(pb.Chunks))
+	for i, c := range pb.Chunks {
+		chunks[i] = chunkInfo{
+			huge: c.Huge,
+		}
+	}
+	f.chunks.Store(&chunks)
+
+	f.memAcct.RemoveAll()
+	for _, s := range pb.MemAcct {
+		f.memAcct.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, memAcctInfo{
+			kind:           usage.MemoryKind(s.Kind),
+			memCgID:        s.MemCgId,
+			knownCommitted: s.KnownCommitted,
+		})
+	}
+	f.unfreeSmall.RemoveAll()
+	for _, s := range pb.UnfreeSmall {
+		f.unfreeSmall.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unfreeInfo{refs: s.Refs})
+	}
+	f.unfreeHuge.RemoveAll()
+	for _, s := range pb.UnfreeHuge {
+		f.unfreeHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unfreeInfo{refs: s.Refs})
+	}
+	f.unwasteSmall.RemoveAll()
+	for _, s := range pb.UnwasteSmall {
+		f.unwasteSmall.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
+	}
+	f.unwasteHuge.RemoveAll()
+	for _, s := range pb.UnwasteHuge {
+		f.unwasteHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
+	}
+	return nil
 }
 
 // SaveOpts provides options to MemoryFile.SaveTo().
@@ -386,16 +475,18 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 
 	// Save metadata.
 	timeMetadataStart := gohacks.Nanotime()
-	if _, err := state.Save(ctx, w, &memoryFileSaved{
-		unwasteSmall: &f.unwasteSmall,
-		unwasteHuge:  &f.unwasteHuge,
-		unfreeSmall:  &f.unfreeSmall,
-		unfreeHuge:   &f.unfreeHuge,
-		subreleased:  f.subreleased,
-		memAcct:      &f.memAcct,
-		chunks:       f.chunksLoad(),
-	}); err != nil {
-		return fmt.Errorf("failed to save metadata: %w", err)
+	pb := f.exportMetadataProto()
+	data, err := proto.Marshal(pb)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	var lengthBuf [8]byte
+	binary.LittleEndian.PutUint64(lengthBuf[:], uint64(len(data)))
+	if _, err := w.Write(lengthBuf[:]); err != nil {
+		return fmt.Errorf("failed to write metadata length: %w", err)
+	}
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("failed to write metadata: %w", err)
 	}
 	log.Infof("MemoryFile(%p): saved metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
 
@@ -935,18 +1026,23 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 
 	// Load metadata.
 	timeMetadataStart := gohacks.Nanotime()
-	var mfs memoryFileSaved
-	if _, err := state.Load(ctx, r, &mfs); err != nil {
-		return fmt.Errorf("failed to load metadata: %w", err)
+	var lengthBuf [8]byte
+	if _, err := io.ReadFull(r, lengthBuf[:]); err != nil {
+		return fmt.Errorf("failed to read metadata length: %w", err)
 	}
-	f.unwasteSmall.MoveFrom(mfs.unwasteSmall)
-	f.unwasteHuge.MoveFrom(mfs.unwasteHuge)
-	f.unfreeSmall.MoveFrom(mfs.unfreeSmall)
-	f.unfreeHuge.MoveFrom(mfs.unfreeHuge)
-	f.subreleased = mfs.subreleased
-	f.memAcct.MoveFrom(mfs.memAcct)
-	chunks := mfs.chunks
-	f.chunks.Store(&chunks)
+	length := binary.LittleEndian.Uint64(lengthBuf[:])
+	data := make([]byte, length)
+	if _, err := io.ReadFull(r, data); err != nil {
+		return fmt.Errorf("failed to read metadata: %w", err)
+	}
+	var pb pgallocpb.MemoryFileMetadataProto
+	if err := proto.Unmarshal(data, &pb); err != nil {
+		return fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+	if err := f.importMetadataProto(&pb); err != nil {
+		return fmt.Errorf("failed to import metadata: %w", err)
+	}
+	chunks := f.chunksLoad()
 	mfTimeline.Reached("metadata loaded")
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
 

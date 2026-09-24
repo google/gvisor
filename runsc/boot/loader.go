@@ -27,6 +27,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -37,11 +38,16 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/cxproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/efaproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
@@ -50,6 +56,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -78,6 +85,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	pf "gvisor.dev/gvisor/runsc/boot/portforward"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
@@ -92,6 +100,7 @@ import (
 	// Include other supported socket providers.
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
+	rdmanetlink "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
@@ -228,6 +237,10 @@ type Loader struct {
 	// should be called when a sandbox is destroyed.
 	stopProfiling func()
 
+	// startupTimertracks overall sandbox startup.
+	// It is *not* owned by the Loader. See `Args.StartupTimer`.
+	startupTimer *timing.Timer
+
 	// PreSeccompCallback is called right before installing seccomp filters.
 	PreSeccompCallback func()
 
@@ -247,12 +260,26 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// rdmaSysfs is the host sysfs snapshot for RDMA device topology, or
+	// nil when disabled.
+	rdmaSysfs *rdma.Snapshot
+
 	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
 	cpuPeriod int64
 
 	hostTHP HostTHP
+
+	// saveMu serializes save operations. Saves can be requested concurrently:
+	// autosave in save-resume mode is triggered by any task executing the
+	// trigger syscall, and checkpoints may be requested concurrently via the
+	// control API. Overlapping saves race: post-save cleanup
+	// (Kernel.BeforeResume) runs outside Kernel.extMu, so save N's cleanup can
+	// clear state that save N+1's in-progress Kernel.SaveTo has just set up.
+	//
+	// Lock order: saveMu is taken before mu.
+	saveMu sync.Mutex
 
 	// mu guards the fields below.
 	mu sync.Mutex
@@ -265,6 +292,13 @@ type Loader struct {
 	//
 	// +checklocks:mu
 	sharedMounts map[string]*vfs.Mount
+
+	// cgroup2Mount is an internal mount of the cgroup2fs singleton used to
+	// manage per-container cgroups. It is only set when InSandboxCgroup is
+	// InSandboxCgroupV2.
+	//
+	// +checklocks:mu
+	cgroup2Mount *vfs.Mount
 
 	// processes maps containers init process and invocation of exec. Root
 	// processes are keyed with container ID and pid=0, while exec invocations
@@ -319,12 +353,22 @@ type Loader struct {
 	// host network namespace during sandbox creation.
 	networkArgs *CreateLinksAndRoutesArgs
 
+	// pinRing accumulates host FDs to pin before seccomp filters are
+	// installed.
+	pinRing pinring.PinRing
+
 	// fsSaveFDs are FDs used for user-triggered filesystem checkpoint saving.
 	fsSaveFDs []*fd.FD
 
 	// fsSaveCheckpointGofer is true if fsSaveFDs contains only one FD, which
 	// is a socket connected to a checkpoint gofer.
 	fsSaveCheckpointGofer bool
+
+	// hostinetNetDevFile is the pre-opened /proc/net/dev file for hostinet restore.
+	hostinetNetDevFile *os.File
+
+	// hostinetNetSNMPFile is the pre-opened /proc/net/snmp file for hostinet restore.
+	hostinetNetSNMPFile *os.File
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -343,6 +387,9 @@ type execProcess struct {
 
 	// pidnsPath is the pid namespace path in spec
 	pidnsPath string
+
+	// cgroupnsPath is the cgroup namespace path in spec
+	cgroupnsPath string
 
 	// hostTTY is present when creating a sub-container with terminal enabled.
 	// TTY file is passed during container create and must be saved until
@@ -376,6 +423,14 @@ type Args struct {
 	// ControllerFD is the FD to the URPC controller. The Loader takes ownership
 	// of this FD and may close it at any time.
 	ControllerFD int
+	// PinRingFD is the FD of the donated pin ring where the sentry registers
+	// its expensive-to-release files into. See `//pkg/pinring`.
+	// -1 if there is no ring.
+	PinRingFD int
+	// CPUDMALatencyFD is an FD for /dev/cpu_dma_latency that the boot
+	// process opened to cap host CPU idle states. The Loader takes
+	// ownership of it. -1 if unset.
+	CPUDMALatencyFD int
 	// Device is an optional argument that is passed to the platform. The Loader
 	// takes ownership of this file and may close it at any time.
 	Device *fd.FD
@@ -416,6 +471,10 @@ type Args struct {
 	// ProductName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	ProductName string
+
+	// RDMASysfs is the host sysfs snapshot for RDMA device topology, or
+	// nil when disabled.
+	RDMASysfs *rdma.Snapshot
 	// PodInitConfigFD is the file descriptor to a file passed in the
 	//	--pod-init-config flag
 	PodInitConfigFD int
@@ -449,6 +508,11 @@ type Args struct {
 	// RootfsUpperTarFD is the file descriptor to the tar file containing the rootfs
 	// upper layer changes.
 	RootfsUpperTarFD int
+
+	// StartupTimer tracks overall sandbox startup.
+	// The `Loader` records midpoints on it as it goes through loader creation
+	// and sandbox startup. The `Loader` does not take ownership of it.
+	StartupTimer *timing.Timer
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -466,7 +530,14 @@ const (
 	// startingStdioFD is the starting stdioFD number used during sandbox
 	// start and restore. This makes sure the stdioFDs are always the same
 	// on initial start and on restore.
-	startingStdioFD = 256
+	// It must be above the highest FD number that donation can assign at boot
+	// (donated FDs are numbered densely from 3, and should ideally be such
+	// that adding 2 to it (i.e. index stderr gets) does *not* cross a
+	// power of 2. See `//runsc/prewarmer/prewarmer.c` for some fun Linux
+	// kernel lore that explains why.
+	// LINT.IfChange
+	startingStdioFD = 253
+	// LINT.ThenChange(../prewarmer/prewarmer.c)
 
 	// containerSpecsKey is the key used to add and pop the container specs to the
 	// kernel during save/restore.
@@ -499,6 +570,23 @@ func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.User
 	return creds
 }
 
+// shouldEnableClockMonotonicRaw reports whether CLOCK_MONOTONIC_RAW should be
+// exposed as a distinct clock tracking the host's CLOCK_MONOTONIC_RAW, rather
+// than aliasing CLOCK_MONOTONIC as it does by default.
+//
+// This exists for GPU profiling: profilers such as Nsight Systems/CUPTI anchor
+// the GPU timeline in the host's CLOCK_MONOTONIC_RAW domain, which drifts from
+// CLOCK_MONOTONIC by NTP frequency adjustment. When nvproxy grants
+// CapProfiling, the sandbox must therefore serve a CLOCK_MONOTONIC_RAW in that
+// same (absolute, unadjusted) domain. It is enabled only in that case.
+func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
+	if !specutils.NVProxyEnabled(spec, conf) {
+		return false
+	}
+	caps, err := specutils.NVProxyDriverCapsAllowed(conf)
+	return err == nil && caps&nvconf.CapProfiling != 0
+}
+
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
@@ -510,19 +598,40 @@ func New(args Args) (*Loader, error) {
 
 	// Initialize seccheck points.
 	seccheck.Initialize()
+	args.StartupTimer.Reached("seccheck initialized")
 
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
 		return nil, fmt.Errorf("setting up rand: %w", err)
 	}
+	args.StartupTimer.Reached("RNG initialized")
 
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
+	args.StartupTimer.Reached("memory usage initialized")
 
 	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		nvproxy.Init()
+		args.StartupTimer.Reached("nvproxy initialized")
+	}
+	if specutils.RDMAEnabled(args.Spec, args.Conf) {
+		cxproxy.Init()
+		efaproxy.Init()
+		genericproxy.Init()
+		version.UseRDMARelease()
+		args.StartupTimer.Reached("RDMA proxy initialized")
+	}
+
+	// Publish the RDMA sysfs snapshot to the NETLINK_RDMA nldev shim before
+	// any application socket can exist. rdma-core discovers devices and binds
+	// userspace providers through nldev (RDMA_NLDEV_ATTR_UVERBS_DRIVER_ID);
+	// providers without a PCI-ID match table (e.g. libirdma) are unusable
+	// without it. A nil snapshot leaves the protocol unregistered-equivalent:
+	// socket(AF_NETLINK, ..., NETLINK_RDMA) fails as on a host without RDMA.
+	if args.RDMASysfs != nil {
+		rdmanetlink.Init(args.RDMASysfs)
 	}
 
 	eid := execID{cid: args.ID}
@@ -531,7 +640,9 @@ func New(args Args) (*Loader, error) {
 		processes:             map[execID]*execProcess{eid: {}},
 		sharedMounts:          make(map[string]*vfs.Mount),
 		stopProfiling:         stopProfiling,
+		startupTimer:          args.StartupTimer,
 		productName:           args.ProductName,
+		rdmaSysfs:             args.RDMASysfs,
 		cpuQuota:              args.CPUQuota,
 		cpuPeriod:             args.CPUPeriod,
 		hostTHP:               args.HostTHP,
@@ -549,6 +660,7 @@ func New(args Args) (*Loader, error) {
 	}
 	log.Infof("CPUs: %d", args.NumCPU)
 	gomaxprocs.SetBase(args.NumCPU)
+	args.StartupTimer.Reached("GOMAXPROCS set")
 
 	// Start filesystem checkpoint restore as soon as possible to maximize
 	// parallel loading.
@@ -580,6 +692,7 @@ func New(args Args) (*Loader, error) {
 	// used.
 	newfd := startingStdioFD
 
+	remapStart := gtime.Now()
 	for _, stdioFD := range args.StdioFDs {
 		// Check that newfd is unused to avoid clobbering over it.
 		if _, err := unix.FcntlInt(uintptr(newfd), unix.F_GETFD, 0); !errors.Is(err, unix.EBADF) {
@@ -597,6 +710,7 @@ func New(args Args) (*Loader, error) {
 		_ = unix.Close(stdioFD)
 		newfd++
 	}
+	log.Infof("Remapped stdio FDs to [%d, %d] in %v", startingStdioFD, newfd-1, gtime.Since(remapStart)) // Load-bearing log message! See `//runsc/prewarmer/prewarmer_speedup_test.go` which parses this log line.
 	for _, goferFD := range args.GoferFDs {
 		l.root.goferFDs = append(l.root.goferFDs, fd.New(goferFD))
 	}
@@ -616,6 +730,7 @@ func New(args Args) (*Loader, error) {
 			guest: customFD.Guest,
 		})
 	}
+	args.StartupTimer.Reached("donated FDs ingested")
 
 	if args.RootfsUpperTarFD >= 0 {
 		if l.fsRestore != nil {
@@ -625,10 +740,20 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID)
+	l.pinRing.FD = args.PinRingFD
+	if args.CPUDMALatencyFD >= 0 {
+		if l.pinRing.Exists() {
+			l.pinRing.Add(args.CPUDMALatencyFD)
+		} else {
+			log.Infof("No pin ring to hold /dev/cpu_dma_latency; not capping host CPU idle states")
+		}
+		unix.Close(args.CPUDMALatencyFD)
+	}
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
+	args.StartupTimer.Reached("platform created")
 	if args.Conf.Platform == "kvm" && specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		if caps, err := specutils.NVProxyDriverCapsAllowed(args.Conf); err == nil && caps&nvconf.CapCompute != 0 {
 			log.Warningf("Application cudaMallocManaged() is flaky on -platform=kvm, see gvisor.dev/docs/user_guide/gpu/#platforms")
@@ -647,6 +772,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
 	l.k.SetMemoryFile(mf)
+	args.StartupTimer.Reached("memory file created")
 
 	// Create VDSO.
 	//
@@ -655,11 +781,13 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %w", err)
 	}
+	args.StartupTimer.Reached("VDSO prepared")
 
 	// Create timekeeper.
 	tk := kernel.NewTimekeeper()
 	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamPage.FileRange())
-	tk.SetClocks(time.NewCalibratedClocks(), params)
+	tk.SetClocks(time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(args.Spec, args.Conf)), params)
+	args.StartupTimer.Reached("timekeeper configured")
 
 	if err := enableStrace(args.Conf); err != nil {
 		return nil, fmt.Errorf("enabling strace: %w", err)
@@ -674,6 +802,7 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
+	args.StartupTimer.Reached("network stack created")
 
 	if args.TotalHostMem > 0 {
 		// tmpfs needs to know the amount of total physical RAM to calculate size limits.
@@ -707,6 +836,12 @@ func New(args Args) (*Loader, error) {
 		}
 		cpufs = afs
 	}
+	// Systrap uses the GS base register for syscall patching, and must be informed
+	// via a arch_prctl(SET_GS, ...) call to safely give control of it
+	// back to the guest.
+	if args.Conf.Platform == "systrap" {
+		cpufs = cpufs.UnsetFSGSBASE()
+	}
 
 	maxFDLimit := kernel.MaxFdLimit
 	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
@@ -736,13 +871,16 @@ func New(args Args) (*Loader, error) {
 		RootPIDNamespace:     kernel.NewRootPIDNamespace(creds.UserNamespace),
 		MaxFDLimit:           maxFDLimit,
 		Cgroup2FSInit:        cgroup2fs.NewFilesystem,
+		SignalUnkillable:     signalUnkillablePolicy(args.Conf.SignalUnkillablePolicy),
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
+	args.StartupTimer.Reached("kernel initialized")
 
-	if err := registerFilesystems(l.k, &l.root); err != nil {
+	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
+	args.StartupTimer.Reached("filesystems registered")
 
 	// Turn on packet logging if enabled.
 	if args.Conf.LogPackets {
@@ -765,15 +903,18 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating init process for root container: %w", err)
 	}
 	l.root.procArgs = procArgs
+	args.StartupTimer.Reached("process args created")
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
 		return nil, fmt.Errorf("initializing compat logs: %w", err)
 	}
+	args.StartupTimer.Reached("compat logs initialized")
 
 	l.mountHints, err = NewPodMountHints(args.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
+	args.StartupTimer.Reached("mount hints parsed")
 
 	// Set up host mount that will be used for imported fds.
 	hostFilesystem, err := host.NewFilesystem(l.k.VFS())
@@ -782,6 +923,7 @@ func New(args Args) (*Loader, error) {
 	}
 	defer hostFilesystem.DecRef(l.k.SupervisorContext())
 	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	args.StartupTimer.Reached("host FS mount created")
 
 	if args.PodInitConfigFD >= 0 {
 		if err := setupSeccheck(args.PodInitConfigFD, args.SinkFDs); err != nil {
@@ -819,12 +961,20 @@ func New(args Args) (*Loader, error) {
 	if err := ctrl.srv.StartServing(); err != nil {
 		return nil, fmt.Errorf("starting control server: %w", err)
 	}
+	args.StartupTimer.Reached("control server started")
 
 	return l, nil
 }
 
 // ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
 func (l *Loader) ConfigureNetwork(s inet.Stack) error {
+	if h, ok := s.(*hostinet.Stack); ok {
+		h.SetFiles(l.hostinetNetDevFile, l.hostinetNetSNMPFile)
+		l.hostinetNetDevFile = nil
+		l.hostinetNetSNMPFile = nil
+		return nil
+	}
+
 	if l.networkArgs == nil {
 		return nil
 	}
@@ -846,7 +996,7 @@ func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 		eps.Stack.SetIPTables(netfilter.DefaultLinuxTables(eps.Stack.Clock(), eps.Stack.InsecureRNG()))
 	}
 	if nftables.IsNFTablesEnabled() && eps.Stack.NFTables() == nil {
-		eps.Stack.SetNFTables(nftables.NewNFTables(eps.Stack.Clock(), eps.Stack.SecureRNG()))
+		eps.Stack.SetNFTables(nftables.NewNFTables(eps.Stack, eps.Stack.Clock(), eps.Stack.SecureRNG()))
 	}
 	n := &Network{
 		Stack:  eps.Stack,
@@ -915,11 +1065,16 @@ func (l *Loader) Destroy() {
 	for _, m := range l.sharedMounts {
 		m.DecRef(ctx)
 	}
+	if l.cgroup2Mount != nil {
+		l.cgroup2Mount.DecRef(ctx)
+		l.cgroup2Mount = nil
+	}
 	l.mu.Unlock()
 
 	// Wake up all checkpoint waiters. This must be done before the controller
 	// is stopped, since its stop sequence requires all pending RPCs to complete.
 	l.k.SignalAllCheckpointWaiters(fmt.Errorf("Loader destroyed"))
+	l.k.SignalAllFSSaveWaiters(fmt.Errorf("Loader destroyed"))
 
 	// Stop the control server. This will indirectly stop any
 	// long-running control operations that are in flight, e.g.
@@ -957,7 +1112,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
@@ -972,6 +1127,8 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 		ApplicationCores:       numCPU,
 		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
 		SandboxID:              sandboxID,
+		StartupTimer:           startupTimer,
+		PinRing:                pinRing,
 	})
 }
 
@@ -1043,6 +1200,7 @@ func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, 
 func (l *Loader) installSeccompFilters() error {
 	if l.PreSeccompCallback != nil {
 		l.PreSeccompCallback()
+		l.startupTimer.Reached("pre-seccomp callback done")
 	}
 	if l.root.conf.DisableSeccomp {
 		log.Warningf("*** SECCOMP WARNING: syscall filter is DISABLED. Running in less secure mode.")
@@ -1071,11 +1229,12 @@ func (l *Loader) installSeccompFilters() error {
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
 			TPUProxy:              specutils.TPUProxyEnabled(l.root.spec, l.root.conf),
+			RDMAProxy:             specutils.RDMAEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,
 		}
-		if err := filter.Install(opts); err != nil {
+		if err := filter.Install(opts, l.startupTimer); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)
 		}
 	}
@@ -1106,6 +1265,7 @@ func (l *Loader) run() error {
 		if err := s.Configure(l.root.conf.EnableRaw); err != nil {
 			return err
 		}
+		l.startupTimer.Reached("host network configured")
 	}
 
 	l.mu.Lock()
@@ -1127,6 +1287,11 @@ func (l *Loader) run() error {
 			if err := l.ConfigureNetwork(l.k.RootNetworkNamespace().Stack()); err != nil {
 				return err
 			}
+			l.startupTimer.Reached("network configured")
+		}
+
+		if err := l.pinRing.Finalize(); err != nil {
+			log.Warningf("Cannot pin files to the pin ring: %v. This slows down gVisor sandbox teardown.", err)
 		}
 
 		// Finally done with all configuration. Setup filters before user code
@@ -1134,9 +1299,11 @@ func (l *Loader) run() error {
 		if err := l.installSeccompFilters(); err != nil {
 			return err
 		}
+		l.startupTimer.Reached("seccomp filters installed")
 
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
+		l.root.procArgs.StartupTimeline = l.startupTimer.Fork("root container")
 		var (
 			tg  *kernel.ThreadGroup
 			err error
@@ -1145,6 +1312,7 @@ func (l *Loader) run() error {
 		if err != nil {
 			return err
 		}
+		l.startupTimer.Reached("root container created")
 
 		if seccheck.Global.Enabled(seccheck.PointContainerStart) {
 			evt := pb.Start{
@@ -1197,12 +1365,16 @@ func (l *Loader) run() error {
 			log.Warningf("error sending signal %d to container %q: %s", sig, l.sandboxID, err)
 		}
 	})
+	l.startupTimer.Reached("signal forwarding started")
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
 	if err := l.k.Start(); err != nil {
 		return err
 	}
+	l.startupTimer.Reached("kernel started")
+	l.root.procArgs.StartupTimeline.End()
+	l.root.procArgs.StartupTimeline = nil
 	switch l.state {
 	case created:
 		l.state = started
@@ -1355,6 +1527,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err != nil {
 		return nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
+	info.procArgs.StartupTimeline.Reached("FD table created")
 	// CreateProcess takes a reference on fdTable if successful. We won't need
 	// ours either way.
 	info.procArgs.FDTable = fdTable
@@ -1389,12 +1562,30 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	l.startGoferMonitor(info)
 
-	if l.root.cid == l.sandboxID && !l.root.conf.MountCgroupV2 {
-		// Mounts cgroups for all the controllers.
-		if err := l.mountCgroupMounts(info.conf, info.procArgs.Credentials); err != nil {
-			return nil, nil, err
+	if l.root.cid == l.sandboxID {
+		if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
+			if err := l.setupCgroup2(); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			// Mounts cgroups for all the controllers.
+			if err := l.mountCgroupMounts(info.conf, info.procArgs.Credentials); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
+	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
+		// Create the container's cgroup and resolve its cgroup namespace
+		// before the container's mounts are set up, so that its
+		// /sys/fs/cgroup mount is rooted per the namespace.
+		cgCleanup, err := l.setupContainerCgroup2(info)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer cgCleanup()
+	}
+	info.procArgs.StartupTimeline.Reached("cgroups mounted")
+
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
 	mntr := l.newContainerMounter(info)
@@ -1413,6 +1604,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err != nil {
 		return nil, nil, err
 	}
+	info.procArgs.StartupTimeline.Reached("exec user home resolved")
 
 	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(info.procArgs)
@@ -1433,6 +1625,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 		if err := task.AppendSyscallFilter(*program, true); err != nil {
 			return nil, nil, fmt.Errorf("appending seccomp filters: %w", err)
 		}
+		info.procArgs.StartupTimeline.Reached("OCI seccomp filters applied")
 	}
 
 	return tg, ttyFile, nil
@@ -1475,16 +1668,13 @@ func (l *Loader) startGoferMonitor(info *containerInfo) {
 			panic(fmt.Sprintf("Error monitoring gofer FDs: %s", err))
 		}
 
-		l.mu.Lock()
-		defer l.mu.Unlock()
-
-		// The gofer could have been stopped due to a normal container shutdown.
-		// Check if the container has not stopped yet.
-		if tg, _ := l.tryThreadGroupFromIDLocked(execID{cid: info.cid}); tg != nil {
-			log.Infof("Gofer socket disconnected, killing container %q", info.cid)
-			if err := l.signalAllProcesses(info.cid, int32(linux.SIGKILL)); err != nil {
-				log.Warningf("Error killing container %q after gofer stopped: %s", info.cid, err)
-			}
+		tg, _ := l.threadGroupFromID(execID{cid: info.cid})
+		if tg == nil {
+			return
+		}
+		log.Infof("Gofer socket disconnected, killing container %q", info.cid)
+		if err := l.signalAllProcesses(info.cid, int32(linux.SIGKILL)); err != nil {
+			log.Warningf("Error killing container %q after gofer stopped: %s", info.cid, err)
 		}
 	}()
 }
@@ -1525,6 +1715,10 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	}
 	// Cleanup the device gofer.
 	l.k.RemoveDevGofer(l.k.ContainerName(cid))
+
+	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
+		l.removeContainerCgroup2(cid)
+	}
 
 	log.Debugf("Container destroyed, cid: %s", cid)
 	return nil
@@ -1568,6 +1762,17 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, err
 	}
 	args.PIDNamespace = tg.PIDNamespace()
+
+	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
+		// Join the container's cgroup and cgroup namespace, like Linux's
+		// runc exec does.
+		leader := tg.Leader()
+		args.InitialCgroupV2 = leader.Cgroup2()
+		if cgroupns := leader.GetCgroupNamespace(); cgroupns != nil {
+			args.CgroupNamespace = cgroupns
+			defer cgroupns.DecRef(sctx)
+		}
+	}
 
 	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyEnabled(l.root.spec, l.root.conf))
 	if err != nil {
@@ -1787,7 +1992,7 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 	}), c.uid.UniqueID())
 
 	if nftables.IsNFTablesEnabled() {
-		s.Stack.SetNFTables(nftables.NewNFTables(c.clock, s.Stack.SecureRNG()))
+		s.Stack.SetNFTables(nftables.NewNFTables(s.Stack, c.clock, s.Stack.SecureRNG()))
 	}
 
 	// Enable SACK Recovery.
@@ -2203,9 +2408,9 @@ func (l *Loader) containerCount() int {
 
 func (l *Loader) pidsCount(cid string) (int, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if _, err := l.tryThreadGroupFromIDLocked(execID{cid: cid}); err != nil {
+	_, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
+	l.mu.Unlock()
+	if err != nil {
 		// Container doesn't exist.
 		return 0, err
 	}
@@ -2301,8 +2506,8 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 		// Container has no thread group assigned, so it has not started yet.
 		return RuntimeStateCreating
 	}
-	if exec.tg.Leader().ExitState() == kernel.TaskExitNone {
-		// Init process is still running.
+	if exec.tg.HasNonExitingTasks() {
+		// Init process thread group is still running.
 		return RuntimeStateRunning
 	}
 	// Init process has stopped, but no one has called wait on it yet.
@@ -2314,4 +2519,17 @@ func (l *Loader) GetContainerSpecs() map[string]*specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.containerSpecs
+}
+
+// signalUnkillablePolicy maps the runsc config signal-unkillable policy
+// to the corresponding kernel policy.
+func signalUnkillablePolicy(p config.SignalUnkillablePolicy) kernel.SignalUnkillablePolicy {
+	switch p {
+	case config.SignalUnkillableLinux:
+		return kernel.SignalUnkillableLinux
+	case config.SignalUnkillableNone:
+		return kernel.SignalUnkillableNone
+	default:
+		return kernel.SignalUnkillableNone
+	}
 }

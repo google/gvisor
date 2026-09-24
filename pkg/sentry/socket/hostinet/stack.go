@@ -48,23 +48,36 @@ var defaultSendBufSize = inet.TCPBufferSize{
 	Max:     4194304,
 }
 
-// Stack implements inet.Stack for host sockets.
+// Stack implements inet.Stack for host sockets. Most fields are derived from
+// the host network configuration. During restore, ReplaceConfig overwrites the
+// deserialized Stack with values from the destination host.
+//
+// +stateify savable
 type Stack struct {
-	// Stack is immutable.
-	supportsIPv6   bool
-	tcpRecovery    inet.TCPLossRecovery
-	tcpRecvBufSize inet.TCPBufferSize
-	tcpSendBufSize inet.TCPBufferSize
-	tcpSACKEnabled bool
-	netDevFile     *os.File
-	netSNMPFile    *os.File
+	supportsIPv6    bool
+	tcpRecovery     inet.TCPLossRecovery
+	tcpRecvBufSize  inet.TCPBufferSize
+	tcpSendBufSize  inet.TCPBufferSize
+	tcpSACKEnabled  bool
+	allowRawSockets bool
+	configured      bool     `state:"nosave"`
+	netDevFile      *os.File `state:"nosave"`
+	netSNMPFile     *os.File `state:"nosave"`
 	// allowedSocketTypes is the list of allowed socket types
-	allowedSocketTypes []AllowedSocketType
-	ipv6KeepAddrOnDown bool
+	allowedSocketTypes []AllowedSocketType `state:"nosave"`
+  ipv6KeepAddrOnDown bool
 }
 
 // Destroy implements inet.Stack.Destroy.
-func (*Stack) Destroy() {
+func (s *Stack) Destroy() {
+	if s.netDevFile != nil {
+		_ = s.netDevFile.Close()
+		s.netDevFile = nil
+	}
+	if s.netSNMPFile != nil {
+		_ = s.netSNMPFile.Close()
+		s.netSNMPFile = nil
+	}
 }
 
 // NewStack returns an empty Stack containing no configuration.
@@ -74,6 +87,10 @@ func NewStack() *Stack {
 
 // Configure sets up the stack using the current state of the host network.
 func (s *Stack) Configure(allowRawSockets bool) error {
+	if s.configured {
+		return nil
+	}
+	s.allowRawSockets = allowRawSockets
 	if _, err := os.Stat("/proc/net/if_inet6"); err == nil {
 		s.supportsIPv6 = true
 	}
@@ -130,6 +147,7 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.allowedSocketTypes = append(s.allowedSocketTypes, AllowedRawSocketTypes...)
 	}
 
+	s.configured = true
 	return nil
 }
 
@@ -430,10 +448,32 @@ func (*Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error
 func (*Stack) Pause() {}
 
 // Restore implements inet.Stack.Restore.
-func (*Stack) Restore() {}
+func (*Stack) Restore() {
+	restoreListeners()
+}
 
-// ResetConfig implements inet.Stack.ResetConfig.
-func (*Stack) ResetConfig() {}
+// ResetConfig implements inet.Stack.ResetConfig. It takes ownership of
+// the freshly configured stack's host state, including its proc net files.
+func (s *Stack) ResetConfig() {
+	s.allowedSocketTypes = AllowedSocketTypes
+	if s.allowRawSockets {
+		s.allowedSocketTypes = append(s.allowedSocketTypes, AllowedRawSocketTypes...)
+	}
+	s.configured = true
+}
+
+// SetFiles sets the host proc net files for the stack.
+// It takes ownership of the files.
+func (s *Stack) SetFiles(netDev, netSNMP *os.File) {
+	if s.netDevFile != nil {
+		s.netDevFile.Close()
+	}
+	s.netDevFile = netDev
+	if s.netSNMPFile != nil {
+		s.netSNMPFile.Close()
+	}
+	s.netSNMPFile = netSNMP
+}
 
 // Resume implements inet.Stack.Resume.
 func (*Stack) Resume() {}
@@ -449,6 +489,16 @@ func (*Stack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}
 
 // SetForwarding implements inet.Stack.SetForwarding.
 func (*Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
+	return linuxerr.EACCES
+}
+
+// GetAllowExternalLoopbackTraffic implements inet.Stack.GetAllowExternalLoopbackTraffic.
+func (*Stack) GetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber) (bool, error) {
+	return false, nil
+}
+
+// SetAllowExternalLoopbackTraffic implements inet.Stack.SetAllowExternalLoopbackTraffic.
+func (*Stack) SetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber, bool) error {
 	return linuxerr.EACCES
 }
 

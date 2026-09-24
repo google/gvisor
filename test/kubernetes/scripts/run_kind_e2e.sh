@@ -42,12 +42,11 @@ if ! command -v kind &> /dev/null || ! command -v kubectl &> /dev/null; then
   fi
 fi
 
-# Build runsc
-echo "Building runsc..."
+# Build runsc release tarball
+echo "Building runsc release tarball..."
 BIN_DIR=$(mktemp -d)
 trap 'rm -rf "${BIN_DIR}"' EXIT
-make copy TARGETS=runsc DESTINATION="${BIN_DIR}/"
-make copy TARGETS=//shim:containerd-shim-runsc-v1 DESTINATION="${BIN_DIR}/"
+make release-tarball DESTINATION="${BIN_DIR}/"
 
 KUBECONFIG_PATH="${BIN_DIR}/kubeconfig"
 KUBECONFIG_INTERNAL_PATH="${BIN_DIR}/kubeconfig_internal"
@@ -87,12 +86,9 @@ sed -i "s/gvisor-e2e-control-plane/${CONTROL_PLANE_IP}/g" "${KUBECONFIG_INTERNAL
 # Install runsc on the node
 NODE="${KIND_CLUSTER_NAME}-control-plane"
 echo "Installing runsc on node ${NODE}..."
-docker cp "${BIN_DIR}/runsc" "${NODE}:/usr/bin/runsc"
-docker exec "${NODE}" chmod +x /usr/bin/runsc
-
-# Also install runsc as the containerd-shim-runsc-v1
-docker cp "${BIN_DIR}/containerd-shim-runsc-v1" "${NODE}:/usr/bin/containerd-shim-runsc-v1"
-docker exec "${NODE}" chmod +x /usr/bin/containerd-shim-runsc-v1
+mkdir -p "${BIN_DIR}/unpacked"
+tar -C "${BIN_DIR}/unpacked" -xjf "${BIN_DIR}/gvisor.tar.bz2"
+docker cp "${BIN_DIR}/unpacked/." "${NODE}:/usr/bin/"
 
 # Create runsc.toml
 echo "Creating runsc.toml..."

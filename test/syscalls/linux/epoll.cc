@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
 #include <signal.h>
@@ -22,15 +23,21 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <vector>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
 #include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
@@ -88,12 +95,13 @@ TEST(EpollTest, LastReadable) {
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
 
-  int i;
-  for (i = 0; i < kFDsPerEpoll - 1; i++) {
-    EXPECT_EQ(result[i].events, EPOLLOUT);
+  for (int i = 0; i < kFDsPerEpoll; i++) {
+    if (result[i].data.u64 == kMagicConstant + kFDsPerEpoll - 1) {
+      EXPECT_EQ(result[i].events, EPOLLOUT | EPOLLIN);
+    } else {
+      EXPECT_EQ(result[i].events, EPOLLOUT);
+    }
   }
-  EXPECT_EQ(result[i].events, EPOLLOUT | EPOLLIN);
-  EXPECT_EQ(result[i].data.u64, kMagicConstant + i);
 }
 
 TEST(EpollTest, LastNonWritable) {
@@ -115,17 +123,19 @@ TEST(EpollTest, LastNonWritable) {
   ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
 
-  int i;
-  for (i = 0; i < kFDsPerEpoll - 1; i++) {
-    EXPECT_EQ(result[i].events, EPOLLOUT);
+  for (int i = 0; i < kFDsPerEpoll; i++) {
+    if (result[i].data.u64 == kMagicConstant + kFDsPerEpoll - 1) {
+      EXPECT_EQ(result[i].events, EPOLLIN);
+    } else {
+      EXPECT_EQ(result[i].events, EPOLLOUT);
+    }
   }
-  EXPECT_EQ(result[i].events, EPOLLIN);
   EXPECT_THAT(ReadFd(eventfds[kFDsPerEpoll - 1].get(), &tmp, sizeof(tmp)),
               sizeof(tmp));
   EXPECT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), result, kFDsPerEpoll, -1),
               SyscallSucceedsWithValue(kFDsPerEpoll));
 
-  for (i = 0; i < kFDsPerEpoll; i++) {
+  for (int i = 0; i < kFDsPerEpoll; i++) {
     EXPECT_EQ(result[i].events, EPOLLOUT);
   }
 }

@@ -191,8 +191,14 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 
 	if opts.User {
 		v |= user
+		v |= pxn
 	} else {
 		v = v &^ user
+		if !opts.AccessType.Execute {
+			v |= pxn
+		} else {
+			v = v &^ pxn
+		}
 	}
 
 	v |= uintptr(opts.MemoryType&attrIndxMask) << attrIndxShift

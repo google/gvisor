@@ -77,8 +77,15 @@ Run an individual test via:
 $ bazel test //test/iptables:iptables_test --test_filter=<TESTNAME>
 ```
 
+To run in nftables compat mode (`iptables-nft`):
+
+```bash
+$ bazel test //test/iptables:iptables_nft_test --test_filter=<TESTNAME>
+```
+
 To run an individual test with `runc`:
 
 ```bash
 $ bazel test //test/iptables:iptables_test --test_filter=<TESTNAME> --test_env=RUNTIME=runc
+$ bazel test //test/iptables:iptables_nft_test --test_filter=<TESTNAME> --test_env=RUNTIME=runc
 ```

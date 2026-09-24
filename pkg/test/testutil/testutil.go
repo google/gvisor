@@ -22,6 +22,7 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"math"
@@ -142,16 +143,42 @@ func ImageByName(name string) string {
 	return fmt.Sprintf("gvisor.dev/images/%s", name)
 }
 
+// FindRunsc returns the path to the runsc binary.
+// As a side effect, it sets the GVISOR_SIDECAR_BINARIES_DIR environment
+// variable needed to properly aim `runsc` at its sidecar binaries in
+// environments like bazel where build artifacts are laid out by hash
+// which can use `runsc` to be placed in a far-away directory from the
+// rest of the sidecar binaries.
+func FindRunsc() (string, error) {
+	path, err := FindFile("release/runsc")
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("GVISOR_SIDECAR_BINARIES_DIR") == "" {
+		dir, err := FindFile("release/gvisor-bin")
+		if err != nil {
+			return "", fmt.Errorf("failed to find gvisor-bin directory: %w", err)
+		}
+		os.Setenv("GVISOR_SIDECAR_BINARIES_DIR", dir)
+	}
+	return path, nil
+}
+
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
 	if *runscPath == "" {
-		path, err := FindFile("runsc/runsc")
+		path, err := FindRunsc()
 		if err != nil {
 			return err
 		}
 		*runscPath = path
 	}
 	specutils.ExePath = *runscPath
+	if os.Getenv("GVISOR_SIDECAR_BINARIES_DIR") == "" {
+		if dir, err := FindFile("release/gvisor-bin"); err == nil {
+			os.Setenv("GVISOR_SIDECAR_BINARIES_DIR", dir)
+		}
+	}
 	return nil
 }
 
@@ -261,6 +288,36 @@ func TestConfig(t *testing.T) *config.Config {
 	return conf
 }
 
+// ConfigForBenchmark returns the default configuration to use in benchmarks.
+// Debugging, tracing, and logging are disabled to ensure accurate performance
+// measurements.
+func ConfigForBenchmark(b *testing.B) *config.Config {
+	testFlags := flag.NewFlagSet("bench", flag.ContinueOnError)
+	config.RegisterFlags(testFlags)
+	conf, err := config.NewFromFlags(testFlags)
+	if err != nil {
+		b.Fatalf("error loading configuration from flags: %v", err)
+	}
+	conf.Debug = false
+	conf.Strace = false
+	conf.LogPackets = false
+	conf.Network = config.NetworkNone
+	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
+	conf.WatchdogAction = "panic"
+	return conf
+}
+
+// Measure executes fn while the benchmark timer is running. It starts the timer
+// immediately before calling fn, pauses it when fn returns (even if fn panics or
+// fails), and returns the elapsed duration of fn.
+func Measure(b *testing.B, fn func()) time.Duration {
+	b.StartTimer()
+	start := time.Now()
+	defer b.StopTimer()
+	fn()
+	return time.Since(start)
+}
+
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
 // in tests.
 func NewSpecWithArgs(args ...string) *specs.Spec {
@@ -308,7 +365,10 @@ func SetupRootDir() (string, func(), error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating root dir: %v", err)
 	}
-	return rootDir, func() { os.RemoveAll(rootDir) }, nil
+	return rootDir, func() {
+		specutils.UnmountNullNetNS(rootDir)
+		os.RemoveAll(rootDir)
+	}, nil
 }
 
 // SetupContainer creates a bundle and root dir for the container, generates a
@@ -656,4 +716,25 @@ func TestIndicesForShard(numTests int) ([]int, error) {
 		}
 	}
 	return indices, nil
+}
+
+// Partition returns the current partition number (1-indexed).
+func Partition() int {
+	return *partition
+}
+
+// TotalPartitions returns the total number of partitions.
+func TotalPartitions() int {
+	return *totalPartitions
+}
+
+// ShouldRun returns true if the test should run on the current partition/shard.
+func ShouldRun(testName string) bool {
+	if *totalPartitions <= 1 {
+		return true
+	}
+	h := fnv.New32a()
+	h.Write([]byte(testName))
+	idx := int(h.Sum32() % uint32(*totalPartitions))
+	return idx == (*partition - 1)
 }

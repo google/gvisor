@@ -141,6 +141,7 @@ func archInit() {
 			Name: "fd_path",
 		},
 	})
+	addSyscallPoint(117, "ptrace", nil)
 	addSyscallPoint(144, "setgid", nil)
 	addSyscallPoint(146, "setuid", nil)
 	addSyscallPoint(147, "setresuid", nil)
@@ -149,6 +150,12 @@ func archInit() {
 	addSyscallPoint(198, "socket", nil)
 	addSyscallPoint(199, "socketpair", nil)
 	addSyscallPoint(200, "bind", []FieldDesc{
+		{
+			ID:   FieldSyscallPath,
+			Name: "fd_path",
+		},
+	})
+	addSyscallPoint(201, "listen", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,
 			Name: "fd_path",

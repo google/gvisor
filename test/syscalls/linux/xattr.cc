@@ -16,14 +16,19 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/capability.h>
+#include <linux/limits.h>
+#include <sched.h>
 #include <stdint.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -38,6 +43,7 @@
 #include "test/util/linux_capability_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -849,6 +855,8 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdminInNewUserns) {
 }  // namespace testing
 }  // namespace gvisor
 
+using gvisor::testing::UnshareAndSetxattrInNewUserns;
+
 int main(int argc, char** argv) {
   // TrustedNamespaceWithCapSysAdminInNewUserns will exec with the following
   // flag, but we avoid using absl::GetFlag because we intend to unshare(), an
@@ -859,8 +867,7 @@ int main(int argc, char** argv) {
     if (arg == gvisor::testing::kUnshareAndSetTrustedXattrInNewUserns) {
       // The next argument is the path to set the trusted xattr on.
       if (i + 1 < argc) {
-        return gvisor::testing::UnshareAndSetxattrInNewUserns(
-            argv[i + 1]);
+        return UnshareAndSetxattrInNewUserns(argv[i + 1]);
       }
       return 4;
     }

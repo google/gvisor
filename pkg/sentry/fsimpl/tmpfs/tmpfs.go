@@ -232,14 +232,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	disableDefaultSizeLimit := false
 	newFSType := vfs.FilesystemType(&fstype)
 
-	// By default we support only "trusted" and "user" namespaces. Linux
-	// also supports "security" and (if configured) POSIX ACL namespaces
-	// "system.posix_acl_access" and "system.posix_acl_default".
+	// By default we support only "trusted", "user", and "system" namespaces.
+	// Linux also supports "security".
 	allowXattrPrefix := map[string]struct{}{
 		linux.XATTR_TRUSTED_PREFIX: {},
 		linux.XATTR_USER_PREFIX:    {},
 		// Only the "security.capability" xattr is supported.
 		linux.XATTR_SECURITY_PREFIX: {},
+		// Only the system.posix_acl_access and system.posix_acl_default
+		// xattrs are supported.
+		linux.XATTR_SYSTEM_PREFIX: {},
 	}
 
 	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)
@@ -556,6 +558,11 @@ type dentry struct {
 	inode *inode
 }
 
+// WriteCount implements vfs.WriteCounter.WriteCount.
+func (d *dentry) WriteCount() *vfs.WriteCount {
+	return &d.inode.writeCount
+}
+
 func (fs *filesystem) newDentry(inode *inode) *dentry {
 	d := &dentry{
 		inode: inode,
@@ -631,12 +638,14 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, otherwise atomic operations can be used.
-	mu    inodeMutex          `state:"nosave"`
-	mode  atomicbitops.Uint32 // file type and mode
-	nlink atomicbitops.Uint32 // protected by filesystem.mu instead of inode.mu
-	uid   atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid   atomicbitops.Uint32 // auth.KGID, but ...
-	ino   uint64              // immutable
+	mu         inodeMutex                   `state:"nosave"`
+	mode       atomicbitops.Uint32          // file type and mode
+	accessACL  atomic.Pointer[vfs.PosixACL] `state:".(*vfs.PosixACL)"`
+	defaultACL atomic.Pointer[vfs.PosixACL] `state:".(*vfs.PosixACL)"`
+	nlink      atomicbitops.Uint32          // protected by filesystem.mu instead of inode.mu
+	uid        atomicbitops.Uint32          // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid        atomicbitops.Uint32          // auth.KGID, but ...
+	ino        uint64                       // immutable
 
 	atime atomicbitops.Int64 // nanoseconds
 	btime atomicbitops.Int64 // nanoseconds
@@ -644,6 +653,11 @@ type inode struct {
 	mtime atomicbitops.Int64 // nanoseconds
 
 	locks vfs.FileLocks
+
+	// writeCount tracks write access to this inode's contents, and is used to
+	// prevent a file from being written while it is being executed. See
+	// vfs.WriteCount.
+	writeCount vfs.WriteCount
 
 	// Inotify watches for this inode.
 	watches vfs.Watches
@@ -655,6 +669,8 @@ const maxLinks = math.MaxUint32
 
 // init creates an inode and increments the total inode count associated with the filesystem.
 // Returns ENOSPC if the maximum inode count has been exhausted and no more inodes can be allocated.
+//
+// If parentDir is not nil, the setgid bit and default ACL will be inherited from parentDir.
 func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) error {
 	if mode.FileType() == 0 {
 		panic("file type is required in FileMode")
@@ -673,8 +689,35 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 		}
 	}
 
-	i.fs = fs
+	// Inherit the parent's default mode and ACL as appropriate
 	i.mode = atomicbitops.FromUint32(uint32(mode))
+	if parentDir != nil && mode.FileType() != linux.ModeSymlink {
+		parentDefaultACL := parentDir.inode.defaultACL.Load()
+
+		if parentDefaultACL != nil {
+			// TODO(gvisor.dev/issues/13688): Linux only masks in the process's umask when creating
+			// in a directory with no default ACL. In gVisor, the umask is masked in by the syscall
+			// layer and not passed along to VFS and the filesystems, so skipping the umask in this
+			// case will require some refactoring.
+			//
+			// This will never lead to overly-permissive file permissions, only too-strict.
+
+			newACL := parentDefaultACL.MaskNewFileMode(uint16(mode))
+			equivMode, equiv := newACL.Mode()
+			if !equiv {
+				i.accessACL.Store(&newACL)
+			}
+			newMode := (uint16(equivMode) & linux.PermissionsMask) | (uint16(mode) &^ linux.PermissionsMask)
+			i.mode = atomicbitops.FromUint32(uint32(newMode))
+
+			if mode.IsDir() {
+				i.defaultACL.Store(parentDefaultACL)
+			}
+
+		}
+	}
+
+	i.fs = fs
 	i.uid = atomicbitops.FromUint32(uint32(kuid))
 	i.gid = atomicbitops.FromUint32(uint32(kgid))
 	i.ino = fs.nextInoMinusOne.Add(1)
@@ -759,7 +802,8 @@ func (i *inode) decRef(ctx context.Context) {
 
 func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := linux.FileMode(i.mode.Load())
-	return vfs.GenericCheckPermissions(creds, ats, mode, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
+	acl := i.accessACL.Load()
+	return vfs.GenericCheckPermissions(creds, ats, mode, acl, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load()))
 }
 
 // Go won't inline this function, and returning linux.Statx (which is quite
@@ -817,8 +861,16 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 		return linuxerr.EPERM
 	}
 	mode := linux.FileMode(i.mode.Load())
-	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, i.accessACL.Load(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 		return err
+	}
+	if opts.NeedWritePerm {
+		// truncate(2), unlike ftruncate(2), acquires write access to the file
+		// and so fails with ETXTBSY if it is being executed. See
+		// fs/open.c:do_sys_truncate().
+		if err := i.writeCount.CheckWrite(); err != nil {
+			return err
+		}
 	}
 
 	i.mu.Lock()
@@ -853,18 +905,34 @@ func (i *inode) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.
 
 	clearSID := opts.ClearPrivs
 	if mask&linux.STATX_MODE != 0 {
+		// Compute a new ACL (and equivalent mode) from the specified stat.Mode.
+		acl := i.accessACL.Load()
+		newPerm := stat.Mode & linux.PermissionsMask
+		if acl != nil {
+			newACL := acl.Chmod(uint16(stat.Mode & linux.PermissionsMask))
+			var equiv bool
+			newPerm, equiv = newACL.Mode()
+
+			if !equiv {
+				i.accessACL.Store(&newACL)
+			} else {
+				i.accessACL.Store(nil)
+			}
+		}
+
+		// Swap in the new (or equivalent, if updating an ACL) mode.
 		for {
-			old := i.mode.Load()
-			ft := old & linux.S_IFMT
-			newMode := ft | uint32(stat.Mode & ^uint16(linux.S_IFMT))
+			oldMode := i.mode.Load()
+			newMode := uint32(oldMode&linux.FileTypeMask) | uint32(stat.Mode&^(linux.FileTypeMask|linux.PermissionsMask)) | uint32(newPerm&linux.PermissionsMask)
 			if clearSID {
 				newMode = vfs.ClearSUIDAndSGID(newMode)
 			}
-			if swapped := i.mode.CompareAndSwap(old, newMode); swapped {
+			if swapped := i.mode.CompareAndSwap(oldMode, newMode); swapped {
 				clearSID = false
 				break
 			}
 		}
+
 		needsCtimeBump = true
 	}
 	now := i.fs.clock.Now().Nanoseconds()
@@ -1012,7 +1080,19 @@ func (i *inode) checkXattrPrefix(name string) error {
 }
 
 func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error) {
-	return i.xattrs.ListXattr(creds, size)
+	xattrs, err := i.xattrs.ListXattr(creds, size)
+	if err != nil {
+		return nil, err
+	}
+
+	if i.accessACL.Load() != nil {
+		xattrs = append(xattrs, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+	}
+	if i.defaultACL.Load() != nil {
+		xattrs = append(xattrs, linux.XATTR_NAME_POSIX_ACL_DEFAULT)
+	}
+
+	return xattrs, nil
 }
 
 func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
@@ -1022,9 +1102,18 @@ func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (st
 	mode := linux.FileMode(i.mode.Load())
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
-	if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, kuid, kgid); err != nil {
+
+	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
+		// Handle POSIX ACL xattrs
+		xattr, err := vfs.ACLGetXattr(creds, opts, mode, i.accessACL.Load(), i.defaultACL.Load())
+		return xattr, err
+	}
+
+	acl := i.accessACL.Load()
+	if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, acl, kuid, kgid); err != nil {
 		return "", err
 	}
+
 	return i.xattrs.GetXattr(creds, mode, kuid, opts)
 }
 
@@ -1035,7 +1124,22 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 	mode := linux.FileMode(i.mode.Load())
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
-	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+
+	if strings.HasPrefix(opts.Name, linux.XATTR_SYSTEM_PREFIX) {
+		// Handle POSIX ACLs
+
+		acl, aclType, err := vfs.ACLSetXattr(creds, opts, mode, kuid)
+		if err != nil {
+			return err
+		}
+
+		// Set the ACL
+		_, _, err = i.setPosixACL(creds, aclType, acl, true /* clearSGID */)
+		return err
+	}
+
+	acl := i.accessACL.Load()
+	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, acl, kuid, kgid); err != nil {
 		return err
 	}
 	return i.xattrs.SetXattr(creds, mode, kuid, kgid, opts)
@@ -1046,12 +1150,79 @@ func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
 		return err
 	}
 	mode := linux.FileMode(i.mode.Load())
+	acl := i.accessACL.Load()
 	kuid := auth.KUID(i.uid.Load())
 	kgid := auth.KGID(i.gid.Load())
-	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, kuid, kgid); err != nil {
+
+	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) {
+		aclType, err := vfs.ACLRemoveXattr(creds, name, mode, kuid)
+		if err != nil {
+			return err
+		}
+
+		// Clear the ACL
+		_, _, err = i.setPosixACL(creds, aclType, nil /* acl */, true /* clearSGID */)
 		return err
 	}
+
+	if err := vfs.GenericCheckPermissions(creds, vfs.MayWrite, mode, acl, kuid, kgid); err != nil {
+		return err
+	}
+
 	return i.xattrs.RemoveXattr(creds, mode, kuid, name)
+}
+
+func (i *inode) setPosixACL(creds *auth.Credentials, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	kuid := auth.KUID(i.uid.Load())
+	kgid := auth.KGID(i.gid.Load())
+	mode := linux.FileMode(i.mode.Load())
+
+	// Update ctime
+	if t != vfs.DefaultACL || mode.IsDir() {
+		// Skip ctime update for clearing default ACLs on non-directories,
+		// since this does not change anything
+		now := i.fs.clock.Now().Nanoseconds()
+		i.ctime.Store(now)
+	}
+
+	switch t {
+	case vfs.AccessACL:
+		i.mu.Lock()
+		defer i.mu.Unlock()
+
+		// If acl == nil, use the current mode. We still need to enter the loop to
+		// potentially clear the SGID bit.
+		mode, equiv := uint16(i.mode.Load()), true
+		if acl != nil {
+			// Otherwise if an ACL is provided, compute the equivalent mode from it.
+			mode, equiv = acl.Mode()
+		}
+		var newMode uint32
+		for {
+			old := i.mode.Load()
+			newMode = (old &^ linux.PermissionsMask) | uint32(mode)
+			if clearSGID && vfs.ShouldClearSGID(creds, linux.FileMode(newMode), kuid, kgid) {
+				newMode &^= linux.S_ISGID
+			}
+			if swapped := i.mode.CompareAndSwap(old, newMode); swapped {
+				break
+			}
+		}
+
+		if equiv {
+			// If the ACL can be represented simply as a mode, no need for the ACL.
+			i.accessACL.Store(nil)
+			return nil, linux.FileMode(newMode), nil
+		}
+		// Otherwise, store the ACL too for permission checking.
+		i.accessACL.Store(acl)
+		return acl, linux.FileMode(newMode), nil
+	case vfs.DefaultACL:
+		i.defaultACL.Store(acl)
+		return acl, linux.FileMode(i.mode.Load()), nil
+	}
+
+	return nil, 0, linuxerr.EOPNOTSUPP
 }
 
 // fileDescription is embedded by tmpfs implementations of
@@ -1113,9 +1284,26 @@ func (fd *fileDescription) RemoveXattr(ctx context.Context, name string) error {
 	return fd.dentry().inode.removeXattr(auth.CredentialsFromContext(ctx), name)
 }
 
+// GetPosixACL implements vfs.FileDescriptionImpl.GetPosixACL.
+func (fd *fileDescription) GetPosixACL(ctx context.Context, t vfs.ACLType) (*vfs.PosixACL, error) {
+	switch t {
+	case vfs.AccessACL:
+		return fd.dentry().inode.accessACL.Load(), nil
+	case vfs.DefaultACL:
+		return fd.dentry().inode.defaultACL.Load(), nil
+	default:
+		return nil, linuxerr.EOPNOTSUPP
+	}
+}
+
+// SetPosixACL implements vfs.FileDescriptionImpl.SetPosixACL.
+func (fd *fileDescription) SetPosixACL(ctx context.Context, t vfs.ACLType, acl *vfs.PosixACL, clearSGID bool) (*vfs.PosixACL, linux.FileMode, error) {
+	return fd.dentry().inode.setPosixACL(auth.CredentialsFromContext(ctx), t, acl, clearSGID)
+}
+
 // Sync implements vfs.FileDescriptionImpl.Sync. It does nothing because all
 // filesystem state is in-memory.
-func (*fileDescription) Sync(context.Context) error {
+func (*fileDescription) Sync(context.Context, vfs.SyncOptions) error {
 	return nil
 }
 

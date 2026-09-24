@@ -91,21 +91,20 @@ func PrintDockerConfig() {
 }
 
 func getDockerVersion() (int, int) {
-	cmd := exec.Command(dockerCLIPath(), "version")
+	cmd := exec.Command(dockerCLIPath(), "version", "--format", "{{.Server.Version}}")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("error running %q: %s: %s", cmd, err, stderr.String())
 	}
-	re := regexp.MustCompile(`Version:\s+(\d+)\.(\d+)\.\d.*`)
-	stdoutStr := stdout.String()
-	matches := re.FindStringSubmatch(stdoutStr)
-	if len(matches) != 3 {
-		log.Fatalf("invalid %q output: %s", cmd, stdoutStr)
+	version := strings.TrimSpace(stdout.String())
+	parts := strings.Split(version, ".")
+	if len(parts) < 3 {
+		log.Fatalf("invalid %q output: %s", cmd, version)
 	}
-	major, _ := strconv.Atoi(matches[1])
-	minor, _ := strconv.Atoi(matches[2])
+	major, _ := strconv.Atoi(parts[0])
+	minor, _ := strconv.Atoi(parts[1])
 	return major, minor
 }
 

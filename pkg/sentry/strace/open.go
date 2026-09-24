@@ -15,8 +15,12 @@
 package strace
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
 // OpenMode represents the mode to open(2) a file.
@@ -90,10 +94,53 @@ var OpenFlagSet = abi.FlagSet{
 	},
 }
 
+// ResolveFlagSet is the set of openat2(2) resolve flags.
+var ResolveFlagSet = abi.FlagSet{
+	{
+		Flag: linux.RESOLVE_NO_XDEV,
+		Name: "RESOLVE_NO_XDEV",
+	},
+	{
+		Flag: linux.RESOLVE_NO_MAGICLINKS,
+		Name: "RESOLVE_NO_MAGICLINKS",
+	},
+	{
+		Flag: linux.RESOLVE_NO_SYMLINKS,
+		Name: "RESOLVE_NO_SYMLINKS",
+	},
+	{
+		Flag: linux.RESOLVE_BENEATH,
+		Name: "RESOLVE_BENEATH",
+	},
+	{
+		Flag: linux.RESOLVE_IN_ROOT,
+		Name: "RESOLVE_IN_ROOT",
+	},
+	{
+		Flag: linux.RESOLVE_CACHED,
+		Name: "RESOLVE_CACHED",
+	},
+}
+
 func open(val uint64) string {
 	s := OpenMode.Parse(val & linux.O_ACCMODE)
 	if flags := OpenFlagSet.Parse(val &^ linux.O_ACCMODE); flags != "" {
 		s += "|" + flags
 	}
 	return s
+}
+
+func openHow(t *kernel.Task, addr hostarch.Addr, size uint) string {
+	if addr == 0 {
+		return "<null>"
+	}
+	s := int(size)
+	if s < 0 {
+		return "<invalid size>"
+	}
+	var how linux.OpenHow
+	if _, err := how.CopyInN(t, addr, min(s, linux.OPEN_HOW_SIZE_LATEST)); err != nil {
+		return fmt.Sprintf("%#x (error decoding OpenHow: %s)", addr, err)
+	}
+	return fmt.Sprintf("%#x flags %s mode %s resolve %s", addr, open(how.Flags), linux.FileMode(how.Mode), ResolveFlagSet.Parse(how.Resolve))
 }

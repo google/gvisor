@@ -43,7 +43,10 @@
 //
 //	subprocessPool.mu
 //		subprocess.mu
-//			platformContext.mu
+//
+//	subprocess.aliveMu
+//		subprocess.syscallThreadMu
+//		subprocess.sysmsgThreadsMu
 //
 // +checkalignedignore
 package systrap
@@ -55,6 +58,7 @@ import (
 	"sync"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -172,6 +176,9 @@ func (c *platformContext) FullStateChanged() {
 func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
+	if s.dead.Load() {
+		return nil, hostarch.NoAccess, errDeadSubprocessContext
+	}
 	if err := s.activateContext(c); err != nil {
 		return nil, hostarch.NoAccess, err
 	}
@@ -290,6 +297,7 @@ func New(opts platform.Options) (*Systrap, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts.StartupTimer.Reached("systrap memory file created")
 
 	var stubErr error
 	stubInitialized.Do(func() {
@@ -307,6 +315,7 @@ func New(opts platform.Options) (*Systrap, error) {
 
 		// Initialize the stub.
 		stubInit()
+		opts.StartupTimer.Reached("systrap stub initialized")
 
 		// Create the source process for the global pool. This must be
 		// done before initializing any other processes.
@@ -315,6 +324,7 @@ func New(opts platform.Options) (*Systrap, error) {
 			stubErr = fmt.Errorf("initialize systrap: %w", err)
 			return
 		}
+		opts.StartupTimer.Reached("systrap source process created")
 		// The source subprocess is never released explicitly by a MM.
 		source.DecRef(nil)
 
@@ -335,8 +345,11 @@ func New(opts platform.Options) (*Systrap, error) {
 		})
 	}
 
+	opts.StartupTimer.Reached("waiting for membarrier")
+	memBarrier := <-mbCh
+	opts.StartupTimer.Reached("host membarrier probed")
 	return &Systrap{
-		UseHostGlobalMemoryBarrier: platform.UseHostGlobalMemoryBarrier{MemBarrier: <-mbCh},
+		UseHostGlobalMemoryBarrier: platform.UseHostGlobalMemoryBarrier{MemBarrier: memBarrier},
 		memoryFile:                 mf,
 	}, nil
 }
@@ -390,7 +403,8 @@ func (*constructor) OpenDevice(_ string) (*fd.FD, error) {
 // Requirements implements platform.Constructor.Requirements().
 func (*constructor) Requirements() platform.Requirements {
 	return platform.Requirements{
-		RequiresCapSysPtrace: true,
+		RequiresCapSysPtrace:      true,
+		FrequentHostThreadWakeups: true,
 	}
 }
 

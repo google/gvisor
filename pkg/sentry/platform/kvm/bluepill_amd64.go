@@ -122,7 +122,7 @@ func (c *vCPU) KernelSyscall() {
 	// 3. HLT does a VM-exit to bluepillHandler, which returns from the
 	// signal handler using vCPU.registers, directly to the SYSCALL
 	// instruction.
-	// 4. Later, when we want to re-use the vCPU (perhaps on a different
+	// 4. Later, when we want to reuse the vCPU (perhaps on a different
 	// host thread), we set the new thread's registers in vCPU.registers
 	// (as opposed to setting the KVM registers with KVM_SET_REGS).
 	// 5. KVM_RUN thus enters the guest with the old register state,

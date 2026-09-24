@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 type statEntry struct {
@@ -48,13 +50,13 @@ type Stats struct {
 	// on the stats object.
 	names []string
 
-	// last is the last start time.
-	last time.Time
+	// last is the monotonic time of the last sample.
+	last int64
 }
 
 // init initializes statistics.
 func (s *Stats) init() {
-	s.last = time.Now()
+	s.last = gohacks.Nanotime()
 	s.stack = append(s.stack, 0)
 }
 
@@ -72,12 +74,12 @@ func (s *Stats) fini(resolve func(id typeID) string) {
 
 // sample adds the samples to the given object.
 func (s *Stats) sample(id typeID) {
-	now := time.Now()
+	now := gohacks.Nanotime()
 	if len(s.byType) <= int(id) {
 		// Allocate all the missing entries in one fell swoop.
 		s.byType = append(s.byType, make([]statEntry, 1+int(id)-len(s.byType))...)
 	}
-	s.byType[id].total += now.Sub(s.last)
+	s.byType[id].total += time.Duration(now - s.last)
 	s.last = now
 }
 

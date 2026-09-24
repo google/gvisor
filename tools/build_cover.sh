@@ -20,7 +20,7 @@ dst=$(realpath "$1")
 gopath_zip="$2"
 go_mod="$3"
 go_sum="$4"
-runsc_main_go="$5"
+main_go="$5" # Path of the main package Go file, relative to the repository root.
 golang_patch=$(realpath "$6")
 race="$7"
 
@@ -62,8 +62,8 @@ gvisor_gopath="gopath"
 
 unzip -q "$gopath_zip" -d "$gvisor_gopath"
 cp "$go_mod" "$go_sum" "$gvisor_gopath/src/gvisor.dev/gvisor/"
-mkdir -p "$gvisor_gopath/src/gvisor.dev/gvisor/runsc"
-cp "$runsc_main_go" "$gvisor_gopath/src/gvisor.dev/gvisor/runsc/main.go"
+mkdir -p "$gvisor_gopath/src/gvisor.dev/gvisor/$(dirname "$main_go")"
+cp "$main_go" "$gvisor_gopath/src/gvisor.dev/gvisor/$main_go"
 cd "$gvisor_gopath/src/gvisor.dev/gvisor/"
 export GOROOT="$goroot_dir"
 go_opts=""
@@ -80,5 +80,16 @@ fi
 # instrumentation. Race builds will be instrumented with atomic coverage (using
 # sync/atomic.AddInt32), which will not work. We may be able to re-enable
 # coverage on them when https://golang.org/issue/43007 is resolved.
-gopkgs=$("$go_tool" list ./... | grep -E -v 'pkg/sentry/platform|pkg/ring0|pkg/coverage|pkg/sleep|pkg/sync|pkg/syncevent' | paste -sd,)
-"$go_tool" build --tags "$go_tags" $go_opts -cover -coverpkg="$gopkgs" -covermode=atomic -o "$dst" runsc/main.go
+# bpf is excluded because `bpf.Optimize` runs at sandbox startup and is a
+# very expensive loop that restarts on every change.
+# Under -covermode=atomic each of those blocks does a sync/atomic counter
+# increment, and in a race build every one of those atomics additionally goes
+# through the race detector on top, which compounds the issue and can make it
+# take 10s of seconds for a codepath that is in practive never exercised on
+# real ssndboxes, because seccomp filters are precompiled there. The only
+# reason this runs at startup at all is because the presence of
+# instrumentation itself changes the set of required seccomp filters, and we
+# don't want to precompile the BPF instruction for those into the real runsc
+# binary, so it is forced to run from scratch.
+gopkgs=$("$go_tool" list ./... | grep -E -v 'pkg/sentry/platform|pkg/ring0|pkg/coverage|pkg/sleep|pkg/sync|pkg/syncevent|pkg/bpf' | paste -sd,)
+"$go_tool" build --tags "$go_tags" $go_opts -cover -coverpkg="$gopkgs" -covermode=atomic -o "$dst" "$main_go"

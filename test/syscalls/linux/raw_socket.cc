@@ -13,24 +13,40 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#ifdef __linux__
+#include <linux/capability.h>
+#include <sys/syscall.h>
+#endif  // __linux__
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/udp.h>
 #include <poll.h>
+#include <sched.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <tuple>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/base/attributes.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -667,8 +683,16 @@ void randomizePacket(char* buf, size_t len, int proto) {
   RandomizeBuffer(buf, len);
   // When testing with TCP sockets, ensure the RST flag is set. This is to
   // prevent the TCP stack from generating RSTs packets for unknown endpoints.
-  if (proto == IPPROTO_TCP && len > TCPHDR_FLAGS_OFF)
+  if (proto == IPPROTO_TCP && len > TCPHDR_FLAGS_OFF) {
     buf[TCPHDR_FLAGS_OFF] |= TCPHDR_RST;
+  }
+  // For UDP packets, ensure the length field in the UDP header
+  // is set to the total length of the UDP packet as the network stack
+  // may trim the packet to the header length.
+  if (proto == IPPROTO_UDP && len >= sizeof(udphdr)) {
+    udphdr* udp = reinterpret_cast<udphdr*>(buf);
+    udp->len = htons(len);
+  }
 }
 
 // Test that receive buffer limits are not enforced when the recv buffer is
@@ -754,8 +778,9 @@ TEST_P(RawSocketTest, RecvBufLimits) {
 
   // Set a receive timeout so that we don't block forever on reads if the test
   // fails.
-  struct timeval tv {
-    .tv_sec = 1, .tv_usec = 0,
+  struct timeval tv{
+      .tv_sec = 1,
+      .tv_usec = 0,
   };
   ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
               SyscallSucceeds());

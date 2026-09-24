@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -81,13 +81,16 @@ type goferSyncFDs struct {
 	// the Gofer chroots.
 	// If this is set, this FD is the first that the Gofer waits for.
 	chrootFD int
+
 	// usernsFD is a file descriptor that is used to wait until
 	// user namespace ID mappings are established in the Gofer's userns.
 	// If this is set, this FD is the second that the Gofer waits for.
 	usernsFD int
+
 	// procMountFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore. It is read by the procfs unmounter
 	// process.
+	// It is only set when re-execing is necessary.
 	// If this is set, this FD is the last that the Gofer interacts with and
 	// closes.
 	procMountFD int
@@ -176,6 +179,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// Set traceback level
 	debug.SetTraceback(conf.Traceback)
 
+	// Whether this process will re-execute itself to apply credential and
+	// capability changes, rather than applying capabilities in-process.
+	// Computed before the sync FDs are consumed below.
+	willReexec := g.applyCaps && (config.CgoEnabled || g.syncFDs.usernsFD >= 0)
+
 	specFile := os.NewFile(uintptr(g.specFD), "spec file")
 	defer specFile.Close()
 	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile, conf)
@@ -207,7 +215,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC), containerID, g.bundleDir); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
-		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		if willReexec && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			cleanupUnmounter := g.syncFDs.spawnProcUnmounter()
 			defer cleanupUnmounter()
 		}
@@ -220,7 +228,16 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if err != nil {
 		util.Fatalf("preparing gofer extensions: %v", err)
 	}
-	if g.applyCaps {
+	capsToApply := goferCaps
+	if conf.GetHostUDS().AllowOpen() {
+		capsToApply = specutils.MergeCapabilities(capsToApply, goferUdsOpenCaps)
+	}
+	if g.applyCaps && willReexec {
+		if config.CgoEnabled {
+			log.Warningf("Need to re-exec in order to drop capabilities, due to cgo build. This slows down gVisor startup. Use a pure-Go gVisor build for faster startup.")
+		} else {
+			log.Infof("Re-execing. FYI, this step isn't necessary when running with root. gVisor will start up faster (and is just as secure) when started as root, as it has to do fewer hoops to get to its as-sandboxed-as-possible state.")
+		}
 		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
 		overrides["setup-root"] = "false"
@@ -228,13 +245,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			overrides[key] = value
 		}
 		args := sandboxsetup.PrepareArgs(g.Name(), f, overrides)
-		capsToApply := goferCaps
-		if conf.GetHostUDS().AllowOpen() {
-			capsToApply = specutils.MergeCapabilities(capsToApply, goferUdsOpenCaps)
-		}
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, sandboxsetup.SetCapsAndCallSelf(args, capsToApply))
 		panic("unreachable")
 	}
+	// No re-exec from here on out.
 
 	// This can't happen until after setCapsAndCallSelf(), since otherwise the
 	// re-executed gofer may reuse goferToHostRPCFD's file descriptor for an
@@ -242,25 +256,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	goferToHostRPC.Close()
 
 	// Start profiling. This will be a noop if no profiling arguments were passed.
+	// This *must* happen while procfs is still mounted (need `/proc/self/maps`).
 	profileOpts := profile.MakeOpts(&g.profileFDs, conf.ProfileGCInterval)
 	g.stopProfiling = profile.Start(profileOpts)
-
-	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
-	// limit >= 0 works. If the limit is lower than the current number of open
-	// files, then Setrlimit will succeed, and the next open will fail.
-	if conf.FDLimit > -1 {
-		rlimit := unix.Rlimit{
-			Cur: uint64(conf.FDLimit),
-			Max: uint64(conf.FDLimit),
-		}
-		switch err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rlimit); err {
-		case nil:
-		case unix.EPERM:
-			log.Warningf("FD limit %d is higher than the current hard limit or system-wide maximum", conf.FDLimit)
-		default:
-			util.Fatalf("Failed to set RLIMIT_NOFILE: %v", err)
-		}
-	}
 
 	// Find what path is going to be served by this gofer.
 	root := spec.Root.Path
@@ -290,6 +288,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
 	unix.Umask(0)
 
+	// Open `/proc/self/fd` (needs procfs).
 	procFDPath := sandboxsetup.ProcFDBindMount
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		procFDPath = "/proc/self/fd"
@@ -298,8 +297,45 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("failed to open /proc/self/fd: %v", err)
 	}
 
-	// procfs isn't needed anymore.
-	g.syncFDs.unmountProcfs()
+	// Look up our own caps (needs procfs).
+	var resolvedCaps *sandboxsetup.ResolvedThreadCaps
+	if g.applyCaps {
+		var err error
+		resolvedCaps, err = sandboxsetup.ResolveThreadCaps(capsToApply, nil)
+		if err != nil {
+			util.Fatalf("resolving capabilities: %v", err)
+		}
+	}
+
+	// Unmount procfs.
+	if g.setUpRoot && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot && g.syncFDs.procMountFD < 0 {
+		sandboxsetup.UmountProcInProcess()
+	} else {
+		g.syncFDs.unmountProcfs()
+	}
+
+	if g.applyCaps {
+		if err := resolvedCaps.Apply(nil); err != nil {
+			util.Fatalf("applying caps to all threads: %v", err)
+		}
+	}
+
+	// At this point we won't re-execute, so it's safe to limit via rlimits. Any
+	// limit >= 0 works. If the limit is lower than the current number of open
+	// files, then Setrlimit will succeed, and the next open will fail.
+	if conf.FDLimit > -1 {
+		rlimit := unix.Rlimit{
+			Cur: uint64(conf.FDLimit),
+			Max: uint64(conf.FDLimit),
+		}
+		switch err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rlimit); err {
+		case nil:
+		case unix.EPERM:
+			log.Warningf("FD limit %d is higher than the current hard limit or system-wide maximum", conf.FDLimit)
+		default:
+			util.Fatalf("Failed to set RLIMIT_NOFILE: %v", err)
+		}
+	}
 
 	if err := unix.Chroot(root); err != nil {
 		util.Fatalf("failed to chroot to %q: %v", root, err)
@@ -340,6 +376,11 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		mountPath string
 		readonly  bool
 		mount     *specs.Mount
+		// devGofer is true only for the dev gofer connection, which serves
+		// host device files to the sentry's device proxies (e.g. nvproxy). A
+		// container mount whose destination happens to be "/dev" is not a dev
+		// gofer connection.
+		devGofer bool
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
 
@@ -394,6 +435,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 		cfgs = append(cfgs, connectionConfig{
 			sock:      sandboxsetup.NewSocket(g.devIoFD),
 			mountPath: "/dev",
+			devGofer:  true,
 		})
 		log.Infof("Serving /dev mapped on FD %d (ro: false)", g.devIoFD)
 	}
@@ -402,12 +444,21 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 	fsgoferConf := &fsgofer.Config{
 		HostUDS:            conf.GetHostUDS(),
 		HostFifo:           conf.HostFifo,
+		CharDevicePolicy:   conf.CharacterDevicePolicy,
 		DonateMountPointFD: conf.DirectFS,
 		RUID:               ruid,
 		EUID:               euid,
 		RGID:               rgid,
 		EGID:               egid,
 	}
+	// The dev gofer connection exists to open host device files on behalf of
+	// the sentry's device proxies (e.g. nvproxy), which mediate all
+	// application I/O on the resulting FDs. --character-device-policy governs
+	// devices that the sandboxed application could open directly through a
+	// gofer mount, not this connection, so character device opens are always
+	// allowed here.
+	devGoferConf := *fsgoferConf
+	devGoferConf.CharDevicePolicy = config.CharDevPassthrough
 
 	// Create the server and start connections.
 	server := lisafs.NewServer()
@@ -430,7 +481,11 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 			}
 		}
 		if connImpl == nil {
-			connImpl = fsgofer.NewConnectionImpl(fsgoferConf)
+			connConf := fsgoferConf
+			if cfg.devGofer {
+				connConf = &devGoferConf
+			}
+			connImpl = fsgofer.NewConnectionImpl(connConf)
 			connOpts = fsgofer.ConnectionOpts(cfg.readonly)
 		}
 		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, connOpts, connImpl)
@@ -508,20 +563,16 @@ func (g *goferSyncFDs) flags() map[string]string {
 	}
 }
 
-// spawnProcMounter executes the /proc unmounter process.
-// It returns a function to wait on the proc unmounter process, which
-// should be called (via defer) in case of errors in order to clean up the
-// unmounter process properly.
-// When procfs is no longer needed, `unmountProcfs` should be called.
+// spawnProcUnmounter executes the /proc unmounter process, for gofers that
+// will re-exec and would lose the capability to umount /proc on their own.
+// It returns a function to clean up the unmounter process, which
+// should be called (via defer) in case of errors.
 func (g *goferSyncFDs) spawnProcUnmounter() func() {
 	if g.procMountFD != -1 {
 		util.Fatalf("procMountFD is set")
 	}
-	// /proc is umounted from a forked process, because the
-	// current one may re-execute itself without capabilities.
 	cmd, w := sandboxsetup.ExecProcUmounter()
-	// Clear FD_CLOEXEC. This process may be re-executed. procMountFD
-	// should remain open.
+	// Clear FD_CLOEXEC so procMountFD survives re-exec.
 	if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
 		util.Fatalf("error clearing CLOEXEC: %v", errno)
 	}
@@ -534,7 +585,7 @@ func (g *goferSyncFDs) spawnProcUnmounter() func() {
 }
 
 // unmountProcfs signals the proc unmounter process that procfs is no longer
-// needed.
+// needed. No-op when no unmounter process was spawned.
 func (g *goferSyncFDs) unmountProcfs() {
 	if g.procMountFD < 0 {
 		return
@@ -553,28 +604,8 @@ func (g *goferSyncFDs) syncUsernsForRootless(uid, gid uint32) {
 	if g.usernsFD < 0 {
 		return
 	}
-	syncUsernsForRootless(g.usernsFD, uid, gid)
+	sandboxsetup.SyncUsernsForRootless(g.usernsFD, uid, gid)
 	g.usernsFD = -1
-}
-
-// syncUsernsForRootless waits on usernsFD to be closed and then sets
-// UID/GID to uid/gid. Note that this function calls runtime.LockOSThread().
-//
-// Postcondition: All callers must re-exec themselves after this returns.
-func syncUsernsForRootless(fd int, uid uint32, gid uint32) {
-	if err := sandboxsetup.WaitForFD(fd, "userns sync FD"); err != nil {
-		util.Fatalf("failed to sync on userns FD: %v", err)
-	}
-
-	// SETUID changes UID on the current system thread, so we have
-	// to re-execute current binary.
-	runtime.LockOSThread()
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, uintptr(uid), 0, 0); errno != 0 {
-		util.Fatalf("failed to set UID: %v", errno)
-	}
-	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, uintptr(gid), 0, 0); errno != 0 {
-		util.Fatalf("failed to set GID: %v", errno)
-	}
 }
 
 // syncChroot waits on chrootFD to be closed.

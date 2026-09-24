@@ -1,0 +1,59 @@
+# Copyright 2026 The gVisor Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# gVisor's C and C++ sources follow the Google C++ style guide.
+BasedOnStyle: Google
+IncludeCategories:
+  - Regex: '^<ext/.*\.h>'
+    Priority: 2
+    SortPriority: 20
+  - Regex: '^<.*\.h>'
+    Priority: 1
+    SortPriority: 10
+  - Regex: '^<.*'
+    Priority: 2
+    SortPriority: 20
+  - Regex: '^"gmock/'
+    Priority: 3
+    SortPriority: 31
+  - Regex: '^"gtest/'
+    Priority: 3
+    SortPriority: 32
+  - Regex: '^"absl/'
+    Priority: 3
+    SortPriority: 33
+  - Regex: '^"benchmark/'
+    Priority: 3
+    SortPriority: 34
+  - Regex: '^"include/grpcpp/'
+    Priority: 3
+    SortPriority: 35
+  - Regex: '^"(examples|images|pkg|runsc|test|tools|vdso|webhook|sysmsg)/'
+    Priority: 3
+    SortPriority: 36
+  - Regex: '^"nlohmann/'
+    Priority: 3
+    SortPriority: 37
+  - Regex: '^"clang/'
+    Priority: 3
+    SortPriority: 38
+  - Regex: '^"llvm/'
+    Priority: 3
+    SortPriority: 39
+  - Regex: '^"google/protobuf/'
+    Priority: 3
+    SortPriority: 40
+  - Regex: '.*'
+    Priority: 3
+    SortPriority: 30

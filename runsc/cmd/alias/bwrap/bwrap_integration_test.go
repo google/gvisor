@@ -19,15 +19,23 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+// newRunRootDir returns a runtime root directory, deleted at test cleanup.
+func newRunRootDir(t *testing.T) string {
+	t.Helper()
+	runRootDir := t.TempDir()
+	t.Cleanup(func() { specutils.UnmountNullNetNS(runRootDir) })
+	return runRootDir
+}
 
 func TestEnvVars(t *testing.T) {
 	if err := testutil.ConfigureExePath(); err != nil {
@@ -36,8 +44,6 @@ func TestEnvVars(t *testing.T) {
 
 	stop := testutil.StartReaper()
 	defer stop()
-
-	rootDir := t.TempDir()
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -102,10 +108,7 @@ func TestEnvVars(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
@@ -142,8 +145,6 @@ func TestUserAndGroup(t *testing.T) {
 
 	stop := testutil.StartReaper()
 	defer stop()
-
-	rootDir := t.TempDir()
 
 	tests := []struct {
 		name      string
@@ -200,10 +201,7 @@ func TestUserAndGroup(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
@@ -244,8 +242,6 @@ func TestHostname(t *testing.T) {
 	stop := testutil.StartReaper()
 	defer stop()
 
-	rootDir := t.TempDir()
-
 	tests := []struct {
 		name       string
 		bwrapArgs  []string
@@ -265,10 +261,7 @@ func TestHostname(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
-			}
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,
@@ -300,8 +293,6 @@ func TestProc(t *testing.T) {
 	stop := testutil.StartReaper()
 	defer stop()
 
-	rootDir := t.TempDir()
-
 	tests := []struct {
 		name       string
 		bwrapArgs  []string
@@ -322,10 +313,230 @@ func TestProc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			runRootDir := filepath.Join(rootDir, tc.name)
-			if err := os.MkdirAll(runRootDir, 0755); err != nil {
-				t.Fatalf("creating root dir: %v", err)
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestCapabilities(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "CapDropAll",
+			bwrapArgs: []string{
+				"--unshare-all",
+				"--ro-bind", "/", "/",
+				"--cap-drop", "ALL",
+				"--",
+				"/bin/cat", "/proc/self/status",
+			},
+			// All bits zeroed out after dropping ALL capabilities.
+			wantOutput: "CapEff:\t0000000000000000",
+		},
+		{
+			name: "CapDropAllAndAddNetAdmin",
+			bwrapArgs: []string{
+				"--unshare-all",
+				"--ro-bind", "/", "/",
+				"--cap-drop", "ALL",
+				"--cap-add", "NET_ADMIN",
+				"--",
+				"/bin/cat", "/proc/self/status",
+			},
+			// CAP_NET_ADMIN is bit 12 (1 << 12 = 0x1000).
+			wantOutput: "CapEff:\t0000000000001000",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output missing expected capability mask:\ngot:\n%s\nwant to contain: %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestArgv0(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "CustomArgv0",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--argv0", "my-custom-sh",
+				"--",
+				"/bin/sh", "-c", "echo $0",
+			},
+			wantOutput: "my-custom-sh",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestPerms(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+	}{
+		{
+			name: "TmpfsPerms",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--tmpfs", "/foo",
+				"--",
+				"/bin/sh", "-c", "stat -c %a /foo",
+			},
+			wantOutput: "700",
+		},
+		{
+			// Without --perms the tmpfs keeps gVisor's default mode, which is
+			// 0777 plus the sticky bit.
+			name: "TmpfsDefaultPerms",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/foo",
+				"--",
+				"/bin/sh", "-c", "stat -c %a /foo",
+			},
+			wantOutput: "1777",
+		},
+		{
+			// --perms is consumed by the mount that follows it, so /b falls back
+			// to the tmpfs default instead of inheriting the 0700.
+			name: "PermsDoNotApplyToNextTmpfs",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--tmpfs", "/a",
+				"--tmpfs", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "700 1777",
+		},
+		{
+			name: "PermsApplyIndependentlyPerTmpfs",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--tmpfs", "/a",
+				"--perms", "0500", "--tmpfs", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "700 500",
+		},
+		{
+			// --perms only ever affects what follows it, so the mount declared
+			// before it keeps the default mode.
+			name: "PermsDoNotApplyToEarlierTmpfs",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/a",
+				"--perms", "0700", "--tmpfs", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "1777 700",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
 
 			args := append([]string{
 				"--root", runRootDir,

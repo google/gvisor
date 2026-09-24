@@ -48,6 +48,15 @@ type Terminal struct {
 
 var _ kernel.TTYOperations = (*Terminal)(nil)
 
+// IncRef implements kernel.TTYOperations.IncRef.
+//
+// A devpts Terminal is kept alive by its master file description and the
+// rootInode.replicas map rather than by a reference count.
+func (t *Terminal) IncRef() {}
+
+// DecRef implements kernel.TTYOperations.DecRef.
+func (t *Terminal) DecRef(context.Context) {}
+
 // OpenTTY implements kernel.TTYOperations.OpenTTY.
 func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	tsk := kernel.TaskFromContext(ctx)
@@ -64,7 +73,9 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 		inode: ri,
 	}
 	fd.LockFD.Init(&ri.locks)
-	if err := fd.vfsfd.Init(fd, opts.Flags, tsk.Credentials(), mnt, vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, opts.Flags, tsk.Credentials(), mnt, vfsd, &vfs.FileDescriptionOptions{
+		SpecialFile: true,
+	}); err != nil {
 		return nil, err
 	}
 	if opts.Flags&linux.O_NOCTTY == 0 {

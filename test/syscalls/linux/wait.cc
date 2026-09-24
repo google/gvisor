@@ -12,15 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sched.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <ctime>
 #include <functional>
 #include <tuple>
 #include <vector>
@@ -926,7 +933,7 @@ TEST(WaitTest, NonConsumingWaitPrefersGroupExitStatus) {
     }
   }
 
-  char thread_stack[65536];
+  alignas(16) char thread_stack[65536];
   int group_status_cnt = 0;
   int thread_status_cnt = 0;
   constexpr int kThreadStatus = 42;

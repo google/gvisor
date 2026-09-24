@@ -18,9 +18,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -34,7 +37,40 @@ type FSCheckpoint struct {
 	imagePath    string
 	leaveRunning bool
 	direct       bool
-	path         string
+	paths        pathVar
+}
+
+type pathVar []checkpoint.ResourceID
+
+func (p *pathVar) String() string {
+	if p == nil {
+		return ""
+	}
+	var strs []string
+	for _, id := range *p {
+		if id.ContainerName == "" {
+			strs = append(strs, id.Path)
+		} else {
+			strs = append(strs, fmt.Sprintf("%s:%s", id.ContainerName, id.Path))
+		}
+	}
+	return strings.Join(strs, ", ")
+}
+
+func (p *pathVar) Set(value string) error {
+	paths, err := boot.ParseFSCheckpointPaths(value)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("empty path: %q", value)
+	}
+	*p = append(*p, paths...)
+	return nil
+}
+
+func (p *pathVar) Get() any {
+	return []checkpoint.ResourceID(*p)
 }
 
 // Name implements subcommands.Command.Name.
@@ -59,7 +95,7 @@ func (c *FSCheckpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved filesystem checkpoint")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "if true, resume containers after checkpointing; if false, containers exit with status 0 after checkpointing")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint files")
-	f.StringVar(&c.path, "path", "/", `path inside the container to save to the checkpoint; the special value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed`)
+	f.Var(&c.paths, "path", `path inside the container to save to the checkpoint (can be repeated). Format: [container_id:]path. The special path value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed. Defaults to "/" if not specified.`)
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -93,10 +129,15 @@ func (c *FSCheckpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
+	paths := []checkpoint.ResourceID(c.paths)
+	if len(paths) == 0 {
+		paths = []checkpoint.ResourceID{{Path: "/"}}
+	}
+
 	if err := cont.FSSave(conf, c.imagePath, sandbox.FSSaveOpts{
 		Direct:          c.direct,
 		ExitAfterSaving: !c.leaveRunning,
-		Path:            c.path,
+		Paths:           paths,
 	}); err != nil {
 		util.Fatalf("filesystem checkpoint saving failed: %v", err)
 	}

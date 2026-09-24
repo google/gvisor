@@ -13,6 +13,11 @@
 // limitations under the License.
 
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <memory>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "test/syscalls/linux/socket_generic.h"
@@ -22,17 +27,23 @@
 
 #ifdef __linux__
 #include <linux/capability.h>
+#include <sys/syscall.h>
 #endif  // __linux__
+#include <sched.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/base/attributes.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -486,9 +497,7 @@ TEST_P(AllSocketPairTest, GetSndBufSucceeds) {
 TEST_P(AllSocketPairTest, RecvTimeoutReadSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -501,9 +510,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutReadSucceeds) {
 TEST_P(AllSocketPairTest, RecvTimeoutRecvSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -516,9 +523,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutRecvSucceeds) {
 TEST_P(AllSocketPairTest, RecvTimeoutRecvOneSecondSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 1, .tv_usec = 0
-  };
+  struct timeval tv{.tv_sec = 1, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -531,9 +536,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutRecvOneSecondSucceeds) {
 TEST_P(AllSocketPairTest, RecvTimeoutRecvmsgSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -609,9 +612,7 @@ TEST_P(AllSocketPairTest, SetGetSendTimeoutLargerArg) {
 TEST_P(AllSocketPairTest, SendTimeoutAllowsWrite) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -624,9 +625,7 @@ TEST_P(AllSocketPairTest, SendTimeoutAllowsWrite) {
 TEST_P(AllSocketPairTest, SendTimeoutAllowsSend) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -639,9 +638,7 @@ TEST_P(AllSocketPairTest, SendTimeoutAllowsSend) {
 TEST_P(AllSocketPairTest, SendTimeoutAllowsSendmsg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 10
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = 10};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -707,9 +704,7 @@ TEST_P(AllSocketPairTest, SetGetRecvTimeoutLargerArg) {
 TEST_P(AllSocketPairTest, RecvTimeoutRecvmsgOneSecondSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 1, .tv_usec = 0
-  };
+  struct timeval tv{.tv_sec = 1, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -729,8 +724,8 @@ TEST_P(AllSocketPairTest, RecvTimeoutRecvmsgOneSecondSucceeds) {
 TEST_P(AllSocketPairTest, RecvTimeoutUsecTooLarge) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 2000000  // 2 seconds.
+  struct timeval tv{
+      .tv_sec = 0, .tv_usec = 2000000  // 2 seconds.
   };
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
@@ -740,8 +735,8 @@ TEST_P(AllSocketPairTest, RecvTimeoutUsecTooLarge) {
 TEST_P(AllSocketPairTest, SendTimeoutUsecTooLarge) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = 2000000  // 2 seconds.
+  struct timeval tv{
+      .tv_sec = 0, .tv_usec = 2000000  // 2 seconds.
   };
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
@@ -751,9 +746,7 @@ TEST_P(AllSocketPairTest, SendTimeoutUsecTooLarge) {
 TEST_P(AllSocketPairTest, RecvTimeoutUsecNeg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = -1
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = -1};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallFailsWithErrno(EDOM));
@@ -762,9 +755,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutUsecNeg) {
 TEST_P(AllSocketPairTest, SendTimeoutUsecNeg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 0, .tv_usec = -1
-  };
+  struct timeval tv{.tv_sec = 0, .tv_usec = -1};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallFailsWithErrno(EDOM));
@@ -773,9 +764,7 @@ TEST_P(AllSocketPairTest, SendTimeoutUsecNeg) {
 TEST_P(AllSocketPairTest, RecvTimeoutNegSecRead) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = -1, .tv_usec = 0
-  };
+  struct timeval tv{.tv_sec = -1, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -788,9 +777,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutNegSecRead) {
 TEST_P(AllSocketPairTest, RecvTimeoutNegSecRecv) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = -1, .tv_usec = 0
-  };
+  struct timeval tv{.tv_sec = -1, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -803,9 +790,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutNegSecRecv) {
 TEST_P(AllSocketPairTest, RecvTimeoutNegSecRecvmsg) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = -1, .tv_usec = 0
-  };
+  struct timeval tv{.tv_sec = -1, .tv_usec = 0};
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
@@ -851,9 +836,7 @@ TEST_P(AllSocketPairTest, RecvWaitAllDontWait) {
 TEST_P(AllSocketPairTest, RecvTimeoutWaitAll) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
-  struct timeval tv {
-    .tv_sec = 1, .tv_usec = 0
-  };
+  struct timeval tv{.tv_sec = 1, .tv_usec = 0};
   EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv,
                          sizeof(tv)),
               SyscallSucceeds());
@@ -930,9 +913,14 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
     socklen_t enableLen = sizeof(enable);
 
     // Test that the option is initially set to false.
-    ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
-                           &enableLen),
-                SyscallSucceeds());
+    int ret = getsockopt(sockets->first_fd(), SOL_SOCKET, sock_opt, &enable,
+                         &enableLen);
+    if (sock_opt == SO_PASSCRED && ret < 0 && errno == EOPNOTSUPP) {
+      // Since Linux 6.16 (7d8d93fdde50), SO_PASSCRED is restricted to
+      // AF_UNIX, AF_NETLINK, and AF_BLUETOOTH sockets.
+      continue;
+    }
+    ASSERT_THAT(ret, SyscallSucceeds());
     ASSERT_EQ(enableLen, sizeof(enable));
     EXPECT_EQ(enable, 0) << absl::StrFormat(
         "getsockopt(fd, SOL_SOCKET, %d, &enable, &enableLen) => enable=%d",

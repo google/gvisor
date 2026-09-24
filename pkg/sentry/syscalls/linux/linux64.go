@@ -22,24 +22,14 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
 )
 
 // AMD64 is a table of Linux amd64 syscall API with the corresponding syscall
 // numbers from Linux 4.4.
 var AMD64 = &kernel.SyscallTable{
-	OS:   abi.Linux,
-	Arch: arch.AMD64,
-	Version: kernel.Version{
-		// Version 4.4 is chosen as a stable, longterm version of Linux, which
-		// guides the interface provided by this syscall table. The build
-		// version is that for a clean build with default kernel config, at 5
-		// minutes after v4.4 was tagged.
-		Sysname: version.LinuxSysname,
-		Release: version.LinuxRelease,
-		Version: version.LinuxVersion,
-	},
+	OS:          abi.Linux,
+	Arch:        arch.AMD64,
 	AuditNumber: linux.AUDIT_ARCH_X86_64,
 	Table: map[uintptr]kernel.Syscall{
 		0:   syscalls.SupportedPoint("read", Read, PointRead),
@@ -92,13 +82,13 @@ var AMD64 = &kernel.SyscallTable{
 		47:  syscalls.Supported("recvmsg", RecvMsg),
 		48:  syscalls.Supported("shutdown", Shutdown),
 		49:  syscalls.SupportedPoint("bind", Bind, PointBind),
-		50:  syscalls.Supported("listen", Listen),
+		50:  syscalls.SupportedPoint("listen", Listen, PointListen),
 		51:  syscalls.Supported("getsockname", GetSockName),
 		52:  syscalls.Supported("getpeername", GetPeerName),
 		53:  syscalls.SupportedPoint("socketpair", SocketPair, PointSocketpair),
 		54:  syscalls.Supported("setsockopt", SetSockOpt),
 		55:  syscalls.Supported("getsockopt", GetSockOpt),
-		56:  syscalls.PartiallySupportedPoint("clone", Clone, PointClone, "Options CLONE_NEWCGROUP, CLONE_NEWTIME, and CLONE_SYSVSEM not supported.", nil),
+		56:  syscalls.PartiallySupportedPoint("clone", Clone, PointClone, "Options CLONE_NEWTIME and CLONE_SYSVSEM not supported.", nil),
 		57:  syscalls.SupportedPoint("fork", Fork, PointFork),
 		58:  syscalls.SupportedPoint("vfork", Vfork, PointVfork),
 		59:  syscalls.SupportedPoint("execve", Execve, PointExecve),
@@ -143,7 +133,7 @@ var AMD64 = &kernel.SyscallTable{
 		98:  syscalls.PartiallySupported("getrusage", Getrusage, "Fields ru_maxrss, ru_minflt, ru_majflt, ru_inblock, ru_oublock are not supported. Fields ru_utime and ru_stime have low precision.", nil),
 		99:  syscalls.PartiallySupported("sysinfo", Sysinfo, "Fields loads, sharedram, bufferram, totalswap, freeswap, totalhigh, freehigh not supported.", nil),
 		100: syscalls.Supported("times", Times),
-		101: syscalls.PartiallySupported("ptrace", Ptrace, "Options PTRACE_PEEKSIGINFO, PTRACE_SECCOMP_GET_FILTER not supported.", nil),
+		101: syscalls.PartiallySupportedPoint("ptrace", Ptrace, PointPtrace, "Options PTRACE_PEEKSIGINFO, PTRACE_SECCOMP_GET_FILTER not supported.", nil),
 		102: syscalls.Supported("getuid", Getuid),
 		103: syscalls.PartiallySupported("syslog", Syslog, "Outputs a dummy message for security reasons.", nil),
 		104: syscalls.Supported("getgid", Getgid),
@@ -359,11 +349,11 @@ var AMD64 = &kernel.SyscallTable{
 		314: syscalls.PartiallySupported("sched_setattr", SchedSetattr, "Stub implementation.", nil),
 		315: syscalls.PartiallySupported("sched_getattr", SchedGetattr, "Stub implementation.", nil),
 		316: syscalls.Supported("renameat2", Renameat2),
-		317: syscalls.Supported("seccomp", Seccomp),
+		317: syscalls.PartiallySupported("seccomp", Seccomp, "Only SECCOMP_SET_MODE_FILTER is supported, with flags set to 0 or SECCOMP_FILTER_FLAG_TSYNC.", nil),
 		318: syscalls.Supported("getrandom", GetRandom),
 		319: syscalls.Supported("memfd_create", MemfdCreate),
 		320: syscalls.CapError("kexec_file_load", linux.CAP_SYS_BOOT, "", nil),
-		321: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
+		321: syscalls.PartiallySupported("bpf", Bpf, "Only loading, querying, and attaching of CGROUP_DEVICE programs are supported. Loaded programs have no effect.", nil),
 		322: syscalls.SupportedPoint("execveat", Execveat, PointExecveat),
 		323: syscalls.ErrorWithEvent("userfaultfd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
 		324: syscalls.PartiallySupported("membarrier", Membarrier, "Not supported on all platforms.", nil),
@@ -371,7 +361,7 @@ var AMD64 = &kernel.SyscallTable{
 
 		// Syscalls implemented after 325 are "backports" from versions
 		// of Linux after 4.4.
-		326: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
+		326: syscalls.Supported("copy_file_range", CopyFileRange),
 		327: syscalls.PartiallySupportedPoint("preadv2", Preadv2, PointPreadv2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		328: syscalls.PartiallySupportedPoint("pwritev2", Pwritev2, PointPwritev2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		329: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
@@ -393,8 +383,9 @@ var AMD64 = &kernel.SyscallTable{
 		432: syscalls.PartiallySupported("fsmount", FSMount, "Options MOUNT_ATTR_NOSYMFOLLOW and MOUNT_ATTR_NODIRATIME are not supported.", nil),
 		433: syscalls.ErrorWithEvent("fspick", linuxerr.ENOSYS, "", nil),
 		434: syscalls.Supported("pidfd_open", PIDFDOpen),
-		435: syscalls.PartiallySupported("clone3", Clone3, "Options CLONE_NEWCGROUP, CLONE_INTO_CGROUP, CLONE_NEWTIME, CLONE_SYSVSEM and, SetTid are not supported.", nil),
+		435: syscalls.PartiallySupported("clone3", Clone3, "Options CLONE_NEWTIME, CLONE_SYSVSEM and SetTid are not supported.", nil),
 		436: syscalls.Supported("close_range", CloseRange),
+		437: syscalls.Supported("openat2", Openat2),
 		438: syscalls.Supported("pidfd_getfd", PIDFDGetFD),
 		439: syscalls.Supported("faccessat2", Faccessat2),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),
@@ -413,13 +404,8 @@ var AMD64 = &kernel.SyscallTable{
 // ARM64 is a table of Linux arm64 syscall API with the corresponding syscall
 // numbers from Linux 4.4.
 var ARM64 = &kernel.SyscallTable{
-	OS:   abi.Linux,
-	Arch: arch.ARM64,
-	Version: kernel.Version{
-		Sysname: version.LinuxSysname,
-		Release: version.LinuxRelease,
-		Version: version.LinuxVersion,
-	},
+	OS:          abi.Linux,
+	Arch:        arch.ARM64,
 	AuditNumber: linux.AUDIT_ARCH_AARCH64,
 	Table: map[uintptr]kernel.Syscall{
 		0:   syscalls.PartiallySupported("io_setup", IoSetup, "Generally supported with exceptions. User ring optimizations are not implemented.", []string{"gvisor.dev/issue/204"}),
@@ -539,7 +525,7 @@ var ARM64 = &kernel.SyscallTable{
 		114: syscalls.Supported("clock_getres", ClockGetres),
 		115: syscalls.Supported("clock_nanosleep", ClockNanosleep),
 		116: syscalls.PartiallySupported("syslog", Syslog, "Outputs a dummy message for security reasons.", nil),
-		117: syscalls.PartiallySupported("ptrace", Ptrace, "Options PTRACE_PEEKSIGINFO, PTRACE_SECCOMP_GET_FILTER not supported.", nil),
+		117: syscalls.PartiallySupportedPoint("ptrace", Ptrace, PointPtrace, "Options PTRACE_PEEKSIGINFO, PTRACE_SECCOMP_GET_FILTER not supported.", nil),
 		118: syscalls.CapError("sched_setparam", linux.CAP_SYS_NICE, "", nil),
 		119: syscalls.PartiallySupported("sched_setscheduler", SchedSetscheduler, "Stub implementation.", nil),
 		120: syscalls.PartiallySupported("sched_getscheduler", SchedGetscheduler, "Stub implementation.", nil),
@@ -623,7 +609,7 @@ var ARM64 = &kernel.SyscallTable{
 		198: syscalls.SupportedPoint("socket", Socket, PointSocket),
 		199: syscalls.SupportedPoint("socketpair", SocketPair, PointSocketpair),
 		200: syscalls.SupportedPoint("bind", Bind, PointBind),
-		201: syscalls.Supported("listen", Listen),
+		201: syscalls.SupportedPoint("listen", Listen, PointListen),
 		202: syscalls.SupportedPoint("accept", Accept, PointAccept),
 		203: syscalls.SupportedPoint("connect", Connect, PointConnect),
 		204: syscalls.Supported("getsockname", GetSockName),
@@ -642,7 +628,7 @@ var ARM64 = &kernel.SyscallTable{
 		217: syscalls.Error("add_key", linuxerr.EACCES, "Not available to user.", nil),
 		218: syscalls.Error("request_key", linuxerr.EACCES, "Not available to user.", nil),
 		219: syscalls.PartiallySupported("keyctl", Keyctl, "Only supports session keyrings with zero keys in them.", nil),
-		220: syscalls.PartiallySupportedPoint("clone", Clone, PointClone, "Options CLONE_NEWCGROUP, CLONE_NEWTIME, and CLONE_SYSVSEM not supported.", nil),
+		220: syscalls.PartiallySupportedPoint("clone", Clone, PointClone, "Options CLONE_NEWTIME and CLONE_SYSVSEM not supported.", nil),
 		221: syscalls.SupportedPoint("execve", Execve, PointExecve),
 		222: syscalls.SupportedPoint("mmap", Mmap, PointMmap),
 		223: syscalls.PartiallySupported("fadvise64", Fadvise64, "Not all options are supported.", nil),
@@ -683,17 +669,17 @@ var ARM64 = &kernel.SyscallTable{
 		274: syscalls.PartiallySupported("sched_setattr", SchedSetattr, "Stub implementation.", nil),
 		275: syscalls.PartiallySupported("sched_getattr", SchedGetattr, "Stub implementation.", nil),
 		276: syscalls.Supported("renameat2", Renameat2),
-		277: syscalls.Supported("seccomp", Seccomp),
+		277: syscalls.PartiallySupported("seccomp", Seccomp, "Only SECCOMP_SET_MODE_FILTER is supported, with flags set to 0 or SECCOMP_FILTER_FLAG_TSYNC.", nil),
 		278: syscalls.Supported("getrandom", GetRandom),
 		279: syscalls.Supported("memfd_create", MemfdCreate),
-		280: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
+		280: syscalls.PartiallySupported("bpf", Bpf, "Only loading, querying, and attaching of CGROUP_DEVICE programs are supported. Loaded programs have no effect.", nil),
 		281: syscalls.SupportedPoint("execveat", Execveat, PointExecveat),
 		282: syscalls.ErrorWithEvent("userfaultfd", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
 		283: syscalls.PartiallySupported("membarrier", Membarrier, "Not supported on all platforms.", nil),
 		284: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 
 		// Syscalls after 284 are "backports" from versions of Linux after 4.4.
-		285: syscalls.ErrorWithEvent("copy_file_range", linuxerr.ENOSYS, "", nil),
+		285: syscalls.Supported("copy_file_range", CopyFileRange),
 		286: syscalls.PartiallySupportedPoint("preadv2", Preadv2, PointPreadv2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		287: syscalls.PartiallySupportedPoint("pwritev2", Pwritev2, PointPwritev2, "RWF flags are not supported.", []string{"gvisor.dev/issue/2601"}),
 		288: syscalls.ErrorWithEvent("pkey_mprotect", linuxerr.ENOSYS, "", nil),
@@ -715,8 +701,9 @@ var ARM64 = &kernel.SyscallTable{
 		432: syscalls.PartiallySupported("fsmount", FSMount, "Options MOUNT_ATTR_NOSYMFOLLOW and MOUNT_ATTR_NODIRATIME are not supported.", nil),
 		433: syscalls.ErrorWithEvent("fspick", linuxerr.ENOSYS, "", nil),
 		434: syscalls.Supported("pidfd_open", PIDFDOpen),
-		435: syscalls.PartiallySupported("clone3", Clone3, "Options CLONE_NEWCGROUP, CLONE_INTO_CGROUP, CLONE_NEWTIME, CLONE_SYSVSEM and clone_args.set_tid are not supported.", nil),
+		435: syscalls.PartiallySupported("clone3", Clone3, "Options CLONE_NEWTIME, CLONE_SYSVSEM and clone_args.set_tid are not supported.", nil),
 		436: syscalls.Supported("close_range", CloseRange),
+		437: syscalls.Supported("openat2", Openat2),
 		438: syscalls.Supported("pidfd_getfd", PIDFDGetFD),
 		439: syscalls.Supported("faccessat2", Faccessat2),
 		441: syscalls.Supported("epoll_pwait2", EpollPwait2),

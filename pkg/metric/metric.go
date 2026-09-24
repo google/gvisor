@@ -983,6 +983,8 @@ type distributionStatistics struct {
 // As a result, it is not entirely accurate when it races with itself,
 // though the imprecision should be fairly small and should not practically
 // matter for distributions with more than a handful of records.
+//
+//go:nosplit
 func (s *distributionStatistics) Update(sample int64) {
 	newSampleCount := s.sampleCount.Add(1)
 	newSampleSum := s.sampleSum.Add(sample)

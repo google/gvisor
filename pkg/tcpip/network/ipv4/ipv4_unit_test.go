@@ -187,6 +187,32 @@ func TestRecalculateChecksum(t *testing.T) {
 			wantChecksum: 0x63bc,
 		},
 		{
+			name: "ICMPv4 Echo Request",
+			pkt: func() *stack.PacketBuffer {
+				payload := []byte{0x11, 0x22}
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv4MinimumSize + header.ICMPv4MinimumSize,
+					Payload:            buffer.MakeWithView(buffer.NewViewWithData(payload)),
+				})
+				pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
+
+				transportHdr := pkt.TransportHeader().Push(header.ICMPv4MinimumSize)
+				icmp := header.ICMPv4(transportHdr)
+				icmp.SetType(header.ICMPv4Echo)
+				icmp.SetIdent(1234)
+				icmp.SetSequence(1)
+
+				ipHeader := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+				ipHeader.Encode(&header.IPv4Fields{
+					Protocol:    uint8(header.ICMPv4ProtocolNumber),
+					TOS:         0,
+					TotalLength: uint16(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(payload)),
+				})
+				return pkt
+			}(),
+			wantChecksum: 0xe20a,
+		},
+		{
 			name: "Invalid UDP packet",
 			pkt: func() *stack.PacketBuffer {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -201,6 +227,28 @@ func TestRecalculateChecksum(t *testing.T) {
 				ipHeader := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
 				ipHeader.Encode(&header.IPv4Fields{
 					Protocol:    uint8(header.UDPProtocolNumber),
+					TOS:         0,
+					TotalLength: uint16(header.IPv4MinimumSize + 4),
+				})
+				return pkt
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "Invalid ICMP packet (transport header too short)",
+			pkt: func() *stack.PacketBuffer {
+				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv4MinimumSize + 4,
+					Payload:            buffer.MakeWithView(buffer.NewViewSize(0)),
+				})
+				pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
+
+				// Insufficient transport header size (< header.ICMPv4MinimumSize).
+				pkt.TransportHeader().Push(4)
+
+				ipHeader := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
+				ipHeader.Encode(&header.IPv4Fields{
+					Protocol:    uint8(header.ICMPv4ProtocolNumber),
 					TOS:         0,
 					TotalLength: uint16(header.IPv4MinimumSize + 4),
 				})
@@ -231,6 +279,8 @@ func TestRecalculateChecksum(t *testing.T) {
 				gotChecksum = header.UDP(pkt.TransportHeader().Slice()).Checksum()
 			case header.TCPProtocolNumber:
 				gotChecksum = header.TCP(pkt.TransportHeader().Slice()).Checksum()
+			case header.ICMPv4ProtocolNumber:
+				gotChecksum = header.ICMPv4(pkt.TransportHeader().Slice()).Checksum()
 			}
 
 			if gotChecksum != test.wantChecksum {

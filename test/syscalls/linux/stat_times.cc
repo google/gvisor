@@ -14,7 +14,11 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
 #include <tuple>
 
 #include "gmock/gmock.h"
@@ -22,6 +26,9 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

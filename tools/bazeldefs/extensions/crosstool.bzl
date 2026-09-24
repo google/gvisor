@@ -2,7 +2,7 @@
 
 load("@coral_crosstool//:configure.bzl", "cc_crosstool")
 
-def _crosstool_impl(ctx):
+def _crosstool_impl(_ctx):
     cc_crosstool(
         name = "crosstool",
         c_version = "gnu17",

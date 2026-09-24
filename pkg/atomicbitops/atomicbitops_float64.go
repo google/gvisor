@@ -14,11 +14,7 @@
 
 package atomicbitops
 
-import (
-	"math"
-
-	"gvisor.dev/gvisor/pkg/sync"
-)
+import "gvisor.dev/gvisor/pkg/sync"
 
 // Float64 is an atomic 64-bit floating-point number.
 //
@@ -34,14 +30,14 @@ type Float64 struct {
 //
 //go:nosplit
 func FromFloat64(v float64) Float64 {
-	return Float64{bits: FromUint64(math.Float64bits(v))}
+	return Float64{bits: FromUint64(float64Bits(v))}
 }
 
 // Load loads the floating-point value.
 //
 //go:nosplit
 func (f *Float64) Load() float64 {
-	return math.Float64frombits(f.bits.Load())
+	return float64FromBits(f.bits.Load())
 }
 
 // RacyLoad is analogous to reading an atomic value without using
@@ -51,14 +47,14 @@ func (f *Float64) Load() float64 {
 //
 //go:nosplit
 func (f *Float64) RacyLoad() float64 {
-	return math.Float64frombits(f.bits.RacyLoad())
+	return float64FromBits(f.bits.RacyLoad())
 }
 
 // Store stores the given floating-point value in the Float64.
 //
 //go:nosplit
 func (f *Float64) Store(v float64) {
-	f.bits.Store(math.Float64bits(v))
+	f.bits.Store(float64Bits(v))
 }
 
 // RacyStore is analogous to setting an atomic value without using
@@ -68,14 +64,14 @@ func (f *Float64) Store(v float64) {
 //
 //go:nosplit
 func (f *Float64) RacyStore(v float64) {
-	f.bits.RacyStore(math.Float64bits(v))
+	f.bits.RacyStore(float64Bits(v))
 }
 
 // Swap stores the given value and returns the previously-stored one.
 //
 //go:nosplit
 func (f *Float64) Swap(v float64) float64 {
-	return math.Float64frombits(f.bits.Swap(math.Float64bits(v)))
+	return float64FromBits(f.bits.Swap(float64Bits(v)))
 }
 
 // CompareAndSwap does a compare-and-swap operation on the float64 value.
@@ -84,7 +80,7 @@ func (f *Float64) Swap(v float64) float64 {
 //
 //go:nosplit
 func (f *Float64) CompareAndSwap(oldVal, newVal float64) bool {
-	return f.bits.CompareAndSwap(math.Float64bits(oldVal), math.Float64bits(newVal))
+	return f.bits.CompareAndSwap(float64Bits(oldVal), float64Bits(newVal))
 }
 
 // Add increments the float by the given value.

@@ -14,11 +14,19 @@
 
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <cstring>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -35,7 +43,7 @@ TEST_P(UnboundFilesystemUnixSocketPairTest, AddressAfterNull) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct sockaddr_un addr =
-      *reinterpret_cast<const struct sockaddr_un *>(sockets->first_addr());
+      *reinterpret_cast<const struct sockaddr_un*>(sockets->first_addr());
   ASSERT_EQ(addr.sun_path[sizeof(addr.sun_path) - 1], 0);
   SKIP_IF(addr.sun_path[sizeof(addr.sun_path) - 2] != 0 ||
           addr.sun_path[sizeof(addr.sun_path) - 3] != 0);
@@ -47,7 +55,7 @@ TEST_P(UnboundFilesystemUnixSocketPairTest, AddressAfterNull) {
               SyscallSucceeds());
 
   ASSERT_THAT(bind(sockets->second_fd(),
-                   reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)),
+                   reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
               SyscallFailsWithErrno(EADDRINUSE));
 }
 
@@ -60,13 +68,13 @@ TEST_P(UnboundFilesystemUnixSocketPairTest, GetSockNameLength) {
 
   sockaddr_storage got_addr = {};
   socklen_t got_addr_len = sizeof(got_addr);
-  ASSERT_THAT(getsockname(sockets->first_fd(),
-                          reinterpret_cast<struct sockaddr *>(&got_addr),
-                          &got_addr_len),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      getsockname(sockets->first_fd(),
+                  reinterpret_cast<struct sockaddr*>(&got_addr), &got_addr_len),
+      SyscallSucceeds());
 
   sockaddr_un want_addr =
-      *reinterpret_cast<const struct sockaddr_un *>(sockets->first_addr());
+      *reinterpret_cast<const struct sockaddr_un*>(sockets->first_addr());
 
   EXPECT_EQ(got_addr_len,
             strlen(want_addr.sun_path) + 1 + sizeof(want_addr.sun_family));
@@ -79,8 +87,8 @@ TEST_P(UnboundFilesystemUnixSocketPairTest, OpenSocketWithTruncate) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  const struct sockaddr_un *addr =
-      reinterpret_cast<const struct sockaddr_un *>(sockets->first_addr());
+  const struct sockaddr_un* addr =
+      reinterpret_cast<const struct sockaddr_un*>(sockets->first_addr());
   EXPECT_THAT(chmod(addr->sun_path, 0777), SyscallSucceeds());
   EXPECT_THAT(open(addr->sun_path, O_RDONLY | O_TRUNC),
               SyscallFailsWithErrno(ENXIO));

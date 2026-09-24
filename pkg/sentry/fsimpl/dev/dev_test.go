@@ -15,6 +15,7 @@
 package dev
 
 import (
+	"fmt"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -150,5 +151,16 @@ func TestDeviceFile(t *testing.T) {
 	}
 	if wantMode := uint16(linux.S_IFCHR | testDevPerms); stat.Mode != wantMode {
 		t.Errorf("device file mode: got %v, wanted %v", stat.Mode, wantMode)
+	}
+
+	// Test that the /dev/char/<major>:<minor> symlink is created.
+	linkPath := fmt.Sprintf("char/%d:%d", testDevMajor, testDevMinor)
+	wantTarget := "../" + testDevPathname
+	if gotTarget, err := vfsObj.ReadlinkAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(linkPath),
+	}); err != nil || gotTarget != wantTarget {
+		t.Errorf("readlink(%q): got (%q, %v), wanted (%q, nil)", linkPath, gotTarget, err, wantTarget)
 	}
 }

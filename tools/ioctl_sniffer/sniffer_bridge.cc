@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -46,7 +47,7 @@ void InitializeSocket() {
   // Ensure the path is null terminated.
   addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';
 
-  if (connect(sfd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+  if (connect(sfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
     std::cerr << "Failed to connect to socket " << addr.sun_path << ": "
               << strerror(errno) << "\n";
     exit(1);
@@ -56,7 +57,7 @@ void InitializeSocket() {
   socket_fd = sfd;
 }
 
-void WriteIoctlProto(gvisor::Ioctl &ioctl) {
+void WriteIoctlProto(gvisor::Ioctl& ioctl) {
   if (socket_owner_tid != gettid()) {
     InitializeSocket();
   }

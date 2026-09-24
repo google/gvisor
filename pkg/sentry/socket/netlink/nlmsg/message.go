@@ -519,6 +519,11 @@ func HostToNetU64(v uint64) uint64 {
 	return binary.BigEndian.Uint64(b[:])
 }
 
+// PutU8 returns a uint8 as a marshal.Marshallable.
+func PutU8(val uint8) marshal.Marshallable {
+	return primitive.AllocateUint8(val)
+}
+
 // PutU16 converts a uint16 to network byte order and returns it as a
 // marshal.Marshallable.
 func PutU16(val uint16) marshal.Marshallable {

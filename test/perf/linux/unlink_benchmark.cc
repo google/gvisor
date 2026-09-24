@@ -16,9 +16,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <utility>
+#include <vector>
+
 #include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 

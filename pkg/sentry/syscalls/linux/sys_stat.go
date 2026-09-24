@@ -247,7 +247,7 @@ func Statfs(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	if err != nil {
 		return 0, nil, err
 	}
-	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink)
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -266,7 +266,7 @@ func Fstatfs(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	fd := args[0].Int()
 	bufAddr := args[1].Pointer()
 
-	tpop, err := getTaskPathOperation(t, fd, fspath.Path{}, allowEmptyPath, nofollowFinalSymlink)
+	tpop, err := getTaskPathOperation(t, fd, fspath.Path{}, allowEmptyPath, nofollowFinalSymlink, 0)
 	if err != nil {
 		return 0, nil, err
 	}

@@ -16,6 +16,7 @@ cc_binary(
     deps = [
         "//test/syscalls/linux:socket_netlink_util",
         "//test/util:capability_util",
+        "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:socket_util",
     ],

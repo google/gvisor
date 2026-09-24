@@ -39,19 +39,19 @@ func iovecsReadWrite(sysno uintptr, fd int32, iovs []unix.Iovec, offset int64, f
 			curOff = offset + int64(total)
 		}
 		cur, _, e := unix.Syscall6(sysno, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[start])), uintptr(size), uintptr(curOff), 0 /* pos_h */, uintptr(flags))
-		if cur > 0 {
-			total += cur
-		}
 		if e != 0 {
 			return total, e
+		}
+		if cur > 0 {
+			total += cur
 		}
 		if last {
 			break
 		}
 		// If this was a short read/write, then break.
 		var curTotal uint64
-		for i := range iovs[start : start+size] {
-			curTotal += iovs[i].Len
+		for _, iov := range iovs[start : start+size] {
+			curTotal += iov.Len
 		}
 		if uint64(cur) < curTotal {
 			break

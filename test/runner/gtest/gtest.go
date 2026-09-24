@@ -47,7 +47,7 @@ type TestCase struct {
 	Name string
 
 	// all indicates that this will run without flags. This takes
-	// precendence over benchmark below.
+	// precedence over benchmark below.
 	all bool
 
 	// benchmark indicates that this is a benchmark. In this case, the

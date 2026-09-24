@@ -47,6 +47,7 @@ const (
 	flagQDisc                   = "qdisc"
 	flagQDiscTBFRate            = "qdisc-tbf-rate"
 	flagQDiscTBFBurst           = "qdisc-tbf-burst"
+	flagInSandboxCgroup         = "in-sandbox-cgroup"
 
 	maxQDiscTBFBurst     = uint64(1<<32 - 1)
 	defaultQDiscTBFRate  = uint64(0)
@@ -114,8 +115,11 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("cpu-num-from-quota", true, "set cpu number to cpu quota (least integer greater or equal to quota value, but not less than 2)")
 	flagSet.Bool(flagOCISeccomp, false, "Enables loading OCI seccomp filters inside the sandbox.")
 	flagSet.Bool("enable-core-tags", false, "enables core tagging. Requires host linux kernel >= 5.14.")
+	flagSet.Var(SignalUnkillableNone.Ptr(), "signal-unkillable-policy", "controls protection of PID namespace init processes from signals under Linux SIGNAL_UNKILLABLE semantics: none (default) or linux.")
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")
 	flagSet.Var(HostSettingsCheck.Ptr(), "host-settings", "how to handle non-optimal host kernel settings: check (default, advisory-only), ignore (do not check), adjust (best-effort auto-adjustment), or enforce (auto-adjustment must succeed).")
+	flagSet.Var(SidecarReleaseIfReleaseBuild.Ptr(), "sidecar-release-enforcement-policy", "when spawned sidecar binaries must match runsc's release: NEVER, ALWAYS, or IF_RELEASE_BUILD. May be overridden by setting GVISOR_ENFORCE_RELEASE=SKIP as env var.")
+	flagSet.Var(SidecarUsageDefault.Ptr(), "sidecar-usage-policy", "policy for sidecar binaries: STRICT (sidecars must exist), LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK (use embedded fallbacks if sidecars are missing; will stop working after 2026-10).")
 	flagSet.Var(RestoreSpecValidationEnforce.Ptr(), "restore-spec-validation", "how to handle spec validation during restore.")
 	flagSet.Bool("systrap-disable-syscall-patching", false, "disables syscall patching when using the Systrap platform. May be necessary to use in case the workload uses the GS register, or uses ptrace within gVisor. Has significant performance implications and is only recommended when the sandbox is known to run otherwise-incompatible workloads. Only relevant for x86.")
 	flagSet.Bool("systrap-disable-fast-path", false, "unconditionally disables the Systrap fast path.")
@@ -123,6 +127,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("kvm-use-cpu-nums", false, "on KVM use vCPU numbers as CPU numbers in the sentry. This is necessary to support features like rseq.")
 	flagSet.Bool("allow-rootfs-tar-annotation", false, "allows the rootfs tar annotation to be set.")
 	flagSet.Duration("control-rpc-stop-timeout", 15*time.Second, "grace period given to in-flight RPCs on the sandbox control socket when the sandbox is shutting down. Once this timeout elapses, client connections are closed, and connections still processing an RPC are closed when their current RPC finishes. Set to 0 to close idle clients immediately.")
+	flagSet.String("shared-root", "", "directory for storage of state shared across sandboxes on the system. Defaults to the value of --root. Point this at a shared system-wide directory if --root is not reused across sandboxes. Access to --shared-root allows identification of running sandboxes, but not control over them.")
 
 	// Flags that control sandbox runtime behavior: MM related.
 	flagSet.Bool("app-huge-pages", true, "enable use of huge pages for application memory; requires /sys/kernel/mm/transparent_hugepage/shmem_enabled = advise")
@@ -139,11 +144,12 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 		"    'size' optional parameter overrides default overlay upper layer size\n")
 	flagSet.Var(hostUDSPtr(HostUDSNone), flagHostUDS, "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
 	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
+	flagSet.Var(charDevicePolicyPtr(CharDevEmulatedOnly), "character-device-policy", "controls how character device files on gofer mounts (rootfs and bind mounts) are handled. 'emulated-only' serves devices implemented by the sentry and fails opens of other devices with ENXIO (default and more secure); 'prefer-emulated' serves sentry-implemented devices from the sentry and opens the rest through the host; 'passthrough' opens all of them through the host. Values: emulated-only|prefer-emulated|passthrough, default: emulated-only")
 	flagSet.Bool("gvisor-marker-file", false, "enable the presence of the /proc/gvisor/kernel_is_gvisor file that can be used by applications to detect that gVisor is in use")
 	flagSet.String("override-procs", "", "comma-separated list of proc files to override with stubs (e.g. kallsyms)")
 
 	flagSet.Bool("ignore-cgroups", false, "don't configure cgroups.")
-	flagSet.Bool("mount-cgroup-v2", false, "EXPERIMENTAL. Mount cgroup v2 instead of cgroup v1 inside the sandbox. cgroup v2 support in gVisor is experimental and incomplete. Do not use for production workloads.")
+	flagSet.Var(inSandboxCgroupTypePtr(InSandboxCgroupV1), flagInSandboxCgroup, "cgroup setup to use inside the sandbox: v1 (default), v2.")
 	flagSet.Int("fdlimit", -1, "Specifies a limit on the number of host file descriptors that can be open. Applies separately to the sentry and gofer. Note: each file in the sandbox holds more than one host FD open.")
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
 	flagSet.Bool("iouring", false, "TEST ONLY; Enables io_uring syscalls in the sentry. Support is experimental and very limited.")
@@ -152,6 +158,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// Flags that control sandbox runtime behavior: network related.
 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
+	flagSet.Var(goferNetworkNamespacePtr(GoferNetworkNamespaceNull), "gofer-network-namespace", "network namespace for gofers: null (default; an empty namespace shared by all gofers using the same --shared-root, which defaults to --root), new (a new empty namespace per gofer), host (the current namespace), or an absolute path to an existing namespace.")
 	flagSet.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
 	flagSet.Bool("allow-packet-socket-write", false, "allow writes on AF_PACKET sockets. When false, writes on AF_PACKET sockets will fail. When turned on, untrusted workloads may potentially attack the network because of the ability to craft arbitrary packets.")
 	flagSet.Bool("allow-live-tcp-migration", true, "allow TCP connection state to be migrated. If false, connected TCP endpoints will be terminated during save/restore.")
@@ -179,6 +186,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")
 	flagSet.Bool("nvproxy-allow-unsupported-driver", false, "allow nvproxy to be initialized with an unsupported driver version.")
 	flagSet.String("nvproxy-allowed-driver-capabilities", "utility,compute", "Comma separated list of NVIDIA driver capabilities that are allowed to be requested by the container. If 'all' is specified here, it is resolved to all driver capabilities supported in nvproxy. If 'all' is requested by the container, it is resolved to this list.")
+	flagSet.Bool("rdmaproxy", false, "WIP: enable RDMA support for containers with /dev/infiniband/uverbs* devices.")
 	flagSet.Bool("tpuproxy", false, "LEGACY: enable support for TPU devices. TPU support gets automatically enabled if TPU devices are present in the OCI spec.")
 
 	// Test flags, not to be used outside tests, ever.
@@ -214,6 +222,7 @@ var overrideAllowlist = map[string]struct {
 	flagQDisc:                   {check: checkQDisc},
 	flagQDiscTBFRate:            {check: checkQDiscTBFRate},
 	flagQDiscTBFBurst:           {check: checkQDiscTBFBurst},
+	flagInSandboxCgroup:         {},
 }
 
 // checkOverlay2 ensures that overlay2 can only be enabled using "memory" or
@@ -300,6 +309,16 @@ func isFlagExplicitlySet(flagSet *flag.FlagSet, name string) bool {
 	return explicit
 }
 
+// DefaultRootDir returns the value used for the runtime root directory when
+// the --root flag is not set (or set to the empty string).
+func DefaultRootDir() string {
+	// NOTE: empty values for XDG_RUNTIME_DIR should be ignored.
+	if runtimeDir := os.Getenv(xdgRuntimeDirEnvVar); runtimeDir != "" {
+		return filepath.Join(runtimeDir, "runsc")
+	}
+	return defaultRootDir
+}
+
 // NewFromFlags creates a new Config with values coming from command line flags.
 func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 	conf := &Config{explicitlySet: map[string]struct{}{}}
@@ -326,11 +345,7 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 
 	if len(conf.RootDir) == 0 {
 		// If not set, set default root dir to something (hopefully) user-writeable.
-		conf.RootDir = defaultRootDir
-		// NOTE: empty values for XDG_RUNTIME_DIR should be ignored.
-		if runtimeDir := os.Getenv(xdgRuntimeDirEnvVar); runtimeDir != "" {
-			conf.RootDir = filepath.Join(runtimeDir, "runsc")
-		}
+		conf.RootDir = DefaultRootDir()
 	}
 
 	if err := conf.Validate(); err != nil {

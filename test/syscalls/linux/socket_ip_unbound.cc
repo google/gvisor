@@ -18,12 +18,14 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
-#include <cstdio>
-#include <cstring>
+#include <cerrno>
+#include <cstdint>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -297,7 +299,7 @@ TEST_P(IPUnboundSocketTest, LargeTOSOptionSize) {
                 SyscallSucceedsWithValue(0));
     int get = -1;
     socklen_t get_sz = i;
-    // We expect the system call handler to only copy atmost sizeof(int) bytes
+    // We expect the system call handler to only copy at most sizeof(int) bytes
     // as asserted by the check below. Hence, we do not expect the copy to
     // overflow in getsockopt.
     ASSERT_THAT(getsockopt(socket->get(), t.level, t.option, &get, &get_sz),
@@ -305,6 +307,17 @@ TEST_P(IPUnboundSocketTest, LargeTOSOptionSize) {
     EXPECT_EQ(get_sz, sizeof(int));
     EXPECT_EQ(get, set);
   }
+}
+
+TEST_P(IPUnboundSocketTest, LargeOptLenAbove32KB) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  std::vector<char> buf(64 * 1024, 0);
+  int* set = reinterpret_cast<int*>(buf.data());
+  *set = 0xC0;
+  TOSOption t = GetTOSOption(GetParam().domain);
+  EXPECT_THAT(
+      setsockopt(socket->get(), t.level, t.option, buf.data(), buf.size()),
+      SyscallSucceedsWithValue(0));
 }
 
 TEST_P(IPUnboundSocketTest, NegativeTOS) {

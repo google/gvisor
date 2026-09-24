@@ -89,4 +89,8 @@ var MmapFlagSet = abi.FlagSet{
 		Flag: linux.MAP_HUGETLB,
 		Name: "MAP_HUGETLB",
 	},
+	{
+		Flag: linux.MAP_FIXED_NOREPLACE,
+		Name: "MAP_FIXED_NOREPLACE",
+	},
 }

@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <sched.h>
+#include <unistd.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"

@@ -1,5 +1,6 @@
 load("@rules_license//rules:license.bzl", "license")
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
+load("//tools:release.bzl", "SIDECARS", "release_files")
 load("//tools/nogo:defs.bzl", "nogo_config")
 load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
@@ -19,7 +20,19 @@ exports_files([
     "README.md",
     "SECURITY.md",
     "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "ADOPTERS.md",
 ])
+
+release_files(
+    name = "release",
+    bins = [
+        "//runsc",
+        "//shim:containerd-shim-runsc-v1",
+    ],
+    sidecars = SIDECARS,
+    visibility = ["//visibility:public"],
+)
 
 nogo_config(
     name = "nogo_config",
@@ -55,6 +68,16 @@ doc(
     subcategory = "Community",
     visibility = ["//website:__pkg__"],
     weight = "20",
+)
+
+doc(
+    name = "adopters",
+    src = "ADOPTERS.md",
+    category = "Project",
+    permalink = "/users/",
+    subcategory = "Community",
+    visibility = ["//website:__pkg__"],
+    weight = "25",
 )
 
 doc(

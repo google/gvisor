@@ -15,9 +15,14 @@
 #define _GNU_SOURCE 1
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/ucontext.h>
 #include <ucontext.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <cstdlib>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/test_util.h"
 

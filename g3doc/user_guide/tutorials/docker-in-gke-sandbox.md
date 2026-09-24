@@ -14,7 +14,7 @@ Docker Version | GKE standard cluster | GKE autopilot cluster
 -------------- | -------------------- | ---------------------
 Docker v27     | 1.29.0 and later     | 1.33.2 and later
 Docker v28     | 1.35.3 and later     | 1.35.3 and later
-Docker v29     | not supported        | not supported
+Docker v29     | 1.36.3 and later     | 1.36.3 and later
 
 ### GKE standard cluster
 
@@ -97,8 +97,11 @@ Apply the pod YAML to your GKE cluster using the kubectl apply command:
 $ kubectl apply -f docker.yaml
 ```
 
-Verify that the docker-in-gvisor pid is running successfully: `shell $ kubectl
-get pods | grep docker-in-gvisor`
+Verify that the docker-in-gvisor pod is running successfully:
+
+```shell
+$ kubectl get pods | grep docker-in-gvisor
+```
 
 ### Build and run the image with docker in gVisor
 

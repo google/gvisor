@@ -525,9 +525,9 @@ func (m *machine) mapUpperHalfRegion(
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	// Map all the executable regions so that all the entry functions
 	// are mapped in the upper half.
-	if err := applyVirtualRegions(func(vr virtualRegion) {
+	if err := applyVirtualRegions(func(vr virtualRegion) bool {
 		if excludeVirtualRegion(vr) || vr.filename == "[vsyscall]" {
-			return
+			return false
 		}
 
 		if vr.accessType.Execute {
@@ -535,6 +535,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 			m.mapUpperHalfRegion(pageTable, r.virtual, r.length,
 				pagetables.MapOpts{AccessType: hostarch.Execute, Global: true})
 		}
+		return false
 	}); err != nil {
 		panic(fmt.Sprintf("error parsing /proc/self/maps: %v", err))
 	}

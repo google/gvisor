@@ -16,15 +16,20 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -187,7 +192,7 @@ TEST(Preadv2Test, TestInvalidFlag) {
   iov.iov_len = buf.size();
 
   EXPECT_THAT(preadv2(fd.get(), &iov, /*iovcnt=*/1,
-                      /*offset=*/0, /*flags=*/0xF0),
+                      /*offset=*/0, /*flags=*/1 << 24),
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 

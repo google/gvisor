@@ -9,3 +9,6 @@
 /repo.key
 # Generate webhook admission.
 /test/kubernetes/gvisor-injection-admission-webhook.yaml
+# clangd compilation database
+/.cache/clangd
+/compile_commands.json

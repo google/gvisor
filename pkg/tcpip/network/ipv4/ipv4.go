@@ -558,6 +558,12 @@ func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
 			csum = 0xFFFF
 		}
 		udp.SetChecksum(csum)
+	case header.ICMPv4ProtocolNumber:
+		if len(transportHeader) < header.ICMPv4MinimumSize {
+			return &tcpip.ErrMalformedHeader{}
+		}
+		icmp := header.ICMPv4(transportHeader)
+		icmp.SetChecksum(header.ICMPv4Checksum(icmp, pkt.Data().Checksum()))
 	}
 	return nil
 }
@@ -609,9 +615,9 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// Similar to the `ip_route_me_harder` in the kernel,
 		// we need to find a new route for the packet.
 		// Implementation is similar to the func forwardUnicastPacket.
-		stk := e.protocol.stack
 		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
 		if err != nil {
+			e.stats.ip.OutgoingPacketErrors.Increment()
 			return err // Drop the packet
 		}
 		// Release the new route on exit.
@@ -623,6 +629,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// done it.
 		if !r.RequiresTXTransportChecksum() && newRoute.RequiresTXTransportChecksum() {
 			if err := recalculateChecksum(pkt, newRoute); err != nil {
+				e.stats.ip.OutgoingPacketErrors.Increment()
 				return err // Drop the packet
 			}
 		}
@@ -633,6 +640,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// Use the new endpoint to write the packet.
 		forwardToEp, ok := e.protocol.getEndpointForNIC(r.NICID())
 		if !ok {
+			e.stats.ip.OutgoingPacketErrors.Increment()
 			return &tcpip.ErrUnknownNICID{}
 		}
 		return forwardToEp.writePacketPostRouting(r, pkt, true /* headerIncluded */)
@@ -952,7 +960,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	defer hView.Release()
 
 	if !e.nic.IsLoopback() {
-		if !e.protocol.options.AllowExternalLoopbackTraffic {
+		if !e.protocol.allowExternalLoopbackTraffic.Load() {
 			if header.IsV4LoopbackAddress(h.SourceAddress()) {
 				martianPacketLogger.Infof("Martian packet dropped with loopback source address. If your traffic is unexpectedly dropped, you may want to allow martian packets.")
 				stats.InvalidSourceAddressesReceived.Increment()
@@ -978,8 +986,10 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 		}
 
+		nicID := e.nic.ID()
 		// Loopback traffic skips the prerouting chain.
-		inNicName := stk.FindNICNameFromID(e.nic.ID())
+		inNicName := stk.FindNICNameFromID(nicID)
+		pkt.InputNICID = nicID
 		if ok := stk.IPTables().CheckPrerouting(pkt, e, inNicName); !ok {
 			// iptables is telling us to drop the packet.
 			stats.IPTablesPreroutingDropped.Increment()
@@ -1663,6 +1673,11 @@ type protocol struct {
 
 	options Options
 
+	// allowExternalLoopbackTraffic mirrors options.AllowExternalLoopbackTraffic
+	// but is runtime-settable (via SetOption / the route_localnet sysctl). It is
+	// read lock-free on the packet path, so it is stored atomically.
+	allowExternalLoopbackTraffic atomicbitops.Bool
+
 	multicastRouteTable multicast.RouteTable
 	// multicastForwardingDisp is the multicast forwarding event dispatcher that
 	// an integrator can provide to receive multicast forwarding events. Note
@@ -1693,6 +1708,9 @@ func (p *protocol) SetOption(option tcpip.SettableNetworkProtocolOption) tcpip.E
 	case *tcpip.DefaultTTLOption:
 		p.SetDefaultTTL(uint8(*v))
 		return nil
+	case *tcpip.AllowExternalLoopbackTrafficOption:
+		p.allowExternalLoopbackTraffic.Store(bool(*v))
+		return nil
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}
 	}
@@ -1703,6 +1721,9 @@ func (p *protocol) Option(option tcpip.GettableNetworkProtocolOption) tcpip.Erro
 	switch v := option.(type) {
 	case *tcpip.DefaultTTLOption:
 		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
+		return nil
+	case *tcpip.AllowExternalLoopbackTrafficOption:
+		*v = tcpip.AllowExternalLoopbackTrafficOption(p.allowExternalLoopbackTraffic.Load())
 		return nil
 	default:
 		return &tcpip.ErrUnknownProtocolOption{}
@@ -2074,6 +2095,7 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 			defaultTTL: atomicbitops.FromUint32(DefaultTTL),
 			options:    opts,
 		}
+		p.allowExternalLoopbackTraffic.Store(opts.AllowExternalLoopbackTraffic)
 		p.fragmentation = fragmentation.NewFragmentation(fragmentblockSize, fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, ReassembleTimeout, s.Clock(), p)
 		p.eps = make(map[tcpip.NICID]*endpoint)
 		// Set ICMP rate limiting to Linux defaults.

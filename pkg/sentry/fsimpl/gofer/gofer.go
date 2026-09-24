@@ -90,9 +90,17 @@ const (
 	moptOverlayfsStaleRead       = "overlayfs_stale_read"
 	moptDisableFileHandleSharing = "disable_file_handle_sharing"
 	moptDisableFifoOpen          = "disable_fifo_open"
+	moptCharDevicePolicy         = "char_device_policy"
 
 	// Directfs options.
 	moptDirectfs = "directfs"
+)
+
+// Valid values for the "char_device_policy" mount option.
+const (
+	charDevPolicyEmulatedOnly   = "emulated-only"
+	charDevPolicyPreferEmulated = "prefer-emulated"
+	charDevPolicyPassthrough    = "passthrough"
 )
 
 // Valid values for the "cache" mount option.
@@ -335,9 +343,36 @@ type filesystemOptions struct {
 	// are disallowed.
 	disableFifoOpen bool
 
+	// charDevicePolicy controls whether opens of character device files are
+	// dispatched to the sentry's device registry, passed through to the host
+	// via the gofer, or a combination of both.
+	charDevicePolicy charDevicePolicy
+
 	// directfs holds options for directfs mode.
 	directfs directfsOpts
 }
+
+// charDevicePolicy tells how opens of character device files are handled.
+// It is set by the "char_device_policy" mount option.
+//
+// +stateify savable
+type charDevicePolicy int
+
+const (
+	// charDevEmulatedOnly dispatches all character device opens to the
+	// sentry's device registry. Opens of devices the sentry does not
+	// implement fail with ENXIO. This is the default.
+	charDevEmulatedOnly charDevicePolicy = iota
+
+	// charDevPreferEmulated dispatches opens of sentry-implemented devices
+	// to the sentry's device registry, and opens the rest through the gofer,
+	// exposing the corresponding host devices.
+	charDevPreferEmulated
+
+	// charDevPassthrough opens all character devices through the gofer,
+	// exposing the corresponding host devices.
+	charDevPassthrough
+)
 
 // +stateify savable
 type directfsOpts struct {
@@ -539,6 +574,20 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if _, ok := mopts[moptDisableFifoOpen]; ok {
 		delete(mopts, moptDisableFifoOpen)
 		fsopts.disableFifoOpen = true
+	}
+	if policy, ok := mopts[moptCharDevicePolicy]; ok {
+		delete(mopts, moptCharDevicePolicy)
+		switch policy {
+		case charDevPolicyEmulatedOnly:
+			fsopts.charDevicePolicy = charDevEmulatedOnly
+		case charDevPolicyPreferEmulated:
+			fsopts.charDevicePolicy = charDevPreferEmulated
+		case charDevPolicyPassthrough:
+			fsopts.charDevicePolicy = charDevPassthrough
+		default:
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid character device policy: %s=%s", moptCharDevicePolicy, policy)
+			return nil, nil, linuxerr.EINVAL
+		}
 	}
 	if _, ok := mopts[moptForcePageCache]; ok {
 		delete(mopts, moptForcePageCache)
@@ -850,6 +899,12 @@ type inode struct {
 	// inoKey is used to identify this inode.
 	inoKey inoKey
 
+	// rdevMajor and rdevMinor are the device numbers reported by the
+	// filesystem for device special files. They are only used to dispatch
+	// opens of device special files to the sentry's device registry. Immutable.
+	rdevMajor uint32
+	rdevMinor uint32
+
 	// Cached metadata; protected by metadataMu.
 	// To access:
 	//   - In situations where consistency is not required (like stat), these
@@ -980,6 +1035,11 @@ type inode struct {
 	pipe *pipe.VFSPipe
 
 	locks vfs.FileLocks
+
+	// writeCount tracks write access to this inode's contents, and is used to
+	// prevent a file from being written while it is being executed. See
+	// vfs.WriteCount.
+	writeCount vfs.WriteCount
 
 	// Inotify watches for this inode.
 	//
@@ -1213,6 +1273,11 @@ func (d *dentry) init() {
 	refs.Register(d)
 }
 
+// WriteCount implements vfs.WriteCounter.WriteCount.
+func (d *dentry) WriteCount() *vfs.WriteCount {
+	return &d.inode.writeCount
+}
+
 // Preconditions: !d.inode.isSynthetic().
 // Preconditions: d.inode.metadataMu is locked.
 // +checklocks:d.inode.metadataMu
@@ -1280,6 +1345,8 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.Mtime = linux.NsecToStatxTimestamp(d.inode.mtime.Load())
 	stat.DevMajor = linux.UNNAMED_MAJOR
 	stat.DevMinor = d.inode.fs.devMinor
+	stat.RdevMajor = d.inode.rdevMajor
+	stat.RdevMinor = d.inode.rdevMinor
 }
 
 // Precondition: fs.renameMu is locked.
@@ -1292,8 +1359,16 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 		return linuxerr.EPERM
 	}
 	mode := linux.FileMode(d.inode.mode.Load())
-	if err := vfs.CheckSetStat(ctx, creds, opts, mode, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load())); err != nil {
+	if err := vfs.CheckSetStat(ctx, creds, opts, mode, nil, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load())); err != nil {
 		return err
+	}
+	if opts.NeedWritePerm {
+		// truncate(2), unlike ftruncate(2), acquires write access to the file
+		// and so fails with ETXTBSY if it is being executed. See
+		// fs/open.c:do_sys_truncate().
+		if err := d.inode.writeCount.CheckWrite(); err != nil {
+			return err
+		}
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return err
@@ -1505,7 +1580,7 @@ func (i *inode) updateSizeAndUnlockDataMuLocked(newSize uint64) {
 }
 
 func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
-	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()))
+	return vfs.GenericCheckPermissions(creds, ats, linux.FileMode(d.inode.mode.Load()), nil, auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()))
 }
 
 // Preconditions: d.inode.metadataMu must be locked.
@@ -1529,7 +1604,7 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	mode := linux.FileMode(d.inode.mode.RacyLoad())
 	kuid := auth.KUID(d.inode.uid.RacyLoad())
 	kgid := auth.KGID(d.inode.gid.RacyLoad())
-	if err := vfs.GenericCheckPermissions(creds, ats, mode, kuid, kgid); err != nil {
+	if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, kuid, kgid); err != nil {
 		return err
 	}
 	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
@@ -1644,10 +1719,32 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
 
+// contextID is this package's type for context.Context.Value keys.
+type contextID int
+
+const (
+	// CtxCheckCachingList is a Context.Value key for a **[]*dentry. While
+	// fs.renameMu is held, inotify notifications are sent with this key set so
+	// that OnZeroWatches appends dentries to the list instead of checking them
+	// under the caller's lock; the caller checks the list once it unlocks.
+	CtxCheckCachingList contextID = iota
+)
+
+// withCheckCachingList returns ctx with CtxCheckCachingList set to ds.
+//
+// Preconditions: fs.renameMu must be locked.
+func withCheckCachingList(ctx context.Context, ds **[]*dentry) context.Context {
+	return context.WithValue(ctx, CtxCheckCachingList, ds)
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 //
 // If no watches are left on this dentry and it has no references, cache it.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
+	if ds, ok := ctx.Value(CtxCheckCachingList).(**[]*dentry); ok {
+		*ds = appendDentry(*ds, d)
+		return
+	}
 	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
 }
 
@@ -2202,25 +2299,33 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 	return nil
 }
 
-func (d *dentry) syncRemoteFile(ctx context.Context) error {
+func (d *dentry) syncRemoteFile(ctx context.Context, dataOnly bool) error {
 	d.inode.handleMu.RLock()
 	defer d.inode.handleMu.RUnlock()
-	return d.syncRemoteFileLocked(ctx)
+	return d.syncRemoteFileLocked(ctx, dataOnly)
 }
 
 // Preconditions: d.inode.handleMu must be locked.
-func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
+func (d *dentry) syncRemoteFileLocked(ctx context.Context, dataOnly bool) error {
 	// Prefer syncing write handles over read handles, since some remote
 	// filesystem implementations may not sync changes made through write
 	// handles otherwise.
 	wh := d.inode.writeHandle()
-	wh.sync(ctx)
+	if dataOnly {
+		wh.syncData(ctx)
+	} else {
+		wh.sync(ctx)
+	}
 	rh := d.inode.readHandle()
-	rh.sync(ctx)
+	if dataOnly {
+		rh.syncData(ctx)
+	} else {
+		rh.sync(ctx)
+	}
 	return nil
 }
 
-func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) error {
+func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, dataOnly bool) error {
 	d.inode.handleMu.RLock()
 	defer d.inode.handleMu.RUnlock()
 	if d.inode.isWriteHandleOk() {
@@ -2233,7 +2338,7 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) err
 			return err
 		}
 	}
-	if err := d.syncRemoteFileLocked(ctx); err != nil {
+	if err := d.syncRemoteFileLocked(ctx, dataOnly); err != nil {
 		if !forFilesystemSync {
 			return err
 		}

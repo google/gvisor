@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -36,22 +37,32 @@ type taskPathOperation struct {
 	haveStartRef bool
 }
 
-func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, emptyPathCheck shouldAllowEmptyPathType, shouldFollowFinalSymlink shouldFollowFinalSymlink) (taskPathOperation, error) {
+func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, emptyPathCheck shouldAllowEmptyPathType, shouldFollowFinalSymlink shouldFollowFinalSymlink, resolveFlags uint64) (taskPathOperation, error) {
 	root := t.FSContext().RootDirectory()
+	rootCleanup := cleanup.Make(func() {
+		root.DecRef(t)
+	})
+	defer rootCleanup.Clean()
 	start := root
 	haveStartRef := false
-	if !path.Absolute {
-		if !path.HasComponents() && !emptyPathCheck.allow() {
-			root.DecRef(t)
-			return taskPathOperation{}, linuxerr.ENOENT
-		}
+	if !path.Absolute && !path.HasComponents() && !emptyPathCheck.allow() {
+		// Reject empty paths if requested
+		return taskPathOperation{}, linuxerr.ENOENT
+	}
+	if resolveFlags&linux.RESOLVE_BENEATH != 0 && path.Absolute {
+		// PathOperation requires that RESOLVE_BENEATH and absolute path
+		// cannot be specified together
+		return taskPathOperation{}, linuxerr.EXDEV
+	}
+	if !path.Absolute || resolveFlags&linux.RESOLVE_IN_ROOT != 0 {
+		// Both relative and RESOLVE_IN_ROOT paths are resolved relative to dirfd
+
 		if dirfd == linux.AT_FDCWD {
 			start = t.FSContext().WorkingDirectory()
 			haveStartRef = true
 		} else {
 			dirfile := t.GetFile(dirfd)
 			if dirfile == nil {
-				root.DecRef(t)
 				return taskPathOperation{}, linuxerr.EBADF
 			}
 			defer dirfile.DecRef(t)
@@ -61,7 +72,6 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, emptyPa
 			// Similar to how Linux handles LOOKUP_LINKAT_EMPTY in path_init() in fs/namei.c.
 			if emptyPathCheck == allowEmptyPathWithCredsCheck {
 				if dirfile.Credentials() != t.Credentials() && !t.HasCapabilityIn(linux.CAP_DAC_READ_SEARCH, dirfile.Credentials().UserNamespace) {
-					root.DecRef(t)
 					return taskPathOperation{}, linuxerr.ENOENT
 				}
 			}
@@ -71,12 +81,15 @@ func getTaskPathOperation(t *kernel.Task, dirfd int32, path fspath.Path, emptyPa
 			haveStartRef = true
 		}
 	}
+
+	rootCleanup.Release()
 	return taskPathOperation{
 		pop: vfs.PathOperation{
 			Root:               root,
 			Start:              start,
 			Path:               path,
 			FollowFinalSymlink: bool(shouldFollowFinalSymlink),
+			ResolveFlags:       resolveFlags,
 		},
 		haveStartRef: haveStartRef,
 	}, nil

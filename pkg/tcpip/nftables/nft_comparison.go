@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // comparison is an operation that compares the data in a register to a given
@@ -92,6 +91,12 @@ func (op *comparison) deepCopy() operation {
 	return &opCopy
 }
 
+// updateReferences implements operation.updateReferences.
+func (op *comparison) updateReferences(table *Table, sourceTable *Table, sourceOp operation) {}
+
+// destroy implements operation.destroy.
+func (op *comparison) destroy() {}
+
 // evaluate for comparison compares the data in the source register to the given
 // data and breaks from the rule if the comparison is false.
 func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {
@@ -122,7 +127,7 @@ func (op comparison) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	}
 	if !result {
 		// Comparison is false, so break from the rule.
-		regs.verdict = stack.NFVerdict{Code: VC(linux.NFT_BREAK)}
+		regs.verdict = Verdict{Code: VC(linux.NFT_BREAK)}
 	}
 }
 func (op comparison) GetExprName() string {
@@ -131,7 +136,7 @@ func (op comparison) GetExprName() string {
 
 func (op comparison) Dump() ([]byte, *syserr.AnnotatedError) {
 	m := &nlmsg.Message{}
-	m.PutAttr(linux.NFTA_CMP_SREG, nlmsg.PutU32(uint32(formatRegIdxForDump(op.sregIdx))))
+	m.PutAttr(linux.NFTA_CMP_SREG, formatRegIdxForDump(op.sregIdx))
 	m.PutAttr(linux.NFTA_CMP_OP, nlmsg.PutU32(uint32(op.cop)))
 	regDump, err := dumpDataAttr(op.data)
 	if err != nil {
@@ -153,11 +158,11 @@ var cmpAttrPolicy = []NlaPolicy{
 }
 
 func initComparison(tab *Table, exprInfo ExprInfo) (*comparison, *syserr.AnnotatedError) {
-	attrs, ok := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
+	attrs, err := NfParseWithOpts(exprInfo.ExprData, &NfParseOpts{
 		Policy: cmpAttrPolicy,
 	})
-	if !ok {
-		return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, "Nftables: Failed to parse comparison expression data")
+	if err != nil {
+		return nil, err
 	}
 	sreg, ok := AttrNetToHost[uint32](linux.NFTA_CMP_SREG, attrs)
 	if !ok {

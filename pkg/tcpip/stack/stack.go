@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -31,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
@@ -112,6 +114,10 @@ type Stack struct {
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
 
+	// clockResolution is an upper bound on the quantization interval of
+	// monotonic timestamps returned by clock.
+	clockResolution time.Duration
+
 	// handleLocal allows non-loopback interfaces to loop packets.
 	handleLocal bool
 
@@ -120,7 +126,11 @@ type Stack struct {
 	tables *IPTables `state:"nosave"`
 
 	// nftables is the nftables interface for packet filtering and manipulation rules.
-	nftables NFTablesInterface `state:"nosave"`
+	// Using atomic.Pointer for RCU lock-free reads.
+	nftables atomic.Pointer[NFTablesInterface] `state:"nosave"`
+
+	// nftablesUpdateMu serializes concurrent netlink batch modifications to nftables.
+	nftablesUpdateMu sync.Mutex `state:"nosave"`
 
 	// nftablesConfigured indicates whether NFTables is configured with at
 	// least one rule on a chain at a network hook.
@@ -225,6 +235,17 @@ type Options struct {
 	//
 	// If Clock is nil, tcpip.NewStdClock() will be used.
 	Clock tcpip.Clock
+
+	// ClockResolution is an upper bound on the quantization interval of
+	// timestamps returned by Clock.NowMonotonic. It should be set when the
+	// clock advances in discrete steps large enough to affect TCP loss detection;
+	// for example, some Windows monotonic clocks commonly update every 500 us.
+	// TCP RACK uses this value to avoid declaring loss based on timestamp
+	// quantization alone. It does not describe timer wake-up precision.
+	//
+	// A value of zero means that no quantization allowance is needed or known.
+	// Values less than zero are clamped to zero.
+	ClockResolution time.Duration
 
 	// Stats are optional statistic counters.
 	Stats tcpip.Stats
@@ -409,6 +430,11 @@ func New(opts Options) *Stack {
 
 	opts.NUDConfigs.resetInvalidFields()
 
+	clockResolution := opts.ClockResolution
+	if clockResolution < 0 {
+		clockResolution = 0
+	}
+
 	s := &Stack{
 		transportProtocols:           make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:             make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
@@ -418,10 +444,10 @@ func New(opts Options) *Stack {
 		cleanupEndpoints:             make(map[TransportEndpoint]struct{}),
 		PortManager:                  ports.NewPortManager(),
 		clock:                        clock,
+		clockResolution:              clockResolution,
 		stats:                        opts.Stats.FillIn(),
 		handleLocal:                  opts.HandleLocal,
 		tables:                       opts.IPTables,
-		nftables:                     opts.NFTables,
 		icmpRateLimiter:              NewICMPRateLimiter(clock),
 		seed:                         secureRNG.Uint32(),
 		nudConfigs:                   opts.NUDConfigs,
@@ -442,6 +468,7 @@ func New(opts Options) *Stack {
 		tsOffsetSecret:        secureRNG.Uint32(),
 		allowLiveTCPMigration: opts.AllowLiveTCPMigration,
 	}
+	s.SetNFTables(opts.NFTables)
 
 	// Add specified network protocols.
 	for _, netProtoFactory := range opts.NetworkProtocols {
@@ -558,6 +585,16 @@ func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h f
 // scheduling work.
 func (s *Stack) Clock() tcpip.Clock {
 	return s.clock
+}
+
+// ClockResolution returns an upper bound on the quantization interval of
+// monotonic timestamps returned by the Stack's clock.
+//
+// A zero value means to trust the clock advances between reads at a precision
+// close to the precision of the value it returns; consuming code should need no
+// corrections for clock resolution.
+func (s *Stack) ClockResolution() time.Duration {
+	return s.clockResolution
 }
 
 // Stats returns a mutable copy of the current stats.
@@ -754,12 +791,16 @@ func (s *Stack) NICMulticastForwarding(id tcpip.NICID, protocol tcpip.NetworkPro
 
 // PortRange returns the UDP and TCP inclusive range of ephemeral ports used in
 // both IPv4 and IPv6.
+//
+// +checklocksexclude:s.PortManager.ephemeralMu
 func (s *Stack) PortRange() (uint16, uint16) {
 	return s.PortManager.PortRange()
 }
 
 // SetPortRange sets the UDP and TCP IPv4 and IPv6 ephemeral port range
 // (inclusive).
+//
+// +checklocksexclude:s.PortManager.ephemeralMu
 func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 	return s.PortManager.SetPortRange(start, end)
 }
@@ -915,6 +956,9 @@ type NICOptions struct {
 	// EnableExperimentIPOption specifies whether the NIC is responsible for
 	// passing the experiment IP option.
 	EnableExperimentIPOption bool
+
+	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
+	Kind string
 }
 
 // GetNICByID return a network device associated with the specified ID.
@@ -1198,6 +1242,9 @@ type NICInfo struct {
 
 	// Primary is the index of the main controlling interface in a bonded setup.
 	Primary tcpip.NICID
+
+	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
+	Kind string
 }
 
 // HasNIC returns true if the NICID is defined in the stack.
@@ -1250,6 +1297,7 @@ func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 		ARPHardwareType:     nic.NetworkLinkEndpoint.ARPHardwareType(),
 		Forwarding:          make(map[tcpip.NetworkProtocolNumber]bool),
 		MulticastForwarding: make(map[tcpip.NetworkProtocolNumber]bool),
+		Kind:                nic.kind,
 	}
 
 	for proto := range s.networkProtocols {
@@ -2124,7 +2172,7 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 
 	// Update iptables and nftables.
 	s.tables = st.IPTables()
-	s.nftables = st.NFTables()
+	s.SetNFTables(st.NFTables())
 	for id, nic := range nics {
 		nic.stack = s
 		s.nics[id] = nic
@@ -2345,12 +2393,30 @@ func (s *Stack) SetIPTables(tables *IPTables) {
 
 // NFTables returns the stack's nftables.
 func (s *Stack) NFTables() NFTablesInterface {
-	return s.nftables
+	val := s.nftables.Load()
+	if val == nil {
+		return nil
+	}
+	return *val
 }
 
 // SetNFTables sets the stack's nftables.
 func (s *Stack) SetNFTables(nft NFTablesInterface) {
-	s.nftables = nft
+	if nft == nil {
+		s.nftables.Store(nil)
+	} else {
+		s.nftables.Store(&nft)
+	}
+}
+
+// LockNFTablesUpdate locks the stack's nftables update mutex for netlink batch modification.
+func (s *Stack) LockNFTablesUpdate() {
+	s.nftablesUpdateMu.Lock()
+}
+
+// UnlockNFTablesUpdate unlocks the stack's nftables update mutex.
+func (s *Stack) UnlockNFTablesUpdate() {
+	s.nftablesUpdateMu.Unlock()
 }
 
 // IsNFTablesConfigured returns true if the stack has nftables configured.

@@ -1,5 +1,5 @@
 # example based on https://github.com/errm/fib
-FROM alpine:3.9 as build
+FROM alpine:3.9 AS build
 
 COPY Gemfile Gemfile.lock ./
 
@@ -8,7 +8,7 @@ RUN apk add --no-cache ruby ruby-dev ruby-bundler ruby-json build-base bash \
         && apk del --no-cache ruby-bundler \
         && rm -rf /usr/lib/ruby/gems/*/cache
 
-FROM alpine:3.9 as prod
+FROM alpine:3.9 AS prod
 
 COPY --from=build /usr/lib/ruby/gems /usr/lib/ruby/gems
 RUN apk add --no-cache ruby ruby-json ruby-etc redis apache2-utils \

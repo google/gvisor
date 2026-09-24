@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,7 +12,9 @@ go_library(
         "cgroup.go",
         "controllers.go",
         "cpu.go",
+        "cpu_mutex.go",
         "cpuset.go",
+        "cpuset_mutex.go",
         "event.go",
         "filesystem.go",
         "memory.go",
@@ -21,6 +23,7 @@ go_library(
         "save_restore.go",
         "tasks_mutex.go",
         "tree_mutex.go",
+        "xattr.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -29,6 +32,7 @@ go_library(
         "//pkg/bitmap",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/fsimpl/kernfs",
@@ -36,10 +40,22 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
+    ],
+)
+
+go_test(
+    name = "cgroup2fs_test",
+    size = "small",
+    srcs = ["cgroup_freeze_credit_test.go"],
+    library = ":cgroup2fs",
+    deps = [
+        "//pkg/context",
+        "//pkg/sentry/kernel",
     ],
 )
 
@@ -62,4 +78,18 @@ declare_mutex(
     out = "pids_mutex.go",
     package = "cgroup2fs",
     prefix = "pids",
+)
+
+declare_mutex(
+    name = "cpu_mutex",
+    out = "cpu_mutex.go",
+    package = "cgroup2fs",
+    prefix = "cpu",
+)
+
+declare_mutex(
+    name = "cpuset_mutex",
+    out = "cpuset_mutex.go",
+    package = "cgroup2fs",
+    prefix = "cpuset",
 )

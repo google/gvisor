@@ -116,6 +116,39 @@ func computeAction(sig linux.Signal, act linux.SigAction) SignalAction {
 	}
 }
 
+// initSignalDiscarded reports whether a signal targeted at a PID namespace's
+// init process must be discarded under Linux SIGNAL_UNKILLABLE semantics
+// (kernel/signal.c:sig_task_ignored(), pid_namespaces(7)).
+//
+// "forced" indicates the signal originated from outside the PID namespace
+// (e.g. host, orchestrator, or kernel; see info.Code == SI_KERNEL or
+// info.PID() == 0).
+//
+// Signals whose default disposition is neither fatal nor stop (e.g. SIGCHLD,
+// SIGURG) are never discarded. For default-fatal or stop signals,
+// SIGKILL/SIGSTOP take effect only when forced, while others are delivered
+// only if an explicit handler is installed.
+func initSignalDiscarded(sig linux.Signal, act linux.SigAction, forced bool) bool {
+	// Classify the signal by its default disposition.
+	switch computeAction(sig, linux.SigAction{Handler: linux.SIG_DFL}) {
+	case SignalActionTerm, SignalActionCore, SignalActionStop:
+		if sig == linux.SIGKILL || sig == linux.SIGSTOP {
+			return !forced
+		}
+		return computeAction(sig, act) != SignalActionHandler
+	default:
+		return false
+	}
+}
+
+// isForcedSignal returns true if info represents a forced signal to a PID
+// namespace init process. Forced signals originate from outside the PID
+// namespace (e.g. host or kernel with info.Code == SI_KERNEL, or ancestor
+// namespaces where info.PID() == 0).
+func isForcedSignal(info *linux.SignalInfo) bool {
+	return info.Code == linux.SI_KERNEL || (info.Code <= 0 && info.PID() == 0)
+}
+
 // UnblockableSignals contains the set of signals which cannot be blocked.
 var UnblockableSignals = linux.MakeSignalSet(linux.SIGKILL, linux.SIGSTOP)
 
@@ -375,18 +408,25 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 func (t *Task) SendSignal(info *linux.SignalInfo) error {
 	sh := t.tg.signalLock()
 	defer sh.mu.Unlock()
-	return t.sendSignalLocked(info, false /* group */)
+	// signalLock returned t.tg's current handler with sh.mu held;
+	// checklocks does not relate that result to the thread-group field.
+	return t.sendSignalLocked(info, false /* group */) // +checklocksignore
 }
 
 // SendGroupSignal sends the given signal to t's thread group.
 func (t *Task) SendGroupSignal(info *linux.SignalInfo) error {
 	sh := t.tg.signalLock()
 	defer sh.mu.Unlock()
-	return t.sendSignalLocked(info, true /* group */)
+	// signalLock returned t.tg's current handler with sh.mu held;
+	// checklocks does not relate that result to the thread-group field.
+	return t.sendSignalLocked(info, true /* group */) // +checklocksignore
 }
 
 // SendSignal sends the given signal to tg, using tg's leader to determine if
 // the signal is blocked.
+//
+// +checklocksexclude:tg.pidns.owner.mu
+// +checklocksexclude:tg.signalHandlers.mu
 func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
@@ -395,12 +435,12 @@ func (tg *ThreadGroup) SendSignal(info *linux.SignalInfo) error {
 	return tg.leader.sendSignalLocked(info, true /* group */)
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) sendSignalLocked(info *linux.SignalInfo, group bool) error {
 	return t.sendSignalTimerLocked(info, group, nil)
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *IntervalTimer) error {
 	if t.ExitState() == TaskExitDead {
 		return linuxerr.ESRCH
@@ -413,19 +453,26 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 		return linuxerr.EINVAL
 	}
 
+	// Protect PID namespace init processes under Linux SIGNAL_UNKILLABLE
+	// semantics (kernel/signal.c:sig_task_ignored(), pid_namespaces(7)).
+	// Signals from ancestor namespaces (info.PID() == 0) or the kernel/host
+	// (info.Code == linux.SI_KERNEL) are considered forced. Traced tasks are
+	// exempt to allow ptrace attach and debugging.
+	if t.k.signalUnkillable != SignalUnkillableNone && t.tg.ID() == initTID && !t.hasTracer() {
+		if initSignalDiscarded(sig, t.tg.signalHandlers.actions[sig], isForcedSignal(info)) {
+			t.Debugf("Discarding signal %d targeted at protected init process", sig)
+			if timer != nil {
+				timer.signalRejectedLocked()
+			}
+			return nil
+		}
+	}
+
 	// Signal side effects apply even if the signal is ultimately discarded.
 	t.tg.applySignalSideEffectsLocked(sig)
-
-	// TODO: "Only signals for which the "init" process has established a
-	// signal handler can be sent to the "init" process by other members of the
-	// PID namespace. This restriction applies even to privileged processes,
-	// and prevents other members of the PID namespace from accidentally
-	// killing the "init" process." - pid_namespaces(7). We don't currently do
-	// this for child namespaces, though we should; we also don't do this for
-	// the root namespace (the same restriction applies to global init on
-	// Linux), where whether or not we should is much murkier. In practice,
-	// most sandboxed applications are not prepared to function as an init
-	// process.
+	if t.k.Cgroup2FS().EverMounted() {
+		t.tg.wakeFrozenTasksForFatalSignalLocked(sig)
+	}
 
 	// Unmasked, ignored signals are discarded without being queued, unless
 	// they will be visible to a tracer. Even for group signals, it's the
@@ -511,6 +558,28 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 	}
 }
 
+// wakeFrozenTasksForFatalSignalLocked un-parks tasks in frozenStop when a
+// fatal-by-default signal arrives, so they reach dequeue-time delivery and die.
+// Delivery/termination itself is unchanged -- this only ends the stop.
+// Callers should skip calling this unless cgroup2 is in use (see
+// sendSignalTimerLocked): checking tg.leader.Kernel() here would race
+// without the taskset mutex, which this function's callers don't hold.
+//
+// Preconditions: the signal mutex must be locked.
+//
+// +checklocks:tg.signalHandlers.mu
+func (tg *ThreadGroup) wakeFrozenTasksForFatalSignalLocked(sig linux.Signal) {
+	act := tg.signalHandlers.actions[sig]
+	if computeAction(sig, act) != SignalActionTerm {
+		return // handled, ignored, stop, or core-dump: stays frozen until thaw
+	}
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
+		if _, ok := t.stop.(*frozenStop); ok {
+			t.endInternalStopLocked()
+		}
+	}
+}
+
 // canReceiveSignalLocked returns true if t should be interrupted to receive
 // the given signal. canReceiveSignalLocked is analogous to Linux's
 // kernel/signal.c:wants_signal(), but see below for divergences.
@@ -567,7 +636,7 @@ func (t *Task) forceSignal(sig linux.Signal, unconditional bool) {
 	t.forceSignalLocked(sig, unconditional)
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
 	blocked := linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.RacyLoad()) != 0
 	act := t.tg.signalHandlers.actions[sig]
@@ -756,6 +825,16 @@ type groupStop struct{}
 // Killable implements TaskStop.Killable.
 func (*groupStop) Killable() bool { return true }
 
+// frozenStop is a TaskStop placed on tasks frozen via cgroup v2's
+// cgroup.freeze. Like groupStop it is killable, so a frozen task remains
+// SIGKILL-able (a frozen task must never be un-killable).
+//
+// +stateify savable
+type frozenStop struct{}
+
+// Killable implements TaskStop.Killable.
+func (*frozenStop) Killable() bool { return true }
+
 // initiateGroupStop attempts to initiate a group stop based on a
 // previously-dequeued stop signal.
 //
@@ -835,6 +914,11 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 		} else {
 			if _, ok := t.stop.(*groupStop); ok {
 				t.endInternalStopLocked()
+				// t may still be effectively frozen but couldn't enter
+				// frozenStop while parked (single t.stop slot); nudge it to recheck.
+				if t.freezeOrdered {
+					t.interrupt()
+				}
 			}
 		}
 	}
@@ -1026,11 +1110,22 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 				}
 			}
 		} else {
+			delta := FreezeCreditNone
+			var creditCg Cgroup2
 			if !t.killedLocked() {
 				t.beginInternalStopLocked((*groupStop)(nil))
+				// t is now quiescent the same way a parked *frozenStop
+				// task is (Linux counts a group-stopped task as already
+				// frozen): resolve any outstanding credit now, since
+				// t.stop being occupied means t will never reach the
+				// *frozenStop park path above.
+				delta, creditCg = t.resolveFreezeCreditSigLocked()
 			}
 			// Drop the signal mutex so we can take the TaskSet mutex.
 			t.tg.signalHandlers.mu.Unlock()
+			if creditCg != nil {
+				creditCg.ApplyFreezeCreditDelta(t, delta)
+			}
 			t.tg.pidns.owner.mu.RLock()
 			if t.tg.leader.parent == nil {
 				notifyParent = false
@@ -1045,29 +1140,58 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	// Are there signals pending?
-	if info := t.dequeueSignalLocked(linux.SignalSet(t.signalMask.RacyLoad())); info != nil {
-		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
-			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
-			return (*runExit)(nil)
-		}
+	// A frozen task may only dequeue a fatal signal; others wait for thaw
+	// (matches Linux). anyFatalPending scans every pending signal, not
+	// just the lowest, so a non-fatal one can't hide a fatal one.
+	mask := linux.SignalSet(t.signalMask.RacyLoad())
+	canDeliver := true
+	if t.freezeOrdered {
+		actions := t.tg.signalHandlers.actions
+		canDeliver = anyFatalPending(t.pendingSignals.pendingSet.RacyLoad(), mask, actions) ||
+			anyFatalPending(t.tg.pendingSignals.pendingSet.RacyLoad(), mask, actions)
+	}
+	if canDeliver {
+		if info := t.dequeueSignalLocked(mask); info != nil {
+			if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
+				t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				return (*runExit)(nil)
+			}
 
-		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
-			// Indicate that we've dequeued a stop signal before unlocking the
-			// signal mutex; initiateGroupStop will check for races with
-			// endGroupStopLocked after relocking it.
-			t.tg.groupStopDequeued = true
-		}
-		if t.ptraceSignalLocked(info) {
-			// Dequeueing the signal action must wait until after the
-			// signal-delivery-stop ends since the tracer can change or
-			// suppress the signal.
+			if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
+				// Indicate that we've dequeued a stop signal before unlocking the
+				// signal mutex; initiateGroupStop will check for races with
+				// endGroupStopLocked after relocking it.
+				t.tg.groupStopDequeued = true
+			}
+			if t.ptraceSignalLocked(info) {
+				// Dequeueing the signal action must wait until after the
+				// signal-delivery-stop ends since the tracer can change or
+				// suppress the signal.
+				t.tg.signalHandlers.mu.Unlock()
+				return (*runInterruptAfterSignalDeliveryStop)(nil)
+			}
+			act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
 			t.tg.signalHandlers.mu.Unlock()
-			return (*runInterruptAfterSignalDeliveryStop)(nil)
+			return t.deliverSignal(info, act)
 		}
-		act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
+	}
+
+	// Reconcile freeze state: enter is self-service, thaw ends it
+	// authoritatively in ApplyFreezeTasksLocked. No cgroup lock is taken
+	// here (avoids inverting fs.tasksMu -> signalHandlers.mu).
+	// !killedLocked() matches groupStop: a dying task is never parked.
+	if t.freezeOrdered && t.stop == nil && !t.killedLocked() {
+		t.beginInternalStopLocked((*frozenStop)(nil))
+		// Resolve the credit atomically with t.stop becoming *frozenStop
+		// (so a racing thaw/exit/migration sees it already done), but
+		// apply it after unlocking: taking fs.tasksMu here would invert
+		// fs.tasksMu -> signalHandlers.mu.
+		delta, creditCg := t.resolveFreezeCreditSigLocked()
 		t.tg.signalHandlers.mu.Unlock()
-		return t.deliverSignal(info, act)
+		if creditCg != nil {
+			creditCg.ApplyFreezeCreditDelta(t, delta)
+		}
+		return (*runInterrupt)(nil)
 	}
 
 	t.unsetInterrupted()

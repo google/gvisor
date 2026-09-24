@@ -16,6 +16,8 @@
 
 #include <errno.h>
 
+#include <cstddef>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 

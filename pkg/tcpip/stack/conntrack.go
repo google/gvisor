@@ -44,6 +44,31 @@ const (
 	unestablishedTimeout time.Duration = 120 * time.Second
 )
 
+// ConnTrackState represents the state of a connection.
+type ConnTrackState int
+
+const (
+	// ConnTrackStateInvalid is the invalid connection tracking state.
+	ConnTrackStateInvalid ConnTrackState = -1
+	// ConnTrackStateEstablished represents an established connection.
+	ConnTrackStateEstablished ConnTrackState = 0
+	// ConnTrackStateNew represents a new connection.
+	ConnTrackStateNew ConnTrackState = 2
+	// ConnTrackStateEstablishedReply represents an established connection
+	// in the reply direction.
+	ConnTrackStateEstablishedReply ConnTrackState = 3
+)
+
+// ConnTrackDirection represents the direction of a connection.
+type ConnTrackDirection uint8
+
+const (
+	// ConnTrackDirectionOriginal represents the original direction.
+	ConnTrackDirectionOriginal ConnTrackDirection = 0
+	// ConnTrackDirectionReply represents the reply direction.
+	ConnTrackDirectionReply ConnTrackDirection = 1
+)
+
 // tuple holds a connection's identifying and manipulating data in one
 // direction. It is immutable.
 //
@@ -160,6 +185,10 @@ type conn struct {
 	//
 	// +checklocks:stateMu
 	lastUsed tcpip.MonotonicTime
+	// replySeen indicates whether a packet in the reply direction has been seen.
+	//
+	// +checklocks:stateMu
+	replySeen bool
 }
 
 // timedOut returns whether the connection timed out based on its state.
@@ -176,6 +205,27 @@ func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
 	return now.Sub(cn.lastUsed) > unestablishedTimeout
 }
 
+// expiresIn returns the duration from now until the connection times out.
+func (cn *conn) expiresIn() time.Duration {
+	var timeout time.Duration
+	var lastUsed tcpip.MonotonicTime
+	cn.stateMu.RLock()
+	state := cn.tcb.State()
+	lastUsed = cn.lastUsed
+	cn.stateMu.RUnlock()
+	if state == tcpconntrack.ResultAlive {
+		timeout = establishedTimeout
+	} else {
+		timeout = unestablishedTimeout
+	}
+	now := cn.ct.clock.NowMonotonic()
+	expires := timeout - now.Sub(lastUsed)
+	if expires < 0 {
+		return 0
+	}
+	return expires
+}
+
 // update the connection tracking state.
 func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 	cn.stateMu.Lock()
@@ -183,6 +233,9 @@ func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 
 	// Mark the connection as having been used recently so it isn't reaped.
 	cn.lastUsed = cn.ct.clock.NowMonotonic()
+	if reply {
+		cn.replySeen = true
+	}
 
 	if pkt.TransportProtocolNumber != header.TCPProtocolNumber {
 		return
@@ -238,6 +291,11 @@ type ConnTrack struct {
 	// Lookup. Persisting the pre-checkpoint seed extends the brute-force
 	// window across save boundaries.
 	seed uint32
+
+	// nftIDSeed is a one-time random value initialized at stack startup
+	// and is used in the calculation of tuple IDs for nftables.
+	// It is immutable.
+	nftIDSeed uint32
 
 	// clock provides timing used to determine conntrack reapings.
 	clock tcpip.Clock
@@ -534,6 +592,114 @@ func (ct *ConnTrack) connForTID(tid tupleID) *tuple {
 	return bkt.connForTID(tid, ct.clock.NowMonotonic())
 }
 
+// ConnTrackInfo holds connection tracking information for a packet.
+type ConnTrackInfo struct {
+	State      ConnTrackState
+	Direction  ConnTrackDirection
+	SrcAddr    tcpip.Address
+	DstAddr    tcpip.Address
+	SrcPort    uint16
+	DstPort    uint16
+	NetProto   tcpip.NetworkProtocolNumber
+	TransProto tcpip.TransportProtocolNumber
+	Expiration time.Duration
+	PseudoID   uint32
+	Bytes      uint64
+	Packets    uint64
+}
+
+// ConnTrackInfoOpts holds options for GetConnTrackInfo.
+type ConnTrackInfoOpts struct {
+	FillState      bool
+	UseReplyDir    bool
+	FillPseudoID   bool
+	FillExpiration bool
+}
+
+// getTCPConnTrackState converts the TCB state to ConnTrackState.
+func (cn *conn) getTCPConnTrackState(useReplyDir bool) ConnTrackState {
+	state := ConnTrackStateInvalid
+	cn.stateMu.RLock()
+	tcbState := cn.tcb.State()
+	cn.stateMu.RUnlock()
+	switch tcbState {
+	case tcpconntrack.ResultConnecting:
+		state = ConnTrackStateNew
+
+	case tcpconntrack.ResultAlive, tcpconntrack.ResultReset,
+		tcpconntrack.ResultClosedByOriginator, tcpconntrack.ResultClosedByResponder:
+
+		if useReplyDir {
+			state = ConnTrackStateEstablishedReply
+		} else {
+			state = ConnTrackStateEstablished
+		}
+	case tcpconntrack.ResultDrop:
+		state = ConnTrackStateInvalid
+	}
+	return state
+}
+
+// getConnTrackState returns the connection tracking state for the connection.
+func (cn *conn) getConnTrackState(useReplyDir bool) ConnTrackState {
+	state := ConnTrackStateInvalid
+	// TCP connections have their own state machine in the TCB.
+	if cn.original.tupleID.transProto == header.TCPProtocolNumber {
+		return cn.getTCPConnTrackState(useReplyDir)
+	}
+	// For non-TCP connections, fill the info based on the reply.
+	cn.stateMu.RLock()
+	replySeen := cn.replySeen
+	cn.stateMu.RUnlock()
+	if useReplyDir {
+		state = ConnTrackStateEstablishedReply
+	} else if replySeen {
+		state = ConnTrackStateEstablished
+	} else {
+		state = ConnTrackStateNew
+	}
+	return state
+}
+
+// FillConnTrackInfo fills connection tracking information for the connection.
+func (cn *conn) FillConnTrackInfo(opts ConnTrackInfoOpts, info *ConnTrackInfo) bool {
+	state := ConnTrackStateInvalid
+	if opts.FillState {
+		state = cn.getConnTrackState(opts.UseReplyDir)
+	}
+
+	dir := ConnTrackDirectionOriginal
+	t := &cn.original
+	if opts.UseReplyDir {
+		t = &cn.reply
+		dir = ConnTrackDirectionReply
+	}
+	tID := t.tupleID
+
+	pID := uint32(0)
+	if opts.FillPseudoID {
+		// Generate a pseudo-ID similar to Linux nf_ct_get_id
+		pID = tupleHash(cn.original.tupleID, cn.ct.nftIDSeed)
+	}
+
+	var expires time.Duration
+	if opts.FillExpiration {
+		expires = cn.expiresIn()
+	}
+
+	info.State = state
+	info.Direction = dir
+	info.SrcAddr = tID.srcAddr
+	info.DstAddr = tID.dstAddr
+	info.SrcPort = tID.srcPortOrEchoRequestIdent
+	info.DstPort = tID.dstPortOrEchoReplyIdent
+	info.NetProto = tID.netProto
+	info.TransProto = tID.transProto
+	info.Expiration = expires
+	info.PseudoID = pID
+	return true
+}
+
 func (bkt *bucket) connForTID(tid tupleID, now tcpip.MonotonicTime) *tuple {
 	bkt.mu.RLock()
 	defer bkt.mu.RUnlock()
@@ -627,8 +793,8 @@ func (ct *ConnTrack) bucket(id tupleID) int {
 	return ct.bucketWithTableLength(id, len(ct.buckets))
 }
 
-func (ct *ConnTrack) bucketWithTableLength(id tupleID, tableLength int) int {
-	h := jenkins.Sum32(ct.seed)
+func tupleHash(id tupleID, seed uint32) uint32 {
+	h := jenkins.Sum32(seed)
 	h.Write(id.srcAddr.AsSlice())
 	h.Write(id.dstAddr.AsSlice())
 	shortBuf := make([]byte, 2)
@@ -640,7 +806,12 @@ func (ct *ConnTrack) bucketWithTableLength(id tupleID, tableLength int) int {
 	h.Write([]byte(shortBuf))
 	binary.LittleEndian.PutUint16(shortBuf, uint16(id.netProto))
 	h.Write([]byte(shortBuf))
-	return int(h.Sum32()) % tableLength
+	return h.Sum32()
+}
+
+func (ct *ConnTrack) bucketWithTableLength(id tupleID, tableLength int) int {
+	h := tupleHash(id, ct.seed)
+	return int(h) % tableLength
 }
 
 // reapUnused deletes timed out entries from the conntrack map. The rules for
@@ -788,9 +959,10 @@ func NewConnTrack(clock tcpip.Clock, rng connTrackRNG, seed *uint32) *ConnTrack 
 		seed = &r
 	}
 	ct := &ConnTrack{
-		clock: clock,
-		rng:   rng,
-		seed:  *seed,
+		clock:     clock,
+		rng:       rng,
+		seed:      *seed,
+		nftIDSeed: rng.Uint32(),
 	}
 	ct.init()
 	return ct

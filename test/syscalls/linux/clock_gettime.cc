@@ -14,6 +14,7 @@
 
 #include <pthread.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include <cerrno>
 #include <cstdint>
@@ -24,8 +25,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/logging.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 

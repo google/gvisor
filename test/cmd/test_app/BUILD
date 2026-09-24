@@ -9,8 +9,12 @@ go_binary(
     name = "test_app",
     testonly = 1,
     srcs = [
+        "chardev.go",
+        "exec_thread.go",
         "fds.go",
+        "hostinet_sr.go",
         "main.go",
+        "xattr.go",
         "zombies.go",
     ],
     features = ["fully_static_link"],

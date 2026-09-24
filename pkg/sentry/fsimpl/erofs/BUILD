@@ -19,13 +19,14 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "dentry_refs",
-    out = "dentry_refs.go",
+    name = "dentry_list",
+    out = "dentry_list.go",
     package = "erofs",
     prefix = "dentry",
-    template = "//pkg/refs:refs_template",
+    template = "//pkg/ilist:generic_list",
     types = {
-        "T": "dentry",
+        "Element": "*dentry",
+        "Linker": "*dentry",
     },
 )
 
@@ -43,7 +44,7 @@ go_template_instance(
 go_library(
     name = "erofs",
     srcs = [
-        "dentry_refs.go",
+        "dentry_list.go",
         "directory.go",
         "erofs.go",
         "filesystem.go",
@@ -68,11 +69,13 @@ go_library(
         "//pkg/sentry/checkpoint",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsutil",
+        "//pkg/sentry/hostfd",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

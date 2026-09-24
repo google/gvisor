@@ -18,81 +18,64 @@
 package filter
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/runsc/fsgofer/filter/config"
 )
 
-// Options are seccomp filter related options.
-type Options struct {
-	UDSOpenEnabled   bool
-	UDSCreateEnabled bool
-	ProfileEnabled   bool
-	DirectFS         bool
-	LisafsNeeded     bool
-	CgoEnabled       bool
-	ExtraRules       []seccomp.SyscallRules
-}
+// ***   DEBUG TIP   ***
+// If you suspect the gofer is getting killed due to a seccomp violation,
+// change this to `true` to get a panic stack trace when there is a
+// violation.
+const debugFilter = false
 
-// Rules returns the seccomp rules for a gofer process without installing them.
-func Rules(opt Options) seccomp.SyscallRules {
-	s := allowedSyscalls.Copy()
-
-	if opt.ProfileEnabled {
-		report("profile enabled: syscall filters less restrictive!")
-		s.Merge(profileFilters)
-	}
-
-	if opt.UDSOpenEnabled || opt.UDSCreateEnabled {
-		report("host UDS enabled: syscall filters less restrictive!")
-		s.Merge(udsCommonSyscalls)
-		if opt.UDSOpenEnabled {
-			s.Merge(udsOpenSyscalls)
-		}
-		if opt.UDSCreateEnabled {
-			s.Merge(udsCreateSyscalls)
-		}
-	}
-
-	if opt.CgoEnabled {
-		report("CGO enabled: syscall filters less restrictive!")
-		s.Merge(cgoFilters)
-	}
-
-	// Set of additional filters used by -race and -msan. Returns empty
-	// when not enabled.
-	s.Merge(instrumentationFilters())
-
-	// When DirectFS is not enabled, filters for LisaFS are installed. They are
-	// also needed when this gofer serves a mount that suppresses DirectFS.
-	if !opt.DirectFS || opt.LisafsNeeded {
-		s.Merge(lisafsFilters)
-	}
-
-	for _, rules := range opt.ExtraRules {
-		s.Merge(rules)
-	}
-	return s
-}
+// Options is a re-export of the config Options type under this package.
+type Options = config.Options
 
 // Install installs seccomp filters.
 func Install(opt Options) error {
-	s := Rules(opt)
+	for _, warning := range config.Warnings(opt) {
+		log.Warningf("*** SECCOMP WARNING: %s", warning)
+	}
+	key := opt.ConfigKey()
+	precompiled, usePrecompiled := GetPrecompiled(key)
+	if usePrecompiled && !debugFilter {
+		vars := opt.Vars()
+		log.Debugf("Loaded precompiled seccomp instructions for options %v, using variables: %v", key, vars)
+		insns, err := precompiled.RenderInstructions(vars)
+		if err != nil {
+			return fmt.Errorf("cannot render precompiled program for options %v / vars %v: %w", key, vars, err)
+		}
+		return seccomp.SetFilter(insns)
+	}
+	var seccompOpts seccomp.ProgramOptions
+	if debugFilter {
+		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
+		seccompOpts.DefaultAction = seccomp.Trap
+	} else {
+		log.Warningf("No precompiled program found for config options %v, building seccomp program from scratch. This slows down gofer startup.", key)
+		if log.IsLogging(log.Debug) {
+			precompiledKeys := ListPrecompiled()
+			log.Debugf("Precompiled seccomp-bpf program configuration option variants (%d):", len(precompiledKeys))
+			for _, k := range precompiledKeys {
+				log.Debugf("  %v", k)
+			}
+		}
+	}
+	rules, denyRules := config.Rules(opt)
 	program := &seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
 			{
-				Rules: seccomp.DenyNewExecMappings,
+				Rules: denyRules,
 			},
 			{
-				Rules:  s,
+				Rules:  rules,
 				Action: seccomp.Allow,
 			},
 		},
+		Options: seccompOpts,
 	}
-
-	return program.Install()
-}
-
-// report writes a warning message to the log.
-func report(msg string) {
-	log.Warningf("*** SECCOMP WARNING: %s", msg)
+	return program.Install(nil /* timer */)
 }

@@ -21,7 +21,6 @@ import (
 
 	"cloud.google.com/go/storage"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -124,11 +123,8 @@ func (r *Reader) workerMain(ctx context.Context) {
 			if err != nil {
 				if code, ok := httpCodeFromError(err); ok && code == statusRangeNotSatisfiable {
 					err = io.EOF
-				} else if ok && isPermissionDeniedCode(code) {
-					log.Infof("gcs.Reader returning EACCES for error: %v", err)
-					err = unix.EACCES
 				} else {
-					err = fmt.Errorf("storage.ObjectHandle.NewRangeReader failed: %w", err)
+					err = mapGCSError(err, "Reader.NewRangeReader", obj.BucketName(), obj.ObjectName())
 				}
 				r.cmps <- stateio.Completion{
 					ID:  sub.id,

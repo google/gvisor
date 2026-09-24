@@ -82,6 +82,14 @@ doc(
 )
 
 doc(
+    name = "rdma",
+    src = "rdma.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/rdma/",
+    weight = "52",
+)
+
+doc(
     name = "runtime_monitoring",
     src = "runtime_monitoring.md",
     category = "User Guide",

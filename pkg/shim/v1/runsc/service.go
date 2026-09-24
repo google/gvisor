@@ -20,9 +20,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+
+	"golang.org/x/sys/unix"
+
+	taskServer "gvisor.dev/gvisor/pkg/shim/v1/taskserver"
+	pb "gvisor.dev/gvisor/pkg/shim/v1/taskserver/task_server_go_proto"
 
 	cgroups "github.com/containerd/cgroups/v3"
 	cgroup1 "github.com/containerd/cgroups/v3/cgroup1"
@@ -115,11 +122,9 @@ type runscService struct {
 	// containers maps container id to a container.
 	containers map[string]*Container
 
-	// root is the runsc root directory.
-	root string
-
-	// runtime is runsc runtime configured for sandbox.
-	runtime *runsccmd.Runsc
+	// versionCommand is the runsc executable configured for the sandbox.
+	// A nil pointer or empty command selects the default.
+	versionCommand atomic.Pointer[string]
 
 	shutdown shutdown.Service
 }
@@ -147,8 +152,6 @@ func NewTaskService(ctx context.Context, publisher shim.Publisher, sd shutdown.S
 		ec:         proc.ExitCh,
 		oomPoller:  ep,
 		shutdown:   sd,
-		root:       proc.RunscRoot,
-		runtime:    &runsccmd.Runsc{Root: proc.RunscRoot},
 	}
 	go s.processExits(ctx)
 	runsccmd.Monitor = &runsccmd.LogMonitor{Next: reaper.Default}
@@ -211,8 +214,8 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 		return nil, err
 	}
 	if initProcess, ok := p.(*proc.Init); ok && initProcess.Sandbox {
-		s.root = initProcess.Runtime().Root
-		s.runtime = initProcess.Runtime()
+		command := initProcess.Runtime().Command
+		s.versionCommand.Store(&command)
 	}
 
 	// Set up OOM notification on the sandbox's cgroup. This is done on
@@ -598,7 +601,6 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		log.L.Debugf("Container init process exited, killing all container processes")
 		ip.KillAll(ctx)
 	}
-	p.SetExited(e.Status)
 	// On init process exit, synchronously check the cgroup for OOM kills
 	// before publishing the exit event. The async OOM notification via
 	// EventChan (cgroups v2) can lose the race against the container exit
@@ -607,7 +609,17 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 	// exec processes share the sandbox cgroup and would produce spurious
 	// events.
 	// Use the per-container id for TaskOOM routing.
-	if isInit && s.oomPoller.isOOM(containerID) {
+	isOOM := isInit && s.oomPoller.isOOM(containerID)
+	// When the memcg kill lands on the sentry itself, `runsc wait` cannot
+	// recover the real signal status and the shim substitutes the generic
+	// InternalErrorCode. Since the cgroup confirms an OOM kill, report the
+	// status tooling expects for SIGKILL (137). A real status reported by
+	// runsc is never overridden.
+	if isOOM && e.Status == proc.InternalErrorCode {
+		e.Status = 128 + int(unix.SIGKILL)
+	}
+	p.SetExited(e.Status)
+	if isOOM {
 		s.send(&events.TaskOOM{ContainerID: containerID})
 	}
 	s.send(&events.TaskExit{
@@ -650,12 +662,22 @@ func (s *runscService) getContainerPids(ctx context.Context, c *Container) ([]ui
 	return pids, nil
 }
 
+// publishFailureIsFatal reports whether a failure to publish an event is fatal.
+// An empty TTRPC_ADDRESS means no event sink is configured (as under CRI-O), so
+// the publisher can never connect and publish errors are expected.
+func publishFailureIsFatal() bool {
+	return os.Getenv("TTRPC_ADDRESS") != ""
+}
+
 func (s *runscService) forward(ctx context.Context, publisher shim.Publisher) {
+	isFatal := publishFailureIsFatal()
 	for e := range s.events {
-		err := publisher.Publish(ctx, getTopic(e), e)
-		if err != nil {
-			// Should not happen.
-			panic(fmt.Errorf("post event: %w", err))
+		if err := publisher.Publish(ctx, getTopic(e), e); err != nil {
+			if isFatal {
+				// Should not happen when an event sink is configured.
+				panic(fmt.Errorf("post event: %w", err))
+			}
+			log.L.Warningf("Failed to post event (no containerd event sink): %v", err)
 		}
 	}
 }
@@ -719,6 +741,12 @@ func newInit(workDir, namespace string, platform stdio.Platform, r *proc.CreateC
 	p.IoGID = int(options.IoGID)
 	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
 	p.UserLog = utils.UserLogPath(spec)
+	if uid, err := utils.PodUID(spec, r.Bundle); err == nil {
+		p.K8sPodUID = uid
+	}
+	// Enable FUSE connection abort on teardown if the annotation is set on the
+	// spec or the pod sandbox spec.
+	p.FuseAbort = utils.FuseAbortOnTeardown(spec, r.Bundle)
 	p.Monitor = reaper.Default
 	return p, nil
 }
@@ -760,4 +788,182 @@ func setPodCgroup(spec *specs.Spec) bool {
 		}
 	}
 	return false
+}
+
+// GvisorTaskServer adapters runscService to taskServer.GvisorTaskServiceExt.
+type GvisorTaskServer struct {
+	s *runscService
+}
+
+var _ taskServer.GvisorTaskServiceExt = (*GvisorTaskServer)(nil)
+
+// NewGvisorTaskServer creates a new GvisorTaskServer adapter.
+func NewGvisorTaskServer(s extension.TaskServiceExt) *GvisorTaskServer {
+	rs, ok := s.(*runscService)
+	if !ok {
+		return nil
+	}
+	return &GvisorTaskServer{s: rs}
+}
+
+// Checkpoint implements taskServer.GvisorTaskServiceExt.
+func (g *GvisorTaskServer) Checkpoint(ctx context.Context, req *pb.CheckpointRequest) (*pb.CheckpointResponse, error) {
+	c, err := g.s.getContainer(req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	p, err := c.Process("")
+	if err != nil {
+		return nil, err
+	}
+	initProc, ok := p.(*proc.Init)
+	if !ok {
+		return nil, fmt.Errorf("process is not init process")
+	}
+
+	// Set debug options on the runtime for this execution
+	runsc := setDebug(initProc.Runtime(), req.GetDebug())
+
+	opts := &runsccmd.CheckpointOpts{
+		ImagePath:                 req.GetImagePath(),
+		LeaveRunning:              req.GetLeaveRunning(),
+		Direct:                    req.GetDirect(),
+		Compression:               req.GetCompression(),
+		ExcludeCommittedZeroPages: req.GetExcludeCommittedZeroPages(),
+		SaveRestoreExecArgv:       req.GetSaveRestoreExecArgv(),
+		SaveRestoreExecTimeout:    req.GetSaveRestoreExecTimeout(),
+		CudaCheckpointPath:        req.GetCudaCheckpointPath(),
+		CudaCheckpointSequential:  req.GetCudaCheckpointSequential(),
+		WorkPath:                  req.GetWorkPath(),
+		FSPath:                    req.GetFsPath(),
+	}
+
+	if req.GetFsCheckpoint() {
+		if err := runsc.FSCheckpoint(ctx, c.ID, opts); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := runsc.Checkpoint(ctx, c.ID, opts); err != nil {
+			return nil, err
+		}
+	}
+
+	return &pb.CheckpointResponse{}, nil
+}
+
+// Wait implements taskServer.GvisorTaskServiceExt.
+func (g *GvisorTaskServer) Wait(ctx context.Context, req *pb.WaitRequest) (*pb.WaitResponse, error) {
+	c, err := g.s.getContainer(req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	p, err := c.Process("")
+	if err != nil {
+		return nil, err
+	}
+	initProc, ok := p.(*proc.Init)
+	if !ok {
+		return nil, fmt.Errorf("process is not init process")
+	}
+
+	// Set debug options on the runtime for this execution
+	runsc := setDebug(initProc.Runtime(), req.GetDebug())
+
+	opts := &runsccmd.WaitOpts{
+		PID:     int(req.GetPid()),
+		RootPID: int(req.GetRootPid()),
+	}
+	switch req.GetWaitType() {
+	case pb.WaitRequest_CHECKPOINT:
+		opts.Checkpoint = true
+	case pb.WaitRequest_RESTORE:
+		opts.Restore = true
+	case pb.WaitRequest_FSCHECKPOINT:
+		opts.FSCheckpoint = true
+	case pb.WaitRequest_FSRESTORE:
+		opts.FSRestore = true
+	}
+
+	exitStatus, err := runsc.WaitWithOptions(ctx, c.ID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.WaitResponse{ExitStatus: int32(exitStatus)}, nil
+}
+
+// State implements taskServer.GvisorTaskServiceExt.
+func (g *GvisorTaskServer) State(ctx context.Context, req *pb.StateRequest) (*pb.StateResponse, error) {
+	if c, err := g.s.getContainer(req.GetId()); err == nil {
+		if p, err := c.Process(""); err == nil {
+			if initProc, ok := p.(*proc.Init); ok {
+				runsc := setDebug(initProc.Runtime(), req.GetDebug())
+				if _, err := runsc.State(ctx, c.ID); err != nil {
+					log.L.Debugf("State with debug failed: %v", err)
+				}
+			}
+		}
+	}
+
+	resp, err := g.s.State(ctx, &task.StateRequest{ID: req.GetId()})
+	if err != nil {
+		return nil, err
+	}
+	stateStr := ""
+	switch resp.Status {
+	case tasktypes.Status_CREATED:
+		stateStr = "created"
+	case tasktypes.Status_RUNNING:
+		stateStr = "running"
+	case tasktypes.Status_STOPPED:
+		stateStr = "stopped"
+	case tasktypes.Status_PAUSING:
+		stateStr = "pausing"
+	case tasktypes.Status_PAUSED:
+		stateStr = "paused"
+	default:
+		stateStr = "unknown"
+	}
+	id := resp.ID
+	pid := int32(resp.Pid)
+	return &pb.StateResponse{
+		Id:    id,
+		State: stateStr,
+		Pid:   pid,
+	}, nil
+}
+
+// Version implements taskServer.GvisorTaskServiceExt.
+func (g *GvisorTaskServer) Version(ctx context.Context, req *pb.VersionRequest) (*pb.VersionResponse, error) {
+	command := runsccmd.DefaultCommand
+	if configured := g.s.versionCommand.Load(); configured != nil && *configured != "" {
+		command = *configured
+	}
+	cmd := exec.Command(command, "-version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get runsc version: %w, output: %s", err, string(out))
+	}
+	versionStr := strings.TrimSpace(string(out))
+	return &pb.VersionResponse{Version: versionStr}, nil
+}
+
+func setDebug(r *runsccmd.Runsc, d *pb.Debug) *runsccmd.Runsc {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	if d == nil {
+		cp.Debug = false
+		cp.DebugLog = ""
+		cp.DebugLogFD = nil
+		return &cp
+	}
+	cp.Debug = true
+	cp.DebugLog = d.GetDebugLog()
+	cp.DebugLogFD = nil
+	if fd := int(d.GetDebugLogFd()); fd != 0 {
+		cp.DebugLogFD = &fd
+	}
+	return &cp
 }

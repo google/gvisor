@@ -95,3 +95,11 @@ const (
 	__NFNL_BATCH_MAX
 	NFNL_BATCH_MAX = __NFNL_BATCH_MAX - 1
 )
+
+// Netlink Netfilter compat message types.
+// Matches Linux include/uapi/linux/netfilter/nf_tables_compat.h
+const (
+	NFNL_MSG_COMPAT_GET = iota
+	__NFNL_MSG_COMPAT_MAX
+	NFNL_MSG_COMPAT_MAX = __NFNL_MSG_COMPAT_MAX - 1
+)

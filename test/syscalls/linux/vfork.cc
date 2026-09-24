@@ -17,9 +17,11 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <ctime>
 #include <string>
 #include <utility>
 
@@ -29,6 +31,8 @@
 #include "absl/time/time.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/time_util.h"

@@ -32,8 +32,7 @@ def compatibility_test(name, srcs, deps = [], data = [], tags = [], size = "larg
     for suffix, runtime in _RUNTIMES:
         target_data = list(data)
         if runtime != "runc":
-            # runsc is needed to invalidate the bazel cache on any code change.
-            target_data = target_data + ["//runsc"]
+            target_data = target_data + ["//:release"]
         go_test(
             name = name + "_" + suffix,
             srcs = srcs,

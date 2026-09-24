@@ -32,14 +32,16 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <cstdint>
 #include <ctime>
-#include <iostream>
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -52,6 +54,7 @@
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -137,7 +140,7 @@ struct kernel_termios DefaultTermios() {
 // Returns a partial read if some bytes were read.
 //
 // fd must be non-blocking.
-PosixErrorOr<size_t> PollAndReadFd(int fd, void *buf, size_t count,
+PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
                                    absl::Duration timeout) {
   absl::Time end = absl::Now() + timeout;
 
@@ -156,7 +159,7 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void *buf, size_t count,
     }
 
     ssize_t n =
-        ReadFd(fd, static_cast<char *>(buf) + completed, count - completed);
+        ReadFd(fd, static_cast<char*>(buf) + completed, count - completed);
     if (n < 0) {
       if (errno == EAGAIN) {
         // Linux sometimes returns EAGAIN from this read, despite the fact that
@@ -251,14 +254,14 @@ PosixErrorOr<int> WaitUntilReceived(int fd, int count) {
 }
 
 // Verifies that there is nothing left to read from fd.
-void ExpectFinished(const FileDescriptor &fd) {
+void ExpectFinished(const FileDescriptor& fd) {
   // Nothing more to read.
   char c;
   EXPECT_THAT(ReadFd(fd.get(), &c, 1), SyscallFailsWithErrno(EAGAIN));
 }
 
 // Verifies that we can read expected bytes from fd into buf.
-void ExpectReadable(const FileDescriptor &fd, int expected, char *buf) {
+void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   size_t n = ASSERT_NO_ERRNO_AND_VALUE(
       PollAndReadFd(fd.get(), buf, expected, kTimeout));
   EXPECT_EQ(expected, n);
@@ -631,9 +634,9 @@ class PtyTest : public ::testing::Test {
 
   // Writes master_input to the master file descriptor and verifies that
   // the replica and the echo output match what is expected.
-  void TestCanonicalIO(const char *master_input,
-                       const char *expected_replica_output,
-                       const char *expected_echo_output) {
+  void TestCanonicalIO(const char* master_input,
+                       const char* expected_replica_output,
+                       const char* expected_echo_output) {
     ASSERT_THAT(WriteFd(master_.get(), master_input, strlen(master_input)),
                 SyscallSucceedsWithValue(strlen(master_input)));
 
@@ -1568,7 +1571,7 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
   std::string kExpected = "GO\nBLUE\n!";
 
   // Write each line.
-  for (const std::string &input : kInputs) {
+  for (const std::string& input : kInputs) {
     ASSERT_THAT(WriteFd(master_.get(), input.c_str(), input.size()),
                 SyscallSucceedsWithValue(input.size()));
   }
@@ -1608,18 +1611,18 @@ TEST_F(PtyTest, QueueSize) {
 
 TEST_F(PtyTest, PartialBadBuffer) {
   // Allocate 2 pages.
-  void *addr = mmap(nullptr, 2 * kPageSize, PROT_READ | PROT_WRITE,
+  void* addr = mmap(nullptr, 2 * kPageSize, PROT_READ | PROT_WRITE,
                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(addr, MAP_FAILED);
-  char *buf = reinterpret_cast<char *>(addr);
+  char* buf = reinterpret_cast<char*>(addr);
 
   // Guard the 2nd page for our read to run into.
   ASSERT_THAT(
-      mprotect(reinterpret_cast<void *>(buf + kPageSize), kPageSize, PROT_NONE),
+      mprotect(reinterpret_cast<void*>(buf + kPageSize), kPageSize, PROT_NONE),
       SyscallSucceeds());
 
   // Leave only one free byte in the buffer.
-  char *bad_buffer = buf + kPageSize - 1;
+  char* bad_buffer = buf + kPageSize - 1;
 
   // Write to the master.
   constexpr char kBuf[] = "hello\n";
@@ -1635,7 +1638,10 @@ TEST_F(PtyTest, PartialBadBuffer) {
       ReadFd(replica_.get(), bad_buffer, size),
       AnyOf(SyscallFailsWithErrno(EFAULT), SyscallFailsWithErrno(EAGAIN)));
 
-  EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr;
+  // Format addr as a string before calling munmap so it can be safely streamed
+  // in diagnostic output on failure without triggering static analysis warnings
+  std::string const addr_str = absl::StrFormat("%p", addr);
+  EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr_str;
 }
 
 // Test that writing nothing to the PTY replica's output queue does not return
@@ -2018,6 +2024,135 @@ TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
   pid_t foreground_pgid;
   ASSERT_THAT(ioctl(replica_.get(), TIOCGPGRP, &foreground_pgid),
               SyscallFailsWithErrno(ENOTTY));
+}
+
+TEST_F(JobControlTest, GetSessionId) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+
+    pid_t sid;
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCGSID, &sid));
+    TEST_PCHECK(sid == getsid(0));
+
+    // TIOCGSID on the master end reports the session of the replica end.
+    pid_t master_sid;
+    TEST_PCHECK(!ioctl(master_.get(), TIOCGSID, &master_sid));
+    TEST_PCHECK(master_sid == sid);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+TEST_F(JobControlTest, GetSessionIdNonControlling) {
+  // At this point there's no controlling terminal, so TIOCGSID should fail on
+  // both ends of the PTY.
+  pid_t sid;
+  ASSERT_THAT(ioctl(replica_.get(), TIOCGSID, &sid),
+              SyscallFailsWithErrno(ENOTTY));
+  ASSERT_THAT(ioctl(master_.get(), TIOCGSID, &sid),
+              SyscallFailsWithErrno(ENOTTY));
+}
+
+// Unlike the replica end, TIOCGSID on the master end does not require the PTY
+// to be the caller's controlling terminal.
+TEST_F(JobControlTest, GetSessionIdMasterOutsideSession) {
+  // child_ready tells us that the child has taken the replica as its
+  // controlling terminal; parent_done tells the child that it may exit.
+  int child_ready[2], parent_done[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  ASSERT_THAT(pipe(parent_done), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (!child) {
+    TEST_PCHECK(!close(child_ready[0]));
+    TEST_PCHECK(!close(parent_done[1]));
+
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+
+    pid_t sid = getsid(0);
+    TEST_PCHECK(write(child_ready[1], &sid, sizeof(sid)) == sizeof(sid));
+
+    // Block until the parent is done querying the master end.
+    char c;
+    TEST_PCHECK(read(parent_done[0], &c, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  ASSERT_THAT(close(child_ready[1]), SyscallSucceeds());
+  ASSERT_THAT(close(parent_done[0]), SyscallSucceeds());
+
+  pid_t child_sid;
+  ASSERT_THAT(read(child_ready[0], &child_sid, sizeof(child_sid)),
+              SyscallSucceedsWithValue(sizeof(child_sid)));
+  ASSERT_EQ(child_sid, child);
+  // We are not part of the child's session, so the replica end must not tell
+  // us anything...
+  pid_t sid;
+  EXPECT_THAT(ioctl(replica_.get(), TIOCGSID, &sid),
+              SyscallFailsWithErrno(ENOTTY));
+  // ...but the master end must.
+  EXPECT_THAT(ioctl(master_.get(), TIOCGSID, &sid), SyscallSucceeds());
+  EXPECT_EQ(sid, child_sid);
+
+  ASSERT_THAT(close(parent_done[1]), SyscallSucceeds());
+  int wstatus;
+  ASSERT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0);
+  ASSERT_THAT(close(child_ready[0]), SyscallSucceeds());
+}
+
+// TIOCGSID requires the PTY to be the caller's controlling terminal, not that
+// the caller lead the session, so a non-leader member of the session can read
+// the session ID too.
+TEST_F(JobControlTest, GetSessionIdNonLeader) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t sid = getsid(0);
+
+    // Fork a child that inherits the controlling terminal but doesn't lead
+    // the session.
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      TEST_PCHECK(getpid() != sid);
+      TEST_PCHECK(getsid(0) == sid);
+
+      pid_t got;
+      TEST_PCHECK(!ioctl(replica_.get(), TIOCGSID, &got));
+      TEST_PCHECK(got == sid);
+      TEST_PCHECK(!ioctl(master_.get(), TIOCGSID, &got));
+      TEST_PCHECK(got == sid);
+      _exit(0);
+    }
+
+    int gcwstatus;
+    TEST_PCHECK(waitpid(grandchild, &gcwstatus, 0) == grandchild);
+    TEST_PCHECK(gcwstatus == 0);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// Giving up the controlling terminal clears the terminal's session, so
+// TIOCGSID fails on both ends afterwards.
+TEST_F(JobControlTest, GetSessionIdAfterRelease) {
+  auto res = RunInChild([=]() {
+    // TIOCNOTTY sends SIGHUP to the foreground process group, which is ours.
+    struct sigaction sa = {};
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    TEST_PCHECK(!sigaction(SIGHUP, &sa, nullptr));
+
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCNOTTY));
+
+    pid_t sid;
+    TEST_PCHECK(ioctl(replica_.get(), TIOCGSID, &sid) < 0 && errno == ENOTTY);
+    TEST_PCHECK(ioctl(master_.get(), TIOCGSID, &sid) < 0 && errno == ENOTTY);
+  });
+  ASSERT_NO_ERRNO(res);
 }
 
 // This test:

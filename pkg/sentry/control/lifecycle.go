@@ -60,8 +60,9 @@ type Lifecycle struct {
 // ContainerNamespaces holds container namespaces that are constructed before
 // StartContainer.
 type ContainerNamespaces struct {
-	MountNamespace *vfs.MountNamespace
-	PIDNamespace   *kernel.PIDNamespace
+	MountNamespace  *vfs.MountNamespace
+	PIDNamespace    *kernel.PIDNamespace
+	CgroupNamespace *kernel.CgroupNamespace
 }
 
 // containerState is the state of the container.
@@ -259,6 +260,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		UTSNamespace:         l.Kernel.RootUTSNamespace(),
 		IPCNamespace:         l.Kernel.RootIPCNamespace(),
 		PIDNamespace:         contNS.PIDNamespace,
+		CgroupNamespace:      contNS.CgroupNamespace,
 		ContainerID:          args.ContainerID,
 	}
 
@@ -327,6 +329,11 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	cgroupRegistry := l.Kernel.CgroupRegistry()
 	// path is relative to the container's cgroup controller of specified type.
 	for initialCgroupController, path := range args.InitialCgroups {
+		if !cgroupRegistry.IsControllerBound(initialCgroupController) && l.Kernel.Cgroup2FS().EverMounted() {
+			// We are in V2 mode and this controller is not bound to V1.
+			// This is expected as V1 mounts are suppressed.
+			continue
+		}
 		cg, err := cgroupRegistry.FindCgroup(ctx, initialCgroupController, path)
 		if err != nil {
 			return fmt.Errorf("FindCgroup can't locate cgroup controller: %v err: %v", initialCgroupController, err)

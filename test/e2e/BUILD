@@ -13,8 +13,8 @@ go_test(
         "integration_test.go",
     ],
 
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
@@ -40,8 +40,8 @@ go_test(
         "integration_runtime_test.go",
         "systemd_test.go",
     ],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
@@ -50,6 +50,7 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/fsutil",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
@@ -64,8 +65,8 @@ go_test(
     srcs = [
         "runtime_in_docker_test.go",
     ],
-    # runsc is needed to invalidate the bazel cache in case of any code changes.
-    data = ["//runsc"],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
     library = ":integration",
     tags = [
         # Requires docker and runsc to be configured before the test runs.
@@ -77,6 +78,27 @@ go_test(
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
+)
+
+go_test(
+    name = "podman_test",
+    size = "large",
+    srcs = [
+        "podman_test.go",
+    ],
+    # runsc is needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
+    library = ":integration",
+    tags = [
+        # Requires docker and runsc to be configured before the test runs.
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
     ],
 )
 

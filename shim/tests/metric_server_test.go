@@ -121,12 +121,15 @@ func hasMetricServer(t *testing.T) bool {
 	}
 
 	// Run "runsc metric-server" with no arguments.
-	// In elided build, it will immediately fail with the "not support" message.
-	// In embedded build, it might fail with flag errors, but NOT the "not support" message.
+	// In elided build, it will immediately fail because the sidecar binary is missing or unsupported.
+	// In embedded build, it might fail with flag errors, but NOT the "not found" / "not support" message.
 	cmd := exec.Command(runscPath, "metric-server")
 	out, _ := cmd.CombinedOutput()
 
-	return !strings.Contains(string(out), "this build does not support the metric-server subcommand")
+	// TODO(gvisor.dev/issue/13718): Temporary. Once the binary is a sidecar, it should
+	// be bundled unconditionally.
+	return !strings.Contains(string(out), "this build does not support the metric-server subcommand") &&
+		!strings.Contains(string(out), `sidecar binary "runsc-metric-server" not found`)
 }
 
 // Test variants for grouping.

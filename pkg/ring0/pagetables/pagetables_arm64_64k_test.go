@@ -62,3 +62,43 @@ func TestNumMemoryTypes(t *testing.T) {
 		t.Errorf("PTE.Set() and PTE.Opts() must be altered to map %d MemoryTypes to a smaller set of MAIR entries", hostarch.NumMemoryTypes)
 	}
 }
+
+func TestPXN(t *testing.T) {
+	testCases := []struct {
+		name      string
+		opts      MapOpts
+		expectPXN bool
+	}{
+		{
+			name:      "User Non-Executable",
+			opts:      MapOpts{AccessType: hostarch.ReadWrite, User: true},
+			expectPXN: true,
+		},
+		{
+			name:      "User Executable",
+			opts:      MapOpts{AccessType: hostarch.ReadExecute, User: true},
+			expectPXN: true,
+		},
+		{
+			name:      "Kernel Non-Executable",
+			opts:      MapOpts{AccessType: hostarch.ReadWrite, User: false},
+			expectPXN: true,
+		},
+		{
+			name:      "Kernel Executable",
+			opts:      MapOpts{AccessType: hostarch.ReadExecute, User: false},
+			expectPXN: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var p PTE
+			p.Set(0x1000, tc.opts)
+			hasPXN := (uintptr(p) & pxn) != 0
+			if hasPXN != tc.expectPXN {
+				t.Errorf("PTE.Set(%v) PXN bit got %v, wanted %v", tc.opts, hasPXN, tc.expectPXN)
+			}
+		})
+	}
+}

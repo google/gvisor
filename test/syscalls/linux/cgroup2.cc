@@ -15,13 +15,22 @@
 // All tests in this file rely on being about to mount and unmount cgroupfs,
 // which isn't expected to work, or be safe on a general linux system.
 
+#include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
 #include <poll.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/xattr.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -36,7 +45,9 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
@@ -56,6 +67,7 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/time_util.h"
 
 #ifndef SYS_clone3
 #define SYS_clone3 435
@@ -67,6 +79,14 @@
 
 #ifndef CGROUP2_SUPER_MAGIC
 #define CGROUP2_SUPER_MAGIC 0x63677270
+#endif
+
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP 0x02000000
+#endif
+
+#ifndef SYS_pidfd_open
+#define SYS_pidfd_open 434
 #endif
 
 namespace gvisor {
@@ -173,6 +193,69 @@ class Cgroup2Test : public ::testing::Test {
     return *root_;
   }
 
+  // WaitForFrozen blocks until cg's cgroup.events reports "frozen <want>"
+  // (want is 0 or 1). A fixed sleep after writing cgroup.freeze isn't
+  // reliable -- how long every task in the cgroup takes to actually settle
+  // depends on scheduling -- but cgroup.events only ever reports the
+  // requested state once that settling is done (cgroup2fs's
+  // outstanding-credit accounting), so no extra margin is needed once a
+  // read matches: poll(POLLPRI) blocks until the file's content changes,
+  // then a fresh read is checked against want_str, repeating until it
+  // matches or the deadline passes.
+  void WaitForFrozen(const Cgroup& cg, int want) {
+    std::string want_str = absl::StrCat("frozen ", want);
+    std::string events_path = cg.Relpath("cgroup.events");
+    FileDescriptor event_fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(events_path, O_RDONLY));
+    absl::Time deadline = absl::Now() + absl::Seconds(2);
+    while (true) {
+      char buf[256];
+      lseek(event_fd.get(), 0, SEEK_SET);
+      int n = read(event_fd.get(), buf, sizeof(buf));
+      if (n > 0 && absl::StrContains(absl::string_view(buf, n), want_str)) {
+        return;
+      }
+      absl::Duration remaining = deadline - absl::Now();
+      if (remaining <= absl::ZeroDuration()) {
+        EXPECT_THAT(cg.ReadControlFile("cgroup.events"),
+                    IsPosixErrorOkAndHolds(HasSubstr(want_str)));
+        return;
+      }
+      struct pollfd pfd = {event_fd.get(), POLLPRI, 0};
+      poll(&pfd, 1, /*timeout=*/absl::ToInt64Milliseconds(remaining));
+    }
+  }
+
+  // WaitUntilBlockedInPoll waits, with a bounded 2-second deadline, for pid's
+  // /proc/<pid>/stat state field to report 'S' (interruptible sleep) --
+  // the state the sentry synchronously flips to the moment a task blocks
+  // inside a syscall like poll() (Task.prepareSleep(), which registers the
+  // waiter before blocking) -- instead of assuming a fixed sleep after some
+  // other signal (e.g. a pipe write from the target process) is enough time
+  // for it to have actually reached and blocked in the syscall.
+  //
+  // /proc/<pid>/stat's format is "pid (comm) state ...", and comm can itself
+  // contain spaces or parentheses, so the state field is found by looking
+  // past the last ')' rather than by naively splitting on spaces.
+  bool WaitUntilBlockedInPoll(pid_t pid) {
+    absl::Time deadline = absl::Now() + absl::Seconds(2);
+    while (true) {
+      auto contents = GetContents(absl::StrCat("/proc/", pid, "/stat"));
+      if (contents.ok()) {
+        absl::string_view stat = contents.ValueOrDie();
+        size_t close_paren = stat.rfind(')');
+        if (close_paren != absl::string_view::npos &&
+            close_paren + 2 < stat.size() && stat[close_paren + 2] == 'S') {
+          return true;
+        }
+      }
+      if (absl::Now() >= deadline) {
+        return false;
+      }
+      absl::SleepFor(absl::Milliseconds(10));
+    }
+  }
+
   void ExpectInotifyEvent(const FileDescriptor& fd) {
     struct pollfd pfd = {fd.get(), POLLIN, 0};
     ASSERT_GT(poll(&pfd, 1, 5000), 0);
@@ -209,6 +292,32 @@ class Cgroup2Test : public ::testing::Test {
   void ExpectNoPollEvent(const FileDescriptor& fd) {
     struct pollfd pfd = {fd.get(), POLLPRI, 0};
     EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(0));
+  }
+
+  // ReadMarker returns true if a progress marker becomes readable on fd within
+  // timeout_ms. Poll-based, so it never blocks on an empty pipe.
+  bool ReadMarker(int fd, int timeout_ms) {
+    struct pollfd pfd = {fd, POLLIN, 0};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+      return false;
+    }
+    char buf[64];
+    return read(fd, buf, sizeof(buf)) > 0;
+  }
+
+  // DrainMarkers consumes any currently-available progress markers on fd
+  // without blocking.
+  void DrainMarkers(int fd) {
+    while (true) {
+      struct pollfd pfd = {fd, POLLIN, 0};
+      if (poll(&pfd, 1, 0) <= 0) {
+        break;
+      }
+      char buf[4096];
+      if (read(fd, buf, sizeof(buf)) <= 0) {
+        break;
+      }
+    }
   }
 
   void ExpectDefaultControlFiles(const Cgroup& cg, bool is_root = false) {
@@ -947,6 +1056,57 @@ TEST_F(Cgroup2Test, PidsEnforcementLayered) {
   EXPECT_EQ(WEXITSTATUS(status), kCantForkSecondHalf);
 }
 
+// A task already in a cgroup when the pids controller is enabled over it must
+// be charged to the new controller, and migrating it away afterward must
+// drain pids.current to 0, not -1.
+TEST_F(Cgroup2Test, PidsChargesPreexistingTasksOnEnable) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "pids"));
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+pids"));
+
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("pids_pre"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+  Cgroup sibling = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("sibling"));
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(wfd.get());
+    char token;
+    (void)read(rfd.get(), &token, 1);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  rfd.reset();
+
+  // The task enters child before child has a pids controller.
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Enabling +pids must charge the pre-existing task to child's new
+  // controller.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.subtree_control", "+pids"));
+  EXPECT_THAT(child.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("1\n"));
+  EXPECT_THAT(sibling.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("0\n"));
+
+  // Migrating the task away must drain child to 0.
+  ASSERT_NO_ERRNO(sibling.Enter(pid));
+  EXPECT_THAT(child.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(sibling.ReadControlFile("pids.current"),
+              IsPosixErrorOkAndHolds("1\n"));
+
+  wfd.reset();
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+}
+
 TEST_F(Cgroup2Test, PidsMigrationAllowsBreaches) {
   std::string controllers =
       ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
@@ -1133,6 +1293,147 @@ TEST_F(Cgroup2Test, CgroupDotEvents) {
   ASSERT_EQ(waitpid(pid1, &status, 0), pid1);
   EXPECT_TRUE(WIFEXITED(status));
   ASSERT_EQ(waitpid(pid2, &status, 0), pid2);
+  EXPECT_TRUE(WIFEXITED(status));
+}
+
+// CgroupDotEventsFrozenPollWakesOnBothTransitions verifies that poll(POLLPRI)
+// on cgroup.events actually wakes a blocked waiter -- not merely reflects the
+// correct value once polled -- on both the frozen 0->1 (settle) and 1->0
+// (thaw) transitions. This is the runtime proof of freeze()'s
+// snapshot-compare-notify pass: c.frozen flipping does not by itself cross
+// any pendingFreezeCount edge (e.g. thawing an already-fully-parked cgroup
+// retracts no credit, since none is outstanding), so without that pass
+// nothing would call eventsFile.Notify() for that transition at all, even
+// though the frozen line genuinely changed.
+TEST_F(Cgroup2Test, CgroupDotEventsFrozenPollWakesOnBothTransitions) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t target_pid = fork();
+  if (target_pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end
+    // open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(target_pid, 0);
+  go_r.reset();
+  auto clean_target = Cleanup([&] {
+    kill(target_pid, SIGKILL);
+    waitpid(target_pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(child.Enter(target_pid));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // ready_fds signals from the poller to the parent that it is about to
+  // call poll() (once per expected transition, two total); result_fds
+  // reports back whether that poll() call actually observed POLLPRI.
+  int ready_fds[2], result_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  ASSERT_THAT(pipe(result_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]);
+  FileDescriptor ready_w(ready_fds[1]);
+  FileDescriptor result_r(result_fds[0]);
+  FileDescriptor result_w(result_fds[1]);
+
+  std::string events_path = child.Relpath("cgroup.events");
+
+  pid_t poller_pid = fork();
+  if (poller_pid == 0) {
+    ready_r.reset();
+    result_r.reset();
+
+    // Deliberately avoid gtest ASSERT_*/EXPECT_* macros in this forked
+    // child: they operate on this process's own copy of gtest's internal
+    // state, not the one the actual test result is collected from.
+    int event_fd = open(events_path.c_str(), O_RDONLY);
+    if (event_fd < 0) {
+      _exit(1);
+    }
+
+    // Prime lastEventSeq to the current generation before the loop --
+    // otherwise this fresh fd's baseline (0) already trails eventSeq (bumped
+    // earlier by the child.Enter(target_pid) populate transition above), and
+    // the first poll() below would return spuriously ready before any
+    // freeze/thaw write.
+    char prime_buf[256];
+    if (read(event_fd, prime_buf, sizeof(prime_buf)) < 0) {
+      _exit(1);
+    }
+
+    for (int i = 0; i < 2; i++) {
+      char one = 1;
+      if (write(ready_w.get(), &one, 1) != 1) {
+        _exit(1);
+      }
+      struct pollfd pfd = {event_fd, POLLPRI, 0};
+      int ret = poll(&pfd, 1, /*timeout=*/5000);
+      char result = (ret == 1 && (pfd.revents & POLLPRI)) ? 1 : 0;
+      // Consume the readiness so the next poll() call detects the next
+      // transition rather than immediately re-observing this one.
+      char buf[256];
+      lseek(event_fd, 0, SEEK_SET);
+      read(event_fd, buf, sizeof(buf));
+      if (write(result_w.get(), &result, 1) != 1) {
+        _exit(1);
+      }
+    }
+    _exit(0);
+  }
+  ASSERT_GT(poller_pid, 0);
+  ready_w.reset();
+  result_w.reset();
+  auto clean_poller = Cleanup([&] {
+    kill(poller_pid, SIGKILL);
+    waitpid(poller_pid, nullptr, 0);
+  });
+
+  // Wait for the poller to be about to block in poll() -- a hint, not proof
+  // -- then confirm via /proc that it has actually blocked inside the
+  // syscall before freezing: the 0->1 transition.
+  char buf;
+  ASSERT_THAT(read(ready_r.get(), &buf, 1), SyscallSucceedsWithValue(1));
+  ASSERT_TRUE(WaitUntilBlockedInPoll(poller_pid));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+
+  char result;
+  ASSERT_THAT(read(result_r.get(), &result, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result, 1)
+      << "poll(POLLPRI) on cgroup.events did not wake on frozen 0->1";
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Wait for the poller's second poll() call -- again just a hint -- then
+  // confirm via /proc that it has actually blocked before thawing: the 1->0
+  // transition.
+  ASSERT_THAT(read(ready_r.get(), &buf, 1), SyscallSucceedsWithValue(1));
+  ASSERT_TRUE(WaitUntilBlockedInPoll(poller_pid));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+
+  ASSERT_THAT(read(result_r.get(), &result, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result, 1)
+      << "poll(POLLPRI) on cgroup.events did not wake on frozen 1->0";
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  int status;
+  ASSERT_EQ(waitpid(poller_pid, &status, 0), poller_pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+
+  // Let the target exit normally.
+  go_w.reset();
+  ASSERT_EQ(waitpid(target_pid, &status, 0), target_pid);
   EXPECT_TRUE(WIFEXITED(status));
 }
 
@@ -1436,6 +1737,1029 @@ TEST_F(Cgroup2Test, KillTree) {
   EXPECT_EQ(WTERMSIG(status), SIGKILL);
 }
 
+// FreezeStopsAndResumesProgress verifies that writing 1 to cgroup.freeze stops
+// a running process from making progress, and writing 0 resumes it.
+TEST_F(Cgroup2Test, FreezeStopsAndResumesProgress) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  // cgroup.freeze starts at 0.
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+
+  // prog: child emits a marker per loop iteration; parent observes progress.
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  // go: parent tells the child to begin looping (after it's in the cgroup).
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      SleepSafe(absl::Milliseconds(10));
+    }
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+
+  // poll-based helpers avoid blocking on an empty pipe.
+  auto read_marker = [&](int timeout_ms) -> bool {
+    struct pollfd pfd = {prog_r.get(), POLLIN, 0};
+    if (poll(&pfd, 1, timeout_ms) <= 0) {
+      return false;
+    }
+    char buf[64];
+    return read(prog_r.get(), buf, sizeof(buf)) > 0;
+  };
+  auto drain = [&]() {
+    while (true) {
+      struct pollfd pfd = {prog_r.get(), POLLIN, 0};
+      if (poll(&pfd, 1, 0) <= 0) {
+        break;
+      }
+      char buf[4096];
+      if (read(prog_r.get(), buf, sizeof(buf)) <= 0) {
+        break;
+      }
+    }
+  };
+
+  // The child is running and making progress.
+  ASSERT_TRUE(read_marker(5000));
+
+  // Freeze: the child must stop making progress.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // Drain any markers buffered before the child parked.
+  drain();
+
+  // No new markers arrive while frozen (~50 missed 10ms iterations).
+  EXPECT_FALSE(read_marker(500));
+
+  // Thaw: progress resumes.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+  EXPECT_TRUE(read_marker(5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// FrozenProcessKillableBySIGKILL verifies that a frozen process (parked in a
+// killable internal stop) is still terminated by SIGKILL. This is the runtime
+// proof of frozenStop.Killable().
+TEST_F(Cgroup2Test, FrozenProcessKillableBySIGKILL) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // A frozen task must still die on SIGKILL.
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGKILL);
+}
+
+// FrozenProcessWakesAndDiesOnDefaultFatalSignal verifies that a frozen
+// process (parked in a killable internal stop) is woken by a non-SIGKILL
+// signal whose default disposition terminates the process, and that the
+// resulting exit status reflects that specific signal (SIGTERM) rather than
+// SIGKILL. This is the runtime proof that ThreadGroup.applySignalSideEffects's
+// generalized wake-on-fatal-signal path only unblocks the stop, and does not
+// reuse killLocked's SIGKILL-specific delivery/exit-status semantics.
+TEST_F(Cgroup2Test, FrozenProcessWakesAndDiesOnDefaultFatalSignal) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely with SIGTERM at its default disposition (no
+    // handler installed); the parent never writes and holds the write end
+    // open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // A frozen task must wake and die on a default-disposition SIGTERM, with
+  // an exit status that reflects SIGTERM specifically, not SIGKILL.
+  ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGTERM);
+}
+
+// g_sigusr1FrozenHandledFd is the write end of a pipe that
+// HandleSigusr1ForFrozenTest writes a token to when SIGUSR1 is actually
+// delivered to (and handled by) the forked child in
+// FrozenProcessDefersNonFatalSignalUntilThaw below. It is set by that child
+// itself, immediately after fork() and before installing the handler, so it
+// is only ever touched within that single forked, single-threaded child
+// process.
+int g_sigusr1FrozenHandledFd = -1;
+
+void HandleSigusr1ForFrozenTest(int sig) {
+  char token = 1;
+  (void)write(g_sigusr1FrozenHandledFd, &token, 1);
+}
+
+// FrozenProcessDefersNonFatalSignalUntilThaw verifies that a frozen process
+// (parked in a killable internal stop) does NOT dequeue and deliver a
+// pending signal whose default disposition is not fatal -- specifically, a
+// SIGUSR1 with a handler installed -- while frozen: the handler must not
+// run, and the process must not exit. Once thawed, the same still-pending
+// signal must then be delivered normally (the handler runs). This is the
+// runtime proof of the peekPendingBit-gated ordering in
+// runInterrupt.execute(): freeze must take effect before an already-pending,
+// non-fatal signal is dequeued, and must never delay a signal whose default
+// disposition is fatal (covered separately by
+// FrozenProcessWakesAndDiesOnDefaultFatalSignal above).
+TEST_F(Cgroup2Test, FrozenProcessDefersNonFatalSignalUntilThaw) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  int handled_fds[2];
+  ASSERT_THAT(pipe(handled_fds), SyscallSucceeds());
+  FileDescriptor handled_r(handled_fds[0]);
+  FileDescriptor handled_w(handled_fds[1]);
+
+  // ready_fds signals from the child to the parent that its sigaction(2)
+  // call has actually completed, so the parent does not freeze the child
+  // while SIGUSR1 is still SIG_DFL: a freeze that lands in that window would
+  // make the wake-on-fatal-signal path correctly kill the child instead of
+  // deferring the (not-yet-installed) handler, which is not what this test
+  // means to exercise.
+  int ready_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]);
+  FileDescriptor ready_w(ready_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    handled_r.reset();
+    ready_r.reset();
+    g_sigusr1FrozenHandledFd = handled_w.release();
+
+    struct sigaction sa = {};
+    sa.sa_handler = HandleSigusr1ForFrozenTest;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;  // No SA_RESTART: the read() below must return EINTR on
+                      // signal delivery so the child observes it and loops,
+                      // rather than either exiting or silently swallowing
+                      // delivery via a transparent restart.
+    if (sigaction(SIGUSR1, &sa, nullptr) != 0) {
+      _exit(1);
+    }
+
+    char ready_token = 1;
+    if (write(ready_w.get(), &ready_token, 1) != 1) {
+      _exit(1);
+    }
+    ready_w.reset();
+
+    // Block indefinitely, waking on either signal delivery (EINTR, in which
+    // case keep blocking) or the parent closing go_w (EOF), whichever comes
+    // first. The parent never writes to go_w; it only closes it once the
+    // test is done observing the handler's effect, to let this child exit.
+    char token;
+    ssize_t n;
+    while ((n = read(go_r.get(), &token, 1)) < 0 && errno == EINTR) {
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+  handled_w.reset();
+  ready_w.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // Wait for the child's sigaction(SIGUSR1, ...) to actually complete before
+  // entering it into the cgroup and freezing it.
+  char ready_token;
+  ASSERT_THAT(read(ready_r.get(), &ready_token, 1),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  ASSERT_THAT(kill(pid, SIGUSR1), SyscallSucceeds());
+
+  // While frozen, the handler must not run: poll the handled-pipe with a
+  // bounded timeout and expect no data, and confirm the process is still
+  // alive (not reaped) throughout.
+  struct pollfd pfd = {.fd = handled_r.get(), .events = POLLIN};
+  EXPECT_THAT(poll(&pfd, 1, /*timeout=*/500), SyscallSucceedsWithValue(0))
+      << "SIGUSR1 handler ran (or the process exited) while frozen";
+  EXPECT_EQ(waitpid(pid, nullptr, WNOHANG), 0) << "process exited while frozen";
+
+  // Thaw. The still-pending SIGUSR1 must now be dequeued and delivered.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  WaitForFrozen(child, 0);
+
+  pfd = {.fd = handled_r.get(), .events = POLLIN};
+  ASSERT_THAT(poll(&pfd, 1, /*timeout=*/5000), SyscallSucceedsWithValue(1))
+      << "SIGUSR1 handler did not run after thaw";
+  char token;
+  EXPECT_THAT(read(handled_r.get(), &token, 1), SyscallSucceedsWithValue(1));
+
+  // Let the child exit normally.
+  go_w.reset();
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+// IgnoreSigusr1ForFatalRaceTest is installed as SIGUSR1's handler in
+// FrozenProcessDiesOnFatalSignalWithLowerNumberedSignalPending below, purely
+// so SIGUSR1's disposition isn't SIG_DFL (which would make it fatal too).
+void IgnoreSigusr1ForFatalRaceTest(int sig) {}
+
+// FrozenProcessDiesOnFatalSignalWithLowerNumberedSignalPending verifies that
+// a frozen process wakes and dies on a fatal-by-default signal even when a
+// lower-numbered, non-fatal signal was queued first. On Linux this races
+// with the target's own scheduling and isn't guaranteed either way; gVisor
+// deliberately guarantees the process dies, so this test is gVisor-only.
+TEST_F(Cgroup2Test,
+       FrozenProcessDiesOnFatalSignalWithLowerNumberedSignalPending) {
+  SKIP_IF(!IsRunningOnGvisor());
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int ready_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]);
+  FileDescriptor ready_w(ready_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    ready_r.reset();
+
+    struct sigaction sa = {};
+    sa.sa_handler = IgnoreSigusr1ForFatalRaceTest;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGUSR1, &sa, nullptr) != 0) {
+      _exit(1);
+    }
+
+    char ready_token = 1;
+    if (write(ready_w.get(), &ready_token, 1) != 1) {
+      _exit(1);
+    }
+    ready_w.reset();
+
+    // Block indefinitely; SIGTERM at its default disposition should
+    // eventually kill this process.
+    while (true) {
+      pause();
+    }
+  }
+  ASSERT_GT(pid, 0);
+  ready_w.reset();
+  auto clean_pid = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // Wait for the child's sigaction(SIGUSR1, ...) to actually complete before
+  // entering it into the cgroup and freezing it.
+  char ready_token;
+  ASSERT_THAT(read(ready_r.get(), &ready_token, 1),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  // Queue the lower-numbered, non-fatal signal first, then the
+  // higher-numbered, fatal-by-default one.
+  ASSERT_THAT(kill(pid, SIGUSR1), SyscallSucceeds());
+  ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+  // The frozen process must still die on SIGTERM. Poll with WNOHANG on a
+  // bounded deadline instead of a blocking waitpid: if the fatal-signal gate
+  // regresses to only inspecting the lowest-numbered pending signal, this
+  // process never dies while frozen, and a blocking wait would hang forever.
+  int status = 0;
+  bool exited = false;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (absl::Now() < deadline) {
+    pid_t ret = waitpid(pid, &status, WNOHANG);
+    if (ret == pid) {
+      exited = true;
+      break;
+    }
+    ASSERT_EQ(ret, 0) << "waitpid failed: " << strerror(errno);
+    absl::SleepFor(absl::Milliseconds(50));
+  }
+  ASSERT_TRUE(exited) << "frozen process did not die on SIGTERM within the "
+                         "deadline -- a lower-numbered pending SIGUSR1 is "
+                         "likely blocking the fatal-signal gate";
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGTERM);
+}
+
+// FrozenProcessDefersCoreDumpSignalUntilThaw verifies that a core-dump-default
+// signal (SIGQUIT) does not kill a frozen process -- it stays queued until
+// thaw -- unlike a term-default signal (SIGTERM), which kills it immediately
+// while still frozen. Linux's complete_signal() gates its fatal-wake fast
+// path on !sig_kernel_coredump(sig): core-dump signals only ever reach
+// get_signal()'s normal dequeue path, which a frozen task never runs until
+// thaw.
+TEST_F(Cgroup2Test, FrozenProcessDefersCoreDumpSignalUntilThaw) {
+  // SIGQUIT: frozen, must not die until thaw.
+  {
+    Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("quit"));
+    pid_t pid = fork();
+    if (pid == 0) {
+      // Explicitly force SIG_DFL rather than relying on inherited
+      // disposition: fork() preserves whatever disposition (SIG_DFL,
+      // SIG_IGN, or a handler) the parent currently has for SIGQUIT, so if
+      // the environment running this test has it ignored or handled, the
+      // child would inherit that, and the signal below would vanish
+      // silently instead of exercising the core-dump-default path this
+      // test is about.
+      struct sigaction sa = {};
+      sa.sa_handler = SIG_DFL;
+      if (sigaction(SIGQUIT, &sa, nullptr) != 0) {
+        _exit(1);
+      }
+      while (true) {
+        pause();
+      }
+    }
+    ASSERT_GT(pid, 0);
+    auto cleanup = Cleanup([&] {
+      kill(pid, SIGKILL);
+      waitpid(pid, nullptr, 0);
+    });
+
+    ASSERT_NO_ERRNO(child.Enter(pid));
+    ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+    WaitForFrozen(child, 1);
+
+    ASSERT_THAT(kill(pid, SIGQUIT), SyscallSucceeds());
+
+    // Must not die while frozen; give it a full second to prove that.
+    int status = 0;
+    const absl::Time not_dead_deadline = absl::Now() + absl::Seconds(1);
+    while (absl::Now() < not_dead_deadline) {
+      ASSERT_THAT(waitpid(pid, &status, WNOHANG), SyscallSucceedsWithValue(0))
+          << "SIGQUIT killed the frozen process before thaw, status = "
+          << status;
+      absl::SleepFor(absl::Milliseconds(50));
+    }
+
+    // Thaw: the queued SIGQUIT should now kill it. Poll with WNOHANG on a
+    // bounded deadline rather than a blocking waitpid, so a regression here
+    // fails loudly instead of hanging the test.
+    ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+    bool exited = false;
+    const absl::Time dead_deadline = absl::Now() + absl::Seconds(10);
+    while (absl::Now() < dead_deadline) {
+      pid_t ret = waitpid(pid, &status, WNOHANG);
+      if (ret == pid) {
+        exited = true;
+        break;
+      }
+      ASSERT_EQ(ret, 0) << "waitpid failed: " << strerror(errno);
+      absl::SleepFor(absl::Milliseconds(50));
+    }
+    ASSERT_TRUE(exited) << "process did not die on the queued SIGQUIT after "
+                           "thaw within the deadline";
+    EXPECT_TRUE(WIFSIGNALED(status));
+    EXPECT_EQ(WTERMSIG(status), SIGQUIT);
+  }
+
+  // SIGTERM: frozen, must die immediately (comparison).
+  {
+    Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("term"));
+    pid_t pid = fork();
+    if (pid == 0) {
+      while (true) {
+        pause();
+      }
+    }
+    ASSERT_GT(pid, 0);
+    auto cleanup = Cleanup([&] {
+      kill(pid, SIGKILL);
+      waitpid(pid, nullptr, 0);
+    });
+
+    ASSERT_NO_ERRNO(child.Enter(pid));
+    ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+    WaitForFrozen(child, 1);
+
+    ASSERT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+    int status = 0;
+    bool exited = false;
+    const absl::Time deadline = absl::Now() + absl::Seconds(10);
+    while (absl::Now() < deadline) {
+      pid_t ret = waitpid(pid, &status, WNOHANG);
+      if (ret == pid) {
+        exited = true;
+        break;
+      }
+      ASSERT_EQ(ret, 0) << "waitpid failed: " << strerror(errno);
+      absl::SleepFor(absl::Milliseconds(50));
+    }
+    ASSERT_TRUE(exited) << "SIGTERM did not kill the frozen process within "
+                           "the deadline";
+    EXPECT_TRUE(WIFSIGNALED(status));
+    EXPECT_EQ(WTERMSIG(status), SIGTERM);
+  }
+}
+
+// FrozenCgroupNotThawedBySIGCONT verifies that sending SIGCONT to a member
+// task of a frozen cgroup does not thaw it. SIGCONT's side effect of ending a
+// job-control group-stop (ThreadGroup.applySignalSideEffectsLocked's sig ==
+// linux.SIGCONT case, endGroupStopLocked) is specific to *groupStop; cgroup
+// v2 freeze is a separate stop mechanism (frozenStop) with its own explicit
+// thaw path (writing "0" to cgroup.freeze), and must not be conflated with
+// job control -- matching Linux, where the cgroup v2 freezer likewise
+// ignores SIGCONT.
+TEST_F(Cgroup2Test, FrozenCgroupNotThawedBySIGCONT) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    go_w.reset();
+    // Block indefinitely; the parent never writes and holds the write end
+    // open.
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(0);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  go_r.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(child.Enter(pid));
+
+  // Freeze and wait for the effective state to actually take hold.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+
+  // SIGCONT must not thaw the cgroup: give it a moment to (not) take
+  // effect, then confirm it is still frozen and the process is still alive.
+  absl::SleepFor(absl::Milliseconds(200));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")))
+      << "SIGCONT thawed a frozen cgroup";
+  EXPECT_EQ(waitpid(pid, nullptr, WNOHANG), 0)
+      << "process exited despite SIGCONT not being fatal";
+
+  // The explicit thaw path must still work afterward.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+  WaitForFrozen(child, 0);
+
+  // Let the child exit normally.
+  go_w.reset();
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+// CgroupFreezeEffectiveStateAndPropagation verifies that the cgroup.events
+// "frozen" line reflects the effective state (self or any ancestor), that
+// freeze propagates to descendants, and that cgroup.freeze itself reports only
+// the cgroup's own requested flag.
+TEST_F(Cgroup2Test, CgroupFreezeEffectiveStateAndPropagation) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  // Initially nothing is frozen.
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Freeze the parent: effective state propagates to the child, but the child's
+  // own cgroup.freeze flag stays 0.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("1")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.freeze"),
+              IsPosixErrorOkAndHolds(HasSubstr("0")));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Thaw the parent: effective state clears everywhere.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+
+  // Freeze only the child: the parent is unaffected.
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "1"));
+  EXPECT_THAT(child.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+  EXPECT_THAT(parent.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 0")));
+  ASSERT_NO_ERRNO(child.WriteControlFile("cgroup.freeze", "0"));
+}
+
+// CgroupFreezeInvalidInput verifies input validation on cgroup.freeze.
+TEST_F(Cgroup2Test, CgroupFreezeInvalidInput) {
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+  // Matches Linux: an out-of-range integer is ERANGE, a non-integer is EINVAL.
+  EXPECT_THAT(child.WriteControlFile("cgroup.freeze", "2"),
+              PosixErrorIs(ERANGE));
+  EXPECT_THAT(child.WriteControlFile("cgroup.freeze", "abc"),
+              PosixErrorIs(EINVAL));
+  EXPECT_TRUE(child.WriteControlFile("cgroup.freeze", "1").ok());
+  EXPECT_TRUE(child.WriteControlFile("cgroup.freeze", "0").ok());
+}
+
+// FreezeAncestorStopsDescendantTasks proves task-level freeze propagation: a
+// process in a descendant cgroup actually stops when an ancestor is frozen (not
+// merely that cgroup.events reports "frozen 1").
+TEST_F(Cgroup2Test, FreezeAncestorStopsDescendantTasks) {
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      SleepSafe(absl::Milliseconds(10));
+    }
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // The process lives in the descendant cgroup.
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  // Freeze the ANCESTOR: the descendant's process must stop.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(child, 1);
+  DrainMarkers(prog_r.get());
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+
+  // Thaw the ancestor: the descendant's process resumes.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// FreezeThawPropagatesThroughGrandchildTree is an end-to-end health check
+// for a W -> A -> B hierarchy: freezing the root must eventually settle
+// the whole tree, and thawing must free every task again. The counting
+// bug this once caught (an ancestor walk that missed a still-unsettled
+// grandchild, permanently corrupting a settled-child counter) is now
+// proven deterministically at the unit level by
+// TestFreezeCreditAccountingAccountsForGrandchildren in
+// pkg/sentry/fsimpl/cgroup2fs -- a syscall-level test can't reliably force
+// or observe that specific race, since gVisor's task-wake latency makes it
+// unobservable from outside the sentry.
+TEST_F(Cgroup2Test, FreezeThawPropagatesThroughGrandchildTree) {
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("b"));
+
+  // a_pid: a plain progress-marking loop, entered directly into A.
+  int a_prog_fds[2];
+  ASSERT_THAT(pipe(a_prog_fds), SyscallSucceeds());
+  FileDescriptor a_prog_r(a_prog_fds[0]);
+  FileDescriptor a_prog_w(a_prog_fds[1]);
+  int a_go_fds[2];
+  ASSERT_THAT(pipe(a_go_fds), SyscallSucceeds());
+  FileDescriptor a_go_r(a_go_fds[0]);
+  FileDescriptor a_go_w(a_go_fds[1]);
+
+  pid_t a_pid = fork();
+  if (a_pid == 0) {
+    a_prog_r.reset();
+    a_go_w.reset();
+    char token;
+    if (read(a_go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(a_prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      SleepSafe(absl::Milliseconds(10));
+    }
+  }
+  ASSERT_GT(a_pid, 0);
+  a_prog_w.reset();
+  a_go_r.reset();
+
+  // b_pid: an equally ordinary progress-marking loop, entered directly
+  // into B. Nothing (ptrace, SIGSTOP, migration) artificially holds it
+  // back from parking -- it's a plain task exercising the same
+  // applyFreezeSigLocked path as a_pid.
+  int b_prog_fds[2];
+  ASSERT_THAT(pipe(b_prog_fds), SyscallSucceeds());
+  FileDescriptor b_prog_r(b_prog_fds[0]);
+  FileDescriptor b_prog_w(b_prog_fds[1]);
+  int b_go_fds[2];
+  ASSERT_THAT(pipe(b_go_fds), SyscallSucceeds());
+  FileDescriptor b_go_r(b_go_fds[0]);
+  FileDescriptor b_go_w(b_go_fds[1]);
+
+  pid_t b_pid = fork();
+  if (b_pid == 0) {
+    b_prog_r.reset();
+    b_go_w.reset();
+    char token;
+    if (read(b_go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(b_prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      SleepSafe(absl::Milliseconds(10));
+    }
+  }
+  ASSERT_GT(b_pid, 0);
+  b_prog_w.reset();
+  b_go_r.reset();
+
+  auto cleanup = Cleanup([&] {
+    kill(a_pid, SIGKILL);
+    waitpid(a_pid, nullptr, 0);
+    kill(b_pid, SIGKILL);
+    waitpid(b_pid, nullptr, 0);
+  });
+
+  ASSERT_NO_ERRNO(a.Enter(a_pid));
+  ASSERT_NO_ERRNO(b.Enter(b_pid));
+  ASSERT_THAT(write(a_go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_THAT(write(b_go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(a_prog_r.get(), 5000));
+  ASSERT_TRUE(ReadMarker(b_prog_r.get(), 5000));
+
+  // Freeze the whole tree and wait (via WaitForFrozen) for both tasks to
+  // actually settle. As noted above, whichever of a_pid/b_pid parks first
+  // here is a real race this test doesn't control -- and doesn't need to.
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(a, 1);
+  WaitForFrozen(b, 1);
+  WaitForFrozen(c(), 1);
+  DrainMarkers(a_prog_r.get());
+  DrainMarkers(b_prog_r.get());
+  EXPECT_FALSE(ReadMarker(a_prog_r.get(), 500));
+  EXPECT_FALSE(ReadMarker(b_prog_r.get(), 500));
+
+  // Thaw: both tasks must resume.
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.freeze", "0"));
+  WaitForFrozen(c(), 0);
+  ASSERT_TRUE(ReadMarker(a_prog_r.get(), 5000));
+  ASSERT_TRUE(ReadMarker(b_prog_r.get(), 5000));
+}
+
+// FrozenProcessAlreadyGroupStoppedCountsAsFrozenImmediately regresses
+// applyFreezeSigLocked's case (a): a task that's already group-stopped
+// (SIGSTOP) when freeze is ordered can never reach *frozenStop -- its
+// single t.stop slot is occupied by *groupStop until continued -- so
+// without special-casing it, it would never pay its freeze credit and the
+// cgroup would never report "frozen 1", even though Linux counts a
+// group-stopped task as already frozen. No credit should be issued for it
+// at all, so freeze must settle immediately.
+TEST_F(Cgroup2Test, FrozenProcessAlreadyGroupStoppedCountsAsFrozenImmediately) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    raise(SIGSTOP);
+    while (true) {
+      pause();
+    }
+  }
+  ASSERT_GT(pid, 0);
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << "status = " << status;
+
+  ASSERT_NO_ERRNO(cg.Enter(pid));
+
+  // pid is already group-stopped when freeze is ordered here. It must not
+  // block settling -- WaitForFrozen's 2-second deadline would mask a
+  // regression back to waiting on pid to reach *frozenStop, which it never
+  // will while stopped.
+  ASSERT_NO_ERRNO(cg.WriteControlFile("cgroup.freeze", "1"));
+  WaitForFrozen(cg, 1);
+}
+
+// CloneIntoFrozenCgroupStartsFrozen verifies that a task born (via
+// CLONE_INTO_CGROUP) directly into a frozen cgroup starts frozen and runs no
+// application code until thawed. (A plain fork/CLONE_THREAD into a frozen group
+// isn't reachable from within it — the creating task would already be frozen —
+// so CLONE_INTO_CGROUP from an unfrozen parent is the testable birth case.)
+TEST_F(Cgroup2Test, CloneIntoFrozenCgroupStartsFrozen) {
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+  FileDescriptor cgroup_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(frozen_cg.Path(), O_RDONLY | O_DIRECTORY));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+
+  clone_args args = {};
+  args.flags = CLONE_INTO_CGROUP;
+  args.cgroup = cgroup_fd.get();
+  args.exit_signal = SIGCHLD;
+  pid_t pid = clone3(&args, sizeof(args));
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    prog_r.reset();
+    // Born into a frozen cgroup: this loop must not run until thawed.
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      SleepSafe(absl::Milliseconds(10));
+    }
+  }
+  prog_w.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // The child was born frozen: no progress markers appear.
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+  EXPECT_THAT(frozen_cg.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("frozen 1")));
+
+  // Thaw: the child now runs for the first time.
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "0"));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
+// CloneIntoFrozenCgroupRepeatedStartsAllFrozen guards against a regression of
+// the race where a child was briefly visible in the cgroup's task list
+// before its frozen state was relayed, letting a concurrent thaw's task-list
+// walk skip it and leave it stuck frozen forever (fixed by relaying frozen
+// state inside CanEnter's commit(), the same tasksMu section that adds the
+// task to the list). Forking several children in a row, instead of just one,
+// gives the race more chances to have shown up before the fix.
+TEST_F(Cgroup2Test, CloneIntoFrozenCgroupRepeatedStartsAllFrozen) {
+  constexpr int kNumChildren = 10;
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+  FileDescriptor cgroup_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(frozen_cg.Path(), O_RDONLY | O_DIRECTORY));
+
+  std::vector<pid_t> pids;
+  std::vector<FileDescriptor> prog_rs;
+  auto cleanup = Cleanup([&] {
+    for (pid_t pid : pids) {
+      kill(pid, SIGKILL);
+      waitpid(pid, nullptr, 0);
+    }
+  });
+  for (int i = 0; i < kNumChildren; ++i) {
+    int prog_fds[2];
+    ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+    FileDescriptor prog_r(prog_fds[0]);
+    FileDescriptor prog_w(prog_fds[1]);
+
+    clone_args args = {};
+    args.flags = CLONE_INTO_CGROUP;
+    args.cgroup = cgroup_fd.get();
+    args.exit_signal = SIGCHLD;
+    pid_t pid = clone3(&args, sizeof(args));
+    ASSERT_THAT(pid, SyscallSucceeds());
+    if (pid == 0) {
+      prog_r.reset();
+      // Born into an already-frozen cgroup: this loop must not run until
+      // thawed.
+      while (true) {
+        if (write(prog_w.get(), "x", 1) != 1) {
+          _exit(2);
+        }
+        SleepSafe(absl::Milliseconds(10));
+      }
+    }
+    prog_w.reset();
+    pids.push_back(pid);
+    prog_rs.push_back(std::move(prog_r));
+  }
+
+  // Every child was born frozen: none produce a progress marker, and the
+  // cgroup settles into "frozen 1" once all of them have parked.
+  for (auto& prog_r : prog_rs) {
+    EXPECT_FALSE(ReadMarker(prog_r.get(), 200));
+  }
+  WaitForFrozen(frozen_cg, 1);
+  for (auto& prog_r : prog_rs) {
+    EXPECT_FALSE(ReadMarker(prog_r.get(), 0));
+  }
+
+  // Thaw: every child now runs for the first time.
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "0"));
+  for (auto& prog_r : prog_rs) {
+    EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+  }
+}
+
+// MigrateIntoFrozenFreezesAndOutResumes proves the attach() reconciliation: a
+// running task migrated (via cgroup.procs) into a frozen cgroup stops, and
+// migrated back out resumes. Without the attach() fix, freeze would be
+// escapable by moving a task out of a frozen subtree.
+TEST_F(Cgroup2Test, MigrateIntoFrozenFreezesAndOutResumes) {
+  Cgroup frozen_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("frozen"));
+  Cgroup normal_cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("normal"));
+  ASSERT_NO_ERRNO(frozen_cg.WriteControlFile("cgroup.freeze", "1"));
+
+  int prog_fds[2];
+  ASSERT_THAT(pipe(prog_fds), SyscallSucceeds());
+  FileDescriptor prog_r(prog_fds[0]);
+  FileDescriptor prog_w(prog_fds[1]);
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    prog_r.reset();
+    go_w.reset();
+    char token;
+    if (read(go_r.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    while (true) {
+      if (write(prog_w.get(), "x", 1) != 1) {
+        _exit(2);
+      }
+      SleepSafe(absl::Milliseconds(10));
+    }
+  }
+  ASSERT_GT(pid, 0);
+  prog_w.reset();
+  go_r.reset();
+  auto cleanup = Cleanup([&] {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+  });
+
+  // Start out running in the unfrozen cgroup.
+  ASSERT_NO_ERRNO(normal_cg.Enter(pid));
+  ASSERT_THAT(write(go_w.get(), "x", 1), SyscallSucceeds());
+  ASSERT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  // Migrate into the frozen cgroup: the task must stop.
+  ASSERT_NO_ERRNO(frozen_cg.Enter(pid));
+  WaitForFrozen(frozen_cg, 1);
+  DrainMarkers(prog_r.get());
+  EXPECT_FALSE(ReadMarker(prog_r.get(), 500));
+
+  // Migrate back out to the unfrozen cgroup: the task must resume.
+  ASSERT_NO_ERRNO(normal_cg.Enter(pid));
+  EXPECT_TRUE(ReadMarker(prog_r.get(), 5000));
+
+  ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+}
+
 TEST_F(Cgroup2Test, DescendantsStatAndLimit) {
   // Verify defaults.
   EXPECT_THAT(c().ReadControlFile("cgroup.stat"),
@@ -1517,6 +2841,83 @@ TEST_F(Cgroup2Test, V1MountSucceedsAndV2OwnershipReturnsOnUnmount) {
   EXPECT_THAT(available, ::testing::HasSubstr("pids"));
 }
 
+// Exercises cgroup.kill while the memory controller is mounted in a v1
+// hierarchy. Stealing the memory controller from v2 acquires the v2 tasks
+// lock under the cgroup registry lock, and cgroup.kill sends signals while
+// holding the same tasks lock; task creation meanwhile enters the initial v1
+// cgroups while holding the signal handlers lock. Together these form a lock
+// order cycle that gVisor builds with lock dependency checking (the "lockdep"
+// go build tag) detect and panic on.
+TEST_F(Cgroup2Test, KillWithV1MemoryMounted) {
+  auto v2_mount = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  Mounter v2_mounter(std::move(v2_mount));
+  auto v2_cg = ASSERT_NO_ERRNO_AND_VALUE(v2_mounter.MountCgroup2fs());
+
+  // Skip if v2 doesn't have memory to begin with.
+  auto available =
+      ASSERT_NO_ERRNO_AND_VALUE(v2_cg.ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(available, "memory"));
+  // Skip if we can't drain memory from below v2 root.
+  PosixError drain =
+      v2_cg.WriteControlFile("cgroup.subtree_control", "-memory");
+  SKIP_IF(drain.errno_value() == EBUSY);
+
+  // Steal the memory controller away from v2 by mounting it in v1.
+  auto v1_mount = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  Mounter v1_mounter(std::move(v1_mount));
+  auto v1_cg = ASSERT_NO_ERRNO_AND_VALUE(v1_mounter.MountCgroupfs("memory"));
+
+  Cgroup child_cg =
+      ASSERT_NO_ERRNO_AND_VALUE(v2_cg.CreateChild("kill_v1mem_test"));
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(wfd.get());
+    char token;
+    if (read(rfd.get(), &token, 1) <= 0) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  rfd.reset();
+
+  ASSERT_NO_ERRNO(child_cg.Enter(pid));
+
+  // Killing the cgroup sends SIGKILL to its tasks while the stolen memory
+  // controller's v1 hierarchy is mounted.
+  EXPECT_TRUE(child_cg.WriteControlFile("cgroup.kill", "1").ok());
+  wfd.reset();
+
+  int status;
+  ASSERT_EQ(waitpid(pid, &status, 0), pid);
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(WTERMSIG(status), SIGKILL);
+
+  // The killed task may leave the cgroup asynchronously; retry the removal.
+  absl::Time deadline = absl::Now() + absl::Seconds(5);
+  PosixError err;
+  while (true) {
+    err = Rmdir(child_cg.Path());
+    if (err.ok() || absl::Now() >= deadline) {
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+  EXPECT_NO_ERRNO(err);
+
+  // Return the memory controller to v2.
+  ASSERT_NO_ERRNO(v1_mounter.Unmount(v1_cg));
+  if (drain.ok()) {
+    v2_cg.WriteControlFile("cgroup.subtree_control", "+memory").IgnoreError();
+  }
+}
+
 TEST_F(Cgroup2Test, MemoryCurrent) {
   DisableSave ds;  // Avoid S/R memory overhead.
   ASSERT_NO_ERRNO(c().Enter(getpid()));
@@ -1535,13 +2936,47 @@ TEST_F(Cgroup2Test, MemoryCurrent) {
 
   // Touch the memory to ensure it's actually allocated (faulted in).
   memset(mem, 1, kMemSize);
-  // Sleep to wait past the sentry's internal 10ms memory usage stats update
+  // Loop to wait past the sentry's internal 10ms memory usage stats update
   // throttle window (f.nextCommitScan in pgalloc.go).
-  absl::SleepFor(absl::Milliseconds(15));
-  const uint64_t usage_after =
-      ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.current"));
+  uint64_t usage_after = 0;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (true) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage_after =
+        ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.current"));
+    if (usage_after >= usage + kMemSize - kMemFloorSlack &&
+        usage_after <= usage + kMemSize + kMemCeilingSlack) {
+      break;
+    }
+    if (absl::Now() >= deadline) {
+      break;
+    }
+  }
   EXPECT_GE(usage_after, usage + kMemSize - kMemFloorSlack);
   EXPECT_LE(usage_after, usage + kMemSize + kMemCeilingSlack);
+}
+
+TEST_F(Cgroup2Test, MemoryFilesNotOnRoot) {
+  // The memory controller's interface files are CFTYPE_NOT_ON_ROOT in Linux:
+  // they must not exist on the root cgroup of a cgroup2 hierarchy, only on
+  // non-root cgroups.
+  const std::string available =
+      ASSERT_NO_ERRNO_AND_VALUE(root().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(available, "memory"));
+
+  // Absent on the root cgroup.
+  for (const char* name :
+       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+    EXPECT_THAT(Exists(root().Relpath(name)), IsPosixErrorOkAndHolds(false))
+        << name << " should not exist on the root cgroup";
+  }
+
+  // Present on a non-root cgroup that has the memory controller.
+  for (const char* name :
+       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+    EXPECT_THAT(Exists(c().Relpath(name)), IsPosixErrorOkAndHolds(true))
+        << name << " should exist on a non-root cgroup";
+  }
 }
 
 TEST_F(Cgroup2Test, MemoryIsChargedToNearestAncestorWithController) {
@@ -1569,13 +3004,24 @@ TEST_F(Cgroup2Test, MemoryIsChargedToNearestAncestorWithController) {
   ASSERT_NE(mem2, MAP_FAILED);
   auto clean_mem2 = Cleanup([&] { munmap(mem2, kMemSize); });
   memset(mem2, 1, kMemSize);
-  // Sleep to wait past the sentry's internal 10ms memory usage stats update
+  // Loop to wait past the sentry's internal 10ms memory usage stats update
   // throttle window (f.nextCommitScan in pgalloc.go).
-  absl::SleepFor(absl::Milliseconds(15));
+  uint64_t usage_child = 0;
+  const absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (true) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage_child = ASSERT_NO_ERRNO_AND_VALUE(
+        child.ReadIntegerControlFile("memory.current"));
+    if (usage_child >= base_usage_child + kMemSize - kMemFloorSlack &&
+        usage_child <= base_usage_child + kMemSize + kMemCeilingSlack) {
+      break;
+    }
+    if (absl::Now() >= deadline) {
+      break;
+    }
+  }
 
   // `child` should now reflect base_usage_child + kMemSize approximately.
-  const uint64_t usage_child =
-      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("memory.current"));
   EXPECT_GE(usage_child, base_usage_child + kMemSize - kMemFloorSlack);
   EXPECT_LE(usage_child, base_usage_child + kMemSize + kMemCeilingSlack);
 
@@ -1763,6 +3209,1255 @@ TEST_F(Cgroup2Test, CpuLimits) {
               PosixErrorIs(ERANGE));
   EXPECT_THAT(parent.WriteControlFile("cpu.weight", "abc"),
               PosixErrorIs(EINVAL));
+}
+
+// The helpers below are for use in forked children: they only use raw
+// syscalls and operate on caller-provided buffers to be async-signal-safe.
+
+// Reads the cgroup2 ("0::") entry from the /proc/<pid>/cgroup file at
+// proc_path and copies the path portion (after "0::") into out. Returns false
+// on failure.
+bool ReadV2PathRaw(const char* proc_path, char* out, size_t out_len) {
+  char data[4096];
+  int fd = open(proc_path, O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  ssize_t n = read(fd, data, sizeof(data) - 1);
+  close(fd);
+  if (n <= 0) {
+    return false;
+  }
+  data[n] = '\0';
+  char* entry = strstr(data, "0::");
+  if (entry == nullptr) {
+    return false;
+  }
+  entry += 3;
+  char* end = strchr(entry, '\n');
+  if (end != nullptr) {
+    *end = '\0';
+  }
+  strncpy(out, entry, out_len);
+  out[out_len - 1] = '\0';
+  return true;
+}
+
+// Writes val to the file at path. Returns 0 on success, the failing errno
+// otherwise.
+int WriteFileErrno(const char* path, absl::string_view val) {
+  if (path == nullptr) {
+    return EINVAL;
+  }
+  const int fd = open(path, O_WRONLY);
+  if (fd < 0) {
+    return errno;
+  }
+  const ssize_t n = WriteFd(fd, val.data(), val.size());
+  const int err = (n < 0 || static_cast<size_t>(n) != val.size()) ? errno : 0;
+  close(fd);
+  return err;
+}
+
+// Async-signal-safe. Returns 0 on success, the write(2) errno otherwise.
+int WriteFdErrno(int fd, absl::string_view val) {
+  const ssize_t n = WriteFd(fd, val.data(), val.size());
+  return (n < 0 || static_cast<size_t>(n) != val.size()) ? errno : 0;
+}
+
+// Whether the cgroup2 mount at `mountpoint` has the nsdelegate flag applied.
+// Mounting with the option always succeeds, but Linux silently ignores it
+// unless the mounting process is in the init cgroup namespace (see
+// apply_cgroup_root_flags in kernel/cgroup/cgroup.c), so environments that
+// themselves run inside a cgroup namespace (e.g. containerized CI sandboxes)
+// cannot turn it on. Tests of nsdelegate behavior must skip there.
+PosixErrorOr<bool> NsdelegateApplied(absl::string_view mountpoint) {
+  ASSIGN_OR_RETURN_ERRNO(std::vector<ProcMountsEntry> entries,
+                         ProcSelfMountsEntries());
+  for (const ProcMountsEntry& e : entries) {
+    if (e.mount_point == mountpoint && e.fstype == "cgroup2") {
+      return absl::StrContains(e.mount_opts, "nsdelegate");
+    }
+  }
+  return PosixError(ENOENT, absl::StrCat("no cgroup2 mount at ", mountpoint));
+}
+
+// Copies the "root" field (field 4) of the /proc/self/mountinfo entry whose
+// mount point is `mp`, into `out`. Returns false if no such entry exists.
+bool MountInfoRootRaw(absl::string_view mp, char* out, size_t out_len) {
+  if (out == nullptr || out_len == 0) {
+    return false;
+  }
+  static char data[1 << 16];
+  const int fd = open("/proc/self/mountinfo", O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  const ssize_t total = ReadFd(fd, data, sizeof(data));
+  close(fd);
+  if (total < 0) {
+    return false;
+  }
+
+  absl::string_view content(data, total);
+  while (!content.empty()) {
+    const size_t newline_pos = content.find('\n');
+    absl::string_view line = content.substr(0, newline_pos);
+    if (newline_pos != absl::string_view::npos) {
+      content.remove_prefix(newline_pos + 1);
+    } else {
+      content = absl::string_view();
+    }
+
+    // Fields: mountID parentID major:minor root mountpoint ...
+    absl::string_view fields[5];
+    bool parsed = true;
+    for (int i = 0; i < 5; ++i) {
+      const size_t space_pos = line.find(' ');
+      if (space_pos == absl::string_view::npos && i < 4) {
+        parsed = false;
+        break;
+      }
+      fields[i] = line.substr(0, space_pos);
+      if (space_pos != absl::string_view::npos) {
+        line.remove_prefix(space_pos + 1);
+      }
+    }
+    if (parsed && fields[4] == mp) {
+      const size_t copied = fields[3].copy(out, out_len - 1);
+      out[copied] = '\0';
+      return true;
+    }
+  }
+  return false;
+}
+
+// readlink() into out, NUL-terminating the result. Returns false on failure.
+bool ReadLinkRaw(const char* path, char* out, size_t out_len) {
+  if (path == nullptr || out == nullptr || out_len == 0) {
+    return false;
+  }
+  const ssize_t n = readlink(path, out, out_len - 1);
+  if (n < 0) {
+    return false;
+  }
+  out[n] = '\0';
+  return true;
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceUnshare) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_unshare"));
+  Cgroup sub = ASSERT_NO_ERRNO_AND_VALUE(cg.CreateChild("sub"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string sub_procs = sub.Relpath("cgroup.procs");
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    char before[256];
+    char after[256];
+    TEST_CHECK(ReadLinkRaw("/proc/self/ns/cgroup", before, sizeof(before)));
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(ReadLinkRaw("/proc/self/ns/cgroup", after, sizeof(after)));
+    TEST_CHECK(strcmp(before, after) != 0);
+
+    // The namespace root is the cgroup we were in when unsharing.
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+
+    // Moving to a sub-cgroup is reflected relative to the namespace root.
+    TEST_CHECK(WriteFileErrno(sub_procs.c_str(), "0") == 0);
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/sub") == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceUnshareRequiresCapability) {
+  c();  // Initialize the fixture, skipping the test if necessary.
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+  EXPECT_THAT(unshare(CLONE_NEWCGROUP), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceClone) {
+  c();  // Initialize the fixture, skipping the test if necessary.
+  const std::string self_ns =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadLink("/proc/self/ns/cgroup"));
+
+  const pid_t pid = syscall(SYS_clone, CLONE_NEWCGROUP | SIGCHLD, 0, 0, 0, 0);
+  if (pid == 0) {
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+    char link[256];
+    TEST_CHECK(ReadLinkRaw("/proc/self/ns/cgroup", link, sizeof(link)));
+    TEST_CHECK(strcmp(link, self_ns.c_str()) != 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// A process in a sibling cgroup namespace is shown with a "/.." relative path.
+TEST_F(Cgroup2Test, CgroupNamespaceSiblingPaths) {
+  Cgroup ca = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_a"));
+  Cgroup cb = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_b"));
+  const std::string cb_procs = cb.Relpath("cgroup.procs");
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  // Park a process in ns_a.
+  const pid_t parked = fork();
+  if (parked == 0) {
+    close(wfd.get());
+    char token;
+    TEST_CHECK(read(rfd.get(), &token, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(parked, 0);
+  ASSERT_NO_ERRNO(ca.Enter(parked));
+  const std::string parked_proc = absl::StrFormat("/proc/%d/cgroup", parked);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(cb_procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+    // The parked process is in a sibling cgroup, outside our namespace.
+    TEST_CHECK(ReadV2PathRaw(parked_proc.c_str(), path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/../ns_a") == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  wfd.reset();  // Release the parked process.
+  ASSERT_THAT(waitpid(parked, &status, 0), SyscallSucceedsWithValue(parked));
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceSetns) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_setns"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string canonical = cg.CanonicalPath();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    int initns = open("/proc/self/ns/cgroup", O_RDONLY);
+    TEST_PCHECK(initns >= 0);
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+
+    // Return to the initial namespace; the full path becomes visible again.
+    TEST_PCHECK(setns(initns, CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(ReadV2PathRaw("/proc/self/cgroup", path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, canonical.c_str()) == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Mounting cgroup2 requires CAP_SYS_ADMIN in the user namespace that owns
+// the mounting task's cgroup namespace. A task that unshares a new user
+// namespace while keeping its cgroup namespace lacks that capability, even
+// though it has CAP_SYS_ADMIN in the user namespace owning its new mount
+// namespace.
+TEST_F(Cgroup2Test, MountFromUnprivilegedUserNamespace) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string mntpoint = dir.path();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0);
+    TEST_CHECK(mount("none", mntpoint.c_str(), "cgroup2", 0, nullptr) < 0);
+    TEST_CHECK_MSG(errno == EPERM, "mount did not fail with EPERM");
+    // The nsdelegate option makes no difference.
+    TEST_CHECK(mount("none", mntpoint.c_str(), "cgroup2", 0, "nsdelegate") < 0);
+    TEST_CHECK_MSG(errno == EPERM, "nsdelegate mount did not fail with EPERM");
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// A task that unshares its cgroup namespace together with the user
+// namespace owns the new cgroup namespace and may mount cgroup2.
+TEST_F(Cgroup2Test, MountFromOwnedCgroupNamespace) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string mntpoint = dir.path();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", mntpoint.c_str(), "cgroup2", 0, nullptr) == 0);
+    struct statfs st;
+    TEST_PCHECK(statfs(mntpoint.c_str(), &st) == 0);
+    TEST_CHECK(st.f_type == CGROUP2_SUPER_MAGIC);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(Cgroup2Test, CgroupNamespaceSetnsPidfd) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_pidfd"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+
+  int ready_fds[2];
+  int release_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  ASSERT_THAT(pipe(release_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]), ready_w(ready_fds[1]);
+  FileDescriptor release_r(release_fds[0]), release_w(release_fds[1]);
+
+  // The target process unshares into a new cgroup namespace rooted at
+  // ns_pidfd, then waits.
+  const pid_t target = fork();
+  if (target == 0) {
+    close(ready_r.get());
+    close(release_w.get());
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    char token = 't';
+    TEST_CHECK(write(ready_w.get(), &token, 1) == 1);
+    close(ready_w.get());
+    TEST_CHECK(read(release_r.get(), &token, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(target, 0);
+  ready_w.reset();
+  char token;
+  ASSERT_THAT(read(ready_r.get(), &token, 1), SyscallSucceedsWithValue(1));
+  const std::string target_proc = absl::StrFormat("/proc/%d/cgroup", target);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    int pidfd = syscall(SYS_pidfd_open, target, 0);
+    TEST_PCHECK(pidfd >= 0);
+    TEST_PCHECK(setns(pidfd, CLONE_NEWCGROUP) == 0);
+    // The target sits at the root of the namespace we just joined.
+    char path[256];
+    TEST_CHECK(ReadV2PathRaw(target_proc.c_str(), path, sizeof(path)));
+    TEST_CHECK_MSG(strcmp(path, "/") == 0, path);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  release_w.reset();
+  ASSERT_THAT(waitpid(target, &status, 0), SyscallSucceedsWithValue(target));
+}
+
+// Mounting cgroup2 from inside a cgroup namespace roots the mount at the
+// namespace root cgroup.
+TEST_F(Cgroup2Test, CgroupNamespaceMount) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("ns_mount"));
+  ASSERT_NO_ERRNO(cg.CreateChild("inner"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+
+  TempPath mntdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = mntdir.path();
+  const std::string inner_path = JoinPath(dir, "inner");
+  // cgroup.type only exists on non-root cgroups, so its presence at the mount
+  // root proves the mount is rooted at the (non-root) namespace root.
+  const std::string type_path = JoinPath(dir, "cgroup.type");
+  // The fixture's "test" cgroup exists at the hierarchy root, and must not be
+  // visible at the mount root.
+  const std::string outside_path = JoinPath(dir, "test");
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", dir.c_str(), "cgroup2", 0, nullptr) == 0);
+    TEST_CHECK(access(inner_path.c_str(), F_OK) == 0);
+    TEST_CHECK(access(type_path.c_str(), F_OK) == 0);
+    TEST_CHECK(access(outside_path.c_str(), F_OK) != 0);
+    TEST_PCHECK(umount2(dir.c_str(), MNT_DETACH) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // In case the child died before unmounting.
+  umount2(dir.c_str(), MNT_DETACH);
+}
+
+// Verifies the mountinfo "root" field for cgroup2 mounts with and without a
+// cgroup namespace.
+//
+//   mount rooted at        read from init ns    read from cgroupns @ /test/mi
+//   ---------------        -----------------    -----------------------------
+//   the real root          "/"                  "/../.."
+//   /test/mi               "/test/mi"           "/"
+TEST_F(Cgroup2Test, MountInfoRootIsCgroupNamespaceRelative) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("mi"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string canonical = cg.CanonicalPath();  // "/test/mi"
+  // The fixture's mount of the full hierarchy.
+  const std::string full_mp = root().Path();
+
+  TempPath mntdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string ns_mp = mntdir.path();
+
+  int ready_fds[2];
+  int done_fds[2];
+  ASSERT_THAT(pipe(ready_fds), SyscallSucceeds());
+  ASSERT_THAT(pipe(done_fds), SyscallSucceeds());
+  FileDescriptor ready_r(ready_fds[0]), ready_w(ready_fds[1]);
+  FileDescriptor done_r(done_fds[0]), done_w(done_fds[1]);
+
+  const pid_t child = fork();
+  if (child == 0) {
+    close(ready_r.get());
+    close(done_w.get());
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", ns_mp.c_str(), "cgroup2", 0, nullptr) == 0);
+
+    char field[256];
+    // Read from inside the namespace, the mount rooted at the namespace root
+    // shows "/"...
+    TEST_CHECK(MountInfoRootRaw(ns_mp.c_str(), field, sizeof(field)));
+    TEST_CHECK_MSG(strcmp(field, "/") == 0, field);
+    // ... and the full-hierarchy mount shows the real root relative to the
+    // namespace root.
+    TEST_CHECK(MountInfoRootRaw(full_mp.c_str(), field, sizeof(field)));
+    TEST_CHECK_MSG(strcmp(field, "/../..") == 0, field);
+
+    char token = 't';
+    TEST_CHECK(write(ready_w.get(), &token, 1) == 1);
+    TEST_CHECK(read(done_r.get(), &token, 1) == 0);
+    TEST_PCHECK(umount2(ns_mp.c_str(), MNT_DETACH) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(child, 0);
+  ready_w.reset();
+  done_r.reset();
+
+  char token;
+  ASSERT_THAT(read(ready_r.get(), &token, 1), SyscallSucceedsWithValue(1));
+
+  // The mounts are shared with the child, but this process reads from the
+  // init cgroup namespace: the namespaced mount shows its real path, and the
+  // full-hierarchy mount shows "/".
+  char field[256];
+  EXPECT_TRUE(MountInfoRootRaw(ns_mp.c_str(), field, sizeof(field)));
+  EXPECT_STREQ(field, canonical.c_str());
+  EXPECT_TRUE(MountInfoRootRaw(full_mp.c_str(), field, sizeof(field)));
+  EXPECT_STREQ(field, "/");
+
+  done_w.reset();  // Release the child.
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // In case the child died before unmounting.
+  umount2(ns_mp.c_str(), MNT_DETACH);
+}
+
+int64_t ParseCpuUsageUsec(const Cgroup& cg) {
+  PosixErrorOr<std::string> stat_or = cg.ReadControlFile("cpu.stat");
+  if (!stat_or.ok()) return -1;
+  for (absl::string_view line : absl::StrSplit(stat_or.ValueOrDie(), '\n')) {
+    line = absl::StripAsciiWhitespace(line);
+    constexpr absl::string_view kUsagePrefix = "usage_usec ";
+    if (absl::StartsWith(line, kUsagePrefix)) {
+      int64_t usage_usec = -1;
+      if (absl::SimpleAtoi(line.substr(kUsagePrefix.size()), &usage_usec)) {
+        return usage_usec;
+      }
+    }
+  }
+  return -1;
+}
+
+// PollCpuUsageUsecGreaterThan polls until the CPU usage exceeds the given
+// target. This handles test flakiness in gVisor: CPU clocks are not updated
+// perfectly synchronously upon task completion. Instead, a background timer
+// samples running tasks every ~10ms (linux.ClockTick). Tests that race to
+// assert CPU usage immediately after a workload finishes natively via KVM can
+// incorrectly read zero if the tick hasn't fired yet.
+int64_t PollCpuUsageUsecGreaterThan(const Cgroup& cg, int64_t target) {
+  int64_t usage = ParseCpuUsageUsec(cg);
+  absl::Time deadline = absl::Now() + absl::Seconds(10);
+  while (usage <= target && absl::Now() < deadline) {
+    absl::SleepFor(absl::Milliseconds(15));
+    usage = ParseCpuUsageUsec(cg);
+  }
+  return usage;
+}
+
+TEST_F(Cgroup2Test, CpuStat) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+
+  std::string stat_before =
+      ASSERT_NO_ERRNO_AND_VALUE(child.ReadControlFile("cpu.stat"));
+  EXPECT_THAT(stat_before, HasSubstr("usage_usec "));
+
+  int fds_start[2];
+  ASSERT_THAT(pipe(fds_start), SyscallSucceeds());
+
+  pid_t pid = fork();
+  ASSERT_THAT(pid, SyscallSucceeds());
+  if (pid == 0) {
+    close(fds_start[1]);
+    char c;
+    if (read(fds_start[0], &c, 1) != 1) _exit(1);
+    close(fds_start[0]);
+    volatile int x = 0;
+    for (int i = 0; i < 50000000; ++i) {
+      x++;
+    }
+    _exit(0);
+  }
+  close(fds_start[0]);
+  ASSERT_NO_ERRNO(child.Enter(pid));
+  char c = 'g';
+  ASSERT_THAT(write(fds_start[1], &c, 1), SyscallSucceeds());
+  close(fds_start[1]);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  int64_t usage_usec = PollCpuUsageUsecGreaterThan(child, 0);
+  EXPECT_GT(usage_usec, 0);
+}
+
+TEST_F(Cgroup2Test, CpuStatMigration) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup cg_a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("cg_a"));
+  Cgroup cg_b = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("cg_b"));
+
+  int fds_start[2];
+  int fds_phase1[2];
+  int fds_proceed[2];
+  ASSERT_THAT(pipe(fds_start), SyscallSucceeds());
+  ASSERT_THAT(pipe(fds_phase1), SyscallSucceeds());
+  ASSERT_THAT(pipe(fds_proceed), SyscallSucceeds());
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(fds_start[1]);
+    close(fds_phase1[0]);
+    close(fds_proceed[1]);
+
+    char c;
+    if (read(fds_start[0], &c, 1) != 1) _exit(1);
+    close(fds_start[0]);
+
+    // Burn some CPU in cg_a.
+    volatile int x = 0;
+    for (int i = 0; i < 50000000; ++i) {
+      x++;
+    }
+    c = '1';
+    if (write(fds_phase1[1], &c, 1) != 1) _exit(1);
+    close(fds_phase1[1]);
+
+    if (read(fds_proceed[0], &c, 1) != 1) _exit(1);
+    close(fds_proceed[0]);
+
+    // Burn some CPU in cg_b.
+    for (int i = 0; i < 50000000; ++i) {
+      x++;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(fds_start[0]);
+  close(fds_phase1[1]);
+  close(fds_proceed[0]);
+
+  ASSERT_NO_ERRNO(cg_a.Enter(pid));
+  // Commence first loop in the child.
+  char c = 'g';
+  ASSERT_THAT(write(fds_start[1], &c, 1), SyscallSucceeds());
+  close(fds_start[1]);
+  // Loop ended, child burned cpu in cg_a.
+  ASSERT_THAT(read(fds_phase1[0], &c, 1), SyscallSucceeds());
+  close(fds_phase1[0]);
+
+  int64_t usage_a_before_migration = PollCpuUsageUsecGreaterThan(cg_a, 0);
+  EXPECT_GT(usage_a_before_migration, 0);
+
+  ASSERT_NO_ERRNO(cg_b.Enter(pid));  // Move to cg_b, loop yet to run.
+
+  int64_t usage_b_post_migration = ParseCpuUsageUsec(cg_b);
+  int64_t usage_a_post_migration = ParseCpuUsageUsec(cg_a);
+  EXPECT_GE(usage_b_post_migration, 0);
+  EXPECT_LT(usage_b_post_migration, 30000);  // Bounded setup (< 30 ms).
+  EXPECT_GE(usage_a_post_migration, usage_a_before_migration);
+
+  // Commence second loop in the child.
+  c = '2';
+  ASSERT_THAT(write(fds_proceed[1], &c, 1), SyscallSucceeds());
+  close(fds_proceed[1]);
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  int64_t usage_b_final =
+      PollCpuUsageUsecGreaterThan(cg_b, usage_b_post_migration);
+  int64_t usage_a_final = ParseCpuUsageUsec(cg_a);
+  EXPECT_GT(usage_b_final, usage_b_post_migration);
+  EXPECT_EQ(usage_a_final, usage_a_post_migration);
+}
+
+// BurnCpuMs busy-loops, consuming CPU, for at least ms milliseconds of wall
+// time. The loop never blocks, so the CPU time consumed tracks wall time. Safe
+// to call in a forked child: it only touches CLOCK_MONOTONIC.
+void BurnCpuMs(int ms) {
+  struct timespec start;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  volatile uint64_t x = 0;
+  for (;;) {
+    for (int i = 0; i < 200000; ++i) x++;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    int64_t el_ms = (now.tv_sec - start.tv_sec) * 1000 +
+                    (now.tv_nsec - start.tv_nsec) / 1000000;
+    if (el_ms >= ms) break;
+  }
+}
+
+// cpu.stat of a cgroup must include live tasks residing in descendant cgroups
+// that have not enabled their own cpu controller.
+TEST_F(Cgroup2Test, CpuStatCountsControllerlessDescendants) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  // a does not enable +cpu, so sub has no cpu controller of its own; a's
+  // controller is the nearest one.
+  Cgroup sub = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("sub"));
+
+  int start[2], stop[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  ASSERT_THAT(pipe(stop), SyscallSucceeds());
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    close(stop[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    int flags = fcntl(stop[0], F_GETFL);
+    fcntl(stop[0], F_SETFL, flags | O_NONBLOCK);
+    for (;;) {
+      BurnCpuMs(50);
+      if (read(stop[0], &ch, 1) == 0 || errno != EAGAIN) break;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+  close(stop[0]);
+
+  ASSERT_NO_ERRNO(sub.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+
+  // a's cpu.stat must reflect the task burning in sub.
+  int64_t usage = PollCpuUsageUsecGreaterThan(a, 100000);
+  EXPECT_GT(usage, 100000);
+
+  close(stop[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+}
+
+// Migrating a task between two cgroups that share the same nearest cpu
+// controller must not discard the CPU it burned before the migration.
+TEST_F(Cgroup2Test, CpuStatSameInstanceMigrationKeepsUsage) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  // a does not enable +cpu, so x and y both resolve to a's controller.
+  Cgroup x = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("x"));
+  Cgroup y = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("y"));
+
+  int start[2], stop[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  ASSERT_THAT(pipe(stop), SyscallSucceeds());
+
+  // The child burns continuously so a's usage keeps growing while we poll; a
+  // frozen counter could stall exactly on the poll target and never exceed it.
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    close(stop[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    int flags = fcntl(stop[0], F_GETFL);
+    fcntl(stop[0], F_SETFL, flags | O_NONBLOCK);
+    for (;;) {
+      BurnCpuMs(50);
+      if (read(stop[0], &ch, 1) == 0 || errno != EAGAIN) break;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+  close(stop[0]);
+
+  ASSERT_NO_ERRNO(x.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+
+  int64_t usage_before = PollCpuUsageUsecGreaterThan(a, 100000);
+  EXPECT_GT(usage_before, 100000);
+
+  // Migrate to a sibling that shares a's controller.
+  ASSERT_NO_ERRNO(y.Enter(pid));
+
+  int64_t usage_after = ParseCpuUsageUsec(a);
+  EXPECT_GE(usage_after, usage_before);
+
+  close(stop[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+}
+
+// Disabling +cpu on a cgroup must reparent the disabled controller's
+// accumulated usage to the parent, not discard it.
+TEST_F(Cgroup2Test, CpuStatDisableReparentsUsage) {
+  DisableSave ds;  // clock involved.
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpu"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("a"));
+  ASSERT_NO_ERRNO(a.WriteControlFile("cgroup.subtree_control", "+cpu"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("b"));
+
+  int start[2], stop[2];
+  ASSERT_THAT(pipe(start), SyscallSucceeds());
+  ASSERT_THAT(pipe(stop), SyscallSucceeds());
+
+  // The child burns continuously so b's usage keeps growing while we poll; a
+  // frozen counter could stall exactly on the poll target and never exceed it.
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(start[1]);
+    close(stop[1]);
+    char ch;
+    if (read(start[0], &ch, 1) != 1) _exit(1);
+    int flags = fcntl(stop[0], F_GETFL);
+    fcntl(stop[0], F_SETFL, flags | O_NONBLOCK);
+    for (;;) {
+      BurnCpuMs(50);
+      if (read(stop[0], &ch, 1) == 0 || errno != EAGAIN) break;
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  close(start[0]);
+  close(stop[0]);
+
+  ASSERT_NO_ERRNO(b.Enter(pid));
+  char ch = 'g';
+  ASSERT_THAT(write(start[1], &ch, 1), SyscallSucceeds());
+
+  // Confirm substantial usage on b's live, growing counter.
+  int64_t live = PollCpuUsageUsecGreaterThan(b, 100000);
+  EXPECT_GT(live, 100000);
+
+  // Stop and reap the child so its usage is committed to b's controller.
+  close(stop[1]);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+
+  // a's recursive cpu.stat includes b's committed usage.
+  int64_t usage_before = PollCpuUsageUsecGreaterThan(a, 0);
+  EXPECT_GT(usage_before, 0);
+
+  // Disabling +cpu destroys b's controller; its usage must survive on a.
+  ASSERT_NO_ERRNO(a.WriteControlFile("cgroup.subtree_control", "-cpu"));
+
+  int64_t usage_after = ParseCpuUsageUsec(a);
+  EXPECT_GE(usage_after, usage_before);
+}
+
+// With nsdelegate, cgroup namespace roots are delegation boundaries: only
+// delegatable files on the namespace root remain writable from inside the
+// namespace.
+TEST_F(Cgroup2Test, NsdelegateRootWrites) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd"));
+  Cgroup inner = ASSERT_NO_ERRNO_AND_VALUE(cg.CreateChild("inner"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+  const std::string inner_max_depth = inner.Relpath("cgroup.max.depth");
+
+  // Setting the flag requires a mount from the init cgroup namespace, and is
+  // system wide.
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // Non-delegatable file on the namespace root: EPERM.
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == EPERM);
+    // Delegatable file on the namespace root: allowed.
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    // Non-delegatable file below the namespace root: allowed.
+    TEST_CHECK(WriteFileErrno(inner_max_depth.c_str(), "max") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Mounting without the option from the init namespace clears the flag;
+  // the same write is then allowed.
+  Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+
+  const pid_t pid2 = fork();
+  if (pid2 == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid2, 0);
+  ASSERT_THAT(waitpid(pid2, &status, 0), SyscallSucceedsWithValue(pid2));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// With nsdelegate, processes can't be migrated into or out of the namespace
+// by a process inside it.
+TEST_F(Cgroup2Test, NsdelegateMigrationContainment) {
+  Cgroup ca = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_a"));
+  Cgroup sub = ASSERT_NO_ERRNO_AND_VALUE(ca.CreateChild("sub"));
+  Cgroup cb = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_b"));
+  const std::string ca_procs = ca.Relpath("cgroup.procs");
+  const std::string sub_procs = sub.Relpath("cgroup.procs");
+  const std::string cb_procs = cb.Relpath("cgroup.procs");
+
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  // Park a process in nsd_b, outside the namespace created below.
+  const pid_t parked = fork();
+  if (parked == 0) {
+    close(wfd.get());
+    char token;
+    TEST_CHECK(read(rfd.get(), &token, 1) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(parked, 0);
+  ASSERT_NO_ERRNO(cb.Enter(parked));
+  const std::string parked_pid = absl::StrCat(parked);
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(ca_procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // Destination outside the namespace: ENOENT.
+    TEST_CHECK(WriteFileErrno(cb_procs.c_str(), "0") == ENOENT);
+    // Source outside the namespace: ENOENT.
+    TEST_CHECK(WriteFileErrno(ca_procs.c_str(), parked_pid.c_str()) == ENOENT);
+    // Both inside the namespace: allowed.
+    TEST_CHECK(WriteFileErrno(sub_procs.c_str(), "0") == 0);
+    TEST_CHECK(WriteFileErrno(ca_procs.c_str(), "0") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Migrations by processes in the init namespace are unrestricted.
+  EXPECT_NO_ERRNO(ca.Enter(parked));
+
+  wfd.reset();  // Release the parked process.
+  ASSERT_THAT(waitpid(parked, &status, 0), SyscallSucceedsWithValue(parked));
+}
+
+// With nsdelegate, CLONE_INTO_CGROUP is subject to the same namespace
+// containment rule as cgroup.procs migrations.
+TEST_F(Cgroup2Test, NsdelegateCloneIntoCgroup) {
+  Cgroup cin = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_ci"));
+  Cgroup cout = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_ci_out"));
+  const std::string cin_procs = cin.Relpath("cgroup.procs");
+  const std::string cin_path = cin.Path();
+  const std::string cout_path = cout.Path();
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(cin_procs.c_str(), "0") == 0);
+    const int inside_fd = open(cin_path.c_str(), O_RDONLY | O_DIRECTORY);
+    TEST_PCHECK(inside_fd >= 0);
+    const int outside_fd = open(cout_path.c_str(), O_RDONLY | O_DIRECTORY);
+    TEST_PCHECK(outside_fd >= 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+
+    struct clone_args cl_args = {};
+    cl_args.flags = CLONE_INTO_CGROUP;
+    cl_args.exit_signal = SIGCHLD;
+
+    // Destination outside the namespace: ENOENT.
+    cl_args.cgroup = static_cast<uint64_t>(outside_fd);
+    TEST_CHECK(clone3(&cl_args, sizeof(cl_args)) < 0);
+    TEST_CHECK(errno == ENOENT);
+
+    // Destination inside the namespace: allowed.
+    cl_args.cgroup = static_cast<uint64_t>(inside_fd);
+    const pid_t grandchild = clone3(&cl_args, sizeof(cl_args));
+    TEST_PCHECK(grandchild >= 0);
+    if (grandchild == 0) {
+      _exit(0);
+    }
+    int status;
+    TEST_PCHECK(waitpid(grandchild, &status, 0) == grandchild);
+    TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// The nsdelegate option is ignored on mounts from non-init cgroupns's.
+TEST_F(Cgroup2Test, NsdelegateIgnoredFromNonInitNamespace) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_noninit"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+
+  // Make sure the flag is off.
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  ASSERT_NO_ERRNO(m2.MountCgroup2fs());
+
+  TempPath mntdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string dir = mntdir.path();
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_PCHECK(mount("none", dir.c_str(), "cgroup2", 0, "nsdelegate") == 0);
+    // The flag was not applied: writes to the namespace root are allowed.
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == 0);
+    TEST_PCHECK(umount2(dir.c_str(), MNT_DETACH) == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  // In case the child died before unmounting.
+  umount2(dir.c_str(), MNT_DETACH);
+}
+
+// The nsdelegate write check uses the cgroup namespace captured at open(2)
+// time, not the writer's namespace at write(2) time: an FD opened in the
+// init namespace remains writable after the writer enters a cgroup
+// namespace rooted at the FD's cgroup.
+TEST_F(Cgroup2Test, NsdelegateWriteUsesOpenTimeNamespaceInitOpener) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_otn_a"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    // Opened before unshare: the FD captures the init cgroup namespace.
+    const int fd = open(max_depth.c_str(), O_WRONLY);
+    TEST_PCHECK(fd >= 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // A write through a freshly opened FD from inside the namespace
+    // is rejected...
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == EPERM);
+    // ...but the FD opened from the init namespace writes successfully.
+    TEST_CHECK(WriteFdErrno(fd, "max") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// The converse: an FD opened inside a cgroup namespace rooted at the FD's
+// cgroup stays subject to the nsdelegate EPERM even when the write comes
+// from a task that has since returned to the init namespace.
+TEST_F(Cgroup2Test, NsdelegateWriteUsesOpenTimeNamespaceNamespacedOpener) {
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd_otn_b"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string max_depth = cg.Relpath("cgroup.max.depth");
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  auto clean = Cleanup([] {
+    // Clear the system-wide flag.
+    Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+    ASSERT_NO_ERRNO(m3.MountCgroup2fs());
+  });
+
+  // Skip if the environment could not actually turn nsdelegate on.
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    const int initns = open("/proc/self/ns/cgroup", O_RDONLY);
+    TEST_PCHECK(initns >= 0);
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    // Opened inside the namespace: the FD captures the non-init namespace
+    // whose root is this cgroup.
+    const int fd = open(max_depth.c_str(), O_WRONLY);
+    TEST_PCHECK(fd >= 0);
+    // Return to the init namespace.
+    TEST_PCHECK(setns(initns, CLONE_NEWCGROUP) == 0);
+    // A write using a fresh open from the init namespace is allowed...
+    TEST_CHECK(WriteFileErrno(max_depth.c_str(), "max") == 0);
+    // ...but the FD opened inside the namespace is rejected.
+    TEST_CHECK(WriteFdErrno(fd, "max") == EPERM);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(Cgroup2Test, Xattr) {
+  const char* path = c().Path().c_str();
+  const char name[] = "trusted.test";
+  const char val = 'a';
+  const size_t size = sizeof(val);
+
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
+
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallSucceedsWithValue(size));
+  EXPECT_EQ(val, got);
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)),
+              SyscallSucceedsWithValue(sizeof(name)));
+  EXPECT_STREQ(list, name);
+
+  EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+}
+
+TEST_F(Cgroup2Test, TrustedXattrWithoutCapSysAdmin) {
+  const char* path = c().Path().c_str();
+  AutoCapability cap(CAP_SYS_ADMIN, false);
+
+  const char name[] = "trusted.test";
+  const char val = 'a';
+  const size_t size = sizeof(val);
+
+  EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0),
+              SyscallFailsWithErrno(EPERM));
+
+  char got = '\0';
+  EXPECT_THAT(getxattr(path, name, &got, size), SyscallFailsWithErrno(ENODATA));
+
+  char list[sizeof(name)];
+  EXPECT_THAT(listxattr(path, list, sizeof(list)), SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(removexattr(path, name), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_F(Cgroup2Test, DetachedMountBindFails) {
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroup2fs());
+
+  // Hold an open fd on the mount so that it survives the lazy umount, then
+  // name it again through /proc/self/fd.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(c.Path(), O_RDONLY | O_DIRECTORY));
+  ASSERT_THAT(umount2(c.Path().c_str(), MNT_DETACH), SyscallSucceeds());
+  m.release(c);
+
+  const TempPath target = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string fd_path = absl::StrFormat("/proc/self/fd/%d", fd.get());
+  EXPECT_THAT(mount(fd_path.c_str(), target.path().c_str(), "", MS_BIND, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// An ancestor's cgroup.events must report "populated 1" while any descendant
+// has a live task, even after a mid-level cgroup's own tasks all leave.
+// Regression test for ancestor counters being decremented when a mid-level
+// cgroup drained while its child was still populated; the child's later
+// drain then decremented again, leaving the counter permanently negative.
+TEST_F(Cgroup2Test, PopulatedAccountsForDescendantsWhenMidLevelDrains) {
+  Cgroup w = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("pop_w"));
+  Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(w.CreateChild("pop_a"));
+  Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(a.CreateChild("pop_b"));
+  Cgroup drain = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("pop_drain"));
+
+  // Two children block on a pipe: one in a, one in a's child b.
+  int go_fds[2];
+  ASSERT_THAT(pipe(go_fds), SyscallSucceeds());
+  FileDescriptor go_r(go_fds[0]);
+  FileDescriptor go_w(go_fds[1]);
+
+  pid_t t1 = fork();
+  if (t1 == 0) {
+    go_w.reset();
+    char token;
+    TEST_PCHECK(read(go_r.get(), &token, 1) >= 0);
+    _exit(0);
+  }
+  ASSERT_GT(t1, 0);
+  pid_t t2 = fork();
+  if (t2 == 0) {
+    go_w.reset();
+    char token;
+    TEST_PCHECK(read(go_r.get(), &token, 1) >= 0);
+    _exit(0);
+  }
+  ASSERT_GT(t2, 0);
+  go_r.reset();
+
+  ASSERT_NO_ERRNO(a.Enter(t1));
+  ASSERT_NO_ERRNO(b.Enter(t2));
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+  EXPECT_THAT(b.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+
+  // Drain a; b's task keeps a's subtree populated.
+  ASSERT_NO_ERRNO(drain.Enter(t1));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")))
+      << "mid-level cgroup reports populated 0 while its child has a task";
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")))
+      << "ancestor reports populated 0 while a descendant has a task";
+
+  // Drain b; the subtree is now empty.
+  ASSERT_NO_ERRNO(drain.Enter(t2));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 0")));
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 0")));
+
+  // Repopulate a; w must flip back to 1 (catches a negative counter).
+  ASSERT_NO_ERRNO(a.Enter(t1));
+  EXPECT_THAT(a.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")));
+  EXPECT_THAT(w.ReadControlFile("cgroup.events"),
+              IsPosixErrorOkAndHolds(HasSubstr("populated 1")))
+      << "ancestor stuck at populated 0: populated-children counter went "
+         "negative when the mid-level cgroup and its child drained";
+
+  // Release and reap the children.
+  go_w.reset();
+  int status;
+  ASSERT_EQ(waitpid(t1, &status, 0), t1);
+  EXPECT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(waitpid(t2, &status, 0), t2);
+  EXPECT_TRUE(WIFEXITED(status));
 }
 
 }  // namespace

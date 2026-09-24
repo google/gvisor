@@ -14,22 +14,26 @@
 
 #include <sys/mman.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <map>
+#include <string>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
-#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
 namespace {
-
-using ::absl::StrFormat;
 
 // AnonUsageFromMeminfo scrapes the current anonymous memory usage from
 // /proc/meminfo and returns it in bytes.
@@ -37,7 +41,7 @@ PosixErrorOr<uint64_t> AnonUsageFromMeminfo() {
   ASSIGN_OR_RETURN_ERRNO(auto meminfo, GetContents("/proc/meminfo"));
   std::vector<std::string> lines(absl::StrSplit(meminfo, '\n'));
 
-  // Try to find AnonPages line, the format is AnonPages:\\s+(\\d+) kB\n.
+  // Try to find AnonPages line, the format is AnonPages:\s+(\d+) kB\n.
   for (const auto& line : lines) {
     if (!absl::StartsWith(line, "AnonPages:")) {
       continue;

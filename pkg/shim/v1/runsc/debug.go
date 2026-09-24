@@ -31,18 +31,22 @@ func setDebugSigHandler() {
 		dumpCh := make(chan os.Signal, 1)
 		signal.Notify(dumpCh, syscall.SIGUSR2)
 		go func() {
-			buf := make([]byte, 10240)
 			for range dumpCh {
-				for {
-					n := runtime.Stack(buf, true)
-					if n >= len(buf) {
-						buf = make([]byte, 2*len(buf))
-						continue
-					}
-					log.L.Debugf("User requested stack trace:\n%s", buf[:n])
-				}
+				log.L.Debugf("User requested stack trace:\n%s", dumpStacks())
 			}
 		}()
 		log.L.Debugf("For full process dump run: kill -%d %d", syscall.SIGUSR2, os.Getpid())
 	})
+}
+
+// dumpStacks returns the stack traces of all goroutines.
+func dumpStacks() []byte {
+	buf := make([]byte, 10240)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return buf[:n]
+		}
+		buf = make([]byte, 2*len(buf))
+	}
 }

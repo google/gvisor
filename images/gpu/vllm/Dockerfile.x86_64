@@ -8,10 +8,19 @@ RUN apk add git-lfs && \
     rm /opt-125m/tf_model.h5
 # post checkout hook. checks that command git lfs is available.
 RUN GIT_CLONE_PROTECTION_ACTIVE=false git clone https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered /dataset
-RUN git clone https://github.com/vllm-project/vllm.git /vllm && cd /vllm && git checkout v0.4.2
+RUN git clone https://github.com/vllm-project/vllm.git /vllm && cd /vllm && git checkout v0.27.1
 
-# v0.4.2
-FROM vllm/vllm-openai@sha256:c63bd9e99c6d5914032b396be38a80fd9640693da62b64b907434d38bf38a8e9
+# v0.27.1. Do not downgrade below this without checking torch's compiled
+# arch list: releases before this shipped torch 2.3.0+cu121, whose kernels
+# stop at sm_90, so every CUDA op fails on Blackwell (sm_100/sm_120) with
+# "no kernel image is available for execution on the device" under any
+# runtime. v0.27.1 ships torch 2.13.0+cu130 built for
+# ['sm_75','sm_80','sm_86','sm_90','sm_100','sm_120'].
+# Pinned to linux/amd64 platform manifest digest to prevent Docker from
+# creating/pushing a multi-platform image index.
+FROM vllm/vllm-openai@sha256:c2f3b1b964e47809b722b5e75b61b1e7b39a50f70388cf2bf2418f16a9f31da2
+ENV PATH=$PATH:/usr/local/nvidia/bin
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/nvidia/lib64:/usr/local/nvidia/lib
 COPY --from=downloader /vllm/examples/template_chatml.jinja /vllm/examples/template_chatml.jinja
 COPY --from=downloader /vllm/benchmarks /vllm/benchmarks
 COPY --from=downloader /opt-125m /model

@@ -20,13 +20,22 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <iterator>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -290,7 +299,7 @@ TEST_F(WriteTest, PartialWriteSIGSEGV) {
       },
   };
   // Write should succeed for the first iovec and half of the second (=2 pages).
-  EXPECT_THAT(pwritev(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+  EXPECT_THAT(pwritev(fd.get(), iov, std::size(iov), 0),
               SyscallSucceedsWithValue(2 * kPageSize));
 }
 
@@ -334,7 +343,7 @@ TEST_F(WriteTest, PartialWriteSIGBUS) {
       },
   };
   // Write should succeed for the first iovec and half of the second (=2 pages).
-  ASSERT_THAT(pwritev(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+  ASSERT_THAT(pwritev(fd.get(), iov, std::size(iov), 0),
               SyscallSucceedsWithValue(2 * kPageSize));
 }
 
@@ -595,7 +604,7 @@ TEST_F(WriteTest, WritevZeroLengthEntries) {
       {.iov_base = buf2, .iov_len = 5},
   };
 
-  EXPECT_THAT(writev(fd.get(), iov, ABSL_ARRAYSIZE(iov)),
+  EXPECT_THAT(writev(fd.get(), iov, std::size(iov)),
               SyscallSucceedsWithValue(10));
 }
 

@@ -13,14 +13,19 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
+#include <cstdint>
 #include <memory>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/util/cleanup.h"
 #include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 

@@ -36,3 +36,24 @@ func TestOpenClaw(t *testing.T) {
 		})
 	})
 }
+
+func TestNextAdaptiveBatchSize(t *testing.T) {
+	// Test 2x scaling: plenty of room
+	bSize, canInc := nextAdaptiveBatchSize(1, 1, 256, 100*1024*1024*1024, 128*1024*1024*1024, 1500*1024*1024, true)
+	if bSize != 2 || !canInc {
+		t.Errorf("Expected (2, true), got (%d, %t)", bSize, canInc)
+	}
+
+	// Test 1x keep when 2x would exceed headroom
+	// Suppose memAvail allows 2 pods (3 GiB) but not 4 pods (6 GiB)
+	bSize, canInc = nextAdaptiveBatchSize(2, 10, 256, 10*1024*1024*1024, 100*1024*1024*1024, 15*1024*1024*1024, true)
+	if bSize != 2 || !canInc {
+		t.Errorf("Expected (2, true), got (%d, %t)", bSize, canInc)
+	}
+
+	// Test fallback to 1 and disabling further increases when headroom is low
+	bSize, canInc = nextAdaptiveBatchSize(4, 100, 256, 1*1024*1024*1024, 100*1024*1024*1024, 150*1024*1024*1024, true)
+	if bSize != 1 || canInc {
+		t.Errorf("Expected (1, false), got (%d, %t)", bSize, canInc)
+	}
+}

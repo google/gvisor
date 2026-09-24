@@ -14,9 +14,11 @@
 
 #include "test/util/fuse_util.h"
 
+#include <linux/fuse.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <cstdint>
 #include <string>
 
 namespace gvisor {

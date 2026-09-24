@@ -234,7 +234,7 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	}
 
 	// nr determines the argument type.
-	// Implementors:
+	// Implementers:
 	// - To map nr to a symbol, look in
 	// src/nvidia/arch/nvalloc/unix/include/nv_escape.h,
 	// kernel-open/common/inc/nv-ioctl-numbers.h, and
@@ -367,6 +367,125 @@ func frontendRegisterFD(fi *frontendIoctlState) (uintptr, error) {
 	ioctlParams.CtlFD = ctlFile.hostFD
 	// The returned ctl_fd can't change, so skip copying out.
 	return frontendIoctlInvokeNoStatus(fi, &ioctlParams)
+}
+
+// frontendExportToDMABufFD handles NV_ESC_EXPORT_TO_DMABUF_FD. CUDA uses this
+// to export GPU memory as a dma-buf fd for ibv_reg_dmabuf_mr (GPUDirect RDMA).
+func frontendExportToDMABufFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParamsValue Params
+	ioctlParams := PtrParams(&ioctlParamsValue)
+	if int(fi.ioctlParamsSize) != ioctlParams.SizeBytes() {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	// The FD field is both input and output (see nv_dma_buf_export() in
+	// kernel-open/nvidia/nv-dmabuf.c):
+	//   - FD == -1: the driver creates a new dma-buf and returns its fd by
+	//     updating the ioctlParams. We wrap that host fd in a new application
+	//     FD installed in the task's fd table and return it via ioctlParams to
+	//     the app, so the app can hand it to the RDMA verbs library.
+	//   - FD >= 0: the app is appending more handles to a dma-buf it exported
+	//     in an earlier call, identified by that fd. The value is an app FD,
+	//     we translate it back to the host fd of the dma-buf we wrapped
+	//     before. The driver leaves the host fd unchanged, so we restore the
+	//     app fd on the way out.
+	if appFD := ioctlParams.GetFrontendFD(); appFD >= 0 {
+		fileGeneric, _ := fi.t.FDTable().Get(appFD)
+		if fileGeneric == nil {
+			return 0, linuxerr.EINVAL
+		}
+		defer fileGeneric.DecRef(fi.ctx)
+		wrapper, ok := fileGeneric.Impl().(*dmaBufFDWrapper)
+		if !ok {
+			return 0, linuxerr.EINVAL
+		}
+		ioctlParams.SetFrontendFD(wrapper.hostFD)
+		n, err := frontendIoctlInvokeNoStatus(fi, ioctlParams)
+		ioctlParams.SetFrontendFD(appFD)
+		if err != nil {
+			return n, err
+		}
+		if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+			return n, err
+		}
+		return n, nil
+	}
+
+	// Create path: FD == -1 (any other negative value is rejected by the
+	// driver, so FD < -1 will fail below).
+	n, err := frontendIoctlInvokeNoStatus(fi, ioctlParams)
+	if err != nil {
+		return n, err
+	}
+
+	// The driver only allocates a dma-buf fd when the export succeeded.
+	if ioctlParams.GetStatus() == nvgpu.NV_OK && ioctlParams.GetFrontendFD() >= 0 {
+		sandboxFD, err := newDMABufFDWrapper(fi.t, ioctlParams.GetFrontendFD())
+		if err != nil {
+			return n, err
+		}
+		ioctlParams.SetFrontendFD(sandboxFD)
+		if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+			// Roll back the fd we installed so the guest doesn't retain a
+			// dma-buf it never learned the number of. Remove drops the table's
+			// reference; DecRef releases it (closing the host fd).
+			if removed := fi.t.FDTable().Remove(fi.ctx, sandboxFD); removed != nil {
+				removed.DecRef(fi.ctx)
+			}
+			return n, err
+		}
+		return n, nil
+	}
+
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// dmaBufFDWrapper wraps a host dma-buf fd returned by the NVIDIA driver's
+// export operation as an application FD. It implements vfs.HostFDProvider so
+// that rdmaproxy can recover the host fd to hand to ibv_reg_dmabuf_mr.
+//
+// +stateify savable
+type dmaBufFDWrapper struct {
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
+
+	hostFD int32
+}
+
+// HostFD implements vfs.HostFDProvider.HostFD.
+func (fd *dmaBufFDWrapper) HostFD() int {
+	return int(fd.hostFD)
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *dmaBufFDWrapper) Release(ctx context.Context) {
+	unix.Close(int(fd.hostFD))
+}
+
+// newDMABufFDWrapper takes ownership of hostFD, wraps it in an application
+// FileDescription and installs it in t's FD table. It returns the application
+// FD number.
+func newDMABufFDWrapper(t *kernel.Task, hostFD int32) (int32, error) {
+	vfsObj := t.Kernel().VFS()
+	vd := vfsObj.NewAnonVirtualDentry("[nvidia-dmabuf]")
+	defer vd.DecRef(t)
+	w := &dmaBufFDWrapper{hostFD: hostFD}
+	if err := w.vfsfd.Init(w, linux.O_RDWR, t.Credentials(), vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
+		UseDentryMetadata: true,
+	}); err != nil {
+		unix.Close(int(hostFD))
+		return -1, err
+	}
+	defer w.vfsfd.DecRef(t)
+	return t.NewFDFrom(0, &w.vfsfd, kernel.FDFlags{CloseOnExec: true})
 }
 
 func frontendIoctlHasFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](fi *frontendIoctlState) (uintptr, error) {
@@ -786,7 +905,7 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		// Consequently, its parameters cannot reasonably contain pointers.
 		return rmControlSimple(fi, &ioctlParams)
 	}
-	// Implementors:
+	// Implementers:
 	// - Top two bytes of Cmd specifies class; third byte specifies category;
 	// fourth byte specifies "message ID" (command within class/category).
 	//   e.g. 0x800288:
@@ -868,6 +987,40 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	ctrlParams.SetFrontendFD(ctlFile.hostFD)
 	n, err := rmControlInvoke(fi, ioctlParams, ctrlParams)
 	ctrlParams.SetFrontendFD(origFD)
+	if err != nil {
+		return n, err
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// ctrlOsUnixMemacctGetLimits translates cgroupFd. Compare
+// src/nvidia/arch/nvalloc/unix/src/os.c:cliresCtrlCmdOsUnixMemacctGetLimits_IMPL().
+func ctrlOsUnixMemacctGetLimits(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV0000_CTRL_OS_UNIX_MEMACCT_GET_LIMITS_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+
+	origCgroupFD := ctrlParams.CgroupFD
+	if origCgroupFD != nvgpu.NV0000_CTRL_CMD_OS_UNIX_MEMACCT_CURRENT_PROCESS {
+		// The driver only accepts cgroup v2 directory FDs; see (Linux)
+		// kernel/cgroup/cgroup.c:cgroup_get_from_fd().
+		if _, err := fi.t.GetCgroup2NodeFromFD(uint64(origCgroupFD)); err != nil {
+			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		}
+		// The sentry's cgroup is the nearest host ancestor of every sandbox
+		// cgroup, and is what the driver uses for CURRENT_PROCESS.
+		ctrlParams.CgroupFD = nvgpu.NV0000_CTRL_CMD_OS_UNIX_MEMACCT_CURRENT_PROCESS
+	}
+
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.CgroupFD = origCgroupFD
 	if err != nil {
 		return n, err
 	}
@@ -1104,7 +1257,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	if log.IsLogging(log.Debug) {
 		fi.ctx.Debugf("nvproxy: allocation class %v", ioctlParams.HClass)
 	}
-	// Implementors:
+	// Implementers:
 	// - To map hClass to a symbol, look in
 	// src/nvidia/generated/g_allclasses.h.
 	// - See src/nvidia/src/kernel/rmapi/resource_list.h for table mapping class
@@ -1197,6 +1350,50 @@ func rmAllocSimpleParams[Params any, PtrParams marshalPtr[Params]](fi *frontendI
 
 func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	return rmAllocInvoke[byte](fi, ioctlParams, nil, isNVOS64, addSimpleObjDepParentLocked)
+}
+
+// rmAllocEventBuffer handles NV_EVENT_BUFFER allocation.
+func rmAllocEventBuffer(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	var allocParams nvgpu.NV_EVENT_BUFFER_ALLOC_PARAMETERS
+	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return 0, err
+	}
+	if allocParams.HBufferHeader.Val == 0 {
+		fi.ctx.Warningf("nvproxy: rejecting NV_EVENT_BUFFER allocation with HBufferHeader == 0 (no translation available)")
+		return 0, linuxerr.EINVAL
+	}
+
+	// notificationHandle is a frontend FD, which the driver translates for
+	// non-kernel clients; 0 leaves the event buffer without a notification
+	// handle. See
+	// src/nvidia/src/kernel/rmapi/event_buffer.c:eventbufferConstruct_IMPL()
+	// => osUserHandleToKernelPtr().
+	origNotificationHandle := allocParams.NotificationHandle
+	if origNotificationHandle != 0 {
+		eventFileGeneric, _ := fi.t.FDTable().Get(int32(origNotificationHandle))
+		if eventFileGeneric == nil {
+			return 0, linuxerr.EINVAL
+		}
+		defer eventFileGeneric.DecRef(fi.ctx)
+		eventFile, ok := eventFileGeneric.Impl().(*frontendFD)
+		if !ok {
+			return 0, linuxerr.EINVAL
+		}
+		allocParams.NotificationHandle = uint64(eventFile.hostFD)
+	}
+
+	n, err := rmAllocInvoke(fi, ioctlParams, &allocParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_EVENT_BUFFER_ALLOC_PARAMETERS) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, &miscObject{}, ioctlParams.HObjectParent, allocParams.HBufferHeader, allocParams.HRecordBuffer, allocParams.HVardataBuffer)
+	})
+	if err != nil {
+		return n, err
+	}
+
+	allocParams.NotificationHandle = origNotificationHandle
+	if _, err := allocParams.CopyOut(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 func rmAllocRootClient(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
@@ -1305,6 +1502,14 @@ func rmAllocChannelGroup(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAM
 		// is enabled, these might not depend on the channel group at all.
 		// Since nvproxy currently does not support MIG, we represent these
 		// dependencies as unconditionally on the channel group instead.
+	})
+}
+
+// rmAllocChannelGroupV615 is the same as rmAllocChannelGroup, but for
+// 615.71.09.
+func rmAllocChannelGroupV615(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams(fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615) {
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams), ioctlParams.HObjectParent, allocParams.HVASpace)
 	})
 }
 

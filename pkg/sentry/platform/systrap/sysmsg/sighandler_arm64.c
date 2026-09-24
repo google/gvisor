@@ -51,7 +51,8 @@ long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   register long x5 __asm__("x5") = a6;
   __asm__ __volatile__("svc #0"
                        : "=r"(x0)
-                       : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5)
+                       : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4),
+                         "r"(x5)
                        : "memory", "cc");
   return x0;
 }
@@ -66,16 +67,16 @@ static __inline uint64_t get_tls() {
   return tls;
 }
 
-long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
-               uint32_t *addr2, int val3) {
+long sys_futex(uint32_t* addr, int op, int val, struct __kernel_timespec* tv,
+               uint32_t* addr2, int val3) {
   return __syscall(__NR_futex, (long)addr, (long)op, (long)val, (long)tv,
                    (long)addr2, (long)val3);
 }
 
-static void gregs_to_ptregs(ucontext_t *ucontext,
-                            struct user_regs_struct *ptregs) {
+static void gregs_to_ptregs(ucontext_t* ucontext,
+                            struct user_regs_struct* ptregs) {
   // Set all registers.
-  for (int i = 0; i < 31; i++ ) {
+  for (int i = 0; i < 31; i++) {
     ptregs->regs[i] = ucontext->uc_mcontext.regs[i];
   }
   ptregs->sp = ucontext->uc_mcontext.sp;
@@ -83,9 +84,9 @@ static void gregs_to_ptregs(ucontext_t *ucontext,
   ptregs->pstate = ucontext->uc_mcontext.pstate;
 }
 
-static void ptregs_to_gregs(ucontext_t *ucontext,
-                            struct user_regs_struct *ptregs) {
-  for (int i = 0; i < 31; i++ ) {
+static void ptregs_to_gregs(ucontext_t* ucontext,
+                            struct user_regs_struct* ptregs) {
+  for (int i = 0; i < 31; i++) {
     ucontext->uc_mcontext.regs[i] = ptregs->regs[i];
   }
   ucontext->uc_mcontext.sp = ptregs->sp;
@@ -93,14 +94,14 @@ static void ptregs_to_gregs(ucontext_t *ucontext,
   ucontext->uc_mcontext.pstate = ptregs->pstate;
 }
 
-void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
+void __export_start(struct sysmsg* sysmsg, void* _ucontext) {
   panic(0x11111111, 0);
 }
 
-void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
-  ucontext_t *ucontext = _ucontext;
-  void *sp = sysmsg_sp();
-  struct sysmsg *sysmsg = sysmsg_addr(sp);
+void __export_sighandler(int signo, siginfo_t* siginfo, void* _ucontext) {
+  ucontext_t* ucontext = _ucontext;
+  void* sp = sysmsg_sp();
+  struct sysmsg* sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
   int32_t thread_state = atomic_load(&sysmsg->state);
@@ -126,16 +127,16 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   // See: arch/arm64/include/uapi/asm/sigcontext.h
   const uint64_t kFpsimdContextSize =
       sizeof(struct fpsimd_context) - sizeof(struct _aarch64_ctx);
-  struct fpsimd_context *fpctx =
-      (struct fpsimd_context *)&ucontext->uc_mcontext.__reserved;
-  uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
+  struct fpsimd_context* fpctx =
+      (struct fpsimd_context*)&ucontext->uc_mcontext.__reserved;
+  uint8_t* fpStatePointer = (uint8_t*)&fpctx->fpsr;
 
   // Verify the header.
   if (fpctx->head.magic != FPSIMD_MAGIC ||
       __export_arch_state.fp_len < kFpsimdContextSize ||
       fpctx->head.size != sizeof(struct fpsimd_context)) {
     panic(STUB_ERROR_FPSTATE_BAD_HEADER,
-          ((uint32_t *)&ucontext->uc_mcontext.__reserved)[0]);
+          ((uint32_t*)&ucontext->uc_mcontext.__reserved)[0]);
   }
 
   memcpy(ctx->fpstate, fpStatePointer, kFpsimdContextSize);
@@ -155,12 +156,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       break;
     }
     case SIGSEGV: {
-      unsigned char *base = &ucontext->uc_mcontext.__reserved[0];
+      unsigned char* base = &ucontext->uc_mcontext.__reserved[0];
       size_t offset = 0;
       while (1) {
-        struct _aarch64_ctx *head = (struct _aarch64_ctx *)(base + offset);
+        struct _aarch64_ctx* head = (struct _aarch64_ctx*)(base + offset);
         if (head->magic == ESR_MAGIC) {
-          ctx->err = ((struct esr_context *)head)->esr;
+          ctx->err = ((struct esr_context*)head)->esr;
           break;
         }
         if (head->magic == 0 || head->magic == EXTRA_MAGIC) break;
@@ -204,12 +205,12 @@ init:
 
 // On ARM restore_state sets up a correct restore from the sighandler by
 // populating _ucontext.
-void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
-                   void *_ucontext) {
-  ucontext_t *ucontext = _ucontext;
-  struct fpsimd_context *fpctx =
-      (struct fpsimd_context *)&ucontext->uc_mcontext.__reserved;
-  uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
+void restore_state(struct sysmsg* sysmsg, struct thread_context* ctx,
+                   void* _ucontext) {
+  ucontext_t* ucontext = _ucontext;
+  struct fpsimd_context* fpctx =
+      (struct fpsimd_context*)&ucontext->uc_mcontext.__reserved;
+  uint8_t* fpStatePointer = (uint8_t*)&fpctx->fpsr;
 
   if (atomic_load(&ctx->fpstate_changed)) {
     memcpy(fpStatePointer, ctx->fpstate, __export_arch_state.fp_len);

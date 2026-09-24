@@ -640,7 +640,7 @@ type slaacPrefixState struct {
 // This function must only be called by IPv6 addresses that are currently
 // tentative.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) tcpip.Error {
 	// addr must be a valid unicast IPv6 address.
 	if !header.IsV6UnicastAddress(addr) {
@@ -681,9 +681,9 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 			if addressEndpoint.ConfigType() == stack.AddressConfigSlaac && !addressEndpoint.Temporary() {
 				// Reset the generation attempts counter as we are starting the
 				// generation of a new address for the SLAAC prefix.
-				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */)
+				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */) // +checklocksforce: DAD calls its handlers with ndp.ep.mu held.
 			}
-			ndp.ep.onAddressAssignedLocked(addr)
+			ndp.ep.onAddressAssignedLocked(addr) // +checklocksforce: DAD calls its handlers with ndp.ep.mu held.
 		}
 	})
 
@@ -713,7 +713,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 // (implying another node is attempting to use addr)). It is up to the caller
 // of this function to handle such a scenario.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, reason stack.DADResult) {
 	ndp.dad.StopLocked(addr, reason)
 }
@@ -721,7 +721,7 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, reason st
 // handleRA handles a Router Advertisement message that arrived on the NIC
 // this ndp is for. Does nothing if the NIC is configured to not handle RAs.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	// Is the IPv6 endpoint configured to handle RAs at all?
 	//
@@ -859,7 +859,7 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 
 // invalidateOffLinkRoute invalidates a discovered off-link route.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) invalidateOffLinkRoute(route offLinkRoute) {
 	state, ok := ndp.offLinkRoutes[route]
 	if !ok {
@@ -877,7 +877,7 @@ func (ndp *ndpState) invalidateOffLinkRoute(route offLinkRoute) {
 
 // handleOffLinkRouteDiscovery handles the discovery of an off-link route.
 //
-// Precondition: ndp.ep.mu must be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime time.Duration, prf header.NDPRoutePreference) {
 	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
@@ -898,7 +898,7 @@ func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime ti
 			state := offLinkRouteState{
 				prf: prf,
 				invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
-					ndp.invalidateOffLinkRoute(route)
+					ndp.invalidateOffLinkRoute(route) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 				}),
 			}
 
@@ -933,7 +933,7 @@ func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime ti
 //
 // The prefix identified by prefix MUST NOT already be known.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) {
 	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
@@ -945,7 +945,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 
 	state := onLinkPrefixState{
 		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
-			ndp.invalidateOnLinkPrefix(prefix)
+			ndp.invalidateOnLinkPrefix(prefix) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 		}),
 	}
 
@@ -958,7 +958,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 
 // invalidateOnLinkPrefix invalidates a discovered on-link prefix.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 	s, ok := ndp.onLinkPrefixes[prefix]
 
@@ -983,7 +983,7 @@ func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
 // handleOnLinkPrefixInformation assumes that the prefix this pi is for is
 // not the link-local prefix and the on-link flag is set.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformation) {
 	prefix := pi.Subnet()
 	prefixState, ok := ndp.onLinkPrefixes[prefix]
@@ -1036,7 +1036,7 @@ func (ndp *ndpState) handleOnLinkPrefixInformation(pi header.NDPPrefixInformatio
 // handleAutonomousPrefixInformation assumes that the prefix this pi is for is
 // not the link-local prefix and the autonomous flag is set.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInformation) {
 	vl := pi.ValidLifetime()
 	pl := pi.PreferredLifetime()
@@ -1077,7 +1077,7 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 //
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	// If we do not already have an address for this prefix and the valid
 	// lifetime is 0, no need to do anything further, as per RFC 4862
@@ -1100,7 +1100,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the deprecated SLAAC prefix %s", prefix))
 			}
 
-			ndp.deprecateSLAACAddress(state.stableAddr.addressEndpoint)
+			ndp.deprecateSLAACAddress(state.stableAddr.addressEndpoint) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 		}),
 		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			state, ok := ndp.slaacPrefixes[prefix]
@@ -1108,7 +1108,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 				panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the invalidated SLAAC prefix %s", prefix))
 			}
 
-			ndp.invalidateSLAACPrefix(prefix, state)
+			ndp.invalidateSLAACPrefix(prefix, state) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 		}),
 		tempAddrs:             make(map[tcpip.Address]tempSLAACAddrState),
 		maxGenerationAttempts: ndp.configs.AutoGenAddressConflictRetries + 1,
@@ -1158,7 +1158,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 
 // addAndAcquireSLAACAddr adds a SLAAC address to the IPv6 endpoint.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, temporary bool, lifetimes stack.AddressLifetimes) stack.AddressEndpoint {
 	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.AddressProperties{
 		PEB:        stack.FirstPrimaryEndpoint,
@@ -1186,7 +1186,7 @@ func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, tempor
 //
 // Panics if the prefix is not a SLAAC prefix or it already has an address.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixState) bool {
 	if addressEndpoint := state.stableAddr.addressEndpoint; addressEndpoint != nil {
 		panic(fmt.Sprintf("ndp: SLAAC prefix %s already has a permanent address %s", prefix, addressEndpoint.AddressWithPrefix()))
@@ -1283,7 +1283,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 //
 // If generating a new address for the prefix fails, the prefix is invalidated.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
@@ -1306,6 +1306,8 @@ func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
 // If resetGenAttempts is true, the prefix's generation counter is reset.
 //
 // Returns true if a new address was generated.
+//
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *slaacPrefixState, resetGenAttempts bool) bool {
 	// Are we configured to auto-generate new temporary global addresses for the
 	// prefix?
@@ -1403,7 +1405,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 				panic(fmt.Sprintf("ndp: must have a tempAddr entry to deprecate temporary address %s", generatedAddr))
 			}
 
-			ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint)
+			ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 		}),
 		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
@@ -1416,7 +1418,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 				panic(fmt.Sprintf("ndp: must have a tempAddr entry to invalidate temporary address %s", generatedAddr))
 			}
 
-			ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState)
+			ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 		}),
 		regenJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 			prefixState, ok := ndp.slaacPrefixes[prefix]
@@ -1437,7 +1439,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 			// Reset the generation attempts counter as we are starting the generation
 			// of a new address for the SLAAC prefix.
-			tempAddrState.regenerated = ndp.generateTempSLAACAddr(prefix, &prefixState, true /* resetGenAttempts */)
+			tempAddrState.regenerated = ndp.generateTempSLAACAddr(prefix, &prefixState, true /* resetGenAttempts */) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 			prefixState.tempAddrs[generatedAddr.Address] = tempAddrState
 			ndp.slaacPrefixes[prefix] = prefixState
 		}),
@@ -1457,7 +1459,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 // regenerateTempSLAACAddr regenerates a temporary address for a SLAAC prefix.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttempts bool) {
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
@@ -1472,7 +1474,7 @@ func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttemp
 //
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixState *slaacPrefixState, pl, vl time.Duration) {
 	// If prefix was preferred for some finite lifetime before, cancel the
 	// deprecation job so it can be reset.
@@ -1658,7 +1660,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 //
 // deprecateSLAACAddress does nothing if the address is already deprecated.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) deprecateSLAACAddress(addressEndpoint stack.AddressEndpoint) {
 	if addressEndpoint.Deprecated() {
 		return
@@ -1672,7 +1674,7 @@ func (ndp *ndpState) deprecateSLAACAddress(addressEndpoint stack.AddressEndpoint
 
 // invalidateSLAACPrefix invalidates a SLAAC prefix.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefixState) {
 	ndp.cleanupSLAACPrefixResources(prefix, state)
 
@@ -1690,7 +1692,7 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefi
 // cleanupSLAACAddrResourcesAndNotify cleans up an invalidated SLAAC address's
 // resources.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidatePrefix bool) {
 	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addr)
@@ -1718,7 +1720,7 @@ func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPr
 //
 // Panics if the SLAAC prefix is not known.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaacPrefixState) {
 	// Invalidate all temporary addresses.
 	for tempAddr, tempAddrState := range state.tempAddrs {
@@ -1736,7 +1738,7 @@ func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaa
 
 // invalidateTempSLAACAddr invalidates a temporary SLAAC address.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
 	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs, tempAddr, tempAddrState)
 
@@ -1749,7 +1751,7 @@ func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLA
 // SLAAC address's resources from ndp and notifies the NDP dispatcher that the
 // address was invalidated.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix) {
 	prefix := addr.Subnet()
 	state, ok := ndp.slaacPrefixes[prefix]
@@ -1769,7 +1771,7 @@ func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWi
 // cleanupTempSLAACAddrResourcesAndNotify except it does not lookup the
 // temporary address's state in ndp - it assumes the passed state is valid.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
 	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), tempAddrState.addressEndpoint.AddressWithPrefix())
@@ -1788,7 +1790,7 @@ func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs map[t
 // This function invalidates all discovered on-link prefixes, discovered
 // routers, and auto-generated addresses.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) cleanupState() {
 	for prefix, state := range ndp.slaacPrefixes {
 		ndp.invalidateSLAACPrefix(prefix, state)
@@ -1820,7 +1822,7 @@ func (ndp *ndpState) cleanupState() {
 // be solicited as there is no point soliciting routers if we don't handle their
 // advertisements.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) startSolicitingRouters() {
 	if ndp.rtrSolicitTimer.timer != nil {
 		// We are already soliciting routers.
@@ -1937,7 +1939,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 // router solicitation will be stopped if NDP is not configured to handle RAs
 // as a router.
 //
-// Precondition: ndp.ep.mu must be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) forwardingChanged(forwarding bool) {
 	if forwarding {
 		if ndp.configs.HandleRAs.enabled(forwarding) {
@@ -1960,7 +1962,7 @@ func (ndp *ndpState) forwardingChanged(forwarding bool) {
 // stopSolicitingRouters stops soliciting routers. If routers are not currently
 // being solicited, this function does nothing.
 //
-// The IPv6 endpoint that ndp belongs to MUST be locked.
+// +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) stopSolicitingRouters() {
 	if ndp.rtrSolicitTimer.timer == nil {
 		// Nothing to do.

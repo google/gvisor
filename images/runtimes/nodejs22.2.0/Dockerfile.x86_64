@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y \
   dumb-init \
   g++ \
   make \
+  patch \
   python3.10
 
 WORKDIR /root
@@ -12,9 +13,18 @@ RUN curl -o node-${VERSION}.tar.gz https://nodejs.org/dist/${VERSION}/node-${VER
  && tar -zxf node-${VERSION}.tar.gz \
  && rm -f node-${VERSION}.tar.gz
 
+# Patch in a timeout increase to reduce test flakiness on gVisor
 WORKDIR /root/node-${VERSION}
+COPY timeouts.patch /tmp/timeouts.patch
+RUN patch -p1 --no-backup-if-mismatch < /tmp/timeouts.patch \
+  && rm -f /tmp/timeouts.patch
+
 RUN ./configure
 RUN make -j $(nproc) test-build
+
+# Use node --check on the files we patched
+RUN out/Release/node --check test/common/index.js \
+  && out/Release/node --check test/parallel/test-http-outgoing-end-cork.js
 
 # Including dumb-init emulates the Linux "init" process, preventing the failure
 # of tests involving worker processes.

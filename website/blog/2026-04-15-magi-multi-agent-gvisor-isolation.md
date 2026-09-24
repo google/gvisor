@@ -78,7 +78,7 @@ Setting up the GCE VM (once SSH'd as `root`):
 sudo apt-get update && sudo apt-get -y upgrade
 
 # NVIDIA driver
-DRIVER_VERSION=590.48.01; \
+DRIVER_VERSION=610.57.04; \
   sudo apt-get install -y build-essential linux-headers-$(uname -r) && \
   curl -fSsl -O "https://us.download.nvidia.com/tesla/$DRIVER_VERSION/NVIDIA-Linux-x86_64-$DRIVER_VERSION.run" && \
   sudo sh NVIDIA-Linux-x86_64-$DRIVER_VERSION.run && \

@@ -22,15 +22,19 @@ package cgroup2fs
 //     kernel.TaskSet.mu
 //       cgroup2fs.filesystem.tasksMu
 //         kernel.SignalHandlers.mu
+//           kernel.CgroupRegistry.mu
 //         kernel.Task.cgroup2Mu
 //
 // The treeMu is an analogue to the kernel's cgroup_mutex, whereas
 // tasksMu is an analogue to the kernel's css_set_lock. The former
 // governs matters of topology: the basic structure of the tree and
-// the controllers enabled in each node. The latter governs membership:
-// the tasks associated with each cgroup.
+// the controllers enabled in each node. It also governs eBPF programs
+// attached to cgroups. The latter governs membership: the tasks
+// associated with each cgroup.
 
 import (
+	"bytes"
+	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -43,6 +47,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sentry/vfs/memxattr"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // limitMax is the value for max.descendants and max.depth that indicates no limit.
@@ -125,6 +131,44 @@ type cgroup struct {
 	// killSeq tracks cgroup.kill invocations.
 	// +checklocks:fs.tasksMu
 	killSeq uint64
+	// freezeRequested is this cgroup's own cgroup.freeze value; see
+	// freezeOrderedLocked for the effective (ancestor-inclusive) state.
+	// +checklocks:fs.tasksMu
+	freezeRequested bool
+
+	// nrFreezeCredits counts this cgroup's direct tasks with an
+	// outstanding freeze credit (kernel.Task.hasFreezeCredit), unresolved
+	// by parking, thaw, exit, or migration.
+	// +checklocks:fs.tasksMu
+	// +checkatomic
+	nrFreezeCredits atomicbitops.Int64
+	// nrChildrenWithCredits lets hasFreezeCredits() answer in O(1),
+	// mirroring nrPopulatedChildren/populated().
+	// +checklocks:fs.tasksMu
+	// +checkatomic
+	nrChildrenWithCredits atomicbitops.Int64
+
+	// xattrs stores extended attributes on this cgroup directory.
+	xattrs memxattr.SimpleExtendedAttributes
+
+	// bpf contains eBPF programs associated with the cgroup.
+	// +checklocks:fs.treeMu
+	bpf *kernel.Cgroup2BPF
+}
+
+// freezeOrderedLocked reports whether c.freezeRequested is set on this
+// cgroup or any ancestor (parent pointers are immutable, so fs.tasksMu
+// suffices).
+// +checklocksread:c.fs.tasksMu
+func (c *cgroup) freezeOrderedLocked() bool {
+	for cg := c; cg != nil; cg = cg.parent {
+		// cg.fs.tasksMu == c.fs.tasksMu (one fs per tree), but checklocks
+		// can't prove that across the parent walk.
+		if cg.freezeRequested { // +checklocksforce: c.fs.tasksMu is locked
+			return true
+		}
+	}
+	return false
 }
 
 // +checklocks:c.fs.treeMu
@@ -300,6 +344,14 @@ func (c *cgroup) populated() bool {
 // its parent's populated child counters and triggers cgroup.events notifications.
 // +checklocks:c.fs.tasksMu
 func (c *cgroup) updatePopulated(ctx context.Context, populated bool) {
+	// c's own tasksCount just crossed the 0<->1 boundary (see callers). If
+	// c still has populated children, its populated() state did not change:
+	// notifying watchers or adjusting ancestor counters here would corrupt
+	// the accounting.
+	if c.nrPopulatedChildren.Load() > 0 {
+		return
+	}
+
 	diff := int64(-1)
 	if populated {
 		diff = 1
@@ -323,6 +375,150 @@ func (c *cgroup) updatePopulated(ctx context.Context, populated bool) {
 		child = curr
 		curr = curr.parent
 	}
+}
+
+// hasFreezeCredits reports whether this cgroup's subtree has any task with
+// an outstanding freeze credit, in O(1) via nrChildrenWithCredits.
+func (c *cgroup) hasFreezeCredits() bool {
+	if c.nrFreezeCredits.Load() > 0 {
+		return true
+	}
+	if c.nrChildrenWithCredits.Load() > 0 {
+		return true
+	}
+	return false
+}
+
+// frozen reports c's cgroup.events "frozen" value: true iff c is under an
+// effective freeze order (freezeOrderedLocked()) and every task in that
+// scope has actually parked (no outstanding freeze credits).
+// freezeOrderedLocked() alone must not be repurposed for this -- commit()/
+// attach()/freeze() need "frozen right now", not "subtree settled".
+//
+// Reads both under a single fs.tasksMu.RLock() for a consistent snapshot.
+func (c *cgroup) frozen() bool {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	return c.frozenLocked()
+}
+
+// frozenLocked is frozen's precondition-locked core: true iff c is under an
+// effective freeze order and has no outstanding freeze credits, i.e. every
+// task in c's freeze-ordered scope has actually parked. Used by freeze()
+// (already holds fs.tasksMu for writing; frozen() would self-deadlock on
+// RLock).
+// +checklocksread:c.fs.tasksMu
+func (c *cgroup) frozenLocked() bool {
+	return c.freezeOrderedLocked() && !c.hasFreezeCredits()
+}
+
+// propagateHasCreditsLocked propagates a change in c's own credit presence
+// up the ancestry. The caller has already applied the +/-1 to
+// c.nrFreezeCredits and calls only on a zero-crossing; hasCredits is c's
+// new own-credit presence (true = just gained its first, false = lost its
+// last).
+//
+// Each node's nrChildrenWithCredits counts the direct children whose
+// subtree holds a credit, so hasFreezeCredits() means "my subtree holds any
+// credit". The walk updates that count on each ancestor and notifies every
+// node whose hasFreezeCredits() actually flips, stopping at the first
+// ancestor whose aggregate is unchanged: it didn't flip, so it needs no
+// notify and relays no change to its parent, hence nothing higher can flip.
+// Mirrors updatePopulated.
+//
+// notify is false to suppress eventsFile.Notify (e.g. freeze()'s bulk loop,
+// which notifies via its own snapshot diff instead); counter propagation
+// always runs regardless.
+// +checklocks:c.fs.tasksMu
+func (c *cgroup) propagateHasCreditsLocked(ctx context.Context, hasCredits, notify bool) {
+	// A child with credits already makes hasFreezeCredits() true
+	// regardless of this transition, so there's nothing to propagate.
+	if c.nrChildrenWithCredits.Load() > 0 {
+		return
+	}
+
+	diff := int64(-1)
+	if hasCredits {
+		diff = 1
+	}
+
+	// h is the farthest freezeRequested ancestor-or-self of c (nearest
+	// root). freezeOrderedLocked is true from c through h inclusive,
+	// false beyond -- one O(depth) pass here avoids calling the O(depth)
+	// freezeOrderedLocked per node below (which would be O(depth^2)).
+	// Skipped when notify is false: freezeOrdered only gates Notify below,
+	// so its value doesn't matter and h staying nil (pastH starting true)
+	// is harmless.
+	var h *cgroup
+	if notify {
+		for node := c; node != nil; node = node.parent {
+			if node.freezeRequested { // +checklocksforce: c.fs.tasksMu is locked
+				h = node
+			}
+		}
+	}
+
+	child := (*cgroup)(nil)
+	pastH := h == nil
+	curr := c
+	for curr != nil {
+		freezeOrdered := !pastH
+		hadCredits := curr.hasFreezeCredits()
+
+		if child != nil {
+			curr.nrChildrenWithCredits.Add(diff) // +checklocksforce: c.fs.tasksMu is locked
+		}
+
+		if child != nil && hadCredits == curr.hasFreezeCredits() {
+			break
+		}
+		// Only curr's *effective* freeze state can change cgroup.events'
+		// "frozen" line; if curr isn't freeze-ordered, notifying here is
+		// spurious.
+		if freezeOrdered && notify && curr.eventsFile != nil {
+			curr.eventsFile.Notify(ctx)
+		}
+		if curr == h {
+			pastH = true
+		}
+		child = curr
+		curr = curr.parent
+	}
+}
+
+// applyFreezeCreditDeltaLocked applies delta to creditCg's freeze-credit
+// count, propagating any has-credits crossing. No-op if creditCg is nil;
+// type-asserting it back to *cgroup is always safe, since this package is
+// the only source of Cgroup2 values. notify is passed through to
+// propagateHasCreditsLocked.
+//
+// Preconditions: caller holds creditCg.(*cgroup).fs.tasksMu if non-nil --
+// checklocks can't see through the type assertion.
+func applyFreezeCreditDeltaLocked(ctx context.Context, delta kernel.FreezeCreditDelta, creditCg kernel.Cgroup2, notify bool) {
+	if creditCg == nil {
+		return
+	}
+	c := creditCg.(*cgroup)
+	switch delta {
+	case kernel.FreezeCreditNone:
+	case kernel.FreezeCreditIssue:
+		if c.nrFreezeCredits.Add(1) == 1 { // +checklocksforce: caller holds fs.tasksMu
+			c.propagateHasCreditsLocked(ctx, true, notify) // +checklocksforce: caller holds fs.tasksMu
+		}
+	case kernel.FreezeCreditRetract:
+		if c.nrFreezeCredits.Add(-1) == 0 { // +checklocksforce: caller holds fs.tasksMu
+			c.propagateHasCreditsLocked(ctx, false, notify) // +checklocksforce: caller holds fs.tasksMu
+		}
+	default:
+		panic(fmt.Sprintf("cgroup2fs: unknown FreezeCreditDelta %d", delta))
+	}
+}
+
+// ApplyFreezeCreditDelta implements kernel.Cgroup2.ApplyFreezeCreditDelta.
+func (c *cgroup) ApplyFreezeCreditDelta(ctx context.Context, delta kernel.FreezeCreditDelta) {
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+	applyFreezeCreditDeltaLocked(ctx, delta, c, true)
 }
 
 // setControllersLocked modifies the set of enabled controllers for the children of the
@@ -363,11 +559,19 @@ func (c *cgroup) rebuildCtrlsLocked(ctx context.Context, cTypes []kernel.Cgroup2
 			ctrl := c.newController(cType)
 			c.ctrls[cType] = ctrl
 			c.populateInterfaceFiles(ctx, ctrl)
+			if newPids, ok := ctrl.(*pids); ok {
+				c.chargePidsForExistingTasksLocked(newPids)
+			}
 		} else if !c.parent.subtreeCtrls[cType] && c.ctrls[cType] != nil { // +checklocksforce: c.fs.treeMu is locked
 			ctrl := c.ctrls[cType]
 			c.ctrls[cType] = nil
 			c.removeInterfaceFiles(ctx, ctrl)
 			ctrl.detach()
+			// Reparent the cpu controller's tasks and accumulated usage onto
+			// the parent so disabling +cpu does not discard them.
+			if oldCPU, ok := ctrl.(*cpu); ok {
+				c.reparentCPUOnDisableLocked(oldCPU)
+			}
 		}
 	}
 
@@ -391,6 +595,25 @@ func (c *cgroup) rebuildCtrlsLocked(ctx context.Context, cTypes []kernel.Cgroup2
 			c.fs.tasksMu.Unlock()
 		}
 	}
+}
+
+// chargePidsForExistingTasksLocked charges a newly instantiated pids
+// controller for the tasks already present in c's subtree. Those tasks were
+// charged to the controller's ancestors when they entered their cgroups, but
+// predate this controller, so nothing else accounts for them.
+// +checklocksread:c.fs.treeMu
+func (c *cgroup) chargePidsForExistingTasksLocked(p *pids) {
+	c.fs.tasksMu.RLock()
+	defer c.fs.tasksMu.RUnlock()
+	n := c.tasksCount.Load()
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		n += child.tasksCount.Load()
+		return true
+	})
+	if n == 0 {
+		return
+	}
+	p.charge(n)
 }
 
 // updateClosestCtrls updates the cached nearest active controller for the given types.
@@ -467,6 +690,10 @@ func (c *cgroup) CanEnter(ctx context.Context, t *kernel.Task) (func(), func(), 
 		if c.tasksCount.Add(1) == 1 {
 			c.updatePopulated(ctx, true)
 		}
+		// Must be in this same tasksMu section as c.tasks[t]'s insertion,
+		// or a concurrent thaw could miss t and never freeze it.
+		delta, creditCg := t.ApplyFreezeTasksLocked(c, c.freezeOrderedLocked())
+		applyFreezeCreditDeltaLocked(ctx, delta, creditCg, true)
 		c.fs.tasksMu.Unlock()
 
 		for _, ctrl := range curSet {
@@ -486,6 +713,11 @@ func (c *cgroup) Exit(ctx context.Context, t *kernel.Task) {
 	if c.tasksCount.Add(-1) == 0 {
 		c.updatePopulated(ctx, false)
 	}
+	// Retract any credit t still holds -- it may die unparked (e.g.
+	// SIGKILLed while frozen) and nothing else would resolve it.
+	// Applied inline: Exit() already holds fs.tasksMu.
+	delta, creditCg := t.ResolveFreezeCreditTasksLocked()
+	applyFreezeCreditDeltaLocked(ctx, delta, creditCg, true)
 	c.fs.tasksMu.Unlock()
 
 	curSet := c.closestCtrls.Load()
@@ -501,9 +733,10 @@ func (c *cgroup) Exit(ctx context.Context, t *kernel.Task) {
 }
 
 // CanCloneInto implements kernel.Cgroup2.CanCloneInto.
-// It is used to check permissions for CLONE_CGROUP_INTO.
+// It is used to check permissions for CLONE_CGROUP_INTO. ns is the forking
+// task's cgroup namespace.
 // +checklocksread:c.fs.treeMu
-func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials) error {
+func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials, ns *kernel.CgroupNamespace) error {
 	if c.deleted.Load() {
 		return linuxerr.ENOENT
 	}
@@ -516,6 +749,7 @@ func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials) erro
 	if err != nil {
 		return err
 	}
+	defer inode.DecRef(ctx)
 	if err := inode.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
 		return err
 	}
@@ -523,7 +757,11 @@ func (c *cgroup) CanCloneInto(ctx context.Context, creds *auth.Credentials) erro
 	t := kernel.TaskFromContext(ctx)
 	if t != nil {
 		if parentCg, ok := t.Cgroup2().(*cgroup); ok {
-			return c.checkMigrationPermsLocked(ctx, creds, parentCg)
+			var nsRoot *cgroup
+			if ns != nil {
+				nsRoot = ns.Root().(*cgroup)
+			}
+			return c.checkMigrationPermsLocked(ctx, creds, parentCg, nsRoot)
 		}
 	}
 	return nil
@@ -588,6 +826,19 @@ func (c *cgroup) attach(ctx context.Context, actx *attachCtx) {
 		if c.tasksCount.Add(1) == 1 {
 			c.updatePopulated(ctx, true)
 		}
+
+		// Set t.freezeOrdered to the destination's effective order
+		// (c.freezeOrderedLocked(); fs.tasksMu is held).
+		//
+		// The migration variant is required because a task can move cgroups
+		// while its effective order is unchanged (frozen in the old cgroup,
+		// still frozen in the new). ApplyFreezeTasksLocked would then report
+		// no change and leave the credit on the old owner -- but the credit
+		// must move old->new, which needs two (delta, cgroup) pairs: one
+		// retract, one issue.
+		delta1, cg1, delta2, cg2 := t.ApplyFreezeForMigrationTasksLocked(c, c.freezeOrderedLocked())
+		applyFreezeCreditDeltaLocked(ctx, delta1, cg1, true)
+		applyFreezeCreditDeltaLocked(ctx, delta2, cg2, true)
 	}
 
 	curSet := c.closestCtrls.Load()
@@ -630,16 +881,95 @@ func (c *cgroup) removeInterfaceFiles(ctx context.Context, ctrl controller) {
 	for _, name := range ctrl.interfaceFileNames() {
 		if inode, err := c.OrderedChildren.Lookup(ctx, name); err == nil {
 			c.OrderedChildren.Unlink(ctx, name, inode)
+			inode.DecRef(ctx)
 		}
 	}
 }
 
-// Path returns the path of the cgroup.
+// Path returns the path of the cgroup (`without " (deleted)"`).
 func (c *cgroup) Path() string {
-	if c.deleted.Load() {
-		return c.path + " (deleted)"
-	}
 	return c.path
+}
+
+// PathFrom implements kernel.Cgroup2.PathFrom.
+//
+// It mirrors Linux's cgroup_path_ns(): the returned path is relative
+// to nsRoot, always starts with '/', and contains one leading "/.." component
+// per level separating nsRoot from the lowest common ancestor of the two
+// cgroups.
+//
+// It relies only on immutable fields (parent, level, path), so it
+// needs no locks.
+func (c *cgroup) PathFrom(nsRoot kernel.Cgroup2) string {
+	root, ok := nsRoot.(*cgroup)
+	if !ok || root.fs != c.fs || root.parent == nil {
+		// Namespace rooted at the real root (or a foreign node, which
+		// shouldn't happen): the path is absolute.
+		return c.Path()
+	}
+
+	lca := lowestCommonAncestor(c, root)
+	var b strings.Builder
+	for i := 0; i < root.level-lca.level; i++ {
+		b.WriteString("/..")
+	}
+	if c != lca {
+		if lca.parent == nil {
+			b.WriteString(c.path)
+		} else {
+			b.WriteString(c.path[len(lca.path):])
+		}
+	}
+	if b.Len() == 0 {
+		b.WriteString("/")
+	}
+	return b.String()
+}
+
+// Deleted implements kernel.Cgroup2.Deleted.
+func (c *cgroup) Deleted() bool {
+	return c.deleted.Load()
+}
+
+// IfBPF implements kernel.Cgroup2.IfBPF.
+func (c *cgroup) IfBPF(f func(*kernel.Cgroup2BPF)) {
+	c.fs.treeMu.RLock()
+	defer c.fs.treeMu.RUnlock()
+	if c.bpf != nil {
+		f(c.bpf)
+	}
+}
+
+// WriteBPF implements kernel.Cgroup2.WriteBPF.
+func (c *cgroup) WriteBPF(f func(*kernel.Cgroup2BPF, []*kernel.Cgroup2BPF) error) error {
+	c.fs.treeMu.Lock()
+	defer c.fs.treeMu.Unlock()
+
+	bpf := c.bpf
+	if bpf == nil {
+		bpf = &kernel.Cgroup2BPF{}
+	}
+
+	// Fetch the Cgroup2BPF structures for each ancestor.
+	ancestors := c.getAncestorsBPF()
+
+	err := f(bpf, ancestors)
+	if err == nil {
+		c.bpf = bpf
+	}
+	return err
+}
+
+// getAncestorsBPF returns the eBPF programs of each ancestor of c,
+// starting with its immediate parent.
+//
+// +checklocksread:c.fs.treeMu
+func (c *cgroup) getAncestorsBPF() []*kernel.Cgroup2BPF {
+	parents := make([]*kernel.Cgroup2BPF, 0, c.level)
+	for cur := c.parent; cur != nil; cur = cur.parent {
+		parents = append(parents, cur.bpf) // +checklocksforce: c.fs.treeMu is locked
+	}
+	return parents
 }
 
 // KillSeq implements kernel.Cgroup2.KillSeq.
@@ -668,8 +998,11 @@ func (c *cgroup) walkSubtreeLocked(f func(n *cgroup) bool) {
 	}
 }
 
+// checkMigrationPermsLocked checks whether the caller may migrate a process
+// from oldNode to c. nsRoot is the root cgroup of the calling task's cgroup
+// namespace.
 // +checklocksread:c.fs.treeMu
-func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Credentials, oldNode *cgroup) error {
+func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Credentials, oldNode, nsRoot *cgroup) error {
 	lca := lowestCommonAncestor(oldNode, c)
 	if lca == nil {
 		return nil
@@ -678,7 +1011,56 @@ func (c *cgroup) checkMigrationPermsLocked(ctx context.Context, creds *auth.Cred
 	if err != nil {
 		return err
 	}
-	return lcaProcs.CheckPermissions(ctx, creds, vfs.MayWrite)
+	defer lcaProcs.DecRef(ctx)
+	if err := lcaProcs.CheckPermissions(ctx, creds, vfs.MayWrite); err != nil {
+		return err
+	}
+
+	// If cgroup namespaces are delegation boundaries, both the source and
+	// destination cgroups must be reachable from the migrating task's cgroup
+	// namespace.
+	if c.fs.nsDelegate.Load() && nsRoot != nil {
+		if !oldNode.isDescendantOf(nsRoot) || !c.isDescendantOf(nsRoot) {
+			return linuxerr.ENOENT
+		}
+	}
+	return nil
+}
+
+// isDescendantOf returns true if c is a descendant of (or the same as) a.
+// It relies only on immutable fields and needs no locks.
+func (c *cgroup) isDescendantOf(ancestor *cgroup) bool {
+	if c == nil || ancestor == nil {
+		return false
+	}
+	for c != nil && c.level > ancestor.level {
+		c = c.parent
+	}
+	return c == ancestor
+}
+
+// checkNSDelegateWrite enforces the "nsdelegate" mount option: cgroup
+// namespace roots are delegation boundaries, so writes from inside a
+// non-init namespace to non-delegatable interface files of the namespace
+// root cgroup are rejected.
+func (c *cgroup) checkNSDelegateWrite(ctx context.Context, fd *vfs.FileDescription) error {
+	// If fd is nil (e.g. writes from outside the sandbox via WriteControl),
+	// there is no cgroup namespace delegation boundary to enforce.
+	if !c.fs.nsDelegate.Load() || fd == nil {
+		return nil
+	}
+	ifd, ok := fd.Impl().(*interfaceFD)
+	if !ok || ifd.ns == nil {
+		return nil
+	}
+	ns := ifd.ns
+	if k := kernel.KernelFromContext(ctx); k == nil || ns == k.RootCgroupNamespace() {
+		return nil
+	}
+	if ns.Root().(*cgroup) == c {
+		return linuxerr.EPERM
+	}
+	return nil
 }
 
 func lowestCommonAncestor(a, b *cgroup) *cgroup {
@@ -732,7 +1114,9 @@ func (c *cgroup) hasControllersEnabledLocked() bool {
 }
 
 // attachProcess handles writes to cgroup.procs.
-func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, pid int64) error {
+// nsRoot is the root cgroup of the cgroupns of the task at the time of the
+// opening of the cgroup.procs fd.
+func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, nsRoot *cgroup, pid int64) error {
 	c.fs.treeMu.Lock()
 	defer c.fs.treeMu.Unlock()
 	if c.deleted.Load() {
@@ -760,7 +1144,7 @@ func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, pid
 		return linuxerr.ESRCH
 	}
 	oldNode := targetTask.Cgroup2().(*cgroup)
-	if err := c.checkMigrationPermsLocked(ctx, creds, oldNode); err != nil {
+	if err := c.checkMigrationPermsLocked(ctx, creds, oldNode, nsRoot); err != nil {
 		return err
 	}
 
@@ -799,7 +1183,17 @@ func (c *cgroup) attachProcess(ctx context.Context, creds *auth.Credentials, pid
 
 // getPIDs handles reads from cgroup.procs.
 func (c *cgroup) getPIDs(t *kernel.Task) []int {
-	currPidns := t.PIDNamespace()
+	if t == nil {
+		return nil
+	}
+	return c.getPIDsInNamespace(t.PIDNamespace())
+}
+
+// getPIDsInNamespace returns task IDs in currPidns for all tasks in c.
+func (c *cgroup) getPIDsInNamespace(currPidns *kernel.PIDNamespace) []int {
+	if currPidns == nil {
+		return nil
+	}
 	var tasks []*kernel.Task
 
 	c.fs.tasksMu.RLock()
@@ -894,6 +1288,73 @@ func (c *cgroup) kill() error {
 	return nil
 }
 
+// freeze() relays each task's effective freeze state via
+// Task.ApplyFreezeTasksLocked (mirrors kill()).
+//
+// Lock ordering: treeMu, then tasksMu, then signalHandlers.mu per task,
+// matching fs.tasksMu -> signalHandlers.mu; runInterrupt never takes a
+// cgroup lock, so the reverse order never occurs.
+func (c *cgroup) freeze(ctx context.Context, freezeRequested bool) error {
+	c.fs.treeMu.Lock()
+	defer c.fs.treeMu.Unlock()
+	if c.deleted.Load() {
+		return linuxerr.ENODEV
+	}
+
+	c.fs.tasksMu.Lock()
+	defer c.fs.tasksMu.Unlock()
+
+	// freezeRequested changes freezeOrderedLocked() for c and its whole
+	// subtree, which can flip a node's frozenLocked() with no credit
+	// touched -- e.g. thawing a fully-parked cgroup (credits already 0),
+	// or freezing/thawing an empty one. The credit path won't notify
+	// those, so snapshot every node's frozenLocked() here and notify each
+	// one that actually flips.
+	type frozenSnapshot struct {
+		cg  *cgroup
+		was bool
+	}
+	snapshots := []frozenSnapshot{{c, c.frozenLocked()}}
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		snapshots = append(snapshots, frozenSnapshot{child, child.frozenLocked()}) // +checklocksforce: c.fs.tasksMu is locked
+		return true
+	})
+
+	// Self-request only -- ancestor inheritance is resolved by
+	// freezeOrderedLocked's walk, not by marking descendants here.
+	c.freezeRequested = freezeRequested
+
+	// Relay the *effective* state (freezeOrderedLocked(), not
+	// c.freezeRequested): thawing c must not thaw a task still frozen via
+	// an ancestor or its own descendant cgroup.freeze.
+	//
+	// notify=false: the snapshot diff below already notifies every node
+	// that actually flips, so per-credit notification here would be
+	// redundant.
+	eff := c.freezeOrderedLocked()
+	for t := range c.tasks {
+		delta, creditCg := t.ApplyFreezeTasksLocked(c, eff)
+		applyFreezeCreditDeltaLocked(ctx, delta, creditCg, false)
+	}
+	c.walkSubtreeLocked(func(child *cgroup) bool {
+		childEff := child.freezeOrderedLocked() // +checklocksforce: c.fs.tasksMu is locked
+		for t := range child.tasks {            // +checklocksforce: c.fs.tasksMu is locked
+			delta, creditCg := t.ApplyFreezeTasksLocked(child, childEff) // +checklocksforce: c.fs.tasksMu is locked
+			applyFreezeCreditDeltaLocked(ctx, delta, creditCg, false)
+		}
+		return true
+	})
+
+	// Notify watchers on every node whose frozenLocked() actually changed
+	// (see the snapshot comment above).
+	for _, s := range snapshots {
+		if s.cg.frozenLocked() != s.was && s.cg.eventsFile != nil { // +checklocksforce: c.fs.tasksMu is locked
+			s.cg.eventsFile.Notify(ctx)
+		}
+	}
+	return nil
+}
+
 // stealController detaches a controller from the root cgroup V2 tree.
 // +checklocks:c.fs.treeMu
 func (c *cgroup) stealController(ctx context.Context, cType kernel.Cgroup2Ctrl) error {
@@ -935,6 +1396,9 @@ func (c *cgroup) returnController(ctx context.Context, cType kernel.Cgroup2Ctrl)
 	ctrl := c.newController(cType)
 	c.ctrls[cType] = ctrl
 	c.populateInterfaceFiles(ctx, ctrl)
+	if newPids, ok := ctrl.(*pids); ok {
+		c.chargePidsForExistingTasksLocked(newPids)
+	}
 
 	cTypes := []kernel.Cgroup2Ctrl{cType}
 	c.updateClosestCtrlsLocked(cTypes)
@@ -960,4 +1424,76 @@ func (c *cgroup) updateTaskMemoryCgIDsLocked() {
 	for t := range c.tasks {
 		t.SetMemCgID(memCgID)
 	}
+}
+
+// ReadControl implements kernel.Cgroup2.ReadControl.
+// It allows reading from control files from outside the sandbox.
+func (c *cgroup) ReadControl(ctx context.Context, name string) (string, error) {
+	// The true root cgroup does not expose memory.current as a file, but
+	// external queries of the root's usage are still answered here.
+	if c.parent == nil && name == "memory.current" {
+		memCgIDs := make(map[uint32]struct{})
+		c.fs.treeMu.RLock()
+		collectMemCgIDs(c, memCgIDs)
+		c.fs.treeMu.RUnlock()
+		total := getUsage(kernel.KernelFromContext(ctx), memCgIDs)
+		return fmt.Sprintf("%d\n", total), nil
+	}
+	cfi, err := c.Lookup(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("no such control file")
+	}
+	defer cfi.DecRef(ctx)
+	dbf, ok := cfi.(*cgroupInterfaceFile)
+	var data vfs.DynamicBytesSource
+	if ok {
+		data, err = dbf.Data(ctx)
+		if err != nil {
+			return "", err
+		}
+	} else if ef, ok := cfi.(*eventFile); ok {
+		data, err = ef.Data(ctx)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		return "", fmt.Errorf("no such control file")
+	}
+
+	var buf bytes.Buffer
+	if err := data.Generate(ctx, &buf); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// WriteControl implements kernel.Cgroup2.WriteControl.
+// It allows writing to control files from outside the sandbox.
+func (c *cgroup) WriteControl(ctx context.Context, name string, val string) error {
+	cfi, err := c.Lookup(ctx, name)
+	if err != nil {
+		return fmt.Errorf("no such control file")
+	}
+	defer cfi.DecRef(ctx)
+	dbf, ok := cfi.(*cgroupInterfaceFile)
+	if !ok {
+		return fmt.Errorf("control file not writable")
+	}
+	data, err := dbf.Data(ctx)
+	if err != nil {
+		return err
+	}
+	wdata, ok := data.(vfs.WritableDynamicBytesSource)
+	if !ok {
+		return fmt.Errorf("control file not writable")
+	}
+	ioSeq := usermem.BytesIOSequence([]byte(val))
+	n, err := wdata.Write(ctx, nil, ioSeq, 0)
+	if err != nil {
+		return err
+	}
+	if n != int64(len(val)) {
+		return fmt.Errorf("short write")
+	}
+	return nil
 }

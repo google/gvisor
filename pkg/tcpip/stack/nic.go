@@ -44,6 +44,7 @@ type nic struct {
 	stack   *Stack
 	id      tcpip.NICID
 	name    string
+	kind    string
 	context NICContext
 
 	stats sharedStats
@@ -195,6 +196,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		qDisc:                     qDisc,
 		deliverLinkPackets:        opts.DeliverLinkPackets,
 		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
+		kind:                      opts.Kind,
 	}
 	nic.linkResQueue.init(nic)
 

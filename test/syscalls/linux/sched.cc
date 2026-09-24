@@ -14,8 +14,11 @@
 
 #include <errno.h>
 #include <linux/sched.h>
+#include <sched.h>
+#include <signal.h>
 #include <stdint.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstring>

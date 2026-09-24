@@ -34,8 +34,9 @@ type Endpoint struct {
 	child    stack.LinkEndpoint
 	embedder stack.NetworkDispatcher
 
-	// mu protects dispatcher.
-	mu         sync.RWMutex `state:"nosave"`
+	mu sync.RWMutex `state:"nosave"`
+
+	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }
 
@@ -53,6 +54,8 @@ func (e *Endpoint) Init(child stack.LinkEndpoint, embedder stack.NetworkDispatch
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.mu.RLock()
 	d := e.dispatcher
@@ -63,6 +66,8 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 }
 
 // DeliverLinkPacket implements stack.NetworkDispatcher.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.mu.RLock()
 	d := e.dispatcher
@@ -73,6 +78,8 @@ func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *
 }
 
 // Attach implements stack.LinkEndpoint.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
 	e.dispatcher = dispatcher
@@ -87,6 +94,8 @@ func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // IsAttached implements stack.LinkEndpoint.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) IsAttached() bool {
 	e.mu.RLock()
 	isAttached := e.dispatcher != nil
@@ -120,6 +129,8 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // SetLinkAddress implements stack.LinkEndpoint.SetLinkAddress.
+//
+// +checklocksexclude:e.mu
 func (e *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

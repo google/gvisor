@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/version"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -394,8 +395,7 @@ func (*versionData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// FIXME(mpratt): Using Version from the init task SyscallTable
 	// disregards the different version a task may have (e.g., in a uts
 	// namespace).
-	ver := kernelVersion(ctx)
-	fmt.Fprintf(buf, "%s version %s %s\n", ver.Sysname, ver.Release, ver.Version)
+	fmt.Fprintf(buf, "%s version %s %s\n", version.LinuxSysname, version.LinuxRelease(), version.LinuxVersion)
 	return nil
 }
 
@@ -442,21 +442,8 @@ var _ dynamicInode = (*cmdLineData)(nil)
 
 // Generate implements vfs.DynamicByteSource.Generate.
 func (*cmdLineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "BOOT_IMAGE=/vmlinuz-%s-gvisor quiet\n", kernelVersion(ctx).Release)
+	fmt.Fprintf(buf, "BOOT_IMAGE=/vmlinuz-%s quiet\n", version.LinuxRelease())
 	return nil
-}
-
-// kernelVersion returns the kernel version.
-func kernelVersion(ctx context.Context) kernel.Version {
-	k := kernel.KernelFromContext(ctx)
-	init := k.GlobalInit()
-	if init == nil {
-		// Attempted to read before the init Task is created. This can
-		// only occur during startup, which should never need to read
-		// this file.
-		panic("Attempted to read version before initial Task is available")
-	}
-	return init.Leader().SyscallTable().Version
 }
 
 // devicesData backs /proc/devices.

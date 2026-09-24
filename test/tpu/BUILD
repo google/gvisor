@@ -9,7 +9,7 @@ go_test(
     name = "vllm_test",
     srcs = ["vllm_test.go"],
     data = [
-        "//runsc",
+        "//:release",
     ],
     tags = [
         "manual",

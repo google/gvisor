@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -23,12 +25,14 @@
 #include <atomic>
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"

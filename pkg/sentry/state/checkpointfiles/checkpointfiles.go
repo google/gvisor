@@ -37,6 +37,7 @@ const (
 // Files specific to filesystem checkpoints (see fscheckpoint package for
 // details):
 const (
-	FSCheckpointManifestFileName = "fscheckpoint.json"
+	FSCheckpointDir              = "fs"
+	FSCheckpointManifestFileName = "fscheckpoint.pb"
 	FSCheckpointMultiTarFileName = "multitar.img"
 )

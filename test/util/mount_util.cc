@@ -15,19 +15,27 @@
 #include "test/util/mount_util.h"
 
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <iostream>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/numbers.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
+#include "test/util/fs_util.h"
+#include "test/util/logging.h"
 #include "test/util/posix_error.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {

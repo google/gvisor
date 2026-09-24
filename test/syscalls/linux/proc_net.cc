@@ -14,23 +14,39 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <linux/capability.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <unistd.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <ostream>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -43,6 +59,7 @@ constexpr const char kIpForward[] = "/proc/sys/net/ipv4/ip_forward";
 constexpr const char kIPv6KeepAddrOnDown[] =
     "/proc/sys/net/ipv6/conf/all/keep_addr_on_down";
 constexpr const char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
+constexpr const char kProcSysNetIpv6[] = "/proc/sys/net/ipv6";
 
 TEST(ProcNetSymlinkTarget, FileMode) {
   struct stat s;
@@ -73,6 +90,26 @@ TEST(ProcNetIfInet6, Format) {
               ::testing::MatchesRegex(
                   // Ex: "00000000000000000000000000000001 01 80 10 80 lo\n"
                   "^([a-f0-9]{32}( [a-f0-9]{2}){4} +[a-z][a-z0-9]*\n)+$"));
+}
+
+TEST(ProcSysNetIpv6, DirectoryExists) {
+  struct stat s;
+  ASSERT_THAT(stat(kProcSysNetIpv6, &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_mode & S_IFMT, S_IFDIR);
+  EXPECT_EQ(s.st_mode & 0777, 0555);
+}
+
+TEST(ProcSysNetIpv6, FilesExist) {
+  const char* files[] = {
+      "/proc/sys/net/ipv6/auto_flowlabels",
+      "/proc/sys/net/ipv6/bindv6only",
+      "/proc/sys/net/ipv6/ip6frag_time",
+      "/proc/sys/net/ipv6/ip_nonlocal_bind",
+  };
+
+  for (const char* file : files) {
+    EXPECT_THAT(open(file, O_RDONLY), SyscallSucceeds()) << file;
+  }
 }
 
 TEST(ProcSysNetIpv4Sack, Exists) {

@@ -55,8 +55,19 @@ fi
 dev=$(ip route show default | sed 's/.*\sdev\s\(\S*\)\s.*$/\1/')
 addr=$(ip addr show dev "$dev"  | grep -w inet | sed 's/^\s*inet\s\(\S*\)\/.*$/\1/')
 
-echo 1 > /proc/sys/net/ipv4/ip_forward
-iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
-iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
+# TODO(gvisor.dev/issues/14011): until we investigate/fix gVisor's handling of
+# forwarding fragmented packets, match the host MTU in nested dockerd to make
+# it more reliable.
+mtu=$(ip -o link show dev "$dev" | sed -n 's/.*mtu \([0-9]*\).*/\1/p')
 
-exec /usr/bin/dockerd --iptables=false --ip6tables=false -D "${EXTRA_DOCKERD_FLAGS[@]}"
+IPTABLES="iptables"
+if command -v iptables-legacy >/dev/null 2>&1; then
+  IPTABLES="iptables-legacy"
+fi
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+$IPTABLES -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
+$IPTABLES -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
+
+exec dockerd-entrypoint.sh --iptables=false --ip6tables=false ${mtu:+--mtu="$mtu"} -D "${EXTRA_DOCKERD_FLAGS[@]}"
+

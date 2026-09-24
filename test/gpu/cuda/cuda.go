@@ -709,7 +709,7 @@ func RunCudaTests(ctx context.Context, t *testing.T, args *RunCudaTestArgs) {
 			}
 		}
 	}
-	ctx, cancel := context.WithTimeoutCause(context.Background(), maxDuration, errors.New("overall test timed out"))
+	ctx, cancel := context.WithTimeoutCause(ctx, maxDuration, errors.New("overall test timed out"))
 	defer cancel()
 	testDeadline, ok := ctx.Deadline()
 	if !ok {

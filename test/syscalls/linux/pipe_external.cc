@@ -14,6 +14,7 @@
 
 #include <asm-generic/errno-base.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -22,9 +23,11 @@
 #include <string>
 #include <tuple>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
 // This file contains tests specific to connecting to host UDS managed outside

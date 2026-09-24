@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"structs"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -53,6 +54,8 @@ type queuedContext struct {
 // The layout must stay byte-identical to `context_queue` in
 // `sysmsg/sysmsg_lib.c`.
 type contextQueue struct {
+	_ structs.HostLayout
+
 	// end is an index used for putting new contexts into the ringbuffer.
 	// It is written only by the Sentry (add) and read by stub threads.
 	end uint32

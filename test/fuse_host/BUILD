@@ -18,7 +18,7 @@ go_test(
     name = "fusehost_test",
     srcs = ["fuse_host_test.go"],
     data = [
-        "//runsc",
+        "//:release",
         "//test/fuse_host/workload",
     ],
     library = ":fusehost",

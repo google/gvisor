@@ -47,6 +47,7 @@ go_library(
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/control/api",
         "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fd",
@@ -55,6 +56,7 @@ go_library(
         "//pkg/metric",
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/tpuproxy/vfio",
@@ -93,11 +95,21 @@ go_library(
 go_test(
     name = "control_test",
     size = "small",
-    srcs = ["proc_test.go"],
+    srcs = [
+        "fs_test.go",
+        "proc_test.go",
+    ],
     library = ":control",
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
+        "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
+        "//pkg/usermem",
     ],
 )

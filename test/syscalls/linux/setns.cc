@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <limits.h>
+#include <linux/capability.h>
+#include <linux/limits.h>
 #include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 

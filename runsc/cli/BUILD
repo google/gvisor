@@ -22,6 +22,7 @@ go_library(
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",
+        "//runsc/gvisorbinaries",
         "//runsc/specutils",
         "//runsc/starttime",
         "//runsc/version",

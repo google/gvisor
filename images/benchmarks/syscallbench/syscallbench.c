@@ -39,7 +39,7 @@ void do_getpidopt() {
 }
 #endif
 
-static void show_usage(const char *cmd) {
+static void show_usage(const char* cmd) {
   fprintf(stderr,
           "Usage: %s [options]\n"
           "-l, --loops <num>\t\t Number of syscall loops, default 10000000\n"
@@ -113,7 +113,7 @@ static void set_uncacheable_filter() {
   }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   int i, c, sys_val = get_pid;
   int seccomp_policy_flag = seccomp_none;
   struct option long_options[] = {{"loops", required_argument, 0, 'l'},

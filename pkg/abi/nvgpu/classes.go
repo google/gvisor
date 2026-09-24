@@ -78,6 +78,9 @@ const (
 	GF100_ZBC_CLEAR                  = 0x00009096
 	GF100_SUBDEVICE_INFOROM          = 0x000090e7
 	GF100_PROFILER                   = 0x000090cc
+	NV_EVENT_BUFFER                  = 0x000090cd
+	NV01_MEMORY_DEVICELESS           = 0x000090ce
+	MAXWELL_PROFILER_CONTEXT         = 0x0000b1cc
 	MAXWELL_PROFILER_DEVICE          = 0x0000b2cc
 	NV_COUNTER_COLLECTION_UNIT       = 0x0000cbca
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
@@ -105,6 +108,7 @@ const (
 	AMPERE_COMPUTE_A                 = 0x0000c6c0
 	NVC6FA_VIDEO_OFA                 = 0x0000c6fa
 	BLACKWELL_USERMODE_A             = 0x0000c761
+	AMPERE_B                         = 0x0000c797
 	NVC7B0_VIDEO_DECODER             = 0x0000c7b0
 	AMPERE_DMA_COPY_B                = 0x0000c7b5
 	NVC7B7_VIDEO_ENCODER             = 0x0000c7b7
@@ -133,10 +137,20 @@ const (
 	NVCDD1_VIDEO_NVJPG               = 0x0000cdd1
 	NVCDFA_VIDEO_OFA                 = 0x0000cdfa
 	BLACKWELL_B                      = 0x0000ce97
+	NVCEB0_VIDEO_DECODER             = 0x0000ceb0
 	NVCEB7_VIDEO_ENCODER             = 0x0000ceb7
 	BLACKWELL_COMPUTE_B              = 0x0000cec0
+	NVCEFA_VIDEO_OFA                 = 0x0000cefa
+	NVCFB0_VIDEO_DECODER             = 0x0000cfb0
 	NVCFB7_VIDEO_ENCODER             = 0x0000cfb7
+	NVCFD1_VIDEO_NVJPG               = 0x0000cfd1
+	NVCFFA_VIDEO_OFA                 = 0x0000cffa
+	NVD1B0_VIDEO_DECODER             = 0x0000d1b0
 	NVD1B7_VIDEO_ENCODER             = 0x0000d1b7
+	NVD1FA_VIDEO_OFA                 = 0x0000d1fa
+	NVD2B0_VIDEO_DECODER             = 0x0000d2b0
+	NVD2D1_VIDEO_NVJPG               = 0x0000d2d1
+	NVD2FA_VIDEO_OFA                 = 0x0000d2fa
 )
 
 // From src/common/sdk/nvidia/inc/class/cl0000.h:
@@ -288,6 +302,28 @@ type NV_MEMORY_ALLOCATION_PARAMS_V545 struct {
 	_        uint32
 }
 
+// NV_EVENT_BUFFER_ALLOC_PARAMETERS is the alloc params type for NV_EVENT_BUFFER,
+// from src/common/sdk/nvidia/inc/class/cl90cd.h.
+//
+// +marshal
+type NV_EVENT_BUFFER_ALLOC_PARAMETERS struct {
+	_                    structs.HostLayout
+	BufferHeader         P64
+	RecordBuffer         P64
+	RecordSize           uint32
+	RecordCount          uint32
+	VardataBuffer        P64
+	VardataBufferSize    uint32
+	RecordsFreeThreshold uint32
+	NotificationHandle   uint64
+	VardataFreeThreshold uint32
+	HSubDevice           Handle
+	Flags                uint32
+	HBufferHeader        Handle
+	HRecordBuffer        Handle
+	HVardataBuffer       Handle
+}
+
 // NV503B_BAR1_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
 //
 // +marshal
@@ -405,6 +441,17 @@ type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS struct {
 	EngineType                  uint32
 	BIsCallingContextVgpuPlugin uint8
 	Pad0                        [3]byte
+}
+
+// NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615 is the updated version of
+// NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS since 615.71.09.
+//
+// +marshal
+type NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS_V615 struct {
+	_ structs.HostLayout
+	NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS
+	Reserved      uint32
+	InternalFlags uint32
 }
 
 // NV_MEMORY_DESC_PARAMS is from
@@ -843,6 +890,15 @@ type NV_OFA_ALLOCATION_PARAMETERS_V545 struct {
 	_ structs.HostLayout
 	NV_OFA_ALLOCATION_PARAMETERS
 	EngineInstance uint32
+}
+
+// NVB1CC_ALLOC_PARAMETERS is the alloc params type for MAXWELL_PROFILER_CONTEXT,
+// from src/common/sdk/nvidia/inc/class/clb1cc.h.
+//
+// +marshal
+type NVB1CC_ALLOC_PARAMETERS struct {
+	_          structs.HostLayout
+	HSubDevice Handle
 }
 
 // NVB2CC_ALLOC_PARAMETERS is the alloc params type for MAXWELL_PROFILER_DEVICE,

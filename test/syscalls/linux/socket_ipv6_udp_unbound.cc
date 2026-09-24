@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"

@@ -2,6 +2,6 @@ FROM ubuntu:jammy
 
 RUN set -x \
         && apt-get update \
-        && apt-get install -y \
-            sysbench \
+        && apt-get install -y --no-install-recommends \
+            sysbench ca-certificates \
         && rm -rf /var/lib/apt/lists/*

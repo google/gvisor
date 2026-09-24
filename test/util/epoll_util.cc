@@ -16,6 +16,9 @@
 
 #include <sys/epoll.h>
 
+#include <cerrno>
+#include <cstdint>
+
 #include "gmock/gmock.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"

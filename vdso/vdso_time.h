@@ -21,6 +21,7 @@ namespace vdso {
 
 int ClockRealtime(struct timespec* ts);
 int ClockMonotonic(struct timespec* ts);
+int ClockMonotonicRaw(struct timespec* ts);
 
 }  // namespace vdso
 

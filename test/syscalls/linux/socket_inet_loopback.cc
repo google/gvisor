@@ -13,15 +13,22 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -1213,7 +1220,7 @@ TEST_P(SocketInetLoopbackTest, TCPResetAfterClose) {
   // have timed out and closed the socket.
   EXPECT_THAT(RetryEINTR(send)(accepted.get(), &data, sizeof(data), 0),
               SyscallSucceeds());
-  // Sleep for a shortwhile to get a RST back.
+  // Sleep for a short while to get a RST back.
   absl::SleepFor(absl::Seconds(1));
 
   // Try writing again and we should get an EPIPE back.

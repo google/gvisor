@@ -29,6 +29,7 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -36,7 +37,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/safemem"
 )
 
 const (
@@ -637,37 +637,46 @@ func (i *Inode) DataOffset() (uint64, error) {
 	return i.dataOff, nil
 }
 
-// Data returns the read-only file data of this inode.
-func (i *Inode) Data() (safemem.BlockSeq, error) {
+// FileRange represents a range of bytes within the image file.
+type FileRange struct {
+	// Off is the offset of the range within the image file.
+	Off uint64
+	// Size is the length of the range in bytes.
+	Size uint64
+	// Bytes is the byte slice of the range within the image file.
+	Bytes []byte
+}
+
+// DataRanges returns the ranges within the image file that hold this inode's
+// data, in file order. An inode's data occupies at most two ranges: a run of
+// plain data blocks and, for files with tail-packed inline data, the inline
+// tail. Entries that are not used (or hold no data) have a zero Size.
+func (i *Inode) DataRanges() ([2]FileRange, error) {
+	var ranges [2]FileRange
 	switch dataLayout := i.DataLayout(); dataLayout {
 	case InodeDataLayoutFlatPlain:
-		bytes, err := i.image.BytesAt(i.dataOff, i.size)
-		if err != nil {
-			return safemem.BlockSeq{}, err
-		}
-		return safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bytes)), nil
+		ranges[0] = FileRange{Off: i.dataOff, Size: i.size}
 
 	case InodeDataLayoutFlatInline:
-		sl := make([]safemem.Block, 0, 2)
 		idataSize := i.size & (uint64(i.image.BlockSize()) - 1)
-		if i.size > idataSize {
-			if bytes, err := i.image.BytesAt(i.dataOff, i.size-idataSize); err != nil {
-				return safemem.BlockSeq{}, err
-			} else {
-				sl = append(sl, safemem.BlockFromSafeSlice(bytes))
-			}
-		}
-		if bytes, err := i.image.BytesAt(i.idataOff, idataSize); err != nil {
-			return safemem.BlockSeq{}, err
-		} else {
-			sl = append(sl, safemem.BlockFromSafeSlice(bytes))
-		}
-		return safemem.BlockSeqFromSlice(sl), nil
+		ranges[0] = FileRange{Off: i.dataOff, Size: i.size - idataSize}
+		ranges[1] = FileRange{Off: i.idataOff, Size: idataSize}
 
 	default:
 		log.Warningf("Unsupported data layout 0x%x at inode (nid=%v)", dataLayout, i.Nid())
-		return safemem.BlockSeq{}, linuxerr.ENOTSUP
+		return [2]FileRange{}, linuxerr.ENOTSUP
 	}
+	for j := range ranges {
+		if ranges[j].Size == 0 {
+			continue
+		}
+		bytes, err := i.image.BytesAt(ranges[j].Off, ranges[j].Size)
+		if err != nil {
+			return [2]FileRange{}, err
+		}
+		ranges[j].Bytes = bytes
+	}
+	return ranges, nil
 }
 
 // blockData represents the information of the data in a block.

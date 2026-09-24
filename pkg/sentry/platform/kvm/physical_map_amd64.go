@@ -77,7 +77,8 @@ func archSpecialRegions(vSize uintptr) (uintptr, []specialVirtualRegion) {
 				length:  vr.virtual - start,
 			}
 			specialRegions = append(specialRegions, specialVirtualRegion{
-				region: r,
+				region:   r,
+				filename: "[extended]",
 			})
 			vSize -= r.length
 			log.Infof("excluded: virtual [%x,%x)", r.virtual, r.virtual+r.length)

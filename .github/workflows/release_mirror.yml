@@ -1,0 +1,215 @@
+# This workflow mirrors an existing gVisor release to the GitHub Releases page.
+#
+# It does NOT build anything. The release itself is produced by the internal
+# Buildkite pipeline (see .buildkite/release.yaml), which builds both
+# architectures and uploads the artifacts to gs://gvisor/releases/. This
+# workflow waits for those artifacts to appear, verifies them against the
+# published sha512 digests, and attaches them to a GitHub Release created from
+# the tag pushed by tools/tag_release.sh.
+#
+# The GCS bucket and the apt repository remain the canonical distribution
+# channels; see g3doc/user_guide/install.md.
+name: "Release Mirror"
+
+"on":
+  push:
+    tags:
+      - 'release-[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. release-20260817.0)'
+        required: true
+        type: string
+
+# Never cancel a partially-published release; queue instead.
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish-release:
+    name: Mirror release to GitHub
+    runs-on: ubuntu-latest
+    # The Buildkite release step allows 180 minutes plus retries, and this job
+    # polls for its output, so allow generous headroom.
+    timeout-minutes: 300
+    permissions:
+      contents: write
+
+    steps:
+      - name: Determine tag and version
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-${REF_NAME}}"
+          # Mirrors the validation in tools/tag_release.sh.
+          if ! [[ "${TAG}" =~ ^release-20[0-9]{6}\.[0-9]+$ ]]; then
+            echo "::error::Not a valid release tag: '${TAG}'"
+            exit 1
+          fi
+          echo "tag=${TAG}" >>"${GITHUB_OUTPUT}"
+          echo "version=${TAG#release-}" >>"${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # Full history and tags are required to compute the changelog range.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag exists
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null || {
+            echo "::error::Tag '${TAG}' does not exist in this repository."
+            exit 1
+          }
+
+      - name: Wait for Buildkite artifacts in GCS
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          source .github/workflows/release_mirror_lib.sh
+
+          declare -a urls=()
+          for arch in "${ARCHS[@]}"; do
+            for f in "${RAW_FILES[@]}"; do
+              urls+=("$(raw_url "${VERSION}" "${arch}" "${f}")")
+              urls+=("$(raw_url "${VERSION}" "${arch}" "${f}.sha512")")
+            done
+          done
+
+          # gcloud uploads the repo tree in an unspecified order, so wait for
+          # every required object rather than using one of them as a proxy.
+          readonly TIMEOUT_SECONDS=$((240 * 60))
+          start="$(date +%s)"
+          for url in "${urls[@]}"; do
+            while true; do
+              # HEAD only: the tarballs are large and this loop is hot.
+              # `|| true` keeps a transient network failure from tripping -e;
+              # curl still emits 000 in that case.
+              status="$(curl -sS -o /dev/null -w '%{http_code}' -I "${url}" 2>/dev/null || true)"
+              if [[ "${status:-000}" == "200" ]]; then
+                echo "ready: ${url}"
+                break
+              fi
+              elapsed=$(( $(date +%s) - start ))
+              if (( elapsed >= TIMEOUT_SECONDS )); then
+                echo "::error::Timed out after $((elapsed / 60))m waiting for ${url} (last status ${status})."
+                exit 1
+              fi
+              echo "waiting for ${url} (status ${status}, elapsed $((elapsed / 60))m)"
+              sleep 30
+            done
+          done
+
+      - name: Download and verify artifacts
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          source .github/workflows/release_mirror_lib.sh
+
+          mkdir -p dist
+          for arch in "${ARCHS[@]}"; do
+            stage="$(mktemp -d)"
+            for f in "${RAW_FILES[@]}"; do
+              curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+                "$(raw_url "${VERSION}" "${arch}" "${f}")" -o "${stage}/${f}"
+              curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+                "$(raw_url "${VERSION}" "${arch}" "${f}.sha512")" -o "${stage}/${f}.sha512"
+              # The published digest records the bare basename, so verify
+              # before renaming for the flat release-asset namespace.
+              (cd "${stage}" && sha512sum -c "${f}.sha512")
+              mv "${stage}/${f}" "dist/$(asset_name "${f}" "${arch}")"
+            done
+            rm -rf "${stage}"
+          done
+
+          # Compute both manifests over the same file list so that neither
+          # includes the other.
+          (
+            cd dist
+            mapfile -t assets < <(find . -maxdepth 1 -type f -printf '%P\n' | sort)
+            sha256sum -- "${assets[@]}" >SHA256SUMS
+            sha512sum -- "${assets[@]}" >SHA512SUMS
+          )
+          ls -l dist
+
+      - name: Generate release notes
+        id: notes
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          prev_tag="$(git describe --tags --abbrev=0 --match 'release-*' "${TAG}^" 2>/dev/null || true)"
+          if [[ -z "${prev_tag}" ]]; then
+            echo "::error::Could not determine the release tag preceding ${TAG}; refusing to publish empty notes."
+            exit 1
+          fi
+
+          notes="${RUNNER_TEMP}/release_notes.md"
+          {
+            echo "## gVisor release ${VERSION}"
+            echo
+            echo "Binaries are also available from the apt repository and the release bucket;"
+            echo "see [Installation](https://gvisor.dev/docs/user_guide/install/)."
+            echo
+            echo "### Changes since \`${prev_tag}\`"
+            echo
+            # Fenced: commit subjects are not written as Markdown and regularly
+            # contain characters that would otherwise be interpreted.
+            echo '```text'
+            git log "${prev_tag}..${TAG}" --no-merges --pretty=format:'%s (%h)'
+            echo
+            echo '```'
+            echo
+            echo "**Full changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev_tag}...${TAG}"
+          } >"${notes}"
+
+          echo "path=${notes}" >>"${GITHUB_OUTPUT}"
+          cat "${notes}"
+
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          NOTES: ${{ steps.notes.outputs.path }}
+        run: |
+          set -euo pipefail
+
+          # Only mark the newest release tag as "latest", so that backfilling an
+          # older tag by hand does not move the pointer backwards.
+          newest="$(git for-each-ref --count=1 --sort=-v:refname \
+            --format='%(refname:short)' 'refs/tags/release-*')"
+          if [[ "${TAG}" == "${newest}" ]]; then is_latest=true; else is_latest=false; fi
+
+          # The Buildkite release step retries automatically, so this has to be
+          # safe to run more than once for the same tag.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; updating."
+            gh release upload "${TAG}" dist/* --clobber
+            gh release edit "${TAG}" \
+              --title "gVisor ${VERSION}" \
+              --notes-file "${NOTES}" \
+              --latest="${is_latest}"
+          else
+            # --verify-tag: without it, a mistyped workflow_dispatch input would
+            # create a bogus tag at the default branch head.
+            gh release create "${TAG}" \
+              --verify-tag \
+              --title "gVisor ${VERSION}" \
+              --notes-file "${NOTES}" \
+              --latest="${is_latest}" \
+              dist/*
+          fi

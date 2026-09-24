@@ -17,13 +17,13 @@ package tmpfs
 import (
 	"archive/tar"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -142,6 +142,12 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 		ino := fs.root.inode
 		ino.uid.Store(uint32(hdr.Uid))
 		ino.gid.Store(uint32(hdr.Gid))
+		acl, defaultACL, err := getACLsFromHeader(hdr)
+		if err != nil {
+			return nil, err
+		}
+		ino.accessACL.Store(acl)
+		ino.defaultACL.Store(defaultACL)
 		ino.mode.Store(uint32(hdr.Mode) | linux.S_IFDIR)
 		ino.mtime.Store(hdr.ModTime.UnixNano())
 		ino.setXattrsFromPAXRecords(hdr)
@@ -168,10 +174,16 @@ func (fs *filesystem) mkdirFromTar(hdr *tar.Header, pathToInode map[string]*inod
 	if !ok {
 		return nil, fmt.Errorf("parent inode at %v is not a directory", dir)
 	}
-	childDir, err := fs.newDirectory(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
+	childDir, err := fs.newDirectory(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), nil /* parentDir */)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new directory inode: %v", err)
 	}
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return nil, err
+	}
+	childDir.inode.accessACL.Store(acl)
+	childDir.inode.defaultACL.Store(defaultACL)
 	parentDir.inode.incLinksLocked() // from child's ".."
 	parentDir.inode.incRef()         // child directory holds a reference to parent
 	childDir.inode.mtime.Store(hdr.ModTime.UnixNano())
@@ -198,19 +210,25 @@ func (fs *filesystem) mknodFromTar(ctx context.Context, hdr *tar.Header, pathToI
 	var err error
 	switch hdr.Typeflag {
 	case tar.TypeReg:
-		childInode, err = fs.newRegularFile(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
+		childInode, err = fs.newRegularFile(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), nil /* parentDir */)
 	case tar.TypeFifo:
-		childInode, err = fs.newNamedPipe(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), parentDir)
+		childInode, err = fs.newNamedPipe(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode), nil /* parentDir */)
 	case tar.TypeBlock:
-		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFBLK), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
+		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFBLK), uint32(hdr.Devmajor), uint32(hdr.Devminor), nil /* parentDir */)
 	case tar.TypeChar:
-		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFCHR), uint32(hdr.Devmajor), uint32(hdr.Devminor), parentDir)
+		childInode, err = fs.newDeviceFileLocked(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), linux.FileMode(hdr.Mode|linux.S_IFCHR), uint32(hdr.Devmajor), uint32(hdr.Devminor), nil /* parentDir */)
 	default:
 		return fmt.Errorf("mknod unsupported file type %v for %v", hdr.Typeflag, hdr.Name)
 	}
 	if err != nil {
 		return err
 	}
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return err
+	}
+	childInode.accessACL.Store(acl)
+	childInode.defaultACL.Store(defaultACL)
 	childInode.mtime.Store(hdr.ModTime.UnixNano())
 	childInode.setXattrsFromPAXRecords(hdr)
 	child := fs.newDentry(childInode)
@@ -273,11 +291,17 @@ func (fs *filesystem) symlinkFromTar(hdr *tar.Header, pathToInode map[string]*in
 			return fmt.Errorf("tmpfs: insufficient space to account for symlink target %q", hdr.Name)
 		}
 	}
-	childInode, err := fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, parentDir)
+	childInode, err := fs.newSymlink(auth.KUID(hdr.Uid), auth.KGID(hdr.Gid), 0777, hdr.Linkname, nil /* parentDir */)
 	if err != nil {
 		return fmt.Errorf("failed to create inode from tar: %v", err)
 	}
 	child := fs.newDentry(childInode)
+	acl, defaultACL, err := getACLsFromHeader(hdr)
+	if err != nil {
+		return err
+	}
+	child.inode.accessACL.Store(acl)
+	child.inode.defaultACL.Store(defaultACL)
 	child.inode.mtime.Store(hdr.ModTime.UnixNano())
 	child.inode.setXattrsFromPAXRecords(hdr)
 	parentDir.insertChildLocked(child, name)
@@ -451,22 +475,29 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
 	if xattrs := d.inode.xattrs.RawXattrs(); len(xattrs) > 0 {
 		header.PAXRecords = make(map[string]string, len(xattrs))
 		for k, v := range xattrs {
-			// PaxRecords require that key and value are non-empty UTF-8 strings and
-			// that the key does not contain '='.
-			if strings.Contains(k, "=") {
-				log.Warningf("Skipping xattr (k=%q, v=%q) for file %q while generating tar archive because key contains '='", k, v, path)
-				continue
-			}
-			if k == "" || v == "" {
-				log.Warningf("Skipping xattr (k=%q, v=%q) for file %q while generating tar archive because key or value is empty", k, v, path)
-				continue
-			}
-			if !utf8.ValidString(k) || !utf8.ValidString(v) {
-				log.Warningf("Skipping xattr (k=%q, v=%q) for file %q while generating tar archive because value is not a valid UTF-8 string", k, v, path)
+			// archive/tar preserves arbitrary bytes, including empty values, in
+			// SCHILY.xattr PAX records, so only the name has to be
+			// representable.
+			if k == "" || strings.ContainsAny(k, "=\x00") {
+				log.Warningf("Skipping xattr (k=%q) for file %q while generating tar archive because the name cannot be represented in a PAX record", k, path)
 				continue
 			}
 			header.PAXRecords[paxXattrPrefix+k] = v
 		}
+	}
+
+	// Serialize POSIX ACLs to PAXRecords.
+	if acl := d.inode.accessACL.Load(); acl != nil {
+		if header.PAXRecords == nil {
+			header.PAXRecords = make(map[string]string)
+		}
+		header.PAXRecords[paxXattrPrefix+linux.XATTR_NAME_POSIX_ACL_ACCESS] = aclToPAXRecord(acl)
+	}
+	if acl := d.inode.defaultACL.Load(); acl != nil {
+		if header.PAXRecords == nil {
+			header.PAXRecords = make(map[string]string)
+		}
+		header.PAXRecords[paxXattrPrefix+linux.XATTR_NAME_POSIX_ACL_DEFAULT] = aclToPAXRecord(acl)
 	}
 
 	inoToPath[d.inode.ino] = path
@@ -510,4 +541,50 @@ func (tarDefaultWriterCallbacks) regularFileWrite(ctx context.Context, rf *regul
 		return fmt.Errorf("failed to write file content to tar: %w", err)
 	}
 	return nil
+}
+
+func aclToPAXRecord(acl *vfs.PosixACL) string {
+	// We can use a "fake" root userns for this serialization
+	// since the values are KUIDs anyway.
+	data := acl.Serialize(auth.NewRootUserNamespace())
+
+	// Base64 encode the ACLs since PaxRecords must be UTF-8 strings.
+	// Omit padding characters (RawStdEncoding) to avoid '=' chars
+	// as well (which tar PAXRecords disallows).
+	dataEncoded := base64.RawStdEncoding.EncodeToString(data)
+
+	return dataEncoded
+}
+
+func aclFromHeader(hdr *tar.Header, aclName string) (*vfs.PosixACL, error) {
+	record, ok := hdr.PAXRecords[paxXattrPrefix+aclName]
+	if !ok {
+		return nil, nil
+	}
+
+	dataDecoded, err := base64.RawStdEncoding.DecodeString(record)
+	if err != nil {
+		return &vfs.PosixACL{}, err
+	}
+
+	acl, err := vfs.ParsePosixACL(dataDecoded, auth.NewRootUserNamespace())
+	if err != nil {
+		return &vfs.PosixACL{}, err
+	}
+
+	return acl, nil
+}
+
+func getACLsFromHeader(hdr *tar.Header) (*vfs.PosixACL, *vfs.PosixACL, error) {
+	acl, err := aclFromHeader(hdr, linux.XATTR_NAME_POSIX_ACL_ACCESS)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	defaultACL, err := aclFromHeader(hdr, linux.XATTR_NAME_POSIX_ACL_DEFAULT)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return acl, defaultACL, nil
 }

@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
@@ -55,13 +55,13 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "host_connected_endpoint_refs",
-    out = "host_connected_endpoint_refs.go",
+    name = "host_sender_refs",
+    out = "host_sender_refs.go",
     package = "transport",
-    prefix = "HostConnectedEndpoint",
+    prefix = "HostSender",
     template = "//pkg/refs:refs_template",
     types = {
-        "T": "HostConnectedEndpoint",
+        "T": "HostSender",
     },
 )
 
@@ -74,8 +74,8 @@ go_library(
         "connectionless_state.go",
         "endpoint_mutex.go",
         "host.go",
-        "host_connected_endpoint_refs.go",
         "host_iovec.go",
+        "host_sender_refs.go",
         "host_unsafe.go",
         "queue.go",
         "queue_mutex.go",
@@ -104,6 +104,22 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/unet",
+        "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "transport_test",
+    size = "small",
+    srcs = [
+        "host_test.go",
+        "queue_test.go",
+    ],
+    library = ":transport",
+    deps = [
+        "//pkg/context",
+        "//pkg/syserr",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
     ],

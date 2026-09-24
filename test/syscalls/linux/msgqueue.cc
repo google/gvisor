@@ -13,19 +13,30 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/capability.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <unistd.h>
 
+#include <cstdint>
+#include <map>
 #include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_format.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
-#include "test/util/capability_util.h"
+#include "absl/time/time.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -561,17 +572,17 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
   // Number of messages that can be sent without blocking.
   const size_t msgCount = msgMnb / msgMax;
 
-  ScopedThread t([&] {
+  int id = queue.get();
+  ScopedThread t([&, id] {
     // Fill the queue.
     msgmax buf{1, ""};
     for (size_t i = 0; i < msgCount; i++) {
-      EXPECT_THAT(msgsnd(queue.get(), &buf, sizeof(buf.mtext), 0),
-                  SyscallSucceeds());
+      EXPECT_THAT(msgsnd(id, &buf, sizeof(buf.mtext), 0), SyscallSucceeds());
     }
 
     // Next msgsnd should block. Because we're repeating on EINTR, msgsnd may
     // race with msgctl(IPC_RMID) and return EINVAL.
-    EXPECT_THAT(RetryEINTR(msgsnd)(queue.get(), &buf, sizeof(buf.mtext), 0),
+    EXPECT_THAT(RetryEINTR(msgsnd)(id, &buf, sizeof(buf.mtext), 0),
                 SyscallFails());
     EXPECT_TRUE((errno == EIDRM || errno == EINVAL));
   });
@@ -594,11 +605,12 @@ TEST(MsgqueueTest, MsgSndRmWhileBlocking) {
 TEST(MsgqueueTest, MsgRcvRmWhileBlocking) {
   Queue queue = ASSERT_NO_ERRNO_AND_VALUE(Msgget(IPC_PRIVATE, 0600));
 
-  ScopedThread t([&] {
+  int id = queue.get();
+  ScopedThread t([&, id] {
     // Because we're repeating on EINTR, msgsnd may race with msgctl(IPC_RMID)
     // and return EINVAL.
     msgbuf rcv;
-    EXPECT_THAT(RetryEINTR(msgrcv)(queue.get(), &rcv, 1, 2, 0), SyscallFails());
+    EXPECT_THAT(RetryEINTR(msgrcv)(id, &rcv, 1, 2, 0), SyscallFails());
     EXPECT_TRUE(errno == EIDRM || errno == EINVAL);
   });
 
@@ -834,6 +846,33 @@ TEST(MsgqueueTest, MsgCtlIpcStatWriteOnly) {
               SyscallFailsWithErrno(EACCES));
 }
 
+TEST(MsgqueueTest, MsgCtlIpcRmid) {
+  Queue queue = ASSERT_NO_ERRNO_AND_VALUE(Msgget(IPC_PRIVATE, 0600));
+  const int id = queue.get();
+  ASSERT_THAT(msgctl(id, IPC_RMID, nullptr), SyscallSucceeds());
+  queue.release();
+  EXPECT_THAT(msgctl(id, IPC_RMID, nullptr), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MsgqueueTest, MsgCtlIpcRmidPermission) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  Queue queue = ASSERT_NO_ERRNO_AND_VALUE(Msgget(IPC_PRIVATE, 0600));
+  const uid_t other_uid = geteuid() == 0 ? 1 : 0;
+  ScopedThread t([&] {
+    // Change only this thread's credentials, leaving the owner able to remove
+    // the queue after the denied attempt.
+    ASSERT_THAT(syscall(SYS_setresuid, -1, other_uid, -1), SyscallSucceeds());
+    ASSERT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
+    EXPECT_THAT(msgctl(queue.get(), IPC_RMID, nullptr),
+                SyscallFailsWithErrno(EPERM));
+  });
+
+  struct msqid_ds ds = {};
+  EXPECT_THAT(msgctl(queue.get(), IPC_STAT, &ds), SyscallSucceeds());
+  // Queue's destructor checks that removal by the owner still succeeds.
+}
+
 // Test msgctl with IPC_SET option.
 TEST(MsgqueueTest, MsgCtlIpcSet) {
   Queue queue(msgget(IPC_PRIVATE, 0600));
@@ -894,12 +933,24 @@ TEST(MsgqueueTest, MsgCtlMsgInfo) {
   ASSERT_THAT(msgctl(0, MSG_INFO, reinterpret_cast<struct msqid_ds*>(&info)),
               SyscallSucceeds());
 
+  // Capture initial global state rather than asserting strictly against 0.
+  // Other tests running in the same process footprint (e.g., via
+  // --gunit_repeat) or concurrently may leak resources or hold queues.
+  // Comparing relative to the initial state prevents these global metrics from
+  // causing flakes.
+  int initial_msgpool = info.msgpool;
+  int initial_msgmap = info.msgmap;
+  int initial_msgtql = info.msgtql;
+
   EXPECT_GT(info.msgmax, 0);
   EXPECT_GT(info.msgmni, 0);
   EXPECT_GT(info.msgmnb, 0);
-  EXPECT_EQ(info.msgpool, 0);  // Number of queues in the system.
-  EXPECT_EQ(info.msgmap, 0);   // Total number of messages in all queues.
-  EXPECT_EQ(info.msgtql, 0);   // Total number of bytes in all messages.
+  // Number of queues in the system.
+  EXPECT_EQ(info.msgpool, initial_msgpool);
+  // Total number of messages in all queues.
+  EXPECT_EQ(info.msgmap, initial_msgmap);
+  // Total number of bytes in all messages.
+  EXPECT_EQ(info.msgtql, initial_msgtql);
   EXPECT_EQ(info.msgssz, msgSsz);
 
   // Add a queue and a message.
@@ -916,9 +967,12 @@ TEST(MsgqueueTest, MsgCtlMsgInfo) {
   EXPECT_GT(info.msgmax, 0);
   EXPECT_GT(info.msgmni, 0);
   EXPECT_GT(info.msgmnb, 0);
-  EXPECT_EQ(info.msgpool, 1);       // Number of queues in the system.
-  EXPECT_EQ(info.msgmap, 1);        // Total number of messages in all queues.
-  EXPECT_EQ(info.msgtql, msgSize);  // Total number of bytes in all messages.
+  // Number of queues in the system.
+  EXPECT_EQ(info.msgpool, initial_msgpool + 1);
+  // Total number of messages in all queues.
+  EXPECT_EQ(info.msgmap, initial_msgmap + 1);
+  // Total number of bytes in all messages.
+  EXPECT_EQ(info.msgtql, initial_msgtql + msgSize);
   EXPECT_EQ(info.msgssz, msgSsz);
 }
 

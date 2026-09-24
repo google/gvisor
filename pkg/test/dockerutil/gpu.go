@@ -282,13 +282,13 @@ func ParseCudaVersion(version string) (*CudaVersion, error) {
 	return &CudaVersion{Major: major, Minor: minor}, nil
 }
 
-var cudaRE = regexp.MustCompile(`CUDA\s*Version\s*:\s*(\d+)\.(\d+)`)
+var cudaRE = regexp.MustCompile(`CUDA\s*(?:UMD\s*)?Version\s*:\s*(\d+)\.(\d+)`)
 
 // NewCudaVersionFromOutput returns a new CudaVersion from the output of nvidia-smi.
 func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 	parts := cudaRE.FindStringSubmatch(out)
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("CUDA version not found in output: %v", parts)
+		return nil, fmt.Errorf("CUDA version not found in output %q", out)
 	}
 
 	major, err := strconv.ParseInt(parts[1], 10, 64)
@@ -298,7 +298,7 @@ func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 
 	minor, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse major version %q: %v", parts[2], err)
+		return nil, fmt.Errorf("failed to parse minor version %q: %v", parts[2], err)
 	}
 
 	return &CudaVersion{Major: major, Minor: minor}, err
@@ -306,7 +306,13 @@ func NewCudaVersionFromOutput(out string) (*CudaVersion, error) {
 
 // MaxSuportedCUDAVersion returns the maximum supported by the host machine.
 func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, error) {
-	c := MakeContainer(ctx, t)
+	return MaxSuportedCUDAVersionWithImage(ctx, t, "gpu/cuda-tests")
+}
+
+// MaxSuportedCUDAVersionWithImage returns the maximum supported CUDA version by the host machine,
+// executing nvidia-smi inside the given image.
+func MaxSuportedCUDAVersionWithImage(ctx context.Context, tb testing.TB, image string) (*CudaVersion, error) {
+	c := MakeContainer(ctx, tb)
 	defer c.CleanUp(ctx)
 	opts, err := GPURunOpts(SniffGPUOpts{
 		DisableSnifferReason: "Get CUDA Version",
@@ -315,11 +321,18 @@ func MaxSuportedCUDAVersion(ctx context.Context, t *testing.T) (*CudaVersion, er
 	if err != nil {
 		return nil, fmt.Errorf("could not create opts: %w", err)
 	}
-	opts.Image = "gpu/cuda-tests"
+	opts.Image = image
+	opts.Entrypoint = []string{"nvidia-smi"}
+	opts.Env = append(opts.Env,
+		"PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/local/cuda/lib64",
+	)
+	// Clear sniffGPUOpts so c.config doesn't inspect the image and restore its default Cmd.
+	opts.sniffGPUOpts = nil
 
-	out, err := c.Run(ctx, opts, "nvidia-smi")
+	out, err := c.Run(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run container: %w", err)
+		return nil, fmt.Errorf("failed to run container: %w (output: %q)", err, out)
 	}
 
 	return NewCudaVersionFromOutput(out)

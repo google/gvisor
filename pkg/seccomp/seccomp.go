@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/timing"
 )
 
 const (
@@ -55,7 +56,7 @@ const (
 // making it possible for the process to continue running after a violation.
 // However, it will leave a SECCOMP audit event trail behind. In any case, the
 // syscall is still blocked from executing.
-func (p *Program) Install() error {
+func (p *Program) Install(timer *timing.Timer) error {
 	// ***   DEBUG TIP   ***
 	// If you suspect the Sentry is getting killed due to a seccomp violation,
 	// look for the `debugFilter` boolean in `//runsc/boot/filter/filter.go`.
@@ -78,11 +79,13 @@ func (p *Program) Install() error {
 	if err != nil {
 		return err
 	}
+	timer.Reached("seccomp program compiled")
 
 	// Perform the actual installation.
 	if err := SetFilter(instrs); err != nil {
 		return fmt.Errorf("failed to set filter: %v", err)
 	}
+	timer.Reached("seccomp program installed")
 
 	log.Infof("Seccomp filters installed.")
 	return nil

@@ -108,14 +108,14 @@ type memoryCurrent struct {
 
 // Collects all the memory cgroup ids under the given cgroup.
 // +checklocksread:c.fs.treeMu
-func (mc *memoryCurrent) collectMemCgIDs(c *cgroup, memCgIDs map[uint32]struct{}) {
+func collectMemCgIDs(c *cgroup, memCgIDs map[uint32]struct{}) {
 	// Add ourselves.
 	if mem := c.ctrls[kernel.Cgroup2Memory]; mem != nil {
 		memCgIDs[mem.(*memory).id] = struct{}{}
 	}
 	// Add our children.
 	for child := range c.children {
-		mc.collectMemCgIDs(child, memCgIDs) // +checklocksforce: c.fs.treeMu is locked
+		collectMemCgIDs(child, memCgIDs) // +checklocksforce: c.fs.treeMu is locked
 	}
 }
 
@@ -136,7 +136,7 @@ func (mc *memoryCurrent) Generate(ctx context.Context, buf *bytes.Buffer) error 
 
 	memCgIDs := make(map[uint32]struct{})
 	mc.m.c.fs.treeMu.RLock()
-	mc.collectMemCgIDs(mc.m.c, memCgIDs)
+	collectMemCgIDs(mc.m.c, memCgIDs)
 	mc.m.c.fs.treeMu.RUnlock()
 
 	totalBytes := getUsage(k, memCgIDs)

@@ -11,9 +11,10 @@ go_binary(
     noasan = True,
     pure = True,
     tags = ["staging"],
-    visibility = [
-        "//visibility:public",
-    ],
+    # Do NOT add new visibility entries here.
+    # Users should depend on the gVisor release fileset,
+    # not on this target directly.
+    visibility = ["//:__subpackages__"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
         "//runsc/cli/maincli",
@@ -57,6 +58,7 @@ go_binary(
     name = "runsc-race",
     srcs = ["main.go"],
     gotags = ["lockdep"],
+    race = "on",
     static = True,
     visibility = [
         "//visibility:public",
@@ -96,6 +98,7 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"false\" ",
+    visibility = ["//debian:__pkg__"],
 )
 
 go_cov(
@@ -118,4 +121,5 @@ go_cov(
         "\"$(location main.go)\" " +
         "\"$(location //tools:go-allow-internal.patch)\" " +
         "\"true\" ",
+    visibility = ["//debian:__pkg__"],
 )

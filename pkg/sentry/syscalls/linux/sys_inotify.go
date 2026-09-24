@@ -105,7 +105,7 @@ func InotifyAddWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) 
 	if mask&linux.IN_ONLYDIR != 0 {
 		path.Dir = true
 	}
-	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, follow)
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, follow, 0)
 	if err != nil {
 		return 0, nil, err
 	}

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -80,6 +81,12 @@ func updateGlobalOnce(fd int) error {
 
 	ring0.Init()
 	initFaultBlocks()
+
+	excludeVvarRegion = vvarMemslotUnusable(fd)
+	if excludeVvarRegion {
+		// Not a warning to make tests pass that match on not getting any warnings.
+		log.Infof("[vvar] region will not be mapped into the KVM guest! Performance will suffer!")
+	}
 	physicalInit()
 
 	// Explicitly configure address space for 48-bit VA.

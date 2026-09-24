@@ -280,7 +280,7 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 // Sync implements vfs.FileDescriptionImpl.Sync. Forwards sync to the upper
 // layer, if there is one. The lower layer doesn't need to sync because it
 // never changes.
-func (fd *directoryFD) Sync(ctx context.Context) error {
+func (fd *directoryFD) Sync(ctx context.Context, opts vfs.SyncOptions) error {
 	d := fd.dentry()
 	if !d.isCopiedUp() {
 		return nil
@@ -294,7 +294,11 @@ func (fd *directoryFD) Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = upperFD.Sync(ctx)
+	if opts.DataOnly {
+		err = upperFD.SyncData(ctx)
+	} else {
+		err = upperFD.Sync(ctx)
+	}
 	upperFD.DecRef(ctx)
 	return err
 }

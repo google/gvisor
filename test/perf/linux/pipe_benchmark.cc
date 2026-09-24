@@ -17,6 +17,8 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "benchmark/benchmark.h"
