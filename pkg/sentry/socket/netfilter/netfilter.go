@@ -298,6 +298,10 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		return err
 	}
 
+	if err := checkTargetHooks(table, ipv6); err != nil {
+		return err
+	}
+
 	stk.IPTables().ReplaceTable(nameToID[replace.Name.String()], table, ipv6)
 	return nil
 }
@@ -518,6 +522,73 @@ func checkLoopsAndChains(table stack.Table, ipv6 bool) *syserr.Error {
 			if err := checkChainDFS(table, ruleIdx+1, state, ipv6); err != nil {
 				return err
 			}
+		}
+	}
+
+	return nil
+}
+
+func targetTable(name string) string {
+	switch name {
+	case RedirectTargetName, DNATTargetName, SNATTargetName:
+		return natTable
+	case RejectTargetName:
+		return filterTable
+	case CTTargetName:
+		return rawTable
+	default:
+		return ""
+	}
+}
+
+func targetSupportsHook(target stack.Target, hook stack.Hook) bool {
+	switch target.(type) {
+	case *redirectTarget, *dnatTarget:
+		return hook == stack.Prerouting || hook == stack.Output
+	case *snatTarget:
+		return hook == stack.Input || hook == stack.Postrouting
+	case *rejectIPv4Target, *rejectIPv6Target:
+		return hook == stack.Input || hook == stack.Forward || hook == stack.Output
+	default:
+		return true
+	}
+}
+
+func checkChainTargets(table stack.Table, ruleIdx int, hook stack.Hook, visited []bool, ipv6 bool) *syserr.Error {
+	for ruleIdx < len(table.Rules) && !visited[ruleIdx] {
+		visited[ruleIdx] = true
+
+		rule := table.Rules[ruleIdx]
+		if !targetSupportsHook(rule.Target, hook) {
+			nflog("target %T at rule %d does not support hook %v", rule.Target, ruleIdx, hook)
+			return syserr.ErrInvalidArgument
+		}
+
+		if jump, ok := rule.Target.(*JumpTarget); ok {
+			if err := checkChainTargets(table, jump.RuleNum, hook, visited, ipv6); err != nil {
+				return err
+			}
+		}
+
+		if isUnconditionalFinalRule(rule, ipv6) {
+			return nil
+		}
+
+		ruleIdx++
+	}
+
+	return nil
+}
+
+func checkTargetHooks(table stack.Table, ipv6 bool) *syserr.Error {
+	for hook, ruleIdx := range table.BuiltinChains {
+		if table.ValidHooks()&(1<<hook) == 0 {
+			continue
+		}
+
+		visited := make([]bool, len(table.Rules))
+		if err := checkChainTargets(table, ruleIdx, stack.Hook(hook), visited, ipv6); err != nil {
+			return err
 		}
 	}
 
