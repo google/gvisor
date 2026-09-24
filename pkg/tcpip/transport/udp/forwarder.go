@@ -49,11 +49,13 @@ func NewForwarder(s *stack.Stack, handler ForwarderHandler) *Forwarder {
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	return f.handler(&ForwarderRequest{
-		stack: f.stack,
-		id:    id,
-		pkt:   pkt.Clone(),
-	})
+	r := NewForwarderRequest(f.stack, id, pkt)
+	handled := f.handler(r)
+	if !handled && r.pkt != nil {
+		r.pkt.DecRef()
+		r.pkt = nil
+	}
+	return handled
 }
 
 // ForwarderRequest represents a session request received by the forwarder and
@@ -65,12 +67,13 @@ type ForwarderRequest struct {
 	pkt   *stack.PacketBuffer
 }
 
-// NewForwarderRequest creates a new ForwarderRequest.
+// NewForwarderRequest creates a new ForwarderRequest and takes a reference on
+// the packet.
 func NewForwarderRequest(stack *stack.Stack, id stack.TransportEndpointID, pkt *stack.PacketBuffer) *ForwarderRequest {
 	return &ForwarderRequest{
 		stack: stack,
 		id:    id,
-		pkt:   pkt,
+		pkt:   pkt.Clone(),
 	}
 }
 
@@ -82,6 +85,11 @@ func (r *ForwarderRequest) ID() stack.TransportEndpointID {
 
 // CreateEndpoint creates a connected UDP endpoint for the session request.
 func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
+	defer func() {
+		r.pkt.DecRef()
+		r.pkt = nil
+	}()
+
 	ep := newEndpoint(r.stack, r.pkt.NetworkProtocolNumber, queue)
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
