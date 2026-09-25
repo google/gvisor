@@ -444,9 +444,16 @@ func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 	// the functions (duffzero) may have jump targets in the middle of the
 	// function itself.
 	funcsAllowed := map[string]struct{}{
-		"runtime.duffzero":       {},
-		"runtime.duffcopy":       {},
+		"runtime.duffzero": {},
+		"runtime.duffcopy": {},
+		// Compiler race instrumentation neither allocates Go heap objects nor
+		// splits the Go stack, including when it instruments stack variables.
 		"runtime.racefuncenter":  {},
+		"runtime.racefuncexit":   {},
+		"runtime.raceread":       {},
+		"runtime.racewrite":      {},
+		"runtime.racereadrange":  {},
+		"runtime.racewriterange": {},
 		"runtime.gcWriteBarrier": {},
 		"runtime.retpolineAX":    {},
 		"runtime.retpolineBP":    {},
