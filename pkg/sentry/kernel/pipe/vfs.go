@@ -115,8 +115,11 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 		for vp.pipe.isNamed && statusFlags&linux.O_NONBLOCK == 0 && !vp.pipe.HasWriters() &&
 			tWriters == vp.pipe.totalWriters.Load() {
 			if !ctx.BlockOn((*waitWriters)(&vp.pipe), waiter.EventInternal) {
+				if vp.pipe.HasWriters() || tWriters != vp.pipe.totalWriters.Load() {
+					break
+				}
 				fd.DecRef(ctx)
-				return nil, linuxerr.EINTR
+				return nil, linuxerr.ERESTARTSYS
 			}
 		}
 
@@ -132,8 +135,11 @@ func (vp *VFSPipe) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, s
 				return nil, linuxerr.ENXIO
 			}
 			if !ctx.BlockOn((*waitReaders)(&vp.pipe), waiter.EventInternal) {
+				if vp.pipe.HasReaders() || tReaders != vp.pipe.totalReaders.Load() {
+					break
+				}
 				fd.DecRef(ctx)
-				return nil, linuxerr.EINTR
+				return nil, linuxerr.ERESTARTSYS
 			}
 		}
 
