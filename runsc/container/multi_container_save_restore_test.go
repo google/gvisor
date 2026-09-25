@@ -59,9 +59,10 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(cleanup)
 
 		args := Args{
-			ID:        ids[i],
-			Spec:      spec,
-			BundleDir: bundleDir,
+			ID:                ids[i],
+			Spec:              spec,
+			BundleDir:         bundleDir,
+			CheckpointDirPath: imagePath,
 		}
 		cont, err := New(conf, args)
 		if err != nil {
@@ -1375,4 +1376,213 @@ func TestMultiContainerSharedVolumeCheckpointRestore(t *testing.T) {
 		c.SignalContainer(unix.SIGKILL, false)
 		c.Wait()
 	}
+}
+
+// TestMultiContainerChainedCheckpointRestore tests that a multi-container
+// sandbox that was restored from a split filesystem checkpoint can be
+// checkpointed again, by chaining split checkpoint/restore 3 times.
+//
+// The sandbox runs two sub-containers, each storing its incrementing counter in
+// a container-private tmpfs mount (saved via SplitFSCheckpointPaths) and
+// writing the current value to an output file on the host once per second.
+// Every iteration:
+//  1. Checkpoints the sandbox with SplitFSCheckpointPaths targeting both
+//     sub-containers' tmpfs mounts, verifies that the split filesystem image
+//     files were created, and records the last counter each container wrote.
+//  2. Destroys the containers, so that the restored ones don't conflict with
+//     them, and recreates the host output files.
+//  3. Restores the sandbox into containers with new IDs and checks that both
+//     applications resumed counting from the counter preserved in the split
+//     filesystem checkpoint, and that all containers are running.
+func TestMultiContainerChainedCheckpointRestore(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint not supported")
+	}
+
+	// Skip overlay on default mounts because the test communicates progress
+	// via output files on the host; each sub-container's counter file lives on
+	// a dedicated tmpfs mount backed by a filestore via mount hints.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testMultiContainerChainedCheckpointRestore(t, conf)
+		})
+	}
+}
+
+func testMultiContainerChainedCheckpointRestore(t *testing.T, conf *config.Config) {
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	testDir := makeTempDir(t, "chained-checkpoint-test")
+	outputPath1 := filepath.Join(testDir, "output1")
+	outputFile1 := resetOutputFile(t, outputPath1)
+	outputPath2 := filepath.Join(testDir, "output2")
+	outputFile2 := resetOutputFile(t, outputPath2)
+
+	const (
+		container1Name = "sub-container-1"
+		container2Name = "sub-container-2"
+		tmpfsMount1    = "/tmpfs1"
+		tmpfsMount2    = "/tmpfs2"
+	)
+
+	counterFile1 := filepath.Join(tmpfsMount1, "counter")
+	counterFile2 := filepath.Join(tmpfsMount2, "counter")
+	script1 := fmt.Sprintf("echo 0 > %q; while true; do i=$(cat %q); echo $i >> %q; echo $((i+1)) > %q; sleep 1; done", counterFile1, counterFile1, outputPath1, counterFile1)
+	script2 := fmt.Sprintf("echo 100 > %q; while true; do j=$(cat %q); echo $j >> %q; echo $((j+1)) > %q; sleep 1; done", counterFile2, counterFile2, outputPath2, counterFile2)
+	testSpecs, ids := createSpecs(
+		sleepCmd,
+		[]string{"bash", "-c", script1},
+		[]string{"bash", "-c", script2},
+	)
+	testSpecs[1].Annotations[specutils.ContainerdContainerNameAnnotation] = container1Name
+	testSpecs[2].Annotations[specutils.ContainerdContainerNameAnnotation] = container2Name
+
+	tmpfsSource1 := makeTempDir(t, "tmpfs-source-1")
+	tmpfsSource2 := makeTempDir(t, "tmpfs-source-2")
+	addTmpfsMountToContainer(testSpecs[0], testSpecs[1], "tmpfs1", tmpfsSource1, tmpfsMount1)
+	addTmpfsMountToContainer(testSpecs[0], testSpecs[2], "tmpfs2", tmpfsSource2, tmpfsMount2)
+
+	conts, cleanupConts, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	// cleanupConts is replaced on every iteration below, so it must be called
+	// through a closure to destroy the containers of the last iteration.
+	defer func() { cleanupConts() }()
+
+	// Wait until both applications have run and written initial output.
+	if err := waitForFileNotEmpty(outputFile1); err != nil {
+		t.Fatalf("Failed to wait for output file 1: %v", err)
+	}
+	if err := waitForFileNotEmpty(outputFile2); err != nil {
+		t.Fatalf("Failed to wait for output file 2: %v", err)
+	}
+
+	hostCounter1 := filepath.Join(tmpfsSource1, "counter")
+	hostCounter2 := filepath.Join(tmpfsSource2, "counter")
+	checkHostFilesAbsent(t, hostCounter1, hostCounter2)
+
+	const iterations = 3
+	for iter := 0; iter < iterations; iter++ {
+		checkpointDir := filepath.Join(testDir, fmt.Sprintf("checkpoint-%d", iter))
+		if err := os.MkdirAll(checkpointDir, 0777); err != nil {
+			t.Fatalf("iter %d: os.MkdirAll failed: %v", iter, err)
+		}
+
+		checkpointWaiter := make(chan error, 1)
+		go func() {
+			checkpointWaiter <- conts[1].WaitCheckpoint()
+		}()
+
+		// Checkpoint root container with SplitFSCheckpointPaths targeting both
+		// sub-containers' tmpfs mounts.
+		checkpointOpts := sandbox.CheckpointOpts{
+			Compression: statefile.CompressionLevelDefault,
+			SplitFSCheckpointPaths: []checkpoint.ResourceID{
+				{ContainerName: container1Name, Path: tmpfsMount1},
+				{ContainerName: container2Name, Path: tmpfsMount2},
+			},
+		}
+		if err := conts[0].Checkpoint(conf, checkpointDir, checkpointOpts); err != nil {
+			t.Fatalf("iter %d: error checkpointing container: %v", iter, err)
+		}
+
+		select {
+		case waitErr := <-checkpointWaiter:
+			if waitErr != nil {
+				t.Errorf("iter %d: error waiting for checkpoint to complete: %v", iter, waitErr)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("iter %d: timed out waiting for checkpoint to complete", iter)
+		}
+
+		checkFSCheckpointFiles(t, checkpointDir)
+
+		lastNum1, err := readOutputNum(outputPath1, -1)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile1: %v", iter, err)
+		}
+		lastNum2, err := readOutputNum(outputPath2, -1)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile2: %v", iter, err)
+		}
+
+		// Destroy the current containers before restoring so there is no
+		// identity or resource conflict with the restored ones.
+		cleanupConts()
+		cleanupConts = func() {}
+		conts = nil
+
+		// Delete and recreate output files before restoring.
+		outputFile1 = resetOutputFile(t, outputPath1)
+		outputFile2 = resetOutputFile(t, outputPath2)
+
+		// Restore into new containers with fresh IDs.
+		newIDs := make([]string, 0, len(ids))
+		for range ids {
+			newIDs = append(newIDs, testutil.RandomContainerID())
+		}
+		for _, spec := range testSpecs[1:] {
+			spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = newIDs[0]
+		}
+
+		restoredConts, restoredCleanup, err := restoreContainers(conf, testSpecs, newIDs, checkpointDir)
+		if err != nil {
+			t.Fatalf("iter %d: error restoring containers: %v", iter, err)
+		}
+		conts, cleanupConts = restoredConts, restoredCleanup
+
+		// Wait until both applications have run after restore.
+		if err := waitForFileNotEmpty(outputFile1); err != nil {
+			t.Fatalf("iter %d: failed to wait for outputFile1 after restore: %v", iter, err)
+		}
+		if err := waitForFileNotEmpty(outputFile2); err != nil {
+			t.Fatalf("iter %d: failed to wait for outputFile2 after restore: %v", iter, err)
+		}
+		checkHostFilesAbsent(t, hostCounter1, hostCounter2)
+
+		firstNum1, err := readOutputNum(outputPath1, 0)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile1 first num: %v", iter, err)
+		}
+		firstNum2, err := readOutputNum(outputPath2, 0)
+		if err != nil {
+			t.Fatalf("iter %d: error reading outputFile2 first num: %v", iter, err)
+		}
+
+		if lastNum1+1 != firstNum1 {
+			t.Errorf("iter %d: container 1 numbers not in order, previous: %d, next: %d", iter, lastNum1, firstNum1)
+		}
+		if lastNum2+1 != firstNum2 {
+			t.Errorf("iter %d: container 2 numbers not in order, previous: %d, next: %d", iter, lastNum2, firstNum2)
+		}
+
+		for _, cont := range conts {
+			state := cont.State()
+			if state.Status != Running {
+				t.Fatalf("iter %d: container %v is not running: %v", iter, cont.ID, state.Status)
+			}
+		}
+	}
+}
+
+// resetOutputFile removes path, if it exists, and creates an empty file that
+// the sandboxed application can write to. The file is closed when the test
+// finishes.
+func resetOutputFile(t *testing.T, path string) *os.File {
+	t.Helper()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("error removing %q: %v", path, err)
+	}
+	f, err := createWriteableOutputFile(path)
+	if err != nil {
+		t.Fatalf("error creating output file %q: %v", path, err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f
 }
