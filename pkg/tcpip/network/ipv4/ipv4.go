@@ -533,8 +533,9 @@ func (e *endpoint) handleFragments(_ *stack.Route, networkMTU uint32, pkt *stack
 	}
 }
 
-// recalculateChecksum recalculates the checksum of a TCP packet.
-func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
+// recalculateChecksum recalculates the transport checksum from the packet's
+// network header.
+func recalculateChecksum(pkt *stack.PacketBuffer) tcpip.Error {
 	// RXChecksumValidated indicates that checksum verification may be
 	// safely skipped.
 	if pkt.RXChecksumValidated {
@@ -553,7 +554,7 @@ func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
 			return &tcpip.ErrMalformedHeader{}
 		}
 		tcp := header.TCP(transportHeader)
-		xsum := r.PseudoHeaderChecksum(header.TCPProtocolNumber, netHdr.PayloadLength())
+		xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, netHdr.SourceAddress(), netHdr.DestinationAddress(), netHdr.PayloadLength())
 		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 		tcp.SetChecksum(0)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
@@ -562,7 +563,7 @@ func recalculateChecksum(pkt *stack.PacketBuffer, r *stack.Route) tcpip.Error {
 			return &tcpip.ErrMalformedHeader{}
 		}
 		udp := header.UDP(transportHeader)
-		xsum := r.PseudoHeaderChecksum(header.UDPProtocolNumber, netHdr.PayloadLength())
+		xsum := header.PseudoHeaderChecksum(header.UDPProtocolNumber, netHdr.SourceAddress(), netHdr.DestinationAddress(), netHdr.PayloadLength())
 		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 		udp.SetChecksum(0)
 		csum := ^udp.CalculateChecksum(xsum)
@@ -625,10 +626,10 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 			return nil
 		}
 
-		// Similar to the `ip_route_me_harder` in the kernel,
-		// we need to find a new route for the packet.
-		// Implementation is similar to the func forwardUnicastPacket.
-		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+		// Find a new route for the rewritten destination, like Linux
+		// ip_route_me_harder. As there, the packet's source address does not
+		// restrict the route and is left unchanged.
+		newRoute, err := stk.FindRoute(0 /* nic id */, tcpip.Address{} /* localAddr */, newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
 		if err != nil {
 			e.stats.ip.OutgoingPacketErrors.Increment()
 			return err // Drop the packet
@@ -641,7 +642,7 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// we must calculate the full checksum; otherwise, NAT should have already
 		// done it.
 		if !r.RequiresTXTransportChecksum() && newRoute.RequiresTXTransportChecksum() {
-			if err := recalculateChecksum(pkt, newRoute); err != nil {
+			if err := recalculateChecksum(pkt); err != nil {
 				e.stats.ip.OutgoingPacketErrors.Increment()
 				return err // Drop the packet
 			}
