@@ -43,10 +43,6 @@ func (m *mockMachineControl) disable() error {
 	return nil
 }
 
-func (m *mockMachineControl) isEnabled() (bool, error) {
-	return m.enabled, nil
-}
-
 func (m *mockMachineControl) getCPUs() (mitigate.CPUSet, error) {
 	set := m.cpus
 	if !m.enabled {
@@ -139,7 +135,7 @@ func (m *Mitigate) doExecuteTest(t *testing.T, wantEnabled bool, wantCPUs int, w
 		return
 	}
 
-	gotEnabled, _ := m.control.isEnabled()
+	gotEnabled := m.control.(*mockMachineControl).enabled
 	if wantEnabled != gotEnabled {
 		t.Fatalf("Incorrect enabled state: want: %t got: %t", wantEnabled, gotEnabled)
 	}
