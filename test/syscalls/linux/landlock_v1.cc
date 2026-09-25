@@ -38,6 +38,8 @@ namespace testing {
 
 namespace {
 
+// TODO: delete this.
+
 TEST(LandlockV1Test, AbiVersionIsSupported) {
   SKIP_IF(IsRunningOnGvisor());
   int version = LandlockAbiVersion();
