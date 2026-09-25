@@ -15,9 +15,12 @@
 package gofer
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -192,5 +195,68 @@ func TestXattrCacheList(t *testing.T) {
 	list, found = ino.xattrCache.getList()
 	if !found || !slices.Equal(list, wantList) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+}
+
+func TestDirectfsOpenHandleDetectsRenameExchange(t *testing.T) {
+	ctx := contexttest.Context(t)
+	dir := t.TempDir()
+	tempPath := filepath.Join(dir, "temp")
+	secretPath := filepath.Join(dir, "secret")
+	if err := os.WriteFile(tempPath, []byte("temp"), 0666); err != nil {
+		t.Fatalf("WriteFile(temp): %v", err)
+	}
+	const wantSecret = "secret-content-must-not-be-truncated"
+	if err := os.WriteFile(secretPath, []byte(wantSecret), 0600); err != nil {
+		t.Fatalf("WriteFile(secret): %v", err)
+	}
+	fs := filesystem{
+		mf:          pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:    make(map[inoKey]uint64),
+		inodeByKey:  make(map[inoKey]*inode),
+		clock:       ktime.RealtimeClockFromContext(ctx),
+		dentryCache: &dentryCache{maxCachedDentries: 0},
+		client:      &lisafs.Client{},
+	}
+	dirFD, err := unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("unix.Open(dir): %v", err)
+	}
+	parent, err := fs.newDirectfsDentry(dirFD)
+	if err != nil {
+		t.Fatalf("newDirectfsDentry(dir): %v", err)
+	}
+	tempFD, err := unix.Open(tempPath, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("unix.Open(temp): %v", err)
+	}
+	child, err := fs.newDirectfsDentry(tempFD)
+	if err != nil {
+		t.Fatalf("newDirectfsDentry(temp): %v", err)
+	}
+	parent.opMu.Lock()
+	parent.childrenMu.Lock()
+	parent.cacheNewChildLocked(child, "temp")
+	parent.childrenMu.Unlock()
+	parent.opMu.Unlock()
+	// Simulate the TOCTOU race between permission check and openHandle():
+	// swap "temp" and "secret" on the host using RENAME_EXCHANGE.
+	if err := unix.Renameat2(unix.AT_FDCWD, tempPath, unix.AT_FDCWD, secretPath, unix.RENAME_EXCHANGE); err != nil {
+		t.Fatalf("Renameat2(RENAME_EXCHANGE): %v", err)
+	}
+	fs.renameMu.RLock()
+	h, openErr := child.inode.impl.(*directfsInode).openHandle(ctx, unix.O_RDWR|unix.O_TRUNC, child)
+	fs.renameMu.RUnlock()
+	if openErr == nil {
+		_ = unix.Close(int(h.fd))
+		t.Fatalf("openHandle() succeeded on swapped inode; want error")
+	}
+	// Verify that O_TRUNC did not truncate the swapped secret file (now at tempPath).
+	gotSecret, err := os.ReadFile(tempPath)
+	if err != nil {
+		t.Fatalf("ReadFile(swapped secret): %v", err)
+	}
+	if string(gotSecret) != wantSecret {
+		t.Errorf("secret file content = %q, want %q (file was truncated!)", string(gotSecret), wantSecret)
 	}
 }

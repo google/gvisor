@@ -1090,6 +1090,20 @@ var logUnimplementedBlockDevOpenOnce sync.Once
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 
+	if !d.inode.isSynthetic() {
+		// renameMu is locked here because it is required by d.openHandle(), which
+		// is called by d.ensureSharedHandle() and d.openSpecialFile() below. It is
+		// also required by d.connect() which is called by
+		// d.openSocketByConnecting(). Note that opening non-synthetic pipes may
+		// block, renameMu is unlocked separately in d.openSpecialFile() for pipes.
+		d.inode.fs.renameMu.RLock()
+		defer d.inode.fs.renameMu.RUnlock()
+	}
+
+	if d.isDeleted() {
+		return nil, linuxerr.ENOENT
+	}
+
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
@@ -1100,15 +1114,6 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if err := d.inode.writeCount.CheckWrite(); err != nil {
 			return nil, err
 		}
-	}
-	if !d.inode.isSynthetic() {
-		// renameMu is locked here because it is required by d.openHandle(), which
-		// is called by d.ensureSharedHandle() and d.openSpecialFile() below. It is
-		// also required by d.connect() which is called by
-		// d.openSocketByConnecting(). Note that opening non-synthetic pipes may
-		// block, renameMu is unlocked separately in d.openSpecialFile() for pipes.
-		d.inode.fs.renameMu.RLock()
-		defer d.inode.fs.renameMu.RUnlock()
 	}
 
 	mnt := rp.Mount()
