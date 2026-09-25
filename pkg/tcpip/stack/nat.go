@@ -493,6 +493,24 @@ func (cn *conn) IsNATConfigured(natType NATType) bool {
 	return false
 }
 
+// IsNATApplied returns whether NAT of the given type changed the connection's
+// addresses or ports. A no-op NAT does not count. This matches Linux, where
+// nf_nat_setup_info sets IPS_SRC_NAT or IPS_DST_NAT only when the NAT changes
+// the tuple.
+func (cn *conn) IsNATApplied(natType NATType) bool {
+	cn.mu.RLock()
+	defer cn.mu.RUnlock()
+	unNATed := cn.original.tupleID.reply()
+	reply := cn.reply.tupleID
+	switch natType {
+	case SNAT:
+		return reply.dstAddr != unNATed.dstAddr || reply.dstPortOrEchoReplyIdent != unNATed.dstPortOrEchoReplyIdent
+	case DNAT:
+		return reply.srcAddr != unNATed.srcAddr || reply.srcPortOrEchoRequestIdent != unNATed.srcPortOrEchoRequestIdent
+	}
+	return false
+}
+
 // ConfigureNoopNAT configures the connection for no-op NAT.
 // Similar to the func `IPTMaybePerformNoopNAT` except that this one only configures NO-OP NAT and is independent of IPTables.
 func (cn *conn) ConfigureNoopNAT(pkt *PacketBuffer, natType NATType) bool {
