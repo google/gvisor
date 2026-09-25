@@ -17,8 +17,8 @@ package runsc
 import (
 	"os"
 
-	"github.com/BurntSushi/toml"
 	"github.com/containerd/log"
+	"github.com/pelletier/go-toml/v2"
 )
 
 const optionsType = "io.containerd.runsc.v1.options"
@@ -45,8 +45,8 @@ func GetRuntimeOptions() *Options {
 		return opts
 	}
 
-	if _, err := toml.DecodeFile(tomlPath, opts); err != nil {
-		log.L.Debugf("Failed to decode shim config file %q: %v", tomlPath, err)
+	if err := decodeTOMLFile(tomlPath, opts); err != nil {
+		log.L.Debugf("Failed to load shim config file %q: %v", tomlPath, err)
 		return opts
 	}
 
@@ -90,4 +90,14 @@ type Options struct {
 
 	// RunscConfig is a key/value map of all runsc flags.
 	RunscConfig map[string]string `toml:"runsc_config" json:"runscConfig"`
+}
+
+func decodeTOMLFile(path string, v any) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return toml.NewDecoder(f).Decode(v)
 }

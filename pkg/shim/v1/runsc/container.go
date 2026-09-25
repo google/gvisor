@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/BurntSushi/toml"
 	cgroups "github.com/containerd/cgroups/v3"
 	cgroupsstats "github.com/containerd/cgroups/v3/cgroup1/stats"
 	cgroupsv2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
@@ -103,7 +102,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 		path := runtimeOptions.GetConfigPath()
 		if path != "" {
 			// Read runsc options from the config file.
-			if _, err = toml.DecodeFile(path, &opts); err != nil {
+			if err := decodeTOMLFile(path, &opts); err != nil {
 				return nil, fmt.Errorf("decode config file %q: %w", path, err)
 			}
 		}

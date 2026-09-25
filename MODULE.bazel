@@ -138,7 +138,6 @@ go_deps.from_file(go_mod = "//:go.mod")
 use_repo(
     go_deps,
     "co_honnef_go_tools",
-    "com_github_burntsushi_toml",
     "com_github_cenkalti_backoff",
     "com_github_cilium_ebpf",
     "com_github_containerd_cgroups_v3",
@@ -206,6 +205,7 @@ use_repo(
     "com_github_munnerz_goautoneg",
     "com_github_opencontainers_image_spec",
     "com_github_opencontainers_runtime_spec",
+    "com_github_pelletier_go_toml_v2",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
     "com_github_sirupsen_logrus",
@@ -255,7 +255,6 @@ use_repo(
     "org_uber_go_atomic",
     "org_uber_go_multierr",
 )
-
 go_deps.module(
     path = "cloud.google.com/go/auth",
     sum = "h1:mFWNQ2FEVWAliEQWpAdH80omXFokmrnbDhUS9cBywsI=",
