@@ -365,10 +365,15 @@ func (mm *MemoryManager) EnsurePMAsExist(ctx context.Context, addr hostarch.Addr
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
-	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
-		return uint64(ims.NumBytes()), nil
+	if ar.Length() == 0 {
+		return 0, nil
+	}
+	var numBytes int64
+	_, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+		numBytes = int64(ims.NumBytes())
+		return 0, nil
 	})
-	return int64(n64), err
+	return numBytes, err
 }
 
 // SwapUint32 implements usermem.IO.SwapUint32.
@@ -946,6 +951,7 @@ func getByteSlicePtr(l int) *[]byte {
 	s := *sp
 	if l <= cap(s) {
 		s = s[:l]
+		clear(s)
 	} else {
 		s = make([]byte, l)
 	}
