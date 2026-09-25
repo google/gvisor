@@ -112,6 +112,20 @@ func skipIfNFTMode(test TestCase, ipv6 bool) (reason string, skip bool) {
 
 		return "MARK target is not supported in nftables compat yet", true
 
+	case
+		// addrtype match tests
+		"FilterInputAddrTypeFIBReject":
+
+		return "addrtype FIB route types are accepted by the nftables compat layer", true
+
+	case
+		"FilterInputAddrTypeIPv6BroadcastReject":
+
+		if ipv6 {
+			return "addrtype BROADCAST is accepted for IPv6 by the nftables compat layer", true
+		}
+		return "", false
+
 	default:
 		return "", false
 	}
@@ -613,4 +627,32 @@ func TestMangleOutputMark(t *testing.T) {
 
 func TestManglePostroutingDrop(t *testing.T) {
 	singleTest(t, &ManglePostroutingDrop{})
+}
+
+func TestFilterInputAddrTypeLocalDrop(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeLocalDrop{})
+}
+
+func TestFilterInputAddrTypeUnicastNotBroadcast(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeUnicastNotBroadcast{})
+}
+
+func TestFilterInputAddrTypeUnicastNotMulticast(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeUnicastNotMulticast{})
+}
+
+func TestFilterInputAddrTypeInvertBroadcastDrop(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeInvertBroadcastDrop{})
+}
+
+func TestFilterInputAddrTypeFIBReject(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeFIBReject{})
+}
+
+func TestFilterInputAddrTypeLocalAccept(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeLocalAccept{})
+}
+
+func TestFilterInputAddrTypeIPv6BroadcastReject(t *testing.T) {
+	singleTest(t, &FilterInputAddrTypeIPv6BroadcastReject{})
 }

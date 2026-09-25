@@ -38,7 +38,7 @@ type matchMaker interface {
 
 	// unmarshal converts from the ABI matcher struct to an
 	// stack.Matcher.
-	unmarshal(mapper IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error)
+	unmarshal(mapper IDMapper, stk *stack.Stack, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error)
 }
 
 type matchKey struct {
@@ -105,7 +105,7 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	return buf
 }
 
-func unmarshalMatcher(mapper IDMapper, match *linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
+func unmarshalMatcher(mapper IDMapper, stk *stack.Stack, match *linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
 	key := matchKey{
 		name:     match.Name.String(),
 		revision: match.Revision,
@@ -114,7 +114,7 @@ func unmarshalMatcher(mapper IDMapper, match *linux.XTEntryMatch, filter stack.I
 	if !ok {
 		return nil, fmt.Errorf("unsupported matcher with name %q and revision %d", match.Name.String(), match.Revision)
 	}
-	return matchMaker.unmarshal(mapper, buf, filter)
+	return matchMaker.unmarshal(mapper, stk, buf, filter)
 }
 
 // matchMakerRevision returns the maximum supported version of the
