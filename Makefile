@@ -298,6 +298,10 @@ HOST_KERNEL ?= $(shell uname -r)
 # To run a single syscall test with the lockdep lock-order checker (use
 # BAZEL_OPTIONS, not OPTIONS, so the runtime under test is rebuilt):
 #   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared BAZEL_OPTIONS=--config=lockdep OPTIONS=--nocache_test_results
+# To run a single syscall test with the Go race detector in runsc and the Sentry:
+#   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared BAZEL_OPTIONS=--config=race OPTIONS=--nocache_test_results
+# To also stop the Sentry at the first race it finds:
+#   make syscall-tests TARGETS=//test/syscalls:signalfd_test_runsc_systrap_shared BAZEL_OPTIONS=--config=race OPTIONS="--nocache_test_results --test_env=GORACE=halt_on_error=1"
 # To find the boot log of a run (e.g. to read a sentry panic). TEST= is a
 # substring of the test name, so a prefix like "signalfd" matches
 # signalfd_test_runsc_systrap_shared:

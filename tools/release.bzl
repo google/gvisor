@@ -60,6 +60,19 @@ def sidecars(flavor):
 # to find under the `gvisor-bin/` directory next to its own binary.
 SIDECARS = sidecars("default")
 
+# RELEASE_RUNSC and RELEASE_SIDECARS are the runsc binary and the sidecars of
+# the flavor matching the build configuration: race under --config=race,
+# default otherwise.
+RELEASE_RUNSC = select({
+    "//tools:gotsan": RUNSC["race"],
+    "//conditions:default": RUNSC["default"],
+})
+
+RELEASE_SIDECARS = select({
+    "//tools:gotsan": sidecars("race"),
+    "//conditions:default": sidecars("default"),
+})
+
 def _single_file(target):
     files = target[DefaultInfo].files.to_list()
     if len(files) != 1:
@@ -72,9 +85,11 @@ def _release_files_impl(ctx):
     commands = []
 
     # Top-level binaries
-    for target in ctx.attr.bins:
+    bins = [(target, _single_file(target).basename) for target in ctx.attr.bins]
+    bins.append((ctx.attr.runsc, "runsc"))
+    for target, name in bins:
         src = _single_file(target)
-        out = ctx.actions.declare_file("%s/%s" % (ctx.label.name, src.basename))
+        out = ctx.actions.declare_file("%s/%s" % (ctx.label.name, name))
         inputs.append(src)
         outputs.append(out)
         commands.append('cp -f "%s" "%s"' % (src.path, out.path))
@@ -109,6 +124,12 @@ release_files = rule(
             allow_files = True,
             mandatory = True,
         ),
+        "runsc": attr.label(
+            doc = "Binary placed at the top level of the layout as `runsc`, " +
+                  "whatever its own filename (e.g. `runsc-race`).",
+            allow_files = True,
+            mandatory = True,
+        ),
         "sidecars": attr.label_keyed_string_dict(
             doc = "Binaries placed under gvisor-bin/, keyed by target with " +
                   "the in-directory filename as value.",
@@ -117,7 +138,7 @@ release_files = rule(
         ),
     },
     doc = "Assembles release binaries in the layout they are installed in: " +
-          "each of `bins` at the top level and `sidecars` under a " +
+          "`runsc` and each of `bins` at the top level and `sidecars` under a " +
           "`gvisor-bin/` directory.",
 )
 

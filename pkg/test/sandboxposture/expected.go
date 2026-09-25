@@ -372,7 +372,10 @@ func expectedAttrs(opts ExpectedOpts, applyCaps, newUserNS bool) Attrs {
 	}
 
 	var env []string
-	if opts.NetworkMode == "plugin" {
+	// runsc sets GLIBC_TUNABLES when runsc itself uses cgo, even if the
+	// Sentry sidecar it boots is pure (see sentryUsesCgo in
+	// runsc/sandbox/sandbox.go). So a cgo test binary expects it.
+	if opts.CgoEnabled || opts.NetworkMode == "plugin" {
 		env = append(env, "GLIBC_TUNABLES=glibc.pthread.rseq=0")
 	}
 	if opts.GoDebug != "" {
