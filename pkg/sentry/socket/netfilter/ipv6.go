@@ -164,7 +164,7 @@ func modifyEntries6(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *l
 			nflog("entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		matchers, err := parseMatchers(mapper, filter, optVal[:matchersSize])
+		matchers, err := parseMatchers(mapper, stk, filter, optVal[:matchersSize])
 		if err != nil {
 			nflog("failed to parse matchers: %v", err)
 			return nil, syserr.ErrInvalidArgument
