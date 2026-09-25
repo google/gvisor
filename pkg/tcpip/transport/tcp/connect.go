@@ -1540,6 +1540,22 @@ func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 					}
 				}
 			}
+
+			// No bound listening endpoint claimed the new connection. The
+			// stack may still be accepting connections through a
+			// tcp.Forwarder registered as the protocol's default handler
+			// instead of a listening endpoint, so give it the same chance a
+			// listening endpoint would have had rather than dropping the SYN
+			// for the rest of the TIME-WAIT period.
+			if handler := e.stack.TransportProtocolDefaultHandler(info.TransProto); handler != nil {
+				reuseTW = func() {
+					handler(s.id, s.pkt)
+					s.DecRef()
+				}
+				// We explicitly do not DecRef the segment as it's still valid and
+				// being reflected to the default handler.
+				return false, reuseTW
+			}
 		}
 		if extTW {
 			extendTimeWait = true
