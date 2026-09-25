@@ -94,6 +94,8 @@ func TestEpollerProcessDeletedCgroup(t *testing.T) {
 	// No cleanup: process() closes the fd itself on this path.
 	e, fd := newTestEpoller(t, cgroups.Deleted)
 	e.process(context.Background(), fd)
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if _, ok := e.set[fd]; ok {
 		t.Error("deleted cgroup was not removed from the epoller set")
 	}
