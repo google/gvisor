@@ -48,7 +48,7 @@ global:
       - "duplicate import"
       # These will never be annotated.
       - "unexpected call to atomic function"
-      - "may require checklocks annotation for"
+      - "^may require checklocks annotation for"
       # Generated proto code creates declarations like 'var start int = iNdEx'
       - "should omit type .* from declaration; it will be inferred from the right-hand side"
   external:
@@ -76,10 +76,12 @@ global:
       - "should not use ALL_CAPS in Go names"
       - "should not use underscores in Go names"
       # These need to be annotated.
+      # Match the diagnostic itself, not a missing-expectation report that
+      # quotes it in a checklocks regression test.
       - "unexpected call to atomic function.*"
-      - "return with unexpected locks held.*"
-      - "incompatible return states.*"
-      - "may require checklocks annotation for.*"
+      - "^return with unexpected locks held.*"
+      - "^incompatible return states.*"
+      - "^may require checklocks annotation for.*"
       # For some reason, the types package falls down.
       - "panic recovered: .*types/sizes.go:82: assertion failed"
     exclude:
