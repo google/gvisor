@@ -74,6 +74,10 @@ const (
 
 	// RuleReturn indicates the packet should return to the previous chain.
 	RuleReturn
+
+	// RuleContinue indicates that traversal should continue with the next
+	// rule, like Linux XT_CONTINUE.
+	RuleContinue
 )
 
 // IPTables holds all the tables for a netstack.

@@ -196,6 +196,8 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		table = stack.EmptyFilterTable()
 	case natTable:
 		table = stack.EmptyNATTable()
+	case mangleTable:
+		table = stack.EmptyMangleTable()
 	case rawTable:
 		table = stack.EmptyRawTable()
 	default:
@@ -446,6 +448,10 @@ func isUnconditionalFinalRule(rule stack.Rule, ipv6 bool) bool {
 		return false
 	}
 	if isUserChainTarget(rule.Target) {
+		return false
+	}
+	// MARK returns XT_CONTINUE, so it never ends a chain.
+	if _, ok := rule.Target.(*markTarget); ok {
 		return false
 	}
 	return true

@@ -14,6 +14,7 @@ go_library(
         "iptables.go",
         "iptables_unsafe.go",
         "iptables_util.go",
+        "mangle.go",
         "nat.go",
         "reject.go",
     ],
