@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -80,6 +81,68 @@ func Execveat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	return execveat(t, dirfd, pathnameAddr, argvAddr, envvAddr, flags)
 }
 
+func openExecFile(t *kernel.Task, root, wd vfs.VirtualDentry, dirfd int32, pathname string, flags int32) (*vfs.FileDescription, string, bool, error) {
+	path := fspath.Parse(pathname)
+	followFinalSymlink := flags&linux.AT_SYMLINK_NOFOLLOW == 0
+	openOpts := &vfs.OpenOptions{
+		Flags:    linux.O_RDONLY,
+		FileExec: true,
+	}
+
+	if dirfd != linux.AT_FDCWD && !path.Absolute {
+		// We must open the executable ourselves since dirfd is used as the
+		// starting point while resolving path, but the task working directory
+		// is used as the starting point while resolving interpreters (Linux:
+		// fs/binfmt_script.c:load_script() => fs/exec.c:open_exec() =>
+		// do_open_execat(fd=AT_FDCWD)), and the loader package is currently
+		// incapable of handling this correctly.
+		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
+			return nil, "", false, linuxerr.ENOENT
+		}
+		dirfile, dirfileFlags := t.FDTable().Get(dirfd)
+		if dirfile == nil {
+			return nil, "", false, linuxerr.EBADF
+		}
+		start := dirfile.VirtualDentry()
+		start.IncRef()
+		dirfile.DecRef(t)
+		defer start.DecRef(t)
+		file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &vfs.PathOperation{
+			Root:               root,
+			Start:              start,
+			Path:               path,
+			FollowFinalSymlink: followFinalSymlink,
+		}, openOpts)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if path.HasComponents() {
+			pathname = fmt.Sprintf("/dev/fd/%d/%s", dirfd, pathname)
+		} else {
+			pathname = fmt.Sprintf("/dev/fd/%d", dirfd)
+		}
+		return file, pathname, dirfileFlags.CloseOnExec, nil
+	}
+
+	if !path.Absolute && !path.HasComponents() {
+		return nil, "", false, linuxerr.ENOENT
+	}
+	start := wd
+	if path.Absolute {
+		start = root
+	}
+	file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &vfs.PathOperation{
+		Root:               root,
+		Start:              start,
+		Path:               path,
+		FollowFinalSymlink: followFinalSymlink,
+	}, openOpts)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return file, pathname, false, nil
+}
+
 func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr hostarch.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -89,11 +152,30 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 	if err != nil {
 		return 0, nil, err
 	}
+
+	fsContext := t.FSContext()
+	root := fsContext.RootDirectory()
+	defer root.DecRef(t)
+	wd := fsContext.WorkingDirectory()
+	defer wd.DecRef(t)
+
+	executable, pathname, closeOnExec, err := openExecFile(t, root, wd, dirfd, pathname, flags)
+	if err != nil {
+		return 0, nil, err
+	}
+	cu := cleanup.Make(func() { executable.DecRef(t) })
+	defer cu.Clean()
+
 	var argv, envv []string
 	if argvAddr != 0 {
 		var err error
 		argv, err = t.CopyInVector(argvAddr, ExecMaxElemSize, ExecMaxTotalSize)
 		if err != nil {
+			// CopyInVector reports size overflows as ENAMETOOLONG or
+			// ENOMEM; Linux uses E2BIG.
+			if linuxerr.Equals(linuxerr.ENAMETOOLONG, err) || linuxerr.Equals(linuxerr.ENOMEM, err) {
+				return 0, nil, linuxerr.E2BIG
+			}
 			return 0, nil, err
 		}
 	}
@@ -101,54 +183,15 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 		var err error
 		envv, err = t.CopyInVector(envvAddr, ExecMaxElemSize, ExecMaxTotalSize)
 		if err != nil {
+			if linuxerr.Equals(linuxerr.ENAMETOOLONG, err) || linuxerr.Equals(linuxerr.ENOMEM, err) {
+				return 0, nil, linuxerr.E2BIG
+			}
 			return 0, nil, err
-		}
-	}
-
-	root := t.FSContext().RootDirectory()
-	defer root.DecRef(t)
-	var executable *vfs.FileDescription // DecRef deferred to to Task.Execve
-	closeOnExec := false
-	if path := fspath.Parse(pathname); dirfd != linux.AT_FDCWD && !path.Absolute {
-		// We must open the executable ourselves since dirfd is used as the
-		// starting point while resolving path, but the task working directory
-		// is used as the starting point while resolving interpreters (Linux:
-		// fs/binfmt_script.c:load_script() => fs/exec.c:open_exec() =>
-		// do_open_execat(fd=AT_FDCWD)), and the loader package is currently
-		// incapable of handling this correctly.
-		if !path.HasComponents() && flags&linux.AT_EMPTY_PATH == 0 {
-			return 0, nil, linuxerr.ENOENT
-		}
-		dirfile, dirfileFlags := t.FDTable().Get(dirfd)
-		if dirfile == nil {
-			return 0, nil, linuxerr.EBADF
-		}
-		start := dirfile.VirtualDentry()
-		start.IncRef()
-		dirfile.DecRef(t)
-		closeOnExec = dirfileFlags.CloseOnExec
-		file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &vfs.PathOperation{
-			Root:               root,
-			Start:              start,
-			Path:               path,
-			FollowFinalSymlink: flags&linux.AT_SYMLINK_NOFOLLOW == 0,
-		}, &vfs.OpenOptions{
-			Flags:    linux.O_RDONLY,
-			FileExec: true,
-		})
-		start.DecRef(t)
-		if err != nil {
-			return 0, nil, err
-		}
-		executable = file
-		if path.HasComponents() {
-			pathname = fmt.Sprintf("/dev/fd/%d/%s", dirfd, pathname)
-		} else {
-			pathname = fmt.Sprintf("/dev/fd/%d", dirfd)
 		}
 	}
 
 	// Execve takes ownership of `executable`.
+	cu.Release()
 	ctrl := t.Execve(argv, envv, flags, pathname, executable, closeOnExec)
 	return 0, ctrl, nil
 }
