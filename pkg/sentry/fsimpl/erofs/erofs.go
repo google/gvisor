@@ -556,12 +556,10 @@ func (d *dentry) checkCaching(ctx context.Context) {
 		d.cachingMu.Unlock()
 		return
 	}
-	// If d still has inotify watches, it can't be evicted. Otherwise, we will
-	// lose its watches, even if a new dentry is created for the same file in
-	// the future. Note that the size of d.inode.watches cannot concurrently
-	// transition from zero to non-zero, because adding a watch requires
-	// holding a reference on d.
-	if r > 0 || d.inode.watches.Size() > 0 {
+	// Watch targets are not cached, so they are never evicted. Their hard link
+	// aliases stay cacheable. Inodes are image-backed and never destroyed, so
+	// no reference is needed to keep the watch set alive.
+	if r > 0 || d.inode.watches.HasTarget(&d.vfsd) {
 		d.removeFromCache()
 		d.cachingMu.Unlock()
 		return
@@ -677,7 +675,7 @@ func (d *dentry) evictAndUnlockCachingMu(ctx context.Context) {
 
 	// Recheck under parent.dirMu, which serializes against lookup: bail if a
 	// lookup revived d (refs != 0) or a racing evictor claimed it (refs == -1).
-	if d.refs.Load() != 0 || d.inode.watches.Size() != 0 {
+	if d.refs.Load() != 0 || d.inode.watches.HasTarget(&d.vfsd) {
 		parent.dirMu.Unlock()
 		d.cachingMu.Unlock()
 		return
