@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -352,13 +353,14 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 		return err
 	}
 
-	return postResumeCuda(k, timeline)
+	return postRestoreCuda(k, timeline, nil)
 }
 
-// PostRestore is called after restoring the kernel.
+// PostRestore is called after restoring the kernel. nvproxyRemapping, if
+// non-nil, describes how GPUs were remapped by this restore.
 //
 // Precondition: The kernel should be running.
-func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
+func PostRestore(k *kernel.Kernel, timeline *timing.Timeline, nvproxyRemapping *nvproxy.DeviceRemapping) error {
 	if k.IsPaused() {
 		// The kernel is still paused (double-pause can happen with Docker which
 		// calls pause first and then checkpoint command). The final resume command
@@ -378,7 +380,7 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 		return err
 	}
 
-	return postRestoreCuda(k, timeline)
+	return postRestoreCuda(k, timeline, nvproxyRemapping)
 }
 
 // SaveRestoreExec creates a new process that executes the save/restore
