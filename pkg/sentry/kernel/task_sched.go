@@ -64,34 +64,49 @@ const (
 	TaskGoroutineStopped
 )
 
+// gostateBits is the width of the `TaskGoroutineState` bits in `Task`'s
+// `gostate` field. The remainder of the bits holds `Kernel.cpuClock`
+// nanoseconds. With gostateBits = 3, this is enough for 73 years.
+const gostateBits = 3
+
 // TaskGoroutineState returns the current state of the task goroutine.
 func (t *Task) TaskGoroutineState() TaskGoroutineState {
-	return TaskGoroutineState(t.gostate.Load())
+	return TaskGoroutineState(t.gostate.Load() & (1<<gostateBits - 1))
+}
+
+// ownTaskGoroutineState returns the current state of the task goroutine,
+// without using an atomic load. This is appropriate to do when running on
+// the task goroutine, since the task goroutine is the only writer.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) ownTaskGoroutineState() TaskGoroutineState {
+	return TaskGoroutineState(t.gostate.RacyLoad() & (1<<gostateBits - 1))
 }
 
 // TaskGoroutineStateTime returns the current state of the task goroutine, and
 // the value of Kernel.CPUClockNow() when that state was last updated or
 // refreshed.
 func (t *Task) TaskGoroutineStateTime() (state TaskGoroutineState, time ktime.Time) {
-	for {
-		epoch := t.gostateSeq.BeginRead()
-		state = t.TaskGoroutineState()
-		time = ktime.FromNanoseconds(t.gostateTime.Load())
-		if t.gostateSeq.ReadOk(epoch) {
-			return
-		}
-	}
+	v := t.gostate.Load()
+	return TaskGoroutineState(v & (1<<gostateBits - 1)), ktime.FromNanoseconds(int64(v >> gostateBits))
+}
+
+// setGostate sets the task goroutine state, timestamped with the current
+// `Kernel.cpuClock`.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) setGostate(state TaskGoroutineState) {
+	// StoreRelaxed due to this being on the syscall hot path, and all readers
+	// are expected to tolerate stale reads.
+	t.gostate.StoreRelaxed(uint64(t.k.cpuClock.Load())<<gostateBits | uint64(state))
 }
 
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) accountTaskGoroutineEnter(state TaskGoroutineState) {
-	if oldState := t.TaskGoroutineState(); oldState != TaskGoroutineRunningSys {
+	if oldState := t.ownTaskGoroutineState(); oldState != TaskGoroutineRunningSys {
 		panic(fmt.Sprintf("Task goroutine switching from state %v (expected %v) to %v", oldState, TaskGoroutineRunningSys, state))
 	}
-	t.gostateSeq.BeginWrite()
-	t.gostate.Store(uint32(state))
-	t.touchGostateTime()
-	t.gostateSeq.EndWrite()
+	t.setGostate(state)
 	if state != TaskGoroutineRunningApp {
 		// Task is blocking/stopping.
 		t.k.decRunningTasks()
@@ -115,18 +130,17 @@ func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
 		// Task is leaving uninterruptible sleep.
 		t.k.blockedTasks.Add(-1)
 	}
-	if oldState := t.TaskGoroutineState(); oldState != state {
+	if oldState := t.ownTaskGoroutineState(); oldState != state {
 		panic(fmt.Sprintf("Task goroutine switching from state %v (expected %v) to %v", oldState, state, TaskGoroutineRunningSys))
 	}
-	t.gostateSeq.BeginWrite()
-	t.gostate.Store(uint32(TaskGoroutineRunningSys))
-	t.touchGostateTime()
-	t.gostateSeq.EndWrite()
+	t.setGostate(TaskGoroutineRunningSys)
 }
 
+// touchGostateTime refreshes the timestamp of the current task goroutine state.
+//
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) touchGostateTime() {
-	t.gostateTime.Store(t.k.cpuClock.Load())
+	t.setGostate(t.ownTaskGoroutineState())
 }
 
 // CPUClockNow returns the current value of the kernel CPU clock, which
