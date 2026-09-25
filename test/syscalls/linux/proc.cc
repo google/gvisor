@@ -2215,6 +2215,81 @@ TEST(ProcPidStatTest, VmStats) {
   EXPECT_NE('0', data_str[0]);
 }
 
+TEST(ProcPidStatTest, ReapedTaskNeverReportsPIDZero) {
+  // Hold /proc/[pid]/stat open across reap; a successful read must not start
+  // with pid 0.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0), SyscallSucceeds());
+
+  std::atomic<bool> stop = false;
+  std::atomic<bool> reported_zero = false;
+  std::atomic<pid_t> current = 0;
+  auto scan = [&] {
+    while (!stop.load(std::memory_order_relaxed)) {
+      pid_t pid = current.load(std::memory_order_relaxed);
+      if (pid <= 0) {
+        continue;
+      }
+      auto contents = GetContents(absl::StrCat("/proc/", pid, "/stat"));
+      if (!contents.ok()) {
+        continue;
+      }
+      if (absl::StartsWith(contents.ValueOrDie(), "0 ")) {
+        reported_zero.store(true, std::memory_order_relaxed);
+      }
+    }
+  };
+  ScopedThread reader1(scan);
+  ScopedThread reader2(scan);
+  ScopedThread reader3(scan);
+  ScopedThread reader4(scan);
+
+  constexpr int kChildrenPerBatch = 64;
+  for (int batch = 0; batch < 32; ++batch) {
+    std::vector<pid_t> children;
+    std::vector<FileDescriptor> fds;
+    children.reserve(kChildrenPerBatch);
+    for (int i = 0; i < kChildrenPerBatch; ++i) {
+      pid_t child = fork();
+      if (child == 0) {
+        _exit(0);
+      }
+      ASSERT_THAT(child, SyscallSucceeds());
+      children.push_back(child);
+      current.store(child, std::memory_order_relaxed);
+      auto fd = Open(absl::StrCat("/proc/", child, "/stat"), O_RDONLY);
+      if (fd.ok()) {
+        fds.push_back(std::move(fd).ValueOrDie());
+      }
+    }
+    for (pid_t child : children) {
+      siginfo_t info = {};
+      ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
+                  SyscallSucceeds());
+    }
+    for (pid_t child : children) {
+      ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                  SyscallSucceedsWithValue(child));
+    }
+    char buf[256];
+    for (auto& live : fds) {
+      const ssize_t n = pread(live.get(), buf, sizeof(buf) - 1, 0);
+      if (n < 0) {
+        EXPECT_TRUE(errno == ESRCH || errno == ENOENT) << errno;
+        continue;
+      }
+      buf[n] = '\0';
+      EXPECT_FALSE(absl::StartsWith(buf, "0 ")) << buf;
+    }
+  }
+
+  stop.store(true, std::memory_order_relaxed);
+  reader1.Join();
+  reader2.Join();
+  reader3.Join();
+  reader4.Join();
+  EXPECT_FALSE(reported_zero.load(std::memory_order_relaxed));
+}
+
 // Parse an array of NUL-terminated char* arrays, returning a vector of
 // strings.
 std::vector<std::string> ParseNulTerminatedStrings(std::string contents) {
