@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file is used in builds that elide the embedded metric server binary
-// (fastbuild, or sidecar embedding disabled).
+// This file is used in builds that elide the embedded checkpoint gofer binary.
 // See the BUILD file.
 
 package embed

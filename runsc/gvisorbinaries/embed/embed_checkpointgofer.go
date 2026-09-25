@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file is used in builds that embed a copy of the metric server binary.
-// The elided variant (embed_metricserver_elided.go) omits the embedded copy
-// to keep fastbuild binaries small; see the BUILD file.
+// This file is used in builds that embed a copy of the checkpoint gofer
+// binary. The elided variant (embed_checkpointgofer_elided.go) omits the
+// embedded copy; see the BUILD file.
 
 package embed
 
 import (
-	"gvisor.dev/gvisor/runsc/cmd/metricserver"
+	"gvisor.dev/gvisor/runsc/checkpointgofer"
 	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
 func init() {
-	gvisorbinaries.MetricServer.DeclareEmbedded(func(o gvisorbinaries.Options) error {
-		return metricserver.Exec(metricserver.Options{Argv: o.Argv, Envv: o.Envv})
+	gvisorbinaries.CheckpointGofer.DeclareEmbedded(func(o gvisorbinaries.Options) error {
+		return checkpointgofer.Exec(checkpointgofer.Options{
+			Argv: o.Argv,
+			Envv: o.Envv,
+		})
 	}, func(o gvisorbinaries.Options) (int, error) {
-		return metricserver.ForkExec(metricserver.Options{
+		return checkpointgofer.ForkExec(checkpointgofer.Options{
 			Argv:        o.Argv,
 			Envv:        o.Envv,
 			Files:       o.Files,

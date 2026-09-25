@@ -16,28 +16,13 @@
 // gvisorbinaries sidecar binaries. It is imported for its side effects by the
 // runsc binary's entrypoint (runsc/cli/maincli)
 //
+// Each sidecar is registered in a per-sidecar file that the BUILD rule swaps
+// for an empty variant when the embedded copy is elided; building with
+// `--define gvisor_embed_sidecars=false` elides all of them, for installations
+// that ship on-disk sidecar binaries and don't want runsc to carry embedded
+// copies.
+//
 // TODO(gvisor.dev/issue/13718): embedded sidecar binaries are being replaced by
 // on-disk binaries in a "gvisor-bin/" directory. Once the embedded copies are
 // removed, delete this package.
 package embed
-
-import (
-	"gvisor.dev/gvisor/runsc/checkpointgofer"
-	"gvisor.dev/gvisor/runsc/gvisorbinaries"
-)
-
-func init() {
-	gvisorbinaries.CheckpointGofer.DeclareEmbedded(func(o gvisorbinaries.Options) error {
-		return checkpointgofer.Exec(checkpointgofer.Options{
-			Argv: o.Argv,
-			Envv: o.Envv,
-		})
-	}, func(o gvisorbinaries.Options) (int, error) {
-		return checkpointgofer.ForkExec(checkpointgofer.Options{
-			Argv:        o.Argv,
-			Envv:        o.Envv,
-			Files:       o.Files,
-			SysProcAttr: o.SysProcAttr,
-		})
-	})
-}
