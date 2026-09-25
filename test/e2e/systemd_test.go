@@ -79,14 +79,21 @@ func execOrFatal(ctx context.Context, t *testing.T, d *dockerutil.Container, arg
 // container must be cleaned up by the caller.
 func spawnSystemdContainer(ctx context.Context, t *testing.T, image string) *dockerutil.Container {
 	t.Helper()
+	return spawnSystemdContainerWithOpts(ctx, t, dockerutil.RunOpts{
+		Image:      image,
+		Privileged: true,
+	})
+}
+
+// spawnSystemdContainerWithOpts is spawnSystemdContainer with caller-provided
+// run options.
+func spawnSystemdContainerWithOpts(ctx context.Context, t *testing.T, opts dockerutil.RunOpts) *dockerutil.Container {
+	t.Helper()
 	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-cgroupv2")
 	cu := cleanup.Make(func() { d.CleanUp(ctx) })
 	defer cu.Clean()
 
-	if err := d.Spawn(ctx, dockerutil.RunOpts{
-		Image:      image,
-		Privileged: true,
-	}); err != nil {
+	if err := d.Spawn(ctx, opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	if err := waitForSystemdBoot(ctx, d); err != nil {
@@ -504,11 +511,19 @@ func TestSystemdRedis(t *testing.T) {
 const alpineImageRef = "mirror.gcr.io/library/alpine:3.22"
 
 // TestSystemdDocker verifies that dockerd runs as a systemd service and can
-// pull images and run containers.
+// pull images, run containers, and pause them.
 func TestSystemdDocker(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	d := spawnSystemdContainer(ctx, t, "systemd-services")
+	// Nested runc places containers by systemd's slice path alone. Under a
+	// host cgroup namespace (docker's default on cgroup v1 hosts), systemd's
+	// root is not the cgroupfs root, so runc would freeze an empty cgroup on
+	// pause while the container keeps running. This happens on Linux too.
+	d := spawnSystemdContainerWithOpts(ctx, t, dockerutil.RunOpts{
+		Image:        "systemd-services",
+		Privileged:   true,
+		CgroupnsMode: "private",
+	})
 	defer d.CleanUp(ctx)
 
 	// Overlay upper layers cannot sit on runsc's sandbox-internal overlay
@@ -537,6 +552,66 @@ func TestSystemdDocker(t *testing.T) {
 	if !strings.Contains(out, wantRelease) {
 		t.Errorf("running a container did not produce its output (output does not contain %q):\n%s", wantRelease, out)
 	}
+
+	// Pause a container and verify that docker reports it paused and that it
+	// actually stops running. For the latter, the container bumps a counter
+	// in a directory bind-mounted from this container, which is read here
+	// without going through the inner docker. Docker pauses containers via
+	// cgroup.freeze.
+	execOrFatal(ctx, t, d, "mkdir", "-p", "/run/gv-pause")
+	execOrFatal(ctx, t, d, "docker", "run", "-d", "--network=none", "--name=gv-pause",
+		"-v", "/run/gv-pause:/out", alpineImageRef, "sh", "-c",
+		"i=0; while :; do i=$((i+1)); echo $i > /out/tmp; mv /out/tmp /out/count; sleep 0.1; done")
+	readCount := func(ctx context.Context) (int, error) {
+		out, err := d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "cat", "/run/gv-pause/count")
+		if err != nil {
+			return 0, fmt.Errorf("cannot read counter: %v (output: %s)", err, out)
+		}
+		return strconv.Atoi(strings.TrimSpace(out))
+	}
+	waitForCountAbove := func(floor int) error {
+		return pollWithTimeout(ctx, daemonPollTimeout, func(ctx context.Context) error {
+			n, err := readCount(ctx)
+			if err != nil {
+				return err
+			}
+			if n <= floor {
+				return fmt.Errorf("counter at %d, want more than %d", n, floor)
+			}
+			return nil
+		})
+	}
+	checkState := func(want string) {
+		t.Helper()
+		out := execOrFatal(ctx, t, d, "docker", "inspect", "-f", "{{.State.Status}}", "gv-pause")
+		if got := strings.TrimSpace(out); got != want {
+			t.Errorf("docker reports container state %q, want %q", got, want)
+		}
+	}
+	if err := waitForCountAbove(0); err != nil {
+		t.Fatalf("container did not start counting: %v", err)
+	}
+
+	execOrFatal(ctx, t, d, "docker", "pause", "gv-pause")
+	checkState("paused")
+	frozen, err := readCount(ctx)
+	if err != nil {
+		t.Fatalf("after pause: %v", err)
+	}
+	// The counter would advance about 20 times in this window if running.
+	time.Sleep(2 * time.Second)
+	if n, err := readCount(ctx); err != nil {
+		t.Fatalf("while paused: %v", err)
+	} else if n != frozen {
+		t.Errorf("paused container kept running: counter advanced from %d to %d", frozen, n)
+	}
+
+	execOrFatal(ctx, t, d, "docker", "unpause", "gv-pause")
+	checkState("running")
+	if err := waitForCountAbove(frozen); err != nil {
+		t.Errorf("unpaused container did not resume: %v", err)
+	}
+	execOrFatal(ctx, t, d, "docker", "rm", "-f", "gv-pause")
 
 	stopService(ctx, t, d, "docker.service")
 }
