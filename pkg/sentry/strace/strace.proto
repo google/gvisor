@@ -26,6 +26,12 @@ message Strace {
   // List of syscall arguments formatted as strings.
   repeated string args = 3;
 
+  // Thread ID in the root PID namespace at the time the syscall fired.
+  // Pairs Enter and Exit events from the same thread; a thread cannot have
+  // two syscalls in flight simultaneously, so (tid, function) identifies
+  // an enter-exit pair unambiguously.
+  int32 tid = 6;
+
   oneof info {
     StraceEnter enter = 4;
     StraceExit exit = 5;
