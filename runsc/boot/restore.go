@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -247,7 +246,7 @@ type restorer struct {
 	containers []*containerInfo
 
 	// stateFile is a reader for the statefile.
-	stateFile io.ReadCloser
+	stateFile statefile.Reader
 
 	// metadata is the metadata contained in the statefile.
 	metadata map[string]string
@@ -526,6 +525,10 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	if err := l.k.LoadFrom(ctx, r.stateFile, r.asyncMFLoader, nil, l, clocks, &vfs.CompleteRestoreOptions{}, r.timer.Fork("kernel load")); err != nil {
 		return fmt.Errorf("failed to load kernel: %w", err)
+	}
+	// Stop the restore if a hash does not cover all of the statefile data.
+	if err := r.stateFile.Verify(); err != nil {
+		return fmt.Errorf("statefile integrity check failed: %w", err)
 	}
 	r.timer.Reached("kernel loaded")
 	if oldNvidiaDriverVersion.Major() > 0 && !l.k.NvidiaDriverVersion.Equals(oldNvidiaDriverVersion) {

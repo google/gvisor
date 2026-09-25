@@ -305,8 +305,20 @@ func metadata(r io.Reader, key []byte) (map[string]string, error) {
 	return metadata, nil
 }
 
+// Reader reads the data section of a statefile.
+type Reader interface {
+	io.ReadCloser
+
+	// Verify gives an error if a hash does not cover all of the data that Read
+	// gave, or if the stream does not end where the caller stopped. Callers
+	// that use the data must call Verify when they stop reading.
+	//
+	// Verify does nothing if the statefile has no key.
+	Verify() error
+}
+
 // NewReader returns a reader for a statefile.
-func NewReader(r io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, error) {
+func NewReader(r io.ReadCloser, key []byte) (Reader, map[string]string, error) {
 	// Read the metadata with the hash.
 	metadata, err := metadata(r, key)
 	if err != nil {
@@ -322,7 +334,7 @@ func NewReader(r io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, e
 	}
 
 	// Pick correct reader
-	var cr io.ReadCloser
+	var cr Reader
 
 	switch compression {
 	case CompressionLevelFlateBestSpeed:
