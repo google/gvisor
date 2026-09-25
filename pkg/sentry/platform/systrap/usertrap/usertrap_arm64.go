@@ -61,6 +61,11 @@ func (*State) HandleFault(ctx context.Context, ac *arch.Context64, mm memoryMana
 	return nil
 }
 
+// RewindTrampolineIP does nothing on arm64 as syscall trapping is not supported.
+func RewindTrampolineIP(ip uintptr) (uintptr, bool) {
+	return ip, false
+}
+
 // PreFork does nothing on arm64 as syscall trapping is not supported.
 func (*State) PreFork() {
 }

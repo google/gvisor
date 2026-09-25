@@ -851,6 +851,12 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	regs := &ac.StateData().Regs
 	s.resetSysemuRegs(regs)
 	ctx := c.sharedContext
+	// We can never resume the application in the middle of a usertrap trampoline.
+	// Rewinding is safe because every trampoline instruction is idempotent, allowing
+	// us to restart it without any consequences.
+	if ip, ok := usertrap.RewindTrampolineIP(ac.IP()); ok {
+		ac.SetIP(ip)
+	}
 	ctx.shared.Regs = regs.PtraceRegs
 	restoreArchSpecificState(ctx.shared, ac)
 
