@@ -1138,9 +1138,26 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	//
 	//	- If we would invalidate only part of a huge page backing a private
 	//	anonymous mapping that we own (is not copy-on-write), use
-	//	MemoryFile.Decommit() instead to keep the allocated huge page intact for
-	//	future use.
+	//	decommitLocked() to punch out the range while retaining its pma, keeping
+	//	the huge page's allocation for future use.
 	didUnmapAS := false
+	// decommitLocked punches out fr while retaining a huge page's pma, but first
+	// tears down ar's stub AddressSpace mappings. shmem's fault-around
+	// (filemap_map_pages) ignores the hole-punch guard that shmem_fault honors, so
+	// a concurrent stub minor fault can re-map a folio that shmem_undo_range is
+	// truncating (e.g. a fragment split off a huge folio by the partial punch),
+	// which the host then deletes while still mapped ("BUG: Bad page cache ...
+	// still mapped when deleted"). Unmapping first leaves nothing to fault-around.
+	// This host bug has been reported to the Linux MM maintainers and may be
+	// fixed upstream in the future.
+	decommitLocked := func(fr memmap.FileRange) {
+		if !didUnmapAS {
+			// Unmap all of ar, not just fr, to minimize host syscalls.
+			mm.unmapASLocked(ar)
+			didUnmapAS = true
+		}
+		mm.mf.Decommit(fr)
+	}
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
 	vseg := mm.vmas.LowerBoundSegment(ar.Start)
 	if !vseg.Ok() {
@@ -1172,7 +1189,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 						// psegAR.Start is not hugepage-aligned.
 						if psegAR.End <= firstHugeEnd {
 							// All of psegAR falls within a single huge page.
-							mm.mf.Decommit(pseg.fileRangeOf(psegAR))
+							decommitLocked(pseg.fileRangeOf(psegAR))
 							pseg = pseg.NextSegment()
 							continue
 						}
@@ -1183,11 +1200,11 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 							// would make two separate calls to
 							// MemoryFile.Decommit() for the first and last
 							// huge pages respectively.
-							mm.mf.Decommit(pseg.fileRangeOf(psegAR))
+							decommitLocked(pseg.fileRangeOf(psegAR))
 							pseg = pseg.NextSegment()
 							continue
 						}
-						mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{psegAR.Start, firstHugeEnd}))
+						decommitLocked(pseg.fileRangeOf(hostarch.AddrRange{psegAR.Start, firstHugeEnd}))
 						psegAR.Start = firstHugeEnd
 					}
 					// Drop whole huge pages between psegAR.Start (which after the above
@@ -1209,7 +1226,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 					}
 					if lastWholeHugeEnd != psegAR.End {
 						// psegAR.End is not hugepage-aligned.
-						mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{lastWholeHugeEnd, psegAR.End}))
+						decommitLocked(pseg.fileRangeOf(hostarch.AddrRange{lastWholeHugeEnd, psegAR.End}))
 						pseg = pseg.NextSegment()
 					}
 					continue
