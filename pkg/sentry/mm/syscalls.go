@@ -1114,6 +1114,17 @@ func madviseAddrRange(addr hostarch.Addr, length uint64) (hostarch.AddrRange, er
 
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).
 func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
+	return mm.decommit(addr, length, false /* madvFree */)
+}
+
+// DecommitMadvFree implements madvise(MADV_FREE): same decommit as
+// MADV_DONTNEED, but only for private anonymous mappings. Linux returns EINVAL
+// for file-backed and shared mappings (mm/madvise.c:madvise_dontneed_free).
+func (mm *MemoryManager) DecommitMadvFree(addr hostarch.Addr, length uint64) error {
+	return mm.decommit(addr, length, true /* madvFree */)
+}
+
+func (mm *MemoryManager) decommit(addr hostarch.Addr, length uint64, madvFree bool) error {
 	addr = hostarch.UntaggedUserAddr(addr)
 	ar, err := madviseAddrRange(addr, length)
 	if err != nil {
@@ -1150,6 +1161,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 	for vseg.Ok() && vseg.Start() < ar.End {
 		vma := vseg.ValuePtr()
 		if vma.mlockMode != memmap.MLockNone {
+			return linuxerr.EINVAL
+		}
+		if madvFree && (vma.mappable != nil || !vma.private) {
 			return linuxerr.EINVAL
 		}
 		vsegAR := vseg.Range().Intersect(ar)

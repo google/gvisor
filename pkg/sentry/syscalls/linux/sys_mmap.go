@@ -217,6 +217,11 @@ func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	switch adv {
 	case linux.MADV_DONTNEED:
 		return 0, nil, t.MemoryManager().Decommit(addr, length)
+	case linux.MADV_FREE:
+		// Linux accepts MADV_FREE on private anonymous mappings. Pages may
+		// remain until reclaim; gVisor has no lazy reclaim path, so Decommit
+		// frees them immediately, which MADV_FREE allows.
+		return 0, nil, t.MemoryManager().DecommitMadvFree(addr, length)
 	case linux.MADV_DOFORK:
 		return 0, nil, t.MemoryManager().SetDontFork(addr, length, false)
 	case linux.MADV_DONTFORK:
