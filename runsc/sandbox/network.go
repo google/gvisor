@@ -15,6 +15,7 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -78,6 +79,117 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config, disableIPv6 b
 		return fmt.Errorf("invalid network type: %v", conf.Network)
 	}
 	return nil
+}
+
+// defaultPrimaryInterfaceName is the default fallback primary interface used
+// when the network-uds-path is set.
+const defaultPrimaryInterfaceName = "eth0"
+
+// hasFDBasedLink reports whether args.FDBasedLinks contains a link with the
+// given interface name.
+func hasFDBasedLink(args *boot.CreateLinksAndRoutesArgs, name string) bool {
+	for _, l := range args.FDBasedLinks {
+		if l.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// primaryInterface returns the interface name that handles default traffic
+// and is present in FDBasedLinks. If a default gateway is configured on an
+// interface that is not in FDBasedLinks (e.g. an XDP link), or if IPv4 and
+// IPv6 default gateways point to different interfaces, an error is returned
+// rather than falling back so default traffic cannot silently bypass the UDS
+// link.
+func primaryInterface(args *boot.CreateLinksAndRoutesArgs) (string, error) {
+	if args == nil {
+		return "", errors.New("network link arguments are nil")
+	}
+	v4Gw := args.Defaultv4Gateway.Name
+	v6Gw := args.Defaultv6Gateway.Name
+	if v4Gw != "" && !hasFDBasedLink(args, v4Gw) {
+		return "", fmt.Errorf("default IPv4 gateway interface %q is not an fd-based link", v4Gw)
+	}
+	if v6Gw != "" && !hasFDBasedLink(args, v6Gw) {
+		return "", fmt.Errorf("default IPv6 gateway interface %q is not an fd-based link", v6Gw)
+	}
+	if v4Gw != "" && v6Gw != "" && v4Gw != v6Gw {
+		return "", fmt.Errorf("default IPv4 gateway interface %q and default IPv6 gateway interface %q differ", v4Gw, v6Gw)
+	}
+	if v4Gw != "" {
+		return v4Gw, nil
+	}
+	if v6Gw != "" {
+		return v6Gw, nil
+	}
+	for _, l := range args.FDBasedLinks {
+		if l.Name == defaultPrimaryInterfaceName {
+			return l.Name, nil
+		}
+	}
+	if len(args.FDBasedLinks) == 1 {
+		return args.FDBasedLinks[0].Name, nil
+	}
+	return "", errors.New("could not find a primary network interface")
+}
+
+// setUDSBufSizes increases the send and receive buffers of a UDS network link
+// so that packet bursts are not dropped. Failures are not fatal, the socket
+// simply keeps the smaller default buffer.
+func setUDSBufSizes(fd int) {
+	const bufSize = 4 << 20 // 4MB.
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUFFORCE, bufSize); err != nil {
+		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufSize); err != nil {
+			log.Warningf("Failed to set UDS receive buffer to %d: %v", bufSize, err)
+		}
+	}
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUFFORCE, bufSize); err != nil {
+		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, bufSize); err != nil {
+			log.Warningf("Failed to set UDS send buffer to %d: %v", bufSize, err)
+		}
+	}
+}
+
+// dialExternalUDS connects to an external network proxy listening on path and
+// returns the connected socket for donation to the sentry.
+//
+// The socket must be SOCK_SEQPACKET, the sentry's fdbased endpoint exchanges
+// IP packets and relies on the message boundaries that a stream socket does
+// not provide. connect() rejects a SOCK_STREAM listener with EPROTOTYPE. There
+// is no retry, the peer is expected to be listening before the sandbox starts.
+// SO_SNDTIMEO bounds connect() in case the peer's accept backlog is full.
+func dialExternalUDS(path string) (*os.File, error) {
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("creating SOCK_SEQPACKET socket: %w", err)
+	}
+	const connectTimeoutSec = 5
+	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &unix.Timeval{Sec: connectTimeoutSec}); err != nil {
+		log.Warningf("Failed to set SO_SNDTIMEO on UDS socket: %v", err)
+	}
+	for {
+		err = unix.Connect(fd, &unix.SockaddrUnix{Name: path})
+		if !errors.Is(err, unix.EINTR) {
+			break
+		}
+	}
+	if err != nil {
+		_ = unix.Close(fd)
+		if errors.Is(err, unix.EPROTOTYPE) {
+			return nil, fmt.Errorf("connecting to %q: %w (the peer must listen on a SOCK_SEQPACKET socket)", path, err)
+		}
+		if errors.Is(err, unix.EAGAIN) {
+			return nil, fmt.Errorf("connecting to %q timed out (peer accept backlog may be full): %w", path, err)
+		}
+		return nil, fmt.Errorf("connecting to %q: %w", path, err)
+	}
+	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &unix.Timeval{}); err != nil {
+		log.Warningf("Failed to clear SO_SNDTIMEO on UDS socket: %v", err)
+	}
+	setUDSBufSizes(fd)
+	log.Infof("Attached sandbox network to external UDS peer %q", path)
+	return os.NewFile(uintptr(fd), "net-uds"), nil
 }
 
 func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client, isRestore bool) error {
@@ -342,12 +454,33 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		return err
 	}
 
+	var (
+		primaryIface string
+		udsFile      *os.File
+	)
+	if conf.UseNetworkUDS() {
+		primaryIface, err = primaryInterface(&args)
+		if err != nil {
+			return fmt.Errorf("UDS enabled: %w", err)
+		}
+		udsFile, err = dialExternalUDS(conf.NetworkUDSPath)
+		if err != nil {
+			return fmt.Errorf("dialing external UDS: %w", err)
+		}
+		defer udsFile.Close()
+	}
+
 	for i := range args.XDPLinks {
 		if err := removeLinkAddresses(args.XDPLinks[i].Name, args.XDPLinks[i].Addresses); err != nil {
 			return fmt.Errorf("removing link addresses for interface %q: %w", args.XDPLinks[i].Name, err)
 		}
 	}
 	for i := range args.FDBasedLinks {
+		// In network UDS mode the primary interface keeps its host
+		// addresses, unlike every other link.
+		if conf.UseNetworkUDS() && args.FDBasedLinks[i].Name == primaryIface {
+			continue
+		}
 		if err := removeLinkAddresses(args.FDBasedLinks[i].Name, args.FDBasedLinks[i].Addresses); err != nil {
 			return fmt.Errorf("removing link addresses for interface %q: %w", args.FDBasedLinks[i].Name, err)
 		}
@@ -368,32 +501,49 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 	for i := range args.FDBasedLinks {
 		link := &args.FDBasedLinks[i]
-		iface, err := net.InterfaceByName(link.Name)
-		if err != nil {
-			return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
-		}
-		ifaceLink, err := netlink.LinkByName(link.Name)
-		if err != nil {
-			return fmt.Errorf("getting link for interface %q: %w", link.Name, err)
-		}
-
-		log.Debugf("Setting up network channels")
-		// Create the socket for the device.
-		for j := 0; j < link.NumChannels; j++ {
-			log.Debugf("Creating Channel %d", j)
-			socketEntry, err := createSocket(*iface, ifaceLink, conf.HostGSO)
+		if conf.UseNetworkUDS() && link.Name == primaryIface {
+			link.IsUDS = true
+			if link.NumChannels != 1 {
+				log.Warningf("Ignoring --num-network-channels=%d for interface %q: a network UDS link always uses a single channel", link.NumChannels, link.Name)
+				link.NumChannels = 1
+			}
+			// A peer told not to verify checksums is assumed not to compute them
+			// either, so accept packets with uncomputed L4 checksums. The offload
+			// flags are part of the host-side configuration that the peer is
+			// expected to be aligned with out-of-band.
+			if link.TXChecksumOffload && !link.RXChecksumOffload {
+				log.Infof("Enabling RX checksum offload on interface %q because TX checksum offload is enabled: the network UDS peer is expected to send packets without computed L4 checksums", link.Name)
+				link.RXChecksumOffload = true
+			}
+			args.FilePayload.Files = append(args.FilePayload.Files, udsFile)
+		} else {
+			iface, err := net.InterfaceByName(link.Name)
 			if err != nil {
-				return fmt.Errorf("failed to createSocket for %s : %w", link.Name, err)
+				return fmt.Errorf("getting interface by name %q: %w", link.Name, err)
 			}
-			if j == 0 {
-				link.GSOMaxSize = socketEntry.gsoMaxSize
-			} else {
-				if link.GSOMaxSize != socketEntry.gsoMaxSize {
-					return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
-						link.GSOMaxSize, socketEntry.gsoMaxSize, link.Name)
+			ifaceLink, err := netlink.LinkByName(link.Name)
+			if err != nil {
+				return fmt.Errorf("getting link for interface %q: %w", link.Name, err)
+			}
+
+			log.Debugf("Setting up network channels")
+			// Create the socket for the device.
+			for j := 0; j < link.NumChannels; j++ {
+				log.Debugf("Creating Channel %d", j)
+				socketEntry, err := createSocket(*iface, ifaceLink, conf.HostGSO)
+				if err != nil {
+					return fmt.Errorf("failed to createSocket for %s : %w", link.Name, err)
 				}
+				if j == 0 {
+					link.GSOMaxSize = socketEntry.gsoMaxSize
+				} else {
+					if link.GSOMaxSize != socketEntry.gsoMaxSize {
+						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+							link.GSOMaxSize, socketEntry.gsoMaxSize, link.Name)
+					}
+				}
+				args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 			}
-			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 		}
 
 		if link.GSOMaxSize == 0 && conf.GVisorGSO {

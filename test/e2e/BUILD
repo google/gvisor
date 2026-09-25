@@ -34,6 +34,36 @@ go_test(
 )
 
 go_test(
+    name = "uds_proxy_test",
+    size = "large",
+    srcs = [
+        "uds_proxy_test.go",
+    ],
+    # Needed to invalidate the bazel cache in case of any code changes.
+    data = ["//:release"],
+    library = ":integration",
+    tags = [
+        # Requires docker and the $(RUNTIME)-net-uds runtime to be configured
+        # before the test runs.
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/adapters/gonet",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/fdbased",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/tcp",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
     name = "integration_runtime_test",
     size = "large",
     srcs = [

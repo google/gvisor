@@ -15,11 +15,15 @@
 package sandbox
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -728,5 +732,228 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 	}
 	if !fdbasedLinksEqual(args.FDBasedLinks, wantFDLinks) {
 		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
+	}
+}
+
+func TestDialExternalUDS(t *testing.T) {
+	// The peer listens on SOCK_SEQPACKET, as an external network proxy must.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "netproxy.sock")
+	ln, err := net.Listen("unixpacket", path)
+	if err != nil {
+		t.Fatalf(`net.Listen("unixpacket", %q) failed: %v`, path, err)
+	}
+	defer ln.Close()
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			accepted <- nil
+			return
+		}
+		accepted <- conn
+	}()
+
+	f, err := dialExternalUDS(path)
+	if err != nil {
+		t.Fatalf("dialExternalUDS(%q) failed: %v", path, err)
+	}
+	defer f.Close()
+
+	var peer net.Conn
+	select {
+	case peer = <-accepted:
+		if peer == nil {
+			t.Fatal("ln.Accept() failed")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the peer to accept the connection")
+	}
+	defer peer.Close()
+
+	// Message boundaries must be preserved in both directions: the sentry and
+	// the external proxy exchange one IP packet per datagram.
+	wantOutbound := []byte("outbound-packet")
+	if _, err := f.Write(wantOutbound); err != nil {
+		t.Fatalf("f.Write(%q) failed: %v", wantOutbound, err)
+	}
+	got := make([]byte, 64)
+	if err := peer.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("peer.SetReadDeadline() failed: %v", err)
+	}
+	n, err := peer.Read(got)
+	if err != nil {
+		t.Fatalf("peer.Read() failed: %v", err)
+	}
+	if !bytes.Equal(got[:n], wantOutbound) {
+		t.Errorf("peer.Read() = %q, want %q", got[:n], wantOutbound)
+	}
+
+	wantInbound := []byte("inbound-packet")
+	if _, err := peer.Write(wantInbound); err != nil {
+		t.Fatalf("peer.Write(%q) failed: %v", wantInbound, err)
+	}
+	n, err = f.Read(got)
+	if err != nil {
+		t.Fatalf("f.Read() failed: %v", err)
+	}
+	if !bytes.Equal(got[:n], wantInbound) {
+		t.Errorf("f.Read() = %q, want %q", got[:n], wantInbound)
+	}
+}
+
+func TestDialExternalUDSRejectsStreamPeer(t *testing.T) {
+	// A SOCK_STREAM peer provides no message boundaries and must be rejected by
+	// the kernel with EPROTOTYPE.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stream.sock")
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatalf(`net.Listen("unix", %q) failed: %v`, path, err)
+	}
+	defer ln.Close()
+
+	f, err := dialExternalUDS(path)
+	if err == nil {
+		_ = f.Close()
+		t.Fatalf("dialExternalUDS(%q) succeeded against a SOCK_STREAM listener, want error", path)
+	}
+	if !errors.Is(err, unix.EPROTOTYPE) {
+		t.Errorf("dialExternalUDS(%q) = %v, want EPROTOTYPE", path, err)
+	}
+}
+
+func TestDialExternalUDSMissingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "does-not-exist.sock")
+	f, err := dialExternalUDS(path)
+	if err == nil {
+		_ = f.Close()
+		t.Fatalf("dialExternalUDS(%q) succeeded for a nonexistent socket, want error", path)
+	}
+	if !errors.Is(err, unix.ENOENT) {
+		t.Errorf("dialExternalUDS(%q) = %v, want ENOENT", path, err)
+	}
+}
+
+func TestPrimaryInterface(t *testing.T) {
+	testCases := []struct {
+		name    string
+		args    *boot.CreateLinksAndRoutesArgs
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "nil args",
+			args:    nil,
+			wantErr: true,
+		},
+		{
+			name: "v4 gateway in fdbased",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: boot.DefaultRoute{Name: "eth1"},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			},
+			want: "eth1",
+		},
+		{
+			name: "v4 gateway not in fdbased rejects eth0 fallback",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: boot.DefaultRoute{Name: "other0"},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "v6 gateway in fdbased",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv6Gateway: boot.DefaultRoute{Name: "eth2"},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth1"}, {Name: "eth2"}},
+			},
+			want: "eth2",
+		},
+		{
+			name: "v6 gateway not in fdbased rejects single link fallback",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv6Gateway: boot.DefaultRoute{Name: "other0"},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "myif0"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "v4 and v6 gateways match same fdbased link",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: boot.DefaultRoute{Name: "eth1"},
+				Defaultv6Gateway: boot.DefaultRoute{Name: "eth1"},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			},
+			want: "eth1",
+		},
+		{
+			name: "v4 and v6 gateways differ",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: boot.DefaultRoute{Name: "eth0"},
+				Defaultv6Gateway: boot.DefaultRoute{Name: "eth1"},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no gateway with eth0 fallback",
+			args: &boot.CreateLinksAndRoutesArgs{
+				FDBasedLinks: []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			},
+			want: "eth0",
+		},
+		{
+			name: "single link in fdbased",
+			args: &boot.CreateLinksAndRoutesArgs{
+				FDBasedLinks: []boot.FDBasedLink{{Name: "tap0"}},
+			},
+			want: "tap0",
+		},
+		{
+			name: "multiple links with no gateway and no eth0",
+			args: &boot.CreateLinksAndRoutesArgs{
+				FDBasedLinks: []boot.FDBasedLink{{Name: "tap0"}, {Name: "tap1"}},
+			},
+			wantErr: true,
+		},
+		{
+			// The gateway resolves to an XDP link, which cannot be proxied over
+			// UDS. primaryInterface() must reject it rather than falling back or
+			// returning a name that has no corresponding FDBasedLink.
+			name: "v4 gateway matches an XDP link only",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: boot.DefaultRoute{Name: "xdp0"},
+				XDPLinks:         []boot.XDPLink{{Name: "xdp0"}},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "tap0"}, {Name: "tap1"}},
+			},
+			wantErr: true,
+		},
+		{
+			// Even when eth0 is present in FDBasedLinks, a default gateway on an
+			// XDP link must fail rather than silently routing default traffic
+			// around the UDS proxy.
+			name: "v4 gateway matches an XDP link rejects eth0 fallback",
+			args: &boot.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: boot.DefaultRoute{Name: "xdp0"},
+				XDPLinks:         []boot.XDPLink{{Name: "xdp0"}},
+				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := primaryInterface(tc.args)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("primaryInterface(%+v) error = %v, wantErr %v", tc.args, err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("primaryInterface(%+v) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
 	}
 }
