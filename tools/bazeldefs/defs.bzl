@@ -3,6 +3,7 @@
 load("@bazel_skylib//:bzl_library.bzl", _bzl_library = "bzl_library")
 load("@bazel_skylib//rules:build_test.bzl", _build_test = "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag")
+load("@com_google_protobuf//bazel:proto_library.bzl", _proto_library = "proto_library")
 
 build_test = _build_test
 bzl_library = _bzl_library
@@ -16,8 +17,7 @@ def short_path(path):
     return path
 
 def proto_library(name, has_services = None, **kwargs):  # buildifier: disable=unused-variable
-    native.proto_library(
-        # buildifier: disable=native-proto
+    _proto_library(
         name = name,
         **kwargs
     )

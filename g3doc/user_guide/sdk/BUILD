@@ -1,4 +1,4 @@
-# Placeholder: load py_test
+load("@rules_python//python:defs.bzl", "py_test")
 load("//website:defs.bzl", "doc")
 
 package(
