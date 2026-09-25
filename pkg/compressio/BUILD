@@ -20,6 +20,7 @@ go_test(
     size = "medium",
     srcs = [
         "compressio_test.go",
+        "nocompressio_integrity_test.go",
         "nocompressio_test.go",
     ],
     library = ":compressio",

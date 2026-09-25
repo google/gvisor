@@ -370,6 +370,12 @@ type Reader struct {
 	// in is the source.
 	in io.ReadCloser
 
+	// keyed is true if the stream contains hashes.
+	keyed bool
+
+	// err is the first error. All subsequent reads give this error.
+	err error
+
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
 	scratch [4]byte
@@ -383,7 +389,8 @@ var _ io.Reader = (*Reader)(nil)
 // details.
 func NewReader(in io.ReadCloser, key []byte) (*Reader, error) {
 	r := &Reader{
-		in: in,
+		in:    in,
+		keyed: len(key) > 0,
 	}
 
 	// Use double buffering for read.
@@ -422,10 +429,62 @@ var errNewBuffer = errors.New("buffer ready")
 var ErrHashMismatch = errors.New("hash mismatch")
 
 // Read implements io.Reader.Read.
+//
+// Read never gives data together with an error other than io.EOF. The first
+// error stops the reader, and all subsequent reads give that error.
 func (r *Reader) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.readLocked(p)
+}
 
+// readLocked does a read and keeps the first error.
+//
+// Precondition: r.mu must be held.
+func (r *Reader) readLocked(p []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	n, err := r.read(p)
+	if err == nil {
+		return n, nil
+	}
+	r.err = err
+	if err == io.EOF {
+		// A hash covers all of the data that the reader gave.
+		return n, io.EOF
+	}
+	return 0, err
+}
+
+// Verify gives an error if the caller did not read all of the stream.
+//
+// Verify does nothing if the reader has no key.
+func (r *Reader) Verify() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.keyed {
+		return nil
+	}
+	if r.err != nil {
+		if r.err == io.EOF {
+			return nil
+		}
+		return r.err
+	}
+	var b [1]byte
+	n, err := r.readLocked(b[:])
+	if n != 0 {
+		return ErrTrailingData
+	}
+	if err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+// Precondition: r.mu must be held.
+func (r *Reader) read(p []byte) (int, error) {
 	// Total bytes completed; this is declared up front because it must be
 	// adjustable by the callback below.
 	done := 0

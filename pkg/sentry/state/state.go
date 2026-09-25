@@ -193,7 +193,10 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 
 // NewStatefileReader returns the statefile's metadata and a reader for it.
 // The ownership of source is transferred to the returned reader.
-func NewStatefileReader(source io.ReadCloser, key []byte) (io.ReadCloser, map[string]string, error) {
+//
+// Callers that use the data must call Verify on the reader when they stop
+// reading. See statefile.Reader.
+func NewStatefileReader(source io.ReadCloser, key []byte) (statefile.Reader, map[string]string, error) {
 	r, m, err := statefile.NewReader(source, key)
 	if err != nil {
 		return nil, nil, fmt.Errorf("statefile.NewReader failed: %w", err)

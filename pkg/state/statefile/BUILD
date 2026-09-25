@@ -18,6 +18,7 @@ go_test(
     name = "statefile_test",
     size = "small",
     srcs = [
+        "statefile_integrity_test.go",
         "statefile_test.go",
     ],
     library = ":statefile",
