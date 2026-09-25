@@ -1,4 +1,9 @@
 groups:
+  # Checklocks fixtures contain intentional violations. Check their analyzer
+  # output without the suppressions used for production code.
+  - name: checklocks_tests
+    regex: "^tools/checklocks/test/"
+    default: false
   # We define three basic groups: generated (all generated files),
   # external (all files outside the repository), and internal (all
   # files within the local repository). We can't enforce many style
@@ -119,6 +124,7 @@ analyzers:
   cgocall:
     external: # Enabled.
   checklocks:
+    checklocks_tests: # Enabled.
     internal:
       exclude:
         - "^-$" # b/181776900: analyzer fails on buildkite.
