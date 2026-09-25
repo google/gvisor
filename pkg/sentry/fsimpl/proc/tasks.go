@@ -209,7 +209,8 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 	startTid := offset - FIRST_PROCESS_ENTRY - 2
 	for _, tg := range i.pidns.ThreadGroups() {
 		tid := i.pidns.IDOfThreadGroup(tg)
-		if int64(tid) < startTid {
+		if tid == 0 || int64(tid) < startTid {
+			// Linux has no /proc/0. Skip a thread group whose ID is gone.
 			continue
 		}
 		if leader := tg.Leader(); leader != nil {
