@@ -343,11 +343,143 @@ func TestNATAlwaysPerformed(t *testing.T) {
 			conn.mu.RLock()
 			srcManip := conn.sourceManip
 			conn.mu.RUnlock()
-			if srcManip != manipPerformed {
-				t.Errorf("got srcManip = %d, want = %d", srcManip, manipPerformed)
+			if srcManip != manipPerformedNoop {
+				t.Errorf("got srcManip = %d, want = %d", srcManip, manipPerformedNoop)
 			}
 		})
 	}
+}
+
+// TestIsNATApplied tests that IsNATApplied reports NAT only when the hooks
+// changed the connection's tuple. The default tables perform a no-op NAT on
+// every connection, which does not count.
+func TestIsNATApplied(t *testing.T) {
+	r := Route{routeInfo: routeInfo{Loop: PacketLoop}}
+
+	t.Run("Default tables", func(t *testing.T) {
+		iptables := DefaultTables(faketime.NewManualClock(), rand.New(rand.NewSource(0 /* seed */)))
+		iptables.ForceReplaceTable(NATID, iptables.GetTable(NATID, ipv6), ipv6)
+		pkt := v6PacketBuffer()
+		if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
+			t.Fatal("got iptables.CheckPrerouting(...) = false, want = true")
+		}
+		cn := pkt.tuple.conn
+		if !iptables.CheckInput(pkt, "" /* inNicName */) {
+			t.Fatal("got iptables.CheckInput(...) = false, want = true")
+		}
+		cn.mu.RLock()
+		srcManip, dstManip := cn.sourceManip, cn.destinationManip
+		cn.mu.RUnlock()
+		if srcManip != manipPerformedNoop || dstManip != manipPerformedNoop {
+			t.Fatalf("got sourceManip = %d, destinationManip = %d, want %d, %d", srcManip, dstManip, manipPerformedNoop, manipPerformedNoop)
+		}
+		if cn.IsNATApplied(SNAT) {
+			t.Error("got IsNATApplied(SNAT) = true after a no-op NAT, want false")
+		}
+		if cn.IsNATApplied(DNAT) {
+			t.Error("got IsNATApplied(DNAT) = true after a no-op NAT, want false")
+		}
+	})
+
+	t.Run("DNAT changes the tuple", func(t *testing.T) {
+		iptables := DefaultTables(faketime.NewManualClock(), rand.New(rand.NewSource(0 /* seed */)))
+		iptables.ReplaceTable(NATID, natTableWithRule(Prerouting, &DNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort, ChangeAddress: true, ChangePort: true}), ipv6)
+		pkt := v6PacketBuffer()
+		if !iptables.CheckPrerouting(pkt, nil /* addressEP */, "" /* inNicName */) {
+			t.Fatal("got iptables.CheckPrerouting(...) = false, want = true")
+		}
+		// The hooks release the packet's connection after the last hook, so
+		// keep a reference to it.
+		cn := pkt.tuple.conn
+		if !iptables.CheckInput(pkt, "" /* inNicName */) {
+			t.Fatal("got iptables.CheckInput(...) = false, want = true")
+		}
+		if !cn.IsNATApplied(DNAT) {
+			t.Error("got IsNATApplied(DNAT) = false after DNAT, want true")
+		}
+		if cn.IsNATApplied(SNAT) {
+			t.Error("got IsNATApplied(SNAT) = true after DNAT only, want false")
+		}
+	})
+
+	t.Run("SNAT changes the tuple", func(t *testing.T) {
+		iptables := DefaultTables(faketime.NewManualClock(), rand.New(rand.NewSource(0 /* seed */)))
+		iptables.ReplaceTable(NATID, natTableWithRule(Postrouting, &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort, ChangeAddress: true, ChangePort: true}), ipv6)
+		pkt := v6PacketBuffer()
+		if !iptables.CheckOutput(pkt, &r, "" /* outNicName */) {
+			t.Fatal("got iptables.CheckOutput(...) = false, want = true")
+		}
+		cn := pkt.tuple.conn
+		if !iptables.CheckPostrouting(pkt, &r, nil /* addressEP */, "" /* outNicName */) {
+			t.Fatal("got iptables.CheckPostrouting(...) = false, want = true")
+		}
+		if !cn.IsNATApplied(SNAT) {
+			t.Error("got IsNATApplied(SNAT) = false after SNAT, want true")
+		}
+		if cn.IsNATApplied(DNAT) {
+			t.Error("got IsNATApplied(DNAT) = true after SNAT only, want false")
+		}
+	})
+
+	// Like Linux get_unique_tuple, the default SNAT remaps the source port when
+	// the reply tuple clashes with an existing connection. That changes the
+	// tuple, so it counts as SNAT.
+	t.Run("Default SNAT remaps a clashing port", func(t *testing.T) {
+		iptables := DefaultTables(faketime.NewManualClock(), rand.New(rand.NewSource(0 /* seed */)))
+		table := natTableWithRule(Postrouting, &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: srcPort, ChangeAddress: true, ChangePort: true})
+		table.Rules[table.BuiltinChains[Postrouting]].Filter = IPHeaderFilter{
+			Src:     srcAddr,
+			SrcMask: tcpip.AddrFrom16([16]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}),
+		}
+		iptables.ReplaceTable(NATID, table, ipv6)
+
+		// srcAddr:srcPort is SNATed to nattedAddr:srcPort.
+		pkt := v6PacketBuffer()
+		if !iptables.CheckOutput(pkt, &r, "" /* outNicName */) {
+			t.Fatal("got iptables.CheckOutput(...) = false, want = true")
+		}
+		first := pkt.tuple.conn
+		if !iptables.CheckPostrouting(pkt, &r, nil /* addressEP */, "" /* outNicName */) {
+			t.Fatal("got iptables.CheckPostrouting(...) = false, want = true")
+		}
+		if !first.IsNATApplied(SNAT) {
+			t.Fatal("got IsNATApplied(SNAT) = false for the SNAT rule, want true")
+		}
+
+		// nattedAddr:srcPort matches no rule, but its reply tuple is taken.
+		pkt = v6PacketBufferWithSrcAddr(nattedAddr)
+		if !iptables.CheckOutput(pkt, &r, "" /* outNicName */) {
+			t.Fatal("got iptables.CheckOutput(...) = false, want = true")
+		}
+		cn := pkt.tuple.conn
+		if !iptables.CheckPostrouting(pkt, &r, nil /* addressEP */, "" /* outNicName */) {
+			t.Fatal("got iptables.CheckPostrouting(...) = false, want = true")
+		}
+		cn.mu.RLock()
+		replyPort := cn.reply.tupleID.dstPortOrEchoReplyIdent
+		cn.mu.RUnlock()
+		if replyPort == srcPort {
+			t.Fatalf("got reply port %d, want the default SNAT to remap it", replyPort)
+		}
+		if !cn.IsNATApplied(SNAT) {
+			t.Error("got IsNATApplied(SNAT) = false after the default SNAT remapped the port, want true")
+		}
+	})
+}
+
+// natTableWithRule returns a NAT table that applies target at hook and accepts
+// everywhere else.
+func natTableWithRule(hook Hook, target Target) Table {
+	var table Table
+	for h := Hook(0); h < NumHooks; h++ {
+		table.BuiltinChains[h] = len(table.Rules)
+		if h == hook {
+			table.Rules = append(table.Rules, Rule{Target: target})
+		}
+		table.Underflows[h] = len(table.Rules)
+		table.Rules = append(table.Rules, Rule{Target: &AcceptTarget{}})
+	}
+	return table
 }
 
 func TestNATConflict(t *testing.T) {

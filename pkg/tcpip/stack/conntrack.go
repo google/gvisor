@@ -129,10 +129,11 @@ const (
 	// manipNotPerformed indicates that NAT has not been performed.
 	manipNotPerformed manipType = iota
 
-	// manipPerformed indicates that NAT was performed.
+	// manipPerformed indicates that NAT was performed and changed the tuple.
 	manipPerformed
 
-	// manipPerformedNoop indicates that NAT was performed but it was a no-op.
+	// manipPerformedNoop indicates that NAT was performed but left the tuple
+	// unchanged.
 	manipPerformedNoop
 )
 

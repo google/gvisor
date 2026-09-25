@@ -48,6 +48,13 @@ func skipIfNFTMode(test TestCase, ipv6 bool) (reason string, skip bool) {
 		return "REJECT target is not supported in nftables compat yet", true
 
 	case
+		// Conntrack state tests
+		"FilterInputConntrackRelated",
+		"FilterOutputConntrackDNAT":
+
+		return "conntrack RELATED and SNAT/DNAT states are not supported in nftables compat yet", true
+
+	case
 		// REDIRECT tests
 		"NATPreRedirectUDPPort",
 		"NATPreRedirectTCPPort",
@@ -613,4 +620,44 @@ func TestMangleOutputMark(t *testing.T) {
 
 func TestManglePostroutingDrop(t *testing.T) {
 	singleTest(t, &ManglePostroutingDrop{})
+}
+
+func TestFilterInputConntrackNewDrop(t *testing.T) {
+	singleTest(t, &FilterInputConntrackNewDrop{})
+}
+
+func TestFilterInputConntrackEstablishedAccept(t *testing.T) {
+	singleTest(t, &FilterInputConntrackEstablishedAccept{})
+}
+
+func TestFilterInputConntrackInvertNewDrop(t *testing.T) {
+	singleTest(t, &FilterInputConntrackInvertNewDrop{})
+}
+
+func TestFilterInputConntrackUDPNewDrop(t *testing.T) {
+	singleTest(t, &FilterInputConntrackUDPNewDrop{})
+}
+
+func TestFilterInputConntrackUDPEstablishedAccept(t *testing.T) {
+	singleTest(t, &FilterInputConntrackUDPEstablishedAccept{})
+}
+
+func TestFilterInputConntrackICMPEcho(t *testing.T) {
+	singleTest(t, &FilterInputConntrackICMPEcho{})
+}
+
+func TestFilterInputConntrackRelated(t *testing.T) {
+	singleTest(t, &FilterInputConntrackRelated{})
+}
+
+func TestFilterOutputConntrackDNAT(t *testing.T) {
+	singleTest(t, &FilterOutputConntrackDNAT{})
+}
+
+func TestFilterOutputConntrackNoDNAT(t *testing.T) {
+	singleTest(t, &FilterOutputConntrackNoDNAT{})
+}
+
+func TestFilterInputConntrackNoSNAT(t *testing.T) {
+	singleTest(t, &FilterInputConntrackNoSNAT{})
 }

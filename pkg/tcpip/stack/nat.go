@@ -311,7 +311,15 @@ func (cn *conn) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Ad
 	if *manip != manipNotPerformed {
 		return true
 	}
+	// Like nf_nat_setup_info, only count the NAT as performed if it changed
+	// the tuple.
+	origAddress, origPortOrIdent := *address, *portOrIdent
 	*manip = manipPerformed
+	defer func() {
+		if *address == origAddress && *portOrIdent == origPortOrIdent {
+			*manip = manipPerformedNoop
+		}
+	}()
 	if changeAddress {
 		*address = natAddress
 	}
@@ -491,6 +499,22 @@ func (cn *conn) IsNATConfigured(natType NATType) bool {
 		return cn.sourceManip != manipNotPerformed
 	case DNAT:
 		return cn.destinationManip != manipNotPerformed
+	}
+	return false
+}
+
+// IsNATApplied returns whether NAT of the given type changed the connection's
+// addresses or ports. A no-op NAT does not count. This matches Linux, where
+// nf_nat_setup_info sets IPS_SRC_NAT or IPS_DST_NAT only when the NAT changes
+// the tuple.
+func (cn *conn) IsNATApplied(natType NATType) bool {
+	cn.mu.RLock()
+	defer cn.mu.RUnlock()
+	switch natType {
+	case SNAT:
+		return cn.sourceManip == manipPerformed
+	case DNAT:
+		return cn.destinationManip == manipPerformed
 	}
 	return false
 }
