@@ -2264,6 +2264,70 @@ TEST(NetlinkRouteTest, VethAdd) {
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
 }
 
+// veth_open calls netif_carrier_on when the peer is IFF_UP, so rfc2863_policy
+// yields IF_OPER_UP. Loopback never toggles carrier, so linkwatch_init_dev
+// skips rfc2863_policy and IFLA_OPERSTATE stays IF_OPER_UNKNOWN.
+TEST(NetlinkRouteTest, VethOperStateUpWhenBothEndsUp) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+
+  std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(fd));
+  int veth1_idx = 0;
+  int veth2_idx = 0;
+  for (const Link& link : links) {
+    if (link.name == "veth1") {
+      veth1_idx = link.index;
+    } else if (link.name == "veth2") {
+      veth2_idx = link.index;
+    }
+  }
+  ASSERT_NE(veth1_idx, 0);
+  ASSERT_NE(veth2_idx, 0);
+
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1_idx, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth2_idx, IFF_UP, IFF_UP));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  } get = {};
+  get.hdr.nlmsg_len = sizeof(get);
+  get.hdr.nlmsg_type = RTM_GETLINK;
+  get.hdr.nlmsg_flags = NLM_F_REQUEST;
+  get.hdr.nlmsg_seq = kSeq + 1;
+  get.ifm.ifi_family = AF_UNSPEC;
+  get.ifm.ifi_index = veth1_idx;
+
+  bool found = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &get, sizeof(get),
+      [&](const struct nlmsghdr* hdr) {
+        ASSERT_EQ(hdr->nlmsg_type, RTM_NEWLINK);
+        const struct ifinfomsg* msg =
+            reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+        const struct rtattr* rta = FindRtAttr(hdr, msg, IFLA_OPERSTATE);
+        ASSERT_NE(rta, nullptr) << "IFLA_OPERSTATE not found in message.";
+        const auto operstate = *reinterpret_cast<const uint8_t*>(RTA_DATA(rta));
+        EXPECT_EQ(operstate, IF_OPER_UP);
+        found = true;
+      },
+      false));
+  EXPECT_TRUE(found);
+}
+
 TEST(NetlinkRouteTest, VethAddShortPeerIfInfoMsg) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());

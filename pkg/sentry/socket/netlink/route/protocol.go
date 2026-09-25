@@ -251,6 +251,14 @@ func writeLinkInfo(m *nlmsg.Message, idx int32, i inet.Interface) {
 	m.PutAttrString(linux.IFLA_IFNAME, i.Name)
 	m.PutAttr(linux.IFLA_MTU, primitive.AllocateUint32(i.MTU))
 
+	// IFLA_OPERSTATE is RFC 2863. Report IF_OPER_UP when IFF_UP is set,
+	// otherwise IF_OPER_DOWN.
+	operState := uint8(linux.IF_OPER_DOWN)
+	if i.Flags&linux.IFF_UP != 0 {
+		operState = linux.IF_OPER_UP
+	}
+	m.PutAttr(linux.IFLA_OPERSTATE, primitive.AllocateUint8(operState))
+
 	mac := make([]byte, 6)
 	brd := mac
 	if len(i.Addr) > 0 {
