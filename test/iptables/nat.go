@@ -21,9 +21,11 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/netutils"
 )
 
@@ -57,6 +59,9 @@ func init() {
 	RegisterTestCase(&NATOutDNAT{})
 	RegisterTestCase(&NATOutDNATAddrOnly{})
 	RegisterTestCase(&NATOutDNATPortOnly{})
+	RegisterTestCase(&NATPostMasqueradeUDP{})
+	RegisterTestCase(&NATPostMasqueradeTCP{})
+	RegisterTestCase(&NATMasqueradeInvalidHookReject{})
 }
 
 // NATPreRedirectUDPPort tests that packets are redirected to different port.
@@ -1159,5 +1164,142 @@ func (*NATOutDNATPortOnly) ContainerAction(ctx context.Context, ip net.IP, ipv6 
 
 // LocalAction implements TestCase.LocalAction.
 func (*NATOutDNATPortOnly) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return nil
+}
+
+// NATPostMasqueradeUDP tests that MASQUERADE rewrites the source IP on UDP packets.
+type NATPostMasqueradeUDP struct{ localCase }
+
+var _ TestCase = (*NATPostMasqueradeUDP)(nil)
+
+func (*NATPostMasqueradeUDP) Name() string {
+	return "NATPostMasqueradeUDP"
+}
+
+func (*NATPostMasqueradeUDP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := natTable(ipv6, "-A", "POSTROUTING", "-p", "udp", "-j", "MASQUERADE"); err != nil {
+		return err
+	}
+	secondary, err := addMasqueradeSecondaryAddress(ipv6)
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialUDP(netutils.UDPNetwork(ipv6), &net.UDPAddr{IP: secondary}, &net.UDPAddr{IP: ip, Port: acceptPort})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	for {
+		// The listener may not be ready yet, and UDP has no handshake, so send until
+		// the local side observes a packet or the test context expires.
+		_, _ = conn.Write([]byte{0})
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+	}
+}
+
+func (*NATPostMasqueradeUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	remote, err := netutils.ListenUDPFrom(ctx, acceptPort, ipv6)
+	if err != nil {
+		return err
+	}
+	if got, want := remote.IP, ip; !got.Equal(want) {
+		return fmt.Errorf("got remote address = %s, want primary egress address = %s", got, want)
+	}
+	return nil
+}
+
+// NATPostMasqueradeTCP tests that MASQUERADE rewrites source IP on TCP connections.
+type NATPostMasqueradeTCP struct{ localCase }
+
+var _ TestCase = (*NATPostMasqueradeTCP)(nil)
+
+func (*NATPostMasqueradeTCP) Name() string {
+	return "NATPostMasqueradeTCP"
+}
+
+func (*NATPostMasqueradeTCP) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := natTable(ipv6, "-A", "POSTROUTING", "-p", "tcp", "-j", "MASQUERADE"); err != nil {
+		return err
+	}
+	secondary, err := addMasqueradeSecondaryAddress(ipv6)
+	if err != nil {
+		return err
+	}
+	dialer := net.Dialer{LocalAddr: &net.TCPAddr{IP: secondary}}
+	return testutil.PollContext(ctx, func() error {
+		conn, err := dialer.DialContext(ctx, netutils.TCPNetwork(ipv6), net.JoinHostPort(ip.String(), strconv.Itoa(acceptPort)))
+		if conn != nil {
+			conn.Close()
+		}
+		return err
+	})
+}
+
+func (*NATPostMasqueradeTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	remote, err := netutils.ListenTCPFrom(ctx, acceptPort, ipv6)
+	if err != nil {
+		return err
+	}
+	host, _, err := net.SplitHostPort(remote.String())
+	if err != nil {
+		return err
+	}
+	if got, want := net.ParseIP(host), ip; !got.Equal(want) {
+		return fmt.Errorf("got remote address = %s, want primary egress address = %s", got, want)
+	}
+	return nil
+}
+
+func addMasqueradeSecondaryAddress(ipv6 bool) (net.IP, error) {
+	iface, ok := netutils.GetNonLoopbackInterface()
+	if !ok {
+		return nil, fmt.Errorf("no non-loopback interface found")
+	}
+	link, err := netlink.LinkByIndex(iface.Index)
+	if err != nil {
+		return nil, fmt.Errorf("netlink.LinkByIndex(%d): %w", iface.Index, err)
+	}
+	secondaryCIDR := "192.0.2.123/32"
+	if ipv6 {
+		secondaryCIDR = "2001:db8::123/128"
+	}
+	addr, err := netlink.ParseAddr(secondaryCIDR)
+	if err != nil {
+		return nil, fmt.Errorf("netlink.ParseAddr(%q): %w", secondaryCIDR, err)
+	}
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return nil, fmt.Errorf("netlink.AddrAdd(%q): %w", secondaryCIDR, err)
+	}
+	return addr.IP, nil
+}
+
+// NATMasqueradeInvalidHookReject tests that installing MASQUERADE in hooks
+// other than POSTROUTING (e.g. PREROUTING or non-nat tables) is rejected.
+type NATMasqueradeInvalidHookReject struct{ containerCase }
+
+var _ TestCase = (*NATMasqueradeInvalidHookReject)(nil)
+
+func (*NATMasqueradeInvalidHookReject) Name() string {
+	return "NATMasqueradeInvalidHookReject"
+}
+
+func (*NATMasqueradeInvalidHookReject) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	// MASQUERADE in nat PREROUTING must be rejected.
+	if err := natTable(ipv6, "-A", "PREROUTING", "-p", "udp", "-j", "MASQUERADE"); err == nil {
+		return fmt.Errorf("expected error installing MASQUERADE target in PREROUTING, but succeeded")
+	}
+	// Mangle has a POSTROUTING hook, so this tests the table restriction rather
+	// than accidentally succeeding because the hook itself is invalid.
+	if err := mangleTable(ipv6, "-A", "POSTROUTING", "-p", "udp", "-j", "MASQUERADE"); err == nil {
+		return fmt.Errorf("expected error installing MASQUERADE target in mangle POSTROUTING, but succeeded")
+	}
+	return nil
+}
+
+func (*NATMasqueradeInvalidHookReject) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return nil
 }

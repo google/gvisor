@@ -32,6 +32,11 @@ func natTable(ipv6 bool, args ...string) error {
 	return tableCmd(ipv6, "nat", args)
 }
 
+// mangleTable calls `ip{6}tables -t mangle` with the given args.
+func mangleTable(ipv6 bool, args ...string) error {
+	return tableCmd(ipv6, "mangle", args)
+}
+
 func tableCmd(ipv6 bool, table string, args []string) error {
 	args = append([]string{"-t", table}, args...)
 	binary := "iptables-legacy"
