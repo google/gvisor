@@ -308,6 +308,8 @@ func (ns *UserNamespace) StateFields() []string {
 		"parent",
 		"owner",
 		"Keys",
+		"maxUserNamespaces",
+		"numUserNamespaces",
 		"uidMapFromParent",
 		"uidMapToParent",
 		"gidMapFromParent",
@@ -326,13 +328,15 @@ func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &ns.parent)
 	stateSinkObject.Save(1, &ns.owner)
 	stateSinkObject.Save(2, &ns.Keys)
-	stateSinkObject.Save(3, &ns.uidMapFromParent)
-	stateSinkObject.Save(4, &ns.uidMapToParent)
-	stateSinkObject.Save(5, &ns.gidMapFromParent)
-	stateSinkObject.Save(6, &ns.gidMapToParent)
-	stateSinkObject.Save(7, &ns.parentHadSetfcap)
-	stateSinkObject.Save(8, &ns.setgroupsAllowed)
-	stateSinkObject.Save(9, &ns.inode)
+	stateSinkObject.Save(3, &ns.maxUserNamespaces)
+	stateSinkObject.Save(4, &ns.numUserNamespaces)
+	stateSinkObject.Save(5, &ns.uidMapFromParent)
+	stateSinkObject.Save(6, &ns.uidMapToParent)
+	stateSinkObject.Save(7, &ns.gidMapFromParent)
+	stateSinkObject.Save(8, &ns.gidMapToParent)
+	stateSinkObject.Save(9, &ns.parentHadSetfcap)
+	stateSinkObject.Save(10, &ns.setgroupsAllowed)
+	stateSinkObject.Save(11, &ns.inode)
 }
 
 func (ns *UserNamespace) afterLoad(context.Context) {}
@@ -342,13 +346,15 @@ func (ns *UserNamespace) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(0, &ns.parent)
 	stateSourceObject.Load(1, &ns.owner)
 	stateSourceObject.Load(2, &ns.Keys)
-	stateSourceObject.Load(3, &ns.uidMapFromParent)
-	stateSourceObject.Load(4, &ns.uidMapToParent)
-	stateSourceObject.Load(5, &ns.gidMapFromParent)
-	stateSourceObject.Load(6, &ns.gidMapToParent)
-	stateSourceObject.Load(7, &ns.parentHadSetfcap)
-	stateSourceObject.Load(8, &ns.setgroupsAllowed)
-	stateSourceObject.Load(9, &ns.inode)
+	stateSourceObject.Load(3, &ns.maxUserNamespaces)
+	stateSourceObject.Load(4, &ns.numUserNamespaces)
+	stateSourceObject.Load(5, &ns.uidMapFromParent)
+	stateSourceObject.Load(6, &ns.uidMapToParent)
+	stateSourceObject.Load(7, &ns.gidMapFromParent)
+	stateSourceObject.Load(8, &ns.gidMapToParent)
+	stateSourceObject.Load(9, &ns.parentHadSetfcap)
+	stateSourceObject.Load(10, &ns.setgroupsAllowed)
+	stateSourceObject.Load(11, &ns.inode)
 }
 
 func init() {
