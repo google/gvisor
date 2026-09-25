@@ -9,6 +9,7 @@ def _crosstool_impl(_ctx):
         patches = [
             "//tools:crosstool-arm-dirs.patch",
             "//tools:remove_windows_deps.patch",
+            "//tools:crosstool-bazel9.patch",
         ],
         sha256 = "f86d488ca353c5ee99187579fe408adb73e9f2bb1d69c6e3a42ffb904ce3ba01",
         strip_prefix = "crosstool-8e885509123395299bed6a5f9529fdc1b9751599",

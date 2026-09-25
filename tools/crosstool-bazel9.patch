@@ -1,0 +1,12 @@
+diff --git a/cc_toolchain_config.bzl.tpl b/cc_toolchain_config.bzl.tpl
+--- a/cc_toolchain_config.bzl.tpl
++++ b/cc_toolchain_config.bzl.tpl
+@@ -25 +25,2 @@
+ load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
++load("@rules_cc//cc:defs.bzl", "CcToolchainConfigInfo", "cc_common")
+diff --git a/BUILD.tpl b/BUILD.tpl
+--- a/BUILD.tpl
++++ b/BUILD.tpl
+@@ -19 +19,2 @@
+ load(":cc_toolchain_config.bzl", "cc_toolchain_config")
++load("@rules_cc//cc:defs.bzl", "cc_toolchain", "cc_toolchain_suite")
