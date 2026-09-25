@@ -43,6 +43,7 @@ func TestSizes(t *testing.T) {
 		{XTNATTargetV0{}, SizeOfXTNATTargetV0},
 		{XTNATTargetV1{}, SizeOfXTNATTargetV1},
 		{XTNATTargetV2{}, SizeOfXTNATTargetV2},
+		{XTAddrtypeInfoV1{}, SizeOfXTAddrtypeInfoV1},
 	}
 
 	for _, tc := range testCases {

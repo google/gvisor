@@ -1068,6 +1068,9 @@ type XTAddrtypeInfoV1 struct {
 	Flags  uint32
 }
 
+// SizeOfXTAddrtypeInfoV1 is the size of struct xt_addrtype_info_v1.
+const SizeOfXTAddrtypeInfoV1 = 8
+
 // XTAddrtypeInfo corresponds to struct xt_addrtype_info in
 // include/uapi/linux/netfilter/xt_addrtype.h.
 //
