@@ -109,6 +109,16 @@ const (
 
 	// NT_ARM_TLS is for ARM TLS register.
 	NT_ARM_TLS = 0x401
+
+	// NT_ARM_PACA_KEYS is for ARM pointer authentication address keys.
+	NT_ARM_PACA_KEYS = 0x407
+
+	// NT_ARM_PACG_KEYS is for ARM pointer authentication generic key.
+	NT_ARM_PACG_KEYS = 0x408
+
+	// NT_ARM_PAC_ENABLED_KEYS is for ARM pointer authentication enabled keys,
+	// as set by prctl(PR_PAC_SET_ENABLED_KEYS).
+	NT_ARM_PAC_ENABLED_KEYS = 0x40a
 )
 
 // ElfHeader64 is the ELF64 file header.

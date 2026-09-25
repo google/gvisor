@@ -55,6 +55,7 @@ func main() {
 	subcommands.Register(new(assertIsEmpty), "")
 	subcommands.Register(new(gvisorDetect), "")
 	subcommands.Register(new(hostinetSR), "")
+	subcommands.Register(new(pacSR), "")
 	subcommands.Register(new(ptyRunner), "")
 	subcommands.Register(new(reaper), "")
 	subcommands.Register(new(syscall), "")

@@ -34,6 +34,36 @@ func archSyscallFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(linux.NT_ARM_TLS),
 			},
 			seccomp.PerArg{
+				seccomp.EqualTo(unix.PTRACE_GETREGSET),
+				seccomp.AnyValue{},
+				seccomp.EqualTo(linux.NT_ARM_PACA_KEYS),
+			},
+			seccomp.PerArg{
+				seccomp.EqualTo(unix.PTRACE_SETREGSET),
+				seccomp.AnyValue{},
+				seccomp.EqualTo(linux.NT_ARM_PACA_KEYS),
+			},
+			seccomp.PerArg{
+				seccomp.EqualTo(unix.PTRACE_GETREGSET),
+				seccomp.AnyValue{},
+				seccomp.EqualTo(linux.NT_ARM_PACG_KEYS),
+			},
+			seccomp.PerArg{
+				seccomp.EqualTo(unix.PTRACE_SETREGSET),
+				seccomp.AnyValue{},
+				seccomp.EqualTo(linux.NT_ARM_PACG_KEYS),
+			},
+			seccomp.PerArg{
+				seccomp.EqualTo(unix.PTRACE_GETREGSET),
+				seccomp.AnyValue{},
+				seccomp.EqualTo(linux.NT_ARM_PAC_ENABLED_KEYS),
+			},
+			seccomp.PerArg{
+				seccomp.EqualTo(unix.PTRACE_SETREGSET),
+				seccomp.AnyValue{},
+				seccomp.EqualTo(linux.NT_ARM_PAC_ENABLED_KEYS),
+			},
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_SETREGSET),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_ARM_TLS),

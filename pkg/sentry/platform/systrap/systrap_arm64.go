@@ -16,6 +16,7 @@ package systrap
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -46,6 +47,15 @@ func cputicksFreq() uint64 {
 
 func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
+}
+
+// hostPACSupport returns which pointer authentication keys the host supports.
+func hostPACSupport() hostPAC {
+	hwcap := cpuid.HostFeatureSet().HWCap1()
+	return hostPAC{
+		address: hwcap&cpuid.HWCAP_PACA != 0,
+		generic: hwcap&cpuid.HWCAP_PACG != 0,
+	}
 }
 
 // configureSystrapAddressSpace overrides the default 48-bit address space

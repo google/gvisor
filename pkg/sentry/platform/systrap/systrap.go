@@ -277,6 +277,10 @@ type Systrap struct {
 	// the Sentry. Since memoryFile is platform-private, it is never restored,
 	// so it is safe to call memoryFile.FD() rather than memoryFile.DataFD().
 	memoryFile *pgalloc.MemoryFile
+
+	// noPACForTest makes the platform behave as on a host without pointer
+	// authentication. It is set by DisablePACForTest.
+	noPACForTest bool
 }
 
 // MinUserAddress implements platform.MinUserAddress.

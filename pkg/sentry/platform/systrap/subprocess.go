@@ -235,6 +235,8 @@ func handlePtraceSyscallRequestError(req any, format string, values ...any) {
 		req.thread <- nil
 	case requestStub:
 		req.done <- nil
+	case requestPACKeys:
+		req.done <- fmt.Errorf(format, values...)
 	}
 	log.BugTracebackf("handlePtraceSyscallRequest failed: "+format, values...)
 }
@@ -332,6 +334,12 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			return
 		}
 		r.done <- t
+	case requestPACKeys:
+		if r.set {
+			r.done <- ptraceThread.setPACKeys(r.keys)
+		} else {
+			r.done <- ptraceThread.getPACKeys(r.keys)
+		}
 
 	}
 }

@@ -106,6 +106,10 @@ const (
 	annotationSaveRestoreExecTimeout = annotationCheckpointPrefix + "save-restore-exec-timeout"
 
 	networkKey = "network"
+
+	// pacKeysKey holds the ARM64 pointer authentication keys of the
+	// application's stub processes.
+	pacKeysKey = "pac_keys"
 )
 
 // GetAnnotationCheckpointPath returns the checkpoint path specified in the
@@ -375,6 +379,24 @@ func (r *restorer) restore(l *Loader) error {
 	p, err := createPlatform(l.root.conf, l.root.applicationCores, r.deviceFile, l.sandboxID, r.timer, &l.pinRing)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
+	}
+
+	// Install pointer authentication keys before LoadFrom creates the
+	// application's stub processes, which inherit them.
+	if keys, ok := r.metadata[pacKeysKey]; ok {
+		restorer, ok := p.(interface{ RestorePACKeys([]byte) error })
+		if !ok {
+			return fmt.Errorf("checkpoint has ARM64 pointer authentication keys, which platform %q cannot restore", l.root.conf.Platform)
+		}
+		if err := restorer.RestorePACKeys([]byte(keys)); err != nil {
+			return fmt.Errorf("restoring pointer authentication keys: %w", err)
+		}
+	} else if disabler, ok := p.(interface{ DisablePACKeys() error }); ok {
+		// The application ran without pointer authentication, so its return
+		// addresses are unsigned. Keep pointer authentication disabled.
+		if err := disabler.DisablePACKeys(); err != nil {
+			log.Warningf("Restoring a checkpoint taken without pointer authentication: %v", err)
+		}
 	}
 
 	// Start the old watchdog before replacing it with a new one below.
@@ -764,6 +786,18 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		return err
 	}
 	saveOpts.Metadata[ContainerSpecsKey] = specsStr
+
+	// Save the pointer authentication keys of the application's stub
+	// processes.
+	if saver, ok := l.k.Platform.(interface{ SavePACKeys() ([]byte, error) }); ok {
+		keys, err := saver.SavePACKeys()
+		if err != nil {
+			return err
+		}
+		if keys != nil {
+			saveOpts.Metadata[pacKeysKey] = string(keys)
+		}
+	}
 
 	// Save start time of the runsc process.
 	saveOpts.StartTime = starttime.Get()
