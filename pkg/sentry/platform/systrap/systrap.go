@@ -56,6 +56,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 
@@ -140,9 +141,9 @@ type platformContext struct {
 
 	// sharedContext is everything related to this platformContext that is resident in
 	// shared memory with the stub thread.
-	// sharedContext is only accessed on the Task goroutine, therefore it is not
-	// mutex protected.
-	sharedContext *sharedContext
+	// sharedContext is only written on the Task goroutine, but atomic because
+	// NotifyInterrupt may read it from any goroutines.
+	sharedContext atomic.Pointer[sharedContext]
 
 	// needRestoreFPState indicates that the FPU state has been changed by
 	// the Sentry and has to be updated on the stub thread.
@@ -225,17 +226,23 @@ func (c *platformContext) Interrupt() {
 // Preempt implements platform.Context.Preempt.
 func (c *platformContext) Preempt() {}
 
+// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+func (c *platformContext) NotifyInterrupt() {
+	if sc := c.sharedContext.Load(); sc != nil {
+		sc.NotifyInterrupt()
+	}
+}
+
 // Release releases all platform resources used by the platformContext.
 func (c *platformContext) Release() {
-	if c.sharedContext != nil {
-		c.sharedContext.release()
-		c.sharedContext = nil
+	if sc := c.sharedContext.Swap(nil); sc != nil {
+		sc.release()
 	}
 }
 
 // PrepareSleep implements platform.Context.PrepareSleep.
 func (c *platformContext) PrepareSleep() {
-	ctx := c.sharedContext
+	ctx := c.sharedContext.Load()
 	if ctx == nil {
 		return
 	}
@@ -379,10 +386,12 @@ func (p *Systrap) NewAddressSpace() (platform.AddressSpace, error) {
 
 // NewContext returns an interruptible platformContext.
 func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
-	return &platformContext{
+	c := &platformContext{
 		needRestoreFPState:  true,
 		needToPullFullState: false,
 	}
+	c.interrupt.Dst = c
+	return c
 }
 
 // ConcurrencyCount implements platform.Platform.ConcurrencyCount.

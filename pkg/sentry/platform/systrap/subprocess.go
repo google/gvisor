@@ -850,12 +850,12 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	// Reset necessary registers.
 	regs := &ac.StateData().Regs
 	s.resetSysemuRegs(regs)
-	ctx := c.sharedContext
+	ctx := c.sharedContext.Load()
 	ctx.shared.Regs = regs.PtraceRegs
 	restoreArchSpecificState(ctx.shared, ac)
 
 	// Check for interrupts, and ensure that future interrupts signal the context.
-	if !c.interrupt.Enable(c.sharedContext) {
+	if !c.interrupt.Enable() {
 		// Pending interrupt; simulate.
 		ctx.clearInterrupt()
 		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
@@ -1090,10 +1090,11 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 }
 
 func (s *subprocess) PullFullState(c *platformContext, ac *arch.Context64) error {
-	if !c.sharedContext.isActiveInSubprocess(s) {
+	sc := c.sharedContext.Load()
+	if !sc.isActiveInSubprocess(s) {
 		panic("Attempted to PullFullState for context that is not used in subprocess")
 	}
-	saveFPState(c.sharedContext, ac)
+	saveFPState(sc, ac)
 	return nil
 }
 
@@ -1281,15 +1282,16 @@ func (s *subprocess) PostFork() {
 // No-op if the context is already active within the subprocess; if not,
 // deactivates it from its last subprocess.
 func (s *subprocess) activateContext(c *platformContext) error {
-	if !c.sharedContext.isActiveInSubprocess(s) {
-		c.sharedContext.release()
-		c.sharedContext = nil
+	if !c.sharedContext.Load().isActiveInSubprocess(s) {
+		if sc := c.sharedContext.Swap(nil); sc != nil {
+			sc.release()
+		}
 
 		shared, err := s.getSharedContext()
 		if err != nil {
 			return err
 		}
-		c.sharedContext = shared
+		c.sharedContext.Store(shared)
 	}
 	return nil
 }

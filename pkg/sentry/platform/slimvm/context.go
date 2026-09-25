@@ -15,6 +15,8 @@
 package slimvm
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -38,6 +40,16 @@ type context struct {
 
 	// interrupt is the interrupt context.
 	interrupt interrupt.Forwarder
+
+	// cpu is the vCPU this context acquired for its last switch.
+	cpu atomic.Pointer[vCPU]
+}
+
+// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+func (c *context) NotifyInterrupt() {
+	if cpu := c.cpu.Load(); cpu != nil {
+		cpu.NotifyInterrupt()
+	}
 }
 
 // tryCPUIDError indicates that CPUID emulation should occur.
@@ -54,9 +66,12 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *
 restart:
 	// Grab a vCPU.
 	cpu := c.machine.Get()
+	if c.cpu.Load() != cpu {
+		c.cpu.Store(cpu)
+	}
 
 	// Enable interrupts (i.e. calls to vCPU.Notify).
-	if !c.interrupt.Enable(cpu) {
+	if !c.interrupt.Enable() {
 		c.machine.Put(cpu) // Already preempted.
 		return nil, hostarch.NoAccess, platform.ErrContextInterrupt
 	}
