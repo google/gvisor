@@ -2671,6 +2671,61 @@ TEST(ProcTask, VerifyTaskChildren) {
   EXPECT_EQ(expectedContent, proc_children_file);
 }
 
+TEST(ProcTask, ProcRootNeverListsZeroTID) {
+  // Concurrent readdir(/proc) while reaping must never list a "0" dirent.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0), SyscallSucceeds());
+
+  std::atomic<bool> stop = false;
+  std::atomic<bool> listed_zero = false;
+  auto scan = [&] {
+    while (!stop.load(std::memory_order_relaxed)) {
+      auto contents = ListDir("/proc", false);
+      if (!contents.ok()) {
+        continue;
+      }
+      for (const auto& name : contents.ValueOrDie()) {
+        if (name == "0") {
+          listed_zero.store(true, std::memory_order_relaxed);
+        }
+      }
+    }
+  };
+  ScopedThread reader1(scan);
+  ScopedThread reader2(scan);
+  ScopedThread reader3(scan);
+  ScopedThread reader4(scan);
+
+  constexpr int kChildrenPerBatch = 64;
+  for (int batch = 0; batch < 32; ++batch) {
+    std::vector<pid_t> children;
+    children.reserve(kChildrenPerBatch);
+    for (int i = 0; i < kChildrenPerBatch; ++i) {
+      pid_t child = fork();
+      if (child == 0) {
+        _exit(0);
+      }
+      ASSERT_THAT(child, SyscallSucceeds());
+      children.push_back(child);
+    }
+    for (pid_t child : children) {
+      siginfo_t info = {};
+      ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
+                  SyscallSucceeds());
+    }
+    for (pid_t child : children) {
+      ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                  SyscallSucceedsWithValue(child));
+    }
+  }
+
+  stop.store(true, std::memory_order_relaxed);
+  reader1.Join();
+  reader2.Join();
+  reader3.Join();
+  reader4.Join();
+  EXPECT_FALSE(listed_zero.load(std::memory_order_relaxed));
+}
+
 TEST(ProcTask, TaskDirCannotBeDeleted) {
   // Drop capabilities that allow us to override file and directory permissions.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
