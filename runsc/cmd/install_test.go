@@ -17,9 +17,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/sys/unix"
 )
 
 type runtimeDef struct {
@@ -203,6 +207,40 @@ func TestInstall(t *testing.T) {
 				t.Fatalf("Mismatch output (-want +got): %s", res)
 			}
 		})
+	}
+}
+
+func TestWriteFileWithExplicitMode(t *testing.T) {
+	oldMask := unix.Umask(0077)
+	t.Cleanup(func() { unix.Umask(oldMask) })
+	filename := filepath.Join(t.TempDir(), "config")
+	const old = "old"
+	if err := os.WriteFile(filename, []byte(old), 0600); err != nil {
+		t.Fatalf("os.WriteFile(%q, %q, 0600) = %v, want nil", filename, old, err)
+	}
+	stale, err := os.Open(filename)
+	if err != nil {
+		t.Fatalf("os.Open(%q) = %v, want nil", filename, err)
+	}
+	t.Cleanup(func() { stale.Close() })
+
+	const want = "new"
+	if err := writeFileWithExplicitMode(filename, []byte(want), 0644); err != nil {
+		t.Fatalf("writeFileWithExplicitMode(%q, %q, 0644) = %v, want nil", filename, want, err)
+	}
+
+	info, err := os.Stat(filename)
+	if err != nil {
+		t.Fatalf("os.Stat(%q) = %v, want nil", filename, err)
+	}
+	if got := info.Mode().Perm(); got != 0644 {
+		t.Errorf("os.Stat(%q).Mode().Perm() = %#o, want %#o", filename, got, 0644)
+	}
+	if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+		t.Errorf("os.ReadFile(%q) = %q, %v, want %q, nil", filename, got, err, want)
+	}
+	if got, err := io.ReadAll(stale); err != nil || string(got) != old {
+		t.Errorf("io.ReadAll(%q) = %q, %v, want %q, nil", stale.Name(), got, err, old)
 	}
 }
 
