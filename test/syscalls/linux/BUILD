@@ -376,6 +376,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_bind_privileged_port_test",
+    testonly = 1,
+    srcs = ["socket_bind_privileged_port.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:socket_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "socket_test",
     testonly = 1,
     srcs = ["socket.cc"],
