@@ -87,7 +87,10 @@ update_version() {
 
   if [[ -n "${wheel_version}" ]]; then
     echo "Updating pyproject.toml version to: ${wheel_version}"
-    sed -i "s/^version = \".*\"/version = \"${wheel_version}\"/" pyproject.toml
+    # Use `-i.bak` rather than plain `-i`, which is a GNU-only extension;
+    # BSD sed (macOS) requires a non-empty backup suffix.
+    sed -i.bak "s/^version = \".*\"/version = \"${wheel_version}\"/" pyproject.toml
+    rm -f pyproject.toml.bak
     echo "pyproject.toml version is now:"
     grep "^version = " pyproject.toml || true
   fi
