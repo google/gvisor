@@ -101,6 +101,10 @@ For LSP integration in other editors, ensure that the environment variable
 `GOPACKAGESDRIVER=tools/gopackagesdriver.sh` is passed along to `gopls`. Also,
 ensure `--allow-config` is passed to `clangd`, which will allow gVisor's
 `.clangd` configuration to take effect.
+The Go package driver targets Linux on the host CPU architecture by default.
+Set `GOOS=darwin` to analyze native macOS packages, or set `GOARCH` to analyze
+a different architecture. Set these variables rather than `--platforms` so
+the driver selects source files and builds for the same target.
 
 #### Using GOPATH (not recommended)
 
