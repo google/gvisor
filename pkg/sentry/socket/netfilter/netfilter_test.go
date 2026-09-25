@@ -230,6 +230,29 @@ func TestCheckTargetHooks(t *testing.T) {
 			},
 		},
 		{
+			name: "masquerade on prerouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&masqueradeTarget{}), // Rule 0: Prerouting.
+					makeRule(&acceptTarget{}),     // Rule 1: Prerouting underflow.
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Prerouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Prerouting: 1}),
+			},
+			want: syserr.ErrInvalidArgument,
+		},
+		{
+			name: "masquerade on postrouting",
+			table: stack.Table{
+				Rules: []stack.Rule{
+					makeRule(&masqueradeTarget{}), // Rule 0: Postrouting.
+					makeRule(&acceptTarget{}),     // Rule 1: Postrouting underflow.
+				},
+				BuiltinChains: makeHookEntries(map[stack.Hook]int{stack.Postrouting: 0}),
+				Underflows:    makeHookEntries(map[stack.Hook]int{stack.Postrouting: 1}),
+			},
+		},
+		{
 			name: "redirect in user chain from postrouting",
 			table: stack.Table{
 				Rules: []stack.Rule{
@@ -337,6 +360,17 @@ func TestParseTargetTable(t *testing.T) {
 			target:    &snatTarget{SNATTarget: stack.SNATTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 			tableName: rawTable,
 			want:      syserr.ErrInvalidArgument,
+		},
+		{
+			name:      "masquerade in the mangle table",
+			target:    &masqueradeTarget{MasqueradeTarget: stack.MasqueradeTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+			tableName: mangleTable,
+			want:      syserr.ErrInvalidArgument,
+		},
+		{
+			name:      "masquerade in the nat table",
+			target:    &masqueradeTarget{MasqueradeTarget: stack.MasqueradeTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+			tableName: natTable,
 		},
 		{
 			name: "reject in the filter table",

@@ -21,7 +21,9 @@ go_library(
     deps = [
         "//pkg/binary",
         "//pkg/hostarch",
+        "//pkg/test/testutil",
         "//test/netutils",
+        "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
