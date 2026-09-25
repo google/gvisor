@@ -9,6 +9,7 @@ go_library(
     name = "iptables",
     testonly = 1,
     srcs = [
+        "conntrack.go",
         "filter_input.go",
         "filter_output.go",
         "iptables.go",
