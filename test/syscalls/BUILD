@@ -62,6 +62,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:socket_bind_privileged_port_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:brk_test",
 )
 

@@ -120,6 +120,15 @@ const (
 	SOCK_PACKET    SockType = 10
 )
 
+// PROT_SOCK is the first unprivileged port: binding an AF_INET or AF_INET6
+// port below it requires CAP_NET_BIND_SERVICE. From linux/include/net/sock.h.
+//
+// Linux makes this boundary configurable per network namespace through
+// net.ipv4.ip_unprivileged_port_start. The Sentry does not implement that
+// sysctl as writable, so this value is also what /proc/sys/net/ipv4/
+// ip_unprivileged_port_start reports.
+const PROT_SOCK = 1024
+
 // SOCK_TYPE_MASK covers all of the above socket types. The remaining bits are
 // flags. From linux/net.h.
 const SOCK_TYPE_MASK = 0xf

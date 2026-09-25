@@ -105,10 +105,16 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 			"ipv4": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"ip_forward":          fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv4.ProtocolNumber}),
 				"ip_local_port_range": fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
-				"tcp_recovery":        fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
-				"tcp_rmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
-				"tcp_sack":            fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
-				"tcp_wmem":            fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
+
+				// Read-only: the Sentry enforces the Linux default and does not
+				// support moving the boundary. Exposing it lets a workload that
+				// reads this file to decide which ports need a capability see the
+				// value that is actually enforced, instead of an absent file.
+				"ip_unprivileged_port_start": fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.PROT_SOCK))),
+				"tcp_recovery":               fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
+				"tcp_rmem":                   fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
+				"tcp_sack":                   fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
+				"tcp_wmem":                   fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpWMem}),
 
 				// conf/{all,default}/route_localnet toggles acceptance of martian
 				// loopback packets on non-loopback NICs (kube-proxy enables this). It

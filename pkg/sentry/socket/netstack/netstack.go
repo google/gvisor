@@ -870,11 +870,6 @@ func (s *sock) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.E
 	return syserr.TranslateNetstackError(s.Endpoint.Connect(addr))
 }
 
-// privilegedPortMax is the first unprivileged port. Linux exposes this as
-// net.ipv4.ip_unprivileged_port_start, which the Sentry does not implement, so
-// only the Linux default is used here.
-const privilegedPortMax = 1024
-
 // portRequiresBindService reports whether binding to port on a socket of the
 // given family and type requires CAP_NET_BIND_SERVICE.
 //
@@ -882,7 +877,7 @@ const privilegedPortMax = 1024
 // sockets are gated by CAP_NET_RAW at creation instead, and an ephemeral port
 // request (port 0) is always permitted.
 func portRequiresBindService(family int, skType linux.SockType, port uint16) bool {
-	if port == 0 || port >= privilegedPortMax {
+	if port == 0 || port >= linux.PROT_SOCK {
 		return false
 	}
 	if family != linux.AF_INET && family != linux.AF_INET6 {
