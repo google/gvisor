@@ -80,6 +80,14 @@ func init() {
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 
+	// MASQUERADE targets (source NAT to the outgoing interface's address).
+	registerTargetMaker(&masqueradeTargetMaker{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&masqueradeTargetMaker{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
+
 	// CT targets (used in the raw table for conntrack zone assignment).
 	registerTargetMaker(&ctTargetMaker{
 		NetworkProtocol: header.IPv4ProtocolNumber,

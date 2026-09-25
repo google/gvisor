@@ -530,7 +530,7 @@ func checkLoopsAndChains(table stack.Table, ipv6 bool) *syserr.Error {
 
 func targetTable(name string) string {
 	switch name {
-	case RedirectTargetName, DNATTargetName, SNATTargetName:
+	case RedirectTargetName, DNATTargetName, SNATTargetName, MasqueradeTargetName:
 		return natTable
 	case RejectTargetName:
 		return filterTable
@@ -547,6 +547,8 @@ func targetSupportsHook(target stack.Target, hook stack.Hook) bool {
 		return hook == stack.Prerouting || hook == stack.Output
 	case *snatTarget:
 		return hook == stack.Input || hook == stack.Postrouting
+	case *masqueradeTarget:
+		return hook == stack.Postrouting
 	case *rejectIPv4Target, *rejectIPv6Target:
 		return hook == stack.Input || hook == stack.Forward || hook == stack.Output
 	default:

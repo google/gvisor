@@ -3985,3 +3985,99 @@ func genUDP6(offset int8) *stack.PacketBuffer {
 	buf := buffer.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
+
+func TestMasqueradePortRange(t *testing.T) {
+	const (
+		srcPort    = 6000
+		dstPort    = 5432
+		mappedPort = 5000
+	)
+
+	tests := []struct {
+		name       string
+		netProto   tcpip.NetworkProtocolNumber
+		transProto tcpip.TransportProtocolNumber
+		buf        []byte
+		check      func(*testing.T, *buffer.View)
+	}{
+		{
+			name:       "IPv4 UDP",
+			netProto:   ipv4.ProtocolNumber,
+			transProto: header.UDPProtocolNumber,
+			buf:        udpv4Packet(utils.Host2IPv4Addr.AddressWithPrefix.Address, utils.Host1IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */),
+			check: func(t *testing.T, v *buffer.View) {
+				checker.IPv4(t, v,
+					checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
+					checker.UDP(checker.SrcPort(mappedPort), checker.DstPort(dstPort)),
+				)
+			},
+		},
+		{
+			name:       "IPv4 TCP",
+			netProto:   ipv4.ProtocolNumber,
+			transProto: header.TCPProtocolNumber,
+			buf:        tcpv4Packet(utils.Host2IPv4Addr.AddressWithPrefix.Address, utils.Host1IPv4Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */),
+			check: func(t *testing.T, v *buffer.View) {
+				checker.IPv4(t, v,
+					checker.SrcAddr(utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address),
+					checker.TCP(checker.SrcPort(mappedPort), checker.DstPort(dstPort)),
+				)
+			},
+		},
+		{
+			name:       "IPv6 UDP",
+			netProto:   ipv6.ProtocolNumber,
+			transProto: header.UDPProtocolNumber,
+			buf:        udpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */),
+			check: func(t *testing.T, v *buffer.View) {
+				checker.IPv6(t, v,
+					checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+					checker.UDP(checker.SrcPort(mappedPort), checker.DstPort(dstPort)),
+				)
+			},
+		},
+		{
+			name:       "IPv6 TCP",
+			netProto:   ipv6.ProtocolNumber,
+			transProto: header.TCPProtocolNumber,
+			buf:        tcpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */),
+			check: func(t *testing.T, v *buffer.View) {
+				checker.IPv6(t, v,
+					checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
+					checker.TCP(checker.SrcPort(mappedPort), checker.DstPort(dstPort)),
+				)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+			})
+			defer s.Destroy()
+
+			ep1 := channel.New(1, header.IPv6MinimumMTU, "")
+			ep2 := channel.New(1, header.IPv6MinimumMTU, "")
+			utils.SetupRouterStack(t, s, ep1, ep2)
+
+			setupSNAT(t, s, test.netProto, test.transProto, &stack.MasqueradeTarget{
+				NetworkProtocol: test.netProto,
+				Ports:           stack.PortOrIdentRange{Start: mappedPort, Size: 1},
+			})
+
+			ep2.InjectInbound(test.netProto, stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(test.buf),
+			}))
+			pkt := ep1.Read()
+			if pkt == nil {
+				t.Fatal("expected to read a packet on ep1")
+			}
+			v := stack.PayloadSince(pkt.NetworkHeader())
+			defer v.Release()
+			pkt.DecRef()
+			test.check(t, v)
+		})
+	}
+}

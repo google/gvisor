@@ -266,6 +266,8 @@ func IPTHandlePacket(pkt *PacketBuffer, hook Hook, r *Route) bool {
 
 // PortOrIdentRange represents a range of ports or idents
 // range to use for NAT.
+//
+// +stateify savable
 type PortOrIdentRange struct {
 	Start uint16
 	Size  uint32
