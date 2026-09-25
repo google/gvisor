@@ -308,7 +308,7 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
 // only the matchers.
-func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
+func parseMatchers(mapper IDMapper, stk *stack.Stack, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
 	nflog("set entries: parsing matchers of size %d", len(optVal))
 	var matchers []stack.Matcher
 	for len(optVal) > 0 {
@@ -335,6 +335,9 @@ func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) 
 		matcher, err := unmarshalMatcherRevs(mapper, &match, filter, optVal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create matcher: %v", match)
+		}
+		if sa, ok := matcher.(interface{ setStack(*stack.Stack) }); ok {
+			sa.setStack(stk)
 		}
 
 		nflog("set entries: found matcher for: %+v", match)
