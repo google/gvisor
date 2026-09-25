@@ -903,10 +903,10 @@
   sha256: 14983d36c56a814ed91b6d652f2b8f895baba1b84eb43b28a0b132c8637cd274
   license: BSD-3-Clause
 - dependency: google_benchmark
-  version: https://github.com/google/benchmark/archive/refs/tags/v1.8.4.tar.gz
-  retrieved: "2026-08-27"
-  commit: a4cf155615c63e019ae549e31703bf367df5b471
-  sha256: 3e7059b6b11fb1bbe28e33e02519398ca94c1818874ebed18e504dc6f709be45
+  version: https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz
+  retrieved: "2026-09-10"
+  commit: 192ef10025eb2c4cdd392bc502f0c852196baa48
+  sha256: 9631341c82bac4a288bef951f8b26b41f69021794184ece969f8473977eaa340
   license: Apache-2.0
 - dependency: google_root_pem
   version: https://pki.goog/roots.pem
@@ -1014,10 +1014,10 @@
     - Apache-2.0 WITH LLVM-exception
     - MIT
 - dependency: nlohmann_json
-  version: https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
-  retrieved: "2026-08-27"
-  commit: 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03
-  sha256: a22461d13119ac5c78f205d3df1db13403e58ce1bb1794edc9313677313f4a9d
+  version: https://github.com/nlohmann/json/releases/download/v3.12.0/include.zip
+  retrieved: "2026-09-10"
+  commit: 55f93686c01528224f448c19128836e7df245f72
+  sha256: b8cb0ef2dd7f57f18933997c9934bb1fa962594f701cd5a8d3c2c80541559372
   license: MIT
 - dependency: platforms
   version: https://github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz
