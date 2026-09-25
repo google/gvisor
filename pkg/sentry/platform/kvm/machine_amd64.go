@@ -57,6 +57,18 @@ func (m *machine) initArchState() error {
 		}
 	}
 
+	// Cache the TSC frequency. Must happen while initialization
+	// is still in progress to avoid having KVM_GET_TSC_KHZ on the seccomp
+	// allowlist.
+	if m.maxVCPUs > 0 {
+		if freq, err := m.vCPUsByID[0].getTSCFreq(); err != nil {
+			log.Warningf("Unable to read the TSC frequency: %v", err)
+		} else {
+			m.tscFrequency = uint64(freq) * 1000 // KHz to Hz.
+		}
+	}
+	log.Debugf("Host TSC frequency: %d Hz.", m.tscFrequency)
+
 	return nil
 }
 
@@ -177,8 +189,8 @@ var bitsForScaling int64
 
 // getBitsForScaling returns the bits available for storing the fraction component
 // of the TSC scaling ratio. This allows us to replicate the (bad) math done by
-// the kernel below in scaledTSC, and ensure we can compute an exact zero
-// offset in setSystemTime.
+// the kernel below in scaledTSC, and ensure we can compute an exact
+// machine.tscOffset in setSystemTime.
 //
 // These constants correspond to kvm_tsc_scaling_ratio_frac_bits.
 func getBitsForScaling() int64 {
@@ -221,7 +233,7 @@ func scaledTSC(rawFreq uintptr) int64 {
 func (c *vCPU) setSystemTime() error {
 	// Attempt to set the offset directly. This is supported as of Linux 5.16,
 	// or commit 828ca89628bfcb1b8f27535025f69dd00eb55207.
-	if err := c.setTSCOffset(); err == nil {
+	if err := c.setTSCOffset(c.machine.tscOffset); err == nil {
 		return err
 	}
 
@@ -262,15 +274,19 @@ func (c *vCPU) setSystemTime() error {
 	//	offset = target_tsc - kvm_scale_tsc(vcpu, rdtsc());
 	//
 	// So as long as the kvm_scale_tsc component is constant before and
-	// after the call to set the TSC value (and it is passes as the
-	// target_tsc), we will compute an offset value of zero.
+	// after the call to set the TSC value, KVM computes an offset of
+	// exactly (target_tsc - scaled host TSC). We pass the scaled host TSC
+	// plus c.machine.tscOffset as target_tsc, so the resulting offset is
+	// c.machine.tscOffset, which is zero unless a restore requires the
+	// guest TSC to be shifted relative to the host.
 	//
 	// This is effectively cheating to make our "setSystemTime" call so
-	// unbelievably, incredibly fast that we do it "instantly" and all the
-	// calculations result in an offset of zero.
+	// unbelievably, incredibly fast that we do it "instantly", so that no
+	// elapsed time contaminates that offset. The loop below enforces this,
+	// retrying until the scaled TSC is unchanged across the call.
 	lastTSC := scaledTSC(rawFreq)
 	for {
-		if err := c.setTSC(uint64(lastTSC)); err != nil {
+		if err := c.setTSC(uint64(lastTSC) + c.machine.tscOffset); err != nil {
 			return err
 		}
 		nextTSC := scaledTSC(rawFreq)
@@ -499,13 +515,13 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *linux.SignalInfo)
 
 func (m *machine) mapUpperHalfRegion(
 	pageTable *pagetables.PageTables,
-	virtual uintptr, length uintptr,
+	virtual, translateVirt, length uintptr,
 	opts pagetables.MapOpts,
 ) {
 	for length != 0 {
-		physical, plength, ok := translateToPhysical(virtual)
+		physical, plength, ok := translateToPhysical(translateVirt)
 		if !ok || plength == 0 {
-			panic(fmt.Sprintf("impossible translation: virtual %x length %x", virtual, length))
+			panic(fmt.Sprintf("impossible translation: virtual %x translateVirt %x length %x", virtual, translateVirt, length))
 		}
 		if plength > length {
 			plength = length
@@ -519,6 +535,7 @@ func (m *machine) mapUpperHalfRegion(
 
 		length -= plength
 		virtual += plength
+		translateVirt += plength
 	}
 }
 
@@ -532,7 +549,11 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 
 		if vr.accessType.Execute {
 			r := vr.region
-			m.mapUpperHalfRegion(pageTable, r.virtual, r.length,
+			translateVirt := r.virtual
+			if vr.filename == "[vdso]" && len(m.shadowVDSO) > 0 {
+				translateVirt = m.shadowVDSOVirt()
+			}
+			m.mapUpperHalfRegion(pageTable, r.virtual, translateVirt, r.length,
 				pagetables.MapOpts{AccessType: hostarch.Execute, Global: true})
 		}
 		return false
@@ -541,7 +562,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	}
 	for start, end := range m.kernel.EntryRegions() {
 		regionLen := end - start
-		m.mapUpperHalfRegion(pageTable, start, regionLen,
+		m.mapUpperHalfRegion(pageTable, start, start, regionLen,
 			pagetables.MapOpts{AccessType: hostarch.ReadWrite, Global: true})
 	}
 }

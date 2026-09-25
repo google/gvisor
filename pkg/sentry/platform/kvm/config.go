@@ -38,6 +38,9 @@ type Config struct {
 
 	// PinRing is used to pin the VM FD and to release it asynchronously.
 	PinRing *pinring.PinRing
+
+	// TSCOffset is the offset to apply to the guest TSC.
+	TSCOffset uint64
 }
 
 func (*machine) applyConfig(config *Config) error { return nil }

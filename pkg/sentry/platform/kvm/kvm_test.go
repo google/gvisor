@@ -465,6 +465,40 @@ func TestRdtsc(t *testing.T) {
 	})
 }
 
+func TestRdtscWithOffset(t *testing.T) {
+	const offset = uint64(10_000_000_000)
+	deviceFile, err := OpenDevice("")
+	if err != nil {
+		t.Fatalf("error opening device file: %v", err)
+	}
+	k, err := New(deviceFile, Config{TSCOffset: offset})
+	if err != nil {
+		t.Fatalf("error creating KVM instance: %v", err)
+	}
+	defer k.machine.Destroy()
+
+	var c *vCPU
+	defer func() {
+		redpill()
+		if c != nil {
+			k.machine.Put(c)
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		c = k.machine.Get()
+		start := uint64(ktime.Rdtsc())
+		bluepill(c)
+		guest := uint64(ktime.Rdtsc())
+		redpill()
+		end := uint64(ktime.Rdtsc())
+		if start+offset > guest || guest > end+offset {
+			t.Errorf("inconsistent time with offset: start+offset=%d, guest=%d, end+offset=%d", start+offset, guest, end+offset)
+		}
+		k.machine.Put(c)
+		c = nil
+	}
+}
+
 func TestKernelVDSO(t *testing.T) {
 	// Note that the target passed here is irrelevant, we never execute SwitchToUser.
 	applicationTest(t, true, testutil.AddrOfGetpid(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
@@ -479,6 +513,63 @@ func TestKernelVDSO(t *testing.T) {
 		}
 		return false
 	})
+}
+
+func TestKernelVDSOWithTSCOffset(t *testing.T) {
+	offsets := []struct {
+		name   string
+		offset uint64
+	}{
+		{"PositiveOffset", 1_000_000_000_000},
+		{"NegativeOffset", ^uint64(1_000_000_000_000) + 1},
+	}
+	for _, tc := range offsets {
+		t.Run(tc.name, func(t *testing.T) {
+			deviceFile, err := OpenDevice("")
+			if err != nil {
+				t.Fatalf("error opening device file: %v", err)
+			}
+			k, err := New(deviceFile, Config{TSCOffset: tc.offset})
+			if err != nil {
+				t.Fatalf("error creating KVM instance: %v", err)
+			}
+			defer k.machine.Destroy()
+
+			var c *vCPU
+			defer func() {
+				redpill()
+				if c != nil {
+					k.machine.Put(c)
+				}
+			}()
+
+			const n = 50
+			for i := 0; i < n; i++ {
+				c = k.machine.Get()
+				tBefore := time.Now()
+				bluepill(c)
+				exitsBefore := c.guestExits.Load()
+				tGuest := time.Now()
+				exitsAfter := c.guestExits.Load()
+				redpill()
+				tAfter := time.Now()
+				k.machine.Put(c)
+				c = nil
+
+				if exitsAfter != exitsBefore {
+					t.Fatalf("iter %d: time.Now() in GR0 triggered VM-exit (exitsBefore=%d, exitsAfter=%d)", i, exitsBefore, exitsAfter)
+				}
+				if tGuest.Before(tBefore) || tAfter.Before(tGuest) {
+					t.Fatalf("iter %d: GR0 time not monotonic with HR3: tBefore=%v, tGuest=%v, tAfter=%v", i, tBefore, tGuest, tAfter)
+				}
+				// Verify wall-clock time is also uncorrupted by the ~333s TSC offset.
+				wallDiff := tGuest.Round(0).Sub(tBefore.Round(0))
+				if wallDiff < 0 || wallDiff > time.Second {
+					t.Fatalf("iter %d: GR0 wall-clock time diverged from HR3: diff=%v (tBefore=%v, tGuest=%v)", i, wallDiff, tBefore, tGuest)
+				}
+			}
+		})
+	}
 }
 
 func TestIoeventfd(t *testing.T) {

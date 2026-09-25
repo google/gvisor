@@ -232,6 +232,16 @@ func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 	}
 }
 
+// TSCOffset implements platform.TSCAdjustablePlatform.
+func (k *KVM) TSCOffset() uint64 {
+	return k.machine.tscOffset
+}
+
+// TSCFrequency implements platform.TSCAdjustablePlatform.
+func (k *KVM) TSCFrequency() (uint64, bool) {
+	return k.machine.tscFrequency, k.machine.tscFrequency != 0
+}
+
 type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
@@ -241,6 +251,7 @@ func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 		UseCPUNums:       opts.UseCPUNums,
 		StartupTimer:     opts.StartupTimer,
 		PinRing:          opts.PinRing,
+		TSCOffset:        opts.TSCOffset,
 	})
 }
 
