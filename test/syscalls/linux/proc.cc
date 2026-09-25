@@ -2765,6 +2765,69 @@ TEST(ProcTask, VerifyTaskChildren) {
   EXPECT_EQ(expectedContent, proc_children_file);
 }
 
+// A child reaped while this file is generated must be omitted, never TID 0.
+TEST(ProcTask, VerifyTaskChildrenNeverReportsZeroTID) {
+  const std::string path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                                    absl::StrCat(gettid()), "children");
+
+  // Keep exited children as zombies until this test reaps them.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0), SyscallSucceeds());
+
+  std::atomic<bool> stop = false;
+  std::atomic<bool> reported_zero = false;
+  auto scan = [&] {
+    while (!stop.load(std::memory_order_relaxed)) {
+      auto contents = GetContents(path);
+      if (!contents.ok()) {
+        continue;
+      }
+      for (absl::string_view tid :
+           absl::StrSplit(contents.ValueOrDie(), ' ', absl::SkipWhitespace())) {
+        if (tid == "0") {
+          reported_zero.store(true, std::memory_order_relaxed);
+        }
+      }
+    }
+  };
+  ScopedThread reader1(scan);
+  ScopedThread reader2(scan);
+  ScopedThread reader3(scan);
+  ScopedThread reader4(scan);
+
+  constexpr int kChildrenPerBatch = 64;
+  for (int batch = 0; batch < 32; ++batch) {
+    std::vector<pid_t> children;
+    children.reserve(kChildrenPerBatch);
+    for (int i = 0; i < kChildrenPerBatch; ++i) {
+      pid_t child = fork();
+      if (child == 0) {
+        _exit(0);
+      }
+      ASSERT_THAT(child, SyscallSucceeds());
+      children.push_back(child);
+    }
+
+    // Ensure all children are zombies, then reap the whole batch while readers
+    // repeatedly snapshot children and resolve each snapshot's TID.
+    for (pid_t child : children) {
+      siginfo_t info = {};
+      ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
+                  SyscallSucceeds());
+    }
+    for (pid_t child : children) {
+      ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                  SyscallSucceedsWithValue(child));
+    }
+  }
+
+  stop.store(true, std::memory_order_relaxed);
+  reader1.Join();
+  reader2.Join();
+  reader3.Join();
+  reader4.Join();
+  EXPECT_FALSE(reported_zero.load(std::memory_order_relaxed));
+}
+
 TEST(ProcTask, TaskDirCannotBeDeleted) {
   // Drop capabilities that allow us to override file and directory permissions.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
