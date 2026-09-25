@@ -31,6 +31,26 @@ bzl_library(
     deps = [":defs_bzl"],
 )
 
+# Keep Go's pure/cgo mode in its build settings, not the target platform:
+# Bazel 9 also uses target constraints to select a test execution platform.
+platform(
+    name = "linux_amd64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "amd64",
     constraint_values = [
