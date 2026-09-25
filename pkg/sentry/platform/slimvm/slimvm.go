@@ -141,9 +141,11 @@ func (k *SlimVM) NewAddressSpace() (platform.AddressSpace, error) {
 
 // NewContext returns an interruptible context.
 func (k *SlimVM) NewContext(pkgcontext.Context) platform.Context {
-	return &context{
+	c := &context{
 		machine: k.machine,
 	}
+	c.interrupt.Dst = c
+	return c
 }
 
 // ConcurrencyCount implements platform.Platform.ConcurrencyCount.

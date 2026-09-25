@@ -15,6 +15,8 @@
 package kvm
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
@@ -38,8 +40,18 @@ type platformContext struct {
 	// interrupt is the interrupt platformContext.
 	interrupt interrupt.Forwarder
 
+	// cpu is the vCPU this platformContext acquired for its last switch.
+	cpu atomic.Pointer[vCPU]
+
 	// lastUsedCPU is the last CPU ID used by this platformContext.
 	lastUsedCPU atomicbitops.Int32
+}
+
+// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+func (c *platformContext) NotifyInterrupt() {
+	if cpu := c.cpu.Load(); cpu != nil {
+		cpu.NotifyInterrupt()
+	}
 }
 
 // tryCPUIDError indicates that CPUID emulation should occur.
@@ -56,9 +68,12 @@ func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManag
 restart:
 	// Grab a vCPU.
 	cpu := c.machine.Get()
+	if c.cpu.Load() != cpu {
+		c.cpu.Store(cpu)
+	}
 
 	// Enable interrupts (i.e. calls to vCPU.Notify).
-	if !c.interrupt.Enable(cpu) {
+	if !c.interrupt.Enable() {
 		c.machine.Put(cpu) // Already preempted.
 		return nil, hostarch.NoAccess, platform.ErrContextInterrupt
 	}

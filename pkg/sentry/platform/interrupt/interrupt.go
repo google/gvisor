@@ -16,9 +16,7 @@
 package interrupt
 
 import (
-	"fmt"
-
-	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // Receiver receives interrupt notifications from a Forwarder.
@@ -27,84 +25,97 @@ type Receiver interface {
 	NotifyInterrupt()
 }
 
+// Forwarder states.
+const (
+	// forwarderDisabled: no interrupt is forwarded, and none is pending.
+	forwarderDisabled uint32 = iota
+
+	// forwarderPending: no interrupt is forwarded, and one is pending.
+	forwarderPending
+
+	// forwarderEnabled: interrupts go to `Dst` directly.
+	forwarderEnabled
+)
+
 // Forwarder is a helper for delivering delayed signal interruptions.
 //
 // This helps platform implementations with Interrupt semantics.
 type Forwarder struct {
-	// mu protects the below.
-	mu sync.Mutex
+	// state of the interrupt forwarder.
+	state atomicbitops.Uint32
 
-	// dst is the function to be called when NotifyInterrupt() is called. If
-	// dst is nil, pending will be set instead, causing the next call to
-	// Enable() to return false.
-	dst     Receiver
-	pending bool
+	// Dst is notified while `state` is `forwarderEnabled`. It is immutable,
+	// and must be set before any function on `Forwarder` is called.
+	Dst Receiver
 }
 
-// Enable attempts to enable interrupt forwarding to r. If f has already
-// received an interrupt, Enable does nothing and returns false. Otherwise,
-// future calls to f.NotifyInterrupt() cause r.NotifyInterrupt() to be called,
-// and Enable returns true.
+// Enable attempts to enable interrupt forwarding.
+// If `f` has already received an interrupt, `Enable` returns `false` and
+// consumes the interrupt, which the caller should handle immediately.
+// Otherwise (if `Enable` returns true, i.e. successful enablement),
+// future calls to `f.NotifyInterrupt()` cause the `Receiver` to be notified,
+// until `Disable` is called.
 //
 // Usage:
 //
-//	if !f.Enable(r) {
-//		// There was an interrupt.
+// ```
+//
+//	if !f.Enable() {
+//		// There was an interrupt, need to handle it.
 //		return
 //	}
+//	defer f.Disable()
 //
-// defer f.Disable()
+// ```
 //
-// Preconditions:
-//   - r must not be nil.
-//   - f must not already be forwarding interrupts to a Receiver.
-func (f *Forwarder) Enable(r Receiver) bool {
-	if r == nil {
-		panic("nil Receiver")
+// Precondition: f must not already be forwarding interrupts.
+func (f *Forwarder) Enable() bool {
+	if f.state.CompareAndSwap(forwarderDisabled, forwarderEnabled) {
+		return true
 	}
-	f.mu.Lock()
-	if f.dst != nil {
-		f.mu.Unlock()
-		panic(fmt.Sprintf("already forwarding interrupts to %+v", f.dst))
+	if !f.state.CompareAndSwap(forwarderPending, forwarderDisabled) {
+		// Enable is written explicitly to fit under the inlining budget,
+		// critical for performance. In particular, do not use `fmt.Sprintf`
+		// here as this will change its inlining cost and cause a noticeable
+		// performance cost on the hot path.
+		panic("already forwarding interrupts")
 	}
-	if f.pending {
-		f.pending = false
-		f.mu.Unlock()
-		return false
-	}
-	f.dst = r
-	f.mu.Unlock()
-	return true
+	return false
 }
 
-// Disable stops interrupt forwarding. If interrupt forwarding is already
-// disabled, Disable is a no-op.
+// Disable stops interrupt forwarding.
+// If interrupt forwarding is already disabled, Disable is a no-op.
+// If an interrupt is already pending, Disable is also a no-op.
 func (f *Forwarder) Disable() {
-	f.mu.Lock()
-	f.dst = nil
-	f.mu.Unlock()
+	f.state.CompareAndSwap(forwarderEnabled, forwarderDisabled)
 }
 
-// NotifyInterrupt implements Receiver.NotifyInterrupt. If interrupt forwarding
-// is enabled, the configured Receiver will be notified. Otherwise the
-// interrupt will be delivered to the next call to Enable.
+// NotifyInterrupt implements Receiver.NotifyInterrupt.
+// If interrupt forwarding is enabled, the `Receiver` will be notified.
+// Otherwise the interrupt is recorded and will be noticed by the next caller
+// of `Enable` exactly once (regardless of how many calls to `NotifyInterrupt`
+// are made).
 func (f *Forwarder) NotifyInterrupt() {
-	f.mu.Lock()
-	if f.dst != nil {
-		f.dst.NotifyInterrupt()
-	} else {
-		f.pending = true
+	for {
+		switch f.state.Load() {
+		case forwarderEnabled:
+			f.Dst.NotifyInterrupt()
+			return
+		case forwarderPending:
+			return
+		default:
+			if f.state.CompareAndSwap(forwarderDisabled, forwarderPending) {
+				return
+			}
+		}
 	}
-	f.mu.Unlock()
 }
 
 // Preempt preempts the running context. Preempt is a weaker version of
 // NotifyInterrupt, it doesn't set the pending flag which is set when a context
 // isn't actually running at this moment.
 func (f *Forwarder) Preempt() {
-	f.mu.Lock()
-	if f.dst != nil {
-		f.dst.NotifyInterrupt()
+	if f.state.Load() == forwarderEnabled {
+		f.Dst.NotifyInterrupt()
 	}
-	f.mu.Unlock()
 }
