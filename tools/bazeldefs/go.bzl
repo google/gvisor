@@ -260,7 +260,7 @@ def _go_imports_impl(ctx):
     ctx.actions.write(
         output = goimports_launcher,
         is_executable = True,
-        content = "PATH=$PWD/{} exec {} {} > {}".format(
+        content = "#!/bin/sh\nPATH=$PWD/{} exec {} {} > {}\n".format(
             shell.quote(go_symlink.dirname),
             shell.quote(goimports_tool.executable.path),
             shell.quote(src.path),
