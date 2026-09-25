@@ -3199,6 +3199,77 @@ TEST(MountTest, OverlayfsSecurityCapabilityTranslatesRootID) {
       IsPosixErrorOkAndHolds(0));
 }
 
+// Linux resolves relative pathnames in overlayfs mount options against the
+// working directory of the mounting process.
+TEST(MountTest, OverlayfsRelativePaths) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Overlayfs can not be used as upper layer for another overlayfs mount. If
+  // running in overlayfs, create a tmpfs mount to use as the upper layer.
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+                SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  // Fixed names, so that the mount options below can name them relatively.
+  // "sub" is the directory the mount is performed from; it is deliberately not
+  // the parent of the mount target, so that resolving against the working
+  // directory is distinguishable from resolving against the target's parent.
+  for (const char* name : {"l0", "l1", "u", "w", "m", "sub"}) {
+    ASSERT_THAT(mkdir(JoinPath(base_dir.path(), name).c_str(), 0755),
+                SyscallSucceeds());
+  }
+  ASSERT_NO_ERRNO(CreateWithContents(
+      JoinPath(base_dir.path(), "l0", "from_l0"), "l0", 0644));
+  ASSERT_NO_ERRNO(CreateWithContents(
+      JoinPath(base_dir.path(), "l1", "from_l1"), "l1", 0644));
+
+  const std::string old_cwd = ASSERT_NO_ERRNO_AND_VALUE(GetCWD());
+  ASSERT_THAT(chdir(JoinPath(base_dir.path(), "sub").c_str()),
+              SyscallSucceeds());
+  auto cwd_cleanup = Cleanup(
+      [&old_cwd] { EXPECT_THAT(chdir(old_cwd.c_str()), SyscallSucceeds()); });
+
+  // Only the pathnames inside the option string are relative. They traverse
+  // "..", which resolves correctly only if the working directory is the
+  // starting point.
+  const std::string merged = JoinPath(base_dir.path(), "m");
+  ASSERT_THAT(mount("overlay", merged.c_str(), "overlay", 0,
+                    "lowerdir=../l0:../l1,upperdir=../u,workdir=../w"),
+              SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.c_str(), MNT_DETACH); });
+
+  // Both lower layers resolved, so both are visible through the merged dir.
+  std::string contents;
+  ASSERT_NO_ERRNO(GetContents(JoinPath(merged, "from_l0"), &contents));
+  EXPECT_EQ(contents, "l0");
+  ASSERT_NO_ERRNO(GetContents(JoinPath(merged, "from_l1"), &contents));
+  EXPECT_EQ(contents, "l1");
+
+  // The workdir resolved: overlayfs created its "work" directory inside it.
+  // A failed MkdirAt on workdir is only logged, so without this the mount
+  // succeeds even when workdir resolved somewhere else.
+  struct stat work_st;
+  ASSERT_THAT(stat(JoinPath(base_dir.path(), "w", "work").c_str(), &work_st),
+              SyscallSucceeds());
+
+  // The upper layer resolved too: a new file lands in it rather than anywhere
+  // else.
+  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(merged, "written"), "up", 0644));
+  ASSERT_NO_ERRNO(
+      GetContents(JoinPath(base_dir.path(), "u", "written"), &contents));
+  EXPECT_EQ(contents, "up");
+}
+
 // Renaming a directory on an overlay inside a user namespace requires
 // user.overlay.* xattrs to mark the directory opaque.
 TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
