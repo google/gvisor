@@ -614,3 +614,39 @@ func TestMangleOutputMark(t *testing.T) {
 func TestManglePostroutingDrop(t *testing.T) {
 	singleTest(t, &ManglePostroutingDrop{})
 }
+
+func TestFilterInputConntrackNewDrop(t *testing.T) {
+	singleTest(t, &FilterInputConntrackNewDrop{})
+}
+
+func TestFilterInputConntrackEstablishedAccept(t *testing.T) {
+	singleTest(t, &FilterInputConntrackEstablishedAccept{})
+}
+
+func TestFilterInputConntrackInvertNewDrop(t *testing.T) {
+	singleTest(t, &FilterInputConntrackInvertNewDrop{})
+}
+
+func TestFilterInputConntrackUDPNewDrop(t *testing.T) {
+	singleTest(t, &FilterInputConntrackUDPNewDrop{})
+}
+
+func TestFilterInputConntrackUDPEstablishedAccept(t *testing.T) {
+	singleTest(t, &FilterInputConntrackUDPEstablishedAccept{})
+}
+
+func TestFilterInputConntrackICMPEcho(t *testing.T) {
+	singleTest(t, &FilterInputConntrackICMPEcho{})
+}
+
+func TestFilterInputConntrackRelated(t *testing.T) {
+	singleTest(t, &FilterInputConntrackRelated{})
+}
+
+func TestFilterOutputConntrackDNAT(t *testing.T) {
+	singleTest(t, &FilterOutputConntrackDNAT{})
+}
+
+func TestFilterOutputConntrackNoDNAT(t *testing.T) {
+	singleTest(t, &FilterOutputConntrackNoDNAT{})
+}
