@@ -81,6 +81,7 @@ const (
 	UVERBS_OBJECT_PD          = 1
 	UVERBS_OBJECT_CQ          = 3
 	UVERBS_OBJECT_QP          = 4
+	UVERBS_OBJECT_SRQ         = 5
 	UVERBS_OBJECT_AH          = 6
 	UVERBS_OBJECT_MR          = 7
 	UVERBS_OBJECT_ASYNC_EVENT = 16
@@ -98,6 +99,10 @@ const (
 
 	// enum uverbs_methods_pd.
 	UVERBS_METHOD_PD_DESTROY = 0
+
+	// enum uverbs_methods_srq.
+	UVERBS_METHOD_SRQ_CREATE  = 0
+	UVERBS_METHOD_SRQ_DESTROY = 1
 
 	// enum uverbs_methods_cq.
 	UVERBS_METHOD_CQ_CREATE  = 0
@@ -223,6 +228,30 @@ const (
 	UVERBS_ATTR_DESTROY_CQ_RESP   = 1
 )
 
+// enum uverbs_attrs_create_srq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_CREATE_SRQ_HANDLE       = 0
+	UVERBS_ATTR_CREATE_SRQ_PD_HANDLE    = 1
+	UVERBS_ATTR_CREATE_SRQ_XRCD_HANDLE  = 2
+	UVERBS_ATTR_CREATE_SRQ_CQ_HANDLE    = 3
+	UVERBS_ATTR_CREATE_SRQ_USER_HANDLE  = 4
+	UVERBS_ATTR_CREATE_SRQ_MAX_WR       = 5
+	UVERBS_ATTR_CREATE_SRQ_MAX_SGE      = 6
+	UVERBS_ATTR_CREATE_SRQ_LIMIT        = 7
+	UVERBS_ATTR_CREATE_SRQ_MAX_NUM_TAGS = 8
+	UVERBS_ATTR_CREATE_SRQ_TYPE         = 9
+	UVERBS_ATTR_CREATE_SRQ_EVENT_FD     = 10
+	UVERBS_ATTR_CREATE_SRQ_RESP_MAX_WR  = 11
+	UVERBS_ATTR_CREATE_SRQ_RESP_MAX_SGE = 12
+	UVERBS_ATTR_CREATE_SRQ_RESP_SRQ_NUM = 13
+)
+
+// enum uverbs_attrs_destroy_srq_cmd_attr_ids.
+const (
+	UVERBS_ATTR_DESTROY_SRQ_HANDLE = 0
+	UVERBS_ATTR_DESTROY_SRQ_RESP   = 1
+)
+
 // enum uverbs_attrs_create_qp_cmd_attr_ids.
 const (
 	UVERBS_ATTR_CREATE_QP_HANDLE           = 0
@@ -302,25 +331,26 @@ const (
 // include/uapi/rdma/ib_user_verbs.h), as carried by the INVOKE_WRITE
 // WRITE_CMD attribute.
 const (
-	IB_USER_VERBS_CMD_QUERY_DEVICE  = 1
-	IB_USER_VERBS_CMD_QUERY_PORT    = 2
-	IB_USER_VERBS_CMD_ALLOC_PD      = 3
-	IB_USER_VERBS_CMD_DEALLOC_PD    = 4
-	IB_USER_VERBS_CMD_CREATE_AH     = 5
-	IB_USER_VERBS_CMD_DESTROY_AH    = 8
-	IB_USER_VERBS_CMD_REG_MR        = 9
-	IB_USER_VERBS_CMD_DEREG_MR      = 13
-	IB_USER_VERBS_CMD_ALLOC_MW      = 14
-	IB_USER_VERBS_CMD_DEALLOC_MW    = 16
-	IB_USER_VERBS_CMD_REQ_NOTIFY_CQ = 23
-	IB_USER_VERBS_CMD_QUERY_QP      = 25
-	IB_USER_VERBS_CMD_MODIFY_QP     = 26
-	IB_USER_VERBS_CMD_ATTACH_MCAST  = 30
-	IB_USER_VERBS_CMD_DETACH_MCAST  = 31
-	IB_USER_VERBS_CMD_MODIFY_SRQ    = 33
-	IB_USER_VERBS_CMD_QUERY_SRQ     = 34
-	IB_USER_VERBS_CMD_CLOSE_XRCD    = 38
-	IB_USER_VERBS_CMD_OPEN_QP       = 40
+	IB_USER_VERBS_CMD_QUERY_DEVICE        = 1
+	IB_USER_VERBS_CMD_QUERY_PORT          = 2
+	IB_USER_VERBS_CMD_ALLOC_PD            = 3
+	IB_USER_VERBS_CMD_DEALLOC_PD          = 4
+	IB_USER_VERBS_CMD_CREATE_AH           = 5
+	IB_USER_VERBS_CMD_DESTROY_AH          = 8
+	IB_USER_VERBS_CMD_REG_MR              = 9
+	IB_USER_VERBS_CMD_DEREG_MR            = 13
+	IB_USER_VERBS_CMD_ALLOC_MW            = 14
+	IB_USER_VERBS_CMD_DEALLOC_MW          = 16
+	IB_USER_VERBS_CMD_CREATE_COMP_CHANNEL = 17
+	IB_USER_VERBS_CMD_REQ_NOTIFY_CQ       = 23
+	IB_USER_VERBS_CMD_QUERY_QP            = 25
+	IB_USER_VERBS_CMD_MODIFY_QP           = 26
+	IB_USER_VERBS_CMD_ATTACH_MCAST        = 30
+	IB_USER_VERBS_CMD_DETACH_MCAST        = 31
+	IB_USER_VERBS_CMD_MODIFY_SRQ          = 33
+	IB_USER_VERBS_CMD_QUERY_SRQ           = 34
+	IB_USER_VERBS_CMD_CLOSE_XRCD          = 38
+	IB_USER_VERBS_CMD_OPEN_QP             = 40
 )
 
 // IB_USER_VERBS_CMD_FLAG_EXTENDED is OR'd into the WRITE_CMD value to select the
@@ -351,6 +381,15 @@ type UverbsRegMRResp struct {
 	MRHandle uint32
 	LKey     uint32
 	RKey     uint32
+}
+
+// UverbsCreateCompChannelResp is struct ib_uverbs_create_comp_channel_resp,
+// CREATE_COMP_CHANNEL's response (include/uapi/rdma/ib_user_verbs.h).
+//
+// +marshal
+type UverbsCreateCompChannelResp struct {
+	_  structs.HostLayout
+	FD uint32
 }
 
 // Mlx5CreatePrefix is the common prefix of struct mlx5_ib_create_cq and
