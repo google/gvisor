@@ -88,6 +88,12 @@
   commit: f4b10eef3a7b114033d52c8d83ad43b105a150b3
   sha256: 2c8a2520ef58c3d2a6e9e0392ec2cea37adb17db4e00c903d48415fd809397f8
   license: Apache-2.0
+- dependency: envoy_api
+  version: https://github.com/envoyproxy/data-plane-api/archive/84e84367f2560cdb47b9bb78fd3e615feb80c3e4.tar.gz
+  retrieved: "2026-09-10"
+  commit: 84e84367f2560cdb47b9bb78fd3e615feb80c3e4
+  sha256: fc3e24880c8ff2ac1564e24aa6d691d2224feadc04f39bb8919a16f28f12eb14
+  license: Apache-2.0
 - dependency: gazelle
   version: https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.47.0/bazel-gazelle-v0.47.0.tar.gz
   retrieved: "2026-08-27"
@@ -903,10 +909,10 @@
   sha256: 14983d36c56a814ed91b6d652f2b8f895baba1b84eb43b28a0b132c8637cd274
   license: BSD-3-Clause
 - dependency: google_benchmark
-  version: https://github.com/google/benchmark/archive/refs/tags/v1.8.4.tar.gz
-  retrieved: "2026-08-27"
-  commit: a4cf155615c63e019ae549e31703bf367df5b471
-  sha256: 3e7059b6b11fb1bbe28e33e02519398ca94c1818874ebed18e504dc6f709be45
+  version: https://github.com/google/benchmark/archive/refs/tags/v1.9.4.tar.gz
+  retrieved: "2026-09-25"
+  commit: eddb0241389718a23a42db6af5f0164b6e0139af
+  sha256: b334658edd35efcf06a99d9be21e4e93e092bd5f95074c1673d5c8705d95c104
   license: Apache-2.0
 - dependency: google_root_pem
   version: https://pki.goog/roots.pem
@@ -947,10 +953,10 @@
     - Apache-2.0
     - MIT
 - dependency: grpc
-  version: https://github.com/grpc/grpc/archive/refs/tags/v1.75.0.tar.gz
-  retrieved: "2026-08-27"
-  commit: 093085cc925e0d5aa6e92bc29e917f9bdc00add2
-  sha256: 31d6c01c3bfa0a3584532665715e487703eb10d76bb30b4875e57d139c13bbf9
+  version: https://github.com/grpc/grpc/archive/refs/tags/v1.76.0.tar.gz
+  retrieved: "2026-09-10"
+  commit: f5ffb68d8a2fd603dff16287e90a4ac571e1fec6
+  sha256: 0af37b800953130b47c075b56683ee60bdc3eda3c37fc6004193f5b569758204
   license:
     - Apache-2.0
     - BSD-3-Clause
