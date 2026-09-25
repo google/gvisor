@@ -9,7 +9,10 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_cc", version = "0.2.16")
-bazel_dep(name = "grpc", version = "1.76.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
+
+# The Envoy API version selected by gRPC uses removed CcInfo and ProtoInfo symbols.
+bazel_dep(name = "envoy_api", version = "0.0.0-20260130-84e8436")
 bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "abseil-cpp", version = "20250814.1", repo_name = "com_google_absl")
@@ -33,15 +36,6 @@ archive_override(
         "//tools:rules_go_export.patch",
     ],
     url = "https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip",
-)
-
-archive_override(
-    module_name = "grpc",
-    integrity = "sha256-MdbAHDv6CjWEUyZlcV5IdwPrENdrswtIdeV9E5wTu/k=",
-    patch_args = ["-p1"],
-    patches = ["//tools:grpc_extra_deps.patch"],
-    strip_prefix = "grpc-1.75.0",
-    url = "https://github.com/grpc/grpc/archive/refs/tags/v1.75.0.tar.gz",
 )
 
 ### LLVM
