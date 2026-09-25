@@ -4,6 +4,7 @@ load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@io_bazel_rules_go//go:def.bzl", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_library = "go_library", _go_path = "go_path", _go_test = "go_test")
+load("@io_bazel_rules_go//go/private:context.bzl", "CGO_ATTRS", "CGO_FRAGMENTS", "CGO_TOOLCHAINS")
 load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", _go_proto_library = "go_proto_library")
 load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 
@@ -158,6 +159,11 @@ def go_rule(rule, implementation, **kwargs):
         "_go_context_data": attr.label(default = "@io_bazel_rules_go//:go_context_data"),
         "_stdlib": attr.label(default = "@io_bazel_rules_go//:stdlib"),
     })
+    # go_context requires the C++ context in race/cgo configurations. rules_go
+    # only exposes the required declarations through go/private/context.bzl.
+    kwargs["attrs"].update(CGO_ATTRS)
+    kwargs.setdefault("fragments", []).extend(CGO_FRAGMENTS)
+    kwargs.setdefault("toolchains", []).extend(CGO_TOOLCHAINS)
     kwargs.setdefault("toolchains", []).append("@io_bazel_rules_go//go:toolchain")
     return rule(implementation, **kwargs)
 
@@ -196,13 +202,13 @@ def go_context(ctx, goos = None, goarch = None):
 
     return struct(
         env = dict(go_ctx.env, CGO_ENABLED = "0"),
-        go = go_ctx.go,
+        go = go_ctx.sdk.go,
         goarch = goarch or go_ctx.sdk.goarch,
         goos = goos or go_ctx.sdk.goos,
-        gotags = go_ctx.tags,
+        gotags = go_ctx.mode.tags,
         lang_version = "go" + go_ctx.sdk.version,  # go_ctx.sdk.version excludes the go prefix.
         nogo_args = nogo_args,
-        runfiles = depset([go_ctx.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
+        runfiles = depset([go_ctx.sdk.go] + go_ctx.sdk.srcs.to_list() + go_ctx.sdk.tools.to_list() + go_ctx.stdlib.libs.to_list()),
         stdlib_srcs = go_ctx.sdk.srcs,
         stdlib_mod = stdlib_mod,
     )
