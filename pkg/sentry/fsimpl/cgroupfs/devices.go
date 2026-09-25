@@ -132,12 +132,15 @@ type devicesController struct {
 	controllerStateless
 	controllerNoResource
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
 	// Allow or deny the device rules below.
+	//
+	// +checklocks:mu
 	defaultAllow bool
-	deviceRules  map[deviceID]permission
+
+	// +checklocks:mu
+	deviceRules map[deviceID]permission
 }
 
 // +stateify savable
@@ -151,6 +154,8 @@ func (d *allowedDevicesData) Generate(ctx context.Context, buf *bytes.Buffer) er
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:d.c.mu
 func (d *allowedDevicesData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	return d.c.write(ctx, src, offset, true)
 }
@@ -166,6 +171,8 @@ func (d *deniedDevicesData) Generate(ctx context.Context, buf *bytes.Buffer) err
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// +checklocksexclude:d.c.mu
 func (d *deniedDevicesData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	return d.c.write(ctx, src, offset, false)
 }
@@ -178,16 +185,20 @@ type controlledDevicesData struct {
 // Generate implements vfs.DynamicBytesSource.Generate.
 //
 // The corresponding devices.list shows devices for which access control is set.
+//
+// +checklocksexclude:d.c.mu
 func (d *controlledDevicesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return d.c.generate(ctx, buf)
 }
 
+// +checklocks:c.mu
 func (c *devicesController) addRule(id deviceID, newPermission permission) error {
 	existingPermission := c.deviceRules[id]
 	c.deviceRules[id] = existingPermission.union(newPermission)
 	return nil
 }
 
+// +checklocks:c.mu
 func (c *devicesController) removeRule(id deviceID, p permission) error {
 	// cgroupv1 ignores silently requests to remove a partially-matching wildcard rule,
 	// which are {majorDevice:wildcardDevice}, {wildcardDevice:minorDevice}, and {wildcardDevice:wildcardDevice}
@@ -214,6 +225,7 @@ func (c *devicesController) removeRule(id deviceID, p permission) error {
 	return nil
 }
 
+// +checklocks:c.mu
 func (c *devicesController) applyRule(id deviceID, p permission, allow bool) error {
 	if !id.controllerType.valid() {
 		return linuxerr.EINVAL
@@ -237,6 +249,7 @@ func (c *devicesController) applyRule(id deviceID, p permission, allow bool) err
 	return c.removeRule(id, p)
 }
 
+// +checklocksexclude:c.mu
 func (c *devicesController) generate(ctx context.Context, buf *bytes.Buffer) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -259,6 +272,7 @@ func (c *devicesController) generate(ctx context.Context, buf *bytes.Buffer) err
 	return nil
 }
 
+// +checklocksexclude:c.mu
 func (c *devicesController) write(ctx context.Context, src usermem.IOSequence, offset int64, allow bool) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -326,6 +340,8 @@ func newDevicesController(fs *filesystem) *devicesController {
 }
 
 // Clone implements controller.Clone.
+//
+// +checklocksexclude:c.mu
 func (c *devicesController) Clone() controller {
 	c.mu.Lock()
 	defer c.mu.Unlock()
