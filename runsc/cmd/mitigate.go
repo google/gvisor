@@ -147,7 +147,6 @@ func (m *Mitigate) doEnableDisable(set mitigate.CPUSet) error {
 type machineControl interface {
 	enable() error
 	disable() error
-	isEnabled() (bool, error)
 	getCPUs() (mitigate.CPUSet, error)
 }
 
@@ -167,16 +166,11 @@ func (*machineControlImpl) disable() error {
 // thread per core in the first place. Otherwise returns error from os.WriteFile.
 func checkFileExistsOnWrite(op, data string) error {
 	err := os.WriteFile(smtPath, []byte(data), 0644)
-	if err != nil && os.IsExist(err) {
+	if err != nil && os.IsNotExist(err) {
 		log.Infof("File %q does not exist for operation %s. This machine probably has no smt control.", smtPath, op)
 		return nil
 	}
 	return err
-}
-
-func (*machineControlImpl) isEnabled() (bool, error) {
-	data, err := os.ReadFile(cpuInfo)
-	return string(data) == "on", err
 }
 
 func (*machineControlImpl) getCPUs() (mitigate.CPUSet, error) {

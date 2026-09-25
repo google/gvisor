@@ -313,7 +313,11 @@ func defaultWriteConfig(c map[string]any, filename string) error {
 			return fmt.Errorf("error reading config file %q: %v", filename, err)
 		}
 	} else {
-		if err := os.WriteFile(filename+"~", old, 0644); err != nil {
+		perm := os.FileMode(0644)
+		if info, err := os.Stat(filename); err == nil {
+			perm = info.Mode().Perm()
+		}
+		if err := writeFileWithExplicitMode(filename+"~", old, perm); err != nil {
 			return fmt.Errorf("error backing up config file %q: %v", filename, err)
 		}
 	}
@@ -329,4 +333,20 @@ func defaultWriteConfig(c map[string]any, filename string) error {
 	}
 
 	return nil
+}
+
+func writeFileWithExplicitMode(filename string, data []byte, perm os.FileMode) error {
+	if err := os.Remove(filename); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := f.Chmod(perm); err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	return err
 }

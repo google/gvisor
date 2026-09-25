@@ -107,6 +107,12 @@ func Preadv2(fd int32, dsts safemem.BlockSeq, offset int64, flags uint32) (uint6
 		}
 	} else {
 		n, e = iovecsReadWrite(unix.SYS_PREADV2, fd, safemem.IovecsFromBlockSeq(dsts), offset, flags)
+		if e != 0 && n > 0 {
+			// Some bytes were read before the error. Report the partial
+			// read, as Linux does; the error will resurface on the next
+			// call.
+			e = 0
+		}
 	}
 	if e != 0 {
 		return 0, e
@@ -138,6 +144,12 @@ func Pwritev2(fd int32, srcs safemem.BlockSeq, offset int64, flags uint32) (uint
 		}
 	} else {
 		n, e = iovecsReadWrite(unix.SYS_PWRITEV2, fd, safemem.IovecsFromBlockSeq(srcs), offset, flags)
+		if e != 0 && n > 0 {
+			// Some bytes were written before the error. Report the
+			// partial write, as Linux does; the error will resurface on
+			// the next call.
+			e = 0
+		}
 	}
 	if e != 0 {
 		return 0, e
