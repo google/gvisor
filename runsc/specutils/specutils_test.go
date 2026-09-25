@@ -16,7 +16,9 @@ package specutils
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -837,6 +839,114 @@ func TestTPUProxyEnabled(t *testing.T) {
 			got := TPUProxyEnabled(&tc.spec, &tc.conf)
 			if got != tc.want {
 				t.Errorf("TPUProxyEnabled() got: %v, want: %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// mountPointTestRoot returns a symlink-free temporary directory. Mount
+// destinations are expected to be free of symlinks (SafeMount rejects any that
+// are not), so the tests below must not inherit one from TMPDIR.
+func mountPointTestRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks failed: %v", err)
+	}
+	return root
+}
+
+func TestSafeCreateMountPoint(t *testing.T) {
+	root := mountPointTestRoot(t)
+
+	dir := filepath.Join(root, "a", "b", "c")
+	if err := SafeCreateMountPoint(dir, true /* isDir */); err != nil {
+		t.Fatalf("SafeCreateMountPoint(%q, true) failed: %v", dir, err)
+	}
+	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+		t.Errorf("Lstat(%q) got: %v, %v; want a directory", dir, fi, err)
+	}
+
+	file := filepath.Join(root, "d", "e", "f")
+	if err := SafeCreateMountPoint(file, false /* isDir */); err != nil {
+		t.Fatalf("SafeCreateMountPoint(%q, false) failed: %v", file, err)
+	}
+	if fi, err := os.Lstat(file); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("Lstat(%q) got: %v, %v; want a regular file", file, fi, err)
+	}
+
+	// Creating an existing mount point is a no-op.
+	if err := SafeCreateMountPoint(dir, true /* isDir */); err != nil {
+		t.Errorf("re-creating %q failed: %v", dir, err)
+	}
+	if err := SafeCreateMountPoint(file, false /* isDir */); err != nil {
+		t.Errorf("re-creating %q failed: %v", file, err)
+	}
+}
+
+func TestSafeCreateMountPointDoesNotTruncate(t *testing.T) {
+	file := filepath.Join(mountPointTestRoot(t), "mountpoint")
+	if err := os.WriteFile(file, []byte("contents"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := SafeCreateMountPoint(file, false /* isDir */); err != nil {
+		t.Fatalf("SafeCreateMountPoint(%q, false) failed: %v", file, err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if want := "contents"; string(got) != want {
+		t.Errorf("contents got: %q, want: %q", got, want)
+	}
+}
+
+func TestSafeCreateMountPointDoesNotFollowSymlinks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		isDir bool
+		// setup creates the symlink under root pointing at escaped, and returns
+		// the destination to create.
+		setup func(t *testing.T, root, escaped string) string
+	}{
+		{
+			name:  "intermediate component",
+			isDir: true,
+			setup: func(t *testing.T, root, escaped string) string {
+				link := filepath.Join(root, "vol")
+				if err := os.Symlink(escaped, link); err != nil {
+					t.Fatalf("Symlink failed: %v", err)
+				}
+				return filepath.Join(link, "deep", "mountpoint")
+			},
+		},
+		{
+			name:  "final component",
+			isDir: false,
+			setup: func(t *testing.T, root, escaped string) string {
+				link := filepath.Join(root, "mountpoint")
+				if err := os.Symlink(escaped, link); err != nil {
+					t.Fatalf("Symlink failed: %v", err)
+				}
+				return link
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := mountPointTestRoot(t)
+			root := filepath.Join(base, "tree")
+			if err := os.Mkdir(root, 0755); err != nil {
+				t.Fatalf("Mkdir failed: %v", err)
+			}
+			escaped := filepath.Join(base, "escaped")
+
+			dst := tc.setup(t, root, escaped)
+			err := SafeCreateMountPoint(dst, tc.isDir)
+			if err == nil {
+				t.Errorf("SafeCreateMountPoint(%q, %t) got: nil; want an error, the path contains a symlink", dst, tc.isDir)
+			}
+			if _, err := os.Lstat(escaped); err == nil {
+				t.Errorf("SafeCreateMountPoint(%q, %t) created %q, outside the intended tree", dst, tc.isDir, escaped)
 			}
 		})
 	}
