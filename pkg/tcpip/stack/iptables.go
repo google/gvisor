@@ -45,6 +45,39 @@ const HookUnset = -1
 // reaperDelay is how long to wait before starting to reap connections.
 const reaperDelay = 5 * time.Second
 
+// defaultMangleTable returns the Linux-shaped empty mangle table: ACCEPT
+// policies on all five builtin chains (PREROUTING, INPUT, FORWARD, OUTPUT,
+// POSTROUTING) plus a trailing ERROR terminator. iptables userspace learns
+// valid hooks from GET_INFO; if the default table omits INPUT/FORWARD/
+// POSTROUTING, GET_INFO and EmptyMangleTable disagree and SET_ENTRIES returns
+// EINVAL when inserting MARK.
+func defaultMangleTable(filter IPHeaderFilter, proto tcpip.NetworkProtocolNumber) Table {
+	return Table{
+		Rules: []Rule{
+			{Filter: filter, Target: &AcceptTarget{NetworkProtocol: proto}},
+			{Filter: filter, Target: &AcceptTarget{NetworkProtocol: proto}},
+			{Filter: filter, Target: &AcceptTarget{NetworkProtocol: proto}},
+			{Filter: filter, Target: &AcceptTarget{NetworkProtocol: proto}},
+			{Filter: filter, Target: &AcceptTarget{NetworkProtocol: proto}},
+			{Filter: filter, Target: &ErrorTarget{NetworkProtocol: proto}},
+		},
+		BuiltinChains: [NumHooks]int{
+			Prerouting:  0,
+			Input:       1,
+			Forward:     2,
+			Output:      3,
+			Postrouting: 4,
+		},
+		Underflows: [NumHooks]int{
+			Prerouting:  0,
+			Input:       1,
+			Forward:     2,
+			Output:      3,
+			Postrouting: 4,
+		},
+	}
+}
+
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
 func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
@@ -73,24 +106,7 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 					Postrouting: 3,
 				},
 			},
-			MangleID: {
-				Rules: []Rule{
-					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Filter: EmptyFilter4(), Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-				},
-				BuiltinChains: [NumHooks]int{
-					Prerouting: 0,
-					Output:     1,
-				},
-				Underflows: [NumHooks]int{
-					Prerouting:  0,
-					Input:       HookUnset,
-					Forward:     HookUnset,
-					Output:      1,
-					Postrouting: HookUnset,
-				},
-			},
+			MangleID: defaultMangleTable(EmptyFilter4(), header.IPv4ProtocolNumber),
 			FilterID: {
 				Rules: []Rule{
 					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
@@ -159,24 +175,7 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 					Postrouting: 3,
 				},
 			},
-			MangleID: {
-				Rules: []Rule{
-					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Filter: EmptyFilter6(), Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-				},
-				BuiltinChains: [NumHooks]int{
-					Prerouting: 0,
-					Output:     1,
-				},
-				Underflows: [NumHooks]int{
-					Prerouting:  0,
-					Input:       HookUnset,
-					Forward:     HookUnset,
-					Output:      1,
-					Postrouting: HookUnset,
-				},
-			},
+			MangleID: defaultMangleTable(EmptyFilter6(), header.IPv6ProtocolNumber),
 			FilterID: {
 				Rules: []Rule{
 					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
@@ -256,6 +255,20 @@ func EmptyNATTable() Table {
 		Underflows: [NumHooks]int{
 			Forward: HookUnset,
 		},
+	}
+}
+
+// EmptyMangleTable returns a Table with no rules. The mangle table is valid at
+// all five hooks (like Linux, whose mangle table always defines PREROUTING,
+// INPUT, FORWARD, OUTPUT and POSTROUTING builtin chains); SetEntries populates
+// them from the replace request. All hooks must stay non-HookUnset so the
+// dataplane, which checks the mangle table at multiple hooks (incl. Postrouting),
+// never indexes Rules with HookUnset (-1).
+func EmptyMangleTable() Table {
+	return Table{
+		Rules:         []Rule{},
+		BuiltinChains: [NumHooks]int{},
+		Underflows:    [NumHooks]int{},
 	}
 }
 
@@ -443,6 +456,10 @@ func (it *IPTables) CheckPrerouting(pkt *PacketBuffer, addressEP AddressableEndp
 func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
 		{
+			fn:      check,
+			tableID: MangleID,
+		},
+		{
 			fn:      checkNAT,
 			tableID: NATID,
 		},
@@ -482,6 +499,10 @@ func (it *IPTables) CheckInput(pkt *PacketBuffer, inNicName string) bool {
 // +checkescape
 func (it *IPTables) CheckForward(pkt *PacketBuffer, inNicName, outNicName string) bool {
 	tables := [...]checkTable{ // escapes: on arm this causes an allocation.
+		{
+			fn:      check,
+			tableID: MangleID,
+		},
 		{
 			fn:      check,
 			tableID: FilterID,
@@ -721,6 +742,11 @@ func (it *IPTables) checkChain(hook Hook, pkt *PacketBuffer, table Table, ruleId
 
 		case RuleReturn:
 			return chainReturn
+
+		case RuleContinue:
+			// A non-terminating target (e.g. MARK) ran; move to the next rule.
+			ruleIdx++
+			continue
 
 		case RuleJump:
 			// "Jumping" to the next rule just means we're

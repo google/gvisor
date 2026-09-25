@@ -74,6 +74,30 @@ func v6PacketBuffer() *PacketBuffer {
 }
 
 // TestNATedConnectionReap tests that NATed connections are properly reaped.
+func TestDefaultMangleTableHasLinuxHooks(t *testing.T) {
+	clock := faketime.NewManualClock()
+	iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
+	const linuxMangleHooks = uint32(1<<Prerouting | 1<<Input | 1<<Forward | 1<<Output | 1<<Postrouting)
+	for _, ipv6 := range []bool{false, true} {
+		table := iptables.GetTable(MangleID, ipv6)
+		if got := table.ValidHooks(); got != linuxMangleHooks {
+			t.Errorf("ipv6=%v DefaultTables mangle ValidHooks()=%#x, want %#x (Linux mangle is valid at all five NF_INET hooks)", ipv6, got, linuxMangleHooks)
+		}
+		for hook := Hook(0); hook < NumHooks; hook++ {
+			if table.BuiltinChains[hook] == HookUnset {
+				t.Errorf("ipv6=%v default mangle BuiltinChains[%v]=HookUnset; SET_ENTRIES requires every valid hook", ipv6, hook)
+			}
+			if table.Underflows[hook] == HookUnset {
+				t.Errorf("ipv6=%v default mangle Underflows[%v]=HookUnset", ipv6, hook)
+			}
+		}
+	}
+	empty := EmptyMangleTable()
+	if got := empty.ValidHooks(); got != linuxMangleHooks {
+		t.Errorf("EmptyMangleTable ValidHooks()=%#x, want %#x so GET_INFO and SET_ENTRIES agree", got, linuxMangleHooks)
+	}
+}
+
 func TestNATedConnectionReap(t *testing.T) {
 	clock := faketime.NewManualClock()
 	iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
