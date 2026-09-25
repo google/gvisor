@@ -17,7 +17,8 @@
 
 package arch
 
-const restartSyscallNr = uintptr(219)
+// RestartSyscallNr is the syscall number for restart_syscall(2).
+const RestartSyscallNr = uintptr(219)
 
 // SyscallSaveOrig save the value of the register which is clobbered in
 // syscall handler(doSyscall()).
@@ -56,5 +57,5 @@ func (c *Context64) RestartSyscall() {
 // RestartSyscallWithRestartBlock implements Context.RestartSyscallWithRestartBlock.
 func (c *Context64) RestartSyscallWithRestartBlock() {
 	c.Regs.Rip -= SyscallWidth
-	c.Regs.Rax = uint64(restartSyscallNr)
+	c.Regs.Rax = uint64(RestartSyscallNr)
 }

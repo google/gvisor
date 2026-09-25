@@ -794,6 +794,10 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 // +checklocksexclude:k.runningTasksMu
 // +checklocksexclude:k.tasks.mu
 func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool, fsOpts *FSSaveOpts) error {
+	// If the sandbox keeps running after the save, tasks resume without going
+	// through Task.afterLoad.
+	k.armSeccompRestartSyscallBypasses()
+
 	stateFileCleanup := cleanup.Make(func() { stateFile.Close() })
 	defer stateFileCleanup.Clean()
 
@@ -1020,6 +1024,27 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
 	return nil
+}
+
+// armSeccompRestartSyscallBypasses arms Task.bypassSeccompRestartSyscall for
+// every task that a checkpoint quiesced outside an internal stop.
+//
+// Preconditions: The kernel must be paused.
+//
+// +checklocksexclude:k.tasks.mu
+func (k *Kernel) armSeccompRestartSyscallBypasses() {
+	k.tasks.mu.RLock()
+	defer k.tasks.mu.RUnlock()
+	if k.tasks.Root == nil {
+		return
+	}
+	for t := range k.tasks.Root.tids {
+		t.tg.signalHandlers.mu.Lock()
+		if t.stop == nil {
+			t.armSeccompRestartSyscallBypass()
+		}
+		t.tg.signalHandlers.mu.Unlock()
+	}
 }
 
 // Preconditions: The kernel must be paused.
