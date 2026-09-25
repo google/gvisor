@@ -1169,6 +1169,7 @@ func ListenHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	if err != nil {
 		return 0, err
 	}
+	defer sock.DecRef(nil)
 	if err := sock.controlFD.safelyRead(func() error {
 		if sock.controlFD.node.isDeleted() {
 			return unix.EINVAL
@@ -1190,6 +1191,7 @@ func AcceptHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	if err != nil {
 		return 0, err
 	}
+	defer sock.DecRef(nil)
 	var (
 		newSock  int
 		peerAddr string
@@ -1387,6 +1389,8 @@ func renameAtCommon(c *Connection, comm Communicator, payloadLen uint32, oldDirF
 	})
 }
 
+// +checklocksexclude:n.controlFDsMu
+// +checklocksexclude:n.childrenMu
 func notifyRenameRecursive(n *Node) {
 	n.forEachFD(func(cfd *ControlFD) {
 		cfd.impl.Renamed()
