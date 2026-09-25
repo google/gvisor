@@ -902,7 +902,10 @@ steps:
     command: make -i benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
   - <<: *benchmarks
     label: ":stopwatch: OCI Lifecycle benchmarks"
-    command: make -i benchmark-platforms SKIP_IMAGE_LOAD=true BENCHMARKS_RUNC=false BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=lifecycle BENCHMARKS_TARGETS=runsc/container:lifecycle_benchmark_test
+    command: make -i benchmark-platforms SKIP_IMAGE_LOAD=true BENCHMARKS_RUNC=false 'BENCHMARKS_OPTIONS=-test.benchtime=30x -runsc=$(RUNTIME_BIN)' BENCHMARKS_SUITE=lifecycle BENCHMARKS_TARGETS=runsc/container:lifecycle_benchmark_test
+  - <<: *benchmarks
+    label: ":stopwatch: Shim Lifecycle benchmarks"
+    command: make -i benchmark-platforms SKIP_IMAGE_LOAD=true BENCHMARKS_RUNC=false 'BENCHMARKS_OPTIONS=-test.benchtime=30x -runsc=$(RUNTIME_BIN)' BENCHMARKS_SUITE=lifecycle BENCHMARKS_TARGETS=shim/tests:lifecycle_benchmark_test
   - <<: *benchmarks
     label: ":computer: sysbench benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test
