@@ -221,6 +221,11 @@ const (
 	chunkSize  = 1 << chunkShift // 1 GB
 	chunkMask  = chunkSize - 1
 	maxChunks  = math.MaxInt64 / chunkSize // because file size is int64
+
+	// MaxAnonymousReserve is the largest span mm should Reserve for a
+	// private anonymous mmap. Larger mappings allocate on fault so one
+	// sparse mmap does not grow the MemoryFile by multiple 1 GiB chunks.
+	MaxAnonymousReserve = chunkSize
 )
 
 // chunkInfo is the value type of MemoryFile.chunks.
@@ -301,6 +306,13 @@ type memAcctInfo struct {
 	// MemoryFile.commitSeq when knownCommitted last transitioned to false.
 	// Otherwise, commitSeq is 0.
 	commitSeq uint64
+
+	// implicitZero is true if represented pages are known to read as zeros
+	// without being committed (a reservation that has not been IncRef'd, or
+	// pages MarkImplicitZero'd after DONTNEED dropped the PMA). SaveTo
+	// skips scanning these ranges so a large unfaulted mmap does not
+	// transiently commit the whole span.
+	implicitZero bool
 }
 
 // An EvictableMemoryUser represents a user of MemoryFile-allocated memory that
@@ -577,6 +589,13 @@ type AllocOpts struct {
 	// Dir indicates the direction in which offsets are allocated.
 	Dir Direction
 
+	// If PreferStart is true, Allocate/Reserve try to return the range
+	// starting at PreferredStart when that exact range is still free.
+	// Otherwise they fall back to Dir. PreferStart is ignored when
+	// Allocate recycles waste pages.
+	PreferStart    bool
+	PreferredStart uint64
+
 	// If ReaderFunc is provided, the allocated memory is filled by calling it
 	// repeatedly until either length bytes are read or a non-nil error is
 	// returned. It returns the allocated memory, truncated down to the nearest
@@ -634,11 +653,12 @@ const (
 
 // allocState holds the state of a call to MemoryFile.Allocate().
 type allocState struct {
-	length     uint64
-	opts       AllocOpts
-	willCommit bool // either us or our caller
-	recycled   bool
-	huge       bool
+	length       uint64
+	opts         AllocOpts
+	willCommit   bool // either us or our caller
+	recycled     bool
+	huge         bool
+	implicitZero bool
 }
 
 // Allocate returns a range of initially-zeroed pages of the given length, with
@@ -773,6 +793,35 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	return fr, nil
 }
 
+// Reserve marks a contiguous range of uncommitted pages as used, with a
+// single reference on each page held by the caller. Unlike Allocate, Reserve
+// never commits, zeros, or populates pages, so the span must not be counted
+// as RSS until the caller takes additional references on faulted subranges.
+// The caller must release the reference with DecRef.
+//
+// Reserve uses the same chunk allocator as Allocate: the backing file and
+// sentry mappings grow in chunkSize steps to cover the reserved span, even
+// though pages stay uncommitted. Callers that mmap large sparse regions
+// therefore grow MemoryFile at mmap time rather than at fault time.
+//
+// Preconditions: same as Allocate.
+func (f *MemoryFile) Reserve(length uint64, opts AllocOpts) (memmap.FileRange, error) {
+	if length == 0 || !hostarch.IsPageAligned(length) || (opts.Huge && !hostarch.IsHugePageAligned(length)) {
+		panic(fmt.Sprintf("invalid reservation length: %#x", length))
+	}
+
+	opts.Mode = AllocateUncommitted
+	opts.ReaderFunc = nil
+	alloc := allocState{
+		length:       length,
+		opts:         opts,
+		willCommit:   false,
+		huge:         opts.Huge && f.opts.ExpectHugepages,
+		implicitZero: true,
+	}
+	return f.findAllocatableAndMarkUsed(&alloc)
+}
+
 func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.FileRange, err error) {
 	unwaste := &f.unwasteSmall
 	unfree := &f.unfreeSmall
@@ -843,6 +892,22 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 	}
 
 	// No suitable waste pages or we can't use them.
+	if alloc.opts.PreferStart {
+		if pref, ok := f.tryMarkUsedAtLocked(unfree, alloc, alloc.opts.PreferredStart); ok {
+			fr = pref
+			return
+		}
+		oldFileSize := uint64(len(f.chunksLoad())) * chunkSize
+		if alloc.opts.PreferredStart+alloc.length > oldFileSize {
+			if extErr := f.extendChunksLocked(alloc); extErr == nil {
+				if pref, ok := f.tryMarkUsedAtLocked(unfree, alloc, alloc.opts.PreferredStart); ok {
+					fr = pref
+					return
+				}
+			}
+		}
+	}
+
 retryFree:
 	// Try to allocate free pages from existing chunks.
 	var ufgap unfreeGapIterator
@@ -885,8 +950,35 @@ retryFree:
 		memCgID:        alloc.opts.MemCgID,
 		knownCommitted: false,
 		commitSeq:      f.commitSeq,
+		implicitZero:   alloc.implicitZero,
 	})
 	return
+}
+
+// tryMarkUsedAtLocked attempts to mark [start, start+alloc.length) used if
+// that exact range is currently a free gap. Preconditions: f.mu is locked.
+func (f *MemoryFile) tryMarkUsedAtLocked(unfree *unfreeSet, alloc *allocState, start uint64) (memmap.FileRange, bool) {
+	fr := memmap.FileRange{Start: start, End: start + alloc.length}
+	if fr.Length() != alloc.length {
+		return memmap.FileRange{}, false
+	}
+	ufgap := unfree.FindGap(start)
+	if !ufgap.Ok() {
+		return memmap.FileRange{}, false
+	}
+	gap := ufgap.Range()
+	if gap.Start > start || gap.End < fr.End {
+		return memmap.FileRange{}, false
+	}
+	unfree.Insert(ufgap, fr, unfreeInfo{refs: 1})
+	f.memAcct.InsertRange(fr, memAcctInfo{
+		kind:           alloc.opts.Kind,
+		memCgID:        alloc.opts.MemCgID,
+		knownCommitted: false,
+		commitSeq:      f.commitSeq,
+		implicitZero:   alloc.implicitZero,
+	})
+	return fr, true
 }
 
 // Preconditions: f.mu must be locked.
@@ -1108,6 +1200,28 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) {
 	})
 }
 
+// MarkImplicitZero records that pages in fr are known to contain zeros
+// without being committed. SaveTo skips scanning these ranges.
+//
+// Call this only when no PMA maps fr (typically after DONTNEED dropped the
+// PMA and only the reservation ref remains). Generic Decommit must not set
+// this: hugepage DONTNEED punches while the PMA stays, and the next write
+// does not IncRef.
+//
+// Preconditions: same as Decommit.
+func (f *MemoryFile) MarkImplicitZero(fr memmap.FileRange) {
+	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
+		panic(fmt.Sprintf("invalid range: %v", fr))
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.memAcct.MutateFullRange(fr, func(maseg memAcctIterator) bool {
+		maseg.ValuePtr().implicitZero = true
+		return true
+	})
+}
+
 func (f *MemoryFile) commitFile(fr memmap.FileRange) error {
 	// "The default operation (i.e., mode is zero) of fallocate() allocates the
 	// disk space within the range specified by offset and len." - fallocate(2)
@@ -1151,7 +1265,17 @@ func (f *MemoryFile) decommitOrManuallyZero(fr memmap.FileRange) {
 //
 // Preconditions: At least one reference must be held on all pages in fr.
 func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
-	hasUniqueRef := true
+	return f.HasExactRefs(fr, 1)
+}
+
+// HasExactRefs returns true if all pages in fr have exactly n references.
+// A return value of false is inherently racy, but if the caller holds a
+// reference on the given range and is preventing other goroutines from
+// copying it, then a return value of true is not racy.
+//
+// Preconditions: At least one reference must be held on all pages in fr.
+func (f *MemoryFile) HasExactRefs(fr memmap.FileRange, n uint64) bool {
+	ok := true
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
@@ -1159,16 +1283,16 @@ func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
 		if chunk.huge {
 			unfree = &f.unfreeHuge
 		}
-		unfree.VisitFullRange(fr, func(ufseg unfreeIterator) bool {
-			if ufseg.ValuePtr().refs != 1 {
-				hasUniqueRef = false
+		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
+			if ufseg.ValuePtr().refs != n {
+				ok = false
 				return false
 			}
 			return true
 		})
-		return hasUniqueRef
+		return ok
 	})
-	return hasUniqueRef
+	return ok
 }
 
 // FirstSharedRange returns the first subrange of fr on which more than one
@@ -1179,6 +1303,17 @@ func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
 //
 // Preconditions: At least one reference must be held on all pages in fr.
 func (f *MemoryFile) FirstSharedRange(fr memmap.FileRange) (memmap.FileRange, bool) {
+	return f.FirstRangeWithRefsAbove(fr, 1)
+}
+
+// FirstRangeWithRefsAbove returns the first subrange of fr on which more than
+// n references are held, and true if such a subrange exists. As for
+// HasUniqueRef, if the caller holds a reference on the given range and is
+// preventing other goroutines from copying it, then subranges reported as
+// unshared (i.e. not contained in the returned range) are not racy.
+//
+// Preconditions: At least one reference must be held on all pages in fr.
+func (f *MemoryFile) FirstRangeWithRefsAbove(fr memmap.FileRange, n uint64) (memmap.FileRange, bool) {
 	var sr memmap.FileRange
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1189,7 +1324,7 @@ func (f *MemoryFile) FirstSharedRange(fr memmap.FileRange) (memmap.FileRange, bo
 		}
 		cont := true
 		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
-			if ufseg.ValuePtr().refs > 1 {
+			if ufseg.ValuePtr().refs > n {
 				r := ufseg.Range().Intersect(chunkFR)
 				if sr.Length() == 0 {
 					sr = r
@@ -1203,8 +1338,6 @@ func (f *MemoryFile) FirstSharedRange(fr memmap.FileRange) (memmap.FileRange, bo
 			}
 			return cont
 		})
-		// Continue to the next chunk only if no shared range has been found,
-		// or if the one found may extend into the next chunk.
 		return cont && (sr.Length() == 0 || sr.End == chunkFR.End)
 	})
 	return sr, sr.Length() != 0
@@ -1236,6 +1369,11 @@ func (f *MemoryFile) incRefLocked(fr memmap.FileRange) {
 			uf.refs++
 			return true
 		})
+		return true
+	})
+	// Faulted pages may be written; SaveTo must scan them.
+	f.memAcct.MutateFullRange(fr, func(maseg memAcctIterator) bool {
+		maseg.ValuePtr().implicitZero = false
 		return true
 	})
 }
@@ -1868,6 +2006,17 @@ func (f *MemoryFile) IsDiskBacked() bool {
 // for which AllocOpts.Huge == true with huge pages.
 func (f *MemoryFile) HugepagesEnabled() bool {
 	return f.opts.ExpectHugepages
+}
+
+// IsHugeChunk reports whether the chunk containing off is huge-page-backed.
+// chunk.huge is immutable after the chunk is created.
+func (f *MemoryFile) IsHugeChunk(off uint64) bool {
+	chunks := f.chunksLoad()
+	i := off / chunkSize
+	if i >= uint64(len(chunks)) {
+		return false
+	}
+	return chunks[i].huge
 }
 
 // String implements fmt.Stringer.String.

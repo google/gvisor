@@ -89,6 +89,7 @@ func (f *MemoryFile) exportMetadataProto() *pgallocpb.MemoryFileMetadataProto {
 			Kind:           uint32(val.kind),
 			MemCgId:        val.memCgID,
 			KnownCommitted: val.knownCommitted,
+			ImplicitZero:   val.implicitZero,
 		})
 	}
 	for s := f.unfreeSmall.FirstSegment(); s.Ok(); s = s.NextSegment() {
@@ -144,6 +145,7 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 			kind:           usage.MemoryKind(s.Kind),
 			memCgID:        s.MemCgId,
 			knownCommitted: s.KnownCommitted,
+			implicitZero:   s.ImplicitZero,
 		})
 	}
 	f.unfreeSmall.RemoveAll()
@@ -404,6 +406,11 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		allocatedBytes += fr.Length()
 		ma.commitSeq = 0
 		wasCommitted := ma.knownCommitted
+		if ma.implicitZero && !wasCommitted {
+			alreadyUncommittedBytes += fr.Length()
+			maseg = maseg.NextSegment()
+			continue
+		}
 		if !opts.ExcludeCommittedZeroPages && wasCommitted {
 			alreadyCommittedBytes += fr.Length()
 			maseg = updateAddRange(maseg, fr, true /* wasCommitted */, true /* nowCommitted */)
