@@ -464,6 +464,10 @@ type Config struct {
 	// Nftables enables support for nftables to be used instead of iptables.
 	Nftables bool `flag:"TESTONLY-nftables"`
 
+	// TestOnlyDisablePAC makes the platform behave as on a host without ARM64
+	// pointer authentication.
+	TestOnlyDisablePAC bool `flag:"TESTONLY-disable-pac"`
+
 	// AllowSUID causes ID elevation to be allowed when execving into executables
 	// with the SUID/SGID bits set.
 	AllowSUID bool `flag:"allow-suid"`

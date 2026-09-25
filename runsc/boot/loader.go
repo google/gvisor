@@ -1207,7 +1207,7 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 	}
 
 	log.Infof("Platform: %s", platformName)
-	return p.New(platform.Options{
+	plat, err := p.New(platform.Options{
 		DeviceFile:             deviceFile,
 		DisableSyscallPatching: platformName == "systrap" && conf.SystrapDisableSyscallPatching,
 		DisableFastPath:        platformName == "systrap" && conf.SystrapDisableFastPath,
@@ -1217,6 +1217,19 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 		StartupTimer:           startupTimer,
 		PinRing:                pinRing,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if conf.TestOnlyDisablePAC {
+		d, ok := plat.(interface{ DisablePACForTest() error })
+		if !ok {
+			return nil, fmt.Errorf("platform %q does not support --TESTONLY-disable-pac", platformName)
+		}
+		if err := d.DisablePACForTest(); err != nil {
+			return nil, err
+		}
+	}
+	return plat, nil
 }
 
 func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {

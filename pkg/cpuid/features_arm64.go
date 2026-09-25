@@ -113,6 +113,14 @@ const (
 	ARM64FeatureASIMDFHM
 )
 
+const (
+	// ARM64FeaturePACA indicates support for address pointer authentication.
+	ARM64FeaturePACA Feature = 30
+
+	// ARM64FeaturePACG indicates support for generic pointer authentication.
+	ARM64FeaturePACG Feature = 31
+)
+
 var allFeatures = map[Feature]allFeatureInfo{
 	ARM64FeatureFP:       {"fp", true},
 	ARM64FeatureASIMD:    {"asimd", true},
