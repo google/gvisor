@@ -468,6 +468,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 	k := kernel.KernelFromContext(ctx)
 	r := k.CgroupRegistry()
 
+	// Remove registry entries for cgroups still owned by this filesystem.
+	fs.removeCgroupsFromRegistry(r)
+
 	if fs.hierarchyID != kernel.InvalidCgroupHierarchyID {
 		k.ReleaseCgroupHierarchy(fs.hierarchyID)
 		r.Unregister(ctx, fs.hierarchyID)
@@ -479,6 +482,27 @@ func (fs *filesystem) Release(ctx context.Context) {
 
 	fs.Filesystem.VFSFilesystem().VirtualFilesystem().PutAnonBlockDevMinor(fs.devMinor)
 	fs.Filesystem.Release(ctx)
+}
+
+// removeCgroupsFromRegistry removes each cgroup in fs.root from the registry.
+func (fs *filesystem) removeCgroupsFromRegistry(r *kernel.CgroupRegistry) {
+	if fs.root == nil {
+		return
+	}
+	rootInode, ok := fs.root.Inode().(*cgroupInode)
+	if !ok {
+		return
+	}
+	var walk func(c *cgroupInode)
+	walk = func(c *cgroupInode) {
+		r.RemoveCgroup(c.id)
+		c.dir.forEachChildDir(func(child *dir) {
+			if child.cgi != nil {
+				walk(child.cgi)
+			}
+		})
+	}
+	walk(rootInode)
 }
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
