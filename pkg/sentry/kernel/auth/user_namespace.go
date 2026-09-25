@@ -18,6 +18,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -38,6 +39,15 @@ type UserNamespace struct {
 
 	// Keys is the set of keys in this namespace.
 	Keys KeySet
+
+	// maxUserNamespaces is this namespace's /proc/sys/user/max_user_namespaces:
+	// the most descendant user namespaces that may be charged to it.
+	// **Not** protected by mu.
+	maxUserNamespaces atomicbitops.Int32
+
+	// numUserNamespaces is the number of descendant user namespaces currently
+	// charged to this namespace. **Not** protected by mu.
+	numUserNamespaces atomicbitops.Int32
 
 	// mu protects the ID maps, setgroupsAllowed, and inode.
 	//
@@ -87,6 +97,7 @@ type UserNamespace struct {
 func NewRootUserNamespace() *UserNamespace {
 	var ns UserNamespace
 	ns.setgroupsAllowed = true
+	ns.maxUserNamespaces.Store(defaultMaxUserNamespaces)
 	// """
 	// The initial user namespace has no parent namespace, but, for
 	// consistency, the kernel provides dummy user and group ID mapping files
@@ -122,7 +133,20 @@ func (ns *UserNamespace) Type() string {
 }
 
 // Destroy implements vfs.Namespace.Destroy.
-func (ns *UserNamespace) Destroy(ctx context.Context) {}
+// Releases ns's charge on its ancestors.
+func (ns *UserNamespace) Destroy(ctx context.Context) {
+	uncharge(ns.parent, nil)
+}
+
+// MaxUserNamespaces returns ns's max_user_namespaces limit.
+func (ns *UserNamespace) MaxUserNamespaces() int32 {
+	return ns.maxUserNamespaces.Load()
+}
+
+// SetMaxUserNamespaces sets ns's max_user_namespaces limit.
+func (ns *UserNamespace) SetMaxUserNamespaces(max int32) {
+	ns.maxUserNamespaces.Store(max)
+}
 
 // UserNamespace implements vfs.Namespace.UserNamespace.
 func (ns *UserNamespace) UserNamespace() *UserNamespace {
@@ -178,6 +202,11 @@ func (ns *UserNamespace) DecRef(ctx context.Context) {
 // namespaces." - user_namespaces(7)
 const maxUserNamespaceDepth = 32
 
+// defaultMaxUserNamespaces is a new namespace's max_user_namespaces.
+// Effectively unlimited until lowered through
+// /proc/sys/user/max_user_namespaces.
+const defaultMaxUserNamespaces = math.MaxInt32
+
 func (ns *UserNamespace) depth() int {
 	var i int
 	for ns != nil {
@@ -212,15 +241,54 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	c.UserNamespace.mu.Lock()
 	parentSetgroupsAllowed := c.UserNamespace.setgroupsAllowed
 	c.UserNamespace.mu.Unlock()
+	if err := c.UserNamespace.chargeChild(); err != nil {
+		return nil, err
+	}
 	return &UserNamespace{
-		parent:           c.UserNamespace,
-		owner:            c.EffectiveKUID,
-		parentHadSetfcap: c.HasSelfCapability(linux.CAP_SETFCAP),
-		setgroupsAllowed: parentSetgroupsAllowed,
+		parent:            c.UserNamespace,
+		owner:             c.EffectiveKUID,
+		parentHadSetfcap:  c.HasSelfCapability(linux.CAP_SETFCAP),
+		setgroupsAllowed:  parentSetgroupsAllowed,
+		maxUserNamespaces: atomicbitops.FromInt32(defaultMaxUserNamespaces),
 		// "When a user namespace is created, it starts without a mapping of
 		// user IDs (group IDs) to the parent user namespace." -
 		// user_namespaces(7)
 	}, nil
+}
+
+// chargeChild charges a new child namespace to ns and each of its ancestors.
+// If any is already at its max_user_namespaces, it undoes the charges already
+// taken and returns ENOSPC. This mirrors inc_ucount() in Linux.
+func (ns *UserNamespace) chargeChild() error {
+	for cur := ns; cur != nil; cur = cur.parent {
+		if !cur.tryCharge() {
+			uncharge(ns, cur)
+			return linuxerr.ENOSPC
+		}
+	}
+	return nil
+}
+
+// tryCharge increments ns's descendant count if it is below ns's limit, and
+// reports whether it did. This mirrors atomic_long_inc_below() in Linux.
+func (ns *UserNamespace) tryCharge() bool {
+	for {
+		n := ns.numUserNamespaces.Load()
+		if n >= ns.maxUserNamespaces.Load() {
+			return false
+		}
+		if ns.numUserNamespaces.CompareAndSwap(n, n+1) {
+			return true
+		}
+	}
+}
+
+// uncharge decrements the descendant count of from and each of its ancestors,
+// stopping before end (which may be nil to go all the way to the root).
+func uncharge(from, end *UserNamespace) {
+	for cur := from; cur != end; cur = cur.parent {
+		cur.numUserNamespaces.Add(-1)
+	}
 }
 
 // SetgroupsAllowed returns ns's USERNS_SETGROUPS_ALLOWED bit.

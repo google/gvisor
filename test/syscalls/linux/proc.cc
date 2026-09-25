@@ -38,6 +38,7 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <syscall.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -2926,6 +2927,337 @@ TEST(ProcSysKernelRandomUuid, DifferentEveryTime) {
   auto uuid2 =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/random/uuid"));
   EXPECT_NE(uuid1, uuid2);
+}
+
+constexpr char kMaxUserNamespaces[] = "/proc/sys/user/max_user_namespaces";
+
+// Writes the whole of data to path, aborting the process on failure.
+void WriteFileOrDie(const char* path, const char* data, size_t len) {
+  int fd = open(path, O_WRONLY);
+  TEST_PCHECK(fd >= 0);
+  TEST_PCHECK(write(fd, data, len) == static_cast<ssize_t>(len));
+  TEST_PCHECK(close(fd) == 0);
+}
+
+// Sets the max_user_namespaces limit of the calling process's own user
+// namespace to `limit`.
+void SetMaxUserNamespacesOrDie(const char* limit) {
+  WriteFileOrDie(kMaxUserNamespaces, limit, strlen(limit));
+}
+
+// Installs uid/gid maps for the user namespace of the process whose /proc
+// directory is `proc_dir` (e.g. "/proc/self").
+void MapUserNamespaceOrDie(const char* proc_dir, const char* uid_map,
+                           const char* gid_map) {
+  char path[64];
+  snprintf(path, sizeof(path), "%s/uid_map", proc_dir);
+  WriteFileOrDie(path, uid_map, strlen(uid_map));
+  snprintf(path, sizeof(path), "%s/setgroups", proc_dir);
+  WriteFileOrDie(path, "deny", 4);
+  snprintf(path, sizeof(path), "%s/gid_map", proc_dir);
+  WriteFileOrDie(path, gid_map, strlen(gid_map));
+}
+
+// Forks a child that enters a new user namespace, maps that namespace from
+// the calling process (in the parent namespace), then runs fn in the child.
+// Returns the child's pid.
+template <typename F>
+pid_t ForkInMappedUserNamespace(const char* uid_map, const char* gid_map,
+                                F fn) {
+  int ready[2], go[2];
+  TEST_PCHECK(pipe(ready) == 0);
+  TEST_PCHECK(pipe(go) == 0);
+  pid_t child = fork();
+  TEST_PCHECK(child >= 0);
+  if (child == 0) {
+    TEST_PCHECK(close(ready[0]) == 0);
+    TEST_PCHECK(close(go[1]) == 0);
+    TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+    TEST_PCHECK(close(ready[1]) == 0);  // namespace created
+    char x;
+    RetryEINTR(read)(go[0], &x, 1);  // wait until mapped
+    TEST_PCHECK(close(go[0]) == 0);
+    fn();
+    _exit(0);
+  }
+  TEST_PCHECK(close(ready[1]) == 0);
+  TEST_PCHECK(close(go[0]) == 0);
+  char c;
+  TEST_PCHECK(RetryEINTR(read)(ready[0], &c, 1) == 0);
+  TEST_PCHECK(close(ready[0]) == 0);
+
+  char proc_dir[32];
+  snprintf(proc_dir, sizeof(proc_dir), "/proc/%d", child);
+  MapUserNamespaceOrDie(proc_dir, uid_map, gid_map);
+
+  TEST_PCHECK(close(go[1]) == 0);  // release child
+  return child;
+}
+
+// Waits for child and aborts unless it exited with status 0.
+void WaitForSuccessOrDie(pid_t child) {
+  int status;
+  TEST_PCHECK(RetryEINTR(waitpid)(child, &status, 0) == child);
+  TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST(ProcSysUserMaxUserNamespaces, Exists) {
+  EXPECT_THAT(open(kMaxUserNamespaces, O_RDONLY), SyscallSucceeds());
+}
+
+TEST(ProcSysUserMaxUserNamespaces, HasNumericValue) {
+  const std::string val_str =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxUserNamespaces));
+  int64_t val;
+  EXPECT_TRUE(absl::SimpleAtoi(val_str, &val))
+      << "/proc/sys/user/max_user_namespaces does not contain a numeric value: "
+      << val_str;
+  EXPECT_GT(val, 0);
+}
+
+// The file advertises 0644.
+TEST(ProcSysUserMaxUserNamespaces, HasRegularFileMode) {
+  struct stat st;
+  ASSERT_THAT(stat(kMaxUserNamespaces, &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+  EXPECT_EQ(st.st_mode & 07777, static_cast<mode_t>(0644));
+
+  EXPECT_THAT(access(kMaxUserNamespaces, R_OK), SyscallSucceeds());
+  EXPECT_THAT(access(kMaxUserNamespaces, X_OK), SyscallFailsWithErrno(EACCES));
+}
+
+// Writing the limit in a fresh user namespace reads back unchanged.
+TEST(ProcSysUserMaxUserNamespaces, WriteUpdatesValue) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MaybeSave();
+
+                SetMaxUserNamespacesOrDie("42");
+
+                int rfd = open(kMaxUserNamespaces, O_RDONLY);
+                TEST_PCHECK(rfd >= 0);
+                char buf[32] = {};
+                TEST_PCHECK(read(rfd, buf, sizeof(buf) - 1) >= 2);
+                TEST_PCHECK(close(rfd) == 0);
+                TEST_PCHECK(buf[0] == '4' && buf[1] == '2');
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// A negative limit is rejected.
+TEST(ProcSysUserMaxUserNamespaces, RejectsNegativeValue) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MaybeSave();
+
+                int fd = open(kMaxUserNamespaces, O_WRONLY);
+                TEST_PCHECK(fd >= 0);
+                TEST_CHECK_ERRNO(write(fd, "-1", 2), EINVAL);
+                TEST_PCHECK(close(fd) == 0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// The limit belongs to a user namespace rather than to the file.
+TEST(ProcSysUserMaxUserNamespaces, WriteRequiresCapSysResource) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MaybeSave();
+
+                int fd = open(kMaxUserNamespaces, O_WRONLY);
+                TEST_PCHECK(fd >= 0);
+                TEST_PCHECK(close(fd) == 0);
+
+                TEST_CHECK_NO_ERRNO(DropPermittedCapability(CAP_SYS_RESOURCE));
+
+                TEST_CHECK_ERRNO(open(kMaxUserNamespaces, O_WRONLY), EACCES);
+                TEST_CHECK_ERRNO(open(kMaxUserNamespaces, O_RDWR), EACCES);
+
+                // Reading needs no capability.
+                fd = open(kMaxUserNamespaces, O_RDONLY);
+                TEST_PCHECK(fd >= 0);
+                TEST_PCHECK(close(fd) == 0);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// Every user namespace carries its own limit, so setting it in a child
+// namespace leaves the parent alone.
+TEST(ProcSysUserMaxUserNamespaces, WriteDoesNotAffectParentNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  const std::string before =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxUserNamespaces));
+
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MaybeSave();
+                SetMaxUserNamespacesOrDie("7");
+              }),
+              IsPosixErrorOkAndHolds(0));
+
+  const std::string after =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxUserNamespaces));
+  EXPECT_EQ(after, before);
+}
+
+// With the limit at zero, creating a nested user namespace must fail.
+TEST(ProcSysUserMaxUserNamespaces, LimitBlocksNestedUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  const std::string uid_map = absl::StrFormat("0 %u 1", getuid());
+  const std::string gid_map = absl::StrFormat("0 %u 1", getgid());
+
+  EXPECT_THAT(InForkedProcess([&uid_map, &gid_map] {
+                WaitForSuccessOrDie(ForkInMappedUserNamespace(
+                    uid_map.c_str(), gid_map.c_str(), [] {
+                      // Forbid descendants, then the next unshare must be
+                      // ENOSPC.
+                      SetMaxUserNamespacesOrDie("0");
+                      TEST_CHECK_ERRNO(unshare(CLONE_NEWUSER), ENOSPC);
+                    }));
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// A parent namespace with a limit of one still blocks a grandchild namespace.
+TEST(ProcSysUserMaxUserNamespaces, RecursiveLimitBlocksGrandchild) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  const std::string uid_map = absl::StrFormat("0 %u 1", getuid());
+  const std::string gid_map = absl::StrFormat("0 %u 1", getgid());
+
+  EXPECT_THAT(
+      InForkedProcess([&uid_map, &gid_map] {
+        // Parent namespace A, mapped, allowing exactly one descendant.
+        TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+        MapUserNamespaceOrDie("/proc/self", uid_map.c_str(), gid_map.c_str());
+        SetMaxUserNamespacesOrDie("1");
+
+        // Child namespace B succeeds and consumes A's budget. The
+        // mapped uid in A is now 0, so map it to itself.
+        WaitForSuccessOrDie(ForkInMappedUserNamespace("0 0 1", "0 0 1", [] {
+          // The grandchild is still charged to A, whose budget is
+          // gone, so the unshare must fail with ENOSPC rather than
+          // succeeding.
+          TEST_CHECK_ERRNO(unshare(CLONE_NEWUSER), ENOSPC);
+        }));
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
+// A namespace holds its charge against its ancestors, so the budget becomes
+// spendable again once it is gone.
+TEST(ProcSysUserMaxUserNamespaces, ExitedNamespaceReleasesCharge) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  const std::string uid_map = absl::StrFormat("0 %u 1", getuid());
+  const std::string gid_map = absl::StrFormat("0 %u 1", getgid());
+
+  EXPECT_THAT(InForkedProcess([&uid_map, &gid_map] {
+                // Namespace A, mapped, with room for a single descendant.
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MapUserNamespaceOrDie("/proc/self", uid_map.c_str(),
+                                      gid_map.c_str());
+                SetMaxUserNamespacesOrDie("1");
+
+                // Spend A's budget on a namespace that immediately goes away
+                // again.
+                int status;
+                pid_t child = fork();
+                TEST_PCHECK(child >= 0);
+                if (child == 0) {
+                  TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                  _exit(0);
+                }
+                TEST_PCHECK(RetryEINTR(waitpid)(child, &status, 0) == child);
+                TEST_PCHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+                // A namespace can outlive the last task in it: Linux frees it
+                // from a workqueue once an RCU grace period has passed, so need
+                // to poll.
+                bool reused = false;
+                for (int i = 0; i < 500 && !reused; i++) {
+                  pid_t retry = fork();
+                  TEST_PCHECK(retry >= 0);
+                  if (retry == 0) {
+                    if (unshare(CLONE_NEWUSER) == 0) {
+                      _exit(0);
+                    }
+                    _exit(errno == ENOSPC ? 1 : 2);
+                  }
+                  TEST_PCHECK(RetryEINTR(waitpid)(retry, &status, 0) == retry);
+                  TEST_PCHECK(WIFEXITED(status));
+                  TEST_CHECK_MSG(WEXITSTATUS(status) != 2,
+                                 "unshare failed, not ENOSPC");
+                  reused = WEXITSTATUS(status) == 0;
+                  if (!reused) {
+                    struct timespec ten_ms = {0, 10 * 1000 * 1000};
+                    nanosleep(&ten_ms, nullptr);
+                  }
+                }
+                TEST_CHECK(reused);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// An unshare refused because an ancestor is out of budget must not leave
+// behind the charges it took on the way to finding that out.
+TEST(ProcSysUserMaxUserNamespaces, RefusedNestingReleasesPartialCharge) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  const std::string uid_map = absl::StrFormat("0 %u 1", getuid());
+  const std::string gid_map = absl::StrFormat("0 %u 1", getgid());
+
+  EXPECT_THAT(InForkedProcess([&uid_map, &gid_map] {
+                // Namespace A, mapped, allowing exactly one descendant.
+                TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                MapUserNamespaceOrDie("/proc/self", uid_map.c_str(),
+                                      gid_map.c_str());
+                SetMaxUserNamespacesOrDie("1");
+
+                int ready[2], go[2];
+                TEST_PCHECK(pipe(ready) == 0);
+                TEST_PCHECK(pipe(go) == 0);
+                // Namespace B is A's one permitted descendant.
+                pid_t child =
+                    ForkInMappedUserNamespace("0 0 1", "0 0 1", [&ready, &go] {
+                      TEST_PCHECK(close(ready[0]) == 0);
+                      TEST_PCHECK(close(go[1]) == 0);
+
+                      // B has room of its own, so each attempt below is
+                      // charged to B before A is reached and refuses it.
+                      SetMaxUserNamespacesOrDie("2");
+                      TEST_CHECK_ERRNO(unshare(CLONE_NEWUSER), ENOSPC);
+                      TEST_CHECK_ERRNO(unshare(CLONE_NEWUSER), ENOSPC);
+
+                      TEST_PCHECK(close(ready[1]) == 0);  // ask A for room
+                      char x;
+                      RetryEINTR(read)(go[0], &x, 1);
+
+                      // Both refused attempts must have been refunded to B;
+                      // otherwise B sits at its own limit of two and this
+                      // fails with ENOSPC.
+                      TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+                    });
+                TEST_PCHECK(close(ready[1]) == 0);
+                TEST_PCHECK(close(go[0]) == 0);
+                char c;
+                TEST_PCHECK(RetryEINTR(read)(ready[0], &c, 1) == 0);
+
+                // Make room in A for a descendant of B.
+                SetMaxUserNamespacesOrDie("3");
+
+                TEST_PCHECK(close(go[1]) == 0);  // release child
+                WaitForSuccessOrDie(child);
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(ProcSysVmMaxmapCount, HasNumericValue) {
