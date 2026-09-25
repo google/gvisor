@@ -114,6 +114,9 @@ func (t *Task) beginInternalStopLocked(s TaskStop) {
 		panic(fmt.Sprintf("Attempting to enter internal stop %#v when already in internal stop %#v", s, t.stop))
 	}
 	t.Debugf("Entering internal stop %#v", s)
+	// Linux filters a restart_syscall that follows a group stop or ptrace
+	// stop, so an internal stop abandons a checkpoint-armed bypass.
+	t.bypassSeccompRestartSyscall = false
 	t.stop = s
 	t.beginStopLocked()
 }
