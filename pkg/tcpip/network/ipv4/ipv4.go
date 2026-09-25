@@ -615,7 +615,16 @@ func (e *endpoint) writePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Er
 		// Similar to the `ip_route_me_harder` in the kernel,
 		// we need to find a new route for the packet.
 		// Implementation is similar to the func forwardUnicastPacket.
-		newRoute, err := stk.FindRoute(0 /* nic id */, netHeader.SourceAddress(), newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+		//
+		// We deliberately pass no localAddr so the route is chosen purely by the
+		// post-DNAT destination. The pre-DNAT source address may be assigned to a
+		// different NIC than the one that reaches newDstAddr (e.g. a ClusterIP
+		// DNATed to a pod behind a bridge): constraining the lookup by that source
+		// makes FindRoute reject the correct interface's route and fall back to a
+		// wrong default route, so the packet egresses the wrong NIC and is dropped.
+		// The source is re-selected on the chosen interface (and by any POSTROUTING
+		// MASQUERADE), matching ip_route_me_harder.
+		newRoute, err := stk.FindRoute(0 /* nic id */, tcpip.Address{} /* localAddr */, newDstAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
 		if err != nil {
 			e.stats.ip.OutgoingPacketErrors.Increment()
 			return err // Drop the packet
