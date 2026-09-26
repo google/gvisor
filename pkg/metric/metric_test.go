@@ -895,6 +895,14 @@ func TestFieldMapperWithFields(t *testing.T) {
 			errOnCreation: nil,
 		},
 		{
+			name:   "FieldMapper49x2",
+			fields: generateFields([]int{49, 2}),
+		},
+		{
+			name:   "FieldMapper256x2",
+			fields: generateFields([]int{256, 2}),
+		},
+		{
 			name:          "FieldMapperErrNoAllowedValues",
 			fields:        []Field{NewField("TheNoValuesField")},
 			errOnCreation: ErrFieldHasNoAllowedValues,
@@ -961,41 +969,73 @@ func TestFieldMapperNoFields(t *testing.T) {
 	}
 }
 
-func TestFieldValueUniqueness(t *testing.T) {
-	panicked := false
-	func() {
-		defer func() {
-			recover()
-			panicked = true
-		}()
-		NewField("field1", &FieldValue{"foo"}, &FieldValue{"foo"})
-	}()
-	if !panicked {
-		t.Error("did not panic")
+func BenchmarkFieldMapperLookup(b *testing.B) {
+	for _, size := range []int{4, 48, 49, 64, 256, 1024} {
+		b.Run(fmt.Sprintf("values=%d", size), func(b *testing.B) {
+			values := make([]*FieldValue, size)
+			for i := range values {
+				values[i] = &FieldValue{Value: fmt.Sprintf("value%d", i)}
+			}
+			mapper, err := newFieldMapper(NewField("field", values...))
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			var index int
+			for b.Loop() {
+				_ = mapper.lookup(values[index])
+				index++
+				if index == len(values) {
+					index = 0
+				}
+			}
+		})
 	}
 }
 
-func TestFieldMapperMustUseSameValuePointer(t *testing.T) {
-	const fooString = "foo"
-	var constFoo = FieldValue{fooString}
-	var heapBar = &FieldValue{fmt.Sprintf("%sr", "ba")}
-	n, err := newFieldMapper(NewField("field1", &constFoo, heapBar))
-	if err != nil {
-		t.Fatalf("newFieldMapper err: got %v wanted nil", err)
-	}
-	n.lookup(&constFoo)
-	n.lookup(heapBar)
-	newFoo := &FieldValue{fmt.Sprintf("%so", "fo")}
-	panicked := false
-	func() {
-		defer func() {
-			recover()
-			panicked = true
-		}()
-		n.lookup(newFoo)
+func TestFieldValueUniqueness(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("did not panic")
+		}
 	}()
-	if !panicked {
-		t.Error("did not panic")
+	NewField("field1", &FieldValue{"foo"}, &FieldValue{"foo"})
+}
+
+func TestFieldMapperMustUseSameValuePointer(t *testing.T) {
+	for _, size := range []int{2, 49, 256} {
+		t.Run(fmt.Sprintf("values=%d", size), func(t *testing.T) {
+			values := make([]*FieldValue, size)
+			for i := range values {
+				// Reverse allocation order so the lookup index must preserve
+				// declaration order independently of pointer order.
+				values[size-i-1] = &FieldValue{Value: fmt.Sprintf("value%d", i)}
+			}
+			mapper, err := newFieldMapper(NewField("field", values...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, value := range values {
+				if got := mapper.lookup(value); got != i {
+					t.Errorf("lookup(%p) = %d, want %d", value, got, i)
+				}
+			}
+			// Identity does not depend on the string's contents.
+			values[0].Value = "changed"
+			if got := mapper.lookup(values[0]); got != 0 {
+				t.Errorf("lookup after changing value = %d, want 0", got)
+			}
+			for _, invalid := range []*FieldValue{{Value: values[0].Value}, nil} {
+				func() {
+					defer func() {
+						if recover() == nil {
+							t.Errorf("lookup(%p) did not panic", invalid)
+						}
+					}()
+					mapper.lookup(invalid)
+				}()
+			}
+		})
 	}
 }
 

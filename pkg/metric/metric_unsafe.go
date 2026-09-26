@@ -22,6 +22,17 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+// fieldValueAddress supports ordering retained FieldValue pointers without
+// inspecting their strings. As with other pointer ordering in gVisor, this
+// relies on Go's nonmoving heap. The addresses are used only for comparisons
+// and never converted back into pointers; Field.values keeps the objects live.
+// +checkescape:all
+//
+//go:nosplit
+func fieldValueAddress(value *FieldValue) uintptr {
+	return uintptr(unsafe.Pointer(value))
+}
+
 // snapshotDistribution snapshots the sample data of distribution metrics in
 // a non-consistent manner.
 // Distribution metrics don't need to be read consistently, because any
