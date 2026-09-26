@@ -226,17 +226,11 @@ func handlePrivilegedRoot(c *Credentials, f *FilePrivileges, filename string) {
 //     Both noNewPrivs and allowSUID prevent ID gain, but allowSUID does not by itself prevent cap
 //     gain. Note also that while noNewPrivs brings down the effective IDs down to the real IDs,
 //     allowSUID at most prevents further ID gain due the SUID/GID bits.
-//
-// Note that gVisor does not support Ambient capabilities.
 func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 	noNewPrivs bool, stopPrivGain bool, allowSUID bool) (*Credentials, bool, error) {
 	if noNewPrivs || !allowSUID {
 		f.SetUserID = NoID
 		f.SetGroupID = NoID
-	}
-	if noNewPrivs {
-		f.HasCaps = false
-		f.Effective = false
 	}
 	// "...if either the user or the group ID of the file has no mapping inside the namespace, the
 	// set-user-ID (set-group-ID) bit is silently ignored: the new program is executed, but the

@@ -26,6 +26,7 @@ type Strace struct {
 	Process  string                 `protobuf:"bytes,1,opt,name=process,proto3" json:"process,omitempty"`
 	Function string                 `protobuf:"bytes,2,opt,name=function,proto3" json:"function,omitempty"`
 	Args     []string               `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
+	Tid      int32                  `protobuf:"varint,6,opt,name=tid,proto3" json:"tid,omitempty"`
 	// Types that are valid to be assigned to Info:
 	//
 	//	*Strace_Enter
@@ -84,6 +85,13 @@ func (x *Strace) GetArgs() []string {
 		return x.Args
 	}
 	return nil
+}
+
+func (x *Strace) GetTid() int32 {
+	if x != nil {
+		return x.Tid
+	}
+	return 0
 }
 
 func (x *Strace) GetInfo() isStrace_Info {
@@ -235,11 +243,12 @@ var File_pkg_sentry_strace_strace_proto protoreflect.FileDescriptor
 
 const file_pkg_sentry_strace_strace_proto_rawDesc = "" +
 	"\n" +
-	"\x1epkg/sentry/strace/strace.proto\x12\x06gvisor\"\xb1\x01\n" +
+	"\x1epkg/sentry/strace/strace.proto\x12\x06gvisor\"\xc3\x01\n" +
 	"\x06Strace\x12\x18\n" +
 	"\aprocess\x18\x01 \x01(\tR\aprocess\x12\x1a\n" +
 	"\bfunction\x18\x02 \x01(\tR\bfunction\x12\x12\n" +
-	"\x04args\x18\x03 \x03(\tR\x04args\x12+\n" +
+	"\x04args\x18\x03 \x03(\tR\x04args\x12\x10\n" +
+	"\x03tid\x18\x06 \x01(\x05R\x03tid\x12+\n" +
 	"\x05enter\x18\x04 \x01(\v2\x13.gvisor.StraceEnterH\x00R\x05enter\x12(\n" +
 	"\x04exit\x18\x05 \x01(\v2\x12.gvisor.StraceExitH\x00R\x04exitB\x06\n" +
 	"\x04info\"\r\n" +
