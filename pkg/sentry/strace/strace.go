@@ -625,6 +625,7 @@ func (i *SyscallInfo) sendEnter(t *kernel.Task, args arch.SyscallArguments) []st
 	event := pb.Strace{
 		Process:  t.Name(),
 		Function: i.name,
+		Tid:      int32(t.ThreadID()),
 		Info: &pb.Strace_Enter{
 			Enter: &pb.StraceEnter{},
 		},
@@ -653,6 +654,7 @@ func (i *SyscallInfo) sendExit(t *kernel.Task, elapsed time.Duration, output []s
 	event := pb.Strace{
 		Process:  t.Name(),
 		Function: i.name,
+		Tid:      int32(t.ThreadID()),
 		Info:     &pb.Strace_Exit{Exit: exit},
 	}
 	event.Args = append(event.Args, output...)
