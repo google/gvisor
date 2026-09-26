@@ -1,0 +1,122 @@
+# Honor the tools and flags supplied by rules_foreign_cc when compiling DPDK
+# and its build-time helpers. Use the selected raw linker for intermediate
+# relocatable links, which must not include C runtime or startup files.
+
+diff --git a/mk/toolchain/clang/rte.vars.mk b/mk/toolchain/clang/rte.vars.mk
+--- a/mk/toolchain/clang/rte.vars.mk
++++ b/mk/toolchain/clang/rte.vars.mk
+@@ -10,30 +10,30 @@
+ #   - define TOOLCHAIN_ASFLAGS variable (overridden by cmdline value)
+ #
+ 
+-CC        = $(CROSS)clang
++CC        ?= $(CROSS)clang
+ KERNELCC  = $(CROSS)gcc
+-CPP       = $(CROSS)cpp
++CPP       = $(CC) -E
+ # for now, we don't use as but nasm.
+ # AS      = $(CROSS)as
+ AS        = nasm
+-AR        = $(CROSS)ar
+-LD        = $(CROSS)ld
++AR        ?= $(CROSS)ar
++LD        ?= $(CROSS)ld
+ OBJCOPY   = $(CROSS)objcopy
+-OBJDUMP   = $(CROSS)objdump
++OBJDUMP   ?= $(CROSS)objdump
+ STRIP     = $(CROSS)strip
+ READELF   = $(CROSS)readelf
+ GCOV      = $(CROSS)gcov
+ 
+-ifeq ("$(origin CC)", "command line")
++# The plugin's execution and target platforms are both Linux AMD64.
+ HOSTCC    = $(CC)
+-else
+-HOSTCC    = clang
+-endif
++HOST_CFLAGS += $(BAZEL_CFLAGS)
++HOST_CPPFLAGS += $(CPPFLAGS)
++HOST_LDFLAGS += $(BAZEL_LDFLAGS)
+ HOSTAS    = as
+ 
+ TOOLCHAIN_ASFLAGS =
+-TOOLCHAIN_CFLAGS =
+-TOOLCHAIN_LDFLAGS =
++TOOLCHAIN_CFLAGS = $(BAZEL_CFLAGS)
++TOOLCHAIN_LDFLAGS = $(BAZEL_LDFLAGS)
+ 
+ WERROR_FLAGS := -W -Wall -Wstrict-prototypes -Wmissing-prototypes
+ WERROR_FLAGS += -Wmissing-declarations -Wold-style-definition -Wpointer-arith
+diff --git a/mk/toolchain/gcc/rte.vars.mk b/mk/toolchain/gcc/rte.vars.mk
+--- a/mk/toolchain/gcc/rte.vars.mk
++++ b/mk/toolchain/gcc/rte.vars.mk
+@@ -10,30 +10,30 @@
+ #   - define TOOLCHAIN_ASFLAGS variable (overridden by cmdline value)
+ #
+ 
+-CC        = $(CROSS)gcc
++CC        ?= $(CROSS)gcc
+ KERNELCC  = $(CROSS)gcc
+-CPP       = $(CROSS)cpp
++CPP       = $(CC) -E
+ # for now, we don't use as but nasm.
+ # AS      = $(CROSS)as
+ AS        = nasm
+-AR        = $(CROSS)ar
+-LD        = $(CROSS)ld
++AR        ?= $(CROSS)ar
++LD        ?= $(CROSS)ld
+ OBJCOPY   = $(CROSS)objcopy
+-OBJDUMP   = $(CROSS)objdump
++OBJDUMP   ?= $(CROSS)objdump
+ STRIP     = $(CROSS)strip
+ READELF   = $(CROSS)readelf
+ GCOV      = $(CROSS)gcov
+ 
+-ifeq ("$(origin CC)", "command line")
++# The plugin's execution and target platforms are both Linux AMD64.
+ HOSTCC    = $(CC)
+-else
+-HOSTCC    = gcc
+-endif
++HOST_CFLAGS += $(BAZEL_CFLAGS)
++HOST_CPPFLAGS += $(CPPFLAGS)
++HOST_LDFLAGS += $(BAZEL_LDFLAGS)
+ HOSTAS    = as
+ 
+ TOOLCHAIN_ASFLAGS =
+-TOOLCHAIN_CFLAGS =
+-TOOLCHAIN_LDFLAGS =
++TOOLCHAIN_CFLAGS = $(BAZEL_CFLAGS)
++TOOLCHAIN_LDFLAGS = $(BAZEL_LDFLAGS)
+ 
+ ifeq ($(CONFIG_RTE_LIBRTE_GCOV),y)
+ TOOLCHAIN_CFLAGS += --coverage
+diff --git a/mk/internal/rte.compile-pre.mk b/mk/internal/rte.compile-pre.mk
+--- a/mk/internal/rte.compile-pre.mk
++++ b/mk/internal/rte.compile-pre.mk
+@@ -61,7 +61,8 @@
+ 
+ PMDINFO_GEN = $(RTE_SDK_BIN)/app/dpdk-pmdinfogen $@ $@.pmd.c
+ PMDINFO_CC = $(CC) $(CPPFLAGS) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $@.pmd.o $@.pmd.c
+-PMDINFO_LD = $(CROSS)ld $(LDFLAGS) -r -o $@.o $@.pmd.o $@
++# This relocatable link combines objects without a C runtime or startup files.
++PMDINFO_LD = $(BAZEL_LD) -r -o $@.o $@.pmd.o $@
+ PMDINFO_TO_O = if grep -q 'RTE_PMD_REGISTER_.*(.*)' $<; then \
+ 	echo "$(if $V,$(PMDINFO_GEN),  PMDINFO $@.pmd.c)" && \
+ 	$(PMDINFO_GEN) && \
+diff --git a/buildtools/check-experimental-syms.sh b/buildtools/check-experimental-syms.sh
+--- a/buildtools/check-experimental-syms.sh
++++ b/buildtools/check-experimental-syms.sh
+@@ -22,9 +22,9 @@
+ 		/.*;/ {if (found == 1) print $1}' $MAPFILE`
+ do
+ 	SYM=`echo $i | sed -e"s/;//"`
+-	objdump -t $OBJFILE | grep -q "\.text.*$SYM$"
++	"${OBJDUMP}" -t $OBJFILE | grep -q "\.text.*$SYM$"
+ 	IN_TEXT=$?
+-	objdump -t $OBJFILE | grep -q "\.text\.experimental.*$SYM$"
++	"${OBJDUMP}" -t $OBJFILE | grep -q "\.text\.experimental.*$SYM$"
+ 	IN_EXP=$?
+ 	if [ $IN_TEXT -eq 0 -a $IN_EXP -ne 0 ]
+ 	then
