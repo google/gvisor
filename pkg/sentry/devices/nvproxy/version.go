@@ -891,6 +891,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV00FD_CTRL_CMD_SET_FAILURE] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ctrlHandler(ctrlClientSystemGetP2PCapsV550, compUtil)
+					abi.controlCmd[nvgpu.NV00FE_CTRL_CMD_SUBMIT_OPERATIONS] = ctrlHandler(rmControlSimple, compUtil)
 			abi.uvmIoctl[nvgpu.UVM_SET_PREFERRED_LOCATION] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550], compUtil)
 			abi.uvmIoctl[nvgpu.UVM_MIGRATE] = uvmHandler(uvmIoctlSimple[nvgpu.UVM_MIGRATE_PARAMS_V550], compUtil)
 			abi.allocationClass[nvgpu.NV_IMEX_SESSION] = allocHandler(rmAllocIMEXSession, nvconf.CapFabricIMEXManagement)
@@ -915,6 +916,7 @@ func Init() {
 				info.ControlInfos[nvgpu.NV00FD_CTRL_CMD_SET_FAILURE] = simpleIoctlInfo("NV00FD_CTRL_CMD_SET_FAILURE", "NV00FD_CTRL_SET_FAILURE_PARAMS")
 				info.ControlInfos[nvgpu.NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE] = simpleIoctlInfo("NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE", "NV2080_CTRL_PERF_GET_CURRENT_PSTATE_PARAMS")
 				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS] = ioctlInfoWithStructName("NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS", nvgpu.NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS_V550{}, "NV0000_CTRL_SYSTEM_GET_P2P_CAPS_PARAMS")
+							info.ControlInfos[nvgpu.NV00FE_CTRL_CMD_SUBMIT_OPERATIONS] = simpleIoctlInfo("NV00FE_CTRL_CMD_SUBMIT_OPERATIONS", "NV00FE_CTRL_SUBMIT_OPERATIONS_PARAMS")
 				info.UvmInfos[nvgpu.UVM_SET_PREFERRED_LOCATION] = ioctlInfoWithStructName("UVM_SET_PREFERRED_LOCATION", nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{}, "UVM_SET_PREFERRED_LOCATION_PARAMS")
 				info.UvmInfos[nvgpu.UVM_MIGRATE] = ioctlInfoWithStructName("UVM_MIGRATE", nvgpu.UVM_MIGRATE_PARAMS_V550{}, "UVM_MIGRATE_PARAMS")
 				info.AllocationInfos[nvgpu.NV_IMEX_SESSION] = ioctlInfo("NV_IMEX_SESSION", nvgpu.NV00F1_ALLOCATION_PARAMETERS{})
@@ -965,12 +967,14 @@ func Init() {
 			abi := v550_90_07()
 			abi.allocationClass[nvgpu.NV_MEMORY_MAPPER] = allocHandler(rmAllocSimple[nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555], nvconf.CapVideo)
 			abi.controlCmd[nvgpu.NV90E7_CTRL_CMD_BBX_GET_LAST_FLUSH_TIME] = ctrlHandler(rmControlSimple, nvconf.CapGraphics)
+					abi.controlCmd[nvgpu.NV00FE_CTRL_CMD_RESIZE_QUEUE] = ctrlHandler(rmControlSimple, compUtil)
 			delete(abi.controlCmd, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
 			prevGetInfo := abi.getInfo
 			abi.getInfo = func() *DriverABIInfo {
 				info := prevGetInfo()
 				info.AllocationInfos[nvgpu.NV_MEMORY_MAPPER] = ioctlInfoWithStructName("NV_MEMORY_MAPPER", nvgpu.NV_MEMORY_MAPPER_ALLOCATION_PARAMS_V555{}, "NV_MEMORY_MAPPER_ALLOCATION_PARAMS")
 				info.ControlInfos[nvgpu.NV90E7_CTRL_CMD_BBX_GET_LAST_FLUSH_TIME] = simpleIoctlInfo("NV90E7_CTRL_CMD_BBX_GET_LAST_FLUSH_TIME", "NV90E7_CTRL_BBX_GET_LAST_FLUSH_TIME_PARAMS")
+							info.ControlInfos[nvgpu.NV00FE_CTRL_CMD_RESIZE_QUEUE] = simpleIoctlInfo("NV00FE_CTRL_CMD_RESIZE_QUEUE", "NV00FE_CTRL_RESIZE_QUEUE_PARAMS")
 				delete(info.ControlInfos, nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID)
 				return info
 			}
