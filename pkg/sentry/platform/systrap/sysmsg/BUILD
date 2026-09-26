@@ -104,7 +104,8 @@ genrule(
     srcs = [":sighandler_object"],
     outs = ["sighandler.go.arch"],
     cmd = "bash -x $(location gen_offsets_go.sh) sighandler Sighandler " +
-          "$(SRCS) > $@",
+          "$(SRCS) \"$(NM)\" > $@",
+    toolchains = [cc_toolchain],
     tools = ["gen_offsets_go.sh"],
 )
 
