@@ -57,7 +57,7 @@ func (k *Kernel) sendExternalSignal(info *linux.SignalInfo, context string) {
 		if k.globalInit == nil {
 			panic(fmt.Sprintf("Received external signal %d before init created", info.Signo))
 		}
-		k.globalInit.SendSignal(info)
+		k.globalInit.SendForcedSignal(info)
 	}
 }
 

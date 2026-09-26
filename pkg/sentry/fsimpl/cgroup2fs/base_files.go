@@ -512,7 +512,7 @@ func (cf *cgroupKill) Write(ctx context.Context, fd *vfs.FileDescription, src us
 	if val != 1 {
 		return 0, linuxerr.ERANGE
 	}
-	if err := cf.c.kill(); err != nil {
+	if err := cf.c.kill(ctx); err != nil {
 		return 0, err
 	}
 	return src.NumBytes(), nil

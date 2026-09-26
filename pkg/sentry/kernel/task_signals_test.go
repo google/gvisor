@@ -71,156 +71,36 @@ func TestInitSignalDiscarded(t *testing.T) {
 	}
 }
 
-// TestMaybeForceInitSignal verifies that external signals (SI_USER) targeted at
-// the global init thread group are marked privileged (SI_KERNEL) when
-// SIGNAL_UNKILLABLE protection is enabled, and left untouched otherwise.
-func TestMaybeForceInitSignal(t *testing.T) {
-	k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-	initTG := &ThreadGroup{}
-	k.TestOnlySetGlobalInit(initTG)
-	otherTG := &ThreadGroup{}
-
-	userSig := &linux.SignalInfo{Signo: int32(linux.SIGTERM), Code: linux.SI_USER}
-	kernelSig := &linux.SignalInfo{Signo: int32(linux.SIGTERM), Code: linux.SI_KERNEL}
-
-	// 1. Target is globalInit and Code is SI_USER -> forced to SI_KERNEL.
-	forced := k.maybeForceInitSignal(initTG, userSig)
-	if forced.Code != linux.SI_KERNEL {
-		t.Errorf("got Code %d, want SI_KERNEL", forced.Code)
-	}
-	if userSig.Code != linux.SI_USER {
-		t.Errorf("original SignalInfo was mutated: got Code %d, want SI_USER", userSig.Code)
+// TestSignalForcedFrom verifies that a signal is forced exactly when its sender
+// has no ID in the target's PID namespace (kernel/signal.c:__send_signal_locked()).
+func TestSignalForcedFrom(t *testing.T) {
+	root := &PIDNamespace{}
+	child := &PIDNamespace{parent: root}
+	sibling := &PIDNamespace{parent: root}
+	grandchild := &PIDNamespace{parent: child}
+	tg := &ThreadGroup{}
+	tg.pidns = child
+	taskIn := func(ns *PIDNamespace) *Task {
+		task := &Task{}
+		task.tg = &ThreadGroup{}
+		task.tg.pidns = ns
+		return task
 	}
 
-	// 2. Target is NOT globalInit -> untouched.
-	if got := k.maybeForceInitSignal(otherTG, userSig); got.Code != linux.SI_USER {
-		t.Errorf("otherTG: got Code %d, want SI_USER", got.Code)
-	}
-
-	// 3. Signal is already SI_KERNEL -> untouched.
-	if got := k.maybeForceInitSignal(initTG, kernelSig); got.Code != linux.SI_KERNEL {
-		t.Errorf("kernelSig: got Code %d, want SI_KERNEL", got.Code)
-	}
-
-	// 4. Policy is None -> untouched.
-	k.SetSignalUnkillablePolicy(SignalUnkillableNone)
-	if got := k.maybeForceInitSignal(initTG, userSig); got.Code != linux.SI_USER {
-		t.Errorf("policy None: got Code %d, want SI_USER", got.Code)
-	}
-}
-
-// TestForcedSignalsToInit verifies that signals from outside the PID namespace
-// (e.g. host/kernel or ancestor namespaces) are correctly classified as forced,
-// and that forced signals are delivered to init while unforced peer signals are
-// discarded under SIGNAL_UNKILLABLE semantics.
-func TestForcedSignalsToInit(t *testing.T) {
-	dflAct := linux.SigAction{Handler: linux.SIG_DFL}
-	handlerAct := linux.SigAction{Handler: 0x1000}
-
-	testCases := []struct {
-		name       string
-		info       *linux.SignalInfo
-		wantForced bool
+	for _, tc := range []struct {
+		name   string
+		sender *Task
+		want   bool
 	}{
-		{
-			name:       "SI_KERNEL (host/kernel) is forced",
-			info:       &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_KERNEL},
-			wantForced: true,
-		},
-		{
-			name: "SI_USER with PID 0 (ancestor namespace) is forced",
-			info: func() *linux.SignalInfo {
-				info := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_USER}
-				info.SetPID(0)
-				return info
-			}(),
-			wantForced: true,
-		},
-		{
-			name: "SI_TKILL with PID 0 (ancestor namespace) is forced",
-			info: func() *linux.SignalInfo {
-				info := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_TKILL}
-				info.SetPID(0)
-				return info
-			}(),
-			wantForced: true,
-		},
-		{
-			name: "SI_QUEUE with PID 0 (ancestor namespace) is forced",
-			info: func() *linux.SignalInfo {
-				info := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_QUEUE}
-				info.SetPID(0)
-				return info
-			}(),
-			wantForced: true,
-		},
-		{
-			name: "SI_USER with PID > 0 (peer in same namespace) is not forced",
-			info: func() *linux.SignalInfo {
-				info := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_USER}
-				info.SetPID(2)
-				return info
-			}(),
-			wantForced: false,
-		},
-		{
-			name: "SI_TKILL with PID > 0 (peer in same namespace) is not forced",
-			info: func() *linux.SignalInfo {
-				info := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_TKILL}
-				info.SetPID(2)
-				return info
-			}(),
-			wantForced: false,
-		},
-		{
-			name: "SI_QUEUE with PID > 0 (peer in same namespace) is not forced",
-			info: func() *linux.SignalInfo {
-				info := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_QUEUE}
-				info.SetPID(2)
-				return info
-			}(),
-			wantForced: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			forced := isForcedSignal(tc.info)
-			if forced != tc.wantForced {
-				t.Fatalf("isForcedSignal(%+v) = %v, want %v", tc.info, forced, tc.wantForced)
-			}
-
-			sig := linux.Signal(tc.info.Signo)
-			discarded := initSignalDiscarded(sig, dflAct, forced)
-			// A forced SIGKILL must never be discarded; an unforced SIGKILL must be discarded.
-			if tc.wantForced && discarded {
-				t.Errorf("forced signal %v was unexpectedly discarded for init", sig)
-			} else if !tc.wantForced && !discarded {
-				t.Errorf("unforced signal %v was unexpectedly not discarded for init", sig)
-			}
-		})
-	}
-
-	// Forced SIGSTOP must be delivered (not discarded).
-	kernelStop := &linux.SignalInfo{Signo: int32(linux.SIGSTOP), Code: linux.SI_KERNEL}
-	if !isForcedSignal(kernelStop) {
-		t.Fatal("kernelStop should be forced")
-	}
-	if initSignalDiscarded(linux.SIGSTOP, dflAct, isForcedSignal(kernelStop)) {
-		t.Error("forced SIGSTOP was unexpectedly discarded for init")
-	}
-
-	// Forced default-fatal signals other than SIGKILL/SIGSTOP (such as SIGTERM)
-	// are discarded when init has no handler, but delivered when a handler is installed.
-	kernelTerm := &linux.SignalInfo{Signo: int32(linux.SIGTERM), Code: linux.SI_KERNEL}
-	if !isForcedSignal(kernelTerm) {
-		t.Fatal("kernelTerm should be forced")
-	}
-	if !initSignalDiscarded(linux.SIGTERM, dflAct, isForcedSignal(kernelTerm)) {
-		t.Error("forced SIGTERM without handler should be discarded for init")
-	}
-	if initSignalDiscarded(linux.SIGTERM, handlerAct, isForcedSignal(kernelTerm)) {
-		t.Error("forced SIGTERM with handler should be delivered to init")
+		{"peer in the same namespace", taskIn(child), false},
+		{"descendant namespace", taskIn(grandchild), false},
+		{"ancestor namespace", taskIn(root), true},
+		{"sibling namespace", taskIn(sibling), true},
+		{"sentry itself", nil, true},
+	} {
+		if got := tg.signalForcedFrom(tc.sender); got != tc.want {
+			t.Errorf("%s: signalForcedFrom = %t, want %t", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -251,156 +131,203 @@ var sharedFakeRegistry = func() *CgroupRegistry {
 	return &CgroupRegistry{v2fs: fs}
 }()
 
-// TestDeliverSignalToInit verifies that sendSignalTimerLocked correctly applies
-// initSignalDiscarded to discard unhandled signals to PID namespace init (PID 1)
-// or permit delivery when appropriate.
-func TestDeliverSignalToInit(t *testing.T) {
-	initTG := &ThreadGroup{
+// newSignalTestTask returns a task in tg that cannot be interrupted, so that a
+// queued signal stays in its pending set without reaching the task's unset
+// platform context.
+func newSignalTestTask(k *Kernel, tg *ThreadGroup) *Task {
+	task := &Task{}
+	task.k = k
+	task.tg = tg
+	prefix := ""
+	task.logPrefix.Store(&prefix)
+	task.interruptChan = make(chan struct{}, 1)
+	task.interruptChan <- struct{}{}
+	return task
+}
+
+// newInitTestTask returns a task whose thread group is the init process of
+// its PID namespace, under the given policy.
+func newInitTestTask(policy SignalUnkillablePolicy) *Task {
+	tg := &ThreadGroup{
 		signalHandlers: NewSignalHandlers(),
 	}
-	initTG.pidWithinNS.Store(int32(initTID))
+	tg.pidWithinNS.Store(int32(initTID))
+	tg.signalUnkillable.Store(true)
+	k := &Kernel{signalUnkillable: policy}
+	k.cgroupRegistry = sharedFakeRegistry
+	return newSignalTestTask(k, tg)
+}
 
-	nonInitTG := &ThreadGroup{
-		signalHandlers: NewSignalHandlers(),
+// TestSendSignalToInit verifies that sendSignalTimerLocked queues or discards
+// signals sent to a PID namespace's init process as Linux does
+// (kernel/signal.c:sig_ignored()).
+func TestSendSignalToInit(t *testing.T) {
+	handlerAct := linux.SigAction{Handler: 0x1000} // arbitrary user handler
+
+	for _, tc := range []struct {
+		name       string
+		policy     SignalUnkillablePolicy
+		nonInit    bool
+		traced     bool
+		handled    bool
+		blocked    bool
+		sig        linux.Signal
+		code       int32
+		forced     bool
+		wantQueued bool
+	}{
+		{name: "peer SIGKILL discarded", policy: SignalUnkillableLinux, sig: linux.SIGKILL, code: linux.SI_USER},
+		{name: "peer SIGSTOP discarded", policy: SignalUnkillableLinux, sig: linux.SIGSTOP, code: linux.SI_USER},
+		{name: "peer unhandled SIGTERM discarded", policy: SignalUnkillableLinux, sig: linux.SIGTERM, code: linux.SI_USER},
+		{name: "SI_KERNEL code does not force", policy: SignalUnkillableLinux, sig: linux.SIGKILL, code: linux.SI_KERNEL},
+		{name: "SI_QUEUE with PID 0 does not force", policy: SignalUnkillableLinux, sig: linux.SIGKILL, code: linux.SI_QUEUE},
+		{name: "SI_TIMER does not force", policy: SignalUnkillableLinux, sig: linux.SIGKILL, code: linux.SI_TIMER},
+		{name: "forced SIGKILL queued", policy: SignalUnkillableLinux, sig: linux.SIGKILL, code: linux.SI_USER, forced: true, wantQueued: true},
+		{name: "forced SIGSTOP queued", policy: SignalUnkillableLinux, sig: linux.SIGSTOP, code: linux.SI_USER, forced: true, wantQueued: true},
+		{name: "forced unhandled SIGTERM discarded", policy: SignalUnkillableLinux, sig: linux.SIGTERM, code: linux.SI_USER, forced: true},
+		{name: "peer handled SIGTERM queued", policy: SignalUnkillableLinux, handled: true, sig: linux.SIGTERM, code: linux.SI_USER, wantQueued: true},
+		{name: "peer blocked SIGTERM queued", policy: SignalUnkillableLinux, blocked: true, sig: linux.SIGTERM, code: linux.SI_USER, wantQueued: true},
+		{name: "traced init discards peer SIGKILL", policy: SignalUnkillableLinux, traced: true, sig: linux.SIGKILL, code: linux.SI_USER},
+		{name: "traced init queues peer SIGTERM", policy: SignalUnkillableLinux, traced: true, sig: linux.SIGTERM, code: linux.SI_USER, wantQueued: true},
+		{name: "traced init queues forced SIGSTOP", policy: SignalUnkillableLinux, traced: true, sig: linux.SIGSTOP, code: linux.SI_USER, forced: true, wantQueued: true},
+		{name: "policy none queues peer SIGKILL", policy: SignalUnkillableNone, sig: linux.SIGKILL, code: linux.SI_USER, wantQueued: true},
+		{name: "non-init queues peer SIGKILL", policy: SignalUnkillableLinux, nonInit: true, sig: linux.SIGKILL, code: linux.SI_USER, wantQueued: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := newInitTestTask(tc.policy)
+			if tc.nonInit {
+				task.tg.pidWithinNS.Store(2)
+				task.tg.signalUnkillable.Store(false)
+			}
+			if tc.traced {
+				task.ptraceTracer.Store(&Task{})
+			}
+			if tc.handled {
+				task.tg.signalHandlers.mu.Lock()
+				task.tg.signalHandlers.actions[tc.sig] = handlerAct
+				task.tg.signalHandlers.mu.Unlock()
+			}
+			if tc.blocked {
+				task.signalMask.Store(uint64(linux.SignalSetOf(tc.sig)))
+			}
+			info := &linux.SignalInfo{Signo: int32(tc.sig), Code: tc.code}
+			if tc.code == linux.SI_USER {
+				info.SetPID(2)
+			}
+			timer := &IntervalTimer{}
+			task.tg.signalHandlers.mu.Lock()
+			err := task.sendSignalTimerLocked(info, false /* group */, tc.forced, timer)
+			task.tg.signalHandlers.mu.Unlock()
+			if err != nil {
+				t.Fatalf("sendSignalTimerLocked: %v", err)
+			}
+			queued := task.pendingSignals.pendingSet.Load() != 0
+			if queued != tc.wantQueued {
+				t.Errorf("signal queued = %t, want %t", queued, tc.wantQueued)
+			}
+			wantOverrun := uint64(0)
+			if !tc.wantQueued {
+				wantOverrun = 1
+			}
+			if timer.overrunCur != wantOverrun {
+				t.Errorf("timer.overrunCur = %d, want %d", timer.overrunCur, wantOverrun)
+			}
+			if tc.sig == linux.SIGKILL && !tc.wantQueued && task.tg.exiting {
+				t.Errorf("discarded SIGKILL marked the thread group as exiting")
+			}
+		})
 	}
-	nonInitTG.pidWithinNS.Store(2)
+}
 
-	newTask := func(k *Kernel, tg *ThreadGroup) *Task {
-		task := &Task{}
-		task.k = k
-		task.tg = tg
-		prefix := ""
-		task.logPrefix.Store(&prefix)
-		// Block all signals so that if a signal is not discarded, canReceiveSignalLocked
-		// returns false and does not attempt to interrupt the uninitialized task platform.
-		task.signalMask.Store(^uint64(0))
-		return task
+// TestInitSignalDropped verifies the dequeue-time rule that keeps a PID
+// namespace's init process alive under Linux SIGNAL_UNKILLABLE semantics
+// (kernel/signal.c:get_signal()).
+func TestInitSignalDropped(t *testing.T) {
+	dflAct := linux.SigAction{Handler: linux.SIG_DFL}
+	handlerAct := linux.SigAction{Handler: 0x1000} // arbitrary user handler
+
+	for _, tc := range []struct {
+		name    string
+		policy  SignalUnkillablePolicy
+		nonInit bool
+		sig     linux.Signal
+		act     linux.SigAction
+		want    bool
+	}{
+		{name: "unhandled SIGTERM dropped", policy: SignalUnkillableLinux, sig: linux.SIGTERM, act: dflAct, want: true},
+		{name: "unhandled SIGSEGV dropped", policy: SignalUnkillableLinux, sig: linux.SIGSEGV, act: dflAct, want: true},
+		{name: "unhandled SIGTSTP dropped", policy: SignalUnkillableLinux, sig: linux.SIGTSTP, act: dflAct, want: true},
+		{name: "handled SIGTERM delivered", policy: SignalUnkillableLinux, sig: linux.SIGTERM, act: handlerAct, want: false},
+		{name: "SIGKILL kills", policy: SignalUnkillableLinux, sig: linux.SIGKILL, act: dflAct, want: false},
+		{name: "SIGSTOP stops", policy: SignalUnkillableLinux, sig: linux.SIGSTOP, act: dflAct, want: false},
+		{name: "policy none delivers", policy: SignalUnkillableNone, sig: linux.SIGTERM, act: dflAct, want: false},
+		{name: "non-init delivers", policy: SignalUnkillableLinux, nonInit: true, sig: linux.SIGTERM, act: dflAct, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := newInitTestTask(tc.policy)
+			if tc.nonInit {
+				task.tg.pidWithinNS.Store(2)
+				task.tg.signalUnkillable.Store(false)
+			}
+			if got := task.initSignalDropped(tc.sig, tc.act); got != tc.want {
+				t.Errorf("initSignalDropped(%v, %+v) = %t, want %t", tc.sig, tc.act, got, tc.want)
+			}
+		})
 	}
+}
 
-	peerKill := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_USER}
-	peerKill.SetPID(2)
+// TestForceSignalOnInit verifies that a forced signal that will take its
+// default action makes an init process killable again
+// (kernel/signal.c:force_sig_info_to_task()), so that a faulting init exits.
+func TestForceSignalOnInit(t *testing.T) {
+	handlerAct := linux.SigAction{Handler: 0x1000} // arbitrary user handler
 
-	forcedKill := &linux.SignalInfo{Signo: int32(linux.SIGKILL), Code: linux.SI_KERNEL}
-
-	peerTerm := &linux.SignalInfo{Signo: int32(linux.SIGTERM), Code: linux.SI_USER}
-	peerTerm.SetPID(2)
-
-	// 1. Under SignalUnkillableLinux, unforced peer SIGKILL to init is discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, initTG)
-		if err := task.SendSignal(peerKill); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() != 0 {
-			t.Errorf("peer SIGKILL was queued in pendingSignals, want discarded")
-		}
-	}
-
-	// 2. Discarding with an IntervalTimer calls signalRejectedLocked on the timer.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, initTG)
-		timer := &IntervalTimer{}
-		task.tg.signalHandlers.mu.Lock()
-		err := task.sendSignalTimerLocked(peerKill, false /* group */, timer)
-		task.tg.signalHandlers.mu.Unlock()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if timer.overrunCur != 1 {
-			t.Errorf("expected timer.overrunCur == 1, got %d", timer.overrunCur)
-		}
-		if task.pendingSignals.pendingSet.Load() != 0 {
-			t.Errorf("peer SIGKILL was queued in pendingSignals, want discarded")
-		}
-	}
-
-	// 3. Peer unhandled SIGTERM to init is discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, initTG)
-		if err := task.SendSignal(peerTerm); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() != 0 {
-			t.Errorf("peer SIGTERM was queued in pendingSignals, want discarded")
-		}
-	}
-
-	// 4. Under SignalUnkillableNone, peer SIGKILL to init is NOT discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableNone}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, initTG)
-		if err := task.SendSignal(peerKill); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() == 0 {
-			t.Errorf("peer SIGKILL was discarded under policy None, want delivered")
-		}
-	}
-
-	// 5. Signals to non-init process (PID 2) are NOT discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, nonInitTG)
-		if err := task.SendSignal(peerKill); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() == 0 {
-			t.Errorf("peer SIGKILL to non-init was discarded, want delivered")
-		}
-	}
-
-	// 6. Traced tasks are exempt and do not have signals discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, initTG)
-		task.ptraceTracer.Store(&Task{})
-		if err := task.SendSignal(peerKill); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() == 0 {
-			t.Errorf("peer SIGKILL to traced init was discarded, want delivered")
-		}
-	}
-
-	// 7. Forced SIGKILL (SI_KERNEL) to init is NOT discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		task := newTask(k, initTG)
-		if err := task.SendSignal(forcedKill); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() == 0 {
-			t.Errorf("forced SIGKILL was discarded, want delivered")
-		}
-	}
-
-	// 8. Handled signals are NOT discarded.
-	{
-		k := &Kernel{signalUnkillable: SignalUnkillableLinux}
-		k.cgroupRegistry = sharedFakeRegistry
-		handledTG := &ThreadGroup{
-			signalHandlers: NewSignalHandlers(),
-		}
-		handledTG.signalHandlers.mu.Lock()
-		handledTG.signalHandlers.actions[linux.SIGTERM] = linux.SigAction{Handler: 0x1000}
-		handledTG.signalHandlers.mu.Unlock()
-		handledTG.pidWithinNS.Store(int32(initTID))
-		task := newTask(k, handledTG)
-		if err := task.SendSignal(peerTerm); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if task.pendingSignals.pendingSet.Load() == 0 {
-			t.Errorf("handled peer SIGTERM was discarded, want delivered")
-		}
+	for _, tc := range []struct {
+		name           string
+		traced         bool
+		handled        bool
+		blocked        bool
+		unconditional  bool
+		wantUnkillable bool
+	}{
+		{name: "default action clears", wantUnkillable: false},
+		{name: "blocked default action clears", blocked: true, wantUnkillable: false},
+		{name: "handler keeps", handled: true, wantUnkillable: true},
+		{name: "blocked handler clears", handled: true, blocked: true, wantUnkillable: false},
+		{name: "traced keeps", traced: true, wantUnkillable: true},
+		{name: "traced unconditional keeps", traced: true, unconditional: true, wantUnkillable: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := newInitTestTask(SignalUnkillableLinux)
+			if tc.traced {
+				task.ptraceTracer.Store(&Task{})
+			}
+			if tc.handled {
+				task.tg.signalHandlers.mu.Lock()
+				task.tg.signalHandlers.actions[linux.SIGSEGV] = handlerAct
+				task.tg.signalHandlers.mu.Unlock()
+			}
+			if tc.blocked {
+				task.signalMask.Store(uint64(linux.SignalSetOf(linux.SIGSEGV)))
+			}
+			task.tg.signalHandlers.mu.Lock()
+			task.forceSignalLocked(linux.SIGSEGV, tc.unconditional)
+			task.tg.signalHandlers.mu.Unlock()
+			if got := task.tg.signalUnkillable.Load(); got != tc.wantUnkillable {
+				t.Fatalf("signalUnkillable = %t, want %t", got, tc.wantUnkillable)
+			}
+			if err := task.SendSignal(SignalInfoPriv(linux.SIGSEGV)); err != nil {
+				t.Fatalf("SendSignal: %v", err)
+			}
+			if task.pendingSignals.pendingSet.Load() == 0 {
+				t.Errorf("SIGSEGV was discarded after forceSignalLocked, want queued")
+			}
+			task.tg.signalHandlers.mu.Lock()
+			act := task.tg.signalHandlers.actions[linux.SIGSEGV]
+			task.tg.signalHandlers.mu.Unlock()
+			if !tc.traced && !tc.handled && tc.wantUnkillable == false && task.initSignalDropped(linux.SIGSEGV, act) {
+				t.Errorf("SIGSEGV would be dropped at delivery after forceSignalLocked")
+			}
+		})
 	}
 }
