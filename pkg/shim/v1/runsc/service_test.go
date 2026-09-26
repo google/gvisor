@@ -102,13 +102,16 @@ func TestForwardPanicsOnPublishErrorUnderContainerd(t *testing.T) {
 
 // fakeOOMPoller reports a fixed OOM verdict per container id.
 type fakeOOMPoller struct {
-	oom map[string]bool
+	status map[string]oomStatus
 }
 
 func (f *fakeOOMPoller) add(string, any) error { return nil }
 func (f *fakeOOMPoller) run(context.Context)   {}
-func (f *fakeOOMPoller) isOOM(id string) bool  { return f.oom[id] }
-func (f *fakeOOMPoller) Close() error          { return nil }
+func (f *fakeOOMPoller) checkOOM(id string) oomStatus {
+	return f.status[id]
+}
+func (f *fakeOOMPoller) remove(id string) { delete(f.status, id) }
+func (f *fakeOOMPoller) Close() error     { return nil }
 
 // nopPlatform is a no-op console platform for proc.Init.
 type nopPlatform struct{}
@@ -129,7 +132,7 @@ func TestCheckProcessesOOMExitStatus(t *testing.T) {
 	const sigkillStatus = 137 // 128 + SIGKILL
 	for _, tc := range []struct {
 		name        string
-		oom         bool
+		oom         oomStatus
 		exitStatus  int
 		wantStatus  int
 		wantTaskOOM bool
@@ -137,15 +140,25 @@ func TestCheckProcessesOOMExitStatus(t *testing.T) {
 		{
 			// Sentry OOM-killed: wait failed (128) and cgroup confirms OOM.
 			name:        "oom-internal-error-becomes-137",
-			oom:         true,
+			oom:         oomKilledUnpublished,
 			exitStatus:  proc.InternalErrorCode,
 			wantStatus:  sigkillStatus,
 			wantTaskOOM: true,
 		},
 		{
+			// The async watcher already published TaskOOM before the exit was
+			// processed: no duplicate event, but the exit status must still
+			// become 137 — the kill is known regardless of who announced it.
+			name:        "oom-async-already-published-still-137",
+			oom:         oomKilledPublished,
+			exitStatus:  proc.InternalErrorCode,
+			wantStatus:  sigkillStatus,
+			wantTaskOOM: false,
+		},
+		{
 			// OOM confirmed but runsc reported a real status: keep it.
 			name:        "oom-real-status-preserved",
-			oom:         true,
+			oom:         oomKilledUnpublished,
 			exitStatus:  2,
 			wantStatus:  2,
 			wantTaskOOM: true,
@@ -153,7 +166,7 @@ func TestCheckProcessesOOMExitStatus(t *testing.T) {
 		{
 			// Wait failure without OOM: generic status stays 128.
 			name:        "no-oom-internal-error-preserved",
-			oom:         false,
+			oom:         oomNotKilled,
 			exitStatus:  proc.InternalErrorCode,
 			wantStatus:  proc.InternalErrorCode,
 			wantTaskOOM: false,
@@ -170,7 +183,9 @@ func TestCheckProcessesOOMExitStatus(t *testing.T) {
 			s := &runscService{
 				events:     make(chan any, 4),
 				containers: map[string]*Container{cid: c},
-				oomPoller:  &fakeOOMPoller{oom: map[string]bool{cid: tc.oom}},
+				oomPoller: &fakeOOMPoller{
+					status: map[string]oomStatus{cid: tc.oom},
+				},
 			}
 
 			s.checkProcesses(context.Background(), proc.Exit{
