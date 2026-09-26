@@ -7,6 +7,10 @@ package(
 
 go_library(
     name = "test1",
-    srcs = ["test1.go"],
+    srcs = [
+        "test1.go",
+        "test1_unsafe.go",
+    ],
+    stateify = False,
     visibility = ["//tools/checkescape/test2:__pkg__"],
 )
