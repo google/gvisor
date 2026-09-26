@@ -87,7 +87,8 @@ func parseCgroupRoot(r io.Reader) string {
 			// directory as the cgroup root. Otherwise, return mountPoint directly
 			// (e.g., /sys/fs/cgroup or /dev/cgroup).
 			base := filepath.Base(mountPoint)
-			if _, ok := controllers[base]; ok || base == "unified" || strings.Contains(base, ",") {
+			name := strings.TrimPrefix(base, "name=")
+			if _, ok := controllers[name]; ok || base == "unified" || strings.Contains(base, ",") {
 				return filepath.Dir(mountPoint)
 			}
 			return mountPoint
@@ -108,11 +109,18 @@ var controllers = map[string]controller{
 
 	// These controllers either don't have anything in the OCI spec or is
 	// irrelevant for a sandbox.
-	"cpuacct":    &noop{},
-	"devices":    &noop{},
-	"freezer":    &noop{},
+	"borglet": &noop{},
+	"cpuacct": &noop{},
+	"devices": &noop{},
+	"freezer": &noop{},
+	"io":      &noop{},
+	"job":     &noop{},
+	"misc":    &noop{},
+	// Optional: runsc functions correctly without v1 netcg or /dev/cgroup/net.
+	"net":        &noop{},
 	"perf_event": &noop{},
 	"rdma":       &noop{},
+	"rlimit":     &noop{},
 	"systemd":    &noop{},
 }
 
@@ -643,7 +651,7 @@ func createController(c Cgroup, name string) (bool, error) {
 	path := c.MakePath(name)
 	log.Debugf("Creating cgroup %q: %q", name, path)
 	if err := os.MkdirAll(path, 0755); err != nil {
-		return errors.Is(err, unix.EROFS), err
+		return errors.Is(err, unix.EROFS) || errors.Is(err, unix.EACCES), err
 	}
 	return false, nil
 }
@@ -742,6 +750,9 @@ func (c *cgroupV1) CPUQuota() (int64, error) {
 	path := c.MakePath("cpu")
 	quota, err := getInt(path, "cpu.cfs_quota_us")
 	if err != nil {
+		if os.IsNotExist(err) {
+			return -1, nil
+		}
 		return -1, err
 	}
 	return int64(quota), nil
@@ -752,6 +763,9 @@ func (c *cgroupV1) CPUPeriod() (int64, error) {
 	path := c.MakePath("cpu")
 	period, err := getInt(path, "cpu.cfs_period_us")
 	if err != nil {
+		if os.IsNotExist(err) {
+			return -1, nil
+		}
 		return -1, err
 	}
 	return int64(period), nil
@@ -866,7 +880,22 @@ func (*memory) set(spec *specs.LinuxResources, path string) error {
 }
 
 type cpu struct {
-	mandatory
+}
+
+func (*cpu) optional() bool {
+	return true
+}
+
+func (*cpu) skip(spec *specs.LinuxResources) error {
+	if spec != nil && spec.CPU != nil &&
+		((spec.CPU.Shares != nil && *spec.CPU.Shares != 0) ||
+			(spec.CPU.Quota != nil && *spec.CPU.Quota > 0) ||
+			(spec.CPU.Period != nil && *spec.CPU.Period != 0) ||
+			(spec.CPU.RealtimePeriod != nil && *spec.CPU.RealtimePeriod != 0) ||
+			(spec.CPU.RealtimeRuntime != nil && *spec.CPU.RealtimeRuntime > 0)) {
+		return fmt.Errorf("cpu controller is missing but limits are set in OCI spec")
+	}
+	return nil
 }
 
 func (*cpu) set(spec *specs.LinuxResources, path string) error {
