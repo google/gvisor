@@ -216,6 +216,7 @@ go_test(
     name = "tcp_test",
     size = "small",
     srcs = [
+        "accept_test.go",
         "cubic_test.go",
         "endpoint_test.go",
         "main_test.go",
@@ -233,8 +234,11 @@ go_test(
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
+        "//pkg/waiter",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
