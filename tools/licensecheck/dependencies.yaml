@@ -89,10 +89,10 @@
   sha256: 2c8a2520ef58c3d2a6e9e0392ec2cea37adb17db4e00c903d48415fd809397f8
   license: Apache-2.0
 - dependency: gazelle
-  version: https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.47.0/bazel-gazelle-v0.47.0.tar.gz
-  retrieved: "2026-08-27"
-  commit: b13c1573c378bb3dd9b9de1397db89d0392f8e72
-  sha256: 675114d8b433d0a9f54d81171833be96ebc4113115664b791e6f204d58e93446
+  version: https://github.com/bazel-contrib/bazel-gazelle/releases/download/v0.51.3/bazel-gazelle-v0.51.3.tar.gz
+  retrieved: "2026-09-25"
+  commit: b66b19ce4b0ecebd3ae416e6b55a0d22a49fef34
+  sha256: 49d9eba309b0b695824ff417d734242824ad9ab5edb56063b9d3400df1a61a56
   license: Apache-2.0
 - dependency: github.com/BurntSushi/toml
   version: v1.4.1-0.20240526193622-a339e1f7089c
@@ -1020,10 +1020,10 @@
   sha256: a22461d13119ac5c78f205d3df1db13403e58ce1bb1794edc9313677313f4a9d
   license: MIT
 - dependency: platforms
-  version: https://github.com/bazelbuild/platforms/releases/download/1.0.0/platforms-1.0.0.tar.gz
-  retrieved: "2026-08-27"
-  commit: ab99943ab6bed53cff461a3afa99fc79d31e4351
-  sha256: 3384eb1c30762704fbe38e440204e114154086c8fc8a8c2e3e28441028c019a8
+  version: https://github.com/bazelbuild/platforms/releases/download/1.1.0/platforms-1.1.0.tar.gz
+  retrieved: "2026-09-25"
+  commit: 2d4b4996f0bf52376704c49264164e166213159e
+  sha256: dbad4a23abcca6171e47b79edc53bd6a41067a3b75f9e8b104656b459ff25046
   license: Apache-2.0
 - dependency: protobuf
   version: https://github.com/protocolbuffers/protobuf/releases/download/v33.4/protobuf-33.4.bazel.tar.gz
@@ -1044,10 +1044,10 @@
   sha256: 458b658277ba51b4730ea7a2020efdf1c6dcadf7d30de72e37f4308277fa8c01
   license: Apache-2.0
 - dependency: rules_go
-  version: https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip
-  retrieved: "2026-08-27"
-  commit: 64d9225db70d2e9014217fd8e0340ba4407066fb
-  sha256: a729c8ed2447c90fe140077689079ca0acfb7580ec41637f312d650ce9d93d96
+  version: https://github.com/bazel-contrib/rules_go/releases/download/v0.62.0/rules_go-v0.62.0.zip
+  retrieved: "2026-09-25"
+  commit: c6b35c2367d164f27af4825422d5c70c3365f6fb
+  sha256: 0b805c94fb3730dc23df32925ed477b3f4ed37b56075dcac6f218c3ea7b4ab42
   license: Apache-2.0
 - dependency: rules_license
   version: https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz

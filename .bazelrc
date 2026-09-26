@@ -43,12 +43,12 @@ build --build_tag_filters=-nogo
 # Set flags for x86_64.
 build:x86_64 --crosstool_top=@crosstool//:toolchains
 build:x86_64 --cpu=k8
-build:x86_64 --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64
+build:x86_64 --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64_cgo
 
 # Set flags for aarch64.
 build:aarch64 --crosstool_top=@crosstool//:toolchains
 build:aarch64 --cpu=aarch64
-build:aarch64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
+build:aarch64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64_cgo
 
 # Use prebuilt protoc to speed up builds.
 common --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
