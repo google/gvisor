@@ -79,18 +79,20 @@ func NewPackage() *Package {
 	}
 }
 
-func extractObjectpath(obj types.Object) (name objectpath.Path, err error) {
+func extractObjectpath(enc *objectpath.Encoder, obj types.Object) (name objectpath.Path, err error) {
 	defer func() {
-		// Unfortunately, objectpath.For will occasionally panic for
+		// Unfortunately, objectpath.Encoder.For will occasionally panic for
 		// certain objects. This happens with basic analysis packages
 		// (buildssa), and therefore cannot be avoided.
 		if r := recover(); r != nil {
+			// Discard any index left incomplete by the failed lookup.
+			*enc = objectpath.Encoder{}
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
 	// Allow empty name for no object.
 	if obj != nil {
-		name, err = objectpath.For(obj)
+		name, err = enc.For(obj)
 	}
 	return
 }
@@ -98,8 +100,9 @@ func extractObjectpath(obj types.Object) (name objectpath.Path, err error) {
 // Serialize implements Serializer.Serialize.
 func (p *Package) Serialize(w io.Writer) error {
 	is := make([]item, 0, len(p.Objects))
+	var enc objectpath.Encoder
 	for obj, facts := range p.Objects {
-		name, err := extractObjectpath(obj)
+		name, err := extractObjectpath(&enc, obj)
 		if err != nil {
 			continue // Not exported; expected.
 		}
