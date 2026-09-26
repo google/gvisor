@@ -236,12 +236,9 @@ func (c *Context64) TLS() uintptr {
 	return uintptr(c.Regs.TPIDR_EL0)
 }
 
-// SetTLS sets the current TLS pointer. Returns false if value is invalid.
+// SetTLS sets the current TLS pointer.
+// ARM64 does not validate the TLS pointer.
 func (c *Context64) SetTLS(value uintptr) bool {
-	if value >= uintptr(maxAddr64) {
-		return false
-	}
-
 	c.Regs.TPIDR_EL0 = uint64(value)
 	return true
 }
