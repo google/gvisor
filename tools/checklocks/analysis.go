@@ -916,6 +916,9 @@ func (pc *passContext) checkInferred() {
 	for obj, oo := range pc.observations {
 		var lgf lockGuardFacts
 		pc.importLockGuardFacts(obj, &lgf)
+		if lgf.AtomicDisposition == atomicIgnore {
+			continue
+		}
 		for other, count := range oo.counts {
 			// Is this already a guard?
 			if _, ok := lgf.GuardedBy[other.Name()]; ok {
