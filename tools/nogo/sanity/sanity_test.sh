@@ -28,7 +28,7 @@ if [[ "${rc}" -eq "0" ]]; then
   echo "Expected failure; got success."
   exit 1
 fi
-if [[ "${output}" =~ ^sanity.go:[0-9]+:[0-9]+:.*%d.*string.*$ ]]; then
+if [[ "${output}" != *'fmt.Fprintf format %d has arg "hello world!" of wrong type string'* ]]; then
   echo "Expected format error; not found."
   exit 1
 fi
