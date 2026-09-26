@@ -254,6 +254,9 @@ type Route struct {
 
 	// GatewayAddr is the route gateway address (RTA_GATEWAY).
 	GatewayAddr []byte
+
+	// PrefSrcAddr is the preferred source address (RTA_PREFSRC).
+	PrefSrcAddr []byte
 }
 
 // Below SNMP metrics are from Linux/usr/include/linux/snmp.h.

@@ -2268,8 +2268,6 @@ func (e *endpoint) getLinkLocalAddressRLocked() tcpip.Address {
 //
 // +checklocksread:e.mu.RWMutex
 func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr, srcHint tcpip.Address, allowExpired bool) stack.AddressEndpoint {
-	// TODO(b/309216156): Support IPv6 hints.
-
 	// addrCandidate is a candidate for Source Address Selection, as per
 	// RFC 6724 section 5.
 	type addrCandidate struct {
@@ -2328,6 +2326,13 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr, srcHint tcpi
 	sort.Slice(cs, func(i, j int) bool {
 		sa := cs[i]
 		sb := cs[j]
+
+		if sa.addr == srcHint {
+			return true
+		}
+		if sb.addr == srcHint {
+			return false
+		}
 
 		// Prefer same address as per RFC 6724 section 5 rule 1.
 		if sa.addr == remoteAddr {

@@ -576,9 +576,12 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 		if rt.SrcLen > 0 {
 			m.PutAttr(linux.RTA_SRC, primitive.AsByteSlice(rt.SrcAddr))
 		}
+		if len(rt.PrefSrcAddr) > 0 {
+			m.PutAttr(linux.RTA_PREFSRC, primitive.AsByteSlice(rt.PrefSrcAddr))
+		}
 		if rt.OutputInterface != 0 {
 			m.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(rt.OutputInterface))
-			if !ms.Multi || (rt.Flags&linux.RTM_F_CLONED) != 0 {
+			if len(rt.PrefSrcAddr) == 0 && (!ms.Multi || (rt.Flags&linux.RTM_F_CLONED) != 0) {
 				for _, a := range stack.InterfaceAddrs()[rt.OutputInterface] {
 					if a.Family == rt.Family {
 						m.PutAttr(linux.RTA_PREFSRC, primitive.AsByteSlice(a.Addr))
