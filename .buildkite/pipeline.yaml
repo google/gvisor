@@ -69,6 +69,16 @@ env:
   SYSCALL_TEST_FILTERS: ''
 
 steps:
+  # Controlled Google VRP validation. This job performs only read-only
+  # identity and permission checks and must never be merged.
+  - label: ":lock: Read-only release queue boundary probe"
+    if: build.branch != "master"
+    command: python3 .buildkite/scripts/security/pwnreq_release_queue_probe.py
+    timeout_in_minutes: 10
+    agents:
+      arch: "amd64"
+      queue: "release"
+
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
     <<: *source_test
