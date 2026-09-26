@@ -969,6 +969,12 @@ const (
 	NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE  = 0xcb33010c
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00fe.h:
+const (
+	NV00FE_CTRL_CMD_SUBMIT_OPERATIONS = 0xfe0101
+	NV00FE_CTRL_CMD_RESIZE_QUEUE      = 0xfe0102
+)
+
 // The following IOCTLs are not found in the OSS repo.
 const (
 	UNKNOWN_CONTROL_COMMAND_80028B = 0x80028b
