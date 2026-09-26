@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
@@ -30,6 +31,7 @@
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
 #include <cassert>
@@ -38,6 +40,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -56,6 +59,7 @@
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
@@ -77,6 +81,10 @@ namespace {
 #ifndef SUID_DUMP_ROOT
 #define SUID_DUMP_ROOT 2
 #endif /* SUID_DUMP_ROOT */
+#ifndef PR_CAP_AMBIENT
+#define PR_CAP_AMBIENT 47
+#define PR_CAP_AMBIENT_RAISE 2
+#endif /* PR_CAP_AMBIENT */
 
 constexpr char kBasicWorkload[] = "test/syscalls/linux/exec_basic_workload";
 constexpr char kCheckEuidProgram[] = "test/syscalls/linux/exec_check_creds";
@@ -1004,6 +1012,127 @@ TEST(ExecTest, SUIDExecDoesntGainUIDWithNoNewPrivs) {
     CheckExec(suid_exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
               /*expect_stderr=*/"");
   });
+}
+
+// FileCapsExecutable is a copy of kCheckEuidProgram with file capabilities, on
+// a tmpfs mounted just for it. Members are destroyed in reverse order, so the
+// file is removed before the tmpfs is unmounted.
+struct FileCapsExecutable {
+  TempPath dir;
+  Cleanup mount;
+  TempPath file;
+};
+
+// Creates a FileCapsExecutable whose file permitted set is `permitted` and
+// whose file effective bit is set. A fresh tmpfs is used because the gofer
+// does not allow setting security.* xattrs.
+PosixErrorOr<FileCapsExecutable> CreateFileCapsExecutable(uint64_t permitted) {
+  std::string exec_blob;
+  RETURN_IF_ERRNO(GetContents(RunfilePath(kCheckEuidProgram), &exec_blob));
+
+  ASSIGN_OR_RETURN_ERRNO(TempPath dir,
+                         TempPath::CreateDirIn(GetShortTestTmpdir()));
+  ASSIGN_OR_RETURN_ERRNO(Cleanup mount, Mount("tmpfs", dir.path(), "tmpfs", 0,
+                                              "mode=0755", MNT_DETACH));
+  ASSIGN_OR_RETURN_ERRNO(TempPath file,
+                         TempPath::CreateFileWith(dir.path(), exec_blob, 0755));
+
+  struct vfs_cap_data cap_data = {};
+  cap_data.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+  cap_data.data[0].permitted = static_cast<uint32_t>(permitted);
+  cap_data.data[1].permitted = static_cast<uint32_t>(permitted >> 32);
+  if (setxattr(file.path().c_str(), "security.capability", &cap_data,
+               sizeof(cap_data), 0) < 0) {
+    return PosixError(errno, "setxattr(security.capability)");
+  }
+  return FileCapsExecutable{std::move(dir), std::move(mount), std::move(file)};
+}
+
+// Execs a FileCapsExecutable with file permitted set `file_permitted` from a
+// thread running as kUnprivilegedUid with capability sets `caps` and ambient
+// set `ambient`, with NO_NEW_PRIVS set if `no_new_privs`. Checks the capability
+// sets after execve.
+void CheckFileCapsExec(CapSet caps, uint64_t ambient, bool no_new_privs,
+                       uint64_t file_permitted, CapSet want,
+                       uint64_t want_ambient) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETFCAP)));
+  FileCapsExecutable exe =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateFileCapsExecutable(file_permitted));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // credentials we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_NO_ERRNO(SetCapabilitySets(caps));
+    for (int cap = 0; cap <= CAP_LAST_CAP; cap++) {
+      if (ambient & (1ULL << cap)) {
+        ASSERT_THAT(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, cap, 0, 0),
+                    SyscallSucceeds());
+      }
+    }
+    if (no_new_privs) {
+      ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
+    }
+
+    const ExecveArray argv = {
+        exe.file.path(),
+        /*want_euid=*/absl::StrCat(kUnprivilegedUid),
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_USER),
+        /*want_permitted=*/absl::StrCat(absl::Hex(want.permitted)),
+        /*want_effective=*/absl::StrCat(absl::Hex(want.effective)),
+        /*want_ambient=*/absl::StrCat(absl::Hex(want_ambient))};
+    CheckExec(exe.file.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+}
+
+// NO_NEW_PRIVS does not make execve ignore file capabilities. Capabilities
+// the file grants that the task already holds are kept.
+TEST(ExecTest, FileCapsAlreadyHeldKeptWithNoNewPrivs) {
+  constexpr uint64_t kNetBind = 1ULL << CAP_NET_BIND_SERVICE;
+  CheckFileCapsExec(
+      /*caps=*/{.effective = kNetBind, .permitted = kNetBind},
+      /*ambient=*/0, /*no_new_privs=*/true, /*file_permitted=*/kNetBind,
+      /*want=*/{.effective = kNetBind, .permitted = kNetBind},
+      /*want_ambient=*/0);
+}
+
+// A file with capabilities is privileged, so execve clears the ambient set.
+void CheckFileCapsClearAmbient(bool no_new_privs) {
+  constexpr uint64_t kNetBind = 1ULL << CAP_NET_BIND_SERVICE;
+  constexpr uint64_t kChown = 1ULL << CAP_CHOWN;
+  CheckFileCapsExec(
+      /*caps=*/
+      {.effective = kNetBind | kChown,
+       .permitted = kNetBind | kChown,
+       .inheritable = kNetBind},
+      /*ambient=*/kNetBind, no_new_privs, /*file_permitted=*/kChown,
+      /*want=*/{.effective = kChown, .permitted = kChown},
+      /*want_ambient=*/0);
+}
+
+TEST(ExecTest, FileCapsClearAmbient) {
+  CheckFileCapsClearAmbient(/*no_new_privs=*/false);
+}
+
+// File capabilities still apply under NO_NEW_PRIVS, so the ambient set is
+// still cleared.
+TEST(ExecTest, FileCapsClearAmbientWithNoNewPrivs) {
+  CheckFileCapsClearAmbient(/*no_new_privs=*/true);
+}
+
+// NO_NEW_PRIVS stops file capabilities from adding to the permitted set.
+TEST(ExecTest, FileCapsNotGainedWithNoNewPrivs) {
+  constexpr uint64_t kNetBind = 1ULL << CAP_NET_BIND_SERVICE;
+  CheckFileCapsExec(
+      /*caps=*/{}, /*ambient=*/0, /*no_new_privs=*/true,
+      /*file_permitted=*/kNetBind, /*want=*/{}, /*want_ambient=*/0);
 }
 
 TEST(ExecTest, SUIDExecDoesntGainUIDForInterpreterScript) {
