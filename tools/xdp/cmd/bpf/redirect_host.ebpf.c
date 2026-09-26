@@ -20,9 +20,9 @@
 #include <bpf/bpf_helpers.h>
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
+#include <linux/in.h>
 #include <linux/ip.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <linux/tcp.h>
 
 #define section(secname) __attribute__((section(secname), used))
 
@@ -83,7 +83,7 @@ section("xdp") int xdp_prog(struct xdp_md* ctx) {
   }
 
   // Allow port 22 traffic for SSH debugging.
-  if (tcp->th_dport == bpf_htons(22)) {
+  if (tcp->dest == bpf_htons(22)) {
     return XDP_PASS;
   }
 
