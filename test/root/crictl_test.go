@@ -66,6 +66,49 @@ func Sandbox(name string) string {
 	return string(v)
 }
 
+const podUserNamespaceHostID = uint32(65536)
+
+// SandboxWithPodUserns returns a JSON pod sandbox config with a pod-level user
+// namespace mapping, matching Kubernetes hostUsers: false / CRI NamespaceMode_POD.
+func SandboxWithPodUserns(name string) string {
+	s := map[string]any{
+		"metadata": map[string]string{
+			"name":      name,
+			"namespace": "default",
+			"uid":       testutil.RandomID(""),
+		},
+		"linux":         podUsernsLinuxSecurityContext(),
+		"log_directory": "/tmp",
+	}
+	v, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(v)
+}
+
+func podUsernsLinuxSecurityContext() map[string]any {
+	return map[string]any{
+		"security_context": map[string]any{
+			"namespace_options": map[string]any{
+				"userns_options": map[string]any{
+					"mode": 0,
+					"uids": []map[string]any{{
+						"container_id": 0,
+						"host_id":      podUserNamespaceHostID,
+						"length":       65536,
+					}},
+					"gids": []map[string]any{{
+						"container_id": 0,
+						"host_id":      podUserNamespaceHostID,
+						"length":       65536,
+					}},
+				},
+			},
+		},
+	}
+}
+
 // SimpleSpec returns a JSON config for a simple container that runs the
 // specified command in the specified image.
 func SimpleSpec(name, image string, cmd []string, extra map[string]any) string {
@@ -1251,6 +1294,34 @@ func findSandboxUnder(root int) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("no sandbox found under %d", root)
+}
+
+func TestCrictlUserNamespace(t *testing.T) {
+	crictl, cleanup, err := setup(t, true /* enableGrouping */)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	podName := testutil.RandomID("userns-pod")
+	sbSpec := SandboxWithPodUserns(podName)
+	sbSpecFile, sbCleanup, err := testutil.WriteTmpFile("sbSpec", sbSpec)
+	if err != nil {
+		t.Fatalf("failed to write sandbox spec: %v", err)
+	}
+	defer sbCleanup()
+
+	podID, err := crictl.RunPod(containerdRuntime, sbSpecFile)
+	if err != nil {
+		t.Fatalf("runp with pod user namespace failed: %v", err)
+	}
+
+	if err := crictl.StopPod(podID); err != nil {
+		t.Fatalf("stop pod failed: %v", err)
+	}
+	if err := crictl.RmPod(podID); err != nil {
+		t.Fatalf("remove pod failed: %v", err)
+	}
 }
 
 // descendsFrom reports whether pid is root or a descendant of root.
