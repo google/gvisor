@@ -206,6 +206,49 @@ const debugReadMemoryMaxLength = 1 << 30 // 1 GiB
 // for this control, so Buffer's size is not limited by
 // RMAPI_PARAM_COPY_MAX_PARAMS_SIZE; we bound it by debugReadMemoryMaxLength
 // instead.
+// ctrlSubmitPagingOperations handles NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS.
+// The params contain a pointer to a caller-allocated array of paging
+// operations, which must be copied into the sentry before invoking the ioctl.
+func ctrlSubmitPagingOperations(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV00FE_CTRL_SUBMIT_PAGING_OPERATIONS_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	var ops []byte
+	if ctrlParams.PagingOps != 0 {
+		if !rmapiParamsSizeCheck(ctrlParams.PagingOpsCount, nvgpu.SizeofNV00FE_CTRL_PAGING_OPERATION) {
+			return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+		}
+		ops = make([]byte, uintptr(ctrlParams.PagingOpsCount)*uintptr(nvgpu.SizeofNV00FE_CTRL_PAGING_OPERATION))
+		if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.PagingOps), ops); err != nil {
+			return 0, err
+		}
+	}
+	defer runtime.KeepAlive(ops)
+	origPagingOps := ctrlParams.PagingOps
+	ctrlParams.PagingOps = 0
+	if len(ops) != 0 {
+		ctrlParams.PagingOps = p64FromPtr(unsafe.Pointer(&ops[0]))
+	}
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	ctrlParams.PagingOps = origPagingOps
+	if err != nil {
+		return n, err
+	}
+	if len(ops) != 0 {
+		if _, err := fi.t.CopyOutBytes(addrFromP64(origPagingOps), ops); err != nil {
+			return n, err
+		}
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlDebugReadMemory(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
