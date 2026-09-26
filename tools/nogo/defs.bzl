@@ -116,7 +116,7 @@ nogo_stdlib = go_rule(
     implementation = _nogo_stdlib_impl,
     attrs = {
         "_nogo": attr.label(
-            default = "//tools/nogo:nogo",
+            default = "//tools/nogo:nogo_tool",
             cfg = "exec",
         ),
         "_target": attr.label(
@@ -340,7 +340,7 @@ nogo_aspect = go_rule(
     ],
     attrs = {
         "_nogo": attr.label(
-            default = "//tools/nogo:nogo",
+            default = "//tools/nogo:nogo_tool",
             cfg = "exec",
         ),
         "_target": attr.label(
@@ -434,7 +434,7 @@ nogo_test = rule(
             doc = "Relevant src files. This is ignored except to make the nogo_test directly affected by the files.",
         ),
         "_nogo": attr.label(
-            default = "//tools/nogo:nogo",
+            default = "//tools/nogo:nogo_tool",
             cfg = "exec",
         ),
         "_target": attr.label(
@@ -516,7 +516,7 @@ nogo_facts_render = go_rule(
             default = False,
         ),
         "_nogo": attr.label(
-            default = "//tools/nogo:nogo",
+            default = "//tools/nogo:nogo_tool",
             cfg = "exec",
         ),
         # See _nogo_aspect, above.
