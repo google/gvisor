@@ -50,9 +50,37 @@ func TestClassify(t *testing.T) {
 			want: Licenses{bsd3},
 		},
 		{
+			// libbacktrace's license uses a different nonendorsement clause:
+			// https://github.com/ianlancetaylor/libbacktrace/blob/793921876/LICENSE
+			name: "bsd3 author name",
+			text: `# Copyright (C) 2012-2016 Free Software Foundation, Inc.
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+
+#     (1) Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+
+#     (2) Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in
+#     the documentation and/or other materials provided with the
+#     distribution.
+
+#     (3) The name of the author may not be used to
+#     endorse or promote products derived from this software without
+#     specific prior written permission.`,
+			want: Licenses{bsd3},
+		},
+		{
 			name: "bsd2",
 			text: "Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met: 1... 2...",
 			want: Licenses{bsd2},
+		},
+		{
+			name: "cc0",
+			text: "Creative Commons Legal Code\nCC0 1.0 Universal",
+			want: Licenses{cc0},
 		},
 		{
 			name: "isc",
