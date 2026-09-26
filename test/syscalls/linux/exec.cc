@@ -840,6 +840,77 @@ TEST(ExecveatTest, InvalidFlags) {
   EXPECT_EQ(execve_errno, EINVAL);
 }
 
+ExecveArray OversizedExecveArgv(const std::string& argv0) {
+  std::string long_arg(128 * 1024, 'A');
+  std::vector<std::string> argv;
+  argv.push_back(argv0);
+  // 17 * 128KB = 2176KB > 2MB.
+  for (int i = 0; i < 17; i++) {
+    argv.push_back(long_arg);
+  }
+  return ExecveArray(argv);
+}
+
+// Oversized argv is E2BIG on both Linux (stack-based cap) and gVisor (2MB).
+TEST(ExecTest, ExecveArgvE2BIG) {
+  int execve_errno = 0;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec("/bin/true",
+                                        OversizedExecveArgv("/bin/true"), {},
+                                        /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, E2BIG);
+}
+
+// Oversized envv is E2BIG.
+TEST(ExecTest, ExecveEnvvE2BIG) {
+  std::string long_env(128 * 1024, 'B');
+  std::vector<std::string> envv;
+  for (int i = 0; i < 17; i++) {
+    envv.push_back("VAR=" + long_env);
+  }
+
+  int execve_errno = 0;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec("/bin/true", {"/bin/true"},
+                                        ExecveArray(envv),
+                                        /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, E2BIG);
+}
+
+// Pathname errors beat oversized argv.
+TEST(ExecTest, ExecveEnoentBeforeE2BIG) {
+  const std::string path = "/file/does/not/exist";
+  int execve_errno = 0;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(path, OversizedExecveArgv(path), {},
+                                        /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ENOENT);
+}
+
+TEST(ExecTest, ExecveEnotdirBeforeE2BIG) {
+  const std::string path = "/etc/passwd/child";
+  int execve_errno = 0;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(path, OversizedExecveArgv(path), {},
+                                        /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ENOTDIR);
+}
+
+TEST(ExecTest, ExecveEaccesBeforeE2BIG) {
+  const std::string path = "/etc/passwd";
+  int execve_errno = 0;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(path, OversizedExecveArgv(path), {},
+                                        /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, EACCES);
+}
+
+TEST(ExecTest, ExecveEnametoolongBeforeE2BIG) {
+  std::string long_component(256, 'x');
+  std::string long_path = "/" + long_component;
+
+  int execve_errno = 0;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(long_path,
+                                        OversizedExecveArgv(long_path), {},
+                                        /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ENAMETOOLONG);
+}
+
 int memfd_create(const std::string& name, unsigned int flags) {
   return syscall(__NR_memfd_create, name.c_str(), flags);
 }
