@@ -33,3 +33,26 @@ func testInferredPositive(tc *inferredStruct) {
 func testInferredNegative(tc *inferredStruct) {
 	tc.unguardedField = 1
 }
+
+type ignoredInferredStruct struct {
+	mu sync.Mutex
+
+	// +checklocksignore
+	prefix  int
+	postfix int // +checklocksignore
+
+	// +checklocksignore
+	// +checklocks:mu
+	guarded int
+}
+
+func testInferredIgnored(tc *ignoredInferredStruct) {
+	tc.mu.Lock()
+	tc.prefix = 1
+	tc.postfix = 1
+	tc.guarded = 1
+	tc.mu.Unlock()
+
+	// Ignoring inference does not disable an explicit guard.
+	tc.guarded = 2 // +checklocksfail=invalid field access
+}
