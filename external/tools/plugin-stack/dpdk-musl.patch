@@ -1,0 +1,153 @@
+# Backport DPDK's musl compatibility fixes to v18.11: use portable pread/pwrite
+# interfaces and avoid glibc-only PCI I/O functions when building with musl.
+# https://github.com/DPDK/dpdk/commit/204a7f44b
+# https://github.com/DPDK/dpdk/commit/884f83ccf
+
+diff --git a/drivers/bus/pci/linux/pci_uio.c b/drivers/bus/pci/linux/pci_uio.c
+--- a/drivers/bus/pci/linux/pci_uio.c
++++ b/drivers/bus/pci/linux/pci_uio.c
+@@ -527,21 +527,33 @@
+ 		if (len >= 4) {
+ 			size = 4;
+ #if defined(RTE_ARCH_X86)
++#ifdef __GLIBC__
+ 			outl_p(*(const uint32_t *)s, reg);
++#else
++			outl(*(const uint32_t *)s, reg);
++#endif
+ #else
+ 			*(volatile uint32_t *)reg = *(const uint32_t *)s;
+ #endif
+ 		} else if (len >= 2) {
+ 			size = 2;
+ #if defined(RTE_ARCH_X86)
++#ifdef __GLIBC__
+ 			outw_p(*(const uint16_t *)s, reg);
++#else
++			outw(*(const uint16_t *)s, reg);
++#endif
+ #else
+ 			*(volatile uint16_t *)reg = *(const uint16_t *)s;
+ #endif
+ 		} else {
+ 			size = 1;
+ #if defined(RTE_ARCH_X86)
++#ifdef __GLIBC__
+ 			outb_p(*s, reg);
++#else
++			outb(*s, reg);
++#endif
+ #else
+ 			*(volatile uint8_t *)reg = *s;
+ #endif
+diff --git a/drivers/bus/pci/linux/pci_vfio.c b/drivers/bus/pci/linux/pci_vfio.c
+--- a/drivers/bus/pci/linux/pci_vfio.c
++++ b/drivers/bus/pci/linux/pci_vfio.c
+@@ -52,7 +52,7 @@
+ pci_vfio_read_config(const struct rte_intr_handle *intr_handle,
+ 		    void *buf, size_t len, off_t offs)
+ {
+-	return pread64(intr_handle->vfio_dev_fd, buf, len,
++	return pread(intr_handle->vfio_dev_fd, buf, len,
+ 	       VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) + offs);
+ }
+ 
+@@ -60,7 +60,7 @@
+ pci_vfio_write_config(const struct rte_intr_handle *intr_handle,
+ 		    const void *buf, size_t len, off_t offs)
+ {
+-	return pwrite64(intr_handle->vfio_dev_fd, buf, len,
++	return pwrite(intr_handle->vfio_dev_fd, buf, len,
+ 	       VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) + offs);
+ }
+ 
+@@ -74,7 +74,7 @@
+ 	uint8_t cap_id, cap_offset;
+ 
+ 	/* read PCI capability pointer from config space */
+-	ret = pread64(fd, &reg, sizeof(reg),
++	ret = pread(fd, &reg, sizeof(reg),
+ 			VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 			PCI_CAPABILITY_LIST);
+ 	if (ret != sizeof(reg)) {
+@@ -89,7 +89,7 @@
+ 	while (cap_offset) {
+ 
+ 		/* read PCI capability ID */
+-		ret = pread64(fd, &reg, sizeof(reg),
++		ret = pread(fd, &reg, sizeof(reg),
+ 				VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 				cap_offset);
+ 		if (ret != sizeof(reg)) {
+@@ -103,7 +103,7 @@
+ 
+ 		/* if we haven't reached MSI-X, check next capability */
+ 		if (cap_id != PCI_CAP_ID_MSIX) {
+-			ret = pread64(fd, &reg, sizeof(reg),
++			ret = pread(fd, &reg, sizeof(reg),
+ 					VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 					cap_offset);
+ 			if (ret != sizeof(reg)) {
+@@ -120,7 +120,7 @@
+ 		/* else, read table offset */
+ 		else {
+ 			/* table offset resides in the next 4 bytes */
+-			ret = pread64(fd, &reg, sizeof(reg),
++			ret = pread(fd, &reg, sizeof(reg),
+ 					VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 					cap_offset + 4);
+ 			if (ret != sizeof(reg)) {
+@@ -129,7 +129,7 @@
+ 				return -1;
+ 			}
+ 
+-			ret = pread64(fd, &flags, sizeof(flags),
++			ret = pread(fd, &flags, sizeof(flags),
+ 					VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 					cap_offset + 2);
+ 			if (ret != sizeof(flags)) {
+@@ -156,7 +156,7 @@
+ 	uint16_t reg;
+ 	int ret;
+ 
+-	ret = pread64(dev_fd, &reg, sizeof(reg),
++	ret = pread(dev_fd, &reg, sizeof(reg),
+ 			VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 			PCI_COMMAND);
+ 	if (ret != sizeof(reg)) {
+@@ -170,7 +170,7 @@
+ 	else
+ 		reg &= ~(PCI_COMMAND_MASTER);
+ 
+-	ret = pwrite64(dev_fd, &reg, sizeof(reg),
++	ret = pwrite(dev_fd, &reg, sizeof(reg),
+ 			VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+ 			PCI_COMMAND);
+ 
+@@ -407,7 +407,7 @@
+ 	uint32_t ioport_bar;
+ 	int ret;
+ 
+-	ret = pread64(vfio_dev_fd, &ioport_bar, sizeof(ioport_bar),
++	ret = pread(vfio_dev_fd, &ioport_bar, sizeof(ioport_bar),
+ 			  VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX)
+ 			  + PCI_BASE_ADDRESS_0 + bar_index*4);
+ 	if (ret != sizeof(ioport_bar)) {
+@@ -1013,7 +1013,7 @@
+ {
+ 	const struct rte_intr_handle *intr_handle = &p->dev->intr_handle;
+ 
+-	if (pread64(intr_handle->vfio_dev_fd, data,
++	if (pread(intr_handle->vfio_dev_fd, data,
+ 		    len, p->base + offset) <= 0)
+ 		RTE_LOG(ERR, EAL,
+ 			"Can't read from PCI bar (%" PRIu64 ") : offset (%x)\n",
+@@ -1026,7 +1026,7 @@
+ {
+ 	const struct rte_intr_handle *intr_handle = &p->dev->intr_handle;
+ 
+-	if (pwrite64(intr_handle->vfio_dev_fd, data,
++	if (pwrite(intr_handle->vfio_dev_fd, data,
+ 		     len, p->base + offset) <= 0)
+ 		RTE_LOG(ERR, EAL,
+ 			"Can't write to PCI bar (%" PRIu64 ") : offset (%x)\n",
