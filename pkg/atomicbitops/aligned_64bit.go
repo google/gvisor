@@ -174,6 +174,20 @@ func (u *Uint64) RacyStore(v uint64) {
 	u.value = v
 }
 
+// StoreRelaxed stores `v` with **no** ordering guarantee.
+// Useful only where readers tolerate a stale value.
+// Race detection is disabled, so this must be used sparingly.
+// On 64-bit architectures, readers are guaranteed to see either the old
+// or the new value, no "partial writes" cases.
+// The 32-bit-architecture variant of this function does a real atomic
+// write to guarantee the same no-partial-write property.
+//
+//go:norace
+//go:nosplit
+func (u *Uint64) StoreRelaxed(v uint64) {
+	u.value = v
+}
+
 // Add is analogous to atomic.AddUint64.
 //
 //go:nosplit

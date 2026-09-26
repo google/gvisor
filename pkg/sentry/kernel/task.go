@@ -108,22 +108,20 @@ type Task struct {
 	// interruptChan is always notified after restore (see Task.run).
 	interruptChan chan struct{} `state:"nosave"`
 
-	// gostateSeq allows Task.TaskGoroutineStateTime() to read gostate and
-	// gostateTime atomically.
+	// gostate combines two fields in one 64-bit integer:
+	//  - First `gostateBits` bits are the `TaskGoroutineState` enum value.
+	//  - Rest of the bits are the value of Kernel.cpuClock when the state was
+	//   last updated or refreshed.
+	// Packing them this way allows efficient atomic reads and writes, which
+	// is critical for performance on the syscall hot path.
 	//
-	// gostateSeq is owned by the task goroutine.
-	gostateSeq sync.SeqCount `state:"nosave"`
-
-	// gostate is the current scheduling state of the task goroutine.
+	// Despite the use of `atomicbitops.Uint64`, `gostate` is written to
+	// **with no barrier guarantee** from the task goroutine, for syscall hot
+	// path performance reasons. This means all readers (other than from the
+	// task goroutine) **must** tolerate stale reads.
 	//
 	// gostate is owned by the task goroutine.
-	gostate atomicbitops.Uint32
-
-	// gostateTime was the value of Kernel.cpuClock when gostate was last
-	// updated or refreshed.
-	//
-	// gostateTime is owned by the task goroutine.
-	gostateTime atomicbitops.Int64
+	gostate atomicbitops.Uint64
 
 	// appCPUClock approximates the amount of time the task goroutine has spent
 	// in TaskGoroutineRunningApp.
@@ -754,7 +752,7 @@ func (t *Task) afterLoad(gocontext.Context) {
 		ts.populateCache(t)
 	}
 	t.interruptChan = make(chan struct{}, 1)
-	t.gostate.Store(uint32(TaskGoroutineNonexistent))
+	t.setGostate(TaskGoroutineNonexistent)
 	if t.stop != nil {
 		t.stopCount = atomicbitops.FromInt32(1)
 	}

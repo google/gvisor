@@ -198,6 +198,16 @@ func (u *Uint64) RacyStore(v uint64) {
 	*u.ptr() = v
 }
 
+// StoreRelaxed is actually the same as `Store` on 32-bit architectures,
+// since 64-bit plain stores are not atomic there.
+// See comment on the analogous of this function in `aligned_64bit.go`.
+//
+//go:norace
+//go:nosplit
+func (u *Uint64) StoreRelaxed(v uint64) {
+	atomic.StoreUint64(u.ptr(), v)
+}
+
 // Add is analogous to atomic.AddUint64.
 //
 //go:nosplit
