@@ -841,3 +841,42 @@ func TestTPUProxyEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSpecForContainerOOMScoreAdj(t *testing.T) {
+	newSpec := func(oomScoreAdj *int, noNewPrivileges bool) *specs.Spec {
+		return &specs.Spec{
+			Process: &specs.Process{
+				Args:            []string{"/bin/true"},
+				Cwd:             "/",
+				OOMScoreAdj:     oomScoreAdj,
+				NoNewPrivileges: noNewPrivileges,
+			},
+		}
+	}
+	intPtr := func(i int) *int { return &i }
+
+	for _, tc := range []struct {
+		name     string
+		old, new *specs.Spec
+		wantErr  bool
+	}{
+		{name: "same", old: newSpec(intPtr(500), false), new: newSpec(intPtr(500), false)},
+		{name: "changed", old: newSpec(intPtr(500), false), new: newSpec(intPtr(900), false)},
+		{name: "added", old: newSpec(nil, false), new: newSpec(intPtr(900), false)},
+		{name: "removed", old: newSpec(intPtr(500), false), new: newSpec(nil, false)},
+		{
+			// Other fields in specs.Process must still be validated.
+			name:    "other field changed",
+			old:     newSpec(intPtr(500), false),
+			new:     newSpec(intPtr(900), true),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSpecForContainer(tc.old, tc.new, "test")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("validateSpecForContainer() = %v, wantErr: %t", err, tc.wantErr)
+			}
+		})
+	}
+}
