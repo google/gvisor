@@ -30,12 +30,14 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	eventtypes "github.com/containerd/containerd/api/events"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	ttrpc "github.com/containerd/ttrpc"
 	typeurl "github.com/containerd/typeurl/v2"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	"context"
@@ -64,9 +66,14 @@ func GetShimPath() (string, error) {
 	return testutil.FindFile("release/containerd-shim-runsc-v1")
 }
 
-// NewSandboxSpec returns a new sandbox spec.
+// NewSandboxSpec returns a new sandbox spec running "sleep 100000".
 func NewSandboxSpec() *specs.Spec {
-	spec := newSpec("sleep", "100000")
+	return NewSandboxSpecWithArgs("sleep", "100000")
+}
+
+// NewSandboxSpecWithArgs returns a new sandbox spec with custom command arguments.
+func NewSandboxSpecWithArgs(args ...string) *specs.Spec {
+	spec := newSpec(args...)
 	spec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeSandbox
 	return spec
 }
@@ -81,6 +88,13 @@ func NewContainerSpec(sandboxID string, args []string) *specs.Spec {
 
 func newSpec(args ...string) *specs.Spec {
 	spec := testutil.NewSpecWithArgs(args...)
+	// When already running as root (e.g. via specutils.MaybeRunAsRoot in benchmarks),
+	// return the base spec directly without adding a nested UserNamespace or UID/GID
+	// mappings. Unprivileged unit tests (os.Getuid() != 0) need the UserNamespace below
+	// to map the current host user to root inside the container.
+	if os.Getuid() == 0 {
+		return spec
+	}
 	if spec.Linux == nil {
 		spec.Linux = &specs.Linux{}
 	}
@@ -176,7 +190,7 @@ func (c *Container) writeSpec(spec *specs.Spec) error {
 
 // dummyEventsServer is a mock implementation of the events service.
 type dummyEventsServer struct {
-	t  *testing.T
+	t  testing.TB
 	ch chan any
 
 	mu     sync.Mutex
@@ -232,6 +246,13 @@ type MockContainerd struct {
 	eventWd       string
 	eventSocket   string
 	eventsImpl    *dummyEventsServer
+
+	// Benchmark mode fields for low-overhead per-iteration execution.
+	benchMode  bool
+	shimSocket string
+	shimConn   net.Conn
+	client     task.TaskService
+	logFile    *os.File
 }
 
 // We need a directory structure to save and other artifacts. The directory
@@ -250,8 +271,14 @@ type MockContainerd struct {
 // shim.
 
 // NewMockContainerdWithSuffix creates a new MockContainerd with a custom suffix for the working directory to avoid conflicts.
-func NewMockContainerdWithSuffix(t *testing.T, suffix string, shimArgs, runscArgs map[string]any) *MockContainerd {
-	s := &MockContainerd{}
+func NewMockContainerdWithSuffix(t testing.TB, suffix string, shimArgsOverrides, runscArgsOverrides map[string]any) *MockContainerd {
+	return newMockContainerdWithSuffix(t, suffix, shimArgsOverrides, runscArgsOverrides, false /* benchMode */)
+}
+
+func newMockContainerdWithSuffix(t testing.TB, suffix string, shimArgsOverrides, runscArgsOverrides map[string]any, benchMode bool) *MockContainerd {
+	s := &MockContainerd{
+		benchMode: benchMode,
+	}
 	// Create working directory.
 	name := t.Name()
 	if suffix != "" {
@@ -268,7 +295,7 @@ func NewMockContainerdWithSuffix(t *testing.T, suffix string, shimArgs, runscArg
 	}
 
 	// Set the runsc config.
-	if err := newRunscConfig(s, shimArgs, runscArgs); err != nil {
+	if err := newRunscConfig(s, shimArgsOverrides, runscArgsOverrides); err != nil {
 		t.Fatalf("failed to create runsc config: %v", err)
 	}
 
@@ -302,18 +329,50 @@ func NewMockContainerdWithSuffix(t *testing.T, suffix string, shimArgs, runscArg
 		_ = server.Serve(t.Context(), s.eventListener)
 	}()
 
-	t.Cleanup(func() {
-		server.Close()
-		s.eventListener.Close()
-		os.RemoveAll(eventWd)
-	})
+	if !s.benchMode {
+		t.Cleanup(func() {
+			server.Close()
+			s.eventListener.Close()
+			os.RemoveAll(eventWd)
+		})
+	}
 
 	return s
 }
 
 // NewMockContainerd creates a new MockContainerd.
-func NewMockContainerd(t *testing.T, shimArgs, runscArgs map[string]any) *MockContainerd {
-	return NewMockContainerdWithSuffix(t, "", shimArgs, runscArgs)
+func NewMockContainerd(t testing.TB, shimArgsOverrides, runscArgsOverrides map[string]any) *MockContainerd {
+	return NewMockContainerdWithSuffix(t, "", shimArgsOverrides, runscArgsOverrides)
+}
+
+// NewMockContainerdForBenchmark creates a MockContainerd configured for low-overhead
+// microbenchmarking (enabling shim pod grouping and GKE production flags while disabling debug
+// logging, strace, and packet logging) with explicit per-iteration Cleanup() support.
+func NewMockContainerdForBenchmark(b *testing.B, conf *config.Config) *MockContainerd {
+	b.Helper()
+	shimArgs := map[string]any{
+		"grouping": true,
+	}
+	runscArgs := map[string]any{
+		"allow-packet-socket-write": fmt.Sprintf("%t", conf.AllowPacketEndpointWrite),
+		"allow-suid":                fmt.Sprintf("%t", conf.AllowSUID),
+		"debug":                     fmt.Sprintf("%t", conf.Debug),
+		"host-settings":             conf.HostSettings.String(),
+		"net-raw":                   fmt.Sprintf("%t", conf.EnableRaw),
+		"oci-seccomp":               fmt.Sprintf("%t", conf.OCISeccomp),
+		"overlay2":                  conf.Overlay2.String(),
+		"platform":                  conf.Platform,
+		"systemd-cgroup":            fmt.Sprintf("%t", conf.SystemdCgroup),
+		"watchdog-action":           conf.WatchdogAction,
+	}
+	cd := newMockContainerdWithSuffix(b, "", shimArgs, runscArgs, true /* benchMode */)
+	cd.shimSocket = filepath.Join(cd.eventWd, "shim.sock")
+	var err error
+	if cd.logFile, err = os.Create(filepath.Join(cd.wd, "log")); err != nil {
+		cd.Cleanup()
+		b.Fatalf("failed to create shim log file: %v", err)
+	}
+	return cd
 }
 
 // WorkingDir returns the working directory of the mock containerd.
@@ -336,18 +395,52 @@ func (m *MockContainerd) root() string {
 	return filepath.Join(m.wd, "containers")
 }
 
-// StartShim starts the shim binary and waits for it to start.
-func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
+// StartShim launches the shim daemon and waits until its socket is ready.
+// In benchmark mode, it disables debug logging, polls the socket at a 50µs interval
+// (instead of 100ms), and caches the TTRPC client connection to avoid adding sleep
+// or dial overhead to benchmark measurements.
+func (m *MockContainerd) StartShim(t testing.TB, c *Container) error {
+	shimBinary, err := GetShimPath()
+	if err != nil {
+		return fmt.Errorf("failed to find shim binary: %v", err)
+	}
+
+	if m.benchMode {
+		args := []string{
+			"-namespace", "default",
+			"-id", c.id,
+			"-socket", m.shimSocket,
+			"-bundle", c.bundle,
+		}
+		m.shim = exec.Command(shimBinary, args...)
+		m.shim.Dir = m.wd
+		m.shim.Stdout = m.logFile
+		m.shim.Stderr = m.logFile
+		m.shim.Env = append(os.Environ(), "TTRPC_ADDRESS="+m.eventSocket)
+		if err := m.shim.Start(); err != nil {
+			return fmt.Errorf("failed to start shim: %w", err)
+		}
+
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			conn, dialErr := net.DialTimeout("unix", m.shimSocket, 100*time.Millisecond)
+			if dialErr == nil {
+				m.shimConn = conn
+				m.client = task.NewTaskClient(ttrpc.NewClient(conn))
+				return nil
+			}
+			time.Sleep(50 * time.Microsecond) // Poll frequently.
+		}
+		logBytes, _ := os.ReadFile(filepath.Join(m.wd, "log"))
+		return fmt.Errorf("timed out waiting for shim socket %s; shim log: %s", m.shimSocket, string(logBytes))
+	}
+
 	f, err := os.Create(filepath.Join(m.wd, "log"))
 	if err != nil {
 		return fmt.Errorf("failed to create shim log file: %v", err)
 	}
 	defer f.Close()
 
-	shimBinary, err := GetShimPath()
-	if err != nil {
-		return fmt.Errorf("failed to find shim binary: %v", err)
-	}
 	args := []string{
 		"-namespace", "default",
 		"-debug",
@@ -394,9 +487,12 @@ func (m *MockContainerd) StartShim(t *testing.T, c *Container) error {
 }
 
 // GetClient returns a client to the shim socket which can be used to send requests to the shim.
-func (m *MockContainerd) GetClient(t *testing.T) task.TaskService {
+func (m *MockContainerd) GetClient(t testing.TB) task.TaskService {
+	if m.client != nil {
+		return m.client
+	}
 	var client task.TaskService
-	m.withShimContext(t, func(t *testing.T) {
+	m.withShimContext(t, func(t testing.TB) {
 		conn, err := net.DialTimeout("unix", SocketAddress, 2*time.Second)
 		if err != nil {
 			t.Fatalf("failed to dial shim socket: %v", err)
@@ -409,7 +505,60 @@ func (m *MockContainerd) GetClient(t *testing.T) task.TaskService {
 	return client
 }
 
-func (m *MockContainerd) withShimContext(t *testing.T, f func(t *testing.T)) {
+// WaitForExit waits for a TaskExit event for containerID to arrive on EventChan.
+func (m *MockContainerd) WaitForExit(ctx context.Context, containerID string) error {
+	waitCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+	for {
+		select {
+		case evt := <-m.EventChan:
+			if exitEvt, ok := evt.(*eventtypes.TaskExit); ok && exitEvt.ContainerID == containerID {
+				return nil
+			}
+		case <-waitCtx.Done():
+			return fmt.Errorf("timed out waiting for TaskExit for %s: %w", containerID, waitCtx.Err())
+		}
+	}
+}
+
+// Cleanup performs a best-effort shutdown of the shim, closes TTRPC servers/connections, and removes temporary directories.
+func (m *MockContainerd) Cleanup() {
+	if m.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = m.client.Shutdown(ctx, &task.ShutdownRequest{ID: "shutdown"})
+		cancel()
+		m.client = nil
+	}
+	if m.shimConn != nil {
+		_ = m.shimConn.Close()
+		m.shimConn = nil
+	}
+	if m.shim != nil && m.shim.Process != nil {
+		_ = m.shim.Process.Kill()
+		_ = m.shim.Wait()
+	}
+	if m.eventServer != nil {
+		_ = m.eventServer.Close()
+	}
+	if m.eventListener != nil {
+		_ = m.eventListener.Close()
+	}
+	if m.logFile != nil {
+		_ = m.logFile.Close()
+	}
+	if m.eventWd != "" {
+		_ = os.RemoveAll(m.eventWd)
+	}
+	if m.wd != "" {
+		_ = os.RemoveAll(m.wd)
+	}
+}
+
+func (m *MockContainerd) withShimContext(t testing.TB, f func(t testing.TB)) {
 	shimContextMutex.Lock()
 	defer shimContextMutex.Unlock()
 
@@ -426,7 +575,7 @@ func (m *MockContainerd) withShimContext(t *testing.T, f func(t *testing.T)) {
 	}
 }
 
-func newRunscConfig(m *MockContainerd, shimArgs, runscArgs map[string]any) error {
+func newRunscConfig(m *MockContainerd, shimArgsOverrides, runscArgsOverrides map[string]any) error {
 	runscDebugPath := filepath.Join(m.WorkingDir(), "%ID%") + "/"
 	runscPath, err := GetRunscPath()
 	if err != nil {
@@ -435,13 +584,15 @@ func newRunscConfig(m *MockContainerd, shimArgs, runscArgs map[string]any) error
 
 	runscConfig := map[string]any{
 		"debug":                   "true",
-		"debug-log":               runscDebugPath,
 		"TESTONLY-unsafe-nonroot": "true",
 		"platform":                "systrap",
 		"network":                 "none",
 	}
-	for k, v := range runscArgs {
+	for k, v := range runscArgsOverrides {
 		runscConfig[k] = v
+	}
+	if runscConfig["debug"] == "true" {
+		runscConfig["debug-log"] = runscDebugPath
 	}
 
 	config := map[string]any{
@@ -450,7 +601,7 @@ func newRunscConfig(m *MockContainerd, shimArgs, runscArgs map[string]any) error
 		"runsc_config": runscConfig,
 	}
 
-	for k, v := range shimArgs {
+	for k, v := range shimArgsOverrides {
 		config[k] = v
 	}
 

@@ -32,6 +32,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -42,6 +43,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -289,8 +291,8 @@ func TestConfig(t *testing.T) *config.Config {
 }
 
 // ConfigForBenchmark returns the default configuration to use in benchmarks.
-// Debugging, tracing, and logging are disabled to ensure accurate performance
-// measurements.
+// Debugging, tracing, and logging are disabled, and GKE production flags are
+// enabled to ensure accurate performance measurements.
 func ConfigForBenchmark(b *testing.B) *config.Config {
 	testFlags := flag.NewFlagSet("bench", flag.ContinueOnError)
 	config.RegisterFlags(testFlags)
@@ -298,10 +300,16 @@ func ConfigForBenchmark(b *testing.B) *config.Config {
 	if err != nil {
 		b.Fatalf("error loading configuration from flags: %v", err)
 	}
+	conf.AllowPacketEndpointWrite = true
+	conf.AllowSUID = true
 	conf.Debug = false
-	conf.Strace = false
+	conf.EnableRaw = true
+	conf.HostSettings = config.HostSettingsEnforce
 	conf.LogPackets = false
 	conf.Network = config.NetworkNone
+	conf.OCISeccomp = true
+	conf.Strace = false
+	conf.SystemdCgroup = cgroup.IsOnlyV2()
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
 	conf.WatchdogAction = "panic"
 	return conf
@@ -316,6 +324,18 @@ func Measure(b *testing.B, fn func()) time.Duration {
 	defer b.StopTimer()
 	fn()
 	return time.Since(start)
+}
+
+// ReportPercentiles sorts the recorded iteration durations and reports p50 and p90 metrics.
+func ReportPercentiles(b *testing.B, samples []time.Duration) {
+	if len(samples) == 0 {
+		return
+	}
+	slices.Sort(samples)
+	for _, p := range []int{50, 90} {
+		idx := (len(samples) - 1) * p / 100
+		b.ReportMetric(float64(samples[idx].Nanoseconds()), fmt.Sprintf("p%d.ns", p))
+	}
 }
 
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
