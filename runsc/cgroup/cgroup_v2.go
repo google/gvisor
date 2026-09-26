@@ -119,8 +119,39 @@ func (c *cgroupV2) createCgroupPaths() (bool, error) {
 		}
 		// enable all known controllers for subtree
 		if i < len(elements)-1 {
-			if err := writeFile(filepath.Join(current, subtreeControl), []byte(val), 0700); err != nil {
-				return false, err
+			subtreeFile := filepath.Join(current, subtreeControl)
+			if err := writeFile(subtreeFile, []byte(val), 0700); err != nil {
+				// Enabling all controllers at once fails if any single one of them
+				// cannot be enabled, so retry them individually before giving up.
+				//
+				// An unprivileged caller cannot enable controllers above the cgroup
+				// that was delegated to it, which is the normal case for rootless
+				// containers. This is not fatal: a controller that is genuinely
+				// unusable reports an error when its limits are applied. runc behaves
+				// the same way, see
+				// https://github.com/opencontainers/cgroups/blob/79cbc7c/fs2/create.go
+				var mandatoryFailed, otherFailed []string
+				var mandatoryErr error
+				for _, controller := range c.Controllers {
+					err := writeFile(subtreeFile, []byte("+"+controller), 0700)
+					if err == nil {
+						continue
+					}
+					if ctrlr, ok := controllers2[controller]; ok && !ctrlr.optional() {
+						mandatoryFailed = append(mandatoryFailed, controller)
+						if mandatoryErr == nil {
+							mandatoryErr = err
+						}
+						continue
+					}
+					otherFailed = append(otherFailed, controller)
+				}
+				if len(otherFailed) > 0 {
+					log.Debugf("Unable to enable cgroup controllers %s in %q: %v", strings.Join(otherFailed, ","), current, err)
+				}
+				if len(mandatoryFailed) > 0 {
+					log.Warningf("Unable to enable mandatory cgroup controllers %s in %q: %v; resource limits for them will NOT be applied", strings.Join(mandatoryFailed, ","), current, mandatoryErr)
+				}
 			}
 		}
 	}
