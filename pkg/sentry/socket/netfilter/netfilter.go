@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -205,10 +206,11 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 
 	var err *syserr.Error
 	var offsets map[uint32]int
+	var targets map[int][]byte
 	if ipv6 {
-		offsets, err = modifyEntries6(mapper, stk, optVal, &replace, &table)
+		offsets, targets, err = modifyEntries6(mapper, optVal, &replace, &table)
 	} else {
-		offsets, err = modifyEntries4(mapper, stk, optVal, &replace, &table)
+		offsets, targets, err = modifyEntries4(mapper, optVal, &replace, &table)
 	}
 	if err != nil {
 		return err
@@ -295,6 +297,10 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 	}
 
 	if err := checkLoopsAndChains(table, ipv6); err != nil {
+		return err
+	}
+
+	if err := parseTargets(stk, table.Rules, targets, ipv6, replace.Name.String()); err != nil {
 		return err
 	}
 
@@ -462,7 +468,7 @@ const (
 func checkChainDFS(table stack.Table, ruleIdx int, state []visitState, ipv6 bool) *syserr.Error {
 	if state[ruleIdx] == visiting {
 		nflog("jump loop detected at rule %d", ruleIdx)
-		return syserr.ErrInvalidArgument
+		return syserr.ErrLinkLoop
 	}
 	if state[ruleIdx] == visited {
 		return nil
@@ -520,11 +526,46 @@ func checkLoopsAndChains(table stack.Table, ipv6 bool) *syserr.Error {
 	for ruleIdx, rule := range table.Rules {
 		if isUserChainTarget(rule.Target) && ruleIdx+1 < len(table.Rules) {
 			if err := checkChainDFS(table, ruleIdx+1, state, ipv6); err != nil {
-				return err
+				return syserr.ErrInvalidArgument
 			}
 		}
 	}
 
+	return nil
+}
+
+func parseTargets(stk *stack.Stack, rules []stack.Rule, targets map[int][]byte, ipv6 bool, tableName string) *syserr.Error {
+	for ruleIdx := range rules {
+		optVal, ok := targets[ruleIdx]
+		if !ok {
+			continue
+		}
+		target, err := parseTarget(rules[ruleIdx].Filter, optVal, ipv6, tableName)
+		if err != nil {
+			nflog("failed to parse target: %v", err)
+			return err
+		}
+		// Set the handler for REJECT targets.
+		switch rejectTarget := target.(type) {
+		case *rejectIPv4Target:
+			netProto := stk.NetworkProtocolInstance(header.IPv4ProtocolNumber)
+			handler, ok := netProto.(stack.RejectIPv4WithHandler)
+			if !ok {
+				nflog("parseTargets: expected %T to implement stack.RejectIPv4WithHandler", netProto)
+				return syserr.ErrInvalidArgument
+			}
+			rejectTarget.Handler = handler
+		case *rejectIPv6Target:
+			netProto := stk.NetworkProtocolInstance(header.IPv6ProtocolNumber)
+			handler, ok := netProto.(stack.RejectIPv6WithHandler)
+			if !ok {
+				nflog("parseTargets: expected %T to implement stack.RejectIPv6WithHandler", netProto)
+				return syserr.ErrInvalidArgument
+			}
+			rejectTarget.Handler = handler
+		}
+		rules[ruleIdx].Target = target
+	}
 	return nil
 }
 
