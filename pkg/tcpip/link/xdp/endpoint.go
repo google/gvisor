@@ -161,6 +161,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	}
 	ep.control, err = xdp.NewFromSocket(opts.FD, uint32(opts.InterfaceIndex), opts.QueueID, xdpOpts)
 	if err != nil {
+		ep.stopFD.Close()
 		return nil, fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
 	}
 
@@ -409,8 +410,13 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 	}
 }
 
-// Close implements stack.LinkEndpoint.
-func (*endpoint) Close() {}
+// Close implements stack.LinkEndpoint. The stack calls it after Attach(nil)
+// has stopped and waited for the dispatch goroutine.
+func (ep *endpoint) Close() {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	ep.stopFD.Close()
+}
 
 // SetOnCloseAction implements stack.LinkEndpoint.
 func (*endpoint) SetOnCloseAction(func()) {}
