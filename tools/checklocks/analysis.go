@@ -478,6 +478,10 @@ func (pc *passContext) postFunctionCallUpdate(call callCommon, lff *lockFunction
 		}
 		// Acquire the lock per the annotation.
 		r := fg.Resolver.resolveCall(pc, ls, call.Common().Args, call.Value())
+		if !r.valid() {
+			pc.maybeFail(call.Pos(), "field %s cannot be resolved", fieldName)
+			continue
+		}
 		if s, ok := ls.lockField(r, fg.Exclusive); !ok && !lff.Ignore {
 			if _, ok := pc.forced[pc.positionKey(call.Pos())]; !ok && !lff.Ignore {
 				pc.maybeFail(call.Pos(), "attempt to acquire %s (%s), but already held (locks: %s)", fieldName, s, ls.String())
@@ -525,6 +529,10 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 	// Check that excluded locks are not held on entry.
 	for fieldName, fg := range lff.ExcludedOnEntry {
 		r := resolve(fg)
+		if !r.valid() {
+			pc.maybeFail(callPos, "field %s cannot be resolved", fieldName)
+			continue
+		}
 		if s, ok := ls.isHeld(r, fg.Exclusive); ok {
 			if !forced && !lff.Ignore {
 				if fg.Exclusive {
@@ -539,6 +547,10 @@ func (pc *passContext) checkFunctionCall(call callCommon, fn *types.Func, lff *l
 	// Check all guards required are held.
 	for fieldName, fg := range lff.HeldOnEntry {
 		r := resolve(fg)
+		if !r.valid() {
+			pc.maybeFail(callPos, "field %s cannot be resolved", fieldName)
+			continue
+		}
 		if s, ok := ls.isHeld(r, fg.Exclusive); !ok {
 			if !forced && !lff.Ignore {
 				pc.maybeFail(callPos, "must hold %s %s (%s) to call %s, but not held (locks: %s)", fieldName, exclusiveStr(fg.Exclusive), s, fn.Name(), ls.String())
