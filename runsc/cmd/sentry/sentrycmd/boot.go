@@ -366,8 +366,14 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Do these before chroot takes effect, otherwise we can't read /proc and /sys.
 	if len(b.productName) == 0 {
-		if product, err := os.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
-			log.Warningf("Not setting product_name: %v", err)
+		const productNamePath = "/sys/devices/virtual/dmi/id/product_name"
+		if product, err := os.ReadFile(productNamePath); err != nil {
+			if os.IsNotExist(err) {
+				// Some hosts, including Firecracker VMs, do not expose DMI data.
+				log.Infof("Host DMI file %q is absent; not setting product_name", productNamePath)
+			} else {
+				log.Warningf("Failed to read host DMI file %q: %s; not setting product_name", productNamePath, err)
+			}
 		} else {
 			b.productName = strings.TrimSpace(string(product))
 			log.Infof("Setting product_name: %q", b.productName)
