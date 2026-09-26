@@ -33,13 +33,14 @@ func callWithSignalFrame(stack uintptr, handler uintptr, sigframe *arch.UContext
 func throw(s string)
 
 // CallWithSignalFrame sets up a signal frame on the stack and executes a
-// user-defined callback function within that context.
+// user-defined callback function within that context. It returns zero on success
+// or an errno on failure, avoiding an interface conversion in this nosplit path.
 //
 // Caller-save registers can be used for passing arguments to the handler.
 // These registers must be pre-set within the signal frame.
 //
 //go:nosplit
-func CallWithSignalFrame(signalStack *linux.SignalStack, handlerAddr uintptr, sigmask *linux.SignalSet, rax uint64) error {
+func CallWithSignalFrame(signalStack *linux.SignalStack, handlerAddr uintptr, sigmask *linux.SignalSet, rax uint64) unix.Errno {
 	var oldSigMask linux.SignalSet
 	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_RT_SIGPROCMASK, linux.SIG_BLOCK,
@@ -66,7 +67,7 @@ func CallWithSignalFrame(signalStack *linux.SignalStack, handlerAddr uintptr, si
 	sigframe.MContext.Fpstate = 0
 
 	callWithSignalFrame(stack, handlerAddr, sigframe)
-	return nil
+	return 0
 }
 
 // Sigreturn restores the thread state from the signal frame.
