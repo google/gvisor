@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("//tools:defs.bzl", "go_library")
 
 package(
@@ -5,8 +6,26 @@ package(
     licenses = ["notice"],
 )
 
+# Preserve whitespace that gofmt would otherwise remove from the directives.
+expand_template(
+    name = "nosplit_source",
+    out = "nosplit.go",
+    substitutions = {
+        "{CR}": "\r",
+        "{NBSP}": " ",
+        "{SPACE}": " ",
+        "{TAB}": "\t",
+    },
+    template = "nosplit.go.in",
+)
+
 go_library(
     name = "test1",
-    srcs = ["test1.go"],
+    srcs = [
+        "test1.go",
+        "test1_unsafe.go",
+        ":nosplit_source",
+    ],
+    stateify = False,
     visibility = ["//tools/checkescape/test2:__pkg__"],
 )

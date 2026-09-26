@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -7,11 +7,7 @@ package(
 
 go_library(
     name = "checkescape",
-    srcs = [
-        "checkescape.go",
-        "checkescape_amd64.go",
-        "checkescape_arm64.go",
-    ],
+    srcs = ["checkescape.go"],
     nogo = False,
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [
@@ -20,4 +16,10 @@ go_library(
         "@org_golang_x_tools//go/analysis/passes/buildssa:go_default_library",
         "@org_golang_x_tools//go/ssa:go_default_library",
     ],
+)
+
+go_test(
+    name = "checkescape_test",
+    srcs = ["checkescape_test.go"],
+    embed = [":checkescape"],
 )
