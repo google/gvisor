@@ -225,6 +225,7 @@ func Init() {
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_DEVICE_IDS:                               ctrlHandler(rmControlSimple, compUtil|nvconf.CapGraphics),
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2:                               ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS:                               ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS:                         ctrlHandler(ctrlSubmitPagingOperations, compUtil),
 					nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS:                                   ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0000_CTRL_CMD_GPU_DETACH_IDS:                                   ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_PCI_INFO:                                 ctrlHandler(rmControlSimple, compUtil),
@@ -551,6 +552,7 @@ func Init() {
 							nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:                       simpleIoctlInfo("NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE", "NV0000_CTRL_CLIENT_GET_ADDR_SPACE_TYPE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY:                simpleIoctlInfo("NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY", "NV0000_CTRL_CLIENT_SET_INHERITED_SHARE_POLICY_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS:                             simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS", "NV0000_CTRL_GPU_GET_ATTACHED_IDS_PARAMS"),
+							nvgpu.NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS:                         ioctlInfo("NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS", nvgpu.NV00FE_CTRL_SUBMIT_PAGING_OPERATIONS_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_DEVICE_IDS:                               simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_DEVICE_IDS", "NV0000_CTRL_GPU_GET_DEVICE_IDS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2:                               simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2", "NV0000_CTRL_GPU_GET_ID_INFO_V2_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS:                               simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_PROBED_IDS", "NV0000_CTRL_GPU_GET_PROBED_IDS_PARAMS"),
@@ -882,6 +884,7 @@ func Init() {
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = ctrlHandler(rmControlSimple, compUtil)
 			abi.controlCmd[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = ctrlHandler(rmControlSimple, compUtil)
+			delete(abi.controlCmd, nvgpu.NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS)
 			abi.controlCmd[nvgpu.NV00E0_CTRL_CMD_IMPORT_MEM] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 			abi.controlCmd[nvgpu.NV00F1_CTRL_CMD_GET_FABRIC_EVENTS] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 			abi.controlCmd[nvgpu.NV00F1_CTRL_CMD_FINISH_MEM_UNIMPORT] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
@@ -906,6 +909,7 @@ func Init() {
 				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID", "NV0000_CTRL_GPU_ASYNC_ATTACH_ID_PARAMS")
 				info.ControlInfos[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = simpleIoctlInfo("NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID", "NV0000_CTRL_GPU_WAIT_ATTACH_ID_PARAMS")
 				info.ControlInfos[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = simpleIoctlInfo("NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL", "NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS")
+				delete(info.ControlInfos, nvgpu.NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS)
 				info.ControlInfos[nvgpu.NV00E0_CTRL_CMD_IMPORT_MEM] = simpleIoctlInfo("NV00E0_CTRL_CMD_IMPORT_MEM", "NV00E0_CTRL_IMPORT_MEM_PARAMS")
 				info.ControlInfos[nvgpu.NV00F1_CTRL_CMD_GET_FABRIC_EVENTS] = simpleIoctlInfo("NV00F1_CTRL_CMD_GET_FABRIC_EVENTS", "NV00F1_CTRL_GET_FABRIC_EVENTS_PARAMS")
 				info.ControlInfos[nvgpu.NV00F1_CTRL_CMD_FINISH_MEM_UNIMPORT] = simpleIoctlInfo("NV00F1_CTRL_CMD_FINISH_MEM_UNIMPORT", "NV00F1_CTRL_FINISH_MEM_UNIMPORT_PARAMS")

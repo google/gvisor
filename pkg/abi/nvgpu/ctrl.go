@@ -969,6 +969,39 @@ const (
 	NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE  = 0xcb33010c
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl00fe.h:
+const (
+	NV00FE_CTRL_CMD_SUBMIT_PAGING_OPERATIONS       = 0xfe0002
+	NV00FE_CTRL_SUBMIT_PAGING_OPERATIONS_MAX_COUNT = 0x10000
+)
+
+// +marshal
+type NV00FE_CTRL_PAGING_OPERATION struct {
+	_               structs.HostLayout
+	HVirtualMemory  Handle
+	Pad0            [4]byte
+	VirtualOffset   uint64
+	HPhysicalMemory Handle
+	Pad1            [4]byte
+	PhysicalOffset  uint64
+	Size            uint64
+	Flags           uint32
+	Pad2            [4]byte
+}
+
+// +marshal
+type NV00FE_CTRL_SUBMIT_PAGING_OPERATIONS_PARAMS struct {
+	_              structs.HostLayout
+	PagingOpsCount uint32
+	Pad            [4]byte
+	PagingOps      P64
+}
+
+var (
+	SizeofNV00FE_CTRL_PAGING_OPERATION                = uint32((*NV00FE_CTRL_PAGING_OPERATION)(nil).SizeBytes())
+	SizeofNV00FE_CTRL_SUBMIT_PAGING_OPERATIONS_PARAMS = uint32((*NV00FE_CTRL_SUBMIT_PAGING_OPERATIONS_PARAMS)(nil).SizeBytes())
+)
+
 // The following IOCTLs are not found in the OSS repo.
 const (
 	UNKNOWN_CONTROL_COMMAND_80028B = 0x80028b
