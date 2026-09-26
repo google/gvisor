@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "bzl_library", "go_binary", "select_goarch", "select_goos")
+load("//tools:defs.bzl", "bzl_library", "go_binary", "go_reset_target", "select_goarch", "select_goos")
 load("//tools/nogo:defs.bzl", "nogo_stdlib", "nogo_target")
 
 package(
@@ -23,6 +23,14 @@ go_binary(
     srcs = ["main.go"],
     visibility = ["//visibility:public"],
     deps = ["//tools/nogo/cli"],
+)
+
+# The exec transition selects the tool platform but preserves Go build modes.
+# Reset those modes so that analyzed targets do not configure the analyzer.
+go_reset_target(
+    name = "nogo_tool",
+    dep = ":nogo",
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
