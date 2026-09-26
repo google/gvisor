@@ -1109,6 +1109,9 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 	if err != nil {
 		return err
 	}
+	if err := s.checkGateway(msg, &localRoute); err != nil {
+		return err
+	}
 	found := false
 	for _, rt := range s.Stack.GetRouteTable() {
 		if localRoute.Equal(rt) {
@@ -1127,6 +1130,39 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 		s.Stack.ReplaceRoute(localRoute)
 	}
 	return nil
+}
+
+func (s *Stack) checkGateway(msg *nlmsg.Message, route *tcpip.Route) *syserr.Error {
+	var rtMsg linux.RouteMessage
+	if _, ok := msg.GetData(&rtMsg); !ok {
+		return syserr.ErrInvalidArgument
+	}
+	gw := route.Gateway
+	if gw.Unspecified() || header.IsV6LinkLocalUnicastAddress(gw) || rtMsg.Flags&linux.RTNH_F_ONLINK != 0 {
+		return nil
+	}
+	for _, rt := range s.Stack.GetRouteTable() {
+		if rt.Gateway.Unspecified() && (route.NIC == 0 || rt.NIC == route.NIC) && rt.Destination.Contains(gw) {
+			route.NIC = rt.NIC
+			return nil
+		}
+	}
+	nics := s.Stack.NICInfo()
+	for _, id := range slices.Sorted(maps.Keys(nics)) {
+		if route.NIC != 0 && id != route.NIC {
+			continue
+		}
+		for _, a := range nics[id].ProtocolAddresses {
+			if subnet := a.AddressWithPrefix.Subnet(); subnet.Contains(gw) {
+				route.NIC = id
+				return nil
+			}
+		}
+	}
+	if rtMsg.Family == linux.AF_INET6 {
+		return syserr.ErrHostUnreachable
+	}
+	return syserr.ErrNetworkUnreachable
 }
 
 // IPTables returns the stack's iptables.
