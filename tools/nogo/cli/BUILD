@@ -17,6 +17,7 @@ go_library(
         "//tools/nogo/flags",
         "@com_github_google_subcommands//:go_default_library",
         "@in_gopkg_yaml_v2//:go_default_library",
+        "@org_golang_x_mod//modfile:go_default_library",
         "@org_golang_x_term//:go_default_library",
     ],
 )
@@ -25,6 +26,10 @@ go_test(
     name = "cli_test",
     size = "small",
     srcs = ["cli_test.go"],
+    data = ["//tools/nogo:nogo"],
     library = ":cli",
-    deps = ["//tools/nogo/flags"],
+    deps = [
+        "//pkg/test/testutil",
+        "//tools/nogo/flags",
+    ],
 )
