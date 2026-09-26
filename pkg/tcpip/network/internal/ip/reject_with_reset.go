@@ -128,7 +128,7 @@ func buildResetPayloadV6(hopLimit uint8, src, dst tcpip.Address, tcpHdr header.T
 // RejectWithTCPReset sends a TCP reset in response to the packet.
 //
 // Ref: net/ipv[4|6]/netfilter/nf_reject_ipv[4|6].c:nf_send_reset[6]()
-func RejectWithTCPReset(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, stk *stack.Stack, deliveredLocally bool) tcpip.Error {
+func RejectWithTCPReset(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, stk *stack.Stack, hook stack.Hook) tcpip.Error {
 	var src, dst tcpip.Address
 	var ttl uint8
 	isFragment := false
@@ -231,13 +231,13 @@ func RejectWithTCPReset(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolN
 	// so we can't validate the checksum for fragmented packets.
 	if !isFragment {
 		// Check checksum integrity.
-		if !pkt.RXChecksumValidated && !tcpHdr.IsChecksumValid(src, dst, pkt.Data().Checksum(), uint16(pkt.Data().Size())) {
+		if !pkt.RXChecksumValidated && hook != stack.Output && !tcpHdr.IsChecksumValid(src, dst, pkt.Data().Checksum(), uint16(pkt.Data().Size())) {
 			return nil
 		}
 	}
 
 	localAddr := dst
-	if !deliveredLocally {
+	if hook != stack.Input {
 		// If the packet wasn't delivered locally, do not use the packet's destination
 		// address as the response's source address as we should not own the
 		// destination address.
