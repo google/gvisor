@@ -1,0 +1,105 @@
+# Replace glibc's execinfo backtrace API with libbacktrace so DPDK's stack
+# diagnostics also build with musl. Use in-memory unwinding and retain frame
+# addresses, avoiding symbol-file lookups after the sentry installs seccomp.
+
+diff --git a/lib/librte_eal/linuxapp/eal/eal_debug.c b/lib/librte_eal/linuxapp/eal/eal_debug.c
+--- a/lib/librte_eal/linuxapp/eal/eal_debug.c
++++ b/lib/librte_eal/linuxapp/eal/eal_debug.c
+@@ -3,7 +3,9 @@
+  */
+ 
+ #ifdef RTE_BACKTRACE
+-#include <execinfo.h>
++#include <backtrace.h>
++#include <dlfcn.h>
++#include <pthread.h>
+ #endif
+ #include <stdarg.h>
+ #include <signal.h>
+@@ -18,27 +20,73 @@
+ 
+ #define BACKTRACE_SIZE 256
+ 
++#ifdef RTE_BACKTRACE
++static struct backtrace_state *trace_state;
++static pthread_once_t trace_once = PTHREAD_ONCE_INIT;
++
++struct stack_trace {
++	uintptr_t pc[BACKTRACE_SIZE];
++	unsigned int size;
++};
++
++static void
++trace_error(void *data, const char *message, int error)
++{
++	(void)data;
++	rte_log(RTE_LOG_ERR, RTE_LOGTYPE_EAL,
++		"Could not unwind stack: %s (%d)\n", message, error);
++}
++
++static void
++trace_init(void)
++{
++	/* Reuse the library's state; it has no corresponding free operation. */
++	trace_state = backtrace_create_state(NULL, 1, trace_error, NULL);
++}
++
++static int
++trace_frame(void *data, uintptr_t pc)
++{
++	struct stack_trace *trace = data;
++
++	if (pc == 0 || pc == UINTPTR_MAX)
++		return 1;
++	trace->pc[trace->size++] = pc;
++	return trace->size == BACKTRACE_SIZE;
++}
++#endif
++
+ /* dump the stack of the calling core */
+ void rte_dump_stack(void)
+ {
+ #ifdef RTE_BACKTRACE
+-	void *func[BACKTRACE_SIZE];
+-	char **symb = NULL;
+-	int size;
++	struct stack_trace trace = { .size = 0 };
+ 
+-	size = backtrace(func, BACKTRACE_SIZE);
+-	symb = backtrace_symbols(func, size);
+-
+-	if (symb == NULL)
++	pthread_once(&trace_once, trace_init);
++	if (trace_state == NULL)
+ 		return;
+ 
+-	while (size > 0) {
+-		rte_log(RTE_LOG_ERR, RTE_LOGTYPE_EAL,
+-			"%d: [%s]\n", size, symb[size - 1]);
+-		size --;
++	/* The simple API unwinds in memory. Symbol-file APIs may open the
++	 * executable, which is unsuitable after the sentry installs filters.
++	 */
++	backtrace_simple(trace_state, 0, trace_frame, trace_error, &trace);
++	while (trace.size > 0) {
++		uintptr_t pc = trace.pc[trace.size - 1];
++		Dl_info info;
++
++		/* Static musl may not name the symbol; always retain its address. */
++		if (dladdr((void *)pc, &info) != 0 && info.dli_sname != NULL &&
++				info.dli_saddr != NULL) {
++			rte_log(RTE_LOG_ERR, RTE_LOGTYPE_EAL,
++				"%u: [%p <%s+%#lx>]\n", trace.size, (void *)pc,
++				info.dli_sname, (unsigned long)(pc -
++					(uintptr_t)info.dli_saddr));
++		} else {
++			rte_log(RTE_LOG_ERR, RTE_LOGTYPE_EAL,
++				"%u: [%p]\n", trace.size, (void *)pc);
++		}
++		trace.size--;
+ 	}
+-
+-	free(symb);
+ #endif /* RTE_BACKTRACE */
+ }
+ 
