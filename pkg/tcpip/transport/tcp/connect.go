@@ -1549,7 +1549,15 @@ func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 			// for the rest of the TIME-WAIT period.
 			if handler := e.stack.TransportProtocolDefaultHandler(info.TransProto); handler != nil {
 				reuseTW = func() {
-					handler(s.id, s.pkt)
+					if !handler(s.id, s.pkt) {
+						// Mirror the normal (non-TIME-WAIT) delivery path in
+						// nic.DeliverTransportPacket: a default handler that
+						// declines the segment is not itself an answer, so
+						// reply with a RST rather than dropping it silently.
+						if !s.flags.Contains(header.TCPFlagRst) {
+							replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+						}
+					}
 					s.DecRef()
 				}
 				// We explicitly do not DecRef the segment as it's still valid and
