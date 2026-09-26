@@ -163,6 +163,7 @@ go_path(
         # binaries have been factored into a cli package, which is
         # a good practice in any case.
         "//runsc/cli/maincli",
+        "//runsc/cli/sentrycli",
         "//shim/v1/cli",
         "//webhook/pkg/cli",
         "//tools/checklocks",
