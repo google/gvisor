@@ -13,20 +13,15 @@
 // limitations under the License.
 
 // Package hostos contains utility functions for getting information about the host OS.
+//
+// The actual host queries are OS-specific: KernelVersion and TotalSystemMemory
+// are implemented in hostos_linux.go and stubbed out elsewhere.
 package hostos
 
 import (
-	"bufio"
 	"fmt"
-	"io"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
 
 	"golang.org/x/mod/semver"
-	"golang.org/x/sys/unix"
 )
 
 // Version represents a semantic version of the form "%d.%d[.%d]".
@@ -51,87 +46,4 @@ func (vr Version) String() string {
 	}
 	// Omit the "v" prefix required by semver.
 	return vr.version[1:]
-}
-
-// These values are effectively local to KernelVersion, but kept here so as to
-// work with sync.Once.
-var (
-	semVersion Version
-	unameErr   error
-	once       sync.Once
-)
-
-// KernelVersion returns the version of the kernel using uname().
-func KernelVersion() (Version, error) {
-	once.Do(func() {
-		var utsname unix.Utsname
-		if err := unix.Uname(&utsname); err != nil {
-			unameErr = err
-			return
-		}
-
-		var sb strings.Builder
-		for _, b := range utsname.Release {
-			if b == 0 {
-				break
-			}
-			sb.WriteByte(byte(b))
-		}
-
-		versionRegexp := regexp.MustCompile(`[0-9]+\.[0-9]+(\.[0-9]+)?`)
-		version := "v" + string(versionRegexp.Find([]byte(sb.String())))
-		if !semver.IsValid(version) {
-			unameErr = fmt.Errorf("invalid version found in release %q", sb.String())
-			return
-		}
-		semVersion.version = version
-	})
-
-	return semVersion, unameErr
-}
-
-// TotalSystemMemory extracts "MemTotal" from "/proc/meminfo".
-func TotalSystemMemory() (uint64, error) {
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	return parseTotalSystemMemory(f)
-}
-
-func parseTotalSystemMemory(r io.Reader) (uint64, error) {
-	for scanner := bufio.NewScanner(r); scanner.Scan(); {
-		line := scanner.Text()
-		totalStr := strings.TrimPrefix(line, "MemTotal:")
-		if len(totalStr) < len(line) {
-			fields := strings.Fields(totalStr)
-			if len(fields) == 0 || len(fields) > 2 {
-				return 0, fmt.Errorf(`malformed "MemTotal": %q`, line)
-			}
-			totalStr = fields[0]
-			unit := ""
-			if len(fields) == 2 {
-				unit = fields[1]
-			}
-			mem, err := strconv.ParseUint(totalStr, 10, 64)
-			if err != nil {
-				return 0, err
-			}
-			switch unit {
-			case "":
-				// do nothing.
-			case "kB":
-				memKb := mem
-				mem = memKb * 1024
-				if mem < memKb {
-					return 0, fmt.Errorf(`"MemTotal" too large: %d`, memKb)
-				}
-			default:
-				return 0, fmt.Errorf("unknown unit %q: %q", unit, line)
-			}
-			return mem, nil
-		}
-	}
-	return 0, fmt.Errorf(`malformed "/proc/meminfo": "MemTotal" not found`)
 }
