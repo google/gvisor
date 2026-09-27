@@ -88,7 +88,6 @@ func TestExpandSlice(t *testing.T) {
 }
 
 func TestInstall(t *testing.T) {
-	const dialErr = "dial unix /var/run/dbus/system_bus_socket: connect: no such file or directory"
 	for _, tc := range []struct {
 		name             string
 		res              *specs.LinuxResources
@@ -258,10 +257,9 @@ func TestInstall(t *testing.T) {
 			}
 
 			if tc.updatedRes != nil {
-				if err := cg.Update(tc.updatedRes); err != nil && err.Error() != dialErr {
-					if !errors.Is(err, tc.err) {
-						t.Fatalf("Wrong error, got: %s, want: %s", err, tc.err)
-					}
+				// Check the generated properties without updating a host systemd unit.
+				if err := cg.updateControllersProps(tc.updatedRes); !errors.Is(err, tc.err) {
+					t.Fatalf("updateControllersProps() = %v, want %v", err, tc.err)
 				}
 				filteredProps = filterProperties(cg.properties, tc.wantUpdatedProps)
 				if diff := cmp.Diff(filteredProps, tc.wantUpdatedProps, cmper, sorter); diff != "" {

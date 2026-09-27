@@ -36,7 +36,6 @@ go_test(
         "systemd_test.go",
     ],
     library = ":cgroup",
-    tags = ["local"],
     deps = [
         "//pkg/test/testutil",
         "@com_github_coreos_go_systemd_v22//dbus:go_default_library",
