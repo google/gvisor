@@ -348,6 +348,122 @@ func TestNicExitingStackExitsBridgeToo(t *testing.T) {
 	}
 }
 
+// makeEthernetFrame builds an inbound frame whose ethernet header is still in
+// the payload, for injection into a channel endpoint wrapped by ethernet.New.
+func makeEthernetFrame(src, dst tcpip.LinkAddress) *stack.PacketBuffer {
+	hdr := make([]byte, header.EthernetMinimumSize)
+	header.Ethernet(hdr).Encode(&header.EthernetFields{
+		SrcAddr: src,
+		DstAddr: dst,
+		Type:    header.IPv4ProtocolNumber,
+	})
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(hdr),
+	})
+}
+
+// drainChannels releases every packet queued on the given endpoints.
+func drainChannels(eps ...*channel.Endpoint) {
+	for _, ep := range eps {
+		for pkt := ep.Read(); pkt != nil; pkt = ep.Read() {
+			pkt.DecRef()
+		}
+	}
+}
+
+// TestBridgeDispatchOnlyForLocalOrMulticast checks that only group frames and
+// frames addressed to the bridge or to the receiving port are passed up; other
+// frames are only forwarded.
+func TestBridgeDispatchOnlyForLocalOrMulticast(t *testing.T) {
+	const (
+		channelLinkAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x10")
+		channelLinkAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x11")
+		bridgeLinkAddr   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x12")
+		unknownLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x13")
+
+		nicID1   = 11
+		nicID2   = 12
+		bridgeID = 13
+	)
+
+	tests := []struct {
+		name       string
+		dst        tcpip.LinkAddress
+		wantUpcall bool
+		// checkFwd checks that port 2 receives the frame. Frames for the bridge
+		// or the receiving port are not checked because they are still flooded.
+		checkFwd bool
+	}{
+		{name: "unicast to other port", dst: channelLinkAddr2, checkFwd: true},
+		{name: "unknown unicast", dst: unknownLinkAddr, checkFwd: true},
+		{name: "unicast to bridge", dst: bridgeLinkAddr, wantUpcall: true},
+		{name: "unicast to receiving port", dst: channelLinkAddr1, wantUpcall: true},
+		{name: "broadcast", dst: header.EthernetBroadcastAddress, wantUpcall: true, checkFwd: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ch1 := channel.New(1, header.EthernetMinimumSize, channelLinkAddr1)
+			ch2 := channel.New(1, header.EthernetMinimumSize, channelLinkAddr2)
+			bridgeEndpoint := stack.NewBridgeEndpoint(1500)
+			bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
+
+			s := stack.New(stack.Options{})
+			defer s.Destroy()
+			if err := s.CreateNIC(bridgeID, bridgeEndpoint); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+			}
+			if err := s.CreateNIC(nicID1, ethernet.New(ch1)); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
+			}
+			if err := s.CreateNIC(nicID2, ethernet.New(ch2)); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
+			}
+			if err := s.SetNICCoordinator(nicID1, bridgeID); err != nil {
+				t.Fatalf("s.SetNICCoordinator(%d, %d): %s", nicID1, bridgeID, err)
+			}
+			if err := s.SetNICCoordinator(nicID2, bridgeID); err != nil {
+				t.Fatalf("s.SetNICCoordinator(%d, %d): %s", nicID2, bridgeID, err)
+			}
+
+			// Learn port 2 so that frames to it are forwarded, not flooded.
+			learn := makeEthernetFrame(channelLinkAddr2, channelLinkAddr1)
+			ch2.InjectInbound(header.IPv4ProtocolNumber, learn)
+			learn.DecRef()
+			drainChannels(ch1, ch2)
+
+			rx := s.NICInfo()[bridgeID].Stats.Rx.Packets
+			before := rx.Value()
+			pkt := makeEthernetFrame(channelLinkAddr1, test.dst)
+			ch1.InjectInbound(header.IPv4ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			var wantUpcalls uint64
+			if test.wantUpcall {
+				wantUpcalls = 1
+			}
+			if got := rx.Value() - before; got != wantUpcalls {
+				t.Errorf("got %d frames passed up to the bridge, want %d", got, wantUpcalls)
+			}
+			if test.checkFwd {
+				if fwd := ch2.Read(); fwd == nil {
+					t.Error("frame was not forwarded to port 2")
+				} else {
+					fwd.LinkHeader().Consume(header.EthernetMinimumSize)
+					if got := header.Ethernet(fwd.LinkHeader().Slice()).DestinationAddress(); got != test.dst {
+						t.Errorf("got forwarded destination = %s, want = %s", got, test.dst)
+					}
+					fwd.DecRef()
+				}
+			}
+
+			drainChannels(ch1, ch2)
+			ch1.Close()
+			ch2.Close()
+		})
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()
