@@ -34,6 +34,8 @@
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/test_util.h"
@@ -84,18 +86,22 @@ TEST(RlimitTest, UnprivilegedSetRlimit) {
   // Drop privileges if necessary.
   AutoCapability cap(CAP_SYS_RESOURCE, false);
 
-  struct rlimit rl = {};
-  rl.rlim_cur = 1000;
-  rl.rlim_max = 20000;
-  EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+  // Lowering the hard limit is irreversible without CAP_SYS_RESOURCE, so use a
+  // subprocess. Zero is valid regardless of the inherited limit and does not
+  // affect already-open descriptors.
+  EXPECT_THAT(InForkedProcess([] {
+                struct rlimit rl = {};
+                TEST_PCHECK(setrlimit(RLIMIT_NOFILE, &rl) == 0);
 
-  struct rlimit rl2 = {};
-  EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl2), SyscallSucceeds());
-  EXPECT_EQ(rl.rlim_cur, rl2.rlim_cur);
-  EXPECT_EQ(rl.rlim_max, rl2.rlim_max);
+                struct rlimit rl2 = {};
+                TEST_PCHECK(getrlimit(RLIMIT_NOFILE, &rl2) == 0);
+                TEST_CHECK(rl2.rlim_cur == 0);
+                TEST_CHECK(rl2.rlim_max == 0);
 
-  rl.rlim_max = 100000;
-  EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallFailsWithErrno(EPERM));
+                rl.rlim_max = 1;
+                TEST_CHECK_ERRNO(setrlimit(RLIMIT_NOFILE, &rl), EPERM);
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(RlimitTest, SetSoftRlimitAboveHard) {
