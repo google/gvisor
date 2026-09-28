@@ -40,4 +40,8 @@ go_test(
         "gro_test.go",
     ],
     library = ":gro",
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/stack",
+    ],
 )
