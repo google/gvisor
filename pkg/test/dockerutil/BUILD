@@ -49,6 +49,14 @@ go_library(
 )
 
 go_test(
+    name = "exec_test",
+    size = "small",
+    srcs = ["exec_test.go"],
+    library = ":dockerutil",
+    deps = ["@com_github_docker_docker//client:go_default_library"],
+)
+
+go_test(
     name = "profile_test",
     size = "large",
     srcs = [
