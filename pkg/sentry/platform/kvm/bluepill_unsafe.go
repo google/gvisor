@@ -123,6 +123,7 @@ const (
 	kvmExitFailEntryStr
 	kvmExitNoMemory
 	kvmExitNoSpace
+	kvmExitRunFailedStr
 )
 
 var printHexTitles = [...][]byte{
@@ -136,6 +137,7 @@ var printHexTitles = [...][]byte{
 	kvmExitFailEntryStr:     []byte("unexpected fail_entry exit: "),
 	kvmExitNoMemory:         []byte("host out of memory"),
 	kvmExitNoSpace:          []byte("host out of MMU pages"),
+	kvmExitRunFailedStr:     []byte("unexpected KVM_RUN errno: "),
 }
 
 // bluepillHandler is called from the signal stub.
@@ -224,6 +226,7 @@ func bluepillHandler(context unsafe.Pointer) {
 		case unix.ENOSPC:
 			bluepillDieCleanly(kvmExitNoSpace)
 		default:
+			printHex(printHexTitles[kvmExitRunFailedStr], uint64(errno))
 			throw("run failed")
 		}
 
