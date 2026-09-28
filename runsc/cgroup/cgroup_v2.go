@@ -725,7 +725,7 @@ func (*io2) set(spec *specs.LinuxResources, path string) error {
 
 	// If BFQ IO scheduler is available, use it.
 	if blkio.Weight != nil || len(blkio.WeightDevice) > 0 {
-		bfq, err = os.Open(filepath.Join(path, "io.bfq.weight"))
+		bfq, err = os.OpenFile(filepath.Join(path, "io.bfq.weight"), os.O_RDWR, 0)
 		if err == nil {
 			defer bfq.Close()
 		} else if !os.IsNotExist(err) {
@@ -902,12 +902,13 @@ func bfqDeviceWeightSupported(bfq *os.File) bool {
 	}
 
 	buf := make([]byte, 32)
-	if _, err := bfq.Read(buf); err != nil {
+	n, err := bfq.Read(buf)
+	if err != nil {
 		return false
 	}
-	// If only a single number (default weight) if read back, we have older
+	// If only a single number (default weight) is read back, we have an older
 	// kernel.
-	_, err := strconv.ParseInt(string(bytes.TrimSpace(buf)), 10, 64)
+	_, err = strconv.ParseInt(string(bytes.TrimSpace(buf[:n])), 10, 64)
 	return err != nil
 }
 

@@ -48,6 +48,14 @@ func TestIO(t *testing.T) {
 			wants: strconv.FormatUint(convertBlkIOToIOWeightValue(1), 10),
 		},
 		{
+			name: "bfq",
+			spec: &specs.LinuxBlockIO{
+				Weight: uint16Ptr(750),
+			},
+			path:  "io.bfq.weight",
+			wants: "750",
+		},
+		{
 			name: "throttlereadbps",
 			spec: &specs.LinuxBlockIO{
 				ThrottleReadBpsDevice: []specs.LinuxThrottleDevice{
@@ -123,6 +131,31 @@ func TestIO(t *testing.T) {
 			got := strings.TrimSuffix(string(gotBytes), "\n")
 			if got != tc.wants {
 				t.Errorf("wrong file content, file: %q, want: %q, got: %q", tc.path, tc.wants, got)
+			}
+		})
+	}
+}
+
+func TestBFQDeviceWeightSupported(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		contents string
+		want     bool
+	}{
+		{name: "legacy", contents: "100\n", want: false},
+		{name: "per_device", contents: "default 100\n", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bfq, err := os.CreateTemp(t.TempDir(), "bfq")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bfq.Close()
+			if _, err := bfq.WriteString(tc.contents); err != nil {
+				t.Fatal(err)
+			}
+			if got := bfqDeviceWeightSupported(bfq); got != tc.want {
+				t.Errorf("bfqDeviceWeightSupported(%q) = %t, want %t", tc.contents, got, tc.want)
 			}
 		})
 	}
