@@ -559,8 +559,9 @@ func (rp *ResolvingPath) warnIfLandlockUnchecked(op string) {
 // CheckLandlockOpen checks the rights that opening d with opts requires. isDir
 // is whether d is a directory.
 //
-// Callers must call this before honoring O_TRUNC, so that a denied open leaves
-// the file intact.
+// Callers must call this after CheckOpenFileType(), so that e.g. O_DIRECTORY on
+// a regular file fails with ENOTDIR rather than EACCES, and before honoring
+// O_TRUNC, so that a denied open leaves the file intact.
 //
 // Matches Linux [security/landlock/fs.c]:hook_file_open()
 func (rp *ResolvingPath) CheckLandlockOpen(ctx context.Context, d *Dentry, opts *OpenOptions, isDir bool) error {
@@ -591,6 +592,31 @@ func (rp *ResolvingPath) CheckLandlockOpenCreate(ctx context.Context, parent *De
 // and hook_path_symlink()
 func (rp *ResolvingPath) CheckLandlockCreate(ctx context.Context, parent *Dentry, mode linux.FileMode) error {
 	return rp.checkLandlockAccess(ctx, parent, landlockModeAccess(mode))
+}
+
+// CheckLandlockMknod checks the right required to create a file of opts.Mode
+// in parent, as CheckLandlockCreate does, and then, if a Landlock domain
+// restricts rp's credentials, CAP_MKNOD. mknodat(2) checks CAP_MKNOD before
+// the path resolves for every other task, but Linux checks it in vfs_mknod(),
+// after the Landlock hook, so that e.g. an unprivileged task denied MAKE_CHAR
+// gets EACCES, not EPERM. Kernel-internal callers, e.g. devtmpfs and overlay
+// copy-up, are not restricted, so they are not checked here either.
+//
+// FilesystemImpls must call it from MknodAt() instead of CheckLandlockCreate.
+//
+// Preconditions: The caller holds the lock under which it resolved parent, and
+// has established that the file does not already exist.
+//
+// Matches Linux [security/landlock/fs.c]:hook_path_mknod(), then the
+// capability check in [fs/namei.c]:vfs_mknod()
+func (rp *ResolvingPath) CheckLandlockMknod(ctx context.Context, parent *Dentry, opts *MknodOptions) error {
+	if err := rp.CheckLandlockCreate(ctx, parent, opts.Mode); err != nil {
+		return err
+	}
+	if !rp.LandlockRestricted() {
+		return nil
+	}
+	return CheckMknodCapability(rp.creds, opts.Mode, opts.DevMajor, opts.DevMinor)
 }
 
 // CheckLandlockRemove checks the right required to remove a file from parent.

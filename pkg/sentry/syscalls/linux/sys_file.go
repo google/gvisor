@@ -60,21 +60,22 @@ func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMod
 	}
 	defer tpop.Release(t)
 
-	switch ft := mode.FileType(); ft {
-	case 0:
+	if mode.FileType() == 0 {
 		// "Zero file type is equivalent to type S_IFREG." - mknod(2)
 		mode |= linux.ModeRegular
-	case linux.ModeCharacterDevice, linux.ModeBlockDevice:
-		// Linux requires CAP_MKNOD in the init user namespace to create
-		// block or character device nodes, except for whiteouts (S_IFCHR
-		// with device number WHITEOUT_DEV). See fs/namei.c:vfs_mknod().
-		isWhiteout := ft == linux.ModeCharacterDevice && dev == linux.WHITEOUT_DEV
-		if !isWhiteout && !t.HasRootCapability(linux.CAP_MKNOD) {
-			return linuxerr.EPERM
-		}
 	}
 	major, minor := linux.DecodeDeviceID(dev)
-	return t.Kernel().VFS().MknodAt(t, t.Credentials(), &tpop.pop, &vfs.MknodOptions{
+	creds := t.Credentials()
+	// CAP_MKNOD for device nodes is checked before the path resolves, except
+	// for a task restricted by Landlock: Linux checks it in vfs_mknod(), after
+	// the Landlock hook, so the FilesystemImpl checks it for such a task after
+	// its Landlock check; see vfs.ResolvingPath.CheckLandlockMknod().
+	if vfs.LandlockDomainFromCredentials(creds).NumLayers() == 0 {
+		if err := vfs.CheckMknodCapability(creds, mode, uint32(major), minor); err != nil {
+			return err
+		}
+	}
+	return t.Kernel().VFS().MknodAt(t, creds, &tpop.pop, &vfs.MknodOptions{
 		Mode:     mode &^ linux.FileMode(t.FSContext().Umask()),
 		DevMajor: uint32(major),
 		DevMinor: minor,
