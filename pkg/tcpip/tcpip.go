@@ -1009,6 +1009,10 @@ const (
 	// between the aligned header and the payload.
 	PacketMMapReserveOption
 
+	// PacketMMapCopyThresholdOption enables copying oversized mmap packets to
+	// the receive queue when nonzero.
+	PacketMMapCopyThresholdOption
+
 	// IPv6MulticastInterfaceOption is used to set/get the NIC used for
 	// IPv6 multicast Tx.
 	IPv6MulticastInterfaceOption
