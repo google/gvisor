@@ -74,6 +74,8 @@ func (t *Terminal) OpenTTY(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 	}
 	fd.LockFD.Init(&ri.locks)
 	if err := fd.vfsfd.Init(fd, opts.Flags, tsk.Credentials(), mnt, vfsd, &vfs.FileDescriptionOptions{
+		DenyPRead:   true,
+		DenyPWrite:  true,
 		SpecialFile: true,
 	}); err != nil {
 		return nil, err
