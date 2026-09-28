@@ -197,9 +197,9 @@ func bluepill(c *vCPU) {
 
 	// Block all signals.
 	sigmask := linux.SignalSet(^uint64(0))
-	if err := sigframe.CallWithSignalFrame(
+	if errno := sigframe.CallWithSignalFrame(
 		&c.signalStack, addrOfBluepillUserHandler(),
-		&sigmask, uint64(uintptr(unsafe.Pointer(c)))); err != nil {
+		&sigmask, uint64(uintptr(unsafe.Pointer(c)))); errno != 0 {
 		throw("failed to swallow the bluepill")
 	}
 }
