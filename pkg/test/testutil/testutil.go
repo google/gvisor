@@ -579,38 +579,45 @@ func StartReaper() func() {
 }
 
 // WaitUntilRead reads from the given reader until the wanted string is found
-// or until timeout.
+// or until timeout. The caller owns r; after a timeout, it must release any
+// blocked Read (for example by closing the reader) to let the scanner exit.
 func WaitUntilRead(r io.Reader, want string, timeout time.Duration) error {
-	sc := bufio.NewScanner(r)
-	// done must be accessed atomically. A value greater than 0 indicates
-	// that the read loop can exit.
-	doneCh := make(chan bool)
-	defer close(doneCh)
-	go func() {
-		for sc.Scan() {
-			t := sc.Text()
-			if strings.Contains(t, want) {
-				doneCh <- true
-				return
-			}
-			select {
-			case <-doneCh:
-				return
-			default:
-			}
-		}
-		doneCh <- false
-	}()
-
+	cancel := make(chan struct{})
+	defer close(cancel)
+	result := readUntil(r, want, cancel)
 	select {
 	case <-time.After(timeout):
 		return fmt.Errorf("timeout waiting to read %q", want)
-	case res := <-doneCh:
-		if !res {
+	case found := <-result:
+		if !found {
 			return fmt.Errorf("reader closed while waiting to read %q", want)
 		}
 		return nil
 	}
+}
+
+// readUntil owns the scanner and result channel. Its single result can be
+// published even after the waiter has canceled and stopped receiving.
+func readUntil(r io.Reader, want string, cancel <-chan struct{}) <-chan bool {
+	sc := bufio.NewScanner(r)
+	result := make(chan bool, 1)
+	go func() {
+		defer close(result)
+		for sc.Scan() {
+			t := sc.Text()
+			if strings.Contains(t, want) {
+				result <- true
+				return
+			}
+			select {
+			case <-cancel:
+				return
+			default:
+			}
+		}
+		result <- false
+	}()
+	return result
 }
 
 // KillCommand kills the process running cmd unless it hasn't been started. It
