@@ -19,6 +19,7 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/uniqueid",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",

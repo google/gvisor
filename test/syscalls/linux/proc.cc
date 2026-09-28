@@ -29,9 +29,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/signalfd.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
@@ -1387,6 +1389,53 @@ TEST(ProcSelfFdInfo, Flags) {
   auto fd_info = ASSERT_NO_ERRNO_AND_VALUE(
       GetContents(absl::StrCat("/proc/self/fdinfo/", fd.get())));
   EXPECT_THAT(fd_info, HasSubstr(absl::StrFormat("flags:\t%#o", flags)));
+}
+
+TEST(ProcSelfFdInfo, Ino) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  auto fd_info = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents(absl::StrCat("/proc/self/fdinfo/", fd.get())));
+  // See fs/proc/fd.c:seq_show(): "ino:\t%llu" directly follows mnt_id.
+  EXPECT_THAT(fd_info, HasSubstr(absl::StrFormat("\nino:\t%d\n", st.st_ino)));
+  EXPECT_THAT(fd_info, ContainsRegex("mnt_id:\t[0-9]+\nino:\t[0-9]+\n"));
+}
+
+TEST(ProcSelfFdInfo, Eventfd) {
+  const FileDescriptor efd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0x2a, EFD_SEMAPHORE));
+  auto fd_info = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents(absl::StrCat("/proc/self/fdinfo/", efd.get())));
+  // See fs/eventfd.c:eventfd_show_fdinfo(): "eventfd-count: %16llx".
+  EXPECT_THAT(fd_info, HasSubstr("eventfd-count:               2a\n"));
+  // eventfd-id was added in Linux 5.2 and eventfd-semaphore in 6.3. gVisor
+  // implements both.
+  KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+  if (IsRunningOnGvisor() || version.major > 5 ||
+      (version.major == 5 && version.minor >= 2)) {
+    EXPECT_THAT(fd_info, ContainsRegex("eventfd-id: [0-9]+\n"));
+  }
+  if (IsRunningOnGvisor() || version.major > 6 ||
+      (version.major == 6 && version.minor >= 3)) {
+    EXPECT_THAT(fd_info, HasSubstr("eventfd-semaphore: 1\n"));
+  }
+}
+
+TEST(ProcSelfFdInfo, Signalfd) {
+  // Ask for SIGUSR1 and SIGKILL; the kernel silently drops SIGKILL.
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  sigaddset(&set, SIGKILL);
+  const FileDescriptor sfd(signalfd(-1, &set, SFD_CLOEXEC));
+  ASSERT_THAT(sfd.get(), SyscallSucceeds());
+  auto fd_info = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents(absl::StrCat("/proc/self/fdinfo/", sfd.get())));
+  // SIGUSR1 is signal 10, i.e. bit 9.
+  EXPECT_THAT(fd_info, HasSubstr("sigmask:\t0000000000000200\n"));
 }
 
 TEST(ProcSelfExe, Absolute) {
