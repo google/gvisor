@@ -195,7 +195,6 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	var (
 		status                           = uint32(linux.TP_STATUS_USER)
 		macOffset, netOffset, dataLength uint32
-		clone                            *stack.PacketBuffer
 	)
 
 	m.mu.Lock()
@@ -244,14 +243,14 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	}
 	dataLength = uint32(pktBuf.Size())
 
-	// If the packet is too large to fit in the ring buffer, copy it to the
-	// receive queue.
-	if macOffset+dataLength > m.rxRingBuffer.FrameSize() {
-		clone = pkt.Clone()
-		defer clone.DecRef()
-		dataLength = m.rxRingBuffer.FrameSize() - macOffset
-		if int(dataLength) < 0 {
-			dataLength = 0
+	// An oversized packet is truncated in the ring. The packet endpoint decides
+	// whether a complete copy can also be queued for recvfrom.
+	frameSize := m.rxRingBuffer.FrameSize()
+	truncated := macOffset > frameSize || dataLength > frameSize-macOffset
+	if truncated {
+		dataLength = 0
+		if macOffset < frameSize {
+			dataLength = frameSize - macOffset
 		}
 	}
 
@@ -273,9 +272,8 @@ func (m *Endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoco
 	}
 	m.rxRingBuffer.incHead()
 
-	if clone != nil {
+	if truncated && m.packetEP.HandlePacketMMapCopy(nicID, netProto, pkt) {
 		status |= linux.TP_STATUS_COPY
-		m.packetEP.HandlePacketMMapCopy(nicID, netProto, clone)
 	}
 	t := m.stack.Clock().Now()
 	version := m.version

@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -460,29 +461,63 @@ TEST(PacketMmapTest, MmapCopy) {
     ASSERT_THAT(munmap(ring, tp_block_size * tp_block_nr), SyscallSucceeds());
   });
 
-  std::string kMessage = "123abc" + std::string(1000, '*');
-  ASSERT_THAT(
-      sendto(mmap_sock.get(), kMessage.c_str(), kMessage.size(), 0 /* flags */,
-             reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)),
-      SyscallSucceeds());
+  // Copying is disabled by default and can be changed after the ring is mapped.
+  // Linux treats any nonzero PACKET_COPY_THRESH value as enabling full copies.
+  const std::array<int, 4> thresholds = {0, 1, 0, -1};
+  ASSERT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_COPY_THRESH,
+                         thresholds.data(), sizeof(int) - 1),
+              SyscallFailsWithErrno(EINVAL));
+  ASSERT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_COPY_THRESH,
+                         thresholds.data(), sizeof(int) + 1),
+              SyscallFailsWithErrno(EINVAL));
+  const std::string kMessage = "123abc" + std::string(1000, '*');
+  for (size_t i = 0; i < thresholds.size(); ++i) {
+    SCOPED_TRACE(i);
+    const int threshold = thresholds[i];
+    if (i != 0) {
+      ASSERT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_COPY_THRESH,
+                             &threshold, sizeof(threshold)),
+                  SyscallSucceeds());
+    }
+    ASSERT_THAT(
+        sendto(mmap_sock.get(), kMessage.c_str(), kMessage.size(),
+               0 /* flags */, reinterpret_cast<const sockaddr*>(&bind_addr),
+               sizeof(bind_addr)),
+        SyscallSucceedsWithValue(kMessage.size()));
 
-  // Wait for the packet to become available on both sockets.
-  struct pollfd pfd = {};
-  pfd.fd = mmap_sock.get();
-  pfd.revents = 0;
-  pfd.events = POLLIN | POLLRDNORM | POLLERR;
-  ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceeds());
+    struct pollfd pfd = {};
+    pfd.fd = mmap_sock.get();
+    pfd.events = POLLIN | POLLRDNORM | POLLERR;
+    ASSERT_THAT(poll(&pfd, 1, 10000), SyscallSucceedsWithValue(1));
+    ASSERT_NE(pfd.revents & POLLIN, 0);
 
-  char buf[1024];
-  socklen_t src_len = sizeof(kMessage);
-  EXPECT_THAT(recvfrom(mmap_sock.get(), buf, sizeof(buf), 0,
-                       reinterpret_cast<sockaddr*>(&bind_addr), &src_len),
-              SyscallSucceedsWithValue(kMessage.size()));
+    auto* hdr = reinterpret_cast<tpacket_hdr*>(static_cast<char*>(ring) +
+                                               i * tp_frame_size);
+    EXPECT_EQ(hdr->tp_status & (TP_STATUS_USER | TP_STATUS_COPY),
+              TP_STATUS_USER | (threshold != 0 ? TP_STATUS_COPY : 0));
+    EXPECT_EQ(hdr->tp_len, kMessage.size());
+    ASSERT_LE(hdr->tp_mac, tp_frame_size);
+    ASSERT_EQ(hdr->tp_snaplen, tp_frame_size - hdr->tp_mac);
+    EXPECT_EQ(memcmp(reinterpret_cast<char*>(hdr) + hdr->tp_mac,
+                     kMessage.data(), hdr->tp_snaplen),
+              0);
 
-  tpacket_hdr* hdr = reinterpret_cast<tpacket_hdr*>(ring);
-  EXPECT_EQ(hdr->tp_status & (TP_STATUS_USER | TP_STATUS_COPY),
-            TP_STATUS_USER | TP_STATUS_COPY);
-  EXPECT_EQ(hdr->tp_snaplen, tp_frame_size - hdr->tp_mac);
+    // Ring readiness does not imply that a full copy was queued. Never block
+    // here, so a missing copy produces a failure instead of hanging the suite.
+    char buf[1024];
+    sockaddr_ll source = {};
+    socklen_t source_len = sizeof(source);
+    const ssize_t received =
+        recvfrom(mmap_sock.get(), buf, sizeof(buf), MSG_DONTWAIT,
+                 reinterpret_cast<sockaddr*>(&source), &source_len);
+    if (threshold != 0) {
+      ASSERT_THAT(received, SyscallSucceedsWithValue(kMessage.size()));
+      EXPECT_EQ(memcmp(buf, kMessage.data(), kMessage.size()), 0);
+    } else {
+      ASSERT_THAT(received, SyscallFailsWithErrno(EAGAIN));
+    }
+    hdr->tp_status = TP_STATUS_KERNEL;
+  }
 }
 
 TEST(PacketMmapTest, SetVersion) {
