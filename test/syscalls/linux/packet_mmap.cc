@@ -492,9 +492,16 @@ TEST(PacketMmapTest, SetVersion) {
                          sizeof(version)),
               SyscallSucceeds());
   version = TPACKET_V3;
-  EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION, &version,
-                         sizeof(version)),
-              SyscallFailsWithErrno(EINVAL));
+  // gVisor currently implements only TPACKET_V1 and TPACKET_V2.
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION,
+                           &version, sizeof(version)),
+                SyscallFailsWithErrno(EINVAL));
+  } else {
+    EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION,
+                           &version, sizeof(version)),
+                SyscallSucceeds());
+  }
   version = TPACKET_V1 + 100;
   EXPECT_THAT(setsockopt(mmap_sock.get(), SOL_PACKET, PACKET_VERSION, &version,
                          sizeof(version)),
@@ -569,6 +576,19 @@ TEST(PacketMMmapTest, GetPacketHdrLen) {
   EXPECT_EQ(val, sizeof(tpacket2_hdr));
 
   val = TPACKET_V3;
+  // gVisor currently implements only TPACKET_V1 and TPACKET_V2.
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(
+        getsockopt(mmap_sock.get(), SOL_PACKET, PACKET_HDRLEN, &val, &val_len),
+        SyscallFailsWithErrno(EINVAL));
+  } else {
+    ASSERT_THAT(
+        getsockopt(mmap_sock.get(), SOL_PACKET, PACKET_HDRLEN, &val, &val_len),
+        SyscallSucceeds());
+    EXPECT_EQ(val, sizeof(tpacket3_hdr));
+  }
+
+  val = TPACKET_V1 + 100;
   EXPECT_THAT(
       getsockopt(mmap_sock.get(), SOL_PACKET, PACKET_HDRLEN, &val, &val_len),
       SyscallFailsWithErrno(EINVAL));
