@@ -553,8 +553,9 @@ func (rp *ResolvingPath) warnIfLandlockUnchecked(op string) {
 // CheckLandlockOpen checks the rights that opening d with opts requires. isDir
 // is whether d is a directory.
 //
-// Callers must call this before honoring O_TRUNC, so that a denied open leaves
-// the file intact.
+// Callers must call this after CheckOpenFileType(), so that e.g. O_DIRECTORY on
+// a regular file fails with ENOTDIR rather than EACCES, and before honoring
+// O_TRUNC, so that a denied open leaves the file intact.
 //
 // Matches Linux [security/landlock/fs.c]:hook_file_open()
 func (rp *ResolvingPath) CheckLandlockOpen(ctx context.Context, d *Dentry, opts *OpenOptions, isDir bool) error {

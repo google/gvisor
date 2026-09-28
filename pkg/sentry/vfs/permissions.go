@@ -183,6 +183,29 @@ func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
 	}
 }
 
+// CheckOpenFileType returns the error an open with opts must fail with due to
+// the file's type, or nil. FilesystemImpls call it before
+// ResolvingPath.CheckLandlockOpen() so these errors win over EACCES, e.g.
+// opening a directory for writing is EISDIR even if Landlock denies it.
+//
+// Matches Linux [fs/namei.c]:do_open() and may_open(), which run before
+// security_file_open().
+func CheckOpenFileType(mode linux.FileMode, opts *OpenOptions) error {
+	switch mode.FileType() {
+	case linux.S_IFLNK:
+		// Only reachable with O_NOFOLLOW and without O_PATH.
+		return linuxerr.ELOOP
+	case linux.S_IFDIR:
+		if opts.Flags&linux.O_CREAT != 0 {
+			return linuxerr.EISDIR
+		}
+		if AccessTypesForOpenFlags(opts).MayWrite() {
+			return linuxerr.EISDIR
+		}
+	}
+	return nil
+}
+
 // MayReadFileWithOpenFlags returns true if a file with the given open flags
 // should be readable.
 func MayReadFileWithOpenFlags(flags uint32) bool {
@@ -375,4 +398,45 @@ func ClearSUIDAndSGID(mode uint32) uint32 {
 		mode &= ^uint32(linux.ModeSetGID)
 	}
 	return mode
+}
+
+// CheckMknodCapability returns EPERM if creds may not create a device node of
+// the given mode and device number: character and block devices, other than
+// overlay whiteouts, require CAP_MKNOD in the root user namespace.
+// FilesystemImpls call it from MknodAt() after ResolvingPath.CheckLandlockCreate(),
+// since Linux checks it in vfs_mknod(), after security_path_mknod(). E.g. an
+// unprivileged task denied MAKE_CHAR gets EACCES, not EPERM.
+//
+// Matches Linux [fs/namei.c]:vfs_mknod()
+func CheckMknodCapability(creds *auth.Credentials, mode linux.FileMode, devMajor, devMinor uint32) error {
+	switch mode.FileType() {
+	case linux.S_IFCHR:
+		if devMajor == 0 && devMinor == 0 {
+			// A whiteout (S_IFCHR with WHITEOUT_DEV) needs no capability.
+			return nil
+		}
+		fallthrough
+	case linux.S_IFBLK:
+		if !creds.HasCapabilityIn(linux.CAP_MKNOD, creds.UserNamespace.Root()) {
+			return linuxerr.EPERM
+		}
+	}
+	return nil
+}
+
+// CheckRenameFlags returns EINVAL for renameat2(2) flags Linux rejects before
+// lookup: unknown flags, and RENAME_EXCHANGE with NOREPLACE or WHITEOUT.
+// Unsupported-but-valid flags must be rejected only after
+// ResolvingPath.CheckLandlockRefer(), so a Landlock denial wins, as Linux's
+// vfs_rename() calls security_path_rename() first.
+//
+// Matches Linux [fs/namei.c]:do_renameat2()
+func CheckRenameFlags(flags uint32) error {
+	if flags&^(linux.RENAME_NOREPLACE|linux.RENAME_EXCHANGE|linux.RENAME_WHITEOUT) != 0 {
+		return linuxerr.EINVAL
+	}
+	if flags&linux.RENAME_EXCHANGE != 0 && flags&(linux.RENAME_NOREPLACE|linux.RENAME_WHITEOUT) != 0 {
+		return linuxerr.EINVAL
+	}
+	return nil
 }

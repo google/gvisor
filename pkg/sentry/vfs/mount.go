@@ -473,6 +473,17 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 //
 // Roughly analogous to Linux fs/namespace.c:do_move_mount().
 func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Credentials, taskMountNs *MountNamespace, source *PathOperation, target *PathOperation) error {
+	// Lookup the target path before the source, as Linux's move_mount(2) does,
+	// so the target's error wins when both are bad.
+	targetVd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{CheckSearchable: true})
+	if err != nil {
+		return err
+	}
+	targetCleanup := cleanup.Make(func() {
+		targetVd.DecRef(ctx)
+	})
+	defer targetCleanup.Clean()
+
 	// Lookup the source path
 	sourceVd, err := vfs.GetDentryAt(ctx, creds, source, &GetDentryOptions{CheckSearchable: true})
 	if err != nil {
@@ -496,16 +507,6 @@ func (vfs *VirtualFilesystem) MoveMountAt(ctx context.Context, creds *auth.Crede
 	if err != nil {
 		return err
 	}
-
-	// Lookup the target path
-	targetVd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{CheckSearchable: true})
-	if err != nil {
-		return err
-	}
-	targetCleanup := cleanup.Make(func() {
-		targetVd.DecRef(ctx)
-	})
-	defer targetCleanup.Clean()
 
 	// Fetch target stat info
 	targetStat, err := vfs.StatAt(ctx, creds, &PathOperation{
@@ -1357,17 +1358,11 @@ func (vfs *VirtualFilesystem) getMountpoint(ctx context.Context, creds *auth.Cre
 // mnt. It takes a reference on the returned VirtualDentry. If no such mount
 // point exists (i.e. mnt is a root mount), getMountpointAt returns (nil, nil).
 //
-// getMountpointAt also takes and drops references on intermediate mount points
-// and mounts while it walks a stack of mounts. If toDecRef is non-nil, those
-// references are appended to *toDecRef instead of dropped, for a caller that
-// holds locks under which it cannot drop them: dropping the last reference to
-// a mount point can release the filesystem it is on, which acquires that
-// filesystem's own locks, and a racing umount can make any reference taken
-// here the last one. Such a caller must drop them once it holds no locks.
-// References taken by an attempt that loses the race with a mount table
-// change and retries are deferred the same way rather than dropped, for the
-// same reason, so *toDecRef grows with each retry; the growth lasts only
-// until the caller drains it.
+// If toDecRef is non-nil, references on intermediate mounts and mount points
+// (including those from retries) are appended to it instead of dropped, for
+// callers holding filesystem locks: after a racing umount, any of them may be
+// the last and dropping it would take the filesystem's locks. The caller must
+// drop them once it holds no locks.
 //
 // Preconditions:
 //   - References are held on mnt and root.

@@ -756,6 +756,15 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	// Linux rejects these before hook_file_open(), so they outrank Landlock.
+	if err := vfs.CheckOpenFileType(linux.FileMode(d.inode.fileType()), opts); err != nil {
+		return nil, err
+	}
+	// Likewise EROFS, from may_open()'s inode_permission(). sb_permission()
+	// only rejects regular files; dirs and symlinks were rejected above.
+	if ats.MayWrite() && d.inode.fileType() == linux.S_IFREG {
+		return nil, linuxerr.EROFS
+	}
 	// The only Landlock check erofs needs: being read-only, every operation
 	// needing another right fails with EROFS.
 	if err := rp.CheckLandlockOpen(ctx, &d.vfsd, opts, d.inode.IsDir()); err != nil {
@@ -764,9 +773,6 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 
 	switch d.inode.fileType() {
 	case linux.S_IFREG:
-		if ats&vfs.MayWrite != 0 {
-			return nil, linuxerr.EROFS
-		}
 		var fd regularFileFD
 		fd.LockFD.Init(&d.inode.locks)
 		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Credentials(), rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{AllowDirectIO: true}); err != nil {
