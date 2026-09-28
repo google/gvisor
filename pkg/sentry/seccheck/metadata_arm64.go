@@ -216,7 +216,7 @@ func archInit() {
 		},
 	})
 
-	const lastSyscallInTable = 441
+	const lastSyscallInTable = 446
 	for i := 0; i <= lastSyscallInTable; i++ {
 		addRawSyscallPoint(uintptr(i))
 	}
