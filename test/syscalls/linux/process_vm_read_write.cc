@@ -37,13 +37,13 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_join.h"
 #include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -56,14 +56,27 @@ namespace testing {
 
 namespace {
 
+// Keep parameter registration independent of the expanded buffer sizes. All
+// patterns refer to string literals and are expanded only when a test runs.
+struct TestBuffer {
+  std::string_view pattern;
+  size_t size = pattern.size();
+};
+
 class TestIovecs {
  public:
-  TestIovecs(std::vector<std::string> data) {
+  explicit TestIovecs(const std::vector<TestBuffer>& data) {
     data_.resize(data.size());
     iovecs_.resize(data.size());
     for (size_t i = 0; i < data.size(); ++i) {
-      data_[i] = data[i];
-      bytes_ += data[i].size();
+      TEST_CHECK(!data[i].pattern.empty() || data[i].size == 0);
+      data_[i].reserve(data[i].size);
+      while (data_[i].size() < data[i].size) {
+        data_[i].append(
+            data[i].pattern.data(),
+            std::min(data[i].pattern.size(), data[i].size - data_[i].size()));
+      }
+      bytes_ += data_[i].size();
       iovecs_[i].iov_len = data_[i].size();
       iovecs_[i].iov_base = data_[i].data();
     }
@@ -87,84 +100,77 @@ class TestIovecs {
 
 // bytes_match checks that the two TestIovecs are at least min_bytes in length,
 // and that they agree in the first min_bytes.
-bool bytes_match(TestIovecs first_iov, TestIovecs second_iov,
+bool bytes_match(const TestIovecs& first_iov, const TestIovecs& second_iov,
                  size_t min_bytes) {
-  auto first = absl::StrJoin(first_iov.data_, "");
-  if (first.size() < min_bytes) {
-    std::cout << "First buffer smaller than min_bytes: " << min_bytes
-              << " buffer: " << first << std::endl;
-    return false;
+  size_t first_index = 0, second_index = 0;
+  std::string_view first, second;
+  size_t matched = 0;
+  while (matched < min_bytes) {
+    while (first.empty() && first_index < first_iov.data_.size()) {
+      first = first_iov.data_[first_index++];
+    }
+    while (second.empty() && second_index < second_iov.data_.size()) {
+      second = second_iov.data_[second_index++];
+    }
+    if (first.empty() || second.empty()) {
+      std::cout << "Buffer smaller than min_bytes: " << min_bytes
+                << " after matching " << matched << " bytes" << std::endl;
+      return false;
+    }
+    const size_t size =
+        std::min({first.size(), second.size(), min_bytes - matched});
+    if (first.substr(0, size) != second.substr(0, size)) {
+      std::cout << "Buffer mismatch in " << size << " bytes at offset "
+                << matched << std::endl;
+      return false;
+    }
+    first.remove_prefix(size);
+    second.remove_prefix(size);
+    matched += size;
   }
-  first = first.substr(0, min_bytes);
-
-  auto second = absl::StrJoin(second_iov.data_, "");
-  if (second.size() < min_bytes) {
-    std::cout << "First buffer smaller than min_bytes: " << min_bytes
-              << " buffer: " << second << std::endl;
-    return false;
-  }
-  second = second.substr(0, min_bytes);
-
-  if (first != second) {
-    std::cout << "Mismatch buffers:\n first: " << first
-              << "\n second: " << second << std::endl;
-    return false;
-  }
-
   return true;
 }
 
 struct ProcessVMTestCase {
   std::string test_name;
-  std::vector<std::string> local_data;
-  std::vector<std::string> remote_data;
+  std::vector<TestBuffer> local_data;
+  std::vector<TestBuffer> remote_data;
 };
 
 using ProcessVMTest = ::testing::TestWithParam<ProcessVMTestCase>;
-
-std::string getTestBuffer(std::string pattern, size_t size) {
-  std::string s;
-
-  auto pattern_length = pattern.length();
-  s.reserve(size);
-  while (s.length() + pattern_length < size) {
-    s += pattern;
-  }
-  s += pattern.substr(0, size - s.length());
-  return s;
-}
 
 INSTANTIATE_TEST_SUITE_P(
     ProcessVMTests, ProcessVMTest,
     ::testing::ValuesIn<ProcessVMTestCase>(
         {{"BothEmpty" /*test name*/,
-          {""} /*local buffer*/,
-          {""} /*remote buffer*/},
-         {"EmptyLocal", {""}, {"All too easy."}},
-         {"EmptyRemote", {"Impressive. Most impressive."}, {""}},
-         {"SingleChar", {"l"}, {"r"}},
+          {{""}} /*local buffer*/,
+          {{""}} /*remote buffer*/},
+         {"EmptyLocal", {{""}}, {{"All too easy."}}},
+         {"EmptyRemote", {{"Impressive. Most impressive."}}, {{""}}},
+         {"SingleChar", {{"l"}}, {{"r"}}},
          {"LargerRemoteBuffer",
-          {"OK, I'll try"},
-          {"No!", "Try not", "Do...or do not", "There is no try."}},
+          {{"OK, I'll try"}},
+          {{"No!"}, {"Try not"}, {"Do...or do not"}, {"There is no try."}}},
          {"LargerLocalBuffer",
-          {"Look!", "The cave is collapsing!"},
-          {"This is no cave."}},
+          {{"Look!"}, {"The cave is collapsing!"}},
+          {{"This is no cave."}}},
          {"BothWithMultipleIovecs",
-          {"Obi-wan never told you what happened to your father.",
-           "He told me enough...he told me you killed him."},
-          {"No...I am your father.", "No. No.", "That's not true.",
-           "That's impossible!"}},
+          {{"Obi-wan never told you what happened to your father."},
+           {"He told me enough...he told me you killed him."}},
+          {{"No...I am your father."},
+           {"No. No."},
+           {"That's not true."},
+           {"That's impossible!"}}},
          {
              "LargeBuffer",
              {
-                 getTestBuffer(
-                     "Train yourself to let go of everything you fear to lose.",
-                     32 << 20),
-                 "Hello there!",
+                 {"Train yourself to let go of everything you fear to lose.",
+                  32 << 20},
+                 {"Hello there!"},
              },
              {
-                 "Do. Or do not. There is no try.",
-                 getTestBuffer("The greatest teacher, failure is.", 32 << 20),
+                 {"Do. Or do not. There is no try."},
+                 {"The greatest teacher, failure is.", 32 << 20},
              },
          }}),
     [](const ::testing::TestParamInfo<ProcessVMTest::ParamType>& info) {
@@ -452,8 +458,8 @@ TEST(ProcessVMTest, WriteToZombie) {
 // TestReadvNull calls process_vm_readv with null iovecs and checks that they
 // succeed but return 0;
 TEST(ProcessVMTest, TestReadvNull) {
-  TestIovecs local(std::vector<std::string>{"foo"});
-  TestIovecs remote(std::vector<std::string>{"bar"});
+  TestIovecs local({{"foo"}});
+  TestIovecs remote({{"bar"}});
 
   // Pass 0 for local.
   EXPECT_THAT(process_vm_readv(getpid(), 0, 0, remote.iovecs_.data(),
@@ -469,8 +475,8 @@ TEST(ProcessVMTest, TestReadvNull) {
 // TestWritevNull calls process_vm_writev with null iovecs and checks that they
 // succeed but return 0;
 TEST(ProcessVMTest, TestWritevNull) {
-  TestIovecs local(std::vector<std::string>{"foo"});
-  TestIovecs remote(std::vector<std::string>{"bar"});
+  TestIovecs local({{"foo"}});
+  TestIovecs remote({{"bar"}});
 
   // Pass 0 for local.
   EXPECT_THAT(process_vm_writev(getpid(), 0, 0, remote.iovecs_.data(),
