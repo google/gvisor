@@ -18,9 +18,6 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
         clang clangd crossbuild-essential-amd64 erofs-utils busybox-static \
         libbpf-dev iproute2 netcat-openbsd libnuma-dev
 
-# This package is needed to build eBPF on amd64, but not on arm64 where it
-# doesn't exist.
-RUN test "$(uname -m)" != x86_64 && exit 0 || apt-get install -y libc6-dev-i386
 #-------------------------------------------------------------------------------
 # The rest of the file is unnecessary for building `runsc`, but are necessary
 # for test targets and/or dev containers.
