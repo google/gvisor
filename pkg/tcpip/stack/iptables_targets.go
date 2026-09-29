@@ -52,7 +52,7 @@ func (*DropTarget) Action(*PacketBuffer, Hook, *Route, AddressableEndpoint) (Rul
 // RejectIPv4WithHandler handles rejecting a packet.
 type RejectIPv4WithHandler interface {
 	// SendRejectionError sends an error packet in response to the packet.
-	SendRejectionError(pkt *PacketBuffer, rejectWith RejectIPv4WithICMPType, inputHook bool) tcpip.Error
+	SendRejectionError(pkt *PacketBuffer, rejectWith RejectIPv4WithICMPType, hook Hook) tcpip.Error
 }
 
 // RejectIPv4WithICMPType indicates the type of ICMP error that should be sent.
@@ -87,7 +87,7 @@ func (rt *RejectIPv4Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ Add
 	case Input, Forward, Output:
 		// There is nothing reasonable for us to do in response to an error here;
 		// we already drop the packet.
-		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook == Input)
+		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook)
 		return RuleDrop, 0
 	case Prerouting, Postrouting:
 		log.BugTracebackOnce(fmt.Errorf("%s not supported for REJECT", hook))
@@ -100,7 +100,7 @@ func (rt *RejectIPv4Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ Add
 // RejectIPv6WithHandler handles rejecting a packet.
 type RejectIPv6WithHandler interface {
 	// SendRejectionError sends an error packet in response to the packet.
-	SendRejectionError(pkt *PacketBuffer, rejectWith RejectIPv6WithICMPType, forwardingHook bool) tcpip.Error
+	SendRejectionError(pkt *PacketBuffer, rejectWith RejectIPv6WithICMPType, hook Hook) tcpip.Error
 }
 
 // RejectIPv6WithICMPType indicates the type of ICMP error that should be sent.
@@ -135,7 +135,7 @@ func (rt *RejectIPv6Target) Action(pkt *PacketBuffer, hook Hook, _ *Route, _ Add
 	case Input, Forward, Output:
 		// There is nothing reasonable for us to do in response to an error here;
 		// we already drop the packet.
-		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook == Input)
+		_ = rt.Handler.SendRejectionError(pkt, rt.RejectWith, hook)
 		return RuleDrop, 0
 	case Prerouting, Postrouting:
 		log.BugTracebackOnce(fmt.Errorf("%s not supported for REJECT", hook))
