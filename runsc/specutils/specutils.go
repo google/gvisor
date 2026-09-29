@@ -41,7 +41,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
-	"gvisor.dev/gvisor/runsc/specutils/seccomp"
 )
 
 // LINT.IfChange(features_annotations)
@@ -998,11 +997,11 @@ func Features() *features.Features {
 				},
 				Seccomp: &features.Seccomp{
 					Enabled:        boolPtr(true),
-					Actions:        seccomp.KnownActions(),
-					Operators:      seccomp.KnownOperators(),
-					Archs:          seccomp.KnownArchs(),
-					KnownFlags:     seccomp.KnownFlags(),
-					SupportedFlags: seccomp.SupportedFlags(),
+					Actions:        knownSeccompActions(),
+					Operators:      knownSeccompOperators(),
+					Archs:          knownSeccompArchs(),
+					KnownFlags:     knownSeccompFlags(),
+					SupportedFlags: supportedSeccompFlags(),
 				},
 				Apparmor: &features.Apparmor{
 					Enabled: boolPtr(false),
