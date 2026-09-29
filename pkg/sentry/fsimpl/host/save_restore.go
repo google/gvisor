@@ -42,6 +42,8 @@ func MakeResourceID(containerName string, fd int) checkpoint.ResourceID {
 }
 
 // beforeSave is invoked by stateify.
+//
+// +checklocksexclude:i.bufMu
 func (i *inode) beforeSave() {
 	if !i.savable {
 		panic("host.inode is not savable")
