@@ -11,10 +11,10 @@
   sha256: 1692f77d1739bacf3f94337188b78583cf09bab7e420d2dc6c5605a4f86785a1
   license: Apache-2.0
 - dependency: bazel_skylib
-  version: https://github.com/bazelbuild/bazel-skylib/releases/download/1.8.2/bazel-skylib-1.8.2.tar.gz
-  retrieved: "2026-08-27"
-  commit: bce8d7f8de2e48033e771f9ccdd721edf9df84e8
-  sha256: 6e78f0e57de26801f6f564fa7c4a48dc8b36873e416257a92bbb0937eeac8446
+  version: https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.2/bazel-skylib-1.9.2.tar.gz
+  retrieved: "2026-09-26"
+  commit: 3de43ed45e1c7923d53c4db56ca3de3e46601580
+  sha256: 37cdfbc6faefea94f7b37760a305c98c08981116c2bc9e821e3b423221fad8c8
   license: Apache-2.0
 - dependency: buildkite_pipeline_schema
   version: https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json
