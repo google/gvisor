@@ -259,6 +259,11 @@ func TestInvalidFlags(t *testing.T) {
 			value: "invalid",
 			error: "invalid value \"invalid\"; must be NEVER, ALWAYS, or IF_RELEASE_BUILD",
 		},
+		{
+			name:  "tmp-mount",
+			value: "invalid",
+			error: "invalid tmp-mount type",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -406,6 +411,21 @@ func TestOverride(t *testing.T) {
 		}
 		if c.FileAccess != FileAccessExclusive {
 			t.Errorf("Override(file-access, exclusive) didn't work: %+v", c)
+		}
+	})
+
+	t.Run("tmp-mount", func(t *testing.T) {
+		if err := c.Override(testFlags, "tmp-mount", "rootfs", false); err != nil {
+			t.Fatalf("Override(tmp-mount, rootfs) failed: %v", err)
+		}
+		if c.TmpMount != TmpMountRootfs {
+			t.Errorf("Override(tmp-mount, rootfs) didn't work: %+v", c)
+		}
+		if err := c.Override(testFlags, "tmp-mount", "tmpfs", false); err != nil {
+			t.Fatalf("Override(tmp-mount, tmpfs) failed: %v", err)
+		}
+		if c.TmpMount != TmpMountTmpfs {
+			t.Errorf("Override(tmp-mount, tmpfs) didn't work: %+v", c)
 		}
 	})
 }

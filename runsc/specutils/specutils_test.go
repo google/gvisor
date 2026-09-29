@@ -24,6 +24,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 func TestWaitForReadyHappy(t *testing.T) {
@@ -841,3 +842,64 @@ func TestTPUProxyEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestFixConfigTmpMount(t *testing.T) {
+	if flag.CommandLine.Lookup("tmp-mount") == nil {
+		config.RegisterFlags(flag.CommandLine)
+	}
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		want        config.TmpMountType
+		wantErr     bool
+	}{
+		{
+			name:        "flag-rootfs",
+			annotations: map[string]string{"dev.gvisor.flag.tmp-mount": "rootfs"},
+			want:        config.TmpMountRootfs,
+		},
+		{
+			name:        "flag-tmpfs",
+			annotations: map[string]string{"dev.gvisor.flag.tmp-mount": "tmpfs"},
+			want:        config.TmpMountTmpfs,
+		},
+		{
+			name:        "flag-auto",
+			annotations: map[string]string{"dev.gvisor.flag.tmp-mount": "auto"},
+			want:        config.TmpMountAuto,
+		},
+		{
+			name:        "spec-rootfs",
+			annotations: map[string]string{AnnotationTmpMount: "rootfs"},
+			want:        config.TmpMountRootfs,
+		},
+		{
+			name:        "spec-tmpfs",
+			annotations: map[string]string{AnnotationTmpMount: "tmpfs"},
+			want:        config.TmpMountTmpfs,
+		},
+		{
+			name:        "invalid",
+			annotations: map[string]string{"dev.gvisor.flag.tmp-mount": "bad"},
+			wantErr:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf, err := config.NewFromFlags(flag.CommandLine)
+			if err != nil {
+				t.Fatalf("NewFromFlags failed: %v", err)
+			}
+			spec := &specs.Spec{
+				Annotations: tc.annotations,
+			}
+			err = FixConfig(conf, spec)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("FixConfig() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && conf.TmpMount != tc.want {
+				t.Errorf("conf.TmpMount = %v, want %v", conf.TmpMount, tc.want)
+			}
+		})
+	}
+}
+
