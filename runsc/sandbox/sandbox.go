@@ -48,9 +48,9 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/prometheus"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -566,12 +566,8 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
-	if !s.FSRestore && imagePath != "" {
-		fsDir := filepath.Join(imagePath, checkpointfiles.FSCheckpointDir)
-		manifestPath := filepath.Join(fsDir, checkpointfiles.FSCheckpointManifestFileName)
-		if _, err := os.Stat(manifestPath); err == nil {
-			return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
-		}
+	if !s.FSRestore && HasFSCheckpointManifest(imagePath) {
+		return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
 	}
 
 	opt := boot.RestoreOpts{
@@ -1805,7 +1801,7 @@ type CheckpointOpts struct {
 	SaveRestoreExecArgv        string
 	SaveRestoreExecTimeout     time.Duration
 	SaveRestoreExecContainerID string
-	SplitFSCheckpointPaths     []checkpoint.ResourceID
+	SplitFSCheckpointPaths     []string
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
@@ -1813,7 +1809,16 @@ type CheckpointOpts struct {
 func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, opts CheckpointOpts) error {
 	log.Debugf("Checkpoint sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
 
-	if len(opts.SplitFSCheckpointPaths) > 0 {
+	bundles, err := fscheckpoint.ParseBundles(opts.SplitFSCheckpointPaths)
+	if err != nil {
+		return err
+	}
+	for i := range bundles {
+		if bundles[i].Prefix == "" {
+			bundles[i].Prefix = checkpointfiles.FSCheckpointDir + "/"
+		}
+	}
+	if len(bundles) > 0 {
 		// Verify we are not using GCS/gofer.
 		gcsOptsPath := filepath.Join(imagePath, checkpointGCSOptsFileName)
 		if _, err := os.Stat(gcsOptsPath); err == nil {
@@ -1827,19 +1832,15 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
-		SplitFSCheckpointPaths:         opts.SplitFSCheckpointPaths,
+		SplitFSCheckpointPaths:         bundles,
 		ExecOpts: control.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
 			ContainerID: opts.SaveRestoreExecContainerID,
 		},
 	}
-	defer func() {
-		for _, f := range opt.FilePayload.Files {
-			_ = f.Close()
-		}
-	}()
-	if err := s.setCheckpointOptsFiles(conf, imagePath, opts, &opt); err != nil {
+	defer opt.FilePayload.Close()
+	if err := s.setCheckpointOptsFiles(conf, imagePath, opts, bundles, &opt); err != nil {
 		return err
 	}
 
@@ -1855,13 +1856,13 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	return nil
 }
 
-func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, opts CheckpointOpts, bundles []fscheckpoint.Bundle, opt *control.SaveOpts) error {
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-writes")
 	if err != nil {
 		return err
 	}
 	if clientSockFile == nil {
-		return setCheckpointOptsFilesForLocalCheckpoint(conf, imagePath, opts, opt)
+		return setCheckpointOptsFilesForLocalCheckpoint(conf, imagePath, opts, bundles, opt)
 	}
 	log.Infof("Saving to GCS via checkpoint gofer")
 	opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
@@ -1870,7 +1871,7 @@ func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, 
 	return nil
 }
 
-func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath string, opts CheckpointOpts, bundles []fscheckpoint.Bundle, opt *control.SaveOpts) error {
 	files, err := createSaveFiles(imagePath, opts.Direct, opts.Compression)
 	if err != nil {
 		return err
@@ -1878,7 +1879,7 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 	opt.FilePayload.Files = files
 	opt.HavePagesFile = len(files) > 1
 
-	if len(opts.SplitFSCheckpointPaths) > 0 {
+	if len(bundles) > 0 {
 		cleanLocalFiles := cleanup.Make(func() {
 			for _, f := range files {
 				_ = f.Close()
@@ -1887,11 +1888,7 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 		})
 		defer cleanLocalFiles.Clean()
 
-		fsImagePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointDir)
-		if err := os.MkdirAll(fsImagePath, 0755); err != nil {
-			return fmt.Errorf("creating fs checkpoint directory: %w", err)
-		}
-		fsFiles, err := openFSCheckpointLocalFiles(fsImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, opts.Direct)
+		fsFiles, err := openFSCheckpointLocalFiles(imagePath, bundles[0].Prefix, os.O_CREATE|os.O_EXCL|os.O_RDWR, opts.Direct)
 		if err != nil {
 			return fmt.Errorf("creating fs checkpoint files: %w", err)
 		}
@@ -1950,7 +1947,61 @@ func createSaveFiles(path string, direct bool, compression statefile.Compression
 	return files, nil
 }
 
+// HasFSCheckpointManifest returns true if dir contains any filesystem
+// checkpoint manifest files (fscheckpoint.pb or *_fscheckpoint.pb).
+func HasFSCheckpointManifest(dir string) bool {
+	prefixes, err := discoverFSCheckpointPrefixes(dir)
+	return err == nil && len(prefixes) > 0
+}
+
+func discoverFSCheckpointPrefixes(dir string) ([]string, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var prefixes []string
+	suffix := "_" + checkpointfiles.FSCheckpointManifestFileName
+	for _, e := range entries {
+		if e.IsDir() {
+			subManifest := filepath.Join(dir, e.Name(), checkpointfiles.FSCheckpointManifestFileName)
+			if _, err := os.Stat(subManifest); err == nil {
+				prefixes = append(prefixes, e.Name()+"/")
+			}
+			continue
+		}
+		if e.Name() == checkpointfiles.FSCheckpointManifestFileName {
+			prefixes = append(prefixes, "")
+		} else if pfx, ok := strings.CutSuffix(e.Name(), suffix); ok && pfx != "" {
+			prefixes = append(prefixes, pfx)
+		}
+	}
+	return prefixes, nil
+}
+
+func hasGCSOpts(imagePath string) bool {
+	_, err := os.Stat(filepath.Join(imagePath, checkpointGCSOptsFileName))
+	return err == nil
+}
+
+// isGCSRestorePath checks whether p refers to a GCS checkpoint directory
+// directly (isPrefixed=false) or to a <gcsdir>/<prefix> bundle path inside a
+// GCS checkpoint directory (isPrefixed=true).
+func isGCSRestorePath(p string) (isGCS bool, isPrefixed bool) {
+	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+		return hasGCSOpts(p), false
+	} else if errors.Is(err, fs.ErrNotExist) {
+		return hasGCSOpts(filepath.Dir(strings.TrimSuffix(p, "/"))), true
+	}
+	return false, false
+}
+
 func (s *Sandbox) openFSRestoreFiles(conf *config.Config, imagePath string, direct bool, cmd *exec.Cmd) ([]*os.File, error) {
+	if isGCS, isPrefixed := isGCSRestorePath(imagePath); isGCS && isPrefixed {
+		return nil, fmt.Errorf("prefixed filesystem checkpoint restore (%q) is not supported with GCS checkpoint gofer", imagePath)
+	}
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-fscheckpoint-reads")
 	if err != nil {
 		return nil, err
@@ -1964,7 +2015,31 @@ func (s *Sandbox) openFSRestoreFiles(conf *config.Config, imagePath string, dire
 }
 
 func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.File, error) {
-	return openFSCheckpointLocalFiles(imagePath, os.O_RDONLY, direct)
+	fi, err := os.Stat(imagePath)
+	if err == nil {
+		if !fi.IsDir() {
+			return nil, fmt.Errorf("fs restore image path %q is a file, expected a directory or <dir>/<prefix>", imagePath)
+		}
+		prefixes, err := discoverFSCheckpointPrefixes(imagePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading fs restore directory %q: %w", imagePath, err)
+		}
+		if len(prefixes) > 1 {
+			return nil, fmt.Errorf("multiple filesystem checkpoint bundles found in %q", imagePath)
+		}
+		var prefix string
+		if len(prefixes) == 1 {
+			prefix = prefixes[0]
+		}
+		return openFSCheckpointLocalFiles(imagePath, prefix, os.O_RDONLY, direct)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("stat fs restore image path %q: %w", imagePath, err)
+	}
+	if strings.HasSuffix(imagePath, "/") {
+		return nil, fmt.Errorf("fs restore image directory %q does not exist: %w", imagePath, err)
+	}
+	return openFSCheckpointLocalFiles(filepath.Dir(imagePath), filepath.Base(imagePath), os.O_RDONLY, direct)
 }
 
 // FSSaveOpts holds options to FSSave.
@@ -1978,24 +2053,30 @@ type FSSaveOpts struct {
 	// provided for parity with that feature.
 	ExitAfterSaving bool
 
-	// Paths is the list of paths inside the containers to save.
-	Paths []checkpoint.ResourceID
+	// Paths is the list of [<prefix>=][<container>:]<path> specifications to
+	// save. Both prefixed (e.g., "rootfs=/") and unprefixed (e.g., "/",
+	// "all-tmpfs", "c1:/data") formats are supported.
+	Paths []string
 }
 
 // FSSave sends the filesystem checkpointing call to the sandbox.
 func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts FSSaveOpts) error {
 	log.Debugf("Checkpoint filesystem for sandbox %q, imagePath %q, opts %+v", s.ID, imagePath, opts)
 
+	bundles, err := fscheckpoint.ParseBundles(opts.Paths)
+	if err != nil {
+		return err
+	}
+	if len(bundles) == 0 {
+		bundles = []fscheckpoint.Bundle{{}}
+	}
+
 	args := boot.FSSaveArgs{
 		ExitAfterSaving: opts.ExitAfterSaving,
-		Paths:           opts.Paths,
+		Paths:           bundles,
 	}
-	defer func() {
-		for _, f := range args.FilePayload.Files {
-			_ = f.Close()
-		}
-	}()
-	if err := s.setFSSaveArgs(conf, imagePath, opts.Direct, &args); err != nil {
+	defer args.FilePayload.Close()
+	if err := s.setFSSaveArgs(conf, imagePath, opts.Direct, bundles[0].Prefix, &args); err != nil {
 		return err
 	}
 
@@ -2010,13 +2091,17 @@ func (s *Sandbox) FSSave(conf *config.Config, cid string, imagePath string, opts
 	return nil
 }
 
-func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
+func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, direct bool, prefix string, args *boot.FSSaveArgs) error {
+	// TODO(b/541219576): Support prefixed filesystem checkpoint with GCS/gofer.
+	if prefix != "" && hasGCSOpts(imagePath) {
+		return fmt.Errorf("prefixed filesystem checkpoint is not supported with GCS/gofer")
+	}
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-fscheckpoint-writes")
 	if err != nil {
 		return err
 	}
 	if clientSockFile == nil {
-		return setFSSaveArgsForLocalCheckpointFiles(conf, imagePath, direct, args)
+		return setFSSaveArgsForLocalCheckpointFiles(conf, imagePath, direct, prefix, args)
 	}
 	log.Infof("Saving filesystem checkpoint to GCS via checkpoint gofer")
 	args.FilePayload.Files = append(args.FilePayload.Files, clientSockFile)
@@ -2024,8 +2109,8 @@ func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, direct bo
 	return nil
 }
 
-func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, args *boot.FSSaveArgs) error {
-	files, err := openFSCheckpointLocalFiles(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, direct)
+func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, prefix string, args *boot.FSSaveArgs) error {
+	files, err := openFSCheckpointLocalFiles(imagePath, prefix, os.O_CREATE|os.O_EXCL|os.O_RDWR, direct)
 	if err != nil {
 		return err
 	}
@@ -2033,7 +2118,7 @@ func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string,
 	return nil
 }
 
-func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([]*os.File, error) {
+func openFSCheckpointLocalFiles(imagePath, prefix string, openFlags int, direct bool) ([]*os.File, error) {
 	var files [4]*os.File
 	closeCleanup := cleanup.Make(func() {
 		for _, f := range files {
@@ -2072,28 +2157,35 @@ func openFSCheckpointLocalFiles(imagePath string, openFlags int, direct bool) ([
 		maybeODirect = unix.O_DIRECT
 	}
 
-	manifestFilePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointManifestFileName)
+	if openFlags&os.O_CREATE != 0 && strings.HasSuffix(prefix, "/") {
+		subDir := filepath.Join(imagePath, prefix)
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			return nil, fmt.Errorf("creating fs checkpoint directory %q: %w", subDir, err)
+		}
+	}
+
+	manifestFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.FSCheckpointManifestFileName))
 	manifestFile, err := os.OpenFile(manifestFilePath, openFlags, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening manifest file %q: %w", manifestFilePath, err)
 	}
 	files[0] = manifestFile
 
-	multiTarFilePath := filepath.Join(imagePath, checkpointfiles.FSCheckpointMultiTarFileName)
+	multiTarFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.FSCheckpointMultiTarFileName))
 	multiTarFile, err := os.OpenFile(multiTarFilePath, openFlags, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening multi-tar file %q: %w", multiTarFilePath, err)
 	}
 	files[1] = multiTarFile
 
-	pagesMetadataFilePath := filepath.Join(imagePath, checkpointfiles.PagesMetadataFileName)
+	pagesMetadataFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.PagesMetadataFileName))
 	pagesMetadataFile, err := os.OpenFile(pagesMetadataFilePath, openFlags, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesMetadataFilePath, err)
 	}
 	files[2] = pagesMetadataFile
 
-	pagesFilePath := filepath.Join(imagePath, checkpointfiles.PagesFileName)
+	pagesFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.PagesFileName))
 	pagesFileFD, err := unix.Open(pagesFilePath, openFlags|maybeODirect, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening pages file %q: %w", pagesFilePath, err)
@@ -2254,6 +2346,17 @@ func (s *Sandbox) maybeConfigureSandboxProcessForWorkloadTriggerFSSave(conf *con
 	if len(path) == 0 {
 		return nil
 	}
+	bundles, err := fscheckpoint.ParseBundles(boot.GetAnnotationFSCheckpointPaths(args.Spec))
+	if err != nil {
+		return err
+	}
+	if len(bundles) == 0 {
+		bundles = []fscheckpoint.Bundle{{}}
+	}
+	// TODO(b/541219576): Support prefixed filesystem checkpoint with GCS/gofer.
+	if bundles[0].Prefix != "" && hasGCSOpts(path) {
+		return fmt.Errorf("prefixed filesystem checkpoint is not supported with GCS/gofer")
+	}
 
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, path, "-allow-fscheckpoint-writes")
 	if err != nil {
@@ -2264,7 +2367,7 @@ func (s *Sandbox) maybeConfigureSandboxProcessForWorkloadTriggerFSSave(conf *con
 		cmd.Args = append(cmd.Args, "-fs-save-checkpoint-gofer")
 		log.Infof("Enabling workload-trigger filesystem checkpoint saving to GCS via checkpoint gofer")
 	} else {
-		files, err := openFSCheckpointLocalFiles(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, boot.GetAnnotationFSCheckpointDirect(args.Spec))
+		files, err := openFSCheckpointLocalFiles(path, bundles[0].Prefix, os.O_CREATE|os.O_EXCL|os.O_RDWR, boot.GetAnnotationFSCheckpointDirect(args.Spec))
 		if err != nil {
 			return fmt.Errorf("failed to create auto fs save files: %w", err)
 		}

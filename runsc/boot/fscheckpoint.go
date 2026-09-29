@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 	"time"
 
@@ -88,6 +87,16 @@ func GetAnnotationFSCheckpointDirect(spec *specs.Spec) bool {
 	return specutils.AnnotationToBool(spec, annotationFSCheckpointDirect)
 }
 
+// GetAnnotationFSCheckpointPaths returns the filesystem checkpoint target paths
+// specified in the container annotation.
+func GetAnnotationFSCheckpointPaths(spec *specs.Spec) []string {
+	annot := spec.Annotations[annotationFSCheckpointPaths]
+	if annot == "" {
+		return nil
+	}
+	return strings.Split(annot, ",")
+}
+
 // FSSave implements kernel.Saver.FSSave.
 //
 // +checklocksexclude:l.mu
@@ -101,73 +110,44 @@ func (l *Loader) FSSave() error {
 	if len(fsSaveFDs) == 0 {
 		return linuxerr.ENXIO
 	}
-	paths, err := ParseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
+	bundles, err := fscheckpoint.ParseBundles(GetAnnotationFSCheckpointPaths(l.root.spec))
 	if err != nil {
 		return err
 	}
 	args := FSSaveArgs{
 		ExitAfterSaving: !specutils.AnnotationToBool(l.root.spec, annotationFSCheckpointResume),
-		Paths:           paths,
+		Paths:           bundles,
 	}
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
+	defer args.FilePayload.Close()
 	args.UseCheckpointGofer = useCheckpointGofer
-	opts := kernel.FSSaveOpts{
-		RunscVersion: version.Version(),
-		Paths:        paths,
-	}
-	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
+	opts, err := convertToKernelFSSaveOpts(&args)
+	if err != nil {
 		return err
 	}
 	return l.k.FSSave(context.Background(), &opts)
 }
 
-// ParseFSCheckpointPaths parses a comma-separated list of container:path
-// checkpoint targets.
-func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
-	val = strings.TrimSpace(val)
-	if val == "" {
-		return nil, nil
-	}
-	var paths []checkpoint.ResourceID
-	for _, part := range strings.Split(val, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		var c, p string
-		subparts := strings.SplitN(part, ":", 2)
-		if len(subparts) == 1 {
-			p = strings.TrimSpace(subparts[0])
-		} else {
-			c = strings.TrimSpace(subparts[0])
-			p = strings.TrimSpace(subparts[1])
-		}
-		if p == "" {
-			return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
-		}
-		if p != fscheckpoint.AllTmpfsPath && (!path.IsAbs(p) || path.Clean(p) != p) {
-			return nil, fmt.Errorf("checkpoint path must be an absolute, clean path or %q, got: %q", fscheckpoint.AllTmpfsPath, p)
-		}
-		paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: p})
-	}
-	return paths, nil
-}
-
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
+	bundles := args.Paths
+	if len(bundles) == 0 {
+		bundles = []fscheckpoint.Bundle{{}}
+	}
 	opts := kernel.FSSaveOpts{
 		RunscVersion:    version.Version(),
 		ExitAfterSaving: args.ExitAfterSaving,
-		Paths:           args.Paths,
+		Paths:           bundles[0].Paths,
 	}
-	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
+	if err := setKernelFSSaveOptsFiles(args, bundles[0].Prefix, &opts); err != nil {
+		_ = opts.Close()
 		return kernel.FSSaveOpts{}, err
 	}
 	return opts, nil
 }
 
-func setKernelFSSaveOptsFiles(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFiles(args *FSSaveArgs, prefix string, opts *kernel.FSSaveOpts) error {
 	if args.UseCheckpointGofer {
-		return setKernelFSSaveOptsFilesForCheckpointGofer(args, opts)
+		return setKernelFSSaveOptsFilesForCheckpointGofer(args, prefix, opts)
 	}
 	return setKernelFSSaveOptsFilesForLocalCheckpoint(args, opts)
 }
@@ -182,14 +162,20 @@ func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.F
 	}
 	multiTarFile, err := args.ReleaseFD(1)
 	if err != nil {
+		manifestFile.Close()
 		return err
 	}
 	pagesMetadataFile, err := args.ReleaseFD(2)
 	if err != nil {
+		manifestFile.Close()
+		multiTarFile.Close()
 		return err
 	}
 	pagesFile, err := args.ReleaseFD(3)
 	if err != nil {
+		manifestFile.Close()
+		multiTarFile.Close()
+		pagesMetadataFile.Close()
 		return err
 	}
 	opts.ManifestFile = stateio.NewBufioWriteCloser(manifestFile)
@@ -199,7 +185,11 @@ func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.F
 	return nil
 }
 
-func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, prefix string, opts *kernel.FSSaveOpts) error {
+	// TODO(b/541219576): Support prefixed filesystem checkpoint with checkpoint gofer.
+	if prefix != "" {
+		return fmt.Errorf("prefixed filesystem checkpoint is not supported with checkpoint gofer")
+	}
 	clientFD, err := unix.Dup(int(args.Files[0].Fd()))
 	if err != nil {
 		return fmt.Errorf("failed to dup checkpoint gofer client FD: %w", err)

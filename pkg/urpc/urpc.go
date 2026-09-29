@@ -89,6 +89,11 @@ func (f *FilePayload) setFilePayload(fs []*os.File) {
 	f.Files = fs
 }
 
+// Close closes all files in the payload.
+func (f *FilePayload) Close() {
+	closeAll(f.Files)
+}
+
 // closeAll closes a slice of files.
 func closeAll(files []*os.File) {
 	for _, f := range files {
