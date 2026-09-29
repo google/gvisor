@@ -21,6 +21,31 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
+// LandlockDomain is a Landlock domain, held opaquely by Credentials and
+// defined by package vfs (like Linux's cred->security LSM blob).
+type LandlockDomain interface {
+	// IsLandlockDomain is a marker method restricting implementations to the
+	// vfs domain type.
+	IsLandlockDomain()
+
+	// ScopeLE reports whether this domain is an ancestor of, or equal to,
+	// other. A nil receiver is an ancestor of everything; a nil other has no
+	// non-nil ancestor.
+	ScopeLE(other LandlockDomain) bool
+}
+
+// LandlockCanPtrace reports whether tracer's domain may ptrace tracee's: the
+// tracee must be at least as restricted, so a sandboxed thread cannot escape
+// by driving a less restricted one.
+//
+// Matches Linux [security/landlock/task.c]:domain_ptrace()
+func LandlockCanPtrace(tracer, tracee LandlockDomain) bool {
+	if tracer == nil {
+		return true
+	}
+	return tracer.ScopeLE(tracee)
+}
+
 // Credentials contains information required to authorize privileged operations
 // in a user namespace.
 //
@@ -58,6 +83,12 @@ type Credentials struct {
 
 	// The user namespace associated with the owner of the credentials.
 	UserNamespace *UserNamespace
+
+	// LandlockDomain is the immutable Landlock domain restricting these
+	// credentials, or nil. It lives here (like Linux's cred->security) so that
+	// a filesystem substituting credentials drops it too, e.g. overlayfs
+	// copy-up under ovl_override_creds() is not checked against the domain.
+	LandlockDomain LandlockDomain
 }
 
 // NewAnonymousCredentials returns a set of credentials with no capabilities in

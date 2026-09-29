@@ -187,6 +187,14 @@ type InodeAttrs struct {
 	atime atomicbitops.Int64
 	mtime atomicbitops.Int64
 	ctime atomicbitops.Int64
+
+	// landlockSlot holds the Landlock object for the inode.
+	landlockSlot vfs.LandlockObjectSlot
+}
+
+// LandlockObjectSlot returns the slot holding the inode's Landlock object.
+func (a *InodeAttrs) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	return &a.landlockSlot
 }
 
 // Init initializes this InodeAttrs.

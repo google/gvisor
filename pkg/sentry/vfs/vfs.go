@@ -212,7 +212,7 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	}
 	anonfs.vfsfs.Init(vfs, &anonFilesystemType{}, &anonfs)
 	defer anonfs.vfsfs.DecRef(ctx)
-	anonMount := vfs.NewDisconnectedMount(&anonfs.vfsfs, nil, &MountOptions{})
+	anonMount := vfs.NewDisconnectedMount(&anonfs.vfsfs, nil, &MountOptions{InternalMount: true})
 	vfs.anonMount = anonMount
 
 	return nil

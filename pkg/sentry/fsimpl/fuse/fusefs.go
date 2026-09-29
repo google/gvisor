@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Name is the default filesystem name.
@@ -98,6 +99,12 @@ type filesystem struct {
 
 	// clock is a real-time clock used to set timestamps in file operations.
 	clock ktime.Clock
+
+	// landlockSlots maps node IDs to the slots of files with a Landlock
+	// object. Every lookup instantiates a new inode, so hard links to a file
+	// share only its node ID. Updates are serialized by landlockSlotsMu.
+	landlockSlotsMu sync.Mutex                    `state:"nosave"`
+	landlockSlots   vfs.LandlockSlotTable[uint64] `state:".(landlockSlotMap)"`
 }
 
 // Name implements vfs.FilesystemType.Name.
