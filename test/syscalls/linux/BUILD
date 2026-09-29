@@ -1,3 +1,4 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "select_gtest", "select_system")
 

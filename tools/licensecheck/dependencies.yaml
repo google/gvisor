@@ -1038,10 +1038,10 @@
   sha256: 26dc6db523ee943af51fdfc292658a2dbe7046735654f1dc839745988f0fe26b
   license: Apache-2.0
 - dependency: rules_cc
-  version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.16/rules_cc-0.2.16.tar.gz
-  retrieved: "2026-08-27"
-  commit: 6fd317b2ae0534a29db7085605b0262849e62f93
-  sha256: 458b658277ba51b4730ea7a2020efdf1c6dcadf7d30de72e37f4308277fa8c01
+  version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.17/rules_cc-0.2.17.tar.gz
+  retrieved: "2026-09-10"
+  commit: 541eda5d72e9b5f18e6a24e8d14975afcd865717
+  sha256: 283fa1cdaaf172337898749cf4b9b1ef5ea269da59540954e51fba0e7b8f277a
   license: Apache-2.0
 - dependency: rules_go
   version: https://github.com/bazel-contrib/rules_go/releases/download/v0.57.0/rules_go-v0.57.0.zip
@@ -1066,6 +1066,12 @@
   retrieved: "2026-08-27"
   commit: d3ea893113375b0c0f788c3315d8a8f488d69af6
   sha256: f609f341d6e9090b981b3f45324d05a819fd7a5a56434f849c761971ce2c47da
+  license: Apache-2.0
+- dependency: rules_shell
+  version: https://github.com/bazel-contrib/rules_shell/releases/download/v0.8.0/rules_shell-v0.8.0.tar.gz
+  retrieved: "2026-09-24"
+  commit: c02969a1822191a179cd70c0cedd076385446a26
+  sha256: 20721f63908879c083f94869e618ea8d4ff5edb91ff9a72a2ebee357fdbc352d
   license: Apache-2.0
 - dependency: sigs.k8s.io/json
   version: v0.0.0-20241010143419-9aa6b5e7a4b3
