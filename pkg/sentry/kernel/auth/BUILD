@@ -93,8 +93,6 @@ go_library(
         "//pkg/log",
         "//pkg/rand",
         "//pkg/refs",
-        "//pkg/sentry/seccheck",
-        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
         "//pkg/sync/locking",
     ],

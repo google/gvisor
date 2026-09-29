@@ -17,8 +17,6 @@ package auth
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 // Credentials contains information required to authorize privileged operations
@@ -268,18 +266,4 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 		return kgid, nil
 	}
 	return NoID, linuxerr.EPERM
-}
-
-// LoadSeccheckData sets credential data based on mask.
-func (c *Credentials) LoadSeccheckData(mask seccheck.FieldMask, info *pb.ContextData) {
-	if mask.Contains(seccheck.FieldCtxtCredentials) {
-		info.Credentials = &pb.Credentials{
-			RealUid:      uint32(c.RealKUID),
-			EffectiveUid: uint32(c.EffectiveKUID),
-			SavedUid:     uint32(c.SavedKUID),
-			RealGid:      uint32(c.RealKGID),
-			EffectiveGid: uint32(c.EffectiveKGID),
-			SavedGid:     uint32(c.SavedKGID),
-		}
-	}
 }
