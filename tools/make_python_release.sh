@@ -16,11 +16,16 @@
 
 set -xeuo pipefail
 
+declare -r PACKAGE_NAME="gvisor"
+
+declare -r MANIFEST_BUCKET="gs://oss-exit-gate-prod-projects-bucket/gvisor/pypi/manifests"
+
 usage() {
   echo "usage: $0 <command> [args...]" >&2
   echo "Commands:" >&2
   echo "  build <dest-dir> [release-name]" >&2
   echo "  upload-wheel <target-dir>" >&2
+  echo "  publish-manifest <release-root>" >&2
   echo "  all <dest-dir> <target-dir> [release-name]" >&2
   exit 1
 }
@@ -209,6 +214,93 @@ upload_to_ar() {
   echo "=== [Upload] Successfully uploaded all artifacts to Artifact Registry! ==="
 }
 
+# Extracts the version out of the wheel filename, since PEP 427 names
+# wheels {distribution}-{version}(-{build})?-{python}-{abi}-{platform}.whl.
+wheel_version() {
+  basename "$1" | cut -d'-' -f2
+}
+
+# publish_manifest triggers an OSS Exit Gate release for the wheel that this
+# build already uploaded to Artifact Registry.
+#
+# The manifest pins the exact version that was built rather than setting
+# publish_all, because publish_all promotes the newest version of every package
+# currently in Artifact Registry.
+#
+# Does nothing when the release tree contains no wheels.
+publish_manifest() {
+  local -r release_root="$1"
+
+  echo "=== [Manifest] Triggering OSS Exit Gate release ==="
+  if [[ ! -d "${release_root}" ]]; then
+    echo "No release tree at ${release_root}; nothing to publish."
+    return 0
+  fi
+
+  # A tagged release stages the same wheel under both release/<base> and
+  # release/<name>, so more than one path is expected here.
+  local -a wheels=()
+  shopt -s nullglob
+  wheels=("${release_root}"/*/python/*.whl)
+  shopt -u nullglob
+  if [[ "${#wheels[@]}" -eq 0 ]]; then
+    echo "No wheels under ${release_root}; nothing to publish."
+    return 0
+  fi
+
+  local -a versions=()
+  local wheel
+  for wheel in "${wheels[@]}"; do
+    versions+=("$(wheel_version "${wheel}")")
+  done
+
+  local -a unique=()
+  mapfile -t unique < <(printf '%s\n' "${versions[@]}" | sort -u)
+  if [[ "${#unique[@]}" -ne 1 ]]; then
+    echo "ERROR: expected one wheel version under ${release_root}, found: ${unique[*]}" >&2
+    return 1
+  fi
+  local -r version="${unique[0]}"
+
+  # Each upload must be a distinct object so that the notification email can be
+  # traced back to the build that sent it.
+  local -r build="${BUILDKITE_BUILD_NUMBER:-$(date +%s)}"
+  local -r destination="${MANIFEST_BUCKET}/${PACKAGE_NAME}-${version}-${build}.json"
+
+  local -r manifest="$(mktemp --tmpdir manifest.XXXXXX.json)"
+  cat > "${manifest}" <<EOF
+{
+  "publish_all": false,
+  "publishing_groups": [
+    {
+      "packages": [
+        {
+          "name": "${PACKAGE_NAME}",
+          "version": "${version}"
+        }
+      ]
+    }
+  ]
+}
+EOF
+
+  echo "Publishing ${PACKAGE_NAME} ${version} via ${destination}"
+  cat "${manifest}"
+
+  if [[ -n "${DRY_RUN:-}" ]]; then
+    echo "DRY_RUN is set; skipping upload."
+    rm -f "${manifest}"
+    return 0
+  fi
+
+  gcloud storage cp "${manifest}" "${destination}"
+  rm -f "${manifest}"
+
+  echo "=== [Manifest] Release triggered for ${PACKAGE_NAME} ${version}. ==="
+  # The Exit Gate exposes no queryable status, so this is the only signal.
+  echo "Progress is reported by email to gvisor-package-dev@google.com."
+}
+
 main() {
   if [[ "$#" -lt 1 ]]; then
     usage
@@ -229,6 +321,12 @@ main() {
         usage
       fi
       upload_to_ar "$1"
+      ;;
+    publish-manifest)
+      if [[ "$#" -lt 1 ]]; then
+        usage
+      fi
+      publish_manifest "$1"
       ;;
     all)
       if [[ "$#" -lt 2 ]]; then

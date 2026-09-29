@@ -59,6 +59,10 @@ steps:
       - (cd repo && gcloud storage cp --recursive . gs://gvisor/releases/)
       # Pushes release-<name> to GitHub.
       - ./.buildkite/scripts/release/tag.sh publish
+      # Pushes the wheel from Artifact Registry to PyPI. Only runs if the rest
+      # of the release succeeded. This step does nothing if no wheel was built,
+      # as is the case for nightly builds.
+      - ./tools/make_python_release.sh publish-manifest repo/release
     agents:
       queue: "release"
   - <<: *common
