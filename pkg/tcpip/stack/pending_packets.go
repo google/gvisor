@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -74,6 +75,13 @@ func (f *packetsPendingLinkResolution) init(nic *nic) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nic = nic
+	f.mu.packets = make(map[<-chan struct{}][]pendingPacket)
+}
+
+// afterLoad is invoked by stateify.
+func (f *packetsPendingLinkResolution) afterLoad(context.Context) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.mu.packets = make(map[<-chan struct{}][]pendingPacket)
 }
 

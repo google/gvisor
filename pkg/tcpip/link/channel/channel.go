@@ -40,14 +40,62 @@ type NotificationHandle struct {
 	n Notification
 }
 
+// +stateify savable
+type savedQueue struct {
+	packets  []*stack.PacketBuffer
+	capacity int
+}
+
+// +stateify savable
 type queue struct {
 	// c is the outbound packet channel.
-	c  chan *stack.PacketBuffer
-	mu queueRWMutex
+	c  chan *stack.PacketBuffer `state:".(*savedQueue)"`
+	mu queueRWMutex             `state:"nosave"`
 	// +checklocks:mu
 	notify []*NotificationHandle
 	// +checklocks:mu
 	closed bool
+}
+
+// +checklocksexclude:q.mu
+func (q *queue) saveC() *savedQueue {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.c == nil {
+		return nil
+	}
+	sq := &savedQueue{
+		packets:  make([]*stack.PacketBuffer, 0, len(q.c)),
+		capacity: cap(q.c),
+	}
+	for len(q.c) > 0 {
+		sq.packets = append(sq.packets, <-q.c)
+	}
+	if !q.closed {
+		for _, pkt := range sq.packets {
+			q.c <- pkt
+		}
+	}
+	return sq
+}
+
+func (q *queue) loadC(_ context.Context, sq *savedQueue) {
+	if sq == nil {
+		return
+	}
+	q.c = make(chan *stack.PacketBuffer, sq.capacity)
+	for _, pkt := range sq.packets {
+		q.c <- pkt
+	}
+}
+
+// +checklocksexclude:q.mu
+func (q *queue) afterLoad(context.Context) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed && q.c != nil {
+		close(q.c)
+	}
 }
 
 func (q *queue) Close() {
