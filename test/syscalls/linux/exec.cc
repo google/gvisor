@@ -1231,8 +1231,14 @@ TEST(ExecTest, SUIDExecDoesntGainUIDWithPtracerAttached) {
   const pid_t tracee_pid = fork();
   if (tracee_pid == 0) {
     TEST_PCHECK(close(sockets[1]) == 0);
-    TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
-    // Indicate that the prctl has been set.
+    // Earlier tests may have disabled dumpability. Allow same-user attachment
+    // without CAP_SYS_PTRACE before dropping our UID below.
+    TEST_PCHECK(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER) == 0);
+    // PR_SET_PTRACER is a Yama extension. Without Yama the option is
+    // unrecognized (EINVAL); see prctl(2) and PR_SET_PTRACER(2const).
+    const int ret = prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY);
+    TEST_PCHECK(ret == 0 || (ret == -1 && errno == EINVAL));
+    // Let the tracer proceed after the optional Yama setup.
     TEST_PCHECK(WriteFd(sockets[0], "x", 1) == 1);
 
     // Wait until tracer has attached before execing.
@@ -1252,16 +1258,16 @@ TEST(ExecTest, SUIDExecDoesntGainUIDWithPtracerAttached) {
 
   const pid_t tracer_pid = fork();
   if (tracer_pid == 0) {
-    // Wait until tracee has called prctl, or else we won't be able to attach.
+    // Wait for the tracee to finish optional Yama setup.
     char done;
     TEST_PCHECK(ReadFd(sockets[1], &done, 1) == 1);
 
+    // Linux retains the tracer's credentials at attachment for exec permission
+    // checks (ptracer_capable). Drop this capability before they are captured.
+    TEST_PCHECK(SetCapability(CAP_SYS_PTRACE, false).ok());
     TEST_PCHECK(ptrace(PTRACE_ATTACH, tracee_pid, 0, 0) == 0);
     // Indicate that we have attached.
     TEST_PCHECK(WriteFd(sockets[1], &done, 1) == 1);
-
-    // Priv gain isn't prevented when the tracer has this cap, so drop it.
-    TEST_PCHECK(SetCapability(CAP_SYS_PTRACE, false).ok());
 
     // Block until tracee enters signal-delivery-stop as a result of the
     // SIGSTOP sent by PTRACE_ATTACH. And then continue it.
@@ -1283,7 +1289,7 @@ TEST(ExecTest, SUIDExecDoesntGainUIDWithPtracerAttached) {
   int status;
   // Verify the tracee's (exec_check_creds's) exit code
   ASSERT_THAT(waitpid(tracee_pid, &status, 0), SyscallSucceeds());
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  EXPECT_EQ(status, 0);
 }
 
 TEST(ExecTest, ReadProcMemAfterExecFromChild) {
