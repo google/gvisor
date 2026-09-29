@@ -13,6 +13,7 @@ ARG CUDA_SAMPLES_VERSION=v12.8
 WORKDIR /
 COPY *.cu *.h *.sh *.cc /
 ENV PATH=$PATH:/usr/local/nvidia/bin
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/nvidia/lib64:/usr/local/nvidia/lib
 RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get update && \
     apt-get install -y \
