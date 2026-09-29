@@ -756,6 +756,11 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	// The only Landlock check erofs needs: being read-only, every operation
+	// needing another right fails with EROFS.
+	if err := rp.CheckLandlockOpen(ctx, &d.vfsd, opts, d.inode.IsDir()); err != nil {
+		return nil, err
+	}
 
 	switch d.inode.fileType() {
 	case linux.S_IFREG:

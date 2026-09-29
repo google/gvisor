@@ -415,10 +415,13 @@ func (fs *filesystem) resolveLocked(ctx context.Context, vfsRP *vfs.ResolvingPat
 // createInRemoteDir (if the parent directory is a real remote directory) or
 // createInSyntheticDir (if the parent directory is synthetic) to do so.
 //
+// checkLandlock is called with parent.opMu held, just before creation, so the
+// check and the creation see the same final component.
+//
 // Preconditions:
 //   - !rp.Done().
 //   - For the final path component in rp, !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) (*dentry, error), createInSyntheticDir func(parent *dentry, name string) (*dentry, error)) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, checkLandlock func(parent *dentry) error, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) (*dentry, error), createInSyntheticDir func(parent *dentry, name string) (*dentry, error)) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
@@ -494,6 +497,15 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	}
 	if !dir && rp.MustBeDir() {
 		return linuxerr.ENOENT
+	}
+	if err := checkLandlock(parent); err != nil {
+		// EEXIST wins over a Landlock denial, as Linux's filename_create()
+		// looks up the child before security_path_mkdir() and friends.
+		// E.g. "mkdir /tmp/x" with /tmp/x existing fails with EEXIST.
+		if existenceErr := checkExistence(); existenceErr != nil {
+			return existenceErr
+		}
+		return err
 	}
 	if parent.inode.isSynthetic() {
 		if createInSyntheticDir == nil {
@@ -622,11 +634,23 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			// Hit a negative cached entry, child doesn't exist.
 			return linuxerr.ENOENT
 		}
+		if child == nil && rp.LandlockRestricted() {
+			child, err = fs.getChildLocked(ctx, parent, name, &ds)
+			if err != nil {
+				return err
+			}
+		}
 	} else {
 		child, _, err = fs.stepLocked(ctx, resolvingPathFull(rp), parent, false /* mayFollowSymlinks */, &ds)
 		if err != nil {
 			return err
 		}
+	}
+	// parent.opMu is held, so name still names the file removed below.
+	if err := rp.CheckLandlockRemove(ctx, &parent.vfsd, dir); err != nil {
+		return err
+	}
+	if parent.inode.mode.Load()&linux.ModeSticky != 0 {
 		if err := parent.mayDelete(rp.Credentials(), child); err != nil {
 			return err
 		}
@@ -816,19 +840,41 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	err := fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+	err := fs.doCreateAt(ctx, rp, false, func(parent *dentry) error {
 		if rp.Mount() != vd.Mount() {
-			return nil, linuxerr.EXDEV
+			// Reported as EXDEV by the creation callback below.
+			return nil
 		}
 		d := vd.Dentry().Impl().(*dentry)
-		if d.isDir() {
-			return nil, linuxerr.EPERM
+		// A root d has no parent; nil oldParent means crossing directories.
+		var oldParent *vfs.Dentry
+		if p := d.parent.Load(); p != nil {
+			oldParent = &p.vfsd
 		}
+		// protected_hardlinks' EPERM precedes Landlock, as Linux's do_linkat()
+		// calls may_linkat() before security_path_link().
 		gid := auth.KGID(d.inode.gid.Load())
 		uid := auth.KUID(d.inode.uid.Load())
 		mode := linux.FileMode(d.inode.mode.Load())
 		if err := vfs.MayLink(rp.Credentials(), mode, nil, uid, gid); err != nil {
-			return nil, err
+			return err
+		}
+		return rp.CheckLandlockRefer(ctx, &vfs.LandlockReferOptions{
+			OldParent: oldParent,
+			NewParent: &parent.vfsd,
+			SrcMode:   mode,
+			// link(2) keeps the source and never replaces the destination.
+			Removable: false,
+			DstExists: false,
+		})
+	}, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+		if rp.Mount() != vd.Mount() {
+			return nil, linuxerr.EXDEV
+		}
+		d := vd.Dentry().Impl().(*dentry)
+		// Checked after the hook, as in Linux's vfs_link().
+		if d.isDir() {
+			return nil, linuxerr.EPERM
 		}
 		if d.inode.nlink.Load() == 0 {
 			return nil, linuxerr.ENOENT
@@ -853,7 +899,9 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
-	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+	return fs.doCreateAt(ctx, rp, true, func(parent *dentry) error {
+		return rp.CheckLandlockCreate(ctx, &parent.vfsd, linux.S_IFDIR)
+	}, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		// If the parent is a setgid directory, use the parent's GID
 		// rather than the caller's and enable setgid.
 		kgid := creds.EffectiveKGID
@@ -904,7 +952,9 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+	return fs.doCreateAt(ctx, rp, false, func(parent *dentry) error {
+		return rp.CheckLandlockCreate(ctx, &parent.vfsd, opts.Mode)
+	}, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		creds := rp.Credentials()
 		if child, err := parent.mknod(ctx, name, creds, &opts); err == nil {
 			return child, nil
@@ -1100,6 +1150,12 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if err := d.inode.writeCount.CheckWrite(); err != nil {
 			return nil, err
 		}
+	}
+	// Checked on the file being opened, before O_TRUNC and after ETXTBSY, as
+	// in Linux's do_dentry_open(). Newly created files are checked by
+	// CheckLandlockOpenCreate() instead.
+	if err := rp.CheckLandlockOpen(ctx, &d.vfsd, opts, d.isDir()); err != nil {
+		return nil, err
 	}
 	if !d.inode.isSynthetic() {
 		// renameMu is locked here because it is required by d.openHandle(), which
@@ -1347,6 +1403,20 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	}
 	defer mnt.EndWrite()
 
+	// d.opMu is held, so this checks the file openCreate() creates below.
+	if err := rp.CheckLandlockOpenCreate(ctx, &d.vfsd, opts); err != nil {
+		// The caller found no cached child, but the file may exist remotely
+		// (InteropModeShared, or a stale negative entry). Opening an existing
+		// file needs no MAKE_REG, so report EEXIST and let the caller step to
+		// it and open it, with the open check, instead.
+		if child, lookupErr := d.inode.fs.getChildLocked(ctx, d, rp.Component(), ds); lookupErr == nil && child != nil {
+			return nil, linuxerr.EEXIST
+		} else if lookupErr != nil && !linuxerr.Equals(linuxerr.ENOENT, lookupErr) {
+			return nil, lookupErr
+		}
+		return nil, err
+	}
+
 	creds := rp.Credentials()
 	name := rp.Component()
 	// If the parent is a setgid directory, use the parent's GID rather
@@ -1591,6 +1661,24 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		}
 	}
 
+	// Both parents' opMu are held, so the names still refer to renamed and
+	// replaced. Checked before the no-op rename below, so that a denied
+	// rename of a file onto itself still fails.
+	referOpts := vfs.LandlockReferOptions{
+		OldParent:   &oldParent.vfsd,
+		NewParent:   &newParent.vfsd,
+		SrcMode:     linux.FileMode(renamed.inode.mode.Load()),
+		DstExists:   replaced != nil,
+		Removable:   true,
+		RenameFlags: opts.Flags,
+	}
+	if replaced != nil {
+		referOpts.DstMode = linux.FileMode(replaced.inode.mode.Load())
+	}
+	if err := rp.CheckLandlockRefer(ctx, &referOpts); err != nil {
+		return err
+	}
+
 	if oldParent == newParent && oldName == newName {
 		return nil
 	}
@@ -1820,7 +1908,9 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+	return fs.doCreateAt(ctx, rp, false, func(parent *dentry) error {
+		return rp.CheckLandlockCreate(ctx, &parent.vfsd, linux.S_IFLNK)
+	}, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		child, err := parent.symlink(ctx, name, target, rp.Credentials())
 		if err != nil {
 			return nil, err

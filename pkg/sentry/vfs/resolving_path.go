@@ -64,6 +64,10 @@ type ResolvingPath struct {
 	// see VirtualFilesystem.WalkAncestors().
 	toDecRef []refs.RefCounter `state:"nosave"`
 
+	// landlockChecked is set by every Landlock check made on rp, so that VFS
+	// can tell a FilesystemImpl that forgot one.
+	landlockChecked bool
+
 	// ResolvingPath tracks relative paths, which is updated whenever a relative
 	// symlink is encountered.
 	parts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
@@ -196,6 +200,7 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 		rp.flags |= rpflagsNoXDev
 	}
 	rp.mustBeDir = pop.Path.Dir
+	rp.landlockChecked = false
 	rp.symlinks = 0
 	rp.curPart = 0
 	rp.creds = creds

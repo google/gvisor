@@ -425,10 +425,25 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if rp.MustBeDir() {
 		return linuxerr.ENOENT
 	}
+	// A parentless (root) source leaves oldParent nil: treated as cross-dir.
+	var oldParent *vfs.Dentry
+	if p := vd.Dentry().Impl().(*Dentry).parent.Load(); p != nil {
+		oldParent = p.VFSDentry()
+	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
 	}
 	defer rp.Mount().EndWrite()
+	if err := rp.CheckLandlockRefer(ctx, &vfs.LandlockReferOptions{
+		OldParent: oldParent,
+		NewParent: parent.VFSDentry(),
+		SrcMode:   inode.Mode(),
+		// link(2) neither removes the source nor replaces the destination.
+		Removable: false,
+		DstExists: false,
+	}); err != nil {
+		return err
+	}
 
 	childI, err := parent.inode.NewLink(ctx, pc, inode)
 	if err != nil {
@@ -465,6 +480,10 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 	defer rp.Mount().EndWrite()
+	// mnt_want_write()'s EROFS precedes the Landlock hook in Linux's do_mkdirat().
+	if err := rp.CheckLandlockCreate(ctx, parent.VFSDentry(), linux.S_IFDIR); err != nil {
+		return err
+	}
 	childI, err := parent.inode.NewDir(ctx, pc, opts)
 	if err != nil {
 		if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
@@ -505,6 +524,10 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 	defer rp.Mount().EndWrite()
+	// mnt_want_write()'s EROFS precedes the Landlock hook in Linux's do_mknodat().
+	if err := rp.CheckLandlockCreate(ctx, parent.VFSDentry(), opts.Mode); err != nil {
+		return err
+	}
 	newI, err := parent.inode.NewNode(ctx, pc, opts)
 	if err != nil {
 		return err
@@ -532,6 +555,11 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			return nil, err
 		}
 		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+			fs.mu.RUnlock()
+			return nil, err
+		}
+		// Checked before any truncation Inode.Open() performs.
+		if err := rp.CheckLandlockOpen(ctx, d.VFSDentry(), &opts, d.isDir()); err != nil {
 			fs.mu.RUnlock()
 			return nil, err
 		}
@@ -575,6 +603,9 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			return nil, linuxerr.EEXIST
 		}
 		if err := start.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+			return nil, err
+		}
+		if err := rp.CheckLandlockOpen(ctx, start.VFSDentry(), &opts, start.isDir()); err != nil {
 			return nil, err
 		}
 		if trunc && start.isRegular() {
@@ -638,6 +669,10 @@ afterTrailingSymlink:
 			return nil, err
 		}
 		defer mnt.EndWrite()
+		// fs.mu is write-locked, so pc names nothing until NewFile() below.
+		if err := rp.CheckLandlockOpenCreate(ctx, parent.VFSDentry(), &opts); err != nil {
+			return nil, err
+		}
 		// Create and open the child.
 		childI, err := parent.inode.NewFile(ctx, pc, opts)
 		if err != nil {
@@ -670,6 +705,9 @@ afterTrailingSymlink:
 		return nil, linuxerr.ENOTDIR
 	}
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		return nil, err
+	}
+	if err := rp.CheckLandlockOpen(ctx, child.VFSDentry(), &opts, child.isDir()); err != nil {
 		return nil, err
 	}
 	if trunc && child.isRegular() {
@@ -809,6 +847,21 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 
+	referOpts := vfs.LandlockReferOptions{
+		OldParent:   srcDirVFSD,
+		NewParent:   dstDir.VFSDentry(),
+		SrcMode:     src.inode.Mode(),
+		DstExists:   dst != nil,
+		Removable:   true,
+		RenameFlags: opts.Flags,
+	}
+	if dst != nil {
+		referOpts.DstMode = dst.inode.Mode()
+	}
+	if err := rp.CheckLandlockRefer(ctx, &referOpts); err != nil {
+		return err
+	}
+
 	if srcDir == dstDir && oldName == newName {
 		return nil
 	}
@@ -893,6 +946,9 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 		return err
 	}
 	if err := checkDeleteLocked(ctx, rp, child); err != nil {
+		return err
+	}
+	if err := rp.CheckLandlockRemove(ctx, parent.VFSDentry(), true); err != nil {
 		return err
 	}
 	if !child.isDir() {
@@ -1024,6 +1080,10 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 		return err
 	}
 	defer rp.Mount().EndWrite()
+	// mnt_want_write()'s EROFS precedes the Landlock hook in Linux's do_symlinkat().
+	if err := rp.CheckLandlockCreate(ctx, parent.VFSDentry(), linux.S_IFLNK); err != nil {
+		return err
+	}
 	childI, err := parent.inode.NewSymlink(ctx, pc, target)
 	if err != nil {
 		return err
@@ -1050,6 +1110,9 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	}
 	defer rp.Mount().EndWrite()
 	if err := checkDeleteLocked(ctx, rp, d); err != nil {
+		return err
+	}
+	if err := rp.CheckLandlockRemove(ctx, d.parent.Load().VFSDentry(), false); err != nil {
 		return err
 	}
 	if d.isDir() {
