@@ -14,10 +14,6 @@
 
 #include <fcntl.h>
 
-#include <cstdint>
-#include <iterator>
-#include <memory>
-
 #ifdef __linux__
 #include <linux/capability.h>
 #include <linux/filter.h>
@@ -37,9 +33,12 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
+#include <iterator>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <thread>  // NOLINT
 #include <utility>
