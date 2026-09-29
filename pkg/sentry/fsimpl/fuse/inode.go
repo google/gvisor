@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	goContext "context"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -129,6 +130,52 @@ func (i *inode) GID() auth.KGID {
 	i.attrMu.Lock()
 	defer i.attrMu.Unlock()
 	return auth.KGID(i.gid.Load())
+}
+
+// LandlockObjectSlot overrides kernfs.InodeAttrs.LandlockObjectSlot. It keys
+// by the immutable nodeID rather than the mutable i.ino, matching
+// getFUSEAttr().
+func (i *inode) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	return vfs.LookupLandlockSlot(&i.fs.landlockSlots, i.nodeID)
+}
+
+// GetLandlockObject implements the kernfs inode Landlock object getter.
+func (i *inode) GetLandlockObject(vfsfs *vfs.Filesystem, d *vfs.Dentry) (*vfs.LandlockObject, error) {
+	fs := i.fs
+	fs.landlockSlotsMu.Lock()
+	defer fs.landlockSlotsMu.Unlock()
+	slot := vfs.LookupLandlockSlot(&fs.landlockSlots, i.nodeID)
+	if slot == nil {
+		slot = vfs.NewLandlockObjectSlot(fs)
+		vfs.StoreLandlockSlot(&fs.landlockSlots, i.nodeID, slot)
+	}
+	return slot.GetObject(vfsfs, d)
+}
+
+// LandlockObjectSlotReleased implements
+// vfs.LandlockObjectSlotOwner.LandlockObjectSlotReleased.
+func (fs *filesystem) LandlockObjectSlotReleased(slot *vfs.LandlockObjectSlot) {
+	fs.landlockSlotsMu.Lock()
+	defer fs.landlockSlotsMu.Unlock()
+	vfs.DeleteLandlockSlot(&fs.landlockSlots, slot)
+}
+
+// landlockSlotMap is the saved form of filesystem.landlockSlots.
+type landlockSlotMap = map[uint64]*vfs.LandlockObjectSlot
+
+// saveLandlockSlots is called by stateify.
+func (fs *filesystem) saveLandlockSlots() landlockSlotMap {
+	if m := fs.landlockSlots.Load(); m != nil {
+		return *m
+	}
+	return nil
+}
+
+// loadLandlockSlots is called by stateify.
+func (fs *filesystem) loadLandlockSlots(_ goContext.Context, m landlockSlotMap) {
+	if m != nil {
+		fs.landlockSlots.Store(&m)
+	}
 }
 
 // +checklocks:i.attrMu

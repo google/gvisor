@@ -116,6 +116,11 @@ type MountOptions struct {
 	// Locked determines whether to lock this mount so it cannot be unmounted by
 	// normal user processes.
 	Locked bool
+
+	// InternalMount marks a mount holding only sentry-internal files (e.g.
+	// pipefs, sockfs, nsfs), like Linux's MNT_INTERNAL with SB_NOUSER. Unlike
+	// GetFilesystemOptions.InternalMount, it is a property of the mount.
+	InternalMount bool
 }
 
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and

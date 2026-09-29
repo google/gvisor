@@ -611,6 +611,11 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
 
+// LandlockObjectSlot implements vfs.DentryImpl.LandlockObjectSlot.
+func (d *dentry) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	return &d.inode.landlockSlot
+}
+
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
 func (d *dentry) OnZeroWatches(context.Context) {}
 
@@ -661,6 +666,10 @@ type inode struct {
 
 	// Inotify watches for this inode.
 	watches vfs.Watches
+
+	// landlockSlot holds the Landlock object for this inode, which is shared
+	// by every hard link to it.
+	landlockSlot vfs.LandlockObjectSlot
 
 	impl any // immutable
 }

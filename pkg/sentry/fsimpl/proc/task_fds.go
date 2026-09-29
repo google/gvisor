@@ -366,7 +366,10 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if file == nil {
 		return linuxerr.ENOENT
 	}
-	defer d.fs.SafeDecRefFD(ctx, file)
+	// Not SafeDecRefFD: Generate is called by reads, never under d.fs.mu, and
+	// nothing processes deferred DecRefs after a read, so a deferred DecRef
+	// could keep file open long after it is closed.
+	defer file.DecRef(ctx)
 	// Currently we output the typical base fields: pos, flags, mnt_id.
 	// TODO(b/121266871): Add ino, lock, and type-specific fields.
 	// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt

@@ -28,6 +28,8 @@
 //		        *** "memmap.Mappable locks taken by Translate" below this point
 //		        dentry.dataMu
 //		      filesystem.ancestryMu
+//		      filesystem.landlockMu
+//		        vfs.LandlockObjectSlot.mu
 //
 // Locking dentry.dirMu in multiple dentries requires that parent dentries are
 // locked before child dentries, and that filesystem.renameMu is locked to
@@ -35,6 +37,7 @@
 package overlay
 
 import (
+	goContext "context"
 	"fmt"
 	"os"
 	"strings"
@@ -144,6 +147,12 @@ type filesystem struct {
 	// lastDirIno is the last inode number assigned to a directory. lastDirIno
 	// is protected by dirInoCacheMu.
 	lastDirIno uint64
+
+	// landlockSlots maps layer files to the slots of the overlay files that
+	// have a Landlock object; see dentry.LandlockObjectSlot(). Updates are
+	// serialized by landlockMu.
+	landlockMu    sync.Mutex                 `state:"nosave"`
+	landlockSlots vfs.LandlockSlotTable[any] `state:".(landlockSlotMap)"`
 
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
 	maxFilenameLen uint64
@@ -868,6 +877,100 @@ const (
 // Preconditions: fs.renameMu must be locked.
 func withDropList(ctx context.Context, ds **[]*dentry) context.Context {
 	return context.WithValue(ctx, CtxDropList, ds)
+}
+
+// LandlockObjectSlot implements vfs.DentryImpl.LandlockObjectSlot.
+//
+// d's slot is keyed by a layer file rather than by d, since the file may be
+// named by a new dentry after d is dropped, or by a hard link:
+//
+//   - Before copy-up, the key is the topmost lower file.
+//   - After copy-up, it is the upper file, which copyUpLocked() maps to the
+//     lower file's slot. E.g. a rule added for /dir before "touch /dir/f"
+//     copies /dir up still matches /dir afterwards.
+//
+// The overlay file and its layer file are distinct files to a rule, as they
+// are distinct inodes in Linux (selftest
+// layout2_overlay.same_content_different_file).
+func (d *dentry) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	if d.fs.landlockSlots.Load() == nil {
+		return nil
+	}
+	key := d.landlockKey()
+	if key == nil {
+		return nil
+	}
+	return vfs.LookupLandlockSlot(&d.fs.landlockSlots, key)
+}
+
+// GetLandlockObject implements vfs.LandlockObjectGetter.GetLandlockObject.
+func (d *dentry) GetLandlockObject(vfsfs *vfs.Filesystem) (*vfs.LandlockObject, error) {
+	fs := d.fs
+	fs.landlockMu.Lock()
+	defer fs.landlockMu.Unlock()
+	key := d.landlockKey()
+	if key == nil {
+		return nil, linuxerr.EBADFD
+	}
+	slot := vfs.LookupLandlockSlot(&fs.landlockSlots, key)
+	if slot == nil {
+		slot = vfs.NewLandlockObjectSlot(fs)
+		vfs.StoreLandlockSlot(&fs.landlockSlots, key, slot)
+	}
+	return slot.GetObject(vfsfs, &d.vfsd)
+}
+
+// LandlockObjectSlotReleased implements
+// vfs.LandlockObjectSlotOwner.LandlockObjectSlotReleased.
+func (fs *filesystem) LandlockObjectSlotReleased(slot *vfs.LandlockObjectSlot) {
+	fs.landlockMu.Lock()
+	defer fs.landlockMu.Unlock()
+	vfs.DeleteLandlockSlot(&fs.landlockSlots, slot)
+}
+
+// landlockSlotMap is the saved form of filesystem.landlockSlots.
+type landlockSlotMap = map[any]*vfs.LandlockObjectSlot
+
+// saveLandlockSlots is called by stateify.
+func (fs *filesystem) saveLandlockSlots() landlockSlotMap {
+	if m := fs.landlockSlots.Load(); m != nil {
+		return *m
+	}
+	return nil
+}
+
+// loadLandlockSlots is called by stateify.
+func (fs *filesystem) loadLandlockSlots(_ goContext.Context, m landlockSlotMap) {
+	if m != nil {
+		fs.landlockSlots.Store(&m)
+	}
+}
+
+// landlockKey returns the key of d's slot in fs.landlockSlots, or nil if d's
+// layer file cannot be named.
+func (d *dentry) landlockKey() any {
+	// copyUpLocked() publishes the upper file's key before setting copiedUp,
+	// so a dentry seen copied up always finds its slot under the upper file.
+	if d.isCopiedUp() {
+		return landlockLayerKey(d.upperVD)
+	}
+	return landlockLayerKey(d.lowerVDs[0])
+}
+
+// landlockLayerKey returns the key for the layer file vd names: the layer
+// file's own slot, which all of its dentries share. A layer that allocates
+// slots on demand, e.g. a nested overlay, may have none yet, so its dentry is
+// the key instead; hard links within such a layer then get distinct Landlock
+// objects.
+func landlockLayerKey(vd vfs.VirtualDentry) any {
+	d := vd.Dentry()
+	if _, ok := d.Impl().(vfs.LandlockObjectGetter); ok {
+		return d
+	}
+	if slot := d.Impl().LandlockObjectSlot(); slot != nil {
+		return slot
+	}
+	return nil
 }
 
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.

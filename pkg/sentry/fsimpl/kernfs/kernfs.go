@@ -148,14 +148,13 @@ func (fs *Filesystem) deferDecRef(d refs.RefCounter) {
 
 // SafeDecRefFD safely DecRef the FileDescription making sure DecRef is deferred
 // in case Filesystem.mu is held. See comment on Filesystem.mu.
+//
+// Unlike SafeDecRef, it defers even an FD on another filesystem: releasing an
+// FD can drop dentries on any filesystem, this one included. E.g. a Landlock
+// ruleset holds references on the dentries its rules name, and a unix socket
+// can hold a ruleset FD in flight.
 func (fs *Filesystem) SafeDecRefFD(ctx context.Context, fd *vfs.FileDescription) {
-	if d, ok := fd.Dentry().Impl().(*Dentry); ok && d.fs == fs {
-		// Only defer if dentry belongs to this filesystem, since locks cannot cross
-		// filesystems.
-		fs.deferDecRef(fd)
-		return
-	}
-	fd.DecRef(ctx)
+	fs.deferDecRef(fd)
 }
 
 // SafeDecRef safely DecRef the virtual dentry making sure DecRef is deferred
@@ -586,6 +585,39 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 // Watches implements vfs.DentryImpl.Watches.
 func (d *Dentry) Watches() *vfs.Watches {
 	return d.inode.Watches()
+}
+
+// inodeLandlockObjectSlotter is implemented by Inodes that Landlock rules can
+// name (e.g. via InodeAttrs). Inodes without it are anonymous.
+type inodeLandlockObjectSlotter interface {
+	LandlockObjectSlot() *vfs.LandlockObjectSlot
+}
+
+// inodeLandlockObjectGetter is implemented by Inodes whose slots need their
+// own lock; see vfs.LandlockObjectGetter.
+type inodeLandlockObjectGetter interface {
+	GetLandlockObject(fs *vfs.Filesystem, d *vfs.Dentry) (*vfs.LandlockObject, error)
+}
+
+// LandlockObjectSlot implements vfs.DentryImpl.LandlockObjectSlot.
+func (d *Dentry) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	inode, ok := d.inode.(inodeLandlockObjectSlotter)
+	if !ok {
+		return nil
+	}
+	return inode.LandlockObjectSlot()
+}
+
+// GetLandlockObject implements vfs.LandlockObjectGetter.GetLandlockObject.
+func (d *Dentry) GetLandlockObject(fs *vfs.Filesystem) (*vfs.LandlockObject, error) {
+	if getter, ok := d.inode.(inodeLandlockObjectGetter); ok {
+		return getter.GetLandlockObject(fs, &d.vfsd)
+	}
+	slot := d.LandlockObjectSlot()
+	if slot == nil {
+		return nil, linuxerr.EBADFD
+	}
+	return slot.GetObject(fs, &d.vfsd)
 }
 
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
