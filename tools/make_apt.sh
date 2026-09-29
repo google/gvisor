@@ -150,6 +150,9 @@ cat > "${release}"/apt.conf <<EOF
 APT {
   FTPArchive {
     Release {
+      // Hash only the package indexes, not the Release file being written.
+      Default-Patterns "false";
+      Patterns { "Packages"; "Packages.gz"; "Packages.xz"; };
       Architectures "${arches[@]}";
       Suite "${suite}";
       Components "main";
