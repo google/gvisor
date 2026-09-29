@@ -82,6 +82,7 @@ const (
 	bsd2        License = "BSD-2-Clause"
 	bsd3        License = "BSD-3-Clause"
 	bsd4        License = "BSD-4-Clause"
+	cc0         License = "CC0-1.0"
 	gpl2        License = "GPL-2.0-only"
 	gpl3        License = "GPL-3.0-only"
 	isc         License = "ISC"
@@ -102,6 +103,7 @@ var knownLicenses = map[License]bool{
 	bsd2:        true,
 	bsd3:        true,
 	bsd4:        true,
+	cc0:         true,
 	gpl2:        true,
 	gpl3:        true,
 	isc:         true,
@@ -829,11 +831,14 @@ func classify(text string) (Licenses, error) {
 		switch {
 		case strings.Contains(t, "all advertising materials"):
 			ids = append(ids, bsd4)
-		case strings.Contains(t, "neither the name"):
+		case strings.Contains(t, "neither the name"), strings.Contains(t, "the name of the author may not be used"):
 			ids = append(ids, bsd3)
 		default:
 			ids = append(ids, bsd2)
 		}
+	}
+	if strings.Contains(t, "cc0 1.0 universal") {
+		ids = append(ids, cc0)
 	}
 	if strings.Contains(t, "mozilla public license version 2.0") {
 		ids = append(ids, mpl2)
