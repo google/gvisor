@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/amdgpu"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -523,5 +524,50 @@ func TestRDMASysfs(t *testing.T) {
 	// host's errno.
 	if _, err := readTestFile(s, nicLeaf+"/net/eth1/speed"); !errors.Is(err, unix.EINVAL) {
 		t.Errorf("reading speed of a down link returned %v, want EINVAL", err)
+	}
+}
+
+func TestAMDGPUSysfs(t *testing.T) {
+	// The PCI device shares the RDMA test snapshot's pci0000:07 root complex.
+	const pci = "devices/pci0000:07/0000:07:02.0"
+	const render = pci + "/drm/renderD128"
+	snap := &amdgpu.Snapshot{
+		Dirs: []string{pci + "/drm/card0"},
+		Files: map[string]string{
+			pci + "/vendor":    "0x1002\n",
+			pci + "/numa_node": "1\n",
+			render + "/dev":    "226:128\n",
+			"devices/virtual/kfd/kfd/topology/nodes/0/gpu_id": "123\n",
+		},
+		Links: map[string]string{
+			"class/kfd/kfd":        "../../devices/virtual/kfd/kfd",
+			"class/drm/renderD128": "../../" + render,
+			"dev/char/226:128":     "../../" + render,
+			render + "/device":     "../..",
+		},
+	}
+	s := newTestSystemWithInternalData(t, &sys.InternalData{AMDGPUSysfs: snap, RDMASysfs: newRDMATestSnapshot(), ProductName: "test-product"})
+	defer s.Destroy()
+	for p, want := range map[string]string{
+		"/class/kfd/kfd/topology/nodes/0/gpu_id":                                       "123\n",
+		"/dev/char/226:128/device/vendor":                                              "0x1002\n",
+		"/class/drm/renderD128/device/numa_node":                                       "0\n",
+		"/devices/virtual/dmi/id/product_name":                                         "test-product\n",
+		"/devices/pci0000:07/0000:07:01.0/0000:0c:00.0/infiniband_verbs/uverbs0/ibdev": "mlx5_0\n",
+	} {
+		if got, err := readTestFile(s, p); err != nil || got != want {
+			t.Errorf("read(%q) = %q, %v; want %q", p, got, err, want)
+		}
+	}
+	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("/dev/char/226:128/device/drm")), map[string]testutil.DirentType{
+		"card0": linux.DT_DIR, "renderD128": linux.DT_DIR,
+	})
+	if _, err := readTestFile(s, "/class/drm/card0"); err == nil {
+		t.Error("primary card node exposed")
+	}
+	bad := &amdgpu.Snapshot{Files: map[string]string{"devices/../etc/passwd": "bad"}}
+	if s, err := tryNewTestSystem(t, &sys.InternalData{AMDGPUSysfs: bad}); err == nil {
+		s.Destroy()
+		t.Error("accepted a sysfs path escaping /sys")
 	}
 }

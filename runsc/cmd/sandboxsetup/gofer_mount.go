@@ -24,6 +24,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/amdgpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -540,11 +541,21 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 	if spec.Linux == nil {
 		return nil
 	}
+	amdDevices := make(map[string]bool)
+	if specutils.AMDGPUProxyEnabled(spec, conf) {
+		for _, dev := range specutils.AMDGPUDevicesInSpec(spec) {
+			if err := amdgpu.ValidateDevice("/", dev); err != nil {
+				return fmt.Errorf("validating AMD GPU device: %w", err)
+			}
+			amdDevices[dev.Path] = true
+		}
+	}
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
 	tpuproxyEnabled := specutils.TPUProxyEnabled(spec, conf)
 	rdmaproxyEnabled := specutils.RDMAEnabled(spec, conf)
 	for _, dev := range spec.Linux.Devices {
-		shouldMount := (nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
+		shouldMount := amdDevices[dev.Path] ||
+			(nvproxyEnabled && ShouldExposeNvidiaDevice(dev.Path)) ||
 			(tpuproxyEnabled && ShouldExposeTpuDevice(dev.Path)) ||
 			(rdmaproxyEnabled && ShouldExposeRDMADevice(dev.Path))
 		if !shouldMount {

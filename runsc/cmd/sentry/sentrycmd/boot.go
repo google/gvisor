@@ -31,6 +31,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 
+	"gvisor.dev/gvisor/pkg/amdgpu"
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -40,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/devices/amdgpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
@@ -598,6 +600,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
+	amdKFDFD := -1
+	if specutils.AMDGPUProxyEnabled(spec, conf) {
+		// This must happen in the process that runs the sentry, after any
+		// re-exec.
+		if amdKFDFD, err = amdgpuproxy.OpenKFD(); err != nil {
+			util.Fatalf("opening /dev/kfd: %v", err)
+		}
+	}
+
 	if b.syncUsernsFD >= 0 {
 		// syncUsernsFD is set, but runsc hasn't been re-executed with a new UID and GID.
 		// We expect that setCapsAndCallSelf has to be called in this case.
@@ -684,6 +695,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
+	var amdgpuSnap *amdgpu.Snapshot
+	if specutils.AMDGPUProxyEnabled(spec, conf) {
+		if amdgpuSnap, err = amdgpu.Load(amdgpu.Path); err != nil {
+			util.Fatalf("loading AMD GPU sysfs snapshot: %v", err)
+		}
+	}
+
 	var rdmaSnap *rdma.Snapshot
 	if specutils.RDMAEnabled(spec, conf) {
 		// Load the RDMA sysfs snapshot serialized by the chroot stage.
@@ -716,6 +734,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		TotalMem:            b.totalMem,
 		TotalHostMem:        b.totalHostMem,
 		UserLogFD:           b.userLogFD,
+		AMDGPUSysfs:         amdgpuSnap,
+		AMDKFDFD:            amdKFDFD,
 		RDMASysfs:           rdmaSnap,
 		ProductName:         b.productName,
 		PodInitConfigFD:     b.podInitConfigFD,

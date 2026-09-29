@@ -29,6 +29,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/amdgpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -265,6 +266,12 @@ type Loader struct {
 	// rdmaSysfs is the host sysfs snapshot for RDMA device topology, or
 	// nil when disabled.
 	rdmaSysfs *rdma.Snapshot
+
+	// amdgpuSysfs is the AMD GPU sysfs snapshot, or nil when disabled.
+	amdgpuSysfs *amdgpu.Snapshot
+
+	// amdKFDFD is the sentry's /dev/kfd, or -1 when disabled.
+	amdKFDFD int
 
 	// cpuQuota and cpuPeriod are the raw host CFS settings that should be
 	// exposed through sandbox cgroupfs.
@@ -524,6 +531,10 @@ type Args struct {
 	// RDMASysfs is the host sysfs snapshot for RDMA device topology, or
 	// nil when disabled.
 	RDMASysfs *rdma.Snapshot
+	// AMDGPUSysfs is the AMD GPU sysfs snapshot, or nil when disabled.
+	AMDGPUSysfs *amdgpu.Snapshot
+	// AMDKFDFD is the sentry's /dev/kfd, or -1 when disabled.
+	AMDKFDFD int
 	// PodInitConfigFD is the file descriptor to a file passed in the
 	//	--pod-init-config flag
 	PodInitConfigFD int
@@ -699,6 +710,8 @@ func New(args Args) (*Loader, error) {
 		startupTimer:          args.StartupTimer,
 		productName:           args.ProductName,
 		rdmaSysfs:             args.RDMASysfs,
+		amdgpuSysfs:           args.AMDGPUSysfs,
+		amdKFDFD:              args.AMDKFDFD,
 		cpuQuota:              args.CPUQuota,
 		cpuPeriod:             args.CPUPeriod,
 		hostTHP:               args.HostTHP,
@@ -938,7 +951,7 @@ func New(args Args) (*Loader, error) {
 	}
 	args.StartupTimer.Reached("kernel initialized")
 
-	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs); err != nil {
+	if err := registerFilesystems(l.k, &l.root, l.rdmaSysfs, l.amdgpuSysfs, l.amdKFDFD); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 	args.StartupTimer.Reached("filesystems registered")
@@ -1313,6 +1326,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProfileEnable:         l.root.conf.ProfileEnable,
+			AMDGPUProxy:           specutils.AMDGPUProxyEnabled(l.root.spec, l.root.conf),
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,
 			TPUProxy:              specutils.TPUProxyEnabled(l.root.spec, l.root.conf),

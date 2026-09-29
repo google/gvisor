@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/ib"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/amdgpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
@@ -38,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/devices/amdgpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
@@ -125,7 +127,7 @@ func cgroupfsMemoryDefaults(memoryLimit uint64) map[string]int64 {
 	}
 }
 
-func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rdma.Snapshot) error {
+func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rdma.Snapshot, amdgpuSnapshot *amdgpu.Snapshot, amdKFDFD int) error {
 	ctx := k.SupervisorContext()
 	vfsObj := k.VFS()
 
@@ -194,6 +196,15 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo, rdmaSnapshot *rd
 	}
 	if err := fuse.Register(vfsObj); err != nil {
 		return fmt.Errorf("registering fusedev: %w", err)
+	}
+
+	if specutils.AMDGPUProxyEnabled(info.spec, info.conf) {
+		if amdgpuSnapshot == nil {
+			return fmt.Errorf("AMD GPU sysfs snapshot missing")
+		}
+		if err := amdgpuproxy.Register(vfsObj, amdKFDFD, specutils.AMDGPUDevicesInSpec(info.spec), amdgpuSnapshot.GPUIDs); err != nil {
+			return fmt.Errorf("registering AMD GPU devices: %w", err)
+		}
 	}
 
 	if err := nvproxyRegisterDevices(info, vfsObj, k.NvidiaDriverVersion); err != nil {
@@ -1006,7 +1017,7 @@ func (c *containerMounter) getPathMode(ctx context.Context, creds *auth.Credenti
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs, c.l.amdgpuSysfs)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -1069,7 +1080,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore, rdmaSysfs *rdma.Snapshot) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName, containerID string, fsr *fsRestore, rdmaSysfs *rdma.Snapshot, amdgpuSysfs *amdgpu.Snapshot) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -1092,6 +1103,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		sysData := &sys.InternalData{
 			EnableTPUProxyPaths: specutils.TPUProxyEnabled(spec, conf),
 			RDMASysfs:           rdmaSysfs,
+			AMDGPUSysfs:         amdgpuSysfs,
 		}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
@@ -1660,7 +1672,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.l.productName, c.containerName, c.containerID, c.l.fsRestore, c.l.rdmaSysfs, c.l.amdgpuSysfs)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err

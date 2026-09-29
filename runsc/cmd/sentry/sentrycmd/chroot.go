@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/abi/tpu"
+	"gvisor.dev/gvisor/pkg/amdgpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/timing"
@@ -169,6 +170,10 @@ func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) err
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
 	}
 
+	if err := amdgpuUpdateChroot(chroot, spec, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for AMD GPUs: %w", err)
+	}
+
 	if err := rdmaSysfsUpdateChroot(chroot, spec, conf); err != nil {
 		return fmt.Errorf("error configuring chroot for RDMA sysfs: %w", err)
 	}
@@ -238,6 +243,28 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		}
 	}
 	return err
+}
+
+func amdgpuUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !specutils.AMDGPUProxyEnabled(spec, conf) {
+		return nil
+	}
+	devices := specutils.AMDGPUDevicesInSpec(spec)
+	for _, dev := range devices {
+		if err := amdgpu.ValidateDevice("/", dev); err != nil {
+			return err
+		}
+	}
+	snap, err := amdgpu.Collect("/sys", devices)
+	if err != nil {
+		return fmt.Errorf("collecting AMD GPU sysfs snapshot: %w", err)
+	}
+	if err := snap.Save(filepath.Join(chroot, amdgpu.Path)); err != nil {
+		return fmt.Errorf("saving AMD GPU sysfs snapshot: %w", err)
+	}
+	// The sentry opens /dev/kfd itself: KFD binds its process state to the
+	// opener's address space, so a gofer-opened descriptor would not do.
+	return mountInChroot(chroot, "/dev/kfd", "/dev/kfd", "bind", unix.MS_BIND)
 }
 
 // rdmaSysfsUpdateChroot collects the host's RDMA sysfs state into a JSON
