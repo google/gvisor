@@ -399,6 +399,101 @@ func TestLandlockMergeLayerLimit(t *testing.T) {
 	}
 }
 
+func TestLandlockOpenAccessRights(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		opts  OpenOptions
+		isDir bool
+		want  uint64
+	}{
+		{
+			name: "ReadOnlyRequiresReadFile",
+			opts: OpenOptions{Flags: linux.O_RDONLY},
+			want: linux.LANDLOCK_ACCESS_FS_READ_FILE,
+		},
+		{
+			name: "WriteOnlyRequiresWriteFile",
+			opts: OpenOptions{Flags: linux.O_WRONLY},
+			want: linux.LANDLOCK_ACCESS_FS_WRITE_FILE,
+		},
+		{
+			// Linux derives the rights from f_mode, which has both bits set.
+			name: "ReadWriteRequiresReadAndWriteFile",
+			opts: OpenOptions{Flags: linux.O_RDWR},
+			want: linux.LANDLOCK_ACCESS_FS_READ_FILE | linux.LANDLOCK_ACCESS_FS_WRITE_FILE,
+		},
+		{
+			// execve(2) opens with O_RDONLY, so Linux requires the right to
+			// read the file as well as the right to execute it.
+			name: "ExecRequiresExecuteAndReadFile",
+			opts: OpenOptions{Flags: linux.O_RDONLY, FileExec: true},
+			want: linux.LANDLOCK_ACCESS_FS_READ_FILE | linux.LANDLOCK_ACCESS_FS_EXECUTE,
+		},
+		{
+			name:  "DirectoryRequiresReadDir",
+			opts:  OpenOptions{Flags: linux.O_RDONLY | linux.O_DIRECTORY},
+			isDir: true,
+			want:  linux.LANDLOCK_ACCESS_FS_READ_DIR,
+		},
+		{
+			// Landlock keys on the file type, not on O_DIRECTORY.
+			name:  "DirectoryWithoutODirectoryStillRequiresReadDir",
+			opts:  OpenOptions{Flags: linux.O_RDONLY},
+			isDir: true,
+			want:  linux.LANDLOCK_ACCESS_FS_READ_DIR,
+		},
+		{
+			name: "UnrelatedFlagsDoNotChangeRights",
+			opts: OpenOptions{Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_TRUNC | linux.O_APPEND},
+			want: linux.LANDLOCK_ACCESS_FS_WRITE_FILE,
+		},
+		{
+			// OPEN_FMODE() maps the ioctl-only access mode 3 to a file that
+			// is neither readable nor writable, so no right is required.
+			name: "IoctlOnlyOpenRequiresNoRights",
+			opts: OpenOptions{Flags: linux.O_ACCMODE},
+			want: 0,
+		},
+		{
+			name:  "IoctlOnlyOpenOfDirectoryRequiresNoRights",
+			opts:  OpenOptions{Flags: linux.O_ACCMODE},
+			isDir: true,
+			want:  0,
+		},
+		{
+			// The right to execute is still required on its own, since
+			// __FMODE_EXEC lives outside the access mode.
+			name: "IoctlOnlyOpenWithExecRequiresExecute",
+			opts: OpenOptions{Flags: linux.O_ACCMODE, FileExec: true},
+			want: linux.LANDLOCK_ACCESS_FS_EXECUTE,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			opts := test.opts
+			if got := landlockOpenAccessRights(&opts, test.isDir); got != test.want {
+				t.Errorf("landlockOpenAccessRights() = %#x, want %#x", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCheckLandlockMount(t *testing.T) {
+	const read = linux.LANDLOCK_ACCESS_FS_READ_FILE
+	ctx := contexttest.Context(t)
+
+	var none *LandlockDomain
+	if err := CheckLandlockMount(none); err != nil {
+		t.Errorf("CheckLandlockMount(nil) = %v, want nil", err)
+	}
+
+	// Landlock has no right that grants a mount, so a domain denies it whatever
+	// it handles and whatever rules it holds.
+	d := domainWith(t, rulesetWith(ctx, read, map[uint64]uint64{inoRoot: read}))
+	if err := CheckLandlockMount(d); !linuxerr.Equals(linuxerr.EPERM, err) {
+		t.Errorf("CheckLandlockMount(domain) = %v, want EPERM", err)
+	}
+}
+
 // TestLandlockScopeLE verifies the domain ordering that Landlock's ptrace
 // restriction is built on: a tracer may only trace a target confined by the
 // tracer's own domain or a descendant of it.

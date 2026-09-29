@@ -48,7 +48,15 @@ func (*FilesystemType) Name() string {
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fst *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fst.initOnce.Do(func() {
-		fs, root, err := dev.FilesystemType{}.GetFilesystem(ctx, vfsObj, creds, source, opts)
+		// Linux populates devtmpfs from its kdevtmpfs kernel thread, so the
+		// Landlock domain of whichever task mounts it first, e.g. through
+		// fsopen(2) and fsconfig(2), which Landlock does not restrict, must
+		// not apply.
+		//
+		// Compare Linux [drivers/base/devtmpfs.c]:devtmpfsd()
+		initCreds := creds.Fork()
+		initCreds.LandlockDomain = nil
+		fs, root, err := dev.FilesystemType{}.GetFilesystem(ctx, vfsObj, initCreds, source, opts)
 		if err != nil {
 			fst.initErr = err
 			return

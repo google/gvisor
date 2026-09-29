@@ -91,6 +91,14 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 	}
 	opts.GetFilesystemOptions.Data = data
+
+	// Landlock denies every form of mount(2) (incl. remount, bind, move) once
+	// the arguments and target resolve. E.g. a missing target is ENOENT.
+	//
+	// Matches Linux [fs/namespace.c]:path_mount() (security_sb_mount()).
+	if err := t.Kernel().VFS().CheckLandlockMountAt(t, creds, &target.pop); err != nil {
+		return 0, nil, err
+	}
 	switch {
 	case flags&linux.MS_REMOUNT != 0:
 		// When MS_REMOUNT is specified, the flags and data should match the values used in the original mount() call,

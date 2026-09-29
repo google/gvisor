@@ -522,6 +522,14 @@ func PivotRoot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	}
 	defer putOldTpop.Release(t)
 
+	// Landlock denies pivot_root(2) with EPERM, but only after both paths
+	// resolve: lookup errors (incl. ENOTDIR, from LOOKUP_DIRECTORY) win.
+	//
+	// Matches Linux [fs/namespace.c]:path_pivot_root() (security_sb_pivotroot()).
+	if err := t.Kernel().VFS().CheckLandlockMountDirAt(t, t.Credentials(), &newRootTpop.pop, &putOldTpop.pop); err != nil {
+		return 0, nil, err
+	}
+
 	newRoot, oldRoot, err := t.Kernel().VFS().PivotRoot(t, t.Credentials(), &newRootTpop.pop, &putOldTpop.pop)
 	if err != nil {
 		return 0, nil, err

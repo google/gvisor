@@ -47,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -388,6 +389,7 @@ func (vfs *VirtualFilesystem) LinkAt(ctx context.Context, creds *auth.Credential
 		}
 		err := rp.mount.fs.impl.LinkAt(ctx, rp, oldVD)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("LinkAt")
 			oldVD.DecRef(ctx)
 			return nil
 		}
@@ -434,6 +436,7 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 		}
 		err := rp.mount.fs.impl.MkdirAt(ctx, rp, *opts)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("MkdirAt")
 			return nil
 		}
 		if checkInvariants {
@@ -476,6 +479,7 @@ func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentia
 		}
 		err := rp.mount.fs.impl.MknodAt(ctx, rp, *opts)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("MknodAt")
 			return nil
 		}
 		if checkInvariants {
@@ -534,6 +538,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	if opts.Flags&linux.O_PATH != 0 {
 		return vfs.openOPathFD(ctx, creds, pop, opts.Flags)
 	}
+
 	rp := vfs.getResolvingPath(creds, pop)
 	defer rp.Release(ctx)
 	if opts.Flags&linux.O_DIRECTORY != 0 {
@@ -549,6 +554,12 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 				fd.DecRef(ctx)
 			})
 			defer fdCleanup.Clean()
+
+			// Fail closed if the FilesystemImpl never checked the domain.
+			if rp.landlockUnchecked() {
+				log.Warningf("OpenAt on %T made no Landlock check", rp.mount.fs.impl)
+				return nil, linuxerr.EACCES
+			}
 
 			if err := rp.finalizeScoped(ctx, fd.VirtualDentry()); err != nil {
 				return nil, err
@@ -662,6 +673,7 @@ func (vfs *VirtualFilesystem) RenameAt(ctx context.Context, creds *auth.Credenti
 		}
 		err := rp.mount.fs.impl.RenameAt(ctx, rp, oldParentVD, oldName, renameOpts)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("RenameAt")
 			oldParentVD.DecRef(ctx)
 			return nil
 		}
@@ -705,6 +717,7 @@ func (vfs *VirtualFilesystem) RmdirAt(ctx context.Context, creds *auth.Credentia
 		}
 		err := rp.mount.fs.impl.RmdirAt(ctx, rp)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("RmdirAt")
 			return nil
 		}
 		if checkInvariants {
@@ -821,6 +834,7 @@ func (vfs *VirtualFilesystem) SymlinkAt(ctx context.Context, creds *auth.Credent
 		}
 		err := rp.mount.fs.impl.SymlinkAt(ctx, rp, target)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("SymlinkAt")
 			return nil
 		}
 		if checkInvariants {
@@ -862,6 +876,7 @@ func (vfs *VirtualFilesystem) UnlinkAt(ctx context.Context, creds *auth.Credenti
 		}
 		err := rp.mount.fs.impl.UnlinkAt(ctx, rp)
 		if err == nil {
+			rp.warnIfLandlockUnchecked("UnlinkAt")
 			return nil
 		}
 		if checkInvariants {

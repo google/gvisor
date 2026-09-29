@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -275,6 +276,19 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 			return 0, err
 		}
 		defer replicaD.DecRef(t)
+		// This bypasses OpenAt(), so check Landlock here. Matches Linux
+		// [drivers/tty/pty.c]:ptm_open_peer(), whose dentry_open() runs
+		// hook_file_open().
+		if domain := vfs.LandlockDomainFromCredentials(t.Credentials()); domain.NumLayers() != 0 {
+			var toDecRef []refs.RefCounter
+			err := domain.CheckAccess(t, t.Kernel().VFS(), replicaD, vfs.LandlockOpenAccessRights(flags), &toDecRef)
+			for _, ref := range toDecRef {
+				ref.DecRef(t)
+			}
+			if err != nil {
+				return 0, err
+			}
+		}
 		replica, err := mfd.t.OpenTTY(t, masterMnt, replicaD.Dentry(), vfs.OpenOptions{
 			Flags: flags & ^uint32(linux.O_CLOEXEC),
 		})

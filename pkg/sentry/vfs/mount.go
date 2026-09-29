@@ -904,6 +904,16 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if !vfs.validInMountNS(ctx, vd.mount) {
 		return linuxerr.EINVAL
 	}
+
+	// Landlock denies umount(2) after can_umount()'s checks (not a mount,
+	// locked) but before the namespace-root and busy checks below. E.g.
+	// unmounting the namespace root is EPERM, not EINVAL.
+	//
+	// Matches Linux [fs/namespace.c]:do_umount() calling security_sb_umount().
+	if err := CheckLandlockMount(LandlockDomainFromCredentials(creds)); err != nil {
+		return err
+	}
+
 	if vd.mount == vd.mount.ns.root {
 		return linuxerr.EINVAL
 	}

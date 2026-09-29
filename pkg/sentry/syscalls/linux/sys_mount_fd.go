@@ -289,8 +289,18 @@ func MoveMount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	}
 	defer to.Release(t)
 
-	// Re-attach the mount to the destination mountpoint
 	vfsObj := t.Kernel().VFS()
+
+	// Landlock denies move_mount(2) with EPERM once both paths resolve (lookup
+	// errors win), before checking that the source is a mount. The destination
+	// goes first, the order in which Linux resolves them.
+	//
+	// Matches Linux [fs/namespace.c]:vfs_move_mount() (security_move_mount()).
+	if err := vfsObj.CheckLandlockMountAt(t, creds, &to.pop, &from.pop); err != nil {
+		return 0, nil, err
+	}
+
+	// Re-attach the mount to the destination mountpoint
 	err = vfsObj.MoveMountAt(t, creds, t.MountNamespace(), &from.pop, &to.pop)
 	if err != nil {
 		return 0, nil, err

@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
@@ -149,12 +150,31 @@ func (r *RegistryImpl) newFD(ctx context.Context, q *mq.Queue, inode *queueInode
 	dentry.Init(&r.fs.Filesystem, inode)
 	defer dentry.DecRef(ctx)
 
+	if err := r.checkLandlock(ctx, &dentry, flags); err != nil {
+		return nil, err
+	}
+
 	fd := &queueFD{queue: view}
 	err = fd.Init(r.mount, &dentry, inode.queue, inode.Locks(), flags, auth.CredentialsFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, nil
+}
+
+// checkLandlock checks an mq_open(2) of dentry, which bypasses OpenAt(). The
+// walk stops at the registry root, so only rules on the queue or the mqueue
+// root allow it. The mount is not internal, which would exempt it.
+//
+// Matches Linux [ipc/mqueue.c]:do_open(), via dentry_open().
+func (r *RegistryImpl) checkLandlock(ctx context.Context, dentry *kernfs.Dentry, flags uint32) error {
+	domain := vfs.LandlockDomainFromCredentials(auth.CredentialsFromContext(ctx))
+	var toDecRef []refs.RefCounter
+	err := domain.CheckAccessDetached(ctx, r.fs.VFSFilesystem().VirtualFilesystem(), dentry.VFSDentry(), vfs.MakeVirtualDentry(r.mount, r.root.VFSDentry()), vfs.LandlockOpenAccessRights(flags), &toDecRef)
+	for _, rc := range toDecRef {
+		rc.DecRef(ctx)
+	}
+	return err
 }
 
 // perm returns a permission mask created using given flags.
