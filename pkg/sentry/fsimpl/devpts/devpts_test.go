@@ -64,7 +64,10 @@ func TestEchoDeadlock(t *testing.T) {
 	outBytes := make([]byte, 32)
 	dst := usermem.BytesIOSequence(outBytes)
 	entry := waiter.NewFunctionEntry(waiter.ReadableEvents, func(waiter.EventMask) {
-		ld.inputQueueRead(ctx, dst)
+		// Read synchronously without notifying this waiter queue again.
+		ld.termiosMu.RLock()
+		defer ld.termiosMu.RUnlock()
+		_, _, _, _ = ld.inQueue.read(ctx, dst, ld, false /* packet */)
 	})
 	ld.masterWaiter.EventRegister(&entry)
 	defer ld.masterWaiter.EventUnregister(&entry)

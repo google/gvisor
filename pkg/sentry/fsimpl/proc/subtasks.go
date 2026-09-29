@@ -124,6 +124,8 @@ type subtasksFD struct {
 	task *kernel.Task
 }
 
+// +checklocksexclude:fd.GenericDirectoryFD.mu
+// +checklocksexclude:fd.GenericDirectoryFD.children.mu
 func (fd *subtasksFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
 		return linuxerr.ENOENT
@@ -132,6 +134,9 @@ func (fd *subtasksFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallbac
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
+//
+// +checklocksexclude:fd.GenericDirectoryFD.mu
+// +checklocksexclude:fd.GenericDirectoryFD.children.mu
 func (fd *subtasksFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	if fd.task.ExitState() >= kernel.TaskExitZombie {
 		return 0, linuxerr.ENOENT

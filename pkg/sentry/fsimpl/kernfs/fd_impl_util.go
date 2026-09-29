@@ -51,10 +51,9 @@ type GenericDirectoryFDOptions struct {
 // GenericDirectoryFD implements vfs.FileDescriptionImpl for a generic directory
 // inode that uses OrderChildren to track child nodes.
 //
-// Note that GenericDirectoryFD holds a lock over OrderedChildren while calling
-// IterDirents callback. The IterDirents callback therefore cannot hash or
-// unhash children, or recursively call IterDirents on the same underlying
-// inode.
+// IterDirents holds mu throughout iteration and children.mu while visiting
+// children. Its callback must not reacquire either mutex, including through
+// Seek, IterDirents, or operations on the same OrderedChildren.
 //
 // Must be initialize with Init before first use.
 //
@@ -72,10 +71,11 @@ type GenericDirectoryFD struct {
 	vfsfd    vfs.FileDescription
 	children *OrderedChildren
 
-	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// off is the current directory offset. Protected by "mu".
+	// off is the current directory offset.
+	//
+	// +checklocks:mu
 	off int64
 }
 
@@ -152,8 +152,13 @@ func (fd *GenericDirectoryFD) inode() Inode {
 	return fd.dentry().inode
 }
 
-// IterDirents implements vfs.FileDescriptionImpl.IterDirents. IterDirents holds
-// o.mu when calling cb.
+// IterDirents implements vfs.FileDescriptionImpl.IterDirents. Callbacks run
+// with fd.mu held, and with fd.children.mu held for reading during the child
+// walk. They must not seek or iterate this FD, or mutate or iterate its children.
+// checklocks does not propagate these lock states through cb.Handle.
+//
+// +checklocksexclude:fd.mu
+// +checklocksexclude:fd.children.mu
 func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
@@ -226,6 +231,9 @@ func (fd *GenericDirectoryFD) IterDirents(ctx context.Context, cb vfs.IterDirent
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.
+//
+// +checklocksexclude:fd.mu
+// +checklocksexclude:fd.children.mu
 func (fd *GenericDirectoryFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
