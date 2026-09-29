@@ -71,6 +71,11 @@ var chunkPool = sync.Pool{
 }
 
 // chunk is a unit of work.
+//
+// Sending a chunk on a worker's input transfers its mutable state and buffers
+// to that worker until the result is received. Inline buffers alias caller
+// storage, so Read and Write must receive their results before returning,
+// including on error. checklocks cannot express this channel-based ownership.
 type chunk struct {
 	// compressed is compressed data.
 	//
@@ -128,12 +133,13 @@ type result struct {
 // The goroutine will exit when input is closed, and the goroutine will close
 // output.
 type worker struct {
+	// These handles are initialized before work starts, then immutable.
 	hashPool *hashPool
 	input    chan *chunk
 	output   chan result
 
 	// scratch is a temporary buffer used for marshalling. This is declared
-	// unfront here to avoid reallocation.
+	// up front here to avoid reallocation. Only this worker's goroutine uses it.
 	scratch [4]byte
 }
 
@@ -209,19 +215,23 @@ func (w *worker) work(compress bool, level int) {
 }
 
 type hashPool struct {
-	// mu protects the hash list.
 	mu sync.Mutex
 
-	// key is the key used to create hash objects.
+	// key is a private copy of the key used to create hash objects. It is
+	// immutable after construction, including during lazy worker setup.
 	key []byte
 
 	// hashes is the hash object free list. Note that this cannot be
 	// globally shared across readers or writers, as it is key-specific.
+	//
+	// +checklocks:mu
 	hashes []hash.Hash
 }
 
 // getHash gets a hash object for the pool. It should only be called when the
-// pool key is non-nil.
+// pool key is non-empty.
+//
+// +checklocksexclude:p.mu
 func (p *hashPool) getHash() hash.Hash {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -235,6 +245,9 @@ func (p *hashPool) getHash() hash.Hash {
 	return h
 }
 
+// putHash resets h and returns it to the free list.
+//
+// +checklocksexclude:p.mu
 func (p *hashPool) putHash(h hash.Hash) {
 	h.Reset()
 
@@ -246,42 +259,63 @@ func (p *hashPool) putHash(h hash.Hash) {
 
 // pool is common functionality for reader/writers.
 type pool struct {
+	// mu serializes construction, Reader.Read, Writer.Write, Writer.Close,
+	// and finalizer cleanup, including synchronous completion callbacks.
+	mu sync.Mutex
+
 	// workers are the compression/decompression workers.
+	//
+	// +checklocks:mu
 	workers []worker
 
 	// chunkSize is the chunk size. This is the first four bytes in the
-	// stream and is shared across both the reader and writer.
+	// stream and is shared across both the reader and writer. It is immutable
+	// after construction.
 	chunkSize uint32
 
-	// mu protects below; it is generally the responsibility of users to
-	// acquire this mutex before calling any methods on the pool.
-	mu sync.Mutex
-
 	// nextInput is the next worker for input (scheduling).
+	//
+	// +checklocks:mu
 	nextInput int
 
 	// nextOutput is the next worker for output (result).
+	//
+	// +checklocks:mu
 	nextOutput int
 
 	// buf is the current active buffer; the exact semantics of this buffer
-	// depending on whether this is a reader or a writer.
+	// depend on whether this is a reader or a writer.
+	//
+	// +checklocks:mu
 	buf *bytes.Buffer
 
-	// lasSum records the hash of the last chunk processed.
+	// err is the first returned terminal Read or Write error. Submitted work is
+	// drained before returning it, so later calls must not schedule more work.
+	//
+	// +checklocks:mu
+	err error
+
+	// lastSum records the hash of the last chunk processed.
+	//
+	// +checklocks:mu
 	lastSum []byte
 
 	// hashPool is the hash object pool. It cannot be embedded into pool
 	// itself as worker refers to it and that would stop pool from being
 	// GCed.
+	//
+	// +checklocks:mu
 	hashPool *hashPool
 }
 
 // init initializes the worker pool.
 //
 // This should only be called once.
+//
+// +checklocks:p.mu
 func (p *pool) init(key []byte, workers int, compress bool, level int) {
 	if len(key) > 0 {
-		p.hashPool = &hashPool{key: key}
+		p.hashPool = &hashPool{key: bytes.Clone(key)}
 	}
 	p.workers = make([]worker, workers)
 	for i := 0; i < len(p.workers); i++ {
@@ -292,19 +326,28 @@ func (p *pool) init(key []byte, workers int, compress bool, level int) {
 		}
 		go p.workers[i].work(compress, level) // S/R-SAFE: In save path only.
 	}
-	runtime.SetFinalizer(p, (*pool).stop)
+	runtime.SetFinalizer(p, func(p *pool) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.stop()
+	})
 }
 
-// stop stops all workers.
+// stop closes worker inputs and drains all submitted work. Worker goroutines
+// may still be exiting when it returns, but no longer access submitted buffers.
+//
+// +checklocks:p.mu
 func (p *pool) stop() {
 	for i := 0; i < len(p.workers); i++ {
 		close(p.workers[i].input)
 	}
-	// Wait for all workers to finish since p.schedule(c=nil) may have returned
+	// Drain outstanding results since p.schedule(c=nil) may have returned
 	// early if any worker emitted an error.
 	if len(p.workers) != 0 {
 		for p.nextOutput < p.nextInput {
-			handleResult(<-p.workers[(p.nextOutput+1)%len(p.workers)].output, func(*chunk) error {
+			// Reclaim completed chunks even if their work failed. No results
+			// are delivered to the caller during cleanup.
+			_ = handleResult(<-p.workers[(p.nextOutput+1)%len(p.workers)].output, func(*chunk) error {
 				return nil
 			})
 			p.nextOutput++
@@ -314,11 +357,15 @@ func (p *pool) stop() {
 	p.hashPool = nil
 }
 
-// handleResult calls the callback.
+// handleResult calls callback synchronously if r.err is nil, then recycles the
+// chunk. callback may retain the uncompressed buffer, but not the chunk itself.
 func handleResult(r result, callback func(*chunk) error) error {
 	defer func() {
 		r.chunk.compressed.Reset()
 		bufPool.Put(r.chunk.compressed)
+		// Inline chunks can reference caller-owned storage. Drop those
+		// references without returning the caller's buffer to bufPool.
+		*r.chunk = chunk{}
 		chunkPool.Put(r.chunk)
 	}()
 	if r.err != nil {
@@ -334,6 +381,12 @@ func handleResult(r result, callback func(*chunk) error) error {
 //
 // If no callback function is provided, then the output channel will be
 // ignored.  You must be sure that the input is schedulable in this case.
+//
+// callback is invoked synchronously with p.mu held. It must preserve that lock
+// and not reenter methods that acquire it. checklocks does not propagate the
+// held lock through this callback parameter.
+//
+// +checklocks:p.mu
 func (p *pool) schedule(c *chunk, callback func(*chunk) error) error {
 	for {
 		var (
@@ -367,23 +420,23 @@ func (p *pool) schedule(c *chunk, callback func(*chunk) error) error {
 type Reader struct {
 	pool
 
-	// in is the source.
+	// in is the source; the interface value is immutable. Read calls it with
+	// mu held, so it must not reenter Reader.Read.
 	in io.ReadCloser
 
-	// keyed is true if the stream contains hashes.
+	// keyed is true if the stream contains hashes. It is immutable.
 	keyed bool
-
-	// err is the first error. All subsequent reads give this error.
-	err error
 
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
+	//
+	// +checklocks:mu
 	scratch [4]byte
 }
 
 var _ io.Reader = (*Reader)(nil)
 
-// NewReader returns a new compressed reader. If key is non-nil, the data stream
+// NewReader returns a new compressed reader. If key is non-empty, the data stream
 // is assumed to contain expected hash values, which will be compared against
 // hash values computed from the compressed bytes. See package comments for
 // details.
@@ -392,6 +445,10 @@ func NewReader(in io.ReadCloser, key []byte) (*Reader, error) {
 		in:    in,
 		keyed: len(key) > 0,
 	}
+	// init registers a finalizer. Order subsequent initialization before
+	// finalizer cleanup, including when a header read fails.
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	// Use double buffering for read.
 	r.init(key, 2*runtime.GOMAXPROCS(0), false, 0)
@@ -432,6 +489,8 @@ var ErrHashMismatch = errors.New("hash mismatch")
 //
 // Read never gives data together with an error other than io.EOF. The first
 // error stops the reader, and all subsequent reads give that error.
+//
+// +checklocksexclude:r.mu
 func (r *Reader) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -440,7 +499,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 
 // readLocked does a read and keeps the first error.
 //
-// Precondition: r.mu must be held.
+// +checklocks:r.mu
 func (r *Reader) readLocked(p []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
@@ -450,6 +509,10 @@ func (r *Reader) readLocked(p []byte) (int, error) {
 		return n, nil
 	}
 	r.err = err
+	// Workers may still be writing directly into p, even when an input read
+	// or an earlier worker failed. Drain them before Read or Verify returns.
+	r.stop()
+	r.buf = nil
 	if err == io.EOF {
 		// A hash covers all of the data that the reader gave.
 		return n, io.EOF
@@ -460,6 +523,8 @@ func (r *Reader) readLocked(p []byte) (int, error) {
 // Verify gives an error if the caller did not read all of the stream.
 //
 // Verify does nothing if the reader has no key.
+//
+// +checklocksexclude:r.mu
 func (r *Reader) Verify() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -483,7 +548,9 @@ func (r *Reader) Verify() error {
 	return nil
 }
 
-// Precondition: r.mu must be held.
+// read reads and decompresses data while the caller owns the pool.
+//
+// +checklocks:r.mu
 func (r *Reader) read(p []byte) (int, error) {
 	// Total bytes completed; this is declared up front because it must be
 	// adjustable by the callback below.
@@ -509,11 +576,13 @@ func (r *Reader) read(p []byte) (int, error) {
 		// return errNewBuffer to ensure that we aren't called a second
 		// time. This error code is handled specially below.
 		//
-		// c.buf will be freed and return to the pool when it is done.
+		// Read returns c.uncompressed to bufPool after consuming it.
 		if pendingPre > 0 {
 			pendingPre--
 		}
-		r.buf = c.uncompressed
+		// schedule invokes this callback with r.mu held, but checklocks does
+		// not propagate the lock state through the callback parameter.
+		r.buf = c.uncompressed // +checklocksignore
 		return errNewBuffer
 	}
 
@@ -530,7 +599,6 @@ func (r *Reader) read(p []byte) (int, error) {
 				r.buf = nil
 			} else if err != nil {
 				// Should never happen.
-				defer r.stop()
 				return done, err
 			}
 			continue
@@ -541,6 +609,10 @@ func (r *Reader) read(p []byte) (int, error) {
 		//
 		// See writer.flush.
 		if _, err := io.ReadFull(r.in, r.scratch[:4]); err != nil {
+			if err != io.EOF {
+				// A partial header or source failure is not a clean stream end.
+				return done, err
+			}
 			// This is generally okay as long as there
 			// are still buffers outstanding. We actually
 			// just wait for completion of those buffers here
@@ -548,7 +620,6 @@ func (r *Reader) read(p []byte) (int, error) {
 			if err := r.schedule(nil, callback); err == nil {
 				// We've actually finished all buffers; this is
 				// the normal EOF exit path.
-				defer r.stop()
 				return done, io.EOF
 			} else if err == errNewBuffer {
 				// A new buffer is now available.
@@ -556,7 +627,6 @@ func (r *Reader) read(p []byte) (int, error) {
 			} else {
 				// Some other error occurred; we cannot
 				// process any further.
-				defer r.stop()
 				return done, err
 			}
 		}
@@ -606,10 +676,9 @@ func (r *Reader) read(p []byte) (int, error) {
 			//
 			// It is safe to pass nil as an output function here,
 			// because we know that we just freed up a slot above.
-			r.schedule(c, nil)
+			_ = r.schedule(c, nil)
 		} else if err != nil {
 			// Some other error occurred; see above.
-			defer r.stop()
 			return done, err
 		}
 	}
@@ -622,8 +691,8 @@ func (r *Reader) read(p []byte) (int, error) {
 				return err
 			}
 			// The nil case means that an inline buffer has
-			// completed. The callback will have already removed
-			// the inline buffer from the map, so we just return an
+			// completed. The callback has already decremented
+			// pendingInline, so we just return an
 			// error to check the top of the loop again.
 			return errNewBuffer
 		}); err != errNewBuffer {
@@ -638,6 +707,9 @@ func (r *Reader) read(p []byte) (int, error) {
 }
 
 // Close implements io.Closer.Close.
+// It forwards to the source without taking mu, allowing the source to interrupt
+// a blocked Read.
+// Concurrent Read and Close require support from the underlying source.
 func (r *Reader) Close() error {
 	return r.in.Close()
 }
@@ -646,20 +718,26 @@ func (r *Reader) Close() error {
 type Writer struct {
 	pool
 
-	// out is the underlying writer.
+	// out is the underlying writer; the interface value is immutable.
+	// Its Write and Close methods are called with mu held and must not reenter
+	// Writer.Write or Writer.Close.
 	out io.Writer
 
 	// closed indicates whether the file has been closed.
+	//
+	// +checklocks:mu
 	closed bool
 
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
+	//
+	// +checklocks:mu
 	scratch [4]byte
 }
 
 var _ io.Writer = (*Writer)(nil)
 
-// NewWriter returns a new compressed writer. If key is non-nil, hash values are
+// NewWriter returns a new compressed writer. If key is non-empty, hash values are
 // generated and written out for compressed bytes. See package comments for
 // details.
 //
@@ -674,6 +752,10 @@ func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer,
 		},
 		out: out,
 	}
+	// init registers a finalizer. Order subsequent initialization before
+	// finalizer cleanup, including when a header write fails.
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.init(key, 1+runtime.GOMAXPROCS(0), true, level)
 
 	binary.BigEndian.PutUint32(w.scratch[:], chunkSize)
@@ -696,6 +778,8 @@ func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer,
 }
 
 // flush writes a single buffer.
+//
+// +checklocks:w.mu
 func (w *Writer) flush(c *chunk) error {
 	// Prefix each chunk with a length; this allows the reader to safely
 	// limit reads while buffering.
@@ -726,7 +810,9 @@ func (w *Writer) flush(c *chunk) error {
 }
 
 // Write implements io.Writer.Write.
-func (w *Writer) Write(p []byte) (int, error) {
+//
+// +checklocksexclude:w.mu
+func (w *Writer) Write(p []byte) (done int, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -734,6 +820,19 @@ func (w *Writer) Write(p []byte) (int, error) {
 	if w.closed {
 		return 0, io.ErrUnexpectedEOF
 	}
+	if w.err != nil {
+		return 0, w.err
+	}
+	defer func() {
+		if err != nil {
+			w.err = err
+			// Finish all reads from p before the caller can reuse it.
+			w.stop()
+			// buf may be an unsubmitted inline slice of p. Do not return
+			// caller-owned storage to bufPool or submit it on a later call.
+			w.buf = nil
+		}
+	}()
 
 	// See above; we need to track in the same way.
 	var (
@@ -741,29 +840,29 @@ func (w *Writer) Write(p []byte) (int, error) {
 		pendingInline = 0
 	)
 	callback := func(c *chunk) error {
+		// schedule invokes this callback with w.mu held, but checklocks does
+		// not propagate the lock state through the callback parameter.
 		if pendingPre > 0 {
 			pendingPre--
-			err := w.flush(c)
+			err := w.flush(c) // +checklocksignore
 			c.uncompressed.Reset()
 			bufPool.Put(c.uncompressed)
 			return err
 		}
 		if pendingInline > 0 {
 			pendingInline--
-			return w.flush(c)
+			return w.flush(c) // +checklocksignore
 		}
 		panic("both pendingPre and pendingInline exhausted")
 	}
 
-	for done := 0; done < len(p); {
+	for done < len(p) {
 		// Construct an inline buffer if we're doing an inline
 		// encoding; see above regarding the bytes.MinRead constraint.
 		inline := false
 		if w.buf.Len() == 0 && len(p) >= done+int(w.chunkSize) && len(p) >= done+bytes.MinRead {
 			bufPool.Put(w.buf) // Return to the pool; never scheduled.
 			w.buf = bytes.NewBuffer(p[done : done+int(w.chunkSize)])
-			done += int(w.chunkSize)
-			pendingInline++
 			inline = true
 		}
 
@@ -774,7 +873,10 @@ func (w *Writer) Write(p []byte) (int, error) {
 			if err := w.schedule(newChunk(nil, nil, nil, w.buf), callback); err != nil {
 				return done, err
 			}
-			if !inline {
+			if inline {
+				done += int(w.chunkSize)
+				pendingInline++
+			} else {
 				pendingPre++
 			}
 			// Reset the buffer, since this has now been scheduled
@@ -817,7 +919,9 @@ func (w *Writer) Write(p []byte) (int, error) {
 }
 
 // Close implements io.Closer.Close.
-func (w *Writer) Close() error {
+//
+// +checklocksexclude:w.mu
+func (w *Writer) Close() (err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -827,7 +931,19 @@ func (w *Writer) Close() error {
 		return io.ErrUnexpectedEOF
 	}
 	w.closed = true
-	defer w.stop()
+	defer func() {
+		w.stop()
+		// Close the destination even if Write or the final flush failed,
+		// but preserve the earlier error.
+		if closer, ok := w.out.(io.Closer); ok {
+			if closeErr := closer.Close(); err == nil {
+				err = closeErr
+			}
+		}
+	}()
+	if w.err != nil {
+		return w.err
+	}
 
 	// Schedule any remaining partial buffer; we pass w.flush directly here
 	// because the final buffer is guaranteed to not be an inline buffer.
@@ -842,9 +958,5 @@ func (w *Writer) Close() error {
 		return err
 	}
 
-	// Close the underlying writer (if necessary).
-	if closer, ok := w.out.(io.Closer); ok {
-		return closer.Close()
-	}
 	return nil
 }
