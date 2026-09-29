@@ -17,6 +17,7 @@
 #include <sched.h>
 #include <stdint.h>
 #include <sys/prctl.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <cerrno>

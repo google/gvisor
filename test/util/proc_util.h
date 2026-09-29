@@ -15,6 +15,8 @@
 #ifndef GVISOR_TEST_UTIL_PROC_UTIL_H_
 #define GVISOR_TEST_UTIL_PROC_UTIL_H_
 
+#include <sys/types.h>
+
 #include <ostream>
 #include <string>
 #include <vector>

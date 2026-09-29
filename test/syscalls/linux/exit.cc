@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>

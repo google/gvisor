@@ -35,6 +35,7 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <syscall.h>
