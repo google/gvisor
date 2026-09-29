@@ -94,17 +94,38 @@ func (hc *hostConnection) readLoop() {
 		}
 
 		hc.conn.mu.Lock()
+		if hdr.Unique&linux.FUSEIntReqBit != 0 {
+			var resendID linux.FUSEOpID
+			switch hdr.Error {
+			case -int32(unix.ENOSYS):
+				hc.conn.noInterrupt = true
+			case -int32(unix.EAGAIN):
+				origID := hdr.Unique &^ linux.FUSEIntReqBit
+				if _, ok := hc.conn.completions[origID]; ok && hc.conn.connected && !hc.conn.noInterrupt {
+					resendID = origID
+				}
+			}
+			hc.conn.mu.Unlock()
+			respBufPool.Put(bufp)
+			if resendID != 0 {
+				_ = hc.writeRequest(newInterruptRequest(resendID))
+			}
+			continue
+		}
+
 		fut, ok := hc.conn.completions[hdr.Unique]
 		if ok {
 			delete(hc.conn.completions, hdr.Unique)
-			fut.hdr = &hdr
-			copy(fut.buf[:], respBuf[:hdr.Len])
-			fut.data = fut.buf[:hdr.Len]
-			select {
-			case hc.conn.fullQueueCh <- struct{}{}:
-			default:
+			if !fut.interrupted {
+				fut.hdr = &hdr
+				copy(fut.buf[:], respBuf[:hdr.Len])
+				fut.data = fut.buf[:hdr.Len]
+				select {
+				case hc.conn.fullQueueCh <- struct{}{}:
+				default:
+				}
+				hc.conn.numActiveRequests--
 			}
-			hc.conn.numActiveRequests--
 			close(fut.ch)
 		}
 		hc.conn.mu.Unlock()
@@ -119,7 +140,9 @@ func (hc *hostConnection) abortPending() {
 	defer hc.conn.mu.Unlock()
 	for id, fut := range hc.conn.completions {
 		delete(hc.conn.completions, id)
-		hc.conn.numActiveRequests--
+		if !fut.interrupted {
+			hc.conn.numActiveRequests--
+		}
 		close(fut.ch)
 	}
 }
@@ -140,13 +163,43 @@ func (hc *hostConnection) call(ctx context.Context, r *Request) (*Response, erro
 
 	if err := hc.writeRequest(r); err != nil {
 		hc.conn.mu.Lock()
-		delete(hc.conn.completions, r.id)
-		hc.conn.numActiveRequests--
+		if _, ok := hc.conn.completions[r.id]; ok {
+			delete(hc.conn.completions, r.id)
+			hc.conn.numActiveRequests--
+		}
 		hc.conn.mu.Unlock()
 		return nil, err
 	}
+	r.sent = true
 
-	return fut.resolve(ctx)
+	res, err := fut.resolve(ctx)
+	if err != nil {
+		hc.interruptRequest(r.id, fut)
+		return nil, linuxError(err)
+	}
+	return res, nil
+}
+
+// interruptRequest handles cleanup and FUSE_INTERRUPT emission when a task
+// waiting on fut over the host FD is interrupted.
+func (hc *hostConnection) interruptRequest(origID linux.FUSEOpID, fut *futureResponse) {
+	hc.conn.mu.Lock()
+	if _, ok := hc.conn.completions[origID]; !ok {
+		hc.conn.mu.Unlock()
+		return
+	}
+	fut.interrupted = true
+	select {
+	case hc.conn.fullQueueCh <- struct{}{}:
+	default:
+	}
+	hc.conn.numActiveRequests--
+	sendIntr := hc.conn.connected && !hc.conn.noInterrupt
+	hc.conn.mu.Unlock()
+
+	if sendIntr {
+		_ = hc.writeRequest(newInterruptRequest(origID))
+	}
 }
 
 // Call makes a request to the server via the host FD and blocks until a
