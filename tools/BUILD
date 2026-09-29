@@ -1,3 +1,4 @@
+load("@rules_python//python:py_test.bzl", "py_test")
 load("//tools:defs.bzl", "bzl_library", "gotsan_flag_values", "gotsan_values")
 
 package(
@@ -74,3 +75,14 @@ exports_files([
     "build_cover.sh",
     "go-allow-internal.patch",
 ])
+
+py_test(
+    name = "lint_test",
+    srcs = ["lint_test.py"],
+    args = ["$(rootpath :lint.sh)"],
+    data = [
+        "lint.sh",
+        "//:.clang-format",
+        "//:go.mod",
+    ],
+)
