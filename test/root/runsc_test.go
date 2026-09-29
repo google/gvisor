@@ -28,11 +28,99 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+func TestCreateContainerHooksRootFS(t *testing.T) {
+	rootLink := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink("/", rootLink); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		root      string
+		wantError bool
+	}{
+		{name: "process-root", root: "/", wantError: true},
+		{name: "dot", root: "/./", wantError: true},
+		{name: "parent", root: "/..", wantError: true},
+		{name: "symlink", root: rootLink, wantError: true},
+		{name: "named-root", root: t.TempDir()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+			config.RegisterFlags(testFlags)
+			conf, err := config.NewFromFlags(testFlags)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conf.Network = config.NetworkNone
+			conf.IgnoreCgroups = true
+			conf.Overlay2.Set("none")
+			logDir := t.TempDir()
+			conf.DebugLog = filepath.Join(logDir, "%COMMAND%.log")
+			spec := testutil.NewSpecWithArgs("/bin/true")
+			spec.Root = &specs.Root{Path: tc.root}
+			spec.Mounts = nil
+			marker := filepath.Join(t.TempDir(), "hook-ran")
+			if !tc.wantError {
+				marker = filepath.Join(tc.root, "hook-ran")
+			}
+			spec.Hooks = &specs.Hooks{CreateContainer: []specs.Hook{{
+				Path: "/bin/sh",
+				Args: []string{"/bin/sh", "-c", `echo hook > "$1"`, "hook", marker},
+			}}}
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			c, err := container.New(conf, container.Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			})
+			if c != nil {
+				defer func() {
+					if err := c.Destroy(); err != nil {
+						t.Errorf("destroying container: %v", err)
+					}
+				}()
+			}
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("container creation succeeded with hooks at the process root")
+				}
+				// Creation reports a synchronization failure when the gofer exits;
+				// check its log to distinguish rejection from unrelated failures.
+				out, err := os.ReadFile(filepath.Join(logDir, "gofer.log"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if want := "createContainer hooks are not supported with rootfs"; !strings.Contains(string(out), want) {
+					t.Fatalf("gofer log does not contain %q:\n%s", want, out)
+				}
+				if _, err := os.Stat(marker); !os.IsNotExist(err) {
+					t.Fatalf("hook marker stat: got %v, want not-exist", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("creating container with hooks at a named root: %v", err)
+			}
+			if out, err := os.ReadFile(marker); err != nil || string(out) != "hook\n" {
+				t.Errorf("hook marker: got %q, err %v; want %q", out, err, "hook\n")
+			}
+		})
+	}
+}
 
 // TestDoKill checks that when "runsc do..." is killed, the sandbox process is
 // also terminated. This ensures that parent death signal is propagate to the

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -135,6 +136,42 @@ func TestEnvVars(t *testing.T) {
 				t.Errorf("runsc bwrap env mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestBind(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat("/mnt"); err != nil || !info.IsDir() {
+		t.Fatalf("bind destination /mnt is not a directory: %v", err)
+	}
+	stop := testutil.StartReaper()
+	defer stop()
+
+	workDir := t.TempDir()
+	const contents = "bind mount contents\n"
+	if err := os.WriteFile(filepath.Join(workDir, "input"), []byte(contents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(specutils.ExePath,
+		"--root", newRunRootDir(t), "bwrap",
+		"--ro-bind", "/", "/", "--bind", workDir, "/mnt",
+		"--", "/bin/sh", "-ec", "cat /mnt/input; cp /mnt/input /mnt/output")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+	}
+	if got := stdout.String(); got != contents {
+		t.Errorf("bind mount contents = %q, want %q", got, contents)
+	}
+	output, err := os.ReadFile(filepath.Join(workDir, "output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(output) != contents {
+		t.Errorf("written bind mount contents = %q, want %q", output, contents)
 	}
 }
 

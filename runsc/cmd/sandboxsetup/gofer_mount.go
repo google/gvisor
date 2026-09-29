@@ -102,11 +102,12 @@ func WriteMounts(mountsFD int, mounts []specs.Mount) error {
 // spec.Root.Path with all the bind-mounts in place.
 //
 // To satisfy all of these requirements, this is the approach we take:
-//  1. We prepare all the bind-mounts in `spec.Root.Path` and execute the
-//     createContainer hooks.
-//  2. We create a new tmpfs mount at /proc/fs.
-//  3. We bind-mount host /proc and spec.Root.Path onto /proc/fs/proc and
-//     /proc/fs/root, respectively.
+//  1. We create a new tmpfs mount at /proc/fs and bind-mount host /proc at
+//     /proc/fs/proc.
+//  2. Without createContainer hooks, we bind-mount spec.Root.Path onto
+//     /proc/fs/root and prepare the bind-mounts there.
+//  3. With createContainer hooks, we instead prepare spec.Root.Path, execute
+//     the hooks, and then bind-mount the prepared root onto /proc/fs/root.
 //  4. We then pivot_root(2) into /proc/fs. Now host procfs is accessible via
 //     /proc/ and container rootfs is accessible via /root.
 //  5. We re-exec the gofer binary and drop extra capabilities.
@@ -119,6 +120,20 @@ func WriteMounts(mountsFD int, mounts []specs.Mount) error {
 // configuration and subsequent entries correspond to spec mounts with
 // mount configs.
 func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.GoferMountConf, devIoFD int, mountOpener MountOpener, containerID string, bundleDir string) error {
+	rootfsConf := mountConfs[0]
+	hasCreateContainerHooks := spec.Hooks != nil && len(spec.Hooks.CreateContainer) > 0
+	if rootfsConf.ShouldUseLisafs() && hasCreateContainerHooks {
+		root, err := filepath.EvalSymlinks(spec.Root.Path)
+		if err != nil {
+			return fmt.Errorf("resolving rootfs for createContainer hooks: %w", err)
+		}
+		// Hook preparation requires a self-bind mount, which cannot safely
+		// overmount the process root. Check aliases before changing any mounts.
+		if root == "/" {
+			return fmt.Errorf("createContainer hooks are not supported with rootfs %q resolving to /", spec.Root.Path)
+		}
+	}
+
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
 	procPath := "/proc"
@@ -171,14 +186,18 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 		procPath = "/proc/fs/proc"
 	}
 
-	rootfsConf := mountConfs[0]
 	if rootfsConf.ShouldUseLisafs() {
-		// Some CDI createContainer hooks pivot_root(2) into spec.Root.Path.
-		// pivot_root(2) requires the target to be a mount point, so we must
-		// self-bind-mount spec.Root.Path here. runc does this step unconditionally
-		// in libcontainer/rootfs_linux.go:prepareRoot().
-		if err := unix.Mount(containerRootFs, containerRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
-			return fmt.Errorf("self-bind-mounting rootfs %q: %w", containerRootFs, err)
+		if !hasCreateContainerHooks {
+			// Prepare the root at its named staging path. When spec.Root.Path
+			// is "/", self-binding it would overmount the process's root;
+			// subsequent absolute lookups would still start beneath that mount.
+			containerRootFs = goferRootFs
+		}
+		// Hooks require the prepared root at spec.Root.Path and may pivot_root
+		// into it, so their path must still be self-bind-mounted. The root path
+		// is host-controlled and may contain symlinks (see runc prepareRoot).
+		if err := unix.Mount(spec.Root.Path, containerRootFs, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
+			return fmt.Errorf("binding rootfs %q at %q: %w", spec.Root.Path, containerRootFs, err)
 		}
 
 		// Ensure the containerRootFs is set to the RootfsPropagation that the user
@@ -215,7 +234,7 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 	}
 
 	if rootfsConf.ShouldUseLisafs() {
-		if spec.Hooks != nil && len(spec.Hooks.CreateContainer) > 0 {
+		if hasCreateContainerHooks {
 			state := specs.State{
 				Version: specs.Version,
 				ID:      containerID,
@@ -230,12 +249,11 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 			if err := specutils.ExecuteHooks(spec.Hooks.CreateContainer, state); err != nil {
 				util.Fatalf("error executing CreateContainer hooks: %v", err)
 			}
-		}
 
-		// Now that spec.Root.Path has been prepared, we can bind-mount it to the
-		// new root. This will make the container rootfs visible in the gofer root.
-		if err := specutils.SafeMount(containerRootFs, goferRootFs, "", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
-			return fmt.Errorf("binding prepared rootfs to gofer root: %v", err)
+			// Copy the root prepared for hooks into the gofer's filesystem.
+			if err := specutils.SafeMount(containerRootFs, goferRootFs, "", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
+				return fmt.Errorf("binding prepared rootfs to gofer root: %v", err)
+			}
 		}
 
 		// Check if root needs to be remounted as readonly.
@@ -252,7 +270,7 @@ func SetupRootFS(spec *specs.Spec, conf *config.Config, mountConfs []specutils.G
 				return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", goferRootFs, goferRootFs, flags, err)
 			}
 		}
-	} else if spec.Hooks != nil && len(spec.Hooks.CreateContainer) > 0 {
+	} else if hasCreateContainerHooks {
 		log.Warningf("CreateContainer hooks are not executed since container rootfs is not on lisafs")
 	}
 
