@@ -5,6 +5,11 @@ package(
     licenses = ["notice"],
 )
 
+exports_files(
+    ["prewarmer.c"],
+    visibility = ["//:__pkg__"],
+)
+
 # Tell build_cleaner not to create an unnecessary cc_library for prewarmer.c.
 filegroup(
     name = "ignore_srcs",
