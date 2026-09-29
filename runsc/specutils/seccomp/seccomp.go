@@ -37,6 +37,7 @@ var (
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_TRACE
 	traceAction = seccomp.Trace.Code(uint16(unix.EPERM))
 	allowAction = seccomp.Allow
+	logAction   = seccomp.Log
 )
 
 // BuildProgram generates a bpf program based on the given OCI seccomp
@@ -106,6 +107,8 @@ func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
 		return errnoAction, nil
 	case specs.ActTrace:
 		return traceAction, nil
+	case specs.ActLog:
+		return logAction, nil
 	case specs.ActAllow:
 		return allowAction, nil
 	default:
@@ -248,6 +251,7 @@ func KnownActions() []string {
 		string(specs.ActTrap),
 		string(specs.ActErrno),
 		string(specs.ActTrace),
+		string(specs.ActLog),
 		string(specs.ActAllow),
 	}
 	// LINT.ThenChange(:convertAction)
