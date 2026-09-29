@@ -29,11 +29,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	ttrpc "github.com/containerd/ttrpc"
 	typeurl "github.com/containerd/typeurl/v2"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pelletier/go-toml/v2"
 	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"

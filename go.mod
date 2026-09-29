@@ -6,7 +6,6 @@ require (
 	cloud.google.com/go/auth v0.20.0
 	cloud.google.com/go/auth/oauth2adapt v0.2.8
 	cloud.google.com/go/storage v1.62.1
-	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cilium/ebpf v0.16.0
 	github.com/containerd/cgroups/v3 v3.0.5
@@ -96,6 +95,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
