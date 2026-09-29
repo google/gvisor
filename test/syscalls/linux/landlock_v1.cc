@@ -39,14 +39,12 @@ namespace testing {
 namespace {
 
 TEST(LandlockV1Test, AbiVersionIsSupported) {
-  SKIP_IF(IsRunningOnGvisor());
   int version = LandlockAbiVersion();
   SKIP_IF(version < 0 && errno == ENOSYS);
   ASSERT_GE(version, 1) << "unexpected Landlock ABI version";
 }
 
 TEST(LandlockV1Test, CreateRulesetHandlingAllV1RightsSucceeds) {
-  SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(LandlockAbiVersion() < 1);
   landlock_ruleset_attr attr = {};
   attr.handled_access_fs = kFsAccessV1;
@@ -58,7 +56,6 @@ TEST(LandlockV1Test, CreateRulesetHandlingAllV1RightsSucceeds) {
 }
 
 TEST(LandlockV1Test, CreateRulesetRejectsUnknownFlags) {
-  SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(LandlockAbiVersion() < 1);
   landlock_ruleset_attr attr = {};
   attr.handled_access_fs = LANDLOCK_ACCESS_FS_READ_FILE;
@@ -67,7 +64,6 @@ TEST(LandlockV1Test, CreateRulesetRejectsUnknownFlags) {
 }
 
 TEST(LandlockV1Test, CreateRulesetRejectsUnknownAccessBits) {
-  SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(LandlockAbiVersion() < 1);
   landlock_ruleset_attr attr = {};
   attr.handled_access_fs = (1ULL << 63);
