@@ -38,17 +38,10 @@ finish() {
 }
 trap finish EXIT
 
-# Discover the package name from the go.mod file.
-declare module origpwd othersrc
-module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
-origpwd=$(pwd)
-othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
-readonly module origpwd othersrc
-
-# Build a full gopath.
+# Build the exported sources independently of the branch's Git history.
 declare -r go_output="${tmp_dir}/output"
-make build BAZEL_OPTIONS="" TARGETS="//:gopath"
-unzip bazel-bin/gopath.zip -d "${go_output}"
+make build BAZEL_OPTIONS="" TARGETS="//:go_export"
+unzip bazel-bin/go_export.zip -d "${go_output}"
 
 # We expect to have an existing go branch that we will use as the basis for this
 # commit. That branch may be empty, but it must exist. We search for this branch
@@ -90,41 +83,12 @@ git merge --no-commit --strategy ours "${head}" || \
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
-# Sync the entire gopath. Note that we exclude auto-generated source files that
-# will change here. Otherwise, it adds a tremendous amount of noise to commits.
-# If this file disappears in the future, then presumably we will still delete
-# the underlying directory.
-declare -r gopath="${go_output}/src/${module}"
+# Sync the exported tree, preserving the existing branch's Git metadata.
 rsync --recursive --delete \
   --exclude .git \
-  "${gopath}/" .
+  "${go_output}/" .
 
-# Add additional files.
-for file in "${othersrc[@]}"; do
-  cp "${origpwd}"/"${file}" .
-done
-
-# Construct a new README.md.
-cat > README.md <<EOF
-# gVisor
-
-This branch is a synthetic branch, containing only Go sources, that is
-compatible with standard Go tools. See the master branch for authoritative
-sources and tests.
-EOF
-
-# There are a few solitary files that can get left behind due to the way bazel
-# constructs the gopath target. Note that we don't find all Go files here
-# because they may correspond to unused templates, etc.
-declare -ar binaries=( "runsc" "shim" "webhook" "tools/checklocks/cmd/checklocks" )
-for target in "${binaries[@]}"; do
-  mkdir -p "${target}"
-  cp "${repo_orig}/${target}"/*.go "${target}/"
-done
-
-# Normalize all permissions. The way bazel constructs the :gopath tree may leave
-# some strange permissions on files. We don't have anything in this tree that
-# should be execution, only the Go source files, README.md, and ${othersrc}.
+# Normalize permissions on files retained by rsync as well as new files.
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
