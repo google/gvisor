@@ -363,6 +363,39 @@ TEST(SeccompTest, RetAllowAllowsSyscall) {
       << "status " << status;
 }
 
+TEST(SeccompTest, RetLogAllowsSyscall) {
+  pid_t const parent = getpid();
+  pid_t const pid = fork();
+  if (pid == 0) {
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(__NR_getppid, SECCOMP_RET_LOG);
+    TEST_CHECK(syscall(__NR_getppid) == parent);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+TEST(SeccompTest, RetLogAllowsNonCachableSyscall) {
+  pid_t const parent = getpid();
+  pid_t const pid = fork();
+  if (pid == 0) {
+    RegisterSignalHandler(SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(__NR_getppid, SECCOMP_RET_LOG);
+    ApplyUncacheableFilter(__NR_getppid);
+    TEST_CHECK(syscall(__NR_getppid) == parent);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
 TEST(SeccompTest, RetAllowAllowsNonCachableSyscall) {
   pid_t const pid = fork();
   if (pid == 0) {

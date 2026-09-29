@@ -55,6 +55,7 @@ const (
 	SECCOMP_RET_ERRNO        BPFAction = 0x00050000
 	SECCOMP_RET_TRACE        BPFAction = 0x7ff00000
 	SECCOMP_RET_USER_NOTIF   BPFAction = 0x7fc00000
+	SECCOMP_RET_LOG          BPFAction = 0x7ffc0000
 	SECCOMP_RET_ALLOW        BPFAction = 0x7fff0000
 )
 
@@ -78,6 +79,8 @@ func (a BPFAction) String() string {
 			return "trace"
 		}
 		return fmt.Sprintf("trace (data=%#x)", data)
+	case SECCOMP_RET_LOG:
+		return "log"
 	case SECCOMP_RET_ALLOW:
 		return "allow"
 	case SECCOMP_RET_USER_NOTIF:
