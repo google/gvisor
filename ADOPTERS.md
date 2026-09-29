@@ -221,6 +221,23 @@ such as
 
 --------------------------------------------------------------------------------
 
+### [Snowflake](https://snowflake.com/)
+
+<img src="https://gvisor.dev/assets/logos/snowflake_logo.svg" alt="Snowflake logo" height="45" align="right" />
+
+Snowflake provides a cloud-based AI Data platform that lets organizations store,
+analyze, and share large amounts of data across different plublic cloud
+services.
+
+> Snowflake uses gVisor for the
+> [Snowpark execution sandbox](https://www.snowflake.com/en/blog/engineering/rebuild-snowpark-execution-sandbox-with-gvisor/)
+> to safely run untrusted user code (such as Python stored procedures and
+> user-defined functions) in a multi-tenant environment.
+
+<br clear="right" />
+
+--------------------------------------------------------------------------------
+
 ### [Tailscale](https://tailscale.com)
 
 <img src="https://gvisor.dev/assets/logos/tailscale_logo.svg" alt="Tailscale logo" height="40" align="right" />
