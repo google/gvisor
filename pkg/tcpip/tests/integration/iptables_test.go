@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -3733,6 +3734,164 @@ func TestRejectWithTCPReset(t *testing.T) {
 						checker.TCPSeqNum(0),
 					),
 				)
+			}
+		})
+	}
+}
+
+func newICMPPortUnreachableTarget(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber) stack.Target {
+	t.Helper()
+
+	proto := s.NetworkProtocolInstance(netProto)
+	switch netProto {
+	case header.IPv4ProtocolNumber:
+		handler, ok := proto.(stack.RejectIPv4WithHandler)
+		if !ok {
+			t.Fatalf("got %T, want stack.RejectIPv4WithHandler", proto)
+		}
+		return &stack.RejectIPv4Target{
+			Handler:    handler,
+			RejectWith: stack.RejectIPv4WithICMPPortUnreachable,
+		}
+	case header.IPv6ProtocolNumber:
+		handler, ok := proto.(stack.RejectIPv6WithHandler)
+		if !ok {
+			t.Fatalf("got %T, want stack.RejectIPv6WithHandler", proto)
+		}
+		return &stack.RejectIPv6Target{
+			Handler:    handler,
+			RejectWith: stack.RejectIPv6WithICMPPortUnreachable,
+		}
+	default:
+		t.Fatalf("unsupported network protocol: %d", netProto)
+		return nil
+	}
+}
+
+func TestRejectICMPOutputDoesNotDeadlockConnect(t *testing.T) {
+	const (
+		port    = 12345
+		timeout = 5 * time.Second
+	)
+
+	tests := []struct {
+		name      string
+		netProto  tcpip.NetworkProtocolNumber
+		addr      tcpip.AddressWithPrefix
+		route     tcpip.Subnet
+		ipv6Table bool
+	}{
+		{
+			name:      "IPv4",
+			netProto:  header.IPv4ProtocolNumber,
+			addr:      utils.Ipv4Addr,
+			route:     header.IPv4EmptySubnet,
+			ipv6Table: false,
+		},
+		{
+			name:      "IPv6",
+			netProto:  header.IPv6ProtocolNumber,
+			addr:      utils.Ipv6Addr,
+			route:     header.IPv6EmptySubnet,
+			ipv6Table: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+			})
+			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
+			}
+			protoAddr := tcpip.ProtocolAddress{
+				Protocol:          test.netProto,
+				AddressWithPrefix: test.addr,
+			}
+			if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
+			}
+			s.SetRouteTable([]tcpip.Route{
+				{Destination: test.route, NIC: nicID},
+			})
+
+			ipt := s.IPTables()
+			table := ipt.GetTable(stack.FilterID, test.ipv6Table)
+			ruleIdx := table.BuiltinChains[stack.Output]
+			table.Rules[ruleIdx].Filter = stack.IPHeaderFilter{
+				Protocol:      header.TCPProtocolNumber,
+				CheckProtocol: true,
+			}
+			table.Rules[ruleIdx].Target = newICMPPortUnreachableTarget(t, s, test.netProto)
+			table.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
+			ipt.ForceReplaceTable(stack.FilterID, table, test.ipv6Table)
+
+			// A real listener ensures ErrConnectionRefused comes from the
+			// iptables-generated ICMP error, not from a closed port.
+			var listenerWQ waiter.Queue
+			listenerEP, err := s.NewEndpoint(tcp.ProtocolNumber, test.netProto, &listenerWQ)
+			if err != nil {
+				t.Fatalf("s.NewEndpoint(listener): %s", err)
+			}
+			if err := listenerEP.Bind(tcpip.FullAddress{Port: port}); err != nil {
+				t.Fatalf("listenerEP.Bind(%d): %s", port, err)
+			}
+			if err := listenerEP.Listen(1); err != nil {
+				t.Fatalf("listenerEP.Listen(1): %s", err)
+			}
+
+			var clientWQ waiter.Queue
+			we, ch := waiter.NewChannelEntry(waiter.EventErr | waiter.EventHUp)
+			clientWQ.EventRegister(&we)
+			defer clientWQ.EventUnregister(&we)
+			clientEP, err := s.NewEndpoint(tcp.ProtocolNumber, test.netProto, &clientWQ)
+			if err != nil {
+				t.Fatalf("s.NewEndpoint(client): %s", err)
+			}
+
+			safeToCleanup := true
+			defer func() {
+				// Before the fix, Connect remains blocked while holding the
+				// endpoint lock. Closing that endpoint may block on the same
+				// lock, so avoid cleanup only in the deadlock failure case.
+				if !safeToCleanup {
+					return
+				}
+				clientEP.Close()
+				listenerEP.Close()
+				s.Destroy()
+			}()
+
+			connectAddr := tcpip.FullAddress{
+				NIC:  nicID,
+				Addr: test.addr.Address,
+				Port: port,
+			}
+			connectErr := make(chan tcpip.Error, 1)
+			go func() {
+				connectErr <- clientEP.Connect(connectAddr)
+			}()
+
+			select {
+			case err := <-connectErr:
+				if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
+					t.Fatalf("got clientEP.Connect(%#v) = %s, want = %s", connectAddr, err, &tcpip.ErrConnectStarted{})
+				}
+			case <-time.After(timeout):
+				safeToCleanup = false
+				t.Fatalf("clientEP.Connect(%#v) did not return within %s", connectAddr, timeout)
+			}
+
+			select {
+			case <-ch:
+			case <-time.After(timeout):
+				t.Fatal("timed out waiting for the ICMP error")
+			}
+			got := clientEP.LastError()
+			if _, ok := got.(*tcpip.ErrConnectionRefused); !ok {
+				t.Fatalf("got clientEP.LastError() = %s, want = %s", got, &tcpip.ErrConnectionRefused{})
 			}
 		})
 	}
