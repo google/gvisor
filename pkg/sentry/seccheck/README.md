@@ -167,13 +167,54 @@ points to it.
 ## Sessions
 
 Trace sessions scope a set of trace points with their corresponding
-configuration and a set of sinks that receive the points. Sessions can be
-created at sandbox initialization time or during runtime. Creating sessions at
-init time guarantees that no trace points are missed, which is important for
-threat detection. It is configured using the `--pod-init-config` flag (more on
-it below). To manage sessions during runtime, `runsc trace create|delete|list`
-is used to manipulate trace sessions. Here are few examples assuming there is a
-running container with ID=cont123 using Docker:
+configuration and a set of sinks that receive the points.
+
+> Note: There is a current limitation that only a single session can exist in
+> the system and it must be called `Default`. This restriction can be lifted in
+> the future when more than one session is needed.
+
+There are **two ways** to set up a trace session configuration:
+
+### 1. At Sandbox Initialization (`--pod-init-config`)
+
+Creating a session at sandbox initialization time guarantees that tracing is
+active before the container application starts running, ensuring no early trace
+points are missed (which is important for threat detection).
+
+This is configured by passing `--pod-init-config=<path-to-json>` to `runsc`,
+pointing to a JSON file containing a `"trace_session"` object (see
+[Config](#config) below):
+
+*   **With `containerd` (`containerd-shim-runsc-v1`):** Set `pod-init-config`
+    under `[runsc_config]` in `/run/containerd/runsc/config.toml` (or
+    `/etc/containerd/runsc/config.toml`):
+
+    ```toml
+    [runsc_config]
+      pod-init-config = "/path/to/pod_init.json"
+    ```
+
+    > Note: `config.toml` only accepts `runsc` flags under `[runsc_config]`. The
+    > trace session configuration itself must be stored in the separate JSON
+    > file referenced by `pod-init-config`, not embedded as TOML in
+    > `config.toml`.
+
+*   **With Docker:** Pass `--pod-init-config` when registering the runtime:
+
+    ```shell
+    $ sudo runsc --install --runtime=runsc-trace -- --pod-init-config=/path/to/pod_init.json
+    ```
+
+### 2. Dynamically at Runtime (`runsc trace create`)
+
+To manage sessions on already-running sandboxes during runtime, use `runsc trace
+create|delete|list`. Dynamic session creation is also useful when a monitoring
+process starts after sandboxes are already running, or when the monitoring
+process restarts and needs to re-establish a `remote` sink connection using
+`--force`.
+
+Here are a few examples assuming there is a running container with `ID=cont123`
+using Docker:
 
 ```shell
 $ sudo runsc --root /run/docker/runtime-runc/moby trace create --config session.json cont123
@@ -187,14 +228,18 @@ $ sudo runsc --root /var/run/docker/runtime-runc/moby trace list cont123
 SESSIONS (0)
 ```
 
-> Note: There is a current limitation that only a single session can exist in
-> the system and it must be called `Default`. This restriction can be lifted in
-> the future when more than one session is needed.
+Pass `--force` to `runsc trace create` to replace an existing session of the
+same name (for example, to attach a new sink socket FD after a remote consumer
+restart):
+
+```shell
+$ sudo runsc --root /run/docker/runtime-runc/moby trace create --force --config session.json cont123
+```
 
 ## Config
 
-The event session can be defined using JSON for the `runsc trace create`
-command. The session definition has 3 main parts:
+Both setup methods use a JSON configuration file. The session definition has 3
+main parts:
 
 1.  `name`: name of the session being created. Only `Default` for now.
 1.  `points`: array of points being enabled in the session. Each point has:
@@ -220,13 +265,15 @@ In addition, the session definition supports the following optional fields:
     `"execve_hash_cache_capacity"` to configure the maximum capacity of the
     per-session execve hash cache).
 
-The session configuration above can also be used with the `--pod-init-config`
-flag under the `"trace_session"` JSON object. There is a full example
-[here](https://cs.opensource.google/gvisor/gvisor/+/master:examples/seccheck/pod_init.json)
+When used with `--pod-init-config`, the session configuration must be nested
+under a top-level `"trace_session"` JSON key (see the full example in
+[`examples/seccheck/pod_init.json`](https://cs.opensource.google/gvisor/gvisor/+/master:examples/seccheck/pod_init.json)).
 
-> Note: For convenience, the `--pod-init-config` file can also be used with
-> `runsc trace create` command. The portions of the Pod init config file that
-> are not related to the session configuration are ignored.
+> Note: For convenience, `runsc trace create --config` accepts **both** a
+> top-level session JSON object and a `--pod-init-config` file containing a
+> `"trace_session"` wrapper object (ignoring any other fields in the init config
+> file). This allows you to use the same JSON file for both `--pod-init-config`
+> and `runsc trace create`.
 
 ## Full Example
 
