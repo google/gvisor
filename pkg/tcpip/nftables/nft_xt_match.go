@@ -51,6 +51,11 @@ func lookupTCPUDPRevision(name string, rev uint32, family stack.AddressFamily) (
 // Ref: net/netfilter/nft_compat.c:nfnl_compat_get_rcu, net/netfilter/x_tables.c:xt_find_revision
 func lookupCompatMatchRevision(name string, rev uint32, family stack.AddressFamily) (uint32, *syserr.AnnotatedError) {
 	switch name {
+	case MatchComment:
+		if rev != 0 {
+			return 0, syserr.NewAnnotatedError(syserr.ErrProtocolNotSupported, fmt.Sprintf("comment revision %d not supported", rev))
+		}
+		return 0, nil
 	case MatchAddrtype:
 		return lookupAddrtypeRevision(rev, family)
 	case MatchConntrack:
@@ -62,7 +67,7 @@ func lookupCompatMatchRevision(name string, rev uint32, family stack.AddressFami
 	}
 }
 
-// compatNoopMatch implements pass-through xtables matches like "tcp" and "udp".
+// compatNoopMatch implements pass-through xtables matches, including "comment".
 // TODO: b/505405732 - Support xt_tcp/xt_udp.
 type compatNoopMatch struct {
 	// name is the name of the match extension (e.g., "tcp" or "udp").
@@ -73,7 +78,8 @@ type compatNoopMatch struct {
 	infoData []byte
 }
 
-// Ref: net/netfilter/xt_tcpudp.c
+// comment matches always succeed (net/netfilter/xt_comment.c:comment_mt).
+// TCP/UDP remain placeholders until b/505405732 is implemented.
 func (op *compatNoopMatch) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	regs.verdict = Verdict{Code: VC(linux.NFT_CONTINUE)}
 }
@@ -149,6 +155,16 @@ func initMatch(tab *Table, exprInfo ExprInfo) (operation, *syserr.AnnotatedError
 	infoData := []byte(infoAttr)
 
 	switch name {
+	case MatchComment:
+		if rev != 0 {
+			return nil, syserr.NewAnnotatedError(syserr.ErrNoSuchFile, fmt.Sprintf("comment revision %d not supported", rev))
+		}
+		// nft_match_select_ops and xt_check_match require the complete,
+		// aligned xt_comment_info payload, including any bytes after a NUL.
+		if len(infoData) != linux.SizeOfXTCommentInfo {
+			return nil, syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("comment info size %d, want %d", len(infoData), linux.SizeOfXTCommentInfo))
+		}
+		return &compatNoopMatch{name: name, revision: rev, infoData: infoData}, nil
 	case MatchAddrtype:
 		addr, err := parseAddrtypeMatch(tab, rev, infoData)
 		if err != nil {

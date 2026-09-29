@@ -182,6 +182,9 @@ void VerifyChainPolicy(const FileDescriptor& fd, absl::string_view table_name,
 // Reads string from an nfattr.
 std::string GetNfAttrString(const struct nfattr* attr);
 
+// Reads a uint32_t from an nfattr in network byte order.
+uint32_t GetNfAttrU32(const struct nfattr* attr);
+
 // Reads raw bytes from an nfattr safely. Supported types: char, uint8_t.
 template <typename T = char>
 std::vector<T> GetNfAttrBytes(const struct nfattr* attr);
