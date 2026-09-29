@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
+	"gvisor.dev/gvisor/pkg/sentry/devices/amdgpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy"
@@ -40,6 +41,7 @@ type Options struct {
 	HostNetworkRawSockets bool
 	HostFilesystem        bool
 	ProfileEnable         bool
+	AMDGPUProxy           bool
 	NVProxy               bool
 	NVProxyCaps           nvconf.DriverCaps
 	TPUProxy              bool
@@ -70,6 +72,7 @@ func (opt Options) ConfigKey() string {
 	fmt.Fprintf(&sb, "HostFilesystem=%t ", opt.HostFilesystem)
 	fmt.Fprintf(&sb, "ProfileEnable=%t ", opt.ProfileEnable)
 	fmt.Fprintf(&sb, "Instrumentation=%t ", isInstrumentationEnabled())
+	fmt.Fprintf(&sb, "AMDGPUProxy=%t ", opt.AMDGPUProxy)
 	fmt.Fprintf(&sb, "NVProxy=%t ", opt.NVProxy)
 	fmt.Fprintf(&sb, "NVProxyCaps=%v ", opt.NVProxyCaps)
 	fmt.Fprintf(&sb, "TPUProxy=%t ", opt.TPUProxy)
@@ -98,6 +101,9 @@ func Warnings(opt Options) []string {
 	}
 	if isInstrumentationEnabled() {
 		warnings = append(warnings, "instrumentation enabled: syscall filters less restrictive!")
+	}
+	if opt.AMDGPUProxy {
+		warnings = append(warnings, "AMD GPU compute proxy enabled: syscall filters less restrictive!")
 	}
 	if opt.NVProxy {
 		warnings = append(warnings, "Nvidia GPU driver proxy enabled: syscall filters less restrictive!")
@@ -154,6 +160,9 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 	}
 	if opt.HostFilesystem {
 		s.Merge(hostFilesystemFilters())
+	}
+	if opt.AMDGPUProxy {
+		s.Merge(amdgpuproxy.Filters())
 	}
 	if opt.NVProxy {
 		s.Merge(nvproxy.Filters(opt.NVProxyCaps))

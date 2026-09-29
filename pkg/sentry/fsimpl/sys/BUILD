@@ -19,6 +19,7 @@ go_template_instance(
 go_library(
     name = "sys",
     srcs = [
+        "amdgpu.go",
         "dir_refs.go",
         "kcov.go",
         "pci.go",
@@ -29,6 +30,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/amdgpu",
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/coverage",
@@ -63,6 +65,7 @@ go_test(
     deps = [
         ":sys",
         "//pkg/abi/linux",
+        "//pkg/amdgpu",
         "//pkg/rdma",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",

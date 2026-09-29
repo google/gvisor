@@ -74,6 +74,14 @@ doc(
 )
 
 doc(
+    name = "amd_gpu",
+    src = "amd_gpu.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/amd_gpu/",
+    weight = "51",
+)
+
+doc(
     name = "tpu",
     src = "tpu.md",
     category = "User Guide",

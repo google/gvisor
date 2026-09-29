@@ -45,6 +45,10 @@ func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 			NVProxy:     true,
 			NVProxyCaps: nvconf.ValidCapabilities,
 		},
+		"amdgpuproxy": {
+			Platform:    (&systrap.Systrap{}).SeccompInfo(),
+			AMDGPUProxy: true,
+		},
 		"tpuproxy": {
 			Platform: (&systrap.Systrap{}).SeccompInfo(),
 			TPUProxy: true,
@@ -109,6 +113,7 @@ func TestOptionsConfigKey(t *testing.T) {
 		"HostNetworkRawSockets": func(opt *Options) { opt.HostNetworkRawSockets = !opt.HostNetworkRawSockets },
 		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
+		"AMDGPUProxy":           func(opt *Options) { opt.AMDGPUProxy = !opt.AMDGPUProxy },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
 		"NVProxyCaps":           func(opt *Options) { opt.NVProxyCaps = ^opt.NVProxyCaps },
 		"TPUProxy":              func(opt *Options) { opt.TPUProxy = !opt.TPUProxy },

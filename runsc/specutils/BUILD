@@ -8,6 +8,7 @@ package(
 go_library(
     name = "specutils",
     srcs = [
+        "amdgpu.go",
         "cri.go",
         "fs.go",
         "gofer_conf.go",
@@ -24,6 +25,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/abi/nvgpu",
+        "//pkg/amdgpu",
         "//pkg/log",
         "//pkg/rdma",
         "//pkg/sentry/devices/nvproxy/nvconf",

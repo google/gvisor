@@ -31,6 +31,7 @@ go_library(
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
+        "//pkg/sentry/devices/amdgpuproxy",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/devices/rdmaproxy",

@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/abi/tpu",
+        "//pkg/amdgpu",
         "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/cpuid",
@@ -27,6 +28,7 @@ go_library(
         "//pkg/prometheus",
         "//pkg/rdma",
         "//pkg/ring0",
+        "//pkg/sentry/devices/amdgpuproxy",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/hostmm",

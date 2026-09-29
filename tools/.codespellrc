@@ -34,6 +34,8 @@ ignore-words-list =
   tru,
   # abbreviations that are correct in context.
   cacl,
+  # DRM render node device name, /dev/dri/renderD<minor>.
+  renderD,
   flate,
   hart,
   iif,

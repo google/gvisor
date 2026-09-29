@@ -1,4 +1,4 @@
-# GPU Support
+# NVIDIA GPU Support
 
 [TOC]
 
@@ -14,7 +14,8 @@ To achieve this, gVisor implements a proxy driver inside the sandbox, henceforth
 referred to as `nvproxy`. `nvproxy` proxies the application's interactions with
 NVIDIA's driver on the host. It provides access to NVIDIA GPU-specific devices
 to the sandboxed application. The GPU application can run unmodified inside the
-sandbox and interact transparently with these devices.
+sandbox and interact transparently with these devices. For AMD GPUs, see
+[AMD GPU Support](amd_gpu.md).
 
 ## Environments
 

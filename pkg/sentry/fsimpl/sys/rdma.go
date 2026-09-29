@@ -47,12 +47,12 @@ import (
 // paired netdev's netns or addresses change) is served by reading host sysfs
 // at access time; those host paths are bind-mounted into the sandbox's chroot.
 
-// rdmaSysfsDirs is the output of newRDMASysfs: subtrees for GetFilesystem
-// to graft into the overall /sys hierarchy.
-type rdmaSysfsDirs struct {
-	// devices maps the pciXXXX:YY root-complex names to their subtrees,
-	// to be added under /sys/devices.
-	devices map[string]kernfs.Inode
+// sysfsDirs holds a device sysfs snapshot's subtrees for GetFilesystem to
+// graft into the overall /sys hierarchy.
+type sysfsDirs struct {
+	// devices is the /sys/devices subtree. It is merged with other
+	// snapshots' before being built.
+	devices *dirTree
 	// class maps class-directory names (infiniband, infiniband_verbs,
 	// net, pci_bus) to symlink-farm directories for /sys/class.
 	class map[string]kernfs.Inode
@@ -61,22 +61,24 @@ type rdmaSysfsDirs struct {
 	// busPCIDrivers maps a kernel driver name to its
 	// /sys/bus/pci/drivers/<driver> directory of bound-device back-symlinks.
 	busPCIDrivers map[string]kernfs.Inode
+	// devChar contains the /sys/dev/char symlinks.
+	devChar map[string]kernfs.Inode
 	// node is the /sys/devices/system/node subtree, or nil.
 	node kernfs.Inode
 }
 
-// rdmaDirTree is the intermediate mutable representation, keyed by entry name.
-type rdmaDirTree struct {
-	children  map[string]*rdmaDirTree
+// dirTree is the intermediate mutable representation, keyed by entry name.
+type dirTree struct {
+	children  map[string]*dirTree
 	files     map[string]string // static file contents
 	hostFiles map[string]string // file name -> host path read at access time
 	errFiles  map[string]int32  // file name -> errno every read fails with
 	symlinks  map[string]string // link name -> relative target
 }
 
-func newRDMADirTree() *rdmaDirTree {
-	return &rdmaDirTree{
-		children:  map[string]*rdmaDirTree{},
+func newDirTree() *dirTree {
+	return &dirTree{
+		children:  map[string]*dirTree{},
 		files:     map[string]string{},
 		hostFiles: map[string]string{},
 		errFiles:  map[string]int32{},
@@ -86,7 +88,7 @@ func newRDMADirTree() *rdmaDirTree {
 
 // get returns the subtree at relPath (slash-separated), creating
 // intermediate directories.
-func (t *rdmaDirTree) get(relPath string) *rdmaDirTree {
+func (t *dirTree) get(relPath string) *dirTree {
 	cur := t
 	for _, part := range strings.Split(relPath, "/") {
 		if part == "" {
@@ -94,7 +96,7 @@ func (t *rdmaDirTree) get(relPath string) *rdmaDirTree {
 		}
 		next, ok := cur.children[part]
 		if !ok {
-			next = newRDMADirTree()
+			next = newDirTree()
 			cur.children[part] = next
 		}
 		cur = next
@@ -102,9 +104,52 @@ func (t *rdmaDirTree) get(relPath string) *rdmaDirTree {
 	return cur
 }
 
+// merge adds o's entries to t. Entries present in both must be identical.
+func (t *dirTree) merge(o *dirTree) error {
+	for name, child := range o.children {
+		if existing, ok := t.children[name]; ok {
+			if err := existing.merge(child); err != nil {
+				return err
+			}
+			continue
+		}
+		t.children[name] = child
+	}
+	for _, m := range []struct{ dst, src map[string]string }{{t.files, o.files}, {t.hostFiles, o.hostFiles}, {t.symlinks, o.symlinks}} {
+		for name, val := range m.src {
+			if existing, ok := m.dst[name]; ok && existing != val {
+				return fmt.Errorf("conflicting sysfs entries for %q", name)
+			}
+			m.dst[name] = val
+		}
+	}
+	for name, errno := range o.errFiles {
+		if existing, ok := t.errFiles[name]; ok && existing != errno {
+			return fmt.Errorf("conflicting sysfs entries for %q", name)
+		}
+		t.errFiles[name] = errno
+	}
+	return nil
+}
+
+// collapseNUMA rewrites a PCI device's CPU-affinity attributes for the single
+// NUMA node (over CPUs 0..cores-1) that gVisor presents. A "-1" numa_node
+// (device on no node) is preserved.
+func (t *dirTree) collapseNUMA(cores uint) {
+	if v, ok := t.files["numa_node"]; ok && strings.TrimSpace(v) != "-1" {
+		t.files["numa_node"] = "0\n"
+	}
+	if _, ok := t.files["local_cpus"]; ok {
+		t.files["local_cpus"] = fullCPUMask(cores) + "\n"
+	}
+	if _, ok := t.files["local_cpulist"]; ok {
+		t.files["local_cpulist"] = cpuListString(cores)
+	}
+}
+
 // newRDMASysfs builds the RDMA sysfs subtrees from snap.
-func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials, snap *rdma.Snapshot) (*rdmaSysfsDirs, error) {
-	root := newRDMADirTree()
+func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials, snap *rdma.Snapshot) (*sysfsDirs, error) {
+	root := newDirTree()
 	classIB := map[string]string{}     // ibdev -> symlink target
 	classUverbs := map[string]string{} // uverbsN -> symlink target
 	classNet := map[string]string{}    // netdev -> symlink target
@@ -148,18 +193,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 				d.files[name] = val
 			}
 		}
-		// CPU-affinity attributes (from pciAttrNames) need to be rewritten.
-		// gVisor presents just 1 NUMA node (over CPUs 0..cores-1) to the
-		// application. A "-1" numa_node (device on no node) is preserved.
-		if v, ok := d.files["numa_node"]; ok && strings.TrimSpace(v) != "-1" {
-			d.files["numa_node"] = "0\n"
-		}
-		if _, ok := d.files["local_cpus"]; ok {
-			d.files["local_cpus"] = fullCPUMask(cores) + "\n"
-		}
-		if _, ok := d.files["local_cpulist"]; ok {
-			d.files["local_cpulist"] = cpuListString(cores)
-		}
+		d.collapseNUMA(cores)
 		// Raw PCI config space (binary). hwloc reads it to rebuild the PCI
 		// bridge hierarchy; without it aws-ofi-nccl's NCCL topology write fails.
 		if n.Config != nil {
@@ -246,8 +280,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 	// covered without special handling here.
 
 	// 3. Convert the tree and assemble the outputs.
-	out := &rdmaSysfsDirs{
-		devices:       map[string]kernfs.Inode{},
+	out := &sysfsDirs{
 		class:         map[string]kernfs.Inode{},
 		busPCIDevices: map[string]kernfs.Inode{},
 		busPCIDrivers: map[string]kernfs.Inode{},
@@ -256,9 +289,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 	if !ok {
 		return nil, fmt.Errorf("RDMA snapshot contains no devices/ paths")
 	}
-	for name, sub := range devicesTree.children {
-		out.devices[name] = fs.buildRDMADir(ctx, creds, sub)
-	}
+	out.devices = devicesTree
 
 	out.class["infiniband"] = fs.newDir(ctx, creds, defaultSysDirMode, fs.symlinkFarm(ctx, creds, classIB))
 	uverbsEntries := fs.symlinkFarm(ctx, creds, classUverbs)
@@ -299,7 +330,7 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 
 // addPorts populates <ibdev>/ports/<n>/ with static attributes and
 // live host-backed files (GIDs, GID attributes, state, counters).
-func (fs *filesystem) addPorts(ib *rdmaDirTree, dev *rdma.Device) {
+func (fs *filesystem) addPorts(ib *dirTree, dev *rdma.Device) {
 	for num, port := range dev.Ports {
 		if !rdma.SafeName(num) {
 			continue
@@ -346,7 +377,7 @@ func (fs *filesystem) addPorts(ib *rdmaDirTree, dev *rdma.Device) {
 // "/sys/class/pci_bus/<bus>/../../<bdf>".
 //
 // Precondition: rdma.IsBDF(path.Base(leaf)) == true
-func (fs *filesystem) addPCIBus(root *rdmaDirTree, leaf string, classPCIBus map[string]string) {
+func (fs *filesystem) addPCIBus(root *dirTree, leaf string, classPCIBus map[string]string) {
 	base := path.Base(leaf)
 	i := strings.LastIndex(base, ":")
 	if i < 0 {
@@ -388,8 +419,13 @@ func cpuListString(cores uint) string {
 	return fmt.Sprintf("0-%d\n", cores-1)
 }
 
-// buildRDMADir converts an rdmaDirTree into kernfs inodes.
-func (fs *filesystem) buildRDMADir(ctx context.Context, creds *auth.Credentials, t *rdmaDirTree) kernfs.Inode {
+// buildDirTree converts a dirTree into kernfs inodes.
+func (fs *filesystem) buildDirTree(ctx context.Context, creds *auth.Credentials, t *dirTree) kernfs.Inode {
+	return fs.newDir(ctx, creds, defaultSysDirMode, fs.dirTreeEntries(ctx, creds, t))
+}
+
+// dirTreeEntries converts a dirTree's entries into kernfs inodes.
+func (fs *filesystem) dirTreeEntries(ctx context.Context, creds *auth.Credentials, t *dirTree) map[string]kernfs.Inode {
 	entries := map[string]kernfs.Inode{}
 	for name, val := range t.files {
 		entries[name] = fs.newStaticFile(ctx, creds, defaultSysMode, val)
@@ -407,9 +443,9 @@ func (fs *filesystem) buildRDMADir(ctx context.Context, creds *auth.Credentials,
 		entries[name] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), target)
 	}
 	for name, child := range t.children {
-		entries[name] = fs.buildRDMADir(ctx, creds, child)
+		entries[name] = fs.buildDirTree(ctx, creds, child)
 	}
-	return fs.newDir(ctx, creds, defaultSysDirMode, entries)
+	return entries
 }
 
 func (fs *filesystem) symlinkFarm(ctx context.Context, creds *auth.Credentials, targets map[string]string) map[string]kernfs.Inode {
