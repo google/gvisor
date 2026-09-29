@@ -262,6 +262,10 @@ func (r *Runsc) start(context context.Context, cio runc.IO, cmd *exec.Cmd) error
 
 // RestoreOpts is a set of options to runsc.Restore().
 type RestoreOpts struct {
+	// Bundle is the container's OCI bundle. runsc falls back to reading the
+	// spec from it when the container is not found, and to the working
+	// directory when it is unset.
+	Bundle     string
 	ImagePath  string
 	Detach     bool
 	Direct     bool
@@ -270,6 +274,9 @@ type RestoreOpts struct {
 
 func (o *RestoreOpts) args() []string {
 	var out []string
+	if o.Bundle != "" {
+		out = append(out, fmt.Sprintf("--bundle=%s", o.Bundle))
+	}
 	if o.ImagePath != "" {
 		out = append(out, fmt.Sprintf("--image-path=%s", o.ImagePath))
 	}
