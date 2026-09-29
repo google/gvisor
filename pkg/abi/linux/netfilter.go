@@ -983,6 +983,20 @@ type XTMarkMtinfo1 struct {
 // SizeOfXTMarkMtinfo1 is the size of XTMarkMtinfo1.
 const SizeOfXTMarkMtinfo1 = 12
 
+// XTMarkTarget is the MARK target: an XTEntryTarget followed by struct
+// xt_mark_tginfo2 from include/uapi/linux/netfilter/xt_mark.h.
+//
+// +marshal
+type XTMarkTarget struct {
+	_      structs.HostLayout
+	Target XTEntryTarget
+	Mark   uint32
+	Mask   uint32
+}
+
+// SizeOfXTMarkTarget is the size of an XTMarkTarget.
+const SizeOfXTMarkTarget = 40
+
 // Ref: include/uapi/linux/netfilter_ipv4/ipt_REJECT.h:enum ipt_reject_with
 const (
 	IPT_ICMP_NET_UNREACHABLE = iota
