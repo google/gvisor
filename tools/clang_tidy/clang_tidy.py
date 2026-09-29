@@ -62,10 +62,16 @@ def _analyze(clang_tidy, database_dir, config_file, workspace, source):
           "--quiet",
           str(workspace / source),
       ],
-      capture_output=True,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.STDOUT,
       text=True,
       check=False,
   )
+
+  if proc.returncode:
+    return source, [], [
+        f"{source}: clang-tidy exited with status {proc.returncode}\n{proc.stdout}"
+    ]
 
   findings = []
   errors = []
@@ -118,8 +124,7 @@ def main():
 
   if errors:
     print(
-        f"clang-tidy: {len(errors)} file(s) failed to compile; the "
-        "compilation database may be stale",
+        f"clang-tidy: analysis failed for {len(errors)} file(s).",
         file=sys.stderr,
     )
     for source in sorted(errors):
