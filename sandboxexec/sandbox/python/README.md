@@ -13,6 +13,38 @@ standard runtimes.
 
 These Python bindings provide a programmable interface to interact with gVisor.
 
+## Installation
+
+```bash
+pip install gvisor
+```
+
+The bindings run sandboxes with `runsc`. Install it by following the
+[gVisor installation guide](https://gvisor.dev/docs/user_guide/install/). The
+package uses the `runsc` on your `PATH`, or the binary set in `RUNSC_PATH`.
+
+## Quickstart
+
+```python
+from gvisor import Mount, NetworkMode, Sandbox
+
+with Sandbox(
+    network=NetworkMode.NONE,
+    mounts=[Mount.tmpfs("/tmp")],
+) as sb:
+    stdout, _ = sb.exec("uname", "-a")
+    print(stdout)
+
+    stdout, _ = sb.exec("sh", "-c", "echo hi > /tmp/out && cat /tmp/out")
+    print(stdout)
+```
+
+## Documentation
+
+*   [Quickstart](https://gvisor.dev/docs/sdk/python/quickstart/)
+*   [API reference](https://gvisor.dev/docs/sdk/python/)
+*   [Examples](https://github.com/google/gvisor/tree/master/examples/sandboxexec/python)
+
 ## License
 
 Apache License 2.0

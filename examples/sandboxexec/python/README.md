@@ -56,34 +56,31 @@ SandboxExec API:
 
 ## 4. Prerequisites
 
-To run sandboxes, install the `runsc` binary and point the Python bindings to
-it.
+To run sandboxes, install the `runsc` binary.
 
 ### Installing `runsc`
 
 1.  **Install `runsc`**: Follow the
     [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/).
 
-2.  **Set `RUNSC_PATH`**: Point the `RUNSC_PATH` environment variable to your
-    `runsc` executable:
+2.  **Make `runsc` findable**: The `gvisor` package uses the `runsc` on your
+    `PATH`. To use a different binary, set `RUNSC_PATH`:
 
     ```bash
     export RUNSC_PATH=/path/to/runsc
     ```
 
-    The `gvisor` package requires `RUNSC_PATH` to find and run `runsc`.
-
 --------------------------------------------------------------------------------
 
 ## 5. Installing the Python Package
 
-### Option A: From PyPI
+The `gvisor` package is available on [PyPI](https://pypi.org/project/gvisor/):
 
 ```bash
 pip install gvisor
 ```
 
-### Option B: Building from Source (Local Wheel)
+To build from source instead (for example, to test local changes):
 
 ```bash
 # from sandboxexec/sandbox/python
