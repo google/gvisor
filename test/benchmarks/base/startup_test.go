@@ -169,12 +169,8 @@ func BenchmarkCheckpointEmpty(b *testing.B) {
 			container := client.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
-			// Using host network mode to avoid Docker v28+ restore bug where
-			// Moby attempts to bind-mount /proc/0/ns/net on bridge namespaces
-			// (see https://github.com/moby/moby/issues/50750).
 			if err := container.Spawn(ctx, dockerutil.RunOpts{
-				Image:       "benchmarks/alpine",
-				NetworkMode: "host",
+				Image: "benchmarks/alpine",
 			}, "sleep", "1000"); err != nil {
 				b.Fatalf("failed to spawn container: %v", err)
 			}
@@ -215,12 +211,8 @@ func BenchmarkRestoreEmpty(b *testing.B) {
 			container := client.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
-			// Using host network mode to avoid Docker v28+ restore bug where
-			// Moby attempts to bind-mount /proc/0/ns/net on bridge namespaces
-			// (see https://github.com/moby/moby/issues/50750).
 			if err := container.Spawn(ctx, dockerutil.RunOpts{
-				Image:       "benchmarks/alpine",
-				NetworkMode: "host",
+				Image: "benchmarks/alpine",
 			}, "sleep", "1000"); err != nil {
 				b.Fatalf("failed to spawn container: %v", err)
 			}
@@ -263,12 +255,8 @@ func waitUntilHostServing(ctx context.Context, server *dockerutil.Container, por
 func spawnServerWorkloadAndWait(ctx context.Context, b *testing.B, client harness.Machine, name string, port int) *dockerutil.Container {
 	server := client.GetContainer(ctx, b)
 
-	// Using host network mode to avoid Docker v28+ restore bug where
-	// Moby attempts to bind-mount /proc/0/ns/net on bridge namespaces
-	// (see https://github.com/moby/moby/issues/50750).
 	opts := dockerutil.RunOpts{
-		Image:       fmt.Sprintf("benchmarks/%s", name),
-		NetworkMode: "host",
+		Image: fmt.Sprintf("benchmarks/%s", name),
 	}
 
 	var cmd []string
