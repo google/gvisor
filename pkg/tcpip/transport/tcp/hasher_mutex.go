@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *hasherMutex) Lock() {
-	locking.AddGLock(hasherprefixIndex, -1)
+	locking.AddGLock(hasherprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *hasherMutex) NestedLock(i hasherlockNameIndex) {
-	locking.AddGLock(hasherprefixIndex, int(i))
+	locking.AddGLock(hasherprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *hasherMutex) Unlock() {
-	locking.DelGLock(hasherprefixIndex, -1)
+	locking.DelGLock(hasherprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *hasherMutex) NestedUnlock(i hasherlockNameIndex) {
-	locking.DelGLock(hasherprefixIndex, int(i))
+	locking.DelGLock(hasherprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

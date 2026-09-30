@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *neighborEntryRWMutex) Lock() {
-	locking.AddGLock(neighborEntryprefixIndex, -1)
+	locking.AddGLock(neighborEntryprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *neighborEntryRWMutex) NestedLock(i neighborEntrylockNameIndex) {
-	locking.AddGLock(neighborEntryprefixIndex, int(i))
+	locking.AddGLock(neighborEntryprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *neighborEntryRWMutex) NestedLock(i neighborEntrylockNameIndex) {
 // +checklocksignore
 func (m *neighborEntryRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(neighborEntryprefixIndex, -1)
+	locking.DelGLock(neighborEntryprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *neighborEntryRWMutex) NestedUnlock(i neighborEntrylockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(neighborEntryprefixIndex, int(i))
+	locking.DelGLock(neighborEntryprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *neighborEntryRWMutex) RLock() {
-	locking.AddGLock(neighborEntryprefixIndex, -1)
+	locking.AddGLock(neighborEntryprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *neighborEntryRWMutex) RLock() {
 // +checklocksignore
 func (m *neighborEntryRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(neighborEntryprefixIndex, -1)
+	locking.DelGLock(neighborEntryprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

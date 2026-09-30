@@ -31,10 +31,12 @@ func SeqAtomicLoadTime(seq *sync.SeqCount, ptr *__generics_imported0.Time) __gen
 //go:nosplit
 func SeqAtomicTryLoadTime(seq *sync.SeqCount, epoch sync.SeqCountEpoch, ptr *__generics_imported0.Time) (val __generics_imported0.Time, ok bool) {
 	if sync.RaceEnabled {
-
+		// runtime.RaceDisable() doesn't actually stop the race detector, so it
+		// can't help us here. Instead, call runtime.memmove directly, which is
+		// not instrumented by the race detector.
 		gohacks.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
-
+		// This is ~40% faster for short reads than going through memmove.
 		val = *ptr
 	}
 	ok = seq.ReadOk(epoch)

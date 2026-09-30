@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *keysetRWMutex) Lock() {
-	locking.AddGLock(keysetprefixIndex, -1)
+	locking.AddGLock(keysetprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *keysetRWMutex) NestedLock(i keysetlockNameIndex) {
-	locking.AddGLock(keysetprefixIndex, int(i))
+	locking.AddGLock(keysetprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *keysetRWMutex) NestedLock(i keysetlockNameIndex) {
 // +checklocksignore
 func (m *keysetRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(keysetprefixIndex, -1)
+	locking.DelGLock(keysetprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *keysetRWMutex) NestedUnlock(i keysetlockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(keysetprefixIndex, int(i))
+	locking.DelGLock(keysetprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *keysetRWMutex) RLock() {
-	locking.AddGLock(keysetprefixIndex, -1)
+	locking.AddGLock(keysetprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *keysetRWMutex) RLock() {
 // +checklocksignore
 func (m *keysetRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(keysetprefixIndex, -1)
+	locking.DelGLock(keysetprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

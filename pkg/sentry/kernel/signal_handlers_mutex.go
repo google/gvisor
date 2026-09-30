@@ -32,28 +32,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *signalHandlersMutex) Lock() {
-	locking.AddGLock(signalHandlersprefixIndex, -1)
+	locking.AddGLock(signalHandlersprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *signalHandlersMutex) NestedLock(i signalHandlerslockNameIndex) {
-	locking.AddGLock(signalHandlersprefixIndex, int(i))
+	locking.AddGLock(signalHandlersprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *signalHandlersMutex) Unlock() {
-	locking.DelGLock(signalHandlersprefixIndex, -1)
+	locking.DelGLock(signalHandlersprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *signalHandlersMutex) NestedUnlock(i signalHandlerslockNameIndex) {
-	locking.DelGLock(signalHandlersprefixIndex, int(i))
+	locking.DelGLock(signalHandlersprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

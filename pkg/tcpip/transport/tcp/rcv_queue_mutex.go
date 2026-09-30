@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *rcvQueueMutex) Lock() {
-	locking.AddGLock(rcvQueueprefixIndex, -1)
+	locking.AddGLock(rcvQueueprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *rcvQueueMutex) NestedLock(i rcvQueuelockNameIndex) {
-	locking.AddGLock(rcvQueueprefixIndex, int(i))
+	locking.AddGLock(rcvQueueprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *rcvQueueMutex) Unlock() {
-	locking.DelGLock(rcvQueueprefixIndex, -1)
+	locking.DelGLock(rcvQueueprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *rcvQueueMutex) NestedUnlock(i rcvQueuelockNameIndex) {
-	locking.DelGLock(rcvQueueprefixIndex, int(i))
+	locking.DelGLock(rcvQueueprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

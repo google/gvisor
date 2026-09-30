@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *multiPortEndpointRWMutex) Lock() {
-	locking.AddGLock(multiPortEndpointprefixIndex, -1)
+	locking.AddGLock(multiPortEndpointprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *multiPortEndpointRWMutex) NestedLock(i multiPortEndpointlockNameIndex) {
-	locking.AddGLock(multiPortEndpointprefixIndex, int(i))
+	locking.AddGLock(multiPortEndpointprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *multiPortEndpointRWMutex) NestedLock(i multiPortEndpointlockNameIndex) 
 // +checklocksignore
 func (m *multiPortEndpointRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(multiPortEndpointprefixIndex, -1)
+	locking.DelGLock(multiPortEndpointprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *multiPortEndpointRWMutex) NestedUnlock(i multiPortEndpointlockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(multiPortEndpointprefixIndex, int(i))
+	locking.DelGLock(multiPortEndpointprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *multiPortEndpointRWMutex) RLock() {
-	locking.AddGLock(multiPortEndpointprefixIndex, -1)
+	locking.AddGLock(multiPortEndpointprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *multiPortEndpointRWMutex) RLock() {
 // +checklocksignore
 func (m *multiPortEndpointRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(multiPortEndpointprefixIndex, -1)
+	locking.DelGLock(multiPortEndpointprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

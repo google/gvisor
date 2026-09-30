@@ -34,28 +34,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *dirMutex) Lock() {
-	locking.AddGLock(dirprefixIndex, -1)
+	locking.AddGLock(dirprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *dirMutex) NestedLock(i dirlockNameIndex) {
-	locking.AddGLock(dirprefixIndex, int(i))
+	locking.AddGLock(dirprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *dirMutex) Unlock() {
-	locking.DelGLock(dirprefixIndex, -1)
+	locking.DelGLock(dirprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *dirMutex) NestedUnlock(i dirlockNameIndex) {
-	locking.DelGLock(dirprefixIndex, int(i))
+	locking.DelGLock(dirprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

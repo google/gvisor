@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *refsMutex) Lock() {
-	locking.AddGLock(refsprefixIndex, -1)
+	locking.AddGLock(refsprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *refsMutex) NestedLock(i refslockNameIndex) {
-	locking.AddGLock(refsprefixIndex, int(i))
+	locking.AddGLock(refsprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *refsMutex) Unlock() {
-	locking.DelGLock(refsprefixIndex, -1)
+	locking.DelGLock(refsprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *refsMutex) NestedUnlock(i refslockNameIndex) {
-	locking.DelGLock(refsprefixIndex, int(i))
+	locking.DelGLock(refsprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

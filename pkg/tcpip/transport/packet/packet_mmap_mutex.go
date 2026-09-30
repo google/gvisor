@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *packetMmapRWMutex) Lock() {
-	locking.AddGLock(packetMmapprefixIndex, -1)
+	locking.AddGLock(packetMmapprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *packetMmapRWMutex) NestedLock(i packetMmaplockNameIndex) {
-	locking.AddGLock(packetMmapprefixIndex, int(i))
+	locking.AddGLock(packetMmapprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *packetMmapRWMutex) NestedLock(i packetMmaplockNameIndex) {
 // +checklocksignore
 func (m *packetMmapRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(packetMmapprefixIndex, -1)
+	locking.DelGLock(packetMmapprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *packetMmapRWMutex) NestedUnlock(i packetMmaplockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(packetMmapprefixIndex, int(i))
+	locking.DelGLock(packetMmapprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *packetMmapRWMutex) RLock() {
-	locking.AddGLock(packetMmapprefixIndex, -1)
+	locking.AddGLock(packetMmapprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *packetMmapRWMutex) RLock() {
 // +checklocksignore
 func (m *packetMmapRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(packetMmapprefixIndex, -1)
+	locking.DelGLock(packetMmapprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

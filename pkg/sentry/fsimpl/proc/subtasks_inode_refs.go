@@ -44,7 +44,8 @@ type subtasksInodeRefs struct {
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
 func (r *subtasksInodeRefs) InitRefs() {
-
+	// We can use RacyStore because the refs can't be shared until after
+	// InitRefs is called, and thus it's safe to use non-atomic operations.
 	r.refCount.RacyStore(1)
 	refs.Register(r)
 }
@@ -93,11 +94,12 @@ func (r *subtasksInodeRefs) IncRef() {
 func (r *subtasksInodeRefs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
 	if v := r.refCount.Add(speculativeRef); int32(v) == 0 {
-
+		// This object has already been freed.
 		r.refCount.Add(-speculativeRef)
 		return false
 	}
 
+	// Turn into a real reference.
 	v := r.refCount.Add(-speculativeRef + 1)
 	if subtasksInodeenableLogging {
 		refs.LogTryIncRef(r, v)
@@ -128,7 +130,7 @@ func (r *subtasksInodeRefs) DecRef(destroy func()) {
 
 	case v == 0:
 		refs.Unregister(r)
-
+		// Call the destructor.
 		if destroy != nil {
 			destroy()
 		}

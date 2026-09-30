@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *threadGroupTimerMutex) Lock() {
-	locking.AddGLock(threadGroupTimerprefixIndex, -1)
+	locking.AddGLock(threadGroupTimerprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *threadGroupTimerMutex) NestedLock(i threadGroupTimerlockNameIndex) {
-	locking.AddGLock(threadGroupTimerprefixIndex, int(i))
+	locking.AddGLock(threadGroupTimerprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *threadGroupTimerMutex) Unlock() {
-	locking.DelGLock(threadGroupTimerprefixIndex, -1)
+	locking.DelGLock(threadGroupTimerprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *threadGroupTimerMutex) NestedUnlock(i threadGroupTimerlockNameIndex) {
-	locking.DelGLock(threadGroupTimerprefixIndex, int(i))
+	locking.DelGLock(threadGroupTimerprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

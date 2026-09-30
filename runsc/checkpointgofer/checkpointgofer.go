@@ -3,7 +3,7 @@ package checkpointgofer
 import (
 	"bytes"
 	"compress/flate"
-
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"syscall"
 
-	_ "embed"
 	"golang.org/x/sys/unix"
 )
 
@@ -53,7 +52,8 @@ func run(options *Options, fork bool) (int, error) {
 	if len(options.Argv) == 0 {
 		options.Argv = []string{BinaryName}
 	}
-
+	// The "io.Reader" below may be replaced by "io.Reader" when
+	// compression is off.
 	binaryReader := io.Reader(bytes.NewReader(compressedBinary))
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -61,7 +61,8 @@ func run(options *Options, fork bool) (int, error) {
 	defer unix.Umask(oldMask)
 
 	tmpFD := -1
-
+	// /tmp is sometimes mounted noexec for "security" reasons. Handle this by
+	// falling back to executing from a memfd.
 	parentDir := os.TempDir()
 	var parentDirStatfs unix.Statfs_t
 	if err := unix.Statfs(parentDir, &parentDirStatfs); err == nil && parentDirStatfs.Flags&unix.ST_NOEXEC == 0 {
@@ -87,7 +88,7 @@ func run(options *Options, fork bool) (int, error) {
 			tmpFile.Close()
 			return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary file: %w", err)
 		}
-
+		// Reopen the file for reading.
 		tmpFileReadOnly, err := os.OpenFile(fmt.Sprintf("/proc/self/fd/%d", tmpFile.Fd()), os.O_RDONLY, 0700)
 		if err != nil {
 			tmpFile.Close()
@@ -102,7 +103,8 @@ func run(options *Options, fork bool) (int, error) {
 		var err error
 		tmpFD, err = unix.MemfdCreate(BinaryName, unix.MFD_ALLOW_SEALING|unix.MFD_EXEC)
 		if err == unix.EINVAL {
-
+			// Assume that the kernel precedes 105ff5339f498 ("mm/memfd: add
+			// MFD_NOEXEC_SEAL and MFD_EXEC"), Linux 6.3+.
 			tmpFD, err = unix.MemfdCreate(BinaryName, unix.MFD_ALLOW_SEALING)
 		}
 		if err != nil {
@@ -114,7 +116,7 @@ func run(options *Options, fork bool) (int, error) {
 		if _, err := io.Copy(tmpFile, binaryReader); err != nil {
 			return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary memfd: %w", err)
 		}
-
+		// Prevent future writes to the memfd.
 		if _, err := unix.FcntlInt(uintptr(tmpFD), unix.F_ADD_SEALS, unix.F_SEAL_SEAL|unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE); err != nil {
 			return 0, fmt.Errorf("cannot seal memfd: %w", err)
 		}
@@ -124,7 +126,10 @@ func run(options *Options, fork bool) (int, error) {
 		return 0, fmt.Errorf("cannot seek temp file back to 0: %w", err)
 	}
 	if fork {
-
+		// Go's syscall/exec_linux.go:forkAndExecInChild1() can clobber FDs
+		// outside of syscall.ProcAttr.Files, including tmpFD, so the FD that
+		// the child execs must be in syscall.ProcAttr.Files to ensure that
+		// it's valid at time of execve().
 		childTmpFD := len(options.Files)
 		files := append(options.Files, uintptr(tmpFD))
 		fdPath := fmt.Sprintf("/proc/self/fd/%d", childTmpFD)

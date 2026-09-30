@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *injectableEndpointRWMutex) Lock() {
-	locking.AddGLock(injectableEndpointprefixIndex, -1)
+	locking.AddGLock(injectableEndpointprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *injectableEndpointRWMutex) NestedLock(i injectableEndpointlockNameIndex) {
-	locking.AddGLock(injectableEndpointprefixIndex, int(i))
+	locking.AddGLock(injectableEndpointprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *injectableEndpointRWMutex) NestedLock(i injectableEndpointlockNameIndex
 // +checklocksignore
 func (m *injectableEndpointRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(injectableEndpointprefixIndex, -1)
+	locking.DelGLock(injectableEndpointprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *injectableEndpointRWMutex) NestedUnlock(i injectableEndpointlockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(injectableEndpointprefixIndex, int(i))
+	locking.DelGLock(injectableEndpointprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *injectableEndpointRWMutex) RLock() {
-	locking.AddGLock(injectableEndpointprefixIndex, -1)
+	locking.AddGLock(injectableEndpointprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *injectableEndpointRWMutex) RLock() {
 // +checklocksignore
 func (m *injectableEndpointRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(injectableEndpointprefixIndex, -1)
+	locking.DelGLock(injectableEndpointprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

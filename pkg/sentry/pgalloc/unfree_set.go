@@ -6,8 +6,11 @@ import (
 
 import (
 	"bytes"
-	"context"
 	"fmt"
+)
+
+import (
+	"context"
 )
 
 // trackGaps is an optional parameter.
@@ -154,7 +157,8 @@ func (s *unfreeSet) LastGap() unfreeGapIterator {
 func (s *unfreeSet) Find(key uint64) (unfreeIterator, unfreeGapIterator) {
 	n := &s.root
 	for {
-
+		// Binary search invariant: the correct value of i lies within [lower,
+		// upper].
 		lower := 0
 		upper := n.nrSegments
 		for lower < upper {
@@ -350,7 +354,7 @@ func (s *unfreeSet) Insert(gap unfreeGapIterator, r __generics_imported0.FileRan
 			return next
 		}
 	}
-
+	// InsertWithoutMergingUnchecked will maintain maxGap if necessary.
 	return s.InsertWithoutMergingUnchecked(gap, r, val)
 }
 
@@ -496,14 +500,24 @@ func (s *unfreeSet) TryInsertWithoutMergingRange(r __generics_imported0.FileRang
 // All existing iterators (including seg, but not including the returned
 // iterator) are invalidated.
 func (s *unfreeSet) Remove(seg unfreeIterator) unfreeGapIterator {
-
+	// We only want to remove directly from a leaf node.
 	if seg.node.hasChildren {
-
+		// Since seg.node has children, the removed segment must have a
+		// predecessor (at the end of the rightmost leaf of its left child
+		// subtree). Move the contents of that predecessor into the removed
+		// segment's position, and remove that predecessor instead. (We choose
+		// to steal the predecessor rather than the successor because removing
+		// from the end of a leaf node doesn't involve any copying unless
+		// merging is required.)
 		victim := seg.PrevSegment()
-
+		// This must be unchecked since until victim is removed, seg and victim
+		// overlap.
 		seg.SetRangeUnchecked(victim.Range())
 		seg.SetValue(victim.Value())
-
+		// Need to update the nextAdjacentNode's maxGap because the gap in between
+		// must have been modified by updating seg.Range() to victim.Range().
+		// seg.NextSegment() must exist since the last segment can't be in a
+		// non-leaf node.
 		nextAdjacentNode := seg.NextSegment().node
 		if unfreetrackGaps != 0 {
 			nextAdjacentNode.updateMaxGapLeaf()
@@ -637,10 +651,11 @@ func (s *unfreeSet) Merge(first, second unfreeIterator) unfreeIterator {
 func (s *unfreeSet) MergeUnchecked(first, second unfreeIterator) unfreeIterator {
 	if first.End() == second.Start() {
 		if mval, ok := (unfreeSetFunctions{}).Merge(first.Range(), first.Value(), second.Range(), second.Value()); ok {
-
+			// N.B. This must be unchecked because until s.Remove(second), first
+			// overlaps second.
 			first.SetEndUnchecked(second.End())
 			first.SetValue(mval)
-
+			// Remove will handle the maxGap update if necessary.
 			return s.Remove(second).PrevSegment()
 		}
 	}
@@ -795,7 +810,7 @@ func (s *unfreeSet) SplitUnchecked(seg unfreeIterator, split uint64) (unfreeIter
 	seg.SetEndUnchecked(split)
 	seg.SetValue(val1)
 	seg2 := s.InsertWithoutMergingUnchecked(seg.NextGap(), __generics_imported0.FileRange{split, end2}, val2)
-
+	// seg may now be invalid due to the Insert.
 	return seg2.PrevSegment(), seg2
 }
 
@@ -1068,7 +1083,9 @@ func (n *unfreenode) rebalanceBeforeInsert(gap unfreeGapIterator) unfreeGapItera
 		gap = n.parent.rebalanceBeforeInsert(gap)
 	}
 	if n.parent == nil {
-
+		// n is root. Move all segments before and after n's median segment
+		// into new child nodes adjacent to the median segment, which is now
+		// the only segment in root.
 		left := &unfreenode{
 			nrSegments:  unfreeminDegree - 1,
 			parent:      n,
@@ -1102,7 +1119,9 @@ func (n *unfreenode) rebalanceBeforeInsert(gap unfreeGapIterator) unfreeGapItera
 		n.hasChildren = true
 		n.children[0] = left
 		n.children[1] = right
-
+		// In this case, n's maxGap won't violated as it's still the root,
+		// but the left and right children should be updated locally as they
+		// are newly split from n.
 		if unfreetrackGaps != 0 {
 			left.updateMaxGapLocal()
 			right.updateMaxGapLocal()
@@ -1115,7 +1134,10 @@ func (n *unfreenode) rebalanceBeforeInsert(gap unfreeGapIterator) unfreeGapItera
 		}
 		return unfreeGapIterator{right, gap.index - unfreeminDegree}
 	}
-
+	// n is non-root. Move n's median segment into its parent node (which can't
+	// be full because we've already invoked n.parent.rebalanceBeforeInsert)
+	// and move all segments after n's median into a new sibling node (the
+	// median segment's right child subtree).
 	copy(n.parent.keys[n.parentIndex+1:], n.parent.keys[n.parentIndex:n.parent.nrSegments])
 	copy(n.parent.values[n.parentIndex+1:], n.parent.values[n.parentIndex:n.parent.nrSegments])
 	n.parent.keys[n.parentIndex], n.parent.values[n.parentIndex] = n.keys[unfreeminDegree-1], n.values[unfreeminDegree-1]
@@ -1143,12 +1165,13 @@ func (n *unfreenode) rebalanceBeforeInsert(gap unfreeGapIterator) unfreeGapItera
 		}
 	}
 	n.nrSegments = unfreeminDegree - 1
-
+	// MaxGap of n's parent is not violated because the segments within is not changed.
+	// n and its sibling's maxGap need to be updated locally as they are two new nodes split from old n.
 	if unfreetrackGaps != 0 {
 		n.updateMaxGapLocal()
 		sibling.updateMaxGapLocal()
 	}
-
+	// gap.node can't be n.parent because gaps are always in leaf nodes.
 	if gap.node != n {
 		return gap
 	}
@@ -1170,10 +1193,27 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 			return gap
 		}
 		if n.parent == nil {
-
+			// Root is allowed to be deficient.
 			return gap
 		}
-
+		// There's one other thing we can do before resorting to unsplitting.
+		// If either sibling node has at least minDegree segments, rotate that
+		// sibling's closest segment through the segment in the parent that
+		// separates us. That is, given:
+		//
+		//      ... D ...
+		//         / \
+		// ... B C]   [E ...
+		//
+		// where the node containing E is deficient, end up with:
+		//
+		//    ... C ...
+		//       / \
+		// ... B]   [D E ...
+		//
+		// As in Set.Remove, prefer rotating from the end of the sibling to the
+		// left: by precondition, n.node has fewer segments (to memcpy) than
+		// the sibling does.
 		if sibling := n.prevSibling(); sibling != nil && sibling.nrSegments >= unfreeminDegree {
 			copy(n.keys[1:], n.keys[:n.nrSegments])
 			copy(n.values[1:], n.values[:n.nrSegments])
@@ -1194,7 +1234,8 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 			}
 			n.nrSegments++
 			sibling.nrSegments--
-
+			// n's parent's maxGap does not need to be updated as its content is unmodified.
+			// n and its sibling must be updated with (new) maxGap because of the shift of keys.
 			if unfreetrackGaps != 0 {
 				n.updateMaxGapLocal()
 				sibling.updateMaxGapLocal()
@@ -1227,7 +1268,8 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 			}
 			n.nrSegments++
 			sibling.nrSegments--
-
+			// n's parent's maxGap does not need to be updated as its content is unmodified.
+			// n and its sibling must be updated with (new) maxGap because of the shift of keys.
 			if unfreetrackGaps != 0 {
 				n.updateMaxGapLocal()
 				sibling.updateMaxGapLocal()
@@ -1240,10 +1282,15 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 			}
 			return gap
 		}
-
+		// Otherwise, we must unsplit.
 		p := n.parent
 		if p.nrSegments == 1 {
-
+			// Merge all segments in both n and its sibling back into n.parent.
+			// This is the reverse of the root splitting case in
+			// node.rebalanceBeforeInsert. (Because we require minDegree >= 3,
+			// only root can have 1 segment in this path, so this reduces the
+			// height of the tree by 1, without violating the constraint that
+			// all leaf nodes remain at the same depth.)
 			left, right := p.children[0], p.children[1]
 			p.nrSegments = left.nrSegments + right.nrSegments + 1
 			p.hasChildren = left.hasChildren
@@ -1264,7 +1311,7 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 				p.children[0] = nil
 				p.children[1] = nil
 			}
-
+			// No need to update maxGap of p as its content is not changed.
 			if gap.node == left {
 				return unfreeGapIterator{p, gap.index}
 			}
@@ -1285,7 +1332,8 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 			left = n
 			right = n.nextSibling()
 		}
-
+		// Fix up gap first since we need the old left.nrSegments, which
+		// merging will change.
 		if gap.node == right {
 			gap = unfreeGapIterator{left, gap.index + left.nrSegments + 1}
 		}
@@ -1310,11 +1358,12 @@ func (n *unfreenode) rebalanceAfterRemove(gap unfreeGapIterator) unfreeGapIterat
 		}
 		p.children[p.nrSegments] = nil
 		p.nrSegments--
-
+		// Update maxGap of left locally, no need to change p and right because
+		// p's contents is not changed and right is already invalid.
 		if unfreetrackGaps != 0 {
 			left.updateMaxGapLocal()
 		}
-
+		// This process robs p of one segment, so recurse into rebalancing p.
 		n = p
 	}
 }
@@ -1329,36 +1378,40 @@ func (n *unfreenode) updateMaxGapLeaf() {
 	}
 	max := n.calculateMaxGapLeaf()
 	if max == n.maxGap.Get() {
-
+		// If new max equals the old maxGap, no update is needed.
 		return
 	}
 	oldMax := n.maxGap.Get()
 	n.maxGap.Set(max)
 	if max > oldMax {
-
+		// Grow ancestor maxGaps.
 		for p := n.parent; p != nil; p = p.parent {
 			if p.maxGap.Get() >= max {
-
+				// p and its ancestors already contain an equal or larger gap.
 				break
 			}
-
+			// Only if new maxGap is larger than parent's
+			// old maxGap, propagate this update to parent.
 			p.maxGap.Set(max)
 		}
 		return
 	}
-
+	// Shrink ancestor maxGaps.
 	for p := n.parent; p != nil; p = p.parent {
 		if p.maxGap.Get() > oldMax {
-
+			// p and its ancestors still contain a larger gap.
 			break
 		}
-
+		// If new max is smaller than the old maxGap, and this gap used
+		// to be the maxGap of its parent, iterate parent's children
+		// and calculate parent's new maxGap.(It's probable that parent
+		// has two children with the old maxGap, but we need to check it anyway.)
 		parentNewMax := p.calculateMaxGapInternal()
 		if p.maxGap.Get() == parentNewMax {
-
+			// p and its ancestors still contain a gap of at least equal size.
 			break
 		}
-
+		// If p's new maxGap differs from the old one, propagate this update.
 		p.maxGap.Set(parentNewMax)
 	}
 }
@@ -1369,10 +1422,10 @@ func (n *unfreenode) updateMaxGapLeaf() {
 // Precondition: trackGaps must be 1.
 func (n *unfreenode) updateMaxGapLocal() {
 	if !n.hasChildren {
-
+		// Leaf node iterates its gaps.
 		n.maxGap.Set(n.calculateMaxGapLeaf())
 	} else {
-
+		// Non-leaf node iterates its children.
 		n.maxGap.Set(n.calculateMaxGapInternal())
 	}
 }
@@ -1623,7 +1676,8 @@ func (seg unfreeIterator) NextSegment() unfreeIterator {
 // PrevGap returns the gap immediately before the iterated segment.
 func (seg unfreeIterator) PrevGap() unfreeGapIterator {
 	if seg.node.hasChildren {
-
+		// Note that this isn't recursive because the last segment in a subtree
+		// must be in a leaf node.
 		return seg.node.children[seg.index].lastSegment().NextGap()
 	}
 	return unfreeGapIterator(seg)
@@ -1764,7 +1818,8 @@ func (gap unfreeGapIterator) NextLargeEnoughGap(minSize uint64) unfreeGapIterato
 		panic("set is not tracking gaps")
 	}
 	if gap.node != nil && gap.node.hasChildren && gap.index == gap.node.nrSegments {
-
+		// If gap is the trailing gap of an non-leaf node,
+		// translate it to the equivalent gap on leaf level.
 		gap.node = gap.NextSegment().node
 		gap.index = 0
 		return gap.nextLargeEnoughGapHelper(minSize)
@@ -1778,16 +1833,18 @@ func (gap unfreeGapIterator) NextLargeEnoughGap(minSize uint64) unfreeGapIterato
 // Preconditions: gap is NOT the trailing gap of a non-leaf node.
 func (gap unfreeGapIterator) nextLargeEnoughGapHelper(minSize uint64) unfreeGapIterator {
 	for {
-
+		// Crawl up the tree if no large enough gap in current node or the
+		// current gap is the trailing one on leaf level.
 		for gap.node != nil &&
 			(gap.node.maxGap.Get() < minSize || (!gap.node.hasChildren && gap.index == gap.node.nrSegments)) {
 			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		}
-
+		// If no large enough gap throughout the whole set, return a terminal
+		// gap iterator.
 		if gap.node == nil {
 			return unfreeGapIterator{}
 		}
-
+		// Iterate subsequent gaps.
 		gap.index++
 		for gap.index <= gap.node.nrSegments {
 			if gap.node.hasChildren {
@@ -1803,7 +1860,8 @@ func (gap unfreeGapIterator) nextLargeEnoughGapHelper(minSize uint64) unfreeGapI
 		}
 		gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		if gap.node != nil && gap.index == gap.node.nrSegments {
-
+			// If gap is the trailing gap of a non-leaf node, crawl up to
+			// parent again and do recursion.
 			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		}
 	}
@@ -1819,7 +1877,8 @@ func (gap unfreeGapIterator) PrevLargeEnoughGap(minSize uint64) unfreeGapIterato
 		panic("set is not tracking gaps")
 	}
 	if gap.node != nil && gap.node.hasChildren && gap.index == 0 {
-
+		// If gap is the first gap of an non-leaf node,
+		// translate it to the equivalent gap on leaf level.
 		gap.node = gap.PrevSegment().node
 		gap.index = gap.node.nrSegments
 		return gap.prevLargeEnoughGapHelper(minSize)
@@ -1833,16 +1892,18 @@ func (gap unfreeGapIterator) PrevLargeEnoughGap(minSize uint64) unfreeGapIterato
 // Preconditions: gap is NOT the first gap of a non-leaf node.
 func (gap unfreeGapIterator) prevLargeEnoughGapHelper(minSize uint64) unfreeGapIterator {
 	for {
-
+		// Crawl up the tree if no large enough gap in current node or the
+		// current gap is the first one on leaf level.
 		for gap.node != nil &&
 			(gap.node.maxGap.Get() < minSize || (!gap.node.hasChildren && gap.index == 0)) {
 			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		}
-
+		// If no large enough gap throughout the whole set, return a terminal
+		// gap iterator.
 		if gap.node == nil {
 			return unfreeGapIterator{}
 		}
-
+		// Iterate previous gaps.
 		gap.index--
 		for gap.index >= 0 {
 			if gap.node.hasChildren {
@@ -1858,7 +1919,8 @@ func (gap unfreeGapIterator) prevLargeEnoughGapHelper(minSize uint64) unfreeGapI
 		}
 		gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		if gap.node != nil && gap.index == 0 {
-
+			// If gap is the first gap of a non-leaf node, crawl up to
+			// parent again and do recursion.
 			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		}
 	}
@@ -1891,7 +1953,8 @@ func unfreesegmentAfterPosition(n *unfreenode, i int) unfreeIterator {
 }
 
 func unfreezeroValueSlice(slice []unfreeInfo) {
-
+	// TODO(jamieliu): check if Go is actually smart enough to optimize a
+	// ClearValue that assigns nil to a memset here.
 	for i := range slice {
 		unfreeSetFunctions{}.ClearValue(&slice[i])
 	}
@@ -2031,9 +2094,11 @@ func (s *unfreeSet) countSegments() (segments int) {
 	}
 	return segments
 }
+
 func (s *unfreeSet) saveRoot() []unfreeFlatSegment {
 	fs := s.ExportSlice()
-
+	// The state package saves data in slice capacity beyond slice length; save
+	// it some time by cutting ours off.
 	fs = fs[:len(fs):len(fs)]
 	return fs
 }

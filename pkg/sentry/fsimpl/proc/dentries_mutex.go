@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *dentriesRWMutex) Lock() {
-	locking.AddGLock(dentriesprefixIndex, -1)
+	locking.AddGLock(dentriesprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *dentriesRWMutex) NestedLock(i dentrieslockNameIndex) {
-	locking.AddGLock(dentriesprefixIndex, int(i))
+	locking.AddGLock(dentriesprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *dentriesRWMutex) NestedLock(i dentrieslockNameIndex) {
 // +checklocksignore
 func (m *dentriesRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(dentriesprefixIndex, -1)
+	locking.DelGLock(dentriesprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *dentriesRWMutex) NestedUnlock(i dentrieslockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(dentriesprefixIndex, int(i))
+	locking.DelGLock(dentriesprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *dentriesRWMutex) RLock() {
-	locking.AddGLock(dentriesprefixIndex, -1)
+	locking.AddGLock(dentriesprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *dentriesRWMutex) RLock() {
 // +checklocksignore
 func (m *dentriesRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(dentriesprefixIndex, -1)
+	locking.DelGLock(dentriesprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

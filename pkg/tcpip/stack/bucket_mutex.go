@@ -30,14 +30,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *bucketRWMutex) Lock() {
-	locking.AddGLock(bucketprefixIndex, -1)
+	locking.AddGLock(bucketprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *bucketRWMutex) NestedLock(i bucketlockNameIndex) {
-	locking.AddGLock(bucketprefixIndex, int(i))
+	locking.AddGLock(bucketprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -45,20 +45,20 @@ func (m *bucketRWMutex) NestedLock(i bucketlockNameIndex) {
 // +checklocksignore
 func (m *bucketRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(bucketprefixIndex, -1)
+	locking.DelGLock(bucketprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *bucketRWMutex) NestedUnlock(i bucketlockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(bucketprefixIndex, int(i))
+	locking.DelGLock(bucketprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *bucketRWMutex) RLock() {
-	locking.AddGLock(bucketprefixIndex, -1)
+	locking.AddGLock(bucketprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -66,7 +66,7 @@ func (m *bucketRWMutex) RLock() {
 // +checklocksignore
 func (m *bucketRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(bucketprefixIndex, -1)
+	locking.DelGLock(bucketprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

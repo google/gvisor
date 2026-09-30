@@ -32,28 +32,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *pipeMutex) Lock() {
-	locking.AddGLock(pipeprefixIndex, -1)
+	locking.AddGLock(pipeprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *pipeMutex) NestedLock(i pipelockNameIndex) {
-	locking.AddGLock(pipeprefixIndex, int(i))
+	locking.AddGLock(pipeprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *pipeMutex) Unlock() {
-	locking.DelGLock(pipeprefixIndex, -1)
+	locking.DelGLock(pipeprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *pipeMutex) NestedUnlock(i pipelockNameIndex) {
-	locking.DelGLock(pipeprefixIndex, int(i))
+	locking.DelGLock(pipeprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

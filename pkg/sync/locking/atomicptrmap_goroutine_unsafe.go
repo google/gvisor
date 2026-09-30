@@ -59,6 +59,17 @@ func init() {
 // concurrent writes to a fixed set of keys. AtomicPtrMap is usually faster in
 // other circumstances.
 type goroutineLocksAtomicPtrMap struct {
+	// AtomicPtrMap is implemented as a hash table with the following
+	// properties:
+	//
+	//	* Collisions are resolved with quadratic probing. Of the two major
+	//		alternatives, Robin Hood linear probing makes it difficult for writers
+	//		to execute in parallel, and bucketing is less effective in Go due to
+	//		lack of SIMD.
+	//
+	//	* The table is optionally divided into shards indexed by hash to further
+	//		reduce unnecessary synchronization.
+
 	shards [1 << goroutineLocksShardOrder]goroutineLocksapmShard
 }
 
@@ -175,11 +186,11 @@ retry:
 		slot := goroutineLocksapmSlotAt(slots, i)
 		slotVal := atomic.LoadPointer(&slot.val)
 		if slotVal == nil {
-
+			// Empty slot; end of probe sequence.
 			return nil
 		}
 		if slotVal == goroutineLocksevacuated() {
-
+			// Racing with rehashing.
 			goto retry
 		}
 		if slot.key == key {
@@ -233,7 +244,7 @@ retry:
 		if (compare && oldVal != goroutineLockstombstone()) || newVal == goroutineLockstombstone() {
 			return nil
 		}
-
+		// Need to allocate a table before insertion.
 		shard.rehash(nil)
 		goto retry
 	}
@@ -247,32 +258,34 @@ retry:
 			if (compare && oldVal != goroutineLockstombstone()) || newVal == goroutineLockstombstone() {
 				return nil
 			}
-
+			// Try to grab this slot for ourselves.
 			shard.dirtyMu.Lock()
 			slotVal = atomic.LoadPointer(&slot.val)
 			if slotVal == nil {
-
+				// Check if we need to rehash before dirtying a slot.
 				if dirty, capacity := shard.dirty+1, mask+1; dirty*goroutineLocksapmRehashThresholdDen >= capacity*goroutineLocksapmRehashThresholdNum {
 					shard.dirtyMu.Unlock()
 					shard.rehash(slots)
 					goto retry
 				}
 				slot.key = key
-				atomic.StorePointer(&slot.val, newVal)
+				atomic.StorePointer(&slot.val, newVal) // transitions slot to full
 				shard.dirty++
 				atomic.AddUintptr(&shard.count, 1)
 				shard.dirtyMu.Unlock()
 				return nil
 			}
-
+			// Raced with another store; the slot is no longer empty. Continue
+			// with the new value of slotVal since we may have raced with
+			// another store of key.
 			shard.dirtyMu.Unlock()
 		}
 		if slotVal == goroutineLocksevacuated() {
-
+			// Racing with rehashing.
 			goto retry
 		}
 		if slot.key == key {
-
+			// We're reusing an existing slot, so rehashing isn't necessary.
 			for {
 				if (compare && oldVal != slotVal) || newVal == slotVal {
 					if slotVal == goroutineLockstombstone() {
@@ -286,7 +299,7 @@ retry:
 						return nil
 					}
 					if newVal == goroutineLockstombstone() {
-						atomic.AddUintptr(&shard.count, ^uintptr(0))
+						atomic.AddUintptr(&shard.count, ^uintptr(0) /* -1 */)
 					}
 					return (*goroutineLocks)(slotVal)
 				}
@@ -296,7 +309,8 @@ retry:
 				}
 			}
 		}
-
+		// This produces a triangular number sequence of offsets from the
+		// initially-probed position.
 		i = (i + inc) & mask
 		inc++
 	}
@@ -310,11 +324,21 @@ func (shard *goroutineLocksapmShard) rehash(oldSlots unsafe.Pointer) {
 	defer shard.rehashMu.Unlock()
 
 	if shard.slots != oldSlots {
-
+		// Raced with another call to rehash().
 		return
 	}
 
-	newSize := uintptr(8)
+	// Determine the size of the new table. Constraints:
+	//
+	//	* The size of the table must be a power of two to ensure that every slot
+	//		is visitable by every probe sequence under quadratic probing with
+	//		triangular numbers.
+	//
+	//	* The size of the table cannot decrease because even if shard.count is
+	//		currently smaller than shard.dirty, concurrent stores that reuse
+	//		existing slots can drive shard.count back up to a maximum of
+	//		shard.dirty.
+	newSize := uintptr(8) // arbitrary initial size
 	if oldSlots != nil {
 		oldSize := shard.mask + 1
 		newSize = oldSize
@@ -323,16 +347,21 @@ func (shard *goroutineLocksapmShard) rehash(oldSlots unsafe.Pointer) {
 		}
 	}
 
+	// Allocate the new table.
 	newSlotsSlice := make([]goroutineLocksapmSlot, newSize)
 	newSlots := unsafe.Pointer(&newSlotsSlice[0])
 	newMask := newSize - 1
 
+	// Start a writer critical section now so that racing users of the old
+	// table that observe evacuated() wait for the new table. (But lock dirtyMu
+	// first since doing so may block, which we don't want to do during the
+	// writer critical section.)
 	shard.dirtyMu.Lock()
 	shard.seq.BeginWrite()
 
 	if oldSlots != nil {
 		realCount := uintptr(0)
-
+		// Copy old entries to the new table.
 		oldMask := shard.mask
 		for i := uintptr(0); i <= oldMask; i++ {
 			oldSlot := goroutineLocksapmSlotAt(oldSlots, i)
@@ -355,10 +384,13 @@ func (shard *goroutineLocksapmShard) rehash(oldSlots unsafe.Pointer) {
 			}
 			realCount++
 		}
-
+		// Update dirty to reflect that tombstones were not copied to the new
+		// table. Use realCount since a concurrent mutator may not have updated
+		// shard.count yet.
 		shard.dirty = realCount
 	}
 
+	// Switch to the new table.
 	atomic.StorePointer(&shard.slots, newSlots)
 	atomic.StoreUintptr(&shard.mask, newMask)
 
@@ -385,7 +417,8 @@ func (m *goroutineLocksAtomicPtrMap) Range(f func(key int64, val *goroutineLocks
 }
 
 func (shard *goroutineLocksapmShard) doRange(f func(key int64, val *goroutineLocks) bool) bool {
-
+	// We have to lock rehashMu because if we handled races with rehashing by
+	// retrying, f could see the same key twice.
 	shard.rehashMu.Lock()
 	defer shard.rehashMu.Unlock()
 	slots := shard.slots

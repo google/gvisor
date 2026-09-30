@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *bridgeRWMutex) Lock() {
-	locking.AddGLock(bridgeprefixIndex, -1)
+	locking.AddGLock(bridgeprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *bridgeRWMutex) NestedLock(i bridgelockNameIndex) {
-	locking.AddGLock(bridgeprefixIndex, int(i))
+	locking.AddGLock(bridgeprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *bridgeRWMutex) NestedLock(i bridgelockNameIndex) {
 // +checklocksignore
 func (m *bridgeRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(bridgeprefixIndex, -1)
+	locking.DelGLock(bridgeprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *bridgeRWMutex) NestedUnlock(i bridgelockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(bridgeprefixIndex, int(i))
+	locking.DelGLock(bridgeprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *bridgeRWMutex) RLock() {
-	locking.AddGLock(bridgeprefixIndex, -1)
+	locking.AddGLock(bridgeprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *bridgeRWMutex) RLock() {
 // +checklocksignore
 func (m *bridgeRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(bridgeprefixIndex, -1)
+	locking.DelGLock(bridgeprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

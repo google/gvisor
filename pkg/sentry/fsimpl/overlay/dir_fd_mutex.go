@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *directoryFDMutex) Lock() {
-	locking.AddGLock(directoryFDprefixIndex, -1)
+	locking.AddGLock(directoryFDprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *directoryFDMutex) NestedLock(i directoryFDlockNameIndex) {
-	locking.AddGLock(directoryFDprefixIndex, int(i))
+	locking.AddGLock(directoryFDprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *directoryFDMutex) Unlock() {
-	locking.DelGLock(directoryFDprefixIndex, -1)
+	locking.DelGLock(directoryFDprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *directoryFDMutex) NestedUnlock(i directoryFDlockNameIndex) {
-	locking.DelGLock(directoryFDprefixIndex, int(i))
+	locking.DelGLock(directoryFDprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

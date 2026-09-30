@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *ipTablesRWMutex) Lock() {
-	locking.AddGLock(ipTablesprefixIndex, -1)
+	locking.AddGLock(ipTablesprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *ipTablesRWMutex) NestedLock(i ipTableslockNameIndex) {
-	locking.AddGLock(ipTablesprefixIndex, int(i))
+	locking.AddGLock(ipTablesprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *ipTablesRWMutex) NestedLock(i ipTableslockNameIndex) {
 // +checklocksignore
 func (m *ipTablesRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(ipTablesprefixIndex, -1)
+	locking.DelGLock(ipTablesprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *ipTablesRWMutex) NestedUnlock(i ipTableslockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(ipTablesprefixIndex, int(i))
+	locking.DelGLock(ipTablesprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *ipTablesRWMutex) RLock() {
-	locking.AddGLock(ipTablesprefixIndex, -1)
+	locking.AddGLock(ipTablesprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *ipTablesRWMutex) RLock() {
 // +checklocksignore
 func (m *ipTablesRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(ipTablesprefixIndex, -1)
+	locking.DelGLock(ipTablesprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

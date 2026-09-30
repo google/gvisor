@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *nicRWMutex) Lock() {
-	locking.AddGLock(nicprefixIndex, -1)
+	locking.AddGLock(nicprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *nicRWMutex) NestedLock(i niclockNameIndex) {
-	locking.AddGLock(nicprefixIndex, int(i))
+	locking.AddGLock(nicprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *nicRWMutex) NestedLock(i niclockNameIndex) {
 // +checklocksignore
 func (m *nicRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(nicprefixIndex, -1)
+	locking.DelGLock(nicprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *nicRWMutex) NestedUnlock(i niclockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(nicprefixIndex, int(i))
+	locking.DelGLock(nicprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *nicRWMutex) RLock() {
-	locking.AddGLock(nicprefixIndex, -1)
+	locking.AddGLock(nicprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *nicRWMutex) RLock() {
 // +checklocksignore
 func (m *nicRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(nicprefixIndex, -1)
+	locking.DelGLock(nicprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

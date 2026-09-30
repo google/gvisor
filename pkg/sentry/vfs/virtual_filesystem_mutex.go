@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *virtualFilesystemMutex) Lock() {
-	locking.AddGLock(virtualFilesystemprefixIndex, -1)
+	locking.AddGLock(virtualFilesystemprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *virtualFilesystemMutex) NestedLock(i virtualFilesystemlockNameIndex) {
-	locking.AddGLock(virtualFilesystemprefixIndex, int(i))
+	locking.AddGLock(virtualFilesystemprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *virtualFilesystemMutex) Unlock() {
-	locking.DelGLock(virtualFilesystemprefixIndex, -1)
+	locking.DelGLock(virtualFilesystemprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *virtualFilesystemMutex) NestedUnlock(i virtualFilesystemlockNameIndex) {
-	locking.DelGLock(virtualFilesystemprefixIndex, int(i))
+	locking.DelGLock(virtualFilesystemprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

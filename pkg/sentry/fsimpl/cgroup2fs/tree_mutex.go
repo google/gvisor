@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *treeRWMutex) Lock() {
-	locking.AddGLock(treeprefixIndex, -1)
+	locking.AddGLock(treeprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *treeRWMutex) NestedLock(i treelockNameIndex) {
-	locking.AddGLock(treeprefixIndex, int(i))
+	locking.AddGLock(treeprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *treeRWMutex) NestedLock(i treelockNameIndex) {
 // +checklocksignore
 func (m *treeRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(treeprefixIndex, -1)
+	locking.DelGLock(treeprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *treeRWMutex) NestedUnlock(i treelockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(treeprefixIndex, int(i))
+	locking.DelGLock(treeprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *treeRWMutex) RLock() {
-	locking.AddGLock(treeprefixIndex, -1)
+	locking.AddGLock(treeprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *treeRWMutex) RLock() {
 // +checklocksignore
 func (m *treeRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(treeprefixIndex, -1)
+	locking.DelGLock(treeprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.

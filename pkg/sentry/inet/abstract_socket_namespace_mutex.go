@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *abstractSocketNamespaceMutex) Lock() {
-	locking.AddGLock(abstractSocketNamespaceprefixIndex, -1)
+	locking.AddGLock(abstractSocketNamespaceprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *abstractSocketNamespaceMutex) NestedLock(i abstractSocketNamespacelockNameIndex) {
-	locking.AddGLock(abstractSocketNamespaceprefixIndex, int(i))
+	locking.AddGLock(abstractSocketNamespaceprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *abstractSocketNamespaceMutex) Unlock() {
-	locking.DelGLock(abstractSocketNamespaceprefixIndex, -1)
+	locking.DelGLock(abstractSocketNamespaceprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *abstractSocketNamespaceMutex) NestedUnlock(i abstractSocketNamespacelockNameIndex) {
-	locking.DelGLock(abstractSocketNamespaceprefixIndex, int(i))
+	locking.DelGLock(abstractSocketNamespaceprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

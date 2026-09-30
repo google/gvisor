@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *deferredDecRefsMutex) Lock() {
-	locking.AddGLock(deferredDecRefsprefixIndex, -1)
+	locking.AddGLock(deferredDecRefsprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *deferredDecRefsMutex) NestedLock(i deferredDecRefslockNameIndex) {
-	locking.AddGLock(deferredDecRefsprefixIndex, int(i))
+	locking.AddGLock(deferredDecRefsprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *deferredDecRefsMutex) Unlock() {
-	locking.DelGLock(deferredDecRefsprefixIndex, -1)
+	locking.DelGLock(deferredDecRefsprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *deferredDecRefsMutex) NestedUnlock(i deferredDecRefslockNameIndex) {
-	locking.DelGLock(deferredDecRefsprefixIndex, int(i))
+	locking.DelGLock(deferredDecRefsprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

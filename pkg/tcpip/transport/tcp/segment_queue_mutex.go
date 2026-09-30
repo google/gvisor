@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *segmentQueueMutex) Lock() {
-	locking.AddGLock(segmentQueueprefixIndex, -1)
+	locking.AddGLock(segmentQueueprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *segmentQueueMutex) NestedLock(i segmentQueuelockNameIndex) {
-	locking.AddGLock(segmentQueueprefixIndex, int(i))
+	locking.AddGLock(segmentQueueprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *segmentQueueMutex) Unlock() {
-	locking.DelGLock(segmentQueueprefixIndex, -1)
+	locking.DelGLock(segmentQueueprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *segmentQueueMutex) NestedUnlock(i segmentQueuelockNameIndex) {
-	locking.DelGLock(segmentQueueprefixIndex, int(i))
+	locking.DelGLock(segmentQueueprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

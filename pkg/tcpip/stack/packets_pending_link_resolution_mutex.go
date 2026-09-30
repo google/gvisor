@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *packetsPendingLinkResolutionMutex) Lock() {
-	locking.AddGLock(packetsPendingLinkResolutionprefixIndex, -1)
+	locking.AddGLock(packetsPendingLinkResolutionprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *packetsPendingLinkResolutionMutex) NestedLock(i packetsPendingLinkResolutionlockNameIndex) {
-	locking.AddGLock(packetsPendingLinkResolutionprefixIndex, int(i))
+	locking.AddGLock(packetsPendingLinkResolutionprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *packetsPendingLinkResolutionMutex) Unlock() {
-	locking.DelGLock(packetsPendingLinkResolutionprefixIndex, -1)
+	locking.DelGLock(packetsPendingLinkResolutionprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *packetsPendingLinkResolutionMutex) NestedUnlock(i packetsPendingLinkResolutionlockNameIndex) {
-	locking.DelGLock(packetsPendingLinkResolutionprefixIndex, int(i))
+	locking.DelGLock(packetsPendingLinkResolutionprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

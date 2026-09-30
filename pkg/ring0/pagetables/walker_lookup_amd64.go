@@ -36,6 +36,7 @@ func (w *lookupWalker) walkPTEs(entries *PTEs, start, end uintptr) (bool, uint16
 			continue
 		}
 
+		// At this point, we are guaranteed that start%pteSize == 0.
 		if !w.visitor.visit(uintptr(start&^(pteSize-1)), entry, pteSize-1) {
 			return false, clearEntries
 		}
@@ -43,6 +44,7 @@ func (w *lookupWalker) walkPTEs(entries *PTEs, start, end uintptr) (bool, uint16
 			clearEntries++
 		}
 
+		// Note that the pte was changed.
 		start += pteSize
 	}
 	return true, clearEntries
@@ -68,12 +70,15 @@ func (w *lookupWalker) walkPMDs(pmdEntries *PTEs, start, end uintptr) (bool, uin
 		pmdEntry := &pmdEntries[pmdIndex]
 		if !pmdEntry.Valid() {
 			if !w.visitor.requiresAlloc() {
-
+				// Skip over this entry.
 				clearEntries++
 				start = nextBoundary
 				continue
 			}
 
+			// This level has 2-MB huge pages. If this
+			// region is continued in a single PMD entry?
+			// As above, we can skip allocating a new page.
 			if start&(pmdSize-1) == 0 && end-start >= pmdSize {
 				pmdEntry.SetSuper()
 				if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
@@ -85,13 +90,14 @@ func (w *lookupWalker) walkPMDs(pmdEntries *PTEs, start, end uintptr) (bool, uin
 				}
 			}
 
-			pteEntries = w.pageTables.Allocator.NewPTEs()
+			// Allocate a new pmd.
+			pteEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 			pmdEntry.setPageTable(w.pageTables, pteEntries)
 
 		} else if pmdEntry.IsSuper() {
-
+			// Does this page need to be split?
 			if w.visitor.requiresSplit() && (start&(pmdSize-1) != 0 || end < lookupnext(start, pmdSize)) {
-
+				// Install the relevant entries.
 				pteEntries = w.pageTables.Allocator.NewPTEs()
 				for index := uint16(0); index < entriesPerPage; index++ {
 					pteEntries[index].Set(
@@ -100,30 +106,34 @@ func (w *lookupWalker) walkPMDs(pmdEntries *PTEs, start, end uintptr) (bool, uin
 				}
 				pmdEntry.setPageTable(w.pageTables, pteEntries)
 			} else {
-
+				// A huge page to be checked directly.
 				if !w.visitor.visit(uintptr(start&^(pmdSize-1)), pmdEntry, pmdSize-1) {
 					return false, clearEntries
 				}
 
+				// Might have been cleared.
 				if !pmdEntry.Valid() {
 					clearEntries++
 				}
 
+				// Note that the huge page was changed.
 				start = nextBoundary
 				continue
 			}
 		} else {
-			pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address())
+			pteEntries = w.pageTables.Allocator.LookupPTEs(pmdEntry.Address()) // escapes: see above.
 		}
 
+		// Map the next level, since this is valid.
 		ok, clearPTEntries := w.walkPTEs(pteEntries, start, nextBoundary)
 		if !ok {
 			return false, clearEntries
 		}
 
+		// Check if we no longer need this page.
 		if clearPTEntries == entriesPerPage {
 			pmdEntry.Clear()
-			w.pageTables.Allocator.FreePTEs(pteEntries)
+			w.pageTables.Allocator.FreePTEs(pteEntries) // escapes: see above.
 			clearEntries++
 		}
 
@@ -152,32 +162,37 @@ func (w *lookupWalker) walkPUDs(pudEntries *PTEs, start, end uintptr) (bool, uin
 		pudEntry := &pudEntries[pudIndex]
 		if !pudEntry.Valid() {
 			if !w.visitor.requiresAlloc() {
-
+				// Skip over this entry.
 				clearEntries++
 				start = nextBoundary
 				continue
 			}
 
+			// This level has 1-GB super pages. Is this
+			// entire region at least as large as a single
+			// PUD entry?  If so, we can skip allocating a
+			// new page for the pmd.
 			if start&(pudSize-1) == 0 && end-start >= pudSize {
 				pudEntry.SetSuper()
 				if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
 					return false, clearEntries
 				}
 				if pudEntry.Valid() {
-
+					// Skip over this entry.
 					start = nextBoundary
 					continue
 				}
 			}
 
-			pmdEntries = w.pageTables.Allocator.NewPTEs()
+			// Allocate a new pud.
+			pmdEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 			pudEntry.setPageTable(w.pageTables, pmdEntries)
 
 		} else if pudEntry.IsSuper() {
-
+			// Does this page need to be split?
 			if w.visitor.requiresSplit() && (start&(pudSize-1) != 0 || end < lookupnext(start, pudSize)) {
-
-				pmdEntries = w.pageTables.Allocator.NewPTEs()
+				// Install the relevant entries.
+				pmdEntries = w.pageTables.Allocator.NewPTEs() // escapes: see above.
 				for index := uint16(0); index < entriesPerPage; index++ {
 					pmdEntries[index].SetSuper()
 					pmdEntries[index].Set(
@@ -186,30 +201,34 @@ func (w *lookupWalker) walkPUDs(pudEntries *PTEs, start, end uintptr) (bool, uin
 				}
 				pudEntry.setPageTable(w.pageTables, pmdEntries)
 			} else {
-
+				// A super page to be checked directly.
 				if !w.visitor.visit(uintptr(start&^(pudSize-1)), pudEntry, pudSize-1) {
 					return false, clearEntries
 				}
 
+				// Might have been cleared.
 				if !pudEntry.Valid() {
 					clearEntries++
 				}
 
+				// Note that the super page was changed.
 				start = nextBoundary
 				continue
 			}
 		} else {
-			pmdEntries = w.pageTables.Allocator.LookupPTEs(pudEntry.Address())
+			pmdEntries = w.pageTables.Allocator.LookupPTEs(pudEntry.Address()) // escapes: see above.
 		}
 
+		// Map the next level, since this is valid.
 		ok, clearPMDEntries := w.walkPMDs(pmdEntries, start, nextBoundary)
 		if !ok {
 			return false, clearEntries
 		}
 
+		// Check if we no longer need this page.
 		if clearPMDEntries == entriesPerPage {
 			pudEntry.Clear()
-			w.pageTables.Allocator.FreePTEs(pmdEntries)
+			w.pageTables.Allocator.FreePTEs(pmdEntries) // escapes: see above.
 			clearEntries++
 		}
 
@@ -223,7 +242,7 @@ func (w *lookupWalker) walkPUDs(pudEntries *PTEs, start, end uintptr) (bool, uin
 //
 //go:nosplit
 func (w *lookupWalker) iterateRangeCanonical(start, end uintptr) bool {
-
+	// Start at very top level of page tables and walk down.
 	for start < end {
 		var pudEntries *PTEs
 		nextBoundary := lookupaddrEnd(start, end, pgdSize)
@@ -232,39 +251,42 @@ func (w *lookupWalker) iterateRangeCanonical(start, end uintptr) bool {
 		if !w.pageTables.largeAddressesEnabled {
 			if !pgdEntry.Valid() {
 				if !w.visitor.requiresAlloc() {
-
+					// Skip over this entry.
 					start = nextBoundary
 					continue
 				}
 
-				pudEntries = w.pageTables.Allocator.NewPTEs()
+				// Allocate a new pgd.
+				pudEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
 				pgdEntry.setPageTable(w.pageTables, pudEntries)
 			} else {
-				pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
+				pudEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()) // escapes: see above.
 			}
-
+			// Map the next level.
 			ok, clearPUDEntries := w.walkPUDs(pudEntries, start, nextBoundary)
 			if !ok {
 				return false
 			}
 
+			// Check if we no longer need this page table.
 			if clearPUDEntries == entriesPerPage {
 				pgdEntry.Clear()
-				w.pageTables.Allocator.FreePTEs(pudEntries)
+				w.pageTables.Allocator.FreePTEs(pudEntries) // escapes: see above.
 			}
 		} else {
 			var p4dEntries *PTEs
 			if !pgdEntry.Valid() {
 				if !w.visitor.requiresAlloc() {
-
+					// Skip over this entry.
 					start = nextBoundary
 					continue
 				}
 
-				p4dEntries = w.pageTables.Allocator.NewPTEs()
+				// Allocate a new pgd.
+				p4dEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
 				pgdEntry.setPageTable(w.pageTables, p4dEntries)
 			} else {
-				p4dEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address())
+				p4dEntries = w.pageTables.Allocator.LookupPTEs(pgdEntry.Address()) // escapes: see above.
 			}
 			var clearP4DEntries uint16 = 0
 			p4dStart := start
@@ -275,16 +297,16 @@ func (w *lookupWalker) iterateRangeCanonical(start, end uintptr) bool {
 				p4dEntry := &p4dEntries[p4dIndex]
 				if !p4dEntry.Valid() {
 					if !w.visitor.requiresAlloc() {
-
+						// Skip over this entry.
 						clearP4DEntries++
 						p4dStart = nextP4DBoundary
 						continue
 					}
-
-					pudEntries = w.pageTables.Allocator.NewPTEs()
+					// Allocate a new pud.
+					pudEntries = w.pageTables.Allocator.NewPTEs() // escapes: depends on allocator.
 					p4dEntry.setPageTable(w.pageTables, pudEntries)
 				} else {
-					pudEntries = w.pageTables.Allocator.LookupPTEs(p4dEntry.Address())
+					pudEntries = w.pageTables.Allocator.LookupPTEs(p4dEntry.Address()) // escapes: see above.
 				}
 
 				ok, clearPUDEntries := w.walkPUDs(pudEntries, p4dStart, nextP4DBoundary)
@@ -293,19 +315,21 @@ func (w *lookupWalker) iterateRangeCanonical(start, end uintptr) bool {
 				}
 				if clearPUDEntries == entriesPerPage {
 					p4dEntry.Clear()
-					w.pageTables.Allocator.FreePTEs(pudEntries)
+					w.pageTables.Allocator.FreePTEs(pudEntries) // escapes: see above.
 					clearP4DEntries++
 				}
 
 				p4dStart = nextP4DBoundary
 			}
 
+			// Check if we no longer need this page table.
 			if clearP4DEntries == entriesPerPage {
 				pgdEntry.Clear()
-				w.pageTables.Allocator.FreePTEs(p4dEntries)
+				w.pageTables.Allocator.FreePTEs(p4dEntries) // escapes: see above.
 			}
 		}
 
+		// Advance to the next PGD entry's range for the next loop.
 		start = nextBoundary
 	}
 	return true

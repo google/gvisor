@@ -32,28 +32,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *netstackLinkMutex) Lock() {
-	locking.AddGLock(netstackLinkprefixIndex, -1)
+	locking.AddGLock(netstackLinkprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *netstackLinkMutex) NestedLock(i netstackLinklockNameIndex) {
-	locking.AddGLock(netstackLinkprefixIndex, int(i))
+	locking.AddGLock(netstackLinkprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *netstackLinkMutex) Unlock() {
-	locking.DelGLock(netstackLinkprefixIndex, -1)
+	locking.DelGLock(netstackLinkprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *netstackLinkMutex) NestedUnlock(i netstackLinklockNameIndex) {
-	locking.DelGLock(netstackLinkprefixIndex, int(i))
+	locking.DelGLock(netstackLinkprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

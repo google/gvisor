@@ -30,28 +30,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *pagesUsedMutex) Lock() {
-	locking.AddGLock(pagesUsedprefixIndex, -1)
+	locking.AddGLock(pagesUsedprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *pagesUsedMutex) NestedLock(i pagesUsedlockNameIndex) {
-	locking.AddGLock(pagesUsedprefixIndex, int(i))
+	locking.AddGLock(pagesUsedprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *pagesUsedMutex) Unlock() {
-	locking.DelGLock(pagesUsedprefixIndex, -1)
+	locking.DelGLock(pagesUsedprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *pagesUsedMutex) NestedUnlock(i pagesUsedlockNameIndex) {
-	locking.DelGLock(pagesUsedprefixIndex, int(i))
+	locking.DelGLock(pagesUsedprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

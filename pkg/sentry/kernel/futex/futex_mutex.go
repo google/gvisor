@@ -32,28 +32,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *futexBucketMutex) Lock() {
-	locking.AddGLock(futexBucketprefixIndex, -1)
+	locking.AddGLock(futexBucketprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *futexBucketMutex) NestedLock(i futexBucketlockNameIndex) {
-	locking.AddGLock(futexBucketprefixIndex, int(i))
+	locking.AddGLock(futexBucketprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *futexBucketMutex) Unlock() {
-	locking.DelGLock(futexBucketprefixIndex, -1)
+	locking.DelGLock(futexBucketprefixIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *futexBucketMutex) NestedUnlock(i futexBucketlockNameIndex) {
-	locking.DelGLock(futexBucketprefixIndex, int(i))
+	locking.DelGLock(futexBucketprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 

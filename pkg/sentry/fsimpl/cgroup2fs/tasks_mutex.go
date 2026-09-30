@@ -28,14 +28,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *tasksRWMutex) Lock() {
-	locking.AddGLock(tasksprefixIndex, -1)
+	locking.AddGLock(tasksprefixIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *tasksRWMutex) NestedLock(i taskslockNameIndex) {
-	locking.AddGLock(tasksprefixIndex, int(i))
+	locking.AddGLock(tasksprefixIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
@@ -43,20 +43,20 @@ func (m *tasksRWMutex) NestedLock(i taskslockNameIndex) {
 // +checklocksignore
 func (m *tasksRWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(tasksprefixIndex, -1)
+	locking.DelGLock(tasksprefixIndex, -1) // escapes: lockdep.
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *tasksRWMutex) NestedUnlock(i taskslockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(tasksprefixIndex, int(i))
+	locking.DelGLock(tasksprefixIndex, int(i)) // escapes: lockdep.
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *tasksRWMutex) RLock() {
-	locking.AddGLock(tasksprefixIndex, -1)
+	locking.AddGLock(tasksprefixIndex, -1) // escapes: lockdep.
 	m.mu.RLock()
 }
 
@@ -64,7 +64,7 @@ func (m *tasksRWMutex) RLock() {
 // +checklocksignore
 func (m *tasksRWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(tasksprefixIndex, -1)
+	locking.DelGLock(tasksprefixIndex, -1) // escapes: lockdep.
 }
 
 // RLockBypass locks m for reading without executing the validator.
