@@ -81,6 +81,7 @@ go_library(
     ],
     marshal = True,
     visibility = [
+        "//pkg/control/api:__pkg__",
         "//pkg/sentry:internal",
         "//test/e2e:__subpackages__",
     ],

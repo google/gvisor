@@ -26,7 +26,7 @@ import (
 
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -275,13 +275,13 @@ func TestJobControlSignalExec(t *testing.T) {
 	// may be a different shell or have a different configuration (such
 	// as disabling interactive mode and job control). Since we want to
 	// explicitly test interactive mode, use /bin/bash. See b/116981926.
-	execArgs := &control.ExecArgs{
+	execArgs := &api.ExecArgs{
 		Filename: "/bin/bash",
 		// Don't let bash execute from profile or rc files, otherwise
 		// our PID counts get messed up.
 		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
 		// Pass the pty replica as FD 0, 1, and 2.
-		FilePayload: control.NewFilePayload(map[int]*os.File{
+		FilePayload: api.NewFilePayload(map[int]*os.File{
 			0: ptyReplica, 1: ptyReplica, 2: ptyReplica,
 		}, nil),
 		StdioIsPty: true,
@@ -296,7 +296,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	}
 
 	// Make sure all the processes are running.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		// Root container process.
 		newProcessBuilder().Cmd("sleep").Process(),
 		// Bash from exec process.
@@ -439,7 +439,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	}()
 
 	// Wait for bash to start.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().PID(1).Cmd("bash").Process(),
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
@@ -579,7 +579,7 @@ func TestMultiContainerTerminal(t *testing.T) {
 				}()
 
 				// Wait for bash to start.
-				expectedPL := []*control.Process{
+				expectedPL := []*api.Process{
 					newProcessBuilder().Cmd("bash").Process(),
 				}
 				if err := waitForProcessList(tc.container, expectedPL); err != nil {

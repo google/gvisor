@@ -21,8 +21,8 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/control/api",
         "//pkg/log",
-        "//pkg/sentry/control",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/hostmm",
@@ -79,11 +79,11 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/control/api",
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/seccheck/scsdk",
         "//pkg/sentry/checkpoint",
-        "//pkg/sentry/control",
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/fscheckpoint:fscheckpoint_proto_go_proto",
         "//pkg/sentry/fsimpl/erofs",

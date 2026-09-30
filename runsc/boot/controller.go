@@ -28,6 +28,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -517,9 +518,9 @@ func (cm *containerManager) DestroySubcontainer(cid *string, _ *struct{}) error 
 
 // ExecuteAsync starts running a command on a created or running sandbox. It
 // returns the PID of the new process.
-func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) error {
+func (cm *containerManager) ExecuteAsync(args *api.ExecArgs, pid *int32) error {
 	log.Debugf("containerManager.ExecuteAsync, cid: %s, args: %+v", args.ContainerID, args)
-	tgid, err := cm.l.executeAsync(args)
+	tgid, err := cm.l.executeAsync(&control.ExecArgs{ExecArgs: *args})
 	if err != nil {
 		log.Debugf("containerManager.ExecuteAsync failed, cid: %s, args: %+v, err: %v", args.ContainerID, args, err)
 		return err

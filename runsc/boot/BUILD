@@ -41,6 +41,7 @@ go_library(
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/control/api",
         "//pkg/control/server",
         "//pkg/coverage",
         "//pkg/cpuid",

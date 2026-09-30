@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/donation"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -166,7 +166,7 @@ func Start(opts Opts) func() {
 		log.Infof("Block profiling enabled")
 		file := os.NewFile(fd, "profile-block")
 
-		runtime.SetBlockProfileRate(control.DefaultBlockProfileRate)
+		runtime.SetBlockProfileRate(api.DefaultBlockProfileRate)
 		maybeEnablePeriodicGC()
 		onStopProfiling = append(onStopProfiling, func() {
 			if err := pprof.Lookup("block").WriteTo(file, 0); err != nil {
@@ -208,7 +208,7 @@ func Start(opts Opts) func() {
 		log.Infof("Mutex profiling enabled")
 		file := os.NewFile(fd, "profile-mutex")
 
-		prev := runtime.SetMutexProfileFraction(control.DefaultMutexProfileRate)
+		prev := runtime.SetMutexProfileFraction(api.DefaultMutexProfileRate)
 		maybeEnablePeriodicGC()
 		onStopProfiling = append(onStopProfiling, func() {
 			if err := pprof.Lookup("mutex").WriteTo(file, 0); err != nil {

@@ -19,6 +19,15 @@ import (
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
+// TarRootfsUpperLayerOpts contains options for the TarRootfsUpperLayer RPC.
+type TarRootfsUpperLayerOpts struct {
+	// ContainerID identifies which container's rootfs upper layer should be
+	// serialized.
+	ContainerID string
+	// FilePayload contains the destination for output.
+	urpc.FilePayload
+}
+
 // ReadOpts contains options for the Fs.Read RPC call.
 type ReadOpts struct {
 	// ContainerID identifies which container's filesystem to read from.

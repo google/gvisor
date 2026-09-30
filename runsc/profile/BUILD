@@ -13,8 +13,8 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/control/api",
         "//pkg/log",
-        "//pkg/sentry/control",
         "//runsc/config",
         "//runsc/donation",
         "//runsc/flag",

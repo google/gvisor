@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -49,7 +50,6 @@ import (
 	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -424,7 +424,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		// The control server is up and the sandbox was configured to export metrics.
 		// We must gather data about registered metrics prior to any process starting in the sandbox.
 		log.Debugf("Getting metric registration information from sandbox %q", s.ID)
-		var registeredMetrics control.MetricsRegistrationResponse
+		var registeredMetrics api.MetricsRegistrationResponse
 		if err := s.call(boot.MetricsGetRegistered, nil, &registeredMetrics); err != nil {
 			return nil, fmt.Errorf("cannot get registered metrics: %v", err)
 		}
@@ -722,9 +722,9 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 
 // Processes retrieves the list of processes and associated metadata for a
 // given container in this sandbox.
-func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
+func (s *Sandbox) Processes(cid string) ([]*api.Process, error) {
 	log.Debugf("Getting processes for container %q in sandbox %q", cid, s.ID)
-	var pl []*control.Process
+	var pl []*api.Process
 	if err := s.call(boot.ContMgrProcesses, &cid, &pl); err != nil {
 		return nil, fmt.Errorf("retrieving process data from sandbox: %v", err)
 	}
@@ -794,7 +794,7 @@ func (s *Sandbox) NewCGroup() (cgroup.Cgroup, error) {
 
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
-func (s *Sandbox) Execute(conf *config.Config, args *control.ExecArgs) (int32, error) {
+func (s *Sandbox) Execute(conf *config.Config, args *api.ExecArgs) (int32, error) {
 	log.Debugf("Executing new process in container %q in sandbox %q", args.ContainerID, s.ID)
 
 	// Stdios are those files which have an FD <= 2 in the process. We do not
@@ -1813,14 +1813,14 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		}
 	}
 
-	opt := control.SaveOpts{
+	opt := api.SaveOpts{
 		Metadata:                       opts.Compression.ToMetadata(),
 		AppMFExcludeCommittedZeroPages: opts.ExcludeCommittedZeroPages,
 		Resume:                         opts.Resume,
 		CudaCheckpointPath:             opts.CudaCheckpointPath,
 		CudaCheckpointSequential:       opts.CudaCheckpointSequential,
 		SplitFSCheckpointPaths:         opts.SplitFSCheckpointPaths,
-		ExecOpts: control.SaveRestoreExecOpts{
+		ExecOpts: api.SaveRestoreExecOpts{
 			Argv:        opts.SaveRestoreExecArgv,
 			Timeout:     opts.SaveRestoreExecTimeout,
 			ContainerID: opts.SaveRestoreExecContainerID,
@@ -1847,7 +1847,7 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	return nil
 }
 
-func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, opts CheckpointOpts, opt *api.SaveOpts) error {
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-writes")
 	if err != nil {
 		return err
@@ -1862,7 +1862,7 @@ func (s *Sandbox) setCheckpointOptsFiles(conf *config.Config, imagePath string, 
 	return nil
 }
 
-func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath string, opts CheckpointOpts, opt *control.SaveOpts) error {
+func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath string, opts CheckpointOpts, opt *api.SaveOpts) error {
 	files, err := createSaveFiles(imagePath, opts.Direct, opts.Compression)
 	if err != nil {
 		return err
@@ -2285,21 +2285,21 @@ func (s *Sandbox) Resume(cid string) error {
 }
 
 // Usage sends the collect call for a container in the sandbox.
-func (s *Sandbox) Usage(Full bool) (control.MemoryUsage, error) {
+func (s *Sandbox) Usage(Full bool) (api.MemoryUsage, error) {
 	log.Debugf("Usage sandbox %q", s.ID)
-	opts := control.MemoryUsageOpts{Full: Full}
-	var m control.MemoryUsage
+	opts := api.MemoryUsageOpts{Full: Full}
+	var m api.MemoryUsage
 	if err := s.call(boot.UsageCollect, &opts, &m); err != nil {
-		return control.MemoryUsage{}, fmt.Errorf("collecting usage: %w", err)
+		return api.MemoryUsage{}, fmt.Errorf("collecting usage: %w", err)
 	}
 	return m, nil
 }
 
 // UsageFD sends the usagefd call for a container in the sandbox.
-func (s *Sandbox) UsageFD() (*control.MemoryUsageRecord, error) {
+func (s *Sandbox) UsageFD() (*MemoryUsageRecord, error) {
 	log.Debugf("Usage sandbox %q", s.ID)
-	opts := control.MemoryUsageFileOpts{Version: 1}
-	var m control.MemoryUsageFile
+	opts := api.MemoryUsageFileOpts{Version: 1}
+	var m api.MemoryUsageFile
 	if err := s.call(boot.UsageUsageFD, &opts, &m); err != nil {
 		return nil, fmt.Errorf("collecting usage FD: %w", err)
 	}
@@ -2307,7 +2307,7 @@ func (s *Sandbox) UsageFD() (*control.MemoryUsageRecord, error) {
 	if len(m.FilePayload.Files) != 2 {
 		return nil, fmt.Errorf("wants exactly two fds")
 	}
-	return control.NewMemoryUsageRecord(*m.FilePayload.Files[0], *m.FilePayload.Files[1])
+	return NewMemoryUsageRecord(*m.FilePayload.Files[0], *m.FilePayload.Files[1])
 }
 
 // GetRegisteredMetrics returns metric registration data from the sandbox.
@@ -2334,7 +2334,7 @@ func (s *Sandbox) TimeSaved() (cpu, wall time.Duration) {
 // ExportMetrics returns a snapshot of metric values from the sandbox in Prometheus format.
 //
 // +checklocksexclude:s.savingsMu
-func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Snapshot, error) {
+func (s *Sandbox) ExportMetrics(opts api.MetricsExportOpts) (*prometheus.Snapshot, error) {
 	log.Debugf("Metrics export sandbox %q", s.ID)
 
 	// Update time saved metrics before exporting, if not exported already for
@@ -2359,7 +2359,7 @@ func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Sna
 		}
 	}
 
-	var data control.MetricsExportData
+	var data api.MetricsExportData
 	if err := s.call(boot.MetricsExport, &opts, &data); err != nil {
 		return nil, err
 	}
@@ -2416,7 +2416,7 @@ func (s *Sandbox) HeapProfile(f *os.File, delay time.Duration) error {
 		log.Infof("Delaying heap profile collection for %v", delay)
 	}
 	log.Debugf("Heap profile %q", s.ID)
-	opts := control.HeapProfileOpts{
+	opts := api.HeapProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 		Delay:       delay,
 	}
@@ -2426,7 +2426,7 @@ func (s *Sandbox) HeapProfile(f *os.File, delay time.Duration) error {
 // GoroutineProfile writes a goroutine stack dump to the given file.
 func (s *Sandbox) GoroutineProfile(f *os.File) error {
 	log.Debugf("Goroutine profile %q", s.ID)
-	opts := control.GoroutineProfileOpts{
+	opts := api.GoroutineProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 	}
 	return s.call(boot.ProfileGoroutine, &opts, nil)
@@ -2435,7 +2435,7 @@ func (s *Sandbox) GoroutineProfile(f *os.File) error {
 // CPUProfile collects a CPU profile.
 func (s *Sandbox) CPUProfile(f *os.File, duration time.Duration) error {
 	log.Debugf("CPU profile %q", s.ID)
-	opts := control.CPUProfileOpts{
+	opts := api.CPUProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 		Duration:    duration,
 	}
@@ -2445,7 +2445,7 @@ func (s *Sandbox) CPUProfile(f *os.File, duration time.Duration) error {
 // BlockProfile writes a block profile to the given file.
 func (s *Sandbox) BlockProfile(f *os.File, duration time.Duration) error {
 	log.Debugf("Block profile %q", s.ID)
-	opts := control.BlockProfileOpts{
+	opts := api.BlockProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 		Duration:    duration,
 	}
@@ -2455,7 +2455,7 @@ func (s *Sandbox) BlockProfile(f *os.File, duration time.Duration) error {
 // MutexProfile writes a mutex profile to the given file.
 func (s *Sandbox) MutexProfile(f *os.File, duration time.Duration) error {
 	log.Debugf("Mutex profile %q", s.ID)
-	opts := control.MutexProfileOpts{
+	opts := api.MutexProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 		Duration:    duration,
 	}
@@ -2465,7 +2465,7 @@ func (s *Sandbox) MutexProfile(f *os.File, duration time.Duration) error {
 // Trace collects an execution trace.
 func (s *Sandbox) Trace(f *os.File, duration time.Duration) error {
 	log.Debugf("Trace %q", s.ID)
-	opts := control.TraceProfileOpts{
+	opts := api.TraceProfileOpts{
 		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
 		Duration:    duration,
 	}
@@ -2473,7 +2473,7 @@ func (s *Sandbox) Trace(f *os.File, duration time.Duration) error {
 }
 
 // ChangeLogging changes logging options.
-func (s *Sandbox) ChangeLogging(args control.LoggingArgs) error {
+func (s *Sandbox) ChangeLogging(args api.LoggingArgs) error {
 	log.Debugf("Change logging start %q", s.ID)
 	if err := s.call(boot.LoggingChange, &args, nil); err != nil {
 		return fmt.Errorf("changing sandbox %q logging: %w", s.ID, err)
@@ -2620,16 +2620,16 @@ func checkBinaryPermissions(conf *config.Config) error {
 }
 
 // CgroupsReadControlFile reads a single cgroupfs control file in the sandbox.
-func (s *Sandbox) CgroupsReadControlFile(file control.CgroupControlFile) (string, error) {
+func (s *Sandbox) CgroupsReadControlFile(file api.CgroupControlFile) (string, error) {
 	log.Debugf("CgroupsReadControlFiles sandbox %q", s.ID)
-	args := control.CgroupsReadArgs{
-		Args: []control.CgroupsReadArg{
+	args := api.CgroupsReadArgs{
+		Args: []api.CgroupsReadArg{
 			{
 				File: file,
 			},
 		},
 	}
-	var out control.CgroupsResults
+	var out api.CgroupsResults
 	if err := s.call(boot.CgroupsReadControlFiles, &args, &out); err != nil {
 		return "", err
 	}
@@ -2640,17 +2640,17 @@ func (s *Sandbox) CgroupsReadControlFile(file control.CgroupControlFile) (string
 }
 
 // CgroupsWriteControlFile writes a single cgroupfs control file in the sandbox.
-func (s *Sandbox) CgroupsWriteControlFile(file control.CgroupControlFile, value string) error {
+func (s *Sandbox) CgroupsWriteControlFile(file api.CgroupControlFile, value string) error {
 	log.Debugf("CgroupsReadControlFiles sandbox %q", s.ID)
-	args := control.CgroupsWriteArgs{
-		Args: []control.CgroupsWriteArg{
+	args := api.CgroupsWriteArgs{
+		Args: []api.CgroupsWriteArg{
 			{
 				File:  file,
 				Value: value,
 			},
 		},
 	}
-	var out control.CgroupsResults
+	var out api.CgroupsResults
 	if err := s.call(boot.CgroupsWriteControlFiles, &args, &out); err != nil {
 		return err
 	}
@@ -2828,7 +2828,7 @@ func (s *Sandbox) ContainerRuntimeState(cid string) (boot.ContainerRuntimeState,
 // returns an error. It writes the tar file to outFD.
 func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File) error {
 	log.Debugf("TarRootfsUpperLayer, sandbox: %q, container: %q", s.ID, containerID)
-	opts := control.TarRootfsUpperLayerOpts{
+	opts := api.TarRootfsUpperLayerOpts{
 		ContainerID: containerID,
 		FilePayload: urpc.FilePayload{Files: []*os.File{outFD}},
 	}
@@ -2841,7 +2841,7 @@ func (s *Sandbox) TarRootfsUpperLayer(containerID string, outFD *os.File) error 
 // ReadFile reads a file of the sandbox from the given container (or root container if containerID is empty) up to the specified size from the specified offset.
 func (s *Sandbox) ReadFile(containerID, path string, offset, size int64, outFD *os.File) error {
 	log.Debugf("ReadFile, sandbox: %q, container: %q, path: %q, offset: %d, size: %d", s.ID, containerID, path, offset, size)
-	opts := control.ReadOpts{
+	opts := api.ReadOpts{
 		ContainerID: containerID,
 		Path:        path,
 		Offset:      offset,

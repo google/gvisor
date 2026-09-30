@@ -21,8 +21,8 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/prometheus"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -85,7 +85,7 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		util.Fatalf("Cannot compute Prometheus labels of sandbox: %v", err)
 	}
 
-	snapshot, err := cont.Sandbox.ExportMetrics(control.MetricsExportOpts{
+	snapshot, err := cont.Sandbox.ExportMetrics(api.MetricsExportOpts{
 		OnlyMetrics: m.sandboxMetricsFilter,
 	})
 	if err != nil {

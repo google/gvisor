@@ -34,9 +34,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
@@ -229,7 +229,7 @@ func querySandboxMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *p
 	canceled := make(chan struct{}, 1)
 	defer close(canceled)
 	go func() {
-		snapshot, err := sand.ExportMetrics(control.MetricsExportOpts{
+		snapshot, err := sand.ExportMetrics(api.MetricsExportOpts{
 			OnlyMetrics: metricsFilter,
 		})
 		res := struct {

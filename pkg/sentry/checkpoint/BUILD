@@ -8,7 +8,10 @@ go_library(
     name = "checkpoint",
     srcs = ["checkpoint.go"],
     importpath = "gvisor.dev/gvisor/pkg/sentry/checkpoint",
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/control/api:__pkg__",
+        "//pkg/sentry:internal",
+    ],
 )
 
 go_test(

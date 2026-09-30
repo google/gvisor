@@ -18,9 +18,9 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/control/api",
         "//pkg/log",
         "//pkg/prometheus",
-        "//pkg/sentry/control",
         "//pkg/state",
         "//pkg/sync",
         "//runsc/config",

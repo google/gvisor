@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/control/api"
 	controlserver "gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/prometheus"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/boot"
 )
 
@@ -57,7 +57,7 @@ func (cm *containerManager) GetSavings(_ *struct{}, savings *boot.Savings) error
 // Metrics supplies an empty snapshot through the metrics control RPC.
 type Metrics struct{}
 
-func (*Metrics) Export(_ *control.MetricsExportOpts, data *control.MetricsExportData) error {
+func (*Metrics) Export(_ *api.MetricsExportOpts, data *api.MetricsExportData) error {
 	data.Snapshot = prometheus.NewSnapshot()
 	return nil
 }
@@ -102,7 +102,7 @@ func TestConcurrentExportSavings(t *testing.T) {
 			exportDone := make(chan struct{}, 2)
 			for range 2 {
 				wg.Go(func() {
-					if _, err := s.ExportMetrics(control.MetricsExportOpts{}); err != nil {
+					if _, err := s.ExportMetrics(api.MetricsExportOpts{}); err != nil {
 						t.Errorf("ExportMetrics: %v", err)
 					}
 					exportDone <- struct{}{}

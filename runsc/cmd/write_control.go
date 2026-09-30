@@ -20,7 +20,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -86,7 +86,7 @@ func (r *WriteControl) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 		util.Fatalf("loading container: %v", err)
 	}
 
-	err = c.Sandbox.CgroupsWriteControlFile(control.CgroupControlFile{
+	err = c.Sandbox.CgroupsWriteControlFile(api.CgroupControlFile{
 		Controller: f.Arg(1),
 		Path:       f.Arg(2),
 		Name:       f.Arg(3),

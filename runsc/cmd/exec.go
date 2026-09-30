@@ -28,8 +28,8 @@ import (
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -184,7 +184,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 	}()
 
-	e.FilePayload = control.NewFilePayload(fdMap, execFile)
+	e.FilePayload = api.NewFilePayload(fdMap, execFile)
 
 	// containerd expects an actual process to represent the container being
 	// executed. If detach was specified, starts a child in non-detach mode,
@@ -196,7 +196,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	return ex.exec(conf, c, e, waitStatus)
 }
 
-func (ex *Exec) exec(conf *config.Config, c *container.Container, e *control.ExecArgs, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
+func (ex *Exec) exec(conf *config.Config, c *container.Container, e *api.ExecArgs, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	// Start the new process and get its pid.
 	pid, err := c.Execute(conf, e)
 	if err != nil {
@@ -334,7 +334,7 @@ func (ex *Exec) execChildAndWait(waitStatus *unix.WaitStatus) subcommands.ExitSt
 
 // parseArgs parses exec information from the command line or a JSON file
 // depending on whether the --process flag was used.
-func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*api.ExecArgs, error) {
 	if ex.execPath != "" && ex.execFD >= 0 {
 		return nil, fmt.Errorf("--exec-path and --exec-fd are mutually exclusive")
 	}
@@ -358,7 +358,7 @@ func (ex *Exec) parseArgs(f *flag.FlagSet, p *specs.Process, enableRaw bool) (*c
 	return e, err
 }
 
-func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*api.ExecArgs, error) {
 	extraKGIDs := make([]auth.KGID, 0, len(p.User.AdditionalGids)+len(ex.extraKGIDs))
 	for _, kgid := range p.User.AdditionalGids {
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
@@ -393,7 +393,7 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 		kgid = ex.user.kgid
 	}
 
-	return &control.ExecArgs{
+	return &api.ExecArgs{
 		Filename:         ex.execPath,
 		Argv:             argv,
 		Envv:             envv,
@@ -408,7 +408,7 @@ func (ex *Exec) argsFromCLI(p *specs.Process, argv []string, enableRaw bool) (*c
 	}, nil
 }
 
-func (ex *Exec) argsFromProcessFile(specProc *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func (ex *Exec) argsFromProcessFile(specProc *specs.Process, enableRaw bool) (*api.ExecArgs, error) {
 	f, err := os.Open(ex.processPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening process file: %s, %v", ex.processPath, err)
@@ -439,7 +439,7 @@ func validateProcessSpec(p *specs.Process) error {
 
 // argsFromProcess performs all the non-IO conversion from the Process struct
 // to ExecArgs.
-func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) (*control.ExecArgs, error) {
+func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) (*api.ExecArgs, error) {
 	// Create capabilities.
 	procCaps := p.Capabilities
 	if procCaps == nil {
@@ -462,7 +462,7 @@ func argsFromProcess(specProc *specs.Process, p *specs.Process, enableRaw bool) 
 		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
 	}
 
-	return &control.ExecArgs{
+	return &api.ExecArgs{
 		Argv:             p.Args,
 		Envv:             p.Env,
 		WorkingDirectory: p.Cwd,

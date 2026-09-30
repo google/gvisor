@@ -30,10 +30,9 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
-	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -803,7 +802,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	execArgs := &control.ExecArgs{
+	execArgs := &api.ExecArgs{
 		Filename: "/bin/sleep",
 		Argv:     []string{"/bin/sleep", "10000"},
 	}
@@ -825,7 +824,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 	defer stdioCleanup.Clean()
 
 	fdMap := map[int]*os.File{0: r, 1: w, 2: w}
-	execArgs.FilePayload = control.NewFilePayload(fdMap, nil)
+	execArgs.FilePayload = api.NewFilePayload(fdMap, nil)
 	pid2, err := cont.Execute(conf, execArgs)
 	if err != nil {
 		t.Fatalf("error executing in container: %v", err)
@@ -837,10 +836,10 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 		t.Fatalf("exec'd PID cannot be 1")
 	}
 	// Wait until the init process and exec'd processes are present.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().Cmd("sleep").PID(1).Process(),
-		newProcessBuilder().Cmd("sleep").PID(kernel.ThreadID(pid1)).Process(),
-		newProcessBuilder().Cmd("sleep").PID(kernel.ThreadID(pid2)).Process(),
+		newProcessBuilder().Cmd("sleep").PID(pid1).Process(),
+		newProcessBuilder().Cmd("sleep").PID(pid2).Process(),
 	}
 	if err := waitForProcessList(cont, expectedPL); err != nil {
 		t.Fatalf("Failed to kill exec'ed process, err: %v", err)
@@ -876,7 +875,7 @@ func TestCheckpointRestoreExecKilled(t *testing.T) {
 
 	// Check that only the init process is present and the exec'ed
 	// processes were killed.
-	expectedPL = []*control.Process{
+	expectedPL = []*api.Process{
 		newProcessBuilder().Cmd("sleep").PID(1).Process(),
 	}
 	if err := waitForProcessList(cont2, expectedPL); err != nil {

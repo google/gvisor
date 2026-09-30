@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
@@ -69,7 +69,7 @@ func TestSharedVolume(t *testing.T) {
 	filename := filepath.Join(dir, "file")
 
 	// File does not exist yet. Reading from the sandbox should fail.
-	argsTestFile := &control.ExecArgs{
+	argsTestFile := &api.ExecArgs{
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", filename},
 	}
@@ -105,7 +105,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// We should be able to test the new filename from within the sandbox.
-	argsTestNewFile := &control.ExecArgs{
+	argsTestNewFile := &api.ExecArgs{
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", newFilename},
 	}
@@ -128,7 +128,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// Now create the file from WITHIN the sandbox.
-	argsTouch := &control.ExecArgs{
+	argsTouch := &api.ExecArgs{
 		Filename: "/usr/bin/touch",
 		Argv:     []string{"touch", filename},
 		KUID:     auth.KUID(os.Getuid()),
@@ -146,7 +146,7 @@ func TestSharedVolume(t *testing.T) {
 	}
 
 	// Delete the file from within the sandbox.
-	argsRemove := &control.ExecArgs{
+	argsRemove := &api.ExecArgs{
 		Filename: "/bin/rm",
 		Argv:     []string{"rm", filename},
 	}

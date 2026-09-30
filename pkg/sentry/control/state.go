@@ -23,8 +23,8 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -46,7 +46,7 @@ type SaveRestoreExecMode string
 const (
 	// DefaultSaveRestoreExecTimeout is the default timeout for the save/restore
 	// binary.
-	DefaultSaveRestoreExecTimeout = 10 * time.Minute
+	DefaultSaveRestoreExecTimeout = api.DefaultSaveRestoreExecTimeout
 	// SaveRestoreExecSave is the save mode for the save/restore exec.
 	SaveRestoreExecSave SaveRestoreExecMode = "save"
 	// SaveRestoreExecRestore is the restore mode for the save/restore exec.
@@ -68,69 +68,11 @@ type State struct {
 }
 
 // SaveOpts contains options for the Save RPC call.
-type SaveOpts struct {
-	// Key is used to enable state integrity check.
-	Key []byte `json:"key"`
-
-	// Metadata is the set of metadata to prepend to the state file.
-	Metadata map[string]string `json:"metadata"`
-
-	// AppMFExcludeCommittedZeroPages is the value of
-	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
-	// file.
-	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
-
-	// HavePagesFile indicates whether the pages file and its corresponding
-	// metadata file is provided.
-	HavePagesFile bool `json:"have_pages_file"`
-
-	// FilePayload contains the following:
-	// 1. checkpoint state file.
-	// 2. optional checkpoint pages metadata file.
-	// 3. optional checkpoint pages file.
-	urpc.FilePayload
-
-	// Resume indicates if the sandbox process should continue running
-	// after checkpointing.
-	Resume bool
-
-	// ExecOpts contains options for executing a binary during save/restore.
-	ExecOpts SaveRestoreExecOpts
-
-	// If UseCheckpointGofer is true, the first and only file in FilePayload is
-	// a Unix domain socket connected to a URPC server implementing
-	// stateipc.AsyncFileServer and providing checkpoint files.
-	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
-
-	// CudaCheckpointPath is the path to the cuda-checkpoint binary.
-	CudaCheckpointPath string `json:"cuda_checkpoint_path"`
-
-	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
-	// sequentially (rather than in parallel).
-	CudaCheckpointSequential bool `json:"cuda_checkpoint_sequential"`
-
-	// SplitFSCheckpointPaths is the list of paths to include in the filesystem
-	// for split checkpoint. If non-empty, split filesystem checkpoint is enabled.
-	// For capturing all of tmpfs, the ResourceID Path should be "all-tmpfs".
-	SplitFSCheckpointPaths []checkpoint.ResourceID `json:"split_fs_checkpoint_paths"`
-
-	// RunscVersion is the runsc binary version.
-	RunscVersion string `json:"runsc_version"`
-}
+type SaveOpts = api.SaveOpts
 
 // SaveRestoreExecOpts contains options for executing a binary
 // during save/restore.
-type SaveRestoreExecOpts struct {
-	// Argv is the argv of the save/restore binary split by spaces.
-	// The first element is the path to the binary.
-	Argv string
-
-	// Timeout is the timeout for waiting for the save/restore binary.
-	Timeout time.Duration
-
-	// ContainerID is the ID of the container that the save/restore binary executes in.
-	ContainerID string
-}
+type SaveRestoreExecOpts = api.SaveRestoreExecOpts
 
 // ConvertToStateSaveOpts converts a control.SaveOpts to a state.SaveOpts.
 // state.SaveOpts.Close() must be called when the state.SaveOpts is no longer
@@ -442,10 +384,12 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 		Kernel: k,
 	}
 	execArgs := ExecArgs{
-		Filename:       argv[0],
-		Argv:           argv,
-		Envv:           append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
-		ContainerID:    contID,
+		ExecArgs: api.ExecArgs{
+			Filename:    argv[0],
+			Argv:        argv,
+			Envv:        append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
+			ContainerID: contID,
+		},
 		MountNamespace: mntns,
 		PIDNamespace:   leader.PIDNamespace(),
 		Limits:         limits.NewLimitSet(),

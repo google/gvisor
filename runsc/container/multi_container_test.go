@@ -31,8 +31,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -545,19 +544,19 @@ func TestNoRootContainerPIDNS(t *testing.T) {
 	// One at a time, so the PIDs below are predictable. TID 1 is reserved, so
 	// numbering starts at 2.
 	shared1 := startNoRootContainerSub(t, conf, sbID, &shared)
-	if err := waitForProcessList(shared1, []*control.Process{
+	if err := waitForProcessList(shared1, []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sleep").Process(),
 	}); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
 	}
 	shared2 := startNoRootContainerSub(t, conf, sbID, &shared)
-	if err := waitForProcessList(shared2, []*control.Process{
+	if err := waitForProcessList(shared2, []*api.Process{
 		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 	}); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
 	}
 	isolated := startNoRootContainerSub(t, conf, sbID, &private)
-	if err := waitForProcessList(isolated, []*control.Process{
+	if err := waitForProcessList(isolated, []*api.Process{
 		newProcessBuilder().PID(4).Cmd("sleep").Process(),
 	}); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
@@ -565,7 +564,7 @@ func TestNoRootContainerPIDNS(t *testing.T) {
 
 	// The sharers see each other, and the isolated container, whose namespace
 	// is a child of theirs.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sleep").Process(),
 		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 		newProcessBuilder().PID(4).Cmd("sleep").Process(),
@@ -582,7 +581,7 @@ func TestNoRootContainerPIDNS(t *testing.T) {
 	}
 
 	// The isolated container sees only itself, and its init is PID 1.
-	expectedPL = []*control.Process{
+	expectedPL = []*api.Process{
 		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 		newProcessBuilder().Cmd("ps").Process(),
 	}
@@ -622,20 +621,20 @@ func TestNoRootContainerPIDNSSandboxSpec(t *testing.T) {
 
 	// Two ways into the root namespace: name none, or name the sandbox's.
 	root := startNoRootContainerSub(t, conf, sbID, nil)
-	if err := waitForProcessList(root, []*control.Process{
+	if err := waitForProcessList(root, []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sleep").Process(),
 	}); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
 	}
 	path := pidnsPath
 	joiner := startNoRootContainerSub(t, conf, sbID, &path)
-	if err := waitForProcessList(joiner, []*control.Process{
+	if err := waitForProcessList(joiner, []*api.Process{
 		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 	}); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
 	}
 
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sleep").Process(),
 		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 		newProcessBuilder().Cmd("ps").Process(),
@@ -659,7 +658,7 @@ func TestNoRootContainerOrphan(t *testing.T) {
 	startNoRootContainerSandbox(t, conf, sbID)
 
 	bystander := startNoRootContainerSub(t, conf, sbID, nil)
-	if err := waitForProcessList(bystander, []*control.Process{
+	if err := waitForProcessList(bystander, []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sleep").Process(),
 	}); err != nil {
 		t.Fatalf("failed to wait for bystander to start: %v", err)
@@ -674,7 +673,7 @@ func TestNoRootContainerOrphan(t *testing.T) {
 		t.Fatalf("orphaner exited with status %d, want 0", es)
 	}
 
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sleep").Process(),
 		newProcessBuilder().PID(4).Cmd("sleep").Process(),
 		newProcessBuilder().Cmd("ps").Process(),
@@ -824,7 +823,7 @@ type execDesc struct {
 func execMany(t *testing.T, conf *config.Config, execs []execDesc) {
 	for _, exec := range execs {
 		t.Run(exec.name, func(t *testing.T) {
-			args := &control.ExecArgs{Argv: exec.cmd}
+			args := &api.ExecArgs{Argv: exec.cmd}
 			if ws, err := exec.c.executeSync(conf, args); err != nil {
 				if len(exec.err) == 0 || !strings.Contains(err.Error(), exec.err) {
 					t.Errorf("error executing %+v: %v", args, err)
@@ -912,13 +911,13 @@ func TestMultiContainerSanity(t *testing.T) {
 			defer cleanup()
 
 			// Check via ps that multiple processes are running.
-			expectedPL := []*control.Process{
+			expectedPL := []*api.Process{
 				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
@@ -957,13 +956,13 @@ func TestMultiPIDNS(t *testing.T) {
 			defer cleanup()
 
 			// Check via ps that multiple processes are running.
-			expectedPL := []*control.Process{
+			expectedPL := []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
@@ -972,7 +971,7 @@ func TestMultiPIDNS(t *testing.T) {
 
 			// Root container runs in the root PID namespace and can see all
 			// processes.
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
@@ -985,7 +984,7 @@ func TestMultiPIDNS(t *testing.T) {
 				t.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expectedPL))
 			}
 
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
@@ -1045,19 +1044,19 @@ func TestMultiPIDNSPath(t *testing.T) {
 			defer cleanup()
 
 			// Check via ps that multiple processes are running.
-			expectedPL := []*control.Process{
+			expectedPL := []*api.Process{
 				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(3).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[2], expectedPL); err != nil {
@@ -1066,7 +1065,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 
 			// Root container runs in the root PID namespace and can see all
 			// processes.
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
@@ -1081,7 +1080,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 			}
 
 			// Container 1 runs in the same PID namespace as the root container.
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
@@ -1096,7 +1095,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 			}
 
 			// Container 2 runs on its own namespace.
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
@@ -1254,19 +1253,19 @@ func TestMultiPIDNSRoot(t *testing.T) {
 			defer cleanup()
 
 			// Wait for all container processes to be up and running.
-			expectedPL := []*control.Process{
+			expectedPL := []*api.Process{
 				newProcessBuilder().PID(1).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
 				t.Errorf("failed to wait for sleep to start: %v", err)
 			}
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(2).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
 				t.Fatalf("failed to wait for sleep to start: %v", err)
 			}
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(3).PPID(0).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(delayed[0], expectedPL); err != nil {
@@ -1275,7 +1274,7 @@ func TestMultiPIDNSRoot(t *testing.T) {
 
 			// Check that delayer container is running in the root PID namespace and
 			// can see all other processes.
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
@@ -1324,7 +1323,7 @@ func TestMultiContainerWait(t *testing.T) {
 
 	// After Wait returns, ensure that the root container is running and
 	// the child has finished.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().Cmd("sleep").PID(1).Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
@@ -1355,7 +1354,7 @@ func TestExecWait(t *testing.T) {
 	defer cleanup()
 
 	// Check via ps that process is running.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[1], expectedPL); err != nil {
@@ -1378,7 +1377,7 @@ func TestExecWait(t *testing.T) {
 	}
 
 	// Execute another process in the first container.
-	args := &control.ExecArgs{
+	args := &api.ExecArgs{
 		Filename:         "/bin/sleep",
 		Argv:             []string{"/bin/sleep", "1"},
 		WorkingDirectory: "/",
@@ -1390,7 +1389,7 @@ func TestExecWait(t *testing.T) {
 	}
 
 	// Wait for the exec'd process to exit.
-	expectedPL = []*control.Process{
+	expectedPL = []*api.Process{
 		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
@@ -1473,7 +1472,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			defer cleanup()
 
 			// Check via ps that container 1 process is running.
-			expectedPL := []*control.Process{
+			expectedPL := []*api.Process{
 				newProcessBuilder().Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[1], expectedPL); err != nil {
@@ -1486,7 +1485,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			}
 
 			// Make sure process 1 is still running.
-			expectedPL = []*control.Process{
+			expectedPL = []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if err := waitForProcessList(containers[0], expectedPL); err != nil {
@@ -1580,7 +1579,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 			defer cleanup()
 
 			// Exec more processes to ensure signal all works for exec'd processes too.
-			args := &control.ExecArgs{
+			args := &api.ExecArgs{
 				Filename: app,
 				Argv:     []string{app, "fork-bomb"},
 			}
@@ -1601,7 +1600,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error getting process data from sandbox: %v", err)
 			}
-			expectedPL := []*control.Process{
+			expectedPL := []*api.Process{
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 			}
 			if !procListsEqual(pss, expectedPL) {
@@ -1640,7 +1639,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 	defer cleanup()
 
 	// Check root's container process list doesn't include other containers.
-	expectedPL0 := []*control.Process{
+	expectedPL0 := []*api.Process{
 		newProcessBuilder().PID(1).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[0], expectedPL0); err != nil {
@@ -1648,7 +1647,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 	}
 
 	// Same for the other container.
-	expectedPL1 := []*control.Process{
+	expectedPL1 := []*api.Process{
 		newProcessBuilder().PID(2).Cmd("sh").Process(),
 		newProcessBuilder().PID(3).PPID(2).Cmd("sleep").Process(),
 	}
@@ -1657,7 +1656,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 	}
 
 	// Now exec into the second container and verify it shows up in the container.
-	args := &control.ExecArgs{
+	args := &api.ExecArgs{
 		Filename: sleepCmd[0],
 		Argv:     sleepCmd,
 	}
@@ -1723,7 +1722,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 		}
 
 		// Exec more processes to ensure signal works for exec'd processes too.
-		args := &control.ExecArgs{
+		args := &api.ExecArgs{
 			Filename: app,
 			Argv:     []string{app, "task-tree", "--depth=2", "--width=2"},
 		}
@@ -2627,7 +2626,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Ensure container is running
 	c := containers[2]
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().PID(3).Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(c, expectedPL); err != nil {
@@ -2654,8 +2653,8 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 		if i == 2 {
 			continue // container[2] has been killed.
 		}
-		pl := []*control.Process{
-			newProcessBuilder().PID(kernel.ThreadID(i + 1)).Cmd("sleep").Process(),
+		pl := []*api.Process{
+			newProcessBuilder().PID(int32(i + 1)).Cmd("sleep").Process(),
 		}
 		if err := waitForProcessList(c, pl); err != nil {
 			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
@@ -2673,7 +2672,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Wait until sandbox stops. waitForProcessList will loop until sandbox exits
 	// and RPC errors out.
-	impossiblePL := []*control.Process{
+	impossiblePL := []*api.Process{
 		newProcessBuilder().Cmd("non-existent-process").Process(),
 	}
 	if err := waitForProcessList(c, impossiblePL); err == nil {
@@ -3058,7 +3057,7 @@ func TestCgroupV2ReadControlFile(t *testing.T) {
 	defer cleanup()
 
 	cgPath := path.Join("/", containers[0].ID)
-	queries := []control.CgroupControlFile{
+	queries := []api.CgroupControlFile{
 		{Controller: "memory", Path: cgPath, Name: "memory.current"},
 		{Controller: "cpu", Path: cgPath, Name: "cpu.stat"},
 		{Controller: "cgroup", Path: cgPath, Name: "cgroup.procs"},
@@ -3129,7 +3128,7 @@ func TestCgroupV2WriteControlFile(t *testing.T) {
 	cgPath := path.Join("/", containers[0].ID)
 
 	// Read current PID from cgroup.procs.
-	procsCtrl := control.CgroupControlFile{Controller: "cgroup", Path: cgPath, Name: "cgroup.procs"}
+	procsCtrl := api.CgroupControlFile{Controller: "cgroup", Path: cgPath, Name: "cgroup.procs"}
 	val, err := containers[0].Sandbox.CgroupsReadControlFile(procsCtrl)
 	if err != nil {
 		t.Fatalf("error reading cgroup.procs in %q: %v", cgPath, err)
@@ -3145,7 +3144,7 @@ func TestCgroupV2WriteControlFile(t *testing.T) {
 	}
 
 	// Writing to a non-delegatable file tests checkNSDelegateWrite with fd == nil.
-	maxDescCtrl := control.CgroupControlFile{Controller: "cgroup", Path: cgPath, Name: "cgroup.max.descendants"}
+	maxDescCtrl := api.CgroupControlFile{Controller: "cgroup", Path: cgPath, Name: "cgroup.max.descendants"}
 	if err := containers[0].Sandbox.CgroupsWriteControlFile(maxDescCtrl, "10"); err != nil {
 		t.Fatalf("error writing cgroup.max.descendants: %v", err)
 	}
@@ -3158,7 +3157,7 @@ func TestCgroupV2WriteControlFile(t *testing.T) {
 	}
 
 	// Writing to memory.max tests controller-specific Write with fd == nil.
-	memMaxCtrl := control.CgroupControlFile{Controller: "memory", Path: cgPath, Name: "memory.max"}
+	memMaxCtrl := api.CgroupControlFile{Controller: "memory", Path: cgPath, Name: "memory.max"}
 	if err := containers[0].Sandbox.CgroupsWriteControlFile(memMaxCtrl, "104857600"); err != nil {
 		t.Fatalf("error writing memory.max: %v", err)
 	}
@@ -3208,7 +3207,7 @@ func TestMultiContainerCgroupV2Destroy(t *testing.T) {
 	defer cleanup()
 
 	readCtrl := func(cgPath string) error {
-		_, err := containers[0].Sandbox.CgroupsReadControlFile(control.CgroupControlFile{
+		_, err := containers[0].Sandbox.CgroupsReadControlFile(api.CgroupControlFile{
 			Controller: "cgroup",
 			Path:       cgPath,
 			Name:       "cgroup.controllers",
@@ -3289,7 +3288,7 @@ func TestDuplicateEnvVariable(t *testing.T) {
 		t.Errorf("container %s exited with non-zero status: %v", containers[1].ID, es)
 	}
 
-	execArgs := &control.ExecArgs{
+	execArgs := &api.ExecArgs{
 		Filename: "/bin/sh",
 		Argv:     []string{"/bin/sh", "-c", cmdExec},
 		Envv:     []string{"VAR=foo", "VAR=bar"},
@@ -3573,7 +3572,7 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 			t.Fatalf("sandbox.Usage failed: %v", err)
 		}
 		allFieldsOk := true
-		// Note that all fields of control.MemoryUsage are exported and uint64.
+		// Note that all fields of api.MemoryUsage are exported and uint64.
 		newUsageV := reflect.ValueOf(newUsage)
 		numFields := oldUsageV.NumField()
 		for i := 0; i < numFields; i++ {
@@ -3644,17 +3643,17 @@ func TestMultiContainerCgroups(t *testing.T) {
 				"pids":    "pids.current",
 			}
 			for ctrl, f := range ctrlFileMap {
-				ctrlRoot := control.CgroupControlFile{
+				ctrlRoot := api.CgroupControlFile{
 					Controller: ctrl,
 					Path:       "/",
 					Name:       f,
 				}
-				ctrl0 := control.CgroupControlFile{
+				ctrl0 := api.CgroupControlFile{
 					Controller: ctrl,
 					Path:       "/" + containers[0].ID,
 					Name:       f,
 				}
-				ctrl1 := control.CgroupControlFile{
+				ctrl1 := api.CgroupControlFile{
 					Controller: ctrl,
 					Path:       "/" + containers[1].ID,
 					Name:       f,
@@ -3723,23 +3722,23 @@ func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
 					usageFile = "memory.current"
 				}
 
-				ctrlRoot := control.CgroupControlFile{
+				ctrlRoot := api.CgroupControlFile{
 					Controller: "memory",
 					Path:       "/",
 					Name:       usageFile,
 				}
-				ctrl0 := control.CgroupControlFile{
+				ctrl0 := api.CgroupControlFile{
 					Controller: "memory",
 					Path:       path.Join("/", containers[0].ID),
 					Name:       usageFile,
 				}
-				ctrl1 := control.CgroupControlFile{
+				ctrl1 := api.CgroupControlFile{
 					Controller: "memory",
 					Path:       path.Join("/", containers[1].ID),
 					Name:       usageFile,
 				}
 
-				readUsage := func(ctrl control.CgroupControlFile) uint64 {
+				readUsage := func(ctrl api.CgroupControlFile) uint64 {
 					val, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl)
 					if err != nil {
 						t.Fatalf("error reading control file %s in %s: %v", ctrl.Name, ctrl.Path, err)
@@ -3935,7 +3934,7 @@ func TestMultiContainerJoinPIDNSOwnerWithoutProcess(t *testing.T) {
 
 	// The sandbox must still be alive: before the fix, starting container 2
 	// panicked the sentry here.
-	expectedPL := []*control.Process{
+	expectedPL := []*api.Process{
 		newProcessBuilder().Cmd("sleep").Process(),
 	}
 	if err := waitForProcessList(containers[2], expectedPL); err != nil {

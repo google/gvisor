@@ -20,7 +20,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -82,9 +82,9 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcomm
 
 	switch ps.format {
 	case "table":
-		fmt.Println(control.ProcessListToTable(pList))
+		fmt.Println(api.ProcessListToTable(pList))
 	case "json":
-		o, err := control.PrintPIDsJSON(pList)
+		o, err := api.PrintPIDsJSON(pList)
 		if err != nil {
 			util.Fatalf("generating JSON: %v", err)
 		}

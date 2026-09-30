@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
@@ -195,14 +196,16 @@ func invokeCudaCheckpoint(sctx context.Context, k *kernel.Kernel, proc *Proc, cu
 		mntns.DecRef(ctx)
 	})
 	args := &ExecArgs{
-		Filename: cudaCheckpointPath,
-		Argv: []string{
-			"cuda-checkpoint",
-			opFlag,
-			"--pid",
-			strconv.FormatInt(int64(pid), 10),
+		ExecArgs: api.ExecArgs{
+			Filename: cudaCheckpointPath,
+			Argv: []string{
+				"cuda-checkpoint",
+				opFlag,
+				"--pid",
+				strconv.FormatInt(int64(pid), 10),
+			},
+			ContainerID: contID,
 		},
-		ContainerID:    contID,
 		MountNamespace: mntns,
 		PIDNamespace:   leader.PIDNamespace(),
 	}
