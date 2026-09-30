@@ -854,16 +854,14 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
 	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
-		// If the parent is a setgid directory, use the parent's GID
-		// rather than the caller's and enable setgid.
-		kgid := creds.EffectiveKGID
+		// If the parent is a setgid directory, the child inherits the parent's
+		// GID (see inode.childGID) and the setgid bit.
 		mode := opts.Mode
 		if parent.inode.mode.Load()&linux.S_ISGID != 0 {
-			kgid = auth.KGID(parent.inode.gid.Load())
 			mode |= linux.S_ISGID
 		}
 
-		child, err := parent.mkdir(ctx, name, mode, creds.EffectiveKUID, kgid, true /* createDentry */)
+		child, err := parent.mkdir(ctx, name, mode, creds.EffectiveKUID, parent.inode.childGID(creds), true /* createDentry */)
 		if err == nil {
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
@@ -1349,14 +1347,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 
 	creds := rp.Credentials()
 	name := rp.Component()
-	// If the parent is a setgid directory, use the parent's GID rather
-	// than the caller's.
-	kgid := creds.EffectiveKGID
-	if d.inode.mode.Load()&linux.S_ISGID != 0 {
-		kgid = auth.KGID(d.inode.gid.Load())
-	}
-
-	child, h, err := d.openCreate(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, creds.EffectiveKUID, kgid, true /* createDentry */)
+	child, h, err := d.openCreate(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, creds.EffectiveKUID, d.inode.childGID(creds), true /* createDentry */)
 	if err != nil {
 		return nil, err
 	}
