@@ -37,6 +37,9 @@ func TestDefault(t *testing.T) {
 	if c.GoferNetworkNamespace != GoferNetworkNamespaceNull {
 		t.Errorf("GoferNetworkNamespace=%q, want null", c.GoferNetworkNamespace)
 	}
+	if c.UseNetworkProxy() {
+		t.Errorf("UseNetworkProxy()=true, want false")
+	}
 
 	// All defaults doesn't require setting flags.
 	flags := c.ToFlags()
@@ -82,6 +85,20 @@ func TestFromFlags(t *testing.T) {
 	}
 	if want := GoferNetworkNamespaceHost; c.GoferNetworkNamespace != want {
 		t.Errorf("GoferNetworkNamespace=%v, want: %v", c.GoferNetworkNamespace, want)
+	}
+
+	if err := testFlags.Lookup("network").Value.Set("sandbox"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	if err := testFlags.Lookup("network-proxy-path").Value.Set("/run/netproxy.sock"); err != nil {
+		t.Errorf("Flag set: %v", err)
+	}
+	c, err = NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/run/netproxy.sock"; c.NetworkProxyPath != want || !c.UseNetworkProxy() {
+		t.Errorf("NetworkProxyPath=%q UseNetworkProxy()=%v, want %q and true", c.NetworkProxyPath, c.UseNetworkProxy(), want)
 	}
 }
 
@@ -354,10 +371,51 @@ func TestValidationFail(t *testing.T) {
 			},
 			error: "overlay flag has been replaced with overlay2 flag",
 		},
+		{
+			name: "network-proxy-path+network:none",
+			flags: map[string]string{
+				"network-proxy-path": "/run/netproxy.sock",
+				"network":            "none",
+			},
+			error: "network-proxy-path flag is only supported with sandbox networking",
+		},
+		{
+			name: "network-proxy-path+network:host",
+			flags: map[string]string{
+				"network-proxy-path": "/run/netproxy.sock",
+				"network":            "host",
+			},
+			error: "network-proxy-path flag is only supported with sandbox networking",
+		},
+		{
+			name: "network-proxy-path:relative",
+			flags: map[string]string{
+				"network-proxy-path": "relative/netproxy.sock",
+			},
+			error: "network-proxy-path must be an absolute path",
+		},
+		{
+			name: "network-proxy-path:abstract",
+			flags: map[string]string{
+				"network-proxy-path": "@netproxy",
+			},
+			error: "network-proxy-path must be an absolute path",
+		},
+		{
+			name: "network-proxy-path+xdp",
+			flags: map[string]string{
+				"network-proxy-path": "/run/netproxy.sock",
+				"EXPERIMENTAL-xdp":   "ns",
+			},
+			error: "network-proxy-path flag is incompatible with XDP",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
 			RegisterFlags(testFlags)
+			t.Cleanup(func() {
+				_ = testFlags.Lookup("EXPERIMENTAL-xdp").Value.Set("off")
+			})
 			for name, val := range tc.flags {
 				if err := testFlags.Lookup(name).Value.Set(val); err != nil {
 					t.Errorf("%s=%q: %v", name, val, err)
@@ -522,6 +580,11 @@ func TestOverrideAllowlist(t *testing.T) {
 		{
 			flag:  "profile",
 			value: "123",
+			error: "flag override disabled",
+		},
+		{
+			flag:  "network-proxy-path",
+			value: "/run/netproxy.sock",
 			error: "flag override disabled",
 		},
 		{

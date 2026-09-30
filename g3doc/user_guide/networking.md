@@ -63,6 +63,45 @@ Add the following `runtimeArgs` to your Docker configuration
 }
 ```
 
+## External network proxy (experimental)
+
+Instead of writing packets to the virtual device with an `AF_PACKET` socket, the
+sandbox's primary network interface can be attached to a `SOCK_SEQPACKET` unix
+domain socket owned by an external process. The sentry writes IP packets and the
+external peer is responsible for proxying those packets onward. This works only
+with `network=sandbox` mode and L4 network proxies.
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--network-proxy-path=/run/netproxy.sock"
+            ]
+       }
+    }
+}
+```
+
+Inside the sandbox, `runsc` still scrapes the container's network namespace and
+configures netstack with the same interface names, MTUs, IPv4/IPv6 addresses,
+and routes (including default gateways). The primary interface is chosen from
+the default gateway's interface (or `eth0` / the sole non-loopback interface if
+no default route is configured) and is backed by a single-channel `fdbased` link
+endpoint over the connected `SOCK_SEQPACKET` socket. Even with `--software-gso`
+enabled, netstack segments packets to the link MTU before writing to the socket,
+so the peer's read buffer must be at least that MTU.
+
+The peer must already be listening when the sandbox starts, runsc dials the
+socket once with timeout for 5 seconds and fails sandbox creation if the
+connection cannot be established.
+
+The external peer is responsible for any egress filtering. Only the primary
+interface (which carries the default route) is proxied and keeps its host IP
+addresses; any other non-loopback interfaces still use `AF_PACKET` sockets (with
+host addresses removed) and bypass the proxy.
+
 ## Egress traffic shaping (TBF)
 
 gVisor can rate limit outbound sandbox traffic with a
