@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -734,6 +735,49 @@ func TestDispatchPacketFormat(t *testing.T) {
 				t.Errorf("pkt.NetworkProtocolNumber = %d, want %d", pkt.NetworkProtocolNumber, wantProto)
 			}
 		})
+	}
+}
+
+func countEventFDs(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatalf("ReadDir(/proc/self/fd) = %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if target, err := os.Readlink("/proc/self/fd/" + e.Name()); err == nil && strings.Contains(target, "anon_inode:[eventfd]") {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCloseReleasesStopFDs checks that removing an endpoint releases the
+// eventfds its dispatchers use to stop, in every dispatch mode.
+func TestCloseReleasesStopFDs(t *testing.T) {
+	for _, mode := range []PacketDispatchMode{Readv, RecvMMsg} {
+		before := countEventFDs(t)
+		for i := 0; i < 10; i++ {
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0)
+			if err != nil {
+				t.Fatalf("Socketpair = %v", err)
+			}
+			ep, err := New(&Options{FDs: []int{fds[0]}, MTU: 1500, PacketDispatchMode: mode})
+			if err != nil {
+				t.Fatalf("New(mode=%d) = %v", mode, err)
+			}
+			// Mirror nic.remove: attach, then detach (which stops and
+			// waits for the dispatch goroutines), then close.
+			ep.Attach(&fakeNetworkDispatcher{})
+			ep.Attach(nil)
+			ep.Close()
+			unix.Close(fds[0])
+			unix.Close(fds[1])
+		}
+		if after := countEventFDs(t); after != before {
+			t.Errorf("mode %d: eventfds before=%d after=%d, want equal", mode, before, after)
+		}
 	}
 }
 
