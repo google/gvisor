@@ -309,12 +309,17 @@ TEST(FsConfigTest, FsConfigReconfigureSucceeds) {
   EXPECT_THAT(fsconfig(fsfd, FSCONFIG_CMD_RECONFIGURE, NULL, NULL, 0),
               SyscallSucceeds());
 
-  // TODO(gvisor.dev/issues/13450): once reconfiguration is properly supported
-  // on underlying filesystems, this test should be updated.
   struct statfs st;
   ASSERT_THAT(fstatfs(mntfd, &st), SyscallSucceeds());
-  EXPECT_NE(st.f_files, 12345);
-  EXPECT_NE(st.f_flags & ST_RDONLY, ST_RDONLY);
+  if (IsRunningOnGvisor()) {
+    // TODO(gvisor.dev/issues/13450): expect the requested options once
+    // reconfiguration is passed through to the underlying filesystem.
+    EXPECT_NE(st.f_files, 12345);
+    EXPECT_NE(st.f_flags & ST_RDONLY, ST_RDONLY);
+  } else {
+    EXPECT_EQ(st.f_files, 12345);
+    EXPECT_EQ(st.f_flags & ST_RDONLY, ST_RDONLY);
+  }
 }
 
 TEST(FsConfigTest, FsConfigUnsupportedTypes) {
