@@ -1188,6 +1188,7 @@ syscall_test(
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
+    requires_atime = True,
     test = "//test/syscalls/linux:stat_times_test",
 )
 
@@ -1200,6 +1201,7 @@ syscall_test(
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
+    requires_atime = True,
     test = "//test/syscalls/linux:symlink_test",
 )
 
