@@ -241,23 +241,15 @@ func BenchmarkRestoreEmpty(b *testing.B) {
 }
 
 func waitUntilHostServing(ctx context.Context, server *dockerutil.Container, port int) error {
-	serverUpChan := make(chan struct{})
-	var upErr error
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	hexPort := fmt.Sprintf(":%04X", port)
 	cmd := "while ! grep -s -E '" + hexPort + "' /proc/net/tcp /proc/net/tcp6; do sleep 0.001; done"
-	go func() {
-		_, upErr = server.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", cmd)
-		if upErr == nil {
-			close(serverUpChan)
-		}
-	}()
-
-	select {
-	case <-serverUpChan:
-		return nil
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("timeout waiting for server on port %d (%s): last err: %v", port, hexPort, upErr)
+	if output, err := server.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", cmd); err != nil {
+		return fmt.Errorf("waiting for server on port %d (%s): %w\n%s", port, hexPort, err, output)
 	}
+	return nil
 }
 
 func spawnServerWorkloadAndWait(ctx context.Context, b *testing.B, client harness.Machine, name string, port int) *dockerutil.Container {
