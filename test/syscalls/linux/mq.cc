@@ -24,6 +24,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -233,6 +234,32 @@ TEST(MqTest, OpenNoAccess) {
   EXPECT_THAT(MqOpen(queue.name(), O_RDONLY), PosixErrorIs(EACCES));
   EXPECT_THAT(MqOpen(queue.name(), O_WRONLY), PosixErrorIs(EACCES));
   EXPECT_THAT(MqOpen(queue.name(), O_RDWR), PosixErrorIs(EACCES));
+}
+
+TEST(MqTest, OpenWithDacOverride) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE)));
+  AutoCapability dacReadSearch(CAP_DAC_READ_SEARCH, false);
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0000, nullptr));
+
+  for (int mode : {O_RDONLY, O_WRONLY, O_RDWR}) {
+    FileDescriptor fd(mq_open(queue.name(), mode));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+  }
+}
+
+TEST(MqTest, OpenWithDacReadSearch) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_READ_SEARCH)));
+  PosixQueue queue = ASSERT_NO_ERRNO_AND_VALUE(
+      MqOpen(O_RDWR | O_CREAT | O_EXCL, 0000, nullptr));
+  AutoCapability dacOverride(CAP_DAC_OVERRIDE, false);
+
+  FileDescriptor fd(mq_open(queue.name(), O_RDONLY));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+  for (int mode : {O_WRONLY, O_RDWR}) {
+    FileDescriptor write_fd(mq_open(queue.name(), mode));
+    EXPECT_THAT(write_fd.get(), SyscallFailsWithErrno(EACCES));
+  }
 }
 
 // Test trying to re-open a read-only queue for write.
