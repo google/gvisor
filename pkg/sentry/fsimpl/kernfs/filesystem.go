@@ -516,6 +516,17 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return nil
 }
 
+// mayExecFile rejects FileExec opens of non-regular files before invoking the
+// inode's open handler, which may block or have side effects (e.g. acquiring
+// a controlling terminal), as in Linux's fs/namei.c:may_open(). Symlinks are
+// exempt so that they produce ELOOP, also per may_open().
+func mayExecFile(d *Dentry, opts vfs.OpenOptions) error {
+	if opts.FileExec && !d.isRegular() && !d.isSymlink() {
+		return linuxerr.EACCES
+	}
+	return nil
+}
+
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(&opts)
@@ -532,6 +543,10 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			return nil, err
 		}
 		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+			fs.mu.RUnlock()
+			return nil, err
+		}
+		if err := mayExecFile(d, opts); err != nil {
 			fs.mu.RUnlock()
 			return nil, err
 		}
@@ -575,6 +590,9 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			return nil, linuxerr.EEXIST
 		}
 		if err := start.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+			return nil, err
+		}
+		if err := mayExecFile(start, opts); err != nil {
 			return nil, err
 		}
 		if trunc && start.isRegular() {
@@ -670,6 +688,9 @@ afterTrailingSymlink:
 		return nil, linuxerr.ENOTDIR
 	}
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		return nil, err
+	}
+	if err := mayExecFile(child, opts); err != nil {
 		return nil, err
 	}
 	if trunc && child.isRegular() {
