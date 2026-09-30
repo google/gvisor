@@ -479,6 +479,7 @@ var sockOptLevels = abi.ValueSet{
 	linux.SOL_RAW:     "SOL_RAW",
 	linux.SOL_PACKET:  "SOL_PACKET",
 	linux.SOL_NETLINK: "SOL_NETLINK",
+	linux.SOL_TLS:     "SOL_TLS",
 }
 
 var sockOptNames = map[uint64]abi.ValueSet{

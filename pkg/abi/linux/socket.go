@@ -103,6 +103,7 @@ const (
 	SOL_RAW     = 255
 	SOL_PACKET  = 263
 	SOL_NETLINK = 270
+	SOL_TLS     = 282
 )
 
 // A SockType is a type (as opposed to family) of sockets. These are enumerated

@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -256,6 +257,29 @@ func (i *directfsInode) openHandle(ctx context.Context, flags uint32, d *dentry)
 	if err != nil {
 		return noHandle, err
 	}
+	cu := cleanup.Make(func() {
+		_ = unix.Close(openFD)
+	})
+	defer cu.Clean()
+
+	// Verify that the opened file matches the expected file type and device.
+	var stat unix.Stat_t
+	if err := unix.Fstat(openFD, &stat); err != nil {
+		return noHandle, err
+	}
+	if err := checkSupportedFileType(stat.Mode); err != nil {
+		return noHandle, err
+	}
+	if got, want := stat.Mode&unix.S_IFMT, i.inode.fileType(); got != want {
+		return noHandle, unix.ESTALE
+	}
+	if i.inode.fileType() == unix.S_IFCHR {
+		if unix.Major(stat.Rdev) != i.inode.rdevMajor || unix.Minor(stat.Rdev) != i.inode.rdevMinor {
+			return noHandle, unix.ESTALE
+		}
+	}
+
+	cu.Release()
 	return handle{fd: int32(openFD)}, nil
 }
 
