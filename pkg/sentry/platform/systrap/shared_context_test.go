@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
+	"gvisor.dev/gvisor/pkg/syncevent"
 )
 
 func newTestSharedContext(t *testing.T) *sharedContext {
@@ -208,6 +209,38 @@ func TestStuckState(t *testing.T) {
 	delete(sc.subprocess.sysmsgThreads, 1)
 	if got := sc.stuckState(); !strings.HasSuffix(got, "no stub thread") {
 		t.Fatalf("stuckState without a stub thread got %q, want no stub thread", got)
+	}
+}
+
+func TestDispatcherSlowPathUnderChurn(t *testing.T) {
+	initSleepTimeouts()
+	enabled := fastpath.sentryFastPathEnabled.Load()
+	fastpath.sentryFastPathEnabled.Store(true)
+	// Other contexts completing on every pass keep the dispatcher from ever
+	// idling into the slow path; model that by making the idle timeout
+	// unreachable.
+	idle := deepSleepTimeout
+	deepSleepTimeout = ^uint64(0)
+	defer func() {
+		deepSleepTimeout = idle
+		fastpath.sentryFastPathEnabled.Store(enabled)
+	}()
+
+	stuck := newTestSharedContext(t)
+	stuck.sync.Init()
+	stuck.startWaitingTS = cputicks()
+
+	got := make(chan syncevent.Set, 1)
+	go func() { got <- dispatcher.waitFor(stuck) }()
+	select {
+	case events := <-got:
+		if events&sharedContextSlowPath == 0 {
+			t.Fatalf("stuck context got events %v, want sharedContextSlowPath", events)
+		}
+	case <-time.After(5 * time.Second):
+		stuck.setState(sysmsg.ContextStateSyscall)
+		<-got
+		t.Fatalf("stuck context was never handed to the slow path")
 	}
 }
 
