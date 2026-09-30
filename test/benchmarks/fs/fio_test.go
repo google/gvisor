@@ -257,7 +257,7 @@ func doFioBenchmark(b *testing.B, testCases []tools.Fio) {
 				b.StartTimer()
 				data, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
 				if err != nil {
-					b.Fatalf("failed to run cmd %v: %v", cmd, err)
+					b.Fatalf("failed to run cmd %v: %v\n%s", cmd, err, data)
 				}
 				b.StopTimer()
 				tc.Report(b, data)
