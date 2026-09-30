@@ -62,7 +62,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -418,18 +417,6 @@ type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 	return New(opts)
-}
-
-func (*constructor) OpenDevice(_ string) (*fd.FD, error) {
-	return nil, nil
-}
-
-// Requirements implements platform.Constructor.Requirements().
-func (*constructor) Requirements() platform.Requirements {
-	return platform.Requirements{
-		RequiresCapSysPtrace:      true,
-		FrequentHostThreadWakeups: true,
-	}
 }
 
 func init() {

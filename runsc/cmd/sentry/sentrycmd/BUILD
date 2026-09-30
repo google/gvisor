@@ -30,7 +30,7 @@ go_library(
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/hostmm",
-        "//pkg/sentry/platform",
+        "//pkg/sentry/platform/platformdesc",
         "//pkg/sentry/syscalls/linux",
         "//pkg/tcpip/nftables",
         "//pkg/timing",

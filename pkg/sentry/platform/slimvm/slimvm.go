@@ -16,10 +16,8 @@
 package slimvm
 
 import (
-	"fmt"
 	"strconv"
 	"sync"
-	"syscall"
 
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -51,18 +49,6 @@ var (
 	slimvmFD   uintptr
 	slimvmFile *fd.FD
 )
-
-// OpenDevice opens the SlimVM device at /dev/slimvm and returns the File.
-func OpenDevice(devicePath string) (*fd.FD, error) {
-	if devicePath == "" {
-		devicePath = "/dev/slimvm"
-	}
-	f, err := fd.Open(devicePath, syscall.O_RDWR, 0)
-	if err != nil {
-		return nil, fmt.Errorf("error opening %s: %v", devicePath, err)
-	}
-	return f, nil
-}
 
 // New returns a new SlimVM-based implementation of the platform interface.
 func New(opts platform.Options) (*SlimVM, error) {
@@ -165,14 +151,6 @@ type constructor struct{}
 
 func (*constructor) New(opts platform.Options) (platform.Platform, error) {
 	return New(opts)
-}
-
-func (*constructor) OpenDevice(devicePath string) (*fd.FD, error) {
-	return OpenDevice(devicePath)
-}
-
-func (*constructor) Requirements() platform.Requirements {
-	return platform.Requirements{}
 }
 
 func init() {

@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -65,7 +66,11 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("platform not found: %v", err)
 	}
-	deviceFile, err := platformCtr.OpenDevice(*platformDevicePathFlag)
+	platformDesc, err := platformdesc.Lookup(*platformFlag)
+	if err != nil {
+		return nil, fmt.Errorf("platform not found: %v", err)
+	}
+	deviceFile, err := platformDesc.OpenDevice(*platformDevicePathFlag)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}

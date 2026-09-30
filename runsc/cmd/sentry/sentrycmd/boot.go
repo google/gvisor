@@ -43,7 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -436,7 +436,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if specutils.NVProxyEnabled(spec, conf) {
 		if b.cpuDMALatencyFD < 0 {
 			// Best effort; requires root.
-			if gPlatform, err := platform.Lookup(conf.Platform); err == nil && gPlatform.Requirements().FrequentHostThreadWakeups {
+			if gPlatform, err := platformdesc.Lookup(conf.Platform); err == nil && gPlatform.Requirements.FrequentHostThreadWakeups {
 				if fd := sandboxsetup.MaybeCapCPUIdleStates(); fd >= 0 {
 					b.cpuDMALatencyFD = fd
 					argOverride["cpu-dma-latency-fd"] = strconv.Itoa(fd)
@@ -518,11 +518,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if b.applyCaps {
 		caps := &specs.LinuxCapabilities{}
 
-		gPlatform, err := platform.Lookup(conf.Platform)
+		gPlatform, err := platformdesc.Lookup(conf.Platform)
 		if err != nil {
 			util.Fatalf("loading platform: %v", err)
 		}
-		if gPlatform.Requirements().RequiresCapSysPtrace {
+		if gPlatform.Requirements.RequiresCapSysPtrace {
 			// Ptrace platform requires extra capabilities.
 			const c = "CAP_SYS_PTRACE"
 			caps.Bounding = append(caps.Bounding, c)

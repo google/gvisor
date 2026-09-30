@@ -52,7 +52,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -1157,7 +1157,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return err
 	}
 
-	gPlatform, err := platform.Lookup(conf.Platform)
+	gPlatform, err := platformdesc.Lookup(conf.Platform)
 	if err != nil {
 		return fmt.Errorf("cannot look up platform: %w", err)
 	}
@@ -1316,7 +1316,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 				// CAP_SETPCAP is required to clear the bounding set.
 				uintptr(capability.CAP_SETPCAP),
 			)
-			if gPlatform.Requirements().RequiresCapSysPtrace {
+			if gPlatform.Requirements.RequiresCapSysPtrace {
 				cmd.SysProcAttr.AmbientCaps = append(cmd.SysProcAttr.AmbientCaps,
 					uintptr(capability.CAP_SYS_PTRACE))
 			}
@@ -2565,7 +2565,7 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 // platform does not need a device file, then nil is returned.
 // devicePath may be empty to use a sane platform-specific default.
 func deviceFileForPlatform(name, devicePath string) (*fd.FD, error) {
-	p, err := platform.Lookup(name)
+	p, err := platformdesc.Lookup(name)
 	if err != nil {
 		return nil, err
 	}

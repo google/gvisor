@@ -1,7 +1,7 @@
 # The go_library rule is imported as a different name in this case,
 # in order to avoid automated tooling doing the wrong thing with the
 # operating-specific dependencies listed below.
-load("//tools:defs.bzl", "platforms", "select_arch", "select_system", exempt_go_library = "go_library")
+load("//tools:defs.bzl", "go_test", "platforms", "select_arch", "select_system", exempt_go_library = "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -33,4 +33,15 @@ exempt_go_library(
         amd64 = ["//pkg/sentry/platform/slimvm"],
         default = [],
     ),
+)
+
+go_test(
+    name = "platforms_test",
+    size = "small",
+    srcs = ["platforms_test.go"],
+    library = ":platforms",
+    deps = [
+        "//pkg/sentry/platform",
+        "//pkg/sentry/platform/platformdesc",
+    ],
 )

@@ -25,7 +25,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -86,7 +86,7 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	conf := args[0].(*config.Config)
 
 	// Check the platform.
-	p, err := platform.Lookup(conf.Platform)
+	p, err := platformdesc.Lookup(conf.Platform)
 	if err != nil {
 		log.Fatalf("invalid platform: %v", err)
 	}
