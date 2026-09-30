@@ -30,6 +30,7 @@ package licensecheck
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -770,7 +771,7 @@ func fetchGitHub(url string) (*fetched, error) {
 		return nil, fmt.Errorf("cannot resolve commit for %s/%s@%s: %w", owner, repo, ref, err)
 	}
 	for _, name := range licenseFileNames {
-		body, err := httpGet(fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, ref, name), nil)
+		body, err := httpGet(fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo, commit, name), nil)
 		if errors.Is(err, errNotFound) {
 			continue
 		}
@@ -786,13 +787,55 @@ func fetchGitHub(url string) (*fetched, error) {
 	return nil, fmt.Errorf("no license file in %s/%s@%s", owner, repo, ref)
 }
 
-var commitRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var (
+	commitRE            = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	abbreviatedCommitRE = regexp.MustCompile(`^[0-9a-f]{4,39}$`)
+)
 
 // resolveGitHubCommit resolves a tag or abbreviated hash to a full commit
-// hash. GITHUB_TOKEN, if set, raises the API rate limit.
+// hash. Named refs use Git's advertisement to avoid GitHub API rate limits.
+// As with the full-hash fast path, an advertised object ID does not establish
+// the object's type. GITHUB_TOKEN, if set, raises the remaining API rate limit.
 func resolveGitHubCommit(owner, repo, ref string) (string, error) {
 	if commitRE.MatchString(ref) {
 		return ref, nil
+	}
+	// Git cannot resolve abbreviated object IDs from an advertisement. Avoid
+	// interpreting glob characters as ls-remote patterns; use the API instead.
+	if !abbreviatedCommitRE.MatchString(ref) && !strings.ContainsAny(ref, "*?[\\") {
+		refs := []string{ref}
+		if !strings.HasPrefix(ref, "refs/") {
+			refs = []string{"refs/tags/" + ref, "refs/heads/" + ref}
+		}
+		args := []string{"ls-remote", "--exit-code", fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)}
+		for _, name := range refs {
+			args = append(args, name)
+			if strings.HasPrefix(name, "refs/tags/") {
+				args = append(args, name+"^{}")
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		// Bound inherited pipes if a transport subprocess outlives Git.
+		cmd.WaitDelay = 5 * time.Second
+		out, err := cmd.Output()
+		if err != nil {
+			exitErr, ok := errors.AsType[*exec.ExitError](err)
+			if !ok {
+				return "", fmt.Errorf("git ls-remote: %w", err)
+			}
+			if exitErr.ExitCode() != 2 {
+				return "", fmt.Errorf("git ls-remote: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+			}
+			// A successful connection with no matching ref still permits API
+			// resolution, as does a tag/branch name with conflicting IDs.
+		} else {
+			if commit, err := parseGitRefs(string(out), refs); err != nil || commit != "" {
+				return commit, err
+			}
+		}
 	}
 	header := map[string]string{"Accept": "application/vnd.github.sha"}
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
@@ -805,6 +848,48 @@ func resolveGitHubCommit(owner, repo, ref string) (string, error) {
 	commit := strings.TrimSpace(string(body))
 	if !commitRE.MatchString(commit) {
 		return "", fmt.Errorf("unexpected GitHub API response %q", commit)
+	}
+	return commit, nil
+}
+
+// parseGitRefs returns the unique object ID for the requested exact ref names,
+// preferring peeled tags. Empty means no match or an ambiguous tag/branch name.
+func parseGitRefs(out string, refs []string) (string, error) {
+	found := make(map[string]string)
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		oid, name, ok := strings.Cut(line, "\t")
+		if !ok || !commitRE.MatchString(oid) {
+			return "", fmt.Errorf("unexpected git ls-remote record %q", line)
+		}
+		// ls-remote patterns also match ref-name tails. Only exact names
+		// requested by this caller may determine the audited source.
+		if !slices.Contains(refs, name) && !(strings.HasPrefix(name, "refs/tags/") && slices.Contains(refs, strings.TrimSuffix(name, "^{}"))) {
+			continue
+		}
+		if _, ok := found[name]; ok {
+			return "", fmt.Errorf("duplicate git ls-remote ref %q", name)
+		}
+		found[name] = oid
+	}
+	var commit string
+	for _, name := range refs {
+		oid := found[name]
+		if peeled := found[name+"^{}"]; peeled != "" {
+			if oid == "" {
+				return "", fmt.Errorf("peeled git ref %q has no tag record", name)
+			}
+			oid = peeled
+		}
+		if oid == "" {
+			continue
+		}
+		if commit != "" && oid != commit {
+			return "", nil
+		}
+		commit = oid
 	}
 	return commit, nil
 }
