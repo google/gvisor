@@ -223,11 +223,14 @@ endif
 DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
 DOCKER_RUN_OPTIONS += --cap-add SYS_MODULE
 DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
+# Direct builds do not require a local Docker socket.
+ifneq (,$(wildcard $(DOCKER_SOCKET)))
 DOCKER_GROUP := $(shell $(STAT_G) $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
 USERADD_OPTIONS += --groups $(DOCKER_GROUP)
 GROUPADD_DOCKER += groupadd --gid $(DOCKER_GROUP) --non-unique docker-$(HASH) &&
 DOCKER_RUN_OPTIONS += --group-add $(DOCKER_GROUP)
+endif
 endif
 endif
 
