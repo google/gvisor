@@ -21,6 +21,7 @@
 #include <sched.h>
 #include <signal.h>
 #include <sys/eventfd.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
@@ -29,7 +30,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/time.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
@@ -1094,6 +1097,128 @@ TEST(ExecTest, ACLExecuteOnlyBinary) {
   if (!acl_enforced) {
     GTEST_SKIP() << "filesystem does not enforce POSIX ACLs";
   }
+}
+
+// Only regular files may be executed: Linux's fs/namei.c:may_open() rejects
+// exec opens of special files with EACCES regardless of their permission
+// bits, before the open can block (e.g. on a FIFO with no writer). Execute
+// permission also does not make a special file readable.
+TEST(ExecTest, ExecuteOnlySpecialFiles) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const std::string dir = GetShortTestTmpdir();
+
+  const std::string fifo = absl::StrCat(dir, "/exec-only-fifo.", getpid());
+  ASSERT_THAT(mkfifo(fifo.c_str(), 0111), SyscallSucceeds());
+  // mkfifo's mode is affected by the umask.
+  ASSERT_THAT(chmod(fifo.c_str(), 0111), SyscallSucceeds());
+  const auto fifo_cleanup = Cleanup([&fifo] { unlink(fifo.c_str()); });
+
+  const std::string sock = absl::StrCat(dir, "/exec-only-sock.", getpid());
+  const FileDescriptor sock_fd(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_THAT(sock_fd.get(), SyscallSucceeds());
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  ASSERT_LT(sock.size(), sizeof(addr.sun_path));
+  strncpy(addr.sun_path, sock.c_str(), sizeof(addr.sun_path) - 1);
+  ASSERT_THAT(bind(sock_fd.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                   sizeof(addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(chmod(sock.c_str(), 0111), SyscallSucceeds());
+  const auto sock_cleanup = Cleanup([&sock] { unlink(sock.c_str()); });
+
+  // A character device (a /dev/null clone). mknod of character devices
+  // requires privileges the environment may not have; skip it if so.
+  const std::string chr = absl::StrCat(dir, "/exec-only-chr.", getpid());
+  const bool have_chr =
+      mknod(chr.c_str(), S_IFCHR | 0111, makedev(1, 3)) == 0 &&
+      chmod(chr.c_str(), 0111) == 0;
+  const auto chr_cleanup = Cleanup([&chr, have_chr] {
+    if (have_chr) unlink(chr.c_str());
+  });
+
+  std::vector<std::string> paths = {fifo, sock};
+  if (have_chr) {
+    paths.push_back(chr);
+  }
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+
+    for (const auto& path : paths) {
+      // Exec is rejected for non-regular files. Bound the exec with an alarm
+      // so that a regression to a blocking open (e.g. a FIFO waiting for a
+      // writer) fails promptly instead of hanging the test.
+      pid_t child;
+      int execve_errno;
+      const auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+          path, {path}, {}, +[] { alarm(10); }, &child, &execve_errno));
+      EXPECT_EQ(execve_errno, EACCES) << path;
+
+      // Execute permission does not make the file readable...
+      EXPECT_THAT(open(path.c_str(), O_RDONLY | O_NONBLOCK),
+                  SyscallFailsWithErrno(EACCES))
+          << path;
+
+      // ...including via the exec-open path, also bounded by an alarm.
+      const FileDescriptor path_fd =
+          ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_PATH));
+      pid_t at_child;
+      int execveat_errno;
+      const auto at_cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(
+          path_fd.get(), "", {path}, {}, AT_EMPTY_PATH, +[] { alarm(10); },
+          &at_child, &execveat_errno));
+      EXPECT_EQ(execveat_errno, EACCES) << path;
+    }
+  });
+}
+
+// A failed exec of a PTY replica must not acquire it as the caller's
+// controlling terminal: the exec open is rejected before the device's open
+// handler can run (Linux's fs/namei.c:may_open()).
+TEST(ExecTest, ExecuteOnlyPtyReplicaAcquiresNoControllingTerminal) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NOCTTY));
+  int n;
+  ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &n), SyscallSucceeds());
+  int unlock = 0;
+  ASSERT_THAT(ioctl(master.get(), TIOCSPTLCK, &unlock), SyscallSucceeds());
+  const std::string replica = absl::StrCat("/dev/pts/", n);
+  ASSERT_THAT(chmod(replica.c_str(), 0111), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (child == 0) {
+    // Become a session leader with no controlling terminal, as an
+    // unprivileged user. No group change is needed: the 0111 fixture denies
+    // reading to every class, and changing groups would require CAP_SETGID.
+    if (setsid() < 0) _exit(10);
+    if (syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                kUnprivilegedUid) != 0) {
+      _exit(13);
+    }
+    char* const argv[] = {const_cast<char*>(replica.c_str()), nullptr};
+    char* const envv[] = {nullptr};
+    if (execve(replica.c_str(), argv, envv) == 0 || errno != EACCES) {
+      _exit(14);
+    }
+    // The failed exec must not have acquired a controlling terminal.
+    errno = 0;
+    int tty = open("/dev/tty", O_RDONLY | O_NOCTTY | O_NONBLOCK);
+    if (tty >= 0 || errno != ENXIO) _exit(15);
+    _exit(0);
+  }
+  ASSERT_GT(child, 0);
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "child status: " << status;
 }
 
 // Linux requires only execute permission (not read) to execve a binary, but

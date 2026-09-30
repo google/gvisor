@@ -1090,6 +1090,13 @@ var logUnimplementedBlockDevOpenOnce sync.Once
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 
+	if ft := d.inode.fileType(); opts.FileExec && ft != linux.S_IFREG && ft != linux.S_IFLNK {
+		// Only regular files may be executed; reject before the open can
+		// block (e.g. on a FIFO with no writer), as in Linux's
+		// fs/namei.c:may_open(). Symlinks are exempt so that they produce
+		// ELOOP below, also per may_open().
+		return nil, linuxerr.EACCES
+	}
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
