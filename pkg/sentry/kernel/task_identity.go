@@ -117,7 +117,7 @@ func (t *Task) SetREUID(r, e auth.UID) error {
 	// ID is set to a value not equal to the previous real user ID, the saved
 	// set-user-ID will be set to the new effective user ID."
 	newS := creds.SavedKUID
-	if r.Ok() || (e.Ok() && newE != creds.EffectiveKUID) {
+	if r.Ok() || (e.Ok() && newE != creds.RealKUID) {
 		newS = newE
 	}
 	t.setKUIDsUnchecked(newR, newE, newS)
@@ -277,7 +277,7 @@ func (t *Task) SetREGID(r, e auth.GID) error {
 		}
 	}
 	newS := creds.SavedKGID
-	if r.Ok() || (e.Ok() && newE != creds.EffectiveKGID) {
+	if r.Ok() || (e.Ok() && newE != creds.RealKGID) {
 		newS = newE
 	}
 	t.setKGIDsUnchecked(newR, newE, newS)
