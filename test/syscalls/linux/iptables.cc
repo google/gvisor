@@ -108,16 +108,14 @@ TEST(IPTablesBasic, GetEntriesShortBuffer) {
 }
 
 TEST(IPTablesBasic, OriginalDstErrors) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
 
-  int sock;
-  ASSERT_THAT(sock = socket(AF_INET, SOCK_STREAM, 0), SyscallSucceeds());
-
-  // Sockets not affected by NAT should fail to find an original destination.
+  // An unconnected socket has no tracked connection to look up.
   struct sockaddr_in addr = {};
   socklen_t addr_len = sizeof(addr);
-  EXPECT_THAT(getsockopt(sock, SOL_IP, SO_ORIGINAL_DST, &addr, &addr_len),
-              SyscallFailsWithErrno(ENOTCONN));
+  EXPECT_THAT(getsockopt(sock.get(), SOL_IP, SO_ORIGINAL_DST, &addr, &addr_len),
+              SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(IPTablesBasic, GetRevision) {
