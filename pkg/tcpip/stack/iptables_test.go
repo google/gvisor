@@ -146,6 +146,15 @@ func TestNATedConnectionReap(t *testing.T) {
 		t.Fatalf("NAT not performed; got invertedReplyTID = %#v", invertedReplyTID)
 	}
 	replyTID := invertedReplyTID.reply()
+	epID := TransportEndpointID{
+		LocalAddress:  replyTID.srcAddr,
+		LocalPort:     replyTID.srcPortOrEchoRequestIdent,
+		RemoteAddress: replyTID.dstAddr,
+		RemotePort:    replyTID.dstPortOrEchoReplyIdent,
+	}
+	if addr, port, err := iptables.OriginalDst(epID, replyTID.netProto, replyTID.transProto); err != nil || addr != dstAddr || port != dstPort {
+		t.Fatalf("OriginalDst(%#v) = (%s, %d, %v), want = (%s, %d, nil)", epID, addr, port, err, dstAddr, dstPort)
+	}
 
 	iptables.connections.mu.RLock()
 	originalBktID := iptables.connections.bucket(originalTID)
@@ -216,6 +225,10 @@ func TestNATedConnectionReap(t *testing.T) {
 	}
 	if replyTuple := replyBkt.connForTID(replyTID, now); replyTuple != nil {
 		t.Errorf("got replyBkt.connForTID(%#v, %#v) = %#v, want = nil", replyTID, now, replyTuple)
+	}
+	_, _, err := iptables.OriginalDst(epID, replyTID.netProto, replyTID.transProto)
+	if _, ok := err.(*tcpip.ErrNoSuchFile); !ok {
+		t.Errorf("OriginalDst(%#v) = (_, _, %v), want = (_, _, ErrNoSuchFile)", epID, err)
 	}
 	// Make sure we don't have stale tuples just lying around.
 	//
