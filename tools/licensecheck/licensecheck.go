@@ -43,7 +43,6 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -72,48 +71,13 @@ type Entry struct {
 	License    Licenses `yaml:"license"`
 }
 
-// License is an SPDX license identifier (https://spdx.org/licenses/), one of
-// knownLicenses.
+// License is a license identifier from the configured text scanner, or an
+// explicit metadata token such as NOASSERTION. Scanner identifiers include
+// SPDX identifiers, but the scanner reuses unsuffixed GNU names for texts that
+// do not distinguish -only from -or-later. Those names have the scanner's
+// meaning here, not the meaning of the deprecated SPDX aliases:
+// https://github.com/google/licensecheck/blob/16aaea366/licenses/README.md#L138-L165
 type License string
-
-const (
-	apache2     License = "Apache-2.0"
-	apache2LLVM License = "Apache-2.0 WITH LLVM-exception"
-	bsd2        License = "BSD-2-Clause"
-	bsd3        License = "BSD-3-Clause"
-	bsd4        License = "BSD-4-Clause"
-	cc0         License = "CC0-1.0"
-	gpl2        License = "GPL-2.0-only"
-	gpl3        License = "GPL-3.0-only"
-	isc         License = "ISC"
-	lgpl21      License = "LGPL-2.1-only"
-	lgpl3       License = "LGPL-3.0-only"
-	mit         License = "MIT"
-	mpl2        License = "MPL-2.0"
-	unlicense   License = "Unlicense"
-	// noAssertion is the SPDX token for dependencies to which no software
-	// license applies, e.g. a certificate bundle.
-	noAssertion License = "NOASSERTION"
-)
-
-// knownLicenses is the set of known license identifiers.
-var knownLicenses = map[License]bool{
-	apache2:     true,
-	apache2LLVM: true,
-	bsd2:        true,
-	bsd3:        true,
-	bsd4:        true,
-	cc0:         true,
-	gpl2:        true,
-	gpl3:        true,
-	isc:         true,
-	lgpl21:      true,
-	lgpl3:       true,
-	mit:         true,
-	mpl2:        true,
-	unlicense:   true,
-	noAssertion: true,
-}
 
 // Licenses is the sorted set of licenses that apply to a dependency. It
 // marshals as a plain string when there is a single license and as a list
@@ -298,7 +262,7 @@ func Verify(p Paths) error {
 	}
 	problems := append(verifyProblems(deps, entries), CheckPolicy(entries, policy)...)
 	if len(problems) > 0 {
-		sort.Strings(problems)
+		slices.Sort(problems)
 		for _, problem := range problems {
 			fmt.Fprintln(os.Stderr, problem)
 		}
@@ -311,6 +275,10 @@ func Verify(p Paths) error {
 // verifyProblems returns one problem per missing, malformed, out-of-date, or
 // stale entry.
 func verifyProblems(deps []dep, entries []Entry) []string {
+	registry, err := configuredLicenses()
+	if err != nil {
+		return []string{fmt.Sprintf("cannot configure license identifiers: %v", err)}
+	}
 	byName := make(map[string]Entry)
 	var problems []string
 	for _, e := range entries {
@@ -319,9 +287,9 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 		}
 		byName[e.Dependency] = e
 	}
-	depSet := make(map[string]bool)
+	depSet := make(map[string]struct{})
 	for _, d := range deps {
-		depSet[d.name] = true
+		depSet[d.name] = struct{}{}
 		e, ok := byName[d.name]
 		switch {
 		case !ok:
@@ -338,7 +306,7 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 				problems = append(problems, fmt.Sprintf("%s was audited with sha256 %q, but is now pinned to %q", d.name, e.SHA256, d.sha256))
 			}
 			for i, license := range e.License {
-				if !knownLicenses[license] {
+				if _, ok := registry.ids[license]; !ok {
 					problems = append(problems, fmt.Sprintf("%s has unknown license %q", d.name, license))
 				}
 				if i > 0 && e.License[i-1] >= license {
@@ -352,7 +320,7 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 		}
 	}
 	for name := range byName {
-		if !depSet[name] {
+		if _, ok := depSet[name]; !ok {
 			problems = append(problems, fmt.Sprintf("stale entry for %s, which is no longer a dependency", name))
 		}
 	}
@@ -454,7 +422,7 @@ func enumerate(p Paths) ([]dep, error) {
 	for path, version := range goVersions {
 		deps = append(deps, dep{name: path, kind: kindGoModule, version: version})
 	}
-	sort.Slice(deps, func(i, j int) bool { return deps[i].name < deps[j].name })
+	slices.SortFunc(deps, func(a, b dep) int { return strings.Compare(a.name, b.name) })
 	for i := 1; i < len(deps); i++ {
 		if deps[i].name == deps[i-1].name {
 			return nil, fmt.Errorf("duplicate dependency name %q", deps[i].name)
@@ -809,65 +777,6 @@ func resolveGitHubCommit(owner, repo, ref string) (string, error) {
 	return commit, nil
 }
 
-// classify maps license text to the set of licenses it contains.
-// Detection looks for phrases unique to each license and reports all that
-// match. The GNU patterns match the dated titles of the full license texts,
-// so that passing references (e.g. in MPL-2.0's "Secondary License" clause)
-// do not trigger them.
-func classify(text string) (Licenses, error) {
-	t := strings.ToLower(strings.Join(strings.Fields(text), " "))
-	var ids Licenses
-	if strings.Contains(t, "apache license") && strings.Contains(t, "version 2.0") {
-		if strings.Contains(t, "llvm exceptions") {
-			ids = append(ids, apache2LLVM)
-		} else {
-			ids = append(ids, apache2)
-		}
-	}
-	if strings.Contains(t, "permission is hereby granted, free of charge") {
-		ids = append(ids, mit)
-	}
-	if strings.Contains(t, "redistribution and use in source and binary forms") {
-		switch {
-		case strings.Contains(t, "all advertising materials"):
-			ids = append(ids, bsd4)
-		case strings.Contains(t, "neither the name"), strings.Contains(t, "the name of the author may not be used"):
-			ids = append(ids, bsd3)
-		default:
-			ids = append(ids, bsd2)
-		}
-	}
-	if strings.Contains(t, "cc0 1.0 universal") {
-		ids = append(ids, cc0)
-	}
-	if strings.Contains(t, "mozilla public license version 2.0") {
-		ids = append(ids, mpl2)
-	}
-	if strings.Contains(t, "gnu lesser general public license version 2.1, february 1999") {
-		ids = append(ids, lgpl21)
-	}
-	if strings.Contains(t, "gnu lesser general public license version 3, 29 june 2007") {
-		ids = append(ids, lgpl3)
-	}
-	if strings.Contains(t, "gnu general public license version 2, june 1991") {
-		ids = append(ids, gpl2)
-	}
-	if strings.Contains(t, "gnu general public license version 3, 29 june 2007") {
-		ids = append(ids, gpl3)
-	}
-	if strings.Contains(t, "permission to use, copy, modify") && strings.Contains(t, "distribute this software for any purpose") {
-		ids = append(ids, isc)
-	}
-	if strings.Contains(t, "this is free and unencumbered software") {
-		ids = append(ids, unlicense)
-	}
-	if len(ids) == 0 {
-		return nil, errors.New("cannot classify license text")
-	}
-	slices.Sort(ids)
-	return ids, nil
-}
-
 // Policy is a dependency licensing policy (governance/licensing.yaml).
 type Policy struct {
 	AllowedLicenses []License   `yaml:"allowed_licenses"`
@@ -900,13 +809,13 @@ func ReadPolicy(path string) (*Policy, error) {
 // neither all in policy.AllowedLicenses nor covered by an exception, and for
 // every malformed, stale, or unnecessary exception.
 func CheckPolicy(entries []Entry, policy *Policy) []string {
-	allowed := make(map[License]bool)
+	allowed := make(map[License]struct{})
 	for _, license := range policy.AllowedLicenses {
-		allowed[license] = true
+		allowed[license] = struct{}{}
 	}
 	conforms := func(l Licenses) bool {
 		for _, license := range l {
-			if !allowed[license] {
+			if _, ok := allowed[license]; !ok {
 				return false
 			}
 		}
@@ -917,12 +826,12 @@ func CheckPolicy(entries []Entry, policy *Policy) []string {
 		byName[e.Dependency] = e
 	}
 	var problems []string
-	exceptions := make(map[string]bool)
+	exceptions := make(map[string]struct{})
 	for i, x := range policy.Exceptions {
-		if exceptions[x.Dependency] {
+		if _, ok := exceptions[x.Dependency]; ok {
 			problems = append(problems, fmt.Sprintf("duplicate exception for %s", x.Dependency))
 		}
-		exceptions[x.Dependency] = true
+		exceptions[x.Dependency] = struct{}{}
 		if i > 0 && policy.Exceptions[i-1].Dependency >= x.Dependency {
 			problems = append(problems, fmt.Sprintf("exceptions are not sorted by dependency at %s", x.Dependency))
 		}
@@ -940,7 +849,7 @@ func CheckPolicy(entries []Entry, policy *Policy) []string {
 		}
 	}
 	for _, e := range entries {
-		if !conforms(e.License) && !exceptions[e.Dependency] {
+		if _, ok := exceptions[e.Dependency]; !conforms(e.License) && !ok {
 			problems = append(problems, fmt.Sprintf("%s uses disallowed licenses %v and has no exception in the policy", e.Dependency, e.License))
 		}
 	}

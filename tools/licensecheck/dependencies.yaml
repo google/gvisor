@@ -418,6 +418,12 @@
   commit: a9779d139771f6a06fc983b18e0efd23ca30222f
   sha256: fc8cbe2239683199e677cb39f9303ae8d4a365f3c8cd8a2dcfa1f14c41bcff88
   license: BSD-3-Clause
+- dependency: github.com/google/licensecheck
+  version: v0.3.1
+  retrieved: "2026-09-30"
+  commit: 16aaea36649f556bae5a5ee972c247f58a0de1c4
+  sha256: 0df7b4ca172de6ee28c525815e21fb5c2014f1e8dbe8879d099b1e019691ca7c
+  license: BSD-3-Clause
 - dependency: github.com/google/pprof
   version: v0.0.0-20240711041743-f6c9dda6c6da
   retrieved: "2026-08-27"
@@ -999,20 +1005,20 @@
   license: Apache-2.0
 - dependency: kythe_release
   version: https://github.com/kythe/kythe/releases/download/v0.0.74/kythe-v0.0.74.tar.gz
-  retrieved: "2026-08-27"
+  retrieved: "2026-09-30"
   commit: a182743b6a2315c3ffdd43ed6f008434948f2adc
   sha256: 52a9c6e8111237043b8d0b6127637f0eb8d2ba3a776e4749b036e911ec3529ce
   license:
     - Apache-2.0
-    - MIT
+    - NCSA
 - dependency: llvm-raw
   version: https://github.com/llvm/llvm-project/archive/cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f.tar.gz
-  retrieved: "2026-08-27"
+  retrieved: "2026-09-30"
   commit: cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f
   sha256: e8ece380fdb57dc6f8e42df9db872a1ade5056c5379075e3e2f99c89200aea69
   license:
     - Apache-2.0 WITH LLVM-exception
-    - MIT
+    - NCSA
 - dependency: nlohmann_json
   version: https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
   retrieved: "2026-08-27"
