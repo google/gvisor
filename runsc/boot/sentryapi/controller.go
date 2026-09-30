@@ -323,3 +323,13 @@ const ContMgrSetNetworkArgs = "containerManager.SetNetworkArgs"
 // ContMgrGetNetworkConfig returns the network interfaces and routes applied
 // during the creation of root container.
 const ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
+
+// ContMgrSetCPUCount updates the number of CPUs visible inside the sandbox,
+// without a restart.
+const ContMgrSetCPUCount = "containerManager.SetCPUCount"
+
+// SetCPUCountArgs are arguments to the SetCPUCount method.
+type SetCPUCountArgs struct {
+	// NumCPU is the new number of CPUs to expose to the application.
+	NumCPU int32
+}

@@ -68,6 +68,7 @@ go_test(
     name = "sandbox_test",
     size = "small",
     srcs = [
+        "cpu_test.go",
         "metrics_test.go",
         "network_test.go",
         "sandbox_test.go",
@@ -81,6 +82,7 @@ go_test(
         "//runsc/cgroup",
         "//runsc/config",
         "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],

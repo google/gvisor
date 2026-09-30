@@ -324,6 +324,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		childCreds = creds.ForkIntoUserNamespace(userns)
 	}
 
+	// Read together so a concurrent grow can't pin a stale mask.
+	cpuMask, cpuMaskPinned := t.cpuMaskState()
 	cfg := &TaskConfig{
 		Kernel:           t.k,
 		ThreadGroup:      tg,
@@ -335,7 +337,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		NoNewPrivs:       t.GetNoNewPrivs(),
 		Niceness:         t.Niceness(),
 		NetworkNamespace: netns,
-		AllowedCPUMask:   t.CPUMask(),
+		AllowedCPUMask:   cpuMask,
+		CPUMaskPinned:    cpuMaskPinned,
 		UTSNamespace:     utsns,
 		IPCNamespace:     ipcns,
 		CgroupNamespace:  cgroupns,

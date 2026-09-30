@@ -81,6 +81,9 @@ type TaskConfig struct {
 	// AllowedCPUMask contains the cpus that this task can run on.
 	AllowedCPUMask sched.CPUSet
 
+	// CPUMaskPinned is set if AllowedCPUMask was narrowed by sched_setaffinity.
+	CPUMaskPinned bool
+
 	// UTSNamespace is the UTSNamespace of the new task.
 	UTSNamespace *UTSNamespace
 
@@ -243,6 +246,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		k:               cfg.Kernel,
 		ptraceTracees:   make(map[*Task]struct{}),
 		allowedCPUMask:  cfg.AllowedCPUMask.Copy(),
+		cpuMaskPinned:   cfg.CPUMaskPinned,
 		ioUsage:         &usage.IO{},
 		niceness:        cfg.Niceness,
 		utsns:           cfg.UTSNamespace,
