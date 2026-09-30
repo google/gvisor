@@ -850,15 +850,22 @@ syzkaller-smoke-test: $(RUNTIME_BIN)
 		--pid=host \
 		-v "$(RUNTIME_DIR):$(RUNTIME_DIR):ro" \
 		-e "GOPATH=/__w/syzkaller/syzkaller/gopath" \
-		-e "GVISOR_VMLINUX_PATH=$(RUNTIME_BIN)" \
 		"$(SYZKALLER_IMAGE)" \
 		/bin/bash -xeuc ' \
+			release_dir=$$(mktemp -d); \
+			install -m555 "$$1" "$$release_dir/runsc"; \
+			sidecars="$$(dirname "$$1")/gvisor-bin"; \
+			if [[ -d "$$sidecars" ]]; then \
+				cp -r --preserve=mode "$$sidecars" "$$release_dir/gvisor-bin"; \
+			fi; \
+			export GVISOR_TARBALL_PATH="$$release_dir.tar.bz2"; \
+			tar -cjf "$$GVISOR_TARBALL_PATH" -C "$$release_dir" .; \
 			mkdir -p "$$GOPATH/src/github.com/google" && \
 			git clone --depth=1 https://github.com/google/syzkaller "$$GOPATH/src/github.com/google/syzkaller" && \
 			cd "$$GOPATH/src/github.com/google/syzkaller" && \
 			make && \
 			bash tools/gvisor-smoke-test.sh \
-		'
+		' -- "$(RUNTIME_BIN)"
 .PHONY: syzkaller-smoke-test
 
 ##
