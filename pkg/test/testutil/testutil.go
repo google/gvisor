@@ -32,6 +32,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -166,7 +167,7 @@ func FindRunsc() (string, error) {
 
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
-	if *runscPath == "" {
+	if _, err := os.Stat(*runscPath); err != nil {
 		path, err := FindRunsc()
 		if err != nil {
 			return err
@@ -288,9 +289,17 @@ func TestConfig(t *testing.T) *config.Config {
 	return conf
 }
 
+func isCgroupV2() bool {
+	var st unix.Statfs_t
+	if err := unix.Statfs("/sys/fs/cgroup", &st); err != nil {
+		return false
+	}
+	return st.Type == unix.CGROUP2_SUPER_MAGIC
+}
+
 // ConfigForBenchmark returns the default configuration to use in benchmarks.
-// Debugging, tracing, and logging are disabled to ensure accurate performance
-// measurements.
+// Debugging, tracing, and logging are disabled, and GKE production flags are
+// enabled to ensure accurate performance measurements.
 func ConfigForBenchmark(b *testing.B) *config.Config {
 	testFlags := flag.NewFlagSet("bench", flag.ContinueOnError)
 	config.RegisterFlags(testFlags)
@@ -298,10 +307,17 @@ func ConfigForBenchmark(b *testing.B) *config.Config {
 	if err != nil {
 		b.Fatalf("error loading configuration from flags: %v", err)
 	}
+	conf.AllowPacketEndpointWrite = true
+	conf.AllowSUID = true
 	conf.Debug = false
-	conf.Strace = false
+	conf.EnableRaw = true
+	conf.HostSettings = config.HostSettingsEnforce
 	conf.LogPackets = false
 	conf.Network = config.NetworkNone
+	conf.OCISeccomp = true
+	conf.Strace = false
+	conf.SystemdCgroup = isCgroupV2()
+	// TODO: b/567596480 - Investigate running benchmarks with TestOnlyAllowRunAsCurrentUserWithoutChroot = false
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
 	conf.WatchdogAction = "panic"
 	return conf
@@ -316,6 +332,18 @@ func Measure(b *testing.B, fn func()) time.Duration {
 	defer b.StopTimer()
 	fn()
 	return time.Since(start)
+}
+
+// ReportPercentiles sorts the recorded iteration durations and reports p50 and p90 metrics.
+func ReportPercentiles(b *testing.B, samples []time.Duration) {
+	if len(samples) == 0 {
+		return
+	}
+	slices.Sort(samples)
+	for _, p := range []int{50, 90} {
+		idx := (len(samples) - 1) * p / 100
+		b.ReportMetric(float64(samples[idx].Nanoseconds()), fmt.Sprintf("p%d.ns", p))
+	}
 }
 
 // NewSpecWithArgs creates a simple spec with the given args suitable for use

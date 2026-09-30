@@ -145,11 +145,11 @@ go_test(
     library = ":container",
     tags = [
         "manual",
+        "notap",
         "requires-kvm",
     ],
     deps = [
         "//pkg/log",
-        "//pkg/sentry/platform",
         "//pkg/test/testutil",
         "//runsc/config",
         "//runsc/flag",

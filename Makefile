@@ -646,6 +646,19 @@ run_benchmark = \
 	fi; \
 	rm -rf $$T)
 
+# $(1) is the platform name.
+# TODO: b/567563387 - consider not using --runtime here to describe the platform
+# in the BigQuery parser for these non-docker tests.
+run_platform_benchmark = \
+	($(call header,BENCHMARK $(1)); \
+	set -euo pipefail; \
+	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
+	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; \
+	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+	fi; \
+	rm -rf $$T)
+
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.
 	@set -xe; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
@@ -671,6 +684,18 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	  $(call run_benchmark,runc); \
 	fi
 .PHONY: benchmark-platforms
+
+# TODO: b/529809802 - Enable benchmarks for slimvm.
+benchmark-platforms-nodocker: $(RUNTIME_BIN) ## Runs non-Docker benchmarks for all (selected) platforms.
+	@set -xe; \
+	for PLATFORM in $$(if test -z "$(BENCHMARKS_PLATFORMS)"; then $(RUNTIME_BIN) help platforms; else echo $(BENCHMARKS_PLATFORMS); fi); do \
+	  if test "$${PLATFORM}" = "slimvm"; then \
+	    continue; \
+	  fi; \
+	  export PLATFORM; \
+	  $(call run_platform_benchmark,$${PLATFORM}); \
+	done
+.PHONY: benchmark-platforms-nodocker
 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
 	@$(call run_benchmark,$(RUNTIME))

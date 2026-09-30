@@ -26,26 +26,35 @@ _templates:
   docker: &docker
     env:
       BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
-  benchmarks: &benchmarks
+  benchmarks_env: &benchmarks_env
+    # BENCHMARKS_OFFICIAL is set from hooks/pre-command, based
+    # on whether this is executing on the master branch.
+    BENCHMARKS_DATASET: buildkite
+    BENCHMARKS_PROJECT: gvisor-benchmarks
+    BENCHMARKS_TABLE: benchmarks
+    BENCHMARKS_UPLOAD: true
+    BENCHMARKS_PLATFORMS: "kvm systrap"
+  benchmarks_base: &benchmarks_base
     timeout_in_minutes: 120
     retry:
       automatic: false
     soft_fail: true
     if: build.branch == "master"
-    env:
-      # BENCHMARKS_OFFICIAL is set from hooks/pre-command, based
-      # on whether this is executing on the master branch.
-      BENCHMARKS_DATASET: buildkite
-      BENCHMARKS_PROJECT: gvisor-benchmarks
-      BENCHMARKS_TABLE: benchmarks
-      BENCHMARKS_UPLOAD: true
-      BENCHMARKS_PLATFORMS: "kvm systrap"
-      BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
     agents:
       <<: *kvm_agents
       <<: *platform_specific_agents
       arch: "amd64"
       queue: "default"
+  benchmarks: &benchmarks
+    <<: *benchmarks_base
+    env:
+      <<: *benchmarks_env
+      BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
+  benchmarks_nodocker: &benchmarks_nodocker
+    <<: *benchmarks_base
+    env:
+      <<: *benchmarks_env
+      BUILDKITE_PIPELINE_INSTALL_RUNTIME: false
   netstack_test: &netstack_test
     env:
       PACKAGES: >
@@ -900,9 +909,12 @@ steps:
   - <<: *benchmarks
     label: ":speedboat: Startup benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
-  - <<: *benchmarks
+  - <<: *benchmarks_nodocker
     label: ":stopwatch: OCI Lifecycle benchmarks"
-    command: make -i benchmark-platforms SKIP_IMAGE_LOAD=true BENCHMARKS_RUNC=false BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=lifecycle BENCHMARKS_TARGETS=runsc/container:lifecycle_benchmark_test
+    command: make -i benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=lifecycle BENCHMARKS_TARGETS=runsc/container:lifecycle_benchmark_test
+  - <<: *benchmarks_nodocker
+    label: ":stopwatch: Shim Lifecycle benchmarks"
+    command: make -i benchmark-platforms-nodocker BENCHMARKS_OPTIONS=-test.benchtime=30x BENCHMARKS_SUITE=lifecycle BENCHMARKS_TARGETS=shim/tests:lifecycle_benchmark_test
   - <<: *benchmarks
     label: ":computer: sysbench benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=sysbench BENCHMARKS_TARGETS=test/benchmarks/base:sysbench_test

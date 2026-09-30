@@ -15,6 +15,7 @@
 package container
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -25,25 +26,18 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
-// testPlatforms must be provided by the BUILD rule, or all platforms are included.
-var (
-	testPlatforms = flag.String("test_platforms", os.Getenv("TEST_PLATFORMS"), "Platforms to test with.")
-	runtimeName   = flag.String("runtime", "", "Runtime/platform name passed by Makefile benchmark-platforms.")
-)
+// testPlatforms must be provided by the BUILD rule, or defaults to systrap.
+var testPlatforms = flag.String("test_platforms", "systrap", "Platforms to test with.")
 
 func TestMain(m *testing.M) {
 	config.RegisterFlags(flag.CommandLine)
 	log.SetLevel(log.Warning)
-	if err := testutil.ConfigureExePath(); err != nil {
-		panic(err.Error())
-	}
 	if err := specutils.MaybeRunAsRoot(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running as root: %v\n", err)
 		os.Exit(123)
@@ -51,31 +45,39 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// benchmarkConfigs returns configurations for testing across platforms (e.g. kvm, systrap),
-// keyed by sub-benchmark name.
-func benchmarkConfigs(b *testing.B) map[string]*config.Config {
+// benchmarkConfig holds a sub-benchmark name and its runtime configuration.
+type benchmarkConfig struct {
+	name string
+	conf *config.Config
+}
+
+// benchmarkConfigs returns configurations for testing across platforms (defaults to systrap),
+// sorted by sub-benchmark name.
+func benchmarkConfigs(b *testing.B) []benchmarkConfig {
+	// Only read in runsc flag after flags are parsed (e.g. after m.Run() is called).
+	if err := testutil.ConfigureExePath(); err != nil {
+		b.Fatalf("ConfigureExePath: %v", err)
+	}
 	var ps []string
-	if *runtimeName != "" {
-		ps = []string{*runtimeName}
-	} else if *testPlatforms == "" {
-		ps = platform.List()
-	} else {
-		ps = strings.Split(*testPlatforms, ",")
+	for _, p := range strings.Split(*testPlatforms, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			ps = append(ps, p)
+		}
 	}
 	ps = slices.DeleteFunc(ps, func(s string) bool {
 		return s == "runc" || s == "ptrace"
 	})
 	if len(ps) == 0 {
-		b.Skipf("no supported platforms to benchmark (runtime=%q, test_platforms=%q)", *runtimeName, *testPlatforms)
+		b.Skipf("no supported platforms to benchmark (test_platforms=%q)", *testPlatforms)
 	}
 
-	cs := make(map[string]*config.Config)
+	var cs []benchmarkConfig
 	// Non-overlay versions.
 	for _, p := range ps {
 		c := testutil.ConfigForBenchmark(b)
 		c.Overlay2.Set("none")
 		c.Platform = p
-		cs[p] = c
+		cs = append(cs, benchmarkConfig{name: p, conf: c})
 	}
 
 	// Overlay versions. These use "root:self", the runsc default.
@@ -83,27 +85,19 @@ func benchmarkConfigs(b *testing.B) map[string]*config.Config {
 		c := testutil.ConfigForBenchmark(b)
 		c.Overlay2.Set("root:self")
 		c.Platform = p
-		cs[p+"_overlay"] = c
+		cs = append(cs, benchmarkConfig{name: p + "_overlay", conf: c})
 	}
+	slices.SortFunc(cs, func(a, b benchmarkConfig) int {
+		return cmp.Compare(a.name, b.name)
+	})
 	return cs
-}
-
-// reportPercentiles sorts the recorded iteration durations and reports p50 and p90 metrics.
-func reportPercentiles(b *testing.B, samples []time.Duration) {
-	if len(samples) == 0 {
-		return
-	}
-	slices.Sort(samples)
-	for _, p := range []int{50, 90} {
-		idx := (len(samples) - 1) * p / 100
-		b.ReportMetric(float64(samples[idx].Nanoseconds()), fmt.Sprintf("p%d.ns", p))
-	}
 }
 
 // BenchmarkOCICreate benchmarks container creation.
 func BenchmarkOCICreate(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -133,15 +127,16 @@ func BenchmarkOCICreate(b *testing.B) {
 					defer cont.Destroy()
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
 
 // BenchmarkOCIStart benchmarks starting a created container.
 func BenchmarkOCIStart(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -173,7 +168,7 @@ func BenchmarkOCIStart(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -210,8 +205,9 @@ func startSleepingContainer(b *testing.B, conf *config.Config) (*Container, func
 
 // BenchmarkOCIPause benchmarks pausing a running container.
 func BenchmarkOCIPause(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -231,15 +227,16 @@ func BenchmarkOCIPause(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
 
 // BenchmarkOCIResume benchmarks resuming a paused container.
 func BenchmarkOCIResume(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -262,7 +259,7 @@ func BenchmarkOCIResume(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -270,8 +267,9 @@ func BenchmarkOCIResume(b *testing.B) {
 // BenchmarkOCIKill benchmarks signaling a running container to terminate. It does not measure
 // container teardown.
 func BenchmarkOCIKill(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -291,15 +289,16 @@ func BenchmarkOCIKill(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
 
 // BenchmarkOCIDestroy benchmarks destroying an already-exited container.
 func BenchmarkOCIDestroy(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -343,7 +342,7 @@ func BenchmarkOCIDestroy(b *testing.B) {
 					cont = nil
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -354,8 +353,9 @@ const readyMsg = "ready"
 // "ready" over a pipe. It covers container creation, start, and reaching the point of
 // producing output, but not exit or teardown.
 func BenchmarkTimeToReady(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -418,7 +418,7 @@ func BenchmarkTimeToReady(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
@@ -428,8 +428,9 @@ func BenchmarkTimeToReady(b *testing.B) {
 // so the difference between the two is the cost of exiting and tearing down the
 // container.
 func BenchmarkEndToEnd(b *testing.B) {
-	for platformName, conf := range benchmarkConfigs(b) {
-		b.Run(platformName, func(b *testing.B) {
+	for _, bc := range benchmarkConfigs(b) {
+		b.Run(bc.name, func(b *testing.B) {
+			conf := bc.conf
 			b.StopTimer()
 			b.ResetTimer()
 			var samples []time.Duration
@@ -481,7 +482,7 @@ func BenchmarkEndToEnd(b *testing.B) {
 					}
 				}()
 			}
-			reportPercentiles(b, samples)
+			testutil.ReportPercentiles(b, samples)
 		})
 	}
 }
