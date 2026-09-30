@@ -195,7 +195,6 @@ The project maintains the following channels:
     purpose user list, used for announcements and meeting invitations.
 *   [gvisor-dev](mailto:gvisor-dev@googlegroups.com): public, general purpose
     development list. Maintainer nominations and votes are held here.
-*   [Gitter](https://gitter.im/gvisor/community): public chat room.
 *   [GitHub issues](https://github.com/google/gvisor/issues): public bug reports
     and feature requests.
 *   [gvisor-security](mailto:gvisor-security@googlegroups.com): **private**
