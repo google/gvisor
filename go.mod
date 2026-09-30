@@ -28,6 +28,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/btree v1.1.2
 	github.com/google/go-github/v84 v84.0.0
+	github.com/google/licensecheck v0.3.1
 	github.com/google/subcommands v1.0.2-0.20190508160503-636abe8753b8
 	github.com/mattbaird/jsonpatch v0.0.0-20171005235357-81af80346b1a
 	github.com/moby/sys/capability v0.4.0
