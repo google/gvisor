@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -63,6 +64,9 @@ type sharedContext struct {
 	kicked         bool
 	// The task associated with the context fell asleep.
 	sleeping bool
+	// interruptRequested is set while the sentry wants the running context
+	// interrupted. Unlike shared.Interrupt, the stub cannot modify it.
+	interruptRequested atomicbitops.Bool
 }
 
 // String returns the ID of this shared context.
@@ -166,6 +170,7 @@ func (sc *sharedContext) killSubprocess() {
 
 // NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
 func (sc *sharedContext) NotifyInterrupt() {
+	sc.interruptRequested.Store(true)
 	t, err := sc.interruptStub()
 	if err == errStubThreadGone {
 		sc.subprocess.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
@@ -186,6 +191,7 @@ func (sc *sharedContext) setInterrupt() {
 }
 
 func (sc *sharedContext) clearInterrupt() {
+	sc.interruptRequested.Store(false)
 	atomic.StoreUint32(&sc.shared.Interrupt, 0)
 }
 
@@ -310,7 +316,7 @@ func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuc
 			}
 			return errStuckContext
 		}
-		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
+		if !sc.isAcked() || (sc.subprocess.contextQueue.isEmpty() && !sc.interruptRequested.Load()) {
 			continue
 		}
 		if _, err := sc.interruptStub(); err != nil {
