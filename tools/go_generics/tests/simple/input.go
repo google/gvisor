@@ -14,6 +14,8 @@
 
 package tests
 
+import _ "os" // Earlier blank import.
+
 type T int
 
 var global T
@@ -27,6 +29,7 @@ func g(a T, b int) {
 
 	d := (*T)(nil)
 	_ = d
+	_ = new(T) // escapes: test annotation.
 }
 
 type R struct {

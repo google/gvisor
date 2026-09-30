@@ -60,12 +60,14 @@ arch_config = [
 
 def arm64_config(_settings, _attr):
     return {
-        # Race builds are always disabled for cross-architecture generation. We
-        # can't run it locally anyways, what value can this provide?
+        # Disable the inherited race setting for cross-architecture generation.
+        # Targets with an explicit race attribute still use instrumentation.
         "@io_bazel_rules_go//go/config:race": False,
         "//command_line_option:cpu": "aarch64",
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
-        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_arm64",
+        # Permit targets that explicitly enable race instrumentation to use cgo.
+        # Ordinary targets still inherit the pure build setting from .bazelrc.
+        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_arm64_cgo",
     }
 
 def amd64_config(_settings, _attr):
@@ -74,7 +76,8 @@ def amd64_config(_settings, _attr):
         "@io_bazel_rules_go//go/config:race": False,
         "//command_line_option:cpu": "k8",
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
-        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_amd64",
+        # See above.
+        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_amd64_cgo",
     }
 
 transition_allowlist = "@bazel_tools//tools/allowlists/function_transition_allowlist"

@@ -44,28 +44,28 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *Mutex) Lock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(genericMarkIndex, -1) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *Mutex) NestedLock(i lockNameIndex) {
-	locking.AddGLock(genericMarkIndex, int(i))
+	locking.AddGLock(genericMarkIndex, int(i)) // escapes: lockdep.
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *Mutex) Unlock() {
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(genericMarkIndex, -1) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *Mutex) NestedUnlock(i lockNameIndex) {
-	locking.DelGLock(genericMarkIndex, int(i))
+	locking.DelGLock(genericMarkIndex, int(i)) // escapes: lockdep.
 	m.mu.Unlock()
 }
 
