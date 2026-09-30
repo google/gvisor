@@ -5185,6 +5185,8 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
