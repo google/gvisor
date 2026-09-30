@@ -361,6 +361,56 @@ func safeSetupAndMoveMount(srcFileFD int, src, dst, procPath string) error {
 	return nil
 }
 
+// tmpfsParent returns the destination of the Sentry tmpfs that dest sits
+// under, other than / and /dev, if there is one.
+func tmpfsParent(mounts []specs.Mount, dest string) (string, bool) {
+	dest = filepath.Clean(dest)
+	parent := ""
+	var parentMount specs.Mount
+	for _, m := range mounts {
+		d := filepath.Clean(m.Destination)
+		if d == dest || !strings.HasPrefix(dest, strings.TrimSuffix(d, "/")+"/") {
+			continue
+		}
+		if len(d) > len(parent) {
+			parent, parentMount = d, m
+		}
+	}
+	if parent == "" || parent == "/" || parent == "/dev" {
+		return "", false
+	}
+	if parentMount.Type != "tmpfs" || specutils.HasMountConfig(parentMount) {
+		return "", false
+	}
+	return parent, true
+}
+
+// shadowTmpfsParent mounts a private tmpfs at dest's tmpfs parent in the
+// gofer's root, so dest's mount point is created there instead of the host.
+func shadowTmpfsParent(mounts []specs.Mount, dest, root, procPath string, shadowed map[string]bool) error {
+	parent, ok := tmpfsParent(mounts, dest)
+	if !ok || shadowed[parent] {
+		return nil
+	}
+	// The shadow's own mount point may sit under another tmpfs.
+	if err := shadowTmpfsParent(mounts, parent, root, procPath, shadowed); err != nil {
+		return err
+	}
+	dst, err := ResolveSymlinks(root, parent)
+	if err != nil {
+		return fmt.Errorf("resolving symlinks to %q: %v", parent, err)
+	}
+	if err := os.MkdirAll(dst, 0777); err != nil {
+		return fmt.Errorf("mkdir(%q) failed: %v", dst, err)
+	}
+	log.Infof("Mounting tmpfs at %q to hold the mount points under it", dst)
+	if err := specutils.SafeMount("tmpfs", dst, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "mode=0755", procPath); err != nil {
+		return fmt.Errorf("mounting tmpfs at %q: %v", dst, err)
+	}
+	shadowed[parent] = true
+	return nil
+}
+
 // SetupMounts bind-mounts all mounts specified in the spec in their correct
 // location inside root. It resolves relative paths and symlinks, and creates
 // directories as needed.
@@ -371,6 +421,7 @@ func safeSetupAndMoveMount(srcFileFD int, src, dst, procPath string) error {
 // source. It may be nil if all mounts are directly accessible.
 func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string, mountConfs []specutils.GoferMountConf, mountOpener MountOpener) (retErr error) {
 	mountIdx := 1 // First index is for rootfs.
+	shadowed := make(map[string]bool)
 	for _, m := range mounts {
 		if !specutils.HasMountConfig(m) {
 			continue
@@ -381,6 +432,9 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 			continue
 		}
 
+		if err := shadowTmpfsParent(mounts, m.Destination, root, procPath, shadowed); err != nil {
+			return err
+		}
 		dst, err := ResolveSymlinks(root, m.Destination)
 		if err != nil {
 			return fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)

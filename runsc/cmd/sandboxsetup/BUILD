@@ -44,4 +44,5 @@ go_test(
     size = "small",
     srcs = ["gofer_mount_test.go"],
     library = ":sandboxsetup",
+    deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
 )
