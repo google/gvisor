@@ -23,40 +23,13 @@ import (
 	"log"
 	"net"
 	"os"
-	"path/filepath"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/xdp"
 	"gvisor.dev/gvisor/runsc/flag"
 )
-
-// bpffsDirName is the path at which BPFFS is expected to be mounted.
-const bpffsDirPath = "/sys/fs/bpf/"
-
-// RedirectPinDir returns the directory to which eBPF objects will be pinned
-// when xdp_loader is run against iface.
-func RedirectPinDir(iface string) string {
-	return filepath.Join(bpffsDirPath, iface)
-}
-
-// RedirectMapPath returns the path where the eBPF map will be pinned when
-// xdp_loader is run against iface.
-func RedirectMapPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "redirect_ip_map")
-}
-
-// RedirectProgramPath returns the path where the eBPF program will be pinned
-// when xdp_loader is run against iface.
-func RedirectProgramPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "redirect_program")
-}
-
-// RedirectLinkPath returns the path where the eBPF link will be pinned when
-// xdp_loader is run against iface.
-func RedirectLinkPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "redirect_link")
-}
 
 //go:embed bpf/redirect_host_ebpf.o
 var redirectProgram []byte
@@ -111,10 +84,10 @@ func (rc *RedirectHostCommand) execute() error {
 		program:     redirectProgram,
 		iface:       iface,
 		unpin:       rc.unpin,
-		pinDir:      RedirectPinDir(iface.Name),
-		mapPath:     RedirectMapPath(iface.Name),
-		programPath: RedirectProgramPath(iface.Name),
-		linkPath:    RedirectLinkPath(iface.Name),
+		pinDir:      xdp.RedirectPinDir(iface.Name),
+		mapPath:     xdp.RedirectMapPath(iface.Name),
+		programPath: xdp.RedirectProgramPath(iface.Name),
+		linkPath:    xdp.RedirectLinkPath(iface.Name),
 	})
 }
 

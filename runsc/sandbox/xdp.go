@@ -34,7 +34,6 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/sandbox/bpf"
-	xdpcmd "gvisor.dev/gvisor/tools/xdp/cmd"
 )
 
 // This file supports XDP in gVisor. It is not compiled in by default.
@@ -88,7 +87,7 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) e
 	// Insert socket into eBPF map. Note that sockets are automatically
 	// removed from eBPF maps when released. See net/xdp/xsk.c:xsk_release
 	// and net/xdp/xsk.c:xsk_delete_from_maps.
-	mapPath := xdpcmd.RedirectMapPath(iface.Name)
+	mapPath := xdp.RedirectMapPath(iface.Name)
 	pinnedMap, err := ebpf.LoadPinnedMap(mapPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load pinned map %s: %w", mapPath, err)
@@ -443,7 +442,7 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) erro
 	}
 
 	// Insert veth into host eBPF map.
-	hostMapPath := xdpcmd.TunnelHostMapPath(hostIface.Name)
+	hostMapPath := xdp.TunnelHostMapPath(hostIface.Name)
 	pinnedHostMap, err := ebpf.LoadPinnedMap(hostMapPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load pinned host map %s: %w", hostMapPath, err)
@@ -493,10 +492,10 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) erro
 	}
 
 	var (
-		vethPinDir      = xdpcmd.RedirectPinDir(vethIface.Name)
-		vethMapPath     = xdpcmd.TunnelVethMapPath(vethIface.Name)
-		vethProgramPath = xdpcmd.TunnelVethProgramPath(vethIface.Name)
-		vethLinkPath    = xdpcmd.TunnelVethLinkPath(vethIface.Name)
+		vethPinDir      = xdp.RedirectPinDir(vethIface.Name)
+		vethMapPath     = xdp.TunnelVethMapPath(vethIface.Name)
+		vethProgramPath = xdp.TunnelVethProgramPath(vethIface.Name)
+		vethLinkPath    = xdp.TunnelVethLinkPath(vethIface.Name)
 	)
 
 	// Create directory /sys/fs/bpf/<device name>/.
