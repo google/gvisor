@@ -214,6 +214,9 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
 func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr.Error {
+	if level == linux.SOL_TLS || (level == linux.SOL_TCP && name == linux.TCP_ULP) {
+		return syserr.ErrProtocolNotAvailable
+	}
 	sockOptMapOnce.Do(func() { initSockOptMap(t) })
 
 	// Special case send/recv timeouts since those are handled internally.

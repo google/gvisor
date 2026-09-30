@@ -2831,6 +2831,27 @@ TEST_P(SimpleTcpSocketTest, SetTCPCorkOff) {
       setsockopt(fd, IPPROTO_TCP, TCP_CORK, &kSockOptOff, sizeof(kSockOptOff)),
       SyscallSucceeds());
 }
+
+#ifndef SOL_TLS
+#define SOL_TLS 282
+#endif
+
+#ifndef TCP_ULP
+#define TCP_ULP 31
+#endif
+
+TEST_P(TcpSocketTest, SetKTLSFails) {
+  int opt = 1;
+  EXPECT_THAT(
+      setsockopt(connected_.get(), SOL_TLS, 1 /* TLS_TX */, &opt, sizeof(opt)),
+      SyscallFailsWithErrno(ENOPROTOOPT));
+
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(
+        setsockopt(connected_.get(), SOL_TCP, TCP_ULP, "tls", sizeof("tls")),
+        SyscallFailsWithErrno(ENOPROTOOPT));
+  }
+}
 #endif  // __linux__
 
 TEST_P(SimpleTcpSocketTest, SetUnsupportedPMTUDISC) {

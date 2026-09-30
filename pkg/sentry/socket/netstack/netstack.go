@@ -704,6 +704,9 @@ func (s *sock) GetSockOpt(t *kernel.Task, level, name int, outPtr hostarch.Addr,
 //
 // +checklocksexclude:s.readMu
 func (s *sock) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
+	if level == linux.SOL_TLS || (level == linux.SOL_TCP && name == linux.TCP_ULP) {
+		return syserr.ErrProtocolNotAvailable
+	}
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for netstack.Socket rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
@@ -2424,7 +2427,6 @@ func (s *sock) setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal
 		linux.TCP_SAVED_SYN,
 		linux.TCP_REPAIR_WINDOW,
 		linux.TCP_FASTOPEN_CONNECT,
-		linux.TCP_ULP,
 		linux.TCP_MD5SIG_EXT,
 		linux.TCP_FASTOPEN_KEY,
 		linux.TCP_FASTOPEN_NO_COOKIE,
