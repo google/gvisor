@@ -90,6 +90,7 @@ type DefaultRoute struct {
 	Name  string
 }
 
+// Neighbor represents an ARP/NDP neighbor entry to be added to the stack.
 type Neighbor struct {
 	IP           net.IP
 	HardwareAddr net.HardwareAddr
@@ -127,6 +128,12 @@ type FDBasedLink struct {
 	// PreConfigured indicates that getsockname and setsockopt(PACKET_FANOUT)
 	// have already been performed on the host FDs.
 	PreConfigured bool
+
+	// IsProxy indicates that this link is backed by a SOCK_SEQPACKET Unix domain
+	// socket connected to an external network proxy rather than by AF_PACKET
+	// sockets on a host device. Such a link carries bare IP packets with no
+	// Ethernet header and has no L2 neighbor table.
+	IsProxy bool
 }
 
 // BindOpt indicates whether the sentry or runsc process is responsible for
@@ -361,15 +368,21 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				FDs = append(FDs, newFD)
 				fdOffset++
 			}
-
 			mac := tcpip.LinkAddress(link.LinkAddress)
+			linkDispatchMode := dispatchMode
+			if link.IsProxy {
+				// Use Readv for a SOCK_SEQPACKET UDS proxy link so a peer EOF (0-byte
+				// read) stops the dispatcher cleanly instead of busy-spinning in
+				// RecvMMsg.
+				linkDispatchMode = fdbased.Readv
+			}
 
 			linkEP, err := fdbased.New(&fdbased.Options{
 				FDs:                  FDs,
 				MTU:                  uint32(link.MTU),
-				EthernetHeader:       mac != "",
+				EthernetHeader:       mac != "" && !link.IsProxy,
 				Address:              mac,
-				PacketDispatchMode:   dispatchMode,
+				PacketDispatchMode:   linkDispatchMode,
 				GSOMaxSize:           link.GSOMaxSize,
 				GVisorGSOEnabled:     link.GVisorGSOEnabled,
 				TXChecksumOffload:    link.TXChecksumOffload,
@@ -433,9 +446,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				routes = append(routes, route)
 			}
 
-			for _, neigh := range link.Neighbors {
-				proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
-				n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
+			if !link.IsProxy {
+				for _, neigh := range link.Neighbors {
+					proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
+					n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
+				}
 			}
 		}
 	} else if len(args.XDPLinks) > 0 {
