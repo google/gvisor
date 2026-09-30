@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -195,6 +196,18 @@ func TestSleepOnStateEmptyQueueAfterClearInterrupt(t *testing.T) {
 	}
 	if atomic.LoadUint32(&sc.shared.Interrupt) != 0 {
 		t.Fatalf("stub was interrupted with an empty queue and no requested interrupt")
+	}
+}
+
+func TestStuckState(t *testing.T) {
+	sc := newTestSharedContext(t)
+	sc.subprocess.sysmsgThreads[1].msg = &sysmsg.Msg{Line: 42}
+	if got := sc.stuckState(); !strings.Contains(got, "line 42") {
+		t.Fatalf("stuckState got %q, want the stub line", got)
+	}
+	delete(sc.subprocess.sysmsgThreads, 1)
+	if got := sc.stuckState(); !strings.HasSuffix(got, "no stub thread") {
+		t.Fatalf("stuckState without a stub thread got %q, want no stub thread", got)
 	}
 }
 

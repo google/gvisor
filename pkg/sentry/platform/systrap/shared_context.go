@@ -163,6 +163,24 @@ func (sc *sharedContext) interruptStub() (*thread, error) {
 	}
 }
 
+// stuckState describes the context and its stub thread for debugging.
+func (sc *sharedContext) stuckState() string {
+	threadID := sc.threadID()
+	desc := fmt.Sprintf("state %v interrupt %d thread %d last thread %d acked %d state changed %d",
+		sc.state(), atomic.LoadUint32(&sc.shared.Interrupt), threadID,
+		atomic.LoadUint32(&sc.shared.LastThreadID), atomic.LoadUint64(&sc.shared.AckedTime),
+		atomic.LoadUint64(&sc.shared.StateChangedTime))
+	s := sc.subprocess
+	s.sysmsgThreadsMu.RLock()
+	defer s.sysmsgThreadsMu.RUnlock()
+	t, ok := s.sysmsgThreads[threadID]
+	if !ok {
+		return desc + ", no stub thread"
+	}
+	return fmt.Sprintf("%s, stub %d state %v err %d line %d debug %x", desc, t.thread.tid, t.msg.State.Get(),
+		atomic.LoadInt32(&t.msg.Err), atomic.LoadInt32(&t.msg.Line), atomic.LoadUint64(&t.msg.Debug))
+}
+
 // killSubprocess marks the subprocess dead and kills its syscall thread.
 func (sc *sharedContext) killSubprocess() {
 	sc.subprocess.kill()
@@ -277,7 +295,7 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
 			// A stub in a slow host page fault cannot take the signal yet, so
 			// keep resending rather than killing a subprocess that may recover.
 			if stuck == 0 {
-				log.TracebackAll(fmt.Sprintf("Systrap context is stuck; still waiting. ThreadContext: %v", sc))
+				log.TracebackAll(fmt.Sprintf("Systrap context is stuck; still waiting. ThreadContext: %v, %s", sc, sc.stuckState()))
 			} else {
 				log.Warningf("Systrap context still stuck after %v. ThreadContext: %v", time.Duration(stuck+1)*stuckContextTimeout, sc)
 			}
