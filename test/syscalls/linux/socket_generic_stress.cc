@@ -107,36 +107,31 @@ INSTANTIATE_TEST_SUITE_P(
 // a persistent listener (if applicable).
 class PersistentListenerConnectStressTest : public SocketPairTest {
  protected:
-  PersistentListenerConnectStressTest() : slept_{false} {}
-
-  // NewSocketSleep is the same as NewSocketPair, but will sleep once (over the
-  // lifetime of the fixture) and retry if creation fails due to EADDRNOTAVAIL.
+  // NewSocketSleep is the same as NewSocketPair, but will sleep once and retry
+  // if this connection fails due to EADDRNOTAVAIL.
   PosixErrorOr<std::unique_ptr<SocketPair>> NewSocketSleep() {
     // We can't reuse a connection too close in time to its last use, as TCP
     // uses the timestamp difference to disambiguate connections. With a
     // sufficiently small port range, we'll cycle through too quickly, and TCP
-    // won't allow for connection reuse. Thus, we sleep the first time
-    // encountering EADDRINUSE to allow for that difference (1 second in
-    // gVisor).
+    // won't allow for connection reuse. Wait for the timestamp difference to
+    // grow (1 second in gVisor) before retrying this connection. Later
+    // connections may need another wait as the port range cycles again.
     PosixErrorOr<std::unique_ptr<SocketPair>> socks = NewSocketPair();
     if (socks.ok()) {
       return socks;
     }
-    if (!slept_ && socks.error().errno_value() == EADDRNOTAVAIL) {
+    if (socks.error().errno_value() == EADDRNOTAVAIL) {
       absl::SleepFor(absl::Milliseconds(1500));
-      slept_ = true;
       return NewSocketPair();
     }
     return socks;
   }
-
- private:
-  bool slept_;
 };
 
 TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
   const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
+    SCOPED_TRACE(i);
     std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());
     ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
