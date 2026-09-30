@@ -15,6 +15,7 @@ go_library(
         "ipv4.go",
         "ipv6.go",
         "mark_matcher.go",
+        "mark_target.go",
         "multiport_matcher.go",
         "multiport_matcher_v1.go",
         "netfilter.go",
@@ -63,6 +64,7 @@ go_test(
     name = "netfilter_test",
     srcs = [
         "mark_matcher_test.go",
+        "mark_target_test.go",
         "netfilter_test.go",
     ],
     library = ":netfilter",
