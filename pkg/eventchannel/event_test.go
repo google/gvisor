@@ -107,6 +107,32 @@ func TestMultiEmitter(t *testing.T) {
 	}
 }
 
+func TestMultiEmitterRemove(t *testing.T) {
+	me := &multiEmitter{}
+	kept := &testEmitter{}
+	removed := &testEmitter{}
+	me.AddEmitter(kept)
+	me.AddEmitter(removed)
+	me.RemoveEmitter(removed)
+
+	if _, err := me.Emit(testMessage{name: "foo"}); err != nil {
+		t.Fatalf("me.Emit failed: %v", err)
+	}
+	if got := len(kept.events); got != 1 {
+		t.Errorf("kept emitter got %d events, want 1", got)
+	}
+	if got := len(removed.events); got != 0 {
+		t.Errorf("removed emitter got %d events, want 0", got)
+	}
+
+	if err := me.Close(); err != nil {
+		t.Fatalf("me.Close() failed: %v", err)
+	}
+	if removed.closed {
+		t.Errorf("removed emitter was closed by me.Close()")
+	}
+}
+
 func TestRateLimitedEmitter(t *testing.T) {
 	// Create a RateLimittedEmitter that wraps a testEmitter.
 	te := &testEmitter{}

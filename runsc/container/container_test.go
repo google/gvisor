@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -38,19 +39,24 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -2026,6 +2032,100 @@ func TestCapabilities(t *testing.T) {
 				t.Fatalf("container failed to exec %v: %v", args, err)
 			}
 		})
+	}
+}
+
+// TestEventsAttachRawEmitter checks that Events.AttachRawEmitter is served on
+// the control socket and emits events as Any messages holding the event.
+func TestEventsAttachRawEmitter(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("socketpair: %v", err)
+	}
+	if err := unix.SetNonblock(fds[0], true); err != nil {
+		t.Fatalf("SetNonblock: %v", err)
+	}
+	events := os.NewFile(uintptr(fds[0]), "events reader")
+	defer events.Close()
+	sink := os.NewFile(uintptr(fds[1]), "events writer")
+
+	// The socket path may be too long to connect to directly, so connect
+	// through /proc/self/fd as Sandbox does.
+	sockFD, err := unix.Open(cont.Sandbox.GetControlSocketPath(), unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("opening control socket: %v", err)
+	}
+	defer unix.Close(sockFD)
+	conn, err := client.ConnectTo(fmt.Sprintf("/proc/self/fd/%d", sockFD))
+	if err != nil {
+		t.Fatalf("connecting to control socket: %v", err)
+	}
+	defer conn.Close()
+	err = conn.Call(boot.EventsAttachRawEmitter, &control.EventsOpts{
+		FilePayload: urpc.FilePayload{Files: []*os.File{sink}},
+	}, nil)
+	sink.Close()
+	if err != nil {
+		t.Fatalf("%s: %v", boot.EventsAttachRawEmitter, err)
+	}
+
+	// A process killed by a signal it does not handle emits UncaughtSignal.
+	if ws, err := execute(conf, cont, "/bin/sh", "-c", "kill -SEGV $$"); err != nil {
+		t.Fatalf("exec: %v", err)
+	} else if !ws.Signaled() || ws.Signal() != unix.SIGSEGV {
+		t.Fatalf("exec wait status = %#x, want killed by SIGSEGV", ws)
+	}
+
+	if err := events.SetReadDeadline(time.Now().Add(pollTimeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	r := bufio.NewReader(events)
+	for {
+		n, err := binary.ReadUvarint(r)
+		if err != nil {
+			t.Fatalf("reading event length: %v", err)
+		}
+		buf := make([]byte, n)
+		if _, err := io.ReadFull(r, buf); err != nil {
+			t.Fatalf("reading event: %v", err)
+		}
+		var ev anypb.Any
+		if err := proto.Unmarshal(buf, &ev); err != nil {
+			t.Fatalf("unmarshaling event: %v", err)
+		}
+		var sig ucspb.UncaughtSignal
+		if !ev.MessageIs(&sig) {
+			t.Logf("Skipping event of type %q", ev.GetTypeUrl())
+			continue
+		}
+		if err := ev.UnmarshalTo(&sig); err != nil {
+			t.Fatalf("unmarshaling UncaughtSignal: %v", err)
+		}
+		if sig.GetSignalNumber() != int32(unix.SIGSEGV) {
+			t.Fatalf("UncaughtSignal signal = %d, want %d", sig.GetSignalNumber(), unix.SIGSEGV)
+		}
+		return
 	}
 }
 

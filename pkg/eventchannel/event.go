@@ -69,6 +69,11 @@ func AddEmitter(e Emitter) {
 	DefaultEmitter.AddEmitter(e)
 }
 
+// RemoveEmitter is a helper method that calls DefaultEmitter.RemoveEmitter.
+func RemoveEmitter(e Emitter) {
+	DefaultEmitter.RemoveEmitter(e)
+}
+
 // HaveEmitters indicates if any emitters have been registered to the
 // default emitter.
 func HaveEmitters() bool {
@@ -131,6 +136,15 @@ func (me *multiEmitter) AddEmitter(e Emitter) {
 		me.emitters = make(map[Emitter]struct{})
 	}
 	me.emitters[e] = struct{}{}
+}
+
+// RemoveEmitter removes an emitter added by AddEmitter. It does not close e.
+//
+// +checklocksexclude:me.mu
+func (me *multiEmitter) RemoveEmitter(e Emitter) {
+	me.mu.Lock()
+	defer me.mu.Unlock()
+	delete(me.emitters, e)
 }
 
 // Close closes all emitters. If any Close call errors, it returns the first

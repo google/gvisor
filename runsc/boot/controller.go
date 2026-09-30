@@ -187,6 +187,12 @@ const (
 	MetricsExport        = "Metrics.Export"
 )
 
+// Eventchannel related commands (see events.go for more details).
+const (
+	EventsAttachDebugEmitter = "Events.AttachDebugEmitter"
+	EventsAttachRawEmitter   = "Events.AttachRawEmitter"
+)
+
 // Commands for interacting with cgroupfs within the sandbox.
 const (
 	CgroupsReadControlFiles  = "Cgroups.ReadControlFiles"
@@ -207,6 +213,10 @@ type controller struct {
 
 	// manager holds the containerManager methods.
 	manager *containerManager
+
+	// events holds the Events methods. It is kept across refreshHandlers so
+	// that a later attach replaces the emitter attached before a restore.
+	events *control.Events
 
 	// stopRPCTimeout is the grace period given to in-flight RPCs when the
 	// control server is shut down. See the documentation of urpc.Server.Stop
@@ -229,6 +239,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 			l:               l,
 		},
 		srv:            srv,
+		events:         &control.Events{},
 		stopRPCTimeout: l.root.conf.ControlRPCStopTimeout,
 	}
 	ctrl.registerHandlers()
@@ -246,6 +257,7 @@ func (c *controller) registerHandlers() {
 	c.srv.Register(&control.State{Kernel: l.k})
 	c.srv.Register(&control.Usage{Kernel: l.k})
 	c.srv.Register(&control.Metrics{})
+	c.srv.Register(c.events)
 	c.srv.Register(&debug{})
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
