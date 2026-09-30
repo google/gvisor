@@ -351,23 +351,35 @@ ensure-bazel-server:
 endif
 .PHONY: ensure-bazel-server
 
-# build_paths extracts the built binary from the bazel stderr output.
-#
-# The last line is used to prevent terminal shenanigans.
+# build_paths builds target patterns (1), then runs command (2) on their outputs.
+# Bazel options (3) are separate from target patterns for both build and cquery.
+# cquery needs one expression; union/except preserve ordered additions/removals.
 build_paths = \
   (set -euo pipefail; \
-  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
-  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(1)) \
+  build_targets=($(1)); \
+  build_query='set()'; \
+  for build_target in "$${build_targets[@]}"; do \
+    case "$$build_target" in \
+      -*) build_query="$$build_query except"; build_target="$${build_target:1}" ;; \
+      *) build_query="$$build_query union" ;; \
+    esac; \
+    case "$$build_target" in \
+      *\"*) build_query="$$build_query '$$build_target'" ;; \
+      *) build_query="$$build_query \"$$build_target\"" ;; \
+    esac; \
+  done; \
+  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(3) -- "$${build_targets[@]}") && \
+  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(3) --output=starlark --starlark:file=tools/show_paths.bzl -- "$$build_query") \
   | $(call wrapper,xargs -r -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"') \
   | sed 's~^$(HOME)/\.cache/bazel/~$(patsubst %/,%,$(BAZEL_CACHE))/~' \
   | xargs -r -n 2 bash -c 'test -e "$$0" || exit 0; echo "$$($(REALPATH_M) "$$0") $$1"' \
   | xargs -r -n 2 bash -c 'set -euo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
-build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0")
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p -m 0755 "$$(dirname "$${dest}")" && chmod a+rx "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi)
-run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),"$$0" $(2))
-sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E "$$0" $(2))
+build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0",$(2))
+copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p -m 0755 "$$(dirname "$${dest}")" && chmod a+rx "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi,$(3))
+run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),"$$0" $(2),$(3))
+sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E "$$0" $(2),$(3))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
 query = $(call wrapper,$(BAZEL) query $(BAZEL_OPTIONS) $(1))
 mod   = $(call wrapper,$(BAZEL) mod $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1))
@@ -377,7 +389,7 @@ clean: ## Cleans the bazel cache.
 .PHONY: clean
 
 runsc-race:
-	@$(call build,--config=race runsc:runsc-race)
+	@$(call build,runsc:runsc-race,--config=race)
 
 testlogs: ## Returns the most recent set of test logs.
 	@if test -f .build_events.json; then \
