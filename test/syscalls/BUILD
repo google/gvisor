@@ -1268,8 +1268,6 @@ syscall_test(
 )
 
 syscall_test(
-    # TODO(b/318948806): tun.tunEndpoint is leaked.
-    leak_check = False,
     # TODO(b/110961832): /dev/net/tun does not support S/R.
     save = False,
     test = "//test/syscalls/linux:tuntap_test",
