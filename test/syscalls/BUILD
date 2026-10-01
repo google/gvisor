@@ -546,6 +546,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:pac_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:pause_test",
 )
 

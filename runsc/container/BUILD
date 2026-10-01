@@ -51,6 +51,7 @@ go_test(
     size = "large",
     srcs = [
         "console_test.go",
+        "container_pac_arm64_test.go",
         "container_save_restore_test.go",
         "container_test.go",
         "metric_server_test.go",
@@ -79,6 +80,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/cpuid",
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/seccheck/scsdk",

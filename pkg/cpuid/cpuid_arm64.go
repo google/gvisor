@@ -85,6 +85,11 @@ func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	return 528, 16
 }
 
+// HWCap1 returns the HWCAP bits of fs, as reported in the ELF auxiliary vector.
+func (fs FeatureSet) HWCap1() uint64 {
+	return fs.hwCap.hwCap1
+}
+
 // HasFeature checks for the presence of a feature.
 func (fs FeatureSet) HasFeature(feature Feature) bool {
 	return fs.hwCap.hwCap1&(1<<feature) != 0
