@@ -71,7 +71,7 @@ func TestCuda12_8(t *testing.T) {
 
 // TestMain overrides the `test.parallel` flag.
 func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
 	cuda.InitFlags()
+	dockerutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
 }

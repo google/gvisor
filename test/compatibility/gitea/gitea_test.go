@@ -154,7 +154,7 @@ func TestGitea(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
+	dockerutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
 }

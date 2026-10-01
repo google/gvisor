@@ -145,7 +145,7 @@ func token(t *testing.T, base, realm, clientID, username, password string) strin
 }
 
 func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
+	dockerutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
 }

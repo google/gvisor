@@ -16,6 +16,7 @@ package dockerutil
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,6 +120,7 @@ func checkFiles(basePath string, expectedFiles []string) error {
 }
 
 func TestMain(m *testing.M) {
+	flag.Parse()
 	EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
 }

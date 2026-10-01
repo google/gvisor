@@ -886,7 +886,7 @@ func testDockerComposeRun(ctx context.Context, t *testing.T, d *dockerutil.Conta
 }
 
 func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
 	flag.Parse()
+	dockerutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
 }
