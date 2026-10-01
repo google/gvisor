@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false && network_plugins
-// +build !false,network_plugins
-
-// The `gvisor_sentry_plugin_stack` binary runs the gVisor sentry with a
-// third-party plugin network stack linked in.
-package main
+// Package sentrycli is the main entry point for gVisor Sentry binaries.
+package sentrycli
 
 import (
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/plugin/stack"
-	"gvisor.dev/gvisor/runsc/cli/sentrycli"
+	"gvisor.dev/gvisor/runsc/cli"
+	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
-func main() {
-	sentrycli.Main(&gvisorbinaries.GvisorSentryPluginStack)
+// Main runs a Sentry binary.
+func Main(sentry *gvisorbinaries.Binary) {
+	cli.Run(sentry, map[util.SubCommand]string{
+		new(sentrycmd.Boot):      "internal use only",
+		new(sentrycmd.Symbolize): "internal use only",
+		new(sentrycmd.Umount):    "internal use only",
+	}, nil)
 }
