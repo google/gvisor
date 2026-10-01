@@ -17,7 +17,6 @@ package sandbox
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -30,6 +29,13 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 )
+
+func init() {
+	// Reserve the initial thread for main so namespace tests use threads that
+	// can exit if namespace restoration fails. Locking during init pins main
+	// to this thread: https://pkg.go.dev/runtime#LockOSThread.
+	runtime.LockOSThread()
+}
 
 func fdbasedLinkEqual(a, b boot.FDBasedLink) bool {
 	if a.Name != b.Name {
@@ -147,33 +153,39 @@ func requireRoot(t *testing.T) {
 	}
 }
 
-func setupTestNamespace(t *testing.T) error {
+func setupTestNamespace(t *testing.T) {
 	t.Helper()
 
-	origNs, err := unix.Open("/proc/self/ns/net", unix.O_RDONLY, 0)
+	// Network namespaces are per-thread. Pin before saving or changing one.
+	runtime.LockOSThread()
+	restoreFailed := false
+	t.Cleanup(func() {
+		if !restoreFailed {
+			runtime.UnlockOSThread()
+		}
+	})
+	origNs, err := unix.Open("/proc/thread-self/ns/net", unix.O_RDONLY, 0)
 	if err != nil {
-		return fmt.Errorf("failed to get current netns: %v", err)
+		t.Fatalf("Failed to get current netns: %v", err)
 	}
+
+	t.Cleanup(func() { unix.Close(origNs) })
 
 	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
-		unix.Close(origNs)
-		return fmt.Errorf("failed to unshare netns: %v", err)
+		t.Fatalf("Failed to unshare netns: %v", err)
 	}
-
-	runtime.LockOSThread()
 
 	t.Cleanup(func() {
 		if err := unix.Setns(origNs, unix.CLONE_NEWNET); err != nil {
+			// Let the test goroutine exit with the thread locked rather than
+			// returning a thread in the wrong namespace to the runtime.
+			restoreFailed = true
 			t.Errorf("Failed to restore original netns: %v", err)
 		}
-		runtime.UnlockOSThread()
-		unix.Close(origNs)
 	})
-
-	return nil
 }
 
-func createVethPair(t *testing.T, name string) (netlink.Link, error) {
+func createVethPair(t *testing.T, name string) netlink.Link {
 	t.Helper()
 
 	veth := &netlink.Veth{
@@ -184,35 +196,26 @@ func createVethPair(t *testing.T, name string) (netlink.Link, error) {
 	}
 
 	if err := netlink.LinkAdd(veth); err != nil {
-		return nil, fmt.Errorf("failed to create veth pair: %v", err)
+		t.Fatalf("Failed to create veth pair: %v", err)
 	}
-
-	link, err := netlink.LinkByName(name)
-	if err != nil {
-		netlink.LinkDel(veth)
-		return nil, fmt.Errorf("failed to get veth link: %v", err)
-	}
-
 	t.Cleanup(func() {
 		if err := netlink.LinkDel(veth); err != nil {
 			t.Errorf("Failed to delete veth pair: %v", err)
 		}
 	})
 
-	return link, nil
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		t.Fatalf("Failed to get veth link: %v", err)
+	}
+	return link
 }
 
 func setupVethInterface(t *testing.T, name, ip string, prefixLen, addrBits int) netlink.Link {
 	t.Helper()
 
-	if err := setupTestNamespace(t); err != nil {
-		t.Fatalf("Failed to setup test namespace: %v", err)
-	}
-
-	link, err := createVethPair(t, name)
-	if err != nil {
-		t.Fatalf("Failed to create veth pair: %v", err)
-	}
+	setupTestNamespace(t)
+	link := createVethPair(t, name)
 
 	if err := netlink.LinkSetUp(link); err != nil {
 		t.Fatalf("Failed to bring up interface: %v", err)
@@ -436,16 +439,24 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 	setupTestNamespace(t)
 	setupLoopback(t)
 
-	veth0Link, _ := createVethPair(t, "testveth0")
-	veth1Link, _ := createVethPair(t, "testveth1")
-	netlink.LinkSetUp(veth0Link)
-	netlink.LinkSetUp(veth1Link)
-	netlink.AddrAdd(veth0Link, &netlink.Addr{
+	veth0Link := createVethPair(t, "testveth0")
+	veth1Link := createVethPair(t, "testveth1")
+	if err := netlink.LinkSetUp(veth0Link); err != nil {
+		t.Fatalf("Failed to bring up interface: %v", err)
+	}
+	if err := netlink.LinkSetUp(veth1Link); err != nil {
+		t.Fatalf("Failed to bring up interface: %v", err)
+	}
+	if err := netlink.AddrAdd(veth0Link, &netlink.Addr{
 		IPNet: &net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.CIDRMask(24, 32)},
-	})
-	netlink.AddrAdd(veth1Link, &netlink.Addr{
+	}); err != nil {
+		t.Fatalf("Failed to add address: %v", err)
+	}
+	if err := netlink.AddrAdd(veth1Link, &netlink.Addr{
 		IPNet: &net.IPNet{IP: net.ParseIP("192.168.1.1"), Mask: net.CIDRMask(24, 32)},
-	})
+	}); err != nil {
+		t.Fatalf("Failed to add address: %v", err)
+	}
 
 	addRoute(t, nil, net.ParseIP("10.0.0.254"))
 
@@ -522,14 +533,20 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 	setupTestNamespace(t)
 	setupLoopback(t)
 
-	veth0Link, _ := createVethPair(t, "testveth0")
-	netlink.LinkSetUp(veth0Link)
-	netlink.AddrAdd(veth0Link, &netlink.Addr{
+	veth0Link := createVethPair(t, "testveth0")
+	if err := netlink.LinkSetUp(veth0Link); err != nil {
+		t.Fatalf("Failed to bring up interface: %v", err)
+	}
+	if err := netlink.AddrAdd(veth0Link, &netlink.Addr{
 		IPNet: &net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.CIDRMask(24, 32)},
-	})
-	netlink.AddrAdd(veth0Link, &netlink.Addr{
+	}); err != nil {
+		t.Fatalf("Failed to add address: %v", err)
+	}
+	if err := netlink.AddrAdd(veth0Link, &netlink.Addr{
 		IPNet: &net.IPNet{IP: net.ParseIP("2001:db8::1"), Mask: net.CIDRMask(64, 128)},
-	})
+	}); err != nil {
+		t.Fatalf("Failed to add address: %v", err)
+	}
 
 	addRoute(t, nil, net.ParseIP("10.0.0.254"))
 	addRoute(t, nil, net.ParseIP("2001:db8::ffff"))
@@ -620,11 +637,15 @@ func TestCollectLinksAndRoutes_NoUsableAddresses(t *testing.T) {
 	requireRoot(t)
 	setupTestNamespace(t)
 
-	veth0Link, _ := createVethPair(t, "testveth0")
-	netlink.LinkSetUp(veth0Link)
-	netlink.AddrAdd(veth0Link, &netlink.Addr{
+	veth0Link := createVethPair(t, "testveth0")
+	if err := netlink.LinkSetUp(veth0Link); err != nil {
+		t.Fatalf("Failed to bring up interface: %v", err)
+	}
+	if err := netlink.AddrAdd(veth0Link, &netlink.Addr{
 		IPNet: &net.IPNet{IP: net.ParseIP("2001:db8::1"), Mask: net.CIDRMask(64, 128)},
-	})
+	}); err != nil {
+		t.Fatalf("Failed to add address: %v", err)
+	}
 
 	conf := &config.Config{
 		XDP: config.XDP{Mode: config.XDPModeOff},
@@ -649,11 +670,15 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 	setupTestNamespace(t)
 	setupLoopback(t)
 
-	vethLink, _ := createVethPair(t, "testveth0")
-	netlink.LinkSetUp(vethLink)
-	netlink.AddrAdd(vethLink, &netlink.Addr{
+	vethLink := createVethPair(t, "testveth0")
+	if err := netlink.LinkSetUp(vethLink); err != nil {
+		t.Fatalf("Failed to bring up interface: %v", err)
+	}
+	if err := netlink.AddrAdd(vethLink, &netlink.Addr{
 		IPNet: &net.IPNet{IP: net.ParseIP("10.0.0.1"), Mask: net.CIDRMask(24, 32)},
-	})
+	}); err != nil {
+		t.Fatalf("Failed to add address: %v", err)
+	}
 
 	// Add a custom route pointing to the loopback interface.
 	// This simulates routes added by e.g. podman-network-create --route.
