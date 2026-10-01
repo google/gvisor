@@ -63,6 +63,47 @@ func TestClockResolution(t *testing.T) {
 	}
 }
 
+func TestNICMTULimitsSurviveMove(t *testing.T) {
+	src := stack.New(stack.Options{})
+	defer src.Close()
+	dst := stack.New(stack.Options{})
+	defer dst.Close()
+	ep := channel.New(0, 1500, "")
+	const nicID = 1
+	if err := src.CreateNICWithOptions(nicID, ep, stack.NICOptions{MinMTU: 1000, MaxMTU: 2000}); err != nil {
+		t.Fatalf("CreateNICWithOptions(%d, _, _) = %v", nicID, err)
+	}
+	id, err := src.SetNICStack(nicID, dst)
+	if err != nil {
+		t.Fatalf("SetNICStack(%d, _) = %v", nicID, err)
+	}
+	for _, test := range []struct {
+		mtu     uint32
+		wantMTU uint32
+		wantErr tcpip.Error
+	}{
+		{mtu: 999, wantMTU: 1500, wantErr: &tcpip.ErrInvalidOptionValue{}},
+		{mtu: 1000, wantMTU: 1000},
+		{mtu: 2000, wantMTU: 2000},
+		{mtu: 2001, wantMTU: 2000, wantErr: &tcpip.ErrInvalidOptionValue{}},
+	} {
+		if err := dst.SetNICMTU(id, test.mtu); !cmp.Equal(err, test.wantErr) {
+			t.Errorf("SetNICMTU(%d, %d) = %v, want %v", id, test.mtu, err, test.wantErr)
+		}
+		if got := ep.MTU(); got != test.wantMTU {
+			t.Errorf("MTU after SetNICMTU(%d, %d) = %d, want %d", id, test.mtu, got, test.wantMTU)
+		}
+	}
+
+	// NICs without explicit bounds retain their existing MTU policy.
+	if err := src.CreateNIC(nicID, channel.New(0, 1500, "")); err != nil {
+		t.Fatalf("CreateNIC(%d, _) = %v", nicID, err)
+	}
+	if err := src.SetNICMTU(nicID, math.MaxUint32); err != nil {
+		t.Errorf("SetNICMTU(%d, MaxUint32) = %v", nicID, err)
+	}
+}
+
 const (
 	fakeNetNumber        tcpip.NetworkProtocolNumber = math.MaxUint32
 	fakeNetHeaderLen                                 = 12
