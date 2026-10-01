@@ -403,6 +403,21 @@ type MMapOpts struct {
 	// underlying memory backing the mapping thus the memory content is
 	// guaranteed not to be modified outside the sentry's purview.
 	SentryOwnedContent bool
+
+	// If EagerForkCopy is true, private pages in the mapping are copied into
+	// the child immediately on fork, rather than being shared as COW
+	// between the parent and the child. This guarantees that later writes to
+	// the mapping never need to break COW, which replaces the pages
+	// backing the mapping and unmaps the pages from the platform.AddressSpace.
+	EagerForkCopy bool
+
+	// If Sealed is true, the application may not unmap, remap, change the
+	// protections of, discard the contents of, madvise, or map over the
+	// mapping. Attempts to do so fail with EPERM. This is reserved for
+	// sentry-managed mapping within the application's address
+	// space (i.e. usertrap table). Seals are inherited across
+	// fork.
+	Sealed bool
 }
 
 // NameMut is the type of MMapOpts.NameMut.

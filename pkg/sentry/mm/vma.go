@@ -94,6 +94,9 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 	// file->f_op->mmap().
 	var vgap vmaGapIterator
 	if opts.Unmap {
+		if mm.isSealedLocked(ar) {
+			return vmaIterator{}, hostarch.AddrRange{}, droppedIDs, linuxerr.EPERM
+		}
 		vgap, droppedIDs = mm.unmapLocked(ctx, ar, droppedIDs)
 	} else {
 		vgap = mm.vmas.FindGap(ar.Start)
@@ -124,6 +127,8 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		private:        opts.Private,
 		growsDown:      opts.GrowsDown,
 		isStack:        opts.Stack,
+		eagerForkCopy:  opts.EagerForkCopy,
+		sealed:         opts.Sealed,
 		mlockMode:      opts.MLockMode,
 		numaPolicy:     linux.MPOL_DEFAULT,
 		id:             opts.MappingIdentity,
@@ -438,6 +443,21 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar hostarch.AddrR
 	return vgap, droppedIDs
 }
 
+// isSealedLocked returns true if any vma overlapping ar is sealed (see
+// memmap.MMapOpts.Sealed). Operations that would modify a sealed vma on
+// behalf of the application must check this before making any changes, and
+// fail with EPERM.
+//
+// Preconditions: mm.mappingMu must be locked.
+func (mm *MemoryManager) isSealedLocked(ar hostarch.AddrRange) bool {
+	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
+		if vseg.ValuePtr().sealed {
+			return true
+		}
+	}
+	return false
+}
+
 // canWriteMappableLocked returns true if it is possible for vma.mappable to be
 // written to via this vma, i.e. if it is possible that
 // vma.mappable.Translate(at.Write=true) may be called as a result of this vma.
@@ -488,6 +508,8 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		vma1.numaPolicy != vma2.numaPolicy ||
 		vma1.numaNodemask != vma2.numaNodemask ||
 		vma1.dontfork != vma2.dontfork ||
+		vma1.eagerForkCopy != vma2.eagerForkCopy ||
+		vma1.sealed != vma2.sealed ||
 		vma1.id != vma2.id ||
 		vma1.name != vma2.name ||
 		vma1.nameMut != vma2.nameMut {

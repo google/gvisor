@@ -283,6 +283,14 @@ type vma struct {
 	// dontfork is the MADV_DONTFORK setting for this vma configured by madvise().
 	dontfork bool
 
+	// eagerForkCopy is memmap.MMapOpts.EagerForkCopy.
+	// It tells if the vma should be copied on fork() instead of
+	// being marked for COW
+	eagerForkCopy bool
+
+	// sealed tells us whether the vma can be modified or not.
+	sealed bool
+
 	mlockMode memmap.MLockMode
 
 	// numaPolicy is the NUMA policy for this vma set by mbind().
@@ -320,6 +328,8 @@ func (v *vma) copy() vma {
 		growsDown:      v.growsDown,
 		isStack:        v.isStack,
 		dontfork:       v.dontfork,
+		eagerForkCopy:  v.eagerForkCopy,
+		sealed:         v.sealed,
 		mlockMode:      v.mlockMode,
 		numaPolicy:     v.numaPolicy,
 		numaNodemask:   v.numaNodemask,
