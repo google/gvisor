@@ -324,7 +324,7 @@ func TestCgroupV1(t *testing.T) {
 
 	checkAttrs()
 
-	// Update memory.
+	// Lower the limit while keeping it above the 500 MiB reservation.
 	updatedMemory := struct {
 		field          string
 		value          int64
@@ -334,10 +334,10 @@ func TestCgroupV1(t *testing.T) {
 		skipIfNotFound bool
 	}{
 		field: "memory",
-		value: 1 << 20,
+		value: 512 << 20,
 		ctrl:  "memory",
 		file:  "memory.limit_in_bytes",
-		want:  "1048576",
+		want:  "536870912",
 	}
 	attrs[3] = updatedMemory
 	if err := d.Update(ctx, container.UpdateConfig{
