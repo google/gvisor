@@ -18,6 +18,7 @@ package gtest
 import (
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -87,8 +88,7 @@ func (tc TestCase) Args() []string {
 func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]TestCase, error) {
 	// Run to extract test cases.
 	args := append([]string{listTestFlag}, extraArgs...)
-	cmd := exec.Command(testBin, args...)
-	out, err := cmd.Output()
+	out, err := discoveryOutput(testBin, args...)
 	if err != nil {
 		// We failed to list tests with the given flags. Just
 		// return something that will run the binary with no
@@ -148,8 +148,7 @@ func ParseTestCases(testBin string, benchmarks bool, extraArgs ...string) ([]Tes
 func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
 	var t []TestCase
 	args := append([]string{listBenchmarkFlag}, extraArgs...)
-	cmd := exec.Command(binary, args...)
-	out, err := cmd.Output()
+	out, err := discoveryOutput(binary, args...)
 	if err != nil {
 		// We were able to enumerate tests above, but not benchmarks?
 		// We requested them, so we return an error in this case.
@@ -181,6 +180,18 @@ func ParseBenchmarks(binary string, extraArgs ...string) ([]TestCase, error) {
 		})
 	}
 	return t, nil
+}
+
+func discoveryOutput(binary string, args ...string) ([]byte, error) {
+	cmd := exec.Command(binary, args...)
+	// Gtest can write an XML listing during discovery. Only the later test
+	// execution should write to the result destination, especially when its
+	// filesystem is isolated from this process.
+	cmd.Env = slices.DeleteFunc(cmd.Environ(), func(entry string) bool {
+		name, _, _ := strings.Cut(entry, "=")
+		return name == "GTEST_OUTPUT" || name == "GUNIT_OUTPUT" || name == "XML_OUTPUT_FILE"
+	})
+	return cmd.Output()
 }
 
 // BuildTestArgs builds arguments to be passed to the test binary to execute
