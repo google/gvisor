@@ -408,7 +408,7 @@ steps:
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,-runsc_slimvm syscall-tests
+    command: make OPTIONS=--config=syscalls-amd64 syscall-tests
     parallelism: 20
     agents:
       <<: *platform_specific_agents
@@ -418,7 +418,7 @@ steps:
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,runsc_ptrace,runsc_systrap syscall-tests
+    command: make OPTIONS=--config=syscalls-arm64 syscall-tests
     parallelism: 10
     agents:
       arch: "arm64"
@@ -427,7 +427,7 @@ steps:
   - <<: *common
     <<: *source_test_continuous
     label: ":linux: System call tests on release-candidate Linux (AMD64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,-runsc_slimvm syscall-tests
+    command: make OPTIONS=--config=syscalls-amd64 syscall-tests
     parallelism: 20
     agents:
       arch: "amd64"
@@ -437,7 +437,7 @@ steps:
   - <<: *common
     <<: *source_test_continuous
     label: ":linux: System call tests on release-candidate Linux (ARM64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,runsc_ptrace,runsc_systrap syscall-tests
+    command: make OPTIONS=--config=syscalls-arm64 syscall-tests
     parallelism: 10
     agents:
       arch: "arm64"
