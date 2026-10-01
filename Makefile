@@ -865,17 +865,20 @@ webhook-update: test/kubernetes/gvisor-injection-admission-webhook.yaml.in
 SYZKALLER_IMAGE     ?= gcr.io/syzkaller/syzbot:latest
 SYZKALLER_CONTAINER ?= gvisor-syz-$(HASH)-$(ARCH)
 SYZKALLER_REPO_URL  ?= https://github.com/google/syzkaller
-syzkaller-smoke-test: $(RUNTIME_BIN)
-	@docker rm -f $(SYZKALLER_CONTAINER) 2>/dev/null || true && \
+SYZKALLER_TARBALL   := $(if $(STAGED_BINARIES),$(notdir $(STAGED_BINARIES)),gvisor.tar.bz2)
+syzkaller-smoke-test:
+	@export T=$$(mktemp -d --tmpdir syzkaller-gvisor.XXXXXX) && chmod a+rx "$$T" && \
+	$(if $(STAGED_BINARIES),gcloud storage cp "$(STAGED_BINARIES)" "$$T/$(SYZKALLER_TARBALL)",$(call copy,//debian:gvisor-release-tar-bz2,$$T)) && \
+	{ docker rm -f $(SYZKALLER_CONTAINER) 2>/dev/null || true; } && \
 	docker run --rm \
 		--name="$(SYZKALLER_CONTAINER)" \
 		--runtime="$(UNSANDBOXED_RUNTIME)" \
 		--hostname="$(SYZKALLER_CONTAINER)" \
 		$(DOCKER_PRIVILEGED) \
 		--pid=host \
-		-v "$(RUNTIME_DIR):$(RUNTIME_DIR):ro" \
+		-v "$$T:$$T:ro" \
 		-e "GOPATH=/__w/syzkaller/syzkaller/gopath" \
-		-e "GVISOR_VMLINUX_PATH=$(RUNTIME_BIN)" \
+		-e "GVISOR_TARBALL_PATH=$$T/$(SYZKALLER_TARBALL)" \
 		"$(SYZKALLER_IMAGE)" \
 		/bin/bash -xeuc ' \
 			mkdir -p "$$GOPATH/src/github.com/google" && \
@@ -883,7 +886,8 @@ syzkaller-smoke-test: $(RUNTIME_BIN)
 			cd "$$GOPATH/src/github.com/google/syzkaller" && \
 			make && \
 			bash tools/gvisor-smoke-test.sh \
-		'
+		'; \
+	rc=$$?; rm -rf "$$T"; exit $$rc
 .PHONY: syzkaller-smoke-test
 
 ##
