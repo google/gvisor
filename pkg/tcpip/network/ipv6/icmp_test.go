@@ -187,7 +187,7 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 	}
 	ip := make([]byte, header.IPv6MinimumSize+extensionHeaders.Length())
 	header.IPv6(ip).Encode(&header.IPv6Fields{
-		PayloadLength:     uint16(len(icmp)),
+		PayloadLength:     uint16(extensionHeaders.Length() + len(icmp)),
 		TransportProtocol: header.ICMPv6ProtocolNumber,
 		HopLimit:          hopLimit,
 		SrcAddr:           src,
