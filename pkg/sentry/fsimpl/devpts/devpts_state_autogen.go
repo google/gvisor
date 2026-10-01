@@ -39,6 +39,46 @@ func (fstype *FilesystemType) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(2, &fstype.root)
 }
 
+func (f *fileSystemOpts) StateTypeName() string {
+	return "pkg/sentry/fsimpl/devpts.fileSystemOpts"
+}
+
+func (f *fileSystemOpts) StateFields() []string {
+	return []string{
+		"mode",
+		"ptmxMode",
+		"uid",
+		"gid",
+		"setuid",
+		"setgid",
+	}
+}
+
+func (f *fileSystemOpts) beforeSave() {}
+
+// +checklocksignore
+func (f *fileSystemOpts) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.mode)
+	stateSinkObject.Save(1, &f.ptmxMode)
+	stateSinkObject.Save(2, &f.uid)
+	stateSinkObject.Save(3, &f.gid)
+	stateSinkObject.Save(4, &f.setuid)
+	stateSinkObject.Save(5, &f.setgid)
+}
+
+func (f *fileSystemOpts) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *fileSystemOpts) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.mode)
+	stateSourceObject.Load(1, &f.ptmxMode)
+	stateSourceObject.Load(2, &f.uid)
+	stateSourceObject.Load(3, &f.gid)
+	stateSourceObject.Load(4, &f.setuid)
+	stateSourceObject.Load(5, &f.setgid)
+}
+
 func (fs *filesystem) StateTypeName() string {
 	return "pkg/sentry/fsimpl/devpts.filesystem"
 }
@@ -86,6 +126,7 @@ func (i *rootInode) StateFields() []string {
 		"rootInodeRefs",
 		"locks",
 		"master",
+		"opts",
 		"replicas",
 		"nextIdx",
 	}
@@ -109,8 +150,9 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &i.rootInodeRefs)
 	stateSinkObject.Save(11, &i.locks)
 	stateSinkObject.Save(12, &i.master)
-	stateSinkObject.Save(13, &i.replicas)
-	stateSinkObject.Save(14, &i.nextIdx)
+	stateSinkObject.Save(13, &i.opts)
+	stateSinkObject.Save(14, &i.replicas)
+	stateSinkObject.Save(15, &i.nextIdx)
 }
 
 func (i *rootInode) afterLoad(context.Context) {}
@@ -130,8 +172,9 @@ func (i *rootInode) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(10, &i.rootInodeRefs)
 	stateSourceObject.Load(11, &i.locks)
 	stateSourceObject.Load(12, &i.master)
-	stateSourceObject.Load(13, &i.replicas)
-	stateSourceObject.Load(14, &i.nextIdx)
+	stateSourceObject.Load(13, &i.opts)
+	stateSourceObject.Load(14, &i.replicas)
+	stateSourceObject.Load(15, &i.nextIdx)
 }
 
 func (i *implStatFS) StateTypeName() string {
@@ -530,6 +573,7 @@ func (t *Terminal) StateLoad(ctx context.Context, stateSourceObject state.Source
 
 func init() {
 	state.Register((*FilesystemType)(nil))
+	state.Register((*fileSystemOpts)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*rootInode)(nil))
 	state.Register((*implStatFS)(nil))
