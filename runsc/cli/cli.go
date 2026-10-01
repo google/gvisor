@@ -178,6 +178,12 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 		}
 	}
 
+	// Replace --platform=auto with a concrete platform. Child processes
+	// receive the concrete platform through their flags.
+	if err := specutils.ResolvePlatform(conf, spec); err != nil {
+		util.Fatalf("%v", err)
+	}
+
 	// Construct LogFileOpts for the subcommand.
 	lfOpts := &specutils.LogFileOpts{
 		SandboxID: "<unknown>",
