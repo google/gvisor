@@ -1079,7 +1079,7 @@ class ElfInterpreterStaticTest
 TEST_P(ElfInterpreterStaticTest, Test) {
   // TODO(gvisor.dev/issue/3721): Test has been observed to segfault on 5.X
   // kernels.
-  if (!IsRunningOnGvisor()) {
+  if (GvisorPlatform() == Platform::kNative) {
     auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
     SKIP_IF(version.major > 4);
   }

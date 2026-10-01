@@ -354,7 +354,7 @@ TEST_P(AllSocketPairTest, RecvmmsgInvalidTimeout) {
 TEST_P(AllSocketPairTest, RecvmmsgTimeoutBeforeRecv) {
   // There is a known bug in the Linux recvmmsg(2) causing it to block forever
   // if the timeout expires while blocking for the first message.
-  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
+  SKIP_IF(GvisorPlatform() == Platform::kNative || IsRunningWithHostinet());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char buf[10];

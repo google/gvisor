@@ -341,7 +341,7 @@ TEST_P(NetlinkSetLinkTest, ChangeLinkName) {
   SKIP_IF(IsRunningWithHostinet());
   // Hosts that run with old kernel allow renaming only when
   // the interface is down. The restriction has been removed.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
   FileDescriptor fd =
@@ -459,7 +459,7 @@ TEST_P(NetlinkSetLinkTest, ChangeMTU) {
 
 TEST_P(NetlinkSetLinkTest, ChangeMACAddress) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   SKIP_IF(IsRunningWithHostinet());
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 

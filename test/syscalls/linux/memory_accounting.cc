@@ -67,7 +67,7 @@ TEST(MemoryAccounting, AnonAccountingPreservedOnSaveRestore) {
   // the machine. In gvisor, this test is the only thing running on the
   // "machine", so values in /proc/meminfo accurately reflect the memory used by
   // the test.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   uint64_t anon_initial = ASSERT_NO_ERRNO_AND_VALUE(AnonUsageFromMeminfo());
 

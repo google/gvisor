@@ -73,7 +73,7 @@ TEST(KillTest, CanKillAllPIDs) {
   // as our namespace may contain may more processes that cannot tolerate
   // the signal below. We also cannot reliably create a new pid namespace
   // for ourselves and test the same functionality.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   int pipe_fds[2];
   ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());

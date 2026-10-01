@@ -246,7 +246,7 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
   // So we only run the test with gVisor and not hostinet, and even then require
   // CAP_NET_RAW.
   // See https://lwn.net/Articles/443051/
-  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
+  SKIP_IF(GvisorPlatform() == Platform::kNative || IsRunningWithHostinet() ||
           ASSERT_NO_ERRNO_AND_VALUE(
               HaveRawIPSocketCapability(AF_INET, IPPROTO_ICMP)));
 
@@ -302,7 +302,7 @@ TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
   // So we only run the test with gVisor and not hostinet, and even then require
   // CAP_NET_RAW.
   // See https://lwn.net/Articles/443051/
-  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
+  SKIP_IF(GvisorPlatform() == Platform::kNative || IsRunningWithHostinet() ||
           ASSERT_NO_ERRNO_AND_VALUE(
               HaveRawIPSocketCapability(AF_INET, IPPROTO_ICMP)));
 
@@ -349,7 +349,7 @@ TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
   // So we only run the test with gVisor and not hostinet, and even then require
   // CAP_NET_RAW.
   // See https://lwn.net/Articles/443051/
-  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
+  SKIP_IF(GvisorPlatform() == Platform::kNative || IsRunningWithHostinet() ||
           ASSERT_NO_ERRNO_AND_VALUE(
               HaveRawIPSocketCapability(AF_INET, IPPROTO_ICMP)));
 

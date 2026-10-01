@@ -219,7 +219,7 @@ void IPTablesTest::TearDown() {
 // can test that gVisor has the same initial state that a newly-booted Linux
 // machine would have.
 TEST_F(IPTablesTest, InitialState) {
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   //
@@ -424,7 +424,7 @@ TEST_F(IPTablesTest, LargeReplacePayload) {
 // Tests the initial state of the raw table. The raw table has PREROUTING and
 // OUTPUT hooks (no INPUT, FORWARD, or POSTROUTING).
 TEST_F(IPTablesTest, RawTableInitialState) {
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   struct ipt_getinfo info = {};

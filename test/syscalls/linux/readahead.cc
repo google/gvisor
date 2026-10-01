@@ -41,7 +41,7 @@ TEST(ReadaheadTest, UnsupportedFile) {
 
 TEST(ReadaheadTest, InvalidOffset) {
   // This test is not valid for some Linux Kernels.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
@@ -92,7 +92,7 @@ TEST(ReadaheadTest, WriteOnly) {
 
 TEST(ReadaheadTest, InvalidSize) {
   // This test is not valid on some Linux kernels.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));

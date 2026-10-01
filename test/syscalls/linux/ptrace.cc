@@ -2393,7 +2393,7 @@ TEST(PtraceTest, SeizeSetOptions) {
 
 TEST(PtraceTest, SetYAMAPtraceScope) {
   // Do not modify the ptrace scope on the host.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(

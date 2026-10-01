@@ -129,7 +129,7 @@ TEST(EventfdTest, IllegalPwrite) {
 
 TEST(EventfdTest, BigWriteFails) {
   // Starting Linux 6.9, big writes fail. gVisor has the newer behavior.
-  if (!IsRunningOnGvisor()) {
+  if (GvisorPlatform() == Platform::kNative) {
     auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
     SKIP_IF(version.major < 6 || (version.major == 6 && version.minor < 9));
   }
@@ -199,7 +199,7 @@ TEST(EventfdTest, NotifyNonZero) {
 TEST(EventfdTest, SpliceReturnsEINVAL) {
   // Splicing into eventfd has been disabled in
   // 36e2c7421f02 ("fs: don't allow splice read/write without explicit ops").
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   // Create an eventfd descriptor.
   FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(7, 0));

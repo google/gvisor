@@ -245,7 +245,7 @@ TEST(ShmTest, ShmStat) {
   // This test relies on the segment we create to be the first one on the
   // system, causing it to occupy slot 1. We can't reasonably expect this on a
   // general Linux host.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   const ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
       Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0777));

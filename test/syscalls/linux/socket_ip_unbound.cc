@@ -221,7 +221,7 @@ TEST_P(IPUnboundSocketTest, InvalidLargeTOS) {
 
 TEST_P(IPUnboundSocketTest, CheckSkipECN) {
   // Test is inconsistent on different kernels.
-  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
+  SKIP_IF(GvisorPlatform() == Platform::kNative || IsRunningWithHostinet());
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   int set = 0xFF;
   socklen_t set_sz = sizeof(set);

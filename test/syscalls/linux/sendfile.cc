@@ -482,7 +482,7 @@ TEST(SendFileTest, SendToNotARegularFile) {
 
 TEST(SendFileTest, SendPipeWouldBlock) {
   // This test fails on Linux, likely due to a Linux bug.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   // Create temp file.
   constexpr char kData[] =
       "The fool doth think he is wise, but the wise man knows himself to be a "
@@ -530,7 +530,7 @@ TEST(SendFileTest, SendPipeEOF) {
 
 TEST(SendFileTest, SendToFullPipeReturnsEAGAIN) {
   // This test fails on Linux, likely due to a Linux bug.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   // Create and open an empty input file.
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor in_fd =

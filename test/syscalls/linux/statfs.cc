@@ -122,7 +122,7 @@ TEST(FstatfsTest, InternalDevShm) {
 TEST(FstatfsTest, BlocksFree) {
   // This test relies on the test being the only user of the filesystem, which
   // is not feasible outside of a sandbox.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   const std::string file_path = NewTempAbsPath();
   const std::string dir = std::string(Dirname(file_path));

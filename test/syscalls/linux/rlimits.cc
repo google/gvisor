@@ -120,7 +120,7 @@ TEST(RlimitTest, RlimitNProc) {
   // The native test can be run in a user namespace without a mapping for
   // kNobody or there can be other processes that are running from the kNobody
   // user.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   // Run the test in a sub-thread to avoid changing UID of the current thread.
   ScopedThread([&] {

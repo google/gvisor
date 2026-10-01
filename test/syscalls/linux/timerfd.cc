@@ -311,7 +311,7 @@ TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtime) {
 TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtimeCancelOnSet) {
   // Skip on native Linux since we can't guarantee there
   // will be no clock jumps causing ECANCELED
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   constexpr int kDelaySecs = 1;
 

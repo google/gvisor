@@ -625,7 +625,7 @@ TEST(ProcSysNetIpv4IpForward, Exists) {
 TEST(ProcSysNetIpv4IpForward, DefaultValueEqZero) {
   // Test is only valid in sandbox. Not hermetic in native tests
   // running on a arbitrary machine.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDONLY));
 
   char buf = 101;

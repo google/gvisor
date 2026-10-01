@@ -1135,7 +1135,7 @@ TEST(ProcSelfMaps, MapUnmap) {
 TEST(ProcSelfMaps, Mprotect) {
   // FIXME(jamieliu): Linux's mprotect() sometimes fails to merge VMAs in this
   // case.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
 
   // Reserve 5 pages of address space.
   Mapping m = ASSERT_NO_ERRNO_AND_VALUE(

@@ -1289,7 +1289,7 @@ TEST(PidfdTest, PidfdGetfdNonDumpableExitingRace) {
   // Skip when running natively because the host kernel may be vulnerable to
   // CVE-2026-46333, which would cause the test to fail. We only want to verify
   // the fix inside the gVisor sandbox.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(GvisorPlatform() == Platform::kNative);
   AutoCapability cap(CAP_SYS_PTRACE, false);
   for (int iter = 0; iter < 100; ++iter) {
     int pfd[2];
