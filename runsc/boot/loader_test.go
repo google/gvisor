@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,11 @@ import (
 )
 
 func init() {
+	// Reserve the initial thread for main so capability tests use threads that
+	// can exit if restoration fails. Locking during init pins main to this thread:
+	// https://pkg.go.dev/runtime#LockOSThread.
+	runtime.LockOSThread()
+
 	log.SetLevel(log.Debug)
 	if err := fsgofer.OpenProcSelfFD("/proc/self/fd"); err != nil {
 		panic(err)
@@ -252,6 +258,15 @@ func TestStartSignal(t *testing.T) {
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the
 // host.
 func TestHostnetWithRawSockets(t *testing.T) {
+	// Capabilities are per-thread. Pin before saving or changing them.
+	runtime.LockOSThread()
+	restoreFailed := false
+	t.Cleanup(func() {
+		if !restoreFailed {
+			runtime.UnlockOSThread()
+		}
+	})
+
 	// Drop CAP_NET_RAW from effective capabilities, if we have it.
 	pid := os.Getpid()
 	caps, err := capability.NewPid2(0)
@@ -263,16 +278,17 @@ func TestHostnetWithRawSockets(t *testing.T) {
 	}
 	if caps.Get(capability.EFFECTIVE, capability.CAP_NET_RAW) {
 		caps.Unset(capability.EFFECTIVE, capability.CAP_NET_RAW)
-		if err := caps.Apply(capability.EFFECTIVE); err != nil {
-			t.Fatalf("error applying capabilities")
+		if err := caps.Apply(capability.CAPS); err != nil {
+			t.Fatalf("error applying capabilities: %v", err)
 		}
-		// Be nice and add it back when we are done.
-		defer func() {
+		t.Cleanup(func() {
 			caps.Set(capability.EFFECTIVE, capability.CAP_NET_RAW)
-			if err := caps.Apply(capability.EFFECTIVE); err != nil {
-				t.Fatalf("error restoring capabilities")
+			if err := caps.Apply(capability.CAPS); err != nil {
+				// Do not return a thread with altered capabilities to the runtime.
+				restoreFailed = true
+				t.Errorf("error restoring capabilities: %v", err)
 			}
-		}()
+		})
 	}
 
 	// Configure host network with raw sockets.
