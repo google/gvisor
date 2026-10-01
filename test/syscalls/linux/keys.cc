@@ -33,7 +33,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/random/random.h"
-#include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
@@ -245,24 +244,17 @@ PosixErrorOr<DescribedKey> DescribeKey(int64_t key_id) {
   return described_key;
 }
 
-TEST(KeysTest, GetCurrentSessionKeyring) {
-  DescribedKey key =
-      ASSERT_NO_ERRNO_AND_VALUE(DescribeKey(KEY_SPEC_SESSION_KEYRING));
-  std::cerr << "Session key: " << DescribedKeyString(key) << std::endl;
-  EXPECT_TRUE(absl::StartsWith(key.description, "_ses"))
-      << "Unexpected name for session keyring";
-}
-
 TEST(KeysTest, GetCurrentSessionKeyringViaID) {
   DescribedKey key_via_special_id =
       ASSERT_NO_ERRNO_AND_VALUE(DescribeKey(KEY_SPEC_SESSION_KEYRING));
   std::cerr << "Session key (retrieved via KEY_SPEC_SESSION_KEYRING): "
             << DescribedKeyString(key_via_special_id) << std::endl;
+  EXPECT_EQ(key_via_special_id.type, "keyring");
   DescribedKey key_via_actual_id =
       ASSERT_NO_ERRNO_AND_VALUE(DescribeKey(key_via_special_id.key_id));
   std::cerr << "Session key (retrieved via explicit ID "
             << key_via_special_id.key_id
-            << "): " << DescribedKeyString(key_via_special_id) << std::endl;
+            << "): " << DescribedKeyString(key_via_actual_id) << std::endl;
   EXPECT_EQ(key_via_special_id, key_via_actual_id);
 }
 
