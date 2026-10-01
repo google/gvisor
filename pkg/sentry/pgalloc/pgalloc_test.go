@@ -17,9 +17,14 @@
 package pgalloc
 
 import (
+	"os"
 	"testing"
+	"unsafe"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
 
@@ -27,6 +32,140 @@ const (
 	page     = hostarch.PageSize
 	hugepage = hostarch.HugePageSize
 )
+
+func TestAllocateAndCommit(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		fr          memmap.FileRange
+		fileSize    int64
+		recycled    bool
+		huge        bool
+		wantFault   bool
+		retryLength uint64
+	}{
+		{
+			name: "small advised allocation", fr: memmap.FileRange{0, page}, fileSize: page,
+		},
+		{
+			name: "recycled allocation", fr: memmap.FileRange{0, page}, fileSize: page, recycled: true,
+		},
+		{
+			name: "recycled fault", fr: memmap.FileRange{0, page}, recycled: true, wantFault: true,
+		},
+		{
+			name: "fault across hugepage boundary", fr: memmap.FileRange{hugepage - page, hugepage + page}, fileSize: hugepage, wantFault: true,
+		},
+		{
+			name: "huge advised fault", fr: memmap.FileRange{0, hugepage}, huge: true, wantFault: true,
+		},
+		{
+			name: "commit after backing fault", fr: memmap.FileRange{0, 2 * page}, wantFault: true, retryLength: 3 * page,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fd, err := unix.MemfdCreate("pgalloc_test", unix.MFD_CLOEXEC)
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := os.NewFile(uintptr(fd), "pgalloc_test")
+			defer file.Close()
+			if err := file.Truncate(test.fileSize); err != nil {
+				t.Fatal(err)
+			}
+			available := memmap.FileRange{test.fr.Start, test.fr.End + test.retryLength}
+			mapping, err := unix.Mmap(int(file.Fd()), 0, int(available.End), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Munmap(mapping)
+			if test.recycled && !test.wantFault {
+				for i := range mapping {
+					mapping[i] = 0xff
+				}
+			}
+
+			// Expose only this allocation, without a releaser racing to reclaim
+			// waste pages. Mapping past EOF supplies a real, bounded SIGBUS.
+			f := &MemoryFile{
+				file: file,
+				opts: MemoryFileOpts{
+					DisableMemoryAccounting: true,
+					ExpectHugepages:         test.huge,
+					AdviseHugepage:          test.huge,
+					AdviseNoHugepage:        !test.huge,
+				},
+			}
+			f.initFields()
+			chunks := []chunkInfo{{mapping: uintptr(unsafe.Pointer(&mapping[0])), huge: test.huge}}
+			f.chunks.Store(&chunks)
+			f.madviseChunkMapping(chunks[0].mapping, uintptr(len(mapping)), test.huge)
+			unfree, unwaste := &f.unfreeSmall, &f.unwasteSmall
+			if test.huge {
+				unfree, unwaste = &f.unfreeHuge, &f.unwasteHuge
+			}
+			if test.recycled {
+				unwaste.RemoveRange(test.fr)
+				f.memAcct.InsertRange(test.fr, memAcctInfo{wasteOrReleasing: true})
+			} else {
+				unfree.RemoveRange(available)
+			}
+
+			readerCalled := false
+			opts := AllocOpts{
+				Mode: AllocateAndCommit,
+				Huge: test.huge,
+				ReaderFunc: func(dsts safemem.BlockSeq) (uint64, error) {
+					readerCalled = true
+					var st unix.Stat_t
+					if err := unix.Fstat(int(file.Fd()), &st); err != nil {
+						t.Fatal(err)
+					}
+					if got := uint64(st.Blocks) * 512; got < test.fr.Length() {
+						t.Errorf("committed bytes before ReaderFunc = %d, want at least %d", got, test.fr.Length())
+					}
+					for blocks := dsts; !blocks.IsEmpty(); blocks = blocks.Tail() {
+						for i, b := range blocks.Head().ToSlice() {
+							if b != 0 {
+								t.Fatalf("allocated byte %d = %#x, want zero", i, b)
+							}
+						}
+					}
+					return safemem.ZeroSeq(dsts)
+				},
+			}
+			fr, err := f.Allocate(test.fr.Length(), opts)
+			if test.wantFault {
+				if !linuxerr.Equals(linuxerr.ENOMEM, err) {
+					t.Fatalf("Allocate() = (%v, %v), want ENOMEM", fr, err)
+				}
+				if fr != (memmap.FileRange{}) || readerCalled {
+					t.Errorf("failed Allocate() returned %v, called reader=%t", fr, readerCalled)
+				}
+				unfree.VisitFullRange(test.fr, func(seg unfreeIterator) bool {
+					if got := seg.Value().refs; got != 0 {
+						t.Errorf("failed allocation retained %d references on %v", got, seg.Range())
+					}
+					return true
+				})
+				if test.retryLength == 0 {
+					return
+				}
+				// The failed population above makes the allocator use its
+				// fallback. A larger retry cannot recycle the failed range, so
+				// its sparse policy touches still require full commitment.
+				if err := file.Truncate(int64(available.End)); err != nil {
+					t.Fatal(err)
+				}
+				test.fr = memmap.FileRange{test.fr.End, available.End}
+				fr, err = f.Allocate(test.retryLength, opts)
+			}
+			if err != nil || fr != test.fr || !readerCalled {
+				t.Fatalf("Allocate() = (%v, %v), called reader=%t; want (%v, nil), true", fr, err, readerCalled, test.fr)
+			}
+			f.DecRef(fr)
+		})
+	}
+}
 
 // existingSegment represents a range of pages in a test MemoryFile that is not
 // void or free.

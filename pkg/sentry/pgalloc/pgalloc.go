@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
@@ -698,17 +699,39 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 					}
 				}
 			}
-			if alloc.recycled {
-				// The contents of recycled waste pages are initially unknown, so we
-				// need to zero them.
-				f.manuallyZero(fr)
-			} else if needHugeTouch {
-				// We only need to touch a single byte in each huge page.
-				f.forEachMappingSlice(fr, func(bs []byte) {
-					for i := 0; i < len(bs); i += hostarch.HugePageSize {
-						bs[i] = 0
+			if alloc.recycled || needHugeTouch || opts.Mode == AllocateAndCommit {
+				f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
+					bs := chunk.sliceAt(chunkFR)
+					if alloc.recycled {
+						// Waste pages may be uncommitted and their contents are unknown.
+						_, err = safemem.Zero(safemem.BlockFromUnsafeSlice(bs))
+						return err == nil
 					}
+					// Establish the VMA's backing policy before fallocate. Population
+					// is only a hint: it may skip short or unaligned mappings.
+					for off := chunkFR.Start; off < chunkFR.End; off = hostarch.HugePageRoundDown(off) + hostarch.HugePageSize {
+						i := off - chunkFR.Start
+						if _, err = safemem.Zero(safemem.BlockFromUnsafeSlice(bs[i : i+1])); err != nil {
+							return false
+						}
+					}
+					return true
 				})
+			}
+			// Full zeroing commits recycled shmem pages. Sparse policy touches
+			// still need full commitment, and disk-backed files need fallocate's
+			// storage reservation even after zeroing.
+			if err == nil && opts.Mode == AllocateAndCommit && (!alloc.recycled || f.opts.DiskBackedFile) {
+				err = f.commitFile(fr)
+			}
+			if err != nil {
+				f.DecRef(fr)
+				if _, ok := err.(safecopy.BusError); ok {
+					// This is failure to back our allocation, not a ReaderFunc
+					// fault while copying from application memory.
+					err = linuxerr.ENOMEM
+				}
+				return memmap.FileRange{}, err
 			}
 		default:
 			panic(fmt.Sprintf("unknown AllocOpts.Mode %d", alloc.opts.Mode))
