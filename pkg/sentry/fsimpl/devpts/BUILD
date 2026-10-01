@@ -60,6 +60,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
         "//pkg/usermem",
         "//pkg/waiter",
     ],
