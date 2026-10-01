@@ -643,13 +643,23 @@ run_benchmark = \
 	($(call header,BENCHMARK $(1)); \
 	set -euo pipefail; \
 	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
+	trap 'rm -rf "$$T"' EXIT; \
 	export UNSANDBOXED_RUNTIME; \
-	if test "$(1)" = "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T; fi; \
-	if test "$(1)" != "runc"; then $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; fi; \
-	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
-	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+	export RUNTIME="$(1)"; \
+	exit_code=0; \
+	if test "$(1)" = "runc"; then \
+	  $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS)) | tee $$T || exit_code=$$?; \
+	else \
+	  $(call sudo,$(BENCHMARKS_TARGETS),-runtime=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T || exit_code=$$?; \
 	fi; \
-	rm -rf $$T)
+	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
+	  upload_ret=0; \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)) || upload_ret=$$?; \
+	  if test "$$upload_ret" -ne 0 && test "$$exit_code" -eq 0; then \
+	    exit_code=$$upload_ret; \
+	  fi; \
+	fi; \
+	exit $$exit_code)
 
 # $(1) is the platform name.
 # TODO: b/567563387 - consider not using --runtime here to describe the platform
