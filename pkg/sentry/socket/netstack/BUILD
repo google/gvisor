@@ -43,7 +43,6 @@ go_library(
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/metric",
-        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/inet",
@@ -82,7 +81,11 @@ go_library(
 go_test(
     name = "netstack_test",
     srcs = ["stack_test.go"],
-    deps = [":netstack"],
+    deps = [
+        ":netstack",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/stack",
+    ],
 )
 
 proto_library(
