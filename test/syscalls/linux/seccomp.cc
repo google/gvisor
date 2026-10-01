@@ -33,14 +33,12 @@
 #include <ucontext.h>
 #include <unistd.h>
 
-#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <iterator>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -231,6 +229,7 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
   pid_t const pid = fork();
   if (pid == 0) {
     constexpr uint16_t kTrapValue = 0xdead;
+    constexpr intptr_t kTrapReturn = 4242;
     RegisterSignalHandler(
         SIGSYS, +[](int signo, siginfo_t* info, void* ucv) {
           ucontext_t* uc = static_cast<ucontext_t*>(ucv);
@@ -243,15 +242,30 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
 #if defined(__x86_64__)
           TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
           TEST_CHECK(uc->uc_mcontext.gregs[REG_RAX] == kFilteredSyscall);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_RDI] == 0x11);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_RSI] == 0x22);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_RDX] == 0x33);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_R10] == 0x44);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_R8] == 0x55);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_R9] == 0x66);
+          uc->uc_mcontext.gregs[REG_RAX] = kTrapReturn;
 #elif defined(__aarch64__)
           TEST_CHECK(info->si_arch == AUDIT_ARCH_AARCH64);
           TEST_CHECK(uc->uc_mcontext.regs[8] == kFilteredSyscall);
+          TEST_CHECK(uc->uc_mcontext.regs[0] == 0x11);
+          TEST_CHECK(uc->uc_mcontext.regs[1] == 0x22);
+          TEST_CHECK(uc->uc_mcontext.regs[2] == 0x33);
+          TEST_CHECK(uc->uc_mcontext.regs[3] == 0x44);
+          TEST_CHECK(uc->uc_mcontext.regs[4] == 0x55);
+          TEST_CHECK(uc->uc_mcontext.regs[5] == 0x66);
+          uc->uc_mcontext.regs[0] = kTrapReturn;
 #endif  // defined(__x86_64__)
-          _exit(0);
         });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_TRAP | kTrapValue);
-    syscall(kFilteredSyscall);
-    TEST_CHECK_MSG(false, "Survived invocation of test syscall");
+    int64_t ret =
+        syscall(kFilteredSyscall, 0x11L, 0x22L, 0x33L, 0x44L, 0x55L, 0x66L);
+    TEST_CHECK(ret == kTrapReturn);
+    _exit(0);
   }
   ASSERT_THAT(pid, SyscallSucceeds());
   int status;
