@@ -150,7 +150,11 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          prev_tag="$(git describe --tags --abbrev=0 --match 'release-*' "${TAG}^" 2>/dev/null || true)"
+          # The previous release by version, not by ancestry: a release with
+          # cherry-picks is not on master, and a point release for an older
+          # date is not an ancestor of newer releases.
+          prev_tag="$(git tag -l 'release-*' --sort=v:refname |
+            awk -v t="${TAG}" '/-staging$/ { next } $0 == t { r = p } { p = $0 } END { print r }')"
           if [[ -z "${prev_tag}" ]]; then
             echo "::error::Could not determine the release tag preceding ${TAG}; refusing to publish empty notes."
             exit 1
@@ -188,10 +192,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Only mark the newest release tag as "latest", so that backfilling an
-          # older tag by hand does not move the pointer backwards.
-          newest="$(git for-each-ref --count=1 --sort=-v:refname \
-            --format='%(refname:short)' 'refs/tags/release-*')"
+          # Only mark the newest release tag as "latest", so that publishing an
+          # older tag (by hand, or a point release for an older date) does not
+          # move the pointer backwards. Staging tags are not releases.
+          newest="$(git for-each-ref --sort=-v:refname \
+            --format='%(refname:short)' 'refs/tags/release-*' |
+            awk '!/-staging$/ && !n++')"
           if [[ "${TAG}" == "${newest}" ]]; then is_latest=true; else is_latest=false; fi
 
           # The Buildkite release step retries automatically, so this has to be

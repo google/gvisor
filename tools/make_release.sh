@@ -121,16 +121,26 @@ else
       # https://gvisor.dev/docs/user_guide/install/#point-release
       install_raw "release/${name}"
       tools/make_python_release.sh upload-wheel "${root}/release/${name}/python"
-      # Install the latest release.
+      install_apt "${base}"
+
+      # Install the latest release, unless a newer one exists: a point release
+      # for an older date must not move users backwards. The tag itself is not
+      # pushed until after the upload, so it is added to the list here.
       # https://gvisor.dev/docs/user_guide/install/#latest-release
-      #
+      # A separate assignment, so that a failed lookup stops the release.
+      published="$(git ls-remote --tags --refs \
+        https://github.com/google/gvisor.git 'refs/tags/release-*')"
+      newest="$( (echo "${published}" | cut -f2 | sed 's|^refs/tags/||' |
+        awk '!/-staging$/'; echo "${tag}") | sort -V | tail -n 1)"
+      if [[ "${newest}" != "${tag}" ]]; then
+        echo "Not updating the latest release: ${newest} is newer than ${tag}."
+        continue
+      fi
       # Unlike the versioned directories above, this one is overwritten by every
       # release, so it must not accumulate version-named wheels. PyPI is the
       # canonical source for the latest Python package.
       install_raw "release/latest" false
-
       install_apt "release"
-      install_apt "${base}"
     done
   else
     # Otherwise, assume it is a raw master commit.

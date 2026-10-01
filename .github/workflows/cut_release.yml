@@ -1,0 +1,82 @@
+# This workflow cuts the release branch for this week's gVisor release.
+#
+# The branch is named release/<yyyymmdd>, where the date is the Monday of the
+# current week (UTC). It fixes the commit of the release before anything is
+# built; fixes are cherry-picked onto it by pull request. Once the branch is
+# ready, stage_release.yml turns it into a release.
+#
+# The branch name contains a slash, so it matches neither the Buildkite
+# release-* branch filter nor build.yml's "*" branch filter; cutting it starts
+# no build.
+name: "Cut Release Branch"
+
+"on":
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit on master (default: head of master when the run starts)'
+        required: false
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    name: Cut release branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # Full history and tags are required for the checks below.
+          fetch-depth: 0
+
+      - name: Cut the branch
+        env:
+          COMMIT: ${{ inputs.commit }}
+          REF: ${{ github.ref }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # github.sha is pinned when the run is created, so "head of master"
+          # means the head at dispatch time, not whenever this job runs.
+          if [[ "${REF}" != "refs/heads/master" ]]; then
+            echo "::error::Run this workflow from master, not ${REF}."
+            exit 1
+          fi
+
+          date="$(date -u -d "-$(( $(date -u +%u) - 1 )) days" +%Y%m%d)"
+          branch="release/${date}"
+
+          if ! commit="$(git rev-parse --verify --quiet "${COMMIT:-${RUN_SHA}}^{commit}")"; then
+            echo "::error::Unknown commit: '${COMMIT}'"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${commit}" origin/master; then
+            echo "::error::${commit} is not on master."
+            exit 1
+          fi
+
+          if git ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null; then
+            echo "::error::${branch} already exists. Cherry-pick fixes onto it instead."
+            exit 1
+          fi
+
+          # A release for this date, or a newer one, already exists.
+          newest="$(git tag -l 'release-*' --sort=-v:refname | awk '!/-staging$/ && !n++')"
+          newest_date="$(echo "${newest#release-}" | cut -d. -f1)"
+          if (( date <= newest_date )); then
+            echo "::error::${newest} is not older than ${date}."
+            exit 1
+          fi
+
+          git log -1 --format='commit %H%nauthor %an%ndate   %ad%n%n%s' "${commit}"
+          git push origin "${commit}:refs/heads/${branch}"
+          echo "Cut \`${branch}\` at \`${commit}\`." >>"${GITHUB_STEP_SUMMARY}"

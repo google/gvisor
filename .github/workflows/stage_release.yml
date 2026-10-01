@@ -1,0 +1,94 @@
+# This workflow stages a gVisor release from a release branch.
+#
+# Run it on release/<yyyymmdd> (see cut_release.yml). It checks the requested
+# version, then calls tools/tag_release.sh, which pushes
+# release-<version>-staging. That tag starts the Buildkite release pipeline
+# (see .buildkite/release.yaml), which builds and uploads the artifacts and only
+# then pushes the real release-<version> tag. A failed build leaves no release
+# tag behind, so the same version can be staged again.
+name: "Stage Release"
+
+"on":
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 20260921.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    name: Stage release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        # Do not set ref: github.sha is the branch head when the run was
+        # created, and re-resolving the branch here would race with pushes.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # Full history and tags are required for the checks below.
+          fetch-depth: 0
+
+      - name: Check the version
+        env:
+          VERSION: ${{ inputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Mirrors the validation in tools/tag_release.sh.
+          if ! [[ "${VERSION}" =~ ^(20[0-9]{6})\.([0-9]+)$ ]]; then
+            echo "::error::Not a valid release version: '${VERSION}'"
+            exit 1
+          fi
+          date="${BASH_REMATCH[1]}"
+          rc="${BASH_REMATCH[2]}"
+
+          if [[ "${BRANCH}" != "release/${date}" ]]; then
+            echo "::error::Run this workflow from release/${date}, not ${BRANCH}."
+            exit 1
+          fi
+
+          if git rev-parse --verify --quiet "refs/tags/release-${VERSION}" >/dev/null; then
+            echo "::error::release-${VERSION} already exists."
+            exit 1
+          fi
+
+          released="$(git tag --points-at HEAD -l 'release-*' | awk '!/-staging$/')"
+          if [[ -n "${released}" ]]; then
+            echo "::error::This commit is already released as ${released}. Merge the fix to ${BRANCH} first."
+            exit 1
+          fi
+
+          # A point release follows the previous one; this catches typos.
+          if (( rc > 0 )) && ! git rev-parse --verify --quiet "refs/tags/release-${date}.$(( rc - 1 ))" >/dev/null; then
+            echo "::error::release-${date}.$(( rc - 1 )) does not exist."
+            exit 1
+          fi
+
+          if git rev-parse --verify --quiet "refs/tags/release-${VERSION}-staging" >/dev/null; then
+            echo "::warning::release-${VERSION}-staging exists; replacing it. Make sure no release build for it is running."
+          fi
+
+          git log -1 --format='commit %H%nauthor %an%ndate   %ad%n%n%s'
+
+      - name: Stage the tag
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # tools/tag_release.sh creates an annotated tag, which needs a tagger.
+          git config user.name "gVisor bot"
+          git config user.email "gvisor-bot@google.com"
+          echo "Release ${VERSION}" >"${RUNNER_TEMP}/message"
+          tools/tag_release.sh "${COMMIT}" "${VERSION}" "${RUNNER_TEMP}/message"
+          echo "Staged \`release-${VERSION}\` at \`${COMMIT}\`." >>"${GITHUB_STEP_SUMMARY}"

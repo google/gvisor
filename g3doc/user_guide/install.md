@@ -157,7 +157,8 @@ sudo add-apt-repository "deb [arch=amd64,arm64] https://storage.googleapis.com/g
 
 ### Latest release
 
-The latest official release is available at the following URL:
+The latest official release is the one with the newest version. A point release
+for an older date does not replace it. It is available at the following URL:
 
 `https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}`
 
