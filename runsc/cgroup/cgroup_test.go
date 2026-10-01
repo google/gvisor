@@ -16,12 +16,14 @@ package cgroup
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -978,6 +980,52 @@ func TestOptional(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:  "net",
+			ctrlr: controllers["net"],
+		},
+		{
+			name:  "cpu",
+			ctrlr: &cpu{},
+			extraValid: []*specs.LinuxResources{
+				{CPU: nil},
+				{CPU: &specs.LinuxCPU{}},
+				{CPU: &specs.LinuxCPU{Shares: uint64Ptr(0), Quota: int64Ptr(0), Period: uint64Ptr(0)}},
+				{CPU: &specs.LinuxCPU{Quota: int64Ptr(-1)}},
+				{CPU: &specs.LinuxCPU{RealtimeRuntime: int64Ptr(-1)}},
+			},
+			invalid: []struct {
+				name string
+				spec *specs.LinuxResources
+				err  string
+			}{
+				{
+					name: "cpu-shares",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Shares: uint64Ptr(100)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-quota",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Quota: int64Ptr(1000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-period",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{Period: uint64Ptr(100000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-realtime-period",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{RealtimePeriod: uint64Ptr(100000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+				{
+					name: "cpu-realtime-runtime",
+					spec: &specs.LinuxResources{CPU: &specs.LinuxCPU{RealtimeRuntime: int64Ptr(100000)}},
+					err:  "cpu controller is missing but limits are set in OCI spec",
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if !tc.ctrlr.optional() {
@@ -1087,6 +1135,31 @@ func TestParseCgroupRoot(t *testing.T) {
 			want:      "/dev/cgroup",
 		},
 		{
+			name:      "v1-job",
+			mountinfo: "15 1 0:0 / /dev/cgroup/job rw shared:9 - cgroup cgroup rw,job",
+			want:      "/dev/cgroup",
+		},
+		{
+			name:      "v1-named-job",
+			mountinfo: "15 1 0:0 / /dev/cgroup/job rw shared:9 - cgroup cgroup rw,name=job",
+			want:      "/dev/cgroup",
+		},
+		{
+			name:      "v1-io",
+			mountinfo: "7971 7962 0:39 / /dev/cgroup/io rw master:1563 - cgroup cgroup rw,io,favordynmods",
+			want:      "/dev/cgroup",
+		},
+		{
+			name:      "v1-named-borglet",
+			mountinfo: "7972 7962 0:40 / /dev/cgroup/borglet rw master:1564 - cgroup cgroup rw,favordynmods,name=borglet",
+			want:      "/dev/cgroup",
+		},
+		{
+			name:      "v1-net",
+			mountinfo: "7974 7962 0:42 / /dev/cgroup/net rw master:1566 - cgroup cgroup rw,net,favordynmods",
+			want:      "/dev/cgroup",
+		},
+		{
 			name:      "empty",
 			mountinfo: "",
 			want:      "/sys/fs/cgroup",
@@ -1100,5 +1173,94 @@ func TestParseCgroupRoot(t *testing.T) {
 				t.Errorf("parseCgroupRoot() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCreateController(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cgroupRoot()
+	oldCgroupRoot := cgroupRootInternal
+	cgroupRootInternal = tmpDir
+	defer func() { cgroupRootInternal = oldCgroupRoot }()
+
+	c := &cgroupV1{Name: "test-cgroup"}
+
+	// Controller directory does not exist. Should skip and return ErrNotExist.
+	skip, err := createController(c, "nonexistent")
+	if !skip {
+		t.Errorf("createController() for nonexistent controller got skip = false, want true")
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("createController() for nonexistent controller got err = %v, want ErrNotExist", err)
+	}
+
+	// Controller directory exists and is writable. Should succeed with skip = false, err = nil.
+	writableCtrlr := filepath.Join(tmpDir, "writable")
+	if err := os.Mkdir(writableCtrlr, 0755); err != nil {
+		t.Fatalf("os.Mkdir(%q) failed: %v", writableCtrlr, err)
+	}
+	skip, err = createController(c, "writable")
+	if skip || err != nil {
+		t.Errorf("createController() for writable controller got (skip=%v, err=%v), want (false, nil)", skip, err)
+	}
+
+	// Controller directory exists but is read-only (EACCES on MkdirAll). Should return skip = true and EACCES error.
+	readOnlyCtrlr := filepath.Join(tmpDir, "readonly")
+	if err := os.Mkdir(readOnlyCtrlr, 0555); err != nil {
+		t.Fatalf("os.Mkdir(%q) failed: %v", readOnlyCtrlr, err)
+	}
+	defer os.Chmod(readOnlyCtrlr, 0755)
+
+	skip, err = createController(c, "readonly")
+	if !skip {
+		t.Errorf("createController() for read-only controller got skip = false, want true")
+	}
+	if !errors.Is(err, unix.EACCES) {
+		t.Errorf("createController() for read-only controller got err = %v, want unix.EACCES", err)
+	}
+
+	// Controller directory for "net" does not exist. Should skip and return ErrNotExist.
+	skip, err = createController(c, "net")
+	if !skip {
+		t.Errorf("createController() for missing net controller got skip = false, want true")
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("createController() for missing net controller got err = %v, want ErrNotExist", err)
+	}
+	if ctrlr, ok := controllers["net"]; !ok || !ctrlr.optional() {
+		t.Errorf("controllers[\"net\"].optional() got false or not found, want true")
+	}
+}
+
+func TestInstallMissingNetController(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cgroupRoot()
+	oldCgroupRoot := cgroupRootInternal
+	cgroupRootInternal = tmpDir
+	defer func() { cgroupRootInternal = oldCgroupRoot }()
+
+	// Provide the mandatory "memory" controller root directory.
+	if err := os.Mkdir(filepath.Join(tmpDir, "memory"), 0755); err != nil {
+		t.Fatalf("os.Mkdir(memory) failed: %v", err)
+	}
+	// Intentionally do not create tmpDir/net to simulate /dev/cgroup/net missing.
+
+	c := &cgroupV1{
+		Name: "test-cgroup",
+		Own:  make(map[string]bool),
+	}
+
+	if err := c.Install(nil); err != nil {
+		t.Fatalf("c.Install() failed with missing net controller: %v", err)
+	}
+	defer c.Uninstall()
+
+	if c.Own["net"] {
+		t.Errorf("c.Own[\"net\"] = true, want false (should have been skipped)")
+	}
+	if !c.Own["memory"] {
+		t.Errorf("c.Own[\"memory\"] = false, want true")
 	}
 }
