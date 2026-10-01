@@ -184,6 +184,7 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/ringdeque",
+        "//pkg/safecopy",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/checkpoint",
@@ -212,8 +213,11 @@ go_test(
     ],
     library = ":pgalloc",
     deps = [
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/safemem",
         "//pkg/sentry/memmap",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
