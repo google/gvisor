@@ -39,5 +39,5 @@ grep podman-testuser /etc/passwd || \
 adduser   --disabled-login  --disabled-password podman-testuser < /dev/null
 (
         cd /
-        sudo -u podman-testuser podman run --runtime "${podman_runtime}" alpine echo "Hello, world"
+        sudo -u podman-testuser podman run --rm --runtime "${podman_runtime}" alpine echo "Hello, world"
 )
