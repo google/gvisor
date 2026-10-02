@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/falloc.h>
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <sys/resource.h>
@@ -29,12 +30,13 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/str_cat.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
@@ -88,6 +90,73 @@ TEST_F(AllocateTest, Fallocate) {
               SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
   EXPECT_EQ(buf.st_size, 40);
+}
+
+TEST_F(AllocateTest, FallocateFromNonzeroOffset) {
+  struct stat buf;
+  ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 0);
+  // Grow file starting from offset 5 with length 1.
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 5, 1), SyscallSucceeds());
+  ASSERT_THAT(fstat(test_file_fd_.get(), &buf), SyscallSucceeds());
+  EXPECT_EQ(buf.st_size, 6);
+}
+
+TEST_F(AllocateTest, FallocateTimestamps) {
+  SKIP_IF(IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
+
+  struct stat before;
+  ASSERT_THAT(fstat(test_file_fd_.get(), &before), SyscallSucceeds());
+
+  absl::SleepFor(absl::Milliseconds(10));
+
+  ASSERT_THAT(fallocate(test_file_fd_.get(), 0, 0, 10), SyscallSucceeds());
+
+  struct stat after;
+  ASSERT_THAT(fstat(test_file_fd_.get(), &after), SyscallSucceeds());
+  EXPECT_EQ(after.st_size, 10);
+
+  const auto ts_gt = [](const struct timespec& a, const struct timespec& b) {
+    return (a.tv_sec > b.tv_sec) ||
+           (a.tv_sec == b.tv_sec && a.tv_nsec > b.tv_nsec);
+  };
+  EXPECT_TRUE(ts_gt(after.st_mtim, before.st_mtim));
+  EXPECT_TRUE(ts_gt(after.st_ctim, before.st_ctim));
+}
+
+TEST_F(AllocateTest, FallocateKeepSize) {
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(fallocate(test_file_fd_.get(), FALLOC_FL_KEEP_SIZE, 0, 10),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    return;
+  }
+
+  struct stat before;
+  ASSERT_THAT(fstat(test_file_fd_.get(), &before), SyscallSucceeds());
+  EXPECT_EQ(before.st_size, 0);
+
+  absl::SleepFor(absl::Milliseconds(10));
+
+  int ret = fallocate(test_file_fd_.get(), FALLOC_FL_KEEP_SIZE, 0, 10);
+  if (ret != 0 && errno == EOPNOTSUPP) {
+    GTEST_SKIP()
+        << "FALLOC_FL_KEEP_SIZE not supported by underlying filesystem";
+  }
+  ASSERT_THAT(ret, SyscallSucceeds());
+
+  struct stat after;
+  ASSERT_THAT(fstat(test_file_fd_.get(), &after), SyscallSucceeds());
+  EXPECT_EQ(after.st_size, 0);
+
+  const auto ts_gt = [](const struct timespec& a, const struct timespec& b) {
+    return (a.tv_sec > b.tv_sec) ||
+           (a.tv_sec == b.tv_sec && a.tv_nsec > b.tv_nsec);
+  };
+  // Linux updates both ctime and mtime on fallocate even with
+  // FALLOC_FL_KEEP_SIZE.
+  EXPECT_TRUE(ts_gt(after.st_ctim, before.st_ctim));
+  EXPECT_TRUE(ts_gt(after.st_mtim, before.st_mtim));
 }
 
 TEST_F(AllocateTest, FallocateInvalid) {
