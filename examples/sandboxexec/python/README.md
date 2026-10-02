@@ -19,7 +19,7 @@ space.
 The `gvisor` Python package creates a standard Open Container Initiative (OCI)
 bundle (`config.json` and `rootfs/`) and invokes `runsc` which uses the OCI
 bundle to execute commands inside the sandbox. We'll walk through how to install
-`runsc` in the Prerequisites section.
+gVisor in the Prerequisites section.
 
 --------------------------------------------------------------------------------
 
@@ -56,19 +56,18 @@ SandboxExec API:
 
 ## 4. Prerequisites
 
-To run sandboxes, install the `runsc` binary.
+Install gVisor by following the
+[installation guide](https://gvisor.dev/docs/user_guide/install/). The `apt`
+package or the release tarball installs `runsc` together with the `gvisor-bin/`
+directory of sidecar binaries that `runsc` uses. Keep `gvisor-bin/` next to
+`runsc`.
 
-### Installing `runsc`
+The `gvisor` wheel uses the `runsc` on your `PATH`. To use another location,
+set `RUNSC_PATH`:
 
-1.  **Install `runsc`**: Follow the
-    [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/).
-
-2.  **Make `runsc` findable**: The `gvisor` package uses the `runsc` on your
-    `PATH`. To use a different binary, set `RUNSC_PATH`:
-
-    ```bash
-    export RUNSC_PATH=/path/to/runsc
-    ```
+```bash
+export RUNSC_PATH=/path/to/runsc
+```
 
 --------------------------------------------------------------------------------
 

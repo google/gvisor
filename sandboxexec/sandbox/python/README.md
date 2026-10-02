@@ -19,7 +19,9 @@ These Python bindings provide a programmable interface to interact with gVisor.
 pip install gvisor
 ```
 
-The bindings run sandboxes with `runsc`. Install it by following the
+The bindings run sandboxes with `runsc`, which needs the sidecar binaries that
+ship with it. Install a full gVisor release from the `apt` repository or the
+release tarball, as described in the
 [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/). The
 package uses the `runsc` on your `PATH`, or the binary set in `RUNSC_PATH`.
 
