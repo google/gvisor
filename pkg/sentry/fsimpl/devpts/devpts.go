@@ -200,9 +200,9 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 		opts:     opts,
 		replicas: make(map[uint32]*replicaInode),
 	}
-	// The mode option applies to replicas, not to this directory, which Linux
-	// fixes at 0755. See fs/devpts/inode.c:devpts_fill_super().
-	root.InodeAttrs.InitWithIDs(ctx, opts.uid, opts.gid, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|rootMode)
+	// Linux fixes the root mode and ownership independently of mount options.
+	// See fs/devpts/inode.c:devpts_fill_super() and fs/inode.c:inode_init_always().
+	root.InodeAttrs.InitWithIDs(ctx, creds.UserNamespace.MapToKUID(auth.RootUID), creds.UserNamespace.MapToKGID(auth.RootGID), linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|rootMode)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	root.InitRefs()
 
@@ -214,7 +214,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	master := &masterInode{
 		root: root,
 	}
-	master.InodeAttrs.InitWithIDs(ctx, opts.uid, opts.gid, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|opts.ptmxMode)
+	master.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|opts.ptmxMode)
 
 	// Add the master as a child of the root.
 	links := root.OrderedChildren.Populate(map[string]kernfs.Inode{
