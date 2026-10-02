@@ -149,6 +149,7 @@ docs(
         "//:security",
         "//g3doc:community",
         "//g3doc:index",
+        "//g3doc:release",
         "//g3doc:roadmap",
         "//g3doc:style",
         "//g3doc/architecture_guide:intro_to_gvisor",
