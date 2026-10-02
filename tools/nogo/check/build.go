@@ -85,6 +85,12 @@ func FilterStdPackages(srcPkgs map[string][]string) (map[string][]string, error)
 			return err
 		}
 		if d.IsDir() {
+			// rules_go includes cmd/internal/{cov,bio} archives for coverage:
+			// https://github.com/bazel-contrib/rules_go/commit/56929daa4
+			// SplitStdPackages excludes cmd sources, so skip those archives.
+			if path == "cmd" {
+				return fs.SkipDir
+			}
 			return nil
 		}
 

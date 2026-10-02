@@ -58,15 +58,17 @@ index 68a1d3b9..53c38cb2 100644
 +        ),
      ]
  
- go_tool_library = rule(
+ go_tool_library = go_rule(
 diff --git a/go/private/rules/test.bzl b/go/private/rules/test.bzl
 index dcb4eb63..660505b4 100644
 --- a/go/private/rules/test.bzl
 +++ b/go/private/rules/test.bzl
-@@ -215,6 +215,8 @@ def _go_test_impl(ctx):
-         ),
+@@ -220,8 +220,10 @@ def _go_test_impl(ctx):
          OutputGroupInfo(
-             compilation_outputs = [internal_archive.data.file],
+             compilation_outputs = [
+                 internal_archive.data.file,
+                 external_archive.data.file,
+             ],
 +            export_files = internal_archive.export_files,
 +            libs = internal_archive.libs,
              nogo_fix = nogo_diagnosticss,
