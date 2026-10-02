@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -27,25 +28,26 @@ namespace gvisor {
 namespace testing {
 namespace {
 
-std::atomic<absl::optional<bool>> save_present;
+std::atomic<absl::optional<bool>> save_enabled;
 
-bool SavePresent() {
-  auto present = save_present.load();
-  if (!present.has_value()) {
-    present = getenv("GVISOR_SAVE_TEST") != nullptr;
-    save_present.store(present);
+bool SaveEnabled() {
+  auto enabled = save_enabled.load();
+  if (!enabled.has_value()) {
+    const char* env = getenv("GVISOR_SAVE_TEST");
+    enabled = env && strcmp(env, "TRUE") == 0;
+    save_enabled.store(enabled);
   }
-  return present.value();
+  return enabled.value();
 }
 
 std::atomic<int> save_disable;
 
 }  // namespace
 
-bool IsRunningWithSaveRestore() { return SavePresent(); }
+bool IsRunningWithSaveRestore() { return SaveEnabled(); }
 
 void MaybeSave() {
-  if (SavePresent() && save_disable.load() == 0) {
+  if (SaveEnabled() && save_disable.load() == 0) {
     internal::DoCooperativeSave();
   }
 }
