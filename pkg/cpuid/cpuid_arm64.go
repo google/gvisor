@@ -90,6 +90,12 @@ func (fs FeatureSet) HasFeature(feature Feature) bool {
 	return fs.hwCap.hwCap1&(1<<feature) != 0
 }
 
+// HasPointerAuth returns true if address pointer authentication is supported
+// (HWCAP_PACA).
+func (fs FeatureSet) HasPointerAuth() bool {
+	return fs.hwCap.hwCap1&HWCAP_PACA != 0
+}
+
 // WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
 // a minimal /proc/cpuinfo, and the bogomips field is simply made up.
 func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {

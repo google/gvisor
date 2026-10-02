@@ -15,8 +15,15 @@
 package systrap
 
 import (
+	"errors"
+
+	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // getCNTFRQ returns the frequency (in Hz) of the system counter read by
@@ -46,6 +53,33 @@ func cputicksFreq() uint64 {
 
 func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
+}
+
+// pointerAuthWarnOnce is used to ensure a warning about disabling PAC failing is only printed
+// once to avoid console output spam.
+var pointerAuthWarnOnce sync.Once
+
+// disablePointerAuth disables all pointer authentication address keys for the
+// thread.
+func (t *thread) disablePointerAuth() error {
+	if !cpuid.HostFeatureSet().HasPointerAuth() {
+		// CPU doesn't support PAC; skip
+		return nil
+	}
+
+	err := t.setEnabledPointerAuthKeys(0)
+	if errors.Is(err, unix.EINVAL) {
+		// Somewhat annoyingly, Linux appears to have added PAC support in 5.0 yet added support
+		// for disabling it per-process in 5.13.
+		// So disabling PAC will only work on kernels >=5.13.
+		//
+		// We ignore EINVAL in case we are on such a kernel version.
+		pointerAuthWarnOnce.Do(func() {
+			log.Warningf("Unable to disable pointer authentication for application processes (is the host kernel 5.13 or greater?): %v", err)
+		})
+		return nil
+	}
+	return err
 }
 
 // configureSystrapAddressSpace overrides the default 48-bit address space

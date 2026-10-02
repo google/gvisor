@@ -47,6 +47,11 @@ func (t *thread) setTLS(tls *uint64) error {
 	return nil
 }
 
+// disablePointerAuth has no effect on amd64.
+func (t *thread) disablePointerAuth() error {
+	return nil
+}
+
 // configureSystrapAddressSpace is a no-op on amd64.
 //
 // On ARM64, this function overrides the default 48-bit address space
