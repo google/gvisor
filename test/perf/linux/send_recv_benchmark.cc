@@ -364,10 +364,11 @@ void BM_SendmsgTCP(benchmark::State& state) {
         // poll.
         continue;
       }
+      TEST_CHECK_ERRNO(n, EAGAIN);
       // Poll the fd for it to become writable.
-      struct pollfd poll_fd = {send_socket.get(), POLL_OUT, 0};
-      EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10),
-                  SyscallSucceedsWithValue(0));
+      struct pollfd poll_fd = {send_socket.get(), POLLOUT, 0};
+      TEST_PCHECK(RetryEINTR(poll)(&poll_fd, 1, -1) == 1);
+      TEST_CHECK(poll_fd.revents == POLLOUT);
     }
     bytes_sent += static_cast<int64_t>(sent);
   }
