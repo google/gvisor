@@ -927,8 +927,7 @@ func (pc *passContext) checkInferred() {
 			// Check to see if this field is used with a given lock
 			// held above the threshold. If yes, provide a helpful
 			// hint that this may something you wish to annotate.
-			const threshold = 0.9
-			if usage := float64(count) / float64(oo.total); usage >= threshold {
+			if usage := float64(count) / float64(oo.total); usage >= inferredThreshold {
 				pc.maybeFail(obj.Pos(), "may require checklocks annotation for %s, used with lock held %2.0f%% of the time", other.Name(), usage*100)
 			}
 		}
