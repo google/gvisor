@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
@@ -41,7 +42,18 @@ func createStub() (*thread, error) {
 	// transitively) will be killed as well. It's simply not possible to
 	// safely handle a single stub getting killed: the exact state of
 	// execution is unknown and not recoverable.
-	return attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), seccomp.Trap)
+	t, err := attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), seccomp.Trap)
+	if err != nil {
+		return nil, err
+	}
+	// On ARM, disable pointer authentication. This will be inherited by future
+	// stub processes.
+	//
+	// TODO(gvisor.dev/issue/13542): Preserve PAC keys across checkpoint/restore.
+	if err := t.disablePointerAuth(); err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
 // attachedThread returns a new attached thread.

@@ -2175,6 +2175,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "pointer_auth_test",
+    testonly = 1,
+    srcs = select_arch(
+        arm64 = ["pointer_auth.cc"],
+        default = [],
+    ),
+    linkstatic = 1,
+    deps = select_gtest() + [
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "poll_test",
     testonly = 1,
     srcs = ["poll.cc"],

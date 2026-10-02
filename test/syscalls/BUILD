@@ -573,6 +573,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:pointer_auth_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:poll_test",
 )
 

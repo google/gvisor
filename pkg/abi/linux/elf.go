@@ -109,6 +109,10 @@ const (
 
 	// NT_ARM_TLS is for ARM TLS register.
 	NT_ARM_TLS = 0x401
+
+	// NT_ARM_PAC_ENABLED_KEYS is for controlling which ARM
+	// pointer authentication keys are enabled.
+	NT_ARM_PAC_ENABLED_KEYS = 0x40a
 )
 
 // ElfHeader64 is the ELF64 file header.
