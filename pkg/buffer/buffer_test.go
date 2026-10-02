@@ -798,6 +798,21 @@ func TestSaveRestoreBuffer(t *testing.T) {
 	}
 }
 
+func TestGrowBufferCloned(t *testing.T) {
+	original := MakeWithData([]byte("abcd"))
+	defer original.Release()
+	clone := original.Clone()
+	defer clone.Release()
+	clone.Truncate(2)
+	clone.GrowTo(4, true)
+	if got := string(clone.Flatten()); got != "ab\x00\x00" {
+		t.Errorf("grown clone = %q, want ab followed by two zero bytes", got)
+	}
+	if got := string(original.Flatten()); got != "abcd" {
+		t.Errorf("growing clone changed original to %q", got)
+	}
+}
+
 func TestRangeIntersect(t *testing.T) {
 	for _, tc := range []struct {
 		desc       string
