@@ -1,0 +1,126 @@
+# This workflow cherry-picks commits from master onto a release branch.
+#
+# Run it on release/<yyyymmdd> (see cut_release.yml) with the commits to pick,
+# oldest first. It pushes the result to a cherry-pick/* branch and opens a pull
+# request against the release branch; the pull request still needs a review.
+# If a commit does not apply cleanly, the workflow stops and the cherry-pick
+# must be done by hand.
+#
+# Do not use this workflow for an embargoed fix: the branch and the pull
+# request are public.
+name: "Cherry-pick to Release Branch"
+
+"on":
+  workflow_dispatch:
+    inputs:
+      commits:
+        description: 'Commits on master to cherry-pick, oldest first, separated by spaces'
+        required: true
+        type: string
+
+concurrency:
+  group: cherry-pick-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  cherry-pick:
+    name: Cherry-pick to release branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        # Do not set ref: github.sha is the release branch head when the run
+        # was created, and the pull request is computed against it.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # Full history is required to check and cherry-pick the commits.
+          fetch-depth: 0
+
+      - name: Cherry-pick the commits
+        id: pick
+        env:
+          COMMITS: ${{ inputs.commits }}
+          BASE: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "${BASE}" =~ ^release/(20[0-9]{6})$ ]]; then
+            echo "::error::Run this workflow from a release/<yyyymmdd> branch, not ${BASE}."
+            exit 1
+          fi
+          head="cherry-pick/${BASH_REMATCH[1]}-${RUN_ID}"
+
+          git config user.name "gVisor bot"
+          git config user.email "gvisor-bot@google.com"
+          git checkout -b "${head}"
+
+          read -r -a requested <<<"${COMMITS}"
+          if (( ${#requested[@]} == 0 )); then
+            echo "::error::No commits given."
+            exit 1
+          fi
+
+          picked=()
+          for c in "${requested[@]}"; do
+            if ! sha="$(git rev-parse --verify --quiet "${c}^{commit}")"; then
+              echo "::error::Unknown commit: '${c}'"
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "${sha}" origin/master; then
+              echo "::error::${sha} is not on master. Merge the fix to master first."
+              exit 1
+            fi
+            if git merge-base --is-ancestor "${sha}" HEAD ||
+               [[ -n "$(git log -1 --format=%H -F --grep="(cherry picked from commit ${sha})" HEAD "origin/${BASE}")" ]]; then
+              echo "::error::${sha} is already on ${BASE}."
+              exit 1
+            fi
+
+            # A merge commit is picked relative to its first parent (master).
+            args=(-x)
+            if (( $(git rev-list --parents -n 1 "${sha}" | wc -w) > 2 )); then
+              args+=(-m 1)
+            fi
+            if ! git cherry-pick "${args[@]}" "${sha}"; then
+              conflicts="$(git diff --name-only --diff-filter=U)"
+              if [[ -z "${conflicts}" ]]; then
+                echo "::error::${sha} changes nothing on ${BASE}; it may already be applied."
+              else
+                echo "::error::${sha} does not apply cleanly to ${BASE}. Cherry-pick it by hand. Conflicts:"
+                echo "${conflicts}"
+              fi
+              exit 1
+            fi
+            picked+=("${sha}")
+          done
+
+          git push origin "HEAD:refs/heads/${head}"
+
+          {
+            echo "Cherry-picks onto \`${BASE}\` from master:"
+            echo
+            for sha in "${picked[@]}"; do
+              echo "- ${sha} $(git log -1 --format=%s "${sha}")"
+            done
+          } >"${RUNNER_TEMP}/body"
+          echo "head=${head}" >>"${GITHUB_OUTPUT}"
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.ref_name }}
+          HEAD_BRANCH: ${{ steps.pick.outputs.head }}
+        run: |
+          set -euo pipefail
+          url="$(gh pr create \
+            --base "${BASE}" \
+            --head "${HEAD_BRANCH}" \
+            --title "[${BASE}] Cherry-pick from master" \
+            --body-file "${RUNNER_TEMP}/body")"
+          echo "Opened ${url}" >>"${GITHUB_STEP_SUMMARY}"
