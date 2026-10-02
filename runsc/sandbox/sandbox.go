@@ -1018,17 +1018,29 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		sentryUsesCgo = true
 	}
 	bootBinPath := specutils.ExePath
+	usingSentrySidecar := false
 	if p, err := sentryBin.Path(); err == nil {
 		log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, p)
 		bootBinPath = p
+		usingSentrySidecar = true
 	} else if conf.SidecarUsagePolicy.AllowEmbeddedFallback() {
 		sentryBin.WarnUnavailable(fmt.Sprintf("Sidecar %q not usable (%v): booting sandbox with runsc itself", sentryBin.Name, err))
 	} else {
 		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", sentryBin.Name, err)
 	}
+	prewarmerPath, prewarmerErr := gvisorbinaries.GvisorSentryPrewarmer.Path()
+	if prewarmerErr != nil {
+		if conf.SidecarUsagePolicy == config.SidecarUsageStrict {
+			return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", gvisorbinaries.GvisorSentryPrewarmer.Name, prewarmerErr)
+		}
+		gvisorbinaries.GvisorSentryPrewarmer.WarnUnavailable(fmt.Sprintf("Sidecar %q not found or usable (%v). This slows down gVisor startup significantly", gvisorbinaries.GvisorSentryPrewarmer.Name, prewarmerErr))
+	}
 
 	// Relay all the config flags to the sandbox process.
 	cmd := exec.Command(bootBinPath, conf.ToFlags()...)
+	if prewarmerErr == nil {
+		cmd.Path = prewarmerPath
+	}
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
@@ -1042,16 +1054,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// Set Args[0] to make easier to spot the sandbox process.
 	cmd.Args[0] = "runsc-sandbox"
 
-	// If the prewarmer sidecar is available, exec it ahead of the boot binary.
-	// Its argv is `gvisor-prewarmer <binary> <argv[0]> [argv[1:]...]`.
-	if p, err := gvisorbinaries.GvisorSentryPrewarmer.Path(); err == nil {
-		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, p)
-		cmd.Args = append([]string{p, cmd.Path}, cmd.Args[0:]...)
-		cmd.Path = p
-	} else if conf.SidecarUsagePolicy != config.SidecarUsageStrict {
-		gvisorbinaries.GvisorSentryPrewarmer.WarnUnavailable(fmt.Sprintf("Sidecar %q not found or usable (%v). This slows down gVisor startup significantly", gvisorbinaries.GvisorSentryPrewarmer.Name, err))
-	} else {
-		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", gvisorbinaries.GvisorSentryPrewarmer.Name, err)
+	if prewarmerErr == nil {
+		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, prewarmerPath)
 	}
 
 	// Transfer FDs that need to be present before the "boot" command.
@@ -1458,6 +1462,39 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	nextFD = donations.Transfer(cmd, nextFD)
 
 	_ = donation.DonateAndTransferCustomFiles(cmd, nextFD, args.PassFiles)
+
+	// Open executables before StartInNS creates the copied mount namespace so
+	// exec does not resolve sidecar paths in the copied mount tree.
+	if prewarmerErr == nil || usingSentrySidecar {
+		bootBinFile, err := os.Open(bootBinPath)
+		if err != nil {
+			return fmt.Errorf("opening Sentry executable %q: %w", bootBinPath, err)
+		}
+		defer bootBinFile.Close()
+		if prewarmerErr == nil {
+			prewarmerFile, err := os.Open(prewarmerPath)
+			if err != nil {
+				return fmt.Errorf("opening prewarmer executable %q: %w", prewarmerPath, err)
+			}
+			defer prewarmerFile.Close()
+			prewarmerFD := len(cmd.ExtraFiles) + 3
+			cmd.ExtraFiles = append(cmd.ExtraFiles, prewarmerFile)
+			bootBinFD := len(cmd.ExtraFiles) + 3
+			cmd.ExtraFiles = append(cmd.ExtraFiles, bootBinFile)
+			cmd.Path = fmt.Sprintf("/proc/self/fd/%d", prewarmerFD)
+			cmd.Args = append([]string{
+				prewarmerPath,
+				fmt.Sprintf("/proc/self/fd/%d", bootBinFD),
+				fmt.Sprintf("/proc/self/fd/%d", prewarmerFD),
+			}, cmd.Args...)
+		} else {
+			bootBinFD := len(cmd.ExtraFiles) + 3
+			cmd.ExtraFiles = append(cmd.ExtraFiles, bootBinFile)
+			bootBinFDPath := fmt.Sprintf("/proc/self/fd/%d", bootBinFD)
+			cmd.Path = bootBinFDPath
+			cmd.Args = append(cmd.Args, fmt.Sprintf("--sentry-executable-fd=%d", bootBinFD))
+		}
+	}
 
 	// Add container ID as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)

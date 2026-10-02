@@ -66,6 +66,39 @@ func timedRun(t *testing.T, argv ...string) time.Duration {
 	return time.Since(start)
 }
 
+func TestPrewarmerClosesExecutableFD(t *testing.T) {
+	prewarmer, err := testutil.FindFile("runsc/prewarmer/gvisor-sentry-prewarmer")
+	if err != nil {
+		t.Fatalf("cannot find gvisor-sentry-prewarmer binary: %v", err)
+	}
+	prewarmerFile, err := os.Open(prewarmer)
+	if err != nil {
+		t.Fatalf("cannot open prewarmer: %v", err)
+	}
+	defer prewarmerFile.Close()
+	helper, err := testutil.FindFile("runsc/prewarmer/exec_fd_helper")
+	if err != nil {
+		t.Fatalf("cannot find exec_fd_helper binary: %v", err)
+	}
+	helperFile, err := os.Open(helper)
+	if err != nil {
+		t.Fatalf("cannot open exec_fd_helper: %v", err)
+	}
+	defer helperFile.Close()
+
+	cmd := exec.Command("/proc/self/fd/3")
+	cmd.Args = []string{
+		"gvisor-sentry-prewarmer",
+		"/proc/self/fd/4",
+		"/proc/self/fd/3",
+		"exec_fd_helper",
+	}
+	cmd.ExtraFiles = []*os.File{prewarmerFile, helperFile}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("prewarmer failed to exec helper: %v; output: %s", err, output)
+	}
+}
+
 func p50(durations []time.Duration) time.Duration {
 	sorted := append([]time.Duration(nil), durations...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })

@@ -128,6 +128,10 @@ type Boot struct {
 	// execFD is the host file descriptor used for program execution.
 	execFD int
 
+	// sentryExecutableFD is the file descriptor used to exec this Sentry from
+	// the parent mount namespace.
+	sentryExecutableFD int
+
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
@@ -289,6 +293,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.Var(&b.passFDs, "pass-fd", "mapping of host to guest FDs. They must be in M:N format. M is the host and N the guest descriptor.")
 	f.IntVar(&b.execFD, "exec-fd", -1, "host file descriptor used for program execution.")
+	f.IntVar(&b.sentryExecutableFD, "sentry-executable-fd", -1, "file descriptor used to exec this Sentry")
 	f.Var(&b.goferFilestoreFDs, "gofer-filestore-fds", "FDs to the regular files that will back the overlayfs or tmpfs mount if a gofer mount is to be overlaid.")
 	f.Var(&b.goferMountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
@@ -363,6 +368,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	timer.Reached("ring0 initialized")
 
 	argOverride := make(map[string]string)
+	if b.sentryExecutableFD >= 0 {
+		if err := unix.Close(b.sentryExecutableFD); err != nil {
+			util.Fatalf("closing sentry executable FD: %v", err)
+		}
+		argOverride["sentry-executable-fd"] = "-1"
+	}
 
 	// Do these before chroot takes effect, otherwise we can't read /proc and /sys.
 	if len(b.productName) == 0 {

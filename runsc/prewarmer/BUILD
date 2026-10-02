@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "go_binary", "go_test")
+load("//tools:defs.bzl", "cc_binary", "cc_flags_supplier", "cc_toolchain", "go_binary", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -65,11 +65,18 @@ go_binary(
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
 
+cc_binary(
+    name = "exec_fd_helper",
+    testonly = 1,
+    srcs = ["exec_fd_helper.c"],
+)
+
 go_test(
     name = "prewarmer_speedup_test",
     size = "small",
     srcs = ["prewarmer_speedup_test.go"],
     data = [
+        ":exec_fd_helper",
         ":fdtable_expander",
         ":prewarmer_binary",
         "//:release",

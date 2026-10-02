@@ -14,10 +14,9 @@
 
 // gvisor-sentry-prewarmer grows its host file descriptor table, then execs
 // the binary at argv[1], handing it argv[2:] as its argv (so argv[2] is the
-// target's argv[0]). It runs just before `runsc boot` (the Sentry) does, and
-// is meant to be invoked as such, i.e.:
-//   `gvisor-sentry-prewarmer /path/to/gvisor_sentry runsc-sandbox <flags...>
-//   boot <flags...>`
+// target's argv[0]). When argv[2] is a /proc/self/fd/N path for the prewarmer
+// executable, it marks both executable FDs close-on-exec and starts the target
+// at argv[3:].
 //
 // You may be asking: wtf, wat, but why? Excellent questions.
 // Sit down for some deep kernel lore.
@@ -138,6 +137,26 @@ static void prewarm_fdtable(void) {
   }
 }
 
+// proc_fd extracts the FD number from a /proc/self/fd/N path. Other paths do
+// not identify an inherited executable FD and return -1.
+static long proc_fd(const char* path) {
+  const char prefix[] = "/proc/self/fd/";
+  long fd = 0;
+  int i = 0;
+  for (; i < (int)(sizeof(prefix) - 1); i++) {
+    if (path[i] != prefix[i]) {
+      return -1;
+    }
+  }
+  if (path[i] < '0' || path[i] > '9') {
+    return -1;
+  }
+  for (; path[i] >= '0' && path[i] <= '9'; i++) {
+    fd = fd * 10 + path[i] - '0';
+  }
+  return path[i] == '\0' ? fd : -1;
+}
+
 // Called by `_start` with a pointer to the initial process stack, which per
 // the Linux ABI holds: `argc`, `argv[0..argc-1]`, NULL, `envp`, NULL.
 __attribute__((noreturn, used)) void prewarmer_main(long* stack) {
@@ -153,8 +172,25 @@ __attribute__((noreturn, used)) void prewarmer_main(long* stack) {
     sys_exit(1);
   }
   prewarm_fdtable();
-  // The argv array is NULL-terminated, so &argv[2] is a valid argv.
-  sys3(__NR_execve, (long)argv[1], (long)&argv[2], (long)envp);
+  long exec_fd = proc_fd(argv[1]);
+  long prewarmer_fd = proc_fd(argv[2]);
+  char** target_argv = &argv[2];
+  if (prewarmer_fd >= 0) {
+    if (argc < 4) {
+      write_stderr("gvisor-sentry-prewarmer: missing target argv[0]\n");
+      sys_exit(1);
+    }
+    target_argv = &argv[3];
+  }
+  if ((exec_fd >= 0 && sys3(__NR_fcntl, exec_fd, F_SETFD, FD_CLOEXEC) < 0) ||
+      (prewarmer_fd >= 0 &&
+       sys3(__NR_fcntl, prewarmer_fd, F_SETFD, FD_CLOEXEC) < 0)) {
+    write_stderr(
+        "gvisor-sentry-prewarmer: failed to set executable FD_CLOEXEC\n");
+    sys_exit(127);
+  }
+  // The argv array is NULL-terminated, so target_argv is a valid argv.
+  sys3(__NR_execve, (long)argv[1], (long)target_argv, (long)envp);
   write_stderr("gvisor-sentry-prewarmer: exec failed: ");
   write_stderr(argv[1]);
   write_stderr("\n");
