@@ -37,7 +37,9 @@ _templates:
   benchmarks_base: &benchmarks_base
     timeout_in_minutes: 120
     retry:
-      automatic: false
+      automatic:
+        - exit_status: -1
+          limit: 2
     soft_fail: true
     if: build.branch == "master"
     agents:
@@ -884,7 +886,7 @@ steps:
     command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER='BenchmarkFioRandRead' BENCHMARKS_OPTIONS=--test.benchtime=1000x
   - <<: *benchmarks
     label: ":cd: Ruby CI/CD benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:rubydev_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=rubydev BENCHMARKS_TARGETS=test/benchmarks/fs:rubydev_test BENCHMARKS_OPTIONS=-test.benchtime=1ns
   - <<: *benchmarks
     label: ":globe_with_meridians: HTTPD benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
