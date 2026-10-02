@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -241,6 +242,64 @@ func blockUntilWaitable(pid int) error {
 		return 0, 0, err
 	})
 	return err
+}
+
+func TestSetOOMScoreAdjExited(t *testing.T) {
+	cmd := exec.Command("/bin/cat")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stdin.Close() })
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	})
+
+	pid := cmd.Process.Pid
+	if err := setOOMScoreAdj(pid, 1000); err != nil {
+		t.Fatalf("setOOMScoreAdj(%d, 1000) while alive: %v", pid, err)
+	}
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "1000" {
+		t.Fatalf("live oom_score_adj = %q, want 1000", got)
+	}
+
+	// Keep the child waitable but unreaped so its proc files still exist.
+	if err := stdin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := blockUntilWaitable(pid); err != nil {
+		t.Fatal(err)
+	}
+	if err := setOOMScoreAdj(pid, 1000); err != nil {
+		t.Fatalf("setOOMScoreAdj(%d, 1000) after exit = %v, want nil", pid, err)
+	}
+}
+
+func TestSetOOMScoreAdjPermissionDenied(t *testing.T) {
+	// Probe without writing: a privileged caller may be able to change PID 1's
+	// score, in which case this permission-denied control does not apply.
+	f, err := os.OpenFile("/proc/1/oom_score_adj", os.O_WRONLY, 0)
+	if err == nil {
+		f.Close()
+		t.Skip("PID 1's oom_score_adj is writable")
+	}
+	if !errors.Is(err, unix.EACCES) {
+		t.Fatalf("opening PID 1's oom_score_adj: %v, want EACCES", err)
+	}
+	if running, err := specutils.IsProcessRunning(1); err != nil || !running {
+		t.Fatalf("IsProcessRunning(1) = (%t, %v), want (true, nil)", running, err)
+	}
+	if err := setOOMScoreAdj(1, 1000); !errors.Is(err, unix.EACCES) {
+		t.Fatalf("setOOMScoreAdj(1, 1000) = %v, want EACCES", err)
+	}
 }
 
 // execPS executes `ps` inside the container and return the processes.

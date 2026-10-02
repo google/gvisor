@@ -2382,31 +2382,7 @@ func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Sna
 
 // IsRunning returns true if the sandbox process is running (and not a zombie).
 func (s *Sandbox) IsRunning() (bool, error) {
-	pid := s.Pid.Load()
-	if pid <= 0 {
-		return false, nil
-	}
-	pidfd, err := unix.PidfdOpen(pid, 0)
-	if err != nil {
-		if err == unix.ESRCH || err == unix.EINVAL {
-			return false, nil
-		}
-		return false, fmt.Errorf("pidfd_open(%d): %w", pid, err)
-	}
-	defer unix.Close(pidfd)
-
-	pfds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
-	for {
-		n, err := unix.Poll(pfds, 0)
-		if err == unix.EINTR {
-			continue
-		}
-		if err != nil {
-			return false, fmt.Errorf("polling pidfd for process %d: %w", pid, err)
-		}
-		// A pidfd becomes readable (POLLIN) when the process exits (including when it is a zombie).
-		return n == 0, nil
-	}
+	return specutils.IsProcessRunning(s.Pid.Load())
 }
 
 // Stacks collects and returns all stacks for the sandbox.
