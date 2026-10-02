@@ -146,7 +146,11 @@ func skipUnlessCheckpointSupported(b *testing.B) {
 	if !testutil.IsCheckpointSupported() {
 		b.Skip("Checkpoint is not supported on this runtime.")
 	}
-	if os.Getenv("RUNTIME") == "runc" {
+	runtime := dockerutil.Runtime()
+	if runtime == "" {
+		runtime = os.Getenv("RUNTIME")
+	}
+	if runtime == "" || runtime == "runc" {
 		b.Skip("Skipping runc for Checkpoint latency benchmark.")
 	}
 }
