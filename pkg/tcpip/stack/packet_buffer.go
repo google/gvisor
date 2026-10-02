@@ -518,6 +518,15 @@ func (pk *PacketBuffer) IsNATConfigured(nt NATType) bool {
 	return pk.tuple.conn.IsNATConfigured(nt)
 }
 
+// IsNATApplied returns whether NAT of the given type changed the addresses or
+// ports of this packet's connection.
+func (pk *PacketBuffer) IsNATApplied(nt NATType) bool {
+	if !pk.IsConnTrackConfigured() {
+		return false
+	}
+	return pk.tuple.conn.IsNATApplied(nt)
+}
+
 // ConfigureNoopNAT configures a no-op NAT for the packet.
 // Called if no NAT rules are configured for this packet.
 func (pk *PacketBuffer) ConfigureNoopNAT(natType NATType) bool {
