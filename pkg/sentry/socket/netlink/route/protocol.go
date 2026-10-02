@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // commandKind describes the operational class of a message type.
@@ -350,6 +351,10 @@ func (p *Protocol) dumpAddrs(ctx context.Context, s *netlink.Socket, msg *nlmsg.
 // commonPrefixLen reports the length of the longest IP address prefix.
 // This is a simplified version from Golang's src/net/addrselect.go.
 func commonPrefixLen(a, b []byte) (cpl int) {
+	if len(a) != len(b) {
+		return 0
+	}
+
 	for len(a) > 0 {
 		if a[0] == b[0] {
 			cpl += 8
@@ -374,12 +379,7 @@ func commonPrefixLen(a, b []byte) (cpl int) {
 
 // fillRoute returns the Route using LPM algorithm. Refer to Linux's
 // net/ipv4/route.c:rt_fill_info().
-func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
-	family := uint8(linux.AF_INET)
-	if len(addr) != 4 {
-		family = linux.AF_INET6
-	}
-
+func fillRoute(routes []inet.Route, family uint8, addr []byte) (inet.Route, *syserr.Error) {
 	idx := -1    // Index of the Route rule to be returned.
 	idxDef := -1 // Index of the default route rule.
 	prefix := 0  // Current longest prefix.
@@ -436,11 +436,21 @@ func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
 }
 
 // parseForDestination parses a message as format of RouteMessage-RtAttr-dst.
-func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
+func parseForDestination(msg *nlmsg.Message) (uint8, []byte, *syserr.Error) {
 	var rtMsg linux.RouteMessage
 	attrs, ok := msg.GetData(&rtMsg)
 	if !ok {
-		return nil, syserr.ErrInvalidArgument
+		return 0, nil, syserr.ErrInvalidArgument
+	}
+
+	var addrSize int
+	switch rtMsg.Family {
+	case linux.AF_INET:
+		addrSize = header.IPv4AddressSize
+	case linux.AF_INET6:
+		addrSize = header.IPv6AddressSize
+	default:
+		return 0, nil, syserr.ErrNotSupported
 	}
 
 	for !attrs.Empty() {
@@ -450,10 +460,13 @@ func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
 		}
 		attrs = rest
 		if hdr.Type == linux.RTA_DST {
-			return value, nil
+			if len(value) < addrSize {
+				return 0, nil, syserr.ErrInvalidArgument
+			}
+			return rtMsg.Family, value[:addrSize], nil
 		}
 	}
-	return nil, syserr.ErrInvalidArgument
+	return 0, nil, syserr.ErrInvalidArgument
 }
 
 // newRoute handles RTM_NEWROUTE requests.
@@ -501,23 +514,19 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 		// We always send back an NLMSG_DONE.
 		ms.Multi = true
 	} else if hdr.Flags&linux.NLM_F_REQUEST != 0 {
-		dst, err := parseForDestination(msg)
+		family, dst, err := parseForDestination(msg)
 		if err != nil {
 			return err
 		}
-		route, err := fillRoute(routeTables, dst)
+		route, err := fillRoute(routeTables, family, dst)
 		if FallbackNonHostRoutes && err != nil {
 			for _, id := range stack.InterfaceIDs() {
 				iface := stack.Interfaces()[id]
 				if (iface.Flags & linux.IFF_LOOPBACK) == 0 {
 					for _, a := range stack.InterfaceAddrs()[id] {
-						family := linux.AF_INET
-						if len(dst) == 16 {
-							family = linux.AF_INET6
-						}
-						if a.Family == uint8(family) {
+						if a.Family == family {
 							route = inet.Route{
-								Family:          uint8(family),
+								Family:          family,
 								OutputInterface: id,
 								Scope:           linux.RT_SCOPE_UNIVERSE,
 								Type:            linux.RTN_UNICAST,
