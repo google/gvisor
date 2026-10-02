@@ -4,7 +4,7 @@ The gVisor blog is owned and run by the gVisor team.
 
 ## Contact
 
-Reach out to us on [gitter](https://gitter.im/gvisor/community) or the
+Reach out to us on the
 [mailing list](https://groups.google.com/forum/#!forum/gvisor-users) if you
 would like to write a blog post.
 
@@ -33,7 +33,8 @@ To submit a blog post, follow the steps below.
     the date on which the blog will be published.
 1.  When you save the file, GitHub will walk you through the pull request (PR)
     process.
-1.  Send us a message on [gitter](https://gitter.im/gvisor/community) with a
+1.  Send us a message on the
+    [mailing list](https://groups.google.com/forum/#!forum/gvisor-users) with a
     link to your recently created PR.
 1.  A reviewer will be assigned to the pull request. They check your submission,
     and work with you on feedback and final details. When the pull request is
