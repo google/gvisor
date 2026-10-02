@@ -20,6 +20,7 @@ namespace testing {
 
 // Returns true if the environment in which the calling process is executing
 // allows the test to be checkpointed and restored during execution.
+// Enabled only when GVISOR_SAVE_TEST is "true", ignoring case.
 bool IsRunningWithSaveRestore();
 
 // May perform a co-operative save cycle.
