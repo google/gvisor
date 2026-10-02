@@ -258,6 +258,10 @@ type connection struct {
 	// Negotiated in INIT.
 	dontMask bool
 
+	// noAccess records an ENOSYS reply to FUSE_ACCESS. Permission checks on
+	// different inodes access this connection-wide capability concurrently.
+	noAccess atomicbitops.Bool
+
 	// noOpen if FUSE server doesn't support open operation.
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
