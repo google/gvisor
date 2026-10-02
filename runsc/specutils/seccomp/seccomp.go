@@ -30,8 +30,9 @@ import (
 )
 
 var (
-	killThreadAction = seccomp.KillThread
-	trapAction       = seccomp.Trap
+	killThreadAction  = seccomp.KillThread
+	killProcessAction = seccomp.KillProcess
+	trapAction        = seccomp.Trap
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_ERRNO
 	errnoAction = seccomp.ReturnError.Code(uint16(unix.EPERM))
 	// runc always returns EPERM as the errorcode for SECCOMP_RET_TRACE
@@ -95,11 +96,13 @@ func lookupSyscallNo(arch uint32, name string) (uint32, error) {
 
 // convertAction converts a LinuxSeccompAction to BPFAction
 func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
-	// TODO(gvisor.dev/issue/3124): Update specs package to include ActLog and ActKillProcess.
+	// TODO(gvisor.dev/issue/3124): Add support for ActLog.
 	// LINT.IfChange
 	switch act {
-	case specs.ActKill:
+	case specs.ActKill, specs.ActKillThread:
 		return killThreadAction, nil
+	case specs.ActKillProcess:
+		return killProcessAction, nil
 	case specs.ActTrap:
 		return trapAction, nil
 	case specs.ActErrno:
@@ -245,6 +248,8 @@ func KnownActions() []string {
 	// LINT.IfChange
 	return []string{
 		string(specs.ActKill),
+		string(specs.ActKillThread),
+		string(specs.ActKillProcess),
 		string(specs.ActTrap),
 		string(specs.ActErrno),
 		string(specs.ActTrace),
