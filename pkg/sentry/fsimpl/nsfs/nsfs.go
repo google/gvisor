@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -91,6 +92,9 @@ type Inode struct {
 
 	mnt *vfs.Mount
 }
+
+// +stateify transparent
+type inodeRefs struct{ refs.Refs[Inode] }
 
 // DecRef implements kernfs.Inode.DecRef.
 func (i *Inode) DecRef(ctx context.Context) {

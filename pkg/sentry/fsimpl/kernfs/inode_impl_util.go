@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -740,6 +741,11 @@ type StaticDirectory struct {
 	locks  vfs.FileLocks
 	fdOpts GenericDirectoryFDOptions
 }
+
+// StaticDirectoryRefs is the reference count for StaticDirectory.
+//
+// +stateify transparent
+type StaticDirectoryRefs struct{ refs.Refs[StaticDirectory] }
 
 var _ Inode = (*StaticDirectory)(nil)
 

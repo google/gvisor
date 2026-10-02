@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -68,7 +69,7 @@ func (c *SCMRights) Release(ctx context.Context) {
 //
 // +stateify savable
 type HostSender struct {
-	HostSenderRefs
+	hostSenderRefs
 
 	// mu protects fd below.
 	mu sync.RWMutex `state:"nosave"`
@@ -98,6 +99,11 @@ type HostSender struct {
 
 	// passcred is true if SO_PASSCRED is enabled on the host socket.
 	passcred bool
+}
+
+// +stateify transparent
+type hostSenderRefs struct {
+	refs.Refs[HostSender]
 }
 
 // init performs initialization required for creating new
@@ -165,7 +171,7 @@ func NewHostSender(hostFD int, addr string) (*HostSender, *syserr.Error) {
 		return nil, err
 	}
 
-	// HostSenderRefs start off with a single reference. We need two.
+	// hostSenderRefs start off with a single reference. We need two.
 	e.IncRef()
 	return &e, nil
 }

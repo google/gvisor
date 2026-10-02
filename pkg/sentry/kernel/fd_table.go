@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -75,7 +76,7 @@ const MaxFdLimit int32 = int32(bitmap.MaxBitEntryLimit)
 //
 // +stateify savable
 type FDTable struct {
-	FDTableRefs
+	fdTableRefs
 
 	k *Kernel
 
@@ -88,6 +89,9 @@ type FDTable struct {
 	// descriptorTable holds descriptors.
 	descriptorTable `state:".(map[int32]descriptor)"`
 }
+
+// +stateify transparent
+type fdTableRefs struct{ refs.Refs[FDTable] }
 
 func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	m := make(map[int32]descriptor)
@@ -146,7 +150,7 @@ func (k *Kernel) NewFDTable() *FDTable {
 //
 // If f reaches zero references, all of its file descriptors are removed.
 func (f *FDTable) DecRef(ctx context.Context) {
-	f.FDTableRefs.DecRef(func() {
+	f.fdTableRefs.DecRef(func() {
 		f.RemoveIf(ctx, func(*vfs.FileDescription, FDFlags) bool {
 			return true
 		})

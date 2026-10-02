@@ -1064,6 +1064,9 @@ type inode struct {
 	impl any // immutable
 }
 
+// +stateify transparent
+type inodeRefs struct{ refs.Refs[inode] }
+
 func (i *inode) init(impl any) {
 	i.refs.InitRefs()
 	i.mmapFile.SetFD(-1)

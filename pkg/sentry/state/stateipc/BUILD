@@ -7,17 +7,6 @@ package(
 )
 
 go_template_instance(
-    name = "asyncfileclient_refs",
-    out = "asyncfileclient_refs.go",
-    package = "stateipc",
-    prefix = "asyncFileClient",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "AsyncFileClient",
-    },
-)
-
-go_template_instance(
     name = "destinationfile_atomicptrmap",
     out = "destinationfile_atomicptrmap_unsafe.go",
     package = "stateipc",
@@ -46,7 +35,6 @@ go_template_instance(
 go_library(
     name = "stateipc",
     srcs = [
-        "asyncfileclient_refs.go",
         "client.go",
         "common.go",
         "common_unsafe.go",

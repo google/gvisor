@@ -41,6 +41,15 @@ type genericFD interface {
 	refs.RefCounter
 }
 
+// +stateify transparent
+type controlFDRefs struct{ refs.Refs[ControlFD] }
+
+// +stateify transparent
+type openFDRefs struct{ refs.Refs[OpenFD] }
+
+// +stateify transparent
+type boundSocketFDRefs struct{ refs.Refs[BoundSocketFD] }
+
 // A ControlFD is the gateway to the backing filesystem tree node. It is an
 // unusual concept. This exists to provide a safe way to do path-based
 // operations on the file. It performs operations that can modify the

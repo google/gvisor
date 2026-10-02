@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -116,6 +117,9 @@ type readonlyDir struct {
 	locks vfs.FileLocks
 }
 
+// +stateify transparent
+type readonlyDirRefs struct{ refs.Refs[readonlyDir] }
+
 func (fs *filesystem) newReadonlyDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
 	dir := &readonlyDir{}
 	dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|mode)
@@ -155,6 +159,9 @@ type dir struct {
 
 	fs *filesystem
 }
+
+// +stateify transparent
+type dirRefs struct{ refs.Refs[dir] }
 
 func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
 	dir := &dir{}

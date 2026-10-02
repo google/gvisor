@@ -341,6 +341,9 @@ type inode struct {
 	watches vfs.Watches
 }
 
+// +stateify transparent
+type inodeRefs struct{ refs.Refs[inode] }
+
 // getInode returns the inode identified by nid. A reference on inode is also
 // returned to caller.
 func (fs *filesystem) getInode(nid uint64) (*inode, error) {

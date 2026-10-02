@@ -1,22 +1,10 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
-)
-
-go_template_instance(
-    name = "namespace_refs",
-    out = "namespace_refs.go",
-    package = "inet",
-    prefix = "namespace",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "Namespace",
-    },
 )
 
 declare_mutex(
@@ -41,7 +29,6 @@ go_library(
         "context.go",
         "inet.go",
         "namespace.go",
-        "namespace_refs.go",
         "nlmcast.go",
         "nlmcast_table_mutex.go",
         "test_stack.go",

@@ -192,50 +192,6 @@ go_template_instance(
     },
 )
 
-go_template_instance(
-    name = "fd_table_refs",
-    out = "fd_table_refs.go",
-    package = "kernel",
-    prefix = "FDTable",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "FDTable",
-    },
-)
-
-go_template_instance(
-    name = "fs_context_refs",
-    out = "fs_context_refs.go",
-    package = "kernel",
-    prefix = "FSContext",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "FSContext",
-    },
-)
-
-go_template_instance(
-    name = "process_group_refs",
-    out = "process_group_refs.go",
-    package = "kernel",
-    prefix = "ProcessGroup",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "ProcessGroup",
-    },
-)
-
-go_template_instance(
-    name = "session_refs",
-    out = "session_refs.go",
-    package = "kernel",
-    prefix = "Session",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "Session",
-    },
-)
-
 proto_library(
     name = "uncaught_signal",
     srcs = ["uncaught_signal.proto"],
@@ -258,12 +214,10 @@ go_library(
         "context.go",
         "fd_table.go",
         "fd_table_mutex.go",
-        "fd_table_refs.go",
         "fd_table_unsafe.go",
         "file_hash.go",
         "fs_context.go",
         "fs_context_mutex.go",
-        "fs_context_refs.go",
         "fs_save_mutex.go",
         "fscheckpoint.go",
         "ipc_namespace.go",
@@ -279,7 +233,6 @@ go_library(
         "pidfd.go",
         "posixtimer.go",
         "process_group_list.go",
-        "process_group_refs.go",
         "ptrace.go",
         "ptrace_amd64.go",
         "ptrace_arm64.go",
@@ -288,7 +241,6 @@ go_library(
         "seccheck.go",
         "seccomp.go",
         "session_list.go",
-        "session_refs.go",
         "sessions.go",
         "signal.go",
         "signal_handlers.go",

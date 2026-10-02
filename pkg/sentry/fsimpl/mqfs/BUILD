@@ -1,20 +1,8 @@
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
-)
-
-go_template_instance(
-    name = "root_inode_refs",
-    out = "root_inode_refs.go",
-    package = "mqfs",
-    prefix = "rootInode",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "rootInode",
-    },
 )
 
 go_library(
@@ -24,7 +12,6 @@ go_library(
         "queue.go",
         "registry.go",
         "root.go",
-        "root_inode_refs.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [

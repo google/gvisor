@@ -1,21 +1,9 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
-)
-
-go_template_instance(
-    name = "tun_endpoint_refs",
-    out = "tun_endpoint_refs.go",
-    package = "tun",
-    prefix = "tunEndpoint",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "tunEndpoint",
-    },
 )
 
 declare_rwmutex(
@@ -39,7 +27,6 @@ go_library(
         "device_mutex.go",
         "endpoint_mutex.go",
         "protocol.go",
-        "tun_endpoint_refs.go",
         "tun_unsafe.go",
     ],
     visibility = ["//visibility:public"],

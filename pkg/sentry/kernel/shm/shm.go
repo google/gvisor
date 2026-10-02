@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
@@ -339,14 +340,14 @@ func (r *Registry) Release(ctx context.Context) {
 //
 // +stateify savable
 type Shm struct {
-	// ShmRefs tracks the number of references to this segment.
+	// shmRefs tracks the number of references to this segment.
 	//
 	// A segment holds a reference to itself until it is marked for
 	// destruction.
 	//
 	// In addition to direct users, the MemoryManager will hold references
 	// via MappingIdentity.
-	ShmRefs
+	shmRefs
 
 	// mf is initialized during construction or afterLoad, then immutable while
 	// the segment is in use.
@@ -412,6 +413,9 @@ type Shm struct {
 	// +checklocks:mu
 	pendingDestruction bool
 }
+
+// +stateify transparent
+type shmRefs struct{ refs.LoggedRefs[Shm] }
 
 // afterLoad is invoked by stateify.
 func (s *Shm) afterLoad(ctx goContext.Context) {
@@ -482,7 +486,7 @@ func (s *Shm) InodeID() uint64 {
 // +checklocksexclude:s.mu
 // +checklocksexclude:s.registry.mu
 func (s *Shm) DecRef(ctx context.Context) {
-	s.ShmRefs.DecRef(func() {
+	s.shmRefs.DecRef(func() {
 		s.mf.DecRef(s.fr)
 		s.registry.remove(s)
 	})

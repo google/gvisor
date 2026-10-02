@@ -119,7 +119,7 @@ func (v *View) Reset() {
 }
 
 func (v *View) sharesChunk() bool {
-	return v.chunk.refCount.Load() > 1
+	return v.chunk.ReadRefs() > 1
 }
 
 // Full indicates the chunk is full.

@@ -1,27 +1,14 @@
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 
-go_template_instance(
-    name = "socket_refs",
-    out = "socket_refs.go",
-    package = "unix",
-    prefix = "socket",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "Socket",
-    },
-)
-
 go_library(
     name = "unix",
     srcs = [
         "io.go",
-        "socket_refs.go",
         "unix.go",
     ],
     visibility = ["//pkg/sentry:internal"],

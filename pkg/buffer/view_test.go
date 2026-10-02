@@ -67,12 +67,12 @@ func TestClone(t *testing.T) {
 	if orig.chunk != clone.chunk {
 		t.Errorf("orig.Clone().chunk = %p, want %p", clone.chunk, orig.chunk)
 	}
-	if orig.chunk.refCount.Load() != 2 {
-		t.Errorf("got orig.chunk.chunkRefs.Load() = %d, want 2", orig.chunk.refCount.Load())
+	if want, got := int64(2), orig.chunk.ReadRefs(); got != want {
+		t.Errorf("got orig.chunk.ReadRefs() = %d, want %d", got, want)
 	}
 	orig.Release()
-	if clone.chunk.refCount.Load() != 1 {
-		t.Errorf("got clone.chunk.chunkRefs.Load() = %d, want 1", clone.chunk.refCount.Load())
+	if want, got := int64(1), clone.chunk.ReadRefs(); got != want {
+		t.Errorf("got clone.chunk.ReadRefs() = %d, want %d", got, want)
 	}
 	clone.Release()
 }

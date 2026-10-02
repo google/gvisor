@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -40,6 +41,9 @@ type AsyncFileClient struct {
 	watchdog     sync.WaitGroup
 	watchdogStop eventfd.Eventfd
 }
+
+// +stateify transparent
+type asyncFileClientRefs struct{ refs.Refs[AsyncFileClient] }
 
 // NewAsyncFileClient returns an AsyncFileClient that communicates with an
 // AsyncFileServer using uc, with one reference held by the caller. It takes

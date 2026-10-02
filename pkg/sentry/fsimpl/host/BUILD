@@ -1,27 +1,14 @@
 load("//tools:defs.bzl", "go_library")
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(default_applicable_licenses = ["//:license"])
 
 licenses(["notice"])
-
-go_template_instance(
-    name = "inode_refs",
-    out = "inode_refs.go",
-    package = "host",
-    prefix = "inode",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "inode",
-    },
-)
 
 go_library(
     name = "host",
     srcs = [
         "host.go",
         "host_unsafe.go",
-        "inode_refs.go",
         "ioctl_unsafe.go",
         "save_restore.go",
         "tty.go",

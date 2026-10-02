@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -66,6 +67,9 @@ type Socket struct {
 	abstractName  string
 	abstractBound bool
 }
+
+// +stateify transparent
+type socketRefs struct{ refs.Refs[Socket] }
 
 var _ = socket.Socket(&Socket{})
 

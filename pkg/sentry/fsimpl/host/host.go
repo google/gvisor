@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
@@ -234,6 +235,9 @@ type inode struct {
 	// +checklocks:termiosMu
 	termios linux.KernelTermios
 }
+
+// +stateify transparent
+type inodeRefs struct{ refs.Refs[inode] }
 
 func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey checkpoint.ResourceID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
 	// Determine if hostFD is seekable.

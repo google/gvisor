@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -27,7 +28,7 @@ import (
 //
 // +stateify savable
 type FSContext struct {
-	FSContextRefs
+	fsContextRefs
 
 	mu fsContextMutex `state:"nosave"`
 
@@ -53,6 +54,9 @@ type FSContext struct {
 	// +checklocks:mu
 	preventSharing bool
 }
+
+// +stateify transparent
+type fsContextRefs struct{ refs.Refs[FSContext] }
 
 // NewFSContext returns a new filesystem context.
 func NewFSContext(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
@@ -96,7 +100,7 @@ func (f *FSContext) destroy(ctx context.Context) {
 //
 // +checklocksexclude:f.mu
 func (f *FSContext) DecRef(ctx context.Context) {
-	f.FSContextRefs.DecRef(func() {
+	f.fsContextRefs.DecRef(func() {
 		f.destroy(ctx)
 	})
 }
@@ -291,6 +295,6 @@ func (f *FSContext) unshareFromTask(t *Task, newF *FSContext) bool {
 	defer f.mu.Unlock()
 	t.fsContext.Store(newF)
 	destroy := false
-	f.FSContextRefs.DecRef(func() { destroy = true })
+	f.fsContextRefs.DecRef(func() { destroy = true })
 	return destroy
 }
