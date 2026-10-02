@@ -35,6 +35,19 @@ func main() {
 	}
 	log.Printf("Read Buildkite agent token (%d bytes)", len(token))
 
+	// Fetch the GitHub token
+	ghToken, err := accessSecret(context.Background(), cfg.githubTokenProject, cfg.githubTokenSecret)
+	if err != nil {
+		log.Fatalf("Failed to read GitHub token: %v", err)
+	}
+
+	// GitHub client
+	ghClient, err := newGitHubClient(ghToken)
+	if err != nil {
+		log.Fatalf("Failed to create GitHub client: %v", err)
+	}
+	_ = ghClient
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "PONG")
