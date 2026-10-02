@@ -344,7 +344,6 @@ void BM_SendmsgTCP(benchmark::State& state) {
   });
 
   int64_t bytes_sent = 0;
-  int ncalls = 0;
   for (auto ignored : state) {
     int sent = 0;
     while (true) {
@@ -356,7 +355,6 @@ void BM_SendmsgTCP(benchmark::State& state) {
       hdr.msg_iov = &iov;
       hdr.msg_iovlen = 1;
       int n = RetryEINTR(sendmsg)(send_socket.get(), &hdr, 0);
-      ncalls++;
       if (n > 0) {
         sent += n;
         if (sent == buf_size) {
@@ -379,15 +377,10 @@ void BM_SendmsgTCP(benchmark::State& state) {
   state.SetBytesProcessed(bytes_sent);
 }
 
-void Args(benchmark::internal::Benchmark* benchmark) {
-  for (int blocking = 0; blocking < 2; blocking++) {
-    for (int buf_size = 1024; buf_size <= 256 << 20; buf_size *= 2) {
-      benchmark->Args({blocking, buf_size});
-    }
-  }
-}
-
-BENCHMARK(BM_SendmsgTCP)->Apply(&Args)->UseRealTime();
+BENCHMARK(BM_SendmsgTCP)
+    ->RangeMultiplier(2)
+    ->Ranges({{0, 1}, {1024, 256 << 20}})
+    ->UseRealTime();
 
 }  // namespace
 
