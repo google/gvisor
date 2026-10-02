@@ -191,7 +191,7 @@ func (b *Buffer) GrowTo(length int64, zero bool) {
 
 		// Zero the written section.
 		if zero {
-			clear(v.chunk.data[v.write : v.write+sz])
+			clear(v.availableSlice()[:sz])
 		}
 
 		// Advance the index.
