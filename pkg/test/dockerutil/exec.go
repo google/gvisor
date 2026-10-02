@@ -169,64 +169,50 @@ func (p *Process) read(stdout, stderr *bytes.Buffer) error {
 	return err
 }
 
-// ExitCode returns the process's exit code.
-func (p *Process) ExitCode(ctx context.Context) (int, error) {
-	_, exitCode, err := p.runningExitCode(ctx)
-	return exitCode, err
-}
-
-// IsRunning checks if the process is running.
-func (p *Process) IsRunning(ctx context.Context) (bool, error) {
-	running, _, err := p.runningExitCode(ctx)
-	return running, err
-}
-
-// WaitExitStatus until process completes and returns exit status.
+// WaitExitStatus waits until the process completes and returns its exit status.
 func (p *Process) WaitExitStatus(ctx context.Context) (int, error) {
-	waitChan := make(chan (int), 1)
-	errChan := make(chan (error), 1)
-
-	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			running, exitcode, err := p.runningExitCode(ctx)
-			if err != nil {
-				errChan <- fmt.Errorf("error waiting process %s: container %v: %w", p.execid, p.container.Name, err)
-				return
-			}
-			if !running {
-				waitChan <- exitcode
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				continue
-			}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		exitCode, err := p.exitCode(ctx)
+		if err != nil {
+			return -1, fmt.Errorf("error waiting process %s: container %v: %w", p.execid, p.container.Name, err)
 		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return -1, fmt.Errorf("error waiting process %s; failed with context error: %w", p.execid, ctx.Err())
-	case ws := <-waitChan:
-		return ws, nil
-	case err := <-errChan:
-		return -1, err
+		if exitCode != nil {
+			return *exitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return -1, fmt.Errorf("error waiting process %s; failed with context error: %w", p.execid, ctx.Err())
+		case <-ticker.C:
+		}
 	}
 }
 
-// runningExitCode collects if the process is running and the exit code.
-// The exit code is only valid if the process has exited.
-func (p *Process) runningExitCode(ctx context.Context) (bool, int, error) {
-	// If execid is not empty, this is a execed process.
+// exitCode returns nil until the process is known to have exited.
+func (p *Process) exitCode(ctx context.Context) (*int, error) {
 	if p.execid != "" {
 		status, err := p.container.client.ContainerExecInspect(ctx, p.execid)
-		return status.Running, status.ExitCode, err
+		if err != nil {
+			return nil, err
+		}
+		// Attach can return before Docker starts the process. Docker then
+		// reports Running=false, Pid=0 and ExitCode=null, which the client
+		// decodes as zero. A started process retains its PID after exiting;
+		// a failed start has a nonzero exit code. Require either before
+		// accepting a completed exit.
+		if status.Running || (status.Pid == 0 && status.ExitCode == 0) {
+			return nil, nil
+		}
+		return &status.ExitCode, nil
 	}
-	// else this is the root process.
+	// Otherwise this is the container's root process.
 	status, err := p.container.Status(ctx)
-	return status.Running, status.ExitCode, err
+	if err != nil {
+		return nil, err
+	}
+	if status.Running || status.Status == "created" {
+		return nil, nil
+	}
+	return &status.ExitCode, nil
 }

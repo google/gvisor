@@ -658,7 +658,7 @@ func dockerInGvisorExecOutput(ctx context.Context, d *dockerutil.Container, cmd 
 	if err != nil {
 		return "", fmt.Errorf("docker logs failed: %v", err)
 	}
-	status, err := execProc.ExitCode(ctx)
+	status, err := execProc.WaitExitStatus(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get exit code: %v", err)
 	}
