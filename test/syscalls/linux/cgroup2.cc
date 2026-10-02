@@ -3149,13 +3149,15 @@ TEST_F(Cgroup2Test, MemoryLimits) {
               IsPosixErrorOkAndHolds("max\n"));
 
   // Page-rounding checks.
-  ASSERT_NO_ERRNO(parent.WriteControlFile("memory.max", "5000"));
+  const std::string unaligned = absl::StrCat(kPageSize + 1000);
+  const std::string rounded = absl::StrCat(kPageSize, "\n");
+  ASSERT_NO_ERRNO(parent.WriteControlFile("memory.max", unaligned));
   EXPECT_THAT(parent.ReadControlFile("memory.max"),
-              IsPosixErrorOkAndHolds("4096\n"));
+              IsPosixErrorOkAndHolds(rounded));
 
-  ASSERT_NO_ERRNO(parent.WriteControlFile("memory.high", "5000"));
+  ASSERT_NO_ERRNO(parent.WriteControlFile("memory.high", unaligned));
   EXPECT_THAT(parent.ReadControlFile("memory.high"),
-              IsPosixErrorOkAndHolds("4096\n"));
+              IsPosixErrorOkAndHolds(rounded));
 
   // Check invalid formats.
   EXPECT_THAT(parent.WriteControlFile("memory.max", "-1"),
