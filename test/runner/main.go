@@ -36,6 +36,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
@@ -825,6 +826,10 @@ func isWarning(line string) bool {
 	// TODO(gvisor.dev/issue/11649): Systrap needs to roll back created
 	// patches for traced procs.
 	case strings.Contains(line, "LIKELY ERROR: Attached tracer to process with patched syscalls"):
+
+	// TODO(gvisor.dev/issue/13542): Disabling arm64 PAC fails and generates a warning on kernels
+	// before 5.13.
+	case strings.Contains(line, "Unable to disable pointer authentication"):
 
 	// Performance-related warnings.
 	case performanceWarningRegexp.MatchString(line):

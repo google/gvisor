@@ -21,6 +21,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
@@ -55,6 +56,26 @@ func (t *thread) setTLS(tls *uint64) error {
 		unix.PTRACE_SETREGSET,
 		uintptr(t.tid),
 		linux.NT_ARM_TLS,
+		uintptr(unsafe.Pointer(&iovec)),
+		0, 0)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+// setEnabledPointerAuthKeys sets the enabled pointer authentication
+// address keys for the thread.
+func (t *thread) setEnabledPointerAuthKeys(keys uint64) error {
+	iovec := unix.Iovec{
+		Base: (*byte)(unsafe.Pointer(&keys)),
+		Len:  uint64(unsafe.Sizeof(keys)),
+	}
+	errno := hostsyscall.RawSyscallErrno6(
+		unix.SYS_PTRACE,
+		unix.PTRACE_SETREGSET,
+		uintptr(t.tid),
+		linux.NT_ARM_PAC_ENABLED_KEYS,
 		uintptr(unsafe.Pointer(&iovec)),
 		0, 0)
 	if errno != 0 {
