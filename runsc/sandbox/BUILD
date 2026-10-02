@@ -82,6 +82,7 @@ go_test(
         "//pkg/prometheus",
         "//pkg/sentry/control",
         "//runsc/boot",
+        "//runsc/cgroup",
         "//runsc/config",
         "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
