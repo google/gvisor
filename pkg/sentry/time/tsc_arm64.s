@@ -26,3 +26,11 @@ TEXT ·getCNTFRQ(SB),NOSPLIT,$0-8
 	WORD	$0xd53be000     //MRS	CNTFRQ_EL0, R0
 	MOVD	R0, ret+0(FP)
 	RET
+
+TEXT ·currentEL(SB),NOSPLIT,$0-8
+	MRS	CurrentEL, R1
+	LSR	$2, R1
+	AND	$3, R1
+	MOVD	R1, ret+0(FP)
+	RET
+

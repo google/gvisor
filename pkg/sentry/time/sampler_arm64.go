@@ -41,3 +41,9 @@ var defaultOverheadCycles = getDefaultArchOverheadCycles()
 
 // maxOverheadCycles is the maximum allowed syscall overhead in TSC cycles.
 var maxOverheadCycles = 100 * defaultOverheadCycles
+
+func currentEL() uint64
+
+func inKernelMode() bool {
+	return currentEL() == 1
+}

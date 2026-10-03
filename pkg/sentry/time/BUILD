@@ -24,6 +24,7 @@ go_library(
         "calibrated_clock.go",
         "clock_id.go",
         "clocks.go",
+        "host_tsc.go",
         "muldiv_amd64.s",
         "muldiv_arm64.s",
         "parameters.go",

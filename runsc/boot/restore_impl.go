@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,24 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "textflag.h"
+//go:build !false
+// +build !false
 
-TEXT ·Rdtsc(SB),NOSPLIT|NOFRAME,$0-8
-	// N.B. We need LFENCE on Intel, AMD is more complicated.
-	// Modern AMD CPUs with modern kernels make LFENCE behave like it does
-	// on Intel with MSR_F10H_DECFG_LFENCE_SERIALIZE_BIT. MFENCE is
-	// otherwise needed on AMD.
-	LFENCE
-	RDTSC
-	SHLQ	$32, DX
-	ADDQ	DX, AX
-	MOVQ	AX, ret+0(FP)
-	RET
+package boot
 
-TEXT ·getcs(SB), $0-2
-	MOVW	CS, AX
-	MOVW	AX, ret+0(FP)
-	RET
+import (
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/time"
+)
 
-
-
+// hostTSCRealtime returns the current raw host TSC value and the host
+// CLOCK_REALTIME value in nanoseconds.
+func hostTSCRealtime() (uint64, uint64, bool) {
+	cycle, realtime, err := time.HostTSCRealtime()
+	if err != nil {
+		log.Warningf("Failed to sample host TSC for TSC offset: %v", err)
+		return 0, 0, false
+	}
+	return uint64(cycle), uint64(realtime), true
+}

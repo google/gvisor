@@ -18,8 +18,22 @@ import (
 	"errors"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 )
+
+// tscOffset is the guest TSC offset applied by the platform (e.g. KVM).
+var tscOffset atomicbitops.Int64
+
+// SetTSCOffset sets the guest TSC offset to apply when not in guest kernel mode.
+func SetTSCOffset(offset int64) {
+	tscOffset.Store(offset)
+}
+
+// TSCOffset returns the current guest TSC offset.
+func TSCOffset() int64 {
+	return tscOffset.Load()
+}
 
 const (
 	// maxSampleLoops is the maximum number of times to try to get a clock sample
@@ -71,7 +85,11 @@ type tscCycleClock struct{}
 
 // Cycles implements cycleClock.Cycles.
 func (tscCycleClock) Cycles() TSCValue {
-	return Rdtsc()
+	tsc := Rdtsc()
+	if offset := tscOffset.Load(); offset != 0 && !inKernelMode() {
+		tsc += TSCValue(offset)
+	}
+	return tsc
 }
 
 // sample contains a sample from the reference clock, with TSC values from
@@ -225,17 +243,17 @@ type syscallTSCReferenceClocks struct {
 }
 
 // Sample implements sampler.Sample.
-func (syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
+func (sc syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
 	var s sample
 
-	s.before = Rdtsc()
+	s.before = sc.Cycles()
 
 	// Don't call clockGettime to avoid a call which may call morestack.
 	var ts unix.Timespec
 
 	vdsoClockGettime(c, &ts)
 
-	s.after = Rdtsc()
+	s.after = sc.Cycles()
 	s.ref = ReferenceNS(ts.Nano())
 
 	return s, nil

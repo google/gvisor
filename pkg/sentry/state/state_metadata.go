@@ -30,6 +30,10 @@ const (
 	metadataTimestamp = "timestamp"
 )
 
+// addSaveMetadata supplements the save metadata.
+//
+// TODO(b/493253787): Populate (gvisor_tsc_snapshot_{cycle,frequency,realtime_nsec})
+// metadata as well.
 func addSaveMetadata(m map[string]string) {
 	t, err := CPUTime()
 	if err != nil {

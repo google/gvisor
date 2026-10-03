@@ -121,6 +121,17 @@ type Platform interface {
 	NumCPUs() int
 }
 
+// TSCAdjustablePlatform is an optional interface that may be implemented by a
+// Platform that applies an offset to the guest TSC.
+type TSCAdjustablePlatform interface {
+	// TSCOffset returns the offset the platform applies to the guest TSC.
+	TSCOffset() uint64
+
+	// TSCFrequency returns the frequency in Hz at which the host TSC
+	// advances, and whether the platform was able to determine it.
+	TSCFrequency() (uint64, bool)
+}
+
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
 // dependent methods for Platforms that do not support this feature.
 type NoCPUPreemptionDetection struct{}
@@ -620,6 +631,9 @@ type Options struct {
 	// It allows releasing them asynchronously.
 	// See `//pkg/pinring`.
 	PinRing *pinring.PinRing
+
+	// TSCOffset is an offset to apply to the guest TSC counter (currently KVM only).
+	TSCOffset uint64
 }
 
 // Constructor represents a platform type.

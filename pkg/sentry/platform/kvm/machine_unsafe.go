@@ -214,3 +214,7 @@ func enableAsyncPreemption() {
 		panic(fmt.Sprintf("sigprocmask failed: %d", errno))
 	}
 }
+
+func sliceFromAddr(addr, length uintptr) []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(addr)), length)
+}

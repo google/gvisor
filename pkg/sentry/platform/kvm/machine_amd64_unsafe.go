@@ -18,6 +18,9 @@
 package kvm
 
 import (
+	"bytes"
+	"debug/elf"
+	"encoding/binary"
 	"fmt"
 	"unsafe"
 
@@ -25,6 +28,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 )
 
 func rdfsbase() uint64
@@ -130,9 +135,8 @@ func (c *vCPU) setTSCFreq(freq uintptr) error {
 	return nil
 }
 
-// setTSCOffset sets the TSC offset to zero.
-func (c *vCPU) setTSCOffset() error {
-	offset := uint64(0)
+// setTSCOffset sets the TSC offset.
+func (c *vCPU) setTSCOffset(offset uint64) error {
 	da := struct {
 		flags uint32
 		group uint32
@@ -261,4 +265,225 @@ func seccompMmapSyscall(context unsafe.Pointer) (uintptr, uintptr, unix.Errno) {
 	}
 
 	return addr, uintptr(ctx.Rsi), unix.Errno(e)
+}
+
+func (m *machine) shadowVDSOVirt() uintptr {
+	if len(m.shadowVDSO) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(&m.shadowVDSO[0]))
+}
+
+// initShadowVDSO creates a binary-patched shadow copy of the host [vdso]
+// when tscOffset != 0. In GR0 (guest ring 0), hardware RDTSC/RDTSCP returns
+// Host_TSC + tscOffset, while the host [vvar] page contains raw Host_TSC
+// base cycles. By patching RDTSC/RDTSCP in the shadow VDSO to subtract
+// tscOffset, GR0 VDSO calls (such as Go runtime time.Now() / nanotime1)
+// compute the exact unadjusted host time without any VM-exits.
+func (m *machine) initShadowVDSO() error {
+	if m.tscOffset == 0 {
+		return nil
+	}
+	var vdsoRegion virtualRegion
+	found := false
+	if err := applyVirtualRegions(func(vr virtualRegion) bool {
+		if vr.filename == "[vdso]" {
+			vdsoRegion = vr
+			found = true
+			return true
+		}
+		return false
+	}); err != nil {
+		return fmt.Errorf("error scanning /proc/self/maps for [vdso]: %v", err)
+	}
+	if !found || vdsoRegion.length == 0 {
+		return fmt.Errorf("[vdso] region not found in /proc/self/maps")
+	}
+	if excludeVirtualRegion(vdsoRegion) {
+		return nil
+	}
+
+	addr, errno := hostsyscall.RawSyscall6(
+		unix.SYS_MMAP,
+		0,
+		vdsoRegion.length,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
+		^uintptr(0),
+		0)
+	if errno != 0 {
+		return fmt.Errorf("failed to allocate shadow VDSO memory: %v", errno)
+	}
+	shadowSlice := sliceFromAddr(addr, vdsoRegion.length)
+	origSlice := sliceFromAddr(vdsoRegion.virtual, vdsoRegion.length)
+	copy(shadowSlice, origSlice)
+
+	if err := patchVDSOTSCOffset(shadowSlice, m.tscOffset); err != nil {
+		hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, addr, vdsoRegion.length, 0)
+		return fmt.Errorf("failed to patch shadow VDSO: %v", err)
+	}
+
+	m.shadowVDSO = shadowSlice
+	m.vdsoVirt = vdsoRegion.virtual
+	return nil
+}
+
+func (m *machine) protectShadowVDSO() {
+	if len(m.shadowVDSO) == 0 {
+		return
+	}
+	shadowVirt := m.shadowVDSOVirt()
+	length := uintptr(len(m.shadowVDSO))
+	for length != 0 {
+		physical, plength, ok := translateToPhysical(shadowVirt)
+		if !ok || plength == 0 {
+			panic(fmt.Sprintf("impossible translation: shadowVirt %x length %x", shadowVirt, length))
+		}
+		if plength > length {
+			plength = length
+		}
+		m.kernel.PageTables.Map(
+			hostarch.Addr(shadowVirt),
+			plength,
+			pagetables.MapOpts{AccessType: hostarch.Read},
+			physical)
+		m.mapPhysical(physical, plength)
+		length -= plength
+		shadowVirt += plength
+	}
+}
+
+func (m *machine) destroyShadowVDSO() {
+	if len(m.shadowVDSO) == 0 {
+		return
+	}
+	addr := uintptr(unsafe.Pointer(&m.shadowVDSO[0]))
+	length := uintptr(len(m.shadowVDSO))
+	m.shadowVDSO = nil
+	if errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, addr, length, 0); errno != 0 {
+		panic(fmt.Sprintf("error unmapping shadow VDSO: %v", errno))
+	}
+}
+
+func patchVDSOTSCOffset(vdsoBytes []byte, tscOffset uint64) error {
+	f, err := elf.NewFile(bytes.NewReader(vdsoBytes))
+	if err != nil {
+		return fmt.Errorf("failed to parse [vdso] ELF: %v", err)
+	}
+	defer f.Close()
+
+	textSec := f.Section(".text")
+	if textSec == nil {
+		return fmt.Errorf("[vdso] ELF missing .text section")
+	}
+	if textSec.Offset+textSec.Size > uint64(len(vdsoBytes)) {
+		return fmt.Errorf("[vdso] .text section out of bounds")
+	}
+
+	const (
+		rdtscpStubLen      = 15
+		lfenceRdtscStubLen = 17
+		totalStubsLen      = rdtscpStubLen + lfenceRdtscStubLen
+	)
+
+	stubOffset := -1
+	if altSec := f.Section(".altinstr_replacement"); altSec != nil {
+		if altSec.Size >= totalStubsLen && altSec.Offset+altSec.Size <= uint64(len(vdsoBytes)) {
+			stubOffset = int(altSec.Offset)
+		}
+	}
+	if stubOffset == -1 {
+		for _, p := range f.Progs {
+			if p.Type != elf.PT_LOAD || (p.Flags&elf.PF_X) == 0 {
+				continue
+			}
+			segEnd := int(p.Off + p.Memsz)
+			if segEnd > len(vdsoBytes) {
+				segEnd = len(vdsoBytes)
+			}
+			textEnd := int(textSec.Offset + textSec.Size)
+			if segEnd-totalStubsLen >= textEnd {
+				allZero := true
+				cand := segEnd - totalStubsLen
+				for j := cand; j < segEnd; j++ {
+					if vdsoBytes[j] != 0 {
+						allZero = false
+						break
+					}
+				}
+				if allZero {
+					stubOffset = cand
+					break
+				}
+			}
+		}
+	}
+	if stubOffset == -1 {
+		return fmt.Errorf("no space found in [vdso] for %d-byte TSC adjustment stubs", totalStubsLen)
+	}
+
+	rdtscpStubOff := stubOffset
+	lfenceRdtscStubOff := stubOffset + rdtscpStubLen
+
+	lo := uint32(tscOffset)
+	hi := uint32(tscOffset >> 32)
+
+	// rdtscp stub (15 bytes):
+	//   0f 01 f9                rdtscp
+	//   2d <lo: 4 bytes LE>     subl $lo, %eax
+	//   81 da <hi: 4 bytes LE>  sbbl $hi, %edx
+	//   c3                      ret
+	copy(vdsoBytes[rdtscpStubOff:], []byte{0x0f, 0x01, 0xf9, 0x2d})
+	binary.LittleEndian.PutUint32(vdsoBytes[rdtscpStubOff+4:rdtscpStubOff+8], lo)
+	vdsoBytes[rdtscpStubOff+8] = 0x81
+	vdsoBytes[rdtscpStubOff+9] = 0xda
+	binary.LittleEndian.PutUint32(vdsoBytes[rdtscpStubOff+10:rdtscpStubOff+14], hi)
+	vdsoBytes[rdtscpStubOff+14] = 0xc3
+
+	// lfence; rdtsc stub (17 bytes):
+	//   0f ae e8                lfence
+	//   0f 31                   rdtsc
+	//   2d <lo: 4 bytes LE>     subl $lo, %eax
+	//   81 da <hi: 4 bytes LE>  sbbl $hi, %edx
+	//   c3                      ret
+	copy(vdsoBytes[lfenceRdtscStubOff:], []byte{0x0f, 0xae, 0xe8, 0x0f, 0x31, 0x2d})
+	binary.LittleEndian.PutUint32(vdsoBytes[lfenceRdtscStubOff+6:lfenceRdtscStubOff+10], lo)
+	vdsoBytes[lfenceRdtscStubOff+10] = 0x81
+	vdsoBytes[lfenceRdtscStubOff+11] = 0xda
+	binary.LittleEndian.PutUint32(vdsoBytes[lfenceRdtscStubOff+12:lfenceRdtscStubOff+16], hi)
+	vdsoBytes[lfenceRdtscStubOff+16] = 0xc3
+
+	textStart := int(textSec.Offset)
+	textEnd := int(textSec.Offset + textSec.Size)
+	patchedCount := 0
+	for i := textStart; i <= textEnd-5; i++ {
+		targetStubOff := -1
+		if vdsoBytes[i] == 0x0f && vdsoBytes[i+1] == 0x01 && vdsoBytes[i+2] == 0xf9 {
+			if (vdsoBytes[i+3] == 0x66 && vdsoBytes[i+4] == 0x90) ||
+				(vdsoBytes[i+3] == 0x90 && vdsoBytes[i+4] == 0x90) {
+				targetStubOff = rdtscpStubOff
+			}
+		} else if vdsoBytes[i] == 0x0f && vdsoBytes[i+1] == 0xae && vdsoBytes[i+2] == 0xe8 &&
+			vdsoBytes[i+3] == 0x0f && vdsoBytes[i+4] == 0x31 {
+			targetStubOff = lfenceRdtscStubOff
+		} else if vdsoBytes[i] == 0x0f && vdsoBytes[i+1] == 0x31 {
+			if (vdsoBytes[i+2] == 0x0f && vdsoBytes[i+3] == 0x1f && vdsoBytes[i+4] == 0x00) ||
+				(vdsoBytes[i+2] == 0x66 && vdsoBytes[i+3] == 0x66 && vdsoBytes[i+4] == 0x90) ||
+				(vdsoBytes[i+2] == 0x90 && vdsoBytes[i+3] == 0x90 && vdsoBytes[i+4] == 0x90) {
+				targetStubOff = lfenceRdtscStubOff
+			}
+		}
+		if targetStubOff != -1 {
+			rel32 := int32(targetStubOff - (i + 5))
+			vdsoBytes[i] = 0xe8 // CALL rel32
+			binary.LittleEndian.PutUint32(vdsoBytes[i+1:i+5], uint32(rel32))
+			i += 4
+			patchedCount++
+		}
+	}
+	if patchedCount == 0 {
+		return fmt.Errorf("no rdtsc/rdtscp instructions found in [vdso] .text")
+	}
+	log.Debugf("Patched %d rdtsc/rdtscp sites in shadow VDSO (tscOffset=%#x)", patchedCount, tscOffset)
+	return nil
 }

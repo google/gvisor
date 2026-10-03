@@ -57,6 +57,11 @@ const (
 	poolPCIDs = 128
 )
 
+// getCNTFRQ returns the frequency in Hz of the system counter, as reported by
+// CNTFRQ_EL0. This is the rate at which CNTVCT_EL0, the counter read by
+// ktime.Rdtsc, advances.
+func getCNTFRQ() int64
+
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		pageTable.Map(

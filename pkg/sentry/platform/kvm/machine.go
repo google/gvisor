@@ -91,6 +91,20 @@ type machine struct {
 
 	// useCPUNums indicates whether to enable the use vCPU numbers as CPU numbers.
 	useCPUNums bool
+
+	// tscOffset is the offset to apply to the guest TSC.
+	tscOffset uint64
+
+	// tscFrequency is the frequency in Hz at which the host TSC advances,
+	// or zero if it could not be determined.
+	tscFrequency uint64
+
+	// shadowVDSO is a binary-patched copy of the host [vdso] mapped at vdsoVirt
+	// in the guest page tables when tscOffset != 0.
+	shadowVDSO []byte
+
+	// vdsoVirt is the host virtual address of [vdso].
+	vdsoVirt uintptr
 }
 
 const (
@@ -281,6 +295,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		fd:               vm,
 		applicationCores: config.ApplicationCores,
 		useCPUNums:       config.UseCPUNums,
+		tscOffset:        config.TSCOffset,
 	}
 	m.available.L = &m.mu
 
@@ -309,6 +324,10 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	hasTSCControl, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_TSC_CONTROL)
 	m.tscControl = errno == 0 && hasTSCControl == 1
 	log.Debugf("TSC scaling support: %t.", m.tscControl)
+
+	if err := m.initShadowVDSO(); err != nil {
+		return nil, err
+	}
 
 	// Create the upper shared pagetables and kernel(sentry) pagetables.
 	m.upperSharedPageTables = pagetables.New(newAllocator())
@@ -363,7 +382,11 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	// ensure successful vCPU entry.
 	mapRegion := func(vr virtualRegion, flags uint32) {
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
-			physical, length, ok := translateToPhysical(virtual)
+			translateVirt := virtual
+			if vr.filename == "[vdso]" && len(m.shadowVDSO) > 0 {
+				translateVirt = m.shadowVDSOVirt() + (virtual - vr.virtual)
+			}
+			physical, length, ok := translateToPhysical(translateVirt)
 			if !ok {
 				// This must be an invalid region that was
 				// knocked out by creation of the physical map.
@@ -409,6 +432,9 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		mapRegion(vr, 0)
 		return false
 	})
+	if len(m.shadowVDSO) > 0 {
+		m.protectShadowVDSO()
+	}
 	if mapEntireAddressSpace {
 		for _, r := range physicalRegions {
 			m.mapPhysical(r.physical, r.length)
@@ -509,6 +535,7 @@ func (m *machine) Destroy() {
 
 	machinePool[m.machinePoolIndex].Store(nil)
 	seccompMmapSync()
+	m.destroyShadowVDSO()
 
 	// vCPUs are gone: teardown machine state.
 	if err := unix.Close(m.fd); err != nil {
@@ -805,7 +832,7 @@ func (c *vCPU) setSystemTimeLegacy() error {
 		// Try to set the TSC to an estimate of where it will be
 		// on the host during a "fast" system call iteration.
 		start := uint64(ktime.Rdtsc())
-		if err := c.setTSC(start + (minimum / 2)); err != nil {
+		if err := c.setTSC(start + (minimum / 2) + c.machine.tscOffset); err != nil {
 			return err
 		}
 		// See if this is our new minimum call time. Note that this
