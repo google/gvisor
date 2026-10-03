@@ -56,6 +56,11 @@ type Credentials struct {
 	// maintained after a switch from root user to non-root user via setuid().
 	KeepCaps bool
 
+	// NoSetUIDFixup is SECBIT_NO_SETUID_FIXUP. If set, changing the real,
+	// effective or saved UID between 0 and nonzero does not change
+	// capabilities.
+	NoSetUIDFixup bool
+
 	// The user namespace associated with the owner of the credentials.
 	UserNamespace *UserNamespace
 }
@@ -172,6 +177,7 @@ func (c *Credentials) ForkIntoUserNamespace(ns *UserNamespace) *Credentials {
 	// values (all flags disabled) in the child (for clone(2)) or caller (for
 	// unshare(2), or setns(2)." - user_namespaces(7)
 	nc.KeepCaps = false
+	nc.NoSetUIDFixup = false
 	return nc
 }
 
