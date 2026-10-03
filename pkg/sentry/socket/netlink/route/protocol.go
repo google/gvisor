@@ -437,20 +437,25 @@ func fillRoute(routes []inet.Route, family uint8, addr []byte) (inet.Route, *sys
 
 // parseForDestination parses a message as format of RouteMessage-RtAttr-dst.
 func parseForDestination(msg *nlmsg.Message) (uint8, []byte, *syserr.Error) {
-	var rtMsg linux.RouteMessage
-	attrs, ok := msg.GetData(&rtMsg)
-	if !ok {
+	var family primitive.Uint8
+	if _, ok := msg.GetData(&family); !ok {
 		return 0, nil, syserr.ErrInvalidArgument
 	}
 
 	var addrSize int
-	switch rtMsg.Family {
+	switch family {
 	case linux.AF_INET:
 		addrSize = header.IPv4AddressSize
 	case linux.AF_INET6:
 		addrSize = header.IPv6AddressSize
 	default:
 		return 0, nil, syserr.ErrNotSupported
+	}
+
+	var rtMsg linux.RouteMessage
+	attrs, ok := msg.GetData(&rtMsg)
+	if !ok {
+		return 0, nil, syserr.ErrInvalidArgument
 	}
 
 	for !attrs.Empty() {
