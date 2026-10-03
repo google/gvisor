@@ -309,6 +309,9 @@ PosixErrorOr<Cleanup> ioPrioCleanup() {
 TEST(IoprioTest, BasicSetGet) {
   auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ioPrioCleanup());
 
+  ASSERT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, 0,
+                         IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0)),
+              SyscallSucceeds());
   EXPECT_THAT(
       ioprio_get(IOPRIO_WHO_PROCESS, 0),
       SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0)));
@@ -376,7 +379,10 @@ TEST(IoprioTest, ChildPID) {
     waitpid(pid, nullptr, 0);
   });
 
-  // Child ioprio starts out as 0
+  // A forked child may receive a different default priority from its parent.
+  ASSERT_THAT(ioprio_set(IOPRIO_WHO_PROCESS, pid,
+                         IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0)),
+              SyscallSucceeds());
   EXPECT_THAT(
       ioprio_get(IOPRIO_WHO_PROCESS, pid),
       SyscallSucceedsWithValue(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0)));
