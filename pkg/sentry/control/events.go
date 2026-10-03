@@ -33,9 +33,25 @@ type Events struct {
 }
 
 // AttachDebugEmitter receives a connected unix domain socket FD from the client
-// and establishes it as a new emitter for the sentry eventchannel. Any existing
-// emitters are replaced on a subsequent attach.
+// and establishes it as a new emitter for the sentry eventchannel. Each event is
+// written as a DebugEvent holding the event's name and its text format. Any
+// existing emitters are replaced on a subsequent attach.
 func (e *Events) AttachDebugEmitter(o *EventsOpts, _ *struct{}) error {
+	return e.attach(o, eventchannel.DebugEmitterFrom)
+}
+
+// AttachRawEmitter receives a connected unix domain socket FD from the client
+// and establishes it as a new emitter for the sentry eventchannel. Each event is
+// written as an Any message holding the event itself, in the framing of
+// eventchannel.SocketEmitter. Any existing emitters are replaced on a
+// subsequent attach.
+func (e *Events) AttachRawEmitter(o *EventsOpts, _ *struct{}) error {
+	return e.attach(o, nil)
+}
+
+// attach establishes the socket FD in o as the emitter of e, wrapped by wrap
+// if it is not nil.
+func (e *Events) attach(o *EventsOpts, wrap func(eventchannel.Emitter) eventchannel.Emitter) error {
 	if len(o.FilePayload.Files) < 1 {
 		return errors.New("no output writer provided")
 	}
@@ -51,13 +67,17 @@ func (e *Events) AttachDebugEmitter(o *EventsOpts, _ *struct{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to create SocketEmitter for FD %d: %v", sockFD, err)
 	}
+	if wrap != nil {
+		emitter = wrap(emitter)
+	}
 
-	// If there is already a debug emitter, close the old one.
+	// If there is already an emitter, stop sending events to it and close it.
 	if e.emitter != nil {
+		eventchannel.RemoveEmitter(e.emitter)
 		e.emitter.Close()
 	}
 
-	e.emitter = eventchannel.DebugEmitterFrom(emitter)
+	e.emitter = emitter
 
 	// Register the new stream destination.
 	eventchannel.AddEmitter(e.emitter)
