@@ -1043,25 +1043,27 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 	var dest tcpip.Subnet
 	// When no destination address is provided, the new route might be the default route.
 	if route.DstAddr == nil {
+		var zero []byte
+		switch route.Family {
+		case linux.AF_INET:
+			zero = tcpip.IPv4Zero
+		case linux.AF_INET6:
+			zero = tcpip.IPv6Zero
+		default:
+			return tcpip.Route{}, syserr.ErrNotSupported
+		}
 		if route.GatewayAddr == nil {
 			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
-		switch len(route.GatewayAddr) {
-		case header.IPv4AddressSize:
-			subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(tcpip.IPv4Zero), tcpip.MaskFromBytes(tcpip.IPv4Zero))
-			if err != nil {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
-			dest = subnet
-		case header.IPv6AddressSize:
-			subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(tcpip.IPv6Zero), tcpip.MaskFromBytes(tcpip.IPv6Zero))
-			if err != nil {
-				return tcpip.Route{}, syserr.ErrInvalidArgument
-			}
-			dest = subnet
-		default:
+		if len(route.GatewayAddr) < len(zero) {
+			return tcpip.Route{}, syserr.ErrRange
+		}
+		route.GatewayAddr = route.GatewayAddr[:len(zero)]
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(zero), tcpip.MaskFromBytes(zero))
+		if err != nil {
 			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
+		dest = subnet
 	} else {
 		dest = tcpip.AddressWithPrefix{
 			Address:   tcpip.AddrFromSlice(route.DstAddr),
@@ -1109,6 +1111,9 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 	if err != nil {
 		return err
 	}
+	if err := s.checkGateway(msg, localRoute); err != nil {
+		return err
+	}
 	found := false
 	for _, rt := range s.Stack.GetRouteTable() {
 		if localRoute.Equal(rt) {
@@ -1127,6 +1132,37 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 		s.Stack.ReplaceRoute(localRoute)
 	}
 	return nil
+}
+
+func (s *Stack) checkGateway(msg *nlmsg.Message, route tcpip.Route) *syserr.Error {
+	var rtMsg linux.RouteMessage
+	if _, ok := msg.GetData(&rtMsg); !ok {
+		return syserr.ErrInvalidArgument
+	}
+	gw := route.Gateway
+	if gw.Unspecified() || header.IsV6LinkLocalUnicastAddress(gw) || rtMsg.Flags&linux.RTNH_F_ONLINK != 0 {
+		return nil
+	}
+	for _, rt := range s.Stack.GetRouteTable() {
+		if rt.Gateway.Unspecified() && (route.NIC == 0 || rt.NIC == route.NIC) && rt.Destination.Contains(gw) {
+			return nil
+		}
+	}
+	nics := s.Stack.NICInfo()
+	for _, id := range slices.Sorted(maps.Keys(nics)) {
+		if route.NIC != 0 && id != route.NIC {
+			continue
+		}
+		for _, a := range nics[id].ProtocolAddresses {
+			if subnet := a.AddressWithPrefix.Subnet(); subnet.Contains(gw) {
+				return nil
+			}
+		}
+	}
+	if rtMsg.Family == linux.AF_INET6 {
+		return syserr.ErrHostUnreachable
+	}
+	return syserr.ErrNetworkUnreachable
 }
 
 // IPTables returns the stack's iptables.
