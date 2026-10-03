@@ -636,19 +636,17 @@ TEST_P(PipeTest, SizeChangeMax) {
 TEST_P(PipeTest, SizeChangeFull) {
   SKIP_IF(!CreateBlocking());
 
-  // Ensure that we adjust to a large enough size to avoid rounding when we
-  // perform the size decrease. If rounding occurs, we may not actually
-  // adjust the size and the call below will return success. It was found via
-  // experimentation that this granularity avoids the rounding for Linux.
-  constexpr int kDelta = 64 * 1024;
-  ASSERT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, Size() + kDelta),
+  // Resize the pipe to two pages, fill it, and try to shrink it to one page.
+  // Use explicit sizes, since growing the pipe from its initial size doesn't
+  // work with 64K pages (the default size of 16 pages is already the 1MB
+  // maximum), and shrinking it doesn't work for the one-page "smallbuffer"
+  // pipe.
+  ASSERT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, 2 * kPageSize),
               SyscallSucceeds());
-
-  // Fill the buffer and try to change down.
   std::vector<char> buf(Size());
   ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
-  EXPECT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, Size() - kDelta),
+  EXPECT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, kPageSize),
               SyscallFailsWithErrno(EBUSY));
 }
 

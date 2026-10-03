@@ -393,8 +393,10 @@ TEST_F(PartialBadBufferTest, SendMsgTCP) {
   ASSERT_THAT(RetryEINTR(sendmsg)(send_socket.get(), &hdr, 0),
               SyscallSucceedsWithValue(kPageSize));
   // Read all the data out so that we drain the socket SND_BUF on the sender.
+  // A single read may return less than kPageSize if kPageSize exceeds the
+  // initial receive window (e.g. with 64K pages), so use ReadFd.
   std::vector<char> buffer(kPageSize);
-  ASSERT_THAT(RetryEINTR(read)(recv_socket.get(), buffer.data(), kPageSize),
+  ASSERT_THAT(ReadFd(recv_socket.get(), buffer.data(), kPageSize),
               SyscallSucceedsWithValue(kPageSize));
 
   // Sleep for a short while to ensure that we have time to process the
