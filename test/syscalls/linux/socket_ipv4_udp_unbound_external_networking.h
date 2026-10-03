@@ -15,17 +15,21 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 
+#include <cstdio>
+#include <memory>
+#include <optional>
+#include <tuple>
+#include <utility>
+
 #include "test/syscalls/linux/socket_ip_udp_unbound_external_networking.h"
 
 namespace gvisor {
 namespace testing {
 
-// Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
-// with external networking support.
-class IPv4UDPUnboundExternalNetworkingSocketTest
-    : public IPUDPUnboundExternalNetworkingSocketTest {
+// Base class for IPv4 UDP tests that need host interface information.
+class IPv4UDPUnboundExternalNetworkingTestBase {
  protected:
-  void SetUp() override;
+  void SetUpInterfaces();
 
   int lo_if_idx() const { return std::get<0>(lo_if_.value()); }
   int eth_if_idx() const { return std::get<0>(eth_if_.value()); }
@@ -37,6 +41,43 @@ class IPv4UDPUnboundExternalNetworkingSocketTest
 
  private:
   std::optional<std::pair<int, sockaddr_in>> lo_if_, eth_if_;
+};
+
+// Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
+// with external networking support.
+class IPv4UDPUnboundExternalNetworkingSocketTest
+    : public IPUDPUnboundExternalNetworkingSocketTest,
+      public IPv4UDPUnboundExternalNetworkingTestBase {
+ protected:
+  void SetUp() override { SetUpInterfaces(); }
+};
+
+using IPv4UDPUnboundExternalNetworkingSocketAddressParam =
+    std::tuple<SocketKind, TestAddress>;
+
+// Test fixture for tests that apply to unbound IPv4 UDP sockets and also need
+// an address parameter.
+class IPv4UDPUnboundExternalNetworkingSocketAddressTest
+    : public ::testing::TestWithParam<
+          IPv4UDPUnboundExternalNetworkingSocketAddressParam>,
+      public IPv4UDPUnboundExternalNetworkingTestBase {
+ protected:
+  IPv4UDPUnboundExternalNetworkingSocketAddressTest() {
+    printf("Testing with %s, %s\n", socket_kind().description.c_str(),
+           address().description.c_str());
+    fflush(stdout);
+  }
+
+  void SetUp() override { SetUpInterfaces(); }
+
+  PosixErrorOr<std::unique_ptr<FileDescriptor>> NewSocket() const {
+    return socket_kind().Create();
+  }
+
+  TestAddress address() const { return std::get<1>(GetParam()); }
+
+ private:
+  const SocketKind& socket_kind() const { return std::get<0>(GetParam()); }
 };
 
 }  // namespace testing
