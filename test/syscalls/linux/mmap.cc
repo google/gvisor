@@ -64,6 +64,10 @@ namespace testing {
 
 namespace {
 
+// Page-size-dependent expectations in this file use kPageSize, which is
+// sysconf(_SC_PAGESIZE), rather than a hard-coded 4096, so that they stay
+// valid on arm64 hosts whose kernel uses a 16K or 64K granule.
+
 static sigjmp_buf jmpbuf;
 static volatile int si_code_received;
 
