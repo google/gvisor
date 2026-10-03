@@ -44,7 +44,10 @@ line unchanged.
 | `--bind` | `<SRC> <DEST>` | Bind mounts `SRC` to `DEST`. When `SRC` is the host root (`/`) and `DEST` is not, the mount also gets `rbind, rprivate, nosuid, nodev`. | — |
 | `--ro-bind` | `<SRC> <DEST>` | Read-only bind mounts `SRC` to `DEST`. Sets `spec.Root.Readonly = true` if `DEST` is `/`. | — |
 | `--tmpfs` | `<DEST>` | Mounts a fresh `tmpfs` filesystem at `DEST`. | — |
+| `--dir` | `<DEST>` | Creates an empty directory at `DEST` as a fresh `tmpfs` mount. | `DEST` is a mount, not a plain directory, so it hides anything already at `DEST` and nothing reaches the host. |
+| `--perms` | `<OCTAL>` | Sets the mode of the mount created by the next `--tmpfs` or `--dir`. Must come right before that flag, takes an octal value up to `07777`, and may appear once per action. | Without it, the mount keeps the `tmpfs` default of `01777`, where `bwrap` uses `0755`. `--file`, `--bind-data`, and `--ro-bind-data` are not supported yet. |
 | `--proc` | `<DEST>` | Mounts a new `procfs` filesystem at `DEST`. Repeating the same `DEST` on one command line is a no-op. | `/proc` is mounted in every sandbox whether or not you pass the flag. |
+| `--dev` | `<DEST>` | Mounts gVisor's `dev` filesystem at `DEST` and a new `devpts` at `DEST/pts`. Repeating the same `DEST` on one command line is a no-op. | The device nodes come from the Sentry, not from host bind mounts. `/dev` is mounted in every sandbox whether or not you pass the flag. |
 
 <!-- mdformat on -->
 
@@ -134,6 +137,7 @@ application itself sits in a host namespace.
 | :--- | :--- | :--- | :--- |
 | `--new-session` | None | No-op. The flag exists to block `TIOCSTI` input injection into the host terminal, and the Sentry leaves `TIOCSTI` unimplemented. | No-op. The protection it asks for is already in place. |
 | `--die-with-parent` | None | No-op. The sandbox init process is a placeholder and the command runs as an exec inside it, so there is no parent-child relationship for `PR_SET_PDEATHSIG` to act on. | Accepted and ignored. Nothing signals the command when `runsc`'s parent dies. |
+| `--as-pid-1` | None | Runs the command as PID 1 of a new PID namespace inside the sandbox. When it exits, every process left in that namespace is killed. Without the flag, the placeholder init process is PID 1. | Does not require `--unshare-pid`. |
 
 <!-- mdformat on -->
 
