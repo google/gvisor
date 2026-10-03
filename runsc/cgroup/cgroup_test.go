@@ -61,6 +61,11 @@ var dindMountinfo = `
 `
 
 func TestUninstallEnoent(t *testing.T) {
+	// Keep the missing cgroup paths under a test directory, not the host mount.
+	oldRoot := cgroupRoot()
+	cgroupRootInternal = t.TempDir()
+	t.Cleanup(func() { cgroupRootInternal = oldRoot })
+
 	c := cgroupV1{
 		// Use a non-existent name.
 		Name: "runsc-test-uninstall-656e6f656e740a",
