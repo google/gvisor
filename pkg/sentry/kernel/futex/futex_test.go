@@ -20,6 +20,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -533,3 +534,83 @@ func TestMutexStress(t *testing.T) {
 		<-c
 	}
 }
+
+func TestWakeOpSignedComparison(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(2 * sizeofInt32)
+
+			// Set address sizeofInt32 to 0x80000001 (negative as int32).
+			(*atomicbitops.Uint32)(unsafe.Pointer(&d.data[sizeofInt32])).Store(0x80000001)
+
+			// Waiter on address sizeofInt32.
+			w := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0x80000001, ^uint32(0))
+			defer m.WaitComplete(w, d)
+
+			// FUTEX_OP_ANDN | FUTEX_OP_OPARG_SHIFT, oparg 31, FUTEX_OP_CMP_LT, cmparg 0:
+			// clear bit 31, and wake if old value was < 0.
+			opIn := uint32(((linux.FUTEX_OP_ANDN | linux.FUTEX_OP_OPARG_SHIFT) << 28) |
+				(linux.FUTEX_OP_CMP_LT << 24) |
+				(31 << 12) |
+				0)
+
+			n, err := m.WakeOp(d, 0, sizeofInt32, private, 0, 1, opIn)
+			if err != nil {
+				t.Fatalf("WakeOp failed: %v", err)
+			}
+			if n != 1 {
+				t.Errorf("WakeOp: got %d woken, wanted 1", n)
+			}
+			if !w.woken() {
+				t.Errorf("waiter on address sizeofInt32 not woken")
+			}
+			got, _ := d.LoadUint32(sizeofInt32)
+			if got != 1 {
+				t.Errorf("got word2 = 0x%x, wanted 0x1", got)
+			}
+		})
+	}
+}
+
+func TestWakeOpNegativeOpArg(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(2 * sizeofInt32)
+
+			// Set address sizeofInt32 to 10.
+			(*atomicbitops.Uint32)(unsafe.Pointer(&d.data[sizeofInt32])).Store(10)
+
+			// FUTEX_OP_ADD with oparg -1 (12-bit: 0xfff), FUTEX_OP_CMP_EQ with cmparg 10.
+			opIn := uint32((linux.FUTEX_OP_ADD << 28) |
+				(linux.FUTEX_OP_CMP_EQ << 24) |
+				(0xfff << 12) |
+				10)
+
+			if _, err := m.WakeOp(d, 0, sizeofInt32, private, 0, 0, opIn); err != nil {
+				t.Fatalf("WakeOp failed: %v", err)
+			}
+			got, _ := d.LoadUint32(sizeofInt32)
+			if got != 9 {
+				t.Errorf("got word2 = %d, wanted 9", got)
+			}
+		})
+	}
+}
+
+func TestWakeOpShiftOutOfRange(t *testing.T) {
+	m := NewManager()
+	d := newTestData(2 * sizeofInt32)
+
+	// FUTEX_OP_OPARG_SHIFT with oparg = 32 must fail with EINVAL.
+	opIn := uint32(((linux.FUTEX_OP_ADD | linux.FUTEX_OP_OPARG_SHIFT) << 28) |
+		(linux.FUTEX_OP_CMP_EQ << 24) |
+		(32 << 12) |
+		0)
+
+	if _, err := m.WakeOp(d, 0, sizeofInt32, true, 0, 0, opIn); !linuxerr.Equals(linuxerr.EINVAL, err) {
+		t.Errorf("WakeOp: got error %v, wanted EINVAL", err)
+	}
+}
+

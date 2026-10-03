@@ -135,12 +135,18 @@ func check(t Target, addr hostarch.Addr, val uint32) error {
 func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 	opType := (opIn >> 28) & 0xf
 	cmp := (opIn >> 24) & 0xf
-	opArg := (opIn >> 12) & 0xfff
-	cmpArg := opIn & 0xfff
+	opArg := int32((opIn>>12)&0xfff) << 20 >> 20
+	cmpArg := int32(opIn&0xfff) << 20 >> 20
 
+	var opVal uint32
 	if opType&linux.FUTEX_OP_OPARG_SHIFT != 0 {
-		opArg = 1 << opArg
+		if opArg < 0 || opArg > 31 {
+			return false, linuxerr.EINVAL
+		}
+		opVal = 1 << uint32(opArg)
 		opType &^= linux.FUTEX_OP_OPARG_SHIFT // Clear flag.
+	} else {
+		opVal = uint32(opArg)
 	}
 
 	var (
@@ -148,7 +154,7 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 		err    error
 	)
 	if opType == linux.FUTEX_OP_SET {
-		oldVal, err = t.SwapUint32(addr, opArg)
+		oldVal, err = t.SwapUint32(addr, opVal)
 		if err != nil {
 			return false, err
 		}
@@ -161,13 +167,13 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 			var newVal uint32
 			switch opType {
 			case linux.FUTEX_OP_ADD:
-				newVal = oldVal + opArg
+				newVal = oldVal + opVal
 			case linux.FUTEX_OP_OR:
-				newVal = oldVal | opArg
+				newVal = oldVal | opVal
 			case linux.FUTEX_OP_ANDN:
-				newVal = oldVal &^ opArg
+				newVal = oldVal &^ opVal
 			case linux.FUTEX_OP_XOR:
-				newVal = oldVal ^ opArg
+				newVal = oldVal ^ opVal
 			default:
 				return false, linuxerr.ENOSYS
 			}
@@ -183,17 +189,17 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 
 	switch cmp {
 	case linux.FUTEX_OP_CMP_EQ:
-		return oldVal == cmpArg, nil
+		return int32(oldVal) == cmpArg, nil
 	case linux.FUTEX_OP_CMP_NE:
-		return oldVal != cmpArg, nil
+		return int32(oldVal) != cmpArg, nil
 	case linux.FUTEX_OP_CMP_LT:
-		return oldVal < cmpArg, nil
+		return int32(oldVal) < cmpArg, nil
 	case linux.FUTEX_OP_CMP_LE:
-		return oldVal <= cmpArg, nil
+		return int32(oldVal) <= cmpArg, nil
 	case linux.FUTEX_OP_CMP_GT:
-		return oldVal > cmpArg, nil
+		return int32(oldVal) > cmpArg, nil
 	case linux.FUTEX_OP_CMP_GE:
-		return oldVal >= cmpArg, nil
+		return int32(oldVal) >= cmpArg, nil
 	default:
 		return false, linuxerr.ENOSYS
 	}
