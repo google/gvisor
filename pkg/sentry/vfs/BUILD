@@ -215,6 +215,7 @@ go_test(
         "dentry_test.go",
         "device_test.go",
         "file_description_impl_util_test.go",
+        "inotify_test.go",
         "mount_test.go",
         "posix_acl_test.go",
     ],
