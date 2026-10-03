@@ -96,6 +96,13 @@ func TestMemCgroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
+	parent := "system.slice"
+	if cgroup.IsOnlyV2() && !useSystemd {
+		parent, err = dockerutil.CgroupfsParent()
+		if err != nil {
+			t.Fatalf("Docker cgroup parent: %v", err)
+		}
+	}
 	// Wait when the container will allocate memory.
 	memUsage := 0
 	start := time.Now()
@@ -108,7 +115,7 @@ func TestMemCgroup(t *testing.T) {
 		// Read the cgroup memory limit.
 		path := cgroupPath("memory/docker", gid, "memory.limit_in_bytes")
 		if cgroup.IsOnlyV2() {
-			path = cgroupPath("docker", gid, "memory.max")
+			path = cgroupPath(parent, gid, "memory.max")
 			if useSystemd {
 				path = cgroupPath("system.slice/docker-"+gid+".scope", "memory.max")
 			}
@@ -133,7 +140,7 @@ func TestMemCgroup(t *testing.T) {
 		if cgroup.IsOnlyV2() {
 			// v2 does not have max_usage_in_bytes equivalent, so memory.current is the
 			// next best thing that we can use
-			path = cgroupPath("docker", gid, "memory.current")
+			path = cgroupPath(parent, gid, "memory.current")
 			if useSystemd {
 				path = cgroupPath("system.slice/docker-"+gid+".scope", "memory.current")
 			}
@@ -444,10 +451,14 @@ func TestCgroupV2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
-	baseCgroupPath := cgroupPath("docker")
-	if useSystemd {
-		baseCgroupPath = cgroupPath("system.slice")
+	parent := "system.slice"
+	if !useSystemd {
+		parent, err = dockerutil.CgroupfsParent()
+		if err != nil {
+			t.Fatalf("Docker cgroup parent: %v", err)
+		}
 	}
+	baseCgroupPath := cgroupPath(parent)
 	// Make configs.
 	conf, hostconf, _, err := d.ConfigsFrom(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
@@ -505,7 +516,7 @@ func TestCgroupV2(t *testing.T) {
 	checkAttrs := func() {
 		// Check list of attributes defined above.
 		for _, attr := range attrs {
-			path := cgroupPath("docker", gid, attr.file)
+			path := filepath.Join(baseCgroupPath, gid, attr.file)
 			if useSystemd {
 				path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", attr.file)
 			}
@@ -554,7 +565,7 @@ func TestCgroupV2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SandboxPid: %v", err)
 	}
-	path := cgroupPath("docker", gid, "cgroup.procs")
+	path := filepath.Join(baseCgroupPath, gid, "cgroup.procs")
 	if useSystemd {
 		path = filepath.Join(baseCgroupPath, "docker-"+gid+".scope", "cgroup.procs")
 	}
