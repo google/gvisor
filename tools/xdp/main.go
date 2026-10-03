@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 || arm64
-// +build amd64 arm64
+//go:build (linux && amd64) || (linux && arm64)
+// +build linux,amd64 linux,arm64
 
 // The xdp_loader tool is used to load compiled XDP object files into the XDP
 // hook of a net device. It is intended primarily for testing.
