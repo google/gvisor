@@ -46,7 +46,7 @@ var _ kernfs.Inode = (*rootInode)(nil)
 // newRootInode returns a new, initialized rootInode.
 func (fs *filesystem) newRootInode(ctx context.Context, creds *auth.Credentials) kernfs.Inode {
 	inode := &rootInode{}
-	inode.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|linux.FileMode(0555))
+	inode.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|linux.ModeSticky|linux.FileMode(0777))
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 	inode.InitRefs()
 	return inode
