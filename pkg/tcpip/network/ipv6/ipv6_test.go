@@ -425,6 +425,8 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 	tests := []struct {
 		name                    string
 		extHdr                  func(nextHdr uint8) ([]byte, uint8)
+		payloadLength           *uint16
+		padding                 int
 		shouldAccept            bool
 		countersToBeIncremented func(*tcpip.Stats) []*tcpip.StatCounter
 		// Should we expect an ICMP response and if so, with what contents?
@@ -439,6 +441,86 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			extHdr:       func(nextHdr uint8) ([]byte, uint8) { return nil, nextHdr },
 			shouldAccept: true,
 			expectICMP:   false,
+		},
+		{
+			name: "padded hopbyhop with UDP",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{nextHdr, 0, 0, 0, 0, 0, 0, 0}, hopByHopExtHdrID
+			},
+			padding:      64,
+			shouldAccept: true,
+		},
+		{
+			name: "padded hopbyhop with unknown next header",
+			extHdr: func(uint8) ([]byte, uint8) {
+				return []byte{unknownHdrID, 0, 0, 0, 0, 0, 0, 0}, hopByHopExtHdrID
+			},
+			padding:    64,
+			expectICMP: true,
+			ICMPType:   header.ICMPv6ParamProblem,
+			ICMPCode:   header.ICMPv6UnknownHeader,
+			pointer:    header.IPv6FixedHeaderSize,
+		},
+		{
+			name: "hopbyhop extends past payload length",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{nextHdr, 0, 0, 0, 0, 0, 0, 0}, hopByHopExtHdrID
+			},
+			payloadLength: new(uint16(7)),
+			countersToBeIncremented: func(stats *tcpip.Stats) []*tcpip.StatCounter {
+				return []*tcpip.StatCounter{stats.IP.MalformedPacketsReceived}
+			},
+		},
+		{
+			name: "truncated payload after hopbyhop",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{nextHdr, 0, 0, 0, 0, 0, 0, 0}, hopByHopExtHdrID
+			},
+			payloadLength: new(uint16(25)),
+			countersToBeIncremented: func(stats *tcpip.Stats) []*tcpip.StatCounter {
+				return []*tcpip.StatCounter{stats.IP.MalformedPacketsReceived}
+			},
+		},
+		{
+			name: "padded no next header",
+			extHdr: func(uint8) ([]byte, uint8) {
+				return nil, noNextHdrID
+			},
+			payloadLength: new(uint16(2)),
+			padding:       64,
+		},
+		{
+			name: "zero payload with no next header",
+			extHdr: func(uint8) ([]byte, uint8) {
+				return nil, noNextHdrID
+			},
+			payloadLength: new(uint16(0)),
+			padding:       64,
+		},
+		{
+			name: "unsupported jumbogram",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{nextHdr, 0, 0xc2, 4, 0, 1, 0, 0}, hopByHopExtHdrID
+			},
+			payloadLength: new(uint16(0)),
+			expectICMP:    true,
+			ICMPType:      header.ICMPv6ParamProblem,
+			ICMPCode:      header.ICMPv6ErroneousHeader,
+			pointer:       header.IPv6PayloadLenOffset,
+			countersToBeIncremented: func(stats *tcpip.Stats) []*tcpip.StatCounter {
+				return []*tcpip.StatCounter{stats.IP.MalformedPacketsReceived}
+			},
+		},
+		{
+			name: "zero payload with hopbyhop multicast",
+			extHdr: func(nextHdr uint8) ([]byte, uint8) {
+				return []byte{nextHdr, 0, 0, 0, 0, 0, 0, 0}, hopByHopExtHdrID
+			},
+			payloadLength: new(uint16(0)),
+			multicast:     true,
+			countersToBeIncremented: func(stats *tcpip.Stats) []*tcpip.StatCounter {
+				return []*tcpip.StatCounter{stats.IP.MalformedPacketsReceived}
+			},
 		},
 		{
 			name: "hopbyhop with router alert option",
@@ -995,6 +1077,9 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 
 			// Serialize IPv6 fixed header.
 			payloadLength := hdr.UsedLength()
+			if test.payloadLength != nil {
+				payloadLength = int(*test.payloadLength)
+			}
 			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength: uint16(payloadLength),
@@ -1019,10 +1104,16 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}
 			}
 
-			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.MakeWithData(hdr.View()),
-			})
+			payload := buffer.MakeWithData(hdr.View())
+			if test.padding != 0 {
+				payload.Append(buffer.NewViewSize(test.padding))
+			}
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: payload})
 			e.InjectInbound(ProtocolNumber, pkt)
+			wantPacketSize := min(hdr.UsedLength()+test.padding, header.IPv6MinimumSize+payloadLength)
+			if got := pkt.Size(); got != wantPacketSize {
+				t.Errorf("parsed packet size = %d, want %d", got, wantPacketSize)
+			}
 			pkt.DecRef()
 			for i := range counters {
 				if got := counters[i].Value(); got != 1 {
@@ -1055,7 +1146,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				v := p.ToView()
 				defer v.Release()
 				pkt := v.AsSlice()
-				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+hdr.UsedLength(); got != want {
+				if got, want := len(pkt), header.IPv6FixedHeaderSize+header.ICMPv6MinimumSize+wantPacketSize; got != want {
 					t.Fatalf("got an ICMP packet of size = %d, want = %d", got, want)
 				}
 
@@ -1072,7 +1163,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				if got, want := icm.TypeSpecific(), test.pointer; got != want {
 					t.Errorf("unexpected ICMPv6 pointer, got = %d, want = %d\n", got, want)
 				}
-				if diff := cmp.Diff([]byte(hdr.View()), originalPacket); diff != "" {
+				if diff := cmp.Diff([]byte(hdr.View())[:wantPacketSize], originalPacket); diff != "" {
 					t.Errorf("ICMPv6 payload mismatch (-want +got):\n%s", diff)
 				}
 				return

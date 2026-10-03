@@ -1637,6 +1637,17 @@ func (e *endpoint) processExtensionHeader(it *header.IPv6PayloadIterator, pkt **
 // Returns an error if the processing of a header failed or if the packet should
 // be discarded.
 func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt *stack.PacketBuffer, forwarding bool) error {
+	if h.PayloadLength() == 0 && h.NextHeader() == uint8(header.IPv6HopByHopOptionsExtHdrIdentifier) {
+		// Jumbograms are unsupported. RFC 2675 section 3 requires this error
+		// for a zero payload length followed by a Hop-by-Hop Options header.
+		e.stats.ip.MalformedPacketsReceived.Increment()
+		_ = e.protocol.returnError(&icmpReasonParameterProblem{
+			code:    header.ICMPv6ErroneousHeader,
+			pointer: header.IPv6PayloadLenOffset,
+		}, pkt, !forwarding /* deliveredLocally */)
+		return fmt.Errorf("zero payload length with Hop-by-Hop Options header")
+	}
+
 	// Create a VV to parse the packet. We don't plan to modify anything here.
 	// vv consists of:
 	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
