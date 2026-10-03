@@ -166,7 +166,8 @@ areas:
       - /pkg/bpf
       - /pkg/seccomp
       - /runsc/boot/filter
-      - /runsc/fsgofer/filter
+      - /runsc/gofer/filter
+      - /runsc/gofer/fs/filter
       - /test/secbench
       - /test/secfuzz
   - name: sentry
@@ -190,7 +191,7 @@ areas:
       - /pkg/sentry/fsimpl
       - /pkg/sentry/fsutil
       - /pkg/sentry/vfs
-      - /runsc/fsgofer
+      - /runsc/gofer/fs
       - /test/fsstress
   - name: website
     enforced_review: false

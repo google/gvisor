@@ -207,15 +207,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_WRITE: seccomp.MatchAll{},
 })
 
-// selfPIDFilters contains syscall filters that depend on the process's PID.
-func selfPIDFilters(pid uint64) seccomp.SyscallRules {
-	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-		unix.SYS_TGKILL: seccomp.PerArg{
-			seccomp.EqualTo(pid),
-		},
-	})
-}
-
 var udsCommonSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_SOCKET: seccomp.Or{
 		seccomp.PerArg{

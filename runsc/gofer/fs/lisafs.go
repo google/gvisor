@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package fsgofer provides a lisafs server implementation which gives access
+// Package fs provides a lisafs server implementation which gives access
 // to local files.
-package fsgofer
+package fs
 
 import (
 	"bytes"
@@ -1535,4 +1535,4 @@ func checkSupportedFileType(mode uint32) error {
 	}
 }
 
-// LINT.ThenChange(../../pkg/sentry/fsimpl/gofer/directfs_inode.go)
+// LINT.ThenChange(../../../pkg/sentry/fsimpl/gofer/directfs_inode.go)

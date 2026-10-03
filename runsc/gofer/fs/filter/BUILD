@@ -11,8 +11,8 @@ precompiled_seccomp_rules(
     out = "filter_precompiled.go",
     exclude_in_fastbuild = True,
     out_package_name = "filter",
-    programs_to_compile_go_import = "gvisor.dev/gvisor/runsc/fsgofer/filter/config",
-    programs_to_compile_go_library = "//runsc/fsgofer/filter/config",
+    programs_to_compile_go_import = "gvisor.dev/gvisor/runsc/gofer/fs/filter/config",
+    programs_to_compile_go_library = "//runsc/gofer/fs/filter/config",
 )
 
 go_library(
@@ -25,10 +25,9 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
-        "//pkg/log",
-        "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sync",
-        "//runsc/fsgofer/filter/config",
+        "//runsc/gofer/filter",
+        "//runsc/gofer/fs/filter/config",
     ],
 )

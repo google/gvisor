@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/lisafs/testsuite"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/runsc/fsgofer"
+	"gvisor.dev/gvisor/runsc/gofer/fs"
 )
 
 // Note that these are not supposed to be extensive or robust tests. These unit
@@ -28,7 +28,7 @@ import (
 
 func init() {
 	log.SetLevel(log.Debug)
-	if err := fsgofer.OpenProcSelfFD("/proc/self/fd"); err != nil {
+	if err := fs.OpenProcSelfFD("/proc/self/fd"); err != nil {
 		panic(err)
 	}
 }
@@ -38,7 +38,7 @@ type tester struct{}
 
 // NewConnImpl implements testsuite.Tester.NewServer.
 func (tester) NewConnImpl(t *testing.T) lisafs.ConnectionImpl {
-	return fsgofer.NewConnectionImpl(&fsgofer.Config{})
+	return fs.NewConnectionImpl(&fs.Config{})
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.

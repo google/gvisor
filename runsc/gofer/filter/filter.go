@@ -12,43 +12,57 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package filter defines all syscalls the gofer is allowed to make, and
-// installs seccomp filters to prevent prohibited syscalls in case it's
-// compromised.
 package filter
 
 import (
 	"errors"
 	"fmt"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
-	"gvisor.dev/gvisor/runsc/fsgofer/filter/config"
 )
 
 // ***   DEBUG TIP   ***
-// If you suspect the gofer is getting killed due to a seccomp violation,
+// If you suspect a gofer is getting killed due to a seccomp violation,
 // change this to `true` to get a panic stack trace when there is a
 // violation.
 const debugFilter = false
 
-// Options is a re-export of the config Options type under this package.
-type Options = config.Options
+// SelfPIDVarName is the variable name for the current process ID used in
+// precompiled seccomp filters.
+const SelfPIDVarName = "self_pid"
 
-// HostVendorSyscalls returns the vendor-specific syscalls that may be used on
-// the current host.
-func HostVendorSyscalls() precompiledseccomp.VarSyscallNumbers {
-	return config.HostVendorSyscalls()
+// SelfPIDFilters returns syscall filters that depend on the process's PID.
+func SelfPIDFilters(pid uint64) seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_TGKILL: seccomp.PerArg{
+			seccomp.EqualTo(pid),
+		},
+	})
 }
 
-// Install installs seccomp filters.
-func Install(opt Options) error {
-	for _, warning := range config.Warnings(opt) {
+// ConfigOptions represents seccomp filter configuration options for a gofer.
+type ConfigOptions interface {
+	ConfigKey() string
+	Warnings() []string
+	Vars() precompiledseccomp.Values
+	Rules() (seccomp.SyscallRules, seccomp.SyscallRules)
+}
+
+// Install installs seccomp filters for a gofer process using precompiled
+// programs when available.
+func Install[Opts ConfigOptions](
+	opt Opts,
+	getPrecompiled func(string) (precompiledseccomp.Program, bool),
+	listPrecompiled func() []string,
+) error {
+	for _, warning := range opt.Warnings() {
 		log.Warningf("*** SECCOMP WARNING: %s", warning)
 	}
 	key := opt.ConfigKey()
-	precompiled, usePrecompiled := GetPrecompiled(key)
+	precompiled, usePrecompiled := getPrecompiled(key)
 	if usePrecompiled && !debugFilter {
 		vars := opt.Vars()
 		log.Debugf("Loaded precompiled seccomp instructions for options %v, using variables: %v", key, vars)
@@ -68,14 +82,14 @@ func Install(opt Options) error {
 	} else if !usePrecompiled {
 		log.Warningf("No precompiled program found for config options %v, building seccomp program from scratch. This slows down gofer startup.", key)
 		if log.IsLogging(log.Debug) {
-			precompiledKeys := ListPrecompiled()
+			precompiledKeys := listPrecompiled()
 			log.Debugf("Precompiled seccomp-bpf program configuration option variants (%d):", len(precompiledKeys))
 			for _, k := range precompiledKeys {
 				log.Debugf("  %v", k)
 			}
 		}
 	}
-	rules, denyRules := config.Rules(opt)
+	rules, denyRules := opt.Rules()
 	program := &seccomp.Program{
 		RuleSets: []seccomp.RuleSet{
 			{
