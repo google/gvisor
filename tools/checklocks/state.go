@@ -16,6 +16,7 @@ package checklocks
 
 import (
 	"fmt"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"maps"
@@ -32,6 +33,16 @@ type lockInfo struct {
 	object    types.Object
 }
 
+// valueIdentity preserves the identity resolved when a value was evaluated.
+type valueIdentity struct {
+	key    string
+	object types.Object
+
+	// Boolean facts are retained only for values loaded from private locals.
+	boolean      bool
+	knownBoolean bool
+}
+
 // lockState tracks the locking state and aliases.
 type lockState struct {
 	// lockedMutexes is used to track which mutexes in a given struct are
@@ -43,13 +54,25 @@ type lockState struct {
 
 	aliases map[string]string
 
-	// stored stores values that have been stored in memory, bound to
-	// FreeVars or passed as Parameterse.
-	stored map[ssa.Value]ssa.Value
+	// bindings substitutes parameters and captured addresses at inline calls.
+	bindings map[ssa.Value]ssa.Value
 
-	// used is a temporary map, used only for valueAndObject. It prevents
-	// multiple use of the same memory location.
-	used map[ssa.Value]struct{}
+	// stored maps resolved memory addresses to their known contents. Reads
+	// cache the initial contents, so a join can distinguish unchanged memory
+	// from a value that is no longer known.
+	stored map[string]valueIdentity
+
+	// unknownMemory means that an absent stored entry no longer identifies
+	// untouched initial memory. Reads instead assign a fresh identity and
+	// cache it until the contents change or a join loses that fact.
+	unknownMemory bool
+
+	// memoryIDs allocates identities shared across forks and inline calls.
+	// Its progress is not part of the facts compared at control-flow joins.
+	memoryIDs *atomic.Uint64
+
+	// loaded records evaluated values independently of subsequent stores.
+	loaded map[*ssa.UnOp]valueIdentity
 
 	// defers are the stack of defers that have been pushed.
 	defers []*ssa.Defer
@@ -65,8 +88,10 @@ func newLockState() *lockState {
 	return &lockState{
 		lockedMutexes: make(map[string]lockInfo),
 		aliases:       make(map[string]string),
-		used:          make(map[ssa.Value]struct{}),
-		stored:        make(map[ssa.Value]ssa.Value),
+		bindings:      make(map[ssa.Value]ssa.Value),
+		stored:        make(map[string]valueIdentity),
+		memoryIDs:     new(atomic.Uint64),
+		loaded:        make(map[*ssa.UnOp]valueIdentity),
 		defers:        make([]*ssa.Defer, 0),
 		refs:          &refs,
 	}
@@ -82,8 +107,11 @@ func (l *lockState) fork() *lockState {
 	return &lockState{
 		lockedMutexes: l.lockedMutexes,
 		aliases:       l.aliases,
-		used:          make(map[ssa.Value]struct{}),
+		bindings:      l.bindings,
 		stored:        l.stored,
+		unknownMemory: l.unknownMemory,
+		memoryIDs:     l.memoryIDs,
+		loaded:        l.loaded,
 		defers:        l.defers,
 		refs:          l.refs,
 	}
@@ -99,10 +127,9 @@ func (l *lockState) modify() {
 		l.aliases = maps.Clone(l.aliases)
 
 		// Copy the stored values.
+		l.bindings = maps.Clone(l.bindings)
 		l.stored = maps.Clone(l.stored)
-
-		// Reset the used values.
-		clear(l.used)
+		l.loaded = maps.Clone(l.loaded)
 
 		// Copy the defers.
 		l.defers = slices.Clone(l.defers)
@@ -203,10 +230,229 @@ func (l *lockState) downgradeField(rv resolvedValue) (string, bool) {
 	return s, true
 }
 
-// store records an alias.
-func (l *lockState) store(addr ssa.Value, v ssa.Value) {
+// bound follows bindings from an inline function to its caller.
+func (l *lockState) bound(v ssa.Value) ssa.Value {
+	for {
+		other, ok := l.bindings[v]
+		if !ok {
+			return v
+		}
+		v = other
+	}
+}
+
+func (l *lockState) bind(v, other ssa.Value) {
 	l.modify()
-	l.stored[addr] = v
+	if v == other {
+		delete(l.bindings, v)
+		return
+	}
+	other = l.bound(other)
+	if v != other {
+		l.bindings[v] = other
+	}
+}
+
+// store records a write, including writes through captured caller variables.
+func (l *lockState) store(addr ssa.Value, v ssa.Value) {
+	addrKey, _ := l.valueAndObject(addr)
+	key, obj := l.valueAndObject(v)
+	boolean, known := l.booleanValue(v)
+	if known {
+		// A named call can mutate an escaped address without being analyzed
+		// inline. Do not use such memory to exclude a control-flow path.
+		_, local := l.bound(addr).(*ssa.Alloc)
+		known = local && localAddress(l.bound(addr), make(map[ssa.Value]struct{}))
+	}
+	l.modify()
+	if _, ok := v.Type().Underlying().(*types.Struct); ok {
+		l.forgetContents(addrKey)
+		l.storeValue(addrKey, valueIdentity{key: key, object: obj}, v.Type())
+		return
+	}
+	if _, ok := v.Type().Underlying().(*types.Array); ok {
+		l.forgetContents(addrKey)
+	}
+	l.stored[addrKey] = valueIdentity{key: key, object: obj, boolean: boolean && known, knownBoolean: known}
+}
+
+// fieldKey identifies field storage, independently of the value it contains.
+func fieldKey(base string, field types.Object) string {
+	return fmt.Sprintf("&(%s.%s)", base, field.Name())
+}
+
+// forgetContents invalidates cached subobjects after a whole-value store.
+// Pointer referents have their own identities and are not part of the copy.
+func (l *lockState) forgetContents(base string) {
+	l.modify()
+	maps.DeleteFunc(l.stored, func(key string, _ valueIdentity) bool {
+		for strings.HasPrefix(key, "&(") {
+			key = strings.TrimPrefix(key, "&(")
+			if strings.HasPrefix(key, base+".") || strings.HasPrefix(key, base+"[") {
+				return true
+			}
+		}
+		return false
+	})
+	l.unknownMemory = true
+}
+
+// storeValue copies field contents, not their addresses: a copied pointer still
+// refers to the original object, but an embedded mutex has distinct storage.
+func (l *lockState) storeValue(dst string, value valueIdentity, typ types.Type) {
+	if st, ok := typ.Underlying().(*types.Struct); ok {
+		for field := range st.Fields() {
+			key, obj := l.loadKeyAndObject(fieldKey(value.key, field), field)
+			l.storeValue(fieldKey(dst, field), valueIdentity{key: key, object: obj}, field.Type())
+		}
+	}
+	l.modify()
+	l.stored[dst] = value
+}
+
+// snapshot freezes value fields before later writes can change their source.
+// In particular, SSA represents a struct copy as a load followed by a store.
+func (l *lockState) snapshot(src string, obj types.Object, typ types.Type) valueIdentity {
+	switch st := typ.Underlying().(type) {
+	case *types.Struct:
+		value := valueIdentity{key: fmt.Sprintf("{memory:%d}", l.memoryIDs.Add(1)), object: obj}
+		for field := range st.Fields() {
+			contents := l.snapshot(fieldKey(src, field), field, field.Type())
+			l.modify()
+			l.stored[fieldKey(value.key, field)] = contents
+		}
+		return value
+	case *types.Array:
+		// Array elements are not tracked through copies. Keep the evaluated
+		// value distinct from mutable source storage nonetheless.
+		return valueIdentity{key: fmt.Sprintf("{memory:%d}", l.memoryIDs.Add(1)), object: obj}
+	default:
+		l.loadKeyAndObject(src, obj)
+		return l.stored[src]
+	}
+}
+
+// localAddress reports whether every use of an address is visible to inline
+// analysis. Capturing it is safe only when every use of the closure is a direct
+// call or defer, and the corresponding free variable has only local uses too.
+func localAddress(addr ssa.Value, seen map[ssa.Value]struct{}) bool {
+	if _, ok := seen[addr]; ok {
+		return true
+	}
+	seen[addr] = struct{}{}
+	refs := addr.Referrers()
+	if refs == nil {
+		return false
+	}
+	for _, ref := range *refs {
+		switch x := ref.(type) {
+		case *ssa.UnOp:
+			if x.Op != token.MUL || x.X != addr {
+				return false
+			}
+		case *ssa.Store:
+			if x.Addr != addr {
+				return false
+			}
+		case *ssa.MakeClosure:
+			calls := x.Referrers()
+			if calls == nil {
+				return false
+			}
+			for _, call := range *calls {
+				if !directInvocation(call, x) {
+					return false
+				}
+			}
+			fn := x.Fn.(*ssa.Function)
+			for i, binding := range x.Bindings {
+				if binding == addr && !localAddress(fn.FreeVars[i], seen) {
+					return false
+				}
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// booleanValue resolves only constants and snapshots of known private locals.
+// Unknown conditions still require analysis of both successors.
+func (l *lockState) booleanValue(v ssa.Value) (bool, bool) {
+	switch x := l.bound(v).(type) {
+	case *ssa.Const:
+		if x.Value != nil && x.Value.Kind() == constant.Bool {
+			return constant.BoolVal(x.Value), true
+		}
+	case *ssa.UnOp:
+		if x.Op == token.NOT {
+			value, known := l.booleanValue(x.X)
+			return !value, known
+		}
+		value := l.loaded[x]
+		return value.boolean, value.knownBoolean
+	}
+	return false, false
+}
+
+// loadKeyAndObject resolves loads from both SSA addresses and guard paths.
+func (l *lockState) loadKeyAndObject(key string, obj types.Object) (string, types.Object) {
+	if value, ok := l.stored[key]; ok {
+		return value.key, value.object
+	}
+	value := valueIdentity{key: fmt.Sprintf("*(%s)", key), object: obj}
+	if l.unknownMemory {
+		value.key = fmt.Sprintf("{memory:%d}", l.memoryIDs.Add(1))
+	}
+	l.modify()
+	l.stored[key] = value
+	return value.key, value.object
+}
+
+// load snapshots the value when the instruction executes. A deferred argument
+// must not be reloaded from its original address when the defer later runs.
+func (l *lockState) load(inst *ssa.UnOp) {
+	key, obj := l.valueAndObject(inst.X)
+	value := l.snapshot(key, obj, inst.Type())
+	l.modify()
+	l.loaded[inst] = value
+}
+
+// returnFrom imports a synchronous callee's effects while preserving the
+// caller's evaluated values, bindings and pending defers.
+func (l *lockState) returnFrom(other *lockState) {
+	if other == nil {
+		return
+	}
+	bindings, loaded, defers := l.bindings, l.loaded, l.defers
+	*l = *other.fork()
+	l.bindings, l.loaded, l.defers = bindings, loaded, defers
+}
+
+// intersect retains only facts established on both normal return paths.
+func (l *lockState) intersect(other *lockState) {
+	l.modify()
+	maps.DeleteFunc(l.lockedMutexes, func(key string, info lockInfo) bool {
+		otherInfo, ok := other.lockedMutexes[key]
+		return !ok || info.exclusive != otherInfo.exclusive
+	})
+	maps.DeleteFunc(l.aliases, func(key, value string) bool { return other.aliases[key] != value })
+	maps.DeleteFunc(l.bindings, func(key, value ssa.Value) bool { return other.bindings[key] != value })
+	// Once any memory facts disagree, missing entries cannot mean untouched
+	// initial contents. Cached reads that agree remain valid across the join.
+	l.unknownMemory = l.unknownMemory || other.unknownMemory || !maps.Equal(l.stored, other.stored)
+	maps.DeleteFunc(l.stored, func(key string, value valueIdentity) bool { return other.stored[key] != value })
+	maps.DeleteFunc(l.loaded, func(key *ssa.UnOp, value valueIdentity) bool { return other.loaded[key] != value })
+}
+
+// equivalent includes the facts and pending work that can affect analysis of
+// subsequent instructions, not just the locks currently held.
+func (l *lockState) equivalent(other *lockState) bool {
+	return l.isCompatible(other) && maps.Equal(l.aliases, other.aliases) &&
+		maps.Equal(l.bindings, other.bindings) && maps.Equal(l.stored, other.stored) &&
+		l.unknownMemory == other.unknownMemory && maps.Equal(l.loaded, other.loaded) &&
+		slices.Equal(l.defers, other.defers)
 }
 
 func (l *lockState) addAlias(left, right resolvedValue) {
@@ -268,6 +514,16 @@ type elemType interface {
 	Elem() types.Type
 }
 
+// indexKey makes equal integer constants identify the same array element even
+// when SSA represents the index occurrences with separate Const objects.
+func (l *lockState) indexKey(v ssa.Value) string {
+	if c, ok := l.bound(v).(*ssa.Const); ok && c.Value != nil && c.Value.Kind() == constant.Int {
+		return c.Value.ExactString()
+	}
+	key, _ := l.valueAndObject(v)
+	return key
+}
+
 // valueAndObject returns a string for a given value, along with a source level
 // object (if available and relevant).
 //
@@ -277,36 +533,13 @@ type elemType interface {
 //
 // Nil may not be passed here.
 func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
+	v = l.bound(v)
 	switch x := v.(type) {
 	case *ssa.Parameter:
-		// Was this provided as a parameter for a local anonymous
-		// function invocation?
-		v, ok := l.stored[x]
-		if ok {
-			return l.valueAndObject(v)
-		}
 		return fmt.Sprintf("{param:%s}", x.Name()), x.Object()
 	case *ssa.Global:
 		return globalLockKey(x.Pkg.Pkg.Path(), x.Name()), x.Object()
 	case *ssa.FreeVar:
-		// Attempt to resolve this, in case we are being invoked in a
-		// scope where all the variables are bound.
-		v, ok := l.stored[x]
-		if ok {
-			// Nested closures capture the enclosing FreeVar. Follow that
-			// binding before dereferencing the captured location. A Store
-			// can instead place an address here, with a different type.
-			if fv, ok := v.(*ssa.FreeVar); ok && types.Identical(fv.Type(), x.Type()) {
-				return l.valueAndObject(fv)
-			}
-			// The FreeVar is typically bound to a location, so we
-			// check what's been stored there. Note that the second
-			// may map to the same FreeVar, which we can check.
-			stored, ok := l.stored[v]
-			if ok {
-				return l.valueAndObject(stored)
-			}
-		}
 		// FreeVar does not have a corresponding source-level object
 		// that we can return here.
 		return fmt.Sprintf("{freevar:%s}", x.Name()), nil
@@ -317,30 +550,9 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 		// Ditto, disregard.
 		return l.valueAndObject(x.X)
 	case *ssa.UnOp:
-		if x.Op != token.MUL {
-			break
+		if value, ok := l.loaded[x]; ok {
+			return value.key, value.object
 		}
-		// Is this loading a free variable? If yes, then this can be
-		// resolved in the original isAlias function.
-		if fv, ok := x.X.(*ssa.FreeVar); ok {
-			return l.valueAndObject(fv)
-		}
-		// Should be try to resolve via a memory address? This needs to
-		// be done since a memory location can hold its own value.
-		if _, ok := l.used[x.X]; !ok {
-			// Check if we know what the accessed location holds.
-			// This is used to disambiguate memory locations.
-			v, ok := l.stored[x.X]
-			if ok {
-				l.used[x.X] = struct{}{}
-				defer func() { delete(l.used, x.X) }()
-				return l.valueAndObject(v)
-			}
-		}
-		// x.X.Type is pointer. We must construct this type
-		// dynamically, since the ssa.Value could be synthetic.
-		s, obj := l.valueAndObject(x.X)
-		return fmt.Sprintf("*(%s)", s), obj
 	case *ssa.Field:
 		structType, ok := resolveStruct(x.X.Type())
 		if !ok {
@@ -349,7 +561,7 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 		}
 		fieldObj := structType.Field(x.Field)
 		s, _ := l.valueAndObject(x.X)
-		return fmt.Sprintf("%s.%s", s, fieldObj.Name()), fieldObj
+		return l.loadKeyAndObject(fieldKey(s, fieldObj), fieldObj)
 	case *ssa.FieldAddr:
 		structType, ok := resolveStruct(x.X.Type())
 		if !ok {
@@ -358,15 +570,13 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 		}
 		fieldObj := structType.Field(x.Field)
 		s, _ := l.valueAndObject(x.X)
-		return fmt.Sprintf("&(%s.%s)", s, fieldObj.Name()), fieldObj
+		return fieldKey(s, fieldObj), fieldObj
 	case *ssa.Index:
 		s, _ := l.valueAndObject(x.X)
-		i, _ := l.valueAndObject(x.Index)
-		return fmt.Sprintf("%s[%s]", s, i), nil
+		return fmt.Sprintf("%s[%s]", s, l.indexKey(x.Index)), nil
 	case *ssa.IndexAddr:
 		s, _ := l.valueAndObject(x.X)
-		i, _ := l.valueAndObject(x.Index)
-		return fmt.Sprintf("&(%s[%s])", s, i), nil
+		return fmt.Sprintf("&(%s[%s])", s, l.indexKey(x.Index)), nil
 	case *ssa.Lookup:
 		s, _ := l.valueAndObject(x.X)
 		i, _ := l.valueAndObject(x.Index)
