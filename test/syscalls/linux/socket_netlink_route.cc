@@ -2896,6 +2896,14 @@ TEST(NetlinkRouteTest, LinkMulticastGroupBasic) {
   // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
   const DisableSave ds;
 
+  // Renaming an up interface fails on older kernels. Change its state before
+  // joining the multicast group so the setup event cannot enter the test.
+  const Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(link.index, 0, IFF_UP));
+  auto restore_flags = Cleanup([&]() {
+    EXPECT_NO_ERRNO(LinkChangeFlags(link.index, link.flags & IFF_UP, IFF_UP));
+  });
+
   // nlsk_bound_group joins RTMGRP_LINK via bind().
   struct sockaddr_nl addr = {};
   addr.nl_family = AF_NETLINK;
@@ -2925,7 +2933,6 @@ TEST(NetlinkRouteTest, LinkMulticastGroupBasic) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
 
   // Change the name of the loopback interface.
-  const Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
   std::string old_loopback_name = link.name;
   NameRequest name_request = GetNameRequest(link, "lo_test", kSeq);
   ASSERT_NO_ERRNO(NetlinkRequestAckOrError(control_fd, kSeq, &name_request,
@@ -3112,6 +3119,14 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNoop) {
   // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
   const DisableSave ds;
 
+  // Renaming an up interface fails on older kernels. Change its state before
+  // joining the multicast group so the setup event cannot enter the test.
+  const Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(link.index, 0, IFF_UP));
+  auto restore_flags = Cleanup([&]() {
+    EXPECT_NO_ERRNO(LinkChangeFlags(link.index, link.flags & IFF_UP, IFF_UP));
+  });
+
   struct sockaddr_nl mcast_addr = {};
   mcast_addr.nl_family = AF_NETLINK;
   mcast_addr.nl_groups = RTMGRP_LINK;
@@ -3119,7 +3134,6 @@ TEST(NetlinkRouteTest, LinkMulticastGroupNoop) {
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &mcast_addr));
 
   // Issue a request to set the name of the loopback interface to the same name.
-  const Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
   NameRequest name_request = GetNameRequest(link, link.name.c_str(), kSeq);
   FileDescriptor control_nlsk =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -3158,6 +3172,15 @@ TEST(NetlinkRouteTest, LinkMulticastGroupEnobufs) {
     GTEST_SKIP() << "gVisor never returns ENOBUFS.";
   }
 
+  // Renaming an up interface fails on older kernels. Change its state before
+  // joining the multicast group so the setup event cannot enter the test.
+  const Link original_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(original_link.index, 0, IFF_UP));
+  auto restore_flags = Cleanup([&]() {
+    EXPECT_NO_ERRNO(LinkChangeFlags(original_link.index,
+                                    original_link.flags & IFF_UP, IFF_UP));
+  });
+
   struct sockaddr_nl mcast_addr = {};
   mcast_addr.nl_family = AF_NETLINK;
   mcast_addr.nl_groups = RTMGRP_LINK;
@@ -3178,7 +3201,13 @@ TEST(NetlinkRouteTest, LinkMulticastGroupEnobufs) {
   // Generate enough link events to overflow poor nlsk's receive buffer.
   FileDescriptor control_nlsk =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
-  Link link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  auto restore_name = Cleanup([&]() {
+    NameRequest request =
+        GetNameRequest(original_link, original_link.name.c_str(), kSeq);
+    EXPECT_NO_ERRNO(NetlinkRequestAckOrError(control_nlsk, kSeq, &request,
+                                             request.hdr.nlmsg_len));
+  });
+  Link link = original_link;
   constexpr int kMinimumNewlinkMsgSize = 32;
   const int num_msgs = recv_buf_size / kMinimumNewlinkMsgSize;
   for (int i = 0; i < num_msgs || link.name != "lo"; ++i) {
