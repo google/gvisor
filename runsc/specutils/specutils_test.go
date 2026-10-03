@@ -146,6 +146,51 @@ func TestSpecInvalid(t *testing.T) {
 			error: "",
 		},
 		{
+			name: "valid with no uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.PIDNamespace},
+					},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "valid with new uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace},
+					},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "host uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace, Path: "/proc/1/ns/uts"},
+					},
+				},
+			},
+			error: "joining UTS namespace",
+		},
+		{
 			name: "no root",
 			spec: specs.Spec{
 				Process: &specs.Process{
