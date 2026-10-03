@@ -70,12 +70,13 @@ type objectObservations struct {
 
 // passContext is a pass with additional expected failures.
 type passContext struct {
-	pass         *analysis.Pass
-	failures     map[positionKey]*failData
-	exemptions   map[positionKey]struct{}
-	forced       map[positionKey]struct{}
-	functions    map[*ssa.Function]struct{}
-	observations map[types.Object]*objectObservations
+	pass             *analysis.Pass
+	failures         map[positionKey]*failData
+	exemptions       map[positionKey]struct{}
+	forced           map[positionKey]struct{}
+	functions        map[*ssa.Function]struct{}
+	escapedFunctions map[*ssa.Function]struct{}
+	observations     map[types.Object]*objectObservations
 }
 
 // observationsFor retrieves observations for the given object.
@@ -140,11 +141,12 @@ func (pc *passContext) forAllFunctions(fn func(fn *ast.FuncDecl)) {
 // run is the main entrypoint.
 func run(pass *analysis.Pass) (any, error) {
 	pc := &passContext{
-		pass:       pass,
-		failures:   make(map[positionKey]*failData),
-		exemptions: make(map[positionKey]struct{}),
-		forced:     make(map[positionKey]struct{}),
-		functions:  make(map[*ssa.Function]struct{}),
+		pass:             pass,
+		failures:         make(map[positionKey]*failData),
+		exemptions:       make(map[positionKey]struct{}),
+		forced:           make(map[positionKey]struct{}),
+		functions:        make(map[*ssa.Function]struct{}),
+		escapedFunctions: make(map[*ssa.Function]struct{}),
 	}
 
 	// Find all line failure annotations.
