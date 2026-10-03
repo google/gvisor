@@ -28,6 +28,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -130,6 +131,11 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		return nil, linuxerr.ENOMEM
 	}
 
+	// On any error below, release the MemoryFile allocations; the success
+	// path transfers ownership to FileDescription.Release.
+	cu := cleanup.Make(func() { mf.DecRef(rbfr) })
+	defer cu.Clean()
+
 	// Allocate enough space to store the given number of submission queue entries.
 	sqEntriesSize := uint64(numSqEntries * uint32((*linux.IOUringSqe)(nil).SizeBytes()))
 	sqEntriesSize = uint64(hostarch.Addr(sqEntriesSize).MustRoundUp())
@@ -137,6 +143,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	if err != nil {
 		return nil, linuxerr.ENOMEM
 	}
+	cu.Add(func() { mf.DecRef(sqefr) })
 
 	iouringfd := &FileDescription{
 		mf: mf,
@@ -160,6 +167,12 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	}); err != nil {
 		return nil, err
 	}
+
+	// Transfer cleanup ownership to the FileDescription: vfsfd.DecRef ->
+	// Release will DecRef both MemoryFile allocations and also release the
+	// mount/dentry refs and writer counter that Init took (O_RDWR mode).
+	cu.Release()
+	cu = cleanup.Make(func() { iouringfd.vfsfd.DecRef(ctx) })
 
 	params.SqEntries = numSqEntries
 	params.CqEntries = numCqEntries
@@ -210,6 +223,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		return nil, err
 	}
 
+	cu.Release()
 	return &iouringfd.vfsfd, nil
 }
 
