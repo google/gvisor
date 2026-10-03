@@ -907,8 +907,7 @@ func (s *Sandbox) connError(err error) error {
 }
 
 type sandboxProcessEnvOptions struct {
-	enforceRelease bool
-	sentryUsesCgo  bool
+	sentryUsesCgo bool
 }
 
 func sandboxProcessEnv(conf *config.Config, opts sandboxProcessEnvOptions) []string {
@@ -925,9 +924,7 @@ func sandboxProcessEnv(conf *config.Config, opts sandboxProcessEnvOptions) []str
 			env = append(env, "TMPDIR="+tmpDir)
 		}
 	}
-	if opts.enforceRelease {
-		env = gvisorbinaries.WithEnforceRelease(env)
-	}
+	env = gvisorbinaries.WithEnforceRelease(env)
 	if opts.sentryUsesCgo {
 		// Platforms that use stub processes are not compatible with
 		// the glibc rseq, because they unmap everything from a process
@@ -936,6 +933,13 @@ func sandboxProcessEnv(conf *config.Config, opts sandboxProcessEnvOptions) []str
 	}
 	return env
 }
+
+// sentryExeFD is the FD at which the prewarmer inherits the Sentry binary.
+// Must match `SENTRY_EXE_FD` in `runsc/prewarmer/prewarmer.c`.
+// LINT.IfChange
+const sentryExeFD = 3
+
+// LINT.ThenChange(../prewarmer/prewarmer.c)
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
@@ -1018,18 +1022,27 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		sentryBin = &gvisorbinaries.GvisorSentryPluginStack
 		sentryUsesCgo = true
 	}
-	bootBinPath := specutils.ExePath
-	if p, err := sentryBin.Path(); err == nil {
-		log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, p)
-		bootBinPath = p
-	} else if conf.SidecarUsagePolicy.AllowEmbeddedFallback() {
-		sentryBin.WarnUnavailable(fmt.Sprintf("Sidecar %q not usable (%v): booting sandbox with runsc itself", sentryBin.Name, err))
-	} else {
-		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", sentryBin.Name, err)
+	bootBinPath, err := sentryBin.Path()
+	if err != nil {
+		return fmt.Errorf("sidecar %q not usable: %w", sentryBin.Name, err)
 	}
+	log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, bootBinPath)
+	// Open with `O_PATH`, which is sufficient for exec and makes the FD
+	// effectively execute-only (no read/write).
+	bootBin, err := os.OpenFile(bootBinPath, unix.O_PATH, 0)
+	if err != nil {
+		return fmt.Errorf("cannot open boot binary %q: %w", bootBinPath, err)
+	}
+	defer bootBin.Close()
+	prewarmerPath, err := gvisorbinaries.GvisorSentryPrewarmer.Path()
+	if err != nil {
+		return fmt.Errorf("sidecar %q not usable: %w", gvisorbinaries.GvisorSentryPrewarmer.Name, err)
+	}
+	log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, prewarmerPath)
 
 	// Relay all the config flags to the sandbox process.
-	cmd := exec.Command(bootBinPath, conf.ToFlags()...)
+	cmd := exec.Command(prewarmerPath, conf.ToFlags()...)
+	cmd.ExtraFiles = []*os.File{bootBin} // Gets FD number `sentryExeFD`.
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
@@ -1043,21 +1056,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// Set Args[0] to make easier to spot the sandbox process.
 	cmd.Args[0] = "runsc-sandbox"
 
-	// If the prewarmer sidecar is available, exec it ahead of the boot binary.
-	// Its argv is `gvisor-prewarmer <binary> <argv[0]> [argv[1:]...]`.
-	if p, err := gvisorbinaries.GvisorSentryPrewarmer.Path(); err == nil {
-		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, p)
-		cmd.Args = append([]string{p, cmd.Path}, cmd.Args[0:]...)
-		cmd.Path = p
-	} else if conf.SidecarUsagePolicy != config.SidecarUsageStrict {
-		gvisorbinaries.GvisorSentryPrewarmer.WarnUnavailable(fmt.Sprintf("Sidecar %q not found or usable (%v). This slows down gVisor startup significantly", gvisorbinaries.GvisorSentryPrewarmer.Name, err))
-	} else {
-		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", gvisorbinaries.GvisorSentryPrewarmer.Name, err)
-	}
-
 	// Transfer FDs that need to be present before the "boot" command.
-	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
-	nextFD := donations.Transfer(cmd, 3)
+	nextFD := donations.Transfer(cmd, sentryExeFD+1)
 
 	// Add the "boot" command to the args.
 	//
@@ -1065,8 +1065,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
 	cmd.Env = sandboxProcessEnv(conf, sandboxProcessEnvOptions{
-		enforceRelease: bootBinPath != specutils.ExePath,
-		sentryUsesCgo:  sentryUsesCgo,
+		sentryUsesCgo: sentryUsesCgo,
 	})
 
 	// If there is a gofer, sends all socket ends to the sandbox.

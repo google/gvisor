@@ -28,6 +28,9 @@ type FlagSet = flag.FlagSet
 // Flag is an alias for flag.Flag.
 type Flag = flag.Flag
 
+// Value is an alias for flag.Value.
+type Value = flag.Value
+
 // Aliases for flag functions.
 var (
 	Bool        = flag.Bool
