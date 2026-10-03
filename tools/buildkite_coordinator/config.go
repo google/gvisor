@@ -27,14 +27,21 @@ type config struct {
 	// holds the Buildkite agent token.
 	bkTokenProject string
 	bkTokenSecret  string
+
+	// githubTokenProject and githubTokenSecret identify the Secret Manager secret
+	// that holds the GitHub token.
+	githubTokenProject string
+	githubTokenSecret  string
 }
 
 // loadConfig reads the configuration from the environment.
 func loadConfig() config {
 	return config{
-		port:           envOr("PORT", "8080"),
-		bkTokenProject: envOr("BUILDKITE_TOKEN_PROJECT", "gvisor-kokoro-testing"),
-		bkTokenSecret:  envOr("BUILDKITE_TOKEN_SECRET", "buildkite-default-token"),
+		port:               envOr("PORT", "8080"),
+		bkTokenProject:     envOr("BUILDKITE_TOKEN_PROJECT", "gvisor-kokoro-testing"),
+		bkTokenSecret:      envOr("BUILDKITE_TOKEN_SECRET", "buildkite-default-token"),
+		githubTokenProject: envOr("GITHUB_TOKEN_PROJECT", "gvisor-kokoro-testing"),
+		githubTokenSecret:  envOr("GITHUB_TOKEN_SECRET", "github-default-token"),
 	}
 }
 
