@@ -2216,6 +2216,84 @@ TEST(ProcPidStatTest, VmStats) {
   EXPECT_NE('0', data_str[0]);
 }
 
+// Hold /proc/[pid]/stat open across reap; a successful read must not start
+// with pid 0.
+TEST(ProcPidStatTest, ReapedTaskNeverReportsPIDZero) {
+  const DisableSave ds;  // Too many syscalls.
+
+  std::atomic<bool> stop = false;
+  std::atomic<bool> reported_zero = false;
+  std::atomic<pid_t> current = 0;
+  auto scan = [&] {
+    while (!stop.load(std::memory_order_relaxed)) {
+      pid_t pid = current.load(std::memory_order_relaxed);
+      if (pid <= 0) {
+        continue;
+      }
+      auto contents = GetContents(absl::StrCat("/proc/", pid, "/stat"));
+      if (!contents.ok()) {
+        continue;
+      }
+      if (absl::StartsWith(contents.ValueOrDie(), "0 ")) {
+        reported_zero.store(true, std::memory_order_relaxed);
+      }
+    }
+  };
+  ScopedThread reader1(scan);
+  ScopedThread reader2(scan);
+  ScopedThread reader3(scan);
+  ScopedThread reader4(scan);
+  // Stop the readers before they are joined, including on a failed assertion.
+  auto stop_readers =
+      Cleanup([&] { stop.store(true, std::memory_order_relaxed); });
+
+  constexpr int kChildrenPerBatch = 64;
+  for (int batch = 0; batch < 32; ++batch) {
+    std::vector<pid_t> children;
+    std::vector<FileDescriptor> fds;
+    children.reserve(kChildrenPerBatch);
+    for (int i = 0; i < kChildrenPerBatch; ++i) {
+      pid_t child = fork();
+      if (child == 0) {
+        _exit(0);
+      }
+      ASSERT_THAT(child, SyscallSucceeds());
+      children.push_back(child);
+      current.store(child, std::memory_order_relaxed);
+      auto fd = Open(absl::StrCat("/proc/", child, "/stat"), O_RDONLY);
+      if (fd.ok()) {
+        fds.push_back(std::move(fd).ValueOrDie());
+      }
+    }
+    for (pid_t child : children) {
+      siginfo_t info = {};
+      ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
+                  SyscallSucceeds());
+    }
+    for (pid_t child : children) {
+      ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                  SyscallSucceedsWithValue(child));
+    }
+    char buf[256];
+    for (auto& live : fds) {
+      const ssize_t n = pread(live.get(), buf, sizeof(buf) - 1, 0);
+      if (n < 0) {
+        EXPECT_TRUE(errno == ESRCH || errno == ENOENT) << errno;
+        continue;
+      }
+      buf[n] = '\0';
+      EXPECT_FALSE(absl::StartsWith(buf, "0 ")) << buf;
+    }
+  }
+
+  stop_readers.Release()();
+  reader1.Join();
+  reader2.Join();
+  reader3.Join();
+  reader4.Join();
+  EXPECT_FALSE(reported_zero.load(std::memory_order_relaxed));
+}
+
 // Parse an array of NUL-terminated char* arrays, returning a vector of
 // strings.
 std::vector<std::string> ParseNulTerminatedStrings(std::string contents) {
@@ -2764,70 +2842,6 @@ TEST(ProcTask, VerifyTaskChildren) {
     expectedContent = absl::StrCat(pid2, " ", pid1, " ");
   }
   EXPECT_EQ(expectedContent, proc_children_file);
-}
-
-// A child reaped while this file is generated must be omitted, never TID 0.
-TEST(ProcTask, VerifyTaskChildrenNeverReportsZeroTID) {
-  const DisableSave ds;  // Too many syscalls.
-  const std::string path = JoinPath("/proc", absl::StrCat(getpid()), "task",
-                                    absl::StrCat(gettid()), "children");
-
-  std::atomic<bool> stop = false;
-  std::atomic<bool> reported_zero = false;
-  auto scan = [&] {
-    while (!stop.load(std::memory_order_relaxed)) {
-      auto contents = GetContents(path);
-      if (!contents.ok()) {
-        continue;
-      }
-      for (absl::string_view tid :
-           absl::StrSplit(contents.ValueOrDie(), ' ', absl::SkipWhitespace())) {
-        if (tid == "0") {
-          reported_zero.store(true, std::memory_order_relaxed);
-        }
-      }
-    }
-  };
-  ScopedThread reader1(scan);
-  ScopedThread reader2(scan);
-  ScopedThread reader3(scan);
-  ScopedThread reader4(scan);
-  // Stop the readers before they are joined, including on a failed assertion.
-  auto stop_readers =
-      Cleanup([&] { stop.store(true, std::memory_order_relaxed); });
-
-  constexpr int kChildrenPerBatch = 64;
-  for (int batch = 0; batch < 32; ++batch) {
-    std::vector<pid_t> children;
-    children.reserve(kChildrenPerBatch);
-    for (int i = 0; i < kChildrenPerBatch; ++i) {
-      pid_t child = fork();
-      if (child == 0) {
-        _exit(0);
-      }
-      ASSERT_THAT(child, SyscallSucceeds());
-      children.push_back(child);
-    }
-
-    // Ensure all children are zombies, then reap the whole batch while readers
-    // repeatedly snapshot children and resolve each snapshot's TID.
-    for (pid_t child : children) {
-      siginfo_t info = {};
-      ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
-                  SyscallSucceeds());
-    }
-    for (pid_t child : children) {
-      ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
-                  SyscallSucceedsWithValue(child));
-    }
-  }
-
-  stop_readers.Release()();
-  reader1.Join();
-  reader2.Join();
-  reader3.Join();
-  reader4.Join();
-  EXPECT_FALSE(reported_zero.load(std::memory_order_relaxed));
 }
 
 TEST(ProcTask, TaskDirCannotBeDeleted) {
