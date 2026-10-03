@@ -53,15 +53,14 @@ func highestOpenFD(t *testing.T) int {
 	return highest
 }
 
-// timedRun runs argv[0] with the given arguments and returns its wall time.
-func timedRun(t *testing.T, argv ...string) time.Duration {
+// timedRun runs cmd and returns its wall time.
+func timedRun(t *testing.T, cmd *exec.Cmd) time.Duration {
 	t.Helper()
-	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	start := time.Now()
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("%v failed: %v", argv, err)
+		t.Fatalf("%v failed: %v", cmd.Args, err)
 	}
 	return time.Since(start)
 }
@@ -95,17 +94,29 @@ func TestPrewarmerSpeedsUpFDTableExpansion(t *testing.T) {
 		t.Skipf("test process has FD %d open, so child processes inherit a pre-expanded FD table; this environment cannot exercise the expansion the prewarmer exists to avoid", fd)
 	}
 
+	expanderFile, err := os.Open(expander)
+	if err != nil {
+		t.Fatalf("cannot open fdtable_expander binary: %v", err)
+	}
+	defer expanderFile.Close()
+	prewarmedCommand := func() *exec.Cmd {
+		cmd := exec.Command(prewarmer)
+		cmd.Args[0] = "fdtable_expander"
+		cmd.ExtraFiles = []*os.File{expanderFile}
+		return cmd
+	}
+
 	// One untimed run with both binaries involved just to warm the page cache:
-	timedRun(t, prewarmer, expander, "fdtable_expander")
+	timedRun(t, prewarmedCommand())
 
 	const runs = 32 // Number of runs to do.
 
 	var alone, prewarmed []time.Duration
 	for i := 0; i < runs; i++ {
-		alone = append(alone, timedRun(t, expander))
+		alone = append(alone, timedRun(t, exec.Command(expander)))
 	}
 	for i := 0; i < runs; i++ {
-		prewarmed = append(prewarmed, timedRun(t, prewarmer, expander, "fdtable_expander"))
+		prewarmed = append(prewarmed, timedRun(t, prewarmedCommand()))
 	}
 
 	p50Alone, p50Prewarmed := p50(alone), p50(prewarmed)
@@ -155,7 +166,7 @@ func runscDo(t *testing.T, runsc, sidecarDir, rootDir string) (time.Duration, st
 // with gVisor's startup latency in practice.
 // It runs `runsc --rootless --network=none do /bin/true` and extracts the FD
 // remap timing from the logs, and verifies that this is faster with the
-// prewarmer in the startup path vs without the prewarmer.
+// prewarmer in the startup path vs with a pass-through.
 func TestPrewarmerSpeedsUpRealBoot(t *testing.T) {
 	runsc, err := testutil.FindRunsc()
 	if err != nil {
@@ -167,7 +178,7 @@ func TestPrewarmerSpeedsUpRealBoot(t *testing.T) {
 	}
 
 	// Create a writable symlink-based mirror of the gvisor-bin directory,
-	// so that we can delete the prewarmer binary from it later.
+	// so that we can replace the prewarmer binary in it later.
 	tmp := t.TempDir()
 	sidecarDir := filepath.Join(tmp, "gvisor-bin")
 	if err := os.Mkdir(sidecarDir, 0755); err != nil {
@@ -209,8 +220,14 @@ func TestPrewarmerSpeedsUpRealBoot(t *testing.T) {
 		prewarmed = append(prewarmed, d)
 	}
 
+	// Replace the prewarmer with a pass-through that execs the boot binary
+	// the same way (see `SENTRY_EXE_FD` in prewarmer.c) but does not grow
+	// the FD table first.
 	if err := os.Remove(prewarmerCopy); err != nil {
 		t.Fatalf("cannot delete prewarmer from sidecar directory: %v", err)
+	}
+	if err := os.WriteFile(prewarmerCopy, []byte("#!/bin/sh\nexec /proc/self/fd/3 \"$@\"\n"), 0755); err != nil {
+		t.Fatalf("cannot write pass-through prewarmer: %v", err)
 	}
 
 	var unprewarmed []time.Duration

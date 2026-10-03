@@ -13,11 +13,11 @@
 // limitations under the License.
 
 // gvisor-sentry-prewarmer grows its host file descriptor table, then execs
-// the binary at argv[1], handing it argv[2:] as its argv (so argv[2] is the
-// target's argv[0]). It runs just before `runsc boot` (the Sentry) does, and
-// is meant to be invoked as such, i.e.:
-//   `gvisor-sentry-prewarmer /path/to/gvisor_sentry runsc-sandbox <flags...>
-//   boot <flags...>`
+// the binary it inherited at FD `SENTRY_EXE_FD`, handing it its own argv and
+// environment unchanged.
+// It runs just before the Sentry,and is meant to be invoked as such by
+// `runsc`, with the Sentry binary at FD `SENTRY_EXE_FD` and the Sentry's argv:
+//   `runsc-sandbox <flags...> boot <flags...>`
 //
 // You may be asking: wtf, wat, but why? Excellent questions.
 // Sit down for some deep kernel lore.
@@ -53,7 +53,13 @@
 // despite its existence, it makes gVisor startup faster.
 
 #include <asm/unistd.h>   // __NR_* syscall numbers for the target arch.
-#include <linux/fcntl.h>  // F_DUPFD_CLOEXEC, O_* flags, AT_FDCWD.
+#include <linux/fcntl.h>  // F_* and FD_* fcntl constants, O_* flags, AT_*.
+
+// The FD at which runsc hands this program the Sentry binary to exec.
+// Must match `sentryExeFD` in `runsc/sandbox/sandbox.go`.
+// LINT.IfChange
+#define SENTRY_EXE_FD 3
+// LINT.ThenChange(../sandbox/sandbox.go)
 
 // The FD number that the boot process remaps its first stdio FD to.
 // Must match `startingStdioFD` in `runsc/boot/loader.go`.
@@ -72,13 +78,23 @@
 // previous value of this constant was committing this exact wastefulness).
 #define PREWARM_MIN_FD (STARTING_STDIO_FD + 2)
 
-// Raw 3-argument syscall function.
+// Raw 3- and 5-argument syscall functions.
 #if defined(__x86_64__)
 static long sys3(long nr, long a0, long a1, long a2) {
   long ret;
   __asm__ volatile("syscall"
                    : "=a"(ret)
                    : "a"(nr), "D"(a0), "S"(a1), "d"(a2)
+                   : "rcx", "r11", "memory");
+  return ret;
+}
+static long sys5(long nr, long a0, long a1, long a2, long a3, long a4) {
+  register long r10 __asm__("r10") = a3;
+  register long r8 __asm__("r8") = a4;
+  long ret;
+  __asm__ volatile("syscall"
+                   : "=a"(ret)
+                   : "a"(nr), "D"(a0), "S"(a1), "d"(a2), "r"(r10), "r"(r8)
                    : "rcx", "r11", "memory");
   return ret;
 }
@@ -91,6 +107,19 @@ static long sys3(long nr, long a0, long a1, long a2) {
   __asm__ volatile("svc #0"
                    : "+r"(x0)
                    : "r"(x8), "r"(x1), "r"(x2)
+                   : "memory", "cc");
+  return x0;
+}
+static long sys5(long nr, long a0, long a1, long a2, long a3, long a4) {
+  register long x8 __asm__("x8") = nr;
+  register long x0 __asm__("x0") = a0;
+  register long x1 __asm__("x1") = a1;
+  register long x2 __asm__("x2") = a2;
+  register long x3 __asm__("x3") = a3;
+  register long x4 __asm__("x4") = a4;
+  __asm__ volatile("svc #0"
+                   : "+r"(x0)
+                   : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4)
                    : "memory", "cc");
   return x0;
 }
@@ -144,20 +173,17 @@ __attribute__((noreturn, used)) void prewarmer_main(long* stack) {
   long argc = stack[0];
   char** argv = (char**)(stack + 1);
   char** envp = argv + argc + 1;
-  if (argc < 3) {
+  if (sys3(__NR_fcntl, SENTRY_EXE_FD, F_SETFD, FD_CLOEXEC) < 0) {
     write_stderr(
-        "gvisor-sentry-prewarmer: usage: gvisor-sentry-prewarmer <binary> "
-        "<argv[0]> [argv[1:]...]\n"
+        "gvisor-sentry-prewarmer: the Sentry binary FD is not open.\n"
         "Do not run this by hand; it is exec'd by runsc ahead of the sandbox "
         "process.\n");
     sys_exit(1);
   }
   prewarm_fdtable();
-  // The argv array is NULL-terminated, so &argv[2] is a valid argv.
-  sys3(__NR_execve, (long)argv[1], (long)&argv[2], (long)envp);
-  write_stderr("gvisor-sentry-prewarmer: exec failed: ");
-  write_stderr(argv[1]);
-  write_stderr("\n");
+  sys5(__NR_execveat, SENTRY_EXE_FD, (long)"", (long)argv, (long)envp,
+       AT_EMPTY_PATH);
+  write_stderr("gvisor-sentry-prewarmer: exec of the Sentry binary failed\n");
   sys_exit(127);
 }
 
