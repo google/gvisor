@@ -1,6 +1,6 @@
 """Macro for precompiling seccomp-bpf programs."""
 
-load("//tools:defs.bzl", "go_binary")
+load("//tools:defs.bzl", "go_binary", "select_arch")
 
 def precompiled_seccomp_rules(
         name,
@@ -13,7 +13,7 @@ def precompiled_seccomp_rules(
     """Generates a Go source file containing precompiled seccomp-bpf programs.
 
     Args:
-        name: Name of the final genrule.
+        name: Name of the generated source target.
         programs_to_compile_go_library: go_library target which describes the
             set of seccomp-bpf programs that you wish to precompile. This must
             define the following package-level function:
@@ -125,32 +125,46 @@ def precompiled_seccomp_rules(
             ],
         )
 
-    # This genrule actually runs the go_binary we just declared, and writes
-    # its output (containing the precompiled rules) to the desired `out` file.
+    # Syscall numbers and the audit architecture are compiled into the generator.
+    # Run it on the target architecture so its exec-configured Go binary embeds
+    # the right constants. Execution constraints cannot be configurable, so each
+    # architecture needs its own action; select only the required output below.
     out_cmd = "$(location :" + name + "_gen_bin) --package='" + out_package_name + "' --out=$@"
-    if exclude_in_fastbuild:
+    for arch, cpu in {
+        "amd64": "@platforms//cpu:x86_64",
+        "arm64": "@platforms//cpu:aarch64",
+    }.items():
         native.genrule(
-            name = name,
-            outs = [out],
-            cmd = select({
-                ":" + name + "_fastbuild_cond": (
-                    "$(location :" + name + "_gen_stubbed_bin) --package='" + out_package_name + "' --out=$@"
-                ),
-                "//conditions:default": out_cmd,
-            }),
-            tools = select({
-                ":" + name + "_fastbuild_cond": [":" + name + "_gen_stubbed_bin"],
-                "//conditions:default": [":" + name + "_gen_bin"],
-            }),
-            tags = tags + ["requires-mem:16g"],
-        )
-    else:
-        native.genrule(
-            name = name,
-            outs = [out],
-            cmd = (
-                "$(location :" + name + "_gen_bin) --package='" + out_package_name + "' --out=$@"
-            ),
+            name = name + "_compile_" + arch,
+            outs = [name + "/" + arch + "/" + out],
+            cmd = out_cmd,
             tools = [":" + name + "_gen_bin"],
-            tags = tags + ["requires-mem:16g"],
+            exec_compatible_with = ["@platforms//os:linux", cpu],
+            tags = tags + ["manual", "requires-mem:16g"],
         )
+    native.alias(
+        name = name + "_compiled",
+        actual = select_arch(
+            amd64 = ":" + name + "_compile_amd64",
+            arm64 = ":" + name + "_compile_arm64",
+        ),
+        tags = tags + ["manual"],
+    )
+    actual = ":" + name + "_compiled"
+    if exclude_in_fastbuild:
+        # The empty stub is architecture-independent and needs no native worker.
+        native.genrule(
+            name = name + "_compile_stubbed",
+            outs = [name + "/stubbed/" + out],
+            cmd = "$(location :" + name + "_gen_stubbed_bin) --package='" + out_package_name + "' --out=$@",
+            tools = [":" + name + "_gen_stubbed_bin"],
+            tags = tags + ["manual", "requires-mem:16g"],
+        )
+        actual = select({
+            ":" + name + "_fastbuild_cond": ":" + name + "_compile_stubbed",
+            "//conditions:default": actual,
+        })
+    native.alias(name = name, actual = actual, tags = tags + ["requires-mem:16g"])
+
+    # Keep both labels accepted by existing callers, without a copy action.
+    native.alias(name = out, actual = ":" + name, tags = tags + ["manual"])
