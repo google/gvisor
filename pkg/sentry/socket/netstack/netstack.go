@@ -1430,7 +1430,7 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		return nil, syserr.ErrUnknownProtocolOption
 	}
 
-	family, skType, _ := s.Type()
+	family, _, _ := s.Type()
 	if family != linux.AF_INET6 {
 		return nil, syserr.ErrNotSupported
 	}
@@ -1560,11 +1560,6 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		// Only valid for raw IPv6 sockets.
-		if skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
-		}
-
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return nil, syserr.ErrNotPermitted
 		}
@@ -1584,10 +1579,6 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		if outLen < linux.SizeOfIPTGetEntries {
 			return nil, syserr.ErrInvalidArgument
 		}
-		// Only valid for raw IPv6 sockets.
-		if skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
-		}
 
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return nil, syserr.ErrNotPermitted
@@ -1606,11 +1597,6 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 	case linux.IP6T_SO_GET_REVISION_MATCH:
 		if outLen < linux.SizeOfXTGetRevision {
 			return nil, syserr.ErrInvalidArgument
-		}
-
-		// Only valid for raw IPv6 sockets.
-		if skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
 		}
 
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
@@ -1633,11 +1619,6 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 	case linux.IP6T_SO_GET_REVISION_TARGET:
 		if outLen < linux.SizeOfXTGetRevision {
 			return nil, syserr.ErrInvalidArgument
-		}
-
-		// Only valid for raw IPv6 sockets.
-		if skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
 		}
 
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
@@ -1817,11 +1798,6 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		// Only valid for raw IPv4 sockets.
-		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
-		}
-
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return nil, syserr.ErrNotPermitted
 		}
@@ -1841,11 +1817,6 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		// Only valid for raw IPv4 sockets.
-		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
-		}
-
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return nil, syserr.ErrNotPermitted
 		}
@@ -1863,12 +1834,6 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 	case linux.IPT_SO_GET_REVISION_MATCH:
 		if outLen < linux.SizeOfXTGetRevision {
 			return nil, syserr.ErrInvalidArgument
-		}
-
-		// Only valid for raw IPv4 sockets.
-		family, skType, _ := s.Type()
-		if family != linux.AF_INET || skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
 		}
 
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
@@ -1891,11 +1856,6 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 	case linux.IPT_SO_GET_REVISION_TARGET:
 		if outLen < linux.SizeOfXTGetRevision {
 			return nil, syserr.ErrInvalidArgument
-		}
-
-		// Only valid for raw IPv4 sockets.
-		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
-			return nil, syserr.ErrProtocolNotAvailable
 		}
 
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
@@ -2630,11 +2590,6 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 			return syserr.ErrInvalidArgument
 		}
 
-		// Only valid for raw IPv6 sockets.
-		if !socket.IsRaw(s) {
-			return syserr.ErrProtocolNotAvailable
-		}
-
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return syserr.ErrNotPermitted
 		}
@@ -2930,11 +2885,6 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 	case linux.IPT_SO_SET_REPLACE:
 		if len(optVal) < linux.SizeOfIPTReplace {
 			return syserr.ErrInvalidArgument
-		}
-
-		// Only valid for raw IPv4 sockets.
-		if family, skType, _ := s.Type(); family != linux.AF_INET || skType != linux.SOCK_RAW {
-			return syserr.ErrProtocolNotAvailable
 		}
 
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
