@@ -102,7 +102,10 @@ go_library(
 
 go_test(
     name = "auth_test",
-    srcs = ["capability_set_test.go"],
+    srcs = [
+        "capability_set_test.go",
+        "key_test.go",
+    ],
     library = ":auth",
     deps = [
         "//pkg/abi/linux",

@@ -50,6 +50,10 @@ const (
 
 // newSysDir returns the dentry corresponding to /proc/sys directory.
 func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *kernel.Kernel) kernfs.Inode {
+	// atomicInt32File retains this pointer and only uses atomic methods.
+	// checklocks cannot follow atomic-field aliases stored in an object.
+	maxFDLimit := &atomicInt32File{min: 8, max: kernel.MaxFdLimit}
+	maxFDLimit.val = &k.MaxFDLimit // +checklocksignore
 	return fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 		"kernel": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"cap_last_cap":       fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.CAP_LAST_CAP))),
@@ -82,7 +86,7 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 		}),
 		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"mount-max":     fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.VFS().MountMax, min: 1, max: math.MaxInt32}),
-			"nr_open":       fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit}),
+			"nr_open":       fs.newInode(ctx, root, 0644, maxFDLimit),
 			"pipe-max-size": fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", pipe.MaximumPipeSize))),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{

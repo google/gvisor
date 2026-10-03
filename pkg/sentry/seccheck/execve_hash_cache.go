@@ -41,7 +41,12 @@ type ExecveHashes struct {
 }
 
 type execveEntry struct {
-	key    ExecveKey
+	// key is fixed when the entry is created.
+	key ExecveKey
+
+	// hashes and its byte slices are protected by the containing cache's mu.
+	// checklocks cannot recover that owner through ExecveHashCache.entries
+	// and list.Element.Value; execveEntry has no cache backpointer.
 	hashes ExecveHashes
 }
 
@@ -55,11 +60,17 @@ type ExecveHashOptions struct {
 // ExecveHashCache provides a thread-safe, bounded LRU cache mapping binary filesystem
 // keys to digests.
 type ExecveHashCache struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+
+	// capacity and opts are fixed at construction.
 	capacity int
 	opts     ExecveHashOptions
-	entries  map[ExecveKey]*list.Element
-	lru      *list.List
+
+	// +checklocks:mu
+	entries map[ExecveKey]*list.Element
+
+	// +checklocks:mu
+	lru *list.List
 }
 
 // NewExecveHashCache constructs a new ExecveHashCache with the specified capacity and options.
@@ -87,6 +98,7 @@ func (c *ExecveHashCache) Capacity() int {
 }
 
 // Lookup attempts to retrieve cached digests for key.
+// Returned digest byte slices do not alias cache storage.
 func (c *ExecveHashCache) Lookup(key ExecveKey) (ExecveHashes, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -108,7 +120,8 @@ func (c *ExecveHashCache) Lookup(key ExecveKey) (ExecveHashes, bool) {
 }
 
 // Add updates or inserts digests into the cache for key, evicting the least recently used
-// entry if capacity is reached.
+// entry if capacity is reached. It copies the supplied digest bytes, so callers
+// may modify their slices after it returns.
 func (c *ExecveHashCache) Add(key ExecveKey, hashes ExecveHashes) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

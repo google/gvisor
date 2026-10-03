@@ -18,6 +18,8 @@
 package futex
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -226,7 +228,9 @@ type Waiter struct {
 
 	// bucket is the bucket this waiter is queued in. If bucket is nil, the
 	// waiter is not waiting and is not in any bucket.
-	bucket AtomicPtrBucket
+	//
+	// +checkatomic
+	bucket atomic.Pointer[bucket]
 
 	// C is sent to when the Waiter is woken.
 	C chan struct{}
@@ -545,7 +549,7 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 	done := b1.wakeLocked(&k1, ^uint32(0), nwake) // +checklocksignore
 
 	// Requeue the number required.
-	b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
+	_ = b1.requeueLocked(t, b2, &k1, &k2, nreq) // +checklocksignore
 
 	return done, nil
 }

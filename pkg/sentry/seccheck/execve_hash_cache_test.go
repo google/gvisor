@@ -66,11 +66,14 @@ func TestExecveHashCache(t *testing.T) {
 		cache.Add(k, ExecveHashes{SHA256: []byte("dummy_hash_slice_thirty_two_bt")})
 	}
 
-	if len(cache.entries) > DefaultExecveHashCacheCapacity {
-		t.Fatalf("cache entries exceeded max size: %d > %d", len(cache.entries), DefaultExecveHashCacheCapacity)
+	cache.mu.Lock()
+	entries, lruLen := len(cache.entries), cache.lru.Len()
+	cache.mu.Unlock()
+	if entries > DefaultExecveHashCacheCapacity {
+		t.Fatalf("cache entries exceeded max size: %d > %d", entries, DefaultExecveHashCacheCapacity)
 	}
-	if cache.lru.Len() > DefaultExecveHashCacheCapacity {
-		t.Fatalf("cache lru length exceeded max size: %d > %d", cache.lru.Len(), DefaultExecveHashCacheCapacity)
+	if lruLen > DefaultExecveHashCacheCapacity {
+		t.Fatalf("cache lru length exceeded max size: %d > %d", lruLen, DefaultExecveHashCacheCapacity)
 	}
 	// Since key1 was added first and then entries were pushed beyond size, key1 should be evicted.
 	if _, ok := cache.Lookup(key1); ok {
@@ -89,8 +92,11 @@ func TestExecveHashCacheConfigurable(t *testing.T) {
 		k := ExecveKey{MountID: 3, Ino: uint64(i), Size: 50, MtimeSec: 1, MtimeNsec: 0}
 		cache.Add(k, ExecveHashes{SHA256: []byte("dummy_hash_slice_thirty_two_bt")})
 	}
-	if len(cache.entries) > 3 || cache.lru.Len() > 3 {
-		t.Fatalf("cache exceeded configured capacity 3: entries=%d lru=%d", len(cache.entries), cache.lru.Len())
+	cache.mu.Lock()
+	entries, lruLen := len(cache.entries), cache.lru.Len()
+	cache.mu.Unlock()
+	if entries > 3 || lruLen > 3 {
+		t.Fatalf("cache exceeded configured capacity 3: entries=%d lru=%d", entries, lruLen)
 	}
 
 	// Verify disabled when capacity <= 0.
@@ -101,7 +107,10 @@ func TestExecveHashCacheConfigurable(t *testing.T) {
 
 	k0 := ExecveKey{MountID: 3, Ino: 999, Size: 50, MtimeSec: 1, MtimeNsec: 0}
 	disabledCache.Add(k0, ExecveHashes{SHA256: []byte("dummy_hash_slice_thirty_two_bt")})
-	if len(disabledCache.entries) != 0 || disabledCache.lru.Len() != 0 {
+	disabledCache.mu.Lock()
+	disabledEntries, disabledLRULen := len(disabledCache.entries), disabledCache.lru.Len()
+	disabledCache.mu.Unlock()
+	if disabledEntries != 0 || disabledLRULen != 0 {
 		t.Fatalf("disabled cache should not add entries")
 	}
 	if _, ok := disabledCache.Lookup(k0); ok {
