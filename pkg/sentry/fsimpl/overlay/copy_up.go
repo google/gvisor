@@ -416,7 +416,19 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		d.lowerMappings.RemoveAll()
 	}
 
+	// Map the upper file to the lower file's Landlock slot, if any, so the
+	// file keeps its Landlock object. This must precede setting copiedUp, since
+	// dentry.LandlockObjectSlot() reads both without landlockMu.
+	d.fs.landlockMu.Lock()
+	if lowerKey := landlockLayerKey(d.lowerVDs[0]); lowerKey != nil {
+		if slot := vfs.LookupLandlockSlot(&d.fs.landlockSlots, lowerKey); slot != nil {
+			if upperKey := landlockLayerKey(d.upperVD); upperKey != nil {
+				vfs.StoreLandlockSlot(&d.fs.landlockSlots, upperKey, slot)
+			}
+		}
+	}
 	d.copiedUp.Store(1)
+	d.fs.landlockMu.Unlock()
 	return nil
 }
 

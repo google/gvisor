@@ -63,6 +63,7 @@ func (*dentryTestFilesystem) IsDescendant(vfsroot, vd VirtualDentry) bool {
 type dentryTestDentry struct {
 	vfsd    Dentry
 	watches Watches
+	slot    LandlockObjectSlot
 
 	refs atomicbitops.Int64
 }
@@ -105,6 +106,10 @@ func (d *dentryTestDentry) Watches() *Watches {
 }
 
 func (d *dentryTestDentry) OnZeroWatches(context.Context) {}
+
+func (d *dentryTestDentry) LandlockObjectSlot() *LandlockObjectSlot {
+	return &d.slot
+}
 
 type dentryTestSystem struct {
 	ctx      context.Context

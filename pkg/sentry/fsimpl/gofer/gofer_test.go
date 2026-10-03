@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func TestDestroyIdempotent(t *testing.T) {
@@ -80,6 +81,85 @@ func TestDestroyIdempotent(t *testing.T) {
 	}
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
 	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+}
+
+// TestLandlockObjectSurvivesEviction verifies that a Landlock object keeps
+// the dentry it was created for, and with it the inode holding the Landlock
+// object's slot, across dentry cache eviction, while an unreferenced dentry is
+// destroyed; that a hard link to the file shares the Landlock object; and that
+// the dentry is destroyed as usual once the Landlock object is released.
+func TestLandlockObjectSurvivesEviction(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fs := filesystem{
+		mf:         pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:   make(map[inoKey]uint64),
+		inodeByKey: make(map[inoKey]*inode),
+		clock:      ktime.RealtimeClockFromContext(ctx),
+		// Test relies on no dentry being held in the cache.
+		dentryCache: &dentryCache{maxCachedDentries: 0},
+		client:      &lisafs.Client{},
+	}
+	// Landlock objects are counted against the VirtualFilesystem's limit.
+	vfsObj := &vfs.VirtualFilesystem{}
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("VFS init: %v", err)
+	}
+	fs.vfsfs.Init(vfsObj, FilesystemType{}, &fs)
+
+	newFile := func(controlFD lisafs.FDID, hostIno uint64) *dentry {
+		t.Helper()
+		d, err := fs.newLisafsDentry(ctx, &lisafs.Inode{
+			ControlFD: controlFD,
+			Stat: lisafs.Statx{
+				Mask:  linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_SIZE | linux.STATX_INO | linux.STATX_NLINK,
+				Mode:  linux.S_IFREG | 0666,
+				Ino:   hostIno,
+				Nlink: 2,
+			},
+		})
+		if err != nil {
+			t.Fatalf("fs.newLisafsDentry(): %v", err)
+		}
+		return d
+	}
+
+	pinned := newFile(1, 42)
+	object, err := pinned.LandlockObjectSlot().GetObject(&fs.vfsfs, &pinned.vfsd)
+	if err != nil {
+		t.Fatalf("GetObject(): %v", err)
+	}
+	link := newFile(2, 42)
+	if got := link.LandlockObjectSlot().Object(); got != object {
+		t.Errorf("hard link has object %p, want %p", got, object)
+	}
+	victim := newFile(3, 43)
+
+	fs.renameMu.Lock()
+	pinned.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	link.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	victim.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	fs.evictAllCachedDentriesLocked(ctx)
+	fs.renameMu.Unlock()
+
+	if got := victim.refs.Load(); got != -1 {
+		t.Errorf("unreferenced dentry was not destroyed: refs=%d, want -1", got)
+	}
+	if got := pinned.refs.Load(); got != 1 {
+		t.Errorf("dentry held by a Landlock object did not survive eviction: refs=%d, want 1", got)
+	}
+	if got := pinned.LandlockObjectSlot().Object(); got != object {
+		t.Errorf("slot holds %p after eviction, want %p", got, object)
+	}
+	// A new dentry for the file, as a lookup after the eviction would
+	// instantiate, finds the Landlock object through the shared inode.
+	if got := newFile(4, 42).LandlockObjectSlot().Object(); got != object {
+		t.Errorf("dentry instantiated after eviction has object %p, want %p", got, object)
+	}
+
+	object.DecRef(ctx)
+	if got := pinned.refs.Load(); got != -1 {
+		t.Errorf("dentry was not destroyed once its Landlock object was released: refs=%d, want -1", got)
+	}
 }
 
 func TestStringFixedCache(t *testing.T) {

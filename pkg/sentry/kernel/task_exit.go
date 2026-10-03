@@ -335,6 +335,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	cgroupns.DecRef(t)
 	netns.DecRef(t)
 	userns.DecRef(t)
+	t.LandlockDomain().DecRef(t)
 	if childPIDNS != nil {
 		childPIDNS.DecRef(t)
 	}

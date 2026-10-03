@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -64,7 +65,7 @@ loop:
 				// of FilesystemImpl.PrependPath() may return nil instead.
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot, nil)
 			if !nextVD.Ok() {
 				break loop
 			}
@@ -112,7 +113,7 @@ loop:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot, nil)
 			if !nextVD.Ok() {
 				return "", nil
 			}
@@ -180,7 +181,7 @@ loop:
 			if vd.mount == vfsroot.mount && vd.mount.root == vfsroot.dentry {
 				break loop
 			}
-			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot)
+			nextVD := vfs.getMountpointAt(ctx, vd.mount, vfsroot, nil)
 			if !nextVD.Ok() {
 				unreachable = true
 				break loop
@@ -212,3 +213,63 @@ loop:
 //		FilesystemImpl.PrependPath() would return PrependPathAtNonMountRootError.
 //
 // These should be added as necessary.
+
+// WalkAncestors calls fn on vd's Dentry and each ancestor up to the mount
+// namespace root, crossing mounts, until fn returns false or there is no mount
+// point to continue from. Covered mount points are skipped, like follow_up().
+// E.g. from /mnt/a/b, with a mount at /mnt, it visits b, a, then / (skipping
+// the mountpoint dentry /mnt).
+//
+// Dentries passed to fn are unreferenced and valid only during the call; fn
+// must not reenter the filesystem, whose locks may be held. References taken
+// on mount points are appended to *toDecRef for the caller to drop once it
+// holds no filesystem locks.
+func (vfs *VirtualFilesystem) WalkAncestors(ctx context.Context, vd VirtualDentry, toDecRef *[]refs.RefCounter, fn func(d *Dentry) bool) {
+	// crossed is true if vd is a mount point reached from the mount covering
+	// it, so vd's Dentry is skipped.
+	crossed := false
+	for {
+		stopped := false
+		first := true
+		var last *Dentry
+		vd.mount.fs.impl.WalkAncestors(ctx, vd, func(d *Dentry) bool {
+			last = d
+			if first {
+				first = false
+				if crossed {
+					return true
+				}
+			}
+			if fn(d) {
+				return true
+			}
+			stopped = true
+			return false
+		})
+		if stopped {
+			return
+		}
+		// If the walk missed the mount root, vd was disconnected (moved out of
+		// the mount's subtree). Visit the mount root anyway, then continue
+		// from the mount point as usual.
+		//
+		// Matches Linux [security/landlock/fs.c]:is_access_to_paths_allowed()
+		// since commit 49c9e09d9610 ("landlock: Fix handling of disconnected
+		// directories"), erratum 3.
+		if root := vd.mount.root; root != nil && last != root {
+			if !fn(root) {
+				return
+			}
+		}
+
+		// Pass toDecRef through: intermediate mount references may be the last
+		// after a racing umount.
+		nextVD := vfs.getMountpointAt(ctx, vd.mount, VirtualDentry{}, toDecRef)
+		if !nextVD.Ok() {
+			return
+		}
+		*toDecRef = append(*toDecRef, nextVD.dentry, nextVD.mount)
+		vd = nextVD
+		crossed = true
+	}
+}

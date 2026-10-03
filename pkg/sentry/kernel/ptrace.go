@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -125,6 +126,10 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return false
 	}
 
+	if !t.canTraceLandlock(target) {
+		return false
+	}
+
 	if attach && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
@@ -133,6 +138,15 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		}
 	}
 	return true
+}
+
+// canTraceLandlock reports whether t's Landlock domain allows tracing target,
+// i.e. target's domain is t's or a descendant. Unlike YAMA, this applies to
+// read access too, e.g. /proc/[pid]/mem of a less restricted thread.
+//
+// Matches Linux [security/landlock/task.c]:hook_ptrace_access_check()
+func (t *Task) canTraceLandlock(target *Task) bool {
+	return auth.LandlockCanPtrace(t.Credentials().LandlockDomain, target.Credentials().LandlockDomain)
 }
 
 // canTraceLocked is the same as CanTrace, except the caller must already hold
@@ -145,6 +159,10 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 	}
 
 	if !t.canTraceStandard(target, attach) {
+		return false
+	}
+
+	if !t.canTraceLandlock(target) {
 		return false
 	}
 

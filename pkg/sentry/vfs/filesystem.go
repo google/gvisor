@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // A Filesystem is a tree of nodes represented by Dentries, which forms part of
@@ -42,6 +43,11 @@ type Filesystem struct {
 
 	// fsType is the FilesystemType of this Filesystem.
 	fsType FilesystemType
+
+	// landlockObjects is the set of Landlock objects referencing a Dentry of
+	// this Filesystem, detached on destruction. Protected by landlockObjectsMu.
+	landlockObjectsMu sync.Mutex `state:"nosave"`
+	landlockObjects   map[*LandlockObject]struct{}
 
 	// impl is the FilesystemImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in Dentry.
@@ -80,6 +86,8 @@ func (fs *Filesystem) DecRef(ctx context.Context) {
 		fs.vfs.filesystemsMu.Lock()
 		delete(fs.vfs.filesystems, fs)
 		fs.vfs.filesystemsMu.Unlock()
+		// Drop Landlock objects' Dentry references before releasing impl.
+		fs.detachLandlockObjects(ctx, nil)
 		fs.impl.Release(ctx)
 	})
 }
@@ -535,6 +543,17 @@ type FilesystemImpl interface {
 	//
 	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
 	PrependPath(ctx context.Context, vfsroot, vd VirtualDentry, b *fspath.Builder) error
+
+	// WalkAncestors calls fn on vd's Dentry and each ancestor within this
+	// filesystem, stopping when fn returns false, after vd.Mount().Root(), or
+	// at a Dentry with no parent. Filesystems without meaningful paths call fn
+	// on vd's Dentry alone; most can use genericfstree.WalkAncestors.
+	//
+	// Dentries passed to fn are unreferenced and valid only during the call;
+	// fn must not reenter the filesystem, whose locks may be held.
+	//
+	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
+	WalkAncestors(ctx context.Context, vd VirtualDentry, fn func(d *Dentry) bool)
 
 	// IsDescendant returns true if vd is a descendant of vfsroot or if vd and
 	// vfsroot are the same dentry.
