@@ -407,7 +407,11 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	// If we receive a SYN cookie ACK, just use the cookie seqnum.
 	if !h.checkAck(s) && h.listenEP != nil {
 		iss := s.ackNumber - 1
-		data, ok := h.listenEP.listenCtx.isCookieValid(s.id, iss, s.sequenceNumber-1)
+		// This handshake retains its listener, whose context is fixed once
+		// listening; repeated Listen calls change only the backlog.
+		// checklocks cannot express this listener-lifetime exception.
+		listenCtx := h.listenEP.listenCtx // +checklocksignore
+		data, ok := listenCtx.isCookieValid(s.id, iss, s.sequenceNumber-1)
 		if !ok || int(data) >= len(mssTable) {
 			// This isn't a valid cookie.
 			// RFC 793, page 72 (https://datatracker.ietf.org/doc/html/rfc793#page-72):
@@ -1176,7 +1180,7 @@ func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	}
 	if ep == nil {
 		if !s.flags.Contains(header.TCPFlagRst) {
-			replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+			_ = replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 		}
 		return
 	}

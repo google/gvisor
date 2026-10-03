@@ -707,42 +707,9 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	defer e.mu.Unlock()
 
 	err := e.net.ConnectAndThen(addr, func(netProto tcpip.NetworkProtocolNumber, previousID, nextID stack.TransportEndpointID) tcpip.Error {
-		// ConnectAndThen invokes this callback synchronously while Connect
-		// holds e.mu. checklocks cannot propagate the captured lock into
-		// a passed callback, so only the guarded accesses and call are ignored.
-		nextID.LocalPort = e.localPort // +checklocksignore
-		nextID.RemotePort = addr.Port
-
-		// Even if we're connected, this endpoint can still be used to send
-		// packets on a different network protocol, so we register both even if
-		// v6only is set to false and this is an ipv6 endpoint.
-		netProtos := []tcpip.NetworkProtocolNumber{netProto}
-		if netProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
-			netProtos = []tcpip.NetworkProtocolNumber{
-				header.IPv4ProtocolNumber,
-				header.IPv6ProtocolNumber,
-			}
-		}
-
-		oldPortFlags := e.boundPortFlags // +checklocksignore
-
-		// Remove the old registration.
-		if e.localPort != 0 { // +checklocksignore
-			previousID.LocalPort = e.localPort                                                                                          // +checklocksignore
-			previousID.RemotePort = e.remotePort                                                                                        // +checklocksignore
-			e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, previousID, e, oldPortFlags, e.boundBindToDevice) // +checklocksignore
-		}
-
-		nextID, btd, err := e.registerWithStack(netProtos, nextID) // +checklocksignore
-		if err != nil {
-			return err
-		}
-
-		e.localPort = nextID.LocalPort   // +checklocksignore
-		e.remotePort = nextID.RemotePort // +checklocksignore
-		e.boundBindToDevice = btd        // +checklocksignore
-		e.effectiveNetProtos = netProtos // +checklocksignore
-		return nil
+		// ConnectAndThen invokes this synchronously while Connect retains e.mu.
+		// checklocks cannot propagate that captured lock into the callback.
+		return e.registerConnectedEndpointLocked(netProto, previousID, nextID, addr.Port) // +checklocksignore
 	})
 	if err != nil {
 		return err
@@ -751,6 +718,46 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	e.rcvMu.Lock()
 	e.rcvReady = true
 	e.rcvMu.Unlock()
+	return nil
+}
+
+// registerConnectedEndpointLocked registers the connection selected by
+// network.Endpoint.ConnectAndThen.
+//
+// +checklocks:e.mu
+func (e *endpoint) registerConnectedEndpointLocked(netProto tcpip.NetworkProtocolNumber, previousID, nextID stack.TransportEndpointID, remotePort uint16) tcpip.Error {
+	nextID.LocalPort = e.localPort
+	nextID.RemotePort = remotePort
+
+	// Even if we're connected, this endpoint can still be used to send
+	// packets on a different network protocol, so we register both even if
+	// v6only is set to false and this is an ipv6 endpoint.
+	netProtos := []tcpip.NetworkProtocolNumber{netProto}
+	if netProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
+		netProtos = []tcpip.NetworkProtocolNumber{
+			header.IPv4ProtocolNumber,
+			header.IPv6ProtocolNumber,
+		}
+	}
+
+	oldPortFlags := e.boundPortFlags
+
+	// Remove the old registration.
+	if e.localPort != 0 {
+		previousID.LocalPort = e.localPort
+		previousID.RemotePort = e.remotePort
+		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, ProtocolNumber, previousID, e, oldPortFlags, e.boundBindToDevice)
+	}
+
+	nextID, btd, err := e.registerWithStack(netProtos, nextID)
+	if err != nil {
+		return err
+	}
+
+	e.localPort = nextID.LocalPort
+	e.remotePort = nextID.RemotePort
+	e.boundBindToDevice = btd
+	e.effectiveNetProtos = netProtos
 	return nil
 }
 
@@ -863,34 +870,9 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	}
 
 	err := e.net.BindAndThen(addr, func(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address) tcpip.Error {
-		// BindAndThen invokes this callback synchronously while bindLocked
-		// holds e.mu. checklocks cannot propagate the captured lock into
-		// a passed callback, so only the guarded accesses and call are ignored.
-
-		// Expand netProtos to include v4 and v6 if the caller is binding to a
-		// wildcard (empty) address, and this is an IPv6 endpoint with v6only
-		// set to false.
-		netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
-		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (tcpip.Address{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
-			netProtos = []tcpip.NetworkProtocolNumber{
-				header.IPv6ProtocolNumber,
-				header.IPv4ProtocolNumber,
-			}
-		}
-
-		id := stack.TransportEndpointID{
-			LocalPort:    addr.Port,
-			LocalAddress: boundAddr,
-		}
-		id, btd, err := e.registerWithStack(netProtos, id) // +checklocksignore
-		if err != nil {
-			return err
-		}
-
-		e.localPort = id.LocalPort       // +checklocksignore
-		e.boundBindToDevice = btd        // +checklocksignore
-		e.effectiveNetProtos = netProtos // +checklocksignore
-		return nil
+		// BindAndThen invokes this synchronously while bindLocked retains e.mu.
+		// checklocks cannot propagate that captured lock into the callback.
+		return e.registerBoundEndpointLocked(boundNetProto, boundAddr, addr.Port) // +checklocksignore
 	})
 	if err != nil {
 		return err
@@ -899,6 +881,37 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 	e.rcvMu.Lock()
 	e.rcvReady = true
 	e.rcvMu.Unlock()
+	return nil
+}
+
+// registerBoundEndpointLocked registers the local address selected by
+// network.Endpoint.BindAndThen.
+//
+// +checklocks:e.mu
+func (e *endpoint) registerBoundEndpointLocked(boundNetProto tcpip.NetworkProtocolNumber, boundAddr tcpip.Address, port uint16) tcpip.Error {
+	// Expand netProtos to include v4 and v6 if the caller is binding to a
+	// wildcard (empty) address, and this is an IPv6 endpoint with v6only
+	// set to false.
+	netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
+	if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (tcpip.Address{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
+		netProtos = []tcpip.NetworkProtocolNumber{
+			header.IPv6ProtocolNumber,
+			header.IPv4ProtocolNumber,
+		}
+	}
+
+	id := stack.TransportEndpointID{
+		LocalPort:    port,
+		LocalAddress: boundAddr,
+	}
+	id, btd, err := e.registerWithStack(netProtos, id)
+	if err != nil {
+		return err
+	}
+
+	e.localPort = id.LocalPort
+	e.boundBindToDevice = btd
+	e.effectiveNetProtos = netProtos
 	return nil
 }
 

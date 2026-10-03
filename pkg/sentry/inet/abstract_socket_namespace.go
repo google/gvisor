@@ -43,6 +43,8 @@ type AbstractSocketNamespace struct {
 	// TryIncRef() must be called in case the socket is concurrently being
 	// destroyed. It is the responsibility of the socket to remove itself from the
 	// abstract socket namespace when it is destroyed.
+	//
+	// +checklocks:mu
 	endpoints map[string]abstractEndpoint
 }
 
@@ -59,8 +61,10 @@ func (e *boundEndpoint) Release(ctx context.Context) {
 	e.BoundEndpoint.Release(ctx)
 }
 
-func (a *AbstractSocketNamespace) init() {
-	a.endpoints = make(map[string]abstractEndpoint)
+func newAbstractSocketNamespace() AbstractSocketNamespace {
+	return AbstractSocketNamespace{
+		endpoints: make(map[string]abstractEndpoint),
+	}
 }
 
 // BoundEndpoint retrieves the endpoint bound to the given name. The return
