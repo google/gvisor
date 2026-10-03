@@ -53,7 +53,7 @@
 // despite its existence, it makes gVisor startup faster.
 
 #include <asm/unistd.h>   // __NR_* syscall numbers for the target arch.
-#include <linux/fcntl.h>  // F_DUPFD_CLOEXEC, O_* flags, AT_FDCWD.
+#include <linux/fcntl.h>  // F_DUPFD_CLOEXEC, O_* flags, AT_FDCWD, AT_EMPTY_PATH.
 
 // The FD number that the boot process remaps its first stdio FD to.
 // Must match `startingStdioFD` in `runsc/boot/loader.go`.
@@ -97,6 +97,56 @@ static long sys3(long nr, long a0, long a1, long a2) {
 #else
 #error "unsupported architecture"
 #endif
+
+// Raw 5-argument syscall function (for execveat(2)).
+#if defined(__x86_64__)
+static long sys5(long nr, long a0, long a1, long a2, long a3, long a4) {
+  long ret;
+  register long r10 __asm__("r10") = a3;
+  register long r8 __asm__("r8") = a4;
+  __asm__ volatile("syscall"
+                   : "=a"(ret)
+                   : "a"(nr), "D"(a0), "S"(a1), "d"(a2), "r"(r10), "r"(r8)
+                   : "rcx", "r11", "memory");
+  return ret;
+}
+#elif defined(__aarch64__)
+static long sys5(long nr, long a0, long a1, long a2, long a3, long a4) {
+  register long x8 __asm__("x8") = nr;
+  register long x0 __asm__("x0") = a0;
+  register long x1 __asm__("x1") = a1;
+  register long x2 __asm__("x2") = a2;
+  register long x3 __asm__("x3") = a3;
+  register long x4 __asm__("x4") = a4;
+  __asm__ volatile("svc #0"
+                   : "+r"(x0)
+                   : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4)
+                   : "memory", "cc");
+  return x0;
+}
+#endif
+
+// Returns N if `path` is "/proc/self/fd/N" (N a decimal FD number), or -1.
+static long self_fd_path_fd(const char* path) {
+  static const char prefix[] = "/proc/self/fd/";
+  long i = 0;
+  for (; prefix[i] != '\0'; i++) {
+    if (path[i] != prefix[i]) {
+      return -1;
+    }
+  }
+  if (path[i] == '\0') {
+    return -1;
+  }
+  long fd = 0;
+  for (; path[i] != '\0'; i++) {
+    if (path[i] < '0' || path[i] > '9' || fd > 0xfffffff) {
+      return -1;
+    }
+    fd = fd * 10 + (path[i] - '0');
+  }
+  return fd;
+}
 
 static __attribute__((noreturn)) void sys_exit(long code) {
   for (;;) {
@@ -153,6 +203,20 @@ __attribute__((noreturn, used)) void prewarmer_main(long* stack) {
     sys_exit(1);
   }
   prewarm_fdtable();
+  // runsc passes the binary as /proc/self/fd/N, an FD that it opened in its
+  // own mount namespace. Exec the FD itself rather than a path: no procfs
+  // lookup is needed, and the process name comes from the file name rather
+  // than from "N" (Linux 6.14+). The FD is deliberately left open across
+  // exec: the boot process owns it, checks that it is its own executable and
+  // closes it (with close-on-exec, that FD number could already be reused by
+  // the time the boot process looks at it). If execveat(2) fails, fall back
+  // to execve(2) of the /proc/self/fd path, which yields the same executable.
+  long fd = self_fd_path_fd(argv[1]);
+  if (fd >= 0) {
+    // The argv array is NULL-terminated, so &argv[2] is a valid argv.
+    sys5(__NR_execveat, fd, (long)"", (long)&argv[2], (long)envp,
+         AT_EMPTY_PATH);
+  }
   // The argv array is NULL-terminated, so &argv[2] is a valid argv.
   sys3(__NR_execve, (long)argv[1], (long)&argv[2], (long)envp);
   write_stderr("gvisor-sentry-prewarmer: exec failed: ");

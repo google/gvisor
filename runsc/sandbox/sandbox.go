@@ -1018,18 +1018,33 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		sentryBin = &gvisorbinaries.GvisorSentryPluginStack
 		sentryUsesCgo = true
 	}
-	bootBinPath := specutils.ExePath
-	if p, err := sentryBin.Path(); err == nil {
-		log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, p)
-		bootBinPath = p
+	// Open the boot binary here, in runsc's mount namespace, and exec the
+	// sandbox process through that FD rather than by path. A path would be
+	// resolved in the sandbox's copy of runsc's mount namespace; the sandbox
+	// and stub processes' executable would then pin that copy and, after
+	// pivot_root(2) detaches it, every mount it held, so that host mounts
+	// existing at sandbox creation stay busy until the sandbox exits even
+	// after being unmounted from the host.
+	bootBin, bootBinPath, err := sentryBin.Open()
+	bootBinIsSidecar := err == nil
+	if err == nil {
+		log.Infof("Sidecar %q found: booting sandbox with %s (exec'd via FD %d)", sentryBin.Name, bootBinPath, bootBinChildFD)
 	} else if conf.SidecarUsagePolicy.AllowEmbeddedFallback() {
 		sentryBin.WarnUnavailable(fmt.Sprintf("Sidecar %q not usable (%v): booting sandbox with runsc itself", sentryBin.Name, err))
+		if bootBin, err = gvisorbinaries.OpenExecutable(specutils.ExePath); err != nil {
+			return fmt.Errorf("opening runsc binary to boot the sandbox: %w", err)
+		}
+		bootBinPath = specutils.ExePath
 	} else {
 		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", sentryBin.Name, err)
 	}
+	defer bootBin.Close()
+	bootBinExecPath := fmt.Sprintf("/proc/self/fd/%d", bootBinChildFD)
 
 	// Relay all the config flags to the sandbox process.
-	cmd := exec.Command(bootBinPath, conf.ToFlags()...)
+	cmd := exec.Command(bootBinExecPath, conf.ToFlags()...)
+	// bootBin must be the first extra file so that it becomes bootBinChildFD.
+	cmd.ExtraFiles = append(cmd.ExtraFiles, bootBin)
 	cmd.SysProcAttr = &unix.SysProcAttr{
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
@@ -1044,7 +1059,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Args[0] = "runsc-sandbox"
 
 	// If the prewarmer sidecar is available, exec it ahead of the boot binary.
-	// Its argv is `gvisor-prewarmer <binary> <argv[0]> [argv[1:]...]`.
+	// Its argv is `gvisor-prewarmer <binary> <argv[0]> [argv[1:]...]`; here
+	// <binary> is bootBinExecPath, which the prewarmer execs through the FD.
+	// The prewarmer itself is still exec'd by path: its executable is replaced
+	// by the boot binary's long before pivot_root(2), so it pins nothing.
 	if p, err := gvisorbinaries.GvisorSentryPrewarmer.Path(); err == nil {
 		log.Infof("Sidecar %q found: prepending Sentry boot command with %s", gvisorbinaries.GvisorSentryPrewarmer.Name, p)
 		cmd.Args = append([]string{p, cmd.Path}, cmd.Args[0:]...)
@@ -1056,16 +1074,16 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	// Transfer FDs that need to be present before the "boot" command.
-	// Start at 3 because 0, 1, and 2 are taken by stdin/out/err.
-	nextFD := donations.Transfer(cmd, 3)
+	// Start after bootBinChildFD (0, 1, and 2 are taken by stdin/out/err).
+	nextFD := donations.Transfer(cmd, bootBinChildFD+1)
 
 	// Add the "boot" command to the args.
 	//
 	// All flags after this must be for the boot command
-	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
+	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir, fmt.Sprintf("--boot-binary-fd=%d", bootBinChildFD))
 
 	cmd.Env = sandboxProcessEnv(conf, sandboxProcessEnvOptions{
-		enforceRelease: bootBinPath != specutils.ExePath,
+		enforceRelease: bootBinIsSidecar,
 		sentryUsesCgo:  sentryUsesCgo,
 	})
 
@@ -1550,6 +1568,12 @@ func calculateCPUNum(cg cgroup.Cgroup, cpuNumFromQuota bool) (int, int64, int64,
 	}
 	return cpuNum, cpuQuota, cpuPeriod, nil
 }
+
+// bootBinChildFD is the FD number at which the sandbox process receives the
+// boot binary that runsc opened, and through which it is exec'd
+// (/proc/self/fd/bootBinChildFD, or execveat(2) in the prewarmer). The boot
+// process closes it at startup (see the boot command's --boot-binary-fd).
+const bootBinChildFD = 3
 
 func rootMappedInContainer(IDMap []specs.LinuxIDMapping) bool {
 	for _, idMap := range IDMap {

@@ -220,6 +220,11 @@ type Boot struct {
 	// used to synchronize rootless user namespace initialization.
 	syncUsernsFD int
 
+	// bootBinaryFD is the FD of this process's own executable, which runsc
+	// opened in its mount namespace and exec'd this process through. It is
+	// not needed after exec and is closed at startup.
+	bootBinaryFD int
+
 	// nvidiaDriverVersion is the Nvidia driver version on the host.
 	nvidiaDriverVersion string
 
@@ -270,6 +275,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.cpuDMALatencyFD, "cpu-dma-latency-fd", -1, "file descriptor holding /dev/cpu_dma_latency open")
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
 	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
+	f.IntVar(&b.bootBinaryFD, "boot-binary-fd", -1, "file descriptor of this binary, through which runsc exec'd this process; closed at startup.")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.Uint64Var(&b.totalHostMem, "total-host-memory", 0, "total memory reported by host /proc/meminfo")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
@@ -363,6 +369,18 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	timer.Reached("ring0 initialized")
 
 	argOverride := make(map[string]string)
+
+	// Close the FD that runsc exec'd this binary through before anything can
+	// inherit it: the /proc umounter, a re-exec of this process, and the stub
+	// processes, which share this process's FD table. A re-exec goes through
+	// /proc/self/exe, which keeps the executable on the same mount.
+	if b.bootBinaryFD >= 0 {
+		if err := sandboxsetup.CloseBootBinaryFD(b.bootBinaryFD); err != nil {
+			util.Fatalf("closing boot binary FD %d: %v", b.bootBinaryFD, err)
+		}
+		b.bootBinaryFD = -1
+		argOverride["boot-binary-fd"] = "-1"
+	}
 
 	// Do these before chroot takes effect, otherwise we can't read /proc and /sys.
 	if len(b.productName) == 0 {

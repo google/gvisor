@@ -333,6 +333,52 @@ func (b *Binary) Path() (string, error) {
 	return p, nil
 }
 
+// Open opens a usable on-disk copy of the binary (see Path) and returns it
+// together with its path. The file is opened with O_PATH|O_CLOEXEC; it is
+// meant to be exec'd through the FD (execveat(2) with AT_EMPTY_PATH, or
+// /proc/self/fd/N once donated to a child process).
+//
+// Exec'ing through a file opened in this process ties the executable to the
+// mount on which this process found it. A path given to a child created in a
+// new mount namespace is instead resolved in the child's *copy* of the mount
+// tree, and the resulting executable keeps that copy, including mounts that
+// are unmounted from the original namespace later on, alive for as long as
+// the process (and anything forked from it) runs.
+func (b *Binary) Open() (*os.File, string, error) {
+	p, err := b.Path()
+	if err != nil {
+		return nil, "", err
+	}
+	f, err := OpenExecutable(p)
+	if err != nil {
+		return nil, "", err
+	}
+	return f, p, nil
+}
+
+// OpenExecutable opens path with O_PATH|O_CLOEXEC and checks, on the opened
+// file, that it is a regular file with at least one execute bit set.
+func OpenExecutable(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open %q: %w", path, err)
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		unix.Close(fd)
+		return nil, fmt.Errorf("cannot stat %q: %w", path, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
+		unix.Close(fd)
+		return nil, fmt.Errorf("%q is not a regular file", path)
+	}
+	if st.Mode&0111 == 0 {
+		unix.Close(fd)
+		return nil, fmt.Errorf("%q is not executable", path)
+	}
+	return os.NewFile(uintptr(fd), path), nil
+}
+
 // expectedPath returns the path at which the on-disk copy of the binary is
 // expected to exist.
 func (b *Binary) expectedPath() (string, error) {

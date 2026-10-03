@@ -133,6 +133,24 @@ func SyncUsernsForRootless(fd int, uid uint32, gid uint32) {
 	}
 }
 
+// CloseBootBinaryFD closes fd, the FD through which runsc exec'd this
+// process, after checking that it refers to this process's executable. If it
+// does not (for example because the FD number does not hold what runsc
+// donated), fd is left open and an error is returned.
+func CloseBootBinaryFD(fd int) error {
+	var exe, got unix.Stat_t
+	if err := unix.Stat("/proc/self/exe", &exe); err != nil {
+		return fmt.Errorf("stat(/proc/self/exe): %w", err)
+	}
+	if err := unix.Fstat(fd, &got); err != nil {
+		return fmt.Errorf("fstat(boot binary FD %d): %w", fd, err)
+	}
+	if got.Dev != exe.Dev || got.Ino != exe.Ino {
+		return fmt.Errorf("boot binary FD %d (dev %d, ino %d) is not this process's executable (dev %d, ino %d)", fd, got.Dev, got.Ino, exe.Dev, exe.Ino)
+	}
+	return unix.Close(fd)
+}
+
 // ExecProcUmounter executes a child process that umounts /proc when the
 // returned pipe is closed.
 func ExecProcUmounter() (*exec.Cmd, *os.File) {

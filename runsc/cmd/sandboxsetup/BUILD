@@ -42,6 +42,10 @@ go_library(
 go_test(
     name = "sandboxsetup_test",
     size = "small",
-    srcs = ["gofer_mount_test.go"],
+    srcs = [
+        "gofer_mount_test.go",
+        "process_test.go",
+    ],
     library = ":sandboxsetup",
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
