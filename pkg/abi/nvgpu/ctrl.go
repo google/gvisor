@@ -64,6 +64,11 @@ const (
 	NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY = 0xd04
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000event.h:
+const (
+	NV0000_CTRL_CMD_EVENT_SET_NOTIFICATION = 0x501
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gpu.h:
 const (
 	NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS      = 0x201
@@ -787,6 +792,7 @@ const (
 const (
 	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS           = 0x20803001
 	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS         = 0x20803002
+	NV2080_CTRL_CMD_NVLINK_GET_COUNTERS_V2           = 0x20803050
 	NV2080_CTRL_CMD_NVLINK_GET_PLATFORM_INFO         = 0x20803083
 	NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE  = 0x2080309d
 	NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY = 0x208030a0
@@ -841,6 +847,24 @@ const (
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080thermal.h:
 const (
 	NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2 = 0x20800513
+)
+
+// "Legacy non-privileged" NV2080 control commands (category = privileged
+// category | NVxxxx_CTRL_LEGACY_NON_PRIVILEGED; see ctrl2080base.h) used by
+// the NVML GPM path (nvmlGpm*) behind DCGM's DCGM_FI_PROF_* profiling fields.
+// NVML probes this non-admin command space first and falls back to the
+// privileged twins when it is unavailable.
+//
+// These commands are not in the public SDK headers; the IDs and parameter
+// sizes below were observed by ptrace-tracing nv-hostengine from NVIDIA DCGM
+// 4.7 under `dcgmi dmon -e 1001,1002,1003,1004,1005` on driver 580.95.05, and
+// their names reflect their observed role. Their parameter buffers contain no
+// pointers or FDs, so all are proxied with rmControlSimple.
+const (
+	NV2080_CTRL_CMD_PERF_LEGACY_GPM_QUERY_SUPPORT = 0x2080a060
+	NV2080_CTRL_CMD_PERF_LEGACY_QUERY_INFO        = 0x2080a080
+	NV2080_CTRL_CMD_PERF_LEGACY_GPM_METRICS_GET   = 0x2080a0a7
+	NV2080_CTRL_CMD_PERF_LEGACY_GPM_SAMPLE_GET    = 0x2080a0a8
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080unix.h:
@@ -972,6 +996,14 @@ const (
 	NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE       = 0xcb330104
 	NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS = 0xcb33010b
 	NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_KEY_ROTATION_STATE  = 0xcb33010c
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrlcbca.h:
+const (
+	NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SUBSCRIBE        = 0xcbca0101
+	NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_UNSUBSCRIBE      = 0xcbca0102
+	NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SET_STREAM_STATE = 0xcbca0103
+	NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_GET_STREAM_STATE = 0xcbca0104
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00fe.h:
