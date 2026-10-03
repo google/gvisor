@@ -391,6 +391,8 @@ TEST_F(Openat2Test, BeneathRaceWithMount) {
   const std::string path =
       JoinPath(Basename(sub.path()), "..", Basename(file.path()));
 
+  // Per-call checkpoints overwhelm the concurrent race; save after it finishes.
+  DisableSave ds;
   auto t = ScopedThread([&done] {
     // Race with a completely unrelated mount elsewhere on the system.
     // This should still be rejected by RESOLVE_BENEATH.
@@ -403,7 +405,13 @@ TEST_F(Openat2Test, BeneathRaceWithMount) {
       ASSERT_THAT(umount(dir.path().c_str()), SyscallSucceeds());
     }
   });
-  auto cleanup = Cleanup([&done] { done.store(true); });
+  auto cleanup = Cleanup([&] {
+    done.store(true);
+    t.Join();
+    ds.reset();
+    MaybeSave();
+    EXPECT_TRUE(SameFile(dirfd_.get(), dir_.path()));
+  });
 
   for (int i = 0; i < numIterations; i++) {
     auto result = OpenAt2(dirfd_.get(), path, O_RDONLY, 0, RESOLVE_BENEATH);
@@ -429,13 +437,15 @@ TEST_F(Openat2Test, BeneathRaceWithRename) {
   const std::string path =
       JoinPath(Basename(sub.path()), "..", Basename(file.path()));
 
+  // Per-call checkpoints overwhelm the concurrent race; save after it finishes.
+  DisableSave ds;
   auto t = ScopedThread([this, &done] {
     const auto dirfd = dirfd_.get();
 
     // Race with a completely unrelated rename elsewhere on the system.
     // This should still be rejected by RESOLVE_BENEATH.
-    ASSERT_THAT(openat(dirfd, "0", O_RDONLY | O_CREAT, 0644),
-                SyscallSucceeds());
+    const auto file =
+        ASSERT_NO_ERRNO_AND_VALUE(OpenAt(dirfd, "0", O_RDONLY | O_CREAT, 0644));
     auto cleanup = Cleanup([&dirfd] {
       unlinkat(dirfd, "0", 0);
       unlinkat(dirfd, "1", 0);
@@ -458,7 +468,13 @@ TEST_F(Openat2Test, BeneathRaceWithRename) {
       i++;
     }
   });
-  auto cleanup = Cleanup([&done] { done.store(true); });
+  auto cleanup = Cleanup([&] {
+    done.store(true);
+    t.Join();
+    ds.reset();
+    MaybeSave();
+    EXPECT_TRUE(SameFile(dirfd_.get(), dir_.path()));
+  });
 
   for (int i = 0; i < numIterations; i++) {
     auto result = OpenAt2(dirfd_.get(), path, O_RDONLY, 0, RESOLVE_BENEATH);
@@ -788,6 +804,8 @@ TEST_F(Openat2Test, InRootRaceWithMount) {
   constexpr int numIterations = 50000;
   std::atomic_bool done = false;
 
+  // Per-call checkpoints overwhelm the concurrent race; save after it finishes.
+  DisableSave ds;
   auto t = ScopedThread([&done] {
     // Race with a completely unrelated mount elsewhere on the system.
     // This should still be rejected by RESOLVE_IN_ROOT.
@@ -800,7 +818,13 @@ TEST_F(Openat2Test, InRootRaceWithMount) {
       ASSERT_THAT(umount(dir.path().c_str()), SyscallSucceeds());
     }
   });
-  auto cleanup = Cleanup([&done] { done.store(true); });
+  auto cleanup = Cleanup([&] {
+    done.store(true);
+    t.Join();
+    ds.reset();
+    MaybeSave();
+    EXPECT_TRUE(SameFile(dirfd_.get(), dir_.path()));
+  });
 
   for (int i = 0; i < numIterations; i++) {
     const auto result = OpenAt2(dirfd_.get(), "../../..",
@@ -825,13 +849,15 @@ TEST_F(Openat2Test, InRootRaceWithRename) {
   constexpr int numIterations = 50000;
   std::atomic_bool done = false;
 
+  // Per-call checkpoints overwhelm the concurrent race; save after it finishes.
+  DisableSave ds;
   auto t = ScopedThread([this, &done] {
     const auto dirfd = dirfd_.get();
 
     // Race with a completely unrelated rename elsewhere on the system.
     // This should still be rejected by RESOLVE_IN_ROOT.
-    ASSERT_THAT(openat(dirfd, "0", O_RDONLY | O_CREAT, 0644),
-                SyscallSucceeds());
+    const auto file =
+        ASSERT_NO_ERRNO_AND_VALUE(OpenAt(dirfd, "0", O_RDONLY | O_CREAT, 0644));
     auto cleanup = Cleanup([&dirfd] {
       unlinkat(dirfd, "0", 0);
       unlinkat(dirfd, "1", 0);
@@ -854,7 +880,13 @@ TEST_F(Openat2Test, InRootRaceWithRename) {
       i++;
     }
   });
-  auto cleanup = Cleanup([&done] { done.store(true); });
+  auto cleanup = Cleanup([&] {
+    done.store(true);
+    t.Join();
+    ds.reset();
+    MaybeSave();
+    EXPECT_TRUE(SameFile(dirfd_.get(), dir_.path()));
+  });
 
   for (int i = 0; i < numIterations; i++) {
     const auto result = OpenAt2(dirfd_.get(), "../../..",
