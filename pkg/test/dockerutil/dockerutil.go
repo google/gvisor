@@ -240,6 +240,28 @@ func UsingSystemdCgroup() (bool, error) {
 	return false, nil
 }
 
+// CgroupfsParent returns the configured absolute parent for containers using the
+// cgroupfs driver, or Docker's default when no parent is configured.
+func CgroupfsParent() (string, error) {
+	data, err := os.ReadFile(*config)
+	if err != nil {
+		return "", err
+	}
+	var cfg struct {
+		Parent string `json:"cgroup-parent"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return "", err
+	}
+	if cfg.Parent == "" {
+		return "/docker", nil
+	}
+	if !strings.HasPrefix(cfg.Parent, "/") {
+		return "", fmt.Errorf("relative Docker cgroup parent %q requires the daemon's cgroup path", cfg.Parent)
+	}
+	return cfg.Parent, nil
+}
+
 func runtimeMap() (map[string]any, error) {
 	// Read the configuration data; the file must exist.
 	configBytes, err := os.ReadFile(*config)
