@@ -25,6 +25,8 @@ import (
 
 // InvalidateUnsavable invokes memmap.Mappable.InvalidateUnsavable on all
 // Mappables mapped by mm.
+//
+// +checklocksexclude:mm.mappingMu
 func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
