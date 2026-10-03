@@ -581,6 +581,18 @@ func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h f
 	}
 }
 
+// TransportProtocolDefaultHandler returns the per-stack default handler
+// previously set for the given protocol via SetTransportProtocolHandler, or
+// nil if none was set (e.g. a tcp.Forwarder registered as the TCP handler
+// for a stack that has no bound listening endpoints).
+func (s *Stack) TransportProtocolDefaultHandler(p tcpip.TransportProtocolNumber) func(TransportEndpointID, *PacketBuffer) bool {
+	state := s.transportProtocols[p]
+	if state == nil {
+		return nil
+	}
+	return state.defaultHandler
+}
+
 // Clock returns the Stack's clock for retrieving the current time and
 // scheduling work.
 func (s *Stack) Clock() tcpip.Clock {
