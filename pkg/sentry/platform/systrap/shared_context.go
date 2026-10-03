@@ -264,18 +264,25 @@ var (
 )
 
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
-	err := sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout)
-	switch err {
-	case errStuckContext:
-		log.TracebackAll(fmt.Sprintf("Systrap context is stuck; killing its subprocess. ThreadContext: %v", sc))
-		sc.killSubprocess()
-		return errDeadSubprocess
-	case errStubThreadGone, errNoStubThread:
-		log.Warningf("Stub thread no longer exists; killing subprocess. ThreadContext: %v", sc)
-		sc.killSubprocess()
-		return errDeadSubprocess
+	for stuck := 0; ; stuck++ {
+		err := sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout)
+		switch err {
+		case errStuckContext:
+			// A stub in a slow host page fault cannot take the signal yet, so
+			// keep resending rather than killing a subprocess that may recover.
+			if stuck == 0 {
+				log.TracebackAll(fmt.Sprintf("Systrap context is stuck; still waiting. ThreadContext: %v", sc))
+			} else {
+				log.Warningf("Systrap context still stuck after %v. ThreadContext: %v", time.Duration(stuck+1)*stuckContextTimeout, sc)
+			}
+			continue
+		case errStubThreadGone, errNoStubThread:
+			log.Warningf("Stub thread no longer exists; killing subprocess. ThreadContext: %v", sc)
+			sc.killSubprocess()
+			return errDeadSubprocess
+		}
+		return err
 	}
-	return err
 }
 
 func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuckTimeout, checkupTimeout time.Duration) error {
