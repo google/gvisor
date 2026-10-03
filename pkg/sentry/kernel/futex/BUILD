@@ -68,6 +68,7 @@ go_test(
     srcs = ["futex_test.go"],
     library = ":futex",
     deps = [
+        "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
