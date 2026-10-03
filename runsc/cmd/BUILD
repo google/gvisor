@@ -113,6 +113,7 @@ go_test(
         "install_test.go",
         "list_test.go",
         "mitigate_test.go",
+        "passfd_test.go",
         "pidfile_test.go",
         "read_test.go",
         "sandboxexec_test.go",
