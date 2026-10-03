@@ -478,7 +478,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime_noreload,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
 	@$(call install_runtime_noreload,$(RUNTIME)-net-uds,--network-proxy-path=$(NET_PROXY_SOCKET)) # Used by TestExternalUDSProxy*.
 	@$(call install_runtime,$(RUNTIME)-cgroupv2,--in-sandbox-cgroup=v2) # Used by TestSystemd* and TestPIDFDSelftests.
-	@$(call test_runtime_cached,$(RUNTIME),--test_env=TEST_SAVE_RESTORE_NETSTACK=true -- $(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test //test/e2e:uds_proxy_test)
+	@$(call test_runtime_cached,$(RUNTIME),-- $(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test //test/e2e:runtime_in_docker_test //test/e2e:uds_proxy_test)
 .PHONY: docker-tests
 
 plugin-network-tests: integration-test-images $(RUNTIME_BIN)
