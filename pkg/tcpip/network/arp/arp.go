@@ -44,6 +44,7 @@ var _ ip.DADProtocol = (*endpoint)(nil)
 // facility provided by the stack to deliver packets to a layer above
 // the link-layer is via stack.NetworkEndpoint.HandlePacket.
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
+var _ stack.RestorableNetworkEndpoint = (*endpoint)(nil)
 
 // +stateify savable
 type endpoint struct {
@@ -60,6 +61,13 @@ type endpoint struct {
 
 	// +checklocks:mu
 	dad ip.DAD
+}
+
+// Restore implements stack.RestorableNetworkEndpoint.
+func (e *endpoint) Restore() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.dad.Restore(&e.mu, e.protocol.stack.SecureRNG().Reader)
 }
 
 // CheckDuplicateAddress implements stack.DuplicateAddressDetector.
