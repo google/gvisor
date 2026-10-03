@@ -18,6 +18,9 @@ import (
 	"structs"
 )
 
+// Landlock ABI version implemented by gVisor.
+const LANDLOCK_ABI_VERSION = 1
+
 // Landlock create_ruleset flags.
 // Matches Linux [include/uapi/linux/landlock.h]:landlock_create_ruleset_flags
 const (
@@ -73,6 +76,18 @@ const (
 		LANDLOCK_ACCESS_FS_MAKE_BLOCK |
 		LANDLOCK_ACCESS_FS_MAKE_SYM
 )
+
+// LandlockRulesetAttr is the argument of sys_landlock_create_ruleset().
+// Matches Linux [include/uapi/linux/landlock.h]:struct landlock_ruleset_attr
+//
+// +marshal
+type LandlockRulesetAttr struct {
+	_ structs.HostLayout
+
+	HandledAccessFS  uint64
+	HandledAccessNet uint64
+	Scoped           uint64
+}
 
 // LandlockPathBeneathAttr is the argument of sys_landlock_add_rule() for LANDLOCK_RULE_PATH_BENEATH.
 // Matches Linux [include/uapi/linux/landlock.h]:struct landlock_path_beneath_attr
