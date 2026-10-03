@@ -32,11 +32,89 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+func TestCreateFailureRemovesCgroup(t *testing.T) {
+	parentPath := "/" + testutil.RandomID("runsc-create-")
+	parent, err := cgroup.NewFromPath(parentPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.Install(&specs.LinuxResources{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := parent.Uninstall(); err != nil {
+			t.Errorf("removing test parent cgroup: %v", err)
+		}
+	})
+	childPath := filepath.Join(parentPath, "child")
+	child, err := cgroup.NewFromPath(childPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retain ownership of these test paths so cleanup can remove a leaked group
+	// on failure, including all controller paths on cgroup v1.
+	if err := child.Install(&specs.LinuxResources{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := child.Uninstall(); err != nil {
+			t.Errorf("removing test child cgroup: %v", err)
+		}
+	})
+	if err := child.Uninstall(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(child.MakePath("memory")); !os.IsNotExist(err) {
+		t.Fatalf("child cgroup before creation: got %v, want not-exist", err)
+	}
+
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	config.RegisterFlags(testFlags)
+	conf, err := config.NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf.Network = config.NetworkNone
+	conf.Overlay2.Set("none")
+	// Fail after the gofer starts, without requiring a working KVM device.
+	conf.Platform = "kvm"
+	conf.PlatformDevicePath = filepath.Join(t.TempDir(), "missing-kvm")
+	spec := testutil.NewSpecWithArgs("/bin/true")
+	spec.Linux = &specs.Linux{CgroupsPath: childPath}
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	c, err := container.New(conf, container.Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if c != nil {
+		t.Cleanup(func() {
+			if err := c.Destroy(); err != nil {
+				t.Errorf("destroying unexpected container: %v", err)
+			}
+		})
+	}
+	if want := fmt.Sprintf("error opening KVM device file (%s): %v", conf.PlatformDevicePath, unix.ENOENT); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("container creation: got %v, want %q", err, want)
+	}
+	if _, err := os.Stat(child.MakePath("memory")); !os.IsNotExist(err) {
+		t.Errorf("child cgroup after failed creation: got %v, want not-exist", err)
+	}
+	if _, err := os.Stat(parent.MakePath("memory")); err != nil {
+		t.Errorf("pre-existing parent cgroup was not preserved: %v", err)
+	}
+}
 
 func TestCreateContainerHooksRootFS(t *testing.T) {
 	rootLink := filepath.Join(t.TempDir(), "root")
