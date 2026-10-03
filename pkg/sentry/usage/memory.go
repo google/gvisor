@@ -232,6 +232,7 @@ func (d *DirtyMemoryStats) Copy() (dirty, writeback uint64) {
 // initially zeroed. Any added field will be ignored by an older API and will be
 // zero if read by a newer API.
 type RTMemoryStats struct {
+	// +checkatomic
 	RTMapped atomicbitops.Uint64
 }
 
