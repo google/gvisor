@@ -26,7 +26,7 @@
 //
 //	heap:      A direct allocation is made on the heap (hard).
 //	builtin:   A call is made to a built-in allocation function (hard).
-//	stack:     A stack split as part of a function preamble (soft).
+//	stack:     A possible stack split in the function or a runtime helper (soft).
 //	interface: A call is made via an interface which *may* escape (soft).
 //	dynamic:   A dynamic function is dispatched which *may* escape (soft).
 //
@@ -34,7 +34,7 @@
 // line "// +checkescape" or "// +checkescape:OPTION[,OPTION]". In the second
 // case, the OPTION field is either a type above, or one of:
 //
-//	local: Escape analysis is limited to local hard escapes only.
+//	local: Only examines local operations for the selected escape reasons.
 //	all: All the escapes are included.
 //	hard: All hard escapes are included.
 //
@@ -44,7 +44,7 @@
 // Some examples of this syntax are:
 //
 // +checkescape:all               - Analyzes for all escapes in this function and all calls.
-// +checkescape:local             - Analyzes only for default local hard escapes.
+// +checkescape:local,hard        - Analyzes only for local hard escapes.
 // +checkescape:heap              - Only analyzes for heap escapes.
 // +checkescape:interface,dynamic - Only checks for dynamic calls and interface calls.
 // +checkescape                   - Does the same as +checkescape:local,hard.
@@ -56,22 +56,36 @@
 // Local exemptions can be made by a comment of the form "// escapes: reason."
 // This must appear on the line of the escape and will also apply to callers of
 // the function as well (for non-local escape analysis).
+//
+// Instructions are analyzed for their possible effects before compiled code is
+// used to rule out eliminated calls. Generic declarations are analyzed for all
+// permitted type arguments, including instantiations compiled only by importing
+// packages. Their archives cannot prove that allocations or compiler-generated
+// calls were eliminated. Operations whose implementation cannot be established
+// from the type constraints count as dynamic escapes; possible boxing and
+// conversion allocations also count as heap escapes. Materialized generic locals
+// conservatively count as heap allocations, since larger type arguments can
+// exceed the compiler's stack-allocation limit.
+// An explicit go:nosplit directive rules out only the declaration's own
+// stack-splitting prologue.
 package checkescape
 
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
+	"debug/gosym"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"io"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -130,7 +144,7 @@ func (e EscapeReason) String() string {
 	case dynamicCall:
 		return "dynamic: call to potentially allocating function"
 	case stackSplit:
-		return "stack: possible split on function entry"
+		return "stack: possible split in function or runtime helper"
 	default:
 		panic(fmt.Sprintf("unknown reason: %d", e))
 	}
@@ -158,17 +172,6 @@ var escapeTypes = func() map[string]EscapeReason {
 	}
 	return result
 }()
-
-// escapingBuiltins are builtins known to escape.
-//
-// These are lowered at an earlier stage of compilation to explicit function
-// calls, but are not available for recursive analysis.
-var escapingBuiltins = []string{
-	"append",
-	"makemap",
-	"newobject",
-	"mallocgc",
-}
 
 // objdumpAnalyzer accepts the objdump parameter.
 type objdumpAnalyzer struct {
@@ -353,15 +356,291 @@ func MergeAll(others []Escapes) (es Escapes) {
 	return
 }
 
+type targetKind int
+
+const (
+	unknownTarget targetKind = iota
+	symbolTarget
+	indirectTarget
+	// unnamedTarget is a relocated direct call whose symbol name is absent
+	// from the object file. Compiling with -d=norefname omits the names of
+	// indexed symbols defined in other packages; objdump then prints the
+	// relocation without a symbol.
+	unnamedTarget
+)
+
+// callTarget distinguishes named callees, indirect dispatch and targets
+// that objdump could not resolve. A symbol's addend is not part of its identity.
+type callTarget struct {
+	name   string
+	offset int64
+	kind   targetKind
+}
+
+func (target callTarget) String() string {
+	s := target.name
+	if target.offset != 0 {
+		s = fmt.Sprintf("%s%+d", s, target.offset)
+	}
+	if target.kind == unnamedTarget {
+		s += " (unnamed relocation)"
+	}
+	return s
+}
+
+// x86CallRegister recognizes the register operands emitted by Go's x86 backend.
+func x86CallRegister(name string) bool {
+	switch name {
+	case "AX", "BX", "CX", "DX", "SI", "DI", "BP", "SP":
+		return true
+	}
+	if strings.HasPrefix(name, "R") {
+		n, err := strconv.Atoi(name[1:])
+		return err == nil && n >= 8 && n <= 15 && name == fmt.Sprintf("R%d", n)
+	}
+	return false
+}
+
+// parseCallTarget preserves relocation identity and recognizes only proven
+// register-indirect operands. Numeric addresses, PC-relative branches and
+// unfamiliar operand syntax remain unknown.
+func parseCallTarget(fields []string) callTarget {
+	target := callTarget{name: fields[4]}
+	symbol, relocated := "", false
+	for _, field := range fields[5:] {
+		for _, relocation := range []string{"]R_CALL", "]R_CALLARM64"} {
+			// Other relocation types sharing this prefix (e.g. R_CALLIND)
+			// leave a remainder that is neither empty nor a ':' suffix.
+			_, rest, ok := strings.Cut(field, relocation)
+			if !ok {
+				continue
+			}
+			if rest == "" {
+				symbol, relocated = "", true
+			} else if name, ok := strings.CutPrefix(rest, ":"); ok {
+				symbol, relocated = name, true
+			}
+		}
+	}
+	if relocated && symbol == "" {
+		return callTarget{name: target.name, kind: unnamedTarget}
+	}
+	if offset, err := strconv.ParseInt(symbol, 10, 64); err == nil {
+		// Without a symbol name, goobj prints only the addend as :%d.
+		// https://github.com/golang/go/blob/go1.26.3/src/cmd/internal/objfile/goobj.go#L92-L104
+		return callTarget{name: target.name, offset: offset, kind: unnamedTarget}
+	}
+	if symbol != "" {
+		var offset int64
+		// goobj prints addends as +%d, including +-N for negative values.
+		// https://github.com/golang/go/blob/go1.26.3/src/cmd/internal/objfile/goobj.go#L92-L103
+		if i := strings.LastIndexByte(symbol, '+'); i >= 0 {
+			var err error
+			offset, err = strconv.ParseInt(symbol[i+1:], 10, 64)
+			if err != nil {
+				return target
+			}
+			symbol = symbol[:i]
+		}
+		symbol = strings.TrimSuffix(symbol, "<1>")
+		if symbol == "" {
+			return target
+		}
+		target = callTarget{name: symbol, offset: offset, kind: symbolTarget}
+		// Retpolines replace register dispatch; they do not prove a safe
+		// callee or an allocation by a compiler-generated helper.
+		// https://github.com/golang/go/blob/go1.26.3/src/cmd/internal/obj/x86/asm6.go#L2077-L2086
+		if register, ok := strings.CutPrefix(target.name, "runtime.retpoline"); ok && target.offset == 0 && register != "SP" && x86CallRegister(register) {
+			target.kind = indirectTarget
+		}
+		return target
+	}
+	// Plan 9 syntax spells x86 register calls as CALL DX and ARM64 BLR
+	// as CALL (R2). Memory operands and symbolic operands without a direct
+	// relocation are deliberately not inferred from their spelling: x86
+	// memory-indirect calls can also be printed as name(SB).
+	// https://github.com/golang/go/blob/go1.26.3/src/cmd/vendor/golang.org/x/arch/x86/x86asm/plan9x.go#L144-L156
+	if x86CallRegister(target.name) {
+		target.kind = indirectTarget
+	} else if register, ok := strings.CutPrefix(target.name, "(R"); ok && strings.HasSuffix(register, ")") {
+		register = strings.TrimSuffix(register, ")")
+		n, err := strconv.Atoi(register)
+		if err == nil && n >= 0 && n <= 30 && register == strconv.Itoa(n) {
+			target.kind = indirectTarget
+		}
+	}
+	return target
+}
+
+// These runtime entry points do not allocate on the Go heap or grow the
+// goroutine's stack. This is a compiler/runtime contract, not parser policy.
+var nonEscapingRuntimeHelpers = map[string]struct{}{
+	"runtime.racefuncenter":  {},
+	"runtime.racefuncexit":   {},
+	"runtime.raceread":       {},
+	"runtime.racewrite":      {},
+	"runtime.racereadrange":  {},
+	"runtime.racewriterange": {},
+	"runtime.gcWriteBarrier": {},
+	"runtime.stackcheck":     {},
+	"runtime.settls":         {},
+}
+
+func (target callTarget) nonEscaping() bool {
+	if target.kind != symbolTarget || target.offset != 0 {
+		return false
+	}
+	if _, ok := nonEscapingRuntimeHelpers[target.name]; ok {
+		return true
+	}
+	// These NOSPLIT entry points tail-jump to the common write barrier;
+	// its flush path switches to g0 before calling allocating code.
+	// https://github.com/golang/go/blob/go1.26.3/src/runtime/asm_amd64.s#L1885-L1908
+	// https://github.com/golang/go/blob/go1.26.3/src/runtime/asm_arm64.s#L1533-L1556
+	variant, ok := strings.CutPrefix(target.name, "runtime.gcWriteBarrier")
+	return ok && len(variant) == 1 && variant[0] >= '1' && variant[0] <= '8'
+}
+
+type callSet map[callTarget]struct{}
+
+func (calls callSet) String() string {
+	names := make([]string, 0, len(calls))
+	for target := range calls {
+		names = append(names, target.String())
+	}
+	slices.Sort(names)
+	return strings.Join(names, " or ")
+}
+
+// callKind identifies compiler lowerings whose calls can be distinguished from
+// unrelated calls on the same source line. Unknown targets remain conservative.
+type callKind int
+
+const (
+	anyCall callKind = iota
+	implicitCall
+	interfaceBoxing
+	stringConversion
+	pointerConversion
+	allocationCall
+	sliceAllocation
+	builtinAllocation
+	sliceGrowth
+	slicePromotion
+	mapCall
+	stackGrowth
+)
+
+func (calls callSet) forKind(kind callKind) callSet {
+	filtered := make(callSet)
+	for target := range calls {
+		if target.nonEscaping() {
+			continue
+		}
+		// The compiler emits fixed allocation/stack helpers as direct calls.
+		// Indirect dispatch belongs to its SSA call, not nearby storage.
+		// Unknown direct addresses and non-entry offsets stay conservative.
+		// Unnamed relocations target another package's indexed symbol;
+		// the runtime helpers matched below are never such references.
+		// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/ssagen/ssa.go#L864-L888
+		matches := target.kind == unknownTarget || target.offset != 0
+		switch kind {
+		case anyCall:
+			matches = true
+		case implicitCall:
+			// Implicit operators call runtime helpers or generated type
+			// algorithms, not user functions. Explicit calls are analyzed
+			// separately through SSA. For example, composite equality uses
+			// runtime.memequal or a type:.eq function generated by EqFor.
+			// The latter may be another package's unnamed symbol.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/reflectdata/alg.go#L645-L652
+			matches = matches || target.kind == indirectTarget || target.kind == unnamedTarget || strings.HasPrefix(target.name, "runtime.") || strings.HasPrefix(target.name, "type:")
+		case allocationCall, sliceAllocation, builtinAllocation:
+			// SSA Alloc lowers to newobject or a specialized mallocgc helper.
+			// Do not mistake an unrelated builtin on its line for heap storage.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/ssagen/ssa.go#L864-L876
+			matches = matches || target.name == "runtime.newobject" || strings.HasPrefix(target.name, "runtime.mallocgc")
+			if kind == sliceAllocation {
+				matches = matches || strings.HasPrefix(target.name, "runtime.makeslice")
+			}
+			if kind == builtinAllocation {
+				// make/new are SSA constructors, not language builtin calls.
+				// A stack-allocated map can still call nonallocating runtime.rand.
+				// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/walk/builtin.go
+				matches = matches || strings.HasPrefix(target.name, "runtime.makemap") ||
+					strings.HasPrefix(target.name, "runtime.makechan")
+			}
+		case sliceGrowth:
+			// Append can use a stack buffer or a no-alias growth variant.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/ssagen/ssa.go#L4062-L4080
+			matches = matches || strings.HasPrefix(target.name, "runtime.growslice")
+		case slicePromotion:
+			// This operation is compiler-inserted, with no owning SSA node.
+			// Require positive evidence rather than turning unrelated unknown
+			// calls into allocations. SSA handles those calls independently.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/ssagen/ssa.go#L4221-L4236
+			matches = target.kind == symbolTarget && target.offset == 0 && strings.HasPrefix(target.name, "runtime.moveSlice")
+		case mapCall:
+			matches = matches || strings.HasPrefix(target.name, "runtime.mapaccess") ||
+				strings.HasPrefix(target.name, "runtime.mapassign") ||
+				strings.HasPrefix(target.name, "runtime.mapdelete") ||
+				target.name == "runtime.mapclear" || target.name == "runtime.mapIterStart" || target.name == "runtime.mapIterNext"
+		case stackGrowth:
+			matches = matches || target.name == "runtime.morestack" || target.name == "runtime.morestack_noctxt" || target.name == "runtime.morestackc"
+		case interfaceBoxing:
+			// walk.dataWord emits these after inlining, including for FIPS
+			// constants that cannot use readonly data. I2I is different.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/walk/convert.go#L366-L397
+			matches = matches || strings.HasPrefix(target.name, "runtime.convT")
+		case stringConversion:
+			// Literal []byte conversions may allocate an array; concatenation
+			// can be combined with conversion. Other forms use string helpers.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/walk/convert.go#L259-L363
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/ssagen/ssa.go#L864-L876
+			switch target.name {
+			case "runtime.stringtoslicebyte", "runtime.stringtoslicerune",
+				"runtime.slicebytetostring", "runtime.slicebytetostringtmp",
+				"runtime.slicerunetostring", "runtime.intstring", "runtime.newobject":
+				matches = true
+			}
+			matches = matches || strings.HasPrefix(target.name, "runtime.concatbyte") || strings.HasPrefix(target.name, "runtime.mallocgc")
+		case pointerConversion:
+			// uintptr-to-pointer arithmetic and unsafe-to-typed alignment checks.
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/walk/convert.go#L503-L536
+			// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/ssagen/ssa.go#L3187-L3190
+			matches = matches || strings.HasPrefix(target.name, "runtime.checkptr")
+		}
+		if matches {
+			filtered[target] = struct{}{}
+		}
+	}
+	return filtered
+}
+
+// compiledFunction retains the owner of calls without source positions.
+// An entry line associates it conservatively with a source body. Zero means
+// that ownership is known only to the source file named by TEXT.
+type compiledFunction struct {
+	symbol    gosym.Sym
+	filename  string
+	entryLine int
+	unlocated callSet
+}
+
+type compiledCode struct {
+	lines     map[string]callSet
+	functions []compiledFunction
+}
+
 // loadObjdump reads the objdump output.
 //
-// This records if there is a call any function for every source line. It is
-// used only to remove false positives for escape analysis. The call will be
-// elided if escape analysis is able to put the object on the heap exclusively.
+// This records compiled source lines and their calls, retaining TEXT ownership
+// when a call's source position is unavailable. It is used to rule out operations
+// that the compiler eliminated or implemented without a call, such as an
+// allocation placed on the stack.
 //
-// Note that the map uses <basename.go>:<line> because that is all that is
-// provided in the objdump format. Since this is all local, it is sufficient.
-func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
+// Line keys use <basename.go>:<line>, as provided by objdump, within this package.
+func loadObjdump(binary io.Reader) (*compiledCode, error) {
 	// Do we have a binary? If it's missing, then the nil will simply be
 	// plumbed all the way down here.
 	if binary == nil {
@@ -438,65 +717,25 @@ func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 		return nil, fmt.Errorf("unable to start objdump: %w: %s", startErr, bufErr.String())
 	}
 
-	// Identify calls by address or name. Note that the list of allowed addresses
-	// -- not the list of allowed function names -- is also constructed
-	// dynamically below, as we encounter the addresses. This is because some of
-	// the functions (duffzero) may have jump targets in the middle of the
-	// function itself.
-	funcsAllowed := map[string]struct{}{
-		"runtime.duffzero": {},
-		"runtime.duffcopy": {},
-		// Compiler race instrumentation neither allocates Go heap objects nor
-		// splits the Go stack, including when it instruments stack variables.
-		"runtime.racefuncenter":  {},
-		"runtime.racefuncexit":   {},
-		"runtime.raceread":       {},
-		"runtime.racewrite":      {},
-		"runtime.racereadrange":  {},
-		"runtime.racewriterange": {},
-		"runtime.gcWriteBarrier": {},
-		"runtime.retpolineAX":    {},
-		"runtime.retpolineBP":    {},
-		"runtime.retpolineBX":    {},
-		"runtime.retpolineCX":    {},
-		"runtime.retpolineDI":    {},
-		"runtime.retpolineDX":    {},
-		"runtime.retpolineR10":   {},
-		"runtime.retpolineR11":   {},
-		"runtime.retpolineR12":   {},
-		"runtime.retpolineR13":   {},
-		"runtime.retpolineR14":   {},
-		"runtime.retpolineR15":   {},
-		"runtime.retpolineR8":    {},
-		"runtime.retpolineR9":    {},
-		"runtime.retpolineSI":    {},
-		"runtime.stackcheck":     {},
-		"runtime.settls":         {},
-	}
-	// addrsAllowed lists every address that can be jumped to within the
-	// funcsAllowed functions.
-	addrsAllowed := make(map[string]struct{})
-
-	// Build the map.
-	nextFunc := "" // For funcsAllowed.
-	m := make(map[string]map[string]struct{})
+	// Retain call identity and source ownership for effect classification.
+	code := &compiledCode{lines: make(map[string]callSet)}
+	var current *compiledFunction
+	var entryPending bool
 	s := bufio.NewScanner(pipeOut)
 	for s.Scan() {
 		line := s.Text()
 		fields := strings.Fields(line)
 
-		// Is this an "allowed" function definition? If so, record every address of
-		// the function body.
 		if len(fields) >= 2 && fields[0] == "TEXT" {
-			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
-			if _, ok := funcsAllowed[nextFunc]; !ok {
-				nextFunc = "" // Don't record addresses.
+			current = nil
+			entryPending = true
+			if len(fields) >= 3 && !strings.HasPrefix(fields[2], "<") {
+				code.functions = append(code.functions, compiledFunction{
+					symbol:   gosym.Sym{Name: strings.TrimSuffix(fields[1], "(SB)")},
+					filename: filepath.Base(fields[2]),
+				})
+				current = &code.functions[len(code.functions)-1]
 			}
-		}
-		if nextFunc != "" && len(fields) > 2 {
-			// We're inside an allowed function. Save the given address (in hex form,
-			// as it appears).
-			addrsAllowed[fields[1]] = struct{}{}
 		}
 
 		// We recognize lines corresponding to actual code (not the
@@ -507,48 +746,49 @@ func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 		//
 		// Lines look like this (including the first space):
 		//  gohacks_unsafe.go:33  0xa39                   488b442408              MOVQ 0x8(SP), AX
-		if len(fields) >= 5 && line[0] == ' ' {
-			if !strings.Contains(fields[3], "CALL") {
-				continue
-			}
+		if len(fields) >= 4 && line[0] == ' ' {
 			site := fields[0]
-			target := strings.TrimSuffix(fields[4], "(SB)")
-			target, err := fixOffset(fields, target)
-			if err != nil {
-				return nil, err
+			filename, line, located := "", 0, false
+			if i := strings.LastIndexByte(site, ':'); i >= 0 {
+				filename = site[:i]
+				line, _ = strconv.Atoi(site[i+1:])
+				located = line > 0 && filename != "" && !strings.HasPrefix(filename, "<")
 			}
-
-			// Ignore strings containing allowed functions.
-			if _, ok := funcsAllowed[target]; ok {
-				continue
+			if entryPending {
+				// Only the entry instruction can anchor this TEXT block. A
+				// later position might belong to an inlined callee instead.
+				if current != nil && located && filepath.Base(filename) == current.filename {
+					current.entryLine = line
+				}
+				entryPending = false
 			}
-			if _, ok := addrsAllowed[target]; ok {
-				continue
-			}
-			if len(fields) > 5 {
-				// This may be a future relocation. Some
-				// objdump versions describe this differently.
-				// If it contains any of the functions allowed
-				// above as a string, we let it go.
-				softTarget := strings.Join(fields[5:], " ")
-				if func() bool {
-					for name := range funcsAllowed {
-						if strings.Contains(softTarget, name) {
-							return true
-						}
-					}
-					return false
-				}() {
-					continue
+			// An empty entry distinguishes compiled code without calls from
+			// source that is absent from this archive, including RET-only bodies.
+			if located {
+				if _, ok := code.lines[site]; !ok {
+					code.lines[site] = nil
 				}
 			}
-
-			calls, ok := m[site]
-			if !ok {
-				calls = make(map[string]struct{})
-				m[site] = calls
+			if len(fields) < 5 || !strings.Contains(fields[3], "CALL") {
+				continue
 			}
-			calls[target] = struct{}{}
+			call := parseCallTarget(fields)
+			if located {
+				if code.lines[site] == nil {
+					code.lines[site] = make(callSet)
+				}
+				code.lines[site][call] = struct{}{}
+			} else if current != nil {
+				// Keep the TEXT owner without inventing a source position.
+				// Go's equality helper generation can overwrite the caller's
+				// position: https://github.com/golang/go/commit/4400f9ad3.
+				// All-autogenerated TEXT blocks have no source function to
+				// analyze; calls to them remain in their source caller.
+				if current.unlocated == nil {
+					current.unlocated = make(callSet)
+				}
+				current.unlocated[call] = struct{}{}
+			}
 		}
 	}
 	if err := s.Err(); err != nil {
@@ -563,16 +803,7 @@ func loadObjdump(binary io.Reader) (map[string]map[string]struct{}, error) {
 		return nil, fmt.Errorf("error running %q: %s (%s)", cmd, err, bufErr.String())
 	}
 
-	// Zap any accidental false positives.
-	for _, calls := range m {
-		for call := range calls {
-			if _, ok := addrsAllowed[call]; ok {
-				delete(calls, call)
-			}
-		}
-	}
-
-	return m, nil
+	return code, nil
 }
 
 // poser is a type that implements Pos.
@@ -660,6 +891,126 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 	return reasons, local, testReasons
 }
 
+// isGeneric includes closures in generic functions, whose compilation also
+// depends on their enclosing function's type arguments.
+func isGeneric(fn *ssa.Function) bool {
+	for ; fn != nil; fn = fn.Parent() {
+		if fn.TypeParams().Len() > 0 || fn.Signature.RecvTypeParams().Len() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// genericCallee finds the declaration whose facts describe fn. Besides generic
+// instantiations, SSA creates thunks for method expressions. Only a thunk that
+// forwards its receiver and arguments unchanged is equivalent to the declared
+// method: receiver adaptations may introduce a separate compiler wrapper whose
+// stack behavior is not covered by the method's nosplit directive.
+// Go reuses the method's instantiation wrapper when the receiver matches:
+// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/noder/reader.go#L2913
+func genericCallee(fn *ssa.Function) *ssa.Function {
+	if origin := fn.Origin(); origin != nil {
+		return origin
+	}
+	obj, ok := fn.Object().(*types.Func)
+	if !ok || obj.Origin() == obj || fn.Signature.Recv() != nil || len(fn.Blocks) != 1 {
+		return fn
+	}
+	recv := obj.Type().(*types.Signature).Recv()
+	if recv == nil || len(fn.Params) == 0 || !types.Identical(fn.Params[0].Type(), recv.Type()) {
+		return fn
+	}
+	var call *ssa.Call
+	var origin *ssa.Function
+	for _, inst := range fn.Blocks[0].Instrs {
+		switch inst := inst.(type) {
+		case *ssa.Call:
+			if call != nil || len(inst.Call.Args) != len(fn.Params) {
+				return fn
+			}
+			for i, arg := range inst.Call.Args {
+				if arg != fn.Params[i] {
+					return fn
+				}
+			}
+			callee := inst.Call.StaticCallee()
+			if callee == nil {
+				return fn
+			}
+			origin = callee.Origin()
+			if origin == nil || origin.Object() != obj.Origin() {
+				return fn
+			}
+			call = inst
+		case *ssa.Extract:
+			if call == nil || inst.Tuple != call {
+				return fn
+			}
+		case *ssa.Return, *ssa.DebugRef:
+		default:
+			return fn
+		}
+	}
+	if origin != nil {
+		return origin
+	}
+	return fn
+}
+
+// allTypes proves a property for every type permitted by typ. A union requires
+// every term to satisfy the property; an intersection needs only one embedded
+// restriction that proves it. This is a sufficient proof, not type-set expansion.
+func allTypes(typ types.Type, property func(types.Type) bool) bool {
+	typ = types.Unalias(typ)
+	if param, ok := typ.(*types.TypeParam); ok {
+		return allTypes(param.Constraint(), property)
+	}
+	switch typ := typ.Underlying().(type) {
+	case *types.Union:
+		for i := 0; i < typ.Len(); i++ {
+			if !allTypes(typ.Term(i).Type(), property) {
+				return false
+			}
+		}
+		return true
+	case *types.Interface:
+		for i := 0; i < typ.NumEmbeddeds(); i++ {
+			if allTypes(typ.EmbeddedType(i), property) {
+				return true
+			}
+		}
+		return false
+	default:
+		return property(typ)
+	}
+}
+
+func isNumeric(typ types.Type) bool {
+	basic, ok := typ.(*types.Basic)
+	return ok && basic.Info()&types.IsNumeric != 0
+}
+
+func isScalar(typ types.Type) bool {
+	switch typ.(type) {
+	case *types.Basic, *types.Pointer, *types.Chan:
+		return true
+	default:
+		return false
+	}
+}
+
+func isDirectInterfaceValue(typ types.Type) bool {
+	switch typ := typ.(type) {
+	case *types.Pointer, *types.Chan, *types.Map, *types.Signature:
+		return true // Already represented by a pointer.
+	case *types.Basic:
+		return typ.Kind() == types.UnsafePointer
+	default:
+		return false
+	}
+}
+
 // run performs the analysis.
 func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 	// Note that if this analysis fails, then we don't actually
@@ -678,50 +1029,368 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 			Line:     p.Line,
 		}
 	}
+	// Next has no independent source position. The Range instruction owns
+	// both iterator initialization and advancement, including exemptions.
+	position := func(inst poser) token.Pos {
+		if next, ok := inst.(*ssa.Next); ok {
+			return next.Iter.Pos()
+		}
+		return inst.Pos()
+	}
 	callSite := func(inst ssa.Instruction) CallSite {
+		pos := position(inst)
+		if !pos.IsValid() {
+			pos = inst.Parent().Pos()
+		}
+		p := pass.Fset.Position(pos)
 		return CallSite{
-			LocalPos: inst.Pos(),
-			Resolved: linePosition(inst, inst.Parent()),
+			LocalPos: pos,
+			Resolved: LinePosition{Filename: p.Filename, Line: p.Line},
 		}
 	}
-	hasCall := func(inst poser) (string, bool) {
-		if callsErr != nil {
-			// See above: we don't have access to the binary
-			// itself, so need to include every possible call.
-			return fmt.Sprintf("(possible, %s)", callsErr), true
+	var loadFunc func(*ssa.Function) Escapes // Used recursively below.
+	loadCallee := func(x *ssa.Function, cs CallSite) (es Escapes) {
+		// buildssa represents instantiations as wrappers with no Pkg.
+		// Analyze and import facts for the generic declaration instead.
+		x = genericCallee(x)
+		// Is this a local function? If yes, call the
+		// function to load the local function. The
+		// local escapes are the escapes found in the
+		// local function.
+		if x.Pkg != nil && x.Pkg.Pkg == pass.Pkg {
+			es.MergeWithCall(loadFunc(x), cs)
+			return
 		}
-		p := linePosition(inst, nil)
-		s, ok := calls[p.Simplified()]
-		if !ok {
-			return "", false
+
+		// If this package is the atomic package, the implementation
+		// may be replaced by intrinsics that don't have analysis.
+		if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
+			return
 		}
-		// Join all calls together.
-		return strings.Join(slices.Sorted(maps.Keys(s)), " or "), true
+
+		// Recursively collect information.
+		var funcEscapes Escapes
+		obj := x.Object()
+		if obj == nil || !pass.ImportObjectFact(obj, &funcEscapes) {
+			// If this is the unix or syscall
+			// package, and the function is
+			// RawSyscall, we can also ignore this
+			// case.
+			pkgIsUnixOrSyscall := x.Pkg != nil && (x.Pkg.Pkg.Name() == "unix" || x.Pkg.Pkg.Name() == "syscall")
+			methodIsRawSyscall := x.Name() == "RawSyscall" || x.Name() == "RawSyscall6"
+			if pkgIsUnixOrSyscall && methodIsRawSyscall {
+				return
+			}
+
+			// Unable to import the dependency; we must
+			// declare these as escaping.
+			name := x.String()
+			if obj != nil {
+				name = obj.String()
+			}
+			message := fmt.Sprintf("no analysis for %q", name)
+			es.Add(unknownPackage, message, cs)
+			return
+		}
+
+		// The escapes of this instruction are the
+		// escapes of the called function directly.
+		// Note that this may record many escapes.
+		es.MergeWithCall(funcEscapes, cs)
+		return
 	}
 	state := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 
-	// Build the exception list.
+	// Build the exception list before collecting compiled-operation evidence.
 	exemptions := make(map[LinePosition]string)
+	// SSA represents constant-capacity make([]T, n, m) as Alloc + Slice.
+	// Preserve the typed source operation, not Alloc's descriptive Comment.
+	// https://github.com/golang/tools/blob/v0.45.0/go/ssa/builder.go#L343-L353
+	// https://github.com/golang/tools/blob/v0.45.0/go/ssa/builder.go#L715-L719
+	makePositions := make(map[token.Pos]struct{})
+	nosplitComments := make(map[token.Pos]struct{})
+	readFile := pass.ReadFile
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
 	for _, f := range pass.Files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			id, ok := ast.Unparen(call.Fun).(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if obj, ok := pass.TypesInfo.Uses[id].(*types.Builtin); ok && obj.Name() == "make" {
+				makePositions[call.Lparen] = struct{}{}
+			}
+			return true
+		})
+		var source []byte
 		for _, cg := range f.Comments {
 			for _, c := range cg.List {
 				p := pass.Fset.Position(c.Slash)
 				if strings.HasPrefix(strings.ToLower(c.Text), exempt) {
-					exemptions[LinePosition{
-						Filename: p.Filename,
-						Line:     p.Line,
-					}] = c.Text[len(exempt):]
+					exemptions[LinePosition{Filename: p.Filename, Line: p.Line}] = c.Text[len(exempt):]
+				}
+				verb, _, _ := strings.Cut(c.Text, " ")
+				if verb != "//go:nosplit" {
+					continue
+				}
+				// The AST strips every CR; the compiler strips only a final
+				// CR and ends the pragma verb at the first ASCII space.
+				// Recover the raw line so an interior CR cannot grant nosplit.
+				// https://github.com/golang/go/blob/2dc996f71/src/cmd/compile/internal/syntax/parser.go#L169-L181
+				// https://github.com/golang/go/blob/2dc996f71/src/cmd/compile/internal/noder/noder.go#L334-L339
+				file := pass.Fset.File(c.Pos())
+				if source == nil {
+					var err error
+					source, err = readFile(file.Name())
+					if err != nil {
+						return nil, fmt.Errorf("reading nosplit directives from %q: %w", file.Name(), err)
+					}
+				}
+				offset := file.Offset(c.Pos())
+				if offset >= len(source) {
+					return nil, fmt.Errorf("nosplit comment offset %d exceeds source size %d in %q", offset, len(source), file.Name())
+				}
+				line, _, _ := bytes.Cut(source[offset:], []byte{'\n'})
+				verb, _, _ = strings.Cut(strings.TrimSuffix(string(line), "\r"), " ")
+				if verb == "//go:nosplit" {
+					nosplitComments[c.Pos()] = struct{}{}
 				}
 			}
 		}
 	}
 
-	var loadFunc func(*ssa.Function) Escapes // Used below.
+	// A nil entry means that the function has no usable source body. Keep
+	// covered call-free lines distinct from an absent compiled source span.
+	type functionCode struct {
+		sites     map[CallSite]callSet
+		unlocated callSet
+	}
+	bodyCalls := make(map[*ssa.Function]*functionCode)
+	functionCalls := func(fn *ssa.Function) *functionCode {
+		if calls, ok := bodyCalls[fn]; ok {
+			return calls
+		}
+		bodyCalls[fn] = nil
+		if fn == nil || calls == nil {
+			return nil
+		}
+		syntax := fn.Syntax()
+		switch syntax := syntax.(type) {
+		case *ast.FuncDecl:
+			if syntax.Body == nil {
+				return nil
+			}
+		case *ast.FuncLit:
+		default:
+			return nil
+		}
+		start := pass.Fset.Position(syntax.Pos())
+		end := pass.Fset.Position(syntax.End())
+		file := pass.Fset.File(syntax.Pos())
+		if file == nil || start.Filename != file.Name() || start.Filename != end.Filename || start.Line == 0 || end.Line < start.Line || end.Line > file.LineCount() {
+			return nil
+		}
+		// A closure is analyzed as its own SSA function. Do not borrow calls
+		// from its body for the enclosing function. Objdump has only line
+		// resolution, so shared boundary lines remain conservative.
+		nestedLines := make(map[int]struct{})
+		ast.Inspect(syntax, func(node ast.Node) bool {
+			lit, ok := node.(*ast.FuncLit)
+			if !ok || node == syntax {
+				return true
+			}
+			first := pass.Fset.Position(lit.Body.Lbrace)
+			last := pass.Fset.Position(lit.Body.Rbrace)
+			if first.Filename == start.Filename && last.Filename == start.Filename {
+				for line := first.Line + 1; line < last.Line; line++ {
+					nestedLines[line] = struct{}{}
+				}
+			}
+			return false
+		})
+		found := &functionCode{sites: make(map[CallSite]callSet), unlocated: make(callSet)}
+		for line := start.Line; line <= end.Line; line++ {
+			if _, nested := nestedLines[line]; nested {
+				continue
+			}
+			p := LinePosition{Filename: start.Filename, Line: line}
+			if lineCalls, ok := calls.lines[p.Simplified()]; ok {
+				found.sites[CallSite{LocalPos: file.LineStart(line), Resolved: p}] = lineCalls
+			}
+		}
+		// Positively identify ordinary named functions by their compiled TEXT
+		// symbol and source entry. Only a matching body can exclude other
+		// TEXT blocks, such as a returned closure with the same boundary line.
+		// Methods, closures, linknames and unmatched names retain conservative
+		// source-span ownership; do not guess their linker names.
+		// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/base/link.go#L31-L40
+		owns := func(block compiledFunction) bool {
+			return fn.Parent() == nil && fn.Signature.Recv() == nil &&
+				block.filename == filepath.Base(start.Filename) &&
+				block.entryLine >= start.Line && block.entryLine <= end.Line &&
+				block.symbol.PackageName() == pass.Pkg.Path() &&
+				block.symbol.ReceiverName() == "" && block.symbol.BaseName() == fn.Name()
+		}
+		hasOwner := slices.ContainsFunc(calls.functions, owns)
+		for _, block := range calls.functions {
+			if hasOwner {
+				if !owns(block) {
+					continue
+				}
+			} else {
+				if block.filename != filepath.Base(start.Filename) {
+					continue
+				}
+				if block.entryLine != 0 {
+					if block.entryLine < start.Line || block.entryLine > end.Line {
+						continue
+					}
+					if _, nested := nestedLines[block.entryLine]; nested {
+						continue
+					}
+				}
+			}
+			// Without an entry anchor, conservatively retain this source
+			// file's unlocated calls. Do not borrow another file's calls.
+			for call := range block.unlocated {
+				found.unlocated[call] = struct{}{}
+			}
+		}
+		if len(found.sites) == 0 && len(found.unlocated) == 0 {
+			return nil
+		}
+		bodyCalls[fn] = found
+		return found
+	}
+	type callEvidence struct {
+		detail   string
+		site     CallSite
+		fromBody bool
+	}
+	type evidenceKey struct {
+		fn   *ssa.Function
+		kind callKind
+	}
+	implicitCalls := make(map[evidenceKey][]callEvidence)
+	bodyEvidence := func(fn *ssa.Function, kind callKind) ([]callEvidence, bool) {
+		key := evidenceKey{fn: fn, kind: kind}
+		if evidence, ok := implicitCalls[key]; ok {
+			return evidence, true
+		}
+		body := functionCalls(fn)
+		if body == nil {
+			return nil, false
+		}
+		var evidence []callEvidence
+		for site, calls := range body.sites {
+			if _, ok := exemptions[site.Resolved]; ok {
+				continue
+			}
+			if calls = calls.forKind(kind); len(calls) != 0 {
+				evidence = append(evidence, callEvidence{detail: calls.String(), site: site, fromBody: true})
+			}
+		}
+		if unlocated := body.unlocated.forKind(kind); len(unlocated) != 0 {
+			evidence = append(evidence, callEvidence{
+				detail:   "(source position unavailable): " + unlocated.String(),
+				site:     CallSite{LocalPos: fn.Pos(), Resolved: linePosition(fn, fn.Parent())},
+				fromBody: true,
+			})
+		}
+		slices.SortFunc(evidence, func(a, b callEvidence) int { return cmp.Compare(a.site.LocalPos, b.site.LocalPos) })
+		implicitCalls[key] = evidence
+		return evidence, true
+	}
+	compiledCalls := func(inst poser, kind callKind) []callEvidence {
+		var fn *ssa.Function
+		var cs CallSite
+		switch inst := inst.(type) {
+		case *ssa.Function:
+			fn = inst
+			cs = CallSite{LocalPos: fn.Pos(), Resolved: linePosition(fn, fn.Parent())}
+		case ssa.Instruction:
+			fn = inst.Parent()
+			cs = callSite(inst)
+		}
+		if inst == fn && kind == stackGrowth {
+			// An explicit nosplit directive covers the declaration's prologue,
+			// including every instantiation. It does not cover called helpers
+			// or closures, which have no directive of their own.
+			if decl, ok := fn.Syntax().(*ast.FuncDecl); ok && decl.Doc != nil {
+				for _, comment := range decl.Doc.List {
+					if _, ok := nosplitComments[comment.Pos()]; ok {
+						return nil
+					}
+				}
+			}
+		}
+		if isGeneric(fn) {
+			// A generic body may only be compiled in an importing package.
+			// Even when this package instantiates it, other type arguments
+			// may produce different code. Absence of a call in this archive
+			// therefore cannot establish that an escape was eliminated.
+			return []callEvidence{{detail: "(possible in a generic function)", site: cs}}
+		}
+		if callsErr != nil {
+			return []callEvidence{{detail: fmt.Sprintf("(possible, %s)", callsErr), site: cs}}
+		}
+		if position(inst).IsValid() {
+			var evidence []callEvidence
+			if s := calls.lines[cs.Resolved.Simplified()].forKind(kind); len(s) != 0 {
+				evidence = append(evidence, callEvidence{detail: s.String(), site: cs})
+			}
+			if body := functionCalls(fn); body != nil {
+				if unlocated := body.unlocated.forKind(kind); len(unlocated) != 0 {
+					evidence = append(evidence, callEvidence{detail: "(source position unavailable): " + unlocated.String(), site: cs})
+				}
+			}
+			return evidence
+		}
+		// Implicit conversions have no SSA source position. Use the enclosing
+		// body, retaining actual helper locations and local exemptions.
+		evidence, ok := bodyEvidence(fn, kind)
+		if !ok {
+			return []callEvidence{{detail: "(possible, no compiled source body)", site: cs}}
+		}
+		return evidence
+	}
+	callDetails := func(inst poser) string {
+		evidence := compiledCalls(inst, anyCall)
+		details := make([]string, 0, len(evidence))
+		for _, call := range evidence {
+			details = append(details, call.detail)
+		}
+		return strings.Join(details, " or ")
+	}
+
+	// SSA operations and compiler-inserted operations share diagnostic emission.
+	emitCalls := func(evidence []callEvidence, reasons []EscapeReason, inst ssa.Instruction) (es Escapes) {
+		for _, call := range evidence {
+			detail := "compiler-generated call: " + call.detail
+			if inst != nil && !call.fromBody {
+				detail = fmt.Sprintf("compiler implementation of %q: %s", inst.String(), call.detail)
+			}
+			for _, reason := range reasons {
+				es.Add(reason, detail, call.site)
+			}
+		}
+		return
+	}
+
 	analyzeInstruction := func(inst ssa.Instruction) (es Escapes) {
 		cs := callSite(inst)
 		if _, ok := exemptions[cs.Resolved]; ok {
 			return // No escape.
 		}
+		var from, to types.Type
+		reasons := []EscapeReason{dynamicCall}
+		kind := implicitCall
 		switch x := inst.(type) {
 		case *ssa.Call:
 			if x.Call.IsInvoke() {
@@ -729,62 +1398,37 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 				// way to know if this is actually escaping or
 				// not, since we don't know the underlying
 				// type.
-				call, _ := hasCall(inst)
+				call := callDetails(inst)
 				es.Add(interfaceInvoke, call, cs)
 				return
 			}
 			switch x := x.Call.Value.(type) {
 			case *ssa.Function:
-				// Is this a local function? If yes, call the
-				// function to load the local function. The
-				// local escapes are the escapes found in the
-				// local function.
-				if x.Pkg != nil && x.Pkg.Pkg == pass.Pkg {
-					es.MergeWithCall(loadFunc(x), cs)
-					return
-				}
-
-				// If this package is the atomic package, the implementation
-				// may be replaced by intrinsics that don't have analysis.
-				if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
-					return
-				}
-
-				// Recursively collect information.
-				var funcEscapes Escapes
-				if !pass.ImportObjectFact(x.Object(), &funcEscapes) {
-					// If this is the unix or syscall
-					// package, and the function is
-					// RawSyscall, we can also ignore this
-					// case.
-					pkgIsUnixOrSyscall := x.Pkg != nil && (x.Pkg.Pkg.Name() == "unix" || x.Pkg.Pkg.Name() == "syscall")
-					methodIsRawSyscall := x.Name() == "RawSyscall" || x.Name() == "RawSyscall6"
-					if pkgIsUnixOrSyscall && methodIsRawSyscall {
+				return loadCallee(x, cs)
+			case *ssa.Builtin:
+				switch x.Name() {
+				case "append":
+					kind, reasons = sliceGrowth, []EscapeReason{builtin}
+				case "clear":
+					if allTypes(inst.(*ssa.Call).Call.Args[0].Type(), func(typ types.Type) bool {
+						_, ok := typ.(*types.Slice)
+						return ok
+					}) {
+						// Slice clearing uses NOSPLIT memclr helpers, including
+						// the write-barrier path for pointer elements.
+						// https://github.com/golang/go/blob/go1.26.3/src/runtime/mbarrier.go#L425-L430
 						return
 					}
-
-					// Unable to import the dependency; we must
-					// declare these as escaping.
-					message := fmt.Sprintf("no analysis for %q", x.Object().String())
-					es.Add(unknownPackage, message, cs)
+					kind, reasons = mapCall, []EscapeReason{stackSplit}
+				case "delete":
+					kind, reasons = mapCall, []EscapeReason{stackSplit}
+				case "len", "cap", "real", "imag", "complex", "panic":
 					return
-				}
-
-				// The escapes of this instruction are the
-				// escapes of the called function directly.
-				// Note that this may record many escapes.
-				es.MergeWithCall(funcEscapes, cs)
-				return
-			case *ssa.Builtin:
-				// Ignore elided escapes.
-				if _, has := hasCall(inst); !has {
-					return
-				}
-
-				// Check if the builtin is escaping.
-				for _, name := range escapingBuiltins {
-					if x.Name() == name {
-						es.Add(builtin, name, cs)
+				case "min", "max":
+					if allTypes(inst.(*ssa.Call).Type(), func(typ types.Type) bool {
+						basic, ok := typ.(*types.Basic)
+						return ok && basic.Info()&types.IsInteger != 0
+					}) {
 						return
 					}
 				}
@@ -793,33 +1437,150 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 				// escapes. They are similar to interface
 				// dispatches. We cannot actually look up what
 				// this refers to using static analysis alone.
-				call, _ := hasCall(inst)
+				call := callDetails(inst)
 				es.Add(dynamicCall, call, cs)
+				return
 			}
 		case *ssa.Alloc:
-			// Ignore non-heap allocations.
-			if !x.Heap {
-				return
+			// SSA's Heap flag does not account for the compiler's size limit,
+			// even for a concrete local. Compiled allocator calls distinguish
+			// heap storage from stack storage and eliminated allocations.
+			kind, reasons = allocationCall, []EscapeReason{allocation}
+			if _, ok := makePositions[x.Pos()]; ok {
+				kind = sliceAllocation
 			}
-
-			// Ignore elided escapes.
-			call, has := hasCall(inst)
-			if !has {
-				return
-			}
-
-			// This is a real heap allocation.
-			es.Add(allocation, call, cs)
-		case *ssa.MakeMap:
-			es.Add(builtin, "makemap", cs)
 		case *ssa.MakeSlice:
-			es.Add(builtin, "makeslice", cs)
+			kind, reasons = sliceAllocation, []EscapeReason{builtin}
 		case *ssa.MakeClosure:
-			es.Add(builtin, "makeclosure", cs)
-		case *ssa.MakeChan:
-			es.Add(builtin, "makechan", cs)
+			kind, reasons = allocationCall, []EscapeReason{builtin}
+		case *ssa.MakeMap, *ssa.MakeChan:
+			kind, reasons = builtinAllocation, []EscapeReason{builtin}
+		case *ssa.Lookup:
+			kind, reasons = mapCall, []EscapeReason{stackSplit}
+		case *ssa.MapUpdate:
+			kind, reasons = mapCall, []EscapeReason{builtin, stackSplit}
+		case *ssa.Range:
+			return // Next owns the range's implicit calls and source position.
+		case *ssa.Next:
+			if !x.IsString {
+				kind, reasons = mapCall, []EscapeReason{stackSplit}
+			}
+		case *ssa.Phi, *ssa.Extract, *ssa.If, *ssa.Jump, *ssa.Return,
+			*ssa.Field, *ssa.FieldAddr, *ssa.Index, *ssa.IndexAddr, *ssa.Slice,
+			*ssa.Store, *ssa.SliceToArrayPointer, *ssa.DebugRef:
+			return
+		case *ssa.ChangeType:
+			// SSA may treat a type parameter and an interface with the same
+			// underlying constraint as representation-preserving. Concrete
+			// instantiations can still need storage for the interface value.
+			_, fromTypeParam := types.Unalias(x.X.Type()).(*types.TypeParam)
+			_, toTypeParam := types.Unalias(x.Type()).(*types.TypeParam)
+			_, toInterface := x.Type().Underlying().(*types.Interface)
+			if !fromTypeParam || toTypeParam || !toInterface || allTypes(x.X.Type(), isDirectInterfaceValue) {
+				return
+			}
+			reasons = []EscapeReason{allocation, dynamicCall}
+		case *ssa.Panic:
+			return // Panic paths, like bounds-check failures, are not checked.
+		case *ssa.Go, *ssa.Defer, *ssa.RunDefers:
+			// These can call user functions directly, unlike implicit operators.
+			kind = anyCall
+		case *ssa.UnOp:
+			if x.Op != token.ARROW {
+				return
+			}
+		case *ssa.BinOp:
+			if x.Op == token.EQL || x.Op == token.NEQ {
+				isNil := func(v ssa.Value) bool {
+					c, ok := v.(*ssa.Const)
+					return ok && c.IsNil()
+				}
+				// String equality can call memequal, whose amd64 and arm64
+				// implementations are NOSPLIT assembly without further calls.
+				// https://github.com/golang/go/blob/go1.26.3/src/internal/bytealg/equal_amd64.s
+				// https://github.com/golang/go/blob/go1.26.3/src/internal/bytealg/equal_arm64.s
+				if isNil(x.X) || isNil(x.Y) || allTypes(x.X.Type(), isScalar) {
+					return
+				}
+			} else if allTypes(x.X.Type(), func(typ types.Type) bool {
+				basic, ok := typ.(*types.Basic)
+				if !ok {
+					return false
+				}
+				switch x.Op {
+				case token.ADD:
+					return basic.Info()&types.IsNumeric != 0
+				case token.QUO:
+					return basic.Info()&types.IsComplex == 0
+				default:
+					return true
+				}
+			}) {
+				return
+			}
+			if x.Op == token.ADD { // String concatenation.
+				reasons = []EscapeReason{allocation, dynamicCall}
+			}
+		case *ssa.Convert:
+			from, to = x.X.Type(), x.Type()
+		case *ssa.MultiConvert:
+			from, to = x.X.Type(), x.Type()
+		case *ssa.MakeInterface:
+			kind = interfaceBoxing
+			if allTypes(x.X.Type(), isDirectInterfaceValue) {
+				return
+			}
+			reasons = []EscapeReason{allocation, dynamicCall} // The interface may need storage for its value.
+		case *ssa.ChangeInterface:
+			if x.Type().Underlying().(*types.Interface).Empty() {
+				return // Dropping methods only changes the interface header.
+			}
+		case *ssa.TypeAssert:
+			if allTypes(x.AssertedType, isScalar) {
+				return // A concrete type check and copy, excluding its panic path.
+			}
 		}
-		return
+		if from != nil {
+			if allTypes(from, isNumeric) && allTypes(to, isNumeric) {
+				return
+			}
+			// Converting pointers to addresses is representation-preserving. The
+			// reverse conversion can invoke checkptr, so remains conservative.
+			pointer := func(typ types.Type) bool {
+				_, ok := typ.(*types.Pointer)
+				return ok
+			}
+			unsafePointer := func(typ types.Type) bool {
+				basic, ok := typ.(*types.Basic)
+				return ok && basic.Kind() == types.UnsafePointer
+			}
+			uintptrType := func(typ types.Type) bool {
+				basic, ok := typ.(*types.Basic)
+				return ok && basic.Kind() == types.Uintptr
+			}
+			if (allTypes(from, pointer) && allTypes(to, unsafePointer)) ||
+				(allTypes(from, unsafePointer) && allTypes(to, uintptrType)) {
+				return
+			}
+			// String and slice conversions may need backing storage. Pointer
+			// conversions can require checkptr calls, but do not allocate.
+			withoutStorage := func(typ types.Type) bool {
+				switch typ := typ.(type) {
+				case *types.Basic:
+					return typ.Info()&types.IsString == 0
+				case *types.Slice:
+					return false
+				default:
+					return true
+				}
+			}
+			if !allTypes(from, withoutStorage) || !allTypes(to, withoutStorage) {
+				kind, reasons = stringConversion, []EscapeReason{allocation, dynamicCall}
+			} else {
+				kind = pointerConversion
+			}
+		}
+		return emitCalls(compiledCalls(inst, kind), reasons, inst)
 	}
 
 	analyzeBasicBlock := func(block *ssa.BasicBlock) (rval []Escapes) {
@@ -855,15 +1616,17 @@ func run(pass *analysis.Pass, binary io.Reader) (any, error) {
 			es = append(es, analyzeBasicBlock(block)...)
 		}
 
-		// Check for a stack split.
-		if call, has := hasCall(fn); has {
-			var ss Escapes
-			ss.Add(stackSplit, call, CallSite{
-				LocalPos: fn.Pos(),
-				Resolved: linePosition(fn, fn.Parent()),
-			})
-			es = append(es, ss)
+		// The compiler can move append storage to the heap at a later return
+		// or assignment, an operation absent from x/tools SSA. Record each
+		// known promotion once at its own site, independently of exemptions
+		// on originating appends. Generic append effects are already covered
+		// conservatively by source analysis.
+		// https://github.com/golang/go/blob/go1.26.3/src/cmd/compile/internal/slice/slice.go#L426-L450
+		if !isGeneric(fn) {
+			promotions, _ := bodyEvidence(fn, slicePromotion)
+			es = append(es, emitCalls(promotions, []EscapeReason{builtin}, nil))
 		}
+		es = append(es, emitCalls(compiledCalls(fn, stackGrowth), []EscapeReason{stackSplit}, nil))
 
 		// Save the result and return.
 		//
