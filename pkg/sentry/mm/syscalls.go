@@ -325,6 +325,11 @@ func (mm *MemoryManager) MUnmap(ctx context.Context, addr hostarch.Addr, length 
 	}
 
 	mm.mappingMu.Lock()
+	// Sealed vmas may not be unmapped.
+	if mm.isSealedLocked(ar) {
+		mm.mappingMu.Unlock()
+		return linuxerr.EPERM
+	}
 	_, droppedIDs := mm.unmapLocked(ctx, ar, nil /* droppedIDs */)
 	mm.mappingMu.Unlock()
 
@@ -402,6 +407,12 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		return 0, linuxerr.EFAULT
 	}
 
+	// Sealed vmas may not be resized, moved, or copied. oldSize can be 0, so
+	// check the vmas starting at oldAddr.
+	if vseg.ValuePtr().sealed || mm.isSealedLocked(hostarch.AddrRange{Start: oldAddr, End: oldEnd}) {
+		return 0, linuxerr.EPERM
+	}
+
 	if vma := vseg.ValuePtr(); newSize > oldSize && vma.mappable != nil {
 		// Check that offset+length does not overflow.
 		offset := vseg.mappableOffsetAt(oldAddr)
@@ -477,6 +488,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 			Private:         vma.private,
 			GrowsDown:       vma.growsDown,
 			Stack:           vma.isStack,
+			EagerForkCopy:   vma.eagerForkCopy,
 			MLockMode:       vma.mlockMode,
 			Name:            vma.name,
 			NameMut:         vma.nameMut,
@@ -526,6 +538,10 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		})
 		if err != nil {
 			return 0, err
+		}
+		// Sealed areas cannot be moved to.
+		if mm.isSealedLocked(newAR) {
+			return 0, linuxerr.EPERM
 		}
 
 		// Unmap any mappings at the destination.
@@ -678,6 +694,10 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 		if ar.Start < vseg.Start() {
 			return linuxerr.ENOMEM
 		}
+	}
+	// Sealed areas cannot have their permissions changed.
+	if mm.isSealedLocked(ar) {
+		return linuxerr.EPERM
 	}
 
 	mm.activeMu.Lock()
@@ -1125,6 +1145,10 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
+	// Sealed vmas may not be decommitted.
+	if mm.isSealedLocked(ar) {
+		return linuxerr.EPERM
+	}
 	mm.activeMu.Lock()
 	defer mm.activeMu.Unlock()
 
@@ -1260,6 +1284,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 // address range that are not mapped, the Linux version of madvise() ignores
 // them and applies the call to the rest (but returns ENOMEM from the system
 // call, as it should)."
+//
+// - If any vma in the range is sealed, madviseMutateVMAs returns EPERM without
+// calling f.
 func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f func(vseg vmaIterator) error) error {
 	ar, err := madviseAddrRange(addr, length)
 	if err != nil {
@@ -1271,6 +1298,10 @@ func (mm *MemoryManager) madviseMutateVMAs(addr hostarch.Addr, length uint64, f 
 
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
+	// Sealed vmas may not be modified.
+	if mm.isSealedLocked(ar) {
+		return linuxerr.EPERM
+	}
 	vseg := mm.vmas.LowerBoundSegmentSplitBefore(ar.Start)
 	if !vseg.Ok() {
 		return linuxerr.ENOMEM

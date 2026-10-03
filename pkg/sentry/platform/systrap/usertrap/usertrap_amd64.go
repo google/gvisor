@@ -175,6 +175,14 @@ func loadUsertrap(ctx context.Context, mm memoryManager, addr hostarch.Addr) err
 		Private:   true,
 		Name:      tableVMAName,
 		MLockMode: memmap.MLockEager,
+		// App threads may be in the middle of executing trampoline code
+		// when another thread patches a syscall, writing to the table.
+		// If the table is marked COW (i.e. due to fork()), the pages
+		// unmap under the threads in the middle of a trampoline, causing
+		// a fault and corrupting state.
+		EagerForkCopy: true,
+		// Prevent users from tampering with the usertrap table.
+		Sealed: true,
 		Perms: hostarch.AccessType{
 			Write:   false,
 			Read:    true,
