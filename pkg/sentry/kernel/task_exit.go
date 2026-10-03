@@ -527,6 +527,42 @@ func (t *Task) reparentLocked(parent *Task) {
 	if oldParent != nil && parent != nil && oldParent.tg == parent.tg {
 		return
 	}
+	// The thread group leader's parent moved to a different thread group (and
+	// thus possibly a different process group), so this thread group's own
+	// contribution to its process group's ancestor count may have changed.
+	// Re-evaluate it against the new and old parent process groups. This is the
+	// third point at which the (thread group, parent's process group)
+	// relationship changes; the other two already adjust the count:
+	// establishment at fork (task_start.go: parentPG.incRefWithParent(parentPG),
+	// receiver == argument, so +0 for a leader in its parent's own group) and
+	// teardown at reap (exitNotifyLocked:
+	// t.tg.processGroup.decRefWithParent(t.tg.parentPG())). Because reap
+	// decrements against the POST-reparent parent, a leader reparented across
+	// process groups leaves ancestors one too low: a premature orphan
+	// SIGHUP/SIGCONT, or a uint32 underflow that denies a truly orphaned group
+	// its mandated signal.
+	//
+	// Use incRefWithParent/decRefWithParent (not a direct ancestors edit) to
+	// reuse their guard and to let decRefWithParent run handleOrphan if this
+	// reparent orphaned the group. The receiver of both is t.tg.processGroup, so
+	// its refcount is net-neutral; issue the increment first so neither the
+	// refcount nor ancestors transiently reaches zero. This runs before the
+	// exitNotifyLocked below, so a leader reaped synchronously there finds the
+	// matching increment already in place.
+	//
+	// Precondition: no signalHandlers.mu may be held here, because
+	// decRefWithParent -> handleOrphan NestedLocks each orphaned member's signal
+	// mutex (the deadlock fixed in c57f2c378). The sole caller,
+	// exitChildrenLocked, releases c.tg.signalHandlers.mu before calling
+	// reparentLocked.
+	var oldParentPG *ProcessGroup
+	if oldParent != nil {
+		oldParentPG = oldParent.tg.processGroup
+	}
+	// t.parent == parent and t == t.tg.leader here, so this is parent's group.
+	newParentPG := t.tg.parentPG()
+	t.tg.processGroup.incRefWithParent(newParentPG)
+	t.tg.processGroup.decRefWithParent(oldParentPG)
 	t.tg.terminationSignal = linux.SIGCHLD
 	if t.exitParentNotified && !t.exitParentAcked {
 		t.exitParentNotified = false
