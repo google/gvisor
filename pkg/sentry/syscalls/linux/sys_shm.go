@@ -145,8 +145,7 @@ func Shmctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, nil, err
 
 	case linux.IPC_RMID:
-		segment.MarkDestroyed(t)
-		return 0, nil, nil
+		return 0, nil, segment.MarkDestroyed(t)
 
 	case linux.SHM_LOCK, linux.SHM_UNLOCK:
 		// We currently do not support memory locking anywhere.
