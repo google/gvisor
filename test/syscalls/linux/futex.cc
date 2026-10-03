@@ -597,6 +597,51 @@ TEST(PrivateFutexTest, WakeOp0Xor) {
   EXPECT_EQ(a, 0b0110);
 }
 
+TEST(PrivateFutexTest, WakeOpSignedComparison) {
+  // FUTEX_WAKE_OP evaluates comparisons using signed integers.
+  // When b is 0x80000001 (negative as int32), FUTEX_OP_CMP_LT against 0
+  // evaluates to true, waking the waiter on b.
+  std::atomic<int> a(0);
+  constexpr int kInitialB = static_cast<int>(0x80000001);
+  std::atomic<int> b(kInitialB);
+
+  DisableSave ds;
+  ScopedThread thread_b([&] {
+    EXPECT_THAT(futex_wait(true, &b, kInitialB), SyscallSucceeds());
+  });
+  absl::SleepFor(kWaiterStartupDelay);
+
+  int futex_op = FUTEX_OP(FUTEX_OP_ANDN | FUTEX_OP_OPARG_SHIFT, 31,
+                          FUTEX_OP_CMP_LT, 0);
+  EXPECT_THAT(futex_wake_op(true, &a, &b, 0, 1, futex_op),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(b, 1);
+}
+
+TEST(PrivateFutexTest, WakeOpNegativeOpArg) {
+  std::atomic<int> a(0);
+  std::atomic<int> b(10);
+
+  // FUTEX_OP_ADD with oparg = -1 (0xfff in 12-bit) should subtract 1 from b.
+  int futex_op = FUTEX_OP(FUTEX_OP_ADD, -1, FUTEX_OP_CMP_EQ, 10);
+  EXPECT_THAT(futex_wake_op(true, &a, &b, 0, 0, futex_op),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(b, 9);
+}
+
+TEST(PrivateFutexTest, WakeOpShiftMasking) {
+  std::atomic<int> a(0);
+  std::atomic<int> b(1);
+
+  // FUTEX_OP_OPARG_SHIFT with oparg > 31 masks the shift amount to 31,
+  // matching Linux kernel behavior (kernel/futex/waitwake.c).
+  int futex_op = FUTEX_OP(FUTEX_OP_ADD | FUTEX_OP_OPARG_SHIFT, 32,
+                          FUTEX_OP_CMP_EQ, 1);
+  EXPECT_THAT(futex_wake_op(true, &a, &b, 0, 0, futex_op),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(b, 2);
+}
+
 TEST(SharedFutexTest, WakeInterprocessSharedAnon) {
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED));
