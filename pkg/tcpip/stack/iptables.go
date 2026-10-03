@@ -808,7 +808,7 @@ func (it *IPTables) OriginalDst(epID TransportEndpointID, netProto tcpip.Network
 	it.mu.RLock()
 	defer it.mu.RUnlock()
 	if !it.modified {
-		return tcpip.Address{}, 0, &tcpip.ErrNotConnected{}
+		return tcpip.Address{}, 0, &tcpip.ErrNoSuchFile{}
 	}
 	return it.connections.originalDst(epID, netProto, transProto)
 }
