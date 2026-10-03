@@ -17,7 +17,6 @@ package mqfs
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
@@ -92,10 +91,8 @@ func (r *RegistryImpl) Get(ctx context.Context, name string, access mq.AccessTyp
 	}
 
 	qInode := inode.(*queueInode)
-	if !qInode.queue.HasPermissions(auth.CredentialsFromContext(ctx), perm(access)) {
-		// "The queue exists, but the caller does not have permission to
-		//  open it in the specified mode."
-		return nil, false, linuxerr.EACCES
+	if err := qInode.CheckPermissions(ctx, auth.CredentialsFromContext(ctx), perm(access)); err != nil {
+		return nil, false, err
 	}
 
 	fd, err := r.newFD(ctx, qInode.queue, qInode, access, block, flags)
