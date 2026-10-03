@@ -80,6 +80,15 @@ func Execveat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	return execveat(t, dirfd, pathnameAddr, argvAddr, envvAddr, flags)
 }
 
+// copyExecVector copies exec argv/envv, reporting size overflows as E2BIG.
+func copyExecVector(t *kernel.Task, addr hostarch.Addr) ([]string, error) {
+	vec, err := t.CopyInVector(addr, ExecMaxElemSize, ExecMaxTotalSize)
+	if linuxerr.Equals(linuxerr.ENAMETOOLONG, err) || linuxerr.Equals(linuxerr.ENOMEM, err) {
+		return nil, linuxerr.E2BIG
+	}
+	return vec, err
+}
+
 func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr hostarch.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -92,14 +101,14 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 	var argv, envv []string
 	if argvAddr != 0 {
 		var err error
-		argv, err = t.CopyInVector(argvAddr, ExecMaxElemSize, ExecMaxTotalSize)
+		argv, err = copyExecVector(t, argvAddr)
 		if err != nil {
 			return 0, nil, err
 		}
 	}
 	if envvAddr != 0 {
 		var err error
-		envv, err = t.CopyInVector(envvAddr, ExecMaxElemSize, ExecMaxTotalSize)
+		envv, err = copyExecVector(t, envvAddr)
 		if err != nil {
 			return 0, nil, err
 		}
