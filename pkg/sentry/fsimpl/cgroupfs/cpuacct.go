@@ -49,13 +49,15 @@ type cpuacctController struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// taskCommittedCharges tracks charges for a task already attributed to this
-	// cgroup. This is used to avoid double counting usage for live
-	// tasks. Protected by mu.
+	// cgroup. This is used to avoid double counting usage for live tasks.
+	//
+	// +checklocks:mu
 	taskCommittedCharges map[*kernel.Task]usage.CPUStats
 
 	// usage is the cumulative CPU time used by past tasks in this cgroup. Note
-	// that this doesn't include usage by live tasks currently in the
-	// cgroup. Protected by mu.
+	// that this doesn't include usage by live tasks currently in the cgroup.
+	//
+	// +checklocks:mu
 	usage usage.CPUStats
 }
 
@@ -136,7 +138,9 @@ func (c *cpuacctCgroup) cpuacctController() *cpuacctController {
 	return c.controllers[kernel.CgroupControllerCPUAcct].(*cpuacctController)
 }
 
-// checklocks:c.fs.tasksMu
+// collectCPUStatsLocked includes descendant charges under the shared task lock.
+//
+// +checklocksread:c.fs.tasksMu
 func (c *cpuacctCgroup) collectCPUStatsLocked(acc *usage.CPUStats) {
 	ctl := c.cpuacctController()
 	for t := range c.ts {
@@ -152,7 +156,10 @@ func (c *cpuacctCgroup) collectCPUStatsLocked(acc *usage.CPUStats) {
 
 	c.forEachChildDir(func(d *dir) {
 		cg := cpuacctCgroup{d.cgi}
-		cg.collectCPUStatsLocked(acc)
+		// forEachChildDir visits the same filesystem synchronously while
+		// c.fs.tasksMu is read-locked. checklocks cannot carry that lock or
+		// relate cg.fs to c.fs through the callback's directory argument.
+		cg.collectCPUStatsLocked(acc) // +checklocksignore
 	})
 }
 

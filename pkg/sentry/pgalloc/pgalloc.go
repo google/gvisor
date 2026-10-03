@@ -108,14 +108,16 @@ type MemoryFile struct {
 	// are *not* waste, allowing use of segment.Set gap-tracking to efficiently
 	// find ranges for both release and recycling allocations.
 	//
-	// unwasteSmall and unwasteHuge are protected by mu.
+	// +checklocks:mu
 	unwasteSmall unwasteSet
-	unwasteHuge  unwasteSet
+
+	// +checklocks:mu
+	unwasteHuge unwasteSet
 
 	// haveWaste is true if there may be at least one waste page in the
 	// MemoryFile.
 	//
-	// haveWaste is protected by mu.
+	// +checklocks:mu
 	haveWaste bool
 
 	// releaseCond is signaled (with mu locked) when haveWaste or destroyed
@@ -129,13 +131,16 @@ type MemoryFile struct {
 	// allowing use of segment.Set gap-tracking to efficiently find free ranges
 	// for allocation.
 	//
-	// unfreeSmall and unfreeHuge are protected by mu.
+	// +checklocks:mu
 	unfreeSmall unfreeSet
-	unfreeHuge  unfreeSet
+
+	// +checklocks:mu
+	unfreeHuge unfreeSet
 
 	// subreleased maps hugepage-aligned file offsets to the number of
 	// sub-released small pages within the hugepage beginning at that offset.
-	// subreleased is protected by mu.
+	//
+	// +checklocks:mu
 	subreleased map[uint64]uint64
 
 	// These fields are used for memory accounting.
@@ -151,33 +156,41 @@ type MemoryFile struct {
 	// each page. Non-empty gaps in memAcct represent pages known to be
 	// uncommitted (void, free, and sub-released pages).
 	//
+	// +checklocks:mu
+	memAcct memAcctSet
+
 	// knownCommittedBytes is the number of bytes in the file known to be
 	// committed, i.e. the span of all segments in memAcct for which
 	// knownCommitted is true.
 	//
-	// commitSeq is a sequence counter used to detect races between scans for
-	// committed pages and concurrent decommitment.
+	// +checklocks:mu
+	knownCommittedBytes uint64
+
+	// commitSeq detects races between commitment scans and decommitment.
 	//
+	// +checklocks:mu
+	commitSeq uint64
+
 	// nextCommitScan is the next time at which UpdateUsage(nil) may scan the
 	// backing file for commitment information.
 	//
-	// ongoingCommitScan is true while UpdateUsage(nil) is in progress. Writing
-	// to it requires f.mu to be locked, but reading it does not.
+	// +checklocks:mu
+	nextCommitScan time.Time
+
+	// ongoingCommitScan is true while UpdateUsage(nil) is in progress.
 	//
-	// isSaving is true during f.SaveTo() to prevent concurrent calls to
-	// f.UpdateUsage() from marking pages as committed.
+	// +checkatomic
+	// +checklocks:mu
+	ongoingCommitScan atomic.Bool
+
+	// isSaving prevents UpdateUsage from marking pages committed during SaveTo.
 	//
-	// All of these fields are protected by mu.
-	memAcct             memAcctSet
-	knownCommittedBytes uint64
-	commitSeq           uint64
-	nextCommitScan      time.Time
-	ongoingCommitScan   atomic.Bool
-	isSaving            bool
+	// +checklocks:mu
+	isSaving bool
 
 	// evictable maps EvictableMemoryUsers to eviction state.
 	//
-	// evictable is protected by mu.
+	// +checklocks:mu
 	evictable map[EvictableMemoryUser]*evictableMemoryUserInfo
 
 	// evictionWG counts the number of goroutines currently performing evictions.
@@ -187,11 +200,15 @@ type MemoryFile struct {
 	opts MemoryFileOpts
 
 	// savable is true if this MemoryFile will be saved via SaveTo() during
-	// the kernel's SaveTo operation. savable is protected by mu.
+	// the kernel's SaveTo operation.
+	//
+	// +checklocks:mu
 	savable bool
 
 	// destroyed is set by Destroy to instruct the releaser goroutine to
-	// release all MemoryFile resources and exit. destroyed is protected by mu.
+	// release all MemoryFile resources and exit.
+	//
+	// +checklocks:mu
 	destroyed bool
 
 	// stopNotifyPressure stops memory cgroup pressure level
@@ -201,6 +218,8 @@ type MemoryFile struct {
 
 	// If asyncPageLoad is non-nil, it tracks the state of in-progress or
 	// failed async page loading.
+	//
+	// +checkatomic
 	asyncPageLoad atomic.Pointer[asyncMemoryFileLoad]
 
 	// file is the backing file. The file pointer is immutable.
@@ -212,7 +231,12 @@ type MemoryFile struct {
 	// quiet cache line, since MapInternal() is by far the hottest path through
 	// pgalloc.
 	//
-	// chunks is protected by mu. chunks slices are immutable.
+	// Published slice headers are immutable. Chunk mappings are populated during
+	// restore and cleared during destruction. The annotation governs the pointer,
+	// not its elements.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	chunks atomic.Pointer[[]chunkInfo]
 }
 
@@ -229,7 +253,8 @@ const (
 type chunkInfo struct {
 	// mapping is the start address of a mapping of the chunk.
 	//
-	// mapping is immutable.
+	// mapping is initialized during allocation or restore and cleared during
+	// destruction; it does not change while the chunk is in use.
 	mapping uintptr `state:"nosave"`
 
 	// huge is true if this chunk is expected to be hugepage-backed and false if
@@ -245,7 +270,7 @@ func (f *MemoryFile) chunksLoad() []chunkInfo {
 
 // forEachChunk invokes fn on a sequence of chunks that collectively span all
 // bytes in fr. In each call, chunkFR is the subset of fr that falls within
-// chunk. If any call to f returns false, forEachChunk stops iteration and
+// chunk. If any call to fn returns false, forEachChunk stops iteration and
 // returns.
 func (f *MemoryFile) forEachChunk(fr memmap.FileRange, fn func(chunk *chunkInfo, chunkFR memmap.FileRange) bool) {
 	chunks := f.chunksLoad()
@@ -268,6 +293,10 @@ type unwasteInfo struct{}
 
 // unfreeInfo is the value type of MemoryFile.unfreeSmall/Huge.
 //
+// Stored values are protected by the owning MemoryFile's mu. Values and
+// generated iterators have no owner back-reference for checklocks to use;
+// Merge and Split also operate on copied values.
+//
 // +stateify savable
 type unfreeInfo struct {
 	// refs is the per-page reference count. refs is non-zero for used pages,
@@ -277,6 +306,10 @@ type unfreeInfo struct {
 }
 
 // memAcctInfo is the value type of MemoryFile.memAcct.
+//
+// Values share the owning MemoryFile's mutex.
+// Values and generated iterators have no MemoryFile back-reference through
+// which checklocks could name that owner; Merge and Split operate on copies.
 //
 // +stateify savable
 type memAcctInfo struct {
@@ -334,6 +367,9 @@ type EvictableMemoryUser interface {
 // type EvictableRange <generated using go_generics>
 
 // evictableMemoryUserInfo is the value type of MemoryFile.evictable.
+//
+// Both fields are protected by the owning MemoryFile's mu. Entries have no
+// back-reference to that MemoryFile, so checklocks cannot name the mutex here.
 type evictableMemoryUserInfo struct {
 	// ranges tracks all evictable ranges for the given user.
 	ranges evictableRangeSet
@@ -444,7 +480,9 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		opts: opts,
 		file: file,
 	}
-	f.initFields()
+	// f was just allocated; no callback or releaser can access it yet.
+	// checklocks cannot substitute this ownership for initFields' mutex contract.
+	f.initFields() // +checklocksignore
 
 	if f.opts.DelayedEviction == DelayedEvictionEnabled && f.opts.UseHostMemcgPressure {
 		stop, err := hostmm.NotifyCurrentMemcgPressureCallback(func() {
@@ -469,6 +507,11 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	return f, nil
 }
 
+// initFields initializes f's bookkeeping before publication.
+//
+// Preconditions: f has not been initialized or shared with other goroutines.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) initFields() {
 	// Initially, all pages are void.
 	fullFR := memmap.FileRange{0, math.MaxUint64}
@@ -530,7 +573,9 @@ func (f *MemoryFile) Destroy() {
 	f.releaseCond.Signal()
 }
 
-// Preconditions: f.mu must be locked.
+// releaserDestroyLocked releases the backing file and chunk mappings.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) releaserDestroyLocked() {
 	if !f.destroyed {
 		panic("destroyed is no longer set")
@@ -774,15 +819,15 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 }
 
 func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.FileRange, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	unwaste := &f.unwasteSmall
 	unfree := &f.unfreeSmall
 	if alloc.huge {
 		unwaste = &f.unwasteHuge
 		unfree = &f.unfreeHuge
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	if alloc.willCommit {
 		// Try to recycle waste pages, since this avoids the overhead of
@@ -808,10 +853,12 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 			}
 			unwaste.Insert(uwgap, fr, unwasteInfo{})
 			// Update reference count for these pages from 0 to 1.
+			// MutateFullRange calls back synchronously with f.mu held, but
+			// checklocks does not propagate that lock state into the callback.
 			unfree.MutateFullRange(fr, func(ufseg unfreeIterator) bool {
 				uf := ufseg.ValuePtr()
 				if uf.refs != 0 {
-					panic(fmt.Sprintf("waste pages %v have unexpected refcount %d during recycling of %v\n%s", ufseg.Range(), uf.refs, fr, f.stringLocked()))
+					panic(fmt.Sprintf("waste pages %v have unexpected refcount %d during recycling of %v\n%s", ufseg.Range(), uf.refs, fr, f.stringLocked())) // +checklocksignore
 				}
 				uf.refs = 1
 				return true
@@ -819,16 +866,19 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 			// These pages should all be unknown-commitment or known-committed;
 			// mark them unknown-commitment, for consistency with non-recycling
 			// allocations (below).
+			//
+			// MutateFullRange is synchronous; checklocks does not carry the held
+			// f.mu into the callback.
 			f.memAcct.MutateFullRange(fr, func(maseg memAcctIterator) bool {
 				ma := maseg.ValuePtr()
 				malen := maseg.Range().Length()
 				if ma.knownCommitted {
 					if ma.kind != usage.System {
-						panic(fmt.Sprintf("waste pages %v have unexpected kind %v\n%s", maseg.Range(), ma.kind, f.stringLocked()))
+						panic(fmt.Sprintf("waste pages %v have unexpected kind %v\n%s", maseg.Range(), ma.kind, f.stringLocked())) // +checklocksignore
 					}
 					ma.knownCommitted = false
-					ma.commitSeq = f.commitSeq
-					f.knownCommittedBytes -= malen
+					ma.commitSeq = f.commitSeq     // +checklocksignore
+					f.knownCommittedBytes -= malen // +checklocksignore
 					if !f.opts.DisableMemoryAccounting {
 						usage.MemoryAccounting.Dec(malen, usage.System, ma.memCgID)
 					}
@@ -889,7 +939,9 @@ retryFree:
 	return
 }
 
-// Preconditions: f.mu must be locked.
+// extendChunksLocked grows the backing file and publishes its new chunks.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) extendChunksLocked(alloc *allocState) error {
 	unfree := &f.unfreeSmall
 	if alloc.huge {
@@ -1091,19 +1143,21 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// MutateFullRange is synchronous; checklocks does not carry the held
+	// f.mu into the callback.
 	f.memAcct.MutateFullRange(fr, func(maseg memAcctIterator) bool {
 		ma := maseg.ValuePtr()
 		if ma.knownCommitted {
 			ma.knownCommitted = false
 			malen := maseg.Range().Length()
-			f.knownCommittedBytes -= malen
+			f.knownCommittedBytes -= malen // +checklocksignore
 			if !f.opts.DisableMemoryAccounting {
 				usage.MemoryAccounting.Dec(malen, ma.kind, ma.memCgID)
 			}
 		}
 		// Update commitSeq to invalidate any observations made by
 		// concurrent calls to f.updateUsageLocked().
-		ma.commitSeq = f.commitSeq
+		ma.commitSeq = f.commitSeq // +checklocksignore
 		return true
 	})
 }
@@ -1154,10 +1208,12 @@ func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
 	hasUniqueRef := true
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// forEachChunk invokes this callback synchronously with f.mu held.
+	// checklocks does not propagate that lock state into the callback.
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-		unfree := &f.unfreeSmall
+		unfree := &f.unfreeSmall // +checklocksignore
 		if chunk.huge {
-			unfree = &f.unfreeHuge
+			unfree = &f.unfreeHuge // +checklocksignore
 		}
 		unfree.VisitFullRange(fr, func(ufseg unfreeIterator) bool {
 			if ufseg.ValuePtr().refs != 1 {
@@ -1182,10 +1238,12 @@ func (f *MemoryFile) FirstSharedRange(fr memmap.FileRange) (memmap.FileRange, bo
 	var sr memmap.FileRange
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// forEachChunk invokes this callback synchronously with f.mu held.
+	// checklocks does not propagate that lock state into the callback.
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-		unfree := &f.unfreeSmall
+		unfree := &f.unfreeSmall // +checklocksignore
 		if chunk.huge {
-			unfree = &f.unfreeHuge
+			unfree = &f.unfreeHuge // +checklocksignore
 		}
 		cont := true
 		unfree.VisitFullRange(chunkFR, func(ufseg unfreeIterator) bool {
@@ -1221,12 +1279,16 @@ func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	f.incRefLocked(fr)
 }
 
-// Preconditions: f.mu must be locked.
+// incRefLocked increments reference counts for pages in fr with f.mu held.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) incRefLocked(fr memmap.FileRange) {
+	// forEachChunk invokes this callback synchronously with f.mu held.
+	// checklocks does not propagate that lock state into the callback.
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-		unfree := &f.unfreeSmall
+		unfree := &f.unfreeSmall // +checklocksignore
 		if chunk.huge {
-			unfree = &f.unfreeHuge
+			unfree = &f.unfreeHuge // +checklocksignore
 		}
 		unfree.MutateFullRange(chunkFR, func(ufseg unfreeIterator) bool {
 			uf := ufseg.ValuePtr()
@@ -1250,12 +1312,14 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 	defer f.mu.Unlock()
 
 	haveWaste := false
+	// forEachChunk is synchronous; checklocks cannot carry the held f.mu
+	// into this callback or its nested range callbacks.
 	f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
-		unwaste := &f.unwasteSmall
-		unfree := &f.unfreeSmall
+		unwaste := &f.unwasteSmall // +checklocksignore
+		unfree := &f.unfreeSmall   // +checklocksignore
 		if chunk.huge {
-			unwaste = &f.unwasteHuge
-			unfree = &f.unfreeHuge
+			unwaste = &f.unwasteHuge // +checklocksignore
+			unfree = &f.unfreeHuge   // +checklocksignore
 		}
 		unfree.MutateFullRange(chunkFR, func(ufseg unfreeIterator) bool {
 			uf := ufseg.ValuePtr()
@@ -1270,7 +1334,7 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 				haveWaste = true
 				// Reclassify waste memory as System until it's recycled or
 				// released.
-				f.memAcct.MutateFullRange(wasteFR, func(maseg memAcctIterator) bool {
+				f.memAcct.MutateFullRange(wasteFR, func(maseg memAcctIterator) bool { // +checklocksignore
 					ma := maseg.ValuePtr()
 					if !f.opts.DisableMemoryAccounting && ma.knownCommitted {
 						usage.MemoryAccounting.Move(maseg.Range().Length(), usage.System, ma.kind, ma.memCgID)
@@ -1281,7 +1345,10 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 				})
 				// Cancel any pending async load on waste pages.
 				if apl := f.asyncPageLoad.Load(); apl != nil {
-					apl.cancelWasteLoad(wasteFR)
+					// DecRef holds f.mu across both synchronous callbacks;
+					// apl came from f.asyncPageLoad, so apl.f is f. checklocks
+					// loses that lock state and owner identity in this callback.
+					apl.cancelWasteLoad(wasteFR) // +checklocksignore
 				}
 			}
 			return true
@@ -1348,7 +1415,10 @@ MainLoop:
 	}
 }
 
-// Preconditions: f.mu must be locked; it may be unlocked and reacquired.
+// releaseLocked releases fr, temporarily dropping f.mu while decommitting
+// pages.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 	defer func() {
 		maseg := f.memAcct.LowerBoundSegmentSplitBefore(fr.Start)
@@ -1671,13 +1741,16 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 // updateUsageLocked attempts to detect commitment of previously-uncommitted
 // pages, and updates memory accounting to reflect newly-committed pages.
 //
-// Precondition: f.mu must be held; it may be unlocked and reacquired.
+// The mutex may be temporarily released while querying page commitment.
+//
 // +checklocks:f.mu
 func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 	// Track if anything changed to elide the merge.
 	changedAny := false
 	defer func() {
-		if changedAny {
+		// SaveTo may have started while mincore released f.mu, and may
+		// retain accounting iterators across its own unlocks.
+		if changedAny && !f.isSaving {
 			f.memAcct.MergeAll()
 		}
 	}()
@@ -1734,9 +1807,11 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 			// Query for new pages in core.
 			// NOTE(b/165896008): mincore might take a really long time. So
 			// unlock f.mu while mincore runs.
-			lastCommitSeq := f.commitSeq
-			f.commitSeq++
-			f.mu.Unlock() // +checklocksforce
+			// forEachChunk calls back with f.mu held, but checklocks cannot
+			// infer that incoming lock state. The reacquisition below is checked.
+			lastCommitSeq := f.commitSeq // +checklocksignore
+			f.commitSeq++                // +checklocksignore
+			f.mu.Unlock()                // +checklocksforce
 			err := mincore(s, buf)
 			f.mu.Lock()
 			if err != nil {
@@ -1877,7 +1952,9 @@ func (f *MemoryFile) String() string {
 	return f.stringLocked()
 }
 
-// Preconditions: f.mu must be locked.
+// stringLocked formats f's allocation state with f.mu held.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) stringLocked() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "unwasteSmall:\n%s", &f.unwasteSmall)
@@ -1904,7 +1981,9 @@ func (f *MemoryFile) StartEvictions() {
 	f.startEvictionsLocked()
 }
 
-// Preconditions: f.mu must be locked.
+// startEvictionsLocked starts eviction workers and reports whether any started.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) startEvictionsLocked() bool {
 	startedAny := false
 	for user, info := range f.evictable {
@@ -1921,7 +2000,8 @@ func (f *MemoryFile) startEvictionsLocked() bool {
 // Preconditions:
 //   - info == f.evictable[user].
 //   - !info.evicting.
-//   - f.mu must be locked.
+//
+// +checklocks:f.mu
 func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info *evictableMemoryUserInfo) {
 	info.evicting = true
 	f.evictionWG.Add(1)

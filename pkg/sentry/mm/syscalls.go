@@ -174,9 +174,9 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 // populateVMA obtains pmas for addresses in ar in the given vma, and maps them
 // into mm.as if it is active.
 //
-// Preconditions:
-//   - mm.mappingMu must be locked.
-//   - vseg.Range().IsSupersetOf(ar).
+// Preconditions: vseg.Range().IsSupersetOf(ar).
+//
+// +checklocksread:mm.mappingMu
 func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// mm.mapASLocked() will no-op due to platform.AddressSpace.MapFile()

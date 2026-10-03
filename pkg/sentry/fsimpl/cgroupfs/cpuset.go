@@ -42,7 +42,10 @@ type cpusetController struct {
 
 	mu sync.Mutex `state:"nosave"`
 
+	// +checklocks:mu
 	cpus *bitmap.Bitmap
+
+	// +checklocks:mu
 	mems *bitmap.Bitmap
 }
 
