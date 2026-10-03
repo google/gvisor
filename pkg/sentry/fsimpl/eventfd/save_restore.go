@@ -38,7 +38,7 @@ func (efd *EventFileDescription) beforeSave() {
 		log.Warningf("Failed to read host fd for eventfd: %v", err)
 		return
 	}
-	copy(efd.hostfdState[:], buf[:])
+	efd.hostfdState = buf
 }
 
 // afterLoad runs before the restored graph is used, while fdnotifier remains

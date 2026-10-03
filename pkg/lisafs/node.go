@@ -36,7 +36,8 @@ const numStaticChildren = 5
 // Reference Model:
 //   - Each node holds a ref on its parent for its entire lifetime.
 type Node struct {
-	// node's ref count is protected by its parent's childrenMu.
+	// References use atomic operations. The parent's childrenMu serializes
+	// lookup with final-reference removal; it is not needed for every ref update.
 	nodeRefs
 
 	// opMu synchronizes high level operations on this path.
@@ -66,25 +67,32 @@ type Node struct {
 	// used to deny operations on FDs on this Node after deletion because it is
 	// not safe for FD implementations to do host walks up to this position
 	// anymore. This node may have been replaced with something hazardous.
-	// deleted is protected by opMu. deleted must only be accessed/mutated using
-	// atomics; see markDeletedRecursive for more details.
+	// Accesses must be atomic because markDeletedRecursive also marks
+	// descendants without holding their opMu.
+	//
+	// +checkatomic
 	deleted atomicbitops.Uint32
 
 	// name is the name of the file represented by this Node in parent. If this
-	// FD represents the root directory, then name is an empty string. name is
-	// protected by the backing server's rename mutex.
+	// Node represents the root directory, then name is an empty string.
+	// Non-root names and parent pointers use the server's rename mutex; root
+	// values are immutable. Node has no server back-reference through which
+	// checklocks could name that mutex.
 	name string
 
-	// parent is this parent node which tracks this node as a child. parent is
-	// protected by the backing server's rename mutex.
+	// parent is held for this node's entire lifetime, even after unlinking.
+	// It is nil for a root and shares name's rename-mutex ownership.
 	parent *Node
+
+	controlFDsMu sync.Mutex
 
 	// controlFDs is a linked list of all the ControlFDs opened on this node.
 	// Prefer this over a slice to avoid additional allocations. Each ControlFD
 	// is an implicit linked list node so there are no additional allocations
 	// needed to maintain the linked list.
-	controlFDsMu sync.Mutex
-	controlFDs   controlFDList
+	//
+	// +checklocks:controlFDsMu
+	controlFDs controlFDList
 
 	// Here is a performance hack. Past experience has shown that map allocations
 	// on each node for tracking children costs a lot of memory. More small
@@ -92,12 +100,15 @@ type Node struct {
 	// upto numStaticChildren children using hardcoded pointers. If more children
 	// are inserted then move to a map. Use dynamicChildren iff it is non-nil.
 
-	// The following fields are protected by childrenMu.
-	childrenMu     sync.Mutex
+	childrenMu sync.Mutex
+
+	// +checklocks:childrenMu
 	staticChildren [numStaticChildren]struct {
 		name string
 		node *Node
 	}
+
+	// +checklocks:childrenMu
 	dynamicChildren map[string]*Node
 }
 
@@ -105,7 +116,8 @@ type Node struct {
 // parameter should never be used. It exists solely to comply with the
 // refs.RefCounter interface.
 //
-// Precondition: server's rename mutex must be at least read locked.
+// Precondition: for a non-root node, the server's rename mutex must be at
+// least read locked. A root's name and parent are immutable.
 func (n *Node) DecRef(context.Context) {
 	if n.parent == nil {
 		n.nodeRefs.DecRef(nil)
@@ -115,21 +127,28 @@ func (n *Node) DecRef(context.Context) {
 	n.parent.childrenMu.Lock()
 	deleted := false
 	n.nodeRefs.DecRef(func() {
-		n.parent.removeChildLocked(n.name)
+		// DecRef invokes this destructor synchronously under parent.childrenMu;
+		// checklocks does not carry that lock state into the callback.
+		// An unlinked node may have been replaced under the same name.
+		if n.parent.LookupChildLocked(n.name) == n { // +checklocksignore
+			_ = n.parent.removeChildLocked(n.name) // +checklocksignore
+		}
 		deleted = true
 	})
 	n.parent.childrenMu.Unlock()
 	if deleted {
-		// Drop ref on parent. Keep Decref call lock free for scalability.
+		// Drop the parent reference after releasing its childrenMu.
 		n.parent.DecRef(nil)
 	}
 }
 
-// InitLocked must be called before first use of fd.
+// InitLocked must be called before first use of n.
 //
-// Precondition: parent.childrenMu is locked.
+// Precondition: parent.childrenMu is locked if parent is non-nil.
 //
 // Postconditions: A ref on n is transferred to the caller.
+//
+// +checklocks:parent.childrenMu
 func (n *Node) InitLocked(name string, parent *Node) {
 	n.nodeRefs.InitRefs()
 	n.name = name
@@ -143,7 +162,7 @@ func (n *Node) InitLocked(name string, parent *Node) {
 // LookupChildLocked looks up for a child with given name. Returns nil if child
 // does not exist.
 //
-// Preconditions: childrenMu is locked.
+// +checklocks:n.childrenMu
 func (n *Node) LookupChildLocked(name string) *Node {
 	if n.dynamicChildren != nil {
 		return n.dynamicChildren[name]
@@ -157,7 +176,10 @@ func (n *Node) LookupChildLocked(name string) *Node {
 	return nil
 }
 
-// WithChildrenMu executes fn with n.childrenMu locked.
+// WithChildrenMu executes fn synchronously with n.childrenMu locked.
+// checklocks cannot propagate that lock state into the supplied callback.
+//
+// +checklocksexclude:n.childrenMu
 func (n *Node) WithChildrenMu(fn func()) {
 	n.childrenMu.Lock()
 	defer n.childrenMu.Unlock()
@@ -210,7 +232,7 @@ func (n *Node) forEachFD(fn func(*ControlFD)) {
 // removeChildLocked removes child with given name from n and returns the
 // removed child. Returns nil if no such child existed.
 //
-// Precondition: childrenMu is locked.
+// +checklocks:n.childrenMu
 func (n *Node) removeChildLocked(name string) *Node {
 	if n.dynamicChildren != nil {
 		toRemove := n.dynamicChildren[name]
@@ -231,7 +253,7 @@ func (n *Node) removeChildLocked(name string) *Node {
 
 // insertChildLocked inserts child into n. It does not check for duplicates.
 //
-// Precondition: childrenMu is locked.
+// +checklocks:n.childrenMu
 func (n *Node) insertChildLocked(name string, child *Node) {
 	// Try to insert statically first if staticChildren is still being used.
 	if n.dynamicChildren == nil {
@@ -276,7 +298,8 @@ func (n *Node) forEachChild(fn func(*Node)) {
 }
 
 // Precondition: opMu must be locked for writing on the root node being marked
-// as deleted.
+// as deleted. Recursive calls mark children atomically without their opMu;
+// a receiver-wide checklocks requirement would incorrectly require those locks.
 func (n *Node) markDeletedRecursive() {
 	n.deleted.Store(1)
 
