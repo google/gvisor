@@ -118,6 +118,15 @@ not_loaduint32:
 	LEAQ handleCheckXstateFault(SB), CX
 	JMP handle_fault
 not_checkXstate:
+	CMPQ CX, ·storeUint64Begin(SB)
+	JB not_storeuint64
+	CMPQ CX, ·storeUint64End(SB)
+	JAE not_storeuint64
+
+	LEAQ handleStoreUint64Fault(SB), CX
+	JMP handle_fault
+
+not_storeuint64:
 original_handler:
 	// Jump to the previous signal handler, which is likely the golang one.
 	XORQ CX, CX
