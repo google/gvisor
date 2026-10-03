@@ -907,8 +907,7 @@ func (s *Sandbox) connError(err error) error {
 }
 
 type sandboxProcessEnvOptions struct {
-	enforceRelease bool
-	sentryUsesCgo  bool
+	sentryUsesCgo bool
 }
 
 func sandboxProcessEnv(conf *config.Config, opts sandboxProcessEnvOptions) []string {
@@ -925,9 +924,7 @@ func sandboxProcessEnv(conf *config.Config, opts sandboxProcessEnvOptions) []str
 			env = append(env, "TMPDIR="+tmpDir)
 		}
 	}
-	if opts.enforceRelease {
-		env = gvisorbinaries.WithEnforceRelease(env)
-	}
+	env = gvisorbinaries.WithEnforceRelease(env)
 	if opts.sentryUsesCgo {
 		// Platforms that use stub processes are not compatible with
 		// the glibc rseq, because they unmap everything from a process
@@ -1025,15 +1022,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		sentryBin = &gvisorbinaries.GvisorSentryPluginStack
 		sentryUsesCgo = true
 	}
-	bootBinPath := specutils.ExePath
-	if p, err := sentryBin.Path(); err == nil {
-		log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, p)
-		bootBinPath = p
-	} else if conf.SidecarUsagePolicy.AllowEmbeddedFallback() {
-		sentryBin.WarnUnavailable(fmt.Sprintf("Sidecar %q not usable (%v): booting sandbox with runsc itself", sentryBin.Name, err))
-	} else {
-		return fmt.Errorf("sidecar %q not usable (%v) and --sidecar-usage-policy is set to STRICT", sentryBin.Name, err)
+	bootBinPath, err := sentryBin.Path()
+	if err != nil {
+		return fmt.Errorf("sidecar %q not usable: %w", sentryBin.Name, err)
 	}
+	log.Infof("Sidecar %q found: booting sandbox with %s", sentryBin.Name, bootBinPath)
 	// Open with `O_PATH`, which is sufficient for exec and makes the FD
 	// effectively execute-only (no read/write).
 	bootBin, err := os.OpenFile(bootBinPath, unix.O_PATH, 0)
@@ -1072,8 +1065,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
 	cmd.Env = sandboxProcessEnv(conf, sandboxProcessEnvOptions{
-		enforceRelease: bootBinPath != specutils.ExePath,
-		sentryUsesCgo:  sentryUsesCgo,
+		sentryUsesCgo: sentryUsesCgo,
 	})
 
 	// If there is a gofer, sends all socket ends to the sandbox.
