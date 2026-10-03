@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -38,7 +39,8 @@ type packetsPendingLinkResolutionMu struct {
 
 	// The packets to send once the resolver completes.
 	//
-	// The link resolution channel is used as the key for this map.
+	// The link resolution channel is used as the key for this map. A nil map
+	// means that the queue has been cancelled and no longer accepts packets.
 	//
 	// +checklocks:packetsPendingLinkResolutionMutex
 	packets map[<-chan struct{}][]pendingPacket
@@ -60,6 +62,10 @@ type packetsPendingLinkResolutionMu struct {
 type packetsPendingLinkResolution struct {
 	nic *nic
 	mu  packetsPendingLinkResolutionMu `state:"nosave"`
+
+	// dequeuing tracks batches removed from mu.packets whose callbacks still
+	// own packet references. Add is serialized with cancel by mu.
+	dequeuing sync.WaitGroup `state:"nosave"`
 }
 
 func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(pkt *PacketBuffer) {
@@ -77,18 +83,24 @@ func (f *packetsPendingLinkResolution) init(nic *nic) {
 	f.mu.packets = make(map[<-chan struct{}][]pendingPacket)
 }
 
-// cancel drains all pending packet queues and release all packet
-// references.
+// cancel stops admission and releases packets still waiting for resolution.
+// wait must be called without stack locks to finish callbacks already running.
 func (f *packetsPendingLinkResolution) cancel() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for ch, pendingPackets := range f.mu.packets {
+	for _, pendingPackets := range f.mu.packets {
 		for _, p := range pendingPackets {
 			p.pkt.DecRef()
 		}
-		delete(f.mu.packets, ch)
 	}
+	f.mu.packets = nil
 	f.mu.cancelChans = nil
+}
+
+// wait waits for callbacks that retained packets before cancel. Callers must
+// cancel first and must not hold locks that a network endpoint may acquire.
+func (f *packetsPendingLinkResolution) wait() {
+	f.dequeuing.Wait()
 }
 
 // dequeue any pending packets associated with ch.
@@ -101,6 +113,7 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 	delete(f.mu.packets, ch)
 
 	if ok {
+		f.dequeuing.Add(1)
 		for i, cancelChan := range f.mu.cancelChans {
 			if cancelChan == ch {
 				f.mu.cancelChans = append(f.mu.cancelChans[:i], f.mu.cancelChans[i+1:]...)
@@ -123,6 +136,10 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 // link resolution.
 func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpip.Error {
 	f.mu.Lock()
+	if f.mu.packets == nil {
+		f.mu.Unlock()
+		return &tcpip.ErrInvalidEndpointState{}
+	}
 	// Make sure we attempt resolution while holding f's lock so that we avoid
 	// a race where link resolution completes before we enqueue the packets.
 	//
@@ -176,6 +193,7 @@ func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpi
 	cancelledPackets := f.newCancelChannelLocked(ch)
 
 	if len(cancelledPackets) != 0 {
+		f.dequeuing.Add(1)
 		// Dequeue the pending packets in a new goroutine to not hold up the current
 		// goroutine as handing link resolution failures may be a costly operation.
 		go f.dequeuePackets(cancelledPackets, "" /* linkAddr */, &tcpip.ErrAborted{})
@@ -212,6 +230,7 @@ func (f *packetsPendingLinkResolution) newCancelChannelLocked(newCH <-chan struc
 }
 
 func (f *packetsPendingLinkResolution) dequeuePackets(packets []pendingPacket, linkAddr tcpip.LinkAddress, err tcpip.Error) {
+	defer f.dequeuing.Done()
 	for _, p := range packets {
 		if err == nil {
 			p.routeInfo.RemoteLinkAddress = linkAddr
