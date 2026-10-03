@@ -117,3 +117,63 @@ func ExcludePrivate() {}
 
 // IndirectValues exposes methods without importing their defining package.
 type IndirectValues = atomicfields.Values
+
+var privateFieldMu sync.Mutex
+
+var privateFieldStruct struct {
+	mu sync.Mutex
+}
+
+var (
+	// +checklocks:privateFieldMu
+	PrivateValue int
+)
+
+// PrivateState exposes a field protected by a private global's mutex field.
+type PrivateState struct {
+	// +checklocks:privateFieldStruct.mu
+	Value int
+}
+
+// LockPrivateField acquires the private global mutex.
+// Keep acquisition and release out of line so export data does not include
+// the private globals merely because an importer might inline these bodies.
+//
+// +checklocksacquire:privateFieldMu
+//
+//go:noinline
+func LockPrivateField() { privateFieldMu.Lock() }
+
+// UnlockPrivateField releases the private global mutex.
+// +checklocksrelease:privateFieldMu
+//
+//go:noinline
+func UnlockPrivateField() { privateFieldMu.Unlock() }
+
+// RequirePrivateField requires the private global mutex to be held.
+// +checklocks:privateFieldMu
+func RequirePrivateField() {}
+
+// ExcludePrivateField requires the private global mutex not to be held.
+// +checklocksexclude:privateFieldMu
+func ExcludePrivateField() {}
+
+// LockPrivateStruct acquires the mutex in the private global struct.
+// +checklocksacquire:privateFieldStruct.mu
+//
+//go:noinline
+func LockPrivateStruct() { privateFieldStruct.mu.Lock() }
+
+// UnlockPrivateStruct releases the mutex in the private global struct.
+// +checklocksrelease:privateFieldStruct.mu
+//
+//go:noinline
+func UnlockPrivateStruct() { privateFieldStruct.mu.Unlock() }
+
+// RequirePrivateStruct requires the private struct's mutex to be held.
+// +checklocks:privateFieldStruct.mu
+func RequirePrivateStruct() {}
+
+// ExcludePrivateStruct requires the private struct's mutex not to be held.
+// +checklocksexclude:privateFieldStruct.mu
+func ExcludePrivateStruct() {}
