@@ -4132,3 +4132,103 @@ func genUDP6(offset int8) *stack.PacketBuffer {
 	buf := buffer.MakeWithData(append([]byte{}, hdr.View()...))
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
+
+// TestOutputDNATReroutesByDestination tests that a locally generated packet
+// whose destination is rewritten by OUTPUT DNAT is routed by its new
+// destination, even when its source address belongs to a different NIC, and
+// keeps its source address. This matches Linux ip_route_me_harder and
+// ip6_route_me_harder.
+func TestOutputDNATReroutesByDestination(t *testing.T) {
+	const port = 8080
+
+	tests := []struct {
+		name         string
+		netProto     tcpip.NetworkProtocolNumber
+		defaultRoute tcpip.Subnet
+		// preDNATDst is reached through NIC1's default route, so the packet's
+		// source is NIC1's address.
+		preDNATDst tcpip.Address
+		srcAddr    tcpip.Address
+		// backend is only reachable through NIC2.
+		backend tcpip.Address
+		check   func(*testing.T, *buffer.View, ...checker.NetworkChecker)
+	}{
+		{
+			name:         "IPv4",
+			netProto:     ipv4.ProtocolNumber,
+			defaultRoute: header.IPv4EmptySubnet,
+			preDNATDst:   testutil.MustParse4("203.0.113.10"),
+			srcAddr:      utils.RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+			backend:      utils.Host2IPv4Addr.AddressWithPrefix.Address,
+			check:        checker.IPv4,
+		},
+		{
+			name:         "IPv6",
+			netProto:     ipv6.ProtocolNumber,
+			defaultRoute: header.IPv6EmptySubnet,
+			preDNATDst:   testutil.MustParse6("2001:db8::10"),
+			srcAddr:      utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			backend:      utils.Host2IPv6Addr.AddressWithPrefix.Address,
+			check:        checker.IPv6,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+			})
+			defer s.Destroy()
+
+			ep1 := channel.New(1, header.IPv6MinimumMTU, "")
+			ep2 := channel.New(1, header.IPv6MinimumMTU, "")
+			utils.SetupRouterStack(t, s, ep1, ep2)
+			s.AddRoute(tcpip.Route{Destination: test.defaultRoute, NIC: utils.RouterNICID1})
+
+			setupNAT(t, s, test.netProto, stack.Output,
+				stack.IPHeaderFilter{
+					Protocol:      udp.ProtocolNumber,
+					CheckProtocol: true,
+				},
+				&stack.DNATTarget{
+					NetworkProtocol: test.netProto,
+					Addr:            test.backend,
+					Port:            port,
+					ChangeAddress:   true,
+					ChangePort:      true,
+				})
+
+			var wq waiter.Queue
+			ep, err := s.NewEndpoint(udp.ProtocolNumber, test.netProto, &wq)
+			if err != nil {
+				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.netProto, err)
+			}
+			defer ep.Close()
+
+			var r bytes.Reader
+			r.Reset([]byte{1, 2, 3, 4})
+			wOpts := tcpip.WriteOptions{To: &tcpip.FullAddress{Addr: test.preDNATDst, Port: port}}
+			if _, err := ep.Write(&r, wOpts); err != nil {
+				t.Fatalf("ep.Write(_, %#v): %s", wOpts, err)
+			}
+
+			if pkt := ep1.Read(); pkt != nil {
+				pkt.DecRef()
+				t.Errorf("got a packet on NIC1, want the DNATed packet to leave through NIC2 only")
+			}
+			pkt := ep2.Read()
+			if pkt == nil {
+				t.Fatal("expected the DNATed packet on NIC2")
+			}
+			v := stack.PayloadSince(pkt.NetworkHeader())
+			defer v.Release()
+			pkt.DecRef()
+			test.check(t, v,
+				checker.SrcAddr(test.srcAddr),
+				checker.DstAddr(test.backend),
+				checker.UDP(checker.DstPort(port)),
+			)
+		})
+	}
+}
