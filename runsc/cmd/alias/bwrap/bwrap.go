@@ -72,6 +72,7 @@ type bwrapConfig struct {
 	UnshareUser bool
 	Hostname    string
 	Argv0       string
+	AsPID1      bool
 	hasArgv0    bool
 	nextPerms   *uint32
 }
@@ -336,6 +337,9 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 	execOpts := []sandbox.ExecOption{
 		sandbox.WithExecStdio(os.Stdin, os.Stdout, os.Stderr),
 		sandbox.WithExecSignalRelay(),
+	}
+	if c.AsPID1 {
+		execOpts = append(execOpts, sandbox.WithExecNewPIDNamespace())
 	}
 	argv := c.Args
 	if c.hasArgv0 {

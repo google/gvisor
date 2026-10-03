@@ -69,6 +69,10 @@ type Exec struct {
 	// execPath is the path of the program to execute. If empty, the program is
 	// resolved from argv[0]. Mutually exclusive with --exec-fd.
 	execPath string
+
+	// newPIDNS runs the process as PID 1 of a new PID namespace that is a
+	// child of the container's PID namespace.
+	newPIDNS bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -115,6 +119,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.Var(&ex.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	f.IntVar(&ex.execFD, "exec-fd", -1, "host file descriptor used for program execution")
 	f.StringVar(&ex.execPath, "exec-path", "", "path of the program to execute; if unset, it is resolved from argv[0]. Mutually exclusive with --exec-fd")
+	f.BoolVar(&ex.newPIDNS, "new-pidns", false, "run the process as PID 1 of a new PID namespace; when it exits, all processes left in that namespace are killed")
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -141,6 +146,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if err != nil {
 		util.Fatalf("parsing process spec: %v", err)
 	}
+	e.NewPIDNamespace = ex.newPIDNS
 
 	log.Debugf("Exec arguments: %+v", e)
 	log.Debugf("Exec capabilities: %+v", e.Capabilities)
