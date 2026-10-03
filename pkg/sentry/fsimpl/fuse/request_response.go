@@ -101,6 +101,8 @@ type Request struct {
 	// If we don't care its response.
 	// Manually set by the caller.
 	noReply bool
+	// sent is true once the request has been read by the FUSE daemon.
+	sent bool
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
@@ -131,6 +133,27 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 	}
 }
 
+// newInterruptRequest creates a FUSE_INTERRUPT request for origID.
+func newInterruptRequest(origID linux.FUSEOpID) *Request {
+	in := linux.FUSEInterruptIn{
+		Unique: uint64(origID),
+	}
+	hdr := linux.FUSEHeaderIn{
+		Len:    linux.SizeOfFUSEHeaderIn + linux.SizeOfFUSEInterruptIn,
+		Opcode: linux.FUSE_INTERRUPT,
+		Unique: origID | linux.FUSEIntReqBit,
+	}
+	buf := make([]byte, hdr.Len)
+	hdr.MarshalUnsafe(buf[:linux.SizeOfFUSEHeaderIn])
+	in.MarshalUnsafe(buf[linux.SizeOfFUSEHeaderIn:])
+	return &Request{
+		id:      hdr.Unique,
+		hdr:     &hdr,
+		data:    buf,
+		noReply: true,
+	}
+}
+
 // futureResponse represents an in-flight request, that may or may not have
 // completed yet. Convert it to a resolved Response by calling Resolve, but note
 // that this may block.
@@ -144,6 +167,13 @@ type futureResponse struct {
 
 	// If this request is async.
 	async bool
+
+	// interrupted is true if the waiting task was interrupted before a
+	// response was received.
+	interrupted bool
+
+	// intrReq is the queued FUSE_INTERRUPT request for this operation, if any.
+	intrReq *Request
 
 	// buf is a fixed-size buffer for response data. The host connection
 	// path slices data from this buffer to avoid a per-response allocation.
