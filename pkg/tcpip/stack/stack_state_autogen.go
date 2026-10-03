@@ -661,6 +661,7 @@ func (mt *MasqueradeTarget) StateTypeName() string {
 func (mt *MasqueradeTarget) StateFields() []string {
 	return []string{
 		"NetworkProtocol",
+		"Ports",
 	}
 }
 
@@ -670,6 +671,7 @@ func (mt *MasqueradeTarget) beforeSave() {}
 func (mt *MasqueradeTarget) StateSave(stateSinkObject state.Sink) {
 	mt.beforeSave()
 	stateSinkObject.Save(0, &mt.NetworkProtocol)
+	stateSinkObject.Save(1, &mt.Ports)
 }
 
 func (mt *MasqueradeTarget) afterLoad(context.Context) {}
@@ -677,6 +679,7 @@ func (mt *MasqueradeTarget) afterLoad(context.Context) {}
 // +checklocksignore
 func (mt *MasqueradeTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mt.NetworkProtocol)
+	stateSourceObject.Load(1, &mt.Ports)
 }
 
 func (c *CTTarget) StateTypeName() string {
@@ -862,6 +865,34 @@ func (fl *IPHeaderFilter) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(11, &fl.OutputInterface)
 	stateSourceObject.Load(12, &fl.OutputInterfaceMask)
 	stateSourceObject.Load(13, &fl.OutputInterfaceInvert)
+}
+
+func (p *PortOrIdentRange) StateTypeName() string {
+	return "pkg/tcpip/stack.PortOrIdentRange"
+}
+
+func (p *PortOrIdentRange) StateFields() []string {
+	return []string{
+		"Start",
+		"Size",
+	}
+}
+
+func (p *PortOrIdentRange) beforeSave() {}
+
+// +checklocksignore
+func (p *PortOrIdentRange) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.Start)
+	stateSinkObject.Save(1, &p.Size)
+}
+
+func (p *PortOrIdentRange) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (p *PortOrIdentRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.Start)
+	stateSourceObject.Load(1, &p.Size)
 }
 
 func (d *dynamicCacheEntry) StateTypeName() string {
@@ -2496,6 +2527,7 @@ func init() {
 	state.Register((*Table)(nil))
 	state.Register((*Rule)(nil))
 	state.Register((*IPHeaderFilter)(nil))
+	state.Register((*PortOrIdentRange)(nil))
 	state.Register((*dynamicCacheEntry)(nil))
 	state.Register((*neighborCacheMu)(nil))
 	state.Register((*neighborCache)(nil))

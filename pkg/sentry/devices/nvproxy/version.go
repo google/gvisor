@@ -1288,7 +1288,7 @@ func Init() {
 			}
 			return abi
 		})
-		_ = addDriverABI(620, 30, 0, ChecksumNoDriver, "d7f6cad7861c3b4faea8b539af72da98a5a72c60665f4779ca0c6f1e1660856d", func() *driverABI {
+		v620_30_00 := addDriverABI(620, 30, 0, ChecksumNoDriver, "d7f6cad7861c3b4faea8b539af72da98a5a72c60665f4779ca0c6f1e1660856d", func() *driverABI {
 			abi := v620_06_00()
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_SET_NVLE_READY] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 
@@ -1300,6 +1300,7 @@ func Init() {
 			}
 			return abi
 		})
+		_ = addDriverABI(620, 51, 0, ChecksumNoDriver, "cf761f39bffc561f6529171e342b5ecfdb4fabcc8dff4159f9400432bf7dc2e8", v620_30_00)
 	})
 }
 

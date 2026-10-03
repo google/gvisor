@@ -58,6 +58,59 @@ func (cm *ctTargetMaker) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(0, &cm.NetworkProtocol)
 }
 
+func (mt *masqueradeTarget) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.masqueradeTarget"
+}
+
+func (mt *masqueradeTarget) StateFields() []string {
+	return []string{
+		"MasqueradeTarget",
+		"raw",
+	}
+}
+
+func (mt *masqueradeTarget) beforeSave() {}
+
+// +checklocksignore
+func (mt *masqueradeTarget) StateSave(stateSinkObject state.Sink) {
+	mt.beforeSave()
+	stateSinkObject.Save(0, &mt.MasqueradeTarget)
+	stateSinkObject.Save(1, &mt.raw)
+}
+
+func (mt *masqueradeTarget) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (mt *masqueradeTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mt.MasqueradeTarget)
+	stateSourceObject.Load(1, &mt.raw)
+}
+
+func (mm *masqueradeTargetMaker) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.masqueradeTargetMaker"
+}
+
+func (mm *masqueradeTargetMaker) StateFields() []string {
+	return []string{
+		"NetworkProtocol",
+	}
+}
+
+func (mm *masqueradeTargetMaker) beforeSave() {}
+
+// +checklocksignore
+func (mm *masqueradeTargetMaker) StateSave(stateSinkObject state.Sink) {
+	mm.beforeSave()
+	stateSinkObject.Save(0, &mm.NetworkProtocol)
+}
+
+func (mm *masqueradeTargetMaker) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (mm *masqueradeTargetMaker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mm.NetworkProtocol)
+}
+
 func (at *acceptTarget) StateTypeName() string {
 	return "pkg/sentry/socket/netfilter.acceptTarget"
 }
@@ -420,6 +473,8 @@ func (rm *rejectTargetMaker) StateLoad(ctx context.Context, stateSourceObject st
 func init() {
 	state.Register((*ctTarget)(nil))
 	state.Register((*ctTargetMaker)(nil))
+	state.Register((*masqueradeTarget)(nil))
+	state.Register((*masqueradeTargetMaker)(nil))
 	state.Register((*acceptTarget)(nil))
 	state.Register((*dropTarget)(nil))
 	state.Register((*errorTarget)(nil))
