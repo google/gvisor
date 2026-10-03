@@ -144,6 +144,15 @@ type ThreadGroup struct {
 	// groupContWaitable is protected by the signal mutex.
 	groupContWaitable bool
 
+	// signalUnkillable is true if the thread group is the init process of its
+	// PID namespace and, under SignalUnkillableLinux, ignores signals it does
+	// not handle; see Task.isUnkillableInit. signalUnkillable is analogous to
+	// Linux's SIGNAL_UNKILLABLE.
+	//
+	// signalUnkillable is written with the signal mutex locked and is read
+	// atomically without it.
+	signalUnkillable atomicbitops.Bool
+
 	// exiting is true if all tasks in the ThreadGroup should exit. exiting is
 	// analogous to Linux's SIGNAL_GROUP_EXIT.
 	//
