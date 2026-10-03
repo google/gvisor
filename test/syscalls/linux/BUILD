@@ -5540,6 +5540,8 @@ cc_binary(
     # sandbox as standard.
     deps = select_gtest() + [
         "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:mount_util",
