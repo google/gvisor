@@ -116,6 +116,9 @@ const (
 	// UserNotify notifies userspace.
 	UserNotify Action = "user_notify"
 
+	// Log logs the syscall and allows it.
+	Log Action = "log"
+
 	// ReturnError returns the given error code to the application.
 	ReturnError Action = "return_error"
 
@@ -154,6 +157,8 @@ func (a Action) bpf(defaultAction func() (linux.BPFAction, error)) (linux.BPFAct
 		return linux.SECCOMP_RET_ALLOW, nil
 	case UserNotify:
 		return linux.SECCOMP_RET_USER_NOTIF, nil
+	case Log:
+		return linux.SECCOMP_RET_LOG, nil
 	case Trap:
 		return linux.SECCOMP_RET_TRAP, nil
 	case Trace:

@@ -132,6 +132,10 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 			return linux.SECCOMP_RET_ERRNO
 		}
 
+	case linux.SECCOMP_RET_LOG:
+		t.Debugf("Syscall %d: logged by seccomp", sysno)
+		return linux.SECCOMP_RET_ALLOW
+
 	case linux.SECCOMP_RET_ALLOW:
 		// "Results in the system call being executed."
 
