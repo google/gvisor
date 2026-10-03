@@ -262,10 +262,24 @@ func (s *Socket) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 		return 0, linuxerr.ECONNRESET
 	}
 
+	if s.isOversizedPing(src.NumBytes()) {
+		return 0, linuxerr.EMSGSIZE
+	}
+
 	writer := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
 	defer hostfd.PutReadWriterAt(writer)
 	n, err := src.CopyInTo(ctx, writer)
 	return int64(n), err
+}
+
+// isOversizedPing implements ping_common_sendmsg's size check before accessing
+// the guest buffer, so an invalid buffer cannot replace EMSGSIZE with EFAULT.
+// See Linux net/ipv4/ping.c:
+// https://github.com/torvalds/linux/blob/830b3c68c/net/ipv4/ping.c#L662-L690
+func (s *Socket) isOversizedPing(length int64) bool {
+	return length > 0xffff && s.stype == linux.SOCK_DGRAM &&
+		((s.family == linux.AF_INET && s.protocol == linux.IPPROTO_ICMP) ||
+			(s.family == linux.AF_INET6 && s.protocol == linux.IPPROTO_ICMPV6))
 }
 
 type socketProvider struct {
@@ -823,6 +837,10 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 			return 0, syserr.ErrBrokenPipe
 		}
 		return 0, syserr.ErrConnectionReset
+	}
+
+	if s.isOversizedPing(src.NumBytes()) {
+		return 0, syserr.ErrMessageTooLong
 	}
 
 	// If the src is zero-length, call SENDTO directly with a null buffer in

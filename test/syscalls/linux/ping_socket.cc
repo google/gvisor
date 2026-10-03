@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -36,6 +37,7 @@
 #include "absl/types/optional.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
@@ -88,28 +90,40 @@ TEST(PingSocket, ICMPPortExhaustion) {
   }
 }
 
-TEST(PingSocket, PayloadTooLarge) {
-  PosixErrorOr<FileDescriptor> result =
-      Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+class PingSocketPayloadTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(PingSocketPayloadTest, PayloadTooLarge) {
+  const int family = GetParam();
+  const int protocol = family == AF_INET ? static_cast<int>(IPPROTO_ICMP)
+                                         : static_cast<int>(IPPROTO_ICMPV6);
+  auto result = Socket(family, SOCK_DGRAM, protocol);
   if (!result.ok()) {
-    int errno_value = result.error().errno_value();
-    ASSERT_EQ(errno_value, EACCES) << strerror(errno_value);
+    ASSERT_EQ(result.error().errno_value(), EACCES);
     GTEST_SKIP() << "ping socket not supported";
   }
-  FileDescriptor& ping = result.ValueOrDie();
+  const FileDescriptor& ping = result.ValueOrDie();
+  const TestAddress addr = family == AF_INET ? V4Loopback() : V6Loopback();
+  ASSERT_THAT(connect(ping.get(), AsSockAddr(&addr.addr), addr.addr_len),
+              SyscallSucceeds());
 
-  constexpr icmphdr kSendIcmp = {
-      .type = ICMP_ECHO,
-  };
-  constexpr size_t kGiantSize = 1 << 21;  // 2MB.
-  const sockaddr_in kAddr = {
-      .sin_family = AF_INET,
-      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
-  };
-  ASSERT_THAT(sendto(ping.get(), &kSendIcmp, kGiantSize, 0,
-                     reinterpret_cast<const sockaddr*>(&kAddr), sizeof(kAddr)),
-              SyscallFailsWithErrno(EMSGSIZE));
+  // An oversized ping must fail before accessing even the ICMP header. At the
+  // size limit, the same inaccessible buffer must instead fail with EFAULT.
+  constexpr size_t kOversized = 65536;
+  auto inaccessible =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kOversized, PROT_NONE, MAP_PRIVATE));
+  for (size_t length : {kOversized - 1, kOversized}) {
+    SCOPED_TRACE(length);
+    const int expected_errno = length == kOversized ? EMSGSIZE : EFAULT;
+    EXPECT_THAT(sendto(ping.get(), inaccessible.ptr(), length, 0,
+                       AsSockAddr(&addr.addr), addr.addr_len),
+                SyscallFailsWithErrno(expected_errno));
+    EXPECT_THAT(write(ping.get(), inaccessible.ptr(), length),
+                SyscallFailsWithErrno(expected_errno));
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(IP, PingSocketPayloadTest,
+                         ::testing::Values(AF_INET, AF_INET6));
 
 TEST(PingSocket, ReceiveTOS) {
   PosixErrorOr<FileDescriptor> result =
