@@ -14,8 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# lint.sh runs gVisor's source-level lint checks. It runs without Bazel or a
-# builder container. Deep Go analysis is owned by gVisor nogo.
+# lint.sh runs gVisor's source-level lint checks without a builder container.
+# The optional actions check runs the //:github_actions_test Bazel test, which
+# CI runs with the unit tests. Deep Go analysis is owned by gVisor nogo.
 #
 # Usage:
 #   tools/lint.sh                     # run every check
@@ -41,13 +42,13 @@ fi
 readonly CACHE_DIR
 
 # Every check, in run order, named as tools/lint.sh accepts it.
-declare -ra ALL_CHECKS=(gofmt clang-format cpplint buildifier actions spelling)
+declare -ra ALL_CHECKS=(gofmt clang-format cpplint buildifier spelling)
 # Only the formatters can rewrite a file; the rest have no safe autofix.
 declare -ra FIXABLE_CHECKS=(gofmt clang-format buildifier)
-declare -ra OPTIONAL_CHECKS=(clang-tidy)
+# These may need Bazel, so they run only when named.
+declare -ra OPTIONAL_CHECKS=(actions clang-tidy)
 declare -ra KNOWN_CHECKS=("${ALL_CHECKS[@]}" "${OPTIONAL_CHECKS[@]}")
 
-declare -r ACTIONLINT_VERSION="1.7.7"
 declare -r CODESPELL_VERSION="2.3.0"
 declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
@@ -64,8 +65,6 @@ declare -r CPPLINT_SHA256="5031cb9671cd5bb3dbb4d3243eebd0d42cdf76388ab49c0d276f8
 
 case "$(uname -m)" in
   x86_64|amd64)
-    declare -r ACTIONLINT_ARCH="amd64"
-    declare -r ACTIONLINT_SHA256="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
     declare -r BUILDIFIER_ARCH="amd64"
     declare -r BUILDIFIER_SHA256="887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/42/ef/3f8e215916e79ecd435b5bc20810443f80fce3fb8bbfe6d2783ceb775c1b/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
@@ -74,8 +73,6 @@ case "$(uname -m)" in
     declare -r CLANG_TIDY_SHA256="1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1"
     ;;
   aarch64|arm64)
-    declare -r ACTIONLINT_ARCH="arm64"
-    declare -r ACTIONLINT_SHA256="401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
     declare -r BUILDIFIER_ARCH="arm64"
     declare -r BUILDIFIER_SHA256="947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
     declare -r CLANG_FORMAT_URL="https://files.pythonhosted.org/packages/0e/b6/1a162e427d912b88653a66e99a22414d798eb885b761ffddb74dbc13963f/clang_format-${CLANG_FORMAT_VERSION}-py2.py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
@@ -113,21 +110,6 @@ fetch() {
     return 1
   fi
   mv "${tmp}" "${out}"
-}
-
-install_actionlint() {
-  local -r bin="${CACHE_DIR}/actionlint-${ACTIONLINT_VERSION}"
-  if [[ ! -x "${bin}" ]]; then
-    local -r tarball="${CACHE_DIR}/actionlint.tar.gz"
-    local -r dir="${CACHE_DIR}/actionlint.d"
-    fetch "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${ACTIONLINT_ARCH}.tar.gz" \
-      "${ACTIONLINT_SHA256}" "${tarball}"
-    rm -rf "${dir}" && mkdir -p "${dir}"
-    tar -xzf "${tarball}" -C "${dir}"
-    mv "${dir}/actionlint" "${bin}"
-    rm -rf "${dir}" "${tarball}"
-  fi
-  echo "${bin}"
 }
 
 install_buildifier() {
@@ -389,10 +371,11 @@ check_buildifier() {
 }
 
 check_actions() {
-  local actionlint
-  actionlint="$(install_actionlint)"
-  # Empty values stop actionlint picking up external checkers from PATH.
-  "${actionlint}" -no-color -oneline -shellcheck= -pyflakes=
+  if ! command -v bazel > /dev/null 2>&1; then
+    echo "lint: bazel is not on PATH; the actions check runs //:github_actions_test" >&2
+    return 1
+  fi
+  bazel test --enable_runfiles --test_output=errors //:github_actions_test
 }
 
 check_spelling() {
