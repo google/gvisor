@@ -123,6 +123,9 @@ func createLimitSet(spec *specs.Spec, enableTPUProxy bool) (*limits.LimitSet, er
 	if enableTPUProxy {
 		ls.SetUnchecked(limits.MemoryLocked, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
 	}
+	if spec.Process == nil {
+		return ls, nil
+	}
 	// Then apply overwrites on top of defaults.
 	for _, rl := range spec.Process.Rlimits {
 		lt, ok := limits.FromLinuxResourceName[rl.Type]

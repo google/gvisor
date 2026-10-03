@@ -1580,6 +1580,75 @@ func TestSignalUnkillablePolicyForcedSignals(t *testing.T) {
 	}
 }
 
+// TestNoRootContainerRejectsRootArgs checks that Args describing a root
+// container process or its rootfs are refused rather than dropped.
+func TestNoRootContainerRejectsRootArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    Args
+		wantErr string
+	}{
+		{
+			name:    "console socket",
+			args:    Args{ConsoleSocket: "/tmp/console.sock"},
+			wantErr: "ConsoleSocket cannot be set with NoRootContainer",
+		},
+		{
+			name:    "fs restore image path",
+			args:    Args{FSRestoreImagePath: "/tmp/image"},
+			wantErr: "FSRestoreImagePath cannot be set with NoRootContainer",
+		},
+		{
+			name:    "pass files",
+			args:    Args{PassFiles: map[int]*os.File{3: os.Stdin}},
+			wantErr: "PassFiles and ExecFile cannot be set with NoRootContainer",
+		},
+		{
+			name:    "exec file",
+			args:    Args{ExecFile: os.Stdin},
+			wantErr: "PassFiles and ExecFile cannot be set with NoRootContainer",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			rootDir, cleanupRoot, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanupRoot()
+			conf.RootDir = rootDir
+
+			// A sandbox spec has no process and no rootfs.
+			spec := &specs.Spec{
+				Version: specs.Version,
+				Annotations: map[string]string{
+					specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+				},
+			}
+			bundleDir, cleanupBundle, err := testutil.SetupBundleDir(spec)
+			if err != nil {
+				t.Fatalf("error setting up bundle: %v", err)
+			}
+			defer cleanupBundle()
+
+			args := tc.args
+			args.ID = testutil.RandomContainerID()
+			args.Spec = spec
+			args.BundleDir = bundleDir
+			args.NoRootContainer = true
+
+			c, err := New(conf, args)
+			if err == nil {
+				c.Destroy()
+				t.Fatalf("New() succeeded, want error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("New() error = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 // startHostinetSRServer starts a TCP server and returns its address, a
 // channel signaled when it observes a connection closing, and a stop func.
 func startHostinetSRServer(t *testing.T) (string, chan struct{}, func()) {

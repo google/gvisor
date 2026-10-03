@@ -367,6 +367,41 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, compression statef
 	cont3.Destroy()
 }
 
+// TestCheckpointRestoreNoRootContainer checks that checkpoint and restore both
+// refuse a sandbox with no root container.
+func TestCheckpointRestoreNoRootContainer(t *testing.T) {
+	const wantErr = "not supported for a sandbox booted without a root container"
+
+	for _, tc := range []struct {
+		name            string
+		noRootContainer bool
+		want            bool
+	}{
+		{name: "no-root-container", noRootContainer: true, want: true},
+		{name: "normal", noRootContainer: false, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Container{ID: "test-cid", Sandbox: &sandbox.Sandbox{NoRootContainer: tc.noRootContainer}}
+			err := c.checkpointRestoreSupported("checkpoint")
+			if got := err != nil; got != tc.want {
+				t.Errorf("checkpointRestoreSupported() error = %v, want error: %t", err, tc.want)
+			} else if tc.want && !strings.Contains(err.Error(), wantErr) {
+				t.Errorf("checkpointRestoreSupported() error = %v, want it to contain %q", err, wantErr)
+			}
+		})
+	}
+
+	// The guard runs before anything touches the sandbox, so nothing to set up.
+	conf := testutil.TestConfig(t)
+	c := &Container{ID: "test-cid", Sandbox: &sandbox.Sandbox{NoRootContainer: true}}
+	if err := c.Checkpoint(conf, "" /* imagePath */, sandbox.CheckpointOpts{}); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("Checkpoint() error = %v, want it to contain %q", err, wantErr)
+	}
+	if err := c.Restore(conf, "" /* imagePath */, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("Restore() error = %v, want it to contain %q", err, wantErr)
+	}
+}
+
 // TestCheckpointRestore does the checkpoint/restore test on each platform.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.

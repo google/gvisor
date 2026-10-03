@@ -100,11 +100,44 @@ func (d *Delete) execute(f *flag.FlagSet, conf *config.Config) error {
 			return fmt.Errorf("loading container %q: %v", id, err)
 		}
 		if !d.force && c.Status != container.Created && c.Status != container.Stopped {
-			return fmt.Errorf("cannot delete container that is not stopped without --force flag")
+			if err := requireForce(conf, c); err != nil {
+				return err
+			}
 		}
 		if err := c.Destroy(); err != nil {
 			return fmt.Errorf("destroying container: %v", err)
 		}
+	}
+	return nil
+}
+
+// requireForce returns an error unless the target is a sandbox with no root
+// container and no containers running.
+func requireForce(conf *config.Config, c *container.Container) error {
+	if c.Sandbox == nil || !c.Sandbox.NoRootContainer || !c.Sandbox.IsRootContainer(c.ID) {
+		return fmt.Errorf("cannot delete container that is not stopped without --force flag")
+	}
+	containers, err := container.LoadSandbox(conf.RootDir, c.Sandbox.ID, container.LoadOpts{})
+	if err != nil {
+		return fmt.Errorf("loading containers of sandbox %q: %w", c.Sandbox.ID, err)
+	}
+	running := 0
+	for _, sc := range containers {
+		if sc.ID == c.ID {
+			continue
+		}
+		// LoadSandbox does not refresh the status.
+		if sc.Status == container.Running {
+			if err := sc.CheckStopped(); err != nil {
+				return fmt.Errorf("checking status of container %q: %w", sc.ID, err)
+			}
+		}
+		if sc.Status == container.Running || sc.Status == container.Paused {
+			running++
+		}
+	}
+	if running > 0 {
+		return fmt.Errorf("cannot delete sandbox %q while %d container(s) are running without --force flag", c.Sandbox.ID, running)
 	}
 	return nil
 }
