@@ -27,6 +27,7 @@ NAME=$2
 PREFIX=${NAME}_blob_offset__
 BLOB=${NAME}_blob
 OBJNAME=$3
+NM=$4
 
 AWK_CMD='$2 ~ /^[tBCTA]$/ { print "var '$PREFIX'" $3 " = 0x" $1 }'
 
@@ -36,4 +37,4 @@ package sysmsg
 
 EOF
 
-nm "$OBJNAME" | grep "__export_" | tr . _ | awk "$AWK_CMD"
+"$NM" "$OBJNAME" | grep "__export_" | tr . _ | awk "$AWK_CMD"
