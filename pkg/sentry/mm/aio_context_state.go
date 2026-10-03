@@ -20,9 +20,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
-// afterLoad is invoked by stateify.
+// afterLoad is invoked by stateify before the restored context is in use.
 func (aio *AIOContext) afterLoad(context.Context) {
-	aio.requestReady = make(chan struct{}, 1)
+	aio.requestReady = make(chan struct{}, 1) // +checklocksignore: initialized before publication.
 }
 
 // afterLoad is invoked by stateify.
