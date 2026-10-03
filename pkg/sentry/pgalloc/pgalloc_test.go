@@ -21,6 +21,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"os"
 )
 
 const (
@@ -583,5 +585,53 @@ func TestFindAllocatable(t *testing.T) {
 				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
 			}
 		})
+	}
+}
+
+func TestReleaseWasteChunkLocked(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "test-memory-file")
+	if err != nil {
+		t.Fatalf("os.CreateTemp failed: %v", err)
+	}
+	defer file.Close()
+	if err := file.Truncate(int64(chunkSize)); err != nil {
+		t.Fatalf("file.Truncate failed: %v", err)
+	}
+
+	f := &MemoryFile{
+		opts: MemoryFileOpts{
+			ExpectHugepages:         false,
+			DisableMemoryAccounting: false,
+		},
+		file: file,
+	}
+	f.initFields()
+	chunks := []chunkInfo{{huge: false}}
+	f.unfreeSmall.RemoveRange(memmap.FileRange{Start: 0, End: chunkSize})
+	f.chunks.Store(&chunks)
+
+	// Create a waste range at [0, 2*page].
+	wasteFR := memmap.FileRange{Start: 0, End: 2 * page}
+	f.unfreeSmall.InsertRange(wasteFR, unfreeInfo{refs: 0})
+	f.unwasteSmall.RemoveRange(wasteFR)
+	f.memAcct.InsertRange(wasteFR, memAcctInfo{
+		kind:             usage.System,
+		wasteOrReleasing: true,
+	})
+	f.haveWaste = true
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.releaseWasteChunkLocked() {
+		t.Fatalf("releaseWasteChunkLocked(): expected waste chunk to be released")
+	}
+	// After releasing all waste, haveWaste should be false.
+	if f.haveWaste {
+		t.Errorf("releaseWasteChunkLocked(): expected haveWaste to be false, got true")
+	}
+	// The range [0, 2*page] should now be a free gap in unfreeSmall.
+	gap := f.unfreeSmall.FirstLargeEnoughGap(2 * page)
+	if !gap.Ok() || gap.Start() != 0 {
+		t.Errorf("expected [0, 2*page] to be free in unfreeSmall, got gap: %v", gap)
 	}
 }
