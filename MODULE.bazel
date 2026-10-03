@@ -102,6 +102,83 @@ http_file(
     urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json"],
 )
 
+http_archive(
+    name = "actionlint_darwin_amd64",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "28e5de5a05fc558474f638323d736d822fff183d2d492f0aecb2b73cc44584f5",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_amd64.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_darwin_arm64",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_arm64.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_freebsd_386",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "a6ee742126aa632b32009bdd6f820e0274c5b24536dc302a9574118378ee92f4",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_freebsd_386.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_freebsd_amd64",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "f6eec0e5efd17183a954f0d88280885b7a58f39808050cdfcd7f068fc1734bc8",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_freebsd_amd64.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_linux_386",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "01d4c173f411aeecf670d5219c008e07bf11539cf1181fdeee0cdb0eb8244aac",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_386.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_linux_amd64",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_linux_arm64",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_arm64.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_linux_armv6",
+    build_file_content = 'exports_files(["actionlint"])',
+    sha256 = "82e98d7252341b83fa557764824f225fa50431801b8e3d8e99f70dc1efc317b2",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_armv6.tar.gz"],
+)
+
+http_archive(
+    name = "actionlint_windows_386",
+    build_file_content = 'exports_files(["actionlint.exe"])',
+    sha256 = "66de2b65bcee17de1866287a513cadf47d812229e976e99024e9757645258adb",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_windows_386.zip"],
+)
+
+http_archive(
+    name = "actionlint_windows_amd64",
+    build_file_content = 'exports_files(["actionlint.exe"])',
+    sha256 = "7f12f1801bca3d480d67aaf7774f4c2a6359a3ca8eebe382c95c10c9704aa731",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_windows_amd64.zip"],
+)
+
+http_archive(
+    name = "actionlint_windows_arm64",
+    build_file_content = 'exports_files(["actionlint.exe"])',
+    sha256 = "76e9514cfac18e5677aa04f3a89873c981f16a2f2353bb97372a86cd09b1f5a8",
+    urls = ["https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_windows_arm64.zip"],
+)
+
 http_file(
     name = "github_workflow_schema",
     sha256 = "7499ccb3e75975504ea1ee7c70291e0c9f6c1f684678091d013061fe263e3ddb",

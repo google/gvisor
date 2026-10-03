@@ -995,7 +995,7 @@ tag: ## Stages a release tag; the release pipeline publishes it once the artifac
 ##
 ## Lint targets.
 ##
-##   These run the source-level linters that live outside the Bazel build.
+##   These run the source-level linters, including the Bazel-owned actions check.
 ##   Deep Go analysis is owned by gVisor nogo.
 ##
 lint: ## Runs the source linters.
