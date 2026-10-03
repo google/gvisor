@@ -363,10 +363,11 @@ TEST_F(IPTablesTest, LargeReplacePayload) {
   repl->valid_hooks = info.valid_hooks;
   repl->num_entries = new_num_entries;
   repl->size = new_entries_size;
-  repl->num_counters = new_num_entries;
+  // Linux returns counters from the table being replaced.
+  repl->num_counters = info.num_entries;
 
   std::unique_ptr<struct xt_counters[]> ctrs(
-      new struct xt_counters[new_num_entries]());
+      new struct xt_counters[info.num_entries]());
   repl->counters = ctrs.get();
 
   // Insert extra entries at the start of the PREROUTING chain. All valid
@@ -410,9 +411,9 @@ TEST_F(IPTablesTest, LargeReplacePayload) {
   restore->valid_hooks = info.valid_hooks;
   restore->num_entries = info.num_entries;
   restore->size = info.size;
-  restore->num_counters = info.num_entries;
+  restore->num_counters = new_num_entries;
   std::unique_ptr<struct xt_counters[]> rctrs(
-      new struct xt_counters[info.num_entries]());
+      new struct xt_counters[new_num_entries]());
   restore->counters = rctrs.get();
   memcpy(restore->hook_entry, info.hook_entry, sizeof(info.hook_entry));
   memcpy(restore->underflow, info.underflow, sizeof(info.underflow));
