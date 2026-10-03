@@ -334,7 +334,7 @@ func (tg *ThreadGroup) createSession() (SessionID, error) {
 		oldParentPG := tg.parentPG()
 		tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 			childTG.processGroup.incRefWithParent(pg)
-			childTG.processGroup.decRefWithParent(oldParentPG)
+			childTG.processGroup.decRefWithParent(tg.processGroup)
 		})
 		// Reassign before decRef so tg isn't signaled as a member of the
 		// old group if it becomes orphaned.
@@ -420,7 +420,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	oldParentPG := tg.parentPG()
 	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
 		childTG.processGroup.incRefWithParent(&pg)
-		childTG.processGroup.decRefWithParent(oldParentPG)
+		childTG.processGroup.decRefWithParent(tg.processGroup)
 	})
 	tg.processGroup.decRefWithParent(oldParentPG)
 	tg.processGroup = &pg
