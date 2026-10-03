@@ -431,7 +431,8 @@ TEST_P(Fixture, Bind) {
   }
   auto socket_fd = std::move(socket).ValueOrDie();
 
-  const int want = test_case.want_gvisor.has_value() && IsRunningOnGvisor()
+  const int want = test_case.want_gvisor.has_value() && IsRunningOnGvisor() &&
+                           !IsRunningWithHostinet()
                        ? *test_case.want_gvisor
                        : test_case.want;
   if (want == 0) {
