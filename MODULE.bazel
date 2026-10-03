@@ -185,45 +185,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json"],
 )
 
-# Statically-linked QEMU user-mode emulators.
-QEMU_USER_EXPORTS = 'exports_files(["usr/bin/qemu-aarch64", "usr/bin/qemu-riscv64", "usr/bin/qemu-x86_64"])'
-
-deb_data = use_repo_rule("//tools/bazeldefs:extensions/deb_data.bzl", "deb_data")
-
-http_archive(
-    name = "qemu_user_amd64",
-    build_file_content = 'exports_files(["data.tar.xz"])',
-    sha256 = "ca6ede739327a20ae5a3498230c8a3a9a072c586e131bc6bcc1201eb1725e336",
-    type = "deb",
-    urls = [
-        "https://snapshot.debian.org/archive/debian/20260905T205002Z/pool/main/q/qemu/qemu-user_10.0.13%2Bds-0%2Bdeb13u1_amd64.deb",
-        "https://deb.debian.org/debian/pool/main/q/qemu/qemu-user_10.0.13%2Bds-0%2Bdeb13u1_amd64.deb",
-    ],
-)
-
-deb_data(
-    name = "qemu_user_amd64_files",
-    build_file_content = QEMU_USER_EXPORTS,
-    data = "@qemu_user_amd64//:data.tar.xz",
-)
-
-http_archive(
-    name = "qemu_user_arm64",
-    build_file_content = 'exports_files(["data.tar.xz"])',
-    sha256 = "c73711af02b97cd5e2667e735d9c06890c57165517110ca4e646c95a7083158d",
-    type = "deb",
-    urls = [
-        "https://snapshot.debian.org/archive/debian/20260905T205002Z/pool/main/q/qemu/qemu-user_10.0.13%2Bds-0%2Bdeb13u1_arm64.deb",
-        "https://deb.debian.org/debian/pool/main/q/qemu/qemu-user_10.0.13%2Bds-0%2Bdeb13u1_arm64.deb",
-    ],
-)
-
-deb_data(
-    name = "qemu_user_arm64_files",
-    build_file_content = QEMU_USER_EXPORTS,
-    data = "@qemu_user_arm64//:data.tar.xz",
-)
-
 # Root certificates.
 #
 # Note that the sha256 hash is omitted here intentionally. This should not be
