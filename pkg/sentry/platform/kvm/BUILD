@@ -8,7 +8,7 @@ package(
 
 go_template_instance(
     name = "atomicptr_machine",
-    out = "atomicptr_machine_unsafe.go",
+    out = "atomicptr_machine.go",
     package = "kvm",
     prefix = "machine",
     template = "//pkg/sync/atomicptr:generic_atomicptr",
@@ -30,7 +30,7 @@ go_library(
         "address_space.go",
         "address_space_amd64.go",
         "address_space_arm64.go",
-        "atomicptr_machine_unsafe.go",
+        "atomicptr_machine.go",
         "bluepill.go",
         "bluepill_allocator.go",
         "bluepill_amd64.go",
