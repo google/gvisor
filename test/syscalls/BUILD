@@ -166,6 +166,17 @@ syscall_test(
 
 syscall_test(
     add_host_fifo = True,
+    add_host_uds = True,
+    add_overlay = True,
+    allow_native = False,
+    one_sandbox = False,
+    save = False,
+    test = "//test/syscalls/linux:copy_up_test",
+    use_tmpfs = True,
+)
+
+syscall_test(
+    add_host_fifo = True,
     one_sandbox = False,
     # Takes too long to run with S/R.
     save = False,
