@@ -1453,58 +1453,21 @@ TEST(RawSocketTest, SetIPv6ChecksumError_ReadShort) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
 
   int intV = 2;
-  if (IsRunningOnGvisor()) {
-    // TODO(https://gvisor.dev/issue/6982): This is a deviation from Linux. We
-    // should determine if we want to match the behaviour or handle the error
-    // more gracefully.
-    ASSERT_THAT(
-        setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV) - 1),
-        SyscallFailsWithErrno(EINVAL));
-    return;
-  }
-
-  intV = std::numeric_limits<int>::max();
-  if (intV % 2) {
-    intV--;
-  }
-
-  if (const char* val = getenv("IPV6_CHECKSUM_SETSOCKOPT_SHORT_EXCEPTION");
-      val != nullptr && strcmp(val, "1") == 0) {
-    // TODO(https://issuetracker.google.com/issues/212585236): As of writing, it
-    // seems like at least one Linux environment considers optlen unlike a local
-    // Linux environment. In this case we call setsockopt with the full int so
-    // that the rest of the test passes. Once the root cause for this difference
-    // is found, we can update this check.
-    ASSERT_THAT(
-        setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV)),
-        SyscallSucceeds());
-  } else {
-    ASSERT_THAT(
-        setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV) - 1),
-        SyscallSucceeds());
-  }
-
-  {
-    int got;
-    socklen_t got_len = sizeof(got);
-    ASSERT_THAT(getsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &got, &got_len),
-                SyscallSucceeds());
-    ASSERT_EQ(got_len, sizeof(got));
-    // Even though we called setsockopt with a length smaller than an int, Linux
-    // seems to read the full int.
-    EXPECT_EQ(got, intV);
-  }
-
-  // If we have pass a pointer that points to memory less than the size of an
-  // int, we get a bad address error.
-  std::unique_ptr<uint8_t> u8V;
-  // Linux seems to assume a full int but doesn't check the passed length.
-  //
-  // https://github.com/torvalds/linux/blob/a52a8e9eaf4a12dd58953fc622bb2bc08fd1d32c/net/ipv6/raw.c#L1023
-  // shows that Linux copies optVal to an int without first checking optLen.
+  // Use a valid length to reach the bad-pointer check.
   ASSERT_THAT(
-      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, u8V.get(), sizeof(*u8V)),
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, nullptr, sizeof(intV)),
       SyscallFailsWithErrno(EFAULT));
+
+  // Linux 5.16 added the length check. Conservatively skip older native
+  // kernels, which may or may not have the fix backported. gVisor checks the
+  // length. https://github.com/torvalds/linux/commit/fb7bc9204
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major < 5 || (version.major == 5 && version.minor < 16));
+  }
+  ASSERT_THAT(
+      setsockopt(fd.get(), SOL_IPV6, IPV6_CHECKSUM, &intV, sizeof(intV) - 1),
+      SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(RawSocketTest, IPv6Checksum_ValidateAndCalculate) {
