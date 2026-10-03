@@ -582,3 +582,101 @@ func TestMRemapMappableOffsetOverflow(t *testing.T) {
 		t.Errorf("MRemap grow got err %v want EINVAL", err)
 	}
 }
+
+type bufferedIOFallbackFile struct {
+	*pgalloc.MemoryFile
+	bufferWrites int
+}
+
+func (f *bufferedIOFallbackFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	return safemem.BlockSeq{}, memmap.BufferedIOFallbackErr{}
+}
+
+func (f *bufferedIOFallbackFile) BufferReadAt(off uint64, dst []byte) (uint64, error) {
+	ims, err := f.MemoryFile.MapInternal(memmap.FileRange{Start: off, End: off + uint64(len(dst))}, hostarch.Read)
+	if err != nil {
+		return 0, err
+	}
+	return safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), ims)
+}
+
+func (f *bufferedIOFallbackFile) BufferWriteAt(off uint64, src []byte) (uint64, error) {
+	f.bufferWrites++
+	ims, err := f.MemoryFile.MapInternal(memmap.FileRange{Start: off, End: off + uint64(len(src))}, hostarch.Write)
+	if err != nil {
+		return 0, err
+	}
+	return safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
+}
+
+type bufferedIOFallbackMappable struct {
+	*SpecialMappable
+	file *bufferedIOFallbackFile
+}
+
+func (m *bufferedIOFallbackMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	ts, err := m.SpecialMappable.Translate(ctx, required, optional, at)
+	for i := range ts {
+		ts[i].File = m.file
+	}
+	return ts, err
+}
+
+func TestEnsurePMAsExistBufferedIOFallback(t *testing.T) {
+	// Verify that recycled buffers from byteSlicePtrPool are zeroed.
+	dirty := getByteSlicePtr(hostarch.PageSize)
+	for i := range *dirty {
+		(*dirty)[i] = 0xfe
+	}
+	putByteSlicePtr(dirty)
+	recycled := getByteSlicePtr(hostarch.PageSize)
+	for i, b := range *recycled {
+		if b != 0 {
+			t.Fatalf("getByteSlicePtr returned non-zero byte %#x at index %d", b, i)
+		}
+	}
+	putByteSlicePtr(recycled)
+
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	fr, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{})
+	if err != nil {
+		t.Fatalf("failed to allocate memory file range: %v", err)
+	}
+	bf := &bufferedIOFallbackFile{MemoryFile: mf}
+	mappable := &bufferedIOFallbackMappable{
+		SpecialMappable: NewSpecialMappable("buffered_fallback", mf, fr),
+		file:            bf,
+	}
+	defer mappable.DecRef(ctx)
+
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:          hostarch.PageSize,
+		MappingIdentity: mappable,
+		Mappable:        mappable,
+		Private:         false,
+		Perms:           hostarch.ReadWrite,
+		MaxPerms:        hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+
+	// Zero-length EnsurePMAsExist should succeed without panicking.
+	if n, err := mm.EnsurePMAsExist(ctx, addr, 0, usermem.IOOpts{}); err != nil || n != 0 {
+		t.Fatalf("EnsurePMAsExist(0) got (%d, %v), want (0, nil)", n, err)
+	}
+
+	// EnsurePMAsExist on a BufferedIOFallbackErr mapping must return the
+	// mapped length without flushing unwritten buffers via BufferWriteAt.
+	n, err := mm.EnsurePMAsExist(ctx, addr, hostarch.PageSize, usermem.IOOpts{})
+	if err != nil || n != hostarch.PageSize {
+		t.Fatalf("EnsurePMAsExist(%d) got (%d, %v), want (%d, nil)", hostarch.PageSize, n, err, hostarch.PageSize)
+	}
+	if bf.bufferWrites != 0 {
+		t.Errorf("EnsurePMAsExist triggered %d BufferWriteAt calls, want 0", bf.bufferWrites)
+	}
+}
