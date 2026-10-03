@@ -131,8 +131,11 @@ func TestSaveToPreservesContents(t *testing.T) {
 			if err := f.SaveTo(context.Background(), &checkpoint, &SaveOpts{ExcludeCommittedZeroPages: tc.exclude}); err != nil {
 				t.Fatalf("SaveTo: %v", err)
 			}
-			if got := f.knownCommittedBytes; got != tc.wantCommitted {
-				t.Errorf("knownCommittedBytes: got %d, want %d", got, tc.wantCommitted)
+			f.mu.Lock()
+			committed := f.knownCommittedBytes
+			f.mu.Unlock()
+			if got, want := committed, tc.wantCommitted; got != want {
+				t.Errorf("knownCommittedBytes: got %d, want %d", got, want)
 			}
 
 			restored := newSaveTestMemoryFile(t, tc.diskBacked)
