@@ -23,7 +23,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -38,10 +37,6 @@ type Run struct {
 
 	// detach indicates that runsc has to start a process and exit without waiting it.
 	detach bool
-
-	// passFDs are user-supplied FDs from the host to be exposed to the
-	// sandboxed app.
-	passFDs sandboxsetup.FDMappings
 
 	// execFD is the host file descriptor used for program execution.
 	execFD int
@@ -68,7 +63,6 @@ func (*Run) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (r *Run) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
-	f.Var(&r.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	f.IntVar(&r.execFD, "exec-fd", -1, "host file descriptor used for program execution")
 	r.Create.SetFlags(f)
 }
@@ -127,30 +121,19 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		return util.Errorf("invalid process spec: %v", err)
 	}
 
-	// Create files from file descriptors.
-	fdMap := make(map[int]*os.File)
-	for _, mapping := range r.passFDs {
-		file := os.NewFile(uintptr(mapping.Host), "")
-		if file == nil {
-			return util.Errorf("Failed to create file from file descriptor %d", mapping.Host)
-		}
-		fdMap[mapping.Guest] = file
+	fdMap, closeFiles, err := r.passFiles()
+	if err != nil {
+		return util.Errorf("preparing passed files: %v", err)
 	}
+	defer closeFiles()
 
 	var execFile *os.File
 	if r.execFD >= 0 {
 		execFile = os.NewFile(uintptr(r.execFD), "exec-fd")
 	}
 
-	// Close the underlying file descriptors after we have passed them.
+	// Close the executable descriptor after passing it to the sandbox.
 	defer func() {
-		for _, file := range fdMap {
-			fd := file.Fd()
-			if file.Close() != nil {
-				log.Debugf("Failed to close FD %d", fd)
-			}
-		}
-
 		if execFile != nil && execFile.Close() != nil {
 			log.Debugf("Failed to close exec FD")
 		}
