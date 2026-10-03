@@ -630,3 +630,19 @@ func TestFilterInputRejectTCPResetUnmatched(t *testing.T) {
 func TestFilterInputCommentMatch(t *testing.T) {
 	singleTest(t, &FilterInputCommentMatch{})
 }
+
+func TestNATPostMasqueradeUDP(t *testing.T) {
+	singleTest(t, &NATPostMasqueradeUDP{})
+}
+
+func TestNATPostMasqueradeTCP(t *testing.T) {
+	singleTest(t, &NATPostMasqueradeTCP{})
+}
+
+func TestNATPostMasqueradeToPortsUDP(t *testing.T) {
+	singleTest(t, &NATPostMasqueradeToPortsUDP{})
+}
+
+func TestNATMasqueradeInvalidHookReject(t *testing.T) {
+	singleTest(t, &NATMasqueradeInvalidHookReject{})
+}

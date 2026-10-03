@@ -398,6 +398,10 @@ type MasqueradeTarget struct {
 	// NetworkProtocol is the network protocol the target is used with. It
 	// is immutable.
 	NetworkProtocol tcpip.NetworkProtocolNumber
+
+	// Ports is the range of source ports (or ICMP idents) to map to. A zero
+	// Size selects the default range for the original port. It is immutable.
+	Ports PortOrIdentRange
 }
 
 // Action implements Target.Action.
@@ -427,6 +431,9 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addre
 
 	address := ep.AddressWithPrefix().Address
 	ep.DecRef()
+	if mt.Ports.Size != 0 {
+		return natAction(pkt, hook, r, mt.Ports, address, false /* dnat */, true /* changePort */, true /* changeAddress */)
+	}
 	return snatAction(pkt, hook, r, 0 /* port */, address, true /* changePort */, true /* changeAddress */)
 }
 
