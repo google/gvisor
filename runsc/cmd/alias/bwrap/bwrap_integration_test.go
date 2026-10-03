@@ -16,6 +16,7 @@ package bwrap
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -122,7 +123,7 @@ func TestEnvVars(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
@@ -251,7 +252,7 @@ func TestUserAndGroup(t *testing.T) {
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
 
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
@@ -310,7 +311,7 @@ func TestHostname(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
@@ -362,7 +363,7 @@ func TestProc(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
@@ -428,7 +429,7 @@ func TestCapabilities(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
@@ -480,7 +481,7 @@ func TestArgv0(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
@@ -569,6 +570,70 @@ func TestPerms(t *testing.T) {
 			},
 			wantOutput: "1777 700",
 		},
+		{
+			name: "DirPerms",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--dir", "/foo",
+				"--",
+				"/bin/sh", "-c", "stat -c %a /foo",
+			},
+			wantOutput: "700",
+		},
+		{
+			// Without --perms the directory keeps gVisor's tmpfs default mode,
+			// which is 0777 plus the sticky bit.
+			name: "DirDefaultPerms",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--dir", "/foo",
+				"--",
+				"/bin/sh", "-c", "stat -c %a /foo",
+			},
+			wantOutput: "1777",
+		},
+		{
+			// --perms is consumed by the directory that follows it, so /b falls
+			// back to the tmpfs default instead of inheriting the 0700.
+			name: "PermsDoNotApplyToNextDir",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--dir", "/a",
+				"--dir", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "700 1777",
+		},
+		{
+			name: "PermsApplyIndependentlyPerDir",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--perms", "0700", "--dir", "/a",
+				"--perms", "0500", "--dir", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "700 500",
+		},
+		{
+			// --perms only ever affects what follows it, so the directory
+			// declared before it keeps the default mode.
+			name: "PermsDoNotApplyToEarlierDir",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--dir", "/a",
+				"--perms", "0700", "--dir", "/b",
+				"--",
+				"/bin/sh", "-c", "echo $(stat -c %a /a) $(stat -c %a /b)",
+			},
+			wantOutput: "1777 700",
+		},
 	}
 
 	for _, tc := range tests {
@@ -585,13 +650,340 @@ func TestPerms(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+			if err := testutil.RunCmd(cmd); err != nil {
 				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
 			}
 
 			output := strings.TrimSpace(stdout.String())
 			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
 				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestDir(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	hostDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		bwrapArgs  []string
+		wantOutput string
+		// wantHostMissing is a host path that must not exist after the run.
+		wantHostMissing string
+	}{
+		{
+			name: "CreatesParents",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/mnt",
+				"--dir", "/mnt/a/b/c",
+				"--",
+				"/bin/sh", "-c", "test -d /mnt/a/b/c && echo ok",
+			},
+			wantOutput: "ok",
+		},
+		{
+			name: "Writable",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/mnt",
+				"--dir", "/mnt/foo",
+				"--",
+				"/bin/sh", "-c", "touch /mnt/foo/file && echo ok",
+			},
+			wantOutput: "ok",
+		},
+		{
+			name: "MissingInReadOnlyBind",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--dir", "/bwrap-test-dir",
+				"--",
+				"/bin/sh", "-c", "test -d /bwrap-test-dir && echo ok",
+			},
+			wantOutput:      "ok",
+			wantHostMissing: "/bwrap-test-dir",
+		},
+		{
+			name: "MissingInWritableBind",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--bind", hostDir, "/mnt",
+				"--dir", "/mnt/new",
+				"--",
+				"/bin/sh", "-c", "test -d /mnt/new && echo ok",
+			},
+			wantOutput:      "ok",
+			wantHostMissing: filepath.Join(hostDir, "new"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			output := strings.TrimSpace(stdout.String())
+			if tc.wantOutput != "" && !strings.Contains(output, tc.wantOutput) {
+				t.Errorf("output = %q, want it to contain %q", output, tc.wantOutput)
+			}
+			if tc.wantHostMissing != "" {
+				if _, err := os.Stat(tc.wantHostMissing); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("os.Stat(%q) = %v, want %v", tc.wantHostMissing, err, os.ErrNotExist)
+				}
+			}
+		})
+	}
+}
+
+func TestAsPID1(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name      string
+		bwrapArgs []string
+		wantPID1  bool
+	}{
+		{
+			name: "AsPID1",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--as-pid-1",
+				"--",
+				"/bin/sh", "-c", "echo $$",
+			},
+			wantPID1: true,
+		},
+		{
+			// Without --as-pid-1 the /bin/sleep placeholder is PID 1.
+			name: "NotPID1ByDefault",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--",
+				"/bin/sh", "-c", "echo $$",
+			},
+			wantPID1: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			pid := strings.TrimSpace(stdout.String())
+			if gotPID1 := pid == "1"; gotPID1 != tc.wantPID1 {
+				t.Errorf("COMMAND ran as PID %q, want PID 1: %t", pid, tc.wantPID1)
+			}
+		})
+	}
+}
+
+func TestDev(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	// check succeeds if DIR holds working device nodes, the standard symlinks
+	// and a devpts at DIR/pts.
+	check := func(dir string) string {
+		return fmt.Sprintf("test -c %[1]s/null && echo x > %[1]s/null && "+
+			"test -c %[1]s/urandom && test -L %[1]s/stdin && "+
+			"test -c %[1]s/pts/ptmx && echo ok", dir)
+	}
+
+	tests := []struct {
+		name      string
+		bwrapArgs []string
+	}{
+		{
+			name: "NewDest",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/mnt",
+				"--dev", "/mnt/dev",
+				"--",
+				"/bin/sh", "-c", check("/mnt/dev"),
+			},
+		},
+		{
+			name: "ReplaceDev",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--dev", "/dev",
+				"--",
+				"/bin/sh", "-c", check("/dev"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			if got := strings.TrimSpace(stdout.String()); got != "ok" {
+				t.Errorf("output = %q, want %q", got, "ok")
+			}
+		})
+	}
+}
+
+func TestBindData(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	// Each script prints "ok" if DEST holds the data passed on FD 3 ("hello")
+	// or FD 4 ("second") and behaves as the flag says.
+	tests := []struct {
+		name   string
+		flags  []string
+		script string
+	}{
+		{
+			name:   "RoBindData",
+			flags:  []string{"--ro-bind-data", "3", "/etc/hosts"},
+			script: `test "$(cat /etc/hosts)" = hello && test "$(stat -c %a /etc/hosts)" = 600 && ! { echo x > /etc/hosts; } 2>/dev/null && echo ok`,
+		},
+		{
+			name:   "BindData",
+			flags:  []string{"--bind-data", "3", "/etc/hosts"},
+			script: `test "$(cat /etc/hosts)" = hello && echo x > /etc/hosts && test "$(cat /etc/hosts)" = x && echo ok`,
+		},
+		{
+			name:   "Perms",
+			flags:  []string{"--perms", "0444", "--ro-bind-data", "3", "/etc/hosts"},
+			script: `test "$(stat -c %a /etc/hosts)" = 444 && echo ok`,
+		},
+		{
+			// DEST and its parent exist only in the sandbox's tmpfs.
+			name:   "UnderTmpfs",
+			flags:  []string{"--tmpfs", "/mnt", "--ro-bind-data", "3", "/mnt/a/f"},
+			script: `test "$(cat /mnt/a/f)" = hello && echo ok`,
+		},
+		{
+			// The inner tmpfs's own mount point exists only in the outer tmpfs.
+			name:   "NestedTmpfs",
+			flags:  []string{"--tmpfs", "/mnt", "--tmpfs", "/mnt/a", "--ro-bind-data", "3", "/mnt/a/f"},
+			script: `test "$(cat /mnt/a/f)" = hello && echo ok`,
+		},
+		{
+			// Both DESTs share one tmpfs parent.
+			name:   "TwoUnderTmpfs",
+			flags:  []string{"--tmpfs", "/mnt", "--ro-bind-data", "3", "/mnt/f", "--ro-bind-data", "4", "/mnt/g"},
+			script: `test "$(cat /mnt/f)" = hello && test "$(cat /mnt/g)" = second && echo ok`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			var files []*os.File
+			for _, content := range []string{"hello", "second"} {
+				f, err := os.CreateTemp(t.TempDir(), "data")
+				if err != nil {
+					t.Fatalf("failed to create data file: %v", err)
+				}
+				defer f.Close()
+				if _, err := f.WriteString(content); err != nil {
+					t.Fatalf("failed to write data file: %v", err)
+				}
+				if _, err := f.Seek(0, 0); err != nil {
+					t.Fatalf("failed to rewind data file: %v", err)
+				}
+				files = append(files, f)
+			}
+
+			args := []string{
+				"--root", runRootDir,
+				"bwrap",
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+			}
+			args = append(args, tc.flags...)
+			args = append(args, "--", "/bin/sh", "-c", tc.script)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+			// Extra files become FD 3, 4, ... in runsc.
+			cmd.ExtraFiles = files
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			if got := strings.TrimSpace(stdout.String()); got != "ok" {
+				t.Errorf("output = %q, want %q\nStderr: %s", got, "ok", stderr.String())
 			}
 		})
 	}

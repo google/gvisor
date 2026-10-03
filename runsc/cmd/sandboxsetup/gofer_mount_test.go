@@ -16,6 +16,8 @@ package sandboxsetup
 
 import (
 	"testing"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func TestShouldExposeNvidiaDevice(t *testing.T) {
@@ -84,6 +86,44 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 			got := ShouldExposeTpuDevice(tst.path)
 			if got != tst.want {
 				t.Errorf("ShouldExposeTpuDevice(%q) = %v, want %v", tst.path, got, tst.want)
+			}
+		})
+	}
+}
+
+func TestTmpfsParent(t *testing.T) {
+	mounts := []specs.Mount{
+		{Destination: "/", Type: "tmpfs"},
+		{Destination: "/dev", Type: "tmpfs"},
+		{Destination: "/mnt", Type: "tmpfs"},
+		{Destination: "/mnt/a/", Type: "tmpfs"},
+		{Destination: "/mnt/f", Type: "bind", Source: "/tmp/f"},
+		{Destination: "/data", Type: "bind", Source: "/tmp/data"},
+		{Destination: "/proc", Type: "proc"},
+	}
+	tests := []struct {
+		name       string
+		dest       string
+		wantParent string
+		wantOK     bool
+	}{
+		{name: "under tmpfs", dest: "/mnt/f", wantParent: "/mnt", wantOK: true},
+		{name: "deep under tmpfs", dest: "/mnt/b/c", wantParent: "/mnt", wantOK: true},
+		{name: "longest tmpfs wins", dest: "/mnt/a/f", wantParent: "/mnt/a", wantOK: true},
+		{name: "tmpfs under tmpfs", dest: "/mnt/a", wantParent: "/mnt", wantOK: true},
+		{name: "under bind", dest: "/data/f", wantOK: false},
+		{name: "under file bind", dest: "/mnt/f/x", wantOK: false},
+		{name: "under proc", dest: "/proc/x", wantOK: false},
+		{name: "root is skipped", dest: "/etc/hosts", wantOK: false},
+		{name: "dev is skipped", dest: "/dev/termination-log", wantOK: false},
+		{name: "prefix is not a parent", dest: "/mntx/f", wantOK: false},
+		{name: "unclean dest", dest: "/mnt//f/", wantParent: "/mnt", wantOK: true},
+	}
+	for _, tst := range tests {
+		t.Run(tst.name, func(t *testing.T) {
+			parent, ok := tmpfsParent(mounts, tst.dest)
+			if parent != tst.wantParent || ok != tst.wantOK {
+				t.Errorf("tmpfsParent(%q) = %q, %t, want %q, %t", tst.dest, parent, ok, tst.wantParent, tst.wantOK)
 			}
 		})
 	}
