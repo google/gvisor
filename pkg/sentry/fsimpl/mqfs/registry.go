@@ -129,6 +129,9 @@ func (r *RegistryImpl) Unlink(ctx context.Context, name string) error {
 		return err
 	}
 	defer inode.DecRef(ctx)
+	if err := vfs.CheckDeleteSticky(creds, root.Mode(), root.UID(), inode.UID(), inode.GID()); err != nil {
+		return err
+	}
 	return root.Unlink(ctx, name, inode)
 }
 
