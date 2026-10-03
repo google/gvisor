@@ -417,7 +417,8 @@ func (m *fieldMapper) lookupSingle(fieldIndex int, fieldValue *FieldValue, idx, 
 
 	// Match using FieldValue pointer.
 	// This avoids the string hashing step that string maps otherwise do.
-	valIdx, found := field.valuesPtrMap[fieldValue]
+	// See https://github.com/google/gvisor/pull/14879 for a nosplit lookup.
+	valIdx, found := field.valuesPtrMap[fieldValue] // escapes: Map lookup may split the stack; remove once lookup is nosplit.
 	if found {
 		remainingCombinationBucket /= numValues
 		idx += remainingCombinationBucket * valIdx
