@@ -64,8 +64,9 @@ const (
 	// forwarded buffer, which reaches the guest via copy-out.
 	AttrIdr
 	// AttrFdIn is an input file descriptor (len==0, data=fd) referencing an
-	// object the proxy previously wrapped (an async-event FD). The guest fd
-	// number is translated to the host fd before the call and restored after.
+	// object the proxy previously wrapped (an async-event FD or completion
+	// channel). The guest fd number is translated to the host fd before the
+	// call and restored after.
 	AttrFdIn
 	// AttrFdNew is an output file descriptor (len==0). The kernel installs a
 	// host fd in the sentry process and writes its number into the data
@@ -94,13 +95,16 @@ const (
 	DmaMRRegDMABuf
 	// DmaMRDestroy releases the pages mirrored for the MR being destroyed.
 	DmaMRDestroy
-	// DmaCQCreate / DmaQPCreate mirror the vendor DMA buffers via the driver
-	// plug-in and track the CQ/QP handle.
+	// DmaCQCreate / DmaQPCreate / DmaSRQCreate mirror the vendor DMA buffers
+	// via the driver plug-in and track the CQ/QP/SRQ handle.
 	DmaCQCreate
 	DmaQPCreate
-	// DmaCQDestroy / DmaQPDestroy release the mirrors tracked at create.
+	DmaSRQCreate
+	// DmaCQDestroy / DmaQPDestroy / DmaSRQDestroy release the mirrors tracked
+	// at create.
 	DmaCQDestroy
 	DmaQPDestroy
+	DmaSRQDestroy
 	// DmaAsyncAlloc wraps the newly allocated async-event host fd.
 	DmaAsyncAlloc
 	// DmaInvokeWrite handles the legacy write ABI wrapped in INVOKE_WRITE: it
@@ -245,6 +249,38 @@ func buildSchemas() map[uint32]*MethodSchema {
 				ib.UVERBS_ATTR_DESTROY_MR_HANDLE: AttrIdr,
 			},
 		},
+		SchemaKey(ib.UVERBS_OBJECT_SRQ, ib.UVERBS_METHOD_SRQ_CREATE): {
+			// drivers/infiniband/core/uverbs_std_types_srq.c. The mlx5 UHW
+			// payload (struct mlx5_ib_create_srq) opens with the same
+			// buf_addr/db_addr prefix as CQ/QP create, so the CQ/QP DMA
+			// mirroring applies unchanged.
+			Dma: DmaSRQCreate, HandleAttr: ib.UVERBS_ATTR_CREATE_SRQ_HANDLE,
+			Attrs: map[uint16]AttrType{
+				ib.UVERBS_ATTR_CREATE_SRQ_HANDLE:       AttrIdr,
+				ib.UVERBS_ATTR_CREATE_SRQ_PD_HANDLE:    AttrIdr,
+				ib.UVERBS_ATTR_CREATE_SRQ_XRCD_HANDLE:  AttrIdr,
+				ib.UVERBS_ATTR_CREATE_SRQ_CQ_HANDLE:    AttrIdr,
+				ib.UVERBS_ATTR_CREATE_SRQ_USER_HANDLE:  AttrPtrIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_MAX_WR:       AttrPtrIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_MAX_SGE:      AttrPtrIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_LIMIT:        AttrPtrIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_MAX_NUM_TAGS: AttrPtrIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_TYPE:         AttrPtrIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_EVENT_FD:     AttrFdIn,
+				ib.UVERBS_ATTR_CREATE_SRQ_RESP_MAX_WR:  AttrPtrOut,
+				ib.UVERBS_ATTR_CREATE_SRQ_RESP_MAX_SGE: AttrPtrOut,
+				ib.UVERBS_ATTR_CREATE_SRQ_RESP_SRQ_NUM: AttrPtrOut,
+				ib.UVERBS_ATTR_UHW_IN:                  AttrPtrIn,
+				ib.UVERBS_ATTR_UHW_OUT:                 AttrPtrOut,
+			},
+		},
+		SchemaKey(ib.UVERBS_OBJECT_SRQ, ib.UVERBS_METHOD_SRQ_DESTROY): {
+			Dma: DmaSRQDestroy, HandleAttr: ib.UVERBS_ATTR_DESTROY_SRQ_HANDLE,
+			Attrs: map[uint16]AttrType{
+				ib.UVERBS_ATTR_DESTROY_SRQ_HANDLE: AttrIdr,
+				ib.UVERBS_ATTR_DESTROY_SRQ_RESP:   AttrPtrOut,
+			},
+		},
 		SchemaKey(ib.UVERBS_OBJECT_CQ, ib.UVERBS_METHOD_CQ_CREATE): {
 			Dma: DmaCQCreate, HandleAttr: ib.UVERBS_ATTR_CREATE_CQ_HANDLE,
 			Attrs: map[uint16]AttrType{
@@ -369,10 +405,11 @@ func invokeWriteForwardable(cmd uint32) bool {
 type invokeWriteDisposition int
 
 const (
-	invokeWriteRejected invokeWriteDisposition = iota // not forwarded
-	invokeWriteRegMR                                  // translate + track MR pages
-	invokeWriteDeregMR                                // release tracked mirror post-call
-	invokeWriteOpaque                                 // forward as-is
+	invokeWriteRejected    invokeWriteDisposition = iota // not forwarded
+	invokeWriteRegMR                                     // translate + track MR pages
+	invokeWriteDeregMR                                   // release tracked mirror post-call
+	invokeWriteCompChannel                               // wrap response fd post-call
+	invokeWriteOpaque                                    // forward as-is
 )
 
 // classifyInvokeWrite maps a legacy WRITE_CMD to its DmaInvokeWrite handling.
@@ -382,6 +419,8 @@ func classifyInvokeWrite(cmd uint32) invokeWriteDisposition {
 		return invokeWriteRegMR
 	case cmd == ib.IB_USER_VERBS_CMD_DEREG_MR:
 		return invokeWriteDeregMR
+	case cmd == ib.IB_USER_VERBS_CMD_CREATE_COMP_CHANNEL:
+		return invokeWriteCompChannel
 	case invokeWriteForwardable(cmd):
 		return invokeWriteOpaque
 	default:
