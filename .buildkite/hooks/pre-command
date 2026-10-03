@@ -182,4 +182,9 @@ if [[ -n "${BUILDKITE_PIPELINE_ID}" ]]; then
     echo "Skipping GPU tests"
     pipeline_add_env SKIP_GPU_TESTS 1
   fi
+
+  # Dynamically calculate concurrency.
+  if [[ -x ./tools/buildkite_throttle_concurrency.py ]]; then
+    export BUILDKITE_DYNAMIC_CONCURRENCY="$(./tools/buildkite_throttle_concurrency.py)"
+  fi
 fi
