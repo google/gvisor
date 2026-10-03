@@ -1307,22 +1307,18 @@ func TestCheckpointResume(t *testing.T) {
 		t.Fatalf("docker checkpoint failed: %v", err)
 	}
 
-	var newLogs string
 	// Wait for the container to resume running and print new logs.
 	if err := testutil.Poll(func() error {
 		// Get the logs after checkpointing to check if the container resumed.
-		newLogs, err = d.Logs(ctx)
+		newLogs, err := d.Logs(ctx)
 		if err != nil {
 			t.Fatalf("docker logs failed: %v", err)
 		}
-		return nil
+		return checkLogs(newLogs, pos)
 	}, defaultWait); err != nil {
 		t.Fatalf("container read logs failed after resume: %v", err)
 	}
 
-	if err := checkLogs(newLogs, pos); err != nil {
-		t.Fatalf("checkLogs failed: %v", err)
-	}
 	if err := d.Kill(ctx); err != nil {
 		t.Fatalf("docker kill failed: %v", err)
 	}
