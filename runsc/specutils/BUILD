@@ -43,6 +43,7 @@ go_test(
     size = "small",
     srcs = [
         "gofer_conf_test.go",
+        "namespace_test.go",
         "specutils_test.go",
     ],
     library = ":specutils",

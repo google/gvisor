@@ -1453,6 +1453,9 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
 func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+	if err := specutils.ValidatePodUserNamespaceNetwork(conf.Network == config.NetworkHost, c.Spec); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	rootfsHint, err := boot.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1688,15 +1691,26 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.Pod
 	// users in the sandbox.
 	if !rootlessEUID {
 		if userNS, ok := specutils.GetNS(specs.UserNamespace, c.Spec); ok {
-			nss = append(nss, userNS)
-			specutils.SetUIDGIDMappings(cmd, c.Spec)
-			// We need to set UID and GID to have capabilities in a new user namespace.
-			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			if userNS.Path == "" {
+				nss = append(nss, userNS)
+				specutils.SetUIDGIDMappings(cmd, c.Spec)
+				// We need to set UID and GID to have capabilities in a new user namespace.
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			} else {
+				// CRI pod user namespaces (hostUsers: false) reference an existing user
+				// namespace by path. The gofer cannot join it from a multi-threaded Go
+				// process, and must stay in the caller's user namespace to open host
+				// mount sources during setup.
+				log.Infof("Pod user namespace %q configured; gofer stays in host userns for mount setup", userNS.Path)
+			}
 		}
 	} else {
 		userNS, ok := specutils.GetNS(specs.UserNamespace, c.Spec)
 		if !ok {
 			return nil, nil, nil, nil, fmt.Errorf("unable to run a rootless container without userns")
+		}
+		if userNS.Path != "" {
+			return nil, nil, nil, nil, fmt.Errorf("joining pod user namespace %q is not supported in rootless mode", userNS.Path)
 		}
 		nss = append(nss, userNS)
 		if sandbox.CanUseUnprivilegedMapping(c.Spec) {
