@@ -15,7 +15,7 @@
 //go:build race
 // +build race
 
-package config
+package goferfilter
 
 import (
 	"golang.org/x/sys/unix"
@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// instrumentationFilters returns additional filters for syscalls used by TSAN.
-func instrumentationFilters() seccomp.SyscallRules {
+// InstrumentationFilters returns additional filters for syscalls used by TSAN.
+func InstrumentationFilters() seccomp.SyscallRules {
 	log.Warningf("*** SECCOMP WARNING: TSAN is enabled: syscall filters less restrictive!")
 	return archInstrumentationFilters(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_BRK:               seccomp.MatchAll{},
