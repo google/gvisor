@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v56/github"
 )
 
 // GitHubBugger implements Bugger interface for github issues.
