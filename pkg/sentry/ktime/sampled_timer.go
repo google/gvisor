@@ -27,29 +27,39 @@ import (
 //
 // +stateify savable
 type SampledTimer struct {
-	// clock is the time source. clock is protected by mu and clockSeq.
+	// clock is the time source. SetClock writes it under mu and a clockSeq
+	// writer section. Clock reads it through SeqAtomicLoadSampledClock, which
+	// validates the sequence after loading. checklocks cannot express this
+	// sequence-validated alternative to holding mu.
 	clockSeq sync.SeqCount `state:"nosave"`
 	clock    SampledClock
 
 	// listener is notified of expirations. listener is immutable.
 	listener Listener
 
-	// mu protects the following mutable fields.
 	mu sync.Mutex `state:"nosave"`
 
-	// setting is the timer setting. setting is protected by mu.
+	// setting is the timer setting.
+	//
+	// +checklocks:mu
 	setting Setting
 
+	// +checklocks:mu
 	pauseState timerPauseState
 
-	// kicker is used to wake the SampledTimer goroutine. The kicker pointer is
-	// immutable, but its state is protected by mu.
+	// kicker wakes the SampledTimer goroutine. Its pointer is fixed after
+	// init. Resets occur under mu. Destroy sets timerDestroyed under mu to
+	// prevent later tick resets, then stops the kicker after unlocking.
 	kicker *time.Timer `state:"nosave"`
 
-	// entry is registered with clock.EventRegister. entry is immutable.
+	// entry is registered with clock.EventRegister. Its notification setup
+	// is fixed after init, but registration links belong to the clock's
+	// waiter queue. SampledClock does not expose that queue's concrete lock
+	// to checklocks. EventUnregister excludes notifications before Destroy
+	// closes events.
 	//
-	// Per comment in SampledClock, entry must be re-registered after restore;
-	// per comment in SampledTimer.Load, this is done in SampledTimer.Resume.
+	// Generated StateLoad does not restore entry. Resume reinitializes and
+	// re-registers it after kernel.Timekeeper.SetClocks, as explained below.
 	entry waiter.Entry `state:"nosave"`
 
 	// events is the channel that will be notified whenever entry receives an
@@ -79,7 +89,9 @@ func NewSampledTimer(clock SampledClock, listener Listener) *SampledTimer {
 		clock:    clock,
 		listener: listener,
 	}
-	t.init()
+	// t is newly allocated; init finishes setup before starting its goroutine.
+	// checklocks cannot substitute this ownership for the mu requirement.
+	t.init() // +checklocksignore
 	return t
 }
 
@@ -88,6 +100,8 @@ func NewSampledTimer(clock SampledClock, listener Listener) *SampledTimer {
 //
 // Preconditions: t.mu must be locked, or the caller must have exclusive access
 // to t.
+//
+// +checklocks:t.mu
 func (t *SampledTimer) init() {
 	if t.kicker != nil {
 		return
@@ -103,6 +117,8 @@ func (t *SampledTimer) init() {
 }
 
 // Destroy implements Timer.Destroy.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) Destroy() {
 	// Stop the timer, ensuring that the goroutine will not call
 	// t.kicker.Reset, before calling t.kicker.Stop.
@@ -119,6 +135,8 @@ func (t *SampledTimer) Destroy() {
 }
 
 // Pause implements Timer.Pause.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) Pause() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -133,6 +151,8 @@ func (t *SampledTimer) Pause() {
 }
 
 // Resume implements Timer.Resume.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) Resume() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -159,6 +179,8 @@ func (t *SampledTimer) Clock() Clock {
 }
 
 // Get implements Timer.Get.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) Get() (Time, Setting) {
 	// Optimistically read t.Clock().Now() before locking t.mu, as t.clock is
 	// unlikely to change.
@@ -182,6 +204,8 @@ func (t *SampledTimer) Get() (Time, Setting) {
 }
 
 // Set implements Timer.Set.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) Set(s Setting, f func()) (Time, Setting) {
 	// Optimistically read t.Clock().Now() before locking t.mu, as t.clock is
 	// unlikely to change.
@@ -212,6 +236,8 @@ func (t *SampledTimer) Set(s Setting, f func()) (Time, Setting) {
 }
 
 // SetClock atomically changes a SampledTimer's Clock and Setting.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) SetClock(c SampledClock, s Setting) {
 	var now Time
 	if s.Enabled {
@@ -246,6 +272,8 @@ func (t *SampledTimer) runGoroutine() {
 
 // tick requests that the SampledTimer immediately check for expirations and
 // re-evaluate when it should next check for expirations.
+//
+// +checklocksexclude:t.mu
 func (t *SampledTimer) tick() {
 	// Optimistically read t.Clock().Now() before locking t.mu, as t.clock is
 	// unlikely to change.
@@ -267,7 +295,7 @@ func (t *SampledTimer) tick() {
 	t.resetKickerLocked(now)
 }
 
-// Preconditions: t.mu must be locked.
+// +checklocks:t.mu
 func (t *SampledTimer) resetKickerLocked(now Time) {
 	if t.setting.Enabled {
 		// Clock.WallTimeUntil may return a negative value. This is fine;
