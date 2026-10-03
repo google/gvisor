@@ -692,27 +692,12 @@ type io2 struct {
 	mandatory
 }
 
-func (*io2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, error) {
-	props := []dbus.Property{}
-	if spec == nil || spec.BlockIO == nil {
-		return props, nil
-	}
-	io := spec.BlockIO
-	if io != nil {
-		if io.Weight != nil && *io.Weight != 0 {
-			ioWeight := convertBlkIOToIOWeightValue(*io.Weight)
-			props = append(props, newProp("IOWeight", ioWeight))
-		}
-		for _, dev := range io.WeightDevice {
-			val := fmt.Sprintf("%d:%d %d", dev.Major, dev.Minor, *dev.Weight)
-			props = append(props, newProp("IODeviceWeight", val))
-		}
-		props = addIOProps(props, "IOReadBandwidthMax", io.ThrottleReadBpsDevice)
-		props = addIOProps(props, "IOWriteBandwidthMax", io.ThrottleWriteBpsDevice)
-		props = addIOProps(props, "IOReadIOPSMax", io.ThrottleReadIOPSDevice)
-		props = addIOProps(props, "IOWriteIOPSMax", io.ThrottleWriteIOPSDevice)
-	}
-	return props, nil
+func (*io2) generateProperties(*specs.LinuxResources) ([]dbus.Property, error) {
+	// Systemd's IOWeight-to-BFQ mapping differs from our cgroupfs mapping:
+	// https://github.com/systemd/systemd/blob/b3d8fc43e/src/basic/cgroup-util.h#L100-L112
+	// Apply I/O resources directly after creating or updating the scope, using
+	// the same filesystem translation as other cgroup v2 users.
+	return nil, nil
 }
 
 func (*io2) set(spec *specs.LinuxResources, path string) error {
