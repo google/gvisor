@@ -44,6 +44,17 @@ exceptions:
       bundled components, including the MPL-2.0 text covering Mozilla's CA
       certificate data (etc/roots.pem). Used by Bazel build and test tooling
       only. Released gVisor binaries use the pure-Go google.golang.org/grpc.
+  - dependency: libpluginstack
+    license:
+      - Apache-2.0
+      - BSD-3-Clause
+      - CC0-1.0
+    exception_rationale: >-
+      The existing TLDK plugin uses Apache-2.0 libraries, the CC0-1.0
+      implementation in lib/libtle_l4p/halfsiphash.h, and BSD-3-Clause code
+      in its DPDK patch series. This records those existing dependencies
+      when replacing the plugin's implicit source downloads with pinned
+      Bazel inputs. The optional GPL packetdrill integration is not built.
   - dependency: llvm-raw
     license:
       - Apache-2.0 WITH LLVM-exception
@@ -53,3 +64,12 @@ exceptions:
       distributed with gVisor. The LLVM exception only relaxes
       Apache-2.0's requirements, and the MIT match comes from third-party
       notices embedded in LICENSE.TXT.
+  - dependency: plugin_dpdk
+    license:
+      - BSD-3-Clause
+      - GPL-2.0-only
+    exception_rationale: >-
+      The existing plugin links DPDK's BSD-3-Clause user-space libraries
+      and drivers. GPL-2.0-only applies to buildtools/pmdinfogen, which
+      generates device metadata during the build and is not linked into
+      the plugin archive or gVisor executables. Kernel modules are disabled.
