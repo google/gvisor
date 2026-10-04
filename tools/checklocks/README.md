@@ -132,6 +132,11 @@ and deferred calls do not qualify. Atomic writes still require all guards
 exclusively, and non-atomic writes remain forbidden even with all guards held.
 The modifier cannot be combined with a field's `+checklocksignore`.
 
+Global lock identities include their declaring package. A private global can
+therefore guard exported fields and functions: callers can acquire and release
+it through functions with `+checklocksacquire` and `+checklocksrelease`, even
+though they cannot name the lock directly.
+
 Like atomic access enforcement, checks may be elided on newly allocated objects.
 
 ### Global Variable Annotations
