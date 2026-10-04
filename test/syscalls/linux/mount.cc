@@ -2976,14 +2976,18 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   // Overlayfs can not be used as upper layer for another overlayfs mount. If
   // running in overlayfs, create a tmpfs mount to use as the upper layer.
+  //
+  // In Linux, mounting overlayfs in a user namespace can fail with
+  // EACCES when the layers are on TEST_TMPDIR's filesystem.
   bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
-  if (in_overlayfs) {
+  bool use_tmpfs = in_overlayfs || GvisorPlatform() == Platform::kNative;
+  if (use_tmpfs) {
     ASSERT_THAT(
         mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
         SyscallSucceeds());
   }
-  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
-    if (in_overlayfs) {
+  auto tmpfs_cleanup = Cleanup([&base_dir, use_tmpfs] {
+    if (use_tmpfs) {
       ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
                   SyscallSucceeds());
     }
@@ -3208,17 +3212,24 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  // Before Linux 6.6, tmpfs doesn't support the user.* xattrs needed.
+  KernelVersion version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+  bool use_tmpfs =
+      in_overlayfs ||
+      (GvisorPlatform() == Platform::kNative &&
+       (version.major > 6 || (version.major == 6 && version.minor >= 6)));
 
   const std::function<void()> parent = [] {};
-  const std::function<void()> child = [&base_dir, &in_overlayfs] {
+  const std::function<void()> child = [&base_dir, use_tmpfs] {
     // Overlayfs can not be used as upper layer for another overlayfs mount. If
-    // running in overlayfs, create a tmpfs mount to use as the upper layer.
-    if (in_overlayfs) {
+    // running in overlayfs or on Linux 6.6 or later, create a tmpfs mount to
+    // use as the upper layer.
+    if (use_tmpfs) {
       TEST_CHECK_SUCCESS(mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0,
                                "mode=1777,size=10m"));
     }
-    auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
-      if (in_overlayfs) {
+    auto tmpfs_cleanup = Cleanup([&base_dir, use_tmpfs] {
+      if (use_tmpfs) {
         TEST_CHECK_SUCCESS(umount2(base_dir.path().c_str(), 0));
       }
     });
