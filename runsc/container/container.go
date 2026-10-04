@@ -259,9 +259,21 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			},
 		},
 	}
-	// The Cleanup object cleans up partially created containers when an error
-	// occurs. Any errors occurring during cleanup itself are ignored.
-	cu := cleanup.Make(func() { _ = c.Destroy() })
+	// Clean up partially created containers on error. Log cleanup failures while
+	// preserving the original creation error so callers see why New failed.
+	var rootCgroup cgroup.Cgroup
+	cu := cleanup.Make(func() {
+		if err := c.Destroy(); err != nil {
+			log.Warningf("destroying container after failed creation: %v", err)
+		}
+		// Failed sandbox creation has no Sandbox to retain the root cgroup.
+		// Stop the gofer above before removing the group it was running in.
+		if rootCgroup != nil {
+			if err := rootCgroup.Uninstall(); err != nil {
+				log.Warningf("removing cgroup after failed container creation: %v", err)
+			}
+		}
+	})
 	defer cu.Clean()
 
 	// Lock the container metadata file to prevent concurrent creations of
@@ -286,7 +298,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	//      already started sandbox. In this case, container ID is different than
 	//      the sandbox ID.
 	if specutils.IsRootContainer(args.Spec) {
-		if err := c.createRoot(conf, args, sandboxID); err != nil {
+		var err error
+		rootCgroup, err = c.createRoot(conf, args, sandboxID)
+		if err != nil {
 			return nil, err
 		}
 
@@ -345,7 +359,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	return c, nil
 }
 
-func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string) error {
+// createRoot returns a cgroup that still needs rollback if creation fails.
+// The caller must stop partially created processes before uninstalling it.
+func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string) (cgroup.Cgroup, error) {
 	log.Debugf("Creating new sandbox for container, cid: %s", args.ID)
 
 	if args.Spec.Linux == nil {
@@ -363,7 +379,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		// part of the cgroup from the start (and all their children processes).
 		parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec)
 		if err != nil {
-			return fmt.Errorf("cannot set up cgroup for root: %w", err)
+			return nil, fmt.Errorf("cannot set up cgroup for root: %w", err)
 		}
 		// Join the child cgroup when using cgroupfs. Joining non leaf-node
 		// cgroups is illegal in cgroupsv2 and will return EBUSY.
@@ -376,10 +392,10 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 	c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
 	mountHints, err := boot.NewPodMountHints(args.Spec)
 	if err != nil {
-		return fmt.Errorf("error creating pod mount hints: %w", err)
+		return parentCgroup, fmt.Errorf("error creating pod mount hints: %w", err)
 	}
 	if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
-		return err
+		return parentCgroup, err
 	}
 	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
 		ioFiles, goferFilestores, devIOFile, specFile, err := c.createGoferProcess(conf, mountHints, args.Attached, cloneIntoCgroupFD)
@@ -417,9 +433,9 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		return nil
 
 	}); err != nil {
-		return err
+		return parentCgroup, err
 	}
-	return nil
+	return nil, nil
 }
 
 func (c *Container) createSubcontainer(conf *config.Config, spec *specs.Spec) error {
