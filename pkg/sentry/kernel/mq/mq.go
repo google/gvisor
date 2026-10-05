@@ -182,7 +182,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.F
 		return nil, linuxerr.ENOENT
 	}
 
-	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), mode, attr)
+	q, err := r.newQueueLocked(auth.CredentialsFromContext(ctx), attr)
 	if err != nil {
 		return nil, err
 	}
@@ -192,12 +192,9 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.F
 // newQueueLocked creates a new queue using the given attributes. If attr is nil
 // return a queue with default values, otherwise use attr to create a new queue,
 // and return an error if attributes are invalid.
-func (r *Registry) newQueueLocked(creds *auth.Credentials, mode linux.FileMode, attr *linux.MqAttr) (*Queue, error) {
+func (r *Registry) newQueueLocked(creds *auth.Credentials, attr *linux.MqAttr) (*Queue, error) {
 	if attr == nil {
 		return &Queue{
-			ownerUID:        creds.EffectiveKUID,
-			ownerGID:        creds.EffectiveKGID,
-			mode:            mode,
 			maxMessageCount: int64(maxMsgDefault),
 			maxMessageSize:  uint64(msgSizeDefault),
 		}, nil
@@ -220,9 +217,6 @@ func (r *Registry) newQueueLocked(creds *auth.Credentials, mode linux.FileMode, 
 	}
 
 	return &Queue{
-		ownerUID:        creds.EffectiveKUID,
-		ownerGID:        creds.EffectiveKGID,
-		mode:            mode,
 		maxMessageCount: attr.MqMaxmsg,
 		maxMessageSize:  uint64(attr.MqMsgsize),
 	}, nil
@@ -256,15 +250,6 @@ func (r *Registry) Impl() RegistryImpl {
 //
 // +stateify savable
 type Queue struct {
-	// ownerUID is the registry's owner's UID. Immutable.
-	ownerUID auth.KUID
-
-	// ownerGID is the registry's owner's GID. Immutable.
-	ownerGID auth.KGID
-
-	// mode is the registry's access permissions. Immutable.
-	mode linux.FileMode
-
 	// mu protects all the fields below.
 	mu sync.Mutex `state:"nosave"`
 
@@ -439,17 +424,4 @@ func (q *Queue) EventUnregister(e *waiter.Entry) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.queue.EventUnregister(e)
-}
-
-// HasPermissions returns true if the given credentials meet the access
-// permissions required by the queue.
-func (q *Queue) HasPermissions(creds *auth.Credentials, req vfs.AccessTypes) bool {
-	perms := uint16(q.mode.Permissions())
-	if q.ownerUID == creds.EffectiveKUID {
-		perms >>= 6
-	} else if creds.InGroup(q.ownerGID) {
-		perms >>= 3
-	}
-
-	return uint16(req)&perms == uint16(req)
 }
