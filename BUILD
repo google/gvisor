@@ -1,3 +1,5 @@
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_license//rules:license.bzl", "license")
 load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
 load("//tools:release.bzl", "RELEASE_RUNSC", "RELEASE_SIDECARS", "release_files")
@@ -96,10 +98,53 @@ yaml_test(
     schema = "//tools/nogo/config:schema.json",
 )
 
+GITHUB_WORKFLOWS = glob(
+    [
+        ".github/workflows/**/*.yaml",
+        ".github/workflows/**/*.yml",
+    ],
+    allow_empty = True,
+) or fail("No GitHub workflow YAML files were found")
+
+filegroup(
+    name = "github_workflows",
+    srcs = GITHUB_WORKFLOWS,
+)
+
 yaml_test(
     name = "github_workflows_test",
-    srcs = glob([".github/workflows/*.yml"]),
+    srcs = [":github_workflows"],
     schema = "@github_workflow_schema//file",
+)
+
+# actionlint discovers project configuration and local actions by finding .git.
+# It only stats the marker; Git metadata and history are not needed.
+write_file(
+    name = "actionlint_project_marker",
+    out = ".git",
+    content = [],
+)
+
+# A real runfiles tree is needed for project/configuration discovery. On
+# Windows, enable Bazel symlink support and pass --enable_runfiles.
+native_test(
+    name = "github_actions_test",
+    src = "//tools/actionlint",
+    args = [
+        "-no-color",
+        "-oneline",
+        "-shellcheck=",
+        "-pyflakes=",
+    ] + ['"$(rootpath %s)"' % workflow for workflow in GITHUB_WORKFLOWS],
+    # These optional configuration files may be absent.
+    # buildifier: disable=constant-glob
+    data = GITHUB_WORKFLOWS + [":actionlint_project_marker"] + glob(
+        [
+            ".github/actionlint.yaml",
+            ".github/actionlint.yml",
+        ],
+        allow_empty = True,
+    ),
 )
 
 filegroup(
