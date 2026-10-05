@@ -82,7 +82,16 @@ go_library(
 go_test(
     name = "netstack_test",
     srcs = ["stack_test.go"],
-    deps = [":netstack"],
+    deps = [
+        ":netstack",
+        "//pkg/abi/linux",
+        "//pkg/context",
+        "//pkg/marshal/primitive",
+        "//pkg/sentry/socket/netlink/nlmsg",
+        "//pkg/syserr",
+        "//pkg/tcpip",
+        "//pkg/tcpip/stack",
+    ],
 )
 
 proto_library(
