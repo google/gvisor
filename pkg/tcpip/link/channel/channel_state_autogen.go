@@ -33,6 +33,66 @@ func (n *NotificationHandle) StateLoad(ctx context.Context, stateSourceObject st
 	stateSourceObject.Load(0, &n.n)
 }
 
+func (s *savedQueue) StateTypeName() string {
+	return "pkg/tcpip/link/channel.savedQueue"
+}
+
+func (s *savedQueue) StateFields() []string {
+	return []string{
+		"packets",
+		"capacity",
+	}
+}
+
+func (s *savedQueue) beforeSave() {}
+
+// +checklocksignore
+func (s *savedQueue) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.packets)
+	stateSinkObject.Save(1, &s.capacity)
+}
+
+func (s *savedQueue) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (s *savedQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.packets)
+	stateSourceObject.Load(1, &s.capacity)
+}
+
+func (q *queue) StateTypeName() string {
+	return "pkg/tcpip/link/channel.queue"
+}
+
+func (q *queue) StateFields() []string {
+	return []string{
+		"c",
+		"notify",
+		"closed",
+	}
+}
+
+func (q *queue) beforeSave() {}
+
+// +checklocksignore
+func (q *queue) StateSave(stateSinkObject state.Sink) {
+	q.beforeSave()
+	cValue := q.saveC()
+	_ = (*savedQueue)(cValue)
+	stateSinkObject.SaveValue(0, cValue)
+	stateSinkObject.Save(1, &q.notify)
+	stateSinkObject.Save(2, &q.closed)
+}
+
+// +checklocksignore
+func (q *queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &q.notify)
+	stateSourceObject.Load(2, &q.closed)
+	stateSourceObject.LoadValue(0, new(*savedQueue), func(y any) { q.loadC(ctx, y.(*savedQueue)) })
+	stateSourceObject.AfterLoad(func() { q.afterLoad(ctx) })
+}
+
 func (e *Endpoint) StateTypeName() string {
 	return "pkg/tcpip/link/channel.Endpoint"
 }
@@ -75,5 +135,7 @@ func (e *Endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source
 
 func init() {
 	state.Register((*NotificationHandle)(nil))
+	state.Register((*savedQueue)(nil))
+	state.Register((*queue)(nil))
 	state.Register((*Endpoint)(nil))
 }
