@@ -23,7 +23,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v84/github"
 	"golang.org/x/oauth2"
 	"gvisor.dev/gvisor/tools/github/reviver"
 )

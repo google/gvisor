@@ -252,7 +252,7 @@ use_repo(
     "com_github_google_btree",
     "com_github_google_gnostic_models",
     "com_github_google_go_cmp",
-    "com_github_google_go_github_v56",
+    "com_github_google_go_github_v84",
     "com_github_google_go_querystring",
     "com_github_google_gopacket",
     "com_github_google_pprof",
@@ -493,14 +493,9 @@ go_deps.module(
     version = "v2.3.3",
 )
 go_deps.module(
-    path = "github.com/google/go-github/v56",
-    sum = "h1:TysL7dMa/r7wsQi44BjqlwaHvwlFlqkK8CtBWCX3gb4=",
-    version = "v56.0.0",
-)
-go_deps.module(
     path = "github.com/google/go-querystring",
-    sum = "h1:AnCroh3fv4ZBgVIf1Iwtovgjaw/GiKJo8M8yD/fhyJ8=",
-    version = "v1.1.0",
+    sum = "h1:yhqkPbu2/OH+V9BfpCVPZkNmUXhb2gBxJArfhIxNtP0=",
+    version = "v1.2.0",
 )
 go_deps.module(
     path = "github.com/google/uuid",

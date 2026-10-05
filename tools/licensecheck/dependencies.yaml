@@ -460,17 +460,17 @@
   commit: 9b12f366a942ebc7254abc7f32ca05068b455fb7
   sha256: 64a9ce046f2c320e3783fba0d1f4a15f8a18f0b009b67bf27f7630919db3f539
   license: BSD-3-Clause
-- dependency: github.com/google/go-github/v56
-  version: v56.0.0
-  retrieved: "2026-08-27"
-  commit: 5e25c5c215b3d21991d17447fba2e9d13a875159
-  sha256: 8c86785cf5a02ddb48872399f3dcfb50b9b065225e62e5a59db512d9f9c4c443
+- dependency: github.com/google/go-github/v84
+  version: v84.0.0
+  retrieved: "2026-10-05"
+  commit: 2830c69e81ae2b8f809ba498c09071d093585908
+  sha256: a123bfabac2393e30bc0608ad79ed1c82d0ac663f810a569e17b4ecd3db4655a
   license: BSD-3-Clause
 - dependency: github.com/google/go-querystring
-  version: v1.1.0
-  retrieved: "2026-08-27"
-  commit: 1f4a1f9d6e29d314b2513651973fca5c4d4498f1
-  sha256: a6aafc01f5602e6177928751074e325792a654e1d92f0e238b8e8739656dd72b
+  version: v1.2.0
+  retrieved: "2026-10-05"
+  commit: 59c17d91d3d41ba66bc4db00b458acc8c3220835
+  sha256: 57b7ce2b82b33c68f59a224c6dd1305753e5ee3eecbefd09d43423a14f541e31
   license: BSD-3-Clause
 - dependency: github.com/google/gofuzz
   version: v1.2.0

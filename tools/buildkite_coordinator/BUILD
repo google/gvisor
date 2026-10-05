@@ -9,6 +9,7 @@ go_binary(
     name = "buildkite_coordinator",
     srcs = [
         "config.go",
+        "github.go",
         "main.go",
         "secrets.go",
     ],
@@ -16,5 +17,8 @@ go_binary(
     pure = True,
     static = True,
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_google_api//secretmanager/v1:go_default_library"],
+    deps = [
+        "@com_github_google_go_github_v84//github:go_default_library",
+        "@org_golang_google_api//secretmanager/v1:go_default_library",
+    ],
 )
