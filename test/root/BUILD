@@ -35,9 +35,9 @@ go_test(
         "//:release",
     ],
     library = ":root",
+    local = True,
     pure = True,
     tags = [
-        "local",
         "manual",
     ],
     visibility = ["//:sandbox"],
@@ -71,9 +71,9 @@ go_test(
         "//:release",
     ],
     library = ":root",
+    local = True,
     pure = True,
     tags = [
-        "local",
         "manual",
     ],
     visibility = ["//:sandbox"],
@@ -93,9 +93,9 @@ go_test(
 go_test(
     name = "portforward_test",
     srcs = ["portforward_test.go"],
+    local = True,
     pure = True,
     tags = [
-        "local",
         "manual",
     ],
     visibility = ["//:sandbox"],

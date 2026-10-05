@@ -9,10 +9,10 @@ def secbench_test(**kwargs):
       **kwargs: Same as go_test arguments.
     """
     kwargs["tags"] = kwargs.get("tags", []) + [
-        "local",
         "manual",
         "secbench",
     ]
+    kwargs["local"] = True
     kwargs["static"] = True
     kwargs["timeout"] = "long"
     go_test(**kwargs)

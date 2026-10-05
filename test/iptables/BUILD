@@ -37,8 +37,8 @@ go_test(
     ],
     data = ["//test/iptables/runner"],
     library = ":iptables",
+    local = True,
     tags = [
-        "local",
         "manual",
     ],
     deps = [
@@ -58,8 +58,8 @@ go_test(
     args = ["-iptables-nft=true"],
     data = ["//test/iptables/runner"],
     library = ":iptables",
+    local = True,
     tags = [
-        "local",
         "manual",
     ],
     deps = [
