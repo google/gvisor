@@ -188,7 +188,7 @@ type Args struct {
 	Attached bool
 
 	// PassFiles are user-supplied files from the host to be exposed to the
-	// sandboxed app.
+	// sandboxed app. They are supported only for the sandbox's root container.
 	PassFiles map[int]*os.File
 
 	// ExecFile is the host file used for program execution.
@@ -221,6 +221,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 
 	if err := validateID(args.ID); err != nil {
 		return nil, err
+	}
+
+	if len(args.PassFiles) != 0 && !specutils.IsRootContainer(args.Spec) {
+		return nil, fmt.Errorf("passed files are supported only when creating a new sandbox")
 	}
 
 	if err := os.MkdirAll(conf.RootDir, 0711); err != nil {

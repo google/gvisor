@@ -172,6 +172,12 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		}
 		runArgs.Spec = r.spec
 		specutils.LogSpecDebug(runArgs.Spec, conf.OCISeccomp)
+		files, closeFiles, err := r.passFiles()
+		if err != nil {
+			return util.Errorf("preparing passed files: %v", err)
+		}
+		defer closeFiles()
+		runArgs.PassFiles = files
 
 		if c, err = container.New(conf, runArgs); err != nil {
 			return util.Errorf("creating container: %v", err)
@@ -183,6 +189,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 			c.Destroy()
 		})
 	} else {
+		if len(r.passFDs) != 0 {
+			return util.Errorf("pass-fd must be supplied when creating the container, not when restoring an existing container")
+		}
 		runArgs.Spec = c.Spec
 	}
 
