@@ -1051,6 +1051,9 @@ type inode struct {
 	// a more in-depth discussion on this matter).
 	watches vfs.Watches
 
+	// landlockSlot holds the Landlock object for this inode.
+	landlockSlot vfs.LandlockObjectSlot
+
 	// refs is the reference count of the inode. A dentry holds a reference on the inode
 	// it points to. rsfs is protected by fs.inodeMu.
 	refs inodeRefs
@@ -1735,6 +1738,14 @@ const (
 // Preconditions: fs.renameMu must be locked.
 func withCheckCachingList(ctx context.Context, ds **[]*dentry) context.Context {
 	return context.WithValue(ctx, CtxCheckCachingList, ds)
+}
+
+// LandlockObjectSlot implements vfs.DentryImpl.LandlockObjectSlot.
+//
+// The slot is in the inode, which dentries that are hard links to the same
+// remote file share: fs.inodeByKey holds one inode per inoKey.
+func (d *dentry) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	return &d.inode.landlockSlot
 }
 
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.

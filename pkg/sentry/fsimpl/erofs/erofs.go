@@ -339,6 +339,9 @@ type inode struct {
 
 	// Inotify watches for this inode.
 	watches vfs.Watches
+
+	// landlockSlot is the inode's Landlock object, shared by all hard links.
+	landlockSlot vfs.LandlockObjectSlot
 }
 
 // getInode returns the inode identified by nid. A reference on inode is also
@@ -737,6 +740,11 @@ func (d *dentry) Watches() *vfs.Watches {
 	return &d.inode.watches
 }
 
+// LandlockObjectSlot implements vfs.DentryImpl.LandlockObjectSlot.
+func (d *dentry) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	return &d.inode.landlockSlot
+}
+
 // OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
 	// If no watches are left on this dentry, try caching it.
@@ -748,12 +756,23 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	// Linux rejects these before hook_file_open(), so they outrank Landlock.
+	if err := vfs.CheckOpenFileType(linux.FileMode(d.inode.fileType()), opts); err != nil {
+		return nil, err
+	}
+	// Likewise EROFS, from may_open()'s inode_permission(). sb_permission()
+	// only rejects regular files; dirs and symlinks were rejected above.
+	if ats.MayWrite() && d.inode.fileType() == linux.S_IFREG {
+		return nil, linuxerr.EROFS
+	}
+	// The only Landlock check erofs needs: being read-only, every operation
+	// needing another right fails with EROFS.
+	if err := rp.CheckLandlockOpen(ctx, &d.vfsd, opts, d.inode.IsDir()); err != nil {
+		return nil, err
+	}
 
 	switch d.inode.fileType() {
 	case linux.S_IFREG:
-		if ats&vfs.MayWrite != 0 {
-			return nil, linuxerr.EROFS
-		}
 		var fd regularFileFD
 		fd.LockFD.Init(&d.inode.locks)
 		if err := fd.vfsfd.Init(&fd, opts.Flags, rp.Credentials(), rp.Mount(), &d.vfsd, &vfs.FileDescriptionOptions{AllowDirectIO: true}); err != nil {

@@ -588,6 +588,39 @@ func (d *Dentry) Watches() *vfs.Watches {
 	return d.inode.Watches()
 }
 
+// inodeLandlockObjectSlotter is implemented by Inodes that Landlock rules can
+// name (e.g. via InodeAttrs). Inodes without it are anonymous.
+type inodeLandlockObjectSlotter interface {
+	LandlockObjectSlot() *vfs.LandlockObjectSlot
+}
+
+// inodeLandlockObjectGetter is implemented by Inodes whose slots need their
+// own lock; see vfs.LandlockObjectGetter.
+type inodeLandlockObjectGetter interface {
+	GetLandlockObject(fs *vfs.Filesystem, d *vfs.Dentry) (*vfs.LandlockObject, error)
+}
+
+// LandlockObjectSlot implements vfs.DentryImpl.LandlockObjectSlot.
+func (d *Dentry) LandlockObjectSlot() *vfs.LandlockObjectSlot {
+	inode, ok := d.inode.(inodeLandlockObjectSlotter)
+	if !ok {
+		return nil
+	}
+	return inode.LandlockObjectSlot()
+}
+
+// GetLandlockObject implements vfs.LandlockObjectGetter.GetLandlockObject.
+func (d *Dentry) GetLandlockObject(fs *vfs.Filesystem) (*vfs.LandlockObject, error) {
+	if getter, ok := d.inode.(inodeLandlockObjectGetter); ok {
+		return getter.GetLandlockObject(fs, &d.vfsd)
+	}
+	slot := d.LandlockObjectSlot()
+	if slot == nil {
+		return nil, linuxerr.EBADFD
+	}
+	return slot.GetObject(fs, &d.vfsd)
+}
+
 // OnZeroWatches implements vfs.Dentry.OnZeroWatches.
 func (d *Dentry) OnZeroWatches(context.Context) {}
 

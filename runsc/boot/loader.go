@@ -952,7 +952,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("failed to create hostfs filesystem: %w", err)
 	}
 	defer hostFilesystem.DecRef(l.k.SupervisorContext())
-	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{}))
+	l.k.SetHostMount(l.k.VFS().NewDisconnectedMount(hostFilesystem, nil, &vfs.MountOptions{InternalMount: true}))
 	args.StartupTimer.Reached("host FS mount created")
 
 	if args.PodInitConfigFD >= 0 {

@@ -376,6 +376,9 @@ var linuxAMD64 = SyscallMap{
 	437: makeSyscallInfo("openat2", FD, Path, OpenHow, Hex),
 	439: makeSyscallInfo("faccessat2", FD, Path, Oct, Hex),
 	441: makeSyscallInfo("epoll_pwait2", FD, EpollEvents, Hex, Timespec, SigSet),
+	444: makeSyscallInfo("landlock_create_ruleset", Hex, Hex, Hex),
+	445: makeSyscallInfo("landlock_add_rule", FD, Hex, Hex, Hex),
+	446: makeSyscallInfo("landlock_restrict_self", FD, Hex),
 }
 
 func init() {

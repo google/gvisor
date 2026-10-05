@@ -171,6 +171,10 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cleanup()
 		return nil, err
 	}
+	// Each task holds a reference on its Landlock domain, which is what keeps
+	// the Landlock objects of the domain's rules alive, as each Linux cred
+	// holds one.
+	vfs.LandlockDomainFromCredentials(cfg.Credentials).IncRef()
 	return t, nil
 }
 

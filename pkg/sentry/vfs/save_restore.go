@@ -71,6 +71,13 @@ func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
 			fs.DecRef(ctx)
 		}
 	}()
+	// Landlock objects are detached from deleted files on every filesystem
+	// before any FilesystemImpl prepares, since a Landlock object on one
+	// filesystem may hold Dentries of another, as an overlay Dentry holds its
+	// layers'.
+	for _, fs := range fss {
+		fs.detachDeadLandlockObjects(ctx)
+	}
 	for _, fs := range fss {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.PrepareSave(ctx); err != nil {

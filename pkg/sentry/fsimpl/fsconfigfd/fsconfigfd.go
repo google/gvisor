@@ -358,6 +358,13 @@ func (fd *Fd) DoCmdReconfigure(ctx context.Context, vfsObj *vfs.VirtualFilesyste
 		return linuxerr.EPERM
 	}
 
+	// Landlock denies remounts to any domain; the caller's domain is checked,
+	// not the fd opener's. Matches Linux [fs/super.c]:reconfigure_super():
+	// security_sb_remount() runs after the EBUSY and CAP_SYS_ADMIN checks.
+	if err := vfs.CheckLandlockMount(vfs.LandlockDomainFromCredentials(auth.CredentialsFromContext(ctx))); err != nil {
+		return err
+	}
+
 	// TODO(gvisor.dev/issues/13450): properly support reconfiguration on underlying filesystems.
 
 	return nil

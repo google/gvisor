@@ -132,6 +132,14 @@ type DentryImpl interface {
 	// The caller does not need to hold a reference on the dentry.
 	Watches() *Watches
 
+	// LandlockObjectSlot returns the slot holding the Landlock object for the
+	// file corresponding to the Dentry, or nil if the filesystem cannot name
+	// the file. Dentries that are hard links to the same underlying file must
+	// return the same slot. See LandlockObjectSlot.
+	//
+	// The caller does not need to hold a reference on the dentry.
+	LandlockObjectSlot() *LandlockObjectSlot
+
 	// OnZeroWatches is called whenever the number of watches on a dentry drops
 	// to zero. This is needed by some FilesystemImpls (e.g. gofer) to manage
 	// dentry lifetime.
