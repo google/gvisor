@@ -24,7 +24,6 @@ go_library(
         "dockerutil.go",
         "exec.go",
         "gpu.go",
-        "network.go",
         "profile.go",
     ],
     embedsrcs = [
