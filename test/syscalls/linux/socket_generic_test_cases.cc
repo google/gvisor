@@ -462,9 +462,14 @@ TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
                 IsPosixErrorOkAndHolds(0));
   };
 
+  // SO_RCVBUFFORCE requires CAP_NET_ADMIN in the initial user namespace.
+  // See net/core/sock.c:1379.
+  const bool can_force =
+      ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)) &&
+      ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace());
   int sso =
       setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &above_max, sizeof(above_max));
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
+  if (!can_force) {
     ASSERT_THAT(sso, SyscallFailsWithErrno(EPERM));
     tryBeatingCapWithUnshare();
     return;
