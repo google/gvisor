@@ -2804,6 +2804,210 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 	}
 }
 
+// sendSmallSegment sends a segment with n bytes of payload at seq and returns
+// the ACK number and the window of the ACK for it.
+func sendSmallSegment(t *testing.T, c *context.Context, seq seqnum.Value, n seqnum.Size) (seqnum.Value, seqnum.Size) {
+	t.Helper()
+	c.SendPacket(make([]byte, n), &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seq,
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  30000,
+	})
+	b := c.GetPacketWithTimeout(time.Second)
+	if b == nil {
+		t.Fatalf("no ACK for the segment at %d; SegmentQueueDropped = %d", seq, c.EP.Stats().(*tcp.Stats).ReceiveErrors.SegmentQueueDropped.Value())
+	}
+	defer b.Release()
+	h := header.TCP(header.IPv4(b.AsSlice()).Payload())
+	return seqnum.Value(h.AckNumber()), seqnum.Size(h.WindowSize()) << c.RcvdWindowScale
+}
+
+// TestSmallSegmentsBufferFullAcked tests that a segment within the window is
+// acknowledged when it is refused because the receive buffer is full (RFC 9293
+// section 3.10.7.4). The initial window is half the buffer, which segments
+// smaller than the segment overhead fill up before the window closes.
+func TestSmallSegmentsBufferFullAcked(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, 32<<10)
+
+	const mss = 536
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	for edge := seq.Add(mss); seq.Add(mss).LessThanEq(edge); seq = seq.Add(mss) {
+		if ack, wnd := sendSmallSegment(t, c, seq, mss); edge.LessThan(ack.Add(wnd)) {
+			edge = ack.Add(wnd)
+		}
+	}
+}
+
+// TestSmallSegmentsWindowClosesBeforeBufferFull tests that the window
+// advertised for segments smaller than the segment overhead closes before
+// the receive buffer is full, so that no segment within it is refused.
+func TestSmallSegmentsWindowClosesBeforeBufferFull(t *testing.T) {
+	for _, payloadSize := range []seqnum.Size{536, 600, 700, 1448} {
+		t.Run(fmt.Sprintf("payload=%d", payloadSize), func(t *testing.T) {
+			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
+			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, 128<<10, []byte{
+				header.TCPOptionWS, 3, 0, header.TCPOptionNOP,
+			})
+
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			if ack, _ := sendSmallSegment(t, c, seq, payloadSize); ack != seq.Add(payloadSize) {
+				t.Fatalf("initial ACK = %d, want %d", ack, seq.Add(payloadSize))
+			}
+			seq = seq.Add(payloadSize)
+			if _, err := c.EP.Read(io.Discard, tcpip.ReadOptions{}); err != nil {
+				t.Fatalf("Read: %s", err)
+			}
+
+			var wnd seqnum.Size
+			for edge := seq.Add(payloadSize); seq != edge; {
+				n := min(payloadSize, seq.Size(edge))
+				ack, nextWnd := sendSmallSegment(t, c, seq, n)
+				seq = seq.Add(n)
+				wnd = nextWnd
+				if ack != seq {
+					t.Fatalf("ACK = %d, want %d for in-window data ending at edge %d", ack, seq, edge)
+				}
+				if edge.LessThan(ack.Add(wnd)) {
+					edge = ack.Add(wnd)
+				}
+			}
+			if wnd != 0 {
+				t.Fatalf("final window = %d, want 0", wnd)
+			}
+		})
+	}
+}
+
+// TestSmallSegmentWindowReopensAfterRead verifies that a sender can resume
+// after an application drains a receive buffer containing a tiny segment.
+// Starting with a one-byte window makes the zero-window state deterministic;
+// enlarging SO_RCVBUF to a normal small value also verifies that the reopen
+// threshold can be reached after the payload/memory ratio has been learned.
+func TestSmallSegmentWindowReopensAfterRead(t *testing.T) {
+	for _, scaled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("scaled=%t", scaled), func(t *testing.T) {
+
+			c := context.New(t, e2e.DefaultMTU)
+			defer c.Cleanup()
+
+			// A tiny initial buffer makes the zero-window state deterministic.
+			opt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 1, Default: 4096, Max: 4096}
+			requestedBuffer := 1
+			wantBuffer := int64(2)
+			if scaled {
+				// Autotuning chooses the scale from Max, while the initial receive
+				// window is one scaling unit. An explicit buffer would disable it.
+				opt.Default, opt.Max = 64, 1<<20
+				requestedBuffer, wantBuffer = -1, 64
+				autoTune := tcpip.TCPModerateReceiveBufferOption(true)
+				if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &autoTune); err != nil {
+					t.Fatalf("SetTransportProtocolOption: %s", err)
+				}
+			}
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+				t.Fatalf("SetTransportProtocolOption: %s", err)
+			}
+			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, requestedBuffer, []byte{header.TCPOptionWS, 3, 0, header.TCPOptionNOP})
+			if scaled && c.RcvdWindowScale == 0 {
+				t.Fatal("expected negotiated nonzero receive window scale")
+			}
+			if got, want := c.EP.SocketOptions().GetReceiveBufferSize(), wantBuffer; got != want {
+				t.Fatalf("initial receive buffer = %d, want %d", got, want)
+			}
+
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			next := seq.Add(1)
+			if ack, wnd := sendSmallSegment(t, c, seq, 1); ack != next || wnd != 0 {
+				t.Fatalf("initial byte: ACK/window = %d/%d, want %d/0", ack, wnd, next)
+			}
+
+			// Enlarge the buffer without changing the negotiated MSS or scale.
+			c.EP.SocketOptions().SetReceiveBufferSize(4096, true /* notify */)
+			var got bytes.Buffer
+			res, err := c.EP.Read(&got, tcpip.ReadOptions{})
+			if err != nil || res.Count != 1 || got.Len() != 1 {
+				t.Fatalf("Read = count %d, data length %d, error %v; want 1, 1, nil", res.Count, got.Len(), err)
+			}
+
+			// Drain any resize/read window updates so the following ACK is necessarily
+			// the response to this probe. An old one-byte probe does not advance RCV.NXT.
+			for p := c.GetPacketNonBlocking(); p != nil; p = c.GetPacketNonBlocking() {
+				p.Release()
+			}
+			ack, wnd := sendSmallSegment(t, c, seq, 1)
+			if ack != next {
+				t.Fatalf("probe ACK = %d, want %d", ack, next)
+			}
+			if wnd == 0 {
+				t.Fatal("window stayed zero after application drained the receive buffer")
+			}
+
+			// Once space is advertised, new data must be accepted and delivered once.
+			if ack, _ := sendSmallSegment(t, c, next, 1); ack != next.Add(1) {
+				t.Fatalf("new byte ACK = %d, want %d", ack, next.Add(1))
+			}
+			got.Reset()
+			res, err = c.EP.Read(&got, tcpip.ReadOptions{})
+			if err != nil || res.Count != 1 || got.Len() != 1 {
+				t.Fatalf("Read after reopen = count %d, data length %d, error %v; want 1, 1, nil", res.Count, got.Len(), err)
+			}
+
+		})
+	}
+}
+
+// TestSmallSegmentsRejectedDataNotAcknowledged verifies that replying to
+// memory-rejected segments does not acknowledge their payload or consume FIN.
+func TestSmallSegmentsRejectedDataNotAcknowledged(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+	opt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 1, Default: 4096, Max: 4096}
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
+		t.Fatalf("SetTransportProtocolOption: %s", err)
+	}
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, 1)
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	next := seq.Add(1)
+	if ack, wnd := sendSmallSegment(t, c, seq, 1); ack != next || wnd != 0 {
+		t.Fatalf("initial byte: ACK/window = %d/%d, want %d/0", ack, wnd, next)
+	}
+	for _, flags := range []header.TCPFlags{header.TCPFlagAck, header.TCPFlagAck | header.TCPFlagFin} {
+		c.SendPacket([]byte{1}, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   flags,
+			SeqNum:  next,
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		p := c.GetPacketWithTimeout(time.Second)
+		if p == nil {
+			t.Fatalf("no ACK for memory-rejected segment with flags %v", flags)
+		}
+		h := header.TCP(header.IPv4(p.AsSlice()).Payload())
+		ack, wnd := seqnum.Value(h.AckNumber()), h.WindowSize()
+		p.Release()
+		if ack != next || wnd != 0 {
+			t.Fatalf("rejected data: ACK/window = %d/%d, want %d/0", ack, wnd, next)
+		}
+	}
+	if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.SegmentQueueDropped.Value(); got != 2 {
+		t.Fatalf("SegmentQueueDropped = %d, want 2", got)
+	}
+	if res, err := c.EP.Read(io.Discard, tcpip.ReadOptions{}); err != nil || res.Count != 1 {
+		t.Fatalf("Read = %d, %v; want 1, nil", res.Count, err)
+	}
+	if _, err := c.EP.Read(io.Discard, tcpip.ReadOptions{}); !cmp.Equal(err, &tcpip.ErrWouldBlock{}) {
+		t.Fatalf("Read after rejected FIN = %v, want ErrWouldBlock", err)
+	}
+}
+
 func TestNoWindowShrinking(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
@@ -7317,8 +7521,13 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 
 	// Verify that we receive a non-zero window update ACK. When running
 	// under thread sanitizer this test can end up sending more than 1
-	// ack, 1 for the non-zero window
+	// ack, 1 for the non-zero window. Segments refused for lack of buffer
+	// space are acknowledged with a zero window before it.
 	p := c.GetPacket()
+	for header.TCP(header.IPv4(p.AsSlice()).Payload()).WindowSize() == 0 {
+		p.Release()
+		p = c.GetPacket()
+	}
 	defer p.Release()
 	checker.IPv4(t, p, checker.TCP(
 		checker.TCPAckNum(wantAckNum),
