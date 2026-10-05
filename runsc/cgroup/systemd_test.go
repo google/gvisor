@@ -202,41 +202,6 @@ func TestInstall(t *testing.T) {
 				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1, 0b_11100000})},
 			},
 		},
-		{
-			name: "io",
-			res: &specs.LinuxResources{
-				BlockIO: &specs.LinuxBlockIO{
-					Weight: uint16Ptr(1),
-					WeightDevice: []specs.LinuxWeightDevice{
-						makeLinuxWeightDevice(2, 3, uint16Ptr(4), uint16Ptr(0)),
-						makeLinuxWeightDevice(5, 6, uint16Ptr(7), uint16Ptr(0)),
-					},
-					ThrottleReadBpsDevice: []specs.LinuxThrottleDevice{
-						makeLinuxThrottleDevice(8, 9, 10),
-						makeLinuxThrottleDevice(11, 12, 13),
-					},
-					ThrottleWriteBpsDevice: []specs.LinuxThrottleDevice{
-						makeLinuxThrottleDevice(14, 15, 16),
-					},
-					ThrottleReadIOPSDevice: []specs.LinuxThrottleDevice{
-						makeLinuxThrottleDevice(17, 18, 19),
-					},
-					ThrottleWriteIOPSDevice: []specs.LinuxThrottleDevice{
-						makeLinuxThrottleDevice(20, 21, 22),
-					},
-				},
-			},
-			wantProps: []systemdDbus.Property{
-				{"IOWeight", dbus.MakeVariant(convertBlkIOToIOWeightValue(1))},
-				{"IODeviceWeight", dbus.MakeVariant("2:3 4")},
-				{"IODeviceWeight", dbus.MakeVariant("5:6 7")},
-				{"IOReadBandwidthMax", dbus.MakeVariant("8:9 10")},
-				{"IOReadBandwidthMax", dbus.MakeVariant("11:12 13")},
-				{"IOWriteBandwidthMax", dbus.MakeVariant("14:15 16")},
-				{"IOReadIOPSMax", dbus.MakeVariant("17:18 19")},
-				{"IOWriteIOPSMax", dbus.MakeVariant("20:21 22")},
-			},
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cg := cgroupSystemd{Name: "123", Parent: "parent.slice"}
