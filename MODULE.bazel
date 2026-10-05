@@ -176,6 +176,7 @@ use_repo(
     "com_github_google_gnostic_models",
     "com_github_google_go_cmp",
     "com_github_google_go_github_v56",
+    "com_github_google_go_github_v92",
     "com_github_google_go_querystring",
     "com_github_google_gopacket",
     "com_github_google_pprof",

@@ -27,13 +27,27 @@ import (
 
 func main() {
 	cfg := loadConfig()
+	ctx := context.Background()
 
 	// Fetch the Buildkite agent token
-	token, err := accessSecret(context.Background(), cfg.bkTokenProject, cfg.bkTokenSecret)
+	token, err := accessSecret(ctx, cfg.bkTokenProject, cfg.bkTokenSecret)
 	if err != nil {
 		log.Fatalf("Failed to read Buildkite agent token: %v", err)
 	}
 	log.Printf("Read Buildkite agent token (%d bytes)", len(token))
+
+	// Fetch the GitHub token
+	ghToken, err := accessSecret(ctx, cfg.githubTokenProject, cfg.githubTokenSecret)
+	if err != nil {
+		log.Fatalf("Failed to read GitHub token: %v", err)
+	}
+
+	// GitHub client
+	ghClient, err := newGitHubClient(ghToken)
+	if err != nil {
+		log.Fatalf("Failed to create GitHub client: %v", err)
+	}
+	_ = ghClient
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
