@@ -23,43 +23,46 @@ import (
 // jobInstance is a specific instance of Job.
 //
 // Different instances are created each time Job is scheduled so each timer has
-// its own earlyReturn signal. This is to address a bug when a Job is stopped
-// and reset in quick succession resulting in a timer instance's earlyReturn
+// its own done signal. This is to address a bug when a Job is stopped
+// and reset in quick succession resulting in a timer instance's done
 // signal being affected or seen by another timer instance.
 //
 // Consider the following sceneario where timer instances share a common
-// earlyReturn signal (T1 creates, stops and resets a Cancellable timer under a
+// done signal (T1 creates, stops and resets a Cancellable timer under a
 // lock L; T2, T3, T4 and T5 are goroutines that handle the first (A), second
 // (B), third (C), and fourth (D) instance of the timer firing, respectively):
 //
 //	T1: Obtain L
 //	T1: Create a new Job w/ lock L (create instance A)
 //	T2: instance A fires, blocked trying to obtain L.
-//	T1: Attempt to stop instance A (set earlyReturn = true)
+//	T1: Attempt to stop instance A (set done = true)
 //	T1: Schedule timer (create instance B)
 //	T3: instance B fires, blocked trying to obtain L.
-//	T1: Attempt to stop instance B (set earlyReturn = true)
+//	T1: Attempt to stop instance B (set done = true)
 //	T1: Schedule timer (create instance C)
 //	T4: instance C fires, blocked trying to obtain L.
-//	T1: Attempt to stop instance C (set earlyReturn = true)
+//	T1: Attempt to stop instance C (set done = true)
 //	T1: Schedule timer (create instance D)
 //	T5: instance D fires, blocked trying to obtain L.
 //	T1: Release L
 //
 // Now that T1 has released L, any of the 4 timer instances can take L and
-// check earlyReturn. If the timers simply check earlyReturn and then do
+// check done. If the timers simply check done and then do
 // nothing further, then instance D will never early return even though it was
-// not requested to stop. If the timers reset earlyReturn before early
+// not requested to stop. If the timers reset done before early
 // returning, then all but one of the timers will do work when only one was
-// expected to. If Job resets earlyReturn when resetting, then all the timers
+// expected to. If Job resets done when resetting, then all the timers
 // will fire (again, when only one was expected to).
 //
 // To address the above concerns the simplest solution was to give each timer
-// its own earlyReturn signal.
+// its own done signal.
 //
 // +stateify savable
 type jobInstance struct {
 	timer Timer `state:"nosave"`
+
+	// The monotonic deadline at which this instance is scheduled.
+	deadline MonotonicTime
 
 	// Used to inform the timer to early return when it gets stopped while the
 	// lock the timer tries to obtain when fired is held (T1 is a goroutine that
@@ -71,18 +74,20 @@ type jobInstance struct {
 	//   T2: Obtains lock does unintended work
 	//
 	// To resolve this, T1 will check to see if the timer already fired, and
-	// inform the timer using earlyReturn to return early so that once T2 obtains
+	// inform the timer using done to return early so that once T2 obtains
 	// the lock, it will see that it is set to true and do nothing further.
-	earlyReturn *bool
+	// It is also set before invoking the callback, so a completed instance is
+	// not scheduled again after restore.
+	done *bool
 }
 
 // stop stops the job instance j from firing if it hasn't fired already. If it
-// has fired and is blocked at obtaining the lock, earlyReturn will be set to
+// has fired and is blocked at obtaining the lock, done will be set to
 // true so that it will early return when it obtains the lock.
 func (j *jobInstance) stop() {
 	if j.timer != nil {
 		j.timer.Stop()
-		*j.earlyReturn = true
+		*j.done = true
 	}
 }
 
@@ -109,7 +114,7 @@ type Job struct {
 	// locker is the lock taken by the timer immediately after it fires and must
 	// be held when attempting to stop the timer.
 	//
-	// Must never change after being assigned.
+	// Must never change after being assigned, except during restore.
 	locker sync.Locker `state:"nosave"`
 
 	// fn is the function that will be called when a timer fires and has not been
@@ -117,8 +122,7 @@ type Job struct {
 	//
 	// fn MUST NOT attempt to lock locker.
 	//
-	// Must never change after being assigned.
-	// TODO(b/341946753): Restore when netstack is savable.
+	// Must never change after being assigned, except during restore.
 	fn func() `state:"nosave"`
 }
 
@@ -147,27 +151,45 @@ func (j *Job) Cancel() {
 // Note, j will be modified.
 func (j *Job) Schedule(d time.Duration) {
 	// Create a new instance.
-	earlyReturn := false
+	done := false
 
 	// Capture the locker so that updating the timer does not cause a data race
 	// when a timer fires and tries to obtain the lock (read the timer's locker).
 	locker := j.locker
 	j.instance = jobInstance{
+		deadline: j.clock.NowMonotonic().Add(d),
 		timer: j.clock.AfterFunc(d, func() {
 			locker.Lock()
 			defer locker.Unlock()
 
-			if earlyReturn {
+			if done {
 				// If we reach this point, it means that the timer fired while another
 				// goroutine called Cancel while it had the lock. Simply return here
 				// and do nothing further.
-				earlyReturn = false
 				return
 			}
 
+			// Use this instance's flag, rather than j.instance: the callback may
+			// schedule the Job again, and Schedule need not hold locker.
+			done = true
 			j.fn()
 		}),
-		earlyReturn: &earlyReturn,
+		done: &done,
+	}
+}
+
+// Restore rebinds a loaded Job's lock and callback and schedules any pending
+// instance at its saved monotonic deadline. Completed, canceled, and never
+// scheduled Jobs remain unscheduled.
+//
+// Restore must be called only on a quiescent Job loaded from a checkpoint,
+// after its clock is restored and before any other use of the Job. l must be
+// locked, and f must not attempt to lock l.
+func (j *Job) Restore(l sync.Locker, f func()) {
+	j.locker = l
+	j.fn = f
+	if j.instance.done != nil && !*j.instance.done {
+		j.Schedule(j.instance.deadline.Sub(j.clock.NowMonotonic()))
 	}
 }
 
