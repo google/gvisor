@@ -30,8 +30,8 @@ go_test(
     srcs = ["nftables_test.go"],
     data = ["//test/nftables/runner"],
     library = ":nftables",
+    local = True,
     tags = [
-        "local",
         "manual",
     ],
     deps = [

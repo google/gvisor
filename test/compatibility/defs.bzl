@@ -25,10 +25,11 @@ def compatibility_test(name, srcs, deps = [], data = [], tags = [], size = "larg
       srcs: test sources.
       deps: test dependencies.
       data: runtime data dependencies.
-      tags: extra tags (in addition to "local" and "manual").
+      tags: extra tags (in addition to "manual").
       size: test size (default "large").
       **kwargs: forwarded to go_test (e.g. visibility).
     """
+    kwargs["local"] = True
     for suffix, runtime in _RUNTIMES:
         target_data = list(data)
         if runtime != "runc":
@@ -39,7 +40,7 @@ def compatibility_test(name, srcs, deps = [], data = [], tags = [], size = "larg
             size = size,
             args = ["--runtime=" + runtime],
             data = target_data,
-            tags = tags + ["local", "manual"],
+            tags = tags + ["manual"],
             deps = deps,
             **kwargs
         )

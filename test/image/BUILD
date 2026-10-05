@@ -18,11 +18,9 @@ go_test(
         "//:release",
     ],
     library = ":image",
-    tags = [
-        # Requires docker and runsc to be configured before the test runs.
-        "manual",
-        "local",
-    ],
+    # Requires docker and runsc to be configured before the test runs.
+    local = True,
+    tags = ["manual"],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

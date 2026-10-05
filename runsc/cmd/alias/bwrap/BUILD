@@ -47,8 +47,8 @@ go_test(
         "//:release",
     ],
     library = ":bwrap",
+    local = True,
     tags = [
-        "local",
         "manual",
     ],
     deps = [
