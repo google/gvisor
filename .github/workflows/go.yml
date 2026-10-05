@@ -29,42 +29,63 @@ jobs:
         else
           echo has_token=false >> "$GITHUB_OUTPUT"
         fi
-    - run: |
+    - env:
+        STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
+      run: |
         jq -nc '{"state": "pending", "context": "go tests"}' | \
         curl -sL -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.statuses_url }}"
+            "${STATUSES_URL}"
       if: github.event_name == 'pull_request'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       if: github.event_name == 'push' && steps.setup.outputs.has_token == 'true'
-      with:
+      with:  # zizmor: ignore[artipacked]
         fetch-depth: 0
         token: '${{ secrets.GO_TOKEN }}'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
-      with:
+      with:  # zizmor: ignore[artipacked]
         fetch-depth: 0
-    - uses: actions/setup-go@v6.0.0
+    - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
       with:
         go-version-file: 'go.mod'
-    - run: tools/go_branch.sh
+    # Restore bazel's disk and repository caches. They live under
+    # $HOME/.cache/bazel, the only directory shared with the builder container.
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/bazel/ci
+        key: bazel-go-${{ runner.arch }}-${{ github.sha }}
+        restore-keys: bazel-go-${{ runner.arch }}-
+    - run: |
+        export BAZEL_REMOTE_CACHE="--disk_cache=$HOME/.cache/bazel/ci/disk --repository_cache=$HOME/.cache/bazel/ci/repo"
+        tools/go_branch.sh
     - run: git checkout go && git clean -xf . && go build ./...
     - if: github.event_name == 'push'
       run: |
         git remote add upstream "https://github.com/${{ github.repository }}"
         git push upstream go:go
+    # Save the cache only on push, after the branch has been pushed.
+    - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      if: github.event_name == 'push'
+      with:
+        path: ~/.cache/bazel/ci
+        key: bazel-go-${{ runner.arch }}-${{ github.sha }}
     - if: ${{ success() && github.event_name == 'pull_request' }}
+      env:
+        STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
       run: |
         jq -nc '{"state": "success", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.statuses_url }}"
+            "${STATUSES_URL}"
     - if: ${{ failure() && github.event_name == 'pull_request' }}
+      env:
+        STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
       run: |
         jq -nc '{"state": "failure", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.statuses_url }}"
+            "${STATUSES_URL}"
