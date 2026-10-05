@@ -447,6 +447,7 @@ func (i *inode) StateFields() []string {
 		"mtime",
 		"ctime",
 		"size",
+		"blocks",
 		"nlink",
 		"blockSize",
 	}
@@ -481,8 +482,9 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(21, &i.mtime)
 	stateSinkObject.Save(22, &i.ctime)
 	stateSinkObject.Save(23, &i.size)
-	stateSinkObject.Save(24, &i.nlink)
-	stateSinkObject.Save(25, &i.blockSize)
+	stateSinkObject.Save(24, &i.blocks)
+	stateSinkObject.Save(25, &i.nlink)
+	stateSinkObject.Save(26, &i.blockSize)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -513,8 +515,9 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(21, &i.mtime)
 	stateSourceObject.Load(22, &i.ctime)
 	stateSourceObject.Load(23, &i.size)
-	stateSourceObject.Load(24, &i.nlink)
-	stateSourceObject.Load(25, &i.blockSize)
+	stateSourceObject.Load(24, &i.blocks)
+	stateSourceObject.Load(25, &i.nlink)
+	stateSourceObject.Load(26, &i.blockSize)
 }
 
 func (r *inodeRefs) StateTypeName() string {
