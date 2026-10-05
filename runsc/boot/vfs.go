@@ -1231,7 +1231,7 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	cleanFile := cleanup.Make(func() { file.Close() })
 	defer cleanFile.Clean()
 
-	pagesMetadataReader, pagesFileOffset, onLoadEnd, err := fsr.memoryFileLoadArgs(resourceID, cid)
+	pagesMetadataReader, loadOpts, err := fsr.memoryFileLoadArgs(resourceID, cid)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1251,17 +1251,15 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	}
 	mf, err := pgalloc.NewMemoryFile(file, mfOpts)
 	if err != nil {
-		onLoadEnd(err)
+		if loadOpts != nil && loadOpts.DoneCallback != nil {
+			loadOpts.DoneCallback(err)
+		}
 		return nil, false, err
 	}
 	cleanFile.Release()
 	if loaded {
 		log.Infof("Loading filesystem checkpoint data for %q", resourceID)
-		if err := mf.LoadFrom(context.Background(), pagesMetadataReader, &pgalloc.LoadOpts{
-			PagesFile:       fsr.apfl,
-			PagesFileOffset: pagesFileOffset,
-			DoneCallback:    onLoadEnd,
-		}); err != nil {
+		if err := mf.LoadFrom(context.Background(), pagesMetadataReader, loadOpts); err != nil {
 			mf.Destroy()
 			return nil, false, err
 		}

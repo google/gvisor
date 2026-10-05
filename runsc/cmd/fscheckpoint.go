@@ -22,8 +22,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -40,37 +39,29 @@ type FSCheckpoint struct {
 	paths        pathVar
 }
 
-type pathVar []checkpoint.ResourceID
+type pathVar []string
 
 func (p *pathVar) String() string {
 	if p == nil {
 		return ""
 	}
-	var strs []string
-	for _, id := range *p {
-		if id.ContainerName == "" {
-			strs = append(strs, id.Path)
-		} else {
-			strs = append(strs, fmt.Sprintf("%s:%s", id.ContainerName, id.Path))
-		}
-	}
-	return strings.Join(strs, ", ")
+	return strings.Join(*p, ", ")
 }
 
 func (p *pathVar) Set(value string) error {
-	paths, err := boot.ParseFSCheckpointPaths(value)
-	if err != nil {
-		return err
-	}
-	if len(paths) == 0 {
+	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("empty path: %q", value)
 	}
-	*p = append(*p, paths...)
+	combined := append(append([]string(nil), *p...), value)
+	if _, err := fscheckpoint.ParseBundles(combined); err != nil {
+		return err
+	}
+	*p = combined
 	return nil
 }
 
 func (p *pathVar) Get() any {
-	return []checkpoint.ResourceID(*p)
+	return []string(*p)
 }
 
 // Name implements subcommands.Command.Name.
@@ -95,7 +86,7 @@ func (c *FSCheckpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved filesystem checkpoint")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "if true, resume containers after checkpointing; if false, containers exit with status 0 after checkpointing")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint files")
-	f.Var(&c.paths, "path", `path inside the container to save to the checkpoint (can be repeated). Format: [container_id:]path. The special path value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed. Defaults to "/" if not specified.`)
+	f.Var(&c.paths, "path", `path inside the container to save to the checkpoint (can be repeated). Format: [<prefix>=][<container_id>:]<path>. The special path value "all-tmpfs" saves all tmpfs mounts from the OCI spec that are disk-backed. Defaults to "/" if not specified.`)
 }
 
 // FetchSpec implements util.SubCommand.FetchSpec.
@@ -129,9 +120,9 @@ func (c *FSCheckpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
-	paths := []checkpoint.ResourceID(c.paths)
+	paths := []string(c.paths)
 	if len(paths) == 0 {
-		paths = []checkpoint.ResourceID{{Path: "/"}}
+		paths = []string{"/"}
 	}
 
 	if err := cont.FSSave(conf, c.imagePath, sandbox.FSSaveOpts{

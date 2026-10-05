@@ -18,8 +18,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -185,83 +187,151 @@ func TestCgroupfsCPUDefaults(t *testing.T) {
 func TestParseFSCheckpointPaths(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		in      string
+		in      []string
 		wantErr bool
-		wantLen int
+		want    []fscheckpoint.Bundle
 	}{
 		{
-			name:    "empty",
-			in:      "",
-			wantErr: false,
-			wantLen: 0,
+			name: "empty",
+			in:   []string{""},
 		},
 		{
-			name:    "all-tmpfs",
-			in:      "all-tmpfs",
-			wantErr: false,
-			wantLen: 1,
+			name: "all-tmpfs",
+			in:   []string{"all-tmpfs"},
+			want: []fscheckpoint.Bundle{{
+				Paths: []checkpoint.ResourceID{{Path: "all-tmpfs"}},
+			}},
 		},
 		{
-			name:    "clean absolute path",
-			in:      "/data",
-			wantErr: false,
-			wantLen: 1,
+			name: "clean absolute path",
+			in:   []string{"/data"},
+			want: []fscheckpoint.Bundle{{
+				Paths: []checkpoint.ResourceID{{Path: "/data"}},
+			}},
 		},
 		{
-			name:    "container and clean absolute path",
-			in:      "c1:/data",
-			wantErr: false,
-			wantLen: 1,
+			name: "container and clean absolute path",
+			in:   []string{"c1:/data"},
+			want: []fscheckpoint.Bundle{{
+				Paths: []checkpoint.ResourceID{{ContainerName: "c1", Path: "/data"}},
+			}},
 		},
 		{
-			name:    "multiple clean paths",
-			in:      "c1:/data, c2:/tmp, all-tmpfs",
-			wantErr: false,
-			wantLen: 3,
+			name: "multiple clean paths",
+			in:   []string{"c1:/data", "c2:/tmp", "c1:/logs"},
+			want: []fscheckpoint.Bundle{{
+				Paths: []checkpoint.ResourceID{
+					{ContainerName: "c1", Path: "/data"},
+					{ContainerName: "c2", Path: "/tmp"},
+					{ContainerName: "c1", Path: "/logs"},
+				},
+			}},
+		},
+		{
+			name: "prefixed rootfs",
+			in:   []string{"rootfs=/"},
+			want: []fscheckpoint.Bundle{{
+				Prefix: "rootfs",
+				Paths:  []checkpoint.ResourceID{{Path: "/"}},
+			}},
+		},
+		{
+			name: "prefixed rootfs and data",
+			in:   []string{"rootfs=/", "fs=/data"},
+			want: []fscheckpoint.Bundle{
+				{Prefix: "rootfs", Paths: []checkpoint.ResourceID{{Path: "/"}}},
+				{Prefix: "fs", Paths: []checkpoint.ResourceID{{Path: "/data"}}},
+			},
+		},
+		{
+			name: "grouped bundles preserving prefix order",
+			in:   []string{"rootfs=/", "dur1=c1:/data", "dur1=/logs", "/extra"},
+			want: []fscheckpoint.Bundle{
+				{Prefix: "rootfs", Paths: []checkpoint.ResourceID{{Path: "/"}}},
+				{Prefix: "dur1", Paths: []checkpoint.ResourceID{{ContainerName: "c1", Path: "/data"}, {Path: "/logs"}}},
+				{Prefix: "", Paths: []checkpoint.ResourceID{{Path: "/extra"}}},
+			},
+		},
+		{
+			name:    "comma separated rejected",
+			in:      []string{"c1:/data, c2:/tmp"},
+			wantErr: true,
+		},
+		{
+			name:    "overlap with all-tmpfs",
+			in:      []string{"c1:/data", "all-tmpfs"},
+			wantErr: true,
+		},
+		{
+			name:    "duplicate paths",
+			in:      []string{"/data", "/data"},
+			wantErr: true,
+		},
+		{
+			name:    "duplicate paths across bundles",
+			in:      []string{"rootfs=/", "fs=/"},
+			wantErr: true,
+		},
+		{
+			name:    "empty prefix",
+			in:      []string{"=/data"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid prefix with slash",
+			in:      []string{"sub/dir=/data"},
+			wantErr: true,
 		},
 		{
 			name:    "uncleaned trailing slash",
-			in:      "/data/",
+			in:      []string{"/data/"},
 			wantErr: true,
 		},
 		{
 			name:    "uncleaned redundant slash",
-			in:      "/data//dir",
+			in:      []string{"/data//dir"},
 			wantErr: true,
 		},
 		{
 			name:    "uncleaned root slashes",
-			in:      "//",
+			in:      []string{"//"},
 			wantErr: true,
 		},
 		{
 			name:    "relative path",
-			in:      "data",
+			in:      []string{"data"},
 			wantErr: true,
 		},
 		{
 			name:    "container with empty path",
-			in:      "c1:",
+			in:      []string{"c1:"},
+			wantErr: true,
+		},
+		{
+			name:    "empty container with colon",
+			in:      []string{":/data"},
 			wantErr: true,
 		},
 		{
 			name:    "uncleaned dot",
-			in:      "/data/./sub",
+			in:      []string{"/data/./sub"},
 			wantErr: true,
 		},
 		{
 			name:    "uncleaned dot dot",
-			in:      "/data/../sub",
+			in:      []string{"/data/../sub"},
 			wantErr: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			paths, err := ParseFSCheckpointPaths(tc.in)
+			bundles, err := fscheckpoint.ParseBundles(tc.in)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("ParseFSCheckpointPaths(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
+				t.Errorf("ParseBundles(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
 			}
-			if err == nil && len(paths) != tc.wantLen {
-				t.Errorf("ParseFSCheckpointPaths(%q) len = %d, want %d", tc.in, len(paths), tc.wantLen)
+			if err == nil {
+				if diff := cmp.Diff(tc.want, bundles); diff != "" {
+					t.Errorf("ParseBundles(%q) diff (-want +got):\n%s", tc.in, diff)
+				}
 			}
 		})
 	}

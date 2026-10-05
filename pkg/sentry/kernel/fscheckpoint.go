@@ -37,15 +37,18 @@ import (
 
 // FSSaveOpts holds options to Kernel.FSSave.
 type FSSaveOpts struct {
+	// RunscVersion is the runsc binary version.
+	RunscVersion string
+
+	// Prefix is the file prefix for this bundle (empty for unprefixed).
+	Prefix string
+
 	// These correspond to files specified by the fscheckpoint package, and are
 	// all required.
 	ManifestFile      io.WriteCloser
 	MultiTarFile      io.WriteCloser
 	PagesMetadataFile io.WriteCloser
 	PagesFile         stateio.AsyncWriter
-
-	// RunscVersion is the runsc binary version.
-	RunscVersion string
 
 	// If ExitAfterSaving is true, all processes exit with status 0 before
 	// FSSave returns, whether or not it returns a non-nil error.
@@ -54,6 +57,38 @@ type FSSaveOpts struct {
 	// Paths is the list of paths inside the containers to save.
 	// If empty, defaults to a single path "/" for all containers.
 	Paths []checkpoint.ResourceID
+
+	// FSBundles holds options for additional filesystem checkpoint bundles
+	// when saving multiple bundles.
+	FSBundles []FSSaveOpts
+}
+
+func (opts *FSSaveOpts) allBundles() []*FSSaveOpts {
+	res := make([]*FSSaveOpts, 1+len(opts.FSBundles))
+	res[0] = opts
+	for i := range opts.FSBundles {
+		res[i+1] = &opts.FSBundles[i]
+	}
+	return res
+}
+
+// validate checks that nested FSBundles do not set fields that are only
+// valid on the root FSSaveOpts, and propagates RunscVersion to nested bundles
+// if unset.
+func (opts *FSSaveOpts) validate() error {
+	for i := range opts.FSBundles {
+		b := &opts.FSBundles[i]
+		if b.ExitAfterSaving {
+			return fmt.Errorf("nested FSBundle %d (prefix %q) must not set ExitAfterSaving", i+1, b.Prefix)
+		}
+		if len(b.FSBundles) != 0 {
+			return fmt.Errorf("nested FSBundle %d (prefix %q) must not have nested FSBundles", i+1, b.Prefix)
+		}
+		if b.RunscVersion == "" {
+			b.RunscVersion = opts.RunscVersion
+		}
+	}
+	return nil
 }
 
 // Close closes all files in opts and sets their references to nil.
@@ -62,21 +97,23 @@ func (opts *FSSaveOpts) Close() error {
 		return nil
 	}
 	var err error
-	if opts.ManifestFile != nil {
-		err = errors.Join(err, opts.ManifestFile.Close())
-		opts.ManifestFile = nil
-	}
-	if opts.MultiTarFile != nil {
-		err = errors.Join(err, opts.MultiTarFile.Close())
-		opts.MultiTarFile = nil
-	}
-	if opts.PagesMetadataFile != nil {
-		err = errors.Join(err, opts.PagesMetadataFile.Close())
-		opts.PagesMetadataFile = nil
-	}
-	if opts.PagesFile != nil {
-		err = errors.Join(err, opts.PagesFile.Close())
-		opts.PagesFile = nil
+	for _, b := range opts.allBundles() {
+		if b.ManifestFile != nil {
+			err = errors.Join(err, b.ManifestFile.Close())
+			b.ManifestFile = nil
+		}
+		if b.MultiTarFile != nil {
+			err = errors.Join(err, b.MultiTarFile.Close())
+			b.MultiTarFile = nil
+		}
+		if b.PagesMetadataFile != nil {
+			err = errors.Join(err, b.PagesMetadataFile.Close())
+			b.PagesMetadataFile = nil
+		}
+		if b.PagesFile != nil {
+			err = errors.Join(err, b.PagesFile.Close())
+			b.PagesFile = nil
+		}
 	}
 	return err
 }
@@ -98,6 +135,9 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 		}
 		k.SignalAllFSSaveWaiters(err)
 	}()
+	if err := opts.validate(); err != nil {
+		return err
+	}
 
 	k.Pause()
 	defer k.Unpause()
@@ -105,7 +145,12 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 		defer k.Kill(linux.WaitStatusExit(0)) // consistent with sentry/state.SaveOpts.Save
 	}
 	return k.quiescePausedAnd(ctx, func() error {
-		return k.fsSaveLocked(ctx, opts, nil /* mfsToSave */, nil /* matchCtx */)
+		for i, b := range opts.allBundles() {
+			if err := k.fsSaveLocked(ctx, b, nil /* mfsToSave */, nil /* matchCtx */); err != nil {
+				return fmt.Errorf("bundle %d (prefix %q): %w", i, b.Prefix, err)
+			}
+		}
+		return nil
 	})
 }
 

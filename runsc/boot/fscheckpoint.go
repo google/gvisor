@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 	"time"
 
@@ -88,6 +87,16 @@ func GetAnnotationFSCheckpointDirect(spec *specs.Spec) bool {
 	return specutils.AnnotationToBool(spec, annotationFSCheckpointDirect)
 }
 
+// GetAnnotationFSCheckpointPaths returns the filesystem checkpoint target paths
+// specified in the container annotation.
+func GetAnnotationFSCheckpointPaths(spec *specs.Spec) []string {
+	annot := spec.Annotations[annotationFSCheckpointPaths]
+	if annot == "" {
+		return nil
+	}
+	return strings.Split(annot, ",")
+}
+
 // FSSave implements kernel.Saver.FSSave.
 //
 // +checklocksexclude:l.mu
@@ -101,95 +110,93 @@ func (l *Loader) FSSave() error {
 	if len(fsSaveFDs) == 0 {
 		return linuxerr.ENXIO
 	}
-	paths, err := ParseFSCheckpointPaths(l.root.spec.Annotations[annotationFSCheckpointPaths])
-	if err != nil {
-		return err
-	}
 	args := FSSaveArgs{
 		ExitAfterSaving: !specutils.AnnotationToBool(l.root.spec, annotationFSCheckpointResume),
-		Paths:           paths,
+		Paths:           GetAnnotationFSCheckpointPaths(l.root.spec),
 	}
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
+	defer func() {
+		for _, f := range args.FilePayload.Files {
+			if f != nil {
+				_ = f.Close()
+			}
+		}
+	}()
 	args.UseCheckpointGofer = useCheckpointGofer
-	opts := kernel.FSSaveOpts{
-		RunscVersion: version.Version(),
-		Paths:        paths,
-	}
-	if err := setKernelFSSaveOptsFiles(&args, &opts); err != nil {
+	opts, err := convertToKernelFSSaveOpts(&args)
+	if err != nil {
 		return err
 	}
 	return l.k.FSSave(context.Background(), &opts)
 }
 
-// ParseFSCheckpointPaths parses a comma-separated list of container:path
-// checkpoint targets.
-func ParseFSCheckpointPaths(val string) ([]checkpoint.ResourceID, error) {
-	val = strings.TrimSpace(val)
-	if val == "" {
-		return nil, nil
-	}
-	var paths []checkpoint.ResourceID
-	for _, part := range strings.Split(val, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		var c, p string
-		subparts := strings.SplitN(part, ":", 2)
-		if len(subparts) == 1 {
-			p = strings.TrimSpace(subparts[0])
-		} else {
-			c = strings.TrimSpace(subparts[0])
-			p = strings.TrimSpace(subparts[1])
-		}
-		if p == "" {
-			return nil, fmt.Errorf("empty path in fscheckpoint paths: %q", val)
-		}
-		if p != fscheckpoint.AllTmpfsPath && (!path.IsAbs(p) || path.Clean(p) != p) {
-			return nil, fmt.Errorf("checkpoint path must be an absolute, clean path or %q, got: %q", fscheckpoint.AllTmpfsPath, p)
-		}
-		paths = append(paths, checkpoint.ResourceID{ContainerName: c, Path: p})
-	}
-	return paths, nil
-}
-
 func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
+	bundles, err := fscheckpoint.ParseBundles(args.Paths)
+	if err != nil {
+		return kernel.FSSaveOpts{}, err
+	}
+	if len(bundles) == 0 {
+		bundles = []fscheckpoint.Bundle{{}}
+	}
 	opts := kernel.FSSaveOpts{
 		RunscVersion:    version.Version(),
 		ExitAfterSaving: args.ExitAfterSaving,
-		Paths:           args.Paths,
+		Prefix:          bundles[0].Prefix,
+		Paths:           bundles[0].Paths,
+		FSBundles:       make([]kernel.FSSaveOpts, len(bundles)-1),
 	}
-	if err := setKernelFSSaveOptsFiles(args, &opts); err != nil {
+	for i, b := range bundles[1:] {
+		opts.FSBundles[i] = kernel.FSSaveOpts{
+			Prefix: b.Prefix,
+			Paths:  b.Paths,
+		}
+	}
+	if err := setKernelFSSaveOptsFiles(args, bundles, &opts); err != nil {
+		_ = opts.Close()
 		return kernel.FSSaveOpts{}, err
 	}
 	return opts, nil
 }
 
-func setKernelFSSaveOptsFiles(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFiles(args *FSSaveArgs, bundles []fscheckpoint.Bundle, opts *kernel.FSSaveOpts) error {
 	if args.UseCheckpointGofer {
-		return setKernelFSSaveOptsFilesForCheckpointGofer(args, opts)
+		return setKernelFSSaveOptsFilesForCheckpointGofer(args, bundles, opts)
 	}
-	return setKernelFSSaveOptsFilesForLocalCheckpoint(args, opts)
+	if len(args.FilePayload.Files) != 4*len(bundles) {
+		return fmt.Errorf("got %d files, want %d", len(args.FilePayload.Files), 4*len(bundles))
+	}
+	if err := setKernelFSSaveOptsFilesForLocalCheckpoint(args, 0, opts); err != nil {
+		return err
+	}
+	for i := range opts.FSBundles {
+		if err := setKernelFSSaveOptsFilesForLocalCheckpoint(args, 4*(i+1), &opts.FSBundles[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
-	if len(args.FilePayload.Files) != 4 {
-		return fmt.Errorf("got %d files, want 4", len(args.FilePayload.Files))
-	}
-	manifestFile, err := args.ReleaseFD(0)
+func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, offset int, opts *kernel.FSSaveOpts) error {
+	manifestFile, err := args.ReleaseFD(offset)
 	if err != nil {
 		return err
 	}
-	multiTarFile, err := args.ReleaseFD(1)
+	multiTarFile, err := args.ReleaseFD(offset + 1)
 	if err != nil {
+		manifestFile.Close()
 		return err
 	}
-	pagesMetadataFile, err := args.ReleaseFD(2)
+	pagesMetadataFile, err := args.ReleaseFD(offset + 2)
 	if err != nil {
+		manifestFile.Close()
+		multiTarFile.Close()
 		return err
 	}
-	pagesFile, err := args.ReleaseFD(3)
+	pagesFile, err := args.ReleaseFD(offset + 3)
 	if err != nil {
+		manifestFile.Close()
+		multiTarFile.Close()
+		pagesMetadataFile.Close()
 		return err
 	}
 	opts.ManifestFile = stateio.NewBufioWriteCloser(manifestFile)
@@ -199,7 +206,10 @@ func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.F
 	return nil
 }
 
-func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, bundles []fscheckpoint.Bundle, opts *kernel.FSSaveOpts) error {
+	if fscheckpoint.HasPrefixes(bundles) {
+		return fmt.Errorf("multi-bundle or prefixed filesystem checkpoint is not supported with checkpoint gofer")
+	}
 	clientFD, err := unix.Dup(int(args.Files[0].Fd()))
 	if err != nil {
 		return fmt.Errorf("failed to dup checkpoint gofer client FD: %w", err)
@@ -259,19 +269,25 @@ func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, opts *kernel.F
 	return nil
 }
 
-// fsRestore holds the state of a filesystem restore.
-type fsRestore struct {
-	wg sync.WaitGroup
-
+// fsRestoreBundle holds the state of a single filesystem checkpoint bundle.
+type fsRestoreBundle struct {
 	// immutable
 	getPagesMetadata func() ([]byte, error)
 	getMultiTar      func() ([]byte, error)
 
+	// immutable after fsRestore.wg.Wait()
+	apfl *pgalloc.AsyncPagesFileLoad
+}
+
+// fsRestore holds the state of a filesystem restore.
+type fsRestore struct {
+	wg sync.WaitGroup
+
 	// immutable after wg.Wait()
 	manifestErr error
-	apfl        *pgalloc.AsyncPagesFileLoad
 	mfs         map[checkpoint.ResourceID]*fscheckpoint.MemoryFile
 	tmpfs       map[checkpoint.ResourceID]*fscheckpoint.Tmpfs
+	fsBundles   map[checkpoint.ResourceID]*fsRestoreBundle
 
 	waitMu sync.Mutex
 
@@ -279,9 +295,25 @@ type fsRestore struct {
 	//
 	// +checklocks:waitMu
 	waitMap map[string]*fsRestoreContainer
+
+	// +checklocks:waitMu
+	claimedMFs map[checkpoint.ResourceID]struct{}
+
+	// +checklocks:waitMu
+	claimedTmpfs map[checkpoint.ResourceID]struct{}
+
+	// stateRestore is true during full sentry state restore (runsc restore),
+	// where tmpfs trees are restored from the sentry state file rather than
+	// via tmpfsSourceTar.
+	//
+	// +checklocks:waitMu
+	stateRestore bool
 }
 
 type fsRestoreContainer struct {
+	// containerName is the container name from the checkpoint ResourceID.
+	containerName string
+
 	// err is the first error encountered while restoring this container.
 	//
 	// +checklocks:cond.L
@@ -308,23 +340,32 @@ type fsRestoreOpts struct {
 	PagesFile         stateio.AsyncReader
 }
 
-func makeFSRestoreOpts(args *Args) (fsRestoreOpts, error) {
+func makeFSRestoreOpts(args *Args) ([]fsRestoreOpts, error) {
 	if args.FSRestoreCheckpointGofer {
-		return makeFSRestoreOptsForCheckpointGofer(args)
+		opt, err := makeFSRestoreOptsForCheckpointGofer(args)
+		if err != nil {
+			return nil, err
+		}
+		return []fsRestoreOpts{opt}, nil
 	}
 	return makeFSRestoreOptsForLocalCheckpoint(args)
 }
 
-func makeFSRestoreOptsForLocalCheckpoint(args *Args) (fsRestoreOpts, error) {
-	if len(args.FSRestoreFDs) != 4 {
-		return fsRestoreOpts{}, fmt.Errorf("got %d files in -fs-restore-fds, want 4", len(args.FSRestoreFDs))
+func makeFSRestoreOptsForLocalCheckpoint(args *Args) ([]fsRestoreOpts, error) {
+	if len(args.FSRestoreFDs) == 0 || len(args.FSRestoreFDs)%4 != 0 {
+		return nil, fmt.Errorf("got %d files in -fs-restore-fds, want a positive multiple of 4", len(args.FSRestoreFDs))
 	}
-	return fsRestoreOpts{
-		ManifestFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[0].ReleaseToFile(checkpointfiles.FSCheckpointManifestFileName)),
-		MultiTarFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName)),
-		PagesMetadataFile: stateio.NewBufioReadCloser(args.FSRestoreFDs[2].ReleaseToFile(checkpointfiles.PagesMetadataFileName)),
-		PagesFile:         stateio.NewPagesFileFDReaderDefault(int32(args.FSRestoreFDs[3].Release())),
-	}, nil
+	opts := make([]fsRestoreOpts, len(args.FSRestoreFDs)/4)
+	for i := range opts {
+		offset := 4 * i
+		opts[i] = fsRestoreOpts{
+			ManifestFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[offset].ReleaseToFile(checkpointfiles.FSCheckpointManifestFileName)),
+			MultiTarFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[offset+1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName)),
+			PagesMetadataFile: stateio.NewBufioReadCloser(args.FSRestoreFDs[offset+2].ReleaseToFile(checkpointfiles.PagesMetadataFileName)),
+			PagesFile:         stateio.NewPagesFileFDReaderDefault(int32(args.FSRestoreFDs[offset+3].Release())),
+		}
+	}
+	return opts, nil
 }
 
 func makeFSRestoreOptsForCheckpointGofer(args *Args) (fsRestoreOpts, error) {
@@ -388,12 +429,15 @@ func makeFSRestoreOptsForCheckpointGofer(args *Args) (fsRestoreOpts, error) {
 	}, nil
 }
 
-// startFSRestore takes ownership of resources in opts.
-func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
+// startFSRestore takes ownership of resources in optsList.
+func startFSRestore(optsList []fsRestoreOpts) (*fsRestore, error) {
 	fsr := &fsRestore{
-		mfs:     make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
-		tmpfs:   make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
-		waitMap: make(map[string]*fsRestoreContainer),
+		mfs:          make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
+		tmpfs:        make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
+		fsBundles:    make(map[checkpoint.ResourceID]*fsRestoreBundle),
+		waitMap:      make(map[string]*fsRestoreContainer),
+		claimedMFs:   make(map[checkpoint.ResourceID]struct{}),
+		claimedTmpfs: make(map[checkpoint.ResourceID]struct{}),
 	}
 
 	// TODO: NOLINT - Currently we read the whole pages metadata file into a
@@ -444,23 +488,38 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 		go f()
 		return f
 	}
-	fsr.getPagesMetadata = readOnce("pages metadata file", &opts.PagesMetadataFile)
-	fsr.getMultiTar = readOnce("multi-tar file", &opts.MultiTarFile)
 
-	// Read and handle the manifest in parallel.
+	bundles := make([]*fsRestoreBundle, len(optsList))
+	for i := range optsList {
+		bundles[i] = &fsRestoreBundle{
+			getPagesMetadata: readOnce("pages metadata file", &optsList[i].PagesMetadataFile),
+			getMultiTar:      readOnce("multi-tar file", &optsList[i].MultiTarFile),
+		}
+	}
+
+	// Read and handle the manifests in parallel.
 	fsr.manifestErr = fmt.Errorf("loading manifest panicked")
 	fsr.wg.Go(func() {
 		defer func() {
-			if opts.ManifestFile != nil {
-				opts.ManifestFile.Close()
-				opts.ManifestFile = nil
+			for i := range optsList {
+				if optsList[i].ManifestFile != nil {
+					optsList[i].ManifestFile.Close()
+					optsList[i].ManifestFile = nil
+				}
+				if optsList[i].PagesFile != nil {
+					optsList[i].PagesFile.Close()
+					optsList[i].PagesFile = nil
+				}
 			}
-			if opts.PagesFile != nil {
-				opts.PagesFile.Close()
-				opts.PagesFile = nil
+			if fsr.manifestErr != nil {
+				for _, b := range bundles {
+					if b.apfl != nil {
+						b.apfl.MemoryFilesDone()
+					}
+				}
 			}
 		}()
-		fsr.manifestErr = func() error {
+		loadBundle := func(opts *fsRestoreOpts, bundle *fsRestoreBundle) error {
 			var manifest fscheckpoint.Manifest
 			timeStart := time.Now()
 			manifestData, err := io.ReadAll(opts.ManifestFile)
@@ -484,6 +543,19 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 				return fmt.Errorf("filesystem checkpoint endianness %q does not match current endianness %q", manifest.Endian, endian)
 			}
 
+			for i := range manifest.MemoryFiles {
+				mmf := &manifest.MemoryFiles[i]
+				if err := addRestoreEntry(fsr.mfs, fsr.fsBundles, mmf.ResourceID, mmf, bundle, "MemoryFile"); err != nil {
+					return err
+				}
+			}
+			for i := range manifest.Tmpfs {
+				mt := &manifest.Tmpfs[i]
+				if err := addRestoreEntry(fsr.tmpfs, fsr.fsBundles, mt.ResourceID, mt, bundle, "Tmpfs"); err != nil {
+					return err
+				}
+			}
+
 			apfl, err := pgalloc.StartAsyncPagesFileLoad(opts.PagesFile /* transfers ownership */, func(err error) {
 				if err != nil {
 					log.Warningf("Failed to load filesystem checkpoint pages: %v", err)
@@ -495,31 +567,54 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 			if err != nil {
 				return fmt.Errorf("failed to start async page loading: %w", err)
 			}
-			fsr.apfl = apfl
-			for i := range manifest.MemoryFiles {
-				mmf := &manifest.MemoryFiles[i]
-				fsr.mfs[mmf.ResourceID] = mmf
-			}
-			for i := range manifest.Tmpfs {
-				mt := &manifest.Tmpfs[i]
-				fsr.tmpfs[mt.ResourceID] = mt
-			}
-			// Note that apfl.MemoryFilesDone() will never be called. This is
-			// because if a container fails and is restarted, we also want to
-			// restore the filesystem of the restarted container, so we need to
+			bundle.apfl = apfl
+			// Note that apfl.MemoryFilesDone() will never be called on success.
+			// This is because if a container fails and is restarted, we also want
+			// to restore the filesystem of the restarted container, so we need to
 			// keep filesystem restore operational indefinitely.
 			return nil
-		}()
+		}
+		for i := range optsList {
+			if err := loadBundle(&optsList[i], bundles[i]); err != nil {
+				fsr.manifestErr = fmt.Errorf("bundle %d: %w", i, err)
+				return
+			}
+		}
+		fsr.manifestErr = nil
 	})
 
 	return fsr, nil
 }
 
+func addRestoreEntry[T any](m map[checkpoint.ResourceID]T, fsBundles map[checkpoint.ResourceID]*fsRestoreBundle, id checkpoint.ResourceID, val T, bundle *fsRestoreBundle, typeName string) error {
+	if _, ok := m[id]; ok {
+		return fmt.Errorf("duplicate %s ResourceID %q in filesystem checkpoint", typeName, id)
+	}
+	if existing := fsBundles[id]; existing != nil && existing != bundle {
+		return fmt.Errorf("ResourceID %q appears in multiple filesystem checkpoint bundles", id)
+	}
+	m[id] = val
+	if fsBundles != nil && bundle != nil {
+		fsBundles[id] = bundle
+	}
+	return nil
+}
+
+// +checklocksexclude:fsr.waitMu
+func (fsr *fsRestore) markStateRestore() {
+	if fsr == nil {
+		return
+	}
+	fsr.waitMu.Lock()
+	defer fsr.waitMu.Unlock()
+	fsr.stateRestore = true
+}
+
 // +checklocks:fsr.waitMu
-func (fsr *fsRestore) ensureContainer(cid string) *fsRestoreContainer {
+func (fsr *fsRestore) ensureContainer(cid, containerName string) *fsRestoreContainer {
 	c := fsr.waitMap[cid]
 	if c == nil {
-		c = &fsRestoreContainer{}
+		c = &fsRestoreContainer{containerName: containerName}
 		c.cond.L = &fsr.waitMu
 		fsr.waitMap[cid] = c
 	}
@@ -571,15 +666,23 @@ func findByResourceID[T any](m map[checkpoint.ResourceID]T, id checkpoint.Resour
 	return zero, false, nil
 }
 
+func (fsr *fsRestore) bundleFor(id checkpoint.ResourceID) (*fsRestoreBundle, error) {
+	b := fsr.fsBundles[id]
+	if b == nil {
+		return nil, fmt.Errorf("no restore bundle mapped for ResourceID %q", id)
+	}
+	return b, nil
+}
+
 // +checklocksexclude:fsr.waitMu
-func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, uint64, func(error), error) {
+func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (io.Reader, *pgalloc.LoadOpts, error) {
 	if fsr == nil {
-		return nil, 0, func(error) {}, nil
+		return nil, nil, nil
 	}
 
 	fsr.wg.Wait()
 	if fsr.manifestErr != nil {
-		return nil, 0, nil, fsr.manifestErr
+		return nil, nil, fsr.manifestErr
 	}
 	mmf, ok, err := findByResourceID(fsr.mfs, id, func(m *fscheckpoint.MemoryFile) checkpoint.ResourceID {
 		return m.ResourceID
@@ -587,46 +690,58 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	if err != nil {
 		fsr.waitMu.Lock()
 		defer fsr.waitMu.Unlock()
-		c := fsr.ensureContainer(cid)
+		c := fsr.ensureContainer(cid, id.ContainerName)
 		// ensureContainer binds c.cond.L to the held fsr.waitMu. checklocks
 		// cannot recover that identity from the returned entry.
-		return nil, 0, nil, c.setError(err) // +checklocksignore
+		return nil, nil, c.setError(err) // +checklocksignore
 	}
 	if !ok {
-		return nil, 0, func(error) {}, nil
+		return nil, nil, nil
 	}
-	pagesMetadata, err := fsr.getPagesMetadata()
+	bundle, err := fsr.bundleFor(mmf.ResourceID)
+	if err != nil {
+		fsr.waitMu.Lock()
+		defer fsr.waitMu.Unlock()
+		c := fsr.ensureContainer(cid, id.ContainerName)
+		return nil, nil, c.setError(err) // +checklocksignore
+	}
+	pagesMetadata, err := bundle.getPagesMetadata()
 
 	fsr.waitMu.Lock()
 	defer fsr.waitMu.Unlock()
-	c := fsr.ensureContainer(cid)
+	c := fsr.ensureContainer(cid, id.ContainerName)
 	// ensureContainer binds c.cond.L to the held fsr.waitMu. checklocks
 	// cannot recover that identity from the returned entry.
 	if err != nil {
-		return nil, 0, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err)) // +checklocksignore
+		return nil, nil, c.setError(fmt.Errorf("failed to read pages metadata: %w", err)) // +checklocksignore
 	}
 	if mmf.PagesMetadataStart > mmf.PagesMetadataEnd || mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
-		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q has invalid pages metadata range [%d, %d) for file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata))) // +checklocksignore
+		return nil, nil, c.setError(fmt.Errorf("MemoryFile %q has invalid pages metadata range [%d, %d) for file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata))) // +checklocksignore
 	}
 	if mmf.PagesStart%hostarch.PageSize != 0 {
-		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q pages offset %d is not page-aligned (page size %d)", mmf.ResourceID, mmf.PagesStart, hostarch.PageSize)) // +checklocksignore
+		return nil, nil, c.setError(fmt.Errorf("MemoryFile %q pages offset %d is not page-aligned (page size %d)", mmf.ResourceID, mmf.PagesStart, hostarch.PageSize)) // +checklocksignore
 	}
+	fsr.claimedMFs[mmf.ResourceID] = struct{}{}
 	c.asyncLoads++ // +checklocksignore
-	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), mmf.PagesStart, func(err error) {
-		fsr.waitMu.Lock()
-		defer fsr.waitMu.Unlock()
-		// The captured entry still uses fsr.waitMu as c.cond.L; checklocks
-		// cannot relate that interface value to the lock acquired above.
-		c.asyncLoads-- // +checklocksignore
-		switch {
-		case err != nil:
-			if c.err == nil { // +checklocksignore
-				c.err = err // +checklocksignore
+	return bytes.NewReader(pagesMetadata[mmf.PagesMetadataStart:mmf.PagesMetadataEnd]), &pgalloc.LoadOpts{
+		PagesFile:       bundle.apfl,
+		PagesFileOffset: mmf.PagesStart,
+		DoneCallback: func(err error) {
+			fsr.waitMu.Lock()
+			defer fsr.waitMu.Unlock()
+			// The captured entry still uses fsr.waitMu as c.cond.L; checklocks
+			// cannot relate that interface value to the lock acquired above.
+			c.asyncLoads-- // +checklocksignore
+			switch {
+			case err != nil:
+				if c.err == nil { // +checklocksignore
+					c.err = err // +checklocksignore
+				}
+				fallthrough
+			case c.asyncLoads == 0: // +checklocksignore
+				c.cond.Broadcast()
 			}
-			fallthrough
-		case c.asyncLoads == 0: // +checklocksignore
-			c.cond.Broadcast()
-		}
+		},
 	}, nil
 }
 
@@ -646,7 +761,7 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 	if err != nil {
 		fsr.waitMu.Lock()
 		defer fsr.waitMu.Unlock()
-		c := fsr.ensureContainer(cid)
+		c := fsr.ensureContainer(cid, id.ContainerName)
 		// ensureContainer binds c.cond.L to the held fsr.waitMu. checklocks
 		// cannot recover that identity from the returned entry.
 		return nil, c.setError(err) // +checklocksignore
@@ -654,11 +769,18 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 	if !ok {
 		return nil, nil
 	}
-	multiTar, err := fsr.getMultiTar()
+	bundle, err := fsr.bundleFor(mt.ResourceID)
+	if err != nil {
+		fsr.waitMu.Lock()
+		defer fsr.waitMu.Unlock()
+		c := fsr.ensureContainer(cid, id.ContainerName)
+		return nil, c.setError(err) // +checklocksignore
+	}
+	multiTar, err := bundle.getMultiTar()
 
 	fsr.waitMu.Lock()
 	defer fsr.waitMu.Unlock()
-	c := fsr.ensureContainer(cid)
+	c := fsr.ensureContainer(cid, id.ContainerName)
 	// ensureContainer binds c.cond.L to the held fsr.waitMu. checklocks
 	// cannot recover that identity from the returned entry.
 	if err != nil {
@@ -667,6 +789,7 @@ func (fsr *fsRestore) tmpfsSourceTar(id checkpoint.ResourceID, cid string) (io.R
 	if mt.TarStart > mt.TarEnd || mt.TarEnd > uint64(len(multiTar)) {
 		return nil, c.setError(fmt.Errorf("tmpfs %q has invalid tar range [%d, %d) for multi-tar file size %d", mt.ResourceID, mt.TarStart, mt.TarEnd, len(multiTar))) // +checklocksignore
 	}
+	fsr.claimedTmpfs[mt.ResourceID] = struct{}{}
 	return io.NopCloser(bytes.NewReader(multiTar[mt.TarStart:mt.TarEnd])), nil
 }
 
@@ -696,6 +819,25 @@ func (fsr *fsRestore) wait(cid string) error {
 			return c.err // +checklocksignore
 		}
 		if c.asyncLoads == 0 { // +checklocksignore
+			matchesContainer := func(id checkpoint.ResourceID) bool {
+				return id.ContainerName == c.containerName || id.ContainerName == "" || c.containerName == ""
+			}
+			for id := range fsr.mfs {
+				if matchesContainer(id) {
+					if _, ok := fsr.claimedMFs[id]; !ok {
+						log.Warningf("Filesystem checkpoint MemoryFile %v was not claimed by any mount", id)
+					}
+				}
+			}
+			if !fsr.stateRestore {
+				for id := range fsr.tmpfs {
+					if matchesContainer(id) {
+						if _, ok := fsr.claimedTmpfs[id]; !ok {
+							log.Warningf("Filesystem checkpoint Tmpfs %v was not claimed by any mount", id)
+						}
+					}
+				}
+			}
 			return nil
 		}
 		c.cond.Wait()
