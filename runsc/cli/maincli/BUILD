@@ -23,7 +23,6 @@ go_library(
         "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",
-        "//runsc/gvisorbinaries/embed",
         "@com_github_google_subcommands//:go_default_library",
     ],
 )

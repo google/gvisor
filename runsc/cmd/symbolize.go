@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/subcommands"
 
-	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -41,11 +40,7 @@ func (c *Symbolize) Execute(ctx context.Context, f *flag.FlagSet, args ...any) s
 	sentry := &gvisorbinaries.GvisorSentry
 	p, err := sentry.Path()
 	if err != nil {
-		// TODO(gvisor.dev/issues/13718): Remove this branch once sidecars are required
-		if !coverage.Available() {
-			return util.Errorf("symbolize requires coverage-instrumented gVisor binaries: Sentry sidecar binary %q is not available (%v) and this runsc binary was not built with coverage.", sentry.Name, err)
-		}
-		return c.Symbolize.Execute(ctx, f, args...)
+		return util.Errorf("Sentry sidecar binary %q is not available: %v", sentry.Name, err)
 	}
 	argv := []string{p, c.Name()}
 	if c.DumpAll {

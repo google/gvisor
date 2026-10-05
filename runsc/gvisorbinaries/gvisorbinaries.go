@@ -17,10 +17,6 @@
 //
 // A sidecar is resolved on disk in a "gvisor-bin/" directory located next to
 // the main binary.
-// TODO(gvisor.dev/issue/13718): Each binary is also embedded in this package
-// itself, which can be extracted and exec'd when the on-disk copy is not
-// available. This will go away after some time in order to lighten up the
-// size of the runsc binary.
 //
 // # Release enforcement
 //
@@ -204,10 +200,6 @@ func VerifyMatchingRelease(b *Binary) {
 }
 
 // The sidecar binaries that runsc may need to execute.
-// Their embedded fallbacks are not wired here directly to avoid import cycles.
-//
-// TODO(gvisor.dev/issue/13718): once embedded sidecar binaries are removed,
-// delete the embedded fallback entirely.
 var (
 	// MetricServer is the `runsc metric-server` sidecar binary.
 	MetricServer = Binary{Name: metricServerName}
@@ -257,22 +249,6 @@ func (o *Options) String() string {
 type Binary struct {
 	// Name is the filename of the binary.
 	Name string
-
-	// embeddedExec/embeddedForkExec, if set, can run a copy of the binary that
-	// is embedded in the main binary.
-	//
-	// TODO(gvisor.dev/issue/13718): remove along with the embed package once
-	// embedded sidecar binaries are gone.
-	embeddedExec     func(Options) error
-	embeddedForkExec func(Options) (int, error)
-}
-
-// DeclareEmbedded sets embedded exec/forkexec handlers.
-//
-// TODO(gvisor.dev/issue/13718): remove.
-func (b *Binary) DeclareEmbedded(execFn func(Options) error, forkExecFn func(Options) (int, error)) {
-	b.embeddedExec = execFn
-	b.embeddedForkExec = forkExecFn
 }
 
 // Memoized result of `resolveDir`.

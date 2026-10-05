@@ -111,27 +111,6 @@ func queryMetrics(t *testing.T, metricSock string) string {
 	return string(body)
 }
 
-// hasMetricServer returns true if the runsc binary supports the metric-server
-// subcommand (i.e., it is not elided as in fastbuild).
-func hasMetricServer(t *testing.T) bool {
-	t.Helper()
-	runscPath, err := shimutils.GetRunscPath()
-	if err != nil {
-		t.Fatalf("failed to get runsc path: %v", err)
-	}
-
-	// Run "runsc metric-server" with no arguments.
-	// In elided build, it will immediately fail because the sidecar binary is missing or unsupported.
-	// In embedded build, it might fail with flag errors, but NOT the "not found" / "not support" message.
-	cmd := exec.Command(runscPath, "metric-server")
-	out, _ := cmd.CombinedOutput()
-
-	// TODO(gvisor.dev/issue/13718): Temporary. Once the binary is a sidecar, it should
-	// be bundled unconditionally.
-	return !strings.Contains(string(out), "this build does not support the metric-server subcommand") &&
-		!strings.Contains(string(out), `sidecar binary "runsc-metric-server" not found`)
-}
-
 // Test variants for grouping.
 
 type metricServerTestCase struct {
@@ -155,9 +134,6 @@ var metricServerTestCases = []metricServerTestCase{
 // can start, bind to a Unix domain socket, and export Prometheus metrics
 // containing the ID of a running sandbox.
 func TestMetricServer(t *testing.T) {
-	if !hasMetricServer(t) {
-		t.Skip("Skipping: runsc binary does not support metric-server (elided in fastbuild). Run with -c opt to enable.")
-	}
 	for _, tc := range metricServerTestCases {
 		t.Run(tc.name, func(t *testing.T) {
 			metricSock := filepath.Join(t.TempDir(), "metrics.sock")
@@ -190,9 +166,6 @@ func TestMetricServer(t *testing.T) {
 // share the same runsc root directory. It asserts that metrics for both
 // sandboxes are present and that the running sandbox count is correct.
 func TestMetricServerMultipleSandboxes(t *testing.T) {
-	if !hasMetricServer(t) {
-		t.Skip("Skipping: runsc binary does not support metric-server (elided in fastbuild). Run with -c opt to enable.")
-	}
 	for _, tc := range metricServerTestCases {
 		t.Run(tc.name, func(t *testing.T) {
 			sharedRoot := filepath.Join(t.TempDir(), "shared_containers")
@@ -243,9 +216,6 @@ func TestMetricServerMultipleSandboxes(t *testing.T) {
 // to a sandbox does not break metrics export, and that the sandbox
 // remains discoverable by the metric server.
 func TestMetricServerMultiContainer(t *testing.T) {
-	if !hasMetricServer(t) {
-		t.Skip("Skipping: runsc binary does not support metric-server (elided in fastbuild). Run with -c opt to enable.")
-	}
 	for _, tc := range metricServerTestCases {
 		t.Run(tc.name, func(t *testing.T) {
 			metricSock := filepath.Join(t.TempDir(), "metrics.sock")
@@ -311,9 +281,6 @@ func TestMetricServerMultiContainer(t *testing.T) {
 // It asserts that the active running sandbox count updates correctly
 // (1 -> 0 -> 1) as sandboxes transition through their lifecycles.
 func TestMetricServerLifecycle(t *testing.T) {
-	if !hasMetricServer(t) {
-		t.Skip("Skipping: runsc binary does not support metric-server (elided in fastbuild). Run with -c opt to enable.")
-	}
 	for _, tc := range metricServerTestCases {
 		t.Run(tc.name, func(t *testing.T) {
 			sharedRoot := filepath.Join(t.TempDir(), "shared_containers")
