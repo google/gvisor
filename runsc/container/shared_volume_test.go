@@ -264,8 +264,7 @@ func TestSharedVolumeFile(t *testing.T) {
 // TestSharedVolumeOverlay tests that changes to a shared volume that is
 // wrapped in an overlay are not visible externally.
 func TestSharedVolumeOverlay(t *testing.T) {
-	conf := testutil.TestConfig(t)
-	conf.Overlay2.Set("all:dir=/tmp")
+	conf := overlayTestConfig(t)
 
 	// File that will be used to check consistency inside/outside sandbox.
 	// Note that TmpDir() is set up as a shared volume by NewSpecWithArgs(). So

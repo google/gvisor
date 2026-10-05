@@ -69,7 +69,7 @@ func TestParse(t *testing.T) {
 		{"1,2-4,5,16", []uint32{1, 2, 3, 4, 5, 16}, false},
 		{"abc", []uint32{}, true},
 		{"1,3-2,4", []uint32{}, true},
-		{"1,3-3,4", []uint32{}, true},
+		{"1,3-3,4", []uint32{1, 3, 4}, false},
 		{"1,2,3\000,4", []uint32{1, 2, 3}, false},
 		{"1,2,3\n,4", []uint32{1, 2, 3}, false},
 	}
