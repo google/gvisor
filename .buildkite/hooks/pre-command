@@ -138,6 +138,14 @@ sudo rm -rf /tmp/profile
 # Allow to read dmesg for all users. It is required for the syslog test.
 sudo sysctl -w kernel.dmesg_restrict=0
 
+# Ubuntu 23.10+ uses AppArmor to restrict unprivileged user namespaces, which
+# breaks the rootless gofer used by the syscall tests ("cannot create gofer
+# process: gofer: fork/exec /proc/self/exe: operation not permitted").
+if [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" == "1" ]]; then
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 ||
+    echo "WARNING: failed to lift the AppArmor user namespace restriction; rootless runsc tests will fail." >&2
+fi
+
 # Download credentials, if a release agent.
 case "${BUILDKITE_AGENT_META_DATA_QUEUE}" in
   release|release-*)

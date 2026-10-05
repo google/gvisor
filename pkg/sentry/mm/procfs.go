@@ -29,28 +29,32 @@ const (
 	// include/linux/kdev_t.h:MINORBITS
 	devMinorBits = 20
 
-	vsyscallEnd        = hostarch.Addr(0xffffffffff601000)
-	vsyscallMapsEntry  = "ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]\n"
-	vsyscallSmapsEntry = vsyscallMapsEntry +
-		"Size:                  4 kB\n" +
-		"Rss:                   0 kB\n" +
-		"Pss:                   0 kB\n" +
-		"Shared_Clean:          0 kB\n" +
-		"Shared_Dirty:          0 kB\n" +
-		"Private_Clean:         0 kB\n" +
-		"Private_Dirty:         0 kB\n" +
-		"Referenced:            0 kB\n" +
-		"Anonymous:             0 kB\n" +
-		"AnonHugePages:         0 kB\n" +
-		"Shared_Hugetlb:        0 kB\n" +
-		"Private_Hugetlb:       0 kB\n" +
-		"Swap:                  0 kB\n" +
-		"SwapPss:               0 kB\n" +
-		"KernelPageSize:        4 kB\n" +
-		"MMUPageSize:           4 kB\n" +
-		"Locked:                0 kB\n" +
-		"VmFlags: rd ex \n"
+	vsyscallEnd       = hostarch.Addr(0xffffffffff601000)
+	vsyscallMapsEntry = "ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]\n"
 )
+
+// vsyscallSmapsEntry is the /proc/[pid]/smaps entry for the vsyscall region.
+// KernelPageSize and MMUPageSize match those of real vmas; see
+// vmaSmapsEntryIntoLocked.
+var vsyscallSmapsEntry = vsyscallMapsEntry +
+	"Size:                  4 kB\n" +
+	"Rss:                   0 kB\n" +
+	"Pss:                   0 kB\n" +
+	"Shared_Clean:          0 kB\n" +
+	"Shared_Dirty:          0 kB\n" +
+	"Private_Clean:         0 kB\n" +
+	"Private_Dirty:         0 kB\n" +
+	"Referenced:            0 kB\n" +
+	"Anonymous:             0 kB\n" +
+	"AnonHugePages:         0 kB\n" +
+	"Shared_Hugetlb:        0 kB\n" +
+	"Private_Hugetlb:       0 kB\n" +
+	"Swap:                  0 kB\n" +
+	"SwapPss:               0 kB\n" +
+	fmt.Sprintf("KernelPageSize: %8d kB\n", hostarch.PageSize/1024) +
+	fmt.Sprintf("MMUPageSize:    %8d kB\n", hostarch.PageSize/1024) +
+	"Locked:                0 kB\n" +
+	"VmFlags: rd ex \n"
 
 // MapsCallbackFuncForBuffer creates a /proc/[pid]/maps entry including the trailing newline.
 func (mm *MemoryManager) MapsCallbackFuncForBuffer(buf *bytes.Buffer) MapsCallbackFunc {

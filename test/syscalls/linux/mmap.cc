@@ -445,9 +445,11 @@ TEST_F(MMapTest, MapFixedNoReplaceExisting) {
 // MAP_FIXED_NOREPLACE").
 TEST_F(MMapTest, MapFixedNoReplacePartialOverlap) {
   SKIP_IF_NO_MAP_FIXED_NOREPLACE();
-  ASSERT_THAT(Map(0x30001000, kPageSize, PROT_NONE,
+  // Occupy the second page of the range requested below.
+  const uintptr_t existing = 0x30000000 + kPageSize;
+  ASSERT_THAT(Map(existing, kPageSize, PROT_NONE,
                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
-              SyscallSucceedsWithValue(0x30001000));
+              SyscallSucceedsWithValue(existing));
   EXPECT_THAT(reinterpret_cast<uintptr_t>(mmap(
                   reinterpret_cast<void*>(0x30000000), 2 * kPageSize, PROT_NONE,
                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0)),

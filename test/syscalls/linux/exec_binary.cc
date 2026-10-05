@@ -422,8 +422,8 @@ TEST(ElfTest, Execute) {
   EXPECT_EQ(IP_REG(regs), elf.header.e_entry + sizeof(kPtraceCode));
 
   EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
-                         {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                          file.path().c_str()},
+                         {0x40000, 0x40000 + kPageSize, true, false, true, true,
+                          0, 0, 0, 0, file.path().c_str()},
                      })));
 }
 
@@ -465,10 +465,10 @@ TEST(ElfTest, DataSegment) {
   phdr.p_type = PT_LOAD;
   phdr.p_flags = PF_R | PF_W;
   phdr.p_offset = kPageSize;
-  phdr.p_vaddr = 0x41000;
+  phdr.p_vaddr = 0x40000 + kPageSize;
   phdr.p_filesz = kPageSize / 2;
   // The header is going to push vaddr up by a few hundred bytes. Keep p_memsz a
-  // bit less than 2 pages so this mapping doesn't extend beyond 0x43000.
+  // bit less than 2 pages so that this mapping fits into 2 pages.
   phdr.p_memsz = 2 * kPageSize - kPageSize / 2;
   elf.phdrs.push_back(phdr);
 
@@ -484,17 +484,18 @@ TEST(ElfTest, DataSegment) {
 
   ASSERT_NO_ERRNO(WaitStopped(child));
 
-  EXPECT_THAT(
-      child, ContainsMappings(std::vector<ProcMapsEntry>({
-                 // text page.
-                 {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                  file.path().c_str()},
-                 // data + bss page from file.
-                 {0x41000, 0x42000, true, true, false, true, kPageSize, 0, 0, 0,
-                  file.path().c_str()},
-                 // bss page from anon.
-                 {0x42000, 0x43000, true, true, false, true, 0, 0, 0, 0, ""},
-             })));
+  EXPECT_THAT(child,
+              ContainsMappings(std::vector<ProcMapsEntry>({
+                  // text page.
+                  {0x40000, 0x40000 + kPageSize, true, false, true, true, 0, 0,
+                   0, 0, file.path().c_str()},
+                  // data + bss page from file.
+                  {0x40000 + kPageSize, 0x40000 + 2 * kPageSize, true, true,
+                   false, true, kPageSize, 0, 0, 0, file.path().c_str()},
+                  // bss page from anon.
+                  {0x40000 + 2 * kPageSize, 0x40000 + 3 * kPageSize, true, true,
+                   false, true, 0, 0, 0, 0, ""},
+              })));
 }
 
 // Additional pages beyond filesz honor (only) execute protections.
@@ -527,10 +528,10 @@ TEST(ElfTest, ExtraMemPages) {
   // the clear_user error is ignored.
   phdr.p_flags = PF_R | PF_W | PF_X;
   phdr.p_offset = kPageSize;
-  phdr.p_vaddr = 0x41000;
+  phdr.p_vaddr = 0x40000 + kPageSize;
   phdr.p_filesz = kPageSize / 2;
   // The header is going to push vaddr up by a few hundred bytes. Keep p_memsz a
-  // bit less than 2 pages so this mapping doesn't extend beyond 0x43000.
+  // bit less than 2 pages so that this mapping covers exactly 2 pages.
   phdr.p_memsz = 2 * kPageSize - kPageSize / 2;
   elf.phdrs.push_back(phdr);
 
@@ -549,13 +550,14 @@ TEST(ElfTest, ExtraMemPages) {
   EXPECT_THAT(child,
               ContainsMappings(std::vector<ProcMapsEntry>({
                   // text page.
-                  {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                   file.path().c_str()},
+                  {0x40000, 0x40000 + kPageSize, true, false, true, true, 0, 0,
+                   0, 0, file.path().c_str()},
                   // data + bss page from file.
-                  {0x41000, 0x42000, true, true, true, true, kPageSize, 0, 0, 0,
-                   file.path().c_str()},
+                  {0x40000 + kPageSize, 0x40000 + 2 * kPageSize, true, true,
+                   true, true, kPageSize, 0, 0, 0, file.path().c_str()},
                   // extra page from anon.
-                  {0x42000, 0x43000, true, true, true, true, 0, 0, 0, 0, ""},
+                  {0x40000 + 2 * kPageSize, 0x40000 + 3 * kPageSize, true, true,
+                   true, true, 0, 0, 0, 0, ""},
               })));
 }
 
@@ -568,7 +570,7 @@ TEST(ElfTest, AnonOnlySegment) {
   // RO segment. The extra anon page will be RW anyways.
   phdr.p_flags = PF_R;
   phdr.p_offset = 0;
-  phdr.p_vaddr = 0x41000;
+  phdr.p_vaddr = 0x40000 + kPageSize;
   phdr.p_filesz = 0;
   phdr.p_memsz = kPageSize;
   elf.phdrs.push_back(phdr);
@@ -577,7 +579,7 @@ TEST(ElfTest, AnonOnlySegment) {
 
   // UpdateOffsets adjusts p_vaddr and p_offset by the header size, but we need
   // a page-aligned p_vaddr to get a truly anon-only page.
-  elf.phdrs[2].p_vaddr = 0x41000;
+  elf.phdrs[2].p_vaddr = 0x40000 + kPageSize;
   // N.B. p_offset is now unaligned, but Linux doesn't care since this is
   // anon-only.
 
@@ -591,14 +593,14 @@ TEST(ElfTest, AnonOnlySegment) {
 
   ASSERT_NO_ERRNO(WaitStopped(child));
 
-  EXPECT_THAT(child,
-              ContainsMappings(std::vector<ProcMapsEntry>({
-                  // text page.
-                  {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                   file.path().c_str()},
-                  // anon page.
-                  {0x41000, 0x42000, true, true, false, true, 0, 0, 0, 0, ""},
-              })));
+  EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
+                         // text page.
+                         {0x40000, 0x40000 + kPageSize, true, false, true, true,
+                          0, 0, 0, 0, file.path().c_str()},
+                         // anon page.
+                         {0x40000 + kPageSize, 0x40000 + 2 * kPageSize, true,
+                          true, false, true, 0, 0, 0, 0, ""},
+                     })));
 }
 
 // p_offset must have the same alignment as p_vaddr.
@@ -668,8 +670,8 @@ TEST(ElfTest, DirectlyOverlappingSegments) {
   ASSERT_NO_ERRNO(WaitStopped(child));
 
   EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
-                         {0x40000, 0x41000, true, true, true, true, 0, 0, 0, 0,
-                          file.path().c_str()},
+                         {0x40000, 0x40000 + kPageSize, true, true, true, true,
+                          0, 0, 0, 0, file.path().c_str()},
                      })));
 }
 
@@ -702,10 +704,10 @@ TEST(ElfTest, OutOfOrderSegments) {
   ASSERT_NO_ERRNO(WaitStopped(child));
 
   EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
-                         {0x20000, 0x21000, true, false, true, true, 0, 0, 0, 0,
-                          file.path().c_str()},
-                         {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                          file.path().c_str()},
+                         {0x20000, 0x20000 + kPageSize, true, false, true, true,
+                          0, 0, 0, 0, file.path().c_str()},
+                         {0x40000, 0x40000 + kPageSize, true, false, true, true,
+                          0, 0, 0, 0, file.path().c_str()},
                      })));
 }
 
@@ -787,7 +789,7 @@ TEST(ElfTest, PIE) {
   phdr.p_vaddr = 0x20000;
   phdr.p_filesz = kPageSize / 2;
   // The header is going to push vaddr up by a few hundred bytes. Keep p_memsz a
-  // bit less than 2 pages so this mapping doesn't extend beyond 0x43000.
+  // bit less than 2 pages so that this mapping covers exactly 2 pages.
   phdr.p_memsz = 2 * kPageSize - kPageSize / 2;
   elf.phdrs.push_back(phdr);
 
@@ -824,17 +826,19 @@ TEST(ElfTest, PIE) {
 
   const uint64_t load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
-  EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
-                         // text page.
-                         {load_addr, load_addr + 0x1000, true, false, true,
-                          true, 0, 0, 0, 0, file.path().c_str()},
-                         // data + bss page from file.
-                         {load_addr + 0x20000, load_addr + 0x21000, true, true,
-                          false, true, kPageSize, 0, 0, 0, file.path().c_str()},
-                         // bss page from anon.
-                         {load_addr + 0x21000, load_addr + 0x22000, true, true,
-                          false, true, 0, 0, 0, 0, ""},
-                     })));
+  EXPECT_THAT(
+      child,
+      ContainsMappings(std::vector<ProcMapsEntry>({
+          // text page.
+          {load_addr, load_addr + kPageSize, true, false, true, true, 0, 0, 0,
+           0, file.path().c_str()},
+          // data + bss page from file.
+          {load_addr + 0x20000, load_addr + 0x20000 + kPageSize, true, true,
+           false, true, kPageSize, 0, 0, 0, file.path().c_str()},
+          // bss page from anon.
+          {load_addr + 0x20000 + kPageSize, load_addr + 0x20000 + 2 * kPageSize,
+           true, true, false, true, 0, 0, 0, 0, ""},
+      })));
 }
 
 // PIE binary with a non-zero start address.
@@ -871,7 +875,7 @@ TEST(ElfTest, PIENonZeroStart) {
   phdr.p_vaddr = 0x60000;
   phdr.p_filesz = kPageSize / 2;
   // The header is going to push vaddr up by a few hundred bytes. Keep p_memsz a
-  // bit less than 2 pages so this mapping doesn't extend beyond 0x43000.
+  // bit less than 2 pages so that this mapping fits into 2 pages.
   phdr.p_memsz = 2 * kPageSize - kPageSize / 2;
   elf.phdrs.push_back(phdr);
 
@@ -905,17 +909,19 @@ TEST(ElfTest, PIENonZeroStart) {
   // this as the start address, as it searches from the top down.
   EXPECT_NE(load_addr, 0x40000);
 
-  EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
-                         // text page.
-                         {load_addr, load_addr + 0x1000, true, false, true,
-                          true, 0, 0, 0, 0, file.path().c_str()},
-                         // data + bss page from file.
-                         {load_addr + 0x20000, load_addr + 0x21000, true, true,
-                          false, true, kPageSize, 0, 0, 0, file.path().c_str()},
-                         // bss page from anon.
-                         {load_addr + 0x21000, load_addr + 0x22000, true, true,
-                          false, true, 0, 0, 0, 0, ""},
-                     })));
+  EXPECT_THAT(
+      child,
+      ContainsMappings(std::vector<ProcMapsEntry>({
+          // text page.
+          {load_addr, load_addr + kPageSize, true, false, true, true, 0, 0, 0,
+           0, file.path().c_str()},
+          // data + bss page from file.
+          {load_addr + 0x20000, load_addr + 0x20000 + kPageSize, true, true,
+           false, true, kPageSize, 0, 0, 0, file.path().c_str()},
+          // bss page from anon.
+          {load_addr + 0x20000 + kPageSize, load_addr + 0x20000 + 2 * kPageSize,
+           true, true, false, true, 0, 0, 0, 0, ""},
+      })));
 }
 
 TEST(ElfTest, PIEOutOfOrderSegments) {
@@ -943,7 +949,7 @@ TEST(ElfTest, PIEOutOfOrderSegments) {
   phdr.p_vaddr = 0x20000;
   phdr.p_filesz = kPageSize / 2;
   // The header is going to push vaddr up by a few hundred bytes. Keep p_memsz a
-  // bit less than 2 pages so this mapping doesn't extend beyond 0x43000.
+  // bit less than 2 pages so that this mapping fits into 2 pages.
   phdr.p_memsz = 2 * kPageSize - kPageSize / 2;
   elf.phdrs.push_back(phdr);
 
@@ -1056,15 +1062,15 @@ TEST(ElfTest, ELFInterpreter) {
 
   const uint64_t interp_load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
-  EXPECT_THAT(
-      child, ContainsMappings(std::vector<ProcMapsEntry>({
-                 // Main binary
-                 {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                  binary_file.path().c_str()},
-                 // Interpreter
-                 {interp_load_addr, interp_load_addr + 0x1000, true, true, true,
-                  true, 0, 0, 0, 0, interpreter_file.path().c_str()},
-             })));
+  EXPECT_THAT(child,
+              ContainsMappings(std::vector<ProcMapsEntry>({
+                  // Main binary
+                  {0x40000, 0x40000 + kPageSize, true, false, true, true, 0, 0,
+                   0, 0, binary_file.path().c_str()},
+                  // Interpreter
+                  {interp_load_addr, interp_load_addr + kPageSize, true, true,
+                   true, true, 0, 0, 0, 0, interpreter_file.path().c_str()},
+              })));
 }
 
 // Test parameter to ElfInterpterStaticTest cases. The first item is a suffix to
@@ -1119,8 +1125,8 @@ TEST_P(ElfInterpreterStaticTest, Test) {
 
     EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
                            // Interpreter.
-                           {0x40000, 0x41000, true, true, true, true, 0, 0, 0,
-                            0, interpreter_file.path().c_str()},
+                           {0x40000, 0x40000 + kPageSize, true, true, true,
+                            true, 0, 0, 0, 0, interpreter_file.path().c_str()},
                        })));
   }
 }
@@ -1243,15 +1249,15 @@ TEST(ElfTest, ELFInterpreterRelative) {
 
   const uint64_t interp_load_addr = IP_REG(regs) & ~(kPageSize - 1);
 
-  EXPECT_THAT(
-      child, ContainsMappings(std::vector<ProcMapsEntry>({
-                 // Main binary
-                 {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                  binary_file.path().c_str()},
-                 // Interpreter
-                 {interp_load_addr, interp_load_addr + 0x1000, true, true, true,
-                  true, 0, 0, 0, 0, interpreter_file.path().c_str()},
-             })));
+  EXPECT_THAT(child,
+              ContainsMappings(std::vector<ProcMapsEntry>({
+                  // Main binary
+                  {0x40000, 0x40000 + kPageSize, true, false, true, true, 0, 0,
+                   0, 0, binary_file.path().c_str()},
+                  // Interpreter
+                  {interp_load_addr, interp_load_addr + kPageSize, true, true,
+                   true, true, 0, 0, 0, 0, interpreter_file.path().c_str()},
+              })));
 }
 
 // ELF interpreter architecture doesn't match the binary.
@@ -1679,7 +1685,7 @@ TEST(ExecveTest, BrkAfterBinary) {
   // address will be, but it is always beyond the final page in the binary.
   // i.e., it does not start immediately after memsz in the middle of a page.
   // Userspace may expect to use that space.
-  EXPECT_GE(RETURN_REG(regs), 0x41000);
+  EXPECT_GE(RETURN_REG(regs), 0x40000 + kPageSize);
 }
 
 }  // namespace
