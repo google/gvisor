@@ -2219,6 +2219,9 @@ func (s *Stack) Restore() {
 	for id, nic := range s.preservedNICs {
 		nic.stack = s
 		s.nics[id] = nic
+		nic.NetworkLinkEndpoint.SetOnCloseAction(func() {
+			s.RemoveNIC(id)
+		})
 		nic.packetEPsMu.Lock()
 		clear(nic.packetEPs)
 		nic.packetEPsMu.Unlock()
@@ -2720,7 +2723,7 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	}
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
-	name := nic.Name()
+	opts := NICOptions{Name: nic.Name(), Kind: nic.kind}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
 	s.mu.Unlock()
@@ -2732,7 +2735,7 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	}
 
 	id = tcpip.NICID(peer.NextNICID())
-	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
+	return id, peer.CreateNICWithOptions(id, linkEp, opts)
 }
 
 // SetRemoveConf sets the removeConf in stack to the given value.
