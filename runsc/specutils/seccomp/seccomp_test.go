@@ -141,6 +141,22 @@ var (
 			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.EPERM))),
 		},
 		{
+			name: "match_name_log",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action: specs.ActLog,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_LOG),
+		},
+		{
 			name: "no_match_name_allow",
 			config: specs.LinuxSeccomp{
 				DefaultAction: specs.ActAllow,
