@@ -41,10 +41,12 @@ type AddressableEndpointState struct {
 	// AddressableEndpointState.mu
 	//   addressState.mu
 	mu addressableEndpointStateRWMutex `state:"nosave"`
+	// TODO(b/361075310): Enable s/r for the below fields.
+	//
 	// +checklocks:mu
-	endpoints map[tcpip.Address]*addressState `state:"wait"`
+	endpoints map[tcpip.Address]*addressState `state:"nosave"`
 	// +checklocks:mu
-	primary []*addressState
+	primary []*addressState `state:"nosave"`
 }
 
 // AddressableEndpointStateOptions contains options used to configure an
@@ -736,8 +738,6 @@ func (a *AddressableEndpointState) Cleanup() {
 var _ AddressEndpoint = (*addressState)(nil)
 
 // addressState holds state for an address.
-//
-// +stateify savable
 type addressState struct {
 	addressableEndpointState *AddressableEndpointState
 	addr                     tcpip.AddressWithPrefix
@@ -748,7 +748,7 @@ type addressState struct {
 	//
 	// AddressableEndpointState.mu
 	//   addressState.mu
-	mu   addressStateRWMutex `state:"nosave"`
+	mu   addressStateRWMutex
 	refs addressStateRefs
 	// +checklocks:mu
 	kind AddressKind
@@ -766,7 +766,7 @@ type addressState struct {
 	// dispatcher.
 	//
 	// +checklocks:mu
-	disp AddressDispatcher `state:"nosave"`
+	disp AddressDispatcher
 }
 
 // AddressWithPrefix implements AddressEndpoint.

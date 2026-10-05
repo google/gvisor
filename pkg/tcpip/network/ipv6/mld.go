@@ -243,11 +243,6 @@ func (mld *mldState) init(ep *endpoint) {
 	})
 }
 
-// +checklocks:mld.ep.mu.RWMutex
-func (mld *mldState) restore() {
-	mld.genericMulticastProtocol.Restore(&mld.ep.mu.RWMutex, mld.ep.protocol.stack.InsecureRNG())
-}
-
 // handleMulticastListenerQuery handles a query message.
 //
 // +checklocks:mld.ep.mu.RWMutex

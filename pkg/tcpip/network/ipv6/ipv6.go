@@ -177,7 +177,6 @@ var _ stack.MulticastForwardingNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
-var _ stack.RestorableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.NDPEndpoint = (*endpoint)(nil)
 var _ MLDEndpoint = (*endpoint)(nil)
 var _ NDPEndpoint = (*endpoint)(nil)
@@ -245,26 +244,6 @@ type endpoint struct {
 	//
 	// LOCK ORDERING: mu > dad.mu.
 	dad endpointDAD
-}
-
-// Restore implements stack.RestorableNetworkEndpoint.
-func (e *endpoint) Restore() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.dad.mu.Lock()
-	e.dad.mu.dad.Restore(&e.dad.mu, e.protocol.stack.SecureRNG().Reader)
-	e.dad.mu.Unlock()
-	e.mu.mld.restore()
-	e.mu.ndp.restore()
-	if e.Enabled() {
-		e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
-			addr := addressEndpoint.AddressWithPrefix().Address
-			if header.IsV6UnicastAddress(addr) && addressEndpoint.GetKind() == stack.PermanentTentative {
-				_ = e.mu.ndp.startDuplicateAddressDetection(addr, addressEndpoint) // +checklocksforce: ForEachEndpoint calls back synchronously with e.mu held.
-			}
-			return true
-		})
-	}
 }
 
 // NICNameFromID is a function that returns a stable name for the specified NIC,

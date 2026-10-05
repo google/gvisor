@@ -4885,7 +4885,6 @@ cc_binary(
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
-        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
