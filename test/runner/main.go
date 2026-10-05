@@ -54,6 +54,7 @@ import (
 
 var (
 	debug              = flag.Bool("debug", false, "enable debug logs")
+	hostNofile         = flag.Uint64("host-nofile", 0, "minimum host descriptor limit required by the test (zero preserves the inherited limit)")
 	oneSandbox         = flag.Bool("one-sandbox", false, "run all test cases in one sandbox")
 	strace             = flag.Bool("strace", false, "enable strace logs")
 	platform           = flag.String("platform", "ptrace", "platform to run on")
@@ -1118,6 +1119,22 @@ func main() {
 	log.SetLevel(log.Info)
 	if *debug {
 		log.SetLevel(log.Debug)
+	}
+
+	if *hostNofile != 0 {
+		// Raise the host allowance before creating user namespaces. Raising a
+		// guest limit later cannot raise the sentry's host descriptor limit.
+		var limit unix.Rlimit
+		if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &limit); err != nil {
+			fatalf("getting host RLIMIT_NOFILE: %v", err)
+		}
+		limit.Cur = max(limit.Cur, *hostNofile)
+		limit.Max = max(limit.Max, *hostNofile)
+		// Set even unchanged values so Go preserves them across child exec.
+		if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &limit); err != nil {
+			fatalf("setting host RLIMIT_NOFILE to %+v: %v", limit, err)
+		}
+		log.Infof("Host RLIMIT_NOFILE: soft=%d hard=%d", limit.Cur, limit.Max)
 	}
 
 	if *platform != "native" {

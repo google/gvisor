@@ -560,6 +560,8 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    # Host-network sockets also need descriptors in the sentry.
+    args = ["--host-nofile=131072"],
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:ping_socket_test",
