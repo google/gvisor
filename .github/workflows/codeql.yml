@@ -39,7 +39,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
 
     - if: ${{ matrix.language == 'go' }}
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
