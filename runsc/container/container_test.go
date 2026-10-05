@@ -5962,6 +5962,11 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 	if err := cont2.Restore(conf, lastImage, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring: %v", err)
 	}
+	// Restore does not wait for its hook to finish. Wait before starting another
+	// checkpoint so that the save and restore hooks cannot run concurrently.
+	if err := cont2.WaitRestore(); err != nil {
+		t.Fatalf("error waiting for restore: %v", err)
+	}
 	checkpointOpts.SaveRestoreExecContainerID = cont2.ID
 	if err := cont2.Checkpoint(conf, imageDir("image-restored"), checkpointOpts); err != nil {
 		t.Fatalf("checkpoint after restore failed: %v", err)
