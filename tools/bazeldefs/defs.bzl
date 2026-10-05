@@ -69,7 +69,7 @@ def arm64_config(_settings, _attr):
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
         # Permit targets that explicitly enable race instrumentation to use cgo.
         # Ordinary targets still inherit the pure build setting from .bazelrc.
-        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_arm64_cgo",
+        "//command_line_option:platforms": "//tools/bazeldefs:linux_arm64",
     }
 
 def amd64_config(_settings, _attr):
@@ -79,7 +79,7 @@ def amd64_config(_settings, _attr):
         "//command_line_option:cpu": "k8",
         "//command_line_option:crosstool_top": "@crosstool//:toolchains",
         # See above.
-        "//command_line_option:platforms": "@io_bazel_rules_go//go/toolchain:linux_amd64_cgo",
+        "//command_line_option:platforms": "//tools/bazeldefs:linux_amd64",
     }
 
 transition_allowlist = "@bazel_tools//tools/allowlists/function_transition_allowlist"
