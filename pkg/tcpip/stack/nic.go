@@ -56,7 +56,7 @@ type nic struct {
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
-	networkEndpoints          map[tcpip.NetworkProtocolNumber]NetworkEndpoint `state:"wait"`
+	networkEndpoints          map[tcpip.NetworkProtocolNumber]NetworkEndpoint
 	linkAddrResolvers         map[tcpip.NetworkProtocolNumber]*linkResolver
 	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
 

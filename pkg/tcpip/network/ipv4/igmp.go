@@ -301,17 +301,6 @@ func (igmp *igmpState) init(ep *endpoint) {
 }
 
 // +checklocks:igmp.ep.mu
-func (igmp *igmpState) restore() {
-	igmp.genericMulticastProtocol.Restore(&igmp.ep.mu, igmp.ep.protocol.stack.InsecureRNG())
-	igmp.igmpV1Job = tcpip.NewJob(igmp.ep.protocol.stack.Clock(), &igmp.ep.mu, func() {
-		igmp.mode = protocolModeV2OrV3
-	})
-	if igmp.mode == protocolModeV1Compatibility {
-		igmp.igmpV1Job.Schedule(v1RouterPresentTimeout)
-	}
-}
-
-// +checklocks:igmp.ep.mu
 func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType header.IGMPType) bool {
 	if messageType == header.IGMPMembershipQuery {
 		// RFC 2236 does not require the IGMP implementation to check the source IP

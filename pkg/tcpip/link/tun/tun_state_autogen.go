@@ -21,8 +21,6 @@ func (d *Device) StateFields() []string {
 	}
 }
 
-func (d *Device) beforeSave() {}
-
 // +checklocksignore
 func (d *Device) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
@@ -108,6 +106,8 @@ func (e *tunEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &e.closed)
 }
 
+func (e *tunEndpoint) afterLoad(context.Context) {}
+
 // +checklocksignore
 func (e *tunEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.tunEndpointRefs)
@@ -118,7 +118,6 @@ func (e *tunEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(5, &e.isTap)
 	stateSourceObject.Load(6, &e.persistent)
 	stateSourceObject.Load(7, &e.closed)
-	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 
 func (r *tunEndpointRefs) StateTypeName() string {

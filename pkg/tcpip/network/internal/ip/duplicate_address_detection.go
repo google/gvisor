@@ -70,8 +70,8 @@ type DAD struct {
 	opts    DADOptions
 	configs stack.DADConfigurations
 
-	protocolMU sync.Locker                `state:"nosave"`
-	addresses  map[tcpip.Address]dadState `state:"nosave"`
+	protocolMU sync.Locker `state:"nosave"`
+	addresses  map[tcpip.Address]dadState
 }
 
 // Init initializes the DAD state.
@@ -97,15 +97,6 @@ func (d *DAD) Init(protocolMU sync.Locker, configs stack.DADConfigurations, opts
 		protocolMU: protocolMU,
 		addresses:  make(map[tcpip.Address]dadState),
 	}
-}
-
-// Restore re-initializes state:"nosave" fields after restore.
-//
-// Precondition: protocolMU must be locked.
-func (d *DAD) Restore(protocolMU sync.Locker, secureRNG io.Reader) {
-	d.protocolMU = protocolMU
-	d.opts.SecureRNG = secureRNG
-	d.addresses = make(map[tcpip.Address]dadState)
 }
 
 // CheckDuplicateAddressLocked performs DAD for an address, calling the

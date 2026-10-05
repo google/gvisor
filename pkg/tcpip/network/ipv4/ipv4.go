@@ -81,7 +81,6 @@ var _ stack.MulticastForwardingNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
-var _ stack.RestorableNetworkEndpoint = (*endpoint)(nil)
 var _ IGMPEndpoint = (*endpoint)(nil)
 
 // +checklocksalias:igmp.ep.mu=mu
@@ -112,13 +111,6 @@ type endpoint struct {
 
 	// +checklocks:mu
 	igmp igmpState
-}
-
-// Restore implements stack.RestorableNetworkEndpoint.
-func (e *endpoint) Restore() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.igmp.restore()
 }
 
 // SetIGMPVersion implements IGMPEndpoint.

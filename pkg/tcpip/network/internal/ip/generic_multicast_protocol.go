@@ -514,68 +514,6 @@ func (g *GenericMulticastProtocolState) SendQueuedReportsLocked() {
 	}
 }
 
-func (g *GenericMulticastProtocolState) newDelayedReportJob(groupAddress tcpip.Address) *tcpip.Job {
-	return tcpip.NewJob(g.opts.Clock, g.protocolMU, func() {
-		if !g.opts.Protocol.Enabled() {
-			panic(fmt.Sprintf("delayed report job fired for group %s while the multicast group protocol is disabled", groupAddress))
-		}
-
-		info, ok := g.memberships[groupAddress]
-		if !ok {
-			panic(fmt.Sprintf("expected to find group state for group = %s", groupAddress))
-		}
-
-		info.delayedReportJobFiresAt = time.Time{}
-
-		switch g.mode {
-		case protocolModeV2:
-			reportBuilder := g.opts.Protocol.NewReportV2Builder()
-			reportBuilder.AddRecord(MulticastGroupProtocolV2ReportRecordModeIsExclude, groupAddress)
-			// Nothing meaningful we can do with the error here - we only try to
-			// send a delayed report once.
-			_, _ = reportBuilder.Send()
-		case protocolModeV1Compatibility, protocolModeV1:
-			g.maybeSendReportLocked(groupAddress, &info)
-		default:
-			panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
-		}
-
-		info.clearQueriedIncludeSources()
-		g.memberships[groupAddress] = info
-	})
-}
-
-// Restore re-initializes state:"nosave" fields after restore.
-//
-// Precondition: protocolMU must be locked.
-func (g *GenericMulticastProtocolState) Restore(protocolMU *sync.RWMutex, rand *rand.Rand) {
-	g.protocolMU = protocolMU
-	g.opts.Rand = rand
-	for groupAddress, info := range g.memberships {
-		info.delayedReportJob = g.newDelayedReportJob(groupAddress)
-		if g.mode != protocolModeV2 && info.transmissionLeft > 0 {
-			g.setDelayTimerForAddressLocked(
-				groupAddress,
-				&info,
-				g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay),
-			)
-		}
-		g.memberships[groupAddress] = info
-	}
-	if g.mode == protocolModeV1Compatibility {
-		modeRevertDelay := time.Duration(g.robustnessVariable) * g.queryInterval
-		g.modeTimer = g.opts.Clock.AfterFunc(modeRevertDelay, func() {
-			g.protocolMU.Lock()
-			defer g.protocolMU.Unlock()
-			g.mode = protocolModeV2
-		})
-	}
-	if g.stateChangedReportV2TimerSet {
-		g.stateChangedReportV2TimerSet = false
-		g.scheduleStateChangedTimer()
-	}
-}
-
 // JoinGroupLocked handles joining a new group.
 //
 // Precondition: g.protocolMU must be locked.
@@ -591,9 +529,36 @@ func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Addre
 	} else {
 		info = multicastGroupState{
 			// Since we just joined the group, its count is 1.
-			joins:                 1,
-			lastToSendReport:      false,
-			delayedReportJob:      g.newDelayedReportJob(groupAddress),
+			joins:            1,
+			lastToSendReport: false,
+			delayedReportJob: tcpip.NewJob(g.opts.Clock, g.protocolMU, func() {
+				if !g.opts.Protocol.Enabled() {
+					panic(fmt.Sprintf("delayed report job fired for group %s while the multicast group protocol is disabled", groupAddress))
+				}
+
+				info, ok := g.memberships[groupAddress]
+				if !ok {
+					panic(fmt.Sprintf("expected to find group state for group = %s", groupAddress))
+				}
+
+				info.delayedReportJobFiresAt = time.Time{}
+
+				switch g.mode {
+				case protocolModeV2:
+					reportBuilder := g.opts.Protocol.NewReportV2Builder()
+					reportBuilder.AddRecord(MulticastGroupProtocolV2ReportRecordModeIsExclude, groupAddress)
+					// Nothing meaningful we can do with the error here - we only try to
+					// send a delayed report once.
+					_, _ = reportBuilder.Send()
+				case protocolModeV1Compatibility, protocolModeV1:
+					g.maybeSendReportLocked(groupAddress, &info)
+				default:
+					panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+				}
+
+				info.clearQueriedIncludeSources()
+				g.memberships[groupAddress] = info
+			}),
 			queriedIncludeSources: make(map[tcpip.Address]struct{}),
 		}
 	}

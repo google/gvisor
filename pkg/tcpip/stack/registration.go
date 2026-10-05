@@ -922,15 +922,6 @@ type NetworkEndpoint interface {
 	Stats() NetworkEndpointStats
 }
 
-// RestorableNetworkEndpoint is a network endpoint that needs to restore state
-// after being loaded from a checkpoint.
-type RestorableNetworkEndpoint interface {
-	NetworkEndpoint
-
-	// Restore restores the network endpoint after a checkpoint load.
-	Restore()
-}
-
 // NetworkEndpointStats is the interface implemented by each network endpoint
 // stats struct.
 type NetworkEndpointStats interface {
