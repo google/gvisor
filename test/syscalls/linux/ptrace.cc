@@ -366,6 +366,7 @@ TEST(PtraceTest, AccessVmUsesAttachCreds_CapGainedAfterAttach) {
 // belongs to an outer user namespace.
 TEST(PtraceTest, TracemeNonDumpableInUserns) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
 
   // The helper must be single-threaded to unshare a user namespace, so fork
   // before dropping privileges.

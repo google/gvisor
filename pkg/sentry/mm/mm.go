@@ -199,9 +199,8 @@ type MemoryManager struct {
 	// userNS is Linux's mm_struct::user_ns: the user namespace in which
 	// CAP_SYS_PTRACE grants access to this MemoryManager when it is not
 	// dumpable. It is set by the loader before the MemoryManager becomes
-	// visible to other tasks and is immutable thereafter. May be nil for
-	// MemoryManagers restored from older saved states, in which case callers
-	// should fall back to the owning task's user namespace.
+	// visible to other tasks (and preserved across save/restore), and is
+	// immutable thereafter.
 	userNS *auth.UserNamespace
 
 	metadataMu metadataMutex `state:"nosave"`

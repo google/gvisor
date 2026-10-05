@@ -392,8 +392,8 @@ type Task struct {
 
 	// ptracerCreds is a snapshot of this task's tracer's credentials,
 	// captured when the tracing relationship was established, analogous to
-	// Linux's task_struct::ptracer_cred. It is nil if the task is not being
-	// traced (and may be nil for tasks restored from older saved states).
+	// Linux's task_struct::ptracer_cred. It is nil if and only if the task is
+	// not being traced.
 	//
 	// ptracerCreds is protected by the TaskSet mutex.
 	ptracerCreds *auth.Credentials

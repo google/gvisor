@@ -50,7 +50,8 @@ func (mm *MemoryManager) SetDumpability(d Dumpability) {
 
 // UserNamespace returns the user namespace in which CAP_SYS_PTRACE grants
 // access to this MemoryManager when it is not dumpable, analogous to Linux's
-// mm_struct::user_ns. May be nil; see MemoryManager.userNS.
+// mm_struct::user_ns. The loader sets it before the MemoryManager becomes
+// visible to other tasks; see MemoryManager.userNS.
 func (mm *MemoryManager) UserNamespace() *auth.UserNamespace {
 	return mm.userNS
 }

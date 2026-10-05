@@ -305,12 +305,16 @@ func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {
 		return auth.RootKUID, auth.RootKGID
 	}
 	if m.Dumpability() != mm.UserDumpable {
+		// Linux's fs/proc/base.c:task_dump_owner() maps root in the mm's user
+		// namespace, which fs/exec.c:would_dump() may have lowered to an
+		// ancestor of the task's namespace.
+		userNS := m.UserNamespace()
 		uid = auth.RootKUID
-		if kuid := creds.UserNamespace.MapToKUID(auth.RootUID); kuid.Ok() {
+		if kuid := userNS.MapToKUID(auth.RootUID); kuid.Ok() {
 			uid = kuid
 		}
 		gid = auth.RootKGID
-		if kgid := creds.UserNamespace.MapToKGID(auth.RootGID); kgid.Ok() {
+		if kgid := userNS.MapToKGID(auth.RootGID); kgid.Ok() {
 			gid = kgid
 		}
 	}
