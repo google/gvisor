@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
+load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_archive", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -276,6 +276,15 @@ def _nogo_aspect_impl(target, ctx):
         # transitive dependencies.
         srcs = []
         deps = ctx.rule.attr.deps
+    elif go_has_archive(target) and hasattr(ctx.rule.attr, "exports"):
+        # Configuration wrappers forward one compiled target. Analyze that
+        # target in its own configuration, then preserve its complete facts.
+        exports = ctx.rule.attr.exports
+        if type(exports) == "list":
+            if len(exports) != 1:
+                fail("nogo requires configuration wrappers to export one target")
+            exports = exports[0]
+        return [exports[NogoInfo]]
     else:
         return [NogoInfo()]
 
@@ -376,6 +385,7 @@ nogo_aspect = go_rule(
         "deps",
         "library",
         "embed",
+        "exports",
     ],
     attrs = {
         "_nogo": attr.label(
