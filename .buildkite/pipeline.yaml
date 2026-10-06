@@ -79,6 +79,7 @@ env:
   # Optional filter for syscall tests.
   SYSCALL_TEST_FILTERS: ''
 
+priority: ${PRIORITY:-0}
 steps:
   # Run basic smoke tests before preceding to other tests.
   - <<: *common
