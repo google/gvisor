@@ -31,12 +31,13 @@ namespace {
 // gVisor.
 constexpr uint32_t kNotImplementedSyscall = SYS_get_kernel_syms;
 #elif defined(__aarch64__)
-// Use the last of arch_specific_syscalls which are not implemented on arm64.
-constexpr uint32_t kNotImplementedSyscall = __NR_arch_specific_syscall + 15;
+// ARM64 leaves the architecture-specific range (244-259) unassigned.
+// https://github.com/torvalds/linux/blob/7d0a66e4b/scripts/syscall.tbl#L291-L305
+constexpr uint32_t kNotImplementedSyscall = 259;
 #elif defined(__riscv)
-// `__NR_arch_specific_syscall + 15` is used on RISC-V for
-// `sys_riscv_flush_icache(). Use `__NR_arch_specific_syscall + 14` instead.
-constexpr uint32_t kNotImplementedSyscall = __NR_arch_specific_syscall + 14;
+// Slot 257 is unassigned; 258 and 259 are riscv_hwprobe and riscv_flush_icache.
+// https://github.com/torvalds/linux/blob/7d0a66e4b/scripts/syscall.tbl#L291-L305
+constexpr uint32_t kNotImplementedSyscall = 257;
 #endif
 
 TEST(BadSyscallTest, NotImplemented) {
