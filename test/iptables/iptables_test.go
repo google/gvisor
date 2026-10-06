@@ -588,8 +588,16 @@ func TestNATPostSNATUDP(t *testing.T) {
 	singleTest(t, &NATPostSNATUDP{})
 }
 
+func TestNATPostSNATUDPWithPort(t *testing.T) {
+	singleTest(t, &NATPostSNATUDP{withPort: true})
+}
+
 func TestNATPostSNATTCP(t *testing.T) {
 	singleTest(t, &NATPostSNATTCP{})
+}
+
+func TestNATPostSNATTCPWithPort(t *testing.T) {
+	singleTest(t, &NATPostSNATTCP{withPort: true})
 }
 
 func TestFilterInputDropAllSrcPorts(t *testing.T) {
