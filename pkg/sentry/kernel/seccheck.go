@@ -89,5 +89,15 @@ func LoadSeccheckDataLocked(t *Task, mask seccheck.FieldMask, info *pb.ContextDa
 	if mask.Contains(seccheck.FieldCtxtIsExecSession) {
 		info.IsExecSession = (t.Origin == OriginExec)
 	}
-	t.Credentials().LoadSeccheckData(mask, info)
+	if mask.Contains(seccheck.FieldCtxtCredentials) {
+		creds := t.Credentials()
+		info.Credentials = &pb.Credentials{
+			RealUid:      uint32(creds.RealKUID),
+			EffectiveUid: uint32(creds.EffectiveKUID),
+			SavedUid:     uint32(creds.SavedKUID),
+			RealGid:      uint32(creds.RealKGID),
+			EffectiveGid: uint32(creds.EffectiveKGID),
+			SavedGid:     uint32(creds.SavedKGID),
+		}
+	}
 }

@@ -81,7 +81,7 @@ func BenchmarkExecuteSyscall(b *testing.B) {
 			},
 		},
 		{
-			// Tests protobuf nesting. Calling task.Credentials().LoadSeccheckData(...)
+			// Tests protobuf nesting. Loading the task's credentials
 			// dynamically builds out nested structs (euid, suid, fsuid, groups, etc.)
 			// and performs heavier allocations.
 			name: "Credentials",

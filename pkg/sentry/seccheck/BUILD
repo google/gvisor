@@ -30,8 +30,6 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/abi",
-        "//pkg/abi/linux",
         "//pkg/abi/sentry",
         "//pkg/atomicbitops",
         "//pkg/context",
@@ -39,8 +37,6 @@ go_library(
         "//pkg/gohacks",
         "//pkg/log",
         "//pkg/metric",
-        "//pkg/sentry/arch",
-        "//pkg/sentry/ktime",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
         "@org_golang_google_protobuf//proto:go_default_library",
