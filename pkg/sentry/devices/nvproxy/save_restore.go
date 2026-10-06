@@ -334,6 +334,21 @@ func (fd *uvmFD) afterLoad(ctx goContext.Context) {
 	fd.memmapFile.SetFD(int(fd.hostFD))
 }
 
+// beforeSave is invoked by stateify.
+func (fd *uvmToolsFD) beforeSave() {
+	if len(fd.mirrors) != 0 {
+		panic("nvproxy: UVM tools event trackers are not restorable")
+	}
+}
+
+// afterLoad is invoked by stateify.
+func (fd *uvmToolsFD) afterLoad(ctx goContext.Context) {
+	fd.hostFD = openHostDevFileForRestore(ctx, "nvidia-uvm-tools", fd.dev.nvp.useDevGofer, fd.containerName, fd.vfsfd.StatusFlags())
+	if err := fdnotifier.AddFD(fd.hostFD, &fd.queue); err != nil {
+		panic(fmt.Sprintf("fdnotifier.AddFD(%d) failed for UVM tools device: %v", fd.hostFD, err))
+	}
+}
+
 // openHostDevFileForRestore differs from openHostDevFile in the following ways:
 //   - The context passed to restore is not bound to a specific container, so
 //     devutil.CtxDevGoferClient is not set. Instead, a container name is passed by the

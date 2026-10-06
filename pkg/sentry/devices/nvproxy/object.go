@@ -15,12 +15,10 @@
 package nvproxy
 
 import (
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/mm"
 )
 
 // object tracks a driver object.
@@ -411,24 +409,14 @@ func (c *rootClient) getObject(ctx context.Context, h nvgpu.Handle) *object {
 // osDescMem is an objectImpl tracking a NV01_MEMORY_SYSTEM_OS_DESCRIPTOR.
 type osDescMem struct {
 	object
-	pinnedRanges []mm.PinnedRange
-
-	// If m is non-zero, it is the start address of a mapping of length len
-	// that should be unmapped when the osDescMem is released.
-	m   uintptr
-	len uintptr
+	appMirror
 }
 
 // Release implements objectImpl.Release.
 func (o *osDescMem) Release(ctx context.Context) func() {
 	// Unpin pages (which takes MM locks) without holding nvproxy locks.
 	return func() {
-		if o.m != 0 {
-			if _, _, errno := unix.RawSyscall(unix.SYS_MUNMAP, o.m, o.len, 0); errno != 0 {
-				ctx.Warningf("nvproxy: failed to unmap %#x-%#x: %v", o.m, o.m+o.len, errno)
-			}
-		}
-		mm.Unpin(o.pinnedRanges)
+		o.appMirror.release(ctx)
 		if ctx.IsLogging(log.Debug) {
 			total := uint64(0)
 			for _, pr := range o.pinnedRanges {
