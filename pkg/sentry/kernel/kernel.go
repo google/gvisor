@@ -192,6 +192,10 @@ type Kernel struct {
 	// signals under Linux SIGNAL_UNKILLABLE semantics (see SignalUnkillablePolicy).
 	signalUnkillable SignalUnkillablePolicy
 
+	// dumpGoroutinesSignal is the signal that triggers a non-fatal goroutine
+	// stack dump. If 0, goroutine dumping on signal is disabled.
+	dumpGoroutinesSignal linux.Signal
+
 	// futexes is the "root" futex.Manager, from which all others are forked.
 	// This is necessary to ensure that shared futexes are coherent across all
 	// tasks, including those created by CreateProcess.
@@ -552,6 +556,10 @@ type InitKernelArgs struct {
 	// SignalUnkillable controls protection of PID namespace init processes from
 	// signals under Linux SIGNAL_UNKILLABLE semantics.
 	SignalUnkillable SignalUnkillablePolicy
+
+	// DumpGoroutinesSignal is the signal that triggers a non-fatal goroutine
+	// stack dump. If 0, goroutine dumping on signal is disabled.
+	DumpGoroutinesSignal linux.Signal
 }
 
 // Init initializes the Kernel with no tasks.
@@ -576,6 +584,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 	k.featureSet = args.FeatureSet
 	k.signalUnkillable = args.SignalUnkillable
+	k.dumpGoroutinesSignal = args.DumpGoroutinesSignal
 	k.timekeeper = args.Timekeeper
 	k.tasks = newTaskSet(args.RootPIDNamespace)
 	k.rootUserNamespace = args.RootUserNamespace

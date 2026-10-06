@@ -404,3 +404,40 @@ func TestDeliverSignalToInit(t *testing.T) {
 		}
 	}
 }
+
+func TestDumpGoroutinesSignal(t *testing.T) {
+	// When DumpGoroutinesSignal is set, external signal should dump goroutines
+	// and be consumed without forwarding to globalInit.
+	{
+		k := &Kernel{dumpGoroutinesSignal: linux.SIGUSR1}
+		// If it were forwarded, with globalInit == nil it would panic.
+		// Since it is consumed, sendExternalSignal returns cleanly.
+		k.sendExternalSignal(&linux.SignalInfo{Signo: int32(linux.SIGUSR1)}, "test")
+	}
+
+	// When DumpGoroutinesSignal is 0 (disabled), external SIGUSR1 should be forwarded
+	// to globalInit.
+	{
+		k := &Kernel{dumpGoroutinesSignal: 0}
+		k.cgroupRegistry = sharedFakeRegistry
+		taskSet := &TaskSet{}
+		pidns := &PIDNamespace{owner: taskSet}
+		initTG := &ThreadGroup{
+			signalHandlers: NewSignalHandlers(),
+		}
+		initTG.pidns = pidns
+		initTG.pidWithinNS.Store(int32(initTID))
+		task := &Task{k: k}
+		task.tg = initTG
+		initTG.leader = task
+		prefix := ""
+		task.logPrefix.Store(&prefix)
+		task.signalMask.Store(^uint64(0))
+		k.globalInit = initTG
+
+		k.sendExternalSignal(&linux.SignalInfo{Signo: int32(linux.SIGUSR1)}, "test")
+		if task.pendingSignals.pendingSet.Load() == 0 && initTG.pendingSignals.pendingSet.Load() == 0 {
+			t.Errorf("SIGUSR1 was not delivered to globalInit when dumpGoroutinesSignal is 0")
+		}
+	}
+}
