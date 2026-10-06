@@ -92,8 +92,9 @@ func (w *Waiter) WaitFor(es Set) Set {
 
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
 		// called or has not reached atomic.SwapUintptr()), go to sleep until
-		// w.NotifyPending() => goready().
-		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceBlockSelect, 0)
+		// w.NotifyPending() => goready(). This is a custom sync wait,
+		// not a channel select with runtime sudog records.
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSemacquire, sync.TraceBlockSync, 0)
 	}
 }
 
@@ -138,8 +139,9 @@ func (w *Waiter) WaitAndAckAll() Set {
 
 		// If w.g is still preparingG (i.e. w.NotifyPending() has not been
 		// called or has not reached atomic.SwapUintptr()), go to sleep until
-		// w.NotifyPending() => goready().
-		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSelect, sync.TraceBlockSelect, 0)
+		// w.NotifyPending() => goready(). This is a custom sync wait,
+		// not a channel select with runtime sudog records.
+		sync.Gopark(waiterCommit, unsafe.Pointer(&w.g), sync.WaitReasonSemacquire, sync.TraceBlockSync, 0)
 
 		// Check for pending events. We call PendingAndAckAll() directly now since
 		// we only expect to be woken after events become pending.

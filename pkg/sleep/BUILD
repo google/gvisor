@@ -18,8 +18,12 @@ go_test(
     name = "sleep_test",
     size = "medium",
     srcs = [
+        "goroutineleak_test.go",
         "sleep_test.go",
     ],
     library = ":sleep",
-    deps = ["//pkg/atomicbitops"],
+    deps = [
+        "//pkg/atomicbitops",
+        "//pkg/syncevent",
+    ],
 )
