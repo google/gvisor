@@ -310,6 +310,9 @@ type vma struct {
 	// being marked for COW
 	eagerForkCopy bool
 
+	// sealed tells us whether the vma can be modified or not.
+	sealed bool
+
 	mlockMode memmap.MLockMode
 
 	// numaPolicy is the NUMA policy for this vma set by mbind().
@@ -352,6 +355,7 @@ func (v *vma) copy() vma {
 		isStack:        v.isStack,
 		dontfork:       v.dontfork,
 		eagerForkCopy:  v.eagerForkCopy,
+		sealed:         v.sealed,
 		mlockMode:      v.mlockMode,
 		numaPolicy:     v.numaPolicy,
 		numaNodemask:   v.numaNodemask,

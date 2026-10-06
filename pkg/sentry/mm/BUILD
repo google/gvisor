@@ -186,6 +186,7 @@ go_test(
     library = ":mm",
     deps = [
         "//pkg/context",
+        "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/memutil",

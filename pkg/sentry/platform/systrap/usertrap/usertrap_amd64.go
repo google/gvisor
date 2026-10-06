@@ -181,6 +181,8 @@ func loadUsertrap(ctx context.Context, mm memoryManager, addr hostarch.Addr) err
 		// unmap under the threads in the middle of a trampoline, causing
 		// a fault and corrupting state.
 		EagerForkCopy: true,
+		// Prevent users from tampering with the usertrap table.
+		Sealed: true,
 		Perms: hostarch.AccessType{
 			Write:   false,
 			Read:    true,
