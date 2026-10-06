@@ -193,7 +193,7 @@ func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 
 // GSOMaxSize implements stack.GSOEndpoint.
 func (*Endpoint) GSOMaxSize() uint32 {
-	return stack.GVisorGSOMaxSize
+	return tcpip.GVisorGSOMaxSize
 }
 
 // SupportedGSO implements stack.GSOEndpoint.
