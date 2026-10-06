@@ -1174,6 +1174,12 @@
     - Apache-2.0
     - BSD-3-Clause
     - MIT
+- dependency: with_cfg.bzl
+  version: https://github.com/fmeum/with_cfg.bzl/releases/download/v1.0.0/with_cfg.bzl-v1.0.0.tar.gz
+  retrieved: "2026-10-05"
+  commit: a33b1b2d2fd38f5884643d37d1c54c5d280d583c
+  sha256: 79815b22f8de722a25bb90ccdc209c145c44983f6d7cd7deb6d87b2b35d821fa
+  license: Apache-2.0
 - dependency: xds
   version: https://github.com/cncf/xds/archive/ee656c7534f5d7dc23d44dd611689568f72017a6.tar.gz
   retrieved: "2026-08-27"
