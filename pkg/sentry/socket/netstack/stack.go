@@ -1087,7 +1087,12 @@ func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Err
 	if err != nil {
 		return err
 	}
+	found := false
 	if removed := s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
+		// Like Linux, remove only the first matching route.
+		if found {
+			return false
+		}
 		// Both gateway and NIC are compared with existing routes
 		// only when they are present in the netlink message.
 		if localRoute.Gateway.Len() > 0 && !localRoute.Gateway.Equal(rt.Gateway) {
@@ -1096,7 +1101,8 @@ func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Err
 		if localRoute.NIC > 0 && localRoute.NIC != rt.NIC {
 			return false
 		}
-		return rt.Destination.Equal(localRoute.Destination)
+		found = rt.Destination.Equal(localRoute.Destination)
+		return found
 	}); removed == 0 {
 		return syserr.ErrNoProcess
 	}

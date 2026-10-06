@@ -410,6 +410,14 @@ type MMapOpts struct {
 	// the mapping never need to break COW, which replaces the pages
 	// backing the mapping and unmaps the pages from the platform.AddressSpace.
 	EagerForkCopy bool
+
+	// If Sealed is true, the application may not unmap, remap, change the
+	// protections of, discard the contents of, madvise, or map over the
+	// mapping. Attempts to do so fail with EPERM. This is reserved for
+	// sentry-managed mapping within the application's address
+	// space (i.e. usertrap table). Seals are inherited across
+	// fork.
+	Sealed bool
 }
 
 // NameMut is the type of MMapOpts.NameMut.
