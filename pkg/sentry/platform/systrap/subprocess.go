@@ -187,6 +187,10 @@ type subprocess struct {
 
 	// dead indicates whether the subprocess is alive or not.
 	dead atomicbitops.Bool
+
+	queueStallMu sync.Mutex
+	// +checklocks:queueStallMu
+	queueStall queueStallState
 }
 
 var seccompNotifyIsSupported = false
