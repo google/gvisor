@@ -51,15 +51,17 @@ var Analyzer = &analysis.Analyzer{
 }
 
 var (
-	enableInferred = true
-	enableAtomic   = true
-	enableWrappers = true
+	enableInferred    = true
+	enableAtomic      = true
+	enableWrappers    = true
+	inferredThreshold = 0.9
 )
 
 func init() {
 	Analyzer.Flags.BoolVar(&enableInferred, "inferred", true, "enable inferred locks")
 	Analyzer.Flags.BoolVar(&enableAtomic, "atomic", true, "enable atomic checks")
 	Analyzer.Flags.BoolVar(&enableWrappers, "wrappers", true, "enable analysis of wrappers")
+	Analyzer.Flags.Float64Var(&inferredThreshold, "inferred-threshold", 0.9, "inferred annotation suggestion threshold (0.0-1.0)")
 }
 
 // objectObservations tracks lock correlations.
