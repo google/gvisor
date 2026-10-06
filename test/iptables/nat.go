@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -996,11 +997,11 @@ func (t *NATPostSNATUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) 
 	} else {
 		snatAddr = snatAddrV4
 	}
-	if got, want := remote.IP, net.ParseIP(snatAddr); !got.Equal(want) {
+	if got, want := remote.Addr(), netip.MustParseAddr(snatAddr); got != want {
 		return fmt.Errorf("got remote address = %s, want = %s", got, want)
 	}
 	if t.withPort {
-		if got, want := remote.Port, snatPort; got != want {
+		if got, want := remote.Port(), uint16(snatPort); got != want {
 			return fmt.Errorf("got remote port = %d, want = %d", got, want)
 		}
 	}
@@ -1060,19 +1061,15 @@ func (t *NATPostSNATTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) 
 	if err != nil {
 		return err
 	}
-	HostStr, portStr, err := net.SplitHostPort(remote.String())
-	if err != nil {
-		return err
+	want, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return fmt.Errorf("invalid container IP address: %v", ip)
 	}
-	if got, want := HostStr, ip.String(); got != want {
+	if got, want := remote.Addr(), want.Unmap(); got != want {
 		return fmt.Errorf("got remote address = %s, want = %s", got, want)
 	}
-	port, err := strconv.ParseInt(portStr, 10, 0)
-	if err != nil {
-		return err
-	}
 	if t.withPort {
-		if got, want := int(port), snatPort; got != want {
+		if got, want := remote.Port(), uint16(snatPort); got != want {
 			return fmt.Errorf("got remote port = %d, want = %d", got, want)
 		}
 	}
@@ -1199,7 +1196,11 @@ func (*NATPostMasqueradeUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bo
 	if err != nil {
 		return err
 	}
-	if got, want := remote.IP, ip; !got.Equal(want) {
+	want, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return fmt.Errorf("invalid container IP address: %v", ip)
+	}
+	if got, want := remote.Addr(), want.Unmap(); got != want {
 		return fmt.Errorf("got remote address = %s, want primary egress address = %s", got, want)
 	}
 	return nil
@@ -1237,11 +1238,11 @@ func (*NATPostMasqueradeTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bo
 	if err != nil {
 		return err
 	}
-	host, _, err := net.SplitHostPort(remote.String())
-	if err != nil {
-		return err
+	want, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return fmt.Errorf("invalid container IP address: %v", ip)
 	}
-	if got, want := net.ParseIP(host), ip; !got.Equal(want) {
+	if got, want := remote.Addr(), want.Unmap(); got != want {
 		return fmt.Errorf("got remote address = %s, want primary egress address = %s", got, want)
 	}
 	return nil
@@ -1283,10 +1284,14 @@ func (*NATPostMasqueradeToPortsUDP) LocalAction(ctx context.Context, ip net.IP, 
 	if err != nil {
 		return err
 	}
-	if got, want := remote.IP, ip; !got.Equal(want) {
+	want, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return fmt.Errorf("invalid container IP address: %v", ip)
+	}
+	if got, want := remote.Addr(), want.Unmap(); got != want {
 		return fmt.Errorf("got remote address = %s, want primary egress address = %s", got, want)
 	}
-	if got, want := remote.Port, masqueradeMappedPort; got != want {
+	if got, want := remote.Port(), uint16(masqueradeMappedPort); got != want {
 		return fmt.Errorf("got remote port = %d, want --to-ports port = %d", got, want)
 	}
 	return nil
