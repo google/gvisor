@@ -17,7 +17,9 @@
 
 #include <errno.h>
 #include <sys/mount.h>
+#include <sys/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>

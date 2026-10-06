@@ -14,6 +14,7 @@
 
 #ifdef __linux__
 
+#include <errno.h>
 #include <linux/capability.h>
 #include <linux/if_ether.h>
 #include <netinet/in.h>
@@ -24,7 +25,6 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 
-#include <cerrno>
 #include <iostream>
 #include <string>
 #include <vector>
