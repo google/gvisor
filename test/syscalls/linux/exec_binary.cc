@@ -15,12 +15,15 @@
 #include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -41,12 +44,15 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -54,6 +60,8 @@ namespace {
 
 using ::testing::AnyOf;
 using ::testing::Eq;
+
+constexpr int kUnprivilegedUid = 12345;
 
 #if !defined(__x86_64__) && !defined(__aarch64__)
 // The assembly stub and ELF internal details must be ported to other arches.
@@ -1318,10 +1326,6 @@ TEST(ElfTest, NoExecute) {
 
 // Execute, but no read permissions on the binary works just fine.
 TEST(ElfTest, NoRead) {
-  // TODO(gvisor.dev/issue/160): gVisor's backing filesystem may prevent the
-  // sentry from reading the executable.
-  SKIP_IF(IsRunningOnGvisor());
-
   ElfBinary<64> elf = StandardElf();
   elf.UpdateOffsets();
 
@@ -1337,9 +1341,76 @@ TEST(ElfTest, NoRead) {
 
   ASSERT_NO_ERRNO(WaitStopped(child));
 
-  // TODO(gvisor.dev/issue/160): A task with a non-readable executable is marked
-  // non-dumpable, preventing access to proc files. gVisor does not implement
-  // this behavior.
+  // Root can read the binary. ElfTest.NoReadNotDumpable tests a user that
+  // cannot.
+}
+
+// Runs ElfTest.NoReadNotDumpable* as an unprivileged user. fn runs in the
+// child before exec.
+void NoReadNotDumpableTest(const std::function<void()>& fn) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+  ASSERT_THAT(chmod(file.path().c_str(), 0111), SyscallSucceeds());
+
+  // Change the uid in a separate thread. This keeps other tests unchanged.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_THAT(open(file.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // After exec, the tracer cannot attach. Thus, attach before exec.
+    // setresuid makes the child non-dumpable, so make it dumpable first.
+    pid_t child;
+    int execve_errno;
+    auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+        file.path(), {file.path()}, {},
+        [&] {
+          fn();
+          TEST_PCHECK(prctl(PR_SET_DUMPABLE, 1 /* SUID_DUMP_USER */) == 0);
+          TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+        },
+        &child, &execve_errno));
+    ASSERT_EQ(execve_errno, 0);
+
+    // The child stops with SIGTRAP after exec.
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) << status;
+
+    // The tracer cannot access the memory of the child.
+    errno = 0;
+    EXPECT_THAT(ptrace(PTRACE_PEEKTEXT, child, elf.header.e_entry, 0),
+                SyscallFailsWithErrno(EIO));
+    EXPECT_THAT(ptrace(PTRACE_POKETEXT, child, elf.header.e_entry, 0),
+                SyscallFailsWithErrno(EIO));
+    EXPECT_THAT(open(absl::StrCat("/proc/", child, "/mem").c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+    char buf;
+    struct iovec local = {&buf, sizeof(buf)};
+    struct iovec remote = {reinterpret_cast<void*>(elf.header.e_entry),
+                           sizeof(buf)};
+    EXPECT_THAT(process_vm_readv(child, &local, 1, &remote, 1, 0),
+                SyscallFailsWithErrno(EPERM));
+  });
+}
+
+// If a task cannot read the binary, exec makes the task non-dumpable. Its
+// tracer then cannot read its memory.
+TEST(ElfTest, NoReadNotDumpable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  NoReadNotDumpableTest([] {});
+}
+
+// Same as NoReadNotDumpable, but the child does exec in a new user namespace.
+// The tracer owns this namespace, but it still cannot read the memory.
+TEST(ElfTest, NoReadNotDumpableInUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  NoReadNotDumpableTest([] { TEST_PCHECK(unshare(CLONE_NEWUSER) == 0); });
 }
 
 // No execute permissions on the ELF interpreter.

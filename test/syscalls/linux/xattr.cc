@@ -244,6 +244,33 @@ TEST_F(XattrTest, XattrWriteOnly) {
   EXPECT_THAT(removexattr(path, name), SyscallSucceeds());
 }
 
+// A read of a security.*, system.* or trusted.* xattr does not need read
+// permission. For example, `ls -l` reads security.selinux.
+//
+// Do not save after the chmod. Restore cannot open the file.
+TEST_F(XattrTest, XattrSecurityNoReadPermission) {
+  // Drop capabilities that allow us to override file and directory permissions.
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
+  AutoCapability cap3(CAP_SYS_ADMIN, false);
+
+  DisableSave ds;
+  ASSERT_NO_ERRNO(testing::Chmod(test_file_name_, S_IXUSR));
+
+  const char* path = test_file_name_.c_str();
+  EXPECT_THAT(getxattr(path, "user.test", nullptr, 0),
+              SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(getxattr(path, "security.selinux", nullptr, 0),
+              AnyOf(SyscallSucceeds(),
+                    SyscallFailsWithErrno(AnyOf(ENODATA, EOPNOTSUPP))));
+  EXPECT_THAT(getxattr(path, "system.posix_acl_access", nullptr, 0),
+              AnyOf(SyscallSucceeds(),
+                    SyscallFailsWithErrno(AnyOf(ENODATA, EOPNOTSUPP))));
+  // Without CAP_SYS_ADMIN, trusted.* xattrs are not visible.
+  EXPECT_THAT(getxattr(path, "trusted.test", nullptr, 0),
+              SyscallFailsWithErrno(AnyOf(ENODATA, EOPNOTSUPP)));
+}
+
 TEST_F(XattrTest, XattrTrustedWithNonadmin) {
   // Gofer does not support trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&

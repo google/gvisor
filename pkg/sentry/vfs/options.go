@@ -140,7 +140,7 @@ type OpenOptions struct {
 	// FileExec is set when the file is being opened to be executed.
 	// VirtualFilesystem.OpenAt() checks that the caller has execute permissions
 	// on the file, that the file is a regular file, and that the mount doesn't
-	// have MS_NOEXEC set.
+	// have MS_NOEXEC set. The caller does not need read permission.
 	FileExec bool
 }
 

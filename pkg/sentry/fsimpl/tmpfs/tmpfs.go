@@ -1110,8 +1110,10 @@ func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (st
 	}
 
 	acl := i.accessACL.Load()
-	if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, acl, kuid, kgid); err != nil {
-		return "", err
+	if vfs.XattrRequiresInodePermission(opts.Name, vfs.MayRead) {
+		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, acl, kuid, kgid); err != nil {
+			return "", err
+		}
 	}
 
 	return i.xattrs.GetXattr(creds, mode, kuid, opts)

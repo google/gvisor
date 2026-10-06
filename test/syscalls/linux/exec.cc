@@ -1161,6 +1161,80 @@ TEST(ExecTest, SUIDExecDoesntGainUIDForInterpreterScript) {
   });
 }
 
+// Exec of a file needs only execute permission. If the task cannot read the
+// file, the task becomes non-dumpable.
+TEST(ExecTest, ExecOnlyExecutableIsNotDumpable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  std::string exec_blob;
+  ASSERT_NO_ERRNO(GetContents(RunfilePath(kCheckEuidProgram), &exec_blob));
+  TempPath exe = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, 0111));
+
+  // Change the uid in a separate thread. This keeps other tests unchanged.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_EQ(geteuid(), kUnprivilegedUid);
+    ASSERT_THAT(open(exe.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    int dumpability;
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER), SyscallSucceeds());
+    ASSERT_THAT(dumpability = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
+    ASSERT_EQ(dumpability, SUID_DUMP_USER);
+
+    const ExecveArray argv = {
+        exe.path(),
+        /*want_euid=*/absl::StrCat(kUnprivilegedUid),
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_DISABLE)};
+    CheckExec(exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+}
+
+// Exec of a set-user-ID file needs only execute permission (b/562533761).
+TEST(ExecTest, SUIDExecOnlyExecutableGainsUID) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  std::string exec_blob;
+  ASSERT_NO_ERRNO(GetContents(RunfilePath(kCheckEuidProgram), &exec_blob));
+  // This test fails if /tmp/ has the nosuid mount option.
+  TempPath suid_exe = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetShortTestTmpdir(), exec_blob, 0111 | S_ISUID));
+
+  int privilegedUid = geteuid();
+  // Change the uid in a separate thread. This keeps other tests unchanged.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_EQ(geteuid(), kUnprivilegedUid);
+    ASSERT_THAT(open(suid_exe.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    const ExecveArray argv = {
+        suid_exe.path(),
+        /*want_euid=*/absl::StrCat(privilegedUid),
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(SUID_DUMP_DISABLE)};
+    CheckExec(suid_exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+}
+
+// Exec of a FIFO fails immediately. It does not wait for a writer.
+TEST(ExecTest, ExecFifoFailsWithoutBlocking) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string fifo = JoinPath(dir.path(), "fifo");
+  ASSERT_THAT(mkfifo(fifo.c_str(), 0777), SyscallSucceeds());
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(fifo, {fifo}, {}, nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, EACCES);
+}
+
 struct CloneExecArgs {
   const char* path;
   char* const* argv;

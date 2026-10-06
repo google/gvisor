@@ -896,7 +896,11 @@ afterTrailingSymlink:
 // Preconditions: filesystem.renameMu must be locked.
 func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) error {
 	ats := vfs.AccessTypesForOpenFlags(opts)
-	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
+	permAts, err := vfs.AccessTypesForOpenPermissionCheck(opts, linux.FileMode(d.mode.Load()))
+	if err != nil {
+		return err
+	}
+	if err := d.checkPermissions(rp.Credentials(), permAts); err != nil {
 		return err
 	}
 	if d.isDir() {

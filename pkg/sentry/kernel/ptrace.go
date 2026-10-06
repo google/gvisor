@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -208,14 +209,14 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	// """
 	callerCreds := t.Credentials()
 	targetCreds := target.Credentials()
-	if callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace) {
-		return true
-	}
-	if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
-		return false
-	}
-	if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
-		return false
+	hasCap := callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace)
+	if !hasCap {
+		if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
+			return false
+		}
+		if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
+			return false
+		}
 	}
 	var targetMM *mm.MemoryManager
 	var targetUserDumpable bool
@@ -224,13 +225,18 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 		targetUserDumpable = t.userDumpable
 	})
 	if targetMM != nil {
-		if targetMM.Dumpability() != mm.UserDumpable {
+		// Use the namespace of the MM. After exec of an unreadable file, it can
+		// be an ancestor of the target namespace.
+		if targetMM.Dumpability() != mm.UserDumpable && !callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM, targetCreds)) {
 			return false
 		}
 	} else {
 		if !targetUserDumpable && !callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, t.Kernel().RootUserNamespace()) {
 			return false
 		}
+	}
+	if hasCap {
+		return true
 	}
 	if callerCreds.UserNamespace != targetCreds.UserNamespace {
 		return false
@@ -239,6 +245,33 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 		return false
 	}
 	return true
+}
+
+// mmUserNamespace returns the namespace in which the caller needs
+// CAP_SYS_PTRACE to access m when m is not UserDumpable.
+func mmUserNamespace(m *mm.MemoryManager, creds *auth.Credentials) *auth.UserNamespace {
+	if ns := m.UserNamespace(); ns != nil {
+		return ns
+	}
+	return creds.UserNamespace
+}
+
+// ptraceMayAccessVM returns true if t, the tracer of target, can access the
+// memory of target.
+//
+// +checklocksexclude:target.mu
+func (t *Task) ptraceMayAccessVM(target *Task) bool {
+	var targetMM *mm.MemoryManager
+	target.WithMuLocked(func(tt *Task) {
+		targetMM = tt.MemoryManager()
+	})
+	if targetMM == nil {
+		return false
+	}
+	if targetMM.Dumpability() == mm.UserDumpable {
+		return true
+	}
+	return t.Credentials().HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM, target.Credentials()))
 }
 
 // canTraceYAMALocked performs ptrace access checks as defined by the YAMA LSM
@@ -1193,6 +1226,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 
 	switch req {
 	case linux.PTRACE_PEEKTEXT, linux.PTRACE_PEEKDATA:
+		if !t.ptraceMayAccessVM(target) {
+			return linuxerr.EIO
+		}
 		// "At the system call level, the PTRACE_PEEKTEXT, PTRACE_PEEKDATA, and
 		// PTRACE_PEEKUSER requests have a different API: they store the result
 		// at the address specified by the data parameter, and the return value
@@ -1205,6 +1241,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		return err
 
 	case linux.PTRACE_POKETEXT, linux.PTRACE_POKEDATA:
+		if !t.ptraceMayAccessVM(target) {
+			return linuxerr.EIO
+		}
 		word := t.Arch().Native(uintptr(data))
 		_, err := word.CopyOut(target.CopyContext(t, usermem.IOOpts{IgnorePermissions: true}), addr)
 		return err

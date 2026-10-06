@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -394,6 +395,22 @@ type loadedELF struct {
 	//	* AT_BASE
 	//	* AT_ENTRY
 	auxv arch.Auxv
+
+	// nonDumpable is true if the task cannot read the ELF or its interpreter.
+	nonDumpable bool
+
+	// userns is the value for mm.MemoryManager.UserNamespace.
+	userns *auth.UserNamespace
+}
+
+// checkReadable sets l.nonDumpable and raises l.userns if the task cannot read
+// fd.
+func (l *loadedELF) checkReadable(ctx context.Context, fd *vfs.FileDescription) {
+	if mayRead(ctx, fd) {
+		return
+	}
+	l.nonDumpable = true
+	l.userns = privilegedOver(ctx, fd, l.userns)
 }
 
 // loadParsedELF loads f into mm.
@@ -651,6 +668,8 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, *arch.Context64, er
 		ctx.Infof("Error loading binary: %v", err)
 		return loadedELF{}, nil, err
 	}
+	bin.userns = auth.CredentialsFromContext(ctx).UserNamespace
+	bin.checkReadable(ctx, args.File)
 
 	var interp loadedELF
 	if bin.interpreter != "" {
@@ -679,6 +698,8 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, *arch.Context64, er
 			ctx.Infof("Interpreter requires an interpreter")
 			return loadedELF{}, nil, linuxerr.ENOEXEC
 		}
+
+		bin.checkReadable(ctx, intFile)
 	}
 
 	// ELF-specific auxv entries.
