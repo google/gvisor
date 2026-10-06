@@ -1,3 +1,4 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_license//rules:license.bzl", "license")
@@ -18,6 +19,7 @@ license(
 )
 
 exports_files([
+    "CODEOWNERS",
     "LICENSE",
     "README.md",
     "SECURITY.md",
@@ -25,6 +27,19 @@ exports_files([
     "MAINTAINERS.md",
     "ADOPTERS.md",
 ])
+
+write_source_files(
+    name = "governance-regen",
+    files = {
+        "CODEOWNERS": "//governance:generated/CODEOWNERS",
+        "MAINTAINERS.md": "//governance:generated/MAINTAINERS.md",
+    },
+)
+
+test_suite(
+    name = "governance-check",
+    tests = [":governance-regen_tests"],
+)
 
 release_files(
     name = "release",

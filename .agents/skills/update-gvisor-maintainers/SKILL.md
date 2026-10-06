@@ -3,21 +3,19 @@ name: update-gvisor-maintainers
 description: >
   Update the gVisor maintainer roster in governance/maintainers.yaml or the
   specialization areas in governance/areas.yaml, and regenerate the files derived
-  from them (.github/reviewer.json, MAINTAINERS.md and CODEOWNERS).
+  from them (MAINTAINERS.md and CODEOWNERS).
   Use when a maintainer goes on hiatus, returns from hiatus, is added, steps down to
   emeritus, changes employer or specialization, or when MAINTAINERS.md /
-  reviewer.json / CODEOWNERS are out of sync.
+  CODEOWNERS are out of sync.
 ---
 
 # Update the gVisor maintainer roster
 
 `governance/maintainers.yaml` (the roster) and `governance/areas.yaml`
-(specialization areas, each mapping a name to repository paths) are the single
-source of truth. `.github/reviewer.json`, `MAINTAINERS.md` and `CODEOWNERS` are
-generated from them by `//governance/tools/maintainers:maintainers_gen`, and the
-`make governance-check` CI step byte-compares all three against the checked-in
-copies. So: edit the YAML, regenerate, run the check. Never hand-edit the
-generated files; the check will catch you, and rightly so.
+(specialization areas) are the sources of truth. Reviewer assignment and the
+Go generator read the same area data. The generator produces `MAINTAINERS.md`
+and `CODEOWNERS`. Edit the source data,
+regenerate, and run the comparison tests. Do not hand-edit generated files.
 
 ## Schema
 
@@ -52,17 +50,15 @@ Each entry under `areas:` in `areas.yaml`:
 
 `status` is one of three, and it drives everything downstream:
 
-Status                      | Reviews | Merge permissions | `reviewer.json` | `MAINTAINERS.md`
---------------------------- | ------- | ----------------- | --------------- | ----------------
-`ACTIVE`                    | yes     | yes               | `true`          | main table
-`HIATUS_SINCE:YYYY-MM-DD`   | no      | yes               | `false`         | main table
-`EMERITUS_SINCE:YYYY-MM-DD` | no      | no                | omitted         | emeritus table
+Status                      | Reviews | Merge permissions | `MAINTAINERS.md`
+--------------------------- | ------- | ----------------- | ----------------
+`ACTIVE`                    | yes     | yes               | main table
+`HIATUS_SINCE:YYYY-MM-DD`   | no      | yes               | main table
+`EMERITUS_SINCE:YYYY-MM-DD` | no      | no                | emeritus table
 
-`true` in `reviewer.json` means the GitHub workflow may auto-assign reviews to
-them. `false` means they are still a maintainer, just not on the receiving end
-of the assignment lottery. Hiatus is about reviews only, not permissions; that
-is why hiatus maintainers still show up in the main `MAINTAINERS.md` table
-alongside active ones.
+The review-assignment workflow reads the roster directly and selects only
+active maintainers. Hiatus affects review assignment, not merge permissions
+or membership in the main maintainer table.
 
 ## Common changes
 
@@ -91,24 +87,24 @@ After any change, regenerate.
 ## Regenerate
 
 ```bash
-make governance-regen
+bazel run //:governance-regen
 ```
 
-This regenerates all three files in place.
+This regenerates both files in place.
 
 Then:
 
 ```bash
-make governance-check
+bazel test //:governance-check
 ```
 
-This fails if the YAML changed and you forgot to regenerate, or if someone
+This fails if the source data changed and you forgot to regenerate, or if someone
 edited a generated file by hand.
 
 ## Before handing back
 
 Show the user the diff across all changed files (`governance/maintainers.yaml`,
-`governance/areas.yaml`, `.github/reviewer.json`, `MAINTAINERS.md`,
+`governance/areas.yaml`, `MAINTAINERS.md`,
 `CODEOWNERS`) and let them confirm the roster reads the way they meant it to.
 
 If a generated file contains something the generator does not emit, that content
