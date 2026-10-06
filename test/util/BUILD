@@ -247,9 +247,22 @@ cc_test(
     name = "posix_error_test",
     size = "small",
     srcs = ["posix_error_test.cc"],
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
     deps = select_gtest() + [
         ":posix_error",
         ":test_main",
+    ],
+)
+
+test_suite(
+    name = "posix_error_test_all_architectures",
+    tags = ["manual"],
+    tests = [
+        ":posix_error_test_amd64",
+        ":posix_error_test_arm64",
     ],
 )
 
