@@ -20,6 +20,7 @@ package platform
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -598,6 +599,14 @@ type Options struct {
 
 	// DisableFastPath, if true, completely disables the Systrap fast path.
 	DisableFastPath bool
+
+	// StuckContextTimeout is how long a Systrap context may stay stuck before
+	// its subprocess is killed. Zero uses the default.
+	StuckContextTimeout time.Duration
+
+	// KeepStuckContexts, if true, makes Systrap keep waiting on a stuck
+	// context instead of killing its subprocess.
+	KeepStuckContexts bool
 
 	// ApplicationCores is used by KVM to determine the correct amount of
 	// vCPUs to create.
