@@ -34,14 +34,16 @@ jobs:
         curl -sL -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.statuses_url }}"
+            "$STATUSES_URL"
+      env:
+        STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
       if: github.event_name == 'pull_request'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       if: github.event_name == 'push' && steps.setup.outputs.has_token == 'true'
       with:
         fetch-depth: 0
         token: '${{ secrets.GO_TOKEN }}'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
       with:
         fetch-depth: 0
@@ -60,11 +62,15 @@ jobs:
         curl -sL  -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.statuses_url }}"
+            "$STATUSES_URL"
+      env:
+        STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
     - if: ${{ failure() && github.event_name == 'pull_request' }}
       run: |
         jq -nc '{"state": "failure", "context": "go tests"}' | \
         curl -sL  -X POST -d @- \
             -H "Content-Type: application/json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.statuses_url }}"
+            "$STATUSES_URL"
+      env:
+        STATUSES_URL: ${{ github.event.pull_request.statuses_url }}
