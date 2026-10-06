@@ -66,7 +66,9 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	if _, hasSourceFDB := bridge.fdbTable[BridgeFDBKey(sourceAddress)]; !header.IsMulticastEthernetAddress(sourceAddress) && !hasSourceFDB {
 		updateFDB = true
 	}
-	if entry, exist := bridge.fdbTable[BridgeFDBKey(eth.DestinationAddress())]; !exist {
+	destAddress := eth.DestinationAddress()
+	isMulticast := header.IsMulticastEthernetAddress(destAddress)
+	if entry, exist := bridge.fdbTable[BridgeFDBKey(destAddress)]; !exist {
 		// When no FDB entry is found, send the packet to all ports.
 		for _, port := range bridge.ports {
 			if p == port {
@@ -90,13 +92,17 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	}
 
 	d := bridge.dispatcher
+	bridgeAddr := bridge.addr
 	bridge.mu.RUnlock()
 	if updateFDB {
 		bridge.mu.Lock()
 		bridge.addFDBEntryLocked(eth.SourceAddress(), p, 0)
 		bridge.mu.Unlock()
 	}
-	if d != nil {
+	// As in Linux, only group frames and frames addressed to the bridge or to
+	// the receiving port reach the IP layer. Passing up transit unicast lets
+	// IP forwarding inject a duplicate back onto the bridge.
+	if d != nil && (isMulticast || destAddress == bridgeAddr || destAddress == p.nic.LinkAddress()) {
 		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
 		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
 		// bridge.mu to avoid circular locking.
