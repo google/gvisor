@@ -140,6 +140,9 @@ const (
 
 	// Arbitrary Packet Type
 	arbitraryPktType = tcpip.PacketOutgoing
+
+	// Arbitrary Packet Mark
+	arbitraryMark = 0x2a
 )
 
 var (
@@ -2876,6 +2879,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 	tcpFields := arbitraryTCPFields()
 	pkt := makeIPv6TCPPacket(pktSize, ipv6Fields, tcpFields)
 	pkt.Owner = &mockPacketOwner{arbitrarySKUID, arbitrarySKGID}
+	pkt.Mark = arbitraryMark
 
 	// Sets up a fake clock (now = UnixEpoch) and dependent time/random fields.
 	fakeClock := faketime.NewManualClock()
@@ -2949,6 +2953,13 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			op1:   mustCreateMetaLoad(t, linux.NFT_META_PKTTYPE, linux.NFT_REG32_05),
 			op2: mustCreateComparison(t, linux.NFT_REG32_05, linux.NFT_CMP_EQ,
 				[]byte{uint8(arbitraryPktType), 0, 0, 0}),
+		},
+		{ // cmd: add rule ip6 tab ch meta mark 0x0000002a
+			tname: "meta load mark test",
+			pkt:   pkt,
+			op1:   mustCreateMetaLoad(t, linux.NFT_META_MARK, linux.NFT_REG32_01),
+			op2: mustCreateComparison(t, linux.NFT_REG32_01, linux.NFT_CMP_EQ,
+				binary.NativeEndian.AppendUint32(nil, arbitraryMark)),
 		},
 		{ // cmd: add rule ip6 tab ch meta random 4059586549
 			tname: "meta load prandom test",

@@ -4962,6 +4962,12 @@ std::vector<RuleWithExprTestParams> GetMetaRuleTestParams() {
                             .U32Attr(NFTA_META_DREG, NFT_REG_1)
                             .U32Attr(NFTA_META_KEY, NFT_META_PKTTYPE)},
       RuleWithExprTestParams{
+          .test_name = "GetMarkValid",
+          .expr_name = "meta",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_META_DREG, NFT_REG32_00)
+                            .U32Attr(NFTA_META_KEY, NFT_META_MARK)},
+      RuleWithExprTestParams{
           .test_name = "SetValid",
           .expr_name = "meta",
           .expr_attrs = NlNestedAttr()
