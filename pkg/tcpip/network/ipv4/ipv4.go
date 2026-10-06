@@ -1418,7 +1418,13 @@ func (e *endpoint) deliverPacketLocally(h header.IPv4, pkt *stack.PacketBuffer, 
 
 		// The reassembler doesn't take care of fixing up the header, so we need
 		// to do it here.
-		h.SetTotalLength(uint16(pkt.Data().Size() + len(h)))
+		totalLength := pkt.Data().Size() + len(h)
+		if totalLength > math.MaxUint16 {
+			stats.ip.MalformedPacketsReceived.Increment()
+			stats.ip.MalformedFragmentsReceived.Increment()
+			return
+		}
+		h.SetTotalLength(uint16(totalLength))
 		h.SetFlagsFragmentOffset(0, 0)
 
 		e.protocol.parseTransport(pkt, tcpip.TransportProtocolNumber(transProtoNum))
