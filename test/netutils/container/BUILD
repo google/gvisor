@@ -6,13 +6,16 @@ package(
 )
 
 go_library(
-    name = "netutils",
-    testonly = 1,
-    srcs = ["utils.go"],
+    name = "container",
+    testonly = True,
+    srcs = ["container.go"],
     visibility = [
         "//test/iptables:__subpackages__",
-        "//test/netutils:__subpackages__",
         "//test/nftables:__subpackages__",
     ],
-    deps = ["//pkg/test/testutil"],
+    deps = [
+        "//pkg/log",
+        "//pkg/test/dockerutil",
+        "//test/netutils",
+    ],
 )

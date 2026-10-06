@@ -19,15 +19,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"slices"
 	"sync"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
-	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/netutils"
+	"gvisor.dev/gvisor/test/netutils/container"
 )
 
 var iptablesNFT = flag.Bool("iptables-nft", false, "run tests using iptables-nft instead of iptables-legacy")
@@ -148,27 +147,11 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	ctx, cancel := context.WithTimeout(context.Background(), TestTimeout)
-	defer cancel()
-
-	d := dockerutil.MakeContainer(ctx, t)
-	defer func() {
-		if logs, err := d.Logs(context.Background()); err != nil {
-			log.Infof("Failed to retrieve container logs.")
-		} else {
-			log.Infof("=== Container logs: ===\n%s", logs)
-		}
-		// Use a new context, as cleanup should run even when we
-		// timeout.
-		d.CleanUp(context.Background())
-	}()
-
 	// Create and start the container.
 	opts := dockerutil.RunOpts{
 		Image:  "iptables",
 		CapAdd: []string{"NET_ADMIN"},
 	}
-	d.CopyFiles(&opts, "/runner", "test/iptables/runner/runner")
 	args := []string{"/runner/runner", "-name", test.Name()}
 	if ipv6 {
 		args = append(args, "-ipv6")
@@ -176,28 +159,12 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	if isNFTMode() {
 		args = append(args, "-nft")
 	}
-	if err := d.Spawn(ctx, opts, args...); err != nil {
-		log.Infof("docker run failed: %v", err)
-		t.FailNow()
-	}
+	d, ip := container.Setup(t, TestTimeout, opts, "test/iptables/runner/runner", ipv6, IPExchangePort, args...)
 
-	// Get the container IP.
-	ip, err := d.FindIP(ctx, ipv6)
-	if err != nil {
-		// If ipv6 is not configured, don't fail.
-		if ipv6 && err == dockerutil.ErrNoIP {
-			log.Infof("No ipv6 address is available.")
-			t.Skip()
-		}
-		log.Infof("failed to get container IP: %v", err)
-		t.FailNow()
-	}
-
-	// Give the container our IP.
-	if err := sendIP(ip); err != nil {
-		log.Infof("failed to send IP to container: %v", err)
-		t.FailNow()
-	}
+	// Negative tests need their full observation interval; container startup
+	// must not consume it.
+	ctx, cancel := context.WithTimeout(t.Context(), TestTimeout)
+	defer cancel()
 
 	// Run our side of the test.
 	errCh := make(chan error, 2)
@@ -236,28 +203,6 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 			t.Fatal(err)
 		}
 	}
-}
-
-func sendIP(ip net.IP) error {
-	contAddr := net.TCPAddr{
-		IP:   ip,
-		Port: IPExchangePort,
-	}
-	var conn *net.TCPConn
-	// The container may not be listening when we first connect, so retry
-	// upon error.
-	cb := func() error {
-		c, err := net.DialTCP("tcp", nil, &contAddr)
-		conn = c
-		return err
-	}
-	if err := testutil.Poll(cb, TestTimeout); err != nil {
-		return fmt.Errorf("timed out waiting to send IP, most recent error: %v", err)
-	}
-	if _, err := conn.Write([]byte{0}); err != nil {
-		return fmt.Errorf("error writing to container: %v", err)
-	}
-	return nil
 }
 
 func TestFilterInputDropUDP(t *testing.T) {
