@@ -22,6 +22,7 @@ Rex Ren              | [@rexren-gif](https://github.com/rexren-gif)             
 Xin Zhong            | [@xinzhong](https://github.com/xinzhong)                     | Google
 Caroline Zhu         | [@carzh](https://github.com/carzh)                           | Google
 Alexander Cueva      | [@kerumeto](https://github.com/kerumeto)                     | Google
+Fernando Rivera      | [@riverafernando](https://github.com/riverafernando)         | Google
 
 ## Emeritus Maintainers
 

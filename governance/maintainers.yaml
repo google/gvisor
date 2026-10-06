@@ -112,8 +112,8 @@ maintainers:
     github: manninglucas
     affiliation: Google
     started: 2021-06-29
-    status: HIATUS_SINCE:2026-07-17
-    areas: [fuse, networking, sandboxexec, tpu, vfs]
+    status: ACTIVE
+    areas: [checkpointing, fuse, networking, runsc, sandboxexec, sentry, tpu, vfs]
   - name: Jing Chen
     github: milantracy
     affiliation: Google
@@ -179,4 +179,9 @@ maintainers:
     github: kerumeto
     affiliation: Google
     started: 2026-08-17
+    status: ACTIVE
+  - name: Fernando Rivera
+    github: riverafernando
+    affiliation: Google
+    started: 2026-09-08
     status: ACTIVE
