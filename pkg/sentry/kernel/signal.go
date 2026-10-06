@@ -27,6 +27,10 @@ import (
 // runtime (in order to catch possible races).
 const SignalPanic = linux.SIGUSR2
 
+// SignalDumpGoroutines is used to trigger a non-fatal stack dump of all
+// running goroutines.
+const SignalDumpGoroutines = linux.SIGUSR1
+
 // sendExternalSignal is called when an asynchronous signal is sent to the
 // sentry ("in sentry context"). On some platforms, it may also be called when
 // an asynchronous signal is sent to sandboxed application threads ("in
@@ -53,6 +57,11 @@ func (k *Kernel) sendExternalSignal(info *linux.SignalInfo, context string) {
 		panic("Signal-induced panic")
 
 	default:
+		if k.dumpGoroutinesSignal > 0 && linux.Signal(info.Signo) == k.dumpGoroutinesSignal {
+			log.TracebackAll("Received external dump signal %d in %s context", info.Signo, context)
+			return
+		}
+
 		log.Infof("Received external signal %d in %s context", info.Signo, context)
 		if k.globalInit == nil {
 			panic(fmt.Sprintf("Received external signal %d before init created", info.Signo))

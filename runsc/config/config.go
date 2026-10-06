@@ -259,6 +259,10 @@ type Config struct {
 	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
 	PanicSignal int `flag:"panic-signal"`
 
+	// DumpGoroutinesSignal registers signal handling that dumps all goroutine
+	// stacks without exiting. -1 disables it.
+	DumpGoroutinesSignal int `flag:"dump-goroutines-signal"`
+
 	// ProfileEnable is set to prepare the sandbox to be profiled.
 	ProfileEnable bool `flag:"profile"`
 

@@ -902,6 +902,7 @@ func New(args Args) (*Loader, error) {
 		MaxFDLimit:           maxFDLimit,
 		Cgroup2FSInit:        cgroup2fs.NewFilesystem,
 		SignalUnkillable:     signalUnkillablePolicy(args.Conf.SignalUnkillablePolicy),
+		DumpGoroutinesSignal: linux.Signal(args.Conf.DumpGoroutinesSignal),
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
@@ -1402,6 +1403,11 @@ func (l *Loader) run() error {
 		// Panic signal should cause a panic.
 		if l.root.conf.PanicSignal != -1 && sig == linux.Signal(l.root.conf.PanicSignal) {
 			panic("Signal-induced panic")
+		}
+
+		if l.root.conf.DumpGoroutinesSignal > 0 && sig == linux.Signal(l.root.conf.DumpGoroutinesSignal) {
+			log.TracebackAll("Received non-fatal dump signal %s (%d)", unix.Signal(sig), sig)
+			return
 		}
 
 		// Otherwise forward to root container.
