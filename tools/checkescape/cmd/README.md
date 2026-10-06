@@ -4,8 +4,7 @@ Checkescape allows recursive escape analysis for hot paths.
 
 ## Installation and Usage
 
-The analyzer is integrated into the gVisor `nogo` framework. It automatically
-applies to all code in this repository.
+The analyzer is integrated into the gVisor `nogo` framework. It applies only to functions annotated with `+checkescape`.
 
 For external usage and to iterate quickly, it may be used as part of `go vet` or it can run as a standalone tool.
 You can install the tool separately via:
