@@ -12,6 +12,7 @@ go_library(
         "audit_arm64.go",
         "seccomp.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/specutils/seccomp",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
@@ -29,7 +30,7 @@ go_test(
     name = "seccomp_test",
     size = "small",
     srcs = ["seccomp_test.go"],
-    library = ":seccomp",
+    embed = [":seccomp"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/bpf",

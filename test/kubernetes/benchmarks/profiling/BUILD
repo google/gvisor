@@ -10,6 +10,7 @@ go_library(
     name = "profiling",
     testonly = 1,
     srcs = ["profiling.go"],
+    importpath = "gvisor.dev/gvisor/test/kubernetes/benchmarks/profiling",
     visibility = [
         "//test/kubernetes:__subpackages__",
     ],

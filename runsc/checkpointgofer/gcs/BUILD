@@ -14,6 +14,7 @@ go_library(
         "reader.go",
         "writer.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/checkpointgofer/gcs",
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -42,7 +43,7 @@ go_test(
         "errors_test.go",
         "parallelwriter_test.go",
     ],
-    library = ":gcs",
+    embed = [":gcs"],
     deps = [
         "//pkg/sentry/state/stateio",
         "@com_google_cloud_go_storage//:go_default_library",

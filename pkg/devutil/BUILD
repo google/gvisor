@@ -10,6 +10,7 @@ go_library(
         "context.go",
         "devutil.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/devutil",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/context",

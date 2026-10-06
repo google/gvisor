@@ -11,6 +11,7 @@ go_library(
         "cli.go",
         "help.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/cli",
     visibility = [
         "//runsc:__subpackages__",
     ],

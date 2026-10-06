@@ -9,6 +9,7 @@ go_library(
     name = "triton",
     testonly = 1,
     srcs = ["triton.go"],
+    importpath = "gvisor.dev/gvisor/test/gpu/triton",
     stateify = False,  # Does not support some generics methods.
     visibility = ["//:sandbox"],
     deps = [

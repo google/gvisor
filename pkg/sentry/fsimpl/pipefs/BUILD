@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "pipefs",
     srcs = ["pipefs.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

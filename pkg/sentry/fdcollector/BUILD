@@ -8,6 +8,7 @@ package(
 go_library(
     name = "fdcollector",
     srcs = ["fdcollector.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fdcollector",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/context",

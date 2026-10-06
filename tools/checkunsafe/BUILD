@@ -8,6 +8,7 @@ package(
 go_library(
     name = "checkunsafe",
     srcs = ["check_unsafe.go"],
+    importpath = "gvisor.dev/gvisor/tools/checkunsafe",
     nogo = False,
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [

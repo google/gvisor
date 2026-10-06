@@ -16,6 +16,7 @@ go_library(
         "profile.go",
         "trace.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/cmd/profile",
     visibility = [
         "//runsc:__subpackages__",
     ],

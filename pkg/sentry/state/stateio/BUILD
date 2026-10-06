@@ -21,6 +21,7 @@ go_library(
         "stateio_util.go",
         "stateio_util_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/state/stateio",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -46,7 +47,7 @@ go_test(
         "ioreader_test.go",
         "iowriter_test.go",
     ],
-    library = ":stateio",
+    embed = [":stateio"],
     deps = [
         "//pkg/cleanup",
         "//pkg/rand",

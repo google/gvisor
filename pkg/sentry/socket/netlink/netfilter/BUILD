@@ -8,6 +8,7 @@ package(
 go_library(
     name = "netfilter",
     srcs = ["protocol.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

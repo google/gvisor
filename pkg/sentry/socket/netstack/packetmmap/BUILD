@@ -12,6 +12,7 @@ go_library(
         "endpoint_state.go",
         "ring_buffer.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netstack/packetmmap",
     visibility = [
         "//visibility:public",
     ],

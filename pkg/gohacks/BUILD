@@ -15,6 +15,7 @@ go_library(
         "string_go113_unsafe.go",
         "string_go120_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/gohacks",
     stateify = False,
     visibility = ["//:sandbox"],
 )
@@ -26,6 +27,6 @@ go_test(
         "gohacks_test.go",
         "string_test.go",
     ],
-    library = ":gohacks",
+    embed = [":gohacks"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

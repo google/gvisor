@@ -11,6 +11,7 @@ go_library(
         "list_supported_drivers.go",
         "nvproxy.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/cmd/nvproxy",
     visibility = [
         "//runsc:__subpackages__",
     ],

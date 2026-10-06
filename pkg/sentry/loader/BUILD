@@ -14,6 +14,7 @@ go_library(
         "vdso.go",
         "vdso_state.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/loader",
     marshal = True,
     marshal_debug = True,
     visibility = ["//pkg/sentry:internal"],

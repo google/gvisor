@@ -11,6 +11,7 @@ go_library(
         "sniffer.go",
         "sniffer_bridge.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/ioctl_sniffer/sniffer",
     visibility = ["//tools/ioctl_sniffer:__subpackages__"],
     deps = [
         "//pkg/abi/linux",

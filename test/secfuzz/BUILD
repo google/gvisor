@@ -13,6 +13,7 @@ go_library(
         "secfuzz_covermeup.go",
         "secfuzz_nocoverageguidance.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/secfuzz",
     visibility = [
         "//:sandbox",
     ],

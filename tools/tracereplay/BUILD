@@ -12,6 +12,7 @@ go_library(
         "save.go",
         "tracereplay.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/tracereplay",
     visibility = [
         "//tools/tracereplay:__subpackages__",
     ],
@@ -32,7 +33,7 @@ go_test(
     data = [
         "testdata/client-0001",
     ],
-    library = ":tracereplay",
+    embed = [":tracereplay"],
     deps = [
         "//pkg/test/testutil",
     ],

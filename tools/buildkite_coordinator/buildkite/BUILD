@@ -11,5 +11,6 @@ go_library(
         "client.go",
         "stacks.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/buildkite_coordinator/buildkite",
     visibility = ["//tools/buildkite_coordinator:__subpackages__"],
 )

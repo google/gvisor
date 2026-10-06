@@ -12,6 +12,7 @@ go_library(
         "nvconf.go",
         "version.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf",
     visibility = [
         "//pkg/sentry:internal",
         "//tools:__subpackages__",
@@ -25,5 +26,5 @@ go_test(
     name = "nvconf_test",
     size = "small",
     srcs = ["caps_test.go"],
-    library = ":nvconf",
+    embed = [":nvconf"],
 )

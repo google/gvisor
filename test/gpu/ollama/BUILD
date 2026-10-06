@@ -9,6 +9,7 @@ go_library(
     name = "ollama",
     testonly = 1,
     srcs = ["ollama.go"],
+    importpath = "gvisor.dev/gvisor/test/gpu/ollama",
     stateify = False,  # Does not support some generics methods.
     visibility = ["//:sandbox"],
     deps = [

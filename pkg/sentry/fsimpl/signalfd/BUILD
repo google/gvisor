@@ -8,6 +8,7 @@ package(
 go_library(
     name = "signalfd",
     srcs = ["signalfd.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

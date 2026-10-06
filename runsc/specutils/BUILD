@@ -19,6 +19,7 @@ go_library(
         "seccomp.go",
         "specutils.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/specutils",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
@@ -45,7 +46,7 @@ go_test(
         "gofer_conf_test.go",
         "specutils_test.go",
     ],
-    library = ":specutils",
+    embed = [":specutils"],
     deps = [
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/config",

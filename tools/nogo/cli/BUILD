@@ -8,6 +8,7 @@ package(
 go_library(
     name = "cli",
     srcs = ["cli.go"],
+    importpath = "gvisor.dev/gvisor/tools/nogo/cli",
     visibility = ["//tools:__subpackages__"],
     deps = [
         "//runsc/flag",
@@ -25,6 +26,6 @@ go_test(
     name = "cli_test",
     size = "small",
     srcs = ["cli_test.go"],
-    library = ":cli",
+    embed = [":cli"],
     deps = ["//tools/nogo/flags"],
 )

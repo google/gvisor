@@ -9,6 +9,7 @@ go_library(
     name = "config",
     testonly = 1,
     srcs = ["config.go"],
+    importpath = "gvisor.dev/gvisor/test/trace/config",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/sentry/seccheck",

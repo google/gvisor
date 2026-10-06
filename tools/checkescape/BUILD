@@ -8,6 +8,7 @@ package(
 go_library(
     name = "checkescape",
     srcs = ["checkescape.go"],
+    importpath = "gvisor.dev/gvisor/tools/checkescape",
     nogo = False,
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [
@@ -21,5 +22,5 @@ go_library(
 go_test(
     name = "checkescape_test",
     srcs = ["checkescape_test.go"],
-    library = ":checkescape",
+    embed = [":checkescape"],
 )

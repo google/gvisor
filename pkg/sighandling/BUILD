@@ -12,6 +12,7 @@ go_library(
         "sighandling_darwin.go",
         "sighandling_linux_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sighandling",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

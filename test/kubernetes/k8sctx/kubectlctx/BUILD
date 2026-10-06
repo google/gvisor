@@ -8,6 +8,7 @@ package(
 go_library(
     name = "kubectlctx",
     srcs = ["kubectlctx.go"],
+    importpath = "gvisor.dev/gvisor/test/kubernetes/k8sctx/kubectlctx",
     nogo = False,
     visibility = [
         "//visibility:public",

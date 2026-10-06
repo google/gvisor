@@ -11,6 +11,7 @@ go_library(
         "flags.go",
         "ports.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/ports",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/rand",
@@ -23,7 +24,7 @@ go_library(
 go_test(
     name = "ports_test",
     srcs = ["ports_test.go"],
-    library = ":ports",
+    embed = [":ports"],
     deps = [
         "//pkg/rand",
         "//pkg/tcpip",

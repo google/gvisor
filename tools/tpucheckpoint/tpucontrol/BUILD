@@ -12,6 +12,7 @@ go_library(
         "discovery.go",
         "errors.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/tpucheckpoint/tpucontrol",
     visibility = ["//tools/tpucheckpoint:__pkg__"],
     deps = [
         "//pkg/sentry/control:tpu_control_proto_go_proto",

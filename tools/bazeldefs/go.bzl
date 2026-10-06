@@ -121,13 +121,18 @@ def go_library(name, bazel_cgo = False, bazel_cdeps = [], bazel_clinkopts = [], 
         bazel_copts: cgo opts to pass to `go_library`.
         **kwargs: rest of the arguments are passed to `go_library`.
     """
+    importpath = "gvisor.dev/gvisor/" + native.package_name()
+
+    # Gazelle writes importpath explicitly; it must match the package.
+    if kwargs.pop("importpath", importpath) != importpath:
+        fail("%s: importpath must be %s" % (name, importpath))
     _go_library(
         name = name,
         cgo = bazel_cgo,
         cdeps = bazel_cdeps,
         copts = bazel_copts,
         clinkopts = bazel_clinkopts,
-        importpath = "gvisor.dev/gvisor/" + native.package_name(),
+        importpath = importpath,
         **kwargs
     )
 

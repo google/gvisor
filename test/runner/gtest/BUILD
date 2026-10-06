@@ -8,6 +8,7 @@ package(
 go_library(
     name = "gtest",
     srcs = ["gtest.go"],
+    importpath = "gvisor.dev/gvisor/test/runner/gtest",
     visibility = ["//:sandbox"],
 )
 
@@ -16,6 +17,6 @@ go_test(
     size = "small",
     srcs = ["gtest_test.go"],
     data = ["//test/util:posix_error_test"],
-    library = ":gtest",
+    embed = [":gtest"],
     deps = ["//pkg/test/testutil"],
 )

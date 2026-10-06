@@ -8,5 +8,6 @@ package(
 go_library(
     name = "version",
     srcs = ["version.go"],
+    importpath = "gvisor.dev/gvisor/runsc/version",
     visibility = ["//:sandbox"],
 )

@@ -11,6 +11,7 @@ go_library(
         "certs.go",
         "webhook.go",
     ],
+    importpath = "gvisor.dev/gvisor/webhook/pkg/injector",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",

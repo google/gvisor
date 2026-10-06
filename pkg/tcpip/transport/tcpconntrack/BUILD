@@ -8,6 +8,7 @@ package(
 go_library(
     name = "tcpconntrack",
     srcs = ["tcp_conntrack.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip/header",

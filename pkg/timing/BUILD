@@ -8,6 +8,7 @@ package(
 go_library(
     name = "timing",
     srcs = ["timing.go"],
+    importpath = "gvisor.dev/gvisor/pkg/timing",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/atomicbitops",

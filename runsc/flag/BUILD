@@ -8,5 +8,6 @@ package(
 go_library(
     name = "flag",
     srcs = ["flag.go"],
+    importpath = "gvisor.dev/gvisor/runsc/flag",
     visibility = ["//:sandbox"],
 )

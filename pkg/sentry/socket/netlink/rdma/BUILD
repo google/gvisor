@@ -8,6 +8,7 @@ package(
 go_library(
     name = "rdma",
     srcs = ["protocol.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/ib",

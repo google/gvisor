@@ -11,6 +11,7 @@ go_library(
         "pinring.go",
         "pinring_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/pinring",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
@@ -23,7 +24,7 @@ go_test(
     name = "pinring_test",
     size = "medium",
     srcs = ["pinring_test.go"],
-    library = ":pinring",
+    embed = [":pinring"],
     deps = [
         "@org_golang_x_sys//unix:go_default_library",
     ],

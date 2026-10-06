@@ -11,6 +11,7 @@ go_library(
         "tpu.go",
         "util.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/cmd/util",
     visibility = [
         "//runsc:__subpackages__",
         "//tools:__subpackages__",

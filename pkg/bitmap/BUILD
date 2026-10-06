@@ -11,6 +11,7 @@ go_library(
         "bitmap.go",
         "format.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/bitmap",
     visibility = ["//:sandbox"],
 )
 
@@ -21,5 +22,5 @@ go_test(
         "bitmap_test.go",
         "format_test.go",
     ],
-    library = ":bitmap",
+    embed = [":bitmap"],
 )

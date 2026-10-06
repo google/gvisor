@@ -10,6 +10,7 @@ go_library(
     name = "testsuite",
     testonly = True,
     srcs = ["testsuite.go"],
+    importpath = "gvisor.dev/gvisor/pkg/lisafs/testsuite",
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

@@ -8,6 +8,7 @@ package(
 go_library(
     name = "cli",
     srcs = ["cli.go"],
+    importpath = "gvisor.dev/gvisor/webhook/pkg/cli",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",

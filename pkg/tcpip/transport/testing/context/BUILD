@@ -12,6 +12,7 @@ go_library(
         "context.go",
         "flow.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/testing/context",
     visibility = [
         "//visibility:public",
     ],

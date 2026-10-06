@@ -8,6 +8,7 @@ package(
 go_library(
     name = "facts",
     srcs = ["facts.go"],
+    importpath = "gvisor.dev/gvisor/tools/nogo/facts",
     visibility = ["//tools:__subpackages__"],
     deps = [
         "//tools/checkconst",
@@ -20,5 +21,5 @@ go_test(
     name = "facts_test",
     size = "small",
     srcs = ["facts_test.go"],
-    library = ":facts",
+    embed = [":facts"],
 )

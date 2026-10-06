@@ -8,6 +8,7 @@ package(
 go_library(
     name = "checklinkname",
     srcs = ["check_linkname.go"],
+    importpath = "gvisor.dev/gvisor/tools/checklinkname",
     nogo = False,
     stateify = False,
     visibility = ["//tools/nogo:__subpackages__"],

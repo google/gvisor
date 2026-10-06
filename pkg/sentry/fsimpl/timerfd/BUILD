@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "timerfd",
     srcs = ["timerfd.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/atomicbitops",

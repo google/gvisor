@@ -13,6 +13,7 @@ go_library(
         "builder.go",
         "fspath.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/fspath",
     deps = [
         "//pkg/gohacks",
     ],
@@ -25,5 +26,5 @@ go_test(
         "builder_test.go",
         "fspath_test.go",
     ],
-    library = ":fspath",
+    embed = [":fspath"],
 )

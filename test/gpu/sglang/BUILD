@@ -9,6 +9,7 @@ go_library(
     name = "sglang",
     testonly = 1,
     srcs = ["sglang.go"],
+    importpath = "gvisor.dev/gvisor/test/gpu/sglang",
     stateify = False,  # Does not support some generics methods.
     visibility = ["//:sandbox"],
     deps = [

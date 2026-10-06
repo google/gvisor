@@ -8,6 +8,7 @@ package(
 go_library(
     name = "memxattr",
     srcs = ["xattr.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/vfs/memxattr",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

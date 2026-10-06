@@ -9,6 +9,7 @@ go_library(
     name = "stablediffusion",
     testonly = 1,
     srcs = ["stablediffusion.go"],
+    importpath = "gvisor.dev/gvisor/test/gpu/stablediffusion",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/dockerutil",

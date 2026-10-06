@@ -9,6 +9,7 @@ package(
 go_library(
     name = "kubectl",
     srcs = ["kubectl.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/provider/kubectl",
     deps = [
         "//pkg/log",
         "//tools/gvisor_k8s_tool/cluster",

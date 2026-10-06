@@ -11,6 +11,7 @@ go_library(
         "secbenchdef.go",
         "special_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/secbench/secbenchdef",
     visibility = [
         "//:sandbox",
     ],

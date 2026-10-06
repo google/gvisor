@@ -40,6 +40,7 @@ go_library(
         "nftables_types.go",
         "nftinterp.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/nftables",
     visibility = [
         "//:sandbox",
     ],
@@ -65,7 +66,7 @@ go_test(
         "nftables_test.go",
         "nftinterp_test.go",
     ],
-    library = ":nftables",
+    embed = [":nftables"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",

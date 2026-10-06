@@ -1,0 +1,34 @@
+# Checks that BUILD files in GAZELLE_PACKAGES match gazelle's output.
+# See tools/gazelle.bzl.
+name: Gazelle
+
+"on":
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gazelle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      with:
+        persist-credentials: false
+
+    # The runner's bazel is bazelisk, which honors .bazelversion.
+    - run: |
+        if ! bazel run //:gazelle_check; then
+          echo "::error::BUILD files are out of date. Run 'bazel run //:gazelle_fix' and commit the result."
+          exit 1
+        fi

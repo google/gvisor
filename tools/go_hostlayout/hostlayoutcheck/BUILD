@@ -8,5 +8,6 @@ package(
 go_library(
     name = "hostlayoutcheck",
     srcs = ["hostlayoutcheck.go"],
+    importpath = "gvisor.dev/gvisor/tools/go_hostlayout/hostlayoutcheck",
     visibility = ["//visibility:public"],
 )

@@ -16,6 +16,7 @@ go_library(
         "uvm.go",
     ],
     hostlayout = True,
+    importpath = "gvisor.dev/gvisor/pkg/abi/nvgpu",
     marshal = True,
     visibility = [
         "//pkg/sentry:internal",

@@ -9,6 +9,7 @@ package(
 go_library(
     name = "spec",
     srcs = ["spec.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/spec",
     deps = [
         "@io_k8s_api//apps/v1:go_default_library",
         "@io_k8s_api//core/v1:go_default_library",

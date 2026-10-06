@@ -9,6 +9,7 @@ package(
 go_library(
     name = "install",
     srcs = ["install.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/cmd/install",
     deps = [
         "//pkg/log",
         "//runsc/cmd/util",

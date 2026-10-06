@@ -8,6 +8,7 @@ package(
 go_library(
     name = "null",
     srcs = ["null.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/null",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/fd",

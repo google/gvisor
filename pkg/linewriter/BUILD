@@ -8,6 +8,7 @@ package(
 go_library(
     name = "linewriter",
     srcs = ["linewriter.go"],
+    importpath = "gvisor.dev/gvisor/pkg/linewriter",
     marshal = False,
     stateify = False,
     visibility = ["//visibility:public"],
@@ -17,5 +18,5 @@ go_library(
 go_test(
     name = "linewriter_test",
     srcs = ["linewriter_test.go"],
-    library = ":linewriter",
+    embed = [":linewriter"],
 )

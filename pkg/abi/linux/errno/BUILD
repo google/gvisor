@@ -9,5 +9,6 @@ go_library(
     name = "errno",
     srcs = ["errno.go"],
     hostlayout = True,
+    importpath = "gvisor.dev/gvisor/pkg/abi/linux/errno",
     visibility = ["//visibility:public"],
 )

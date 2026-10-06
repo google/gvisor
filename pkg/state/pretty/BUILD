@@ -8,6 +8,7 @@ package(
 go_library(
     name = "pretty",
     srcs = ["pretty.go"],
+    importpath = "gvisor.dev/gvisor/pkg/state/pretty",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/state",

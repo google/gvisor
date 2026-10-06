@@ -24,6 +24,7 @@ go_library(
         "semaphore.go",
         "waiter_list.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/semaphore",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -41,7 +42,7 @@ go_test(
     name = "semaphore_test",
     size = "small",
     srcs = ["semaphore_test.go"],
-    library = ":semaphore",
+    embed = [":semaphore"],
     deps = [
         "//pkg/abi/linux",  # keep
         "//pkg/context",  # keep

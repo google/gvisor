@@ -8,6 +8,7 @@ package(
 go_library(
     name = "uevent",
     srcs = ["protocol.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

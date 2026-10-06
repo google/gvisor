@@ -8,5 +8,6 @@ package(
 go_library(
     name = "seqnum",
     srcs = ["seqnum.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/seqnum",
     visibility = ["//visibility:public"],
 )

@@ -11,6 +11,7 @@ go_library(
         "compressio.go",
         "nocompressio.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/compressio",
     visibility = ["//:sandbox"],
     deps = ["//pkg/sync"],
 )
@@ -23,5 +24,5 @@ go_test(
         "nocompressio_integrity_test.go",
         "nocompressio_test.go",
     ],
-    library = ":compressio",
+    embed = [":compressio"],
 )

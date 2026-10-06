@@ -8,6 +8,7 @@ package(
 go_library(
     name = "ethernet",
     srcs = ["ethernet.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/ethernet",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",

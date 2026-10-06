@@ -8,13 +8,14 @@ package(
 go_library(
     name = "trie",
     srcs = ["trie.go"],
+    importpath = "gvisor.dev/gvisor/pkg/trie",
     visibility = ["//:sandbox"],
 )
 
 go_test(
     name = "trie_test",
     srcs = ["trie_test.go"],
-    library = ":trie",
+    embed = [":trie"],
     deps = [
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",

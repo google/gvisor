@@ -8,6 +8,7 @@ package(
 go_library(
     name = "procfs",
     srcs = ["dump.go"],
+    importpath = "gvisor.dev/gvisor/runsc/boot/procfs",
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/linux",

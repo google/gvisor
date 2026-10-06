@@ -13,5 +13,6 @@ go_library(
         "flag.go",
     ],
     hostlayout = True,
+    importpath = "gvisor.dev/gvisor/pkg/abi",
     visibility = ["//:sandbox"],
 )

@@ -10,6 +10,7 @@ go_library(
         "collect.go",
         "snapshot.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/rdma",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",
@@ -20,5 +21,5 @@ go_library(
 go_test(
     name = "rdma_test",
     srcs = ["snapshot_test.go"],
-    library = ":rdma",
+    embed = [":rdma"],
 )

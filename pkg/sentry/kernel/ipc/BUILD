@@ -12,6 +12,7 @@ go_library(
         "object.go",
         "registry.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/ipc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

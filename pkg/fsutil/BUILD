@@ -12,6 +12,7 @@ go_library(
         "fsutil_arm64_unsafe.go",
         "fsutil_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/fsutil",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/syserr",

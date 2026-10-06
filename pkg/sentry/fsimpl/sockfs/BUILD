@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "sockfs",
     srcs = ["sockfs.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

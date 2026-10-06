@@ -11,6 +11,7 @@ go_library(
         "socket.go",
         "socket_state.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

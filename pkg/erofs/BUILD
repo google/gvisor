@@ -11,6 +11,7 @@ go_library(
         "erofs.go",
         "erofs_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/erofs",
     marshal = True,
     visibility = ["//visibility:public"],
     deps = [
@@ -29,5 +30,5 @@ go_test(
     name = "erofs_test",
     size = "small",
     srcs = ["erofs_test.go"],
-    library = ":erofs",
+    embed = [":erofs"],
 )

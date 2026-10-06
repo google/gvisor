@@ -11,6 +11,7 @@ go_library(
         "endpoint.go",
         "endpoint_state.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/internal/network",
     visibility = [
         "//pkg/tcpip/transport/icmp:__pkg__",
         "//pkg/tcpip/transport/raw:__pkg__",

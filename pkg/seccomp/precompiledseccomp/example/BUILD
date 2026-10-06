@@ -8,6 +8,7 @@ package(
 go_library(
     name = "example",
     srcs = ["example.go"],
+    importpath = "gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp/example",
     visibility = [
         "//pkg/seccomp/precompiledseccomp/example:__subpackages__",
     ],

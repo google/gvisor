@@ -8,6 +8,7 @@ package(
 go_library(
     name = "sentrycli",
     srcs = ["sentrycli.go"],
+    importpath = "gvisor.dev/gvisor/runsc/cli/sentrycli",
     visibility = ["//visibility:public"],
     deps = [
         "//runsc/cli",

@@ -12,6 +12,7 @@ go_library(
         "hostmm.go",
         "membarrier.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/hostmm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

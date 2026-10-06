@@ -11,6 +11,7 @@ go_library(
     name = "compatibility",
     testonly = True,
     srcs = ["compatibility.go"],
+    importpath = "gvisor.dev/gvisor/test/compatibility",
 )
 
 compatibility_test(

@@ -8,6 +8,7 @@ package(
 go_library(
     name = "atomic",
     srcs = ["atomic.go"],
+    importpath = "gvisor.dev/gvisor/tools/checklocks/test/atomic",
     marshal = False,
     stateify = False,
     visibility = ["//tools/checklocks/test/crosspkg:__pkg__"],

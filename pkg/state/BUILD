@@ -78,6 +78,7 @@ go_library(
         "stats.go",
         "types.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/state",
     marshal = False,
     stateify = False,
     visibility = [

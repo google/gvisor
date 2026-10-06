@@ -12,6 +12,7 @@ go_library(
         "iouringfs_state.go",
         "iouringfs_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/iouringfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -34,6 +35,6 @@ go_test(
     name = "iouringfs_test",
     size = "small",
     srcs = ["iouringfs_test.go"],
-    library = ":iouringfs",
+    embed = [":iouringfs"],
     deps = ["//pkg/hostarch"],
 )

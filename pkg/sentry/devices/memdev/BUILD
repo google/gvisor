@@ -13,6 +13,7 @@ go_library(
         "random.go",
         "zero.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/devices/memdev",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

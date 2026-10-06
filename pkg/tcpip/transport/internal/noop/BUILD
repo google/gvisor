@@ -8,6 +8,7 @@ package(
 go_library(
     name = "noop",
     srcs = ["endpoint.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/internal/noop",
     visibility = ["//pkg/tcpip/transport/raw:__pkg__"],
     deps = [
         "//pkg/tcpip",

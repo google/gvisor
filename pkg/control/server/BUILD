@@ -8,6 +8,7 @@ package(
 go_library(
     name = "server",
     srcs = ["server.go"],
+    importpath = "gvisor.dev/gvisor/pkg/control/server",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

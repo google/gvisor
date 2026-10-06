@@ -10,6 +10,7 @@ go_library(
         "marshal.go",
         "util.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/marshal",
     visibility = [
         "//:sandbox",
     ],

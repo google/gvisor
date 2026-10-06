@@ -10,6 +10,7 @@ go_library(
         "ioctl_unsafe.go",
         "util.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy/util",
     visibility = [
         "//pkg/sentry:internal",
     ],
