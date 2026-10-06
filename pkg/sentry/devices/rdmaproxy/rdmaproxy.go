@@ -137,9 +137,9 @@ func (mp *MirroredPages) Release(ctx context.Context) {
 	mm.Unpin(mp.prs)
 }
 
-// PinnedDMABufs tracks the buf + doorbell mirrors for a single CQ or QP. Driver
-// plug-ins return this from PrepareCreateDMA; the core stores it against the
-// resulting CQ/QP handle until DESTROY.
+// PinnedDMABufs tracks the buf + doorbell mirrors for a single CQ, QP, or SRQ.
+// Driver plug-ins return this from PrepareCreateDMA; the core stores it against
+// the resulting object handle until DESTROY.
 type PinnedDMABufs struct {
 	// Buf is the work-queue buffer mirror, or nil if the driver produced none.
 	Buf *MirroredPages
@@ -163,8 +163,9 @@ func (p *PinnedDMABufs) Release(ctx context.Context) {
 type pinnedResources struct {
 	mu  sync.Mutex
 	mrs map[uint32]*MirroredPages
-	// dmaBufs tracks CQ and QP mirrors together: object handles are unique
-	// within a uverbs context's IDR namespace, so CQ and QP ids never collide.
+	// dmaBufs tracks CQ, QP, and SRQ mirrors together: object handles are
+	// unique within a uverbs context's IDR namespace, so their ids never
+	// collide.
 	dmaBufs map[uint32]*PinnedDMABufs
 }
 
@@ -283,6 +284,12 @@ func (fd *uverbsFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
+// uverbsFD deliberately does not implement Epollable: the host uverbs cdev
+// has no poll file operation (drivers/infiniband/core/uverbs_main.c
+// uverbs_fops), so EPOLL_CTL_ADD on it fails with EPERM on Linux; the vfs
+// default reproduces that. Only the event FDs (async events, completion
+// channels) are pollable.
+
 // Register registers a proxied uverbs device with the VFS at the fixed uverbs
 // char-device major (ib.IB_UVERBS_MAJOR) and the given minor. devName is the
 // device filename (e.g. "uverbs0").
@@ -325,13 +332,15 @@ func Register(vfsObj *vfs.VirtualFilesystem, devName string, minor uint32, drive
 	})
 }
 
-// asyncEventFD wraps a host FD for RDMA async event delivery. The kernel
-// creates this FD via UVERBS_METHOD_ASYNC_EVENT_ALLOC; rdma-core reads async
-// events from it via read(2). Input FD attributes referencing an async event
-// (CQ/QP EVENT_FD) are translated back to this host FD at ioctl time by
-// resolving the app FD through the task's FD table, which correctly handles
-// FD-number recycling across application processes.
-type asyncEventFD struct {
+// eventFD wraps a host FD for RDMA event delivery: an async-event FD created
+// by UVERBS_METHOD_ASYNC_EVENT_ALLOC, or a completion channel created by
+// IB_USER_VERBS_CMD_CREATE_COMP_CHANNEL. rdma-core reads events from it via
+// read(2) and waits on it via poll/epoll. Input FD attributes referencing an
+// event FD (CQ/QP EVENT_FD, CREATE_CQ COMP_CHANNEL) are translated back to
+// this host FD at ioctl time by resolving the app FD through the task's FD
+// table, which correctly handles FD-number recycling across application
+// processes.
+type eventFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
@@ -342,13 +351,13 @@ type asyncEventFD struct {
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *asyncEventFD) Release(ctx context.Context) {
+func (fd *eventFD) Release(ctx context.Context) {
 	fdnotifier.RemoveFD(fd.hostFD)
 	unix.Close(int(fd.hostFD))
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *asyncEventFD) EventRegister(e *waiter.Entry) error {
+func (fd *eventFD) EventRegister(e *waiter.Entry) error {
 	fd.queue.EventRegister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
@@ -358,7 +367,7 @@ func (fd *asyncEventFD) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (fd *asyncEventFD) EventUnregister(e *waiter.Entry) {
+func (fd *eventFD) EventUnregister(e *waiter.Entry) {
 	fd.queue.EventUnregister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
@@ -366,17 +375,22 @@ func (fd *asyncEventFD) EventUnregister(e *waiter.Entry) {
 }
 
 // Readiness implements waiter.Waitable.Readiness.
-func (fd *asyncEventFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (fd *eventFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
-// newAsyncEventFD wraps a host async-event FD in a sentry FileDescription and
+// Epollable implements vfs.FileDescriptionImpl.Epollable.
+func (fd *eventFD) Epollable() bool {
+	return true
+}
+
+// newEventFD wraps a host event FD in a sentry FileDescription named name and
 // installs it in the task's FD table. Returns the app FD number.
-// newAsyncEventFD takes ownership of hostFD. On success, hostFD ownership is
-// transferred to the asyncEventFD.
-func newAsyncEventFD(t *kernel.Task, hostFD int) (int32, error) {
+// newEventFD takes ownership of hostFD. On success, hostFD ownership is
+// transferred to the eventFD.
+func newEventFD(t *kernel.Task, hostFD int, name string) (int32, error) {
 	vfsObj := t.Kernel().VFS()
-	vd := vfsObj.NewAnonVirtualDentry("[rdma-async-event]")
+	vd := vfsObj.NewAnonVirtualDentry(name)
 	defer vd.DecRef(t)
 
 	if err := unix.SetNonblock(hostFD, true); err != nil {
@@ -384,7 +398,7 @@ func newAsyncEventFD(t *kernel.Task, hostFD int) (int32, error) {
 		return -1, fmt.Errorf("SetNonblock: %w", err)
 	}
 
-	afd := &asyncEventFD{
+	afd := &eventFD{
 		hostFD: int32(hostFD),
 	}
 	if err := fdnotifier.AddFD(afd.hostFD, &afd.queue); err != nil {
