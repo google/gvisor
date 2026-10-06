@@ -16,8 +16,6 @@ package harness
 
 import (
 	"context"
-	"errors"
-	"net"
 	"os/exec"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
@@ -36,9 +34,6 @@ type Machine interface {
 
 	// RunCommand runs cmd on this machine.
 	RunCommand(cmd string, args ...string) (string, error)
-
-	// Returns IP Address for the machine.
-	IPAddress() (net.IP, error)
 
 	// CleanUp cleans up this machine.
 	CleanUp()
@@ -63,23 +58,6 @@ func (l *localMachine) RunCommand(cmd string, args ...string) (string, error) {
 	c := exec.Command(cmd, args...)
 	out, err := c.CombinedOutput()
 	return string(out), err
-}
-
-// IPAddress implements Machine.IPAddress.
-func (l *localMachine) IPAddress() (net.IP, error) {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return net.IP{}, err
-	}
-	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP, nil
-			}
-		}
-	}
-	// Unable to locate non-loopback address.
-	return nil, errors.New("no IPAddress available")
 }
 
 // CleanUp implements Machine.CleanUp and does nothing for localMachine.
