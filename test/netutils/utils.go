@@ -51,7 +51,8 @@ func ListenUDPFrom(ctx context.Context, port int, ipv6 bool) (*net.UDPAddr, erro
 		err        error
 	}
 
-	ch := make(chan result)
+	// The read must be able to finish after cancellation stops the receiver.
+	ch := make(chan result, 1)
 	go func() {
 		_, remoteAddr, err := conn.ReadFromUDP([]byte{0})
 		ch <- result{remoteAddr, err}
@@ -122,15 +123,16 @@ func ListenTCPFrom(ctx context.Context, port int, ipv6 bool) (net.Addr, error) {
 	}
 
 	// Accept connections on port.
-	ch := make(chan result)
+	// The accept must be able to finish after cancellation stops the receiver.
+	ch := make(chan result, 1)
 	go func() {
 		conn, err := lConn.AcceptTCP()
 		var remoteAddr net.Addr
 		if err == nil {
 			remoteAddr = conn.RemoteAddr()
+			conn.Close()
 		}
 		ch <- result{remoteAddr, err}
-		conn.Close()
 	}()
 
 	select {
