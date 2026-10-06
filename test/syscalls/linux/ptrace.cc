@@ -114,10 +114,6 @@ namespace {
 constexpr auto kPtraceGetSigMask = static_cast<__ptrace_request>(0x420a);
 constexpr auto kPtraceSetSigMask = static_cast<__ptrace_request>(0x420b);
 
-// PTRACE_SYSEMU is not defined until glibc 2.27 (c48831d0eebf "linux/x86: sync
-// sys/ptrace.h with Linux 4.14 [BZ #22433]").
-constexpr auto kPtraceSysemu = static_cast<__ptrace_request>(31);
-
 // PTRACE_EVENT_STOP is not defined until glibc 2.26 (3f67d1a7021e "Add Linux
 // PTRACE_EVENT_STOP").
 constexpr int kPtraceEventStop = 128;
@@ -2012,6 +2008,10 @@ TEST(PtraceTest, Int3) {
 }
 
 TEST(PtraceTest, Sysemu_PokeUser) {
+  // PTRACE_SYSEMU is not defined until glibc 2.27 (c48831d0eebf "linux/x86:
+  // sync sys/ptrace.h with Linux 4.14 [BZ #22433]").
+  constexpr auto kPtraceSysemu = static_cast<__ptrace_request>(31);
+
   constexpr int kSysemuHelperFirstExitCode = 126;
   constexpr uint64_t kSysemuInjectedExitGroupReturn = 42;
 
