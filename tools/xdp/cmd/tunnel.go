@@ -18,53 +18,11 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"path/filepath"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/xdp"
 	"gvisor.dev/gvisor/runsc/flag"
 )
-
-// TunnelPinDir returns the directory to which eBPF objects will be pinned when
-// xdp_loader is run against iface.
-func TunnelPinDir(iface string) string {
-	return filepath.Join(bpffsDirPath, iface)
-}
-
-// TunnelHostMapPath returns the path where the eBPF map will be pinned when
-// xdp_loader is run against iface.
-func TunnelHostMapPath(iface string) string {
-	return filepath.Join(TunnelPinDir(iface), "tunnel_host_map")
-}
-
-// TunnelHostProgramPath returns the path where the eBPF program will be pinned
-// when xdp_loader is run against iface.
-func TunnelHostProgramPath(iface string) string {
-	return filepath.Join(TunnelPinDir(iface), "tunnel_host_program")
-}
-
-// TunnelHostLinkPath returns the path where the eBPF link will be pinned when
-// xdp_loader is run against iface.
-func TunnelHostLinkPath(iface string) string {
-	return filepath.Join(TunnelPinDir(iface), "tunnel_host_link")
-}
-
-// TunnelVethMapPath returns the path where the eBPF map should be pinned when
-// xdp_loader is run against iface.
-func TunnelVethMapPath(iface string) string {
-	return filepath.Join(TunnelPinDir(iface), "tunnel_veth_map")
-}
-
-// TunnelVethProgramPath returns the path where the eBPF program should be pinned
-// when xdp_loader is run against iface.
-func TunnelVethProgramPath(iface string) string {
-	return filepath.Join(TunnelPinDir(iface), "tunnel_veth_program")
-}
-
-// TunnelVethLinkPath returns the path where the eBPF link should be pinned when
-// xdp_loader is run against iface.
-func TunnelVethLinkPath(iface string) string {
-	return filepath.Join(TunnelPinDir(iface), "tunnel_veth_link")
-}
 
 //go:embed bpf/tunnel_host_ebpf.o
 var tunnelHostProgram []byte
@@ -120,9 +78,9 @@ func (tn *TunnelCommand) execute() error {
 		program:     tunnelHostProgram,
 		iface:       iface,
 		unpin:       tn.unpin,
-		pinDir:      RedirectPinDir(iface.Name),
-		mapPath:     TunnelHostMapPath(iface.Name),
-		programPath: TunnelHostProgramPath(iface.Name),
-		linkPath:    TunnelHostLinkPath(iface.Name),
+		pinDir:      xdp.RedirectPinDir(iface.Name),
+		mapPath:     xdp.TunnelHostMapPath(iface.Name),
+		programPath: xdp.TunnelHostProgramPath(iface.Name),
+		linkPath:    xdp.TunnelHostLinkPath(iface.Name),
 	})
 }

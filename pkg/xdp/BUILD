@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "completionqueue.go",
         "fillqueue.go",
+        "pin.go",
         "rxqueue.go",
         "txqueue.go",
         "umem.go",
