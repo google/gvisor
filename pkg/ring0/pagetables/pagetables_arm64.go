@@ -18,7 +18,7 @@ package pagetables
 
 // Address space layout constants shared by all ARM64 page sizes.
 const (
-	lowerTop    = 0x0000ffffffffffff
+	lowerTop    = 0x0001000000000000
 	upperBottom = 0xffff000000000000
 
 	ttbrASIDOffset = 48

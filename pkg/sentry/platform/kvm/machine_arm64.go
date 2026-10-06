@@ -58,10 +58,23 @@ const (
 )
 
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
+	// The upper half starts at KernelStartAddress (0xffff000000000000), so
+	// mapping the final page at UserspaceSize - PageSize would have an end
+	// address of 1<<64, which overflows uintptr in PageTables.Map. Kernel
+	// data structures accessed via TTBR1_EL1 live on the Go heap or in
+	// .text, never in the top page of the host initial thread stack.
+	const maxUpperEnd = ring0.UserspaceSize - hostarch.PageSize
 	applyPhysicalRegions(func(pr physicalRegion) bool {
+		length := pr.length
+		if end := pr.virtual + length; end > maxUpperEnd {
+			if pr.virtual >= maxUpperEnd {
+				return true
+			}
+			length = maxUpperEnd - pr.virtual
+		}
 		pageTable.Map(
 			hostarch.Addr(ring0.KernelStartAddress|pr.virtual),
-			pr.length,
+			length,
 			pagetables.MapOpts{AccessType: hostarch.AnyAccess, Global: true},
 			pr.physical)
 

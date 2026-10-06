@@ -252,7 +252,9 @@ func computePhysicalRegions(specialRegions []specialVirtualRegion) (physicalRegi
 		}
 		lastSpecialEnd = r.virtual + r.length
 	}
-	addValidRegion(lastSpecialEnd, ring0.MaximumUserAddress-lastSpecialEnd, false /* mmio */)
+	if lastSpecialEnd < ring0.MaximumUserAddress {
+		addValidRegion(lastSpecialEnd, ring0.MaximumUserAddress-lastSpecialEnd, false /* mmio */)
+	}
 
 	// Do arch-specific actions on physical regions.
 	physicalRegions = archPhysicalRegions(physicalRegions)

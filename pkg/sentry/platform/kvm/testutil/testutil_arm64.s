@@ -93,11 +93,26 @@ isNaN:
 
 TEXT ·FloatingPointWorks(SB),NOSPLIT,$0
 	NO_LOCAL_POINTERS
+	// Verify that R18_PLATFORM and R19 are preserved across both
+	// el1_fpsimd_acc (triggered by the first FP instruction in EL1)
+	// and el1_svc.
+	MOVD $0x1818181818181818, R5
+	MOVD $0x1919191919191919, R6
+	MOVD R5, R18_PLATFORM
+	MOVD R6, R19
 	// gc will touch fpsimd, so we should test it.
 	// such as in <runtime.deductSweepCredit>.
 	FMOVD $(9.9), F0
+	CMP R5, R18_PLATFORM
+	BNE isNaN
+	CMP R6, R19
+	BNE isNaN
 	MOVD $SYS_GETPID, R8 // getpid
 	SVC
+	CMP R5, R18_PLATFORM
+	BNE isNaN
+	CMP R6, R19
+	BNE isNaN
 	FMOVD $(9.9), F1
 	FCMPD F0, F1
 	BNE isNaN
@@ -196,4 +211,17 @@ TEXT ·LoadPair(SB),NOSPLIT,$0-24
 	LDP 0(R0), (R1, R2)
 	MOVD R1, ret+8(FP)
 	MOVD R2, ret1+16(FP)
+	RET
+
+// func StorePairAtSP(sp, r18, r19 uintptr) (uintptr, uintptr)
+TEXT ·StorePairAtSP(SB),NOSPLIT,$0-40
+	MOVD sp+0(FP), R0
+	MOVD r18+8(FP), R18_PLATFORM
+	MOVD r19+16(FP), R19
+	MOVD RSP, R20
+	MOVD R0, RSP
+	STP (R18_PLATFORM, R19), 0(RSP)
+	MOVD R20, RSP
+	MOVD R18_PLATFORM, ret+24(FP)
+	MOVD R19, ret1+32(FP)
 	RET

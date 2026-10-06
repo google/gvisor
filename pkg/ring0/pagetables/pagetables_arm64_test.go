@@ -126,3 +126,18 @@ func TestPXN(t *testing.T) {
 		})
 	}
 }
+
+func TestTopUserPage(t *testing.T) {
+	pt := New(NewRuntimeAllocator())
+
+	const topPage = uintptr(0x0001000000000000 - pteSize)
+	opts := MapOpts{AccessType: hostarch.ReadWrite, User: true}
+	pt.Map(hostarch.Addr(topPage), pteSize, opts, pteSize*42)
+
+	checkMappings(t, pt, []mapping{
+		{topPage, pteSize, pteSize * 42, opts},
+	})
+
+	pt.Unmap(hostarch.Addr(topPage), pteSize)
+	checkMappings(t, pt, nil)
+}
