@@ -113,6 +113,8 @@ type ioResult struct {
 // +stateify savable
 type AIOContext struct {
 	// requestReady is the notification channel used for all requests.
+	//
+	// +checklocks:mu
 	requestReady chan struct{} `state:"nosave"`
 
 	mu aioContextMutex `state:"nosave"`
