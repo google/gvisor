@@ -61,6 +61,52 @@ func (mm *MemoryManager) SetMmapLayout(ac *arch.Context64, r *limits.LimitSet) (
 	return layout, nil
 }
 
+// isolatePMAToVMALocked advances vseg to the vma containing pseg.Start(), and
+// splits pseg at that vma's boundaries so that it lies entirely within it. It
+// returns the updated iterators. If there is a remainder to the pma, it
+// becomes the one following the returned one. The returned vseg can be used
+// to find the vma of the pma.
+//
+// Preconditions:
+//   - A vma must contain pseg.Start(), and vseg must not be after it.
+//
+// +checklocksread:mm.mappingMu
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) isolatePMAToVMALocked(pseg pmaIterator, vseg vmaIterator) (pmaIterator, vmaIterator) {
+	vseg = vseg.seekNextLowerBound(pseg.Start())
+	if checkInvariants {
+		if !vseg.Ok() {
+			panic(fmt.Sprintf("no vma covers pma range %v", pseg.Range()))
+		}
+		if pseg.Start() < vseg.Start() {
+			panic(fmt.Sprintf("vma %v ran ahead of pma %v", vseg.Range(), pseg.Range()))
+		}
+	}
+	return mm.pmas.Isolate(pseg, vseg.Range()), vseg
+}
+
+// abortForkLocked releases the references and mappings established for a
+// MemoryManager under construction by Fork, when Fork fails while copying
+// pmas, similar to Linux's copy_page_range() fail. It returns the updated
+// aborted mappings via droppedIDs.
+//
+// Preconditions:
+//   - mm must not yet be visible outside of Fork.
+//
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) abortForkLocked(ctx context.Context, droppedIDs []memmap.MappingIdentity) []memmap.MappingIdentity {
+	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
+		pseg.ValuePtr().file.DecRef(pseg.fileRange())
+	}
+	mm.pmas.RemoveAll()
+	// Fork still exclusively owns mm2's VMA and mapping-accounting
+	// state. AddMapping only exposes its activeMu-protected
+	// invalidation state.
+	_, droppedIDs = mm.removeVMAsLocked(ctx, mm.applicationAddrRange(), droppedIDs) // +checklocksignore
+	mm.as.Release()
+	return droppedIDs
+}
+
 // Fork creates a copy of mm with 1 user, as for Linux syscalls fork() or
 // clone() (without CLONE_VM).
 //
@@ -115,6 +161,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 
 	// Copy vmas.
 	dontforks := false
+	var eagerForkARs []hostarch.AddrRange
 	dstvgap := mm2.vmas.FirstGap()
 	for srcvseg := mm.vmas.FirstSegment(); srcvseg.Ok(); srcvseg = srcvseg.NextSegment() {
 		vma := srcvseg.ValuePtr().copy()
@@ -128,6 +175,9 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 			}
 			dontforks = true
 			continue
+		}
+		if vma.eagerForkCopy {
+			eagerForkARs = append(eagerForkARs, vmaAR)
 		}
 
 		// Inform the Mappable, if any, of the new mapping.
@@ -180,24 +230,31 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 			continue
 		}
 
-		if dontforks {
-			// Find the 'vma' that contains the starting address
-			// associated with the 'pma' (there must be one).
-			srcvseg = srcvseg.seekNextLowerBound(srcpseg.Start())
-			if checkInvariants {
-				if !srcvseg.Ok() {
-					panic(fmt.Sprintf("no vma covers pma range %v", srcpseg.Range()))
-				}
-				if srcpseg.Start() < srcvseg.Start() {
-					panic(fmt.Sprintf("vma %v ran ahead of pma %v", srcvseg.Range(), srcpseg.Range()))
-				}
-			}
+		// Skip eager fork ranges that end before srcpseg. Since pmas are
+		// visited in increasing order, they can't overlap any later pmas.
+		for len(eagerForkARs) != 0 && eagerForkARs[0].End <= srcpseg.Start() {
+			eagerForkARs = eagerForkARs[1:]
+		}
 
-			srcpseg = mm.pmas.Isolate(srcpseg, srcvseg.Range())
-			if srcvseg.ValuePtr().dontfork {
+		eager := len(eagerForkARs) != 0 && eagerForkARs[0].Overlaps(srcpseg.Range())
+		if dontforks || eager {
+			srcpseg, srcvseg = mm.isolatePMAToVMALocked(srcpseg, srcvseg)
+			srcvma := srcvseg.ValuePtr()
+			if srcvma.dontfork {
 				continue
 			}
+
 			pma = srcpseg.ValuePtr()
+			if srcvma.eagerForkCopy {
+				var err error
+				if dstpgap, err = mm.forkCopyPMALocked(mm2, srcpseg, dstpgap, memCgID); err != nil {
+					// Dropped IDs need to be updated so that deferred
+					// ref decrements are done correctly.
+					droppedIDs = mm2.abortForkLocked(ctx, droppedIDs)
+					return nil, err
+				}
+				continue
+			}
 		}
 
 		if mm.hasPinned && !pma.needCOW {
@@ -233,18 +290,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 					var err error
 					dstpgap, err = mm.forkCopyPMALocked(mm2, srcpseg, dstpgap, memCgID)
 					if err != nil {
-						// Fork fails, as when Linux's copy_page_range()
-						// fails. Release the references and mappings already
-						// established for mm2.
-						for pseg := mm2.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
-							pseg.ValuePtr().file.DecRef(pseg.fileRange())
-						}
-						mm2.pmas.RemoveAll()
-						// Fork still exclusively owns mm2's VMA and mapping-accounting
-						// state. AddMapping only exposes its activeMu-protected
-						// invalidation state.
-						_, droppedIDs = mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange(), droppedIDs) // +checklocksignore
-						as.Release()
+						droppedIDs = mm2.abortForkLocked(ctx, droppedIDs)
 						return nil, err
 					}
 					continue

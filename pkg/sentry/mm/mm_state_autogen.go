@@ -302,6 +302,7 @@ func (v *vma) StateFields() []string {
 		"off",
 		"realPerms",
 		"dontfork",
+		"eagerForkCopy",
 		"mlockMode",
 		"numaPolicy",
 		"numaNodemask",
@@ -323,13 +324,14 @@ func (v *vma) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &v.mappable)
 	stateSinkObject.Save(1, &v.off)
 	stateSinkObject.Save(3, &v.dontfork)
-	stateSinkObject.Save(4, &v.mlockMode)
-	stateSinkObject.Save(5, &v.numaPolicy)
-	stateSinkObject.Save(6, &v.numaNodemask)
-	stateSinkObject.Save(7, &v.id)
-	stateSinkObject.Save(8, &v.name)
-	stateSinkObject.Save(9, &v.nameMut)
-	stateSinkObject.Save(10, &v.lastFault)
+	stateSinkObject.Save(4, &v.eagerForkCopy)
+	stateSinkObject.Save(5, &v.mlockMode)
+	stateSinkObject.Save(6, &v.numaPolicy)
+	stateSinkObject.Save(7, &v.numaNodemask)
+	stateSinkObject.Save(8, &v.id)
+	stateSinkObject.Save(9, &v.name)
+	stateSinkObject.Save(10, &v.nameMut)
+	stateSinkObject.Save(11, &v.lastFault)
 }
 
 func (v *vma) afterLoad(context.Context) {}
@@ -339,13 +341,14 @@ func (v *vma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.mappable)
 	stateSourceObject.Load(1, &v.off)
 	stateSourceObject.Load(3, &v.dontfork)
-	stateSourceObject.Load(4, &v.mlockMode)
-	stateSourceObject.Load(5, &v.numaPolicy)
-	stateSourceObject.Load(6, &v.numaNodemask)
-	stateSourceObject.Load(7, &v.id)
-	stateSourceObject.Load(8, &v.name)
-	stateSourceObject.Load(9, &v.nameMut)
-	stateSourceObject.Load(10, &v.lastFault)
+	stateSourceObject.Load(4, &v.eagerForkCopy)
+	stateSourceObject.Load(5, &v.mlockMode)
+	stateSourceObject.Load(6, &v.numaPolicy)
+	stateSourceObject.Load(7, &v.numaNodemask)
+	stateSourceObject.Load(8, &v.id)
+	stateSourceObject.Load(9, &v.name)
+	stateSourceObject.Load(10, &v.nameMut)
+	stateSourceObject.Load(11, &v.lastFault)
 	stateSourceObject.LoadValue(2, new(int), func(y any) { v.loadRealPerms(ctx, y.(int)) })
 }
 
