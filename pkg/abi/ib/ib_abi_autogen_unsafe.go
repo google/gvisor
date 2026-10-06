@@ -15,6 +15,7 @@ import (
 // Marshallable types used by this file.
 var _ marshal.Marshallable = (*Mlx5CreatePrefix)(nil)
 var _ marshal.Marshallable = (*UverbsAttr)(nil)
+var _ marshal.Marshallable = (*UverbsCreateCompChannelResp)(nil)
 var _ marshal.Marshallable = (*UverbsIoctlHdr)(nil)
 var _ marshal.Marshallable = (*UverbsRegMR)(nil)
 var _ marshal.Marshallable = (*UverbsRegMRResp)(nil)
@@ -357,6 +358,103 @@ func WriteUverbsAttrSlice(dst io.Writer, src []UverbsAttr) (int, error) {
     // must live until the use above.
     runtime.KeepAlive(src) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (u *UverbsCreateCompChannelResp) SizeBytes() int {
+    return 4
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (u *UverbsCreateCompChannelResp) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(u.FD))
+    dst = dst[4:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (u *UverbsCreateCompChannelResp) UnmarshalBytes(src []byte) []byte {
+    u.FD = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (u *UverbsCreateCompChannelResp) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (u *UverbsCreateCompChannelResp) MarshalUnsafe(dst []byte) []byte {
+    size := u.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(u), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (u *UverbsCreateCompChannelResp) UnmarshalUnsafe(src []byte) []byte {
+    size := u.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(u), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (u *UverbsCreateCompChannelResp) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
+    hdr.Len = u.SizeBytes()
+    hdr.Cap = u.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that u
+    // must live until the use above.
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (u *UverbsCreateCompChannelResp) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return u.CopyOutN(cc, addr, u.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (u *UverbsCreateCompChannelResp) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
+    hdr.Len = u.SizeBytes()
+    hdr.Cap = u.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that u
+    // must live until the use above.
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (u *UverbsCreateCompChannelResp) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return u.CopyInN(cc, addr, u.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (u *UverbsCreateCompChannelResp) WriteTo(writer io.Writer) (int64, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(u)))
+    hdr.Len = u.SizeBytes()
+    hdr.Cap = u.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that u
+    // must live until the use above.
+    runtime.KeepAlive(u) // escapes: replaced by intrinsic.
+    return int64(length), err
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
