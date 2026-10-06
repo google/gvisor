@@ -125,6 +125,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		private:        opts.Private,
 		growsDown:      opts.GrowsDown,
 		isStack:        opts.Stack,
+		eagerForkCopy:  opts.EagerForkCopy,
 		mlockMode:      opts.MLockMode,
 		numaPolicy:     linux.MPOL_DEFAULT,
 		id:             opts.MappingIdentity,
@@ -508,6 +509,7 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		vma1.numaPolicy != vma2.numaPolicy ||
 		vma1.numaNodemask != vma2.numaNodemask ||
 		vma1.dontfork != vma2.dontfork ||
+		vma1.eagerForkCopy != vma2.eagerForkCopy ||
 		vma1.id != vma2.id ||
 		vma1.name != vma2.name ||
 		vma1.nameMut != vma2.nameMut {

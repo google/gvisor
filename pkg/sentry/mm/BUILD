@@ -188,6 +188,7 @@ go_test(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/memutil",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
@@ -196,5 +197,6 @@ go_test(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
