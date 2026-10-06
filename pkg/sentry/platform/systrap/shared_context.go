@@ -263,6 +263,43 @@ var (
 	errStuckContext   = fmt.Errorf("systrap context is stuck")
 )
 
+// queueStallStep caps what one check adds, so a frozen sandbox or clock jump
+// does not count as a stall.
+const queueStallStep = time.Second
+
+type queueStallState struct {
+	start   uint32
+	last    time.Time
+	stalled time.Duration
+}
+
+// checkQueueStall warns once when contextQueue has been non-empty with no
+// dequeue for stuckContextTimeout, and reports whether it warned.
+func (s *subprocess) checkQueueStall(now time.Time) bool {
+	s.queueStallMu.Lock()
+	defer s.queueStallMu.Unlock()
+	st := &s.queueStall
+	if !st.last.IsZero() && now.Sub(st.last) < contextPreemptTimeout {
+		return false
+	}
+	start := atomic.LoadUint32(&s.contextQueue.start)
+	last := st.last
+	st.last = now
+	if last.IsZero() || start != st.start || s.contextQueue.isEmpty() {
+		st.start = start
+		st.stalled = 0
+		return false
+	}
+	before := st.stalled
+	st.stalled += min(now.Sub(last), queueStallStep)
+	if before >= stuckContextTimeout || st.stalled < stuckContextTimeout {
+		return false
+	}
+	log.Warningf("Systrap context queue has not moved for %v; no stub thread is taking contexts. start %d end %d active threads %d",
+		st.stalled, start, atomic.LoadUint32(&s.contextQueue.end), atomic.LoadUint32(&s.contextQueue.numActiveThreads))
+	return true
+}
+
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
 	err := sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout)
 	switch err {
@@ -296,7 +333,9 @@ func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuc
 		if !sc.subprocess.alive() {
 			return errDeadSubprocess
 		}
-		if interruptsSent > 0 && time.Now().After(deadline) {
+		now := time.Now()
+		sc.subprocess.checkQueueStall(now)
+		if interruptsSent > 0 && now.After(deadline) {
 			// The context can recover between the futex timeout and here.
 			if sc.state() != state {
 				return nil
