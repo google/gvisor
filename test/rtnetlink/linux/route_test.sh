@@ -37,6 +37,30 @@ ip netns exec test ip r list | grep "default via 192.168.11.2 dev eth0"
 # Remove all routes that are add/modified above.
 ip netns exec test ip r del default via 192.168.11.2 dev eth0
 ip netns exec test ip r del 192.168.146.48/28
+
+# A route delete removes only the first matching route.
+count_routes() {
+  ip netns exec test ip r list | grep -c "^10.0.0.0/24 " || true
+}
+ip link add name veth2 type veth peer name eth1 netns test
+ip netns exec test ip link set up dev eth1
+ip netns exec test ip r add 10.0.0.0/24 dev eth0 metric 100
+ip netns exec test ip r add 10.0.0.0/24 dev eth1 metric 200
+if [[ "$(count_routes)" != 2 ]]; then
+  fail "expected two 10.0.0.0/24 routes"
+fi
+ip netns exec test ip r del 10.0.0.0/24
+if [[ "$(count_routes)" != 1 ]]; then
+  fail "expected one 10.0.0.0/24 route after the first delete"
+fi
+ip netns exec test ip r del 10.0.0.0/24
+if [[ "$(count_routes)" != 0 ]]; then
+  fail "expected no 10.0.0.0/24 routes after the second delete"
+fi
+if ip netns exec test ip r del 10.0.0.0/24; then
+  fail "deleting a missing route succeeded"
+fi
+
 CURRENT_ROUTES=$(ip netns exec test ip r)
 
 if [[ "$ORIGINAL_ROUTES" != "$CURRENT_ROUTES" ]]; then

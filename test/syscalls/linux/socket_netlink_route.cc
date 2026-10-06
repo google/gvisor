@@ -2493,6 +2493,101 @@ TEST(NetlinkRouteTest, VethAdd) {
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
 }
 
+TEST(NetlinkRouteTest, DeleteRouteRemovesFirstMatchOnly) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // Routes are not savable.
+  DisableSave ds;
+
+  const FileDescriptor curr_nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup restore_netns = Cleanup([&] {
+    ASSERT_THAT(setns(curr_nsfd.get(), CLONE_NEWNET),
+                SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  VethRequest veth_req = GetVethRequest(kSeq, "veth1", "veth2");
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
+  const int veth1_idx = if_nametoindex("veth1");
+  const int veth2_idx = if_nametoindex("veth2");
+  ASSERT_NE(veth1_idx, 0);
+  ASSERT_NE(veth2_idx, 0);
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth1_idx, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth2_idx, IFF_UP, IFF_UP));
+
+  struct in_addr dst;
+  ASSERT_EQ(inet_pton(AF_INET, "10.0.0.0", &dst), 1);
+  ASSERT_NO_ERRNO(AddUnicastRoute(veth1_idx, AF_INET, 24, &dst, sizeof(dst)));
+  ASSERT_NO_ERRNO(AddUnicastRoute(veth2_idx, AF_INET, 24, &dst, sizeof(dst)));
+
+  // Deletes 10.0.0.0/24 without naming an output interface, so that both
+  // routes match the request.
+  auto del_route = [&]() -> PosixError {
+    struct request {
+      struct nlmsghdr hdr;
+      struct rtmsg rtm;
+      char buf[64];
+    };
+    struct request req = {};
+    req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.rtm));
+    req.hdr.nlmsg_type = RTM_DELROUTE;
+    req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    req.hdr.nlmsg_seq = kSeq;
+    req.rtm.rtm_family = AF_INET;
+    req.rtm.rtm_dst_len = 24;
+    addattr(&req.hdr, sizeof(req), RTA_DST, &dst, sizeof(dst));
+    return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+  };
+
+  auto count_routes = [&]() -> int {
+    struct request {
+      struct nlmsghdr hdr;
+      struct rtmsg rtm;
+    };
+    struct request req = {};
+    req.hdr.nlmsg_len = sizeof(req);
+    req.hdr.nlmsg_type = RTM_GETROUTE;
+    req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    req.hdr.nlmsg_seq = kSeq;
+    req.rtm.rtm_family = AF_INET;
+
+    int count = 0;
+    EXPECT_NO_ERRNO(NetlinkRequestResponse(
+        fd, &req, sizeof(req),
+        [&](const struct nlmsghdr* hdr) {
+          if (hdr->nlmsg_type != RTM_NEWROUTE) {
+            return;
+          }
+          const struct rtmsg* msg =
+              reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+          if (msg->rtm_dst_len != 24) {
+            return;
+          }
+          int len = RTM_PAYLOAD(hdr);
+          for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+               attr = RTA_NEXT(attr, len)) {
+            if (attr->rta_type == RTA_DST &&
+                memcmp(RTA_DATA(attr), &dst, sizeof(dst)) == 0) {
+              count++;
+            }
+          }
+        },
+        false));
+    return count;
+  };
+
+  ASSERT_EQ(count_routes(), 2);
+  ASSERT_NO_ERRNO(del_route());
+  EXPECT_EQ(count_routes(), 1);
+  ASSERT_NO_ERRNO(del_route());
+  EXPECT_EQ(count_routes(), 0);
+  EXPECT_THAT(del_route(), PosixErrorIs(ESRCH, _));
+}
+
 TEST(NetlinkRouteTest, VethAddShortPeerIfInfoMsg) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   SKIP_IF(IsRunningWithHostinet());
