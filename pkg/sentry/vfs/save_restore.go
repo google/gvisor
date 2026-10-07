@@ -202,6 +202,8 @@ func (epi *epollInterest) afterLoad(goContext.Context) {
 
 // afterLoad is called by stateify.
 func (vfs *VirtualFilesystem) afterLoad(goContext.Context) {
+	vfs.dynCharDevMajorMu.Lock()
+	defer vfs.dynCharDevMajorMu.Unlock()
 	if vfs.dynCharDevMajorShared == nil {
 		vfs.dynCharDevMajorShared = make(map[SharedDynamicCharDevMajorKey]uint32)
 	}
