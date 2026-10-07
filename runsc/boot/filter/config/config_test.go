@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -96,7 +97,7 @@ func TestOptionsConfigKey(t *testing.T) {
 	// This should only contain fields which influence the configuration;
 	// calling the mutation function of these should change the value of
 	// `Options.Key`.
-	var configFields = map[string]mutateFn{
+	configFields := map[string]mutateFn{
 		"Platform": func(opt *Options) {
 			if defaultOpt.Platform.ConfigKey() == opt.Platform.ConfigKey() {
 				opt.Platform = (&kvm.KVM{}).SeccompInfo()
@@ -169,4 +170,30 @@ func TestOptionsConfigKey(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestPrecompiledProgramsDeterministic verifies that compiling programs
+// concurrently produces the same output as compiling them one at a time.
+func TestPrecompiledProgramsDeterministic(t *testing.T) {
+	// Make sure that compilations run in parallel even with few CPUs.
+	const minProcs = 8
+	if runtime.GOMAXPROCS(0) < minProcs {
+		defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(minProcs))
+	}
+	serial, err := precompiledPrograms(1)
+	if err != nil {
+		t.Fatalf("precompiledPrograms(1) failed: %v", err)
+	}
+	concurrent, err := PrecompiledPrograms()
+	if err != nil {
+		t.Fatalf("PrecompiledPrograms() failed: %v", err)
+	}
+	if len(serial) != len(concurrent) {
+		t.Fatalf("got %d programs when compiling concurrently, want %d", len(concurrent), len(serial))
+	}
+	for i := range serial {
+		if !reflect.DeepEqual(serial[i], concurrent[i]) {
+			t.Errorf("program %d (%q) differs between serial and concurrent compilation (concurrent name: %q)", i, serial[i].Name, concurrent[i].Name)
+		}
+	}
 }
