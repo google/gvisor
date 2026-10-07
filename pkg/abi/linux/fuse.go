@@ -179,6 +179,11 @@ const (
 	FUSE_PAGE_SIZE       = 4096
 	FUSE_DIRENT_ALIGN    = 8
 	FUSE_FSYNC_FDATASYNC = 1 << 0
+
+	// FUSEIntReqBit (FUSE_INT_REQ_BIT in fs/fuse/fuse_i.h) is the least
+	// significant bit of FUSEHeaderIn.Unique used to tag FUSE_INTERRUPT
+	// requests.
+	FUSEIntReqBit = 1
 )
 
 // FUSEInitIn is the request sent by the kernel to the daemon,
@@ -1265,3 +1270,16 @@ type FUSEFlushIn struct {
 	_         uint32 // padding
 	LockOwner uint64
 }
+
+// FUSEInterruptIn is the request sent by the kernel to the daemon to interrupt
+// a pending FUSE request.
+//
+// +marshal
+// +stateify savable
+type FUSEInterruptIn struct {
+	_      structs.HostLayout
+	Unique uint64
+}
+
+// SizeOfFUSEInterruptIn is the size of the FUSEInterruptIn struct.
+var SizeOfFUSEInterruptIn = uint32((*FUSEInterruptIn)(nil).SizeBytes())

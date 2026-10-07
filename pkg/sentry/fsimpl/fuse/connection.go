@@ -64,7 +64,8 @@ func (dc *deviceConn) call(ctx context.Context, r *Request) (*Response, error) {
 	}
 	res, err := fut.resolve(ctx)
 	if err != nil {
-		return res, linuxError(err)
+		dc.conn.interruptRequest(r, fut)
+		return nil, linuxError(err)
 	}
 	return res, nil
 }
@@ -269,6 +270,12 @@ type connection struct {
 	// noCreate if FUSE server doesn't support the create operation. Files are
 	// then created with FUSE_MKNOD followed by FUSE_OPEN, as Linux does.
 	noCreate bool
+
+	// noInterrupt if FUSE server doesn't support the FUSE_INTERRUPT operation
+	// (set when the server replies with ENOSYS to a FUSE_INTERRUPT request).
+	//
+	// +checklocks:mu
+	noInterrupt bool
 }
 
 func linuxError(err error) error {
@@ -481,12 +488,69 @@ func (conn *connection) callFutureLocked(r *Request) (*futureResponse, error) {
 	return fut, nil
 }
 
+// interruptRequest handles cleanup and FUSE_INTERRUPT emission when a task
+// waiting on fut is interrupted.
+func (conn *connection) interruptRequest(r *Request, fut *futureResponse) {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+
+	// If the response already arrived before we acquired conn.mu, nothing to
+	// interrupt or clean up.
+	if _, ok := conn.completions[r.id]; !ok {
+		return
+	}
+
+	// Release the active request slot immediately so the caller and future
+	// requests are not blocked by a slow or hung daemon.
+	select {
+	case conn.fullQueueCh <- struct{}{}:
+	default:
+	}
+	conn.numActiveRequests--
+
+	// If the daemon hasn't read the request from /dev/fuse yet, remove it
+	// from the queue and completions without sending FUSE_INTERRUPT.
+	if !r.sent {
+		conn.queue.Remove(r)
+		delete(conn.completions, r.id)
+		close(fut.ch)
+		return
+	}
+
+	// The daemon has already read the request. Mark fut as interrupted so
+	// the daemon's eventual reply is absorbed cleanly without decrementing
+	// numActiveRequests a second time.
+	fut.interrupted = true
+	conn.queueInterruptLocked(r.id, fut)
+}
+
+// queueInterruptLocked queues a FUSE_INTERRUPT request at the front of
+// conn.queue and notifies waiting readers.
+//
+// +checklocks:conn.mu
+func (conn *connection) queueInterruptLocked(origID linux.FUSEOpID, fut *futureResponse) {
+	if !conn.connected || conn.noInterrupt {
+		return
+	}
+	if fut.intrReq != nil && !fut.intrReq.sent {
+		return
+	}
+	intrReq := newInterruptRequest(origID)
+	fut.intrReq = intrReq
+	conn.queue.PushFront(intrReq)
+	conn.waitQueue.Notify(waiter.ReadableEvents)
+}
+
 // sendResponse sends a response to the waiting task (if any).
 //
 // +checklocks:conn.mu
 func (conn *connection) sendResponse(ctx context.Context, fut *futureResponse) error {
 	// Signal the task waiting on a response if any.
 	defer close(fut.ch)
+
+	if fut.interrupted {
+		return nil
+	}
 
 	// Signal that the queue is no longer full.
 	select {
@@ -582,10 +646,13 @@ func (conn *connection) read(ctx context.Context, dst usermem.IOSequence) (int64
 		return 0, linuxerr.EIO
 	}
 	conn.queue.Remove(req)
+	req.sent = true
 	// Remove noReply ones from the map of requests expecting a reply.
 	if req.noReply {
-		conn.numActiveRequests--
-		delete(conn.completions, req.hdr.Unique)
+		if _, ok := conn.completions[req.hdr.Unique]; ok {
+			conn.numActiveRequests--
+			delete(conn.completions, req.hdr.Unique)
+		}
 	}
 	return int64(n), nil
 }
@@ -606,6 +673,23 @@ func (conn *connection) write(ctx context.Context, src usermem.IOSequence) (int6
 		return 0, linuxerr.EINVAL
 	}
 
+	// Replies to FUSE_INTERRUPT requests have an odd Unique ID.
+	if hdr.Unique&linux.FUSEIntReqBit != 0 {
+		if hdr.Len != linux.SizeOfFUSEHeaderOut {
+			return 0, linuxerr.EINVAL
+		}
+		switch hdr.Error {
+		case -int32(unix.ENOSYS):
+			conn.noInterrupt = true
+		case -int32(unix.EAGAIN):
+			origID := hdr.Unique &^ linux.FUSEIntReqBit
+			if fut, ok := conn.completions[origID]; ok {
+				conn.queueInterruptLocked(origID, fut)
+			}
+		}
+		return int64(n), nil
+	}
+
 	fut, ok := conn.completions[hdr.Unique]
 	if !ok {
 		// Server sent us a response for a request we never sent, or for which we
@@ -613,6 +697,14 @@ func (conn *connection) write(ctx context.Context, src usermem.IOSequence) (int6
 		return 0, linuxerr.EINVAL
 	}
 	delete(conn.completions, hdr.Unique)
+	if fut.intrReq != nil && !fut.intrReq.sent {
+		conn.queue.Remove(fut.intrReq)
+		fut.intrReq = nil
+	}
+	if fut.interrupted {
+		close(fut.ch)
+		return src.NumBytes(), nil
+	}
 
 	// Copy over the header into the future response. The rest of the payload
 	// will be copied over to the FR's data in the next iteration.

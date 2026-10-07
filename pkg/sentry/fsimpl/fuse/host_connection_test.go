@@ -385,3 +385,106 @@ func TestHostConnectionNotConnected(t *testing.T) {
 		t.Fatalf("expected ENOTCONN, got %v", err)
 	}
 }
+
+func TestHostConnectionInterrupt(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	hc, serverFD, cleanup := newTestHostConnection(t)
+	defer cleanup()
+
+	creds := auth.CredentialsFromContext(s.Ctx)
+	payload := primitive.Uint32(55)
+	req := hc.conn.NewRequest(creds, 1, 1, echoTestOpcode, &payload)
+
+	ic := newInterruptibleContext(s.Ctx)
+	callErrCh := make(chan error, 1)
+	go func() {
+		_, err := hc.Call(ic, req)
+		callErrCh <- err
+	}()
+
+	// Read the original request on the server side.
+	buf := make([]byte, linux.FUSE_MIN_READ_BUFFER)
+	n, err := unix.Read(serverFD, buf)
+	if err != nil {
+		t.Fatalf("unix.Read(serverFD) failed: %v", err)
+	}
+	if n < int(linux.SizeOfFUSEHeaderIn) {
+		t.Fatalf("unix.Read(serverFD) = %d bytes, want >= %d", n, linux.SizeOfFUSEHeaderIn)
+	}
+	var reqHdr linux.FUSEHeaderIn
+	reqHdr.UnmarshalUnsafe(buf[:linux.SizeOfFUSEHeaderIn])
+	if reqHdr.Unique != req.id {
+		t.Fatalf("reqHdr.Unique = %d, want %d", reqHdr.Unique, req.id)
+	}
+
+	// Interrupt the waiting caller.
+	ic.Interrupt()
+	if callErr := <-callErrCh; !linuxerr.Equals(linuxerr.ErrInterrupted, callErr) {
+		t.Fatalf("hc.Call(%v) = %v, want %v", req.id, callErr, linuxerr.ErrInterrupted)
+	}
+
+	// Read the FUSE_INTERRUPT request sent over hostFD.
+	n, err = unix.Read(serverFD, buf)
+	if err != nil {
+		t.Fatalf("unix.Read(serverFD) for FUSE_INTERRUPT failed: %v", err)
+	}
+	wantLen := int(linux.SizeOfFUSEHeaderIn + linux.SizeOfFUSEInterruptIn)
+	if n != wantLen {
+		t.Fatalf("unix.Read(serverFD) = %d bytes, want %d", n, wantLen)
+	}
+
+	var intrHdr linux.FUSEHeaderIn
+	intrHdr.UnmarshalUnsafe(buf[:linux.SizeOfFUSEHeaderIn])
+	if intrHdr.Opcode != linux.FUSE_INTERRUPT {
+		t.Errorf("intrHdr.Opcode = %d, want %d", intrHdr.Opcode, linux.FUSE_INTERRUPT)
+	}
+	wantIntrUnique := req.id | linux.FUSEIntReqBit
+	if intrHdr.Unique != wantIntrUnique {
+		t.Errorf("intrHdr.Unique = %d, want %d", intrHdr.Unique, wantIntrUnique)
+	}
+
+	var intrIn linux.FUSEInterruptIn
+	intrIn.UnmarshalUnsafe(buf[linux.SizeOfFUSEHeaderIn:wantLen])
+	if intrIn.Unique != uint64(req.id) {
+		t.Errorf("intrIn.Unique = %d, want %d", intrIn.Unique, req.id)
+	}
+
+	// Reply -ENOSYS to the interrupt and -EINTR to the original request,
+	// then verify a subsequent normal Call succeeds.
+	respBuf := make([]byte, linux.SizeOfFUSEHeaderOut)
+	enosysHdr := linux.FUSEHeaderOut{
+		Len:    linux.SizeOfFUSEHeaderOut,
+		Error:  -int32(unix.ENOSYS),
+		Unique: wantIntrUnique,
+	}
+	enosysHdr.MarshalUnsafe(respBuf)
+	if _, err := unix.Write(serverFD, respBuf); err != nil {
+		t.Fatalf("unix.Write(ENOSYS) failed: %v", err)
+	}
+
+	eintrHdr := linux.FUSEHeaderOut{
+		Len:    linux.SizeOfFUSEHeaderOut,
+		Error:  -int32(unix.EINTR),
+		Unique: req.id,
+	}
+	eintrHdr.MarshalUnsafe(respBuf)
+	if _, err := unix.Write(serverFD, respBuf); err != nil {
+		t.Fatalf("unix.Write(EINTR) failed: %v", err)
+	}
+
+	done := make(chan struct{})
+	go echoServer(t, serverFD, done)
+
+	nextPayload := primitive.Uint32(88)
+	nextReq := hc.conn.NewRequest(creds, 1, 1, echoTestOpcode, &nextPayload)
+	resp, err := hc.Call(s.Ctx, nextReq)
+	if err != nil {
+		t.Fatalf("hc.Call(%v) after interrupt failed: %v", nextReq.id, err)
+	}
+	<-done
+	if resp.hdr.Unique != nextReq.id {
+		t.Errorf("resp.hdr.Unique = %d, want %d", resp.hdr.Unique, nextReq.id)
+	}
+}
