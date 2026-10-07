@@ -246,3 +246,31 @@ func TestCalculateCPUNum(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenFSRestoreFilesForLocalCheckpointErrors(t *testing.T) {
+	dir := t.TempDir()
+	files, err := openFSCheckpointLocalFiles(dir, "rootfs", os.O_CREATE|os.O_EXCL|os.O_RDWR, false)
+	if err != nil {
+		t.Fatalf("openFSCheckpointLocalFiles(%q, \"rootfs\") failed: %v", dir, err)
+	}
+	for _, f := range files {
+		_ = f.Close()
+	}
+
+	for _, tc := range []struct {
+		name    string
+		paths   []string
+		wantErr string
+	}{
+		{name: "duplicate explicit prefix path", paths: []string{filepath.Join(dir, "rootfs"), filepath.Join(dir, "rootfs")}, wantErr: "duplicate filesystem checkpoint bundle"},
+		{name: "duplicate mixing directory and explicit prefix", paths: []string{dir, filepath.Join(dir, "rootfs")}, wantErr: "duplicate filesystem checkpoint bundle"},
+		{name: "non-existent directory with trailing slash", paths: []string{filepath.Join(dir, "missing") + "/"}, wantErr: "does not exist"},
+		{name: "only empty strings", paths: []string{"", ""}, wantErr: "empty --fs-restore-image-path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := openFSRestoreFilesForLocalCheckpoint(tc.paths, false); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("openFSRestoreFilesForLocalCheckpoint(%q) error = %v, want substring %q", tc.paths, err, tc.wantErr)
+			}
+		})
+	}
+}

@@ -31,7 +31,6 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
@@ -453,14 +452,14 @@ func TestFSCheckpointCommand(t *testing.T) {
 			if tc.all {
 				fsSavePathArg = fscheckpoint.AllTmpfsPath
 			}
-			var paths []checkpoint.ResourceID
+			var paths []string
 			if tc.multipaths {
-				paths = []checkpoint.ResourceID{
-					{ContainerName: rootName, Path: "/data1"},
-					{ContainerName: subName, Path: "/data2"},
+				paths = []string{
+					rootName + ":/data1",
+					subName + ":/data2",
 				}
 			} else {
-				paths = []checkpoint.ResourceID{{Path: fsSavePathArg}}
+				paths = []string{fsSavePathArg}
 			}
 			if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
 				ExitAfterSaving: true,
@@ -547,7 +546,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 			defer cleanupRootsNew()
 			restoreConts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, restoreIDs, func(i int, contArgs *Args) {
 				if i == 0 {
-					contArgs.FSRestoreImagePath = imagePath
+					contArgs.FSRestoreImagePaths = []string{imagePath}
 				}
 			})
 			if err != nil {
@@ -976,7 +975,7 @@ func TestFSCheckpointAnnotation(t *testing.T) {
 			defer cleanupRootsNew()
 			conts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, ids, func(i int, contArgs *Args) {
 				if i == 0 {
-					contArgs.FSRestoreImagePath = imagePath
+					contArgs.FSRestoreImagePaths = []string{imagePath}
 				}
 			})
 			if err != nil {
@@ -1117,9 +1116,9 @@ func TestFSCheckpointSharedVolume(t *testing.T) {
 	// Specifying both ensures it matches container0's mount and gets saved.
 	if err := conts[0].FSSave(conf, imagePath, sandbox.FSSaveOpts{
 		ExitAfterSaving: true,
-		Paths: []checkpoint.ResourceID{
-			{ContainerName: rootName, Path: "/shared"},
-			{ContainerName: subName, Path: "/shared"},
+		Paths: []string{
+			rootName + ":/shared",
+			subName + ":/shared",
 		},
 	}); err != nil {
 		t.Fatalf("Error saving filesystem checkpoint: %v", err)
@@ -1158,7 +1157,7 @@ func TestFSCheckpointSharedVolume(t *testing.T) {
 
 	restoreConts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, restoreIDs, func(i int, contArgs *Args) {
 		if i == 0 {
-			contArgs.FSRestoreImagePath = imagePath
+			contArgs.FSRestoreImagePaths = []string{imagePath}
 		}
 	})
 	if err != nil {
@@ -1483,9 +1482,9 @@ func testMultiContainerChainedCheckpointRestore(t *testing.T, conf *config.Confi
 		// sub-containers' tmpfs mounts.
 		checkpointOpts := sandbox.CheckpointOpts{
 			Compression: statefile.CompressionLevelDefault,
-			SplitFSCheckpointPaths: []checkpoint.ResourceID{
-				{ContainerName: container1Name, Path: tmpfsMount1},
-				{ContainerName: container2Name, Path: tmpfsMount2},
+			SplitFSCheckpointPaths: []string{
+				"fs=" + container1Name + ":" + tmpfsMount1,
+				"fs=" + container2Name + ":" + tmpfsMount2,
 			},
 		}
 		if err := conts[0].Checkpoint(conf, checkpointDir, checkpointOpts); err != nil {
@@ -1501,7 +1500,7 @@ func testMultiContainerChainedCheckpointRestore(t *testing.T, conf *config.Confi
 			t.Fatalf("iter %d: timed out waiting for checkpoint to complete", iter)
 		}
 
-		checkFSCheckpointFiles(t, checkpointDir)
+		checkFSCheckpointFiles(t, checkpointDir, "fs")
 
 		lastNum1, err := readOutputNum(outputPath1, -1)
 		if err != nil {

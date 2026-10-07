@@ -494,6 +494,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	ctx = context.WithValues(ctx, ctxValues)
 	if l.fsRestore != nil {
+		l.fsRestore.markStateRestore()
 		ctx = kernel.WithFSRestore(ctx, restoreMnts.fsCheckpointedMfs)
 	}
 

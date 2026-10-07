@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -1211,15 +1210,18 @@ func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerR
 
 // FSSaveArgs holds arguments to FSSave.
 type FSSaveArgs struct {
-	// FilePayload contains the following fscheckpoint files in order:
+	// FilePayload contains the following fscheckpoint files in order for each
+	// bundle:
 	// 1. manifest file
 	// 2. multi-tar file
 	// 3. pages metadata file
 	// 4. pages file
 	urpc.FilePayload
 
-	// Paths are the paths inside the containers to save to the checkpoint.
-	Paths []checkpoint.ResourceID `json:"paths"`
+	// Paths are the paths inside the containers to save to the checkpoint. Paths
+	// can have prefixes (like [<prefix>=][<container>:]<path>). When prefixes are
+	// specified the checkpoint files will start with "prefix_".
+	Paths []string `json:"paths"`
 
 	// Equivalent to kernel.FSSaveOpts fields.
 	ExitAfterSaving bool `json:"exit_after_saving"`

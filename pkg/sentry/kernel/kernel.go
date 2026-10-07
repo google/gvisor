@@ -814,6 +814,11 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 		})
 	}
 	defer fsCleanup.Clean()
+	if fsOpts != nil {
+		if err := fsOpts.validate(); err != nil {
+			return err
+		}
+	}
 
 	if hostarch.PageSize != 4096 {
 		return fmt.Errorf("save is not supported with %dK page size", hostarch.PageSize/1024)
@@ -851,10 +856,14 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 	}
 
 	mfsToSaveActual := mfsToSave
-	var matchCtx *fsCheckpointMatchContext
+	var matchCtxs []*fsCheckpointMatchContext
 	if fsOpts != nil {
-		matchCtx = k.newFSCheckpointMatchContext(ctx, fsOpts.Paths)
-		mfsToSaveActual = filterMFsToSave(mfsToSave, matchCtx)
+		bundles := fsOpts.allBundles()
+		matchCtxs = make([]*fsCheckpointMatchContext, len(bundles))
+		for i, b := range bundles {
+			matchCtxs[i] = k.newFSCheckpointMatchContext(ctx, b.Paths)
+		}
+		mfsToSaveActual = filterMFsToSave(mfsToSave, matchCtxs)
 	}
 
 	parallelMFSave := pagesMetadata != nil
@@ -910,8 +919,10 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 
 	if fsOpts != nil {
 		fsSaveStart := time.Now()
-		if err := k.fsSaveLocked(ctx, fsOpts, mfsToSave, matchCtx); err != nil {
-			return fmt.Errorf("failed to save split filesystem: %w", err)
+		for i, b := range fsOpts.allBundles() {
+			if err := k.fsSaveLocked(ctx, b, mfsToSave, matchCtxs[i]); err != nil {
+				return fmt.Errorf("failed to save split filesystem bundle %d (prefix %q): %w", i, b.Prefix, err)
+			}
 		}
 		log.Infof("Split filesystem save took [%s].", time.Since(fsSaveStart))
 		fsCleanup.Release()
@@ -2682,11 +2693,18 @@ func (k *Kernel) ContainerName(cid string) string {
 	return k.containerNames[cid]
 }
 
-func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
+func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtxs []*fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
 	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	for id, mf := range mfsToSave {
-		_, isTmpfs := matchCtx.tmpfsResourceIDs[id]
-		if !matchesPaths(id, matchCtx.pathsMap, isTmpfs) {
+		matched := false
+		for _, matchCtx := range matchCtxs {
+			_, isTmpfs := matchCtx.tmpfsResourceIDs[id]
+			if matchesPaths(id, matchCtx.pathsMap, isTmpfs) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			mfsToSaveActual[id] = mf
 		}
 	}

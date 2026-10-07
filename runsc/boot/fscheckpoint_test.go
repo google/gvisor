@@ -17,8 +17,10 @@ package boot
 import (
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 )
@@ -67,9 +69,12 @@ func checkBoundsResult(t *testing.T, tc boundsTestCase, blob []byte, r io.Reader
 // newTestFSRestore returns an fsRestore with all its maps initialized.
 func newTestFSRestore() *fsRestore {
 	return &fsRestore{
-		mfs:     make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
-		tmpfs:   make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
-		waitMap: make(map[string]*fsRestoreContainer),
+		mfs:          make(map[checkpoint.ResourceID]*fscheckpoint.MemoryFile),
+		tmpfs:        make(map[checkpoint.ResourceID]*fscheckpoint.Tmpfs),
+		fsBundles:    make(map[checkpoint.ResourceID]*fsRestoreBundle),
+		waitMap:      make(map[string]*fsRestoreContainer),
+		claimedMFs:   make(map[checkpoint.ResourceID]struct{}),
+		claimedTmpfs: make(map[checkpoint.ResourceID]struct{}),
 	}
 }
 
@@ -85,14 +90,19 @@ func TestMemoryFileLoadArgsBounds(t *testing.T) {
 				PagesMetadataStart: tc.start,
 				PagesMetadataEnd:   tc.end,
 			}
-			fsr.getPagesMetadata = func() ([]byte, error) {
-				if tc.readErr != nil {
-					return nil, tc.readErr
-				}
-				return metadata, nil
+			fsr.fsBundles[resID] = &fsRestoreBundle{
+				getPagesMetadata: func() ([]byte, error) {
+					if tc.readErr != nil {
+						return nil, tc.readErr
+					}
+					return metadata, nil
+				},
 			}
-			r, _, _, err := fsr.memoryFileLoadArgs(resID, "c1")
+			r, _, err := fsr.memoryFileLoadArgs(resID, "c1")
 			checkBoundsResult(t, tc, metadata, r, err)
+			if _, claimed := fsr.claimedMFs[resID]; claimed != !tc.expectErr {
+				t.Errorf("claimedMFs[%v] = %v, want %v", resID, claimed, !tc.expectErr)
+			}
 		})
 	}
 }
@@ -110,10 +120,15 @@ func TestMemoryFileLoadArgsUnalignedPages(t *testing.T) {
 		PagesMetadataEnd:   5,
 		PagesStart:         123,
 	}
-	fsr.getPagesMetadata = func() ([]byte, error) { return metadata, nil }
+	fsr.fsBundles[resID] = &fsRestoreBundle{
+		getPagesMetadata: func() ([]byte, error) { return metadata, nil },
+	}
 
-	if _, _, _, err := fsr.memoryFileLoadArgs(resID, "c1"); err == nil {
+	if _, _, err := fsr.memoryFileLoadArgs(resID, "c1"); err == nil {
 		t.Errorf("memoryFileLoadArgs() with unaligned pages start succeeded, want error")
+	}
+	if _, claimed := fsr.claimedMFs[resID]; claimed {
+		t.Errorf("claimedMFs[%v] = true after unaligned error, want false", resID)
 	}
 }
 
@@ -129,14 +144,66 @@ func TestTmpfsSourceTarBounds(t *testing.T) {
 				TarStart:   tc.start,
 				TarEnd:     tc.end,
 			}
-			fsr.getMultiTar = func() ([]byte, error) {
-				if tc.readErr != nil {
-					return nil, tc.readErr
-				}
-				return tarData, nil
+			fsr.fsBundles[resID] = &fsRestoreBundle{
+				getMultiTar: func() ([]byte, error) {
+					if tc.readErr != nil {
+						return nil, tc.readErr
+					}
+					return tarData, nil
+				},
 			}
 			rc, err := fsr.tmpfsSourceTar(resID, "c1")
 			checkBoundsResult(t, tc, tarData, rc, err)
+			if _, claimed := fsr.claimedTmpfs[resID]; claimed != !tc.expectErr {
+				t.Errorf("claimedTmpfs[%v] = %v, want %v", resID, claimed, !tc.expectErr)
+			}
 		})
+	}
+}
+
+func TestUnmappedBundleError(t *testing.T) {
+	resID := checkpoint.ResourceID{ContainerName: "c1", Path: "/tmp"}
+	fsr := newTestFSRestore()
+	fsr.mfs[resID] = &fscheckpoint.MemoryFile{ResourceID: resID}
+	fsr.tmpfs[resID] = &fscheckpoint.Tmpfs{ResourceID: resID}
+
+	if _, _, err := fsr.memoryFileLoadArgs(resID, "c1"); err == nil {
+		t.Errorf("memoryFileLoadArgs() with unmapped bundle succeeded, want error")
+	}
+	if _, err := fsr.tmpfsSourceTar(resID, "c1"); err == nil {
+		t.Errorf("tmpfsSourceTar() with unmapped bundle succeeded, want error")
+	}
+}
+
+func TestMakeFSRestoreOptsForLocalCheckpointInvalidFDCounts(t *testing.T) {
+	for _, count := range []int{0, 1, 3, 5, 7} {
+		args := &Args{FSRestoreFDs: make([]*fd.FD, count)}
+		if _, err := makeFSRestoreOptsForLocalCheckpoint(args); err == nil {
+			t.Errorf("makeFSRestoreOptsForLocalCheckpoint(%d FDs) = nil, want error", count)
+		}
+	}
+}
+
+func TestAddRestoreEntryDuplicates(t *testing.T) {
+	m := make(map[checkpoint.ResourceID]int)
+	tmpfsMap := make(map[checkpoint.ResourceID]int)
+	fsBundles := make(map[checkpoint.ResourceID]*fsRestoreBundle)
+	b1 := &fsRestoreBundle{}
+	b2 := &fsRestoreBundle{}
+	c1Data := checkpoint.ResourceID{ContainerName: "c1", Path: "/data"}
+	c2Data := checkpoint.ResourceID{ContainerName: "c2", Path: "/data"}
+
+	if err := addRestoreEntry(m, fsBundles, c1Data, 1, b1, "MemoryFile"); err != nil {
+		t.Fatalf("addRestoreEntry(%v) failed: %v", c1Data, err)
+	}
+	if err := addRestoreEntry(m, fsBundles, c2Data, 2, b1, "MemoryFile"); err != nil {
+		t.Fatalf("addRestoreEntry(%v) failed: %v", c2Data, err)
+	}
+	if err := addRestoreEntry(m, fsBundles, c1Data, 3, b1, "MemoryFile"); err == nil || !strings.Contains(err.Error(), "duplicate MemoryFile") {
+		t.Errorf("addRestoreEntry(%v) error = %v, want duplicate MemoryFile error", c1Data, err)
+	}
+	// Same ResourceID across different bundles (e.g. MemoryFile in b1, Tmpfs in b2) should fail.
+	if err := addRestoreEntry(tmpfsMap, fsBundles, c1Data, 4, b2, "Tmpfs"); err == nil || !strings.Contains(err.Error(), "multiple filesystem checkpoint bundles") {
+		t.Errorf("addRestoreEntry(%v) across bundles error = %v, want multiple bundles error", c1Data, err)
 	}
 }

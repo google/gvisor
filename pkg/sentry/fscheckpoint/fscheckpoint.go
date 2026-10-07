@@ -42,6 +42,11 @@
 package fscheckpoint
 
 import (
+	"fmt"
+	"path"
+	"strings"
+	"unicode"
+
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 )
@@ -51,6 +56,84 @@ import (
 // filesystems with a ResourceID should be checkpointed, rather than only the
 // tmpfs filesystems mounted at a specific path.
 const AllTmpfsPath = "all-tmpfs"
+
+// Bundle contains groups of one or more target ResourceIDs that are saved into
+// a single set of filesystem checkpoint files sharing the same prefix.
+type Bundle struct {
+	// Prefix is the file prefix for the checkpoint bundle (e.g., "fs" produces
+	// "fs_fscheckpoint.pb", etc.; empty string in fscheckpoint only produces
+	// unprefixed "fscheckpoint.pb", etc.).
+	Prefix string
+
+	// Paths is the list of target paths in this bundle.
+	Paths []checkpoint.ResourceID
+}
+
+// ParseBundles parses the list of [<prefix_name>=][<container_name>:]<path>
+// checkpoint target paths, validates that no targets overlap, and groups
+// them by their prefix (empty string when no prefix is specified).
+func ParseBundles(vals []string) ([]Bundle, error) {
+	var allPaths []checkpoint.ResourceID
+	var bundles []Bundle
+	prefixIdx := make(map[string]int)
+	for _, val := range vals {
+		part := strings.TrimSpace(val)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, ",") {
+			return nil, fmt.Errorf("path %q must not contain commas; specify multiple values instead", val)
+		}
+		var prefix string
+		rest := part
+		if pfx, r, hasPrefix := strings.Cut(part, "="); hasPrefix {
+			prefix = strings.TrimSpace(pfx)
+			rest = strings.TrimSpace(r)
+			if prefix == "" || strings.ContainsAny(prefix, "/:=") || prefix == "." || prefix == ".." || strings.IndexFunc(prefix, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) != -1 {
+				return nil, fmt.Errorf("invalid prefix %q in paths: %q", prefix, val)
+			}
+		}
+		var c, p string
+		if cPart, pPart, hasCont := strings.Cut(rest, ":"); hasCont {
+			c, p = strings.TrimSpace(cPart), strings.TrimSpace(pPart)
+			if c == "" {
+				return nil, fmt.Errorf("empty container name in paths: %q", val)
+			}
+		} else {
+			p = strings.TrimSpace(rest)
+		}
+		if p == "" || (p != AllTmpfsPath && (!path.IsAbs(p) || path.Clean(p) != p)) {
+			return nil, fmt.Errorf("checkpoint path must be an absolute, clean path or %q, got: %q", AllTmpfsPath, p)
+		}
+		rid := checkpoint.ResourceID{ContainerName: c, Path: p}
+		for _, prev := range allPaths {
+			if targetsOverlap(prev, rid) {
+				return nil, fmt.Errorf("overlapping targets %q and %q", prev, rid)
+			}
+		}
+		allPaths = append(allPaths, rid)
+		if idx, ok := prefixIdx[prefix]; ok {
+			bundles[idx].Paths = append(bundles[idx].Paths, rid)
+		} else {
+			prefixIdx[prefix] = len(bundles)
+			bundles = append(bundles, Bundle{Prefix: prefix, Paths: []checkpoint.ResourceID{rid}})
+		}
+	}
+	return bundles, nil
+}
+
+// HasPrefixes reports whether bundles require prefixed checkpoint files
+// (either multiple bundles or a single bundle with a non-empty prefix).
+func HasPrefixes(bundles []Bundle) bool {
+	return len(bundles) > 1 || (len(bundles) == 1 && bundles[0].Prefix != "")
+}
+
+func targetsOverlap(a, b checkpoint.ResourceID) bool {
+	if a.ContainerName != "" && b.ContainerName != "" && a.ContainerName != b.ContainerName {
+		return false
+	}
+	return a.Path == b.Path || a.Path == AllTmpfsPath || b.Path == AllTmpfsPath
+}
 
 // Manifest is the type of the JSON object stored in the manifest file.
 type Manifest struct {

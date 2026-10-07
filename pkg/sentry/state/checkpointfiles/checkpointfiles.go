@@ -37,7 +37,15 @@ const (
 // Files specific to filesystem checkpoints (see fscheckpoint package for
 // details):
 const (
-	FSCheckpointDir              = "fs"
 	FSCheckpointManifestFileName = "fscheckpoint.pb"
 	FSCheckpointMultiTarFileName = "multitar.img"
 )
+
+// PrefixFileName returns name prefixed with prefix + "_" if prefix is
+// non-empty, or name unchanged if prefix is empty.
+func PrefixFileName(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "_" + name
+}

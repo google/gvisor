@@ -20,7 +20,6 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -56,9 +55,6 @@ var loadProgramsFn = example.PrecompiledPrograms // PROGRAMS_FUNC_THIS_IS_A_LOAD
 
 func main() {
 	flag.Parse()
-
-	debug.SetGCPercent(1000)
-	debug.SetMemoryLimit(2 << 30)
 
 	// Get a sorted list of programs.
 	var programs []precompiledseccomp.Program
