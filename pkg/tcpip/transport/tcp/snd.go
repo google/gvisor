@@ -184,6 +184,17 @@ type sender struct {
 	// RFC3522 Section 3.2.
 	retransmitTS uint32
 
+	// sackedOutsideRecovery is the number of packets that were newly
+	// SACKed while no loss recovery was in progress. SetPipe() only
+	// accounts SACKed segments into Outstanding during loss recovery, and
+	// the cumulative-ACK path skips previously-SACKed segments assuming
+	// SetPipe() accounted for them; packets counted here are the ones
+	// that assumption misses, and their count is removed from Outstanding
+	// when they are cumulatively ACKed. Reset whenever Outstanding is
+	// recomputed or reset wholesale (recovery entry, RTO, full window
+	// drain). See gvisor.dev/issue/14092.
+	sackedOutsideRecovery int
+
 	// startCork start corking the segments.
 	startCork bool
 
@@ -641,6 +652,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	// We'll keep on transmitting (or retransmitting) as we get acks for
 	// the data we transmit.
 	s.Outstanding = 0
+	s.sackedOutsideRecovery = 0
 
 	// Expunge all SACK information as per https://tools.ietf.org/html/rfc6675#section-5.1
 	//
@@ -1149,6 +1161,8 @@ func (s *sender) enterRecovery() {
 	// the 3 duplicate ACKs and are now not in flight.
 	s.SndCwnd = s.Ssthresh + 3
 	s.SackedOut = 0
+	// SetPipe() owns all SACK accounting for the duration of recovery.
+	s.sackedOutsideRecovery = 0
 	s.DupAckCount = 0
 	s.FastRecovery.First = s.SndUna
 	s.FastRecovery.Last = s.SndNxt - 1
@@ -1570,8 +1584,27 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// which have start/end before sndUna and are used to
 			// indicate spurious retransmissions.
 			if rcvdSeg.ackNumber.LessThan(sb.Start) && s.SndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.SndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
+				// Track segments that this block newly covers while
+				// no loss recovery is in progress: SetPipe() will
+				// not account for them (it is a no-op outside
+				// recovery), so the cumulative-ACK path must, or
+				// their packet count leaks into Outstanding
+				// permanently. See gvisor.dev/issue/14092.
+				var newlyCovered []*segment
+				if !s.FastRecovery.Active {
+					for seg := s.writeList.Front(); seg != nil && seg.sequenceNumber.LessThan(sb.End); seg = seg.Next() {
+						if seg.xmitCount != 0 && !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+							newlyCovered = append(newlyCovered, seg)
+						}
+					}
+				}
 				s.ep.scoreboard.Insert(sb)
 				rcvdSeg.hasNewSACKInfo = true
+				for _, seg := range newlyCovered {
+					if s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+						s.sackedOutsideRecovery += s.pCount(seg, s.MaxPayloadSize)
+					}
+				}
 			}
 		}
 
@@ -1708,11 +1741,21 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			// If SACK is enabled then only reduce outstanding if
 			// the segment was not previously SACKED as these have
-			// already been accounted for in SetPipe().
+			// already been accounted for in SetPipe() (during loss
+			// recovery) or in sackedOutsideRecovery below (outside
+			// of it).
 			if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 				s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
 			} else {
 				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
+				// SetPipe() only accounts for SACKed segments
+				// during loss recovery; segments SACKed outside
+				// of it are recorded in sackedOutsideRecovery
+				// and must be removed from Outstanding here.
+				if n := min(s.pCount(seg, s.MaxPayloadSize), s.sackedOutsideRecovery); n > 0 {
+					s.Outstanding -= n
+					s.sackedOutsideRecovery -= n
+				}
 			}
 			seg.DecRef()
 			ackLeft -= datalen
@@ -1758,6 +1801,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// RFC 6298 Rule 5.3
 		if s.SndUna == s.SndNxt {
 			s.Outstanding = 0
+			s.sackedOutsideRecovery = 0
 			// Reset firstRetransmittedSegXmitTime to the zero value.
 			s.firstRetransmittedSegXmitTime = tcpip.MonotonicTime{}
 			s.resendTimer.disable()
