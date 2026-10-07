@@ -152,6 +152,21 @@ type MemoryManager struct {
 	// +checklocks:activeMu
 	curRSS uint64
 
+	// partialHugeDecommits contains the hugepage-aligned start addresses of
+	// huge pages that Decommit decommitted only part of. Decommit leaves
+	// those pages in their pmas, so curRSS still counts them; RSS reports
+	// subtract the ones that the host no longer backs.
+	//
+	// +checklocks:activeMu
+	partialHugeDecommits map[hostarch.Addr]struct{}
+
+	// partialHugeDecommitsSweepAt is the size of partialHugeDecommits at
+	// which notePartialHugeDecommitLocked next drops entries for huge pages
+	// that are no longer mapped.
+	//
+	// +checklocks:activeMu
+	partialHugeDecommitsSweepAt int
+
 	// maxRSS is the maximum resident set size in bytes of a MemoryManager.
 	// It is tracked as the application adds and removes mappings to pmas.
 	//

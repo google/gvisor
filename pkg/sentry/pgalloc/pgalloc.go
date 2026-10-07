@@ -1531,6 +1531,37 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 	return safemem.BlockSeqFromSlice(blocks), nil
 }
 
+// CommittedBytes returns the number of bytes in fr that the host currently
+// backs with memory, as reported by mincore(2).
+//
+// Preconditions: At least one reference must be held on all pages in fr.
+func (f *MemoryFile) CommittedBytes(fr memmap.FileRange) (uint64, error) {
+	var (
+		n   uint64
+		buf []byte
+		err error
+	)
+	f.forEachMappingSlice(fr, func(s []byte) {
+		if err != nil {
+			return
+		}
+		pages := len(s) / hostarch.PageSize
+		if cap(buf) < pages {
+			buf = make([]byte, pages)
+		}
+		buf = buf[:pages]
+		if err = mincore(s, buf); err != nil {
+			return
+		}
+		for _, b := range buf {
+			if b&0x1 != 0 {
+				n += hostarch.PageSize
+			}
+		}
+	})
+	return n, err
+}
+
 // forEachMappingSlice invokes fn on a sequence of byte slices that
 // collectively map all bytes in fr.
 func (f *MemoryFile) forEachMappingSlice(fr memmap.FileRange, fn func([]byte)) {
