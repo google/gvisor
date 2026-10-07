@@ -128,7 +128,7 @@ func (*SlimVM) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new pagetable root.
-func (k *SlimVM) NewAddressSpace() (platform.AddressSpace, error) {
+func (k *SlimVM) NewAddressSpace(opts platform.AddressSpaceOptions) (platform.AddressSpace, error) {
 	// Allocate page tables and install system mappings.
 	pageTables := pagetables.NewWithUpper(newAllocator(), k.machine.upperSharedPageTables, ring0.KernelStartAddress)
 

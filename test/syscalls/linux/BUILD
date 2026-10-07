@@ -2244,6 +2244,8 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",

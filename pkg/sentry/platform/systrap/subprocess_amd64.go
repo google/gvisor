@@ -217,6 +217,9 @@ func (s *subprocess) restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arc
 	appUsesGS := ac.GS() != 0
 	if disableSyscallPatching || usertrapDisabled || appUsesGS {
 		ctx.GsUsedByApp = 1
+		if !usertrapDisabled && appUsesGS {
+			s.usertrap.Disable()
+		}
 	} else {
 		ctx.GsUsedByApp = 0
 	}
@@ -228,7 +231,7 @@ func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
 	regs.Gs_base = sysThread.msg.Self
 }
 
-func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+func (s *subprocess) retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 }
 
 func sigErrorToAccessType(sigError uint64) hostarch.AccessType {

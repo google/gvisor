@@ -34,6 +34,8 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/fs_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -643,9 +645,6 @@ TEST(ArchPrctlTest, SetGSToZero) {
               SyscallSucceeds());
   EXPECT_EQ(read_gs, 0);
 
-  // TODO: b/405441712 - Remove once forked address spaces inherit disabled
-  // syscall patching.
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT(
       {
         uint64_t val = 0;
@@ -886,6 +885,52 @@ TEST(ArchPrctlTest, ConcurrentPatchAndUnpatchRace) {
   EXPECT_EQ((RawSyscall<SYS_getuid, 4>()), expected_uid);
 
   ASSERT_THAT(arch_prctl(ARCH_SET_GS, orig_gs), SyscallSucceeds());
+  munmap(page, kPageSize);
+}
+
+// Tests that a child process reverts the syscall patches that it inherited
+// from its parent when a user sets GS. The child runs in a new address space,
+// which does not remember the patches that were applied before the fork, so
+// they are recovered using the inherited trap table.
+TEST(ArchPrctlTest, UnpatchInheritedSyscallsAfterFork) {
+  SKIP_IF(GvisorPlatform() != Platform::kSystrap);
+
+  const pid_t parent_pid = getpid();
+  void* page = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(page, MAP_FAILED);
+  constexpr uint64_t kGSData = 0x0f0e0d0c0b0a0908ULL;
+  *static_cast<uint64_t*>(page) = kGSData;
+  const uintptr_t new_gs = reinterpret_cast<uintptr_t>(page);
+
+  // Patch a few callsites
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_EQ((RawSyscall<SYS_getpid, 5>()), parent_pid);
+  }
+
+  EXPECT_THAT(InForkedProcess([&] {
+                TEST_CHECK(arch_prctl(ARCH_SET_GS, new_gs) == 0);
+
+                uint64_t gs_val = 0;
+                asm volatile("movq %%gs:0, %0" : "=r"(gs_val));
+                TEST_CHECK(gs_val == kGSData);
+
+                // The inherited patch must have been reverted; otherwise this
+                // jumps into the trap table, which clobbers GS.
+                const pid_t child_pid = getpid();
+                for (int i = 0; i < 100; ++i) {
+                  TEST_CHECK((RawSyscall<SYS_getpid, 5>()) == child_pid);
+                }
+
+                gs_val = 0;
+                asm volatile("movq %%gs:0, %0" : "=r"(gs_val));
+                TEST_CHECK(gs_val == kGSData);
+              }),
+              IsPosixErrorOkAndHolds(0));
+
+  // The parent keeps its patches and is unaffected by the child.
+  EXPECT_EQ((RawSyscall<SYS_getpid, 5>()), parent_pid);
+
   munmap(page, kPageSize);
 }
 

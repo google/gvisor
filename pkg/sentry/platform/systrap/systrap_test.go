@@ -74,7 +74,7 @@ func newSystrapTest(t *testing.T) (*Systrap, platform.AddressSpace, *platformCon
 		t.Fatalf("failed to create Systrap platform: %v", err)
 	}
 
-	as, err := s.NewAddressSpace()
+	as, err := s.NewAddressSpace(platform.AddressSpaceOptions{})
 	if err != nil {
 		t.Fatalf("failed to create address space: %v", err)
 	}

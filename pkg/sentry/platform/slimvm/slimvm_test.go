@@ -140,7 +140,7 @@ func applicationTest(t testHarness, useHostMappings bool, targetFn uintptr, fn f
 
 	slimvmTest(t, func(k *SlimVM) {
 		// Create new page tables.
-		as, err := k.NewAddressSpace()
+		as, err := k.NewAddressSpace(platform.AddressSpaceOptions{})
 		if err != nil {
 			t.Fatalf("can't create new address space: %v", err)
 		}

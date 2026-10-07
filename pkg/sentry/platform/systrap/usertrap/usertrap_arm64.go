@@ -48,7 +48,8 @@ type State struct {
 }
 
 // New returns the new state structure.
-func New() *State {
+// The disabled argument is ignored, since syscall patching is not supported on arm64.
+func New(bool) *State {
 	return &State{}
 }
 
@@ -57,6 +58,11 @@ func (*State) Disabled() bool {
 	return true
 }
 
+// Disable disables future syscall patching.
+func (*State) Disable() {
+}
+
+// PatchSyscall does nothing on arm64 as syscall trapping is not supported.
 func (*State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryManager) (restart bool, err error) {
 	return false /* restart */, nil
 }

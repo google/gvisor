@@ -72,7 +72,7 @@ type Platform interface {
 	MaxUserAddress() hostarch.Addr
 
 	// NewAddressSpace returns a new memory context for this platform.
-	NewAddressSpace() (AddressSpace, error)
+	NewAddressSpace(opts AddressSpaceOptions) (AddressSpace, error)
 
 	// NewContext returns a new execution context.
 	NewContext(context.Context) Context
@@ -403,6 +403,18 @@ type AddressSpace interface {
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this
 	// does not hold may panic if AddressSpaceIO methods are invoked.
 	AddressSpaceIO
+}
+
+// AddressSpaceOptions contains options for Platform.NewAddressSpace.
+type AddressSpaceOptions struct {
+	// DisableSyscallPatching is used by systrap to indicate that the platform must not patch
+	// application syscall instructions in this address space.
+	//
+	// It is set when the application in the corresponding MemoryManager has
+	// decided to use the GS register, meaning we can no longer patch system calls.
+	// Since a MemoryManager acquires a fresh AddressSpace on fork() and after
+	// restore, it must be initialized to match the parent's state.
+	DisableSyscallPatching bool
 }
 
 // AddressSpaceIO supports IO through the memory mappings installed in an

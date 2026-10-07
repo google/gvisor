@@ -35,11 +35,23 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// trapNR is the maximum number of traps what can fit in the trap table.
-const trapNR = 256
+const (
+	// trapNR is the maximum number of traps what can fit in the trap table.
+	trapNR = 256
 
-// trapSize is the size of one trap.
-const trapSize = 80
+	// trapSize is the size of one trap.
+	trapSize = 80
+
+	// trapRetAddrOffset is the offset in a trap of the address at which the
+	// patched syscall returns. It is the immediate operand of the "movabs
+	// $ret_addr, %rax" instruction. See addTrapLocked.
+	trapRetAddrOffset = 40
+
+	// trapSysnoOffset is the offset in a trap of the number of the syscall
+	// that the trap invokes. It is the immediate operand of the "mov sysno,
+	// %eax" instruction. See addTrapLocked.
+	trapSysnoOffset = 58
+)
 
 var (
 	// jmpInst is the binary code of "jmp *addr".
@@ -80,9 +92,10 @@ type State struct {
 }
 
 // New returns the new state structure.
-func New() *State {
+func New(disabled bool) *State {
 	return &State{
-		patches: make(map[hostarch.Addr]uint32),
+		disabled: disabled,
+		patches:  make(map[hostarch.Addr]uint32),
 	}
 }
 
@@ -91,6 +104,13 @@ func (s *State) Disabled() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.disabled
+}
+
+// Disable disables future syscall patching.
+func (s *State) Disable() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disabled = true
 }
 
 // +marshal
@@ -334,16 +354,141 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	return nil
 }
 
+// loadTableLocked initializes s.tableAddr and s.nextTrap from the trap table
+// mapped in mm. It returns false if the trap table has not been mapped, which
+// means that no syscall has ever been patched in this address space.
+//
+// Preconditions: s.mu must be locked.
+func (s *State) loadTableLocked(ctx context.Context, mm memoryManager) (bool, error) {
+	// The usertrap table has already been mapped and initialized.
+	if s.nextTrap != 0 {
+		return true, nil
+	}
+
+	addr, off, err := mm.FindVMAByName(trapTableAddrRange, tableVMAName)
+	// The usertrap vma does not exist.
+	if err != nil {
+		return false, nil
+	}
+
+	// The usertrap table should not be overmounted.
+	if off != 0 {
+		return false, fmt.Errorf("the usertrap vma has been overmounted")
+	}
+
+	var hdr header
+	if _, err := hdr.CopyIn(&usermem.IOCopyContext{Ctx: ctx, IO: mm}, addr); err != nil {
+		return false, err
+	}
+
+	// The table has been mapped but no trap has been allocated yet.
+	if hdr.nextTrap == 0 {
+		return false, nil
+	}
+
+	s.tableAddr = addr
+	s.nextTrap = hdr.nextTrap
+	return true, nil
+}
+
+// isPatchedWith returns true if code is a syscall that has been patched to
+// jump to trapAddr.
+func isPatchedWith(code []uint8, trapAddr hostarch.Addr) bool {
+	// PatchSyscall writes the first byte of the jmp instruction last, so it
+	// can still be the first byte of the original mov instruction if the
+	// patch has been interrupted. Threads are redirected to trapAddr in both
+	// cases; see HandleFault.
+	if code[0] != jmpInst[0] && code[0] != movInstOpcode {
+		return false
+	}
+
+	for i := 1; i < jmpInstOpcodeLen; i++ {
+		if code[i] != jmpInst[i] {
+			return false
+		}
+	}
+
+	return binary.LittleEndian.Uint32(code[jmpInstOpcodeLen:]) == uint32(trapAddr)
+}
+
+// recoverPatchesLocked adds the patches that are recorded in the trap table,
+// but not in s.patches, to s.patches.
+//
+// s.patches only contains the patches that have been applied through this
+// State. An address space that has been forked or restored inherits both the
+// patched application code and the trap table, but it gets a new State with an
+// empty map, so the trap table is the only remaining record of these patches.
+// Each trap contains the address at which the patched syscall returns and its
+// syscall number, which is all that is needed to revert the patch.
+//
+// Preconditions: s.mu must be locked.
+func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) error {
+	ok, err := s.loadTableLocked(ctx, mm)
+	if err != nil || !ok {
+		return err
+	}
+
+	if s.patches == nil {
+		s.patches = make(map[hostarch.Addr]uint32)
+	}
+
+	cc := &usermem.IOCopyContext{Ctx: ctx, IO: mm}
+	code := make([]uint8, len(jmpInst))
+	nextTrap := s.nextTrap
+	if nextTrap > trapNR {
+		nextTrap = trapNR
+	}
+
+	tableBuf := make([]uint8, nextTrap*trapSize)
+	if _, err := primitive.CopyUint8SliceIn(cc, s.tableAddr, tableBuf); err != nil {
+		return err
+	}
+
+	// The table header is the first entry in the table. Skip it.
+	for trap := uint32(1); trap < nextTrap; trap++ {
+		trapAddr := s.trapAddr(trap)
+		trapBuf := tableBuf[trap*trapSize : (trap+1)*trapSize]
+
+		// The first eight bytes of every trap point to its ninth byte. Some traps
+		// are skipped by NewTrapLocked because they would cross a page boundary.
+		if binary.LittleEndian.Uint64(trapBuf[:8]) != uint64(trapAddr)+8 {
+			continue
+		}
+
+		retAddr := binary.LittleEndian.Uint64(trapBuf[trapRetAddrOffset:])
+		// Protect against underflow.
+		if retAddr < uint64(len(jmpInst)) {
+			continue
+		}
+
+		// Check if the patch has already been restored.
+		patchAddr := hostarch.Addr(retAddr - uint64(len(jmpInst)))
+		if _, ok := s.patches[patchAddr]; ok {
+			continue
+		}
+
+		// Copy the patch instruction.
+		if _, err := primitive.CopyUint8SliceIn(cc, patchAddr, code); err != nil {
+			continue
+		}
+
+		// Check if the patch is still installed.
+		if !isPatchedWith(code, trapAddr) {
+			continue
+		}
+
+		sysno := binary.LittleEndian.Uint32(trapBuf[trapSysnoOffset:])
+		ctx.Debugf("Recovered binary patch addr %x trap addr %x (sysno %d)", patchAddr, trapAddr, sysno)
+		s.patches[patchAddr] = sysno
+	}
+	return nil
+}
+
 // UnpatchSyscalls reverts all applied syscall patches to their original
 // instructions and disables future syscall patching.
 func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if len(s.patches) == 0 {
-		s.disabled = true
-		return nil
-	}
 
 	if ctx == nil {
 		return fmt.Errorf("no context provided")
@@ -353,6 +498,18 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 		return fmt.Errorf("no task found")
 	}
 
+	// This address space can contain patches that were applied before this
+	// State was created (i.e. before it was forked or restored).
+	// This seems expensive but it only happens once per address space.
+	if err := s.recoverPatchesLocked(ctx, mm); err != nil {
+		return err
+	}
+
+	if len(s.patches) == 0 {
+		s.disabled = true
+		return nil
+	}
+
 	ignorePermContext := task.OwnCopyContext(usermem.IOOpts{IgnorePermissions: true})
 
 	// We recreate the original instruction using the sysno stored in the
@@ -360,7 +517,7 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 	for patchAddr, sysno := range s.patches {
 		origCode := make([]byte, len(jmpInst))
 		// 0xb8 is the opcode for "mov sysno, %eax".
-		origCode[0] = 0xb8
+		origCode[0] = movInstOpcode
 		// The next 4 bytes are the sysno.
 		binary.LittleEndian.PutUint32(origCode[1:5], sysno)
 		// 0x0f05 is the opcode for the syscall instruction.
