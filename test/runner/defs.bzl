@@ -14,6 +14,9 @@ _platform_support_env_vars = {
 def _runner_test_impl(ctx):
     # Generate a runner binary.
     runner = ctx.actions.declare_file(ctx.label.name)
+    setup = ""
+    if ctx.attr.requires_atime:
+        setup = "%s --require-atime " % ctx.executable._setup_container.short_path
     runner_content = "\n".join([
         "#!/bin/bash",
         "set -euf -x -o pipefail",
@@ -21,7 +24,8 @@ def _runner_test_impl(ctx):
         "  mkdir -p \"${TEST_UNDECLARED_OUTPUTS_DIR}\"",
         "  chmod a+rwx \"${TEST_UNDECLARED_OUTPUTS_DIR}\"",
         "fi",
-        "exec %s %s \"$@\" %s\n" % (
+        "exec %s%s %s \"$@\" %s\n" % (
+            setup,
             ctx.files.runner[0].short_path,
             " ".join(ctx.attr.runner_args),
             ctx.files.test[0].short_path,
@@ -40,6 +44,9 @@ def _runner_test_impl(ctx):
         collect_default = True,
         collect_data = True,
     )
+    if ctx.attr.requires_atime:
+        runfiles = runfiles.merge(ctx.attr._setup_container[DefaultInfo].default_runfiles)
+        runfiles = runfiles.merge(ctx.runfiles(files = [ctx.executable._setup_container]))
     return [DefaultInfo(executable = runner, runfiles = runfiles)]
 
 _runner_test = rule(
@@ -51,6 +58,14 @@ _runner_test = rule(
             mandatory = True,
         ),
         "runner_args": attr.string_list(),
+        "requires_atime": attr.bool(
+            doc = "Enable host-backed atime updates; requires CAP_SYS_ADMIN on noatime mounts.",
+        ),
+        "_setup_container": attr.label(
+            default = "//test/runner/setup_container",
+            executable = True,
+            cfg = "target",
+        ),
         "data": attr.label_list(
             allow_files = True,
         ),
@@ -84,6 +99,7 @@ def _syscall_test(
         nftables = False,
         kvm_use_cpu_nums = True,
         in_sandbox_cgroup = "v1",
+        requires_atime = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -195,6 +211,8 @@ def _syscall_test(
     _runner_test(
         name = name,
         test = test,
+        # Native always uses a host directory; FUSE variants use guest tmpfs.
+        requires_atime = requires_atime and (platform == "native" or not use_tmpfs),
         runner_args = runner_args,
         tags = tags,
         **kwargs
@@ -263,7 +281,7 @@ def syscall_test_variants(
       nftables: if nftables is true, enable nftables.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
-      **kwargs: additional test arguments.
+      **kwargs: Additional test arguments; requires_atime enables host atime updates.
     """
     for platform, platform_tags in all_platforms():
         # Add directfs to the default platform variant.
@@ -458,7 +476,7 @@ def syscall_test(
       perf: test is a benchmark.
       kvm_use_cpu_nums: use cpu numbers in kvm platform.
       in_sandbox_cgroup: cgroup version to use inside the sandbox.
-      **kwargs: additional test arguments.
+      **kwargs: Additional test arguments; requires_atime enables host atime updates.
     """
     if not tags:
         tags = []
