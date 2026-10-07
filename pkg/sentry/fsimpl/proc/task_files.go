@@ -1040,17 +1040,11 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	egid := creds.EffectiveKGID.In(s.userns).OrOverflow()
 	sgid := creds.SavedKGID.In(s.userns).OrOverflow()
 	var fds int
-	var vss, rss, data uint64
 	s.task.WithMuLocked(func(t *kernel.Task) {
 		if fdTable := t.FDTable(); fdTable != nil {
 			fds = fdTable.CurrentMaxFDs()
 		}
 	})
-	if mm := getMM(s.task); mm != nil {
-		vss = mm.VirtualMemorySize()
-		rss = mm.ResidentSetSize()
-		data = mm.VirtualDataSize()
-	}
 	// Filesystem user/group IDs aren't implemented; effective UID/GID are used
 	// instead.
 	fmt.Fprintf(buf, "Uid:\t%d\t%d\t%d\t%d\n", ruid, euid, suid, euid)
@@ -1066,9 +1060,15 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	}
 	buf.WriteString(" \n")
 
-	fmt.Fprintf(buf, "VmSize:\t%d kB\n", vss>>10)
-	fmt.Fprintf(buf, "VmRSS:\t%d kB\n", rss>>10)
-	fmt.Fprintf(buf, "VmData:\t%d kB\n", data>>10)
+	// As in Linux's fs/proc/array.c:proc_pid_status(), a task without an mm,
+	// such as an exited thread group leader, has no Vm* lines.
+	if mm := getMM(s.task); mm != nil {
+		rss := mm.ResidentSetSize()
+		fmt.Fprintf(buf, "VmSize:\t%d kB\n", mm.VirtualMemorySize()>>10)
+		fmt.Fprintf(buf, "VmHWM:\t%d kB\n", max(mm.MaxResidentSetSize(), rss)>>10)
+		fmt.Fprintf(buf, "VmRSS:\t%d kB\n", rss>>10)
+		fmt.Fprintf(buf, "VmData:\t%d kB\n", mm.VirtualDataSize()>>10)
+	}
 
 	fmt.Fprintf(buf, "Threads:\t%d\n", s.task.ThreadGroup().Count())
 	// Signal masks are rendered as in Linux's fs/proc/array.c:task_sig().

@@ -73,6 +73,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/strip.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
@@ -2292,6 +2293,68 @@ TEST(ProcPidStatTest, ReapedTaskNeverReportsPIDZero) {
   reader3.Join();
   reader4.Join();
   EXPECT_FALSE(reported_zero.load(std::memory_order_relaxed));
+}
+
+// Returns the value of a "<field>:\t<n> kB" line of /proc/self/status in kB.
+PosixErrorOr<uint64_t> ProcSelfStatusKB(absl::string_view field) {
+  ASSIGN_OR_RETURN_ERRNO(std::string contents,
+                         GetContents("/proc/self/status"));
+  absl::btree_map<std::string, std::string> status;
+  ASSIGN_OR_RETURN_ERRNO(status, ParseProcStatus(contents));
+  const auto it = status.find(field);
+  if (it == status.end()) {
+    return PosixError(ENOENT, absl::StrCat(field, " not found"));
+  }
+  absl::string_view number = it->second;
+  uint64_t kb;
+  if (!absl::ConsumeSuffix(&number, " kB") || !absl::SimpleAtoi(number, &kb)) {
+    return PosixError(EINVAL, absl::StrCat(field, ": ", it->second));
+  }
+  return kb;
+}
+
+// VmHWM is the peak resident set size: it stays at the high-water mark after
+// memory is released, while VmRSS drops.
+TEST(ProcPidStatusTest, VmHWM) {
+  constexpr uint64_t kMappingKB = 64 * 1024;
+  uint64_t rss_mapped = 0;
+  {
+    const Mapping mapping = ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(
+        kMappingKB * 1024, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_POPULATE));
+    rss_mapped = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfStatusKB("VmRSS"));
+    ASSERT_GE(rss_mapped, kMappingKB);
+  }
+  const uint64_t hwm = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfStatusKB("VmHWM"));
+  const uint64_t rss = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfStatusKB("VmRSS"));
+  EXPECT_GE(hwm, rss);
+  // Allow 10% slack: Linux updates the high-water mark from approximate RSS
+  // counters.
+  EXPECT_GE(hwm, rss_mapped * 9 / 10);
+  // Unmapping released at least half of the mapping.
+  EXPECT_LT(rss, rss_mapped - kMappingKB / 2);
+}
+
+// A thread group leader that has exited while other threads run has no mm, so
+// its status has no Vm* lines.
+TEST(ProcPidStatusTest, ExitedLeaderOmitsVmLines) {
+  const auto rest = [] {
+    const std::string path = absl::StrCat("/proc/", getpid(), "/status");
+    ScopedThread reader([&path] {
+      // Poll until the leader is a zombie.
+      for (int i = 0; i < 1000; ++i) {
+        const PosixErrorOr<std::string> status = GetContents(path);
+        TEST_CHECK(status.ok());
+        if (absl::StrContains(status.ValueOrDie(), "State:\tZ")) {
+          TEST_CHECK(!absl::StrContains(status.ValueOrDie(), "\nVm"));
+          _exit(0);
+        }
+        absl::SleepFor(absl::Milliseconds(10));
+      }
+      _exit(1);
+    });
+    syscall(SYS_exit, 0);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
 // Parse an array of NUL-terminated char* arrays, returning a vector of
