@@ -492,8 +492,16 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	}
 
 	if ats.MayRead() || ats.MayWrite() || ats.MayExec() {
+		if i.fs.conn.noAccess.Load() {
+			return nil
+		}
 		in := linux.FUSEAccessIn{Mask: uint32(ats)}
-		return i.callNoReply(ctx, linux.FUSE_ACCESS, &in)
+		err := i.callNoReply(ctx, linux.FUSE_ACCESS, &in)
+		if linuxerr.Equals(linuxerr.ENOSYS, err) {
+			i.fs.conn.noAccess.Store(true)
+			return nil
+		}
+		return err
 	}
 	return nil
 }

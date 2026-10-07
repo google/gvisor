@@ -28,6 +28,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -91,6 +92,32 @@ void FuseInit(int fd) {
       .minor = FUSE_KERNEL_MINOR_VERSION,
   };
   FuseRespond(fd, in_hdr->unique, &out_payload, sizeof(out_payload));
+}
+
+// Takes ownership of an initialized device. The callback returns false to stop
+// serving requests; a fatal assertion also stops the loop. Closing the device
+// on exit aborts any client still waiting for a reply.
+void RunFuseServer(
+    int device_fd, int stop_fd,
+    const std::function<bool(int, const fuse_in_header&)>& respond) {
+  const FileDescriptor fd(device_fd);
+  ASSERT_THAT(fcntl(fd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  alignas(fuse_in_header) char req_buf[65536];
+  while (!::testing::Test::HasFatalFailure()) {
+    struct pollfd fds[] = {
+        {.fd = fd.get(), .events = POLLIN},
+        {.fd = stop_fd, .events = POLLIN},
+    };
+    ASSERT_THAT(RetryEINTR(poll)(fds, 2, -1), SyscallSucceeds());
+    if (fds[1].revents & POLLIN) break;
+    ssize_t res = RetryEINTR(read)(fd.get(), req_buf, sizeof(req_buf));
+    if (res < 0 && errno == EAGAIN) continue;
+    ASSERT_THAT(res, SyscallSucceedsWithValue(Ge(sizeof(fuse_in_header))));
+    const auto& in = *reinterpret_cast<fuse_in_header*>(req_buf);
+    if (in.opcode == FUSE_FORGET) continue;
+    SCOPED_TRACE(absl::StrFormat("FUSE opcode %u", in.opcode));
+    if (!respond(fd.get(), in)) break;
+  }
 }
 
 TEST(FuseTest, RejectBadInit) {
@@ -232,59 +259,44 @@ TEST(FuseTest, Fallocate) {
       Mount("fuse", mount_point.path(), "fuse", MS_NODEV | MS_NOSUID,
             mount_opts, 0 /* umountflags */));
   ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
-  ASSERT_THAT(fcntl(fd.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
   const FileDescriptor stop_fd =
       ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
 
   constexpr uint64_t kIno = 42;
   constexpr uint64_t kBlocks = 8;
 
-  // Only the server owns the device after initialization. Closing it when the
-  // server exits also aborts any client request waiting for a reply.
-  const int server_fd = fd.release();
-  ScopedThread fuse_server = ScopedThread([&, server_fd] {
-    const FileDescriptor fd(server_fd);
-    alignas(fuse_in_header) char req_buf[65536];
-    while (!::testing::Test::HasFatalFailure()) {
-      struct pollfd fds[] = {
-          {.fd = fd.get(), .events = POLLIN},
-          {.fd = stop_fd.get(), .events = POLLIN},
-      };
-      ASSERT_THAT(RetryEINTR(poll)(fds, 2, -1), SyscallSucceeds());
-      if (fds[1].revents & POLLIN) break;
-      ssize_t res = RetryEINTR(read)(fd.get(), req_buf, sizeof(req_buf));
-      if (res < 0 && errno == EAGAIN) continue;
-      ASSERT_THAT(res, SyscallSucceedsWithValue(Ge(sizeof(fuse_in_header))));
-      auto* in = reinterpret_cast<fuse_in_header*>(req_buf);
-      if (in->opcode == FUSE_FORGET) continue;
-      SCOPED_TRACE(absl::StrFormat("FUSE opcode %u", in->opcode));
-
-      if (in->opcode == FUSE_LOOKUP) {
-        fuse_entry_out out = {
-            .nodeid = 2, .generation = 1, .entry_valid = 1, .attr_valid = 1};
-        out.attr = {
-            .ino = kIno, .blocks = kBlocks, .mode = S_IFREG | 0644, .nlink = 1};
-        FuseRespond(fd.get(), in->unique, &out, sizeof(out));
-      } else if (in->opcode == FUSE_OPEN) {
-        fuse_open_out out = {.fh = 1};
-        FuseRespond(fd.get(), in->unique, &out, sizeof(out));
-      } else if (in->opcode == FUSE_GETATTR) {
-        fuse_attr_out out = {.attr_valid = 1};
-        out.attr = {.ino = in->nodeid == 1 ? 1 : kIno,
-                    .blocks = in->nodeid == 1 ? 0 : kBlocks,
-                    .mode = in->nodeid == 1 ? S_IFDIR | 0755U : S_IFREG | 0644U,
-                    .nlink = 1};
-        FuseRespond(fd.get(), in->unique, &out, sizeof(out));
-      } else if (in->opcode == FUSE_ACCESS || in->opcode == FUSE_FALLOCATE ||
-                 in->opcode == FUSE_FLUSH) {
-        FuseRespond(fd.get(), in->unique);
-      } else if (in->opcode == FUSE_RELEASE) {
-        FuseRespond(fd.get(), in->unique);
-        break;
-      } else {
-        FuseRespond(fd.get(), in->unique, nullptr, 0, -ENOSYS);
-      }
-    }
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(
+        server_fd, stop_fd.get(), [&](int fd, const fuse_in_header& in) {
+          if (in.opcode == FUSE_LOOKUP) {
+            fuse_entry_out out = {.nodeid = 2,
+                                  .generation = 1,
+                                  .entry_valid = 1,
+                                  .attr_valid = 1};
+            out.attr = {.ino = kIno,
+                        .blocks = kBlocks,
+                        .mode = S_IFREG | 0644,
+                        .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_OPEN) {
+            fuse_open_out out = {.fh = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_GETATTR) {
+            fuse_attr_out out = {.attr_valid = 1};
+            out.attr = {
+                .ino = in.nodeid == 1 ? 1 : kIno,
+                .blocks = in.nodeid == 1 ? 0 : kBlocks,
+                .mode = in.nodeid == 1 ? S_IFDIR | 0755U : S_IFREG | 0644U,
+                .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_ACCESS || in.opcode == FUSE_FALLOCATE ||
+                     in.opcode == FUSE_FLUSH || in.opcode == FUSE_RELEASE) {
+            FuseRespond(fd, in.unique);
+          } else {
+            FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+          }
+          return in.opcode != FUSE_RELEASE;
+        });
   });
   // An assertion before a file is opened cannot rely on a RELEASE request to
   // stop the server. Wake its poll before ScopedThread's destructor joins it.
@@ -321,6 +333,66 @@ TEST(FuseTest, Fallocate) {
 
   file_fd.reset();
   fuse_server.Join();
+}
+
+TEST(FuseTest, AccessUnsupported) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningWithSaveRestore());
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount_opts =
+      absl::StrFormat("fd=%d,user_id=0,group_id=0,rootmode=40000", fd.get());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("fuse", mount_point.path(), "fuse", MS_NODEV | MS_NOSUID,
+            mount_opts, 0 /* umountflags */));
+  ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
+  const FileDescriptor stop_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+
+  int access_requests = 0;
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(
+        server_fd, stop_fd.get(), [&](int fd, const fuse_in_header& in) {
+          if (in.opcode == FUSE_ACCESS) {
+            ++access_requests;
+            // A real denial must not disable ACCESS. ENOSYS disables it for the
+            // connection; reply to unexpected later requests so failures cannot
+            // hang.
+            const int error = access_requests == 2 ? ENOSYS : EACCES;
+            FuseRespond(fd, in.unique, nullptr, 0, -error);
+          } else if (in.opcode == FUSE_LOOKUP) {
+            fuse_entry_out out = {.nodeid = 2,
+                                  .generation = 1,
+                                  .entry_valid = 1,
+                                  .attr_valid = 1};
+            out.attr = {.ino = 2, .mode = S_IFREG | 0644, .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_GETATTR) {
+            fuse_attr_out out = {.attr_valid = 1};
+            out.attr = {
+                .ino = in.nodeid,
+                .mode = in.nodeid == 1 ? S_IFDIR | 0755U : S_IFREG | 0644U,
+                .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else {
+            FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+          }
+          return true;
+        });
+  });
+  Cleanup stop_server([&] {
+    const uint64_t stop = 1;
+    EXPECT_THAT(RetryEINTR(write)(stop_fd.get(), &stop, sizeof(stop)),
+                SyscallSucceedsWithValue(sizeof(stop)));
+  });
+
+  EXPECT_THAT(access(mount_point.path().c_str(), R_OK),
+              SyscallFailsWithErrno(EACCES));
+  EXPECT_THAT(access(mount_point.path().c_str(), R_OK), SyscallSucceeds());
+  // The cached capability applies to another inode and a different mask.
+  const std::string file_path = JoinPath(mount_point.path(), "testfile");
+  EXPECT_THAT(access(file_path.c_str(), W_OK), SyscallSucceeds());
 }
 
 TEST(FuseTest, LookupUpdatesInode) {
