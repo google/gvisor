@@ -87,6 +87,7 @@ func (opts *FSSaveOpts) Close() error {
 // +checklocksexclude:k.extMu
 // +checklocksexclude:k.tasks.mu
 // +checklocksexclude:k.runningTasksMu
+// +checklocksexclude:k.fsSaveMu
 func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 	if opts == nil {
 		return fmt.Errorf("FSSaveOpts cannot be nil")
@@ -347,6 +348,8 @@ func (cw *countingWriter) Write(src []byte) (int, error) {
 //
 // This API is difficult to use without races, but is consistent with
 // k.WaitForCheckpoint().
+//
+// +checklocksexclude:k.fsSaveMu
 func (k *Kernel) WaitForFSSave() error {
 	c := make(chan error, 1)
 	k.fsSaveMu.Lock()
@@ -356,6 +359,8 @@ func (k *Kernel) WaitForFSSave() error {
 }
 
 // SignalAllFSSaveWaiters signals all FS save waiters with err.
+//
+// +checklocksexclude:k.fsSaveMu
 func (k *Kernel) SignalAllFSSaveWaiters(err error) {
 	k.fsSaveMu.Lock()
 	defer k.fsSaveMu.Unlock()
