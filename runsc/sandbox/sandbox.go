@@ -50,7 +50,6 @@ import (
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -2566,14 +2565,13 @@ func deviceFileForPlatform(name, devicePath string) (*fd.FD, error) {
 }
 
 // getNvproxyDriverVersion returns the NVIDIA driver ABI version to use by
-// nvproxy.
+// nvproxy, or "latest", which the sentry resolves to the newest supported ABI.
 func getNvproxyDriverVersion(conf *config.Config) (string, error) {
 	switch conf.NVProxyDriverVersion {
 	case "":
-		return nvproxy.HostDriverVersion()
+		return nvconf.HostDriverVersion()
 	case "latest":
-		nvproxy.Init()
-		return nvproxy.LatestDriver().String(), nil
+		return conf.NVProxyDriverVersion, nil
 	default:
 		version, err := nvconf.DriverVersionFrom(conf.NVProxyDriverVersion)
 		return version.String(), err

@@ -44,6 +44,7 @@ enum thread_state {
   THREAD_STATE_PREP,
   THREAD_STATE_ASLEEP,
   THREAD_STATE_INITIALIZING,
+  THREAD_STATE_TRANSITION_TO_SIGHANDLER,
 };
 
 struct thread_context;
@@ -98,6 +99,7 @@ struct thread_context {
   uint64_t acked_time;
   uint64_t state_changed_time;
   uint64_t tls;
+  uint64_t gs_used_by_app;
   uint64_t debug;
   uint64_t err;
 };

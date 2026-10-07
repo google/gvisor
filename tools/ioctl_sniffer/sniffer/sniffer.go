@@ -197,7 +197,7 @@ func Init() error {
 	nvproxy.Init()
 
 	// Load the ABI for the host driver.
-	driverVerStr, err := nvproxy.HostDriverVersion()
+	driverVerStr, err := nvconf.HostDriverVersion()
 	if err != nil {
 		return fmt.Errorf("failed to get host driver version: %w", err)
 	}
