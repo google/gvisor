@@ -151,9 +151,14 @@ func (pg *ProcessGroup) incRefWithParent(parentPG *ProcessGroup) {
 //
 // Precondition: callers must hold TaskSet.mu for writing.
 func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
+	// POSIX signals a group's stopped members only when it becomes orphaned
+	// (compare kernel/exit.c:kill_orphaned_pgrp); a member leaving a group
+	// that was already orphaned must not signal it.
+	newlyOrphaned := false
 	// See incRefWithParent regarding parent == nil.
 	if pg != parentPG && (parentPG == nil || pg.session == parentPG.session) {
 		pg.ancestors--
+		newlyOrphaned = pg.ancestors == 0
 	}
 
 	alive := true
@@ -171,7 +176,7 @@ func (pg *ProcessGroup) decRefWithParent(parentPG *ProcessGroup) {
 		pg.session.processGroups.Remove(pg)
 		pg.session.DecRef()
 	})
-	if alive {
+	if alive && newlyOrphaned {
 		pg.handleOrphan()
 	}
 }
