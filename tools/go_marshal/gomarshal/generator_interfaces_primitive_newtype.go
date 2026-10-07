@@ -99,7 +99,6 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.recordUsedImport("hostarch")
 	g.recordUsedImport("io")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
 	g.recordUsedImport("unsafe")
 
@@ -248,7 +247,6 @@ func (g *interfaceGenerator) emitCheckedMarshallableForPrimitiveNewtype() {
 func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Ident, slice *sliceAPI) {
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")
-	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
 	g.recordUsedImport("unsafe")
 
@@ -268,7 +266,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emitCastSliceToByteSlice("&dst", "buf", "size * count")
+		g.emitCastSliceToByteSlice("dst", "buf", "size * count")
 
 		g.emit("length, err := cc.CopyInBytes(addr, buf) // escapes: okay.\n")
 		g.emitKeepAlive("dst")
@@ -287,7 +285,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emitCastSliceToByteSlice("&src", "buf", "size * count")
+		g.emitCastSliceToByteSlice("src", "buf", "size * count")
 
 		g.emit("length, err := cc.CopyOutBytes(addr, buf) // escapes: okay.\n")
 		g.emitKeepAlive("src")

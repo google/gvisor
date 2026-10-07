@@ -175,54 +175,15 @@ func (g *interfaceGenerator) unmarshalScalar(accessor, typ, bufVar string) {
 // dstVar dependent on srcPtr due to the escape analysis bypass.
 //
 // srcPtr must be a pointer.
-//
-// This function uses internally uses the identifier "hdr", and cannot be used
-// in a context where it is already bound.
 func (g *interfaceGenerator) emitCastToByteSlice(srcPtr, dstVar, lenExpr string) {
 	g.recordUsedImport("gohacks")
-	g.emit("// Construct a slice backed by dst's underlying memory.\n")
-	g.emit("var %s []byte\n", dstVar)
-	g.emit("hdr := (*reflect.SliceHeader)(unsafe.Pointer(&%s))\n", dstVar)
-	g.emit("hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(%s)))\n", srcPtr)
-	g.emit("hdr.Len = %s\n", lenExpr)
-	g.emit("hdr.Cap = %s\n\n", lenExpr)
+	g.emit("%s := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(%s))), %s)\n\n", dstVar, srcPtr, lenExpr)
 }
 
-// emitCastSliceToByteSlice unsafely casts a slice with elements of an arbitrary type
-// to a byte slice. As part of the cast, the byte slice is made to look
-// independent of the src slice by bypassing escape analysis. This means the
-// byte slice can be used without causing the source to escape. The caller is
-// responsible for ensuring srcPtr lives until they're done with dstVar, as the
-// runtime no longer considers dstVar dependent on srcPtr and is free to GC it.
-//
-// srcPtr must be a pointer.
-//
-// This function uses internally uses the identifiers "ptr", "val" and "hdr",
-// and cannot be used in a context where these identifiers are already bound.
-func (g *interfaceGenerator) emitCastSliceToByteSlice(srcPtr, dstVar, lenExpr string) {
-	g.emitNoEscapeSliceDataPointer(srcPtr, "val")
-
-	g.emit("// Construct a slice backed by dst's underlying memory.\n")
-	g.emit("var %s []byte\n", dstVar)
-	g.emit("hdr := (*reflect.SliceHeader)(unsafe.Pointer(&%s))\n", dstVar)
-	g.emit("hdr.Data = uintptr(val)\n")
-	g.emit("hdr.Len = %s\n", lenExpr)
-	g.emit("hdr.Cap = %s\n\n", lenExpr)
-}
-
-// emitNoEscapeSliceDataPointer unsafely casts a slice's data pointer to an
-// unsafe.Pointer, bypassing escape analysis. The caller is responsible for
-// ensuring srcPtr lives until they're done with dstVar, as the runtime no
-// longer considers dstVar dependent on srcPtr and is free to GC it.
-//
-// srcPtr must be a pointer.
-//
-// This function uses internally uses the identifier "ptr" cannot be used in a
-// context where this identifier is already bound.
-func (g *interfaceGenerator) emitNoEscapeSliceDataPointer(srcPtr, dstVar string) {
-	g.recordUsedImport("gohacks")
-	g.emit("ptr := unsafe.Pointer(%s)\n", srcPtr)
-	g.emit("%s := gohacks.Noescape(unsafe.Pointer((*reflect.SliceHeader)(ptr).Data))\n\n", dstVar)
+// emitCastSliceToByteSlice is like emitCastToByteSlice, but takes a slice
+// expression rather than a pointer.
+func (g *interfaceGenerator) emitCastSliceToByteSlice(srcSlice, dstVar, lenExpr string) {
+	g.emitCastToByteSlice(fmt.Sprintf("unsafe.SliceData(%s)", srcSlice), dstVar, lenExpr)
 }
 
 func (g *interfaceGenerator) emitKeepAlive(ptrVar string) {

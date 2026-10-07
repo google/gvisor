@@ -336,7 +336,6 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			g.emit("return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if cond, ok := g.areFieldsPackedExpression(); ok {
@@ -380,7 +379,6 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			g.emit("return length, err\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if cond, ok := g.areFieldsPackedExpression(); ok {
@@ -421,7 +419,6 @@ func (g *interfaceGenerator) emitMarshallableForStruct(st *ast.StructType) {
 			g.emit("return int64(length), err\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if cond, ok := g.areFieldsPackedExpression(); ok {
@@ -514,7 +511,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.emit("return length, err\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if _, ok := g.areFieldsPackedExpression(); ok {
@@ -523,7 +519,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 				g.emit("}\n\n")
 			}
 			// Fast deserialization.
-			g.emitCastSliceToByteSlice("&dst", "buf", "size * count")
+			g.emitCastSliceToByteSlice("dst", "buf", "size * count")
 
 			g.emit("length, err := cc.CopyInBytes(addr, buf)\n")
 			g.emitKeepAlive("dst")
@@ -557,7 +553,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.emit("return cc.CopyOutBytes(addr, buf)\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if _, ok := g.areFieldsPackedExpression(); ok {
@@ -566,7 +561,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 				g.emit("}\n\n")
 			}
 			// Fast serialization.
-			g.emitCastSliceToByteSlice("&src", "buf", "size * count")
+			g.emitCastSliceToByteSlice("src", "buf", "size * count")
 
 			g.emit("length, err := cc.CopyOutBytes(addr, buf)\n")
 			g.emitKeepAlive("src")
@@ -597,7 +592,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.emit("return dst\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			g.recordUsedImport("gohacks")
@@ -637,7 +631,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 		}
 		if thisPacked {
 			g.recordUsedImport("gohacks")
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			if _, ok := g.areFieldsPackedExpression(); ok {
 				g.emit("if !dst[0].Packed() {\n")
@@ -686,7 +679,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.emit("return length, nil\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if _, ok := g.areFieldsPackedExpression(); ok {
@@ -695,7 +687,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 				g.emit("}\n\n")
 			}
 			// Fast serialization.
-			g.emitCastSliceToByteSlice("&dst", "buf", "size * count")
+			g.emitCastSliceToByteSlice("dst", "buf", "size * count")
 
 			g.emit("length, err := io.ReadFull(src, buf)\n")
 			g.emitKeepAlive("dst")
@@ -737,7 +729,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 			g.emit("return length, nil\n")
 		}
 		if thisPacked {
-			g.recordUsedImport("reflect")
 			g.recordUsedImport("runtime")
 			g.recordUsedImport("unsafe")
 			if _, ok := g.areFieldsPackedExpression(); ok {
@@ -746,7 +737,7 @@ func (g *interfaceGenerator) emitMarshallableSliceForStruct(st *ast.StructType, 
 				g.emit("}\n\n")
 			}
 			// Fast serialization.
-			g.emitCastSliceToByteSlice("&src", "buf", "size * count")
+			g.emitCastSliceToByteSlice("src", "buf", "size * count")
 
 			g.emit("length, err := dst.Write(buf)\n")
 			g.emitKeepAlive("src")
