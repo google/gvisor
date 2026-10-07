@@ -819,6 +819,170 @@ func TestGrowBufferCloned(t *testing.T) {
 	}
 }
 
+// externalTestStorage models an owner whose bytes are not available until its
+// restore lifecycle finishes, after state.Load has reconstructed the buffers.
+type externalTestStorage struct {
+	data     []byte
+	ready    bool
+	releases int
+}
+
+func (s *externalTestStorage) Bytes() []byte {
+	if !s.ready {
+		panic("external storage is not ready")
+	}
+	return s.data
+}
+
+func (s *externalTestStorage) Release() {
+	s.releases++
+	s.ready = false
+}
+
+func (*externalTestStorage) StateTypeName() string {
+	return "gvisor.dev/gvisor/pkg/buffer.externalTestStorage"
+}
+
+func (*externalTestStorage) StateFields() []string {
+	return []string{"data"}
+}
+
+func (s *externalTestStorage) StateSave(sink state.Sink) {
+	sink.Save(0, &s.data)
+}
+
+func (s *externalTestStorage) StateLoad(_ context.Context, source state.Source) {
+	source.Load(0, &s.data)
+}
+
+func init() {
+	state.Register((*externalTestStorage)(nil))
+}
+
+func TestSaveRestoreExternalBuffers(t *testing.T) {
+	storage := &externalTestStorage{data: bytes.Repeat([]byte("0123456789"), 1024), ready: true}
+	v := NewViewWithExternalStorage(storage)
+	v.TrimFront(3)
+	v.CapLength(8)
+	var original Buffer
+	original.appendOwned(NewViewWithData([]byte("head")))
+	original.appendOwned(v)
+	original.appendOwned(NewViewWithData([]byte("tail")))
+	defer original.Release()
+	shared := original.Clone()
+	defer shared.Release()
+	written := original.Clone()
+	defer written.Release()
+	if _, err := written.data.Front().Next().WriteAt([]byte("X"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	toSave := []*Buffer{&original, &shared, &written}
+	var encoded bytes.Buffer
+	ctx := t.Context()
+	if _, err := state.Save(ctx, &encoded, &toSave); err != nil {
+		t.Fatal(err)
+	}
+	var restored []*Buffer
+	if _, err := state.Load(ctx, &encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != len(toSave) {
+		t.Fatalf("restored %d buffers, want %d", len(restored), len(toSave))
+	}
+	for _, b := range restored {
+		defer b.Release()
+	}
+	first := restored[0].data.Front().Next()
+	second := restored[1].data.Front().Next()
+	owner := first.chunk.external.(*externalTestStorage)
+	if first.chunk != second.chunk {
+		t.Fatal("restored external views do not share their chunk")
+	}
+	if owner.ready || owner.releases != 0 {
+		t.Fatalf("storage touched during load: ready=%t, releases=%d", owner.ready, owner.releases)
+	}
+	owner.ready = true
+	for i, want := range []string{"head34567890tail", "head34567890tail", "headX4567890tail"} {
+		if got := string(restored[i].Flatten()); got != want {
+			t.Errorf("buffer %d = %q, want %q", i, got, want)
+		}
+	}
+	if _, err := first.WriteAt([]byte("Y"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(second.AsSlice()); got != "34567890" {
+		t.Fatalf("restored COW changed shared bytes to %q", got)
+	}
+	restored[0].Release()
+	if owner.releases != 0 {
+		t.Fatalf("storage released with a surviving view: %d releases", owner.releases)
+	}
+	restored[1].Release()
+	restored[2].Release()
+	if owner.releases != 1 {
+		t.Fatalf("final storage releases = %d, want 1", owner.releases)
+	}
+}
+
+func TestSaveRestoreEmptyExternalView(t *testing.T) {
+	storage := &externalTestStorage{data: []byte("x"), ready: true}
+	v := NewViewWithExternalStorage(storage)
+	v.CapLength(0)
+	var original Buffer
+	original.appendOwned(v)
+	defer original.Release()
+	var restored Buffer
+	doSaveAndLoad(t, &original, &restored)
+	owner := restored.data.Front().chunk.external.(*externalTestStorage)
+	if owner.ready || owner.releases != 0 {
+		t.Fatal("loading released or accessed empty external storage")
+	}
+	restored.Release()
+	if owner.releases != 1 {
+		t.Fatalf("storage releases = %d, want 1", owner.releases)
+	}
+}
+
+func TestSaveRestoreTrimmedHeapBuffer(t *testing.T) {
+	b := MakeWithView(NewViewWithData(bytes.Repeat([]byte("x"), MaxChunkSize)))
+	defer b.Release()
+	b.TrimFront(MaxChunkSize - 1)
+	var encoded bytes.Buffer
+	ctx := t.Context()
+	if _, err := state.Save(ctx, &encoded, &b); err != nil {
+		t.Fatal(err)
+	}
+	// The snapshot should not retain the unused 64 KiB heap chunk capacity.
+	if got := encoded.Len(); got >= MaxChunkSize/2 {
+		t.Fatalf("one-byte buffer snapshot size = %d, retains unused chunk capacity", got)
+	}
+	var restored Buffer
+	if _, err := state.Load(ctx, &encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Release()
+	if got := string(restored.Flatten()); got != "x" {
+		t.Fatalf("restored buffer = %q, want x", got)
+	}
+}
+
+func TestGrowExternalBuffer(t *testing.T) {
+	storage := &externalTestStorage{data: []byte("abcd"), ready: true}
+	original := MakeWithView(NewViewWithExternalStorage(storage))
+	defer original.Release()
+	clone := original.Clone()
+	defer clone.Release()
+	clone.Truncate(2)
+	clone.GrowTo(4, true)
+	if got := string(clone.Flatten()); got != "ab\x00\x00" {
+		t.Errorf("grown clone = %q, want ab followed by two zero bytes", got)
+	}
+	if got := string(original.Flatten()); got != "abcd" {
+		t.Errorf("growing clone changed original to %q", got)
+	}
+}
+
 func TestRangeIntersect(t *testing.T) {
 	for _, tc := range []struct {
 		desc       string
