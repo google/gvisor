@@ -849,10 +849,10 @@
   sha256: 0077abedf9a4798c50e015045b5cc092b8001be6d994fc59781c4b0d6ae94507
   license: MIT
 - dependency: golang.org/x/crypto
-  version: v0.51.0
-  retrieved: "2026-09-24"
-  commit: b8a14a8d65f88c0c79c139171f1354c69a6cdb8a
-  sha256: a28a63b8a6abbbfcbf9fecf8417ce734c50dd988564cadf301c72c2a944f3a6a
+  version: v0.57.0
+  retrieved: "2026-10-07"
+  commit: 3f62bf119e84c6e35e8518a2958089ade622d1a3
+  sha256: 856c916b92f1fc5b53983c04f6249f632f56c47ebc003bbcdfc503500dfb58b8
   license: BSD-3-Clause
 - dependency: golang.org/x/exp
   version: v0.0.0-20250711185948-6ae5c78190dc
@@ -867,16 +867,16 @@
   sha256: 9bd73f186851c6229484f486981f608d16e2b86acbbef6f4f7cc0480a508a4a4
   license: BSD-3-Clause
 - dependency: golang.org/x/mod
-  version: v0.36.0
-  retrieved: "2026-09-24"
-  commit: 643da9ba74f1165d8cae1505d453b3de3cf21b7b
-  sha256: 5410180c3dd4cd6e3ad08e7f47586fd93de65ca9c0a8891a8f964d321f74b60b
+  version: v0.41.0
+  retrieved: "2026-10-07"
+  commit: d0a27b2d4a48460806692bf5c87fc157c3c65292
+  sha256: 201e678d0a35b18b246abe58d80017b75d60be21cbaf4cbb9e963b48872565a9
   license: BSD-3-Clause
 - dependency: golang.org/x/net
-  version: v0.54.0
-  retrieved: "2026-09-24"
-  commit: b138e06246cb323f2f380c2b7f7dd91f581dd56b
-  sha256: 1fef7f3ac7fc69f85b7fa47df036c75ad2136f719072a2bb4b93fc79f90bc7c7
+  version: v0.59.0
+  retrieved: "2026-10-07"
+  commit: 540d04cfe5028e2655754591a4d3e08c586809f2
+  sha256: 1dc3bf31fcebe80d393288ac8fe5cac7f0e82e9b3a2630021dcdf5ffbfa3f601
   license: BSD-3-Clause
 - dependency: golang.org/x/oauth2
   version: v0.36.0
@@ -885,34 +885,34 @@
   sha256: 15bf65ff103e5dafc809d78cd037a1d1e88ccb8451824e851156002a13304504
   license: BSD-3-Clause
 - dependency: golang.org/x/sync
-  version: v0.20.0
-  retrieved: "2026-08-27"
-  commit: ec11c4a93de22cde2abe2bf74d70791033c2464c
-  sha256: 7179d4d68800f6fdcadb9d4bbf11cbb5df9b40360c89305c203fe20723cbd375
+  version: v0.23.0
+  retrieved: "2026-10-07"
+  commit: f75267d8412fc1dfd12b343644a7ea46e4d9c85d
+  sha256: c19a11baba5c1a093cb4fd2f6d0d8d79673c97a82cb0fe2d693c9b6ad84f0f82
   license: BSD-3-Clause
 - dependency: golang.org/x/sys
-  version: v0.44.0
-  retrieved: "2026-09-24"
-  commit: fb1facd76f95fa87c151018200ea5e4892ff115d
-  sha256: f1fa1052808e6bd6eb9c5372c053b2370a582532fac5d6a4600e7a6fab190ff3
+  version: v0.48.0
+  retrieved: "2026-10-07"
+  commit: 613e2570718ecde85c04e69ebd5585c3881c442c
+  sha256: 3a47e06431ba1e24d5b2aca3a7ce31fd13faff34df3e5d8e63f105ff9d0c1786
   license: BSD-3-Clause
 - dependency: golang.org/x/telemetry
-  version: v0.0.0-20260508192327-42602be52be6
-  retrieved: "2026-09-24"
-  commit: 42602be52be69fafe0488d2ac57dfdd4e33a4035
-  sha256: 45effab83a47978464e05709be15da7232d501ad29fdc61b6977cd5c65528dde
+  version: v0.0.0-20260924152758-ed294f943157
+  retrieved: "2026-10-07"
+  commit: ed294f9431572147af3f0aaa3fe932a93b698664
+  sha256: fd337baf7135f8e4c98ea04830184b23b81bd1f6b86c925f82a7d0fcbb54c971
   license: BSD-3-Clause
 - dependency: golang.org/x/term
-  version: v0.43.0
-  retrieved: "2026-09-24"
-  commit: 3c3e4855f7d2eb06c3e48933554add9ec6b599b5
-  sha256: 0d12dd77f2c620f236e59421d604f6bcd1f9212a4083a1c0ec13425c67bc6e81
+  version: v0.46.0
+  retrieved: "2026-10-07"
+  commit: 6226200ed12cba417a9d9e799c2a7179d3fc0e27
+  sha256: 9147fdd982f1aed1392183d5b48055f4f74c85d496604766c7f0b1d3bbd61c7c
   license: BSD-3-Clause
 - dependency: golang.org/x/text
-  version: v0.37.0
-  retrieved: "2026-09-24"
-  commit: 3ef517e623a4bfc08d6457f87d73afda7af7d8e1
-  sha256: b8d475c17835ab602b91f1147684ceb5dbf4060e72e5dfb2e0e33efc9312a982
+  version: v0.42.0
+  retrieved: "2026-10-07"
+  commit: fafe4a06967e06550e69ee42787d9902845d2a3f
+  sha256: a7b64e003056b6470303f408202098d8f3714a115f23091b8cac85edeb265476
   license: BSD-3-Clause
 - dependency: golang.org/x/time
   version: v0.15.0
@@ -921,10 +921,10 @@
   sha256: 8cfb20e915fa5d6c3fd264304233f8d71a3385e48a37819239c532ad9da27f84
   license: BSD-3-Clause
 - dependency: golang.org/x/tools
-  version: v0.45.0
-  retrieved: "2026-09-24"
-  commit: 2aabba0e4be44cc8f254ced118a7156d04bbc9f3
-  sha256: 13e8d03676d30a1431dc72e9e1d831298a8cca0dd620f68154a4419a125816e2
+  version: v0.51.0
+  retrieved: "2026-10-07"
+  commit: ea2f152dc35325e4b9b639583972375972350a84
+  sha256: 176a49a54ed781feb196235cc640f0454884f4e59d0b859ab4ecc9169cde513c
   license: BSD-3-Clause
 - dependency: golang.org/x/xerrors
   version: v0.0.0-20220907171357-04be3eba64a2

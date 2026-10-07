@@ -359,38 +359,38 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/crypto",
-    sum = "h1:IBPXwPfKxY7cWQZ38ZCIRPI50YLeevDLlLnyC5wRGTI=",
-    version = "v0.51.0",
+    sum = "h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=",
+    version = "v0.57.0",
 )
 go_deps.module(
     path = "golang.org/x/mod",
-    sum = "h1:JJjpVx6myfUsUdAzZuOSTTmRE0PfZeNWzzvKrP7amb4=",
-    version = "v0.36.0",
+    sum = "h1:qJmnOUb4YB+FsEuM3HcWucdZASCPGhsX6uljO6pog0c=",
+    version = "v0.41.0",
 )
 go_deps.module(
     path = "golang.org/x/sync",
-    sum = "h1:l60nONMj9l5drqw6jlhIELNv9I0A4OFgRsG9k2oT9Ug=",
-    version = "v0.17.0",
+    sum = "h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=",
+    version = "v0.23.0",
 )
 go_deps.module(
     path = "golang.org/x/sys",
-    sum = "h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=",
-    version = "v0.44.0",
+    sum = "h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=",
+    version = "v0.48.0",
 )
 go_deps.module(
     path = "golang.org/x/tools",
-    sum = "h1:18qN3FAooORvApf5XjCXgsuayZOEtXf6JK18I3+ONa8=",
-    version = "v0.45.0",
+    sum = "h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=",
+    version = "v0.51.0",
 )
 go_deps.module(
     path = "golang.org/x/term",
-    sum = "h1:S4RLU2sB31O/NCl+zFN9Aru9A/Cq2aqKpTZJ6B+DwT4=",
-    version = "v0.43.0",
+    sum = "h1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=",
+    version = "v0.46.0",
 )
 go_deps.module(
     path = "golang.org/x/net",
-    sum = "h1:2zJIZAxAHV/OHCDTCOHAYehQzLfSXuf/5SoL/Dv6w/w=",
-    version = "v0.54.0",
+    sum = "h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=",
+    version = "v0.59.0",
 )
 go_deps.module(
     path = "github.com/google/go-cmp",
@@ -734,8 +734,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/telemetry",
-    sum = "h1:HjU6IWBiAgRIdAJ9/y1rwCn+UELEmwV+VsTLzj/W4sE=",
-    version = "v0.0.0-20260508192327-42602be52be6",
+    sum = "h1:DftxASHKl6JolFPqoN+2WrFO53JvkHwRXvFqf8gsivA=",
+    version = "v0.0.0-20260924152758-ed294f943157",
 )
 go_deps.module(
     path = "golang.org/x/xerrors",
