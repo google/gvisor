@@ -190,7 +190,7 @@ var AMD64 = &kernel.SyscallTable{
 		155: syscalls.Supported("pivot_root", PivotRoot),
 		156: syscalls.Error("sysctl", linuxerr.EPERM, "Deprecated. Use /proc/sys instead.", nil),
 		157: syscalls.PartiallySupported("prctl", Prctl, "Not all options are supported.", nil),
-		158: syscalls.PartiallySupported("arch_prctl", ArchPrctl, "Options ARCH_GET_GS, ARCH_SET_GS not supported.", nil),
+		158: syscalls.Supported("arch_prctl", ArchPrctl),
 		159: syscalls.CapError("adjtimex", linux.CAP_SYS_TIME, "", nil),
 		160: syscalls.PartiallySupported("setrlimit", Setrlimit, "Not all rlimits are enforced.", nil),
 		161: syscalls.SupportedPoint("chroot", Chroot, PointChroot),
