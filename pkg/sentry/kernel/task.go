@@ -64,6 +64,9 @@ const (
 // by the task goroutine while it is running. The task goroutine does not
 // require synchronization to read or write these fields.
 //
+// A task's Kernel and ThreadGroup belong to the same TaskSet.
+//
+// +checklocksalias:tg.pidns.owner.mu=k.tasks.mu
 // +stateify savable
 type Task struct {
 	taskNode
@@ -149,18 +152,19 @@ type Task struct {
 
 	// signalMask is the set of signals whose delivery is currently blocked.
 	//
-	// signalMask is accessed using atomic memory operations, and is protected
-	// by the signal mutex (such that reading signalMask is safe if either the
-	// signal mutex is locked or if atomic memory operations are used, while
-	// writing signalMask requires both). signalMask is owned by the task
-	// goroutine.
+	// signalMask is owned by the task goroutine.
+	//
+	// +checkatomic
+	// +checklocks:tg.signalHandlers.mu
 	signalMask atomicbitops.Uint64
 
-	// If the task goroutine is currently executing Task.sigtimedwait,
+	// If the task goroutine is currently executing Task.Sigtimedwait,
 	// realSignalMask is the previous value of signalMask, which has temporarily
-	// been replaced by Task.sigtimedwait. Otherwise, realSignalMask is 0.
+	// been replaced by Task.Sigtimedwait. Otherwise, realSignalMask is 0.
 	//
-	// realSignalMask is exclusive to the task goroutine.
+	// realSignalMask is owned by the task goroutine.
+	//
+	// +checklocks:tg.signalHandlers.mu
 	realSignalMask linux.SignalSet
 
 	// If haveSavedSignalMask is true, savedSignalMask is the signal mask that
@@ -520,7 +524,7 @@ type Task struct {
 
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
-	// parentDeathSignal is protected by mu.
+	// +checklocks:mu
 	parentDeathSignal linux.Signal
 
 	// seccomp contains all seccomp-bpf syscall filters applicable to the task.
@@ -548,6 +552,9 @@ type Task struct {
 
 	// cpu is the fake cpu number returned by getcpu(2). cpu is ignored
 	// entirely if Kernel.useHostCores is true.
+	//
+	// +checkatomic
+	// +checklocks:mu
 	cpu atomicbitops.Int32
 
 	// This is used to keep track of the scheduling policy for this task.
@@ -660,7 +667,9 @@ type Task struct {
 	// startTime is the real time at which the task started. It is set when
 	// a Task is created or invokes execve(2).
 	//
-	// startTime is protected by mu.
+	// +checklocks:mu
+	// +checklocks:k.tasks.mu
+	// +checklocksreadany
 	startTime ktime.Time
 
 	// kcov is the kcov instance providing code coverage owned by this task.
