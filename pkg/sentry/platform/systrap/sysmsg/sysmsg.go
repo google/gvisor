@@ -111,6 +111,13 @@ const (
 	// is used to tell the signal handler that the thread does not yet have a
 	// context.
 	ThreadStateInitializing
+	// ThreadStateTransitionToSighandler is used when a fast-path stub thread
+	// popped a context that requires signal-frame restoration. This occurs
+	// when a ctx that has set its GS base is resumed by a systhread that had
+	// initially taken the fast path. Because the ctx needs to use its GS
+	// register, it cannot remain on the fast path so its transitioned to the
+	// slow path.
+	ThreadStateTransitionToSighandler
 )
 
 // Msg contains the current state of the sysmsg thread.
@@ -277,6 +284,10 @@ type ThreadContext struct {
 	// TLS is a pointer to a thread local storage.
 	// It is is only populated on ARM64.
 	TLS uint64
+	// GsUsedByApp is a flag to indicate whether the GS register is being used
+	// by the application.
+	// It is only populated on x86_64.
+	GsUsedByApp uint64
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
 	// SigError is an error code that clarifies the nature of the signal.

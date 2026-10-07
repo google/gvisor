@@ -53,6 +53,24 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 						seccomp.AnyValue{},
 						seccomp.GreaterThan(stubStart), // rip
 					},
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.ARCH_SET_GS),
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.GreaterThan(stubStart), // rip
+					},
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.ARCH_GET_GS),
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.GreaterThan(stubStart), // rip
+					},
 				},
 			}),
 			Action: seccomp.Allow,

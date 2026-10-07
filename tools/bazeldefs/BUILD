@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "bzl_library", "target_emulators")
+load("//tools:defs.bzl", "bzl_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -29,12 +29,6 @@ bzl_library(
     srcs = ["go.bzl"],
     visibility = ["//visibility:private"],
     deps = [":defs_bzl"],
-)
-
-bzl_library(
-    name = "deb_data_bzl",
-    srcs = ["extensions/deb_data.bzl"],
-    visibility = ["//visibility:private"],
 )
 
 # Keep Go's pure/cgo mode in its build settings, not the target platform:
@@ -77,10 +71,6 @@ config_setting(
         "@platforms//cpu:riscv64",
     ],
 )
-
-# User-mode emulators for each target architecture (qemu_*).
-# See target_emulator in defs.bzl.
-target_emulators(name = "qemu")
 
 genrule(
     name = "version",

@@ -53,15 +53,3 @@ exceptions:
       distributed with gVisor. The LLVM exception only relaxes
       Apache-2.0's requirements, and the MIT match comes from third-party
       notices embedded in LICENSE.TXT.
-  - dependency: qemu_user_amd64
-    license: GPL-2.0-only
-    exception_rationale: >-
-      QEMU user-mode emulators for x86_64 build machines, run as a build tool
-      to execute binaries built for the target architecture when
-      cross-compiling. QEMU is neither linked into nor distributed with gVisor.
-  - dependency: qemu_user_arm64
-    license: GPL-2.0-only
-    exception_rationale: >-
-      QEMU user-mode emulators for arm64 build machines, run as a build tool
-      to execute binaries built for the target architecture when
-      cross-compiling. QEMU is neither linked into nor distributed with gVisor.
