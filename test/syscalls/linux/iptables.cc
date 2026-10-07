@@ -195,6 +195,29 @@ void IPTablesTest::TearDown() {
   EXPECT_THAT(close(s_), SyscallSucceeds());
 }
 
+// Linux returns ENOENT when asked about a table that isn't registered. Tools
+// such as syzkaller rely on this to skip unsupported tables (e.g. "security").
+TEST_F(IPTablesTest, GetInfoNonexistentTable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  struct ipt_getinfo info = {};
+  snprintf(info.name, XT_TABLE_MAXNAMELEN, "%s", "nonexistent");
+  socklen_t info_size = sizeof(info);
+  EXPECT_THAT(getsockopt(s_, SOL_IP, IPT_SO_GET_INFO, &info, &info_size),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_F(IPTablesTest, GetEntriesNonexistentTable) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  struct ipt_get_entries entries = {};
+  snprintf(entries.name, XT_TABLE_MAXNAMELEN, "%s", "nonexistent");
+  socklen_t entries_size = sizeof(entries);
+  EXPECT_THAT(
+      getsockopt(s_, SOL_IP, IPT_SO_GET_ENTRIES, &entries, &entries_size),
+      SyscallFailsWithErrno(ENOENT));
+}
+
 // This tests the initial state of a machine with empty iptables. We don't
 // have a guarantee that the iptables are empty when running in native, but we
 // can test that gVisor has the same initial state that a newly-booted Linux

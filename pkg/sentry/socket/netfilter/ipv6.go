@@ -45,7 +45,7 @@ func convertNetstackToBinary6(stk *stack.Stack, tablename linux.TableName) (linu
 
 	id, ok := nameToID[tablename.String()]
 	if !ok {
-		return linux.KernelIP6TGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q", tablename)
+		return linux.KernelIP6TGetEntries{}, linux.IPTGetinfo{}, fmt.Errorf("couldn't find table %q: %w", tablename, errTableNotFound)
 	}
 
 	// Setup the info struct, which is the same in IPv4 and IPv6.
