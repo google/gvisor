@@ -30,7 +30,7 @@ pkg_tar(
 go_binary(
     name = "webhook",
     srcs = ["main.go"],
-    features = ["fully_static_link"],
     pure = "on",
+    static = True,
     deps = ["//webhook/pkg/cli"],
 )
