@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"regexp"
@@ -143,7 +143,7 @@ func listedDriverVersions(cosVersion string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to get driver versions for release %q: %w", cosVersion, err)
 	}
 	defer resp.Body.Close()
-	return ioutil.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func TestMain(m *testing.M) {

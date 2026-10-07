@@ -182,7 +182,7 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 	}
 
 	// Keep needed information before trimming header.
-	p := hdr.TransportProtocol()
+	p := tcpip.TransportProtocolNumber(hdr.NextHeader())
 	dstAddr := hdr.DestinationAddress()
 
 	// Skip the IP header, then handle the fragmentation header if there

@@ -21,5 +21,7 @@ go_library(
         "@io_k8s_api//core/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/api/resource:go_default_library",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
+        "@org_golang_x_text//cases:go_default_library",
+        "@org_golang_x_text//language:go_default_library",
     ],
 )

@@ -21,5 +21,9 @@ go_library(
     visibility = [
         "//:sandbox",
     ],
-    deps = ["//tools/constraintutil"],
+    deps = [
+        "//tools/constraintutil",
+        "@org_golang_x_text//cases:go_default_library",
+        "@org_golang_x_text//language:go_default_library",
+    ],
 )

@@ -32,7 +32,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/checkpoint"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
@@ -345,7 +344,7 @@ func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*cont
 		if len(entrypoint) == 0 || len(args) == 0 {
 			// Need to look up the image's default entrypoint/args so we can prepend to them.
 			// If we don't, then we will end up overwriting them.
-			imageInfo, _, err := c.client.ImageInspectWithRaw(ctx, image)
+			imageInfo, err := c.client.ImageInspect(ctx, image)
 			if err != nil {
 				return nil, fmt.Errorf("cannot inspect image %q: %w", image, err)
 			}
@@ -651,10 +650,10 @@ func (c *Container) Stats(ctx context.Context) (*container.StatsResponse, error)
 }
 
 // Status inspects the container returns its status.
-func (c *Container) Status(ctx context.Context) (types.ContainerState, error) {
+func (c *Container) Status(ctx context.Context) (container.State, error) {
 	resp, err := c.client.ContainerInspect(ctx, c.id)
 	if err != nil {
-		return types.ContainerState{}, err
+		return container.State{}, err
 	}
 	return *resp.State, err
 }
