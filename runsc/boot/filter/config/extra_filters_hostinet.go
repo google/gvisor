@@ -15,6 +15,8 @@
 package config
 
 import (
+	"slices"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -123,7 +125,7 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 	// socket types.
 	stypes := hostinet.AllowedSocketTypes
 	if allowRawSockets {
-		stypes = append(stypes, hostinet.AllowedRawSocketTypes...)
+		stypes = slices.Concat(hostinet.AllowedSocketTypes, hostinet.AllowedRawSocketTypes)
 	}
 	for _, sock := range stypes {
 		rule := seccomp.PerArg{
