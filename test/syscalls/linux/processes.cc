@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <linux/capability.h>
+#include <poll.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdint.h>
@@ -187,6 +188,112 @@ TEST(Processes, SetsidOrphansSharedSignalHandlers) {
   ASSERT_THAT(RetryEINTR(waitpid)(a, &status, 0), SyscallSucceedsWithValue(a));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "process A exited with status " << status;
+}
+
+// Forks a member of the caller's process group that stops itself and idles.
+// SIGHUP kills it, even if the test runner ignores SIGHUP: it restores the
+// default before stopping, so no SIGHUP can arrive while it is still ignored.
+pid_t forkStoppedMember() {
+  pid_t s = fork();
+  if (s == 0) {
+    TEST_PCHECK(signal(SIGHUP, SIG_DFL) != SIG_ERR);
+    TEST_PCHECK(raise(SIGSTOP) == 0);
+    while (true) {
+      pause();
+    }
+  }
+  TEST_PCHECK(s > 0);
+  int status;
+  TEST_PCHECK(RetryEINTR(waitpid)(s, &status, WUNTRACED) == s);
+  TEST_PCHECK(WIFSTOPPED(status));
+  return s;
+}
+
+// A member exiting from a process group that was already orphaned does not
+// orphan it, so its stopped members must not get SIGHUP and SIGCONT.
+TEST(Processes, ExitFromOrphanedGroupDoesNotSignalStoppedMembers) {
+  pid_t a = fork();
+  if (a == 0) {
+    // A new session's group is orphaned from the start.
+    TEST_PCHECK(setsid() != -1);
+    pid_t s = forkStoppedMember();
+
+    sigset_t hup;
+    sigemptyset(&hup);
+    sigaddset(&hup, SIGHUP);
+    TEST_PCHECK(sigprocmask(SIG_BLOCK, &hup, nullptr) == 0);
+
+    pid_t e = fork();
+    if (e == 0) {
+      _exit(0);
+    }
+    TEST_PCHECK(e > 0);
+    int status;
+    TEST_PCHECK(RetryEINTR(waitpid)(e, &status, 0) == e);
+
+    sigset_t pending;
+    TEST_PCHECK(sigpending(&pending) == 0);
+    bool signaled = sigismember(&pending, SIGHUP);
+    absl::SleepFor(absl::Milliseconds(100));
+    signaled |= RetryEINTR(waitpid)(s, &status, WNOHANG) == s;
+
+    TEST_PCHECK(kill(s, SIGKILL) == 0 || errno == ESRCH);
+    RetryEINTR(waitpid)(s, &status, 0);
+    _exit(signaled ? 1 : 0);
+  }
+  ASSERT_THAT(a, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(a, &status, 0), SyscallSucceedsWithValue(a));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "the exit sent SIGHUP to an already orphaned group; status " << status;
+}
+
+// The exit that orphans a process group with a stopped member still sends it
+// SIGHUP, which kills it.
+TEST(Processes, ExitThatOrphansGroupSignalsStoppedMembers) {
+  int p[2];
+  ASSERT_THAT(pipe(p), SyscallSucceeds());
+
+  pid_t m = fork();
+  if (m == 0) {
+    // M's own session, so that once A exits, S's new parent is in another
+    // session and nothing outside the group keeps it from being orphaned.
+    TEST_PCHECK(setsid() != -1);
+    pid_t a = fork();
+    if (a == 0) {
+      // A leads group G, linked to M's group in the same session.
+      TEST_PCHECK(setpgid(0, 0) == 0);
+      pid_t s = forkStoppedMember();
+      TEST_PCHECK(WriteFd(p[1], &s, sizeof(s)) == sizeof(s));
+      _exit(0);
+    }
+    TEST_PCHECK(a > 0);
+    close(p[1]);
+    int status;
+    TEST_PCHECK(RetryEINTR(waitpid)(a, &status, 0) == a);
+    _exit(WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1);
+  }
+  ASSERT_THAT(m, SyscallSucceeds());
+  ASSERT_THAT(close(p[1]), SyscallSucceeds());
+
+  pid_t s;
+  ASSERT_THAT(ReadFd(p[0], &s, sizeof(s)), SyscallSucceedsWithValue(sizeof(s)));
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(m, &status, 0), SyscallSucceedsWithValue(m));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // S holds the pipe's last write end, so EOF means SIGHUP killed it.
+  struct pollfd pfd = {.fd = p[0], .events = POLLIN};
+  int n = RetryEINTR(poll)(&pfd, 1, 10000);
+  if (n != 1) {
+    kill(s, SIGKILL);
+  }
+  ASSERT_EQ(n, 1) << "stopped member was not signaled when its group became "
+                     "orphaned";
+  char c;
+  EXPECT_THAT(ReadFd(p[0], &c, 1), SyscallSucceedsWithValue(0));
+  close(p[0]);
 }
 
 void WritePIDToPipe(int* pipe_fds) {
