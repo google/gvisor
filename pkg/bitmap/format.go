@@ -93,8 +93,8 @@ func parseToken(token string) (start, end uint32, err error) {
 		if err != nil {
 			return 0, 0, err
 		}
-		if val1 >= val2 {
-			return 0, 0, fmt.Errorf("start (%v) must be less than end (%v)", val1, val2)
+		if val1 > val2 {
+			return 0, 0, fmt.Errorf("start (%v) must not exceed end (%v)", val1, val2)
 		}
 		return uint32(val1), uint32(val2), nil
 	default:
