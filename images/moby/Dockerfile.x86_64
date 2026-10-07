@@ -1,0 +1,28 @@
+# Update DOCKER_VERSION to test against newer Moby releases.
+ARG DOCKER_VERSION=29.8.1
+FROM docker:${DOCKER_VERSION}-dind
+ARG DOCKER_VERSION
+
+RUN apk add --no-cache go git nftables nftables-dev pkgconf skopeo
+
+RUN git clone --depth 1 --branch "docker-v${DOCKER_VERSION}" https://github.com/moby/moby.git /moby
+WORKDIR /moby
+RUN cp /moby/Dockerfile /moby/integration/Dockerfile
+
+# Bundle container images required by Moby network tests.
+# Pin busybox to 1.36 as the DNS tests expect output in a specific format.
+RUN mkdir -p /docker-images && \
+    skopeo copy docker://hello-world:latest docker-archive:/docker-images/hello-world.tar:hello-world:latest && \
+    skopeo copy docker://busybox:1.36 docker-archive:/docker-images/busybox.tar:busybox:latest
+
+# Pre-compile the tests.
+# TODO: b/568427471 - Add integration/network/bridge/bridge_linux_test.go when fixed.
+ENV GVISOR_MOBY_TEST_FILES="\
+integration/network/network_linux_test.go \
+integration/network/dns_test.go \
+integration/network/network_test.go"
+RUN set -e; for f in $GVISOR_MOBY_TEST_FILES; do \
+      pkg=$(dirname "$f"); \
+      out="./${pkg}/$(basename "${pkg}").test"; \
+      [ -f "$out" ] || go test -c -o "$out" "./${pkg}"; \
+    done

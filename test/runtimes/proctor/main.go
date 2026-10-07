@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary proctor runs the test for a particular runtime. It is meant to be
-// included in Docker images for all runtime tests.
-package main
+// Package proctor executes proctor test batches inside a container sandbox.
+package proctor
 
 import (
 	"flag"
 	"fmt"
-	"log"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -63,7 +63,8 @@ func setNumFilesLimit() error {
 	return nil
 }
 
-func main() {
+// Run parses command-line flags and executes the proctor.
+func Run(customRunners map[string]lib.TestRunner) error {
 	flag.Parse()
 
 	if *pause {
@@ -72,33 +73,37 @@ func main() {
 	}
 
 	if *runtime == "" {
-		log.Fatalf("runtime flag must be provided")
+		return fmt.Errorf("runtime flag must be provided")
 	}
 
 	timer := time.NewTimer(*timeout)
 
-	tr, err := lib.TestRunnerForRuntime(*runtime)
-	if err != nil {
-		log.Fatalf("%v", err)
+	var err error
+	tr, ok := customRunners[*runtime]
+	if !ok {
+		tr, err = lib.TestRunnerForRuntime(*runtime)
+		if err != nil {
+			return err
+		}
 	}
 
 	// List tests.
 	if *list {
 		tests, err := tr.ListTests()
 		if err != nil {
-			log.Fatalf("failed to list tests: %v", err)
+			return fmt.Errorf("failed to list tests: %v", err)
 		}
 		for _, test := range tests {
 			fmt.Println(test)
 		}
-		return
+		return nil
 	}
 
 	// heartbeat
 	go func() {
 		for {
 			time.Sleep(15 * time.Second)
-			log.Println("Proctor checking in " + time.Now().String())
+			slog.Info("Proctor checking in " + time.Now().String())
 		}
 	}()
 
@@ -107,7 +112,7 @@ func main() {
 		// Run every test.
 		tests, err = tr.ListTests()
 		if err != nil {
-			log.Fatalf("failed to get all tests: %v", err)
+			return fmt.Errorf("failed to get all tests: %v", err)
 		}
 	} else {
 		// Run subset of test.
@@ -115,7 +120,7 @@ func main() {
 	}
 
 	if err := setNumFilesLimit(); err != nil {
-		log.Fatalf("%v", err)
+		return err
 	}
 
 	// Run tests.
@@ -127,7 +132,7 @@ func main() {
 		case <-done:
 			return
 		case <-timer.C:
-			log.Println("The batch timeout duration is exceeded")
+			slog.Error("The batch timeout duration is exceeded")
 			killed := false
 			for _, cmd := range cmds {
 				p := cmd.Process
@@ -179,7 +184,16 @@ func main() {
 			}
 
 			// Run the test.
-			cmdCopy.Stdout, cmdCopy.Stderr = os.Stdout, os.Stderr
+			if cmdCopy.Stdout != nil {
+				cmdCopy.Stdout = io.MultiWriter(os.Stdout, cmdCopy.Stdout)
+			} else {
+				cmdCopy.Stdout = os.Stdout
+			}
+			if cmdCopy.Stderr != nil {
+				cmdCopy.Stderr = io.MultiWriter(os.Stderr, cmdCopy.Stderr)
+			} else {
+				cmdCopy.Stderr = os.Stderr
+			}
 			testErr := cmdCopy.Run()
 			close(testDone)
 			if <-testTimedOutCh {
@@ -200,17 +214,17 @@ func main() {
 		if successes > 0 && firstFailure != nil {
 			// Test is flaky.
 			if *flakyIsError {
-				log.Fatalf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations)
-			} else {
-				log.Printf("FLAKY: %v (%d failures out of %d)\n", firstFailure, iterations-successes, iterations)
+				return fmt.Errorf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations)
 			}
+			slog.Warn(fmt.Sprintf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations))
 		} else if successes == 0 && firstFailure != nil {
 			// Test is 100% failing.
-			log.Fatalf("FAIL: %v", firstFailure)
+			return fmt.Errorf("FAIL: %v", firstFailure)
 		} else if successes > 0 && firstFailure == nil {
 			// Test is 100% succeeding, do nothing.
 		} else {
-			log.Fatalf("Internal logic error")
+			return fmt.Errorf("internal logic error")
 		}
 	}
+	return nil
 }

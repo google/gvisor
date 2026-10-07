@@ -671,6 +671,17 @@ steps:
       <<: *ubuntu_agents
       cgroup: "v2"
       queue: "default"
+  # TODO: b/568426030 - Enable Moby tests on ARM64.
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":docker: Moby tests"
+    command: make moby-tests
+    agents:
+      <<: *ubuntu_agents
+      arch: "amd64"
+      cgroup: "v2"
+      queue: "default"
 
   # Check the website builds.
   - <<: *common

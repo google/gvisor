@@ -59,7 +59,7 @@ _runtime_test = rule(
             cfg = "target",
         ),
         "_proctor": attr.label(
-            default = "//test/runtimes/proctor:proctor",
+            default = "//test/runtimes/proctor:proctor_bin",
             executable = True,
             cfg = "target",
         ),

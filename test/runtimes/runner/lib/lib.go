@@ -21,12 +21,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -34,6 +37,12 @@ import (
 
 // ProctorSettings contains settings passed directly to the proctor process.
 type ProctorSettings struct {
+	// Runner is the host runfiles path to the proctor binary to copy into the container.
+	Runner string
+	// Privileged enables privileged mode for the container.
+	Privileged bool
+	// CapAdd is the list of capabilities to add to the container.
+	CapAdd []string
 	// PerTestTimeout is the timeout for each individual test.
 	PerTestTimeout time.Duration
 	// RunsPerTest is the number of times to run each test.
@@ -70,6 +79,13 @@ func RunTests(lang, image string, filter Filter, batchSize int, timeout time.Dur
 	d := dockerutil.MakeContainer(ctx, testutil.DefaultLogger(lang))
 	defer d.CleanUp(ctx)
 
+	localArtifactsDir, artifactsCleanup, err := setupArtifactsDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to setup artifacts dir: %v\n", err)
+		return 1
+	}
+	defer artifactsCleanup()
+
 	if err := testutil.TouchShardStatusFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "error touching status shard file: %v\n", err)
 		return 1
@@ -82,7 +98,7 @@ func RunTests(lang, image string, filter Filter, batchSize int, timeout time.Dur
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
-	tests, err := getTests(ctx, d, lang, image, batchSize, timeoutChan, timeout, filter, proctorSettings)
+	tests, err := getTests(ctx, d, lang, image, batchSize, timeoutChan, timeout, filter, proctorSettings, localArtifactsDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
@@ -91,16 +107,60 @@ func RunTests(lang, image string, filter Filter, batchSize int, timeout time.Dur
 	return m.Run()
 }
 
+// setupArtifactsDir creates a directory for test artifacts and
+// returns a function to copy files to TEST_UNDECLARED_OUTPUTS_DIR.
+func setupArtifactsDir() (localArtifactsDir string, cleanup func(), err error) {
+	outDir, hasOutDir := os.LookupEnv("TEST_UNDECLARED_OUTPUTS_DIR")
+	cleanup = func() {}
+	if !hasOutDir {
+		return "", cleanup, nil
+	}
+
+	localArtifactsDir, err = os.MkdirTemp("", "proctor-artifacts")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
+		return "", cleanup, err
+	}
+	if err = os.Chmod(localArtifactsDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to chmod temp dir: %v\n", err)
+		os.RemoveAll(localArtifactsDir)
+		return "", cleanup, err
+	}
+	cleanup = func() {
+		// Copy files to test artifacts dir.
+		copyCmd := exec.Command("cp", "-a", localArtifactsDir+"/.", outDir)
+		if err := copyCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to copy artifacts to %s: %v\n", outDir, err)
+		}
+		os.RemoveAll(localArtifactsDir)
+	}
+	return localArtifactsDir, cleanup, nil
+}
+
 // getTests executes all tests as table tests.
-func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeoutChan chan struct{}, timeout time.Duration, filter Filter, proctorSettings ProctorSettings) ([]testing.InternalTest, error) {
+func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeoutChan chan struct{}, timeout time.Duration, filter Filter, proctorSettings ProctorSettings, localArtifactsDir string) ([]testing.InternalTest, error) {
+	if batchSize <= 0 {
+		return nil, fmt.Errorf("batchSize must be > 0, got %d", batchSize)
+	}
 	startTime := time.Now()
 
 	// Start the container.
 	opts := dockerutil.RunOpts{
-		Image: fmt.Sprintf("runtimes/%s", image),
+		Image:      image,
+		Privileged: proctorSettings.Privileged,
+		CapAdd:     proctorSettings.CapAdd,
 	}
-	d.CopyFiles(&opts, "/proctor", "test/runtimes/proctor/proctor")
-	if err := d.Spawn(ctx, opts, "/proctor/proctor", "--pause"); err != nil {
+	if localArtifactsDir != "" {
+		opts.Mounts = append(opts.Mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   localArtifactsDir,
+			Target:   "/proctor-artifacts",
+			ReadOnly: false,
+		})
+	}
+	containerProctor := "/proctor/" + filepath.Base(proctorSettings.Runner)
+	d.CopyFiles(&opts, "/proctor", proctorSettings.Runner)
+	if err := d.Spawn(ctx, opts, containerProctor, "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 
@@ -116,7 +176,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 		panic("TIMEOUT: Unable to get a list of tests")
 	}()
 	// Get a list of all tests in the image.
-	list, err := d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, "/proctor/proctor", "--runtime", lang, "--list")
+	list, err := d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, containerProctor, "--runtime", lang, "--list")
 	if err != nil {
 		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
@@ -163,7 +223,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 			continue
 		}
 		itests = append(itests, testing.InternalTest{
-			Name: strings.Join(tcs, ", "),
+			Name: fmt.Sprintf("batch_%d", len(itests)),
 			F: func(t *testing.T) {
 				var (
 					now    = time.Now()
@@ -183,7 +243,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 
 				go func() {
 					argv := []string{
-						"/proctor/proctor", "--runtime", lang,
+						containerProctor, "--runtime", lang,
 						"--tests", strings.Join(tcs, ","),
 						fmt.Sprintf("--timeout=%s", timeout-time.Since(startTime)),
 					}

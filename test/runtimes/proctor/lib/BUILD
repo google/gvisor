@@ -15,7 +15,7 @@ go_library(
         "php.go",
         "python.go",
     ],
-    visibility = ["//test/runtimes/proctor:__pkg__"],
+    visibility = ["//test:__subpackages__"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
 

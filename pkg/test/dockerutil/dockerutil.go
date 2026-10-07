@@ -184,8 +184,15 @@ func RuntimeArgs() ([]string, error) {
 
 // IsGVisorRuntime returns whether the default container runtime used by
 // `dockerutil` is gVisor-based or not.
-func IsGVisorRuntime(ctx context.Context, t *testing.T) (bool, error) {
-	output, err := MakeContainer(ctx, t).Run(ctx, RunOpts{Image: "basic/alpine"}, "dmesg")
+func IsGVisorRuntime(ctx context.Context) (bool, error) {
+	if *runtime == "runc" {
+		return false, nil
+	}
+	if strings.Contains(*runtime, "runsc") {
+		return true, nil
+	}
+	logger := testutil.DefaultLogger("is-gvisor-runtime")
+	output, err := MakeContainer(ctx, logger).Run(ctx, RunOpts{Image: "basic/alpine"}, "dmesg")
 	if err != nil {
 		if strings.Contains(output, "dmesg: klogctl: Operation not permitted") {
 			return false, nil
@@ -314,4 +321,9 @@ func Save(logger testutil.Logger, image string, w io.Writer) error {
 // Runtime returns the value of the flag runtime.
 func Runtime() string {
 	return *runtime
+}
+
+// SetRuntime sets the value of the flag runtime.
+func SetRuntime(r string) {
+	*runtime = r
 }

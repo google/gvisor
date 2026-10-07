@@ -127,7 +127,7 @@ func GetEnvironment(ctx context.Context, t *testing.T, image string) (*TestEnvir
 	} else {
 		testLog(t, "%d GPUs detected", numGPU)
 	}
-	runtimeIsGVisor, err := dockerutil.IsGVisorRuntime(ctx, t)
+	runtimeIsGVisor, err := dockerutil.IsGVisorRuntime(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("cannot determine if runtime is gVisor or not: %w", err)
 	}
