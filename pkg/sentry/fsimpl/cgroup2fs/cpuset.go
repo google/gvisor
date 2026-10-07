@@ -123,10 +123,6 @@ func (cc *cpusetCpus) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	if err != nil {
 		return 0, linuxerr.EINVAL
 	}
-	if got, want := b.Maximum(), maxCpus; got > want {
-		return 0, linuxerr.EINVAL
-	}
-
 	cc.cs.mu.Lock()
 	defer cc.cs.mu.Unlock()
 	cc.cs.cpus = b
@@ -173,10 +169,6 @@ func (cm *cpusetMems) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	if err != nil {
 		return 0, linuxerr.EINVAL
 	}
-	if got, want := b.Maximum(), maxMems; got > want {
-		return 0, linuxerr.EINVAL
-	}
-
 	cm.cs.mu.Lock()
 	defer cm.cs.mu.Unlock()
 	cm.cs.mems = b
