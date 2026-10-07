@@ -774,6 +774,38 @@ TEST_F(Cgroup2Test, SubtreeControlPids) {
               IsPosixErrorOkAndHolds(Not(HasSubstr("pids"))));
 }
 
+TEST_F(Cgroup2Test, CpusetRejectsImpossibleCpu) {
+  const std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "cpuset"));
+
+  const std::string possible =
+      std::string(absl::StripAsciiWhitespace(ASSERT_NO_ERRNO_AND_VALUE(
+          GetContents("/sys/devices/system/cpu/possible"))));
+  // CPU IDs can be sparse or offline. Use the last possible ID, not the number
+  // of online CPUs, to choose a bit outside the system's possible mask.
+  const size_t last = possible.find_last_of(",-");
+  const uint32_t max_cpu = ASSERT_NO_ERRNO_AND_VALUE(Atoi<uint32_t>(
+      possible.substr(last == std::string::npos ? 0 : last + 1)));
+  // Keep the range small even if a regression accepts it.
+  SKIP_IF(max_cpu >= 4096);
+  const std::string impossible = absl::StrCat(max_cpu + 1);
+  const std::string before =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cpuset.cpus"));
+  ASSERT_NO_ERRNO(c().WriteControlFile("cpuset.cpus", before));
+  RecordProperty("possible_cpus", possible);
+  for (const auto& [name, value] :
+       {std::pair{"singleton", impossible},
+        std::pair{"range", absl::StrCat("0-", impossible)}}) {
+    SCOPED_TRACE(value);
+    const PosixError error = c().WriteControlFile("cpuset.cpus", value);
+    RecordProperty(absl::StrCat(name, "_errno"), error.errno_value());
+    EXPECT_FALSE(error.ok()) << "Accepted an impossible CPU";
+    EXPECT_THAT(c().ReadControlFile("cpuset.cpus"),
+                IsPosixErrorOkAndHolds(before));
+  }
+}
+
 TEST_F(Cgroup2Test, PidsEnforcement) {
   std::string controllers =
       ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
