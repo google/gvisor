@@ -49,9 +49,14 @@ go_library(
 go_test(
     name = "config_test",
     size = "large",
-    srcs = ["config_test.go"],
+    srcs = [
+        "clone_test.go",
+        "config_test.go",
+    ],
     embed = [":config"],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/platform/kvm",
