@@ -39,10 +39,16 @@ go_library(
 go_test(
     name = "config_test",
     size = "small",
-    srcs = ["config_test.go"],
+    srcs = [
+        "clone_test.go",
+        "config_test.go",
+    ],
     embed = [":config"],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
