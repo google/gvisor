@@ -1094,6 +1094,7 @@ func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *
 // a panic in a control server rpc would then hang forever.
 //
 // +checklocksexclude:l.mu
+// +checklocksexclude:l.k.fsSaveMu
 func (l *Loader) Destroy() {
 	if l.stopSignalForwarding != nil {
 		l.stopSignalForwarding()
