@@ -242,8 +242,17 @@ TEST(FuseTest, CloneFromUnconnectedDeviceFails) {
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
 
   int fd1_num = fd1.get();
-  EXPECT_THAT(ioctl(fd2.get(), FUSE_DEV_IOC_CLONE, &fd1_num),
-              SyscallFailsWithErrno(EINVAL));
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(ioctl(fd2.get(), FUSE_DEV_IOC_CLONE, &fd1_num),
+                SyscallFailsWithErrno(EINVAL));
+  } else {
+    // Linux changed this error to EPERM; stable backports make a version
+    // threshold unreliable. Keep accepting EINVAL on older kernels.
+    // https://github.com/torvalds/linux/commit/da6fcc6db
+    EXPECT_THAT(ioctl(fd2.get(), FUSE_DEV_IOC_CLONE, &fd1_num),
+                ::testing::AnyOf(SyscallFailsWithErrno(EINVAL),
+                                 SyscallFailsWithErrno(EPERM)));
+  }
 }
 
 TEST(FuseTest, Fallocate) {
