@@ -33,9 +33,11 @@ func TestTarXattrRoundTrip(t *testing.T) {
 		"user.binary": "\x00\xff\x80\n=",
 		"user.\xff":   "non-UTF8 name",
 	}
-	d := dentry{inode: &inode{impl: &directory{}}}
+	d := dentry{inode: &inode{fs: &filesystem{}, impl: &directory{}}}
 	d.inode.xattrs.SetRawXattrs(want)
+	d.inode.fs.mu.RLock()
 	hdr, err := d.createTarHeader("./", make(map[uint64]string), tarDefaultWriterCallbacks{})
+	d.inode.fs.mu.RUnlock()
 	if err != nil {
 		t.Fatal(err)
 	}
