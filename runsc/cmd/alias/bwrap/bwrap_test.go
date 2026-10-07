@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/sandboxexec/sandbox"
 )
@@ -464,6 +465,17 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "AsPID1",
+			args: []string{"--as-pid-1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				AsPID1: true,
+				Args:   []string{"bash"},
+			},
+		},
+		{
 			name: "ValidHostname",
 			args: []string{"--hostname", "test-host", "bash"},
 			wantCfg: &bwrapConfig{
@@ -518,6 +530,92 @@ func TestParseFlags(t *testing.T) {
 					{Type: sandbox.MountTypeProc, Destination: "/proc2"},
 				},
 			},
+		},
+		{
+			name: "Dev",
+			args: []string{"--dev", "/dev1/", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev1"},
+					{Type: sandbox.MountTypeDevpts, Destination: "/dev1/pts"},
+				},
+			},
+		},
+		{
+			name: "DeduplicatedDev",
+			args: []string{"--dev", "/dev1", "--dev", "/dev1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev1"},
+					{Type: sandbox.MountTypeDevpts, Destination: "/dev1/pts"},
+				},
+			},
+		},
+		{
+			name:        "MissingDevArg",
+			args:        []string{"--dev"},
+			errContains: "--dev takes 1 argument",
+		},
+		{
+			name: "RoBindData",
+			args: []string{"--ro-bind-data", "3", "/x/", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:      os.Environ(),
+				UID:      -1,
+				GID:      -1,
+				Args:     []string{"bash"},
+				Mounts:   []sandbox.Mount{{Type: sandbox.MountTypeBind, Destination: "/x", ReadOnly: true}},
+				BindData: []BindData{{MountIndex: 0, FD: 3, Perms: 0600}},
+			},
+		},
+		{
+			// MountIndex points past the mounts that come before.
+			name: "BindDataPerms",
+			args: []string{"--tmpfs", "/etc", "--perms", "0444", "--bind-data", "4", "/etc/x", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeTmpfs, Destination: "/etc"},
+					{Type: sandbox.MountTypeBind, Destination: "/etc/x"},
+				},
+				BindData: []BindData{{MountIndex: 1, FD: 4, Perms: 0444}},
+			},
+		},
+		{
+			name:        "BindDataInvalidFD",
+			args:        []string{"--bind-data", "abc", "/x", "bash"},
+			errContains: "Invalid fd: abc",
+		},
+		{
+			name:        "RoBindDataNegativeFD",
+			args:        []string{"--ro-bind-data", "-1", "/x", "bash"},
+			errContains: "Invalid fd: -1",
+		},
+		{
+			name:        "RoBindDataEmptyDest",
+			args:        []string{"--ro-bind-data", "3", "", "bash"},
+			errContains: "destination path is empty",
+		},
+		{
+			name:        "MissingBindDataArg",
+			args:        []string{"--bind-data", "3"},
+			errContains: "--bind-data takes 2 arguments",
+		},
+		{
+			name:        "MissingRoBindDataArg",
+			args:        []string{"--ro-bind-data", "3"},
+			errContains: "--ro-bind-data takes 2 arguments",
 		},
 		{
 			name: "CapDrop",
@@ -607,6 +705,35 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "PermsDir",
+			args: []string{"--perms", "0700", "--dir", "/foo", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo", Mode: permsPtr(0700)}},
+				Args:   []string{"bash"},
+			},
+		},
+		{
+			// --dir becomes a tmpfs mount. Without --perms it carries no mode,
+			// leaving gVisor's tmpfs default of 01777 in place.
+			name: "DirDefaultPerms",
+			args: []string{"--dir", "/foo", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo"}},
+				Args:   []string{"bash"},
+			},
+		},
+		{
+			name:        "MissingDirArg",
+			args:        []string{"--dir"},
+			errContains: "--dir takes 1 argument",
+		},
+		{
 			name:        "MissingPermsArg",
 			args:        []string{"--perms"},
 			errContains: "--perms takes 1 argument",
@@ -654,5 +781,57 @@ func TestParseFlags(t *testing.T) {
 				t.Errorf("bwrapConfig mismatch (-got +want):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestWriteBindData(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() failed: %v", err)
+	}
+	if _, err := w.WriteString("hello"); err != nil {
+		t.Fatalf("failed to write to pipe: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close pipe: %v", err)
+	}
+	// writeBindData closes the FD it reads, so hand it a duplicate that r
+	// does not own.
+	fd, err := unix.Dup(int(r.Fd()))
+	if err != nil {
+		t.Fatalf("unix.Dup() failed: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("failed to close pipe: %v", err)
+	}
+
+	cfg, err := parseBwrapArgs([]string{"--perms", "0440", "--ro-bind-data", strconv.Itoa(fd), "/x", "bash"})
+	if err != nil {
+		t.Fatalf("parseBwrapArgs() failed: %v", err)
+	}
+	cleanup, err := cfg.writeBindData()
+	if err != nil {
+		t.Fatalf("writeBindData() failed: %v", err)
+	}
+
+	src := cfg.Mounts[0].Source
+	got, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", src, err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("contents = %q, want %q", got, "hello")
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatalf("failed to stat %s: %v", src, err)
+	}
+	if mode := info.Mode().Perm(); mode != 0440 {
+		t.Errorf("mode = %#o, want %#o", mode, 0440)
+	}
+
+	cleanup()
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("os.Stat(%s) after cleanup = %v, want not exist", src, err)
 	}
 }

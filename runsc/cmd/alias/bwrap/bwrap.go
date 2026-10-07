@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -57,9 +58,17 @@ type CapOp struct {
 	Cap  string
 }
 
+// BindData is a --bind-data or --ro-bind-data file whose contents come from FD.
+type BindData struct {
+	MountIndex int
+	FD         int
+	Perms      uint32
+}
+
 // bwrapConfig represents the configuration for the bwrap sandbox.
 type bwrapConfig struct {
 	Mounts      []sandbox.Mount
+	BindData    []BindData
 	CapOps      []*CapOp
 	UnshareNet  bool
 	Args        []string
@@ -72,6 +81,7 @@ type bwrapConfig struct {
 	UnshareUser bool
 	Hostname    string
 	Argv0       string
+	AsPID1      bool
 	hasArgv0    bool
 	nextPerms   *uint32
 }
@@ -312,8 +322,74 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 	return opts, nil
 }
 
+// writeBindData copies each --bind-data and --ro-bind-data FD into a host
+// file and points its mount at that file. It returns a function that removes
+// the files.
+func (c *bwrapConfig) writeBindData() (func(), error) {
+	var paths []string
+	cleanup := func() {
+		for _, p := range paths {
+			if err := os.Remove(p); err != nil {
+				log.Warningf("bwrap: failed to remove %s: %v", p, err)
+			}
+		}
+	}
+	for _, bd := range c.BindData {
+		path, err := c.writeBindFile(bd)
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		paths = append(paths, path)
+		c.Mounts[bd.MountIndex].Source = path
+	}
+	return cleanup, nil
+}
+
+// writeBindFile copies FD into a new host file with the requested mode.
+func (c *bwrapConfig) writeBindFile(bd BindData) (string, error) {
+	dst := c.Mounts[bd.MountIndex].Destination
+	src := os.NewFile(uintptr(bd.FD), "bind-data")
+	if src == nil {
+		return "", fmt.Errorf("bwrap: Invalid fd: %d", bd.FD)
+	}
+	defer src.Close()
+
+	f, err := os.CreateTemp("", "runsc-bwrap-data-")
+	if err != nil {
+		return "", fmt.Errorf("bwrap: Can't create tmpfile for %s: %v", dst, err)
+	}
+	defer f.Close()
+	if err := c.fillBindFile(f, src, bd.Perms); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("bwrap: Can't write data to file %s: %v", dst, err)
+	}
+	return f.Name(), nil
+}
+
+// fillBindFile copies src into f and sets its mode and owner.
+func (c *bwrapConfig) fillBindFile(f, src *os.File, perms uint32) error {
+	if _, err := io.Copy(f, src); err != nil {
+		return err
+	}
+	if err := f.Chmod(os.FileMode(perms)); err != nil {
+		return err
+	}
+	if c.UnshareUser {
+		return f.Chown(getEnvInt("SUDO_UID", os.Getuid()), getEnvInt("SUDO_GID", os.Getgid()))
+	}
+	return nil
+}
+
 // do runs the command in a gVisor sandbox and records its exit status.
 func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
+	// Deferred before sb.Close, so the files outlive the sandbox.
+	cleanupData, err := c.writeBindData()
+	if err != nil {
+		return util.Errorf("%v", err)
+	}
+	defer cleanupData()
+
 	opts, err := c.sandboxOptions()
 	if err != nil {
 		return util.Errorf("%v", err)
@@ -336,6 +412,9 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 	execOpts := []sandbox.ExecOption{
 		sandbox.WithExecStdio(os.Stdin, os.Stdout, os.Stderr),
 		sandbox.WithExecSignalRelay(),
+	}
+	if c.AsPID1 {
+		execOpts = append(execOpts, sandbox.WithExecNewPIDNamespace())
 	}
 	argv := c.Args
 	if c.hasArgv0 {
