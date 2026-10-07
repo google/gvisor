@@ -477,10 +477,13 @@ func getCloneSeccheckInfo(t, nt *Task, flags uint64) (seccheck.FieldSet, *pb.Clo
 	}
 	t.k.tasks.mu.RLock()
 	defer t.k.tasks.mu.RUnlock()
+	// The new child belongs to t's Kernel and TaskSet. checklocks cannot
+	// relate their TaskSet mutexes across the two arguments.
+	startTime := nt.startTime // +checklocksignore
 	info := &pb.CloneInfo{
 		CreatedThreadId:          int32(nt.k.tasks.Root.tids[nt]),
 		CreatedThreadGroupId:     int32(nt.k.tasks.Root.tgids[nt.tg]),
-		CreatedThreadStartTimeNs: nt.startTime.Nanoseconds(),
+		CreatedThreadStartTimeNs: startTime.Nanoseconds(),
 		Flags:                    flags,
 	}
 

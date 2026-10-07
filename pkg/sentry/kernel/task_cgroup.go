@@ -88,7 +88,7 @@ func (t *Task) ApplyFreezeTasksLocked(cg Cgroup2, freezeOrdered bool) (FreezeCre
 	return t.applyFreezeSigLocked(cg, freezeOrdered)
 }
 
-// Preconditions: signalHandlers.mu is locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) applyFreezeSigLocked(cg Cgroup2, freezeOrdered bool) (FreezeCreditDelta, Cgroup2) {
 	was := t.freezeOrdered
 	t.freezeOrdered = freezeOrdered
