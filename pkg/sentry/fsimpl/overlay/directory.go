@@ -194,6 +194,7 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 		// Reuse slice allocated for maybeWhiteouts from a previous layer to
 		// reduce allocations.
 		maybeWhiteouts = maybeWhiteouts[:0]
+		layerStart := len(dirents)
 		err = layerFD.IterDirents(ctx, vfs.IterDirentsCallbackFunc(func(dirent vfs.Dirent) error {
 			if dirent.Name == "." || dirent.Name == ".." {
 				return nil
@@ -235,6 +236,15 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 			}
 			dirent.NextOff = int64(len(dirents) + 1)
 			dirents = append(dirents, dirent)
+		}
+		if isUpper {
+			d.fs.dirInoCacheMu.Lock()
+			for i := layerStart; i < len(dirents); i++ {
+				if id, ok := d.fs.copiedUpIDs[dirents[i].Ino]; ok && dirents[i].Type != linux.DT_DIR {
+					dirents[i].Ino = id.ino
+				}
+			}
+			d.fs.dirInoCacheMu.Unlock()
 		}
 		return true
 	})
