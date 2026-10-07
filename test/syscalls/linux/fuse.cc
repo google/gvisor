@@ -13,17 +13,27 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <features.h>
 #include <linux/capability.h>
 #include <linux/fuse.h>
-#include <linux/stat.h>
 #include <poll.h>
 #include <stdio.h>
+#include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #include <unistd.h>
+
+// Direct-include lint needs linux/stat.h when glibc 2.30+ shares its statx
+// types. glibc 2.28/2.29 and musl define those types in sys/stat.h; including
+// the kernel header with either would redefine them.
+// https://sourceware.org/git/gitweb.cgi?p=glibc.git;h=5dad6ffbb
+#if defined(__GLIBC__) && \
+    (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 30))
+#include <linux/stat.h>
+#endif
 
 #include <cerrno>
 #include <cstdint>
