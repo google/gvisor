@@ -18,6 +18,7 @@ go_binary(
     visibility = ["//:__subpackages__"],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
+        "//pkg/pagesizecheck",
         "//runsc/cli/maincli",
         "//runsc/version",
     ],
@@ -36,6 +37,7 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
+        "//pkg/pagesizecheck",
         "//pkg/sentry/socket/plugin/stack",
         "//runsc/cli/maincli",
         "//runsc/version",
@@ -66,6 +68,7 @@ go_binary(
     ],
     x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
     deps = [
+        "//pkg/pagesizecheck",
         "//runsc/cli/maincli",
         "//runsc/version",
     ],
