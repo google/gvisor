@@ -28,7 +28,7 @@ import (
 //
 // +stateify savable
 type Buffer struct {
-	data ViewList `state:".([]byte)"`
+	data ViewList `state:".([]savedView)"`
 	size int64
 }
 
