@@ -122,19 +122,30 @@ and set the `--container-runtime` flag to `remote` and set the
 `--container-runtime-endpoint` flag to point to the containerd socket. e.g.
 `/var/run/containerd/containerd.sock`.
 
-### My container cannot resolve another container's name when using Docker user defined bridge {#docker-bridge}
+### DNS doesn't work on a Docker user defined bridge network, including Docker Compose {#docker-bridge}
 
 This is normally indicated by errors like `bad address 'container-name'` when
-trying to communicate to another container in the same network.
+trying to communicate to another container in the same network, or
+`bad address 'example.com'` when resolving a public name. Docker Compose puts
+services on a user defined bridge network by default, so it is affected too.
 
 Docker user defined bridge uses an embedded DNS server bound to the loopback
-interface on address 127.0.0.10. This requires access to the host network in
-order to communicate to the DNS server. runsc network is isolated from the host
-and cannot access the DNS server on the host network without breaking the
-sandbox isolation. There are a few different workarounds you can try:
+interface on address 127.0.0.11, and Docker points the container's
+`/etc/resolv.conf` at it. This requires access to the host network in order to
+communicate to the DNS server. runsc network is isolated from the host and
+cannot access the DNS server on the host network without breaking the sandbox
+isolation, so lookups of both container names and public names fail. See
+[issue #7469][issue-7469] for details. There are a few different workarounds
+you can try:
 
 *   Use default bridge network with `--link` to connect containers. Default
-    bridge doesn't use embedded DNS.
+    bridge doesn't use embedded DNS. With Docker Compose, set
+    `network_mode: bridge` on the service.
+*   If the container only needs public names, mount an `/etc/resolv.conf` that
+    points to a resolver the container can reach, for example
+    `-v /path/to/resolv.conf:/etc/resolv.conf:ro`. Passing `--dns` alone is not
+    enough on a user defined bridge, because Docker still writes 127.0.0.11
+    into the container's `/etc/resolv.conf`.
 *   Use [`--network=host`][host-net] option in runsc, however beware that it
     will use the host network stack and is less secure.
 *   Use IPs instead of container names.
@@ -184,5 +195,6 @@ within another container (e.g., Docker or Podman).
 [filesystem]: /docs/user_guide/filesystem/
 [docker]: /docs/user_guide/quick_start/docker/
 [k8s]: /docs/user_guide/quick_start/kubernetes/
+[issue-7469]: https://github.com/google/gvisor/issues/7469
 [Production guide]: /docs/user_guide/production/
 [CVE-2020-15257]: https://github.com/containerd/containerd/security/advisories/GHSA-36xw-fx78-c5r4
