@@ -48,7 +48,7 @@ RUN set -eux; \
     done
 
 ARG RUNC_VERSION=v1.2.6
-ARG CNI_PLUGINS_VERSION=v1.6.2
+ARG CNI_PLUGINS_VERSION=v1.9.1
 
 RUN set -eux; \
     ARCH="${TARGETARCH:-$(dpkg --print-architecture)}"; \
