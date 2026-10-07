@@ -50,14 +50,14 @@ func checkEqual(root, loadedValue any) bool {
 		return true
 	}
 
-	// Same real for complex numbers.
+	// Apply the same rule to both components of complex numbers.
 	rc64, ok1 := root.(complex64)
-	lc64, ok2 := root.(complex64)
+	lc64, ok2 := loadedValue.(complex64)
 	if ok1 && ok2 {
 		return checkEqual(real(rc64), real(lc64)) && checkEqual(imag(rc64), imag(lc64))
 	}
 	rc128, ok1 := root.(complex128)
-	lc128, ok2 := root.(complex128)
+	lc128, ok2 := loadedValue.(complex128)
 	if ok1 && ok2 {
 		return checkEqual(real(rc128), real(lc128)) && checkEqual(imag(rc128), imag(lc128))
 	}
