@@ -84,8 +84,8 @@ We distinguish the following type of issues, listed from most to least severe:
             alone, or any host directory explicitly mounted into the sandbox per
             the sandbox configuration.
     -   `Lateral`: **Sandbox-to-sandbox lateral movement**. Issues that allow an
-        attacker to execute arbitrary code execution in a sandbox on the same
-        host other than the one they started with.
+        attacker to execute arbitrary code in a sandbox on the same host other
+        than the one they started with.
     -   `HostDoS`: **Denial-of-service attacks** that affect **the host kernel**
         (e.g. trigger a host kernel panic).
     -   `PeerDoS`: **Denial-of-service attacks** that affect **other sandboxes
@@ -208,7 +208,7 @@ non-gVisor sandbox):
     -   **CVE**: ✔️ Yes.
 -   An attacker exposes the host's `/var/run/docker.sock` UDS within a sandbox,
     then creates unsandboxed containers by using this UDS.
-    -   **Classification**: `SandboxConf / Escape`.
+    -   **Classification**: `SandboxSpec / Escape`.
     -   **CVE**: ❌ No. While the attacker is able to get out of the sandbox,
         they required access to the host's `/var/run/docker.sock` to do so,
         which secure deployments of gVisor do not expose. Additionally, running
@@ -281,9 +281,8 @@ disclosure are outlined in the [governance policy](GOVERNANCE.md).
 
 -   High-level summary of the issue
 -   Type of issue, e.g. "sandbox escape", "DoS", ...
--   Prerequisites, e.g. "the attacker requires the ability to set these special
-    flags to be set".
--   Classification code as per the above scheme (e.g. "`Sandboxed / Escape`").
+-   Prerequisites, e.g. "the attacker requires these special flags to be set".
+-   Classification code as per the above scheme (e.g. "`SandboxRoot / Escape`").
 -   Explanation of gVisor-specificity, aka behavior and reproducibility when
     executing the attack in an unsandboxed context, everything else being equal
     (e.g. running with `runc` instead of `runsc`).
