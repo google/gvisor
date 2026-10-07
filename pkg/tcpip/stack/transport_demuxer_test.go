@@ -396,11 +396,10 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						}
 					}
 
-					// Send packets across a range of ports, checking that packets from
-					// the same source port are always demultiplexed to the same
-					// destination endpoint.
+					// Repeated packets check flow affinity, not hash distribution.
+					// Send two packets per source port to cover more distinct flows.
 					npackets := 10_000
-					nports := 1_000
+					nports := npackets / 2
 					if got, want := len(test.endpoints), len(wantDistribution); got != want {
 						t.Fatalf("got len(test.endpoints) = %d, want %d", got, want)
 					}
@@ -445,7 +444,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 						wantRecv := wantRatio * float64(npackets)
 						actualRecv := stats[ep]
 						actualRatio := float64(stats[ep]) / float64(npackets)
-						// The deviation is less than 10%.
+						// Allow a five-percentage-point deviation.
 						if math.Abs(actualRatio-wantRatio) > 0.05 {
 							t.Errorf("want about %.0f%% (%.0f of %d) packets to arrive on endpoint %d, got %.0f%% (%d of %d)", wantRatio*100, wantRecv, npackets, i, actualRatio*100, actualRecv, npackets)
 						}
