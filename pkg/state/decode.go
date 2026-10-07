@@ -452,7 +452,7 @@ func (ds *decodeState) findType(t wire.TypeSpec) reflect.Type {
 		rte := ds.types.Lookup(typeID(x), typ)
 		return rte.LocalType
 	case *wire.TypeSpecPointer:
-		return reflect.PtrTo(ds.findType(x.Type))
+		return reflect.PointerTo(ds.findType(x.Type))
 	case *wire.TypeSpecArray:
 		return reflect.ArrayOf(int(x.Count), ds.findType(x.Type))
 	case *wire.TypeSpecSlice:
