@@ -28,6 +28,12 @@ import (
 
 const iovecLength = 16
 
+// UserModifiedGS notifies the task's address space that the user has modified
+// the GS register.
+func (t *Task) UserModifiedGS() error {
+	return t.MemoryManager().UserModifiedGS(t)
+}
+
 // CopyInBytes is a legacy wrapper for t.MemoryManager().CopyIn.
 //
 // Preconditions: The caller must be running on the task goroutine.

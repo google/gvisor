@@ -25,6 +25,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
@@ -853,7 +854,7 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	s.resetSysemuRegs(regs)
 	ctx := c.sharedContext.Load()
 	ctx.shared.Regs = regs.PtraceRegs
-	restoreArchSpecificState(ctx.shared, ac)
+	s.restoreArchSpecificState(ctx.shared, ac)
 
 	// Check for interrupts, and ensure that future interrupts signal the context.
 	if !c.interrupt.Enable() {
@@ -1277,6 +1278,20 @@ func (s *subprocess) PreFork() {
 // PostFork implements platform.AddressSpace.PostFork.
 func (s *subprocess) PostFork() {
 	s.usertrap.PostFork() // +checklocksforce: PreFork acquires, above.
+}
+
+// UserModifiedGS implements platform.AddressSpace.UserModifiedGS.
+func (s *subprocess) UserModifiedGS(ctx pkgcontext.Context, mm platform.MemoryManager) error {
+	if s.usertrap == nil || s.usertrap.Disabled() {
+		return nil
+	}
+
+	if err := s.usertrap.UnpatchSyscalls(ctx, mm); err != nil {
+		s.kill()
+		return err
+	}
+
+	return nil
 }
 
 // activateContext activates the context in this subprocess.
