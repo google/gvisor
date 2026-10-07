@@ -138,12 +138,11 @@ func MirrorAppPages(t *kernel.Task, addr, length uint64) (*MirroredPages, uintpt
 
 	at := hostarch.ReadWrite
 	prs, pinErr := t.MemoryManager().Pin(t, appAR, at, false /* ignorePermissions */)
+	cu := cleanup.Make(func() { mm.Unpin(prs) })
+	defer cu.Clean()
 	if pinErr != nil {
 		return nil, 0, pinErr
 	}
-
-	cu := cleanup.Make(func() { mm.Unpin(prs) })
-	defer cu.Clean()
 
 	// Prefer a single contiguous internal mapping if the pinned range is one
 	// physically contiguous run.
