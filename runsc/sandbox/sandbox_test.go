@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/cgroup"
 )
 
@@ -244,5 +245,54 @@ func TestCalculateCPUNum(t *testing.T) {
 				t.Errorf("calculateCPUNum() got cpuPeriod = %d, want %d", gotPeriod, tc.cpuPeriod)
 			}
 		})
+	}
+}
+
+func TestRootfsUpperTarFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+	targetPath := filepath.Join(tmpDir, "target.tar")
+	if err := os.WriteFile(targetPath, []byte("tar-data"), 0644); err != nil {
+		t.Fatalf("os.WriteFile(%q) failed: %v", targetPath, err)
+	}
+	symlinkPath := filepath.Join(tmpDir, "symlink.tar")
+	if err := os.Symlink(targetPath, symlinkPath); err != nil {
+		t.Fatalf("os.Symlink(%q, %q) failed: %v", targetPath, symlinkPath, err)
+	}
+
+	if f, err := os.OpenFile(symlinkPath, rootfsUpperTarFlags(symlinkPath), 0644); err == nil {
+		f.Close()
+		t.Fatalf("os.OpenFile(%q, rootfsUpperTarFlags) error = nil, want %v", symlinkPath, unix.ELOOP)
+	} else if !errors.Is(err, unix.ELOOP) {
+		t.Errorf("os.OpenFile(%q, rootfsUpperTarFlags) error = %v, want %v", symlinkPath, err, unix.ELOOP)
+	}
+
+	f, err := os.OpenFile(targetPath, rootfsUpperTarFlags(targetPath), 0644)
+	if err != nil {
+		t.Fatalf("os.OpenFile(%q, rootfsUpperTarFlags) error = %v, want nil", targetPath, err)
+	}
+	defer f.Close()
+
+	procFDPath := fmt.Sprintf("/proc/self/fd/%d", f.Fd())
+	dupFile, err := os.OpenFile(procFDPath, rootfsUpperTarFlags(procFDPath), 0644)
+	if err != nil {
+		t.Fatalf("os.OpenFile(%q, rootfsUpperTarFlags) error = %v, want nil", procFDPath, err)
+	}
+	dupFile.Close()
+
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{path: "/proc/self/fd/3", want: true},
+		{path: "/proc/thread-self/fd/4", want: true},
+		{path: "/dev/fd/5", want: true},
+		{path: "/proc/self/fd/", want: false},
+		{path: "/proc/self/fd/../etc/passwd", want: false},
+		{path: "/proc/self/fd/2147483648", want: false},
+		{path: "/tmp/upper.tar", want: false},
+	} {
+		if got := isProcFDPath(tc.path); got != tc.want {
+			t.Errorf("isProcFDPath(%q) = %v, want %v", tc.path, got, tc.want)
+		}
 	}
 }
