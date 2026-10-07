@@ -3793,6 +3793,58 @@ TEST(ProcPid, RootDumpableOwner) {
   EXPECT_THAT(st.st_gid, AnyOf(Eq(0), Eq(65534)));
 }
 
+// The owner of /proc/PID/fd and friends follows the task's current
+// credentials, not the ones it had when the entries were first looked up.
+TEST(ProcPid, FdOwnerFollowsSetuid) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+  constexpr int kNobody = 65534;
+
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    // Instantiate the entries while still root.
+    struct stat st;
+    TEST_PCHECK(stat("/proc/self/fd", &st) == 0);
+    TEST_PCHECK(stat("/proc/self/fdinfo", &st) == 0);
+    TEST_PCHECK(lstat("/proc/self/fd/0", &st) == 0);
+    TEST_PCHECK(syscall(SYS_setresgid, kNobody, kNobody, kNobody) == 0);
+    TEST_PCHECK(syscall(SYS_setresuid, kNobody, kNobody, kNobody) == 0);
+    // Changing credentials cleared dumpability.
+    TEST_PCHECK(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER) == 0);
+    raise(SIGSTOP);
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  auto kill_cleanup = Cleanup([child_pid] {
+    EXPECT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+    EXPECT_THAT(RetryEINTR(waitpid)(child_pid, nullptr, 0),
+                SyscallSucceedsWithValue(child_pid));
+  });
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFSTOPPED(status)) << status;
+
+  for (const char* name : {"fd", "fdinfo", "fd/0"}) {
+    SCOPED_TRACE(name);
+    struct stat st;
+    ASSERT_THAT(
+        lstat(absl::StrCat("/proc/", child_pid, "/", name).c_str(), &st),
+        SyscallSucceeds());
+    EXPECT_EQ(st.st_uid, kNobody);
+    EXPECT_EQ(st.st_gid, kNobody);
+  }
+
+  // A raw setuid changes only the calling thread's credentials.
+  ScopedThread nobody_thread([child_pid] {
+    ASSERT_THAT(syscall(SYS_setuid, kNobody), SyscallSucceeds());
+    EXPECT_NO_ERRNO(
+        Open(absl::StrCat("/proc/", child_pid, "/fd"), O_RDONLY | O_DIRECTORY));
+  });
+  nobody_thread.Join();
+}
+
 TEST(Proc, GetdentsEnoent) {
   FileDescriptor fd;
   ASSERT_NO_ERRNO(WithSubprocess(
