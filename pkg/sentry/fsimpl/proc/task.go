@@ -94,6 +94,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"oom_score":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
 		"oom_score_adj":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
 		"root":            fs.newRootSymlink(ctx, task, fs.NextIno()),
+		"schedstat":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &schedstatData{task: task}),
 		"setgroups":       fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &setgroupsData{task: task}),
 		"smaps":           fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mmFile{task: task, ftype: smapsMMFile}),
 		"stat":            fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &taskStatData{task: task, pidns: pidns, tgstats: isThreadGroup}),

@@ -131,6 +131,25 @@ type Task struct {
 	// spent in TaskGoroutineRunningApp or TaskGoroutineRunningSys.
 	appSysCPUClock ktime.SyntheticClock
 
+	// runSeq lets readers on other goroutines load runStart, runTime and
+	// runCount consistently. It is written only by the task goroutine.
+	runSeq sync.SeqCount `state:"nosave"`
+
+	// runStart is the gohacks.Nanotime() at which the task goroutine last
+	// entered TaskGoroutineRunningSys from a state other than
+	// TaskGoroutineRunningApp, or 0 while it is blocked, stopped or
+	// nonexistent. Task.Start sets it again after restore.
+	runStart atomicbitops.Int64 `state:"nosave"`
+
+	// runTime is the time the task goroutine has spent running application or
+	// sentry code, excluding the interval that began at runStart. Unlike
+	// appSysCPUClock, it is measured rather than sampled.
+	runTime atomicbitops.Int64
+
+	// runCount is the number of intervals of running counted by runTime and
+	// runStart.
+	runCount atomicbitops.Uint64
+
 	// yieldCount is the number of times the task goroutine has called
 	// Task.InterruptibleSleepStart, Task.UninterruptibleSleepStart, or
 	// Task.Yield(), voluntarily ceasing execution.

@@ -2132,6 +2132,205 @@ TEST(ProcPidStatusTest, ValuesAreTabDelimited) {
   }
 }
 
+// The fields of a schedstat file that the tests check.
+struct Schedstat {
+  absl::Duration run_time;
+  uint64_t timeslices;
+};
+
+PosixErrorOr<Schedstat> ReadSchedstat(absl::string_view path) {
+  ASSIGN_OR_RETURN_ERRNO(std::string contents, GetContents(path));
+  std::vector<absl::string_view> fields =
+      absl::StrSplit(absl::StripAsciiWhitespace(contents), ' ');
+  uint64_t run_ns;
+  uint64_t wait_ns;
+  uint64_t timeslices;
+  if (fields.size() != 3 || !absl::SimpleAtoi(fields[0], &run_ns) ||
+      !absl::SimpleAtoi(fields[1], &wait_ns) ||
+      !absl::SimpleAtoi(fields[2], &timeslices)) {
+    return PosixError(EINVAL, absl::StrCat("bad ", path, ": ", contents));
+  }
+  return Schedstat{absl::Nanoseconds(run_ns), timeslices};
+}
+
+// Spins until the calling thread has used `cpu_time` of CPU time.
+void SpinFor(absl::Duration cpu_time) {
+  struct timespec ts;
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+  const absl::Duration end = absl::DurationFromTimespec(ts) + cpu_time;
+  do {
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+  } while (absl::DurationFromTimespec(ts) < end);
+}
+
+absl::Duration MonotonicNow() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return absl::DurationFromTimespec(ts);
+}
+
+// CPU time the tests spin for, and the bounds on the run time schedstat reports
+// for spinning and for sleeping. The slack covers gVisor's 10 ms CPU clock
+// ticks, which drive CLOCK_THREAD_CPUTIME_ID there.
+constexpr absl::Duration kSpinTime = absl::Milliseconds(50);
+constexpr absl::Duration kMinSpinRunTime = absl::Milliseconds(40);
+constexpr absl::Duration kMaxSleepRunTime = absl::Milliseconds(20);
+
+TEST(ProcPidSchedstatTest, CountsRunningNotSleeping) {
+  const DisableSave ds;
+  const std::string path =
+      absl::StrCat("/proc/self/task/", syscall(SYS_gettid), "/schedstat");
+
+  const absl::Duration wall_start = MonotonicNow();
+  // Linux's schedstat lags a running task's run time by up to a tick; reading
+  // the thread CPU clock brings it up to date.
+  struct timespec ts;
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+  const Schedstat before_spin = ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat(path));
+  SpinFor(kSpinTime);
+  const Schedstat after_spin = ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat(path));
+  const absl::Duration wall_time = MonotonicNow() - wall_start;
+  const absl::Duration spin_run_time =
+      after_spin.run_time - before_spin.run_time;
+  EXPECT_GE(spin_run_time, kMinSpinRunTime);
+  // The slack covers schedstat and CLOCK_MONOTONIC being read from different
+  // clocks under gVisor.
+  EXPECT_LE(spin_run_time, wall_time + absl::Milliseconds(1));
+
+  absl::SleepFor(absl::Milliseconds(100));
+  const Schedstat after_sleep = ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat(path));
+  EXPECT_LT(after_sleep.run_time - after_spin.run_time, kMaxSleepRunTime);
+  EXPECT_GT(after_sleep.timeslices, after_spin.timeslices);
+}
+
+// /proc/[pid]/schedstat describes the thread group leader alone, and
+// /proc/[pid]/task/[tid]/schedstat each thread.
+TEST(ProcPidSchedstatTest, PerThread) {
+  const DisableSave ds;
+  pid_t sleeper_tid = 0;
+  absl::Notification started;
+  absl::Notification done;
+  ScopedThread sleeper([&] {
+    sleeper_tid = syscall(SYS_gettid);
+    started.Notify();
+    done.WaitForNotification();
+  });
+  started.WaitForNotification();
+  const std::string sleeper_path =
+      absl::StrCat("/proc/self/task/", sleeper_tid, "/schedstat");
+
+  const Schedstat leader_before =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat("/proc/self/schedstat"));
+  const Schedstat sleeper_before =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat(sleeper_path));
+  SpinFor(kSpinTime);
+  const Schedstat leader_after =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat("/proc/self/schedstat"));
+  const Schedstat sleeper_after =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadSchedstat(sleeper_path));
+  done.Notify();
+
+  EXPECT_GE(leader_after.run_time - leader_before.run_time, kMinSpinRunTime);
+  EXPECT_LT(sleeper_after.run_time - sleeper_before.run_time, kMaxSleepRunTime);
+}
+
+// Reads of a task's run time never decrease, however they interleave with the
+// task blocking and waking. Two threads hand a byte back and forth through
+// pipes, so each blocks and wakes as often as possible, while more readers
+// than CPUs read their schedstat files and are descheduled at arbitrary
+// points.
+TEST(ProcPidSchedstatTest, RunTimeIsMonotonic) {
+  const DisableSave ds;
+  constexpr absl::Duration kTestDuration = absl::Seconds(10);
+  int ping[2];
+  int pong[2];
+  ASSERT_THAT(pipe(ping), SyscallSucceeds());
+  ASSERT_THAT(pipe(pong), SyscallSucceeds());
+  const FileDescriptor ping_read(ping[0]);
+  const FileDescriptor ping_write(ping[1]);
+  const FileDescriptor pong_read(pong[0]);
+  const FileDescriptor pong_write(pong[1]);
+
+  std::atomic<bool> stop = false;
+  pid_t target_tids[2] = {};
+  absl::Notification started[2];
+  // Each target forwards the byte it reads, until the byte is 0.
+  auto forward = [&](int index, const FileDescriptor& in,
+                     const FileDescriptor& out) {
+    target_tids[index] = syscall(SYS_gettid);
+    started[index].Notify();
+    char c;
+    do {
+      if (read(in.get(), &c, 1) != 1) {
+        break;
+      }
+      if (stop.load(std::memory_order_relaxed)) {
+        c = 0;
+      }
+      if (write(out.get(), &c, 1) != 1) {
+        break;
+      }
+    } while (c != 0);
+  };
+  ScopedThread pinger([&] { forward(0, pong_read, ping_write); });
+  ScopedThread ponger([&] { forward(1, ping_read, pong_write); });
+  started[0].WaitForNotification();
+  started[1].WaitForNotification();
+  // Ends the exchange before the targets are joined, also when an assertion
+  // returns early: every target that exits writes a 0 to the other, and this 0
+  // reaches the ponger even if no byte was ever sent.
+  const Cleanup stop_targets([&] {
+    stop = true;
+    constexpr char kZero = 0;
+    EXPECT_THAT(write(ping_write.get(), &kZero, 1),
+                SyscallSucceedsWithValue(1));
+  });
+  constexpr char kByte = 1;
+  ASSERT_THAT(write(ping_write.get(), &kByte, 1), SyscallSucceedsWithValue(1));
+
+  const int num_cpus = std::max(NumCPUs(), 2);
+  std::vector<FileDescriptor> fds;
+  for (int i = 0; i < std::min(4 * num_cpus, 64); ++i) {
+    fds.push_back(ASSERT_NO_ERRNO_AND_VALUE(
+        Open(absl::StrCat("/proc/self/task/", target_tids[i % 2], "/schedstat"),
+             O_RDONLY)));
+  }
+
+  std::atomic<uint64_t> decreases = 0;
+  std::atomic<uint64_t> reads = 0;
+  std::vector<std::unique_ptr<ScopedThread>> readers;
+  readers.reserve(fds.size());
+  for (const FileDescriptor& fd : fds) {
+    readers.push_back(std::make_unique<ScopedThread>([&] {
+      uint64_t previous_ns = 0;
+      char buf[128];
+      while (!stop.load(std::memory_order_relaxed)) {
+        const ssize_t n = pread(fd.get(), buf, sizeof(buf), 0);
+        if (n <= 0) {
+          break;
+        }
+        const absl::string_view contents(buf, n);
+        uint64_t run_ns;
+        if (!absl::SimpleAtoi(contents.substr(0, contents.find(' ')),
+                              &run_ns)) {
+          break;
+        }
+        if (run_ns < previous_ns) {
+          decreases.fetch_add(1);
+        }
+        previous_ns = run_ns;
+        reads.fetch_add(1, std::memory_order_relaxed);
+      }
+    }));
+  }
+  absl::SleepFor(kTestDuration);
+  stop = true;
+  readers.clear();
+
+  EXPECT_GT(reads.load(), 0);
+  EXPECT_EQ(decreases.load(), 0) << "over " << reads.load() << " reads";
+}
+
 // Threads properly counts running threads.
 //
 // TODO(mpratt): Test zombied threads while the thread group leader is still
