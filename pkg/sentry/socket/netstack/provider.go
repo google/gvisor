@@ -135,6 +135,12 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		return nil, syserr.TranslateNetstackError(e)
 	}
 
+	// Nagle's algorithm is enabled by default on new stream sockets. Sockets
+	// returned by accept(2) instead inherit TCP_NODELAY from the listener.
+	if stype == linux.SOCK_STREAM {
+		ep.SocketOptions().SetDelayOption(true)
+	}
+
 	return New(t, p.family, stype, int(transProto), wq, ep)
 }
 

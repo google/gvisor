@@ -471,10 +471,6 @@ var _ = socket.Socket(&sock{})
 
 // New creates a new endpoint socket.
 func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue *waiter.Queue, endpoint tcpip.Endpoint) (*vfs.FileDescription, *syserr.Error) {
-	if skType == linux.SOCK_STREAM {
-		endpoint.SocketOptions().SetDelayOption(true)
-	}
-
 	mnt := t.Kernel().SocketMount()
 	d := sockfs.NewDentry(t, mnt)
 	defer d.DecRef(t)

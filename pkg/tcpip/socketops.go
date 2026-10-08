@@ -488,6 +488,14 @@ func (so *SocketOptions) SetDelayOption(v bool) {
 	so.handler.OnDelayOptionSet(v)
 }
 
+// SetDelayOptionNoNotify sets inverted value for TCP_NODELAY option without
+// notifying the owning endpoint. It skips flushing any data held back by
+// Nagle's algorithm, so it is only safe on an endpoint that is not yet
+// connected, such as an accepted endpoint being initialized from its listener.
+func (so *SocketOptions) SetDelayOptionNoNotify(v bool) {
+	storeAtomicBool(&so.delayOptionEnabled, v)
+}
+
 // GetCorkOption gets value for TCP_CORK option.
 func (so *SocketOptions) GetCorkOption() bool {
 	return so.corkOptionEnabled.Load() != 0

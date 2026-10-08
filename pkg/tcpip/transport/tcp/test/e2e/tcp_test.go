@@ -1279,6 +1279,65 @@ func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
 		})
 	}
 }
+
+// TestAcceptedInheritsDelayOption tests that an accepted endpoint inherits the
+// delay option (the inverse of TCP_NODELAY) from the listening endpoint.
+func TestAcceptedInheritsDelayOption(t *testing.T) {
+	for _, cookieEnabled := range []tcpip.TCPAlwaysUseSynCookies{false, true} {
+		for _, delay := range []bool{false, true} {
+			t.Run(fmt.Sprintf("syn-cookies enabled: %t, delay: %t", cookieEnabled, delay), func(t *testing.T) {
+				c := context.New(t, e2e.DefaultMTU)
+				defer c.Cleanup()
+
+				if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &cookieEnabled); err != nil {
+					t.Fatalf("SetTransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, cookieEnabled, err)
+				}
+				// Default new endpoints to the opposite of the listener so that
+				// the accepted endpoint's value can only come from the listener.
+				defaultDelay := tcpip.TCPDelayEnabled(!delay)
+				if err := c.Stack().SetTransportProtocolOption(header.TCPProtocolNumber, &defaultDelay); err != nil {
+					t.Fatalf("SetTransportProtocolOption(%d, %T) = %s", header.TCPProtocolNumber, defaultDelay, err)
+				}
+
+				c.Create(-1)
+				c.EP.SocketOptions().SetDelayOption(delay)
+
+				if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+					t.Fatal("Bind failed:", err)
+				}
+
+				if err := c.EP.Listen(10); err != nil {
+					t.Fatal("Listen failed:", err)
+				}
+
+				we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+				c.WQ.EventRegister(&we)
+				defer c.WQ.EventUnregister(&we)
+
+				executeHandshake(t, c, context.TestPort, bool(cookieEnabled))
+
+				ep, _, err := c.EP.Accept(nil)
+				if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+					select {
+					case <-ch:
+						ep, _, err = c.EP.Accept(nil)
+					case <-time.After(1 * time.Second):
+						t.Fatalf("Timed out waiting for accept")
+					}
+				}
+				if err != nil {
+					t.Fatalf("Accept failed: %s", err)
+				}
+				defer ep.Close()
+
+				if got := ep.SocketOptions().GetDelayOption(); got != delay {
+					t.Errorf("got accepted GetDelayOption() = %t, want = %t", got, delay)
+				}
+			})
+		}
+	}
+}
+
 func TestSendRstOnListenerRxSynAckV4(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
