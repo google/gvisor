@@ -463,6 +463,12 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// send an ACK and stop further processing of the segment.
 	// This is according to RFC 793, page 68.
 	if !r.acceptable(segSeq, segLen) {
+		// A zero-window probe at RCV.NXT is not acceptable, but RFC 7323
+		// section 4.3 rule 2 still updates TS.Recent from it so the ACK
+		// echoes the probe's TSval.
+		if segSeq == r.RcvNxt && r.ep.SendTSOk && s.parsedOptions.TS {
+			r.ep.updateRecentTimestamp(s.parsedOptions.TSVal, r.ep.snd.MaxSentAck, segSeq)
+		}
 		r.ep.snd.maybeSendOutOfWindowAck(s)
 		return true, nil
 	}

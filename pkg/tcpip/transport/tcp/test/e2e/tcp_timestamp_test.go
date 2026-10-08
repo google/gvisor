@@ -126,6 +126,48 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 	}
 }
 
+// TestTimeStampZeroWindowProbe tests that the ACK of a zero-window probe at
+// RCV.NXT echoes the probe's TSval, as RFC 7323 section 4.3 rule 2 requires.
+func TestTimeStampZeroWindowProbe(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	// The endpoint advertises half of its receive buffer, so a single
+	// rcvBufSize segment closes the window while leaving room in the buffer
+	// for the probe to be queued.
+	const rcvBufSize = 4096
+	rcvBufOpt := tcpip.TCPReceiveBufferSizeRangeOption{Min: 1, Default: rcvBufSize * 2, Max: rcvBufSize * 2}
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &rcvBufOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%#v) failed: %s", tcp.ProtocolNumber, rcvBufOpt, err)
+	}
+	c.WindowScale = uint8(tcp.FindWndScale(rcvBufSize * 2))
+
+	rep := createConnectedWithTimestampOption(c)
+
+	// Fill the receive window without reading from the endpoint.
+	tsVal := rep.TSVal + 100
+	rep.SendPacketWithTS(make([]byte, rcvBufSize), tsVal)
+	ack := rep.VerifyAndReturnACKWithTS(tsVal)
+	checker.IPv4(t, ack, checker.TCP(checker.TCPWindow(0)))
+	ack.Release()
+
+	// Send a one byte zero-window probe at RCV.NXT with a newer TSval.
+	rcvNxt := rep.NextSeqNum
+	tsVal += 100
+	rep.SendPacketWithTS([]byte{1}, tsVal)
+	ack = c.GetPacket()
+	defer ack.Release()
+	checker.IPv4(t, ack,
+		checker.TCP(
+			checker.DstPort(rep.SrcPort),
+			checker.TCPFlags(header.TCPFlagAck),
+			checker.TCPAckNum(uint32(rcvNxt)),
+			checker.TCPWindow(0),
+			checker.TCPTimestampChecker(true, 0, tsVal),
+		),
+	)
+}
+
 // TestTimeStampDisabledConnect tests that netstack sends timestamp option on an
 // active connect but if the SYN-ACK doesn't specify the TS option then
 // timestamp option is not enabled and future packets do not contain a
