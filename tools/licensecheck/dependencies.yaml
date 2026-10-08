@@ -873,10 +873,10 @@
   sha256: 201e678d0a35b18b246abe58d80017b75d60be21cbaf4cbb9e963b48872565a9
   license: BSD-3-Clause
 - dependency: golang.org/x/net
-  version: v0.59.0
-  retrieved: "2026-10-07"
-  commit: 540d04cfe5028e2655754591a4d3e08c586809f2
-  sha256: 1dc3bf31fcebe80d393288ac8fe5cac7f0e82e9b3a2630021dcdf5ffbfa3f601
+  version: v0.60.0
+  retrieved: "2026-10-08"
+  commit: 18ece0ce30bc35fa81fe72028bf309bb3ff3f4a5
+  sha256: 052e0453db47a96ae9567503e7c95ea925ab52682cb1cec31250541f7160107e
   license: BSD-3-Clause
 - dependency: golang.org/x/oauth2
   version: v0.36.0
