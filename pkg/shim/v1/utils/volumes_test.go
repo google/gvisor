@@ -22,6 +22,7 @@ import (
 
 	"github.com/mohae/deepcopy"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 )
 
 func TestUpdateVolumeAnnotations(t *testing.T) {
@@ -33,11 +34,13 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 	kubeletPodsDir = dir
 
 	const (
-		testPodUID             = "testuid"
-		testVolumeName         = "testvolume"
-		testNonEmptyVolumeName = "nonemptyvolume"
-		testLogDirPath         = "/var/log/pods/testns_testname_" + testPodUID
-		testLegacyLogDirPath   = "/var/log/pods/" + testPodUID
+		testPodUID                = "testuid"
+		testVolumeName            = "testvolume"
+		testNonEmptyVolumeName    = "nonemptyvolume"
+		testMemVolumeName         = "memvolume"
+		testNonEmptyMemVolumeName = "nonemptymemvolume"
+		testLogDirPath            = "/var/log/pods/testns_testname_" + testPodUID
+		testLegacyLogDirPath      = "/var/log/pods/" + testPodUID
 	)
 	testVolumePath := fmt.Sprintf("%s/%s/volumes/%s/%s", dir, testPodUID, emptyDirVolumesDir, testVolumeName)
 	if err := os.MkdirAll(testVolumePath, 0755); err != nil {
@@ -51,6 +54,32 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 	if err := os.WriteFile(testNonEmptyVolumePath+"/file", []byte("hello"), 0644); err != nil {
 		t.Fatalf("Create test volume: %v", err)
 	}
+
+	// Memory-backed EmptyDirs, on which the kubelet mounts a size-limited tmpfs.
+	testMemVolumePath := fmt.Sprintf("%s/%s/volumes/%s/%s", dir, testPodUID, emptyDirVolumesDir, testMemVolumeName)
+	if err := os.MkdirAll(testMemVolumePath, 0755); err != nil {
+		t.Fatalf("Create test volume: %v", err)
+	}
+	testNonEmptyMemVolumePath := fmt.Sprintf("%s/%s/volumes/%s/%s", dir, testPodUID, emptyDirVolumesDir, testNonEmptyMemVolumeName)
+	if err := os.MkdirAll(testNonEmptyMemVolumePath, 0755); err != nil {
+		t.Fatalf("Create test volume: %v", err)
+	}
+	if err := os.WriteFile(testNonEmptyMemVolumePath+"/file", []byte("hello"), 0644); err != nil {
+		t.Fatalf("Create test volume: %v", err)
+	}
+
+	// The pod's /dev/shm, on which containerd mounts a size-limited tmpfs.
+	testShmPath := dir + "/shm"
+
+	// Only the paths above are on a tmpfs, regardless of the filesystem of the
+	// test's temporary directory.
+	oldStatfs := statfs
+	defer func() { statfs = oldStatfs }()
+	statfs = fakeStatfs(map[string]uint64{
+		testMemVolumePath:         256 << 20, // 256MiB
+		testNonEmptyMemVolumePath: 256 << 20, // 256MiB
+		testShmPath:               64 << 20,  // 64MiB
+	})
 
 	for _, test := range []struct {
 		name      string
@@ -393,6 +422,181 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 		},
 		{
+			name: "memory-backed volume for sandbox gets host tmpfs size",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,rprivate",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,rprivate,size=268435456",
+					volumeKeyPrefix + testMemVolumeName + ".source":  testMemVolumePath,
+				},
+			},
+		},
+		{
+			name: "memory-backed volume for sandbox without options gets host tmpfs size",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                        testLogDirPath,
+					ContainerTypeAnnotation:                        containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share": "pod",
+					volumeKeyPrefix + testMemVolumeName + ".type":  "tmpfs",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "pod",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "size=268435456",
+					volumeKeyPrefix + testMemVolumeName + ".source":  testMemVolumePath,
+				},
+			},
+		},
+		{
+			name: "memory-backed volume for sandbox keeps explicit size",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "pod",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,size=1m",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "pod",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,size=1m",
+					volumeKeyPrefix + testMemVolumeName + ".source":  testMemVolumePath,
+				},
+			},
+		},
+		{
+			// Only volumes that the admission controller marked as memory-backed
+			// (type=tmpfs) get a size.
+			name: "disk-backed volume for sandbox does not get host tmpfs size",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "bind",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,rprivate",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                          testLogDirPath,
+					ContainerTypeAnnotation:                          containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,rprivate",
+					volumeKeyPrefix + testMemVolumeName + ".source":  testMemVolumePath,
+				},
+			},
+		},
+		{
+			// Non-empty EmptyDirs are bind mounted from the host tmpfs, which
+			// enforces its size limit itself.
+			name: "non-empty memory-backed volume for sandbox does not get host tmpfs size",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                  testLogDirPath,
+					ContainerTypeAnnotation:                                  containerTypeSandbox,
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".options": "rw,rprivate",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                  testLogDirPath,
+					ContainerTypeAnnotation:                                  containerTypeSandbox,
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".share":   "shared",
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".type":    "bind",
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".options": "rw,rprivate",
+					volumeKeyPrefix + testNonEmptyMemVolumeName + ".source":  testNonEmptyMemVolumePath,
+				},
+			},
+		},
+		{
+			// Same as above, for EmptyDirs forced to be bind mounted.
+			name: "force-shared memory-backed volume for sandbox does not get host tmpfs size",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                                       testLogDirPath,
+					ContainerTypeAnnotation:                                                       containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":                                "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":                                 "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options":                              "rw,rprivate",
+					emptyDirAnnotationPrefix + testMemVolumeName + "." + emptyDirForceSharedField: "true",
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                                                       testLogDirPath,
+					ContainerTypeAnnotation:                                                       containerTypeSandbox,
+					volumeKeyPrefix + testMemVolumeName + ".share":                                "shared",
+					volumeKeyPrefix + testMemVolumeName + ".type":                                 "bind",
+					volumeKeyPrefix + testMemVolumeName + ".options":                              "rw,rprivate",
+					volumeKeyPrefix + testMemVolumeName + ".source":                               testMemVolumePath,
+					emptyDirAnnotationPrefix + testMemVolumeName + "." + emptyDirForceSharedField: "true",
+				},
+			},
+		},
+		{
+			// Mount annotations are only consumed from the sandbox spec, so
+			// sub-container annotations are left unchanged.
+			name: "memory-backed volume for container",
+			spec: &specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Destination: "/test",
+						Type:        "bind",
+						Source:      testMemVolumePath,
+						Options:     []string{"rw"},
+					},
+				},
+				Annotations: map[string]string{
+					ContainerTypeAnnotation:                          ContainerTypeContainer,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,rprivate",
+				},
+			},
+			expected: &specs.Spec{
+				Mounts: []specs.Mount{
+					{
+						Destination: "/test",
+						Type:        "tmpfs",
+						Source:      testMemVolumePath,
+						Options:     []string{"rw"},
+					},
+				},
+				Annotations: map[string]string{
+					ContainerTypeAnnotation:                          ContainerTypeContainer,
+					volumeKeyPrefix + testMemVolumeName + ".share":   "container",
+					volumeKeyPrefix + testMemVolumeName + ".type":    "tmpfs",
+					volumeKeyPrefix + testMemVolumeName + ".options": "rw,rprivate",
+				},
+			},
+		},
+		{
 			name: "shm-sandbox",
 			spec: &specs.Spec{
 				Annotations: map[string]string{
@@ -455,6 +659,41 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 						Type:        "tmpfs",
 						Source:      testVolumePath,
 						Options:     []string{"ro", "foo"},
+					},
+				},
+			},
+		},
+		{
+			name: "shm-sandbox-host-tmpfs",
+			spec: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation: testLogDirPath,
+					ContainerTypeAnnotation: containerTypeSandbox,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "bind",
+						Source:      testShmPath,
+						Options:     []string{"rbind", "ro", "nosuid", "nodev", "noexec"},
+					},
+				},
+			},
+			expected: &specs.Spec{
+				Annotations: map[string]string{
+					sandboxLogDirAnnotation:                   testLogDirPath,
+					ContainerTypeAnnotation:                   containerTypeSandbox,
+					volumeKeyPrefix + devshmName + ".share":   "pod",
+					volumeKeyPrefix + devshmName + ".type":    "tmpfs",
+					volumeKeyPrefix + devshmName + ".options": "rw,size=67108864",
+					volumeKeyPrefix + devshmName + ".source":  testShmPath,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/shm",
+						Type:        "tmpfs",
+						Source:      testShmPath,
+						Options:     []string{"ro", "nosuid", "nodev", "noexec"},
 					},
 				},
 			},
@@ -556,5 +795,91 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 				t.Fatalf("want: %+v, got: %+v", test.expected, test.spec)
 			}
 		})
+	}
+}
+
+// fakeStatfs returns a statfs implementation that reports each path in
+// tmpfsSizes as being on a tmpfs with the given size limit in bytes, and every
+// other path as being on ext4.
+func fakeStatfs(tmpfsSizes map[string]uint64) func(string, *unix.Statfs_t) error {
+	return func(path string, st *unix.Statfs_t) error {
+		const blockSize = 4096
+		*st = unix.Statfs_t{
+			Type:   unix.EXT4_SUPER_MAGIC,
+			Bsize:  blockSize,
+			Frsize: blockSize,
+			Blocks: 1 << 20,
+		}
+		if size, ok := tmpfsSizes[path]; ok {
+			st.Type = unix.TMPFS_MAGIC
+			st.Blocks = size / blockSize
+		}
+		return nil
+	}
+}
+
+func TestHostTmpfsSize(t *testing.T) {
+	oldStatfs := statfs
+	defer func() { statfs = oldStatfs }()
+
+	for _, test := range []struct {
+		name     string
+		st       unix.Statfs_t
+		err      error
+		wantSize uint64
+		wantOK   bool
+	}{
+		{
+			name:     "tmpfs",
+			st:       unix.Statfs_t{Type: unix.TMPFS_MAGIC, Bsize: 4096, Frsize: 4096, Blocks: 16384},
+			wantSize: 64 << 20,
+			wantOK:   true,
+		},
+		{
+			name:     "tmpfs without frsize",
+			st:       unix.Statfs_t{Type: unix.TMPFS_MAGIC, Bsize: 4096, Blocks: 16384},
+			wantSize: 64 << 20,
+			wantOK:   true,
+		},
+		{
+			name: "tmpfs without size limit",
+			st:   unix.Statfs_t{Type: unix.TMPFS_MAGIC, Bsize: 4096, Frsize: 4096},
+		},
+		{
+			name: "not tmpfs",
+			st:   unix.Statfs_t{Type: unix.EXT4_SUPER_MAGIC, Bsize: 4096, Frsize: 4096, Blocks: 16384},
+		},
+		{
+			name: "statfs error",
+			err:  unix.ENOENT,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			statfs = func(path string, st *unix.Statfs_t) error {
+				*st = test.st
+				return test.err
+			}
+			size, ok := hostTmpfsSize("/some/path")
+			if size != test.wantSize || ok != test.wantOK {
+				t.Errorf("hostTmpfsSize() = (%d, %t), want (%d, %t)", size, ok, test.wantSize, test.wantOK)
+			}
+		})
+	}
+}
+
+func TestWithSizeOption(t *testing.T) {
+	for _, test := range []struct {
+		opts string
+		want string
+	}{
+		{opts: "", want: "size=1024"},
+		{opts: "rw", want: "rw,size=1024"},
+		{opts: "rw,rprivate", want: "rw,rprivate,size=1024"},
+		{opts: "rw,size=1m", want: "rw,size=1m"},
+		{opts: "size=0,ro", want: "size=0,ro"},
+	} {
+		if got := withSizeOption(test.opts, 1024); got != test.want {
+			t.Errorf("withSizeOption(%q, 1024) = %q, want %q", test.opts, got, test.want)
+		}
 	}
 }
