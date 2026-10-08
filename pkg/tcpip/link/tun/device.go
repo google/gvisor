@@ -32,6 +32,9 @@ const (
 	// drivers/net/tun.c:tun_net_init()
 	defaultDevMtu = 1500
 
+	// drivers/net/tun.c:MAX_MTU
+	maxMTU = 65535
+
 	// Queue length for outbound packet, arriving at fd side for read. Overflow
 	// causes packet drops. gVisor implementation-specific.
 	defaultDevOutQueueLen = 1024
@@ -191,7 +194,11 @@ func attachOrCreateNIC(ctx context.Context, s *stack.Stack, name, prefix string,
 			endpoint.name = fmt.Sprintf("%s%d", prefix, id)
 		}
 		err := s.CreateNICWithOptions(endpoint.nicID, packetsocket.New(endpoint), stack.NICOptions{
-			Name: endpoint.name,
+			Name:   endpoint.name,
+			MinMTU: header.IPv4MinimumMTU,
+			// Linux drivers/net/tun.c:tun_net_initialize sets max_mtu to
+			// MAX_MTU minus hard_header_len, excluding packet-info bytes.
+			MaxMTU: maxMTU - uint32(endpoint.MaxHeaderLength()),
 		})
 		switch err.(type) {
 		case nil:
