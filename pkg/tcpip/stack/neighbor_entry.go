@@ -107,6 +107,12 @@ type neighborEntryMu struct {
 
 	// +checklocks:neighborEntryRWMutex
 	timer timer
+
+	// +checklocks:neighborEntryRWMutex
+	localAddr tcpip.Address
+
+	// +checklocks:neighborEntryRWMutex
+	pendingPackets []pendingPacket
 }
 
 // neighborEntry implements a neighbor entry's individual node behavior, as per
@@ -374,6 +380,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 	case Unknown, Unreachable:
 		prev := e.mu.neigh.State
 		e.mu.neigh.State = Incomplete
+		e.mu.localAddr = localAddr
 		e.mu.neigh.UpdatedAt = e.cache.nic.stack.clock.NowMonotonic()
 
 		switch prev {
@@ -384,52 +391,7 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 			e.cache.nic.stats.neighbor.unreachableEntryLookups.Increment()
 		}
 
-		config := e.nudState.Config()
-
-		// Protected by e.mu.
-		done := false
-
-		remaining := config.MaxMulticastProbes
-		addr := e.mu.neigh.Addr
-
-		// Send a probe in another gorountine to free this thread of execution
-		// for finishing the state transition. This is necessary to escape the
-		// currently held lock so we can send the probe message without holding
-		// a shared lock.
-		e.mu.timer = timer{
-			done: &done,
-			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
-				var err tcpip.Error = &tcpip.ErrTimeout{}
-				if remaining != 0 {
-					// As per RFC 4861 section 7.2.2:
-					//
-					//  If the source address of the packet prompting the solicitation is
-					//  the same as one of the addresses assigned to the outgoing interface,
-					//  that address SHOULD be placed in the IP Source Address of the
-					//  outgoing solicitation.
-					//
-					err = e.cache.linkRes.LinkAddressRequest(addr, localAddr, "" /* linkAddr */)
-				}
-
-				e.mu.Lock()
-				defer e.mu.Unlock()
-
-				if done {
-					// The timer was stopped because the entry changed state.
-					return
-				}
-
-				if err != nil {
-					e.setStateLocked(Unreachable)
-					e.notifyCompletionLocked(err)
-					e.dispatchChangeEventLocked()
-					return
-				}
-
-				remaining--
-				e.mu.timer.timer.Reset(config.RetransmitTimer)
-			}),
-		}
+		e.scheduleMulticastProbeLocked()
 
 	case Stale:
 		e.setStateLocked(Delay)
@@ -439,6 +401,57 @@ func (e *neighborEntry) handlePacketQueuedLocked(localAddr tcpip.Address) {
 		// Do nothing
 	default:
 		panic(fmt.Sprintf("Invalid cache entry state: %s", e.mu.neigh.State))
+	}
+}
+
+// +checklocks:e.mu.neighborEntryRWMutex
+func (e *neighborEntry) scheduleMulticastProbeLocked() {
+	config := e.nudState.Config()
+
+	// Protected by e.mu.
+	done := false
+
+	remaining := config.MaxMulticastProbes
+	addr := e.mu.neigh.Addr
+	localAddr := e.mu.localAddr
+
+	// Send a probe in another gorountine to free this thread of execution
+	// for finishing the state transition. This is necessary to escape the
+	// currently held lock so we can send the probe message without holding
+	// a shared lock.
+	e.mu.timer = timer{
+		done: &done,
+		timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
+			var err tcpip.Error = &tcpip.ErrTimeout{}
+			if remaining != 0 {
+				// As per RFC 4861 section 7.2.2:
+				//
+				//  If the source address of the packet prompting the solicitation is
+				//  the same as one of the addresses assigned to the outgoing interface,
+				//  that address SHOULD be placed in the IP Source Address of the
+				//  outgoing solicitation.
+				//
+				err = e.cache.linkRes.LinkAddressRequest(addr, localAddr, "" /* linkAddr */)
+			}
+
+			e.mu.Lock()
+			defer e.mu.Unlock()
+
+			if done {
+				// The timer was stopped because the entry changed state.
+				return
+			}
+
+			if err != nil {
+				e.setStateLocked(Unreachable)
+				e.notifyCompletionLocked(err)
+				e.dispatchChangeEventLocked()
+				return
+			}
+
+			remaining--
+			e.mu.timer.timer.Reset(config.RetransmitTimer)
+		}),
 	}
 }
 

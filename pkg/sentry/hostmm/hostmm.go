@@ -22,7 +22,9 @@ import (
 	"path"
 	"regexp"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/eventfd"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -120,4 +122,39 @@ func NotifyCurrentMemcgPressureCallback(f func(), level string) (func(), error) 
 		eventFD.Write(stopVal)
 		<-stopCh
 	}, nil
+}
+
+// IMAWorkAroundForMemFile works around IMA by immediately creating a temporary
+// PROT_EXEC mapping, while the backing file is still small. IMA will ignore
+// any future mappings.
+//
+// The Linux kernel contains an optional feature called "Integrity
+// Measurement Architecture" (IMA). If IMA is enabled, it will checksum
+// binaries the first time they are mapped PROT_EXEC. This is bad news for
+// executable pages mapped from our backing file, which can grow to
+// terabytes in (sparse) size. If IMA attempts to checksum a file that
+// large, it will allocate all of the sparse pages and quickly exhaust all
+// memory.
+func IMAWorkAroundForMemFile(fd uintptr) {
+	m, _, errno := unix.Syscall6(
+		unix.SYS_MMAP,
+		0,
+		hostarch.PageSize,
+		unix.PROT_EXEC,
+		unix.MAP_SHARED,
+		fd,
+		0)
+	if errno != 0 {
+		// This isn't fatal (IMA may not even be in use). Log the error, but
+		// don't return it.
+		log.Warningf("Failed to pre-map MemoryFile PROT_EXEC: %v", errno)
+	} else {
+		if _, _, errno := unix.Syscall(
+			unix.SYS_MUNMAP,
+			m,
+			hostarch.PageSize,
+			0); errno != 0 {
+			panic(fmt.Sprintf("failed to unmap PROT_EXEC MemoryFile mapping: %v", errno))
+		}
+	}
 }

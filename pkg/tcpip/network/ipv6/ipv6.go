@@ -16,6 +16,7 @@
 package ipv6
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -177,6 +178,7 @@ var _ stack.MulticastForwardingNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
+var _ stack.RestorableNetworkEndpoint = (*endpoint)(nil)
 var _ stack.NDPEndpoint = (*endpoint)(nil)
 var _ MLDEndpoint = (*endpoint)(nil)
 var _ NDPEndpoint = (*endpoint)(nil)
@@ -244,6 +246,30 @@ type endpoint struct {
 	//
 	// LOCK ORDERING: mu > dad.mu.
 	dad endpointDAD
+}
+
+// Restore implements stack.RestorableNetworkEndpoint.
+func (e *endpoint) Restore() {
+	e.mu.Lock()
+	e.dad.mu.Lock()
+	e.dad.mu.dad.Restore(&e.dad.mu, e.protocol.stack.SecureRNG().Reader)
+	e.dad.mu.Unlock()
+	e.mu.mld.restore()
+	e.mu.ndp.restore()
+	if e.Enabled() {
+		e.mu.addressableEndpointState.ForEachEndpoint(func(addressEndpoint stack.AddressEndpoint) bool {
+			addr := addressEndpoint.AddressWithPrefix().Address
+			if header.IsV6UnicastAddress(addr) && addressEndpoint.GetKind() == stack.PermanentTentative {
+				_ = e.mu.ndp.startDuplicateAddressDetection(addr, addressEndpoint) // +checklocksforce: ForEachEndpoint calls back synchronously with e.mu held.
+			}
+			return true
+		})
+	}
+	e.mu.Unlock()
+
+	e.protocol.mu.Lock()
+	e.protocol.mu.eps[e.nic.ID()] = e
+	e.protocol.mu.Unlock()
 }
 
 // NICNameFromID is a function that returns a stable name for the specified NIC,
@@ -2472,7 +2498,7 @@ type protocolMu struct {
 	// when handling a packet, by looking at which NIC handled the packet.
 	//
 	// +checklocks:RWMutex
-	eps map[tcpip.NICID]*endpoint
+	eps map[tcpip.NICID]*endpoint `state:"nosave"`
 
 	// ICMP types for which the stack's global rate limiting must apply.
 	//
@@ -2485,6 +2511,15 @@ type protocolMu struct {
 	//
 	// +checklocks:RWMutex
 	multicastForwardingDisp stack.MulticastForwardingEventDispatcher
+}
+
+// afterLoad is invoked by stateify.
+//
+// +checklocksexclude:p.RWMutex
+func (p *protocolMu) afterLoad(context.Context) {
+	p.Lock()
+	defer p.Unlock()
+	p.eps = make(map[tcpip.NICID]*endpoint)
 }
 
 // +stateify savable

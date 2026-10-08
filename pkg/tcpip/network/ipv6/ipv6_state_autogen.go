@@ -290,7 +290,6 @@ func (p *protocolMu) StateTypeName() string {
 
 func (p *protocolMu) StateFields() []string {
 	return []string{
-		"eps",
 		"icmpRateLimitedTypes",
 		"multicastForwardingDisp",
 	}
@@ -301,18 +300,15 @@ func (p *protocolMu) beforeSave() {}
 // +checklocksignore
 func (p *protocolMu) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	stateSinkObject.Save(0, &p.eps)
-	stateSinkObject.Save(1, &p.icmpRateLimitedTypes)
-	stateSinkObject.Save(2, &p.multicastForwardingDisp)
+	stateSinkObject.Save(0, &p.icmpRateLimitedTypes)
+	stateSinkObject.Save(1, &p.multicastForwardingDisp)
 }
-
-func (p *protocolMu) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *protocolMu) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.eps)
-	stateSourceObject.Load(1, &p.icmpRateLimitedTypes)
-	stateSourceObject.Load(2, &p.multicastForwardingDisp)
+	stateSourceObject.Load(0, &p.icmpRateLimitedTypes)
+	stateSourceObject.Load(1, &p.multicastForwardingDisp)
+	stateSourceObject.AfterLoad(func() { p.afterLoad(ctx) })
 }
 
 func (p *protocol) StateTypeName() string {

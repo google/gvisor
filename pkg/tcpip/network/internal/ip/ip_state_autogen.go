@@ -87,7 +87,6 @@ func (d *DAD) StateFields() []string {
 	return []string{
 		"opts",
 		"configs",
-		"addresses",
 	}
 }
 
@@ -98,7 +97,6 @@ func (d *DAD) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.opts)
 	stateSinkObject.Save(1, &d.configs)
-	stateSinkObject.Save(2, &d.addresses)
 }
 
 func (d *DAD) afterLoad(context.Context) {}
@@ -107,7 +105,6 @@ func (d *DAD) afterLoad(context.Context) {}
 func (d *DAD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.opts)
 	stateSourceObject.Load(1, &d.configs)
-	stateSourceObject.Load(2, &d.addresses)
 }
 
 func (e *ErrMessageTooLong) StateTypeName() string {
