@@ -298,7 +298,8 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 	@echo "alias bazel='$(call wrapper,$(BAZEL))'"
 .PHONY: bazel-alias
 
-bazel-image: load-default ## Ensures that the local builder exists.
+# A cached load only tags the image; executing the builder still needs QEMU.
+bazel-image: load-default register-cross ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
 	@$(DOCKER_CLI_PATH) rm -f $(BUILDER_NAME) 2>/dev/null || true
 	@$(DOCKER_CLI_PATH) run --user 0:0 --entrypoint "" \

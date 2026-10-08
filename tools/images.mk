@@ -131,30 +131,6 @@ tag = $(shell cd images && find $(subst _,/,$(1)) -type f | sort -f -d | xargs -
 remote_image = $(REMOTE_IMAGE_PREFIX)/$(subst _,/,$(1))_$(ARCH)
 local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 
-# Include all existing images as targets here.
-#
-# Note that we use a _ for the tag separator, instead of :, as the latter is
-# interpreted by Make, unfortunately. tag_expand expands the generic rules to
-# tag-specific targets. These is needed to provide sensible targets for load
-# below, with caching. Basically, if there is a rule generated here, then the
-# load will be skipped. If there is no load generated here, then the default
-# rule for load will kick in.
-#
-# Note that if this rule does not successfully rule, we will simply have
-# additional Docker pull commands that run for all images that are already
-# pulled. No real harm done.
-EXISTING_IMAGES = $(shell docker images --format '{{.Repository}}_{{.Tag}}' | grep -v '<none>')
-define existing_image_rule =
-loaded0_$(1)=load-$$(1): tag-$$(1) # Already available.
-loaded1_$(1)=.PHONY: load-$$(1)
-endef
-$(foreach image, $(EXISTING_IMAGES), $(eval $(call existing_image_rule,$(image))))
-define tag_expand_rule =
-$(eval $(loaded0_$(call remote_image,$(1))_$(call tag,$(1))))
-$(eval $(loaded1_$(call remote_image,$(1))_$(call tag,$(1))))
-endef
-$(foreach image, $(ALL_IMAGES), $(eval $(call tag_expand_rule,$(image))))
-
 # tag tags a local image. This applies both the hash-based tag from above to
 # ensure that caching works as expected, as well as the "latest" tag that is
 # used by the tests.
@@ -164,6 +140,8 @@ latest_tag = \
   docker tag $(call local_image,$(1)):$(call tag,$(1)) $(call local_image,$(1)):latest >&2
 tag_exists = \
   docker image inspect $(call local_image,$(1)):$(call tag,$(1)) &>/dev/null
+cached_image = $(if $(wildcard $(call path,$(1))/Dockerfile $(call path,$(1))/Dockerfile.$(ARCH)),$(shell \
+  docker image inspect $(call remote_image,$(1)):$(call tag,$(1)) >/dev/null 2>&1 && echo cached))
 tag-%: ## Tag a local image.
 	@$(call header,TAG $*)
 	@$(call local_tag,$*) && $(call latest_tag,$*)
@@ -198,13 +176,18 @@ rebuild = \
 rebuild-%: register-cross ## Force rebuild an image locally.
 	@$(call rebuild,$*)
 
-# load will either pull the "remote" or build it locally. This is the preferred
-# entrypoint, as it should never fail. The local tag should always be set after
-# this returns (either by the pull or the build).
+# load reuses a cached remote image or pulls/builds one, applying local hash and
+# latest tags. On a cache miss, SKIP_IMAGE_LOAD only checks the local hash tag.
 # If the image is not available for the current architecture, it is not loaded.
-load-%: register-cross ## Pull or build an image locally.
-	@if [ -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
-	  if [ "$(SKIP_IMAGE_LOAD)" == true ]; then \
+# Defer cache inspection and image hashing until an image is requested.
+# Secondary expansion selects a prerequisite only when this image is requested:
+# cached images only need tagging; cache misses share cross-emulation setup.
+.SECONDEXPANSION:
+load-%: $$(if $$(call cached_image,$$*),tag-$$*,register-cross) ## Pull or build an image locally.
+	@if [ "$<" = register-cross ]; then \
+	  if [ ! -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
+	    echo "Image $* is not available on $$(uname -m), ignoring it." >&2; \
+	  elif [ "$(SKIP_IMAGE_LOAD)" == true ]; then \
 	    if ! $(call tag_exists,$*); then \
 	      echo "Image $* does not exist locally and SKIP_IMAGE_LOAD is set so cannot pull it. Failing." >&2; \
 	      exit 1; \
@@ -212,8 +195,6 @@ load-%: register-cross ## Pull or build an image locally.
 	  else \
 	    ($(call pull,$*)) || ($(call rebuild,$*)); \
 	  fi; \
-	else \
-	  echo "Image $* is not available on $$(uname -m), ignoring it." >&2; \
 	fi
 
 test-%: register-cross ## Build an image locally if the remote doesn't exist.
