@@ -130,7 +130,7 @@ func (i *In) normalize() {
 	switch cpuidFunction(i.Eax) {
 	case vendorID, featureInfo, intelCacheDescriptors, extendedFunctionInfo, extendedFeatures:
 		i.Ecx = 0 // Ignore.
-	case processorBrandString2, processorBrandString3, processorBrandString4, l1CacheAndTLBInfo, l2CacheInfo, amdMemoryEncryptionInfo:
+	case processorBrandString2, processorBrandString3, processorBrandString4, l1CacheAndTLBInfo, l2CacheInfo, addressSizes, amdMemoryEncryptionInfo:
 		i.Ecx = 0 // Ignore.
 	case intelDeterministicCacheParams, extendedFeatureInfo:
 		// Preserve i.Ecx.
