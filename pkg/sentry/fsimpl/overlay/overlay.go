@@ -255,7 +255,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: gofer filesystem used as overlay upper layer; enabling userxattr")
 			userXattr = true
 		}
-		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
+		privateUpperRoot, err := clonePrivateMount(ctx, vfsObj, upperRoot, false /* forceReadOnly */)
 		upperRoot.DecRef(ctx)
 		if err != nil {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to make private bind mount of upperdir %q: %v", upperPathname, err)
@@ -290,7 +290,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve lowerdir %q: %v", lowerPathname, err)
 				return nil, nil, err
 			}
-			privateLowerRoot, err := clonePrivateMount(vfsObj, lowerRoot, true /* forceReadOnly */)
+			privateLowerRoot, err := clonePrivateMount(ctx, vfsObj, lowerRoot, true /* forceReadOnly */)
 			lowerRoot.DecRef(ctx)
 			if err != nil {
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to make private bind mount of lowerdir %q: %v", lowerPathname, err)
@@ -453,7 +453,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 // single mount, and therefore can't cross into e.g. the overlay filesystem
 // itself, risking lock recursion.) A reference is held on the returned
 // VirtualDentry.
-func clonePrivateMount(vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forceReadOnly bool) (vfs.VirtualDentry, error) {
+func clonePrivateMount(ctx context.Context, vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forceReadOnly bool) (vfs.VirtualDentry, error) {
+	if err := vfsObj.CheckClonePrivateMount(ctx, vd); err != nil {
+		return vfs.VirtualDentry{}, err
+	}
 	oldmnt := vd.Mount()
 	opts := oldmnt.Options()
 	if forceReadOnly {
