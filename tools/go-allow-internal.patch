@@ -1,11 +1,11 @@
 diff --git a/src/cmd/go/internal/load/pkg.go b/src/cmd/go/internal/load/pkg.go
-index e2a77d7..fec9756 100644
+index 2985cff67..277aee7d1 100644
 --- a/src/cmd/go/internal/load/pkg.go
 +++ b/src/cmd/go/internal/load/pkg.go
-@@ -1465,6 +1465,7 @@ func reusePackage(p *Package, stk *ImportStack) *Package {
+@@ -1483,6 +1483,7 @@
  // If the import is allowed, disallowInternal returns the original package p.
  // If not, it returns a new package containing just an appropriate error.
- func disallowInternal(loaderstate *modload.State, ctx context.Context, srcDir string, importer *Package, importerPath string, p *Package, stk *ImportStack) *PackageError {
+ func disallowInternal(ld *modload.Loader, ctx context.Context, srcDir string, importer *Package, importerPath string, p *Package, stk *ImportStack) *PackageError {
 +	return nil
  	// golang.org/s/go14internal:
  	// An import of a path containing the element “internal”
