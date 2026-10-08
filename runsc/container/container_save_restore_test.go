@@ -1545,3 +1545,130 @@ func TestSplitFSCheckpointRestoreOnlyFS(t *testing.T) {
 		checkGuestFile(t, conf, contRestore, guestFile, "hello")
 	})
 }
+
+// TestCheckpointRestoreTUN tests that a TUN device created inside a container
+// is preserved across multiple checkpoint (with resume) and restore cycles
+// along with its addresses and routes, and can be modified after each restore.
+func TestCheckpointRestoreTUN(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint not supported")
+	}
+
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			spec, _ := sleepSpecConf(t)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Create a persistent TUN interface and configure IPv4 and IPv6
+			// addresses before checkpointing.
+			setupCmd := "ip tuntap add dev tun0 mode tun && ip addr add 10.0.0.1/24 dev tun0 && ip addr add fd00::1/64 dev tun0 && ip link set tun0 up && ip addr show dev tun0"
+			out, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", setupCmd)
+			if err != nil {
+				t.Fatalf("failed to set up tun0 before checkpoint: %v (output: %s)", err, out)
+			}
+			if !strings.Contains(string(out), "10.0.0.1/24") || !strings.Contains(string(out), "fd00::1/64") {
+				t.Fatalf("unexpected tun0 addresses before checkpoint: %s", out)
+			}
+
+			checkpointDir := makeTempDir(t, "checkpoint-tun-test")
+			if err := cont.Checkpoint(conf, checkpointDir, sandbox.CheckpointOpts{Resume: true}); err != nil {
+				t.Fatalf("error checkpointing container: %v", err)
+			}
+
+			// Verify tun0 is still intact in the resumed original container.
+			out, err = executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "ip addr show dev tun0")
+			if err != nil {
+				t.Fatalf("failed to query tun0 after resume: %v (output: %s)", err, out)
+			}
+			if !strings.Contains(string(out), "10.0.0.1/24") || !strings.Contains(string(out), "fd00::1/64") {
+				t.Fatalf("unexpected tun0 addresses after resume: %s", out)
+			}
+			cont.Destroy()
+
+			args2 := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont2, err := New(conf, args2)
+			if err != nil {
+				t.Fatalf("error creating restored container: %v", err)
+			}
+			defer cont2.Destroy()
+
+			if err := cont2.Restore(conf, checkpointDir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+				t.Fatalf("error restoring container: %v", err)
+			}
+
+			// Verify tun0 and its addresses are preserved after restore, and that
+			// addresses can be added/removed and new TUN devices can be created.
+			verifyCmd := "ip addr show dev tun0 && ip addr add 10.0.0.2/24 dev tun0 && ip addr del 10.0.0.1/24 dev tun0 && ip addr add fd00::2/64 dev tun0 && ip addr del fd00::1/64 dev tun0 && ip tuntap add dev tun1 mode tun && ip addr show dev tun0 && ip link show dev tun1"
+			out, err = executeCombinedOutput(conf, cont2, nil, "/bin/sh", "-c", verifyCmd)
+			if err != nil {
+				t.Fatalf("failed to verify tun0 after restore: %v (output: %s)", err, out)
+			}
+			if !strings.Contains(string(out), "10.0.0.2/24") || !strings.Contains(string(out), "fd00::2/64") {
+				t.Fatalf("expected updated addresses on tun0 after restore, got: %s", out)
+			}
+
+			// Checkpoint the restored container a second time with Resume: true.
+			checkpointDir2 := makeTempDir(t, "checkpoint-tun-test-2")
+			if err := cont2.Checkpoint(conf, checkpointDir2, sandbox.CheckpointOpts{Resume: true}); err != nil {
+				t.Fatalf("error checkpointing restored container: %v", err)
+			}
+
+			// Verify tun0 and tun1 are still intact in cont2 after the second checkpoint+resume.
+			out, err = executeCombinedOutput(conf, cont2, nil, "/bin/sh", "-c", "ip addr show dev tun0 && ip link show dev tun1")
+			if err != nil {
+				t.Fatalf("failed to query tun0/tun1 after second resume: %v (output: %s)", err, out)
+			}
+			if !strings.Contains(string(out), "10.0.0.2/24") || !strings.Contains(string(out), "fd00::2/64") {
+				t.Fatalf("unexpected tun0 addresses after second resume: %s", out)
+			}
+			cont2.Destroy()
+
+			args3 := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			cont3, err := New(conf, args3)
+			if err != nil {
+				t.Fatalf("error creating second restored container: %v", err)
+			}
+			defer cont3.Destroy()
+
+			if err := cont3.Restore(conf, checkpointDir2, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+				t.Fatalf("error restoring container a second time: %v", err)
+			}
+
+			// Verify tun0 and tun1 are preserved across the second restore and can be modified.
+			verifyCmd2 := "ip addr show dev tun0 && ip link show dev tun1 && ip addr add 10.0.0.3/24 dev tun0 && ip addr del 10.0.0.2/24 dev tun0 && ip addr add fd00::3/64 dev tun0 && ip addr del fd00::2/64 dev tun0 && ip addr add 10.0.1.1/24 dev tun1 && ip link set tun1 up && ip addr show dev tun0 && ip addr show dev tun1"
+			out, err = executeCombinedOutput(conf, cont3, nil, "/bin/sh", "-c", verifyCmd2)
+			if err != nil {
+				t.Fatalf("failed to verify tun0/tun1 after second restore: %v (output: %s)", err, out)
+			}
+			if !strings.Contains(string(out), "10.0.0.3/24") || !strings.Contains(string(out), "fd00::3/64") || !strings.Contains(string(out), "10.0.1.1/24") {
+				t.Fatalf("expected updated addresses on tun0/tun1 after second restore, got: %s", out)
+			}
+		})
+	}
+}

@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -544,5 +545,123 @@ func TestRestoreListenWithPreexistingConnection(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+type unregisteredClock struct {
+	tcpip.Clock
+}
+
+func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
+	c := testcontext.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	const preservedNICID = 10
+	preservedIPv4Addr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom4([4]byte{10, 0, 1, 1}),
+		PrefixLen: 24,
+	}
+	preservedIPv6Addr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFrom16([16]byte{0xfd, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+		PrefixLen: 64,
+	}
+	preservedEP := channel.New(1000, e2e.DefaultMTU, "")
+	defer preservedEP.Close()
+	if err := c.Stack().CreateNICWithOptions(preservedNICID, preservedEP, stack.NICOptions{Kind: "tun"}); err != nil {
+		t.Fatalf("CreateNICWithOptions failed: %v", err)
+	}
+	if err := c.Stack().AddProtocolAddress(preservedNICID, tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: preservedIPv4Addr,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(IPv4) failed: %v", err)
+	}
+	if err := c.Stack().AddProtocolAddress(preservedNICID, tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: preservedIPv6Addr,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(IPv6) failed: %v", err)
+	}
+
+	c.Stack().SetRemoveConf(false)
+
+	var buf bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf, c.Stack()); err != nil {
+		t.Fatalf("First Save failed: %v", err)
+	}
+	c.Stack().Resume()
+
+	restoredStack := stack.New(stack.Options{
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+	})
+	defer restoredStack.Destroy()
+
+	if _, err := state.Load(context.Background(), bytes.NewReader(buf.Bytes()), restoredStack); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Simulate sentry restore creating unpreserved NICs on a temporary stack
+	// with a non-state-registered clock before calling ReplaceConfig.
+	tempStack := stack.New(stack.Options{
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+		Clock:              &unregisteredClock{Clock: tcpip.NewStdClock()},
+	})
+	defer tempStack.Destroy()
+
+	ep := channel.New(1000, e2e.DefaultMTU, "")
+	defer ep.Close()
+	if err := tempStack.CreateNIC(1, ep); err != nil {
+		t.Fatalf("tempStack.CreateNIC failed: %v", err)
+	}
+	if err := tempStack.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: testcontext.StackAddrWithPrefix,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("tempStack.AddProtocolAddress(IPv4) failed: %v", err)
+	}
+	if err := tempStack.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol:          header.IPv6ProtocolNumber,
+		AddressWithPrefix: testcontext.StackV6AddrWithPrefix,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("tempStack.AddProtocolAddress(IPv6) failed: %v", err)
+	}
+
+	restoredStack.ReplaceConfig(tempStack)
+	restoredStack.Restore()
+
+	if got := restoredStack.CheckLocalAddress(preservedNICID, header.IPv4ProtocolNumber, preservedIPv4Addr.Address); got != preservedNICID {
+		t.Fatalf("restoredStack.CheckLocalAddress(IPv4) = %d, want %d", got, preservedNICID)
+	}
+	if got := restoredStack.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Address); got != preservedNICID {
+		t.Fatalf("restoredStack.CheckLocalAddress(IPv6) = %d, want %d", got, preservedNICID)
+	}
+
+	// Taking a subsequent snapshot with removeConf=false must not serialize
+	// unpreserved NICs from tempStack or fail on unregisteredClock.
+	restoredStack.SetRemoveConf(false)
+	var buf2 bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf2, restoredStack); err != nil {
+		t.Fatalf("Second Save after Restore+ReplaceConfig failed: %v", err)
+	}
+	restoredStack.Resume()
+
+	restoredStack2 := stack.New(stack.Options{
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+	})
+	defer restoredStack2.Destroy()
+
+	if _, err := state.Load(context.Background(), bytes.NewReader(buf2.Bytes()), restoredStack2); err != nil {
+		t.Fatalf("Second Load failed: %v", err)
+	}
+	restoredStack2.Restore()
+
+	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv4ProtocolNumber, preservedIPv4Addr.Address); got != preservedNICID {
+		t.Fatalf("restoredStack2.CheckLocalAddress(IPv4) = %d, want %d", got, preservedNICID)
+	}
+	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Address); got != preservedNICID {
+		t.Fatalf("restoredStack2.CheckLocalAddress(IPv6) = %d, want %d", got, preservedNICID)
 	}
 }

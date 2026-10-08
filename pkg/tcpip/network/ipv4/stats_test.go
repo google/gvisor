@@ -83,6 +83,20 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 		t.Fatalf("found an incorrect endpoint mapped to nic id %d", nic.ID())
 	}
 
+	proto.forgetEndpoint(nic.ID())
+	ep.Restore()
+
+	proto.mu.Lock()
+	foundEPAfterRestore, hasEndpointAfterRestore := proto.eps[nic.ID()]
+	nicIDs = knownNICIDs(proto)
+	proto.mu.Unlock()
+	if !hasEndpointAfterRestore {
+		t.Fatalf("expected Restore to re-register nic id %d in the protocol's endpoint map (%v)", nic.ID(), nicIDs)
+	}
+	if foundEPAfterRestore != ep {
+		t.Fatalf("found an incorrect endpoint mapped to nic id %d after Restore", nic.ID())
+	}
+
 	ep.Close()
 
 	proto.mu.Lock()

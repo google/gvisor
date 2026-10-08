@@ -59,6 +59,7 @@
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -713,8 +714,8 @@ TEST_F(TuntapTest, WriteHangBug155928773) {
   const auto tuntap = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
       kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
 
-  int sock = socket(AF_INET, SOCK_DGRAM, 0);
-  ASSERT_THAT(sock, SyscallSucceeds());
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
 
   struct sockaddr_in remote = {
       .sin_family = AF_INET,
@@ -722,8 +723,8 @@ TEST_F(TuntapTest, WriteHangBug155928773) {
       .sin_addr = {.s_addr = kTapIPAddr},
   };
   // Return values do not matter in this test.
-  connect(sock, AsSockAddr(&remote), sizeof(remote));
-  write(sock, "hello", 5);
+  connect(sock.get(), AsSockAddr(&remote), sizeof(remote));
+  write(sock.get(), "hello", 5);
 }
 
 // Test that raw packet sockets do not need/include link headers when
@@ -812,6 +813,98 @@ TEST_F(TuntapTest, RawPacketSocket) {
           memcmp(read_buf, &ping_req, sizeof(ping_req)) == 0) {
         break;
       }
+    }
+  }
+}
+
+TEST_F(TuntapTest, SaveRestorePreservesAddressesAndPendingPackets) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  const auto& [fd, link] = ASSERT_NO_ERRNO_AND_VALUE(OpenAndAttachTunTap(
+      kTapName, kTapIPAddr, true /* tap */, false /* no_pi */));
+
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  struct in6_addr dev_ipv6_addr = {};
+  ASSERT_EQ(inet_pton(AF_INET6, "fd00::1", &dev_ipv6_addr), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, link.index, AF_INET6, /*prefixlen=*/64,
+                                   &dev_ipv6_addr, sizeof(dev_ipv6_addr)));
+
+  // Send a UDP packet to an unresolved peer IP so that link resolution is in
+  // the Incomplete state with a queued packet across save/restore.
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  struct sockaddr_in remote = {
+      .sin_family = AF_INET,
+      .sin_port = htons(42),
+      .sin_addr = {.s_addr = kTapPeerIPAddr},
+  };
+  ASSERT_THAT(
+      sendto(sock.get(), "hello", 5, 0, AsSockAddr(&remote), sizeof(remote)),
+      SyscallSucceedsWithValue(5));
+
+  MaybeSave();
+
+  // Verify that adding and deleting IPv4 and IPv6 addresses on the preserved
+  // interface works after restore (exercising IGMP, MLD, NDP, and DAD).
+  const struct in_addr extra_ipv4_addr = {.s_addr = htonl(0x0a000003)};
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, link.index, AF_INET, /*prefixlen=*/24,
+                                   &extra_ipv4_addr, sizeof(extra_ipv4_addr)));
+  ASSERT_NO_ERRNO(LinkDelLocalAddr(nlsk, link.index, AF_INET, /*prefixlen=*/24,
+                                   &extra_ipv4_addr, sizeof(extra_ipv4_addr)));
+
+  struct in6_addr extra_ipv6_addr = {};
+  ASSERT_EQ(inet_pton(AF_INET6, "fd00::2", &extra_ipv6_addr), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(nlsk, link.index, AF_INET6, /*prefixlen=*/64,
+                                   &extra_ipv6_addr, sizeof(extra_ipv6_addr)));
+  ASSERT_NO_ERRNO(LinkDelLocalAddr(nlsk, link.index, AF_INET6, /*prefixlen=*/64,
+                                   &extra_ipv6_addr, sizeof(extra_ipv6_addr)));
+
+  // Verify that creating another interface after restore assigns a
+  // non-colliding name and NIC ID.
+  FileDescriptor fd2 = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  struct ifreq ifr2 = {};
+  ifr2.ifr_flags = IFF_TAP;
+  ASSERT_THAT(ioctl(fd2.get(), TUNSETIFF, &ifr2), SyscallSucceedsWithValue(0));
+  struct ifreq ifr2_get = {};
+  ASSERT_THAT(ioctl(fd2.get(), TUNGETIFF, &ifr2_get),
+              SyscallSucceedsWithValue(0));
+  EXPECT_NE(std::string(ifr2_get.ifr_name), std::string(kTapName));
+
+  // Complete ARP resolution and verify that the UDP packet queued before
+  // MaybeSave() is transmitted without re-sending.
+  std::string arp_rep =
+      CreateArpPacket(kMacB, kTapPeerIPAddr, kMacA, kTapIPAddr);
+  struct udp_pkt {
+    pihdr pi;
+    ethhdr eth;
+    iphdr ip;
+    char payload[64];
+  } __attribute__((packed));
+  union inpkt {
+    pihdr pi;
+    arp_pkt arp;
+    udp_pkt udp;
+  };
+  bool arp_replied = false;
+  while (true) {
+    inpkt r = {};
+    ssize_t n;
+    ASSERT_THAT(n = read(fd.get(), &r, sizeof(r)), SyscallSucceeds());
+    if (n < static_cast<ssize_t>(sizeof(pihdr))) {
+      continue;
+    }
+    if (!arp_replied && n >= static_cast<ssize_t>(sizeof(arp_pkt)) &&
+        r.pi.pi_protocol == htons(ETH_P_ARP)) {
+      ASSERT_THAT(write(fd.get(), arp_rep.data(), arp_rep.size()),
+                  SyscallSucceedsWithValue(arp_rep.size()));
+      arp_replied = true;
+    } else if (n >= static_cast<ssize_t>(sizeof(pihdr) + sizeof(ethhdr) +
+                                         sizeof(iphdr)) &&
+               r.pi.pi_protocol == htons(ETH_P_IP) &&
+               r.udp.ip.protocol == IPPROTO_UDP &&
+               r.udp.ip.daddr == kTapPeerIPAddr) {
+      break;
     }
   }
 }

@@ -16,6 +16,7 @@
 package ipv4
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -81,6 +82,7 @@ var _ stack.MulticastForwardingNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
+var _ stack.RestorableNetworkEndpoint = (*endpoint)(nil)
 var _ IGMPEndpoint = (*endpoint)(nil)
 
 // +checklocksalias:igmp.ep.mu=mu
@@ -111,6 +113,17 @@ type endpoint struct {
 
 	// +checklocks:mu
 	igmp igmpState
+}
+
+// Restore implements stack.RestorableNetworkEndpoint.
+func (e *endpoint) Restore() {
+	e.mu.Lock()
+	e.igmp.restore()
+	e.mu.Unlock()
+
+	e.protocol.mu.Lock()
+	e.protocol.eps[e.nic.ID()] = e
+	e.protocol.mu.Unlock()
 }
 
 // SetIGMPVersion implements IGMPEndpoint.
@@ -1653,7 +1666,7 @@ type protocol struct {
 	// eps is keyed by NICID to allow protocol methods to retrieve an endpoint
 	// when handling a packet, by looking at which NIC handled the packet.
 	// +checklocks:mu
-	eps map[tcpip.NICID]*endpoint
+	eps map[tcpip.NICID]*endpoint `state:"nosave"`
 
 	// ICMP types for which the stack's global rate limiting must apply.
 	// +checklocks:mu
@@ -1683,6 +1696,15 @@ type protocol struct {
 	// that multicast packets will only be forwarded if this is non-nil.
 	// +checklocks:mu
 	multicastForwardingDisp stack.MulticastForwardingEventDispatcher
+}
+
+// afterLoad is invoked by stateify.
+//
+// +checklocksexclude:p.mu
+func (p *protocol) afterLoad(context.Context) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.eps = make(map[tcpip.NICID]*endpoint)
 }
 
 // Number returns the ipv4 protocol number.
