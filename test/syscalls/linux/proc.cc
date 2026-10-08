@@ -1756,6 +1756,45 @@ TEST_P(ProcPidStatTest, HasBasicFields) {
 INSTANTIATE_TEST_SUITE_P(SelfAndNumericPid, ProcPidStatTest,
                          ::testing::Values("self", absl::StrCat(getpid())));
 
+// PF_EXITING from include/linux/sched.h.
+constexpr uint64_t kPFExiting = 0x4;
+
+TEST(ProcPidStatTest, SelfIsNotExiting) {
+  std::string proc_pid_stat =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/stat"));
+  std::vector<std::string> fields =
+      ASSERT_NO_ERRNO_AND_VALUE(ParseProcPidStat(proc_pid_stat));
+  ASSERT_GE(fields.size(), 9);
+  uint64_t flags;
+  ASSERT_TRUE(absl::SimpleAtoi(fields[8], &flags));
+  EXPECT_EQ(flags & kPFExiting, 0);
+}
+
+TEST(ProcPidStatTest, ZombieIsExiting) {
+  pid_t child = fork();
+  if (child == 0) {
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  auto reap = Cleanup([child] {
+    EXPECT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
+                SyscallSucceedsWithValue(child));
+  });
+  siginfo_t info = {};
+  ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
+              SyscallSucceeds());
+
+  std::string proc_pid_stat = ASSERT_NO_ERRNO_AND_VALUE(
+      GetContents(absl::StrCat("/proc/", child, "/stat")));
+  std::vector<std::string> fields =
+      ASSERT_NO_ERRNO_AND_VALUE(ParseProcPidStat(proc_pid_stat));
+  ASSERT_GE(fields.size(), 9);
+  EXPECT_EQ("Z", fields[2]);
+  uint64_t flags;
+  ASSERT_TRUE(absl::SimpleAtoi(fields[8], &flags));
+  EXPECT_NE(flags & kPFExiting, 0);
+}
+
 using ProcPidStatmTest = ::testing::TestWithParam<std::string>;
 
 TEST_P(ProcPidStatmTest, HasBasicFields) {
