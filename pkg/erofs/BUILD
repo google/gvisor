@@ -31,4 +31,8 @@ go_test(
     size = "small",
     srcs = ["erofs_test.go"],
     embed = [":erofs"],
+    deps = [
+        "//pkg/errors/linuxerr",
+        "//pkg/hostarch",
+    ],
 )
