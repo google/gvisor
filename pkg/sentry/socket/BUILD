@@ -7,10 +7,7 @@ package(
 
 go_library(
     name = "socket",
-    srcs = [
-        "socket.go",
-        "socket_state.go",
-    ],
+    srcs = ["socket.go"],
     importpath = "gvisor.dev/gvisor/pkg/sentry/socket",
     visibility = ["//pkg/sentry:internal"],
     deps = [
