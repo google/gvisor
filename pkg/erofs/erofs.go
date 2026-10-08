@@ -126,8 +126,15 @@ type SuperBlock struct {
 	Reserved        [38]uint8
 }
 
+// maxBlockSizeBits caps the block size at 64 KiB, the largest page size of any
+// host that gVisor supports. Linux caps it at the host's own page size.
+const maxBlockSizeBits = 16
+
 // BlockSize returns the block size.
 func (sb *SuperBlock) BlockSize() uint32 {
+	if sb.BlockSizeBits > maxBlockSizeBits {
+		panic(fmt.Sprintf("unsupported block size bits: %d", sb.BlockSizeBits))
+	}
 	return 1 << sb.BlockSizeBits
 }
 
@@ -272,16 +279,16 @@ func (i *Image) initSuperBlock() error {
 		return fmt.Errorf("unknown magic: 0x%x", i.sb.Magic)
 	}
 
+	if i.sb.BlockSizeBits < hostarch.PageShift || i.sb.BlockSizeBits > maxBlockSizeBits {
+		return fmt.Errorf("unsupported block size bits: %d", i.sb.BlockSizeBits)
+	}
+
 	if err := i.verifyChecksum(); err != nil {
 		return err
 	}
 
 	if featureIncompat := i.sb.FeatureIncompat & ^uint32(FeatureIncompatSupported); featureIncompat != 0 {
 		return fmt.Errorf("unsupported incompatible features detected: 0x%x", featureIncompat)
-	}
-
-	if i.BlockSize()%hostarch.PageSize != 0 {
-		return fmt.Errorf("unsupported block size: 0x%x", i.BlockSize())
 	}
 
 	return nil
