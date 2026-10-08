@@ -26,12 +26,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/buffer"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
-	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	iptestutil "gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
@@ -4230,43 +4228,8 @@ func TestForwardingTCPChecksum(t *testing.T) {
 }
 
 func TestRecalculateChecksum(t *testing.T) {
-	clock := faketime.NewManualClock()
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
-		Clock:              clock,
-	})
-	defer func() {
-		s.Close()
-		s.Wait()
-		clock.RunImmediatelyScheduledJobs()
-		refs.DoRepeatedLeakCheck()
-	}()
-
-	ep := channel.New(10, header.IPv6MinimumMTU, "")
-	defer ep.Close()
-
 	src := testutil.MustParse6("2001:db8::1")
 	dst := testutil.MustParse6("2001:db8::2")
-
-	if err := s.CreateNIC(1, ep); err != nil {
-		t.Fatalf("CreateNIC(1, _) failed: %s", err)
-	}
-	if err := s.AddProtocolAddress(1, tcpip.ProtocolAddress{
-		Protocol:          ProtocolNumber,
-		AddressWithPrefix: src.WithPrefix(),
-	}, stack.AddressProperties{}); err != nil {
-		t.Fatalf("AddProtocolAddress failed: %s", err)
-	}
-	s.SetRouteTable([]tcpip.Route{{
-		Destination: dst.WithPrefix().Subnet(),
-		NIC:         1,
-	}})
-	r, err := s.FindRoute(1, src, dst, ProtocolNumber, false /* multicastLoop */)
-	if err != nil {
-		t.Fatalf("FindRoute(1, %s, %s, %d, false) failed: %s", src, dst, ProtocolNumber, err)
-	}
-	defer r.Release()
 
 	// Expected checksums below are precomputed using a Python scapy lib.
 	tests := []struct {
@@ -4649,7 +4612,7 @@ func TestRecalculateChecksum(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pkt := test.pkt
 			defer pkt.DecRef()
-			err := recalculateChecksum(pkt, r)
+			err := recalculateChecksum(pkt)
 			if test.wantErr {
 				if err == nil {
 					t.Errorf("recalculateChecksum succeeded, wanted error")
