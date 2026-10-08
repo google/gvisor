@@ -353,6 +353,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		}
 		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
 		child.devMinor = atomicbitops.FromUint32(childDevMinor)
+	} else if id, ok := fs.copiedUpID(child.ino.RacyLoad()); ok {
+		child.devMajor = atomicbitops.FromUint32(id.major)
+		child.devMinor = atomicbitops.FromUint32(id.minor)
+		child.ino = atomicbitops.FromUint64(id.ino)
 	}
 
 	parent.IncRef()

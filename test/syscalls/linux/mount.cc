@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
@@ -3060,6 +3061,56 @@ TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {
                 SyscallSucceeds());
     EXPECT_TRUE(merged_st_after_touch.st_mode & S_ISGID);
   }
+}
+
+// st_dev and st_ino of a file with a single link survive its copy-up, and
+// readdir reports the same inode number.
+TEST(MountTest, OverlayfsCopyUpKeepsInodeNumber) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // tmpfs, unlike a gofer, keeps inode numbers across save/restore.
+  auto tmpfs_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("tmpfs", base_dir.path(), "tmpfs", 0, "", MNT_DETACH));
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  ASSERT_NO_ERRNO(CreateWithContents(lower.path() + "/file", "contents"));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlayfs_cleanup =
+      Cleanup([&merged] { umount2(merged.path().c_str(), MNT_DETACH); });
+
+  const std::string merged_file = merged.path() + "/file";
+  const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat(merged_file));
+
+  // Opening for writing copies the file up without changing its contents.
+  ASSERT_NO_ERRNO(Open(merged_file, O_RDWR));
+  ASSERT_NO_ERRNO(Stat(upper.path() + "/file"));
+
+  const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(merged_file));
+  EXPECT_EQ(after.st_dev, before.st_dev);
+  EXPECT_EQ(after.st_ino, before.st_ino);
+
+  auto dir = opendir(merged.path().c_str());
+  ASSERT_NE(dir, nullptr) << errno;
+  auto dir_cleanup = Cleanup([dir] { closedir(dir); });
+  bool found = false;
+  while (struct dirent* ent = readdir(dir)) {
+    if (absl::string_view(ent->d_name) == "file") {
+      found = true;
+      EXPECT_EQ(ent->d_ino, before.st_ino);
+    }
+  }
+  EXPECT_TRUE(found);
 }
 
 TEST(MountTest, OverlayfsSecurityCapabilityRequiresSetFcap) {
