@@ -105,6 +105,13 @@ func skipIfNFTMode(test TestCase, ipv6 bool) (reason string, skip bool) {
 
 		return "owner match is not supported in nftables compat yet", true
 
+	case
+		// MARK target tests
+		"ManglePreroutingMarkContinue",
+		"MangleOutputMark":
+
+		return "MARK target is not supported in nftables compat yet", true
+
 	default:
 		return "", false
 	}
@@ -590,4 +597,20 @@ func TestNATPostMasqueradeToPortsUDP(t *testing.T) {
 
 func TestNATMasqueradeInvalidHookReject(t *testing.T) {
 	singleTest(t, &NATMasqueradeInvalidHookReject{})
+}
+
+func TestMangleInputDrop(t *testing.T) {
+	singleTest(t, &MangleInputDrop{})
+}
+
+func TestManglePreroutingMarkContinue(t *testing.T) {
+	singleTest(t, &ManglePreroutingMarkContinue{})
+}
+
+func TestMangleOutputMark(t *testing.T) {
+	singleTest(t, &MangleOutputMark{})
+}
+
+func TestManglePostroutingDrop(t *testing.T) {
+	singleTest(t, &ManglePostroutingDrop{})
 }
