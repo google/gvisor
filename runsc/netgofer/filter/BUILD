@@ -6,32 +6,32 @@ package(
 )
 
 go_library(
-    name = "config",
+    name = "filter",
     srcs = [
         "config.go",
         "config_amd64.go",
         "config_arm64.go",
-        "config_main.go",
-        "config_precompiled.go",
+        "filter.go",
     ],
     visibility = [
-        "//runsc/fsgofer/filter:__subpackages__",
+        "//runsc:__subpackages__",
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/log",
         "//pkg/seccomp",
-        "//pkg/seccomp/precompiledseccomp",
-        "//pkg/sync",
         "//runsc/goferfilter",
-        "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
 go_test(
-    name = "config_test",
+    name = "filter_test",
     size = "small",
-    srcs = ["config_test.go"],
-    library = ":config",
-    deps = ["//pkg/seccomp"],
+    srcs = ["filter_test.go"],
+    library = ":filter",
+    deps = [
+        "//pkg/seccomp",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

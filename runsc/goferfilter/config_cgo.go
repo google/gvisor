@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+// Package goferfilter provides common seccomp syscall rules shared by gofers.
+package goferfilter
 
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-var cgoFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+// CgoFilters are additional syscall rules required when CGO is enabled.
+var CgoFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_MMAP: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},
@@ -42,6 +44,18 @@ var cgoFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	// TODO(eperot): remove this syscall seccomp rule
 	unix.SYS_SET_ROBUST_LIST: seccomp.MatchAll{},
+	unix.SYS_CLONE: seccomp.PerArg{
+		seccomp.EqualTo(
+			unix.CLONE_VM |
+				unix.CLONE_FS |
+				unix.CLONE_FILES |
+				unix.CLONE_SETTLS |
+				unix.CLONE_SIGHAND |
+				unix.CLONE_SYSVSEM |
+				unix.CLONE_THREAD |
+				unix.CLONE_PARENT_SETTID |
+				unix.CLONE_CHILD_CLEARTID),
+	},
 	// TODO(eperot): remove this syscall seccomp rule
 	unix.SYS_CLONE3: seccomp.MatchAll{},
 	// TODO(eperot): remove this syscall seccomp rule
