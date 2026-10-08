@@ -166,7 +166,7 @@ go_test(
         "tar_test.go",
         "tmpfs_test.go",
     ],
-    library = ":tmpfs",
+    embed = [":tmpfs"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",

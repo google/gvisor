@@ -8,6 +8,7 @@ package(
 go_library(
     name = "extension",
     srcs = ["extension.go"],
+    importpath = "gvisor.dev/gvisor/pkg/shim/v1/extension",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_containerd_console//:go_default_library",

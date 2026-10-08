@@ -18,5 +18,5 @@ go_test(
     name = "ringdeque_test",
     size = "small",
     srcs = ["ringdeque_test.go"],
-    library = ":ringdeque",
+    embed = [":ringdeque"],
 )

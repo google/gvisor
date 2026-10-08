@@ -10,6 +10,7 @@ go_library(
     name = "uds",
     testonly = 1,
     srcs = ["uds.go"],
+    importpath = "gvisor.dev/gvisor/test/uds",
     deps = [
         "//pkg/cleanup",
         "//pkg/log",

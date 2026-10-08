@@ -15,7 +15,7 @@ go_library(
 benchmark_test(
     name = "redis_test",
     srcs = ["redis_test.go"],
-    library = ":database",
+    embed = [":database"],
     use_for_pgo = True,
     visibility = ["//:sandbox"],
     deps = [

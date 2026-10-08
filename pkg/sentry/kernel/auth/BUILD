@@ -101,7 +101,7 @@ go_library(
 go_test(
     name = "auth_test",
     srcs = ["capability_set_test.go"],
-    library = ":auth",
+    embed = [":auth"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/errors/linuxerr",

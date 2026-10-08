@@ -11,6 +11,7 @@ go_library(
         "console.go",
         "pty_linux.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/console",
     visibility = [
         "//runsc:__subpackages__",
     ],

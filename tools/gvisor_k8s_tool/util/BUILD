@@ -9,4 +9,5 @@ package(
 go_library(
     name = "util",
     srcs = ["util.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/util",
 )

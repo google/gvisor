@@ -15,6 +15,7 @@ go_library(
         "importfacts.go",
         "state.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/checklocks",
     nogo = False,
     visibility = [
         "//:__pkg__",

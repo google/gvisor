@@ -183,7 +183,7 @@ go_test(
     name = "mm_test",
     size = "small",
     srcs = ["mm_test.go"],
-    library = ":mm",
+    embed = [":mm"],
     deps = [
         "//pkg/context",
         "//pkg/errors",

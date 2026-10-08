@@ -8,5 +8,6 @@ package(
 go_library(
     name = "prependable",
     srcs = ["prependable.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/prependable",
     visibility = ["//visibility:public"],
 )

@@ -49,7 +49,7 @@ go_library(
 go_test(
     name = "abslbuild_test",
     srcs = ["abslbuild_test.go"],
-    library = ":abslbuild",
+    embed = [":abslbuild"],
     local = True,
     nogo = False,
     tags = [
@@ -83,7 +83,7 @@ go_library(
 go_test(
     name = "startup_test",
     srcs = ["startup_test.go"],
-    library = ":startup",
+    embed = [":startup"],
     local = True,
     nogo = False,
     tags = [
@@ -118,7 +118,7 @@ go_library(
 go_test(
     name = "openclaw_test",
     srcs = ["openclaw_test.go"],
-    library = ":openclaw",
+    embed = [":openclaw"],
     local = True,
     nogo = False,
     tags = [
@@ -151,7 +151,7 @@ go_library(
 go_test(
     name = "redis_test",
     srcs = ["redis_test.go"],
-    library = ":redis",
+    embed = [":redis"],
     local = True,
     nogo = False,
     tags = [
@@ -184,7 +184,7 @@ go_library(
 go_test(
     name = "ffmpeg_test",
     srcs = ["ffmpeg_test.go"],
-    library = ":ffmpeg",
+    embed = [":ffmpeg"],
     local = True,
     nogo = False,
     tags = [
@@ -217,7 +217,7 @@ go_library(
 go_test(
     name = "grpc_test",
     srcs = ["grpc_test.go"],
-    library = ":grpc",
+    embed = [":grpc"],
     local = True,
     nogo = False,
     tags = [
@@ -251,7 +251,7 @@ go_library(
 go_test(
     name = "nginx_test",
     srcs = ["nginx_test.go"],
-    library = ":nginx",
+    embed = [":nginx"],
     local = True,
     nogo = False,
     tags = [
@@ -283,7 +283,7 @@ go_library(
 go_test(
     name = "postgresql_test",
     srcs = ["postgresql_test.go"],
-    library = ":postgresql",
+    embed = [":postgresql"],
     local = True,
     nogo = False,
     tags = [
@@ -316,7 +316,7 @@ go_library(
 go_test(
     name = "tensorflow_test",
     srcs = ["tensorflow_test.go"],
-    library = ":tensorflow",
+    embed = [":tensorflow"],
     local = True,
     nogo = False,
     tags = [
@@ -349,7 +349,7 @@ go_library(
 go_test(
     name = "wordpress_test",
     srcs = ["wordpress_test.go"],
-    library = ":wordpress",
+    embed = [":wordpress"],
     local = True,
     nogo = False,
     tags = [
@@ -389,7 +389,7 @@ go_library(
 go_test(
     name = "ollama_test",
     srcs = ["ollama_test.go"],
-    library = ":ollama",
+    embed = [":ollama"],
     local = True,
     nogo = False,
     tags = [
@@ -429,7 +429,7 @@ go_library(
 go_test(
     name = "triton_test",
     srcs = ["triton_test.go"],
-    library = ":triton",
+    embed = [":triton"],
     local = True,
     nogo = False,
     tags = [
@@ -469,7 +469,7 @@ go_library(
 go_test(
     name = "sglang_test",
     srcs = ["sglang_test.go"],
-    library = ":sglang",
+    embed = [":sglang"],
     local = True,
     nogo = False,
     tags = [
@@ -503,7 +503,7 @@ go_library(
 go_test(
     name = "stablediffusion_test",
     srcs = ["stablediffusion_test.go"],
-    library = ":stablediffusion",
+    embed = [":stablediffusion"],
     local = True,
     nogo = False,
     tags = [
@@ -535,7 +535,7 @@ go_library(
 go_test(
     name = "gsutil_test",
     srcs = ["gsutil_test.go"],
-    library = ":gsutil",
+    embed = [":gsutil"],
     local = True,
     nogo = False,
     tags = [
@@ -569,7 +569,7 @@ go_library(
 go_test(
     name = "rubydev_test",
     srcs = ["rubydev_test.go"],
-    library = ":rubydev",
+    embed = [":rubydev"],
     local = True,
     tags = [
         "noguitar",
@@ -608,7 +608,7 @@ go_library(
 go_test(
     name = "vllm_test",
     srcs = ["vllm_test.go"],
-    library = ":vllm",
+    embed = [":vllm"],
     local = True,
     nogo = False,
     tags = [

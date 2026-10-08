@@ -8,6 +8,7 @@ go_library(
     name = "ib",
     srcs = ["ib.go"],
     hostlayout = True,
+    importpath = "gvisor.dev/gvisor/pkg/abi/ib",
     marshal = True,
     visibility = [
         "//pkg/sentry:internal",

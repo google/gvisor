@@ -15,6 +15,7 @@ go_library(
         "stack.go",
         "util.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/plugin/stack",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",
@@ -54,6 +55,6 @@ go_test(
         "socket_noplugin_test.go",
         "socket_test.go",
     ],
-    library = ":stack",
+    embed = [":stack"],
     deps = ["//pkg/waiter"],
 )

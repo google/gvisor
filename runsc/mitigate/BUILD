@@ -21,6 +21,6 @@ go_test(
     name = "mitigate_test",
     size = "small",
     srcs = ["mitigate_test.go"],
-    library = ":mitigate",
+    embed = [":mitigate"],
     deps = ["@com_github_google_go_cmp//cmp:go_default_library"],
 )

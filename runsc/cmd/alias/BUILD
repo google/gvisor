@@ -8,6 +8,7 @@ package(
 go_library(
     name = "alias",
     srcs = ["aliases.go"],
+    importpath = "gvisor.dev/gvisor/runsc/cmd/alias",
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//runsc/cmd/alias/bwrap",

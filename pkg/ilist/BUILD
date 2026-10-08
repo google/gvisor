@@ -42,7 +42,7 @@ go_test(
         "list_test.go",
         "test_list.go",
     ],
-    library = ":ilist",
+    embed = [":ilist"],
 )
 
 go_template(
@@ -102,5 +102,5 @@ go_test(
         "ring_test.go",
         "test_ring.go",
     ],
-    library = ":ring",
+    embed = [":ring"],
 )

@@ -22,5 +22,5 @@ go_test(
     srcs = [
         "pool_test.go",
     ],
-    library = ":pool",
+    embed = [":pool"],
 )

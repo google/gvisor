@@ -73,7 +73,7 @@ go_test(
         "network_test.go",
         "sandbox_test.go",
     ],
-    library = ":sandbox",
+    embed = [":sandbox"],
     deps = [
         "//pkg/control/server",
         "//pkg/prometheus",

@@ -8,5 +8,6 @@ package(
 go_library(
     name = "gvisordetect",
     srcs = ["gvisordetect.go"],
+    importpath = "gvisor.dev/gvisor/pkg/gvisordetect",
     visibility = ["//visibility:public"],
 )

@@ -76,7 +76,7 @@ go_test(
         "mld_test.go",
         "ndp_test.go",
     ],
-    library = ":header",
+    embed = [":header"],
     deps = [
         "//pkg/buffer",
         "//pkg/tcpip",

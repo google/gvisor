@@ -9,7 +9,7 @@ go_test(
     name = "parsers_test",
     size = "small",
     srcs = ["go_parser_test.go"],
-    library = ":parsers",
+    embed = [":parsers"],
     nogo = False,
     deps = [
         "//tools/bigquery",

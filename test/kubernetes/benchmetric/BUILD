@@ -16,6 +16,7 @@ go_library(
         "benchmetric.go",
         "timing.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/kubernetes/benchmetric",
     deps = [
         "//test/kubernetes/testcluster",
         "@io_k8s_api//core/v1:go_default_library",

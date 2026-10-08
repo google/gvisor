@@ -14,6 +14,7 @@ go_library(
         "testutil_runfiles.go",
         "tree.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/test/testutil",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/rand",
@@ -32,5 +33,5 @@ go_test(
     name = "testutil_test",
     size = "small",
     srcs = ["testutil_test.go"],
-    library = ":testutil",
+    embed = [":testutil"],
 )

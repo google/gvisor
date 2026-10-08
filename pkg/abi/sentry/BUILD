@@ -12,5 +12,6 @@ go_library(
         "syscall.go",
     ],
     hostlayout = True,
+    importpath = "gvisor.dev/gvisor/pkg/abi/sentry",
     visibility = ["//:sandbox"],
 )

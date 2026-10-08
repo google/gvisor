@@ -73,6 +73,6 @@ go_test(
     name = "atomicptrmap_test",
     size = "small",
     srcs = ["atomicptrmap_test.go"],
-    library = ":atomicptrmap",
+    embed = [":atomicptrmap"],
     deps = ["//pkg/sync"],
 )

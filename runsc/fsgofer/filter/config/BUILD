@@ -21,6 +21,7 @@ go_library(
         "extra_filters_race_amd64.go",
         "extra_filters_race_arm64.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/fsgofer/filter/config",
     visibility = [
         "//runsc/fsgofer/filter:__subpackages__",
     ],
@@ -39,6 +40,6 @@ go_test(
     name = "config_test",
     size = "small",
     srcs = ["config_test.go"],
-    library = ":config",
+    embed = [":config"],
     deps = ["//pkg/seccomp"],
 )

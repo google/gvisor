@@ -159,7 +159,7 @@ go_test(
     srcs = [
         "dirty_set_test.go",
     ],
-    library = ":fsutil",
+    embed = [":fsutil"],
     deps = [
         "//pkg/hostarch",
         "//pkg/sentry/memmap",

@@ -71,7 +71,7 @@ go_test(
     srcs = [
         "slimvm_test.go",
     ],
-    library = ":slimvm",
+    embed = [":slimvm"],
     # TODO: b/529809802 - Enable nogo.
     nogo = False,
     tags = [

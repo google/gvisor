@@ -48,7 +48,7 @@ go_test(
     name = "stats_test",
     size = "small",
     srcs = ["stats_test.go"],
-    library = ":arp",
+    embed = [":arp"],
     deps = [
         "//pkg/refs",
         "//pkg/tcpip",

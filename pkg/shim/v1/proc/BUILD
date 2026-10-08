@@ -19,6 +19,7 @@ go_library(
         "types.go",
         "utils.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/shim/v1/proc",
     visibility = [
         "//pkg/shim:__subpackages__",
         "//shim:__subpackages__",
@@ -52,7 +53,7 @@ go_test(
         "update_test.go",
         "utils_test.go",
     ],
-    library = ":proc",
+    embed = [":proc"],
     deps = [
         "//pkg/shim/v1/runsccmd",
         "@com_github_containerd_console//:go_default_library",

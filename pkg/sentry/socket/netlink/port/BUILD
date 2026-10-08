@@ -8,6 +8,7 @@ package(
 go_library(
     name = "port",
     srcs = ["port.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink/port",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/rand",
@@ -18,5 +19,5 @@ go_library(
 go_test(
     name = "port_test",
     srcs = ["port_test.go"],
-    library = ":port",
+    embed = [":port"],
 )

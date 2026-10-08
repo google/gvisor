@@ -13,6 +13,7 @@ go_library(
         "check.go",
         "findings.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/nogo/check",
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [
         "//runsc/flag",
@@ -64,7 +65,7 @@ go_test(
     name = "check_test",
     size = "small",
     srcs = ["check_test.go"],
-    library = ":check",
+    embed = [":check"],
     deps = [
         "//tools/nogo/flags",
         "@org_golang_x_tools//go/analysis:go_default_library",

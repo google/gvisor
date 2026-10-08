@@ -9,6 +9,7 @@ go_library(
     name = "cuda",
     testonly = True,
     srcs = ["cuda.go"],
+    importpath = "gvisor.dev/gvisor/test/gpu/cuda",
     visibility = ["//test/gpu:__subpackages__"],
     deps = [
         "//pkg/test/dockerutil",

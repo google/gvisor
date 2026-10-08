@@ -12,6 +12,7 @@ go_library(
     data = [
         "//:release",
     ],
+    importpath = "gvisor.dev/gvisor/shim/shimutils",
     visibility = ["//shim:__subpackages__"],
     deps = [
         "//pkg/shim/v1/runtimeoptions",

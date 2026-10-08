@@ -98,7 +98,7 @@ go_test(
         ":walker_check_arm64",
         ":walker_check_arm64_64k",
     ],
-    library = ":pagetables",
+    embed = [":pagetables"],
     deps = [
         "//pkg/cpuid",
         "//pkg/hostarch",

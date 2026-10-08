@@ -116,7 +116,7 @@ go_test(
         "utils_test.go",
         "xattr_test.go",
     ],
-    library = ":fuse",
+    embed = [":fuse"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

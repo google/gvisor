@@ -9,6 +9,7 @@ go_library(
     name = "utils",
     testonly = True,
     srcs = ["utils.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/tests/utils",
     visibility = ["//pkg/tcpip/tests:__subpackages__"],
     deps = [
         "//pkg/buffer",

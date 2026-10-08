@@ -70,7 +70,7 @@ go_test(
     name = "stats_test",
     size = "small",
     srcs = ["stats_test.go"],
-    library = ":ipv4",
+    embed = [":ipv4"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
@@ -82,7 +82,7 @@ go_test(
     name = "ipv4_unit_test",
     size = "small",
     srcs = ["ipv4_unit_test.go"],
-    library = ":ipv4",
+    embed = [":ipv4"],
     deps = [
         "//pkg/buffer",
         "//pkg/tcpip",

@@ -24,6 +24,6 @@ go_test(
     name = "runsccmd_test",
     size = "small",
     srcs = ["runsc_test.go"],
-    library = ":runsccmd",
+    embed = [":runsccmd"],
     deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
 )

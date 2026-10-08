@@ -9,6 +9,7 @@ package(
 go_library(
     name = "clusterflag",
     srcs = ["clusterflag.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/provider/clusterflag",
     deps = [
         "//tools/gvisor_k8s_tool/cluster",
         "//tools/gvisor_k8s_tool/provider/gke",

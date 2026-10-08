@@ -35,5 +35,5 @@ go_test(
     name = "atomicptr_test",
     size = "small",
     srcs = ["atomicptr_test.go"],
-    library = ":atomicptr",
+    embed = [":atomicptr"],
 )

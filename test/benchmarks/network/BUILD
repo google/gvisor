@@ -25,7 +25,7 @@ benchmark_test(
     srcs = [
         "iperf_test.go",
     ],
-    library = ":network",
+    embed = [":network"],
     use_for_pgo = True,
     visibility = ["//:sandbox"],
     deps = [
@@ -42,7 +42,7 @@ benchmark_test(
     srcs = [
         "node_test.go",
     ],
-    library = ":network",
+    embed = [":network"],
     use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
@@ -58,7 +58,7 @@ benchmark_test(
     srcs = [
         "ruby_test.go",
     ],
-    library = ":network",
+    embed = [":network"],
     use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
@@ -74,7 +74,7 @@ benchmark_test(
     srcs = [
         "nginx_test.go",
     ],
-    library = ":network",
+    embed = [":network"],
     use_for_pgo = True,
     visibility = ["//:sandbox"],
     deps = [
@@ -89,7 +89,7 @@ benchmark_test(
     srcs = [
         "httpd_test.go",
     ],
-    library = ":network",
+    embed = [":network"],
     use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [

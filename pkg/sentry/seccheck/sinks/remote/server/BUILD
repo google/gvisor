@@ -8,6 +8,7 @@ package(
 go_library(
     name = "server",
     srcs = ["server.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/server",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",

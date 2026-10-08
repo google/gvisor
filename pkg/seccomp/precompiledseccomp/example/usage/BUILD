@@ -31,7 +31,7 @@ go_library(
 go_test(
     name = "usage_test",
     srcs = ["usage_test.go"],
-    library = ":usage",
+    embed = [":usage"],
     deps = [
         "//pkg/bpf",
         "//pkg/seccomp/precompiledseccomp",

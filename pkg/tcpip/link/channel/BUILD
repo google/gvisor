@@ -40,6 +40,6 @@ go_library(
 go_test(
     name = "channel_test",
     srcs = ["channel_test.go"],
-    library = ":channel",
+    embed = [":channel"],
     deps = ["//pkg/tcpip"],
 )

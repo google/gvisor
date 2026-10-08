@@ -65,5 +65,5 @@ go_test(
     name = "segment_test",
     size = "small",
     srcs = ["segment_test.go"],
-    library = ":segment",
+    embed = [":segment"],
 )

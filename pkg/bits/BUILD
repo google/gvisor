@@ -15,6 +15,7 @@ go_library(
         "uint64_arch_arm64_asm.s",
         "uint64_arch_generic.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/bits",
     visibility = ["//:sandbox"],
     deps = [
         "@org_golang_x_exp//constraints:go_default_library",
@@ -25,5 +26,5 @@ go_test(
     name = "bits_test",
     size = "small",
     srcs = ["uint64_test.go"],
-    library = ":bits",
+    embed = [":bits"],
 )

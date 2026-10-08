@@ -8,6 +8,7 @@ package(
 go_library(
     name = "profile",
     srcs = ["profile.go"],
+    importpath = "gvisor.dev/gvisor/runsc/profile",
     visibility = [
         "//runsc:__subpackages__",
     ],

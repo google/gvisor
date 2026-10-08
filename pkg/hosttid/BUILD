@@ -21,7 +21,7 @@ go_test(
     srcs = [
         "hosttid_test.go",
     ],
-    library = ":hosttid",
+    embed = [":hosttid"],
     deps = [
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
@@ -35,7 +35,7 @@ go_test(
         "hosttid_net_test.go",
         "hosttid_test.go",
     ],
-    library = ":hosttid",
+    embed = [":hosttid"],
     deps = [
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",

@@ -16,6 +16,7 @@ go_library(
         "nftables_util.go",
         "nftables_validation.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/nftables",
     visibility = ["//test/nftables:__subpackages__"],
     deps = [
         "//pkg/log",
@@ -29,7 +30,7 @@ go_test(
     size = "large",
     srcs = ["nftables_test.go"],
     data = ["//test/nftables/runner"],
-    library = ":nftables",
+    embed = [":nftables"],
     local = True,
     tags = [
         "manual",

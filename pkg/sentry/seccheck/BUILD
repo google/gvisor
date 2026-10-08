@@ -52,7 +52,7 @@ go_test(
         "metadata_test.go",
         "seccheck_test.go",
     ],
-    library = ":seccheck",
+    embed = [":seccheck"],
     deps = [
         "//pkg/context",
         "//pkg/fd",

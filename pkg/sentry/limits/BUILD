@@ -27,6 +27,6 @@ go_test(
     srcs = [
         "limits_test.go",
     ],
-    library = ":limits",
+    embed = [":limits"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

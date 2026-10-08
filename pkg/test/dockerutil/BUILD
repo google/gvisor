@@ -51,7 +51,7 @@ go_test(
     name = "exec_test",
     size = "small",
     srcs = ["exec_test.go"],
-    library = ":dockerutil",
+    embed = [":dockerutil"],
     deps = ["@com_github_docker_docker//client:go_default_library"],
 )
 
@@ -61,7 +61,7 @@ go_test(
     srcs = [
         "profile_test.go",
     ],
-    library = ":dockerutil",
+    embed = [":dockerutil"],
     # Requires docker and runsc to be configured before test runs.
     # Also requires the test to be run as root.
     local = True,

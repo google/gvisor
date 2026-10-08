@@ -10,6 +10,7 @@ go_library(
     name = "httpbench",
     testonly = 1,
     srcs = ["httpbench.go"],
+    importpath = "gvisor.dev/gvisor/test/kubernetes/benchmarks/httpbench",
     visibility = [
         "//test/kubernetes/benchmarks:__subpackages__",
     ],

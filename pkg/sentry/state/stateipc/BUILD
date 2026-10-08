@@ -79,7 +79,7 @@ go_test(
     srcs = [
         "stateipc_test.go",
     ],
-    library = ":stateipc",
+    embed = [":stateipc"],
     deps = [
         "//pkg/rand",
         "//pkg/sentry/memmap",

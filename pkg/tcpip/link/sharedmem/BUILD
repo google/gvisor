@@ -59,7 +59,7 @@ go_library(
 go_test(
     name = "sharedmem_test",
     srcs = ["sharedmem_test.go"],
-    library = ":sharedmem",
+    embed = [":sharedmem"],
     deps = [
         "//pkg/buffer",
         "//pkg/refs",

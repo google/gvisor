@@ -36,6 +36,6 @@ go_test(
     srcs = [
         "waiter_test.go",
     ],
-    library = ":waiter",
+    embed = [":waiter"],
     deps = ["//pkg/atomicbitops"],
 )

@@ -47,7 +47,7 @@ go_test(
         "main_test.go",
         "reassembler_test.go",
     ],
-    library = ":fragmentation",
+    embed = [":fragmentation"],
     deps = [
         "//pkg/buffer",
         "//pkg/refs",

@@ -15,6 +15,7 @@ go_library(
         "schema.go",
         "seccomp_filter.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy",
     visibility = [
         "//pkg/sentry:internal",
         "//runsc:__subpackages__",

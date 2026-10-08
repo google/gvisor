@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "checkpoint",
     srcs = ["checkpoint.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/checkpoint",
     visibility = ["//pkg/sentry:internal"],
 )
 
@@ -14,5 +15,5 @@ go_test(
     name = "checkpoint_test",
     size = "small",
     srcs = ["checkpoint_test.go"],
-    library = ":checkpoint",
+    embed = [":checkpoint"],
 )

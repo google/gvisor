@@ -443,7 +443,7 @@ go_test(
         "task_test.go",
         "timekeeper_test.go",
     ],
-    library = ":kernel",
+    embed = [":kernel"],
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",

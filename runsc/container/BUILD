@@ -73,7 +73,7 @@ go_test(
         "//:release",
         "//test/cmd/test_app",
     ],
-    library = ":container",
+    embed = [":container"],
     shard_count = most_shards,
     tags = ["requires-kvm"],
     deps = [
@@ -142,7 +142,7 @@ go_test(
         "//:release",
         "//test/cmd/test_app",
     ],
-    library = ":container",
+    embed = [":container"],
     tags = [
         "manual",
         "notap",

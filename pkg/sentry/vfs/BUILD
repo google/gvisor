@@ -218,7 +218,7 @@ go_test(
         "mount_test.go",
         "posix_acl_test.go",
     ],
-    library = ":vfs",
+    embed = [":vfs"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",

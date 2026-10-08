@@ -35,7 +35,7 @@ go_library(
 go_test(
     name = "metricserver_test",
     srcs = ["metricserver_test.go"],
-    library = ":metricserver",
+    embed = [":metricserver"],
     deps = [
         "//pkg/metric:metric_go_proto",
         "//runsc/container",

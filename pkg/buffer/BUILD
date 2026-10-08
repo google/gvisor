@@ -60,7 +60,7 @@ go_test(
         "buffer_test.go",
         "view_test.go",
     ],
-    library = ":buffer",
+    embed = [":buffer"],
     deps = [
         "//pkg/rand",
         "//pkg/state",

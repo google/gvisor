@@ -15,7 +15,7 @@ go_test(
 
     # Needed to invalidate the bazel cache in case of any code changes.
     data = ["//:release"],
-    library = ":integration",
+    embed = [":integration"],
     # Requires docker and runsc to be configured before the test runs.
     local = True,
     tags = ["manual"],
@@ -39,7 +39,7 @@ go_test(
     ],
     # Needed to invalidate the bazel cache in case of any code changes.
     data = ["//:release"],
-    library = ":integration",
+    embed = [":integration"],
     # Requires docker and the $(RUNTIME)-net-uds runtime to be configured
     # before the test runs.
     local = True,
@@ -68,7 +68,7 @@ go_test(
     ],
     # Needed to invalidate the bazel cache in case of any code changes.
     data = ["//:release"],
-    library = ":integration",
+    embed = [":integration"],
     # Requires docker and runsc to be configured before the test runs.
     local = True,
     tags = ["manual"],
@@ -91,7 +91,7 @@ go_test(
     ],
     # Needed to invalidate the bazel cache in case of any code changes.
     data = ["//:release"],
-    library = ":integration",
+    embed = [":integration"],
     # Requires docker and runsc to be configured before the test runs.
     local = True,
     tags = ["manual"],
@@ -111,7 +111,7 @@ go_test(
     ],
     # runsc is needed to invalidate the bazel cache in case of any code changes.
     data = ["//:release"],
-    library = ":integration",
+    embed = [":integration"],
     # Requires docker and runsc to be configured before the test runs.
     local = True,
     tags = ["manual"],

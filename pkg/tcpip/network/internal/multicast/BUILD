@@ -21,7 +21,7 @@ go_test(
     name = "multicast_test",
     size = "small",
     srcs = ["route_table_test.go"],
-    library = ":multicast",
+    embed = [":multicast"],
     deps = [
         "//pkg/buffer",
         "//pkg/refs",

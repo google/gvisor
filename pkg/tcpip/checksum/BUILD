@@ -8,7 +8,7 @@ package(
 go_test(
     name = "checksum_test",
     srcs = ["checksum_test.go"],
-    library = ":checksum",
+    embed = [":checksum"],
 )
 
 go_library(
@@ -17,5 +17,6 @@ go_library(
         "checksum.go",
         "checksum_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/checksum",
     visibility = ["//visibility:public"],
 )

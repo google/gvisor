@@ -12,6 +12,7 @@ go_library(
         "testutil.go",
         "testutil_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/testutil",
     visibility = ["//visibility:public"],
     deps = ["//pkg/tcpip"],
 )
@@ -19,6 +20,6 @@ go_library(
 go_test(
     name = "testutil_test",
     srcs = ["testutil_test.go"],
-    library = ":testutil",
+    embed = [":testutil"],
     deps = ["//pkg/tcpip"],
 )

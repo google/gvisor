@@ -8,6 +8,7 @@ package(
 go_library(
     name = "gonet",
     srcs = ["gonet.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/adapters/gonet",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sync",
@@ -23,7 +24,7 @@ go_test(
     name = "gonet_test",
     size = "small",
     srcs = ["gonet_test.go"],
-    library = ":gonet",
+    embed = [":gonet"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",

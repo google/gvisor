@@ -332,7 +332,7 @@ go_test(
         "nic_test.go",
         "packet_buffer_test.go",
     ],
-    library = ":stack",
+    embed = [":stack"],
     deps = [
         "//pkg/atomicbitops",
         "//pkg/buffer",

@@ -177,7 +177,7 @@ go_test(
         "mount_hints_test.go",
         "vfs_test.go",
     ],
-    library = ":boot",
+    embed = [":boot"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/control/server",

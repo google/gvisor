@@ -21,6 +21,6 @@ go_test(
         "statefile_integrity_test.go",
         "statefile_test.go",
     ],
-    library = ":statefile",
+    embed = [":statefile"],
     deps = ["//pkg/compressio"],
 )

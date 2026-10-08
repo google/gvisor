@@ -21,6 +21,7 @@ go_library(
         "sysbench.go",
         "tools.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/benchmarks/tools",
     visibility = ["//:sandbox"],
 )
 
@@ -35,5 +36,5 @@ go_test(
         "meminfo_test.go",
         "sysbench_test.go",
     ],
-    library = ":tools",
+    embed = [":tools"],
 )

@@ -141,6 +141,6 @@ go_test(
         "linux64_arm64_test.go",
         "linux64_test.go",
     ],
-    library = ":linux",
+    embed = [":linux"],
     deps = ["//pkg/sentry/seccheck"],
 )

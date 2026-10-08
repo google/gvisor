@@ -31,7 +31,7 @@ go_test(
     srcs = [
         "protocol_test.go",
     ],
-    library = ":route",
+    embed = [":route"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/marshal/primitive",

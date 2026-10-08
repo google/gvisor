@@ -12,6 +12,7 @@ go_library(
         "memutil_unsafe.go",
         "mmap.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/memutil",
     visibility = ["//visibility:public"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

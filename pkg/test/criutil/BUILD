@@ -9,6 +9,7 @@ go_library(
     name = "criutil",
     testonly = 1,
     srcs = ["criutil.go"],
+    importpath = "gvisor.dev/gvisor/pkg/test/criutil",
     nogo = False,
     visibility = ["//:sandbox"],
     deps = [

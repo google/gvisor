@@ -34,7 +34,7 @@ go_test(
     name = "control_test",
     size = "small",
     srcs = ["control_test.go"],
-    library = ":control",
+    embed = [":control"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",

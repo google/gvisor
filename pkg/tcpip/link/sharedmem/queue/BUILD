@@ -24,7 +24,7 @@ go_test(
     srcs = [
         "queue_test.go",
     ],
-    library = ":queue",
+    embed = [":queue"],
     deps = [
         "//pkg/atomicbitops",
         "//pkg/tcpip/link/sharedmem/pipe",

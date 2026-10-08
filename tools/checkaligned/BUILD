@@ -8,6 +8,7 @@ package(
 go_library(
     name = "checkaligned",
     srcs = ["checkaligned.go"],
+    importpath = "gvisor.dev/gvisor/tools/checkaligned",
     nogo = False,
     stateify = False,
     visibility = ["//tools/nogo:__subpackages__"],

@@ -8,6 +8,7 @@ package(
 go_library(
     name = "containermetrics",
     srcs = ["containermetrics.go"],
+    importpath = "gvisor.dev/gvisor/runsc/metricserver/containermetrics",
     visibility = [
         "//:sandbox",
     ],

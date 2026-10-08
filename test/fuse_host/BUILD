@@ -21,7 +21,7 @@ go_test(
         "//:release",
         "//test/fuse_host/workload",
     ],
-    library = ":fusehost",
+    embed = [":fusehost"],
     deps = [
         "//pkg/test/testutil",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",

@@ -9,6 +9,7 @@ go_library(
     name = "contexttest",
     testonly = 1,
     srcs = ["contexttest.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/contexttest",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/atomicbitops",

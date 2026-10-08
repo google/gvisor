@@ -12,6 +12,7 @@ go_library(
         "expected.go",
         "sandboxposture.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/test/sandboxposture",
     visibility = ["//:sandbox"],
     deps = [
         "@com_github_google_go_cmp//cmp:go_default_library",

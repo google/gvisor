@@ -11,6 +11,7 @@ go_library(
         "full_reader.go",
         "secio.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/secio",
     visibility = ["//pkg/sentry:internal"],
 )
 
@@ -18,5 +19,5 @@ go_test(
     name = "secio_test",
     size = "small",
     srcs = ["secio_test.go"],
-    library = ":secio",
+    embed = [":secio"],
 )

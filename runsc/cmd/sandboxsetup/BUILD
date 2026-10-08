@@ -43,5 +43,5 @@ go_test(
     name = "sandboxsetup_test",
     size = "small",
     srcs = ["gofer_mount_test.go"],
-    library = ":sandboxsetup",
+    embed = [":sandboxsetup"],
 )

@@ -8,6 +8,7 @@ package(
 go_library(
     name = "wire",
     srcs = ["wire.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/wire",
     marshal = True,
     visibility = ["//:sandbox"],
 )
@@ -16,5 +17,5 @@ go_test(
     name = "wire_test",
     size = "small",
     srcs = ["wire_test.go"],
-    library = ":wire",
+    embed = [":wire"],
 )

@@ -8,6 +8,7 @@ package(
 go_library(
     name = "parse",
     srcs = ["parse.go"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/header/parse",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",

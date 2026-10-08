@@ -30,6 +30,7 @@ go_library(
         "refcounter.go",
         "refs_map.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/refs",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/atomicbitops",

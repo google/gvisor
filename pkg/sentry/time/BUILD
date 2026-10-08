@@ -57,7 +57,7 @@ go_test(
         "sampler_test.go",
         "vdso_test.go",
     ],
-    library = ":time",
+    embed = [":time"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/sync",

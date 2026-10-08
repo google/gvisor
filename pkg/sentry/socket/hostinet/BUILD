@@ -9,7 +9,7 @@ go_test(
     name = "hostinet_test",
     size = "small",
     srcs = ["stack_test.go"],
-    library = ":hostinet",
+    embed = [":hostinet"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/inet",
@@ -30,6 +30,7 @@ go_library(
         "stack.go",
         "stack_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/hostinet",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

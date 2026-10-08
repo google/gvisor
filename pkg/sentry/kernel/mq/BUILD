@@ -24,6 +24,7 @@ go_library(
         "message_list.go",
         "mq.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/mq",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

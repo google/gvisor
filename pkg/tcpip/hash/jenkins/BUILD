@@ -17,5 +17,5 @@ go_test(
     srcs = [
         "jenkins_test.go",
     ],
-    library = ":jenkins",
+    embed = [":jenkins"],
 )

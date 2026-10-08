@@ -26,7 +26,7 @@ go_test(
     srcs = [
         "unet_test.go",
     ],
-    library = ":unet",
+    embed = [":unet"],
     deps = [
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",

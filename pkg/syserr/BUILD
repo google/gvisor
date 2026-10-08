@@ -13,6 +13,7 @@ go_library(
         "netstack.go",
         "syserr.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/syserr",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux/errno",

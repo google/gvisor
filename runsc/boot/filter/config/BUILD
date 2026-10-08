@@ -49,7 +49,7 @@ go_library(
 go_test(
     name = "config_test",
     srcs = ["config_test.go"],
-    library = ":config",
+    embed = [":config"],
     deps = [
         "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",

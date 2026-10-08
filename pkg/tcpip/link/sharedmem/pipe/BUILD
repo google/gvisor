@@ -26,6 +26,6 @@ go_test(
     srcs = [
         "pipe_test.go",
     ],
-    library = ":pipe",
+    embed = [":pipe"],
     deps = ["//pkg/sync"],
 )

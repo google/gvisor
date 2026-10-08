@@ -15,7 +15,7 @@ proto_library(
 go_test(
     name = "taskserver_test",
     srcs = ["server_test.go"],
-    library = ":taskserver",
+    embed = [":taskserver"],
     deps = [
         ":task_server_go_proto",
         "//pkg/cleanup",

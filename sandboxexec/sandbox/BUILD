@@ -13,6 +13,7 @@ go_library(
         "sandbox.go",
         "storage.go",
     ],
+    importpath = "gvisor.dev/gvisor/sandboxexec/sandbox",
     visibility = ["//:__subpackages__"],
     deps = [
         "//pkg/abi/linux",

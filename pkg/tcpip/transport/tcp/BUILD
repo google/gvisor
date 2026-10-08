@@ -224,7 +224,7 @@ go_test(
         "segment_test.go",
         "timer_test.go",
     ],
-    library = ":tcp",
+    embed = [":tcp"],
     deps = [
         "//pkg/buffer",
         "//pkg/refs",

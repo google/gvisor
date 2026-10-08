@@ -34,7 +34,7 @@ go_test(
     srcs = [
         "waitable_test.go",
     ],
-    library = ":waitable",
+    embed = [":waitable"],
     deps = [
         "//pkg/refs",
         "//pkg/tcpip",

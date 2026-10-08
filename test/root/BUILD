@@ -34,7 +34,7 @@ go_test(
     data = [
         "//:release",
     ],
-    library = ":root",
+    embed = [":root"],
     local = True,
     pure = True,
     tags = [
@@ -70,7 +70,7 @@ go_test(
     data = [
         "//:release",
     ],
-    library = ":root",
+    embed = [":root"],
     local = True,
     pure = True,
     tags = [

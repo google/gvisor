@@ -69,7 +69,7 @@ go_test(
         "masquerade_test.go",
         "netfilter_test.go",
     ],
-    library = ":netfilter",
+    embed = [":netfilter"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/marshal",

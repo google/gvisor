@@ -30,7 +30,7 @@ go_library(
 go_test(
     name = "bwrap_test",
     srcs = ["bwrap_test.go"],
-    library = ":bwrap",
+    embed = [":bwrap"],
     deps = [
         "//runsc/config",
         "//sandboxexec/sandbox",
@@ -46,7 +46,7 @@ go_test(
     data = [
         "//:release",
     ],
-    library = ":bwrap",
+    embed = [":bwrap"],
     local = True,
     tags = [
         "manual",

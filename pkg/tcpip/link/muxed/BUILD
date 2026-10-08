@@ -34,7 +34,7 @@ go_test(
     name = "muxed_test",
     size = "small",
     srcs = ["injectable_test.go"],
-    library = ":muxed",
+    embed = [":muxed"],
     deps = [
         "//pkg/buffer",
         "//pkg/refs",

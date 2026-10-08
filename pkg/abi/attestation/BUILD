@@ -9,5 +9,6 @@ go_library(
     name = "attestation",
     srcs = ["attestation.go"],
     hostlayout = True,
+    importpath = "gvisor.dev/gvisor/pkg/abi/attestation",
     visibility = ["//visibility:public"],
 )

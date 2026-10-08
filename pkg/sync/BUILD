@@ -58,5 +58,5 @@ go_test(
         "rwmutex_test.go",
         "seqcount_test.go",
     ],
-    library = ":sync",
+    embed = [":sync"],
 )

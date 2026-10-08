@@ -27,7 +27,7 @@ go_test(
     name = "scsdk_test",
     size = "small",
     srcs = ["fs_test.go"],
-    library = ":scsdk",
+    embed = [":scsdk"],
     deps = [
         "//pkg/control/api",
         "//pkg/unet",
@@ -40,7 +40,7 @@ go_test(
     name = "tracker_test",
     size = "small",
     srcs = ["tracker_test.go"],
-    library = ":scsdk",
+    embed = [":scsdk"],
     deps = [
         "//pkg/sentry/seccheck/points:points_go_proto",
     ],

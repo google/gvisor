@@ -52,7 +52,7 @@ go_test(
     name = "cgroup2fs_test",
     size = "small",
     srcs = ["cgroup_freeze_credit_test.go"],
-    library = ":cgroup2fs",
+    embed = [":cgroup2fs"],
     deps = [
         "//pkg/context",
         "//pkg/sentry/kernel",

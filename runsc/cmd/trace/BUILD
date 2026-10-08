@@ -15,6 +15,7 @@ go_library(
         "procfs.go",
         "trace.go",
     ],
+    importpath = "gvisor.dev/gvisor/runsc/cmd/trace",
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -35,7 +36,7 @@ go_test(
     name = "trace_test",
     size = "small",
     srcs = ["create_test.go"],
-    library = ":trace",
+    embed = [":trace"],
     deps = [
         "//pkg/sentry/seccheck",
         "//pkg/test/testutil",

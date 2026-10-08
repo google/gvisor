@@ -43,6 +43,6 @@ go_test(
     name = "seqatomic_test",
     size = "small",
     srcs = ["seqatomic_test.go"],
-    library = ":seqatomic",
+    embed = [":seqatomic"],
     deps = ["//pkg/sync"],
 )

@@ -28,7 +28,7 @@ go_test(
         "aio_linux_test.go",
         "aio_test.go",
     ],
-    library = ":aio",
+    embed = [":aio"],
     deps = [
         "//pkg/bitmap",
         "//pkg/rand",

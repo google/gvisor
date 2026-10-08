@@ -8,6 +8,7 @@ package(
 go_library(
     name = "pprof",
     srcs = ["pprof.go"],
+    importpath = "gvisor.dev/gvisor/runsc/boot/pprof",
     visibility = [
         "//runsc:__subpackages__",
     ],

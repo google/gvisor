@@ -15,6 +15,7 @@ go_library(
         "rawsockets.go",
         "testbench.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/packetimpact/testbench",
     visibility = ["//test/packetimpact:__subpackages__"],
     deps = [
         "//pkg/abi/linux",
@@ -41,7 +42,7 @@ go_test(
     name = "testbench_test",
     size = "small",
     srcs = ["layers_test.go"],
-    library = ":testbench",
+    embed = [":testbench"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/header",

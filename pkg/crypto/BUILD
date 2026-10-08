@@ -11,5 +11,6 @@ go_library(
         "crypto.go",
         "crypto_stdlib.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/crypto",
     visibility = ["//:sandbox"],
 )

@@ -16,5 +16,5 @@ go_library(
 go_test(
     name = "cleanup_test",
     srcs = ["cleanup_test.go"],
-    library = ":cleanup",
+    embed = [":cleanup"],
 )

@@ -84,5 +84,5 @@ go_test(
     srcs = [
         "synthetic_timer_test.go",
     ],
-    library = ":ktime",
+    embed = [":ktime"],
 )

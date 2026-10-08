@@ -12,6 +12,7 @@ go_library(
         "getcpu_arm64.s",
         "hostcpu.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/hostcpu",
     visibility = ["//:sandbox"],
 )
 
@@ -19,5 +20,5 @@ go_test(
     name = "hostcpu_test",
     size = "small",
     srcs = ["hostcpu_test.go"],
-    library = ":hostcpu",
+    embed = [":hostcpu"],
 )

@@ -29,6 +29,7 @@ go_library(
         "dynamic.go",
         "test.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/go_marshal/test",
     marshal = True,
     visibility = ["//tools/go_marshal/test:__subpackages__"],
     deps = [

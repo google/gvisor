@@ -25,7 +25,7 @@ go_test(
     name = "dev_test",
     size = "small",
     srcs = ["dev_test.go"],
-    library = ":dev",
+    embed = [":dev"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

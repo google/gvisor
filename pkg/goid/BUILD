@@ -22,5 +22,5 @@ go_test(
     srcs = [
         "goid_test.go",
     ],
-    library = ":goid",
+    embed = [":goid"],
 )

@@ -11,6 +11,7 @@ go_library(
         "cpuset.go",
         "sched.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/sched",
     visibility = ["//pkg/sentry:internal"],
 )
 
@@ -18,5 +19,5 @@ go_test(
     name = "sched_test",
     size = "small",
     srcs = ["cpuset_test.go"],
-    library = ":sched",
+    embed = [":sched"],
 )

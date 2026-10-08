@@ -33,10 +33,10 @@ go_test(
     srcs = [
         "seccomp_test.go",
     ],
+    embed = [":seccomp"],
     embedsrcs = [
         "//pkg/seccomp/victim",  # keep
     ],
-    library = ":seccomp",
     deps = [
         "//pkg/abi/linux",
         "//pkg/bpf",

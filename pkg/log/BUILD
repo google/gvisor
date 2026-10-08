@@ -16,6 +16,7 @@ go_library(
         "log.go",
         "rate_limited.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/log",
     marshal = False,
     stateify = False,
     visibility = [
@@ -36,5 +37,5 @@ go_test(
         "json_test.go",
         "log_test.go",
     ],
-    library = ":log",
+    embed = [":log"],
 )

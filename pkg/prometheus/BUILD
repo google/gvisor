@@ -20,7 +20,7 @@ go_test(
     name = "prometheus_test",
     size = "small",
     srcs = ["prometheus_test.go"],
-    library = ":prometheus",
+    embed = [":prometheus"],
     deps = [
         "//pkg/metric:metric_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",

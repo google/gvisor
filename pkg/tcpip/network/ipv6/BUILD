@@ -40,7 +40,7 @@ go_test(
         "main_test.go",
         "ndp_test.go",
     ],
-    library = ":ipv6",
+    embed = [":ipv6"],
     deps = [
         "//pkg/buffer",
         "//pkg/refs",

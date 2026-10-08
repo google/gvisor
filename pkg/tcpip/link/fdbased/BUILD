@@ -68,7 +68,7 @@ go_test(
         "endpoint_test.go",
         "processors_test.go",
     ],
-    library = ":fdbased",
+    embed = [":fdbased"],
     deps = [
         "//pkg/buffer",
         "//pkg/rand",

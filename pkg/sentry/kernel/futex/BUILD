@@ -66,7 +66,7 @@ go_test(
     name = "futex_test",
     size = "small",
     srcs = ["futex_test.go"],
-    library = ":futex",
+    embed = [":futex"],
     deps = [
         "//pkg/atomicbitops",
         "//pkg/context",

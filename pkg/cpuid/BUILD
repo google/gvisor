@@ -34,7 +34,7 @@ go_test(
         "cpuid_amd64_test.go",
         "cpuid_test.go",
     ],
-    library = ":cpuid",
+    embed = [":cpuid"],
     # NOTE: It seems that bazel code generation does not properly parse tags
     # when run via the architecture transition for nogo. This should be fixed
     # at some point in the future, but for now we can simply skip nogo analysis
@@ -50,7 +50,7 @@ go_test(
         "cpuid_parse_arm64_test.go",
         "cpuid_parse_test.go",
     ],
-    library = ":cpuid",
+    embed = [":cpuid"],
     tags = [
         "manual",
         "not_run:arm",

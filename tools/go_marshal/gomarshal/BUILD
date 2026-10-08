@@ -16,6 +16,7 @@ go_library(
         "generator_tests.go",
         "util.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/go_marshal/gomarshal",
     stateify = False,
     visibility = [
         "//:sandbox",

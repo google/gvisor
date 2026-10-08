@@ -28,7 +28,7 @@ go_test(
         "sigframe_amd64_test.s",
         "sigframe_test.go",
     ],
-    library = ":sigframe",
+    embed = [":sigframe"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/hostarch",

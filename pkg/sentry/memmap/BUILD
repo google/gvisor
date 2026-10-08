@@ -66,6 +66,6 @@ go_test(
     name = "memmap_test",
     size = "small",
     srcs = ["mapping_set_test.go"],
-    library = ":memmap",
+    embed = [":memmap"],
     deps = ["//pkg/hostarch"],
 )

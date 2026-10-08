@@ -22,5 +22,5 @@ go_library(
 go_test(
     name = "rand_test",
     srcs = ["rng_test.go"],
-    library = ":rand",
+    embed = [":rand"],
 )

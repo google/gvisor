@@ -24,7 +24,7 @@ go_test(
     srcs = [
         "watchdog_test.go",
     ],
-    library = ":watchdog",
+    embed = [":watchdog"],
     deps = [
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

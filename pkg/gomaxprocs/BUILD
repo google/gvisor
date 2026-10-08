@@ -31,5 +31,5 @@ go_test(
     name = "gomaxprocs_test",
     size = "small",
     srcs = ["gomaxprocs_test.go"],
-    library = ":gomaxprocs",
+    embed = [":gomaxprocs"],
 )

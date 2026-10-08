@@ -10,4 +10,5 @@ go_library(
     name = "utils",
     testonly = True,
     srcs = ["utils.go"],
+    importpath = "gvisor.dev/gvisor/test/kubernetes/benchmarks/utils",
 )

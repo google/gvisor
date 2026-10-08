@@ -8,5 +8,6 @@ package(
 go_library(
     name = "checkpointfiles",
     srcs = ["checkpointfiles.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles",
     visibility = ["//:sandbox"],
 )

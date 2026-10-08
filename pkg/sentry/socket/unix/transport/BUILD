@@ -116,7 +116,7 @@ go_test(
         "host_test.go",
         "queue_test.go",
     ],
-    library = ":transport",
+    embed = [":transport"],
     deps = [
         "//pkg/context",
         "//pkg/syserr",

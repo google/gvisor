@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "tundev",
     srcs = ["tundev.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/devices/tundev",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

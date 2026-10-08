@@ -15,7 +15,7 @@ go_library(
 benchmark_test(
     name = "tensorflow_test",
     srcs = ["tensorflow_test.go"],
-    library = ":ml",
+    embed = [":ml"],
     use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [

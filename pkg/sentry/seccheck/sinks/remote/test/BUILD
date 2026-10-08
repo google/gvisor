@@ -9,6 +9,7 @@ go_library(
     name = "test",
     testonly = True,
     srcs = ["server.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/test",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/sentry/seccheck/points:points_go_proto",

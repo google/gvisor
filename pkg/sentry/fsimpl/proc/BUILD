@@ -138,7 +138,7 @@ go_test(
         "tasks_sys_test.go",
         "tasks_test.go",
     ],
-    library = ":proc",
+    embed = [":proc"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

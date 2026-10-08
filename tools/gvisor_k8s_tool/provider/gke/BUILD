@@ -9,6 +9,7 @@ package(
 go_library(
     name = "gke",
     srcs = ["gke.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/provider/gke",
     deps = [
         "//tools/gvisor_k8s_tool/cluster",
         "//tools/gvisor_k8s_tool/util",

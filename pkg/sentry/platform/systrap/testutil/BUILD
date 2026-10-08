@@ -12,5 +12,6 @@ go_library(
         "testutil_amd64.go",
         "testutil_arm64.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/systrap/testutil",
     visibility = ["//pkg/sentry/platform/systrap:__pkg__"],
 )

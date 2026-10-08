@@ -13,6 +13,7 @@ go_library(
         "safemem.go",
         "seq_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/safemem",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/gohacks",
@@ -29,5 +30,5 @@ go_test(
         "io_test.go",
         "seq_test.go",
     ],
-    library = ":safemem",
+    embed = [":safemem"],
 )

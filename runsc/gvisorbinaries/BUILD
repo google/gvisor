@@ -8,6 +8,7 @@ package(
 go_library(
     name = "gvisorbinaries",
     srcs = ["gvisorbinaries.go"],
+    importpath = "gvisor.dev/gvisor/runsc/gvisorbinaries",
     visibility = [
         "//visibility:public",
     ],

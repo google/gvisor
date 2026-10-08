@@ -9,6 +9,7 @@ package(
 go_library(
     name = "cluster",
     srcs = ["cluster.go"],
+    importpath = "gvisor.dev/gvisor/tools/gvisor_k8s_tool/cluster",
     deps = [
         "@io_k8s_api//apps/v1:go_default_library",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",

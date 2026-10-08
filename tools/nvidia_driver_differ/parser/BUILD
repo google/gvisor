@@ -14,6 +14,7 @@ go_library(
         "runner.go",
         "sources.go",
     ],
+    importpath = "gvisor.dev/gvisor/tools/nvidia_driver_differ/parser",
     visibility = [
         "//pkg/sentry/devices/nvproxy:__subpackages__",
         "//tools/nvidia_driver_differ:__subpackages__",

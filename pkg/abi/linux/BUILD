@@ -112,5 +112,5 @@ go_test(
     srcs = [
         "netfilter_test.go",
     ],
-    library = ":linux",
+    embed = [":linux"],
 )

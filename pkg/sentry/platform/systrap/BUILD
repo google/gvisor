@@ -116,7 +116,7 @@ go_test(
         "shared_context_test.go",
         "systrap_test.go",
     ],
-    library = ":systrap",
+    embed = [":systrap"],
     deps = [
         "//pkg/context",
         "//pkg/cpuid",

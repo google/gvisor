@@ -13,6 +13,7 @@ go_library(
     testonly = 1,
     srcs = ["fsbench.go"],
     data = ["//test/runner/fuse"],
+    importpath = "gvisor.dev/gvisor/test/benchmarks/fs/fsbench",
     deps = [
         "//pkg/cleanup",
         "//pkg/test/dockerutil",

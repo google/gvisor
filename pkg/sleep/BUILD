@@ -20,6 +20,6 @@ go_test(
     srcs = [
         "sleep_test.go",
     ],
-    library = ":sleep",
+    embed = [":sleep"],
     deps = ["//pkg/atomicbitops"],
 )

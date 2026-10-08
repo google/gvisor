@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "fsconfigfd",
     srcs = ["fsconfigfd.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/fsconfigfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

@@ -31,7 +31,7 @@ go_test(
     srcs = [
         "usermem_test.go",
     ],
-    library = ":usermem",
+    embed = [":usermem"],
     deps = [
         "//pkg/context",
         "//pkg/errors/linuxerr",

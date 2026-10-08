@@ -13,6 +13,7 @@ go_library(
         "syncevent.go",
         "waiter_unsafe.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/syncevent",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/atomicbitops",
@@ -28,7 +29,7 @@ go_test(
         "syncevent_example_test.go",
         "waiter_test.go",
     ],
-    library = ":syncevent",
+    embed = [":syncevent"],
     deps = [
         "//pkg/atomicbitops",
         "//pkg/sleep",

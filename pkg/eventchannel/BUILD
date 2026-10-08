@@ -35,7 +35,7 @@ proto_library(
 go_test(
     name = "eventchannel_test",
     srcs = ["event_test.go"],
-    library = ":eventchannel",
+    embed = [":eventchannel"],
     deps = [
         "//pkg/sync",
         "@org_golang_google_protobuf//proto:go_default_library",

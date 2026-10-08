@@ -123,7 +123,7 @@ go_test(
         "//:release",  # keep
         "//runsc",  # keep
     ],
-    library = ":cmd",
+    embed = [":cmd"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",

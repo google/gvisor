@@ -8,6 +8,7 @@ package(
 go_library(
     name = "fd",
     srcs = ["fd.go"],
+    importpath = "gvisor.dev/gvisor/pkg/fd",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
@@ -19,7 +20,7 @@ go_test(
     name = "fd_test",
     size = "small",
     srcs = ["fd_test.go"],
-    library = ":fd",
+    embed = [":fd"],
     deps = [
         "//pkg/atomicbitops",
         "@org_golang_x_sys//unix:go_default_library",

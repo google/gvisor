@@ -8,6 +8,7 @@ package(
 go_library(
     name = "errors",
     srcs = ["errors.go"],
+    importpath = "gvisor.dev/gvisor/pkg/errors",
     visibility = ["//:sandbox"],
     deps = ["//pkg/abi/linux/errno"],
 )

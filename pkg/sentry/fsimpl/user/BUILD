@@ -11,6 +11,7 @@ go_library(
         "path.go",
         "user.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/user",
     visibility = [
         "//visibility:public",
     ],
@@ -31,7 +32,7 @@ go_test(
     name = "user_test",
     size = "small",
     srcs = ["user_test.go"],
-    library = ":user",
+    embed = [":user"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

@@ -13,6 +13,7 @@ go_library(
         "machine.go",
         "util.go",
     ],
+    importpath = "gvisor.dev/gvisor/test/benchmarks/harness",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cleanup",

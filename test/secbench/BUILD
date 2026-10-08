@@ -12,6 +12,7 @@ go_library(
     data = [
         ":runner",
     ],
+    importpath = "gvisor.dev/gvisor/test/secbench",
     visibility = [
         "//:sandbox",
     ],

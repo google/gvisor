@@ -48,7 +48,7 @@ go_test(
         "manager_test.go",
         "service_test.go",
     ],
-    library = ":v1",
+    embed = [":v1"],
     deps = [
         "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",

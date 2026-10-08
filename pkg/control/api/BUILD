@@ -8,6 +8,7 @@ package(
 go_library(
     name = "api",
     srcs = ["fs.go"],
+    importpath = "gvisor.dev/gvisor/pkg/control/api",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/urpc",

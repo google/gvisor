@@ -8,6 +8,7 @@ package(
 go_library(
     name = "metricservercmd",
     srcs = ["metricservercmd.go"],
+    importpath = "gvisor.dev/gvisor/runsc/cmd/metricserver/metricservercmd",
     visibility = [
         "//runsc/cmd:__subpackages__",
     ],

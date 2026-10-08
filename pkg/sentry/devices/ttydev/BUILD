@@ -7,6 +7,7 @@ licenses(["notice"])
 go_library(
     name = "ttydev",
     srcs = ["ttydev.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/devices/ttydev",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

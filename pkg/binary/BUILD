@@ -8,6 +8,7 @@ package(
 go_library(
     name = "binary",
     srcs = ["binary.go"],
+    importpath = "gvisor.dev/gvisor/pkg/binary",
     visibility = ["//:sandbox"],
 )
 
@@ -15,5 +16,5 @@ go_test(
     name = "binary_test",
     size = "small",
     srcs = ["binary_test.go"],
-    library = ":binary",
+    embed = [":binary"],
 )

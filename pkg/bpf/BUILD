@@ -16,6 +16,7 @@ go_library(
         "optimizer.go",
         "program_builder.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/bpf",
     imports = ["gvisor.dev/gvisor/pkg/abi/linux"],
     visibility = ["//visibility:public"],
     deps = ["//pkg/abi/linux"],
@@ -31,7 +32,7 @@ go_test(
         "optimizer_test.go",
         "program_builder_test.go",
     ],
-    library = ":bpf",
+    embed = [":bpf"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/hostarch",

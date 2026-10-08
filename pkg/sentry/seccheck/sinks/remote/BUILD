@@ -8,6 +8,7 @@ package(
 go_library(
     name = "remote",
     srcs = ["remote.go"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/atomicbitops",
@@ -30,7 +31,7 @@ go_test(
     data = [
         "//examples/seccheck:server_cc",
     ],
-    library = ":remote",
+    embed = [":remote"],
     deps = [
         "//pkg/fd",
         "//pkg/sentry/seccheck",

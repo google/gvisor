@@ -25,7 +25,7 @@ go_test(
         "addr_test.go",
         "hostarch_test.go",
     ],
-    library = ":hostarch",
+    embed = [":hostarch"],
 )
 
 go_library(

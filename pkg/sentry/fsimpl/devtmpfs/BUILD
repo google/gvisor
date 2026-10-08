@@ -10,6 +10,7 @@ go_library(
         "devtmpfs.go",
         "save_restore.go",
     ],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/context",

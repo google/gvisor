@@ -36,7 +36,7 @@ go_test(
     srcs = [
         "safecopy_test.go",
     ],
-    library = ":safecopy",
+    embed = [":safecopy"],
     deps = [
         "@org_golang_x_sys//unix:go_default_library",
     ],
