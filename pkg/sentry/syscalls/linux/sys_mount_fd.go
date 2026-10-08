@@ -217,17 +217,25 @@ func FSMount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Fetch the previously-instantiated filesystem
-	fs, root, opts, err := fsfd.GetFilesystem()
+	fsTypeName, opts, err := fsfd.PeekFilesystem()
 	if err != nil {
 		return 0, nil, err
 	}
 
 	// Parse mount options specified in attrFlags
-	parseAttrFlagsIntoMountOpts(attrFlags, opts)
+	parseAttrFlagsIntoMountOpts(attrFlags, &opts)
+	if t.Kernel().VFS().MountTooRevealing(t, fsTypeName, &opts) {
+		return 0, nil, linuxerr.EPERM
+	}
+
+	// Fetch the previously-instantiated filesystem
+	fs, root, err := fsfd.GetFilesystem()
+	if err != nil {
+		return 0, nil, err
+	}
 
 	// Create the mount, which we will place at the root of a new anonymous mount namespace
-	mountNs := t.Kernel().VFS().NewMountNamespaceFrom(t, creds, fs, root, opts, t.Kernel(), true /* anon */)
+	mountNs := t.Kernel().VFS().NewMountNamespaceFrom(t, creds, fs, root, &opts, t.Kernel(), true /* anon */)
 
 	// Create the mount object fd
 	mountFile, err := mountfd.New(t, mountNs, linux.O_RDONLY)
