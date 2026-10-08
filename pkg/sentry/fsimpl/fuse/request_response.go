@@ -101,6 +101,9 @@ type Request struct {
 	// If we don't care its response.
 	// Manually set by the caller.
 	noReply bool
+	// sent is true once the request has been dequeued by conn.read() or
+	// written to the host FD.
+	sent bool
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
@@ -144,6 +147,12 @@ type futureResponse struct {
 
 	// If this request is async.
 	async bool
+
+	// abandoned is true if the waiting task was interrupted after the request
+	// was already sent to the FUSE server. The completion entry remains registered
+	// until the server replies so that the late reply is consumed and discarded
+	// cleanly instead of failing with EINVAL.
+	abandoned bool
 
 	// buf is a fixed-size buffer for response data. The host connection
 	// path slices data from this buffer to avoid a per-response allocation.
