@@ -15,8 +15,12 @@
 package tests
 
 import (
+	"bytes"
+	"math"
 	"reflect"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 var allMapPrimitives = []any{
@@ -56,6 +60,34 @@ func TestMapAliasing(t *testing.T) {
 	ptrToV := &v
 	aliases := []map[int]int{v, v}
 	runTestCases(t, false, "", []any{ptrToV, aliases})
+}
+
+func TestMapNaNKeys(t *testing.T) {
+	// Identical NaNs compare unequal, so both entries must survive even
+	// though neither can be retrieved using a map lookup.
+	const nanBits = uint64(0x7ff8000000000001)
+	nan := math.Float64frombits(nanBits)
+	original := map[float64]int{1: 3}
+	original[nan] = 1
+	original[nan] = 2
+	var buf bytes.Buffer
+	if _, err := state.Save(t.Context(), &buf, &original); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	var restored map[float64]int
+	if _, err := state.Load(t.Context(), &buf, &restored); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	want := map[int]uint64{1: nanBits, 2: nanBits, 3: math.Float64bits(1)}
+	if len(restored) != len(want) {
+		t.Fatalf("Restored %d entries, want %d", len(restored), len(want))
+	}
+	for key, value := range restored {
+		if bits, ok := want[value]; !ok || math.Float64bits(key) != bits {
+			t.Fatalf("Unexpected restored entry: key bits=%#x, value=%d", math.Float64bits(key), value)
+		}
+		delete(want, value)
+	}
 }
 
 func TestMapsEmpty(t *testing.T) {
