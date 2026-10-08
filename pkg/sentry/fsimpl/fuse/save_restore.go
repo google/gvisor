@@ -47,8 +47,8 @@ func (conn *connection) loadFullQueueCh(_ goContext.Context, capacity int) {
 
 // lostHostConn implements fuseConn for a restored connection whose server
 // was outside the sandbox (see connection.hostTransport). Such connections are
-// aborted before they are saved (see filesystem.PrepareSave), so call is
-// unreachable. lostHostConn only exists to preserve
+// aborted before they are saved (see filesystem.PrepareSave), so call and
+// interrupt are unreachable. lostHostConn only exists to preserve
 // hostConnection's reference-counting behavior on release.
 type lostHostConn struct {
 	conn *connection
@@ -64,6 +64,9 @@ func (lc *lostHostConn) release(ctx context.Context) {
 	// Mirrors hostConnection.release; the host FD is already gone.
 	lc.conn.DecRef(ctx)
 }
+
+// interrupt implements fuseConn.interrupt.
+func (*lostHostConn) interrupt(*futureResponse) {}
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
