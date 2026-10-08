@@ -7,7 +7,6 @@ import (
     "gvisor.dev/gvisor/pkg/hostarch"
     "gvisor.dev/gvisor/pkg/marshal"
     "io"
-    "reflect"
     "runtime"
     "unsafe"
 )
@@ -63,12 +62,7 @@ func (g *GasketInterruptEventFd) UnmarshalUnsafe(src []byte) []byte {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 func (g *GasketInterruptEventFd) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -84,12 +78,7 @@ func (g *GasketInterruptEventFd) CopyOut(cc marshal.CopyContext, addr hostarch.A
 
 // CopyInN implements marshal.Marshallable.CopyInN.
 func (g *GasketInterruptEventFd) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -105,12 +94,7 @@ func (g *GasketInterruptEventFd) CopyIn(cc marshal.CopyContext, addr hostarch.Ad
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (g *GasketInterruptEventFd) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -172,12 +156,7 @@ func (g *GasketInterruptMapping) UnmarshalUnsafe(src []byte) []byte {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 func (g *GasketInterruptMapping) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -193,12 +172,7 @@ func (g *GasketInterruptMapping) CopyOut(cc marshal.CopyContext, addr hostarch.A
 
 // CopyInN implements marshal.Marshallable.CopyInN.
 func (g *GasketInterruptMapping) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -214,12 +188,7 @@ func (g *GasketInterruptMapping) CopyIn(cc marshal.CopyContext, addr hostarch.Ad
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (g *GasketInterruptMapping) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -364,12 +333,7 @@ func (g *GasketPageTableIoctl) UnmarshalUnsafe(src []byte) []byte {
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 func (g *GasketPageTableIoctl) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -385,12 +349,7 @@ func (g *GasketPageTableIoctl) CopyOut(cc marshal.CopyContext, addr hostarch.Add
 
 // CopyInN implements marshal.Marshallable.CopyInN.
 func (g *GasketPageTableIoctl) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that g
@@ -406,12 +365,7 @@ func (g *GasketPageTableIoctl) CopyIn(cc marshal.CopyContext, addr hostarch.Addr
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (g *GasketPageTableIoctl) WriteTo(writer io.Writer) (int64, error) {
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(g)))
-    hdr.Len = g.SizeBytes()
-    hdr.Cap = g.SizeBytes()
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(g))), g.SizeBytes())
 
     length, err := writer.Write(buf)
     // Since we bypassed the compiler's escape analysis, indicate that g
