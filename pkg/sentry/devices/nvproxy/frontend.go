@@ -666,6 +666,11 @@ var madvPopulateWriteDisabled atomicbitops.Bool
 func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
 	// Compare src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor()
 	// => RmCreateOsDescriptor().
+	if ioctlParams.Params.HObjectNew.Val == nvgpu.NV01_NULL_OBJECT {
+		// The driver would generate a handle for the descriptor without
+		// returning it, so we couldn't track the pinned memory.
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_OBJECT_HANDLE)
+	}
 	appAddr := addrFromP64(ioctlParams.Params.PMemory)
 	if !appAddr.IsPageAligned() {
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_NOT_SUPPORTED)
