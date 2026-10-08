@@ -409,6 +409,20 @@ func TestValidationFail(t *testing.T) {
 			},
 			error: "network-proxy-path flag is incompatible with XDP",
 		},
+		{
+			name: "platform_device_path:malformed-pair",
+			flags: map[string]string{
+				"platform_device_path": "kvm=/dev/kvm,/dev/other",
+			},
+			error: "expected format is --platform_device_path",
+		},
+		{
+			name: "platform_device_path:duplicate-platform",
+			flags: map[string]string{
+				"platform_device_path": "kvm=/dev/kvm,kvm=/dev/kvm2",
+			},
+			error: "names platform \"kvm\" more than once",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -423,6 +437,37 @@ func TestValidationFail(t *testing.T) {
 			}
 			if _, err := NewFromFlags(testFlags); err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("NewFromFlags() wrong error reported: %v", err)
+			}
+		})
+	}
+}
+
+func TestPlatformDeviceFor(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		flag     string
+		platform string
+		want     string
+	}{
+		{name: "unset", flag: "", platform: "kvm", want: ""},
+		{name: "single path applies to any platform", flag: "/dev/kvm2", platform: "kvm", want: "/dev/kvm2"},
+		{name: "single path applies to platform without device", flag: "/dev/kvm2", platform: "systrap", want: "/dev/kvm2"},
+		{name: "pair matches", flag: "kvm=/dev/kvm2,other=/dev/other2", platform: "other", want: "/dev/other2"},
+		{name: "pair for other platform is ignored", flag: "kvm=/dev/kvm2", platform: "other", want: ""},
+		{name: "unknown platform name is tolerated", flag: "nosuch=/dev/nosuch,kvm=/dev/kvm2", platform: "kvm", want: "/dev/kvm2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+			RegisterFlags(testFlags)
+			if err := testFlags.Lookup("platform_device_path").Value.Set(tc.flag); err != nil {
+				t.Fatalf("platform_device_path=%q: %v", tc.flag, err)
+			}
+			c, err := NewFromFlags(testFlags)
+			if err != nil {
+				t.Fatalf("NewFromFlags() failed: %v", err)
+			}
+			if got := c.PlatformDeviceFor(tc.platform); got != tc.want {
+				t.Errorf("PlatformDeviceFor(%q) with --platform_device_path=%q = %q, want %q", tc.platform, tc.flag, got, tc.want)
 			}
 		})
 	}

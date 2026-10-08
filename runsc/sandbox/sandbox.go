@@ -588,7 +588,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 
 	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDevicePath); err != nil {
+	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDeviceFor(conf.Platform)); err != nil {
 		return err
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
@@ -1169,7 +1169,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if err != nil {
 		return fmt.Errorf("cannot look up platform: %w", err)
 	}
-	if deviceFile, err := gPlatform.OpenDevice(conf.PlatformDevicePath); err != nil {
+	if deviceFile, err := gPlatform.OpenDevice(conf.PlatformDeviceFor(conf.Platform)); err != nil {
 		return fmt.Errorf("opening device file for platform %q: %v", conf.Platform, err)
 	} else if deviceFile != nil {
 		donations.DonateAndClose("device-fd", deviceFile.ReleaseToFile("device file"))
