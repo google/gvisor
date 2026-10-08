@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -128,7 +129,7 @@ func removeShardAndXMLEnvVars(env []string, tc *gtest.TestCase) []string {
 		// Provide a dynamically generated, unique output file path for each test case execution
 		// so their individual C++ metadata and results are preserved. They will be collated later.
 		if origXML, ok := unix.Getenv("XML_OUTPUT_FILE"); ok && len(origXML) > 0 {
-			safeName := strings.ReplaceAll(tc.Name, "/", "_")
+			safeName := url.PathEscape(tc.FullName())
 			env = append(env, fmt.Sprintf("XML_OUTPUT_FILE=%s.%s%s", origXML, safeName, uniqueXMLSuffix))
 		}
 	}
