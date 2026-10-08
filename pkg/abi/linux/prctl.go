@@ -191,6 +191,16 @@ const (
 	ARCH_GET_FS    = 0x1003
 	ARCH_GET_GS    = 0x1004
 	ARCH_SET_CPUID = 0x1012
+
+	ARCH_GET_XCOMP_SUPP = 0x1021
+	ARCH_GET_XCOMP_PERM = 0x1022
+	ARCH_REQ_XCOMP_PERM = 0x1023
+)
+
+// XSAVE state component indices, from arch/x86/include/asm/fpu/types.h.
+const (
+	XFEATURE_XTILECFG  = 17
+	XFEATURE_XTILEDATA = 18
 )
 
 // Flags for prctl(PR_SET_DUMPABLE), defined in include/linux/sched/coredump.h.
