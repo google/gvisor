@@ -212,6 +212,7 @@ func (fsType FilesystemType) getFilesystemHostFD(ctx context.Context, vfsObj *vf
 
 	hostConn := newHostConnection(conn, int32(dupFD))
 	conn.fuseConn = hostConn
+	conn.hostTransport = true
 
 	fs := &filesystem{
 		devMinor: devMinor,

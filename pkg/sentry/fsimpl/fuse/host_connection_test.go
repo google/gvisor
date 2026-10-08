@@ -15,8 +15,10 @@
 package fuse
 
 import (
+	"bytes"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -24,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 // newTestHostConnection creates a hostConnection backed by a socketpair.
@@ -383,5 +386,83 @@ func TestHostConnectionNotConnected(t *testing.T) {
 	_, err := hc.Call(s.Ctx, req)
 	if !linuxerr.Equals(linuxerr.ENOTCONN, err) {
 		t.Fatalf("expected ENOTCONN, got %v", err)
+	}
+}
+
+// registerOutstandingRequest registers a request on conn as if it had been
+// written to the server, and returns its ID and future response.
+func registerOutstandingRequest(conn *connection, creds *auth.Credentials) (linux.FUSEOpID, *futureResponse) {
+	payload := primitive.Uint32(0)
+	req := conn.NewRequest(creds, 1, 1, echoTestOpcode, &payload)
+	fut := newFutureResponse(req)
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	conn.completions[req.id] = fut
+	conn.numActiveRequests++
+	return req.id, fut
+}
+
+// A connection to a FUSE server outside the sandbox can't be checkpointed, so
+// it is aborted before it is saved: outstanding requests fail, and new
+// requests fail with ENOTCONN, both before and after restore.
+func TestHostConnectionAbortedOnSave(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+	creds := auth.CredentialsFromContext(s.Ctx)
+
+	hc, serverFD, cleanup := newTestHostConnection(t)
+	defer cleanup()
+	conn := hc.conn
+	conn.hostTransport = true
+	id1, fut1 := registerOutstandingRequest(conn, creds)
+	id2, fut2 := registerOutstandingRequest(conn, creds)
+
+	fs := &filesystem{conn: conn}
+	if err := fs.PrepareSave(s.Ctx); err != nil {
+		t.Fatalf("PrepareSave: %v", err)
+	}
+	for id, fut := range map[linux.FUSEOpID]*futureResponse{id1: fut1, id2: fut2} {
+		select {
+		case <-fut.ch:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("request %d not completed by PrepareSave", id)
+		}
+		if fut.hdr == nil || fut.hdr.Error != -int32(unix.ECONNABORTED) {
+			t.Errorf("request %d reply header = %+v, want error ECONNABORTED", id, fut.hdr)
+		}
+	}
+	conn.mu.Lock()
+	if n := len(conn.completions); n != 0 || conn.numActiveRequests != 0 {
+		t.Errorf("after PrepareSave: %d requests outstanding, numActiveRequests = %d; want 0, 0", n, conn.numActiveRequests)
+	}
+	conn.mu.Unlock()
+
+	// A late reply from the server is discarded by the reader goroutine.
+	hdr := linux.FUSEHeaderOut{Len: linux.SizeOfFUSEHeaderOut, Unique: id1}
+	buf := make([]byte, hdr.SizeBytes())
+	hdr.MarshalUnsafe(buf)
+	if _, err := unix.Write(serverFD, buf); err != nil {
+		t.Fatalf("server Write: %v", err)
+	}
+
+	var saved bytes.Buffer
+	if _, err := state.Save(s.Ctx, &saved, conn); err != nil {
+		t.Fatalf("state.Save: %v", err)
+	}
+	var restored connection
+	if _, err := state.Load(s.Ctx, &saved, &restored); err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	defer restored.DecRef(s.Ctx)
+	if _, ok := restored.fuseConn.(*lostHostConn); !ok {
+		t.Fatalf("restored fuseConn is %T, want *lostHostConn", restored.fuseConn)
+	}
+
+	for name, c := range map[string]*connection{"before restore": conn, "after restore": &restored} {
+		payload := primitive.Uint32(0)
+		req := c.NewRequest(creds, 1, 1, echoTestOpcode, &payload)
+		if _, err := c.Call(s.Ctx, req); !linuxerr.Equals(linuxerr.ENOTCONN, err) {
+			t.Errorf("Call %s: got error %v, want ENOTCONN", name, err)
+		}
 	}
 }
