@@ -394,7 +394,7 @@ func (t *Task) exitThreadGroup() bool {
 // Preconditions: The TaskSet mutex must be locked for writing.
 func (t *Task) exitChildrenLocked() {
 	newParent := t.findReparentTargetLocked()
-	if newParent == nil {
+	if newParent == nil && !t.tg.pidns.noInit {
 		// "If the init process of a PID namespace terminates, the kernel
 		// terminates all of the processes in the namespace via a SIGKILL
 		// signal." - pid_namespaces(7)
