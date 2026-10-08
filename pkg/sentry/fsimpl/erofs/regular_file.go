@@ -83,30 +83,39 @@ type regularFileReader struct {
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (r *regularFileReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
-	// Find the range containing the current offset. A read must not span the
-	// discontinuity between ranges in the image, so it is clamped to the end
-	// of the containing range.
+	// The ranges aren't contiguous in the image, so a read that spans both is
+	// done one range at a time.
+	var done uint64
 	off := r.off
 	for _, rng := range r.ranges {
-		if off < rng.Size {
-			dsts = dsts.TakeFirst64(rng.Size - off)
-			imageOff := rng.Off + off
-			var (
-				n   uint64
-				err error
-			)
-			if r.useRead {
-				n, err = hostfd.Preadv2(int32(r.image.FD()), dsts, int64(imageOff), 0 /* flags */)
-			} else {
-				src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(rng.Bytes)).DropFirst64(off)
-				n, err = safemem.CopySeq(dsts, src)
-			}
-			r.off += n
-			return n, err
+		if off >= rng.Size {
+			off -= rng.Size
+			continue
 		}
-		off -= rng.Size
+		dst := dsts.TakeFirst64(rng.Size - off)
+		imageOff := rng.Off + off
+		var (
+			n   uint64
+			err error
+		)
+		if r.useRead {
+			n, err = hostfd.Preadv2(int32(r.image.FD()), dst, int64(imageOff), 0 /* flags */)
+		} else {
+			src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(rng.Bytes)).DropFirst64(off)
+			n, err = safemem.CopySeq(dst, src)
+		}
+		r.off += n
+		done += n
+		if err != nil || n < dst.NumBytes() {
+			return done, err
+		}
+		dsts = dsts.DropFirst64(n)
+		if dsts.IsEmpty() {
+			return done, nil
+		}
+		off = 0
 	}
-	return 0, io.EOF
+	return done, io.EOF
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
