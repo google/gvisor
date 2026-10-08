@@ -153,6 +153,9 @@ const (
 )
 
 const (
+	// NetworkCreateLinksAndRoutes synchronously creates links and routes.
+	NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
+
 	// NetworkInitPluginStack initializes third-party network stack.
 	NetworkInitPluginStack = "Network.InitPluginStack"
 
