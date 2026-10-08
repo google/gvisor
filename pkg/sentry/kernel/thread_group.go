@@ -319,6 +319,11 @@ type ThreadGroup struct {
 	//
 	// Since gVisor does not perform core dumps, it has no effect.
 	coredumpFilter atomicbitops.Uint32
+
+	// xcompPerm is the set of dynamically-enabled XSAVE features granted by
+	// arch_prctl(ARCH_REQ_XCOMP_PERM). It is inherited by fork and reset by
+	// execve.
+	xcompPerm atomicbitops.Uint64
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The

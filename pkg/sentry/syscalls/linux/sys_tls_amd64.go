@@ -19,6 +19,7 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -64,6 +65,28 @@ func ArchPrctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 		if !t.Arch().SetGS(uintptr(gsbase)) {
 			return 0, nil, linuxerr.EPERM
 		}
+	case linux.ARCH_GET_XCOMP_SUPP:
+		supp := t.Kernel().FeatureSet().ValidXCR0Mask()
+		if _, err := primitive.CopyUint64Out(t, args[1].Pointer(), supp); err != nil {
+			return 0, nil, err
+		}
+	case linux.ARCH_GET_XCOMP_PERM:
+		// XTILEDATA is the only dynamic feature; all others are always permitted.
+		perm := t.Kernel().FeatureSet().ValidXCR0Mask()&^cpuid.XCR0AmxDataMask | t.XcompPerm()
+		if _, err := primitive.CopyUint64Out(t, args[1].Pointer(), perm); err != nil {
+			return 0, nil, err
+		}
+	case linux.ARCH_REQ_XCOMP_PERM:
+		switch idx := args[1].Uint64(); {
+		case idx > linux.XFEATURE_XTILEDATA:
+			return 0, nil, linuxerr.EINVAL
+		case idx != linux.XFEATURE_XTILEDATA:
+			return 0, nil, linuxerr.EOPNOTSUPP
+		}
+		if t.Kernel().FeatureSet().ValidXCR0Mask()&cpuid.XCR0AmxDataMask == 0 {
+			return 0, nil, linuxerr.EOPNOTSUPP
+		}
+		t.GrantXcompPerm(cpuid.XCR0AmxDataMask)
 	default:
 		return 0, nil, linuxerr.EINVAL
 	}

@@ -1018,3 +1018,20 @@ func (t *Task) SetCoredumpFilter(coredumpFilter uint32) {
 func (t *Task) GetCoredumpFilter() uint32 {
 	return t.tg.coredumpFilter.Load()
 }
+
+// XcompPerm returns the dynamic XSAVE features granted to the task's thread
+// group.
+func (t *Task) XcompPerm() uint64 {
+	return t.tg.xcompPerm.Load()
+}
+
+// GrantXcompPerm adds mask to the dynamic XSAVE features granted to the
+// task's thread group.
+func (t *Task) GrantXcompPerm(mask uint64) {
+	for {
+		old := t.tg.xcompPerm.Load()
+		if old&mask == mask || t.tg.xcompPerm.CompareAndSwap(old, old|mask) {
+			return
+		}
+	}
+}
