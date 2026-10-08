@@ -344,6 +344,9 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	t.rseqSignature = 0
 	t.oldRSeqCPUAddr = 0
 	t.tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
+	// Dynamic XSAVE feature permissions are reset, as in Linux's
+	// fpu_flush_thread().
+	t.tg.xcompPerm.Store(0)
 	t.tg.pidns.owner.mu.Unlock()
 
 	oldFDTable := t.fdTable
