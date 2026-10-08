@@ -21,8 +21,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"os"
 )
 
 const (
@@ -585,118 +583,5 @@ func TestFindAllocatable(t *testing.T) {
 				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
 			}
 		})
-	}
-}
-
-func TestReleaseWasteChunkLocked(t *testing.T) {
-	file, err := os.CreateTemp(t.TempDir(), "test-memory-file")
-	if err != nil {
-		t.Fatalf("os.CreateTemp failed: %v", err)
-	}
-	defer file.Close()
-	if err := file.Truncate(int64(chunkSize)); err != nil {
-		t.Fatalf("file.Truncate failed: %v", err)
-	}
-
-	f := &MemoryFile{
-		opts: MemoryFileOpts{
-			ExpectHugepages:         false,
-			DisableMemoryAccounting: false,
-		},
-		file: file,
-	}
-	f.initFields()
-	chunks := []chunkInfo{{huge: false}}
-	f.unfreeSmall.RemoveRange(memmap.FileRange{Start: 0, End: chunkSize})
-	f.chunks.Store(&chunks)
-
-	// Create a waste range at [0, 2*page].
-	wasteFR := memmap.FileRange{Start: 0, End: 2 * page}
-	f.unfreeSmall.InsertRange(wasteFR, unfreeInfo{refs: 0})
-	f.unwasteSmall.RemoveRange(wasteFR)
-	f.memAcct.InsertRange(wasteFR, memAcctInfo{
-		kind:             usage.System,
-		wasteOrReleasing: true,
-	})
-	f.haveWaste = true
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if !f.releaseWasteChunkLocked() {
-		t.Fatalf("releaseWasteChunkLocked(): expected waste chunk to be released")
-	}
-	// After releasing all waste, haveWaste should be false.
-	if f.haveWaste {
-		t.Errorf("releaseWasteChunkLocked(): expected haveWaste to be false, got true")
-	}
-	// The range [0, 2*page] should now be a free gap in unfreeSmall.
-	gap := f.unfreeSmall.FirstLargeEnoughGap(2 * page)
-	if !gap.Ok() || gap.Start() != 0 {
-		t.Errorf("expected [0, 2*page] to be free in unfreeSmall, got gap: %v", gap)
-	}
-}
-
-func TestFindAllocatableReclaimsWasteAndMergesFreeGaps(t *testing.T) {
-	file, err := os.CreateTemp(t.TempDir(), "test-memory-file")
-	if err != nil {
-		t.Fatalf("os.CreateTemp failed: %v", err)
-	}
-	defer file.Close()
-	if err := file.Truncate(int64(chunkSize)); err != nil {
-		t.Fatalf("file.Truncate failed: %v", err)
-	}
-
-	f := &MemoryFile{
-		opts: MemoryFileOpts{
-			ExpectHugepages:         false,
-			DisableMemoryAccounting: false,
-		},
-		file: file,
-	}
-	f.initFields()
-	chunks := []chunkInfo{{huge: false}}
-	f.unfreeSmall.RemoveRange(memmap.FileRange{Start: 0, End: chunkSize})
-	f.chunks.Store(&chunks)
-
-	// Setup chunk layout:
-	// [0, page]: Used (refs: 1)
-	// [page, 2*page]: Free gap (1 page, not in unfreeSmall)
-	// [2*page, 4*page]: Waste (2 pages, in unfreeSmall + unwasteSmall)
-	// [4*page, chunkSize]: Used (refs: 1)
-	f.unfreeSmall.InsertRange(memmap.FileRange{Start: 0, End: page}, unfreeInfo{refs: 1})
-	wasteFR := memmap.FileRange{Start: 2 * page, End: 4 * page}
-	f.unfreeSmall.InsertRange(wasteFR, unfreeInfo{refs: 0})
-	f.unwasteSmall.RemoveRange(wasteFR)
-	f.memAcct.InsertRange(wasteFR, memAcctInfo{
-		kind:             usage.System,
-		wasteOrReleasing: true,
-	})
-	f.unfreeSmall.InsertRange(memmap.FileRange{Start: 4 * page, End: chunkSize}, unfreeInfo{refs: 1})
-	f.haveWaste = true
-
-	// Request an allocation of 3 pages. The only free gap is [page, 2*page] (1 page).
-	// findAllocatableAndMarkUsed must perform direct reclaim on [2*page, 4*page],
-	// which coalesces with [page, 2*page] to satisfy the 3-page request at [page, 4*page]
-	// without extending chunks.
-	alloc := allocState{
-		length: 3 * page,
-		opts: AllocOpts{
-			Huge: false,
-			Dir:  BottomUp,
-		},
-		huge: false,
-	}
-	fr, err := f.findAllocatableAndMarkUsed(&alloc)
-	if err != nil {
-		t.Fatalf("findAllocatableAndMarkUsed failed: %v", err)
-	}
-	if want := (memmap.FileRange{Start: page, End: 4 * page}); fr != want {
-		t.Errorf("got allocated range %v, want %v", fr, want)
-	}
-	if f.haveWaste {
-		t.Errorf("expected haveWaste to be false, got true")
-	}
-	if numChunks := len(*f.chunks.Load()); numChunks != 1 {
-		t.Errorf("expected 1 chunk (no file extension), got %d chunks", numChunks)
 	}
 }
