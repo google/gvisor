@@ -58,6 +58,62 @@ func (cm *ctTargetMaker) StateLoad(ctx context.Context, stateSourceObject state.
 	stateSourceObject.Load(0, &cm.NetworkProtocol)
 }
 
+func (mt *markTarget) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.markTarget"
+}
+
+func (mt *markTarget) StateFields() []string {
+	return []string{
+		"mark",
+		"mask",
+		"networkProtocol",
+	}
+}
+
+func (mt *markTarget) beforeSave() {}
+
+// +checklocksignore
+func (mt *markTarget) StateSave(stateSinkObject state.Sink) {
+	mt.beforeSave()
+	stateSinkObject.Save(0, &mt.mark)
+	stateSinkObject.Save(1, &mt.mask)
+	stateSinkObject.Save(2, &mt.networkProtocol)
+}
+
+func (mt *markTarget) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (mt *markTarget) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mt.mark)
+	stateSourceObject.Load(1, &mt.mask)
+	stateSourceObject.Load(2, &mt.networkProtocol)
+}
+
+func (mm *markTargetMaker) StateTypeName() string {
+	return "pkg/sentry/socket/netfilter.markTargetMaker"
+}
+
+func (mm *markTargetMaker) StateFields() []string {
+	return []string{
+		"NetworkProtocol",
+	}
+}
+
+func (mm *markTargetMaker) beforeSave() {}
+
+// +checklocksignore
+func (mm *markTargetMaker) StateSave(stateSinkObject state.Sink) {
+	mm.beforeSave()
+	stateSinkObject.Save(0, &mm.NetworkProtocol)
+}
+
+func (mm *markTargetMaker) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (mm *markTargetMaker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mm.NetworkProtocol)
+}
+
 func (mt *masqueradeTarget) StateTypeName() string {
 	return "pkg/sentry/socket/netfilter.masqueradeTarget"
 }
@@ -473,6 +529,8 @@ func (rm *rejectTargetMaker) StateLoad(ctx context.Context, stateSourceObject st
 func init() {
 	state.Register((*ctTarget)(nil))
 	state.Register((*ctTargetMaker)(nil))
+	state.Register((*markTarget)(nil))
+	state.Register((*markTargetMaker)(nil))
 	state.Register((*masqueradeTarget)(nil))
 	state.Register((*masqueradeTargetMaker)(nil))
 	state.Register((*acceptTarget)(nil))

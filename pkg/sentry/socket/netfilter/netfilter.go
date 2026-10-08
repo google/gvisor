@@ -61,9 +61,8 @@ var nameToID = map[string]stack.TableID{
 	rawTable:    stack.RawID,
 }
 
-// errTableNotFound is returned when a requested table doesn't exist. It is
-// translated to ENOENT, matching Linux, which returns ENOENT when the table
-// (e.g. "security") isn't registered.
+// errTableNotFound is returned when a requested table doesn't exist.
+// It is translated to `ENOENT`.
 var errTableNotFound = errors.New("table not found")
 
 // tableLookupError converts an error from convertNetstackToBinary{4,6} into a
@@ -211,6 +210,8 @@ func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *sy
 		table = stack.EmptyFilterTable()
 	case natTable:
 		table = stack.EmptyNATTable()
+	case mangleTable:
+		table = stack.EmptyMangleTable()
 	case rawTable:
 		table = stack.EmptyRawTable()
 	default:
