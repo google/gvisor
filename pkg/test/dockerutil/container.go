@@ -56,7 +56,6 @@ type Container struct {
 	id       string
 	mounts   []mount.Mount
 	links    []string
-	copyErr  error
 	cleanups []func()
 
 	// profile is the profiling hook associated with this container.
@@ -602,31 +601,29 @@ func (c *Container) FindPort(ctx context.Context, sandboxPort int) (int, error) 
 	return port, nil
 }
 
-// CopyFiles copies in and mounts the given files. They are always ReadOnly.
-func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
+// CopyFiles copies the named files to a temporary directory and adds a bind
+// mount at target to opts. Call it before creating the container so the mount
+// is included in the container configuration.
+func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) error {
 	dir, err := os.MkdirTemp("", c.Name)
 	if err != nil {
-		c.copyErr = fmt.Errorf("os.MkdirTemp failed: %v", err)
-		return
+		return fmt.Errorf("os.MkdirTemp failed: %w", err)
 	}
 	c.cleanups = append(c.cleanups, func() { os.RemoveAll(dir) })
 	if err := os.Chmod(dir, 0755); err != nil {
-		c.copyErr = fmt.Errorf("os.Chmod(%q, 0755) failed: %v", dir, err)
-		return
+		return fmt.Errorf("os.Chmod(%q, 0755) failed: %w", dir, err)
 	}
 	for _, name := range sources {
 		src := name
 		if !filepath.IsAbs(src) {
 			src, err = testutil.FindFile(name)
 			if err != nil {
-				c.copyErr = fmt.Errorf("testutil.FindFile(%q) failed: %w", name, err)
-				return
+				return fmt.Errorf("testutil.FindFile(%q) failed: %w", name, err)
 			}
 		}
 		dst := path.Join(dir, path.Base(name))
 		if err := testutil.Copy(src, dst); err != nil {
-			c.copyErr = fmt.Errorf("testutil.Copy(%q, %q) failed: %v", src, dst, err)
-			return
+			return fmt.Errorf("testutil.Copy(%q, %q) failed: %w", src, dst, err)
 		}
 		c.logger.Logf("copy: %s -> %s", src, dst)
 	}
@@ -636,6 +633,7 @@ func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
 		Target:   target,
 		ReadOnly: false,
 	})
+	return nil
 }
 
 // Stats returns a snapshot of container stats similar to `docker stats`.

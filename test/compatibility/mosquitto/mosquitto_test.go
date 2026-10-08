@@ -52,7 +52,9 @@ func TestMosquitto(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 	opts := dockerutil.RunOpts{Image: mosquittoImage}
-	c.CopyFiles(&opts, "/mosquitto/config", compatibility.WriteConfigFile(t, "mosquitto.conf", mosquittoConfig))
+	if err := c.CopyFiles(&opts, "/mosquitto/config", compatibility.WriteConfigFile(t, "mosquitto.conf", mosquittoConfig)); err != nil {
+		t.Fatalf("copy mosquitto configuration: %v", err)
+	}
 	if err := c.Spawn(ctx, opts); err != nil {
 		t.Fatalf("failed to start mosquitto: %v", err)
 	}

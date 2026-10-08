@@ -131,6 +131,11 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 				Image:  bm.Image,
 				Mounts: mts,
 			}
+			if variant.fsType == harness.FuseFS {
+				if err := container.CopyFiles(&runOpts, "/fusebin", "test/runner/fuse/fuse"); err != nil {
+					b.Fatalf("copy FUSE server: %v", err)
+				}
+			}
 
 			// Start a container and sleep.
 			if err := container.Spawn(ctx, runOpts, "sleep", "24h"); err != nil {
@@ -146,7 +151,6 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 			}
 
 			if variant.fsType == harness.FuseFS {
-				container.CopyFiles(&runOpts, "/fusebin", "test/runner/fuse/fuse")
 				_, err := container.ExecProcess(ctx, dockerutil.ExecOpts{
 					Privileged: true,
 				}, "/fusebin/fuse", "--dir="+prefix, "--debug=false")
