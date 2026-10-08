@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Internal tests depend on this file and its BUILD targets, even though the
+// public source contains no test cases.
+
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
