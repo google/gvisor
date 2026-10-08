@@ -1482,6 +1482,69 @@ TEST(ElfTest, ProcessVMReadExecuteOnlyBinary) {
   });
 }
 
+// A /proc/[pid]/mem file stays bound to the mm that its open-time access
+// check validated. After the target execs an execute-only binary, that old mm
+// has no users, so reads through the old fd return EOF rather than any data
+// from the new image, and a fresh open is denied.
+TEST(ElfTest, ProcMemFdAcrossExecuteOnlyExec) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(ExecNonDumpEnforced()));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 1);
+
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath exec_only = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+  ASSERT_THAT(chmod(exec_only.path().c_str(), 0111), SyscallSucceeds());
+
+  static volatile int64_t marker = 0x1111;
+
+  ScopedThread([&] {
+    constexpr int kUnprivilegedUid = 12345;
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
+
+    int go[2];
+    ASSERT_THAT(pipe(go), SyscallSucceeds());
+    const FileDescriptor go_rfd(go[0]);
+    const FileDescriptor go_wfd(go[1]);
+    pid_t child = fork();
+    if (child == 0) {
+      char g;
+      if (ReadFd(go_rfd.get(), &g, 1) != 1) _exit(40);
+      char* const argv[] = {const_cast<char*>(exec_only.path().c_str()),
+                            nullptr};
+      execve(exec_only.path().c_str(), argv, nullptr);
+      _exit(41);
+    }
+    MaybeSave();
+    ASSERT_GT(child, 0);
+    const auto cleanup = Cleanup([child] {
+      kill(child, SIGKILL);
+      RetryEINTR(waitpid)(child, nullptr, 0);
+    });
+
+    const FileDescriptor mem = ASSERT_NO_ERRNO_AND_VALUE(
+        Open(absl::StrCat("/proc/", child, "/mem"), O_RDONLY));
+    int64_t v = 0;
+    ASSERT_THAT(pread(mem.get(), &v, sizeof(v), (off_t)&marker),
+                SyscallSucceedsWithValue(sizeof(v)));
+    EXPECT_EQ(v, marker);
+
+    ASSERT_THAT(WriteFd(go_wfd.get(), "g", 1), SyscallSucceedsWithValue(1));
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, WUNTRACED),
+                SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status)) << status;
+
+    EXPECT_THAT(pread(mem.get(), &v, sizeof(v), (off_t)&marker),
+                SyscallSucceedsWithValue(0));
+    EXPECT_THAT(open(absl::StrCat("/proc/", child, "/mem").c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+  });
+}
+
 // Test parameter to ElfInterpterStaticTest cases. The first item is a suffix to
 // add to the end of the interpreter path in the PT_INTERP segment and the
 // second is the expected execve(2) errno.
@@ -1725,7 +1788,11 @@ TEST(ElfTest, NoExecute) {
   EXPECT_EQ(execve_errno, EACCES);
 }
 
-// Execute, but no read permissions on the binary works just fine.
+// Execute, but no read permissions on the binary works just fine. A task
+// whose credentials cannot read its executable is marked non-dumpable (see
+// ExecuteOnlyBinary and PtraceExecuteOnlyBinary), but this test runs with
+// CAP_DAC_OVERRIDE, so the executable remains readable to it and the task
+// stays dumpable.
 TEST(ElfTest, NoRead) {
   ElfBinary<64> elf = StandardElf();
   elf.UpdateOffsets();
@@ -1743,11 +1810,6 @@ TEST(ElfTest, NoRead) {
   ASSERT_EQ(execve_errno, 0);
 
   ASSERT_NO_ERRNO(WaitStopped(child));
-
-  // A task whose credentials cannot read its executable is marked
-  // non-dumpable; see ExecuteOnlyBinary and PtraceExecuteOnlyBinary. This test
-  // runs with CAP_DAC_OVERRIDE, so the executable remains readable to it and
-  // the task stays dumpable.
 }
 
 // No execute permissions on the ELF interpreter.
