@@ -906,7 +906,12 @@ TEST(ExecTest, Setpgid) {
   ASSERT_THAT(WSTOPSIG(status), SIGTRAP);
   EXPECT_THAT(setpgid(pid, pid), SyscallFailsWithErrno(EACCES));
   EXPECT_THAT(setpgid(pid, getpid()), SyscallFailsWithErrno(EACCES));
-  EXPECT_THAT(setpgid(getpid(), pid), SyscallSucceeds());
+  // A session leader cannot join another process group.
+  if (getsid(0) == getpid()) {
+    EXPECT_THAT(setpgid(getpid(), pid), SyscallFailsWithErrno(EPERM));
+  } else {
+    EXPECT_THAT(setpgid(getpid(), pid), SyscallSucceeds());
+  }
 }
 
 PosixErrorOr<TempPath> CreateSuidExecutable(std::string path) {
