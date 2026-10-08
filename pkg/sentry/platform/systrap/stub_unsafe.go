@@ -55,12 +55,16 @@ func stubCall(addr, pid uintptr)
 func prepareSeccompRules(stubSysmsgStart,
 	stubSysmsgRules, stubSysmsgRulesLen,
 	stubSyscallRules, stubSyscallRulesLen uintptr) {
-	vars := stubfilter.SysmsgThreadVars(uint64(stubStart), uint64(stubSysmsgStart))
-	instrs := renderStubFilter(stubfilter.SysmsgThreadName, vars)
+	instrs := sysmsgThreadFilter(stubStart, stubSysmsgStart)
 	copySeccompRulesToStub(instrs, stubSysmsgRules, stubSysmsgRulesLen)
 
 	instrs = renderStubFilter(stubfilter.SyscallThreadName, nil)
 	copySeccompRulesToStub(instrs, stubSyscallRules, stubSyscallRulesLen)
+}
+
+func sysmsgThreadFilter(stubStart, stubSysmsgStart uintptr) []bpf.Instruction {
+	vars := stubfilter.SysmsgThreadVars(uint64(stubStart), uint64(stubSysmsgStart))
+	return trapRestartArgs(stubSysmsgStart, renderStubFilter(stubfilter.SysmsgThreadName, vars))
 }
 
 // renderStubFilter renders the precompiled stubfilter program with the given

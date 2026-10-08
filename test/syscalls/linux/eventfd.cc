@@ -19,7 +19,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -217,6 +219,24 @@ TEST(EventfdTest, SpliceReturnsEINVAL) {
 
   EXPECT_THAT(splice(rfd.get(), nullptr, efd.get(), nullptr, kPageSize, 0),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(EventfdTest, RestartCodeInitialValue) {
+  // On arm64, x0 holds both the first argument and the return value, so the
+  // host kernel can mistake an argument for a restart code.
+  for (int64_t arg : {-512, -513, -514, -516, -4}) {
+    for (bool use_libc : {false, true}) {
+      const int fd = use_libc ? eventfd(static_cast<unsigned int>(arg), 0)
+                              : syscall(SYS_eventfd2, arg, 0);
+      ASSERT_THAT(fd, SyscallSucceeds());
+      FileDescriptor efd(fd);
+      uint64_t l = 0;
+      ASSERT_THAT(read(efd.get(), &l, sizeof(l)),
+                  SyscallSucceedsWithValue(sizeof(l)));
+      EXPECT_EQ(l, static_cast<uint32_t>(arg))
+          << "for arg " << arg << " (use_libc=" << use_libc << ")";
+    }
+  }
 }
 
 }  // namespace
