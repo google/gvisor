@@ -68,6 +68,11 @@ if test -s "${profile_output}"; then
 fi
 rm -rf "${profile_output}"
 
+# Clean up any modifications made to pipeline.yaml during pipeline upload.
+if [[ "${BUILDKITE_COMMAND:-}" =~ "pipeline upload" ]]; then
+  git checkout -- .buildkite/pipeline.yaml 2>/dev/null || true
+fi
+
 # Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   set -x
