@@ -221,16 +221,6 @@ func doFioBenchmark(b *testing.B, testCases []tools.Fio) {
 					b.Fatalf("failed to copy directory: %v (%s)", err, out)
 				}
 
-				if fsType == harness.FuseFS {
-					container.CopyFiles(&runOpts, "/fusebin", "test/runner/fuse/fuse")
-					_, err := container.ExecProcess(ctx, dockerutil.ExecOpts{
-						Privileged: true,
-					}, "/fusebin/fuse", "--dir="+outdir, "--debug=false")
-					if err != nil {
-						b.Fatalf("starting fuse server failed with: %v", err)
-					}
-				}
-
 				// Directory and filename inside container where fio will read/write.
 				outfile := filepath.Join(outdir, "test.txt")
 
