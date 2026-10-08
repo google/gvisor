@@ -16,6 +16,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/prctl.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
@@ -28,6 +29,8 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/landlock_util.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
@@ -113,6 +116,8 @@ TEST(LandlockV1Test, RestrictSelfWithoutNoNewPrivsFails) {
   SKIP_IF(IsRunningOnGvisor());
   SKIP_IF(LandlockAbiVersion() < 1);
   int status = ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([] {
+    TEST_PCHECK(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) == 0);
+    TEST_PCHECK(SetCapability(CAP_SYS_ADMIN, false).ok());
     struct landlock_ruleset_attr attr = {};
     attr.handled_access_fs = LANDLOCK_ACCESS_FS_READ_FILE;
     int fd = landlock_create_ruleset(&attr, sizeof(attr), 0);
