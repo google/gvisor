@@ -16,6 +16,7 @@ package erofs
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -27,8 +28,10 @@ import (
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -41,7 +44,7 @@ const testFileNid = 127
 func newTestImage(features uint32, file erofs.InodeCompact) []byte {
 	const rootNid = 96
 	data := make([]byte, 10*hostarch.PageSize)
-	sb := erofs.SuperBlock{Magic: erofs.SuperBlockMagicV1, BlockSizeBits: 12, RootNid: rootNid, Blocks: 10, FeatureIncompat: features}
+	sb := erofs.SuperBlock{Magic: erofs.SuperBlockMagicV1, BlockSizeBits: hostarch.PageShift, RootNid: rootNid, Blocks: 10, FeatureIncompat: features}
 	sb.MarshalUnsafe(data[erofs.SuperBlockOffset:])
 	rootOff := rootNid << erofs.InodeSlotBits
 	root := erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatInline << erofs.InodeDataLayoutBit, Mode: linux.S_IFDIR | 0755, Size: 16, Nlink: 2}
@@ -113,5 +116,100 @@ func TestReadSpansInlineTail(t *testing.T) {
 				t.Fatalf("PRead returned %d bytes, want all %d", n, size)
 			}
 		})
+	}
+}
+
+func TestTranslateBeyondEOF(t *testing.T) {
+	file := erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatPlain << erofs.InodeDataLayoutBit, Size: hostarch.PageSize + 17, RawBlockAddr: 4}
+	fd := openTestFile(t, newTestImage(0, file))
+	ctx := contexttest.Context(t)
+	end := uint64(2 * hostarch.PageSize)
+	r := memmap.MappableRange{Start: end - hostarch.PageSize, End: end + hostarch.PageSize}
+	ts, err := fd.inode().Translate(ctx, r, r, hostarch.Read)
+	if err := memmap.CheckTranslateResult(r, r, hostarch.Read, ts, err); err != nil {
+		t.Fatal(err)
+	}
+	if err == nil {
+		t.Fatalf("Translate(%v) returned no error", r)
+	}
+}
+
+func TestChunkReadAndMMap(t *testing.T) {
+	const (
+		page  = hostarch.PageSize
+		chunk = 2 * page
+		size  = 3*chunk + 17
+	)
+	for _, indexes := range []bool{false, true} {
+		for _, useRead := range []bool{false, true} {
+			t.Run(fmt.Sprintf("indexes=%t/read=%t", indexes, useRead), func(t *testing.T) {
+				format := uint32(1)
+				unit := erofs.BlockMapEntrySize
+				if indexes {
+					format |= erofs.ChunkFormatIndexes
+					unit = erofs.ChunkIndexSize
+				}
+				data := newTestImage(erofs.FeatureIncompatChunkedFile, erofs.InodeCompact{Format: erofs.InodeDataLayoutChunkBased << erofs.InodeDataLayoutBit, Size: size, RawBlockAddr: format})
+				off := testFileNid<<erofs.InodeSlotBits + erofs.InodeCompactSize
+				for _, block := range []uint32{4, 6, erofs.NullAddr, 4} {
+					binary.LittleEndian.PutUint32(data[off+unit-4:], block)
+					off += unit
+				}
+				for j := 0; j < 2*chunk; j++ {
+					data[4*page+j] = byte(j % 251)
+				}
+				want := make([]byte, size)
+				copy(want, data[4*page:8*page])
+				copy(want[3*chunk:], data[4*page:])
+				fd := openTestFile(t, data)
+				ctx := contexttest.Context(t)
+				fd.inode().fs.useReadForIO = useRead
+
+				for _, offset := range []int{0, 1, chunk - 1, chunk, chunk + 1, 2*chunk - 1, 2 * chunk, size - 1, size, size + 1} {
+					got := make([]byte, size+1)
+					n, err := fd.PRead(ctx, usermem.BytesIOSequence(got), int64(offset), vfs.ReadOptions{})
+					if err != nil && err != io.EOF {
+						t.Fatalf("PRead(%d): %v", offset, err)
+					}
+					if start := min(offset, size); n != int64(size-start) || !bytes.Equal(got[:n], want[start:]) {
+						t.Fatalf("PRead(%d) returned %d incorrect bytes", offset, n)
+					}
+				}
+
+				end, _ := hostarch.PageRoundUp(uint64(size))
+				required := memmap.MappableRange{Start: 0, End: end}
+				ts, err := fd.inode().Translate(ctx, required, required, hostarch.Read)
+				if err := memmap.CheckTranslateResult(required, required, hostarch.Read, ts, err); err != nil {
+					t.Fatal(err)
+				}
+				if ts[0].Source.End != 2*chunk {
+					t.Errorf("contiguous chunks translated separately: %+v", ts[0])
+				}
+				got := make([]byte, end)
+				for _, tr := range ts {
+					blocks, err := tr.File.MapInternal(tr.FileRange(), hostarch.Read)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(got[tr.Source.Start:tr.Source.End])), blocks); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if !bytes.Equal(got[:size], want) {
+					t.Fatal("mmap contents differ")
+				}
+				// Like Linux, the final page exposes the rest of its backing block.
+				if !bytes.Equal(got[size:], data[4*page+size-3*chunk:5*page]) {
+					t.Fatal("mmap padding differs from the backing block")
+				}
+				for off := uint64(0); off < end; off += page {
+					r := memmap.MappableRange{Start: off, End: off + page}
+					ts, err := fd.inode().Translate(ctx, r, required, hostarch.Read)
+					if err := memmap.CheckTranslateResult(r, required, hostarch.Read, ts, err); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
 	}
 }

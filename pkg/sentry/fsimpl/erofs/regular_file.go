@@ -60,49 +60,38 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		return 0, nil
 	}
 
-	inode := fd.inode()
-	ranges, err := inode.DataRanges()
-	if err != nil {
-		return 0, err
-	}
-	r := &regularFileReader{
-		image:   inode.fs.image,
-		ranges:  ranges,
-		off:     uint64(offset),
-		useRead: inode.fs.useReadForIO,
-	}
-	return dst.CopyOutFrom(ctx, r)
+	return dst.CopyOutFrom(ctx, &regularFileReader{inode: fd.inode(), off: uint64(offset)})
 }
 
 type regularFileReader struct {
-	image   *erofs.Image
-	ranges  [2]erofs.FileRange
-	off     uint64
-	useRead bool
+	inode *inode
+	off   uint64
 }
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (r *regularFileReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
-	// The ranges aren't contiguous in the image, so a read that spans both is
-	// done one range at a time.
 	var done uint64
-	off := r.off
-	for _, rng := range r.ranges {
-		if off >= rng.Size {
-			off -= rng.Size
-			continue
+	for !dsts.IsEmpty() {
+		if r.off >= r.inode.Size() {
+			return done, io.EOF
 		}
-		dst := dsts.TakeFirst64(rng.Size - off)
-		imageOff := rng.Off + off
-		var (
-			n   uint64
-			err error
-		)
-		if r.useRead {
-			n, err = hostfd.Preadv2(int32(r.image.FD()), dst, int64(imageOff), 0 /* flags */)
-		} else {
-			src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(rng.Bytes)).DropFirst64(off)
-			n, err = safemem.CopySeq(dst, src)
+		e, err := r.inode.MapBlocks(r.off)
+		if err != nil {
+			return done, err
+		}
+		within := r.off - e.Off
+		dst := dsts.TakeFirst64(min(e.Length-within, r.inode.Size()-r.off))
+		var n uint64
+		switch {
+		case !e.Mapped:
+			n, err = safemem.ZeroSeq(dst)
+		case r.inode.fs.useReadForIO:
+			n, err = hostfd.Preadv2(int32(r.inode.fs.image.FD()), dst, int64(e.ImageOff+within), 0 /* flags */)
+		default:
+			var data []byte
+			if data, err = r.inode.fs.image.BytesAt(e.ImageOff+within, dst.NumBytes()); err == nil {
+				n, err = safemem.CopySeq(dst, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(data)))
+			}
 		}
 		r.off += n
 		done += n
@@ -110,12 +99,8 @@ func (r *regularFileReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 			return done, err
 		}
 		dsts = dsts.DropFirst64(n)
-		if dsts.IsEmpty() {
-			return done, nil
-		}
-		off = 0
 	}
-	return done, io.EOF
+	return done, nil
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -190,10 +175,12 @@ func (i *inode) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, 
 // Translate implements memmap.Mappable.Translate.
 func (i *inode) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	pgend, _ := hostarch.PageRoundUp(i.Size())
+	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
 			return nil, &memmap.BusError{io.EOF}
 		}
+		beyondEOF = true
 		required.End = pgend
 	}
 	if optional.End > pgend {
@@ -206,19 +193,37 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 		})
 		return nil, &memmap.BusError{linuxerr.EROFS}
 	}
-	offset, err := i.DataOffset()
-	if err != nil {
-		return nil, &memmap.BusError{err}
+	// TODO: Tail-packed inline data isn't block aligned in the image, so
+	// regular files with inline data can't be mapped. The image should be
+	// created with the "-E noinline_data" option, which was introduced for
+	// the DAX feature support in Linux [1].
+	// [1] https://github.com/erofs/erofs-utils/commit/60549d52c3b636f0ddd1d51b0c1517c1dee22595
+	if i.DataLayout() == erofs.InodeDataLayoutFlatInline {
+		return nil, &memmap.BusError{linuxerr.ENOTSUP}
 	}
-	mr := optional
-	return []memmap.Translation{
-		{
-			Source: mr,
-			File:   &i.fs.mf,
-			Offset: mr.Start + offset,
-			Perms:  hostarch.ReadExecute,
-		},
-	}, nil
+	var ts []memmap.Translation
+	for off := required.Start; off < required.End; {
+		e, err := i.MapBlocks(off)
+		if err != nil {
+			return ts, &memmap.BusError{err}
+		}
+		t := memmap.Translation{Perms: hostarch.ReadExecute}
+		if e.Mapped {
+			t.Source = memmap.MappableRange{Start: max(e.Off, optional.Start), End: min(e.Off+e.Length, optional.End)}
+			t.File = &i.fs.mf
+			t.Offset = e.ImageOff + t.Source.Start - e.Off
+		} else {
+			t.Source = memmap.MappableRange{Start: off, End: off + hostarch.PageSize}
+			t.File = i.fs.memoryFile
+			t.Offset = i.fs.zeroPage.Start
+		}
+		ts = append(ts, t)
+		off = t.Source.End
+	}
+	if beyondEOF {
+		return ts, &memmap.BusError{io.EOF}
+	}
+	return ts, nil
 }
 
 var inodeTranslateWriteWarnOnce sync.Once
