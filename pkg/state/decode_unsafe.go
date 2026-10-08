@@ -17,7 +17,6 @@ package state
 import (
 	"fmt"
 	"reflect"
-	"runtime"
 	"unsafe"
 )
 
@@ -35,42 +34,12 @@ func reflectValueRWAddr(obj reflect.Value) reflect.Value {
 // the use of unexported struct fields.
 //
 // Preconditions:
-//   - arr.Kind() == reflect.Array.
+//   - arr.Kind() == reflect.Array and arr.CanAddr().
 //   - i, j, k >= 0.
 //   - i <= j <= k <= arr.Len().
 func reflectValueRWSlice3(arr reflect.Value, i, j, k int) reflect.Value {
 	if arr.Kind() != reflect.Array {
 		panic(fmt.Sprintf("arr has kind %v, wanted %v", arr.Kind(), reflect.Array))
 	}
-	if i < 0 || j < 0 || k < 0 {
-		panic(fmt.Sprintf("negative subscripts (%d, %d, %d)", i, j, k))
-	}
-	if i > j {
-		panic(fmt.Sprintf("subscript i (%d) > j (%d)", i, j))
-	}
-	if j > k {
-		panic(fmt.Sprintf("subscript j (%d) > k (%d)", j, k))
-	}
-	if k > arr.Len() {
-		panic(fmt.Sprintf("subscript k (%d) > array length (%d)", k, arr.Len()))
-	}
-
-	sliceTyp := reflect.SliceOf(arr.Type().Elem())
-	if i == arr.Len() {
-		// By precondition, i == j == k == arr.Len().
-		return reflect.MakeSlice(sliceTyp, 0, 0)
-	}
-	slh := reflect.SliceHeader{
-		// reflect.Value.CanAddr() == false for arrays, so we need to get the
-		// address from the first element of the array.
-		Data: arr.Index(i).UnsafeAddr(),
-		Len:  j - i,
-		Cap:  k - i,
-	}
-	slobj := reflect.NewAt(sliceTyp, unsafe.Pointer(&slh)).Elem()
-	// Before slobj is constructed, arr holds the only pointer-typed pointer to
-	// the array since reflect.SliceHeader.Data is a uintptr, so arr must be
-	// kept alive.
-	runtime.KeepAlive(arr)
-	return slobj
+	return reflectValueRWAddr(arr).Elem().Slice3(i, j, k)
 }

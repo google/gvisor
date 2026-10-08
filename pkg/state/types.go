@@ -91,7 +91,7 @@ func makeTypeDecodeDatabase() typeDecodeDatabase {
 
 // lookupNameFields extracts the name and fields from an object.
 func lookupNameFields(typ reflect.Type) (string, []string, bool) {
-	v := reflect.Zero(reflect.PtrTo(typ)).Interface()
+	v := reflect.Zero(reflect.PointerTo(typ)).Interface()
 	t, ok := v.(Type)
 	if !ok {
 		// Is this a primitive?
