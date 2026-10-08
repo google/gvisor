@@ -64,6 +64,11 @@ const (
 	NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY = 0xd04
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000event.h:
+const (
+	NV0000_CTRL_CMD_EVENT_SET_NOTIFICATION = 0x501
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000gpu.h:
 const (
 	NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS      = 0x201
