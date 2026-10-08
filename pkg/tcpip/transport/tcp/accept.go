@@ -371,6 +371,9 @@ func (e *Endpoint) propagateInheritableOptionsLocked(n *Endpoint) {
 	n.boundPortFlags = e.boundPortFlags
 	n.userMSS = e.userMSS
 	n.ops.SetMark(e.ops.GetMark())
+	// n is not yet connected, so there is no delayed data for the handler to
+	// flush. The handler also acquires n.mu, which is already held.
+	n.ops.SetDelayOptionNoNotify(e.ops.GetDelayOption())
 }
 
 // reserveTupleLocked reserves an accepted endpoint's tuple.

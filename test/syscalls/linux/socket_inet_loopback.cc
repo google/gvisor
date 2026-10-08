@@ -1290,6 +1290,60 @@ TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPUserTimeout) {
   EXPECT_EQ(get, kUserTimeout);
 }
 
+TEST_P(SocketInetLoopbackTest, AcceptedInheritsTCPNoDelay) {
+  SocketInetTestParam const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(
+      bind(listen_fd.get(), AsSockAddr(&listen_addr), listener.addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(), AsSockAddr(&listen_addr), &addrlen),
+              SyscallSucceeds());
+
+  const uint16_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  for (int nodelay : {1, 0}) {
+    SCOPED_TRACE(absl::StrCat("TCP_NODELAY=", nodelay));
+
+    ASSERT_THAT(setsockopt(listen_fd.get(), IPPROTO_TCP, TCP_NODELAY, &nodelay,
+                           sizeof(nodelay)),
+                SyscallSucceeds());
+
+    // Connect to the listening socket.
+    FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+
+    sockaddr_storage conn_addr = connector.addr;
+    ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+    ASSERT_THAT(RetryEINTR(connect)(conn_fd.get(), AsSockAddr(&conn_addr),
+                                    connector.addr_len),
+                SyscallSucceeds());
+
+    // Accept the connection.
+    auto accepted =
+        ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+    // Verify that the accepted socket inherited TCP_NODELAY from the
+    // listening socket.
+    int get = -1;
+    socklen_t get_len = sizeof(get);
+    ASSERT_THAT(
+        getsockopt(accepted.get(), IPPROTO_TCP, TCP_NODELAY, &get, &get_len),
+        SyscallSucceeds());
+    EXPECT_EQ(get_len, sizeof(get));
+    EXPECT_EQ(get, nodelay);
+  }
+}
+
 TEST_P(SocketInetLoopbackTest, TCPAcceptAfterReset) {
   SocketInetTestParam const& param = GetParam();
   TestAddress const& listener = param.listener;
