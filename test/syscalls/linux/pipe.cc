@@ -19,6 +19,7 @@
 #include <linux/magic.h>
 #include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
@@ -270,6 +271,37 @@ TEST(Pipe2Test, CloExec) {
 TEST(Pipe2Test, BadOptions) {
   int fds[2];
   EXPECT_THAT(pipe2(fds, 0xDEAD), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(Pipe2Test, RestartCodeAddress) {
+  // On arm64, x0 holds both the first argument and the return value, so the
+  // host kernel can mistake an argument for a restart code.
+  void* const want = reinterpret_cast<void*>((uint64_t{1} << 32) - kPageSize);
+  void* const addr =
+      mmap(want, kPageSize, PROT_READ | PROT_WRITE,
+           MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+  if (addr == MAP_FAILED && errno == EEXIST) {
+    GTEST_SKIP() << "the page below 4 GiB is in use";
+  }
+  ASSERT_THAT(reinterpret_cast<uintptr_t>(addr), SyscallSucceeds());
+  if (addr != want) {
+    munmap(addr, kPageSize);
+    GTEST_SKIP() << "MAP_FIXED_NOREPLACE is not supported";
+  }
+  Cleanup unmap([addr] { munmap(addr, kPageSize); });
+
+  for (int64_t code : {-512, -514, -516}) {
+    const uint32_t low = static_cast<uint32_t>(code);
+    ASSERT_THAT(syscall(SYS_pipe2, uint64_t{low}, 0), SyscallSucceeds())
+        << "for code " << code;
+    int fds[2];
+    memcpy(fds, reinterpret_cast<void*>(uintptr_t{low}), sizeof(fds));
+    FileDescriptor rfd(fds[0]);
+    FileDescriptor wfd(fds[1]);
+    EXPECT_THAT(syscall(SYS_pipe2, static_cast<uint64_t>(code), 0),
+                SyscallFailsWithErrno(EFAULT))
+        << "for code " << code;
+  }
 }
 
 // Tests that opening named pipes with O_TRUNC shouldn't cause an error, but

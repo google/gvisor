@@ -114,14 +114,18 @@ go_test(
     srcs = [
         "context_queue_test.go",
         "shared_context_test.go",
+        "sysmsg_thread_arm64_test.go",
         "systrap_test.go",
     ],
     embed = [":systrap"],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/safemem",
+        "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",

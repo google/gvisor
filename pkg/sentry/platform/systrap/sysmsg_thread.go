@@ -181,5 +181,5 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 		panic(fmt.Sprintf("failed to build rules for sysmsg threads: %v", err))
 	}
 
-	return instrs
+	return trapRestartArgs(stubStart, instrs)
 }

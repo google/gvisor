@@ -79,7 +79,7 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 }
 
 // updateSyscallRegs updates registers after finishing sysemu.
-func updateSyscallRegs(regs *arch.Registers, _ sysmsg.ContextState) {
+func updateSyscallRegs(regs *arch.Registers, _ sysmsg.ContextState, _ *linux.SignalInfo) {
 	// Ptrace puts -ENOSYS in rax on syscall-enter-stop.
 	regs.Rax = regs.Orig_rax
 }
