@@ -649,6 +649,7 @@ func (r *Request) StateFields() []string {
 		"data",
 		"async",
 		"noReply",
+		"sent",
 	}
 }
 
@@ -663,6 +664,7 @@ func (r *Request) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &r.data)
 	stateSinkObject.Save(4, &r.async)
 	stateSinkObject.Save(5, &r.noReply)
+	stateSinkObject.Save(6, &r.sent)
 }
 
 func (r *Request) afterLoad(context.Context) {}
@@ -675,6 +677,7 @@ func (r *Request) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(3, &r.data)
 	stateSourceObject.Load(4, &r.async)
 	stateSourceObject.Load(5, &r.noReply)
+	stateSourceObject.Load(6, &r.sent)
 }
 
 func (fRes *futureResponse) StateTypeName() string {
@@ -687,6 +690,7 @@ func (fRes *futureResponse) StateFields() []string {
 		"hdr",
 		"data",
 		"async",
+		"abandoned",
 		"buf",
 	}
 }
@@ -700,7 +704,8 @@ func (fRes *futureResponse) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fRes.hdr)
 	stateSinkObject.Save(2, &fRes.data)
 	stateSinkObject.Save(3, &fRes.async)
-	stateSinkObject.Save(4, &fRes.buf)
+	stateSinkObject.Save(4, &fRes.abandoned)
+	stateSinkObject.Save(5, &fRes.buf)
 }
 
 // +checklocksignore
@@ -709,7 +714,8 @@ func (fRes *futureResponse) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(1, &fRes.hdr)
 	stateSourceObject.Load(2, &fRes.data)
 	stateSourceObject.Load(3, &fRes.async)
-	stateSourceObject.Load(4, &fRes.buf)
+	stateSourceObject.Load(4, &fRes.abandoned)
+	stateSourceObject.Load(5, &fRes.buf)
 	stateSourceObject.AfterLoad(func() { fRes.afterLoad(ctx) })
 }
 
