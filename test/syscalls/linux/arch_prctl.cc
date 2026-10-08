@@ -1192,6 +1192,73 @@ TEST(ArchPrctlTest, AmxReqXcompPermEnablesTileData) {
       << std::hex << perm;
 }
 
+// Tile configuration with palette 1, and %tmm0 holding kTileRows rows of
+// kTileRowBytes bytes.
+constexpr int kTileRows = 16;
+constexpr int kTileRowBytes = 64;
+struct alignas(64) TileConfig {
+  uint8_t bytes[64];
+};
+
+TileConfig MakeTileConfig() {
+  TileConfig cfg = {};
+  cfg.bytes[0] = 1;               // Palette.
+  cfg.bytes[16] = kTileRowBytes;  // %tmm0 bytes per row.
+  cfg.bytes[48] = kTileRows;      // %tmm0 rows.
+  return cfg;
+}
+
+const TileConfig kTileConfig = MakeTileConfig();
+
+// AMX tile instructions, for assemblers that don't know them. All of them use
+// %tmm0 and a stride of kTileRowBytes.
+
+void LoadTileConfig(const TileConfig& cfg) {
+  asm volatile(".byte 0xc4, 0xe2, 0x78, 0x49, 0x00"  // ldtilecfg (%rax)
+               :
+               : "a"(cfg.bytes)
+               : "memory");
+}
+
+void ZeroTile() {
+  asm volatile(".byte 0xc4, 0xe2, 0x7b, 0x49, 0xc0" ::: "memory");  // tilezero
+}
+
+sigjmp_buf tile_read_jmp;
+
+void TileReadSigillHandler(int) { siglongjmp(tile_read_jmp, 1); }
+
+// Where gVisor hides AMX, it hides all of it.
+TEST(ArchPrctlTest, AmxHiddenConsistently) {
+  SKIP_IF(!IsRunningOnGvisor() || CpuidHasAMXTile());
+
+  unsigned long supp = 0;
+  ASSERT_THAT(
+      arch_prctl(ARCH_GET_XCOMP_SUPP, reinterpret_cast<uintptr_t>(&supp)),
+      SyscallSucceeds());
+  EXPECT_EQ(supp & ((1UL << XFEATURE_XTILECFG) | (1UL << XFEATURE_XTILEDATA)),
+            0UL)
+      << std::hex << supp;
+  EXPECT_THAT(arch_prctl(ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+
+  uint32_t eax, ebx, ecx, edx;
+  ASSERT_TRUE(__get_cpuid_count(0xd, 0, &eax, &ebx, &ecx, &edx));
+  EXPECT_EQ(eax & ((1U << XFEATURE_XTILECFG) | (1U << XFEATURE_XTILEDATA)), 0U)
+      << std::hex << eax;
+
+  // Tile instructions don't work.
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(signal(SIGILL, TileReadSigillHandler) != SIG_ERR);
+                if (sigsetjmp(tile_read_jmp, 1) == 0) {
+                  LoadTileConfig(kTileConfig);
+                  ZeroTile();
+                  _exit(1);
+                }
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
 }  // namespace
 
 }  // namespace testing
