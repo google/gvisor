@@ -157,6 +157,54 @@ func (t *Task) BlockOn(w waiter.Waitable, mask waiter.EventMask) bool {
 	return err == nil
 }
 
+// BlockKillable blocks t until an event is received from C, t is killed (i.e.
+// has a SIGKILL pending), or t is required to enter a stop (e.g. because the
+// sandbox is being checkpointed). Unlike Block, other interrupts, such as
+// those resulting from the delivery of non-fatal signals, do not end the
+// block. BlockKillable is analogous to Linux's wait_event_killable(), except
+// that the task is reported as interruptibly sleeping ('S') rather than in
+// uninterruptible sleep ('D') while blocked.
+//
+// It returns nil if an event is received from C and linuxerr.ErrInterrupted
+// otherwise. Interrupts that are consumed while blocking are not lost: they
+// are re-raised before BlockKillable returns so that the task run loop still
+// observes them.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) BlockKillable(C <-chan struct{}) error {
+	consumed := false
+	for {
+		// Consume any pending interrupt so that t.block() below only returns
+		// early for interrupts that occur after this point. This must happen
+		// before the checks below so that a SIGKILL or stop request that
+		// races with the consumption is not missed.
+		if t.interrupted() {
+			t.unsetInterrupted()
+			consumed = true
+		}
+		if t.killed() || t.stopCount.Load() > 0 {
+			t.interruptSelf()
+			return linuxerr.ErrInterrupted
+		}
+		if err := t.block(C, nil); err == nil {
+			if consumed {
+				t.interruptSelf()
+			}
+			return nil
+		}
+		// t.block() re-raised the interrupt via t.interruptSelf(); loop around
+		// to determine whether it is fatal.
+	}
+}
+
+// StopRequested returns true if t is required to enter a stop (e.g. because
+// the sandbox is being checkpointed).
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) StopRequested() bool {
+	return t.stopCount.Load() > 0
+}
+
 // block blocks a task on one of many events.
 // N.B. defer is too expensive to be used here.
 //

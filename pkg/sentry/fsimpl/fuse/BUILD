@@ -113,6 +113,7 @@ go_test(
         "dev_test.go",
         "host_connection_integration_test.go",
         "host_connection_test.go",
+        "interrupt_test.go",
         "utils_test.go",
         "xattr_test.go",
     ],

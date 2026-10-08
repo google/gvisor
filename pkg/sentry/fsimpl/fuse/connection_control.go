@@ -202,11 +202,18 @@ func (conn *connection) Abort(ctx context.Context) {
 		conn.queue.Remove(req)
 	}
 
+	// Likewise for pending FUSE_INTERRUPT requests, including those for
+	// requests that have been abandoned.
+	for !conn.interrupts.Empty() {
+		conn.interrupts.Remove(conn.interrupts.Front())
+	}
+
 	var terminate []linux.FUSEOpID
 
 	// 2. Collect the requests have not been sent to FUSE daemon,
 	// or have not received a reply.
-	for unique := range conn.completions {
+	for unique, fut := range conn.completions {
+		fut.intrReq = nil // Removed from conn.interrupts above.
 		terminate = append(terminate, unique)
 	}
 

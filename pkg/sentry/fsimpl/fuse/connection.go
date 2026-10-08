@@ -48,6 +48,14 @@ const (
 type fuseConn interface {
 	call(ctx context.Context, r *Request) (*Response, error)
 	release(ctx context.Context)
+
+	// interrupt notifies the FUSE server that the task waiting on fut has
+	// been interrupted by a signal, by sending it a FUSE_INTERRUPT request
+	// (immediately if the original request has already been sent, or as
+	// soon as it is sent otherwise).
+	//
+	// Preconditions: conn.mu must be unlocked.
+	interrupt(fut *futureResponse)
 }
 
 // deviceConn implements fuseConn for the in-sandbox /dev/fuse path.
@@ -60,23 +68,27 @@ type deviceConn struct {
 func (dc *deviceConn) call(ctx context.Context, r *Request) (*Response, error) {
 	fut, err := dc.conn.callFuture(ctx, r)
 	if err != nil {
-		return nil, linuxError(err)
+		return nil, err
 	}
-	res, err := fut.resolve(ctx)
-	if err != nil {
-		// If the waiting task is interrupted (e.g. by Kernel.Pause during
-		// save/restore or by a signal), linuxError converts ErrInterrupted to
-		// ERESTARTSYS so the syscall will be re-executed with a new request.
-		// Remove this abandoned request from the queue, completions map, and
-		// active-request count so it is not processed twice or leaked across
-		// checkpoint/restore.
-		dc.conn.cancelRequest(r)
-		return nil, linuxError(err)
+	if fut.async {
+		return nil, nil
 	}
-	return res, nil
+	return dc.conn.waitForResponse(ctx, r, fut)
 }
 
 func (dc *deviceConn) release(ctx context.Context) {}
+
+// interrupt implements fuseConn.interrupt.
+func (dc *deviceConn) interrupt(fut *futureResponse) {
+	conn := dc.conn
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	if conn.markInterruptedLocked(fut) && fut.sent {
+		conn.queueInterruptLocked(fut)
+	}
+	// Otherwise, if the request hasn't been sent yet, conn.read() will queue
+	// the interrupt after the request has been transferred to the server.
+}
 
 // connection is the struct by which the sentry communicates with the FUSE server daemon.
 //
@@ -153,6 +165,20 @@ type connection struct {
 	//
 	// +checklocks:mu
 	queue requestList
+
+	// interrupts is the list of FUSE_INTERRUPT requests that need to be
+	// processed by the FUSE server. As in Linux, interrupts take precedence
+	// over the requests in queue.
+	//
+	// +checklocks:mu
+	interrupts requestList
+
+	// noInterrupt is set if the FUSE server replied to a FUSE_INTERRUPT
+	// request with ENOSYS, indicating that it doesn't support interrupts. No
+	// further FUSE_INTERRUPT requests are sent once it is set.
+	//
+	// +checklocks:mu
+	noInterrupt bool
 
 	// nextOpID is used to create new requests.
 	//
@@ -298,35 +324,28 @@ func linuxError(err error) error {
 			return linuxerr.ErrorFromUnix(e)
 		}
 	default:
+		// FUSE requests are only abandoned with ErrInterrupted when the task
+		// must enter a stop (e.g. for checkpointing), in which case the syscall
+		// should be restarted once the stop ends (see
+		// connection.waitForResponse). Most VFS syscalls don't convert
+		// ErrInterrupted themselves (it would otherwise reach userspace as
+		// EINTR), so request a restart here. Syscalls that can't be restarted
+		// (close(2), for forced FUSE_FLUSH requests) must handle ERESTARTSYS
+		// themselves.
 		return linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 	}
 	log.Warningf("fusefs: failed with invalid error: %v", err)
 	return linuxerr.EINVAL
 }
 
-// cancelRequest removes an aborted request from the queue and completions map
-// if it has not yet been sent to the FUSE server, or marks its completion entry
-// as abandoned if the server has already dequeued it so the late reply can be
-// consumed and discarded without failing with EINVAL.
-func (conn *connection) cancelRequest(r *Request) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-
-	fut, ok := conn.completions[r.id]
-	if !ok {
-		return
+// blockKillable blocks until ch is ready. If ctx is a task, only fatal
+// signals and stops (e.g. for checkpointing) interrupt the wait, as in Linux
+// where tasks waiting to send FUSE requests are only killable.
+func blockKillable(ctx context.Context, ch <-chan struct{}) error {
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		return t.BlockKillable(ch)
 	}
-	if !r.sent {
-		conn.queue.Remove(r)
-		delete(conn.completions, r.id)
-		conn.numActiveRequests--
-		select {
-		case conn.fullQueueCh <- struct{}{}:
-		default:
-		}
-		return
-	}
-	fut.abandoned = true
+	return ctx.Block(ch)
 }
 
 // setInitializedLocked atomically sets the connection as initialized.
@@ -448,7 +467,7 @@ func (conn *connection) CallAsync(ctx context.Context, r *Request) error {
 func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error) {
 	// Block requests sent before connection is initialized.
 	if !conn.isInitialized() && r.hdr.Opcode != linux.FUSE_INIT {
-		if err := ctx.Block(conn.initializedChan); err != nil {
+		if err := blockKillable(ctx, conn.initializedChan); err != nil {
 			return nil, linuxError(err)
 		}
 	}
@@ -466,12 +485,13 @@ func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error)
 		return nil, linuxerr.ECONNREFUSED
 	}
 
-	return conn.fuseConn.call(ctx, r)
+	res, err := conn.fuseConn.call(ctx, r)
+	return res, linuxError(err)
 }
 
 // callFuture makes a request to the server and returns a future response.
 // Call resolve() when the response needs to be fulfilled.
-func (conn *connection) callFuture(b context.Blocker, r *Request) (*futureResponse, error) {
+func (conn *connection) callFuture(ctx context.Context, r *Request) (*futureResponse, error) {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
@@ -486,11 +506,15 @@ func (conn *connection) callFuture(b context.Blocker, r *Request) (*futureRespon
 	// This can potentially starve a request forever but this can only happen
 	// if there are always too many ongoing requests all the time. The
 	// supported maxActiveRequests setting should be really high to avoid this.
-	for conn.numActiveRequests == conn.maxActiveRequests {
+	//
+	// As in Linux, forced requests (e.g. FUSE_FLUSH and FUSE_RELEASE, which
+	// must reach the server even if the calling task is killed) aren't
+	// subject to this limit.
+	for !r.force && conn.numActiveRequests >= conn.maxActiveRequests {
 		log.Infof("Blocking request %v from being queued. Too many active requests: %v",
 			r.id, conn.numActiveRequests)
 		conn.mu.Unlock()
-		err := b.Block(conn.fullQueueCh)
+		err := blockKillable(ctx, conn.fullQueueCh)
 		conn.mu.Lock()
 		if err != nil {
 			return nil, err
@@ -522,6 +546,162 @@ func (conn *connection) callFutureLocked(r *Request) (*futureResponse, error) {
 	return fut, nil
 }
 
+// waitForResponse waits for the server's reply to the synchronous request r.
+// As in Linux (fs/fuse/dev.c:request_wait_answer()), a signal causes a
+// FUSE_INTERRUPT request to be sent once r has been read by the server, after
+// which only fatal signals end the wait. A fatal signal before r is read
+// dequeues it.
+//
+// Unlike Linux, the wait also ends if:
+//
+//   - The task is killed after r was read. Waiting could hang task exit
+//     forever, since the server may be dead. The reply is discarded.
+//
+//   - The task must enter a stop (e.g. for checkpointing), which requires
+//     returning from the syscall. ErrInterrupted is returned, so that the
+//     syscall is restarted (see linuxError). If r was read, a FUSE_INTERRUPT
+//     request is sent and r is forgotten (the server's reply to it fails with
+//     ENOENT); the restarted syscall resends it. If
+//     the server doesn't honor the interrupt, the operation is executed twice,
+//     which may cause spurious errors (e.g. EEXIST from mkdir(2)) or
+//     duplicated effects for non-idempotent operations.
+func (conn *connection) waitForResponse(ctx context.Context, r *Request, fut *futureResponse) (*Response, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		// Not running on a task goroutine, so there are no signals to handle;
+		// treat an interruption like a stop.
+		if err := ctx.Block(fut.ch); err != nil {
+			conn.fuseConn.interrupt(fut)
+			return conn.abandonRequest(r, fut, false /* killed */, err)
+		}
+		return fut.getResponse(), nil
+	}
+
+	err := t.Block(fut.ch)
+	if err == nil {
+		return fut.getResponse(), nil
+	}
+
+	// Interrupted by a signal or a stop: notify the server.
+	conn.fuseConn.interrupt(fut)
+
+	killed := t.Killed()
+	if !killed && !t.StopRequested() {
+		// Interrupted by a non-fatal signal. Only fatal signals (or stops) may
+		// interrupt the wait from now on.
+		if err = t.BlockKillable(fut.ch); err == nil {
+			return fut.getResponse(), nil
+		}
+		killed = t.Killed()
+	}
+	if killed {
+		err = linuxerr.EINTR
+	}
+	return conn.abandonRequest(r, fut, killed, err)
+}
+
+// abandonRequest is called when the task waiting on fut stops waiting for the
+// response to r before receiving it, because it was killed or must enter a
+// stop. If the response arrived in the meantime, it is returned. Otherwise,
+// err is returned, and r is disposed of as described by waitForResponse.
+func (conn *connection) abandonRequest(r *Request, fut *futureResponse, killed bool, err error) (*Response, error) {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	if conn.completions[fut.unique] != fut {
+		// The request has completed (or the connection has been aborted).
+		return fut.getResponse(), nil
+	}
+	switch {
+	case !fut.sent && !r.force:
+		// The server hasn't seen the request; drop it.
+		conn.queue.Remove(r)
+		conn.releaseLocked(fut)
+	case killed || r.force:
+		// Leave the request outstanding. Forced requests (FUSE_FLUSH) must
+		// reach the server, and their syscalls (close(2)) aren't restarted.
+		// The eventual reply is discarded.
+	default:
+		// Stop with the request already in the server's hands. The
+		// restarted syscall will send a new request.
+		conn.releaseLocked(fut)
+	}
+	return nil, err
+}
+
+// releaseLocked forgets the outstanding request whose future response is
+// fut, releasing its active request slot. Any reply subsequently sent by the
+// server for it is rejected with ENOENT, as in Linux. A FUSE_INTERRUPT
+// request that is already queued for it is still sent.
+//
+// +checklocks:conn.mu
+func (conn *connection) releaseLocked(fut *futureResponse) {
+	delete(conn.completions, fut.unique)
+	fut.intrReq = nil
+	conn.numActiveRequests--
+	select {
+	case conn.fullQueueCh <- struct{}{}:
+	default:
+	}
+}
+
+// markInterruptedLocked marks the request whose future response is fut as
+// interrupted, and returns true if the server should be sent a
+// FUSE_INTERRUPT request for it.
+//
+// +checklocks:conn.mu
+func (conn *connection) markInterruptedLocked(fut *futureResponse) bool {
+	if conn.noInterrupt || conn.completions[fut.unique] != fut {
+		// Either the server doesn't support interrupts, or the request has
+		// already been answered.
+		return false
+	}
+	fut.interrupted = true
+	return true
+}
+
+// queueInterruptLocked queues a FUSE_INTERRUPT request for fut, if one isn't
+// already queued.
+//
+// Preconditions: fut has been sent to the server and has not been answered.
+//
+// +checklocks:conn.mu
+func (conn *connection) queueInterruptLocked(fut *futureResponse) {
+	if conn.noInterrupt || fut.intrReq != nil {
+		return
+	}
+	fut.intrReq = newInterruptRequest(fut.unique)
+	conn.interrupts.PushBack(fut.intrReq)
+	conn.waitQueue.Notify(waiter.ReadableEvents)
+}
+
+// handleInterruptReplyLocked processes the FUSE server's reply to a
+// FUSE_INTERRUPT request, as in Linux's fs/fuse/dev.c:fuse_dev_do_write().
+// size is the total size of the reply.
+//
+// If the server replied with EAGAIN, the future response of the interrupted
+// request is returned and the caller must re-send the FUSE_INTERRUPT request.
+//
+// +checklocks:conn.mu
+func (conn *connection) handleInterruptReplyLocked(hdr *linux.FUSEHeaderOut, size int64) (*futureResponse, error) {
+	fut, ok := conn.completions[hdr.Unique&^linux.FUSE_INT_REQ_BIT]
+	if !ok || !fut.sent {
+		return nil, linuxerr.ENOENT
+	}
+	if size != int64(linux.SizeOfFUSEHeaderOut) {
+		return nil, linuxerr.EINVAL
+	}
+	switch hdr.Error {
+	case -int32(unix.ENOSYS):
+		conn.noInterrupt = true
+	case -int32(unix.EAGAIN):
+		if !fut.interrupted {
+			return nil, linuxerr.EINVAL
+		}
+		return fut, nil
+	}
+	return nil, nil
+}
+
 // sendResponse sends a response to the waiting task (if any).
 //
 // +checklocks:conn.mu
@@ -529,16 +709,19 @@ func (conn *connection) sendResponse(ctx context.Context, fut *futureResponse) e
 	// Signal the task waiting on a response if any.
 	defer close(fut.ch)
 
+	// A pending FUSE_INTERRUPT request is moot now that the request has been
+	// answered.
+	if fut.intrReq != nil {
+		conn.interrupts.Remove(fut.intrReq)
+		fut.intrReq = nil
+	}
+
 	// Signal that the queue is no longer full.
 	select {
 	case conn.fullQueueCh <- struct{}{}:
 	default:
 	}
 	conn.numActiveRequests--
-
-	if fut.abandoned {
-		return nil
-	}
 
 	if fut.async {
 		return conn.asyncCallBack(ctx, fut.getResponse())
@@ -569,7 +752,7 @@ func (conn *connection) readiness(ready waiter.EventMask) waiter.EventMask {
 	defer conn.mu.Unlock()
 	// FD is always writable.
 	ready |= waiter.WritableEvents
-	if !conn.queue.Empty() {
+	if !conn.queue.Empty() || !conn.interrupts.Empty() {
 		// Have reqs available, FD is readable.
 		ready |= waiter.ReadableEvents
 	}
@@ -593,6 +776,23 @@ func (conn *connection) read(ctx context.Context, dst usermem.IOSequence) (int64
 	if dst.NumBytes() < int64(minBuffSize) {
 		return 0, linuxerr.EINVAL
 	}
+
+	// Interrupts take precedence over other requests.
+	if intr := conn.interrupts.Front(); intr != nil {
+		n, err := dst.CopyOut(ctx, intr.data)
+		if err != nil {
+			return 0, err
+		}
+		if n != len(intr.data) {
+			return 0, linuxerr.EIO
+		}
+		conn.interrupts.Remove(intr)
+		if fut := conn.completions[intr.hdr.Unique&^linux.FUSE_INT_REQ_BIT]; fut != nil {
+			fut.intrReq = nil
+		}
+		return int64(n), nil
+	}
+
 	// Find the first valid request. For the normal case this loop only executes
 	// once.
 	var req *Request
@@ -627,11 +827,17 @@ func (conn *connection) read(ctx context.Context, dst usermem.IOSequence) (int64
 		return 0, linuxerr.EIO
 	}
 	conn.queue.Remove(req)
-	req.sent = true
 	// Remove noReply ones from the map of requests expecting a reply.
 	if req.noReply {
 		conn.numActiveRequests--
 		delete(conn.completions, req.hdr.Unique)
+	} else if fut, ok := conn.completions[req.hdr.Unique]; ok {
+		fut.sent = true
+		// If the waiting task was interrupted before the request was sent,
+		// the server must now be notified.
+		if fut.interrupted {
+			conn.queueInterruptLocked(fut)
+		}
 	}
 	return int64(n), nil
 }
@@ -652,11 +858,25 @@ func (conn *connection) write(ctx context.Context, src usermem.IOSequence) (int6
 		return 0, linuxerr.EINVAL
 	}
 
+	// Is this the reply to a FUSE_INTERRUPT request?
+	if hdr.Unique&linux.FUSE_INT_REQ_BIT != 0 {
+		fut, err := conn.handleInterruptReplyLocked(&hdr, src.NumBytes())
+		if err != nil {
+			return 0, err
+		}
+		if fut != nil {
+			// The server asked us to re-send the interrupt.
+			conn.queueInterruptLocked(fut)
+		}
+		return int64(n), nil
+	}
+
 	fut, ok := conn.completions[hdr.Unique]
 	if !ok {
 		// Server sent us a response for a request we never sent, or for which we
-		// already received a reply (e.g. aborted), an unlikely event.
-		return 0, linuxerr.EINVAL
+		// already received a reply, or which was abandoned (e.g. aborted). As in
+		// Linux, return ENOENT, which FUSE servers expect in this case.
+		return 0, linuxerr.ENOENT
 	}
 	delete(conn.completions, hdr.Unique)
 

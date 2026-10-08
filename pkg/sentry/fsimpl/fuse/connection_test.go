@@ -216,9 +216,9 @@ func TestConnectionCallInterruptedByPause(t *testing.T) {
 	}
 
 	// Now test interrupting a request AFTER the FUSE daemon has already
-	// dequeued it via fd.Read(). The completion entry must remain registered as
-	// abandoned until the daemon writes its reply via fd.Write() so that the
-	// reply does not fail with EINVAL.
+	// dequeued it via fd.Read(). The daemon is sent a FUSE_INTERRUPT request,
+	// and the request is forgotten, releasing its active request slot. As in
+	// Linux, the daemon's late reply to it fails with ENOENT.
 	taskCtx2 := &interruptibleTaskContext{
 		Context:      s.Ctx,
 		enteredBlock: make(chan struct{}, 1),
@@ -244,26 +244,28 @@ func TestConnectionCallInterruptedByPause(t *testing.T) {
 		t.Errorf("conn.Call() after interrupt of dequeued req = %v, want %v (ERESTARTSYS)", callErr2, linuxerr.ERESTARTSYS)
 	}
 
-	// Because the daemon is still processing req2, its completion entry should
-	// remain as abandoned until conn.write() delivers the reply.
+	conn.mu.Lock()
+	activeReqs = conn.numActiveRequests
+	numCompletions = len(conn.completions)
+	intr := conn.interrupts.Front()
+	conn.mu.Unlock()
+	if activeReqs != 0 {
+		t.Errorf("conn.numActiveRequests after interrupt of dequeued req = %d, want 0", activeReqs)
+	}
+	if numCompletions != 0 {
+		t.Errorf("len(conn.completions) after interrupt of dequeued req = %d, want 0", numCompletions)
+	}
+	if intr == nil || intr.hdr.Unique != req2.id|linux.FUSE_INT_REQ_BIT {
+		t.Errorf("no FUSE_INTERRUPT request queued for dequeued req %d", req2.id)
+	}
+
 	var hdrOut linux.FUSEHeaderOut
 	hdrOut.Len = uint32(hdrOut.SizeBytes())
 	hdrOut.Error = 0
 	hdrOut.Unique = req2.id
 	writeBuf := make([]byte, hdrOut.Len)
 	hdrOut.MarshalUnsafe(writeBuf)
-	if _, err := conn.write(s.Ctx, usermem.BytesIOSequence(writeBuf)); err != nil {
-		t.Errorf("conn.write() for abandoned request failed: %v, want nil", err)
-	}
-
-	conn.mu.Lock()
-	activeReqsAfterReply := conn.numActiveRequests
-	numCompletionsAfterReply := len(conn.completions)
-	conn.mu.Unlock()
-	if activeReqsAfterReply != 0 {
-		t.Errorf("conn.numActiveRequests after late reply = %d, want 0", activeReqsAfterReply)
-	}
-	if numCompletionsAfterReply != 0 {
-		t.Errorf("len(conn.completions) after late reply = %d, want 0", numCompletionsAfterReply)
+	if _, err := conn.write(s.Ctx, usermem.BytesIOSequence(writeBuf)); !linuxerr.Equals(linuxerr.ENOENT, err) {
+		t.Errorf("conn.write() for abandoned request = %v, want ENOENT", err)
 	}
 }
