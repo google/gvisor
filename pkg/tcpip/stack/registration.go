@@ -1498,7 +1498,3 @@ type GSOEndpoint interface {
 	// SupportedGSO returns the supported segmentation offloading.
 	SupportedGSO() SupportedGSO
 }
-
-// GVisorGSOMaxSize is a maximum allowed size of a software GSO segment.
-// This isn't a hard limit, because it is never set into packet headers.
-const GVisorGSOMaxSize = 1 << 16

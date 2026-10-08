@@ -30,10 +30,6 @@ type PluginStack interface {
 
 	// Init initializes plugin stack.
 	Init(args *InitStackArgs) error
-
-	// PreInit handles prepare steps before initializing plugin stack.
-	// It may include joining namespace, mounting NIC, etc.
-	PreInit(args *PreInitStackArgs) (string, []int, error)
 }
 
 // InitStackArgs is a struct that holds arguments needed by PluginStack.Init.
@@ -44,14 +40,6 @@ type InitStackArgs struct {
 	// FDs represents files opened during stack pre-init stage, which will
 	// be used in stack initialization.
 	FDs []int
-}
-
-// PreInitStackArgs is a struct that holds arguments needed by
-// PluginStack.PreInit.
-type PreInitStackArgs struct {
-	// Pid represents current process that invokes plugin stack
-	// pre-init.
-	Pid int
 }
 
 var pluginStack PluginStack

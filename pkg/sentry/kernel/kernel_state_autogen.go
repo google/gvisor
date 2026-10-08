@@ -2807,6 +2807,7 @@ func (ns *PIDNamespace) StateFields() []string {
 		"userns",
 		"id",
 		"last",
+		"noInit",
 		"tasks",
 		"tids",
 		"tgids",
@@ -2830,16 +2831,17 @@ func (ns *PIDNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &ns.userns)
 	stateSinkObject.Save(3, &ns.id)
 	stateSinkObject.Save(4, &ns.last)
-	stateSinkObject.Save(5, &ns.tasks)
-	stateSinkObject.Save(6, &ns.tids)
-	stateSinkObject.Save(7, &ns.tgids)
-	stateSinkObject.Save(8, &ns.sessions)
-	stateSinkObject.Save(9, &ns.sids)
-	stateSinkObject.Save(10, &ns.processGroups)
-	stateSinkObject.Save(11, &ns.pgids)
-	stateSinkObject.Save(12, &ns.exiting)
-	stateSinkObject.Save(13, &ns.extra)
-	stateSinkObject.Save(14, &ns.inode)
+	stateSinkObject.Save(5, &ns.noInit)
+	stateSinkObject.Save(6, &ns.tasks)
+	stateSinkObject.Save(7, &ns.tids)
+	stateSinkObject.Save(8, &ns.tgids)
+	stateSinkObject.Save(9, &ns.sessions)
+	stateSinkObject.Save(10, &ns.sids)
+	stateSinkObject.Save(11, &ns.processGroups)
+	stateSinkObject.Save(12, &ns.pgids)
+	stateSinkObject.Save(13, &ns.exiting)
+	stateSinkObject.Save(14, &ns.extra)
+	stateSinkObject.Save(15, &ns.inode)
 }
 
 func (ns *PIDNamespace) afterLoad(context.Context) {}
@@ -2851,16 +2853,17 @@ func (ns *PIDNamespace) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(2, &ns.userns)
 	stateSourceObject.Load(3, &ns.id)
 	stateSourceObject.Load(4, &ns.last)
-	stateSourceObject.Load(5, &ns.tasks)
-	stateSourceObject.Load(6, &ns.tids)
-	stateSourceObject.Load(7, &ns.tgids)
-	stateSourceObject.Load(8, &ns.sessions)
-	stateSourceObject.Load(9, &ns.sids)
-	stateSourceObject.Load(10, &ns.processGroups)
-	stateSourceObject.Load(11, &ns.pgids)
-	stateSourceObject.Load(12, &ns.exiting)
-	stateSourceObject.Load(13, &ns.extra)
-	stateSourceObject.Load(14, &ns.inode)
+	stateSourceObject.Load(5, &ns.noInit)
+	stateSourceObject.Load(6, &ns.tasks)
+	stateSourceObject.Load(7, &ns.tids)
+	stateSourceObject.Load(8, &ns.tgids)
+	stateSourceObject.Load(9, &ns.sessions)
+	stateSourceObject.Load(10, &ns.sids)
+	stateSourceObject.Load(11, &ns.processGroups)
+	stateSourceObject.Load(12, &ns.pgids)
+	stateSourceObject.Load(13, &ns.exiting)
+	stateSourceObject.Load(14, &ns.extra)
+	stateSourceObject.Load(15, &ns.inode)
 }
 
 func (t *threadGroupNode) StateTypeName() string {

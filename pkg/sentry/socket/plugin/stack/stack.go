@@ -50,11 +50,6 @@ func (s *Stack) Init(args *plugin.InitStackArgs) error {
 	return nil
 }
 
-// PreInit implements plugin.PluginStack.PreInit.
-func (s *Stack) PreInit(args *plugin.PreInitStackArgs) (string, []int, error) {
-	return cgo.PreInitStack(args.Pid)
-}
-
 // Interfaces implements inet.Stack.Interfaces.
 func (s *Stack) Interfaces() map[int32]inet.Interface {
 	// TODO: support Interfaces

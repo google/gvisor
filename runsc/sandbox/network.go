@@ -28,9 +28,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
@@ -553,7 +551,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		if link.GSOMaxSize == 0 && conf.GVisorGSO {
 			// Host GSO is disabled. Let's enable gVisor GSO.
-			link.GSOMaxSize = stack.GVisorGSOMaxSize
+			link.GSOMaxSize = tcpip.GVisorGSOMaxSize
 			link.GVisorGSOEnabled = true
 		}
 	}
@@ -571,13 +569,17 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	return nil
 }
 
+// PluginStackPreInit prepares the plugin network stack for the sandbox process
+// with the given PID, returning the stack's init string and the host FDs to
+// pass to the sandbox. Binaries that link a plugin stack set it.
+var PluginStackPreInit func(pid int) (string, []int, error)
+
 func initPluginStack(conn *urpc.Client, pid int, conf *config.Config) error {
-	pluginStack := plugin.GetPluginStack()
-	if pluginStack == nil {
+	if PluginStackPreInit == nil {
 		return fmt.Errorf("plugin stack is not registered")
 	}
 
-	initStr, fds, err := pluginStack.PreInit(&plugin.PreInitStackArgs{Pid: pid})
+	initStr, fds, err := PluginStackPreInit(pid)
 	if err != nil {
 		return fmt.Errorf("plugin stack PreInit failed: %v", err)
 	}
@@ -758,7 +760,7 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 			}
 			// Create a catch all route to the gateway.
 			switch len(r.Gw) {
-			case header.IPv4AddressSize:
+			case net.IPv4len:
 				if defv4 != nil {
 					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv4, r)
 				}
@@ -770,7 +772,7 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 					Gateway: r.Gw,
 					MTU:     mtu,
 				}
-			case header.IPv6AddressSize:
+			case net.IPv6len:
 				if defv6 != nil {
 					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv6, r)
 				}
