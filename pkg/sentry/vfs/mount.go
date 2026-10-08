@@ -433,6 +433,28 @@ func (vfs *VirtualFilesystem) mountHasLockedChildren(mnt *Mount, vd VirtualDentr
 	return false
 }
 
+// CheckClonePrivateMount returns a non-nil error if a private mount without
+// submounts cannot be cloned from vd, as Linux's clone_private_mount() checks:
+// vd's mount must be in the caller's mount namespace or be the root of an
+// anonymous mount namespace, the caller must hold CAP_SYS_ADMIN in the user
+// namespace owning vd's mount namespace, and no locked mount can be mounted at
+// or below vd.
+func (vfs *VirtualFilesystem) CheckClonePrivateMount(ctx context.Context, vd VirtualDentry) error {
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
+	mnt := vd.mount
+	if !vfs.validInMountNS(ctx, mnt) && (mnt.umounted || mnt.ns == nil || !mnt.ns.anon || mnt != mnt.ns.root) {
+		return linuxerr.EINVAL
+	}
+	if !auth.CredentialsFromContext(ctx).HasCapabilityIn(linux.CAP_SYS_ADMIN, mnt.ns.Owner) {
+		return linuxerr.EPERM
+	}
+	if vfs.mountHasLockedChildren(mnt, vd) {
+		return linuxerr.EINVAL
+	}
+	return nil
+}
+
 // ConnectMountAt connects mnt at the path represented by target.
 //
 // Preconditions: mnt must be disconnected.
