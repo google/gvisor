@@ -395,6 +395,27 @@ func (fd *Fd) GetFilesystem() (*vfs.Filesystem, *vfs.Dentry, *vfs.MountOptions, 
 	return fs, root, opts, nil
 }
 
+// UngetFilesystem undoes GetFilesystem for an fsmount(2) that failed before mounting, so that
+// the fd can be mounted again, as Linux allows. It takes its own references on fs and root.
+func (fd *Fd) UngetFilesystem(fs *vfs.Filesystem, root *vfs.Dentry, opts *vfs.MountOptions) {
+	fd.contextMu.Lock()
+	defer fd.contextMu.Unlock()
+
+	fdContext, ok := fd.context.(*reconfParamsContext)
+	if !ok {
+		return
+	}
+
+	fs.IncRef()
+	root.IncRef()
+	fd.context = &awaitingMountContext{
+		filesystem: fs,
+		root:       root,
+		opts:       opts,
+		creds:      fdContext.creds,
+	}
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *Fd) Release(ctx context.Context) {
 	fdContext, ok := fd.context.(*awaitingMountContext)

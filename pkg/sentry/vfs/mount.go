@@ -37,6 +37,8 @@ const (
 	nsfsName        = "nsfs"
 	cgroupFsName    = "cgroup"
 	cgroup2FsName   = "cgroup2"
+	procFsName      = "proc"
+	sysFsName       = "sysfs"
 )
 
 // mountLockFlags records which of a Mount's flags a remount may not clear. It
@@ -866,10 +868,90 @@ func (vfs *VirtualFilesystem) MountAt(ctx context.Context, creds *auth.Credentia
 		return nil, err
 	}
 	defer mnt.DecRef(ctx)
+	if vfs.MountTooRevealing(ctx, mnt) {
+		return nil, linuxerr.EPERM
+	}
 	if err := vfs.ConnectMountAt(ctx, creds, mnt, target); err != nil {
 		return nil, err
 	}
 	return mnt, nil
+}
+
+// MountVisibilityDentry is an optional extension to DentryImpl used by
+// MountTooRevealing. A Dentry that does not implement it is neither a
+// filesystem root nor an empty directory to MountTooRevealing.
+type MountVisibilityDentry interface {
+	// IsFilesystemRoot returns true if the Dentry is the root of its
+	// filesystem.
+	IsFilesystemRoot() bool
+
+	// IsEmptyDir returns true if the Dentry is a directory that can never
+	// contain entries.
+	IsEmptyDir() bool
+}
+
+// MountTooRevealing returns true if mnt, a new proc or sysfs mount, would give
+// the mount namespace in ctx more access to its filesystem than the
+// namespace's existing mounts do. This applies only to namespaces that are not
+// owned by the initial user namespace. When mnt is allowed only because of
+// read-only mounts, mnt is locked read-only as well.
+//
+// It is analogous to fs/namespace.c:mount_too_revealing() in Linux.
+//
+// Preconditions: mnt is not in the mount namespace in ctx.
+func (vfs *VirtualFilesystem) MountTooRevealing(ctx context.Context, mnt *Mount) bool {
+	name := mnt.fs.FilesystemType().Name()
+	if name != procFsName && name != sysFsName {
+		return false
+	}
+	mntns := MountNamespaceFromContext(ctx)
+	if mntns == nil {
+		return false
+	}
+	if mntns.Owner == mntns.Owner.Root() {
+		mntns.DecRef(ctx)
+		return false
+	}
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
+	vfs.delayDecRef(mntns)
+	readOnlyVisible := false
+	for _, m := range mntns.root.submountsLocked() {
+		if m.fs.FilesystemType().Name() != name {
+			continue
+		}
+		if impl, ok := m.root.Impl().(MountVisibilityDentry); !ok || !impl.IsFilesystemRoot() {
+			continue
+		}
+		if m.lockedFlags.readOnly && !mnt.ReadOnlyLocked() {
+			continue
+		}
+		if vfs.mountHidesContent(m) {
+			continue
+		}
+		if !m.lockedFlags.readOnly {
+			return false
+		}
+		readOnlyVisible = true
+	}
+	if readOnlyVisible {
+		mnt.lockedFlags.readOnly = true
+		return false
+	}
+	return true
+}
+
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) mountHidesContent(mnt *Mount) bool {
+	for child := range mnt.children {
+		if !child.locked {
+			continue
+		}
+		if impl, ok := child.point().Impl().(MountVisibilityDentry); !ok || !impl.IsEmptyDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // UmountAt removes the Mount at the given path.
