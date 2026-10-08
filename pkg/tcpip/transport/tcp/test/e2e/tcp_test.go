@@ -2863,6 +2863,91 @@ func TestSmallSegReceiveWindowAdvertisement(t *testing.T) {
 	}
 }
 
+// TestSmallSegmentsQueuedWhileNotReading tests that a receiver that is not
+// reading queues every segment sent within its advertised window, however
+// small the segments are.
+func TestSmallSegmentsQueuedWhileNotReading(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	// Each segment fits the window, but 3000 of them overflow the receive buffer
+	// if each is charged its full overhead.
+	const (
+		segs   = 3000
+		rcvBuf = 64 << 10
+	)
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, rcvBuf)
+	payload := []byte("+PONG\r\n")
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	for i := 0; i < segs; i++ {
+		c.SendPacket(payload, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			SeqNum:  seq,
+			AckNum:  c.IRS.Add(1),
+			Flags:   header.TCPFlagAck,
+			RcvWnd:  30000,
+		})
+		seq = seq.Add(seqnum.Size(len(payload)))
+		v := c.GetPacket()
+		checker.IPv4(t, v, checker.TCP(checker.TCPAckNum(uint32(seq))))
+		v.Release()
+	}
+	if got, err := c.EP.GetSockOptInt(tcpip.ReceiveQueueSizeOption); err != nil || got != segs*len(payload) {
+		t.Fatalf("GetSockOptInt(ReceiveQueueSizeOption) = (%d, %v), want (%d, nil)", got, err, segs*len(payload))
+	}
+}
+
+// TestCoalesceSkipsSegmentBeingRead tests that a reader that consumes small
+// segments as they arrive, but always leaves part of one unread, keeps the
+// receive window open.
+func TestCoalesceSkipsSegmentBeingRead(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(context.TestInitialSequenceNumber, 30000, 32<<10)
+	payload := []byte("+PONG\r\n")
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	// send sends payload and returns the window advertised in the ACK for it.
+	send := func() uint16 {
+		c.SendPacket(payload, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			SeqNum:  seq,
+			AckNum:  c.IRS.Add(1),
+			Flags:   header.TCPFlagAck,
+			RcvWnd:  30000,
+		})
+		seq = seq.Add(seqnum.Size(len(payload)))
+		v := c.GetPacket()
+		defer v.Release()
+		checker.IPv4(t, v, checker.TCP(checker.TCPAckNum(uint32(seq))))
+		return header.TCP(header.IPv4(v.AsSlice()).Payload()).WindowSize()
+	}
+	read := func(n int) {
+		var buf bytes.Buffer
+		if _, err := c.EP.Read(&tcpip.LimitedWriter{W: &buf, N: int64(n)}, tcpip.ReadOptions{}); err != nil {
+			t.Fatalf("Read: %s", err)
+		}
+		if buf.Len() != n {
+			t.Fatalf("Read returned %d bytes, want %d", buf.Len(), n)
+		}
+		// Discard any window update the read triggered.
+		for v := c.GetPacketNonBlocking(); v != nil; v = c.GetPacketNonBlocking() {
+			v.Release()
+		}
+	}
+
+	initial := send()
+	read(len(payload) - 1)
+	for i := 0; i < 6000; i++ {
+		if wnd := send(); wnd < initial/2 {
+			t.Fatalf("after %d segments, window = %d, want >= %d", i+1, wnd, initial/2)
+		}
+		read(len(payload))
+	}
+}
+
 func TestNoWindowShrinking(t *testing.T) {
 	c := context.New(t, e2e.DefaultMTU)
 	defer c.Cleanup()
