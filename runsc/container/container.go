@@ -39,7 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -1289,7 +1289,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	for _, filestore := range goferFilestores {
 		// Perform this work around outside the sandbox. The sandbox may already be
 		// running with seccomp filters that do not allow this.
-		pgalloc.IMAWorkAroundForMemFile(filestore.Fd())
+		hostmm.IMAWorkAroundForMemFile(filestore.Fd())
 	}
 	return goferFilestores, nil
 }
