@@ -92,6 +92,7 @@ go_test(
         "//pkg/hostarch",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/vfs",
         "//pkg/usermem",

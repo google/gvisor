@@ -190,10 +190,12 @@ func (i *inode) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, 
 // Translate implements memmap.Mappable.Translate.
 func (i *inode) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	pgend, _ := hostarch.PageRoundUp(i.Size())
+	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
 			return nil, &memmap.BusError{io.EOF}
 		}
+		beyondEOF = true
 		required.End = pgend
 	}
 	if optional.End > pgend {
@@ -211,14 +213,18 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 		return nil, &memmap.BusError{err}
 	}
 	mr := optional
-	return []memmap.Translation{
+	ts := []memmap.Translation{
 		{
 			Source: mr,
 			File:   &i.fs.mf,
 			Offset: mr.Start + offset,
 			Perms:  hostarch.ReadExecute,
 		},
-	}, nil
+	}
+	if beyondEOF {
+		return ts, &memmap.BusError{io.EOF}
+	}
+	return ts, nil
 }
 
 var inodeTranslateWriteWarnOnce sync.Once
