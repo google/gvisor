@@ -969,6 +969,72 @@ func (mm *MemoryManager) addRSSLocked(ar hostarch.AddrRange) {
 // +checklocks:mm.activeMu
 func (mm *MemoryManager) removeRSSLocked(ar hostarch.AddrRange) {
 	mm.curRSS -= uint64(ar.Length())
+	if len(mm.partialHugeDecommits) == 0 {
+		return
+	}
+	start, ok := ar.Start.HugeRoundUp()
+	if !ok {
+		return
+	}
+	for h := start; h < ar.End && ar.End-h >= hostarch.HugePageSize; h += hostarch.HugePageSize {
+		delete(mm.partialHugeDecommits, h)
+	}
+}
+
+// notePartialHugeDecommitLocked records that Decommit decommitted ar, part of
+// a huge page that stays mapped by a pma.
+//
+// +checklocks:mm.activeMu
+func (mm *MemoryManager) notePartialHugeDecommitLocked(ar hostarch.AddrRange) {
+	if mm.partialHugeDecommits == nil {
+		mm.partialHugeDecommits = make(map[hostarch.Addr]struct{})
+	}
+	if len(mm.partialHugeDecommits) >= mm.partialHugeDecommitsSweepAt {
+		// Drop huge pages that are unmapped or fully backed again.
+		for h := range mm.partialHugeDecommits {
+			if mm.uncommittedBytesLocked(hostarch.AddrRange{h, h + hostarch.HugePageSize}) == 0 {
+				delete(mm.partialHugeDecommits, h)
+			}
+		}
+		mm.partialHugeDecommitsSweepAt = max(2*len(mm.partialHugeDecommits), 64)
+	}
+	for h := ar.Start.HugeRoundDown(); h < ar.End; h += hostarch.HugePageSize {
+		mm.partialHugeDecommits[h] = struct{}{}
+	}
+}
+
+// uncommittedRSSLocked returns the number of bytes in ar that private pmas
+// map in partially decommitted huge pages and that the host does not
+// currently back. These bytes are included in curRSS but are not resident.
+//
+// +checklocksread:mm.activeMu
+func (mm *MemoryManager) uncommittedRSSLocked(ar hostarch.AddrRange) uint64 {
+	var n uint64
+	for h := range mm.partialHugeDecommits {
+		n += mm.uncommittedBytesLocked(hostarch.AddrRange{h, h + hostarch.HugePageSize}.Intersect(ar))
+	}
+	return n
+}
+
+// uncommittedBytesLocked returns the number of bytes in ar that private pmas
+// map and that the host does not currently back.
+//
+// +checklocksread:mm.activeMu
+func (mm *MemoryManager) uncommittedBytesLocked(ar hostarch.AddrRange) uint64 {
+	var n uint64
+	for pseg := mm.pmas.LowerBoundSegment(ar.Start); pseg.Ok() && pseg.Start() < ar.End; pseg = pseg.NextSegment() {
+		if !pseg.ValuePtr().private {
+			continue
+		}
+		psegAR := pseg.Range().Intersect(ar)
+		committed, err := mm.mf.CommittedBytes(pseg.fileRangeOf(psegAR))
+		if err != nil {
+			// Count the pages as resident.
+			continue
+		}
+		n += uint64(psegAR.Length()) - committed
+	}
+	return n
 }
 
 // pmaSetFunctions implements segment.Functions for pmaSet.

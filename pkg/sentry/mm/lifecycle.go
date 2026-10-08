@@ -16,6 +16,7 @@ package mm
 
 import (
 	"fmt"
+	"maps"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -333,6 +334,10 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		addrRange := srcpseg.Range()
 		mm2.addRSSLocked(addrRange)
 		dstpgap = mm2.pmas.Insert(dstpgap, addrRange, *pma).NextGap()
+	}
+	if len(mm.partialHugeDecommits) != 0 {
+		mm2.partialHugeDecommits = maps.Clone(mm.partialHugeDecommits)
+		mm2.partialHugeDecommitsSweepAt = mm.partialHugeDecommitsSweepAt
 	}
 
 	// Between when we call memmap.Mappable.AddMapping while copying vmas and
