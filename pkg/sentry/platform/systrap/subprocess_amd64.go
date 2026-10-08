@@ -200,6 +200,8 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_FS)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
 				},
 			}),
 			Action: seccomp.Allow,
@@ -207,7 +209,20 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 	}...)
 }
 
-func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+func (s *subprocess) restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+	// If syscall patching is disabled or the GS register is not 0, then we are in a context where
+	// the GS register is/can be used by the application. Thus, we need to set GsUsedByApp to 1 to
+	// restore the GS register to its original value in the signal handler.
+	usertrapDisabled := s.usertrap == nil || s.usertrap.Disabled()
+	appUsesGS := ac.GS() != 0
+	if disableSyscallPatching || usertrapDisabled || appUsesGS {
+		ctx.GsUsedByApp = 1
+		if !usertrapDisabled && appUsesGS {
+			s.usertrap.Disable()
+		}
+	} else {
+		ctx.GsUsedByApp = 0
+	}
 }
 
 func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
@@ -216,7 +231,7 @@ func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
 	regs.Gs_base = sysThread.msg.Self
 }
 
-func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+func (s *subprocess) retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 }
 
 func sigErrorToAccessType(sigError uint64) hostarch.AccessType {

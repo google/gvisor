@@ -19,6 +19,8 @@ func (s *State) StateFields() []string {
 	return []string{
 		"nextTrap",
 		"tableAddr",
+		"disabled",
+		"patches",
 	}
 }
 
@@ -29,6 +31,8 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.nextTrap)
 	stateSinkObject.Save(1, &s.tableAddr)
+	stateSinkObject.Save(2, &s.disabled)
+	stateSinkObject.Save(3, &s.patches)
 }
 
 func (s *State) afterLoad(context.Context) {}
@@ -37,6 +41,8 @@ func (s *State) afterLoad(context.Context) {}
 func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.nextTrap)
 	stateSourceObject.Load(1, &s.tableAddr)
+	stateSourceObject.Load(2, &s.disabled)
+	stateSourceObject.Load(3, &s.patches)
 }
 
 func init() {

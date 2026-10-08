@@ -210,14 +210,14 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 	}
 }
 
-func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+func (s *subprocess) restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 	ctx.TLS = uint64(ac.TLS())
 }
 
 func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
 }
 
-func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+func (s *subprocess) retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 	if !ac.SetTLS(uintptr(ctx.TLS)) {
 		panic(fmt.Sprintf("ac.SetTLS(%+v) failed", ctx.TLS))
 	}

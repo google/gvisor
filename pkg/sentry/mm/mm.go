@@ -167,6 +167,13 @@ type MemoryManager struct {
 	// +checklocks:activeMu
 	hasPinned bool
 
+	// gsInUse is true if the application uses the GS register. Only Systrap
+	// cares about this, but it must be defined in mm to preserve the flag
+	// across save/restores.
+	//
+	// gsInUse is protected by activeMu.
+	gsInUse bool
+
 	// as is the platform.AddressSpace that pmas are mapped into. as is immutable
 	// until users becomes 0, at which point as becomes nil. Reads with a live
 	// user reference need no lock. activeMu serializes teardown and invalidation

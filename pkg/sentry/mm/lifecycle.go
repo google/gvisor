@@ -33,7 +33,7 @@ import (
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
 func NewMemoryManager(p platform.Platform, mf *pgalloc.MemoryFile) (*MemoryManager, error) {
-	as, err := p.NewAddressSpace()
+	as, err := p.NewAddressSpace(platform.AddressSpaceOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,14 @@ func (mm *MemoryManager) abortForkLocked(ctx context.Context, droppedIDs []memma
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
-	as, err := mm.p.NewAddressSpace()
+	// Systrap cares about the GS register: see systrap.go/NewAddressSpace.
+	mm.activeMu.RLock()
+	gsInUse := mm.gsInUse
+	mm.activeMu.RUnlock()
+
+	as, err := mm.p.NewAddressSpace(platform.AddressSpaceOptions{
+		DisableSyscallPatching: gsInUse,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +219,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.activeMu.Unlock()
 	mm2.activeMu.NestedLock(activeLockForked)
 	defer mm2.activeMu.NestedUnlock(activeLockForked)
+	mm2.gsInUse = gsInUse
 	if dontforks || mm.hasPinned {
 		defer mm.pmas.MergeInsideRange(mm.applicationAddrRange())
 	}
