@@ -3750,47 +3750,42 @@ TEST(Proc, NoDuplicates) { CheckDuplicatesRecursively("/proc"); }
 
 // Most /proc/PID files are owned by the task user with SUID_DUMP_USER.
 TEST(ProcPid, UserDumpableOwner) {
-  int before;
-  ASSERT_THAT(before = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
-  auto cleanup = Cleanup([before] {
-    ASSERT_THAT(prctl(PR_SET_DUMPABLE, before), SyscallSucceeds());
-  });
+  // A child leaves the parent's dumpability intact even when it is
+  // SUID_DUMP_ROOT, which PR_SET_DUMPABLE cannot restore.
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER) == 0);
 
-  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER), SyscallSucceeds());
+                // This applies to the task directory itself and files inside.
+                struct stat st;
+                TEST_PCHECK(stat("/proc/self/", &st) == 0);
+                TEST_CHECK(st.st_uid == geteuid());
+                TEST_CHECK(st.st_gid == getegid());
 
-  // This applies to the task directory itself and files inside.
-  struct stat st;
-  ASSERT_THAT(stat("/proc/self/", &st), SyscallSucceeds());
-  EXPECT_EQ(st.st_uid, geteuid());
-  EXPECT_EQ(st.st_gid, getegid());
-
-  ASSERT_THAT(stat("/proc/self/stat", &st), SyscallSucceeds());
-  EXPECT_EQ(st.st_uid, geteuid());
-  EXPECT_EQ(st.st_gid, getegid());
+                TEST_PCHECK(stat("/proc/self/stat", &st) == 0);
+                TEST_CHECK(st.st_uid == geteuid());
+                TEST_CHECK(st.st_gid == getegid());
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 // /proc/PID files are owned by root with SUID_DUMP_DISABLE.
 TEST(ProcPid, RootDumpableOwner) {
-  int before;
-  ASSERT_THAT(before = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
-  auto cleanup = Cleanup([before] {
-    ASSERT_THAT(prctl(PR_SET_DUMPABLE, before), SyscallSucceeds());
-  });
+  EXPECT_THAT(InForkedProcess([] {
+                TEST_PCHECK(prctl(PR_SET_DUMPABLE, SUID_DUMP_DISABLE) == 0);
 
-  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_DISABLE), SyscallSucceeds());
+                // This does not apply to the task directory itself (or other
+                // 0555 directories), but does to files inside.
+                struct stat st;
+                TEST_PCHECK(stat("/proc/self/", &st) == 0);
+                TEST_CHECK(st.st_uid == geteuid());
+                TEST_CHECK(st.st_gid == getegid());
 
-  // This *does not* applies to the task directory itself (or other 0555
-  // directories), but does to files inside.
-  struct stat st;
-  ASSERT_THAT(stat("/proc/self/", &st), SyscallSucceeds());
-  EXPECT_EQ(st.st_uid, geteuid());
-  EXPECT_EQ(st.st_gid, getegid());
-
-  // This file is owned by root. Also allow nobody in case this test is running
-  // in a userns without root mapped.
-  ASSERT_THAT(stat("/proc/self/stat", &st), SyscallSucceeds());
-  EXPECT_THAT(st.st_uid, AnyOf(Eq(0), Eq(65534)));
-  EXPECT_THAT(st.st_gid, AnyOf(Eq(0), Eq(65534)));
+                // Also allow nobody in a userns without root mapped.
+                TEST_PCHECK(stat("/proc/self/stat", &st) == 0);
+                TEST_CHECK(st.st_uid == 0 || st.st_uid == 65534);
+                TEST_CHECK(st.st_gid == 0 || st.st_gid == 65534);
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(Proc, GetdentsEnoent) {
