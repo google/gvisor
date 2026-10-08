@@ -67,8 +67,9 @@ namespace {
 #ifdef __x86_64__
 constexpr uint32_t kFilteredSyscall = SYS_vserver;
 #elif __aarch64__
-// Use the last of arch_specific_syscalls which are not implemented on arm64.
-constexpr uint32_t kFilteredSyscall = __NR_arch_specific_syscall + 15;
+// ARM64 leaves the architecture-specific range (244-259) unassigned.
+// https://github.com/torvalds/linux/blob/7d0a66e4b/scripts/syscall.tbl#L291-L305
+constexpr uint32_t kFilteredSyscall = 259;
 #endif
 
 // Applies a seccomp-bpf filter that returns `filtered_result` for
