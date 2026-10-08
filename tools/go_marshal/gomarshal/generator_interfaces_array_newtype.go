@@ -37,7 +37,6 @@ func (g *interfaceGenerator) emitMarshallableForArrayNewtype(n *ast.Ident, a *as
 	g.recordUsedImport("hostarch")
 	g.recordUsedImport("io")
 	g.recordUsedImport("marshal")
-	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
 	g.recordUsedImport("unsafe")
 
