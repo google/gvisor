@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -35,7 +36,13 @@ func WaitUntilContainerServing(ctx context.Context, machine Machine, container *
 	netcat := machine.GetNativeContainer(ctx, logger)
 	defer netcat.CleanUp(ctx)
 
-	cmd := fmt.Sprintf("while ! wget -q --spider http://%s:%d; do true; done", "server", port)
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+	}
+
+	cmd := fmt.Sprintf("while ! wget -q --spider http://%s:%d; do sleep 0.05; done", "server", port)
 	_, err := netcat.Run(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/util",
 		Links: []string{container.MakeLink("server")},

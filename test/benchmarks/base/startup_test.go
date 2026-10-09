@@ -42,13 +42,16 @@ func BenchmarkStartupEmpty(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		harness.DebugLog(b, "Running container: %d", i)
 		container := machine.GetContainer(ctx, b)
+		spawnCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		b.StartTimer()
-		if err := container.Spawn(ctx, dockerutil.RunOpts{
+		if err := container.Spawn(spawnCtx, dockerutil.RunOpts{
 			Image: "benchmarks/alpine",
 		}, "sleep", "100"); err != nil {
+			cancel()
 			b.Fatalf("failed to start container: %v", err)
 		}
 		b.StopTimer()
+		cancel()
 		if i == 0 {
 			metricsviz.FromContainerLogs(ctx, b, container)
 		}
@@ -125,13 +128,17 @@ func runServerWorkload(ctx context.Context, b *testing.B, args base.ServerArgs) 
 				b.StartTimer()
 			}()
 			harness.DebugLog(b, "Spawning container: %s", args.RunOpts.Image)
-			if err := server.Spawn(ctx, args.RunOpts, args.Cmd...); err != nil {
+			spawnCtx, cancelSpawn := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelSpawn()
+			if err := server.Spawn(spawnCtx, args.RunOpts, args.Cmd...); err != nil {
 				return fmt.Errorf("failed to spawn node instance: %v", err)
 			}
 
 			// Wait until the Client sees the server as up.
 			harness.DebugLog(b, "Waiting for container to start.")
-			if err := harness.WaitUntilContainerServing(ctx, args.Machine, server, args.Port); err != nil {
+			waitCtx, cancelWait := context.WithTimeout(ctx, 60*time.Second)
+			defer cancelWait()
+			if err := harness.WaitUntilContainerServing(waitCtx, args.Machine, server, args.Port); err != nil {
 				return fmt.Errorf("failed to wait for serving: %v", err)
 			}
 			return nil
@@ -173,7 +180,9 @@ func BenchmarkCheckpointEmpty(b *testing.B) {
 			container := client.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
-			if err := container.Spawn(ctx, dockerutil.RunOpts{
+			spawnCtx, cancelSpawn := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelSpawn()
+			if err := container.Spawn(spawnCtx, dockerutil.RunOpts{
 				Image: "benchmarks/alpine",
 			}, "sleep", "1000"); err != nil {
 				b.Fatalf("failed to spawn container: %v", err)
@@ -188,8 +197,10 @@ func BenchmarkCheckpointEmpty(b *testing.B) {
 			}
 
 			ckptName := fmt.Sprintf("ckpt-empty-%d", i)
+			ckptCtx, cancelCkpt := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelCkpt()
 			b.StartTimer()
-			if err := container.Checkpoint(ctx, ckptName); err != nil {
+			if err := container.Checkpoint(ckptCtx, ckptName); err != nil {
 				b.Fatalf("failed to checkpoint container: %v", err)
 			}
 			b.StopTimer()
@@ -215,20 +226,26 @@ func BenchmarkRestoreEmpty(b *testing.B) {
 			container := client.GetContainer(ctx, b)
 			defer container.CleanUp(ctx)
 
-			if err := container.Spawn(ctx, dockerutil.RunOpts{
+			spawnCtx, cancelSpawn := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelSpawn()
+			if err := container.Spawn(spawnCtx, dockerutil.RunOpts{
 				Image: "benchmarks/alpine",
 			}, "sleep", "1000"); err != nil {
 				b.Fatalf("failed to spawn container: %v", err)
 			}
 
 			ckptName := fmt.Sprintf("ckpt-restore-empty-%d", i)
-			if err := container.Checkpoint(ctx, ckptName); err != nil {
+			ckptCtx, cancelCkpt := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelCkpt()
+			if err := container.Checkpoint(ckptCtx, ckptName); err != nil {
 				b.Fatalf("failed to checkpoint container: %v", err)
 			}
 
 			time.Sleep(2 * time.Second)
+			restoreCtx, cancelRestore := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelRestore()
 			b.StartTimer()
-			if err := container.Restore(ctx, ckptName); err != nil {
+			if err := container.Restore(restoreCtx, ckptName); err != nil {
 				b.Fatalf("failed to restore container: %v", err)
 			}
 			b.StopTimer()
@@ -290,8 +307,10 @@ func runCheckpointServerWorkload(b *testing.B, name string, port int) {
 			defer server.CleanUp(ctx)
 
 			ckptName := fmt.Sprintf("ckpt-%s-%d", name, i)
+			ckptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
 			b.StartTimer()
-			if err := server.Checkpoint(ctx, ckptName); err != nil {
+			if err := server.Checkpoint(ckptCtx, ckptName); err != nil {
 				b.Fatalf("failed to checkpoint %s: %v", name, err)
 			}
 			b.StopTimer()
@@ -317,16 +336,20 @@ func runRestoreServerWorkload(b *testing.B, name string, port int) {
 			defer server.CleanUp(ctx)
 
 			ckptName := fmt.Sprintf("ckpt-restore-%s-%d", name, i)
-			if err := server.Checkpoint(ctx, ckptName); err != nil {
+			ckptCtx, cancelCkpt := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelCkpt()
+			if err := server.Checkpoint(ckptCtx, ckptName); err != nil {
 				b.Fatalf("failed to checkpoint %s: %v", name, err)
 			}
 
 			time.Sleep(2 * time.Second)
+			restoreCtx, cancelRestore := context.WithTimeout(ctx, 30*time.Second)
+			defer cancelRestore()
 			b.StartTimer()
-			if err := server.Restore(ctx, ckptName); err != nil {
+			if err := server.Restore(restoreCtx, ckptName); err != nil {
 				b.Fatalf("failed to restore %s: %v", name, err)
 			}
-			if err := waitUntilHostServing(ctx, server, port); err != nil {
+			if err := waitUntilHostServing(restoreCtx, server, port); err != nil {
 				b.Fatalf("failed to wait for %s serving after restore: %v", name, err)
 			}
 			b.StopTimer()
