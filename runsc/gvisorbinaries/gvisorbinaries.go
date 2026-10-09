@@ -17,10 +17,6 @@
 //
 // A sidecar is resolved on disk in a "gvisor-bin/" directory located next to
 // the main binary.
-// TODO(gvisor.dev/issue/13718): Each binary is also embedded in this package
-// itself, which can be extracted and exec'd when the on-disk copy is not
-// available. This will go away after some time in order to lighten up the
-// size of the runsc binary.
 //
 // # Release enforcement
 //
@@ -114,11 +110,6 @@ func cutSkip(val, prefix string) (string, bool) {
 // Set from config flag.
 var ReleaseEnforcementPolicy = config.SidecarReleaseNever
 
-// UsagePolicy controls whether Exec/ForkExec and other sidecar invocations
-// will fall back to embedded copies when on-disk binaries are not available.
-// Set from config flag.
-var UsagePolicy = config.SidecarUsageDefault
-
 // WithEnforceRelease returns envv with `GVISOR_ENFORCE_RELEASE` set for
 // sidecar processes. Exec and ForkExec apply it automatically
 // Callers that spawn a sidecar through other means (manual `exec.Cmd`)
@@ -209,10 +200,6 @@ func VerifyMatchingRelease(b *Binary) {
 }
 
 // The sidecar binaries that runsc may need to execute.
-// Their embedded fallbacks are not wired here directly to avoid import cycles.
-//
-// TODO(gvisor.dev/issue/13718): once embedded sidecar binaries are removed,
-// delete the embedded fallback entirely.
 var (
 	// MetricServer is the `runsc metric-server` sidecar binary.
 	MetricServer = Binary{Name: metricServerName}
@@ -262,22 +249,6 @@ func (o *Options) String() string {
 type Binary struct {
 	// Name is the filename of the binary.
 	Name string
-
-	// embeddedExec/embeddedForkExec, if set, can run a copy of the binary that
-	// is embedded in the main binary.
-	//
-	// TODO(gvisor.dev/issue/13718): remove along with the embed package once
-	// embedded sidecar binaries are gone.
-	embeddedExec     func(Options) error
-	embeddedForkExec func(Options) (int, error)
-}
-
-// DeclareEmbedded sets embedded exec/forkexec handlers.
-//
-// TODO(gvisor.dev/issue/13718): remove.
-func (b *Binary) DeclareEmbedded(execFn func(Options) error, forkExecFn func(Options) (int, error)) {
-	b.embeddedExec = execFn
-	b.embeddedForkExec = forkExecFn
 }
 
 // Memoized result of `resolveDir`.
@@ -350,31 +321,7 @@ func (b *Binary) notAvailableError() error {
 	if err != nil {
 		return err
 	}
-	if UsagePolicy == config.SidecarUsageStrict {
-		return fmt.Errorf("sidecar binary %q not found (expected at %q) and --sidecar-usage-policy is set to STRICT; install it per https://gvisor.dev/docs/user_guide/install/ instructions", b.Name, p)
-	}
 	return fmt.Errorf("sidecar binary %q not found (expected at %q); install it per https://gvisor.dev/docs/user_guide/install/ instructions", b.Name, p)
-}
-
-// WarnUnavailable logs an appropriate warning when the sidecar binary is not found on disk.
-func (b *Binary) WarnUnavailable(action string) {
-	expected, err := b.expectedPath()
-	if err != nil {
-		expected = filepath.Join(binDirName, b.Name)
-	}
-	switch UsagePolicy {
-	case config.SidecarUsageStrict:
-		log.Warningf("Sidecar binary %q not found (expected at %q) and --sidecar-usage-policy is set to STRICT.", b.Name, expected)
-	case config.SidecarUsageLegacyEmbedded:
-		log.Warningf("%s; embedded sidecar binaries are deprecated and will stop working after 2026-10. This slows down gVisor startup. Please install sidecar binaries as per https://gvisor.dev/docs/user_guide/install/", action)
-	case config.SidecarUsageDefault:
-		log.Warningf("%s; embedded sidecar binaries are deprecated and will be removed in a future release. Please install sidecar binaries per https://gvisor.dev/docs/user_guide/install/ or set `--sidecar-usage-policy=LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK` as a temporary option to restore functionality (this slows down gVisor startup and will stop working after 2026-10).", action)
-	}
-}
-
-// TODO(gvisor.dev/issue/13718): remove along with the embedded fallback.
-func (b *Binary) warnEmbeddedDeprecated(opts *Options) {
-	b.WarnUnavailable(fmt.Sprintf("Executing embedded copy of sidecar %q (%v)", b.Name, opts))
 }
 
 // Exec resolves the binary and replaces the current process with it. It only
@@ -384,10 +331,6 @@ func (b *Binary) Exec(opts Options) error {
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q found: executing %s (%v)", b.Name, p, &opts)
 		return execDisk(p, opts)
-	}
-	if UsagePolicy.AllowEmbeddedFallback() && b.embeddedExec != nil {
-		b.warnEmbeddedDeprecated(&opts)
-		return b.embeddedExec(opts)
 	}
 	return b.notAvailableError()
 }
@@ -399,10 +342,6 @@ func (b *Binary) ForkExec(opts Options) (int, error) {
 	if p, err := b.Path(); err == nil {
 		log.Infof("sidecar %q: executing %s (%v)", b.Name, p, &opts)
 		return forkExecDisk(p, opts)
-	}
-	if UsagePolicy.AllowEmbeddedFallback() && b.embeddedForkExec != nil {
-		b.warnEmbeddedDeprecated(&opts)
-		return b.embeddedForkExec(opts)
 	}
 	return 0, b.notAvailableError()
 }

@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -42,6 +43,40 @@ func deprecatedBool(flagSet *flag.FlagSet, name string, defaultValue bool, usage
 	deprecatedFlags.LoadOrStore(name, &removalDate)
 }
 
+func deprecatedVar(flagSet *flag.FlagSet, value flag.Value, name string, usage string, removalDate time.Time) {
+	flagSet.Var(value, name, usage)
+	deprecatedFlags.LoadOrStore(name, &removalDate)
+}
+
+// sidecarUsagePolicy is the value of the retired --sidecar-usage-policy flag.
+// Its LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK value selected the embedded
+// sidecar fallback, which no longer exists, so that value is rejected with an
+// explanation. The other values never did anything that is not now the
+// default, so they are accepted and ignored.
+type sidecarUsagePolicy string
+
+// Set implements flag.Value.
+func (p *sidecarUsagePolicy) Set(v string) error {
+	switch strings.ToUpper(v) {
+	case "DEFAULT", "STRICT":
+		*p = sidecarUsagePolicy(strings.ToUpper(v))
+		return nil
+	case "LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK":
+		return fmt.Errorf("the embedded sidecar fallback has been removed; install the sidecar binaries per https://gvisor.dev/docs/user_guide/install/ instructions and drop this flag")
+	}
+	return fmt.Errorf("invalid value %q; must be DEFAULT or STRICT", v)
+}
+
+// String implements flag.Value.
+func (p *sidecarUsagePolicy) String() string {
+	return string(*p)
+}
+
+// Get implements flag.Getter.
+func (p *sidecarUsagePolicy) Get() any {
+	return string(*p)
+}
+
 // RegisterDeprecatedFlags registers flags that should no longer be used and
 // are planned for removal.
 func RegisterDeprecatedFlags(flagSet *flag.FlagSet) {
@@ -53,4 +88,6 @@ func RegisterDeprecatedFlags(flagSet *flag.FlagSet) {
 	deprecatedBool(flagSet, "fsgofer-host-uds", false, "DEPRECATED: use host-uds=all", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 	deprecatedBool(flagSet, "save-restore-netstack", true, "DEPRECATED: this flag has no effect.", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 	deprecatedBool(flagSet, "mount-cgroup-v2", false, "DEPRECATED: use in-sandbox-cgroup=v2", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
+	usagePolicy := sidecarUsagePolicy("DEFAULT")
+	deprecatedVar(flagSet, &usagePolicy, "sidecar-usage-policy", "DEPRECATED: this flag has no effect; sidecar binaries must always be installed in `gvisor-bin` (or `GVISOR_SIDECAR_BINARIES_DIR`).", time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 }
