@@ -186,6 +186,9 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config, noRootContainer bool) e
 			return err
 		}
 	}
+	if utsns, ok := GetNS(specs.UTSNamespace, spec); ok && utsns.Path != "" {
+		return fmt.Errorf("joining UTS namespace %q is not supported", utsns.Path)
+	}
 	for _, m := range spec.Mounts {
 		if err := validateMount(&m); err != nil {
 			return err
