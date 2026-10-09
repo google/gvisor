@@ -100,6 +100,24 @@ func (s *Stack) sendDeleteEvent(ctx context.Context, id tcpip.NICID, nicInfo *st
 	s.eventSubscriber.OnInterfaceDeleteEvent(ctx, int32(id), makeInterfaceInfo(nicInfo))
 }
 
+func (s *Stack) sendAddressEvent(ctx context.Context, id tcpip.NICID, addr inet.InterfaceAddr, added bool) {
+	if s.eventSubscriber == nil {
+		return
+	}
+	if nicInfo, ok := s.Stack.SingleNICInfo(id); ok {
+		s.eventSubscriber.OnAddressEvent(ctx, int32(id), makeInterfaceInfo(nicInfo), addr, added)
+	}
+}
+
+func (s *Stack) sendRouteEvent(ctx context.Context, rt tcpip.Route, added bool, nlFlags uint16) {
+	if s.eventSubscriber == nil {
+		return
+	}
+	if r, ok := makeInetRoute(rt); ok {
+		s.eventSubscriber.OnRouteEvent(ctx, r, added, nlFlags)
+	}
+}
+
 // Destroy implements inet.Stack.Destroy.
 func (s *Stack) Destroy() {
 	if s.Stack != nil {
@@ -682,7 +700,7 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
-func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+func (s *Stack) AddInterfaceAddr(ctx context.Context, idx int32, addr inet.InterfaceAddr) error {
 	protocolAddress, err := convertAddr(addr)
 	if err != nil {
 		return err
@@ -693,6 +711,7 @@ func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	if err := s.Stack.AddProtocolAddress(nicID, protocolAddress, stack.AddressProperties{}); err != nil {
 		return syserr.TranslateNetstackError(err).ToError()
 	}
+	s.sendAddressEvent(ctx, nicID, addr, true /* added */)
 
 	// Add route for local network if it doesn't exist already.
 	localRoute := tcpip.Route{
@@ -709,12 +728,13 @@ func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 
 	// Local route does not exist yet. Add it.
 	s.Stack.AddRoute(localRoute)
+	s.sendRouteEvent(ctx, localRoute, true /* added */, linux.NLM_F_CREATE)
 
 	return nil
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
-func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+func (s *Stack) RemoveInterfaceAddr(ctx context.Context, idx int32, addr inet.InterfaceAddr) error {
 	protocolAddress, err := convertAddr(addr)
 	if err != nil {
 		return err
@@ -725,6 +745,7 @@ func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	if err := s.Stack.RemoveAddress(nicID, protocolAddress.AddressWithPrefix.Address); err != nil {
 		return syserr.TranslateNetstackError(err).ToError()
 	}
+	s.sendAddressEvent(ctx, nicID, addr, false /* added */)
 
 	// Remove the corresponding local network route if it exists.
 	localRoute := tcpip.Route{
@@ -732,9 +753,17 @@ func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 		Gateway:     tcpip.Address{}, // No gateway for local network.
 		NIC:         nicID,
 	}
+	var removed []tcpip.Route
 	s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
-		return rt.Equal(localRoute)
+		if !rt.Equal(localRoute) {
+			return false
+		}
+		removed = append(removed, rt)
+		return true
 	})
+	for _, rt := range removed {
+		s.sendRouteEvent(ctx, rt, false /* added */, 0)
+	}
 
 	return nil
 }
@@ -947,38 +976,45 @@ func (s *Stack) RouteTable() []inet.Route {
 	var routeTable []inet.Route
 
 	for _, rt := range s.Stack.GetRouteTable() {
-		var family uint8
-		switch rt.Destination.ID().BitLen() {
-		case header.IPv4AddressSizeBits:
-			family = linux.AF_INET
-		case header.IPv6AddressSizeBits:
-			family = linux.AF_INET6
-		default:
-			log.Warningf("Unknown network protocol in route %+v", rt)
-			continue
+		if r, ok := makeInetRoute(rt); ok {
+			routeTable = append(routeTable, r)
 		}
-
-		dstAddr := rt.Destination.ID()
-		routeTable = append(routeTable, inet.Route{
-			Family: family,
-			DstLen: uint8(rt.Destination.Prefix()), // The CIDR prefix for the destination.
-
-			// Always return unspecified protocol since we have no notion of
-			// protocol for routes.
-			Protocol: linux.RTPROT_UNSPEC,
-			// Set statically to LINK scope for now.
-			//
-			// TODO(gvisor.dev/issue/595): Set scope for routes.
-			Scope: linux.RT_SCOPE_LINK,
-			Type:  linux.RTN_UNICAST,
-
-			DstAddr:         dstAddr.AsSlice(),
-			OutputInterface: int32(rt.NIC),
-			GatewayAddr:     rt.Gateway.AsSlice(),
-		})
 	}
 
 	return routeTable
+}
+
+// makeInetRoute converts a netstack route to the form reported by RTM_GETROUTE.
+func makeInetRoute(rt tcpip.Route) (inet.Route, bool) {
+	var family uint8
+	switch rt.Destination.ID().BitLen() {
+	case header.IPv4AddressSizeBits:
+		family = linux.AF_INET
+	case header.IPv6AddressSizeBits:
+		family = linux.AF_INET6
+	default:
+		log.Warningf("Unknown network protocol in route %+v", rt)
+		return inet.Route{}, false
+	}
+
+	dstAddr := rt.Destination.ID()
+	return inet.Route{
+		Family: family,
+		DstLen: uint8(rt.Destination.Prefix()), // The CIDR prefix for the destination.
+
+		// Always return unspecified protocol since we have no notion of
+		// protocol for routes.
+		Protocol: linux.RTPROT_UNSPEC,
+		// Set statically to LINK scope for now.
+		//
+		// TODO(gvisor.dev/issue/595): Set scope for routes.
+		Scope: linux.RT_SCOPE_LINK,
+		Type:  linux.RTN_UNICAST,
+
+		DstAddr:         dstAddr.AsSlice(),
+		OutputInterface: int32(rt.NIC),
+		GatewayAddr:     rt.Gateway.AsSlice(),
+	}, true
 }
 
 // localRoute constructs a local route from the netlink message.
@@ -1091,6 +1127,7 @@ func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Err
 		return err
 	}
 	found := false
+	var removedRoute tcpip.Route
 	if removed := s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
 		// Like Linux, remove only the first matching route.
 		if found {
@@ -1105,10 +1142,14 @@ func (s *Stack) RemoveRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Err
 			return false
 		}
 		found = rt.Destination.Equal(localRoute.Destination)
+		if found {
+			removedRoute = rt
+		}
 		return found
 	}); removed == 0 {
 		return syserr.ErrNoProcess
 	}
+	s.sendRouteEvent(ctx, removedRoute, false /* added */, 0)
 	return nil
 }
 
@@ -1129,14 +1170,20 @@ func (s *Stack) NewRoute(ctx context.Context, msg *nlmsg.Message) *syserr.Error 
 		}
 	}
 	flags := msg.Header().Flags
+	var nlFlags uint16
 	switch {
 	case !found && flags&linux.NLM_F_CREATE == linux.NLM_F_CREATE:
 		s.Stack.AddRoute(localRoute)
+		nlFlags |= linux.NLM_F_CREATE
 	case found && flags&linux.NLM_F_REPLACE != linux.NLM_F_REPLACE:
 		return syserr.ErrExists
 	}
 	if flags&linux.NLM_F_REPLACE == linux.NLM_F_REPLACE {
 		s.Stack.ReplaceRoute(localRoute)
+		nlFlags |= linux.NLM_F_REPLACE
+	}
+	if nlFlags != 0 {
+		s.sendRouteEvent(ctx, localRoute, true /* added */, nlFlags)
 	}
 	return nil
 }

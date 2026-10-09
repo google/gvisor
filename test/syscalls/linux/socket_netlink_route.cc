@@ -79,6 +79,7 @@ constexpr uint32_t kSeq = 12345;
 using ::testing::_;
 using ::testing::AnyOf;
 using ::testing::Eq;
+using ::testing::IsEmpty;
 
 // Parameters for SockOptTest. They are:
 // 0: Socket option to query.
@@ -3833,6 +3834,281 @@ TEST(NetlinkRouteTest, LinkMulticastGroupBasic) {
         },
         /*expect_nlmsgerr=*/false));
     EXPECT_TRUE(got_msg);
+  }
+}
+
+// Returns copies of all netlink messages that arrive on fd, until nothing has
+// arrived for timeout_ms.
+std::vector<std::vector<char>> DrainNetlinkMessages(const FileDescriptor& fd,
+                                                    int timeout_ms = 200) {
+  std::vector<std::vector<char>> msgs;
+  while (true) {
+    struct pollfd pfd = {.fd = fd.get(), .events = POLLIN};
+    if (RetryEINTR(poll)(&pfd, 1, timeout_ms) <= 0) {
+      break;
+    }
+    EXPECT_NO_ERRNO(NetlinkResponse(
+        fd,
+        [&](const struct nlmsghdr* hdr) {
+          const char* p = reinterpret_cast<const char*>(hdr);
+          msgs.emplace_back(p, p + hdr->nlmsg_len);
+        },
+        /*expect_nlmsgerr=*/false));
+  }
+  return msgs;
+}
+
+// Returns the payload of the first attribute of the given type, or nullptr.
+const struct rtattr* FindAttr(const struct rtattr* rta, int len, int type) {
+  for (; RTA_OK(rta, len); rta = RTA_NEXT(rta, len)) {
+    if (rta->rta_type == type) {
+      return rta;
+    }
+  }
+  return nullptr;
+}
+
+bool AttrEquals(const struct rtattr* rta, const std::string& want) {
+  return rta != nullptr && RTA_PAYLOAD(rta) == want.size() &&
+         memcmp(RTA_DATA(rta), want.data(), want.size()) == 0;
+}
+
+// Returns the first message of the given type that describes the address
+// addr/prefixlen on interface index, or nullptr.
+const struct nlmsghdr* FindAddrMessage(
+    const std::vector<std::vector<char>>& msgs, uint16_t type, int family,
+    int index, int prefixlen, const std::string& addr) {
+  for (const auto& m : msgs) {
+    const struct nlmsghdr* hdr =
+        reinterpret_cast<const struct nlmsghdr*>(m.data());
+    if (hdr->nlmsg_type != type ||
+        hdr->nlmsg_len < NLMSG_LENGTH(sizeof(struct ifaddrmsg))) {
+      continue;
+    }
+    const struct ifaddrmsg* ifa =
+        reinterpret_cast<const struct ifaddrmsg*>(NLMSG_DATA(hdr));
+    if (ifa->ifa_family != family || ifa->ifa_prefixlen != prefixlen ||
+        static_cast<int>(ifa->ifa_index) != index) {
+      continue;
+    }
+    if (AttrEquals(FindAttr(IFA_RTA(ifa), IFA_PAYLOAD(hdr), IFA_ADDRESS),
+                   addr)) {
+      return hdr;
+    }
+  }
+  return nullptr;
+}
+
+// Returns the first message of the given type that describes the route to
+// dst/prefixlen out of interface index, or nullptr.
+const struct nlmsghdr* FindRouteMessage(
+    const std::vector<std::vector<char>>& msgs, uint16_t type, int family,
+    int index, int prefixlen, const std::string& dst) {
+  for (const auto& m : msgs) {
+    const struct nlmsghdr* hdr =
+        reinterpret_cast<const struct nlmsghdr*>(m.data());
+    if (hdr->nlmsg_type != type ||
+        hdr->nlmsg_len < NLMSG_LENGTH(sizeof(struct rtmsg))) {
+      continue;
+    }
+    const struct rtmsg* rtm =
+        reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+    if (rtm->rtm_family != family || rtm->rtm_dst_len != prefixlen) {
+      continue;
+    }
+    const struct rtattr* oif =
+        FindAttr(RTM_RTA(rtm), RTM_PAYLOAD(hdr), RTA_OIF);
+    if (oif == nullptr || RTA_PAYLOAD(oif) != sizeof(int32_t) ||
+        *reinterpret_cast<const int32_t*>(RTA_DATA(oif)) != index) {
+      continue;
+    }
+    if (AttrEquals(FindAttr(RTM_RTA(rtm), RTM_PAYLOAD(hdr), RTA_DST), dst)) {
+      return hdr;
+    }
+  }
+  return nullptr;
+}
+
+// Sockets used to observe address or route events: one joined via bind(), one
+// joined via NETLINK_ADD_MEMBERSHIP, one joined only to other groups, and one
+// not joined to any group.
+struct McastObservers {
+  FileDescriptor bound_group;
+  FileDescriptor sockopt_group;
+  FileDescriptor other_groups;
+  FileDescriptor no_groups;
+
+  std::vector<const FileDescriptor*> Joined() const {
+    return {&bound_group, &sockopt_group};
+  }
+  std::vector<const FileDescriptor*> NotJoined() const {
+    return {&other_groups, &no_groups};
+  }
+};
+
+PosixErrorOr<McastObservers> MakeMcastObservers(unsigned int bind_groups,
+                                                unsigned int sockopt_group,
+                                                unsigned int other_groups) {
+  McastObservers o;
+  struct sockaddr_nl addr = {};
+  addr.nl_family = AF_NETLINK;
+  addr.nl_groups = bind_groups;
+  ASSIGN_OR_RETURN_ERRNO(o.bound_group,
+                         NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+
+  addr.nl_groups = 0;
+  ASSIGN_OR_RETURN_ERRNO(o.sockopt_group,
+                         NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+  RETURN_ERROR_IF_SYSCALL_FAIL(
+      setsockopt(o.sockopt_group.get(), SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+                 &sockopt_group, sizeof(sockopt_group)));
+
+  addr.nl_groups = other_groups;
+  ASSIGN_OR_RETURN_ERRNO(o.other_groups,
+                         NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+
+  addr.nl_groups = 0;
+  ASSIGN_OR_RETURN_ERRNO(o.no_groups, NetlinkBoundSocket(NETLINK_ROUTE, &addr));
+  return std::move(o);
+}
+
+TEST_P(NetlinkRouteIpInvariantTest, AddressMulticastGroup) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // Netstack state is not restored.
+  const DisableSave ds;
+
+  const int family = GetParam();
+  const bool v4 = family == AF_INET;
+  const int prefixlen = v4 ? 24 : 64;
+  std::string addr(v4 ? sizeof(in_addr) : sizeof(in6_addr), '\0');
+  ASSERT_EQ(inet_pton(family, v4 ? "10.0.0.1" : "2001:db8::1", addr.data()), 1);
+
+  McastObservers obs = ASSERT_NO_ERRNO_AND_VALUE(MakeMcastObservers(
+      v4 ? RTMGRP_IPV4_IFADDR : RTMGRP_IPV6_IFADDR,
+      v4 ? RTNLGRP_IPV4_IFADDR : RTNLGRP_IPV6_IFADDR,
+      // Groups other than this family's address group. Adding an address also
+      // announces its prefix route, so this family's route group is excluded.
+      RTMGRP_LINK | (v4 ? RTMGRP_IPV6_IFADDR | RTMGRP_IPV6_ROUTE
+                        : RTMGRP_IPV4_IFADDR | RTMGRP_IPV4_ROUTE)));
+
+  FileDescriptor control_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  const uint32_t control_port =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(control_fd.get()));
+  const Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(control_fd, lo.index, family, prefixlen,
+                                   addr.data(), addr.size()));
+  bool added = true;
+  auto cleanup = Cleanup([&] {
+    if (added) {
+      EXPECT_NO_ERRNO(LinkDelLocalAddr(control_fd, lo.index, family, prefixlen,
+                                       addr.data(), addr.size()));
+    }
+  });
+
+  // IPv4 notifications carry the requester's port ID and sequence number;
+  // IPv6 notifications are sent by the kernel with both 0.
+  const uint32_t want_port = v4 ? control_port : 0;
+  const uint32_t want_seq = v4 ? kSeq : 0;
+
+  for (const FileDescriptor* fd : obs.Joined()) {
+    auto msgs = DrainNetlinkMessages(*fd);
+    const struct nlmsghdr* hdr =
+        FindAddrMessage(msgs, RTM_NEWADDR, family, lo.index, prefixlen, addr);
+    ASSERT_NE(hdr, nullptr) << "no RTM_NEWADDR on fd " << fd->get();
+    EXPECT_EQ(hdr->nlmsg_pid, want_port);
+    EXPECT_EQ(hdr->nlmsg_seq, want_seq);
+    if (v4) {
+      const struct ifaddrmsg* ifa =
+          reinterpret_cast<const struct ifaddrmsg*>(NLMSG_DATA(hdr));
+      EXPECT_TRUE(AttrEquals(
+          FindAttr(IFA_RTA(ifa), IFA_PAYLOAD(hdr), IFA_LOCAL), addr));
+    }
+  }
+  for (const FileDescriptor* fd : obs.NotJoined()) {
+    EXPECT_THAT(DrainNetlinkMessages(*fd), IsEmpty());
+  }
+
+  ASSERT_NO_ERRNO(LinkDelLocalAddr(control_fd, lo.index, family, prefixlen,
+                                   addr.data(), addr.size()));
+  added = false;
+
+  for (const FileDescriptor* fd : obs.Joined()) {
+    auto msgs = DrainNetlinkMessages(*fd);
+    const struct nlmsghdr* hdr =
+        FindAddrMessage(msgs, RTM_DELADDR, family, lo.index, prefixlen, addr);
+    ASSERT_NE(hdr, nullptr) << "no RTM_DELADDR on fd " << fd->get();
+    EXPECT_EQ(hdr->nlmsg_pid, want_port);
+    EXPECT_EQ(hdr->nlmsg_seq, want_seq);
+  }
+  for (const FileDescriptor* fd : obs.NotJoined()) {
+    EXPECT_THAT(DrainNetlinkMessages(*fd), IsEmpty());
+  }
+}
+
+TEST_P(NetlinkRouteIpInvariantTest, RouteMulticastGroup) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+  // Routes are not savable.
+  const DisableSave ds;
+
+  const int family = GetParam();
+  const bool v4 = family == AF_INET;
+  const int prefixlen = v4 ? 24 : 64;
+  std::string dst(v4 ? sizeof(in_addr) : sizeof(in6_addr), '\0');
+  ASSERT_EQ(
+      inet_pton(family, v4 ? "203.0.113.0" : "2001:db8:ffff::", dst.data()), 1);
+
+  McastObservers obs = ASSERT_NO_ERRNO_AND_VALUE(
+      MakeMcastObservers(v4 ? RTMGRP_IPV4_ROUTE : RTMGRP_IPV6_ROUTE,
+                         v4 ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE,
+                         // Every group but this family's route group.
+                         RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR |
+                             (v4 ? RTMGRP_IPV6_ROUTE : RTMGRP_IPV4_ROUTE)));
+
+  const Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  ASSERT_NO_ERRNO(
+      AddUnicastRoute(lo.index, family, prefixlen, dst.data(), dst.size()));
+  bool added = true;
+  auto cleanup = Cleanup([&] {
+    if (added) {
+      EXPECT_NO_ERRNO(
+          DelUnicastRoute(lo.index, family, prefixlen, dst.data(), dst.size()));
+    }
+  });
+
+  // The requests are made from short-lived sockets, so only check that the
+  // notification carries a requester port ID and the request's sequence
+  // number.
+  for (const FileDescriptor* fd : obs.Joined()) {
+    auto msgs = DrainNetlinkMessages(*fd);
+    const struct nlmsghdr* hdr =
+        FindRouteMessage(msgs, RTM_NEWROUTE, family, lo.index, prefixlen, dst);
+    ASSERT_NE(hdr, nullptr) << "no RTM_NEWROUTE on fd " << fd->get();
+    EXPECT_NE(hdr->nlmsg_pid, 0u);
+    EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+  }
+  for (const FileDescriptor* fd : obs.NotJoined()) {
+    EXPECT_THAT(DrainNetlinkMessages(*fd), IsEmpty());
+  }
+
+  ASSERT_NO_ERRNO(
+      DelUnicastRoute(lo.index, family, prefixlen, dst.data(), dst.size()));
+  added = false;
+
+  for (const FileDescriptor* fd : obs.Joined()) {
+    auto msgs = DrainNetlinkMessages(*fd);
+    const struct nlmsghdr* hdr =
+        FindRouteMessage(msgs, RTM_DELROUTE, family, lo.index, prefixlen, dst);
+    ASSERT_NE(hdr, nullptr) << "no RTM_DELROUTE on fd " << fd->get();
+    EXPECT_NE(hdr->nlmsg_pid, 0u);
+    EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+  }
+  for (const FileDescriptor* fd : obs.NotJoined()) {
+    EXPECT_THAT(DrainNetlinkMessages(*fd), IsEmpty());
   }
 }
 
