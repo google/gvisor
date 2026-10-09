@@ -1,5 +1,4 @@
 load("//tools:defs.bzl", "go_binary")
-load("//tools/embeddedbinary:defs.bzl", "embedded_binary_go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -26,13 +25,5 @@ go_binary(
         "//runsc/gvisorbinaries",
         "//runsc/metricserver",
         "@com_github_google_subcommands//:go_default_library",
-    ],
-)
-
-embedded_binary_go_library(
-    name = "metricserver",
-    binary = ":runsc-metric-server",
-    visibility = [
-        "//runsc:__subpackages__",
     ],
 )

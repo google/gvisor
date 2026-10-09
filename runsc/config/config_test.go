@@ -267,14 +267,19 @@ func TestInvalidFlags(t *testing.T) {
 			error: "expected format is --overlay2",
 		},
 		{
-			name:  "sidecar-usage-policy",
-			value: "invalid",
-			error: "invalid value \"invalid\"; must be DEFAULT, STRICT, or LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK",
-		},
-		{
 			name:  "sidecar-release-enforcement-policy",
 			value: "invalid",
 			error: "invalid value \"invalid\"; must be NEVER, ALWAYS, or IF_RELEASE_BUILD",
+		},
+		{
+			name:  "sidecar-usage-policy",
+			value: "invalid",
+			error: "invalid value \"invalid\"; must be DEFAULT or STRICT",
+		},
+		{
+			name:  "sidecar-usage-policy",
+			value: "LEGACY_DEPRECATED_SLOW_EMBEDDED_FALLBACK",
+			error: "the embedded sidecar fallback has been removed",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
