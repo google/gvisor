@@ -68,7 +68,9 @@ declare repo_orig
 repo_orig="$(pwd)"
 readonly repo_orig
 declare -r repo_new="${tmp_dir}/repository"
-git clone . "${repo_new}"
+# This clone is discarded on exit; detached maintenance can still be writing
+# when finish removes it. gc.auto also covers Git versions before maintenance.
+git clone -c maintenance.auto=false -c gc.auto=0 . "${repo_new}"
 cd "${repo_new}"
 
 # Setup the repository and checkout the branch.
