@@ -354,7 +354,8 @@ func deleteSandbox(args []string, id string) error {
 //
 // Returns an error if the sandboxed application exits non-zero.
 func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
-	var hostTTYFile *os.File
+	var extraFiles []*os.File
+	var passFDArgs []string
 
 	if *addHostTTY {
 		ptmx, pts, err := pty.Open()
@@ -363,8 +364,36 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		}
 		defer ptmx.Close()
 		defer pts.Close()
-		hostTTYFile = pts
+		extraFiles = append(extraFiles, pts)
+		passFDArgs = append(passFDArgs, fmt.Sprintf("--pass-fd=%d:%d", hostPTYHostFD, hostPTYGuestFD))
 		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("TEST_HOST_PTY_FD=%d", hostPTYGuestFD))
+	}
+
+	if *overlay {
+		for _, kv := range spec.Process.Env {
+			xmlPath, ok := strings.CutPrefix(kv, "XML_OUTPUT_FILE=")
+			if !ok || xmlPath == "" {
+				continue
+			}
+			// Opening the report on the host keeps its writes out of the
+			// overlay. Keep it open across every checkpoint/restore, and let
+			// GTest reopen it through procfs when writing its final report.
+			xmlFile, err := os.Create(xmlPath)
+			if err != nil {
+				return fmt.Errorf("creating XML report: %w", err)
+			}
+			defer xmlFile.Close()
+			// Use the first guest descriptor after stdio, before tests allocate
+			// their own descriptors (including close_range test ranges).
+			const xmlGuestFD = 3
+			passFDArgs = append(passFDArgs, fmt.Sprintf("--pass-fd=%d:%d", 3+len(extraFiles), xmlGuestFD))
+			extraFiles = append(extraFiles, xmlFile)
+			spec.Process.Env = filterEnv(spec.Process.Env, []string{"XML_OUTPUT_FILE", "GTEST_OUTPUT", "GUNIT_OUTPUT"})
+			spec.Process.Env = append(spec.Process.Env,
+				fmt.Sprintf("XML_OUTPUT_FILE=/proc/self/fd/%d", xmlGuestFD),
+				fmt.Sprintf("GTEST_OUTPUT=xml:/proc/self/fd/%d", xmlGuestFD))
+			break
+		}
 	}
 
 	bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
@@ -526,16 +555,12 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	var cmdArgs []string
 	if *waitForPid != 0 {
 		createArgs := append(args, "create")
-		if hostTTYFile != nil {
-			createArgs = append(createArgs, fmt.Sprintf("--pass-fd=%d:%d", hostPTYHostFD, hostPTYGuestFD))
-		}
+		createArgs = append(createArgs, passFDArgs...)
 		createArgs = append(createArgs, "-pid-file", filepath.Join(testLogDir, "pid"), "--bundle", bundleDir, id)
 		defer os.Remove(filepath.Join(testLogDir, "pid"))
 		log.Infof("Executing: %v", append([]string{specutils.ExePath}, createArgs...))
 		createCmd := exec.Command(specutils.ExePath, createArgs...)
-		if hostTTYFile != nil {
-			createCmd.ExtraFiles = append(createCmd.ExtraFiles, hostTTYFile)
-		}
+		createCmd.ExtraFiles = extraFiles
 		createCmd.SysProcAttr = sysProcAttr
 		createCmd.Stdout = os.Stdout
 		createCmd.Stderr = os.Stderr
@@ -570,15 +595,13 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		cmdArgs = append(args, "start", id)
 	} else {
 		cmdArgs = append(args, "run")
-		if hostTTYFile != nil {
-			cmdArgs = append(cmdArgs, fmt.Sprintf("--pass-fd=%d:%d", hostPTYHostFD, hostPTYGuestFD))
-		}
+		cmdArgs = append(cmdArgs, passFDArgs...)
 		cmdArgs = append(cmdArgs, "--bundle", bundleDir, id)
 	}
 	log.Infof("Executing: %v", append([]string{specutils.ExePath}, cmdArgs...))
 	cmd := exec.Command(specutils.ExePath, cmdArgs...)
-	if hostTTYFile != nil && *waitForPid == 0 {
-		cmd.ExtraFiles = append(cmd.ExtraFiles, hostTTYFile)
+	if *waitForPid == 0 {
+		cmd.ExtraFiles = extraFiles
 	}
 	cmd.SysProcAttr = sysProcAttr
 	if *container || *network == "host" || (cmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
@@ -667,9 +690,12 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 				os.RemoveAll(currentRestoreDir)
 				return fmt.Errorf("prepareSave error: %v", err)
 			}
-			restoreArgs = append(restoreArgs, "restore", "--image-path", currentRestoreDir, "--bundle", bundleDir, id)
+			restoreArgs = append(restoreArgs, "restore")
+			restoreArgs = append(restoreArgs, passFDArgs...)
+			restoreArgs = append(restoreArgs, "--image-path", currentRestoreDir, "--bundle", bundleDir, id)
 			log.Infof("Executing: %v", append([]string{specutils.ExePath}, restoreArgs...))
 			restoreCmd := exec.Command(specutils.ExePath, restoreArgs...)
+			restoreCmd.ExtraFiles = extraFiles
 			restoreCmd.SysProcAttr = sysProcAttr
 			if *container || *network == "host" || (restoreCmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
 				restoreCmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWNET
