@@ -17,6 +17,7 @@ package control
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -106,6 +107,62 @@ func TestStateSaveGraphEngineOverride(t *testing.T) {
 			}
 			if !hdr.Object || hdr.Graph != tc.override {
 				t.Errorf("saved header = %+v, want Object=true Graph=%v", hdr, tc.override)
+			}
+		})
+	}
+}
+
+func TestSaveRestoreExecEnv(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		specEnv  []string
+		mode     SaveRestoreExecMode
+		extraEnv []string
+		want     []string
+	}{
+		{
+			name: "empty",
+			mode: SaveRestoreExecSave,
+			want: []string{"GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE=save"},
+		},
+		{
+			name:     "order",
+			specEnv:  []string{"A=1", "B=2"},
+			mode:     SaveRestoreExecRestore,
+			extraEnv: []string{"GVISOR_SAVE_RESTORE_DEVICE_MAP=GPU-a=GPU-b"},
+			want: []string{
+				"A=1",
+				"B=2",
+				"GVISOR_SAVE_RESTORE_DEVICE_MAP=GPU-a=GPU-b",
+				"GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE=restore",
+			},
+		},
+		{
+			// The container's device map is removed, even if gVisor does not
+			// set one. The container's mode variable is kept.
+			name: "container device map removed",
+			specEnv: []string{
+				"GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE=container",
+				"A=1",
+				"GVISOR_SAVE_RESTORE_DEVICE_MAP=stale",
+				"GVISOR_SAVE_RESTORE_DEVICE_MAP_X=1",
+			},
+			mode: SaveRestoreExecResume,
+			want: []string{
+				"GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE=container",
+				"A=1",
+				"GVISOR_SAVE_RESTORE_DEVICE_MAP_X=1",
+				"GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE=resume",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			specEnv := slices.Clone(tc.specEnv)
+			if got := saveRestoreExecEnv(specEnv, tc.mode, tc.extraEnv); !slices.Equal(got, tc.want) {
+				t.Errorf("saveRestoreExecEnv() = %q, want %q", got, tc.want)
+			}
+			if !slices.Equal(specEnv, tc.specEnv) {
+				t.Errorf("saveRestoreExecEnv() modified specEnv: got %q, want %q", specEnv, tc.specEnv)
 			}
 		})
 	}

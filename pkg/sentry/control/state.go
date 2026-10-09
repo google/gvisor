@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -52,6 +53,11 @@ const (
 	SaveRestoreExecResume SaveRestoreExecMode = "resume"
 
 	saveRestoreExecEnvVar = "GVISOR_SAVE_RESTORE_AUTO_EXEC_MODE"
+
+	// saveRestoreExecDeviceMapEnvVar is the environment variable that contains
+	// the GPU device map for the save/restore binary in restore mode. See
+	// kernel.SaveRestoreExecConfig.Argv.
+	saveRestoreExecDeviceMapEnvVar = "GVISOR_SAVE_RESTORE_DEVICE_MAP"
 )
 
 // ErrInvalidFiles is returned when the urpc call to Save does not include an
@@ -281,7 +287,7 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 		return nil
 	}
 	// Undo preSave in reverse order.
-	if err := postResumeCuda(k, timeline); err != nil {
+	if err := postRestoreCuda(k, timeline, nil); err != nil {
 		return err
 	}
 
@@ -292,10 +298,11 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 	return postResumeTPU(k)
 }
 
-// PostRestore is called after restoring the kernel.
+// PostRestore is called after restoring the kernel. nvproxyRemapping, if
+// non-nil, describes how GPUs were remapped by this restore.
 //
 // Precondition: The kernel should be running.
-func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
+func PostRestore(k *kernel.Kernel, timeline *timing.Timeline, nvproxyRemapping *nvproxy.DeviceRemapping) error {
 	if k.IsPaused() {
 		// The kernel is still paused (double-pause can happen with Docker which
 		// calls pause first and then checkpoint command). The final resume command
@@ -308,11 +315,17 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 		return nil
 	}
 	// Undo preSave in reverse order.
-	if err := postRestoreCuda(k, timeline); err != nil {
+	if err := postRestoreCuda(k, timeline, nvproxyRemapping); err != nil {
 		return err
 	}
 
-	if err := SaveRestoreExec(k, SaveRestoreExecRestore); err != nil {
+	// saveRestoreExecDeviceMapEnv may log a warning, so only call it if there
+	// is a save/restore binary to pass the result to.
+	var extraEnv []string
+	if k.SaveRestoreExecConfig != nil {
+		extraEnv = saveRestoreExecDeviceMapEnv(nvproxyRemapping)
+	}
+	if err := SaveRestoreExec(k, SaveRestoreExecRestore, extraEnv...); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
 
@@ -320,11 +333,12 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 }
 
 // SaveRestoreExec creates a new process that executes the save/restore
-// binary specified by k.SaveRestoreExecConfig and waits for it to finish.
+// binary specified by k.SaveRestoreExecConfig and waits for it to finish. The
+// environment of the binary is built by saveRestoreExecEnv.
 //
 // Precondition: The kernel should be running; k.SetSaveRestoreExecConfig should
 // be setup with an argv, otherwise this function is a no-op.
-func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
+func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode, extraEnv ...string) error {
 	if k.SaveRestoreExecConfig == nil {
 		return nil
 	}
@@ -368,7 +382,7 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 		execOut = fdcollector.NewAgent(ctx, rfd, argv[0]) // transfers ownership of rfd
 		cu.Add(execOut.Stop)
 	}
-	envv := k.SpecEnviron(contID)
+	envv := saveRestoreExecEnv(k.SpecEnviron(contID), mode, extraEnv)
 
 	proc := Proc{
 		Kernel: k,
@@ -377,7 +391,7 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 		ExecArgs: controlapi.ExecArgs{
 			Filename:    argv[0],
 			Argv:        argv,
-			Envv:        append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
+			Envv:        envv,
 			ContainerID: contID,
 		},
 		MountNamespace: mntns,
@@ -406,6 +420,21 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 	}
 	log.Debugf("save/restore binary %s output: %s", argv[0], execOut.String())
 	return nil
+}
+
+// saveRestoreExecEnv returns the environment of the save/restore binary:
+// specEnv without saveRestoreExecDeviceMapEnvVar, then extraEnv, then
+// saveRestoreExecEnvVar set to mode. It does not modify specEnv.
+func saveRestoreExecEnv(specEnv []string, mode SaveRestoreExecMode, extraEnv []string) []string {
+	env := make([]string, 0, len(specEnv)+len(extraEnv)+1)
+	for _, kv := range specEnv {
+		if name, _, _ := strings.Cut(kv, "="); name == saveRestoreExecDeviceMapEnvVar {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, extraEnv...)
+	return append(env, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode))
 }
 
 // ConfigureSaveRestoreExec sets the configuration for the save/restore binary.
