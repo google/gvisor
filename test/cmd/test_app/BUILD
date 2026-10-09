@@ -17,7 +17,7 @@ go_binary(
         "xattr.go",
         "zombies.go",
     ],
-    features = ["fully_static_link"],
+    static = True,
     visibility = [
         "//runsc/container:__pkg__",
         "//test/syscalls/linux:__pkg__",
