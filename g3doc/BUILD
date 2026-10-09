@@ -27,6 +27,14 @@ doc(
 )
 
 doc(
+    name = "release",
+    src = "release.md",
+    category = "Project",
+    permalink = "/release/",
+    weight = "20",
+)
+
+doc(
     name = "community",
     src = "community.md",
     category = "Project",
