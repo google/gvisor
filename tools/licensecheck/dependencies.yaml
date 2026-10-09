@@ -76,6 +76,12 @@
   commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
   sha256: 76e9514cfac18e5677aa04f3a89873c981f16a2f2353bb97372a86cd09b1f5a8
   license: MIT
+- dependency: bazel_lib
+  version: https://github.com/bazel-contrib/bazel-lib/releases/download/v3.2.2/bazel-lib-v3.2.2.tar.gz
+  retrieved: "2026-10-06"
+  commit: cac2d7855949d1b222fa26888892fbbe1d31015d
+  sha256: 3d62bf30b95b71a566d9ebca50ee78d370b12522d244235b41166f65b142705d
+  license: Apache-2.0
 - dependency: bazel_skylib
   version: https://github.com/bazelbuild/bazel-skylib/releases/download/1.9.2/bazel-skylib-1.9.2.tar.gz
   retrieved: "2026-09-26"
@@ -1167,6 +1173,12 @@
   retrieved: "2026-08-27"
   commit: ee656c7534f5d7dc23d44dd611689568f72017a6
   sha256: 49535f3c3370004309da50194c09bbfc528d4702424dd46e7d56a278a3dfc15d
+  license: Apache-2.0
+- dependency: yq.bzl
+  version: https://github.com/bazel-contrib/yq.bzl/releases/download/v0.4.0/yq.bzl-v0.4.0.tar.gz
+  retrieved: "2026-10-07"
+  commit: 417d98fd7a9836a488ec57467c2eb78c25b30205
+  sha256: 58dddbe703a26df30f79a6335ab13f4a4a0c128dc2f9371ec7a4722e12f258cc
   license: Apache-2.0
 - dependency: zstd
   version: https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -176,17 +175,9 @@ func parseRoster(yamlData []byte, areasByName map[string]area) (*roster, error) 
 	return &r, nil
 }
 
-// generateCODEOWNERS renders `CODEOWNERS` contents. All area paths must
-// exist as directories under the repository root. Only areas with
+// generateCODEOWNERS renders `CODEOWNERS` contents. Only areas with
 // enforced_review get a CODEOWNERS section.
-func generateCODEOWNERS(r *roster, areasByName map[string]area, root string) ([]byte, error) {
-	for _, name := range slices.Sorted(maps.Keys(areasByName)) {
-		for _, p := range areasByName[name].Paths {
-			if st, err := os.Stat(filepath.Join(root, p)); err != nil || !st.IsDir() {
-				return nil, fmt.Errorf("area %q: path %q is not a directory under %q", name, p, root)
-			}
-		}
-	}
+func generateCODEOWNERS(r *roster, areasByName map[string]area) ([]byte, error) {
 	ownersByArea := make(map[string][]string)
 	for _, m := range r.Maintainers {
 		for _, a := range m.Areas {
@@ -348,9 +339,7 @@ func main() {
 	case "MAINTAINERS.md":
 		outData, err = generateMaintainersMD(r)
 	case "CODEOWNERS":
-		// areas.yaml lives at <repo root>/governance/areas.yaml; area paths
-		// are checked for existence relative to that root.
-		outData, err = generateCODEOWNERS(r, areasByName, filepath.Dir(filepath.Dir(*areasPath)))
+		outData, err = generateCODEOWNERS(r, areasByName)
 	default:
 		err = fmt.Errorf("invalid format %q", *format)
 	}
