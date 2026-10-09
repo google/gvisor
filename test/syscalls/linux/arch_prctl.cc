@@ -13,9 +13,12 @@
 // limitations under the License.
 
 #include <asm/prctl.h>
+#include <setjmp.h>  // IWYU pragma: keep
+#include <signal.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -23,6 +26,7 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -33,10 +37,12 @@
 #include "absl/base/attributes.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -932,6 +938,110 @@ TEST(ArchPrctlTest, UnpatchInheritedSyscallsAfterFork) {
   EXPECT_EQ((RawSyscall<SYS_getpid, 5>()), parent_pid);
 
   munmap(page, kPageSize);
+}
+
+// Shared state for the signal handlers.
+sigjmp_buf reverted_patch_site_env;
+volatile sig_atomic_t reverted_patch_site_signal = 0;
+std::atomic<uintptr_t> reverted_patch_site_sigill_ip{0};
+
+// SIGILL is used to catch faults at the reverted patch site.
+void RevertedPatchSiteSigillHandler(int sig, siginfo_t*, void* uc) {
+  reverted_patch_site_signal = sig;
+  reverted_patch_site_sigill_ip.store(static_cast<uintptr_t>(
+      static_cast<ucontext_t*>(uc)->uc_mcontext.gregs[REG_RIP]));
+  siglongjmp(reverted_patch_site_env, 1);
+}
+
+// SIGALRM is used to terminate the test if the fault is restarted forever.
+void RevertedPatchSiteSigalrmHandler(int sig) {
+  reverted_patch_site_signal = sig;
+  siglongjmp(reverted_patch_site_env, 1);
+}
+
+// The Sentry remembers former patch sites so that it can restart threads that
+// fault on an unpatch in progress, but it must not restart faults on code that
+// the app has since placed there as it would restart forever.
+TEST(ArchPrctlTest, SigillAtRevertedPatchSiteIsDelivered) {
+  SKIP_IF(GvisorPlatform() != Platform::kSystrap);
+
+  // mov $SYS_getpid, %eax; syscall; ret
+  constexpr uint8_t kSyscallStub[] = {0xb8, SYS_getpid, 0x00, 0x00,
+                                      0x00, 0x0f,       0x05, 0xc3};
+  // ud2
+  constexpr uint8_t kInvalidInst[] = {0x0f, 0x0b};
+  // The first byte of "jmp *addr", which replaces a patched syscall.
+  constexpr uint8_t kJmpOpcode = 0xff;
+
+  uintptr_t orig_gs;
+  ASSERT_THAT(arch_prctl(ARCH_GET_GS, reinterpret_cast<uintptr_t>(&orig_gs)),
+              SyscallSucceeds());
+
+  void* gs_page = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(gs_page, MAP_FAILED);
+  void* code_page = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(code_page, MAP_FAILED);
+
+  const auto gs_cleanup = Cleanup([&] {
+    EXPECT_THAT(arch_prctl(ARCH_SET_GS, orig_gs), SyscallSucceeds());
+    munmap(code_page, kPageSize);
+    munmap(gs_page, kPageSize);
+  });
+
+  // Systrap only patches a syscall if it can read the byte before its mov
+  // instruction.
+  uint8_t* code = static_cast<uint8_t*>(code_page) + 16;
+  auto stub = reinterpret_cast<pid_t (*)()>(code);
+
+  // Systrap patches the stub the first time it runs.
+  memcpy(code, kSyscallStub, sizeof(kSyscallStub));
+  const pid_t pid = getpid();
+  ASSERT_EQ(stub(), pid);
+  if (code[0] != kJmpOpcode) {
+    GTEST_SKIP() << "Syscall patching is disabled";
+  }
+
+  // Setting GS reverts the patch and disables syscall patching.
+  ASSERT_THAT(arch_prctl(ARCH_SET_GS, reinterpret_cast<uintptr_t>(gs_page)),
+              SyscallSucceeds());
+  ASSERT_EQ(memcmp(code, kSyscallStub, sizeof(kSyscallStub)), 0);
+  ASSERT_EQ(stub(), pid);
+
+  // Signal handler setup
+  struct sigaction sa = {};
+  sa.sa_sigaction = RevertedPatchSiteSigillHandler;
+  sa.sa_flags = SA_SIGINFO;
+  const auto sigill_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGILL, sa));
+  sa = {};
+  sa.sa_handler = RevertedPatchSiteSigalrmHandler;
+  const auto sigalrm_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGALRM, sa));
+
+  // Place an invalid instruction at the former patch site (offset 0) and then
+  // again at the former syscall instruction (offset 5).
+  for (int offset : {0, 5}) {
+    SCOPED_TRACE(::testing::Message() << "ud2 at offset " << offset);
+    memcpy(code, kSyscallStub, sizeof(kSyscallStub));
+    memcpy(code + offset, kInvalidInst, sizeof(kInvalidInst));
+    reverted_patch_site_signal = 0;
+    reverted_patch_site_sigill_ip.store(0);
+
+    // Set a save point for a future siglongjmp to return to.
+    if (sigsetjmp(reverted_patch_site_env, 1) == 0) {
+      // SIGALRM ends the test if the fault is restarted forever.
+      alarm(5);
+      stub();
+    }
+    alarm(0);
+
+    // Verify that SIGILL was delivered and the IP is correct (not rewound).
+    EXPECT_EQ(reverted_patch_site_signal, SIGILL);
+    EXPECT_EQ(reverted_patch_site_sigill_ip.load(),
+              reinterpret_cast<uintptr_t>(code + offset));
+  }
 }
 
 }  // namespace
