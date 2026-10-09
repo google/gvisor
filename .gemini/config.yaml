@@ -1,0 +1,16 @@
+# Configuration for Gemini Code Assist on GitHub. See
+# https://docs.cloud.google.com/gemini/docs/code-review/customize-repo-review
+#
+# Reviews are on demand: Gemini does not post anything when a pull request is
+# opened. Comment "/gemini review" on a pull request to request a review.
+have_fun: false
+code_review:
+  disable: false
+  comment_severity_threshold: MEDIUM
+  max_review_comments: -1
+  pull_request_opened:
+    help: false
+    summary: false
+    code_review: false
+    include_drafts: false
+ignore_patterns: []
