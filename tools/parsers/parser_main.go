@@ -33,6 +33,17 @@ const (
 	initDescription  = "initializes a new table with benchmarks schema"
 	parseString      = "parse"
 	parseDescription = "parses given benchmarks file and sends it to BigQuery table."
+
+	// Flag and condition names used across commands.
+	projectFlag            = "project"
+	datasetFlag            = "dataset"
+	tableFlag              = "table"
+	runtimeFlag            = "runtime"
+	commitFlag             = "commit"
+	commitHashCondition    = "commit_hash"
+	branchFlag             = "branch"
+	buildURLFlag           = "build_url"
+	failedParseFlagsFormat = "Failed parse flags: %v\n"
 )
 
 var (
@@ -40,23 +51,23 @@ var (
 	// the table with the schema in //tools/bigquery/bigquery.go. If the table/dataset exists
 	// or has been initialized, init has no effect and successfully returns.
 	initCmd     = flag.NewFlagSet(initString, flag.ContinueOnError)
-	initProject = initCmd.String("project", "", "GCP project to send benchmarks.")
-	initDataset = initCmd.String("dataset", "", "dataset to send benchmarks data.")
-	initTable   = initCmd.String("table", "", "table to send benchmarks data.")
+	initProject = initCmd.String(projectFlag, "", "GCP project to send benchmarks.")
+	initDataset = initCmd.String(datasetFlag, "", "dataset to send benchmarks data.")
+	initTable   = initCmd.String(tableFlag, "", "table to send benchmarks data.")
 
 	// The parse command parses benchmark data in `file` and sends it to the
 	// requested table.
 	parseCmd     = flag.NewFlagSet(parseString, flag.ContinueOnError)
 	file         = parseCmd.String("file", "", "file to parse for benchmarks")
 	name         = parseCmd.String("suite_name", "", "name of the benchmark suite")
-	parseProject = parseCmd.String("project", "", "GCP project to send benchmarks.")
-	parseDataset = parseCmd.String("dataset", "", "dataset to send benchmarks data.")
-	parseTable   = parseCmd.String("table", "", "table to send benchmarks data.")
+	parseProject = parseCmd.String(projectFlag, "", "GCP project to send benchmarks.")
+	parseDataset = parseCmd.String(datasetFlag, "", "dataset to send benchmarks data.")
+	parseTable   = parseCmd.String(tableFlag, "", "table to send benchmarks data.")
 	official     = parseCmd.Bool("official", false, "mark input data as official.")
-	runtime      = parseCmd.String("runtime", "", "runtime used to run the benchmark")
-	commit       = parseCmd.String("commit", "", "commit hash of the benchmark run")
-	branch       = parseCmd.String("branch", "", "branch of the benchmark run")
-	buildURL     = parseCmd.String("build_url", "", "CI build URL")
+	runtime      = parseCmd.String(runtimeFlag, "", "runtime used to run the benchmark")
+	commit       = parseCmd.String(commitFlag, "", "commit hash of the benchmark run")
+	branch       = parseCmd.String(branchFlag, "", "branch of the benchmark run")
+	buildURL     = parseCmd.String(buildURLFlag, "", "CI build URL")
 	debug        = parseCmd.Bool("debug", false, "print debug logs")
 )
 
@@ -99,7 +110,7 @@ func parseBenchmarks(ctx context.Context) error {
 
 	extraConditions := []*bq.Condition{
 		{
-			Name:  "runtime",
+			Name:  runtimeFlag,
 			Value: *runtime,
 		},
 		{
@@ -110,24 +121,24 @@ func parseBenchmarks(ctx context.Context) error {
 	if commitVal != "" {
 		extraConditions = append(extraConditions,
 			&bq.Condition{
-				Name:  "commit",
+				Name:  commitFlag,
 				Value: commitVal,
 			},
 			&bq.Condition{
-				Name:  "commit_hash",
+				Name:  commitHashCondition,
 				Value: commitVal,
 			},
 		)
 	}
 	if branchVal != "" {
 		extraConditions = append(extraConditions, &bq.Condition{
-			Name:  "branch",
+			Name:  branchFlag,
 			Value: branchVal,
 		})
 	}
 	if buildURLVal != "" {
 		extraConditions = append(extraConditions, &bq.Condition{
-			Name:  "build_url",
+			Name:  buildURLFlag,
 			Value: buildURLVal,
 		})
 	}
@@ -144,7 +155,7 @@ func main() {
 	// the "init" command
 	case len(os.Args) >= 2 && os.Args[1] == initString:
 		if err := initCmd.Parse(os.Args[2:]); err != nil {
-			log.Fatalf("Failed parse flags: %v\n", err)
+			log.Fatalf(failedParseFlagsFormat, err)
 			os.Exit(1)
 		}
 		if err := initBenchmarks(ctx); err != nil {
@@ -155,7 +166,7 @@ func main() {
 	// the "parse" command.
 	case len(os.Args) >= 2 && os.Args[1] == parseString:
 		if err := parseCmd.Parse(os.Args[2:]); err != nil {
-			log.Fatalf("Failed parse flags: %v\n", err)
+			log.Fatalf(failedParseFlagsFormat, err)
 			os.Exit(1)
 		}
 		if err := parseBenchmarks(ctx); err != nil {
