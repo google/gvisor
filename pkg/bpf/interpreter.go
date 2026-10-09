@@ -375,9 +375,9 @@ func Exec[endian Endianness](p Program, in Input) (uint32, error) {
 		case Ret | A:
 			return m.A, nil
 		case Misc | Tax:
-			m.A = m.X
-		case Misc | Txa:
 			m.X = m.A
+		case Misc | Txa:
+			m.A = m.X
 		default:
 			return 0, Error{InvalidOpcode, pc}
 		}
@@ -648,9 +648,9 @@ func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics,
 			ret.ReturnValue = m.A
 			return ret, nil
 		case Misc | Tax:
-			m.A = m.X
-		case Misc | Txa:
 			m.X = m.A
+		case Misc | Txa:
+			m.A = m.X
 		default:
 			return ret, Error{InvalidOpcode, pc}
 		}

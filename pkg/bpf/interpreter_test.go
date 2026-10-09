@@ -225,7 +225,7 @@ func TestValidInstructions(t *testing.T) {
 			desc: "Load of immediate into X and copying of X into A",
 			insns: []Instruction{
 				Stmt(Ldx|Imm|W, 42), // X = 42
-				Stmt(Misc|Tax, 0),   // A = X
+				Stmt(Misc|Txa, 0),   // A = X
 				Stmt(Ret|A, 0),      // return A
 			},
 			expected: allCoveredNoneReadAndReturns(42),
@@ -234,9 +234,9 @@ func TestValidInstructions(t *testing.T) {
 			desc: "Copying of A into X and back",
 			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42), // A = 42
-				Stmt(Misc|Txa, 0),  // X = A
+				Stmt(Misc|Tax, 0),  // X = A
 				Stmt(Ld|Imm|W, 0),  // A = 0
-				Stmt(Misc|Tax, 0),  // A = X
+				Stmt(Misc|Txa, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
 			},
 			expected: allCoveredNoneReadAndReturns(42),
@@ -340,7 +340,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Stx, 3),        // M[3] = X
 				Stmt(Ldx|Imm|W, 0),  // X = 0
 				Stmt(Ldx|Mem|W, 3),  // X = M[3]
-				Stmt(Misc|Tax, 0),   // A = X
+				Stmt(Misc|Txa, 0),   // A = X
 				Stmt(Ret|A, 0),      // return A
 			},
 			expected: allCoveredNoneReadAndReturns(42),
@@ -358,7 +358,7 @@ func TestValidInstructions(t *testing.T) {
 			desc: "Load of input length into X",
 			insns: []Instruction{
 				Stmt(Ldx|Len|W, 0), // X = len(input)
-				Stmt(Misc|Tax, 0),  // A = X
+				Stmt(Misc|Txa, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
 			},
 			input:    []byte{1, 2, 3},
@@ -368,7 +368,7 @@ func TestValidInstructions(t *testing.T) {
 			desc: "Load of MSH (?) into X",
 			insns: []Instruction{
 				Stmt(Ldx|Msh|B, 0), // X = 4*(input[0]&0xf)
-				Stmt(Misc|Tax, 0),  // A = X
+				Stmt(Misc|Txa, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
 			},
 			input: []byte{0xf1},
@@ -853,6 +853,51 @@ func TestValidInstructions(t *testing.T) {
 				Coverage:      []bool{true, true, true, false, true, true, false},
 				InputAccessed: []bool{},
 				ReturnValue:   0,
+			}),
+		},
+		{
+			desc: "Repeated scratch memory load after store",
+			insns: []Instruction{
+				Stmt(Ld|Imm|W, 1),  // A = 1
+				Stmt(St, 0),        // M[0] = A
+				Stmt(Ld|Mem|W, 0),  // A = M[0]
+				Stmt(Ldx|Imm|W, 2), // X = 2
+				Stmt(Stx, 0),       // M[0] = X
+				Stmt(Ld|Mem|W, 0),  // A = M[0]
+				Stmt(Ret|A, 0),     // return A
+			},
+			expected: allCoveredNoneReadAndReturns(2),
+		},
+		{
+			desc: "Repeated relative offset load after X changes",
+			insns: []Instruction{
+				Stmt(Ldx|Imm|W, 0), // X = 0
+				Stmt(Ld|Ind|B, 0),  // A = input[X]
+				Stmt(Ldx|Imm|W, 1), // X = 1
+				Stmt(Ld|Ind|B, 0),  // A = input[X]
+				Stmt(Ret|A, 0),     // return A
+			},
+			input: []byte{0x11, 0x22},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, true, true},
+				InputAccessed: []bool{true, true},
+				ReturnValue:   0x22,
+			}),
+		},
+		{
+			desc: "Repeated relative offset load after copying A into X",
+			insns: []Instruction{
+				Stmt(Ldx|Imm|W, 0), // X = 0
+				Stmt(Ld|Ind|B, 0),  // A = input[X]
+				Stmt(Misc|Tax, 0),  // X = A
+				Stmt(Ld|Ind|B, 0),  // A = input[X]
+				Stmt(Ret|A, 0),     // return A
+			},
+			input: []byte{0x01, 0x22},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, true, true},
+				InputAccessed: []bool{true, true},
+				ReturnValue:   0x22,
 			}),
 		},
 	} {
