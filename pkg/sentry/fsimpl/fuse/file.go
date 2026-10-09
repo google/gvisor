@@ -90,8 +90,11 @@ func (fd *fileDescription) Release(ctx context.Context) {
 	}
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
 	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, opcode, &in)
-	// The reply will be ignored since no callback is defined in asyncCallBack().
-	fs.conn.Call(ctx, req)
+	// As in Linux, FUSE_RELEASE is sent as a forced background request, so it
+	// is not affected by signals received by the calling task. The reply will
+	// be ignored since no callback is defined in asyncCallBack().
+	req.force = true
+	fs.conn.CallAsync(ctx, req)
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
@@ -113,7 +116,19 @@ func (fd *fileDescription) OnClose(ctx context.Context) error {
 		LockOwner: 0, // TODO(gvisor.dev/issue/3245): file lock
 	}
 	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FLUSH, &in)
+	// As in Linux, FUSE_FLUSH must reach the server even if the calling task
+	// is killed (e.g. when files are closed during exit).
+	req.force = true
 	res, err := fs.conn.Call(ctx, req)
+	if linuxerr.Equals(linuxerr.ERESTARTSYS, err) {
+		// The task had to stop (e.g. for checkpointing) while waiting. Unlike
+		// most syscalls, close(2) can't be restarted, since the FD has already
+		// been removed. The FUSE_FLUSH request, if queued, still reaches the
+		// server since it is forced, but its result is unknown. Report
+		// success rather than a spurious EINTR, since the FD is closed
+		// regardless.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
