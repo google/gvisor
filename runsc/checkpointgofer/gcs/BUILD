@@ -16,6 +16,7 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/runsc/checkpointgofer/gcs",
     visibility = [
+        "//:__pkg__",
         "//runsc:__subpackages__",
     ],
     deps = [

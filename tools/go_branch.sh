@@ -108,23 +108,45 @@ done
 cat > README.md <<EOF
 # gVisor
 
-This branch is a synthetic branch, containing only Go sources, that is
-compatible with standard Go tools. See the master branch for authoritative
-sources and tests.
+This branch is a synthetic branch, containing Go sources and the C sources of
+runsc's sidecars, that is compatible with standard Go tools. Build runsc and
+its Go sidecars with CGO_ENABLED=0, and build the C sidecars with the flags in
+their BUILD files on the master commit that each go branch commit merges. See
+the master branch for authoritative sources and tests.
 EOF
 
 # There are a few solitary files that can get left behind due to the way bazel
 # constructs the gopath target. Note that we don't find all Go files here
 # because they may correspond to unused templates, etc.
-declare -ar binaries=( "runsc" "shim" "webhook" "tools/checklocks/cmd/checklocks" )
+declare -ar binaries=(
+  "runsc"
+  "runsc/checkpointgofer"
+  "runsc/cmd/metricserver"
+  "runsc/cmd/sentry"
+  "shim"
+  "webhook"
+  "tools/checklocks/cmd/checklocks"
+)
 for target in "${binaries[@]}"; do
   mkdir -p "${target}"
   cp "${repo_orig}/${target}"/*.go "${target}/"
 done
 
+# The sidecars written in C are built from these sources. Each must stay in a
+# directory without Go files, because the go tool refuses to build a package
+# that contains C files but doesn't use cgo.
+declare -ar csources=(
+  "runsc/fdparking/fdparking.c"
+  "runsc/prewarmer/prewarmer.c"
+)
+for file in "${csources[@]}"; do
+  mkdir -p "$(dirname "${file}")"
+  cp "${repo_orig}/${file}" "${file}"
+done
+
 # Normalize all permissions. The way bazel constructs the :gopath tree may leave
 # some strange permissions on files. We don't have anything in this tree that
-# should be execution, only the Go source files, README.md, and ${othersrc}.
+# should be execution, only source files, README.md, and ${othersrc}.
 find . -type f -exec chmod 0644 {} \;
 find . -type d -exec chmod 0755 {} \;
 
