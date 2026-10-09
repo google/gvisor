@@ -1305,9 +1305,10 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 
 // precondition: s.mu is held.
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
+	enabled := nic.Enabled()
 	flags := NICStateFlags{
-		Up:          true, // Netstack interfaces are always up.
-		Running:     nic.Enabled(),
+		Up:          enabled,
+		Running:     enabled,
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
 	}
@@ -1488,6 +1489,9 @@ func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address
 //
 // +checklocksread:s.mu
 func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+	if !localAddressNIC.Enabled() {
+		return nil
+	}
 	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, false /* createTemp */, NeverPrimaryEndpoint)
 	if localAddressEndpoint == nil {
 		return nil
@@ -1503,7 +1507,7 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 	// NICs.
 	if outgoingNIC == nil {
 		for _, nic := range s.nics {
-			if nic.hasAddress(netProto, remoteAddr) {
+			if nic.Enabled() && nic.hasAddress(netProto, remoteAddr) {
 				outgoingNIC = nic
 				break
 			}
@@ -1535,6 +1539,9 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 }
 
 func (s *Stack) loopbackLocalRoute(localAddressNIC *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+	if !localAddressNIC.Enabled() {
+		return nil
+	}
 	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, true /* createTemp */, NeverPrimaryEndpoint)
 	if localAddressEndpoint == nil {
 		return nil

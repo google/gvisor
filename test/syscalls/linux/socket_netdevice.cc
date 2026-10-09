@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <linux/ethtool.h>
 #include <linux/if.h>
 #include <linux/if_addr.h>
@@ -21,19 +22,26 @@
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <initializer_list>
 #include <ios>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -46,6 +54,304 @@ namespace {
 
 using ::testing::AnyOf;
 using ::testing::Eq;
+
+class NetdeviceNamespaceTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(IsRunningWithHostinet());
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    original_namespace_ =
+        FileDescriptor(open("/proc/thread-self/ns/net", O_RDONLY));
+    ASSERT_GE(original_namespace_.get(), 0);
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+    socket_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    // A new loopback is DOWN on Linux but UP on gVisor.
+    ASSERT_NO_FATAL_FAILURE(SetFlags(fd(), 0));
+  }
+
+  void TearDown() override {
+    if (original_namespace_.get() >= 0) {
+      EXPECT_THAT(setns(original_namespace_.get(), CLONE_NEWNET),
+                  SyscallSucceeds());
+    }
+  }
+
+  int Flags(int fd) {
+    struct ifreq req = {};
+    snprintf(req.ifr_name, IFNAMSIZ, "lo");
+    EXPECT_THAT(ioctl(fd, SIOCGIFFLAGS, &req), SyscallSucceeds());
+    return static_cast<unsigned short>(req.ifr_flags);
+  }
+
+  void SetFlags(int fd, int flags) {
+    struct ifreq req = {};
+    snprintf(req.ifr_name, IFNAMSIZ, "lo");
+    req.ifr_flags = flags;
+    ASSERT_THAT(ioctl(fd, SIOCSIFFLAGS, &req), SyscallSucceeds());
+  }
+
+  struct LinkAttribute {
+    uint16_t type;
+    uint32_t value;
+    uint16_t size = sizeof(uint32_t);
+  };
+
+  PosixError ChangeLink(uint32_t flags, uint32_t change,
+                        std::initializer_list<LinkAttribute> attributes = {}) {
+    struct ifreq iface = {};
+    snprintf(iface.ifr_name, IFNAMSIZ, "lo");
+    if (ioctl(fd(), SIOCGIFINDEX, &iface) < 0) {
+      return PosixError(errno, "SIOCGIFINDEX");
+    }
+    std::vector<char> request(NLMSG_LENGTH(sizeof(struct ifinfomsg)), 0);
+    for (const auto& attribute : attributes) {
+      const size_t offset = request.size();
+      request.resize(offset + RTA_SPACE(attribute.size), 0);
+      struct rtattr attr = {};
+      attr.rta_type = attribute.type;
+      attr.rta_len = RTA_LENGTH(attribute.size);
+      memcpy(request.data() + offset, &attr, sizeof(attr));
+      memcpy(request.data() + offset + RTA_LENGTH(0), &attribute.value,
+             attribute.size);
+    }
+    auto* header = reinterpret_cast<struct nlmsghdr*>(request.data());
+    constexpr uint32_t kSeq = 1;
+    header->nlmsg_len = request.size();
+    header->nlmsg_type = RTM_NEWLINK;
+    header->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    header->nlmsg_seq = kSeq;
+    auto* info = reinterpret_cast<struct ifinfomsg*>(NLMSG_DATA(header));
+    info->ifi_index = iface.ifr_ifindex;
+    info->ifi_flags = flags;
+    info->ifi_change = change;
+    ASSIGN_OR_RETURN_ERRNO(FileDescriptor netlink,
+                           NetlinkBoundSocket(NETLINK_ROUTE));
+    return NetlinkRequestAckOrError(netlink, kSeq, request.data(),
+                                    request.size());
+  }
+
+  int MTU() {
+    struct ifreq req = {};
+    snprintf(req.ifr_name, IFNAMSIZ, "lo");
+    EXPECT_THAT(ioctl(fd(), SIOCGIFMTU, &req), SyscallSucceeds());
+    return req.ifr_mtu;
+  }
+
+  int fd() const { return socket_.get(); }
+
+ private:
+  const DisableSave disable_save_;
+  FileDescriptor original_namespace_;
+  FileDescriptor socket_;
+};
+
+// Setting IFF_UP brings loopback up with 127.0.0.1.
+TEST_F(NetdeviceNamespaceTest, LoopbackUp) {
+  EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING), 0);
+  SetFlags(fd(), Flags(fd()) | IFF_UP);
+  EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING | IFF_LOOPBACK),
+            IFF_UP | IFF_RUNNING | IFF_LOOPBACK);
+  struct ifreq req = {};
+  snprintf(req.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(fd(), SIOCGIFADDR, &req), SyscallSucceeds());
+  const auto* address =
+      reinterpret_cast<const struct sockaddr_in*>(&req.ifr_addr);
+  EXPECT_EQ(address->sin_addr.s_addr, htonl(INADDR_LOOPBACK));
+}
+
+// Repeated UP and DOWN requests preserve device identity and actual state.
+TEST_F(NetdeviceNamespaceTest, LoopbackRepeatedUpDown) {
+  for (int i = 0; i < 3; ++i) {
+    SetFlags(fd(), IFF_UP);
+    SetFlags(fd(), IFF_UP);
+    EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+    SetFlags(fd(), IFF_RUNNING);
+    SetFlags(fd(), 0);
+    EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING), 0);
+    EXPECT_EQ(Flags(fd()) & IFF_LOOPBACK, IFF_LOOPBACK);
+  }
+}
+
+// Netlink applies only selected bits; zero change retains legacy semantics.
+TEST_F(NetdeviceNamespaceTest, NetlinkFlagMasks) {
+  ASSERT_NO_ERRNO(ChangeLink(IFF_UP, 0));
+  ASSERT_NE(Flags(fd()) & IFF_UP, 0);
+  ASSERT_NO_ERRNO(ChangeLink(Flags(fd()), ~uint32_t{0}));
+  ASSERT_NO_ERRNO(ChangeLink(0, IFF_DEBUG | IFF_PROMISC));
+  EXPECT_NE(Flags(fd()) & IFF_UP, 0);
+  ASSERT_NO_ERRNO(ChangeLink(IFF_PROMISC, IFF_UP));
+  EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_PROMISC), 0);
+  ASSERT_NO_ERRNO(ChangeLink(IFF_UP, IFF_PROMISC));
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+  ASSERT_NO_ERRNO(ChangeLink(IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(ChangeLink(0, 0));
+  EXPECT_NE(Flags(fd()) & IFF_UP, 0);
+  ASSERT_NO_ERRNO(ChangeLink(IFF_LOOPBACK, 0));
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+}
+
+// Unsupported writable flags fail before either flags or attributes change.
+TEST_F(NetdeviceNamespaceTest, UnsupportedFlagChanges) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SetFlags(fd(), IFF_UP);
+  const int old_flags = Flags(fd());
+  const int old_mtu = MTU();
+  for (int bit :
+       {IFF_DEBUG, IFF_NOTRAILERS, IFF_NOARP, IFF_PROMISC, IFF_ALLMULTI,
+        IFF_MULTICAST, IFF_PORTSEL, IFF_AUTOMEDIA, IFF_DYNAMIC}) {
+    SCOPED_TRACE(bit);
+    struct ifreq req = {};
+    snprintf(req.ifr_name, IFNAMSIZ, "lo");
+    req.ifr_flags = (old_flags & ~IFF_UP) ^ bit;
+    EXPECT_THAT(ioctl(fd(), SIOCSIFFLAGS, &req),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+    EXPECT_EQ(Flags(fd()), old_flags);
+    EXPECT_THAT(ChangeLink(bit, IFF_UP | bit, {{IFLA_MTU, 1500}}),
+                PosixErrorIs(EOPNOTSUPP, ::testing::_));
+    EXPECT_EQ(Flags(fd()), old_flags);
+    EXPECT_EQ(MTU(), old_mtu);
+  }
+}
+
+// A malformed early attribute must not bring the interface UP.
+TEST_F(NetdeviceNamespaceTest, MalformedLinkAttributePreservesFlags) {
+  const int old_mtu = MTU();
+  EXPECT_THAT(
+      ChangeLink(IFF_UP, IFF_UP, {{IFLA_MTU, 1500}, {IFLA_ADDRESS, 0, 1}}),
+      PosixErrorIs(EINVAL, ::testing::_));
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+  EXPECT_EQ(MTU(), old_mtu);
+}
+
+// Attribute policy validation precedes all device changes, even for MASTER.
+TEST_F(NetdeviceNamespaceTest, MalformedMasterPreservesFlagsAndMTU) {
+  const int old_mtu = MTU();
+  EXPECT_THAT(
+      ChangeLink(IFF_UP, IFF_UP, {{IFLA_MTU, 1500}, {IFLA_MASTER, 0, 1}}),
+      PosixErrorIs(AnyOf(Eq(EINVAL), Eq(ERANGE)), ::testing::_));
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+  EXPECT_EQ(MTU(), old_mtu);
+}
+
+// A later MASTER failure retains the earlier MTU and UP changes, independent
+// of the order of attributes in the request.
+TEST_F(NetdeviceNamespaceTest, MasterFailureRetainsEarlierChanges) {
+  for (bool master_first : {false, true}) {
+    SetFlags(fd(), 0);
+    const int old_mtu = MTU();
+    const uint32_t mtu = master_first ? 1600 : 1500;
+    const LinkAttribute master = {IFLA_MASTER, 0x7fffffff};
+    const LinkAttribute mtu_attr = {IFLA_MTU, mtu};
+    const auto result = master_first
+                            ? ChangeLink(IFF_UP, IFF_UP, {master, mtu_attr})
+                            : ChangeLink(IFF_UP, IFF_UP, {mtu_attr, master});
+    // The existing missing-master errno differs between the two stacks.
+    EXPECT_THAT(result, PosixErrorIs(IsRunningOnGvisor() ? ENODEV : EINVAL,
+                                     ::testing::_));
+    // Check ordering independently of the existing Ethernet MTU adjustment.
+    EXPECT_NE(MTU(), old_mtu);
+    EXPECT_NE(Flags(fd()) & IFF_UP, 0);
+    struct ifreq req = {};
+    snprintf(req.ifr_name, IFNAMSIZ, "lo");
+    ASSERT_THAT(ioctl(fd(), SIOCGIFADDR, &req), SyscallSucceeds());
+    EXPECT_EQ(
+        reinterpret_cast<struct sockaddr_in*>(&req.ifr_addr)->sin_addr.s_addr,
+        htonl(INADDR_LOOPBACK));
+  }
+}
+
+// Attribute changes are reported even if a later attribute fails and the
+// requested flags are unchanged.
+TEST_F(NetdeviceNamespaceTest, PartialLinkChangeNotifiesSubscribers) {
+  SetFlags(fd(), IFF_UP);
+  const int old_mtu = MTU();
+  struct sockaddr_nl address = {};
+  address.nl_family = AF_NETLINK;
+  address.nl_groups = RTMGRP_LINK;
+  FileDescriptor observer =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE, &address));
+  EXPECT_THAT(
+      ChangeLink(IFF_UP, IFF_UP, {{IFLA_MTU, 1500}, {IFLA_MASTER, 0x7fffffff}}),
+      PosixErrorIs(IsRunningOnGvisor() ? ENODEV : EINVAL, ::testing::_));
+  EXPECT_NE(MTU(), old_mtu);
+  struct pollfd ready = {};
+  ready.fd = observer.get();
+  ready.events = POLLIN;
+  ASSERT_THAT(RetryEINTR(poll)(&ready, 1, 2000), SyscallSucceedsWithValue(1));
+  alignas(struct nlmsghdr) char buffer[4096];
+  ssize_t size =
+      RetryEINTR(recv)(observer.get(), buffer, sizeof(buffer), MSG_DONTWAIT);
+  ASSERT_GT(size, 0);
+  bool found = false;
+  for (auto* header = reinterpret_cast<struct nlmsghdr*>(buffer);
+       NLMSG_OK(header, size); header = NLMSG_NEXT(header, size)) {
+    if (header->nlmsg_type != RTM_NEWLINK ||
+        header->nlmsg_len < NLMSG_LENGTH(sizeof(struct ifinfomsg))) {
+      continue;
+    }
+    const auto* info =
+        reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(header));
+    if ((info->ifi_flags & (IFF_UP | IFF_LOOPBACK)) ==
+        (IFF_UP | IFF_LOOPBACK)) {
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+// Missing devices and bad pointers fail without changing loopback state.
+TEST_F(NetdeviceNamespaceTest, InvalidDeviceAndPointer) {
+  struct ifreq req = {};
+  snprintf(req.ifr_name, IFNAMSIZ, "missing");
+  req.ifr_flags = IFF_UP;
+  EXPECT_THAT(ioctl(fd(), SIOCSIFFLAGS, &req), SyscallFailsWithErrno(ENODEV));
+  EXPECT_THAT(ioctl(fd(), SIOCSIFFLAGS, nullptr),
+              SyscallFailsWithErrno(EFAULT));
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+}
+
+// NET_ADMIN is required even when the named device does not exist.
+TEST_F(NetdeviceNamespaceTest, RequiresNetAdmin) {
+  AutoCapability no_net_admin(CAP_NET_ADMIN, false);
+  struct ifreq req = {};
+  snprintf(req.ifr_name, IFNAMSIZ, "lo");
+  req.ifr_flags = IFF_UP;
+  EXPECT_THAT(ioctl(fd(), SIOCSIFFLAGS, &req), SyscallFailsWithErrno(EPERM));
+  snprintf(req.ifr_name, IFNAMSIZ, "missing");
+  EXPECT_THAT(ioctl(fd(), SIOCSIFFLAGS, &req), SyscallFailsWithErrno(EPERM));
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+}
+
+// Old sockets keep querying and modifying their original network namespace.
+TEST_F(NetdeviceNamespaceTest, SocketNamespaceSurvivesUnshare) {
+  SetFlags(fd(), IFF_UP);
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+  FileDescriptor inner =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  SetFlags(inner.get(), 0);
+  EXPECT_EQ(Flags(fd()) & IFF_UP, IFF_UP);
+  EXPECT_EQ(Flags(inner.get()) & IFF_UP, 0);
+  SetFlags(fd(), 0);
+  SetFlags(fd(), IFF_UP);
+  EXPECT_EQ(Flags(inner.get()) & IFF_UP, 0);
+  SetFlags(inner.get(), IFF_UP);
+  EXPECT_EQ(Flags(inner.get()) & IFF_UP, IFF_UP);
+}
+
+// IPv6 and Unix sockets expose the same network-device ioctl interface.
+TEST_F(NetdeviceNamespaceTest, OtherSocketFamilies) {
+  FileDescriptor ipv6 =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+  SetFlags(ipv6.get(), IFF_UP);
+  EXPECT_EQ(Flags(fd()) & IFF_UP, IFF_UP);
+  FileDescriptor unix_socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_DGRAM, 0));
+  SetFlags(unix_socket.get(), 0);
+  EXPECT_EQ(Flags(fd()) & IFF_UP, 0);
+  SetFlags(unix_socket.get(), IFF_UP);
+  EXPECT_EQ(Flags(fd()) & IFF_UP, IFF_UP);
+}
 
 TEST(NetdeviceTest, Loopback) {
   FileDescriptor sock =

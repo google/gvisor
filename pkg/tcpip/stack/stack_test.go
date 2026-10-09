@@ -961,8 +961,13 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 		nicInfo, ok := allNICInfo[nicID]
 		if !ok {
 			t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
-		} else if nicInfo.Flags.Running != enabled {
-			t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+		} else {
+			if nicInfo.Flags.Up != enabled {
+				t.Errorf("got nicInfo.Flags.Up = %t, want = %t", nicInfo.Flags.Up, enabled)
+			}
+			if nicInfo.Flags.Running != enabled {
+				t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+			}
 		}
 
 		if got := s.CheckNIC(nicID); got != enabled {
@@ -988,6 +993,58 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
 	}
 	checkNIC(false)
+}
+
+// Disabling loopback must prevent local routes through it, including the
+// HandleLocal fast path that bypasses the route table.
+func TestDisabledLoopbackLocalRoute(t *testing.T) {
+	const nicID = 1
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		HandleLocal:      true,
+	})
+	defer s.Destroy()
+	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+		t.Fatalf("CreateNIC(%d): %s", nicID, err)
+	}
+	addr := tcpip.AddrFrom4([4]byte{127, 0, 0, 1})
+	pa := tcpip.ProtocolAddress{
+		Protocol: ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   addr,
+			PrefixLen: 8,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, pa, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, pa, err)
+	}
+	for _, id := range []tcpip.NICID{0, nicID} {
+		t.Run(fmt.Sprintf("NICID=%d", id), func(t *testing.T) {
+			checkRoute := func(enabled bool) {
+				t.Helper()
+				r, err := s.FindRoute(id, tcpip.Address{}, addr, ipv4.ProtocolNumber, false)
+				if r != nil {
+					defer r.Release()
+				}
+				if enabled {
+					if err != nil {
+						t.Fatalf("FindRoute(%d): %s", id, err)
+					}
+				} else if err == nil {
+					t.Fatalf("FindRoute(%d) succeeded with loopback disabled", id)
+				}
+			}
+			checkRoute(true)
+			if err := s.DisableNIC(nicID); err != nil {
+				t.Fatalf("DisableNIC(%d): %s", nicID, err)
+			}
+			checkRoute(false)
+			if err := s.EnableNIC(nicID); err != nil {
+				t.Fatalf("EnableNIC(%d): %s", nicID, err)
+			}
+			checkRoute(true)
+		})
+	}
 }
 
 func TestRemoveUnknownNIC(t *testing.T) {
