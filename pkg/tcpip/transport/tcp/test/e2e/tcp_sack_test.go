@@ -586,107 +586,124 @@ func TestSACKRecovery(t *testing.T) {
 //   - Only enter recovery when at least one more byte of data beyond the highest
 //     byte that was outstanding when fast retransmit was last entered is acked.
 func TestRecoveryEntry(t *testing.T) {
-	c := context.New(t, uint32(mtu))
-	defer c.Cleanup()
+	for _, algorithm := range []string{"reno", "cubic"} {
+		t.Run(algorithm, func(t *testing.T) {
+			c := context.New(t, uint32(mtu))
+			defer c.Cleanup()
 
-	numPackets := 5
-	data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, false /* enableRACK */)
-
-	// Ack #1 packet.
-	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	c.SendAck(seq, maxPayload)
-
-	// Now SACK #3, #4 and #5 packets. This will simulate a situation where
-	// SND.UNA should be considered lost and the sender should enter fast recovery
-	// (even though dupack count is still below threshold).
-	p3Start := c.IRS.Add(1 + seqnum.Size(2*maxPayload))
-	p3End := p3Start.Add(maxPayload)
-	p4Start := p3End
-	p4End := p4Start.Add(maxPayload)
-	p5Start := p4End
-	p5End := p5Start.Add(maxPayload)
-	c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{p3Start, p3End}, {p4Start, p4End}, {p5Start, p5End}})
-
-	// Expect #2 to be retransmitted.
-	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, tsOptionSize)
-
-	metricPollFn := func() error {
-		tcpStats := c.Stack().Stats().TCP
-		stats := []struct {
-			stat *tcpip.StatCounter
-			name string
-			want uint64
-		}{
-			// SACK recovery must have happened.
-			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
-			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
-			// #2 was retransmitted.
-			{tcpStats.Retransmits, "stats.TCP.Retransmits", 1},
-			// No RTOs should have fired yet.
-			{tcpStats.Timeouts, "stats.TCP.Timeouts", 0},
-		}
-		for _, s := range stats {
-			if got, want := s.stat.Value(), s.want; got != want {
-				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			cc := tcpip.CongestionControlOption(algorithm)
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+				t.Fatalf("SetTransportProtocolOption(%s): %s", algorithm, err)
 			}
-		}
-		return nil
-	}
-	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
-		t.Error(err)
-	}
 
-	// Send 4 more packets.
-	var r bytes.Reader
-	data = append(data, data...)
-	r.Reset(data[5*maxPayload : 9*maxPayload])
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %s", err)
-	}
+			numPackets := 5
+			data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, false /* enableRACK */)
 
-	var sackBlocks []header.SACKBlock
-	bytesRead := numPackets * maxPayload
-	for i := 0; i < 4; i++ {
-		c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
-		if i > 0 {
-			pStart := c.IRS.Add(1 + seqnum.Size(bytesRead))
-			sackBlocks = append(sackBlocks, header.SACKBlock{pStart, pStart.Add(maxPayload)})
-			c.SendAckWithSACK(seq, 5*maxPayload, sackBlocks)
-		}
-		bytesRead += maxPayload
-	}
+			// Ack #1 packet.
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			c.SendAck(seq, maxPayload)
 
-	// #6 should be retransmitted after RTO. The sender should NOT enter fast
-	// recovery because the highest byte that was outstanding when fast recovery
-	// was last entered is #5 packet's end. And the sender requires at least one
-	// more byte beyond that (#6 packet start) to be acked to enter recovery.
-	c.ReceiveAndCheckPacketWithOptions(data, 5*maxPayload, maxPayload, tsOptionSize)
-	c.SendAck(seq, 9*maxPayload)
+			// Now SACK #3, #4 and #5 packets. This will simulate a situation where
+			// SND.UNA should be considered lost and the sender should enter fast recovery
+			// (even though dupack count is still below threshold).
+			p3Start := c.IRS.Add(1 + seqnum.Size(2*maxPayload))
+			p3End := p3Start.Add(maxPayload)
+			p4Start := p3End
+			p4End := p4Start.Add(maxPayload)
+			p5Start := p4End
+			p5End := p5Start.Add(maxPayload)
+			c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{p3Start, p3End}, {p4Start, p4End}, {p5Start, p5End}})
 
-	metricPollFn = func() error {
-		tcpStats := c.Stack().Stats().TCP
-		stats := []struct {
-			stat *tcpip.StatCounter
-			name string
-			want uint64
-		}{
-			// Only 1 SACK recovery must have happened.
-			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
-			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
-			// #2 and #6 were retransmitted.
-			{tcpStats.Retransmits, "stats.TCP.Retransmits", 2},
-			// RTO should have fired once.
-			{tcpStats.Timeouts, "stats.TCP.Timeouts", 1},
-		}
-		for _, s := range stats {
-			if got, want := s.stat.Value(), s.want; got != want {
-				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			// Expect #2 to be retransmitted.
+			c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, tsOptionSize)
+
+			metricPollFn := func() error {
+				tcpStats := c.Stack().Stats().TCP
+				stats := []struct {
+					stat *tcpip.StatCounter
+					name string
+					want uint64
+				}{
+					// SACK recovery must have happened.
+					{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
+					{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
+					// #2 was retransmitted.
+					{tcpStats.Retransmits, "stats.TCP.Retransmits", 1},
+					// No RTOs should have fired yet.
+					{tcpStats.Timeouts, "stats.TCP.Timeouts", 0},
+				}
+				for _, s := range stats {
+					if got, want := s.stat.Value(), s.want; got != want {
+						return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+					}
+				}
+				return nil
 			}
-		}
-		return nil
-	}
-	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
-		t.Error(err)
+			if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+				t.Error(err)
+			}
+
+			// Send 4 more packets.
+			var r bytes.Reader
+			data = append(data, data...)
+			r.Reset(data[5*maxPayload : 9*maxPayload])
+			if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write failed: %s", err)
+			}
+
+			var sackBlocks []header.SACKBlock
+			bytesRead := numPackets * maxPayload
+			for i := 0; i < 4; i++ {
+				c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
+				if i > 0 {
+					pStart := c.IRS.Add(1 + seqnum.Size(bytesRead))
+					sackBlocks = append(sackBlocks, header.SACKBlock{pStart, pStart.Add(maxPayload)})
+					c.SendAckWithSACK(seq, 5*maxPayload, sackBlocks)
+				}
+				bytesRead += maxPayload
+			}
+
+			// #6 should be retransmitted after RTO. The sender should NOT enter fast
+			// recovery because the highest byte that was outstanding when fast recovery
+			// was last entered is #5 packet's end. And the sender requires at least one
+			// more byte beyond that (#6 packet start) to be acked to enter recovery.
+			c.ReceiveAndCheckPacketWithOptions(data, 5*maxPayload, maxPayload, tsOptionSize)
+			c.SendAck(seq, bytesRead)
+
+			metricPollFn = func() error {
+				tcpStats := c.Stack().Stats().TCP
+				stats := []struct {
+					stat *tcpip.StatCounter
+					name string
+					want uint64
+				}{
+					// Only 1 SACK recovery must have happened.
+					{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 1},
+					{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 1},
+					// #2 and #6 were retransmitted.
+					{tcpStats.Retransmits, "stats.TCP.Retransmits", 2},
+					// RTO should have fired once.
+					{tcpStats.Timeouts, "stats.TCP.Timeouts", 1},
+				}
+				for _, s := range stats {
+					if got, want := s.stat.Value(), s.want; got != want {
+						return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+					}
+				}
+				return nil
+			}
+			if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+				t.Error(err)
+			}
+
+			// A completed recovery must allow new data to leave the sender.
+			r.Reset(data[bytesRead:])
+			if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+				t.Fatalf("Write after recovery: %s", err)
+			}
+			c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, tsOptionSize)
+			c.SendAck(seq, len(data))
+		})
 	}
 }
 
