@@ -265,6 +265,7 @@ func stubInit() {
 	gap := uintptr(rand.Uint64()) * hostarch.PageSize % (maximumUserAddress - stubStart - mapLen)
 	stubSysmsgStack += uintptr(gap)
 	stubContextQueueRegion += uintptr(gap)
+	stubSpinningThreadQueueAddr += uintptr(gap)
 	stubContextRegion += uintptr(gap)
 
 	// Copy the stub to the address.

@@ -155,3 +155,11 @@ func TestSwitchThreadIDVisibility(t *testing.T) {
 			"before publishing the context state", n)
 	}
 }
+
+func TestSpinningQueueLayout(t *testing.T) {
+	newSystrapTest(t)
+	queueStart := stubContextQueueRegion + stubContextQueueRegionLen
+	if stubSpinningThreadQueueAddr < queueStart || stubSpinningThreadQueueAddr+sysmsg.SpinningQueueMemSize > stubContextRegion {
+		t.Errorf("spinning queue %#x not in [%#x, %#x)", stubSpinningThreadQueueAddr, queueStart, stubContextRegion)
+	}
+}
