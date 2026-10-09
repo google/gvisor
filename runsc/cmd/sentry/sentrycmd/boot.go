@@ -652,11 +652,25 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		timer.Reached("resolved mounts read")
 	}
 
+	procSelfFD := -1
 	if conf.DirectFS {
 		// sandbox should run with a umask of 0, because we want to preserve file
 		// modes exactly as sent by the sentry, which would have already applied
 		// the application umask.
 		unix.Umask(0)
+
+		// Open the bind mount of procfs' self/fd directory set up by
+		// setUpChroot(). It must be opened before /proc is unmounted and
+		// remains usable afterwards.
+		procSelfFDPath := procSelfFDBindMount
+		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+			procSelfFDPath = "/proc/self/fd"
+		}
+		procSelfFD, err = unix.Open(procSelfFDPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			util.Fatalf("opening %q: %v", procSelfFDPath, err)
+		}
+		timer.Reached("procfs self/fd opened")
 	}
 
 	if conf.EnableCoreTags {
@@ -710,6 +724,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		StdioFDs:            b.stdioFDs.GetArray(),
 		PassFDs:             b.passFDs.GetArray(),
 		ExecFD:              b.execFD,
+		ProcSelfFD:          procSelfFD,
 		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
 		GoferMountConfs:     b.goferMountConfs.GetArray(),
 		NumCPU:              b.cpuNum,
@@ -755,7 +770,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if b.procMountSyncFD != -1 {
 		l.PreSeccompCallback = func() {
 			// Call validateOpenFDs() before umounting /proc.
-			validateOpenFDs(bootArgs.PassFDs)
+			validateOpenFDs(bootArgs.PassFDs, procSelfFD)
 			// This callback runs on the same goroutine as the rest of sandbox
 			// startup (for now at least...), so safe to record here.
 			timer.Reached("open FDs validated")
@@ -822,8 +837,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 }
 
 // validateOpenFDs checks that the sandbox process does not have any open
-// directory FDs.
-func validateOpenFDs(passFDs []sentryapi.FDMapping) {
+// directory FDs other than procSelfFD.
+func validateOpenFDs(passFDs []sentryapi.FDMapping, procSelfFD int) {
 	passHostFDs := make(map[int]struct{})
 	for _, passFD := range passFDs {
 		passHostFDs[passFD.Host] = struct{}{}
@@ -851,6 +866,9 @@ func validateOpenFDs(passFDs []sentryapi.FDMapping) {
 		fdNo, err := strconv.Atoi(d.Name())
 		if err != nil {
 			return fmt.Errorf("strconv.Atoi(%s) failed: %v", d.Name(), err)
+		}
+		if fdNo == procSelfFD {
+			return nil
 		}
 		dirLink, err := os.Readlink(path)
 		if err != nil {

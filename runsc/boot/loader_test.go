@@ -46,6 +46,9 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+// procSelfFD is passed as Args.ProcSelfFD to every loader created by tests.
+var procSelfFD int
+
 func init() {
 	// Reserve the initial thread for main so capability tests use threads that
 	// can exit if restoration fails. Locking during init pins main to this thread:
@@ -56,6 +59,11 @@ func init() {
 	if err := fsgofer.OpenProcSelfFD("/proc/self/fd"); err != nil {
 		panic(err)
 	}
+	fd, err := unix.Open("/proc/self/fd", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		panic(err)
+	}
+	procSelfFD = fd
 }
 
 func testConfig() *config.Config {
@@ -157,6 +165,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		GoferMountConfs:  []specutils.GoferMountConf{{Lower: specutils.Lisafs, Upper: specutils.NoOverlay}},
 		PodInitConfigFD:  -1,
 		ExecFD:           -1,
+		ProcSelfFD:       procSelfFD,
 		RootfsUpperTarFD: -1,
 		CPUDMALatencyFD:  -1,
 	}
