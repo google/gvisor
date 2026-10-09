@@ -640,6 +640,9 @@ BENCHMARKS_OPTIONS   ?= -test.benchtime=30s
 BENCHMARKS_ARGS      ?= -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
 BENCHMARKS_PROFILE   ?=
 # Example: BENCHMARKS_PROFILE='-pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex'
+BENCHMARKS_COMMIT    ?= $(shell git rev-parse HEAD 2>/dev/null || echo "$$BUILDKITE_COMMIT")
+BENCHMARKS_BRANCH    ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$$BUILDKITE_BRANCH")
+BENCHMARKS_BUILD_URL ?= $(BUILDKITE_BUILD_URL)
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -661,7 +664,7 @@ run_benchmark = \
 	fi; \
 	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
 	  upload_ret=0; \
-	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)) || upload_ret=$$?; \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL) --commit="$(BENCHMARKS_COMMIT)" --branch="$(BENCHMARKS_BRANCH)" --build_url="$(BENCHMARKS_BUILD_URL)") || upload_ret=$$?; \
 	  if test "$$upload_ret" -ne 0 && test "$$exit_code" -eq 0; then \
 	    exit_code=$$upload_ret; \
 	  fi; \
@@ -675,11 +678,17 @@ run_platform_benchmark = \
 	($(call header,BENCHMARK $(1)); \
 	set -euo pipefail; \
 	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
-	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; \
+	trap 'rm -rf "$$T"' EXIT; \
+	exit_code=0; \
+	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T || exit_code=$$?; \
 	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
-	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+	  upload_ret=0; \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL) --commit="$(BENCHMARKS_COMMIT)" --branch="$(BENCHMARKS_BRANCH)" --build_url="$(BENCHMARKS_BUILD_URL)") || upload_ret=$$?; \
+	  if test "$$upload_ret" -ne 0 && test "$$exit_code" -eq 0; then \
+	    exit_code=$$upload_ret; \
+	  fi; \
 	fi; \
-	rm -rf $$T)
+	exit $$exit_code)
 
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.

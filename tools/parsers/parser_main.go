@@ -54,6 +54,9 @@ var (
 	parseTable   = parseCmd.String("table", "", "table to send benchmarks data.")
 	official     = parseCmd.Bool("official", false, "mark input data as official.")
 	runtime      = parseCmd.String("runtime", "", "runtime used to run the benchmark")
+	commit       = parseCmd.String("commit", "", "commit hash of the benchmark run")
+	branch       = parseCmd.String("branch", "", "branch of the benchmark run")
+	buildURL     = parseCmd.String("build_url", "", "CI build URL")
 	debug        = parseCmd.Bool("debug", false, "print debug logs")
 )
 
@@ -81,6 +84,19 @@ func parseBenchmarks(ctx context.Context) error {
 		return nil
 	}
 
+	commitVal := *commit
+	if commitVal == "" {
+		commitVal = os.Getenv("BUILDKITE_COMMIT")
+	}
+	branchVal := *branch
+	if branchVal == "" {
+		branchVal = os.Getenv("BUILDKITE_BRANCH")
+	}
+	buildURLVal := *buildURL
+	if buildURLVal == "" {
+		buildURLVal = os.Getenv("BUILDKITE_BUILD_URL")
+	}
+
 	extraConditions := []*bq.Condition{
 		{
 			Name:  "runtime",
@@ -90,6 +106,30 @@ func parseBenchmarks(ctx context.Context) error {
 			Name:  "version",
 			Value: version,
 		},
+	}
+	if commitVal != "" {
+		extraConditions = append(extraConditions,
+			&bq.Condition{
+				Name:  "commit",
+				Value: commitVal,
+			},
+			&bq.Condition{
+				Name:  "commit_hash",
+				Value: commitVal,
+			},
+		)
+	}
+	if branchVal != "" {
+		extraConditions = append(extraConditions, &bq.Condition{
+			Name:  "branch",
+			Value: branchVal,
+		})
+	}
+	if buildURLVal != "" {
+		extraConditions = append(extraConditions, &bq.Condition{
+			Name:  "build_url",
+			Value: buildURLVal,
+		})
 	}
 
 	suite.Official = *official
