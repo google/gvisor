@@ -185,7 +185,8 @@ type Endpoint interface {
 	waiter.Waitable
 
 	// Close puts the endpoint in a closed state and frees all resources
-	// associated with it.
+	// associated with it. The caller must exclude operations using the
+	// Receiver being released, including previously started RecvMsg calls.
 	Close(ctx context.Context)
 
 	// RecvMsg reads data and a control message from the endpoint. This method
@@ -302,6 +303,9 @@ type BoundEndpoint interface {
 	// connection information (Receiver and Sender) upon a
 	// successful connect. The callback should only be called on a successful
 	// connect.
+	//
+	// returnConnect is invoked synchronously while the ConnectingEndpoint's
+	// lock is held. The callback must not acquire that lock.
 	//
 	// For a connection attempt to be successful, the ConnectingEndpoint must
 	// be unconnected and not listening and the BoundEndpoint whose
@@ -443,8 +447,8 @@ type Receiver interface {
 	// RecvMaxQueueSize should return -1 if the operation isn't supported.
 	RecvMaxQueueSize() int64
 
-	// Release releases any resources owned by the Receiver. It should be
-	// called before dropping all references to a Receiver.
+	// Release releases any resources owned by the Receiver. The caller must
+	// exclude every other operation on the Receiver during and after Release.
 	Release(ctx context.Context)
 }
 
@@ -551,10 +555,16 @@ func (q *queueReceiver) Release(ctx context.Context) {
 type streamQueueReceiver struct {
 	queueReceiver
 
-	mu      streamQueueReceiverMutex `state:"nosave"`
-	buffer  []byte
+	mu streamQueueReceiverMutex `state:"nosave"`
+
+	// +checklocks:mu
+	buffer []byte
+
+	// +checklocks:mu
 	control ControlMessages
-	addr    Address
+
+	// +checklocks:mu
+	addr Address
 }
 
 func vecCopy(data [][]byte, buf []byte) (int64, [][]byte, []byte) {
@@ -724,6 +734,12 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, args Recv
 }
 
 // Release implements Receiver.Release.
+//
+// Preconditions: no other operation may use q during or after Release.
+// Receiver.Release cannot express this concrete mutex requirement; interface
+// callers instead establish exclusive lifetime ownership at the call site.
+//
+// +checklocks:q.mu
 func (q *streamQueueReceiver) Release(ctx context.Context) {
 	q.queueReceiver.Release(ctx)
 	q.control.Release(ctx)
@@ -923,37 +939,51 @@ type baseEndpoint struct {
 
 	tcpip.DefaultSocketOptionsHandler
 
-	// Mutex protects the below fields.
-	//
 	// See the lock ordering comment in package kernel/epoll regarding when
 	// this lock can safely be held.
 	endpointMutex `state:"nosave"`
 
 	// receiver allows Messages to be received.
+	//
+	// Operations on a retained Receiver follow its own synchronization and
+	// lifetime requirements; endpointMutex only protects this reference.
+	//
+	// +checklocks:endpointMutex
 	receiver Receiver
 
 	// peer is the Sender through which this endpoint's sends reach its
 	// peer socket; it also exposes the send-side state (writability,
 	// shutdown) of that connection.
+	//
+	// See receiver for synchronization.
+	//
+	// +checklocks:endpointMutex
 	peer Sender
 
 	// path is not empty if the endpoint has been bound,
 	// or may be used if the endpoint is connected.
+	//
+	// +checklocks:endpointMutex
 	path string
 
 	// sendShutdown is true if the write side of the endpoint has been
 	// shut down without closing the peer's read side: sends fail with
 	// EPIPE, but the peer is unaffected. This is how shutdown(SHUT_WR)
-	// behaves on datagram sockets. Protected by endpointMutex.
+	// behaves on datagram sockets.
+	//
+	// +checklocks:endpointMutex
 	sendShutdown bool
 
 	// ops is used to get socket level options.
 	ops tcpip.SocketOptions
 
-	// lastError is the last error returned by getsockopt(SO_ERROR).
-	// This field is protected by lastErrorMu.
 	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   tcpip.Error
+
+	// lastError is a pending error cleared by LastError. RecvMsg may also
+	// consume it when a receive returns ErrClosedForReceive or ErrWouldBlock.
+	//
+	// +checklocks:lastErrorMu
+	lastError tcpip.Error
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
@@ -995,7 +1025,7 @@ func (e *baseEndpoint) ConnectedPasscred() bool {
 
 // Connected implements ConnectingEndpoint.Connected.
 //
-// Preconditions: e.mu must be held.
+// +checklocks:e.endpointMutex
 func (e *baseEndpoint) Connected() bool {
 	return e.receiver != nil && e.peer != nil
 }
