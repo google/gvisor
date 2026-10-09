@@ -16,7 +16,11 @@ package transport
 
 import "context"
 
-// saveAcceptedChan is invoked by stateify.
+// saveAcceptedChan is invoked by stateify. Generated serialization callers
+// supply quiescence rather than holding endpointMutex and are exempt from
+// checklocks.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) saveAcceptedChan() []*connectionedEndpoint {
 	// If acceptedChan is nil (i.e. we are not listening) then we will save nil.
 	// Otherwise we create a (possibly empty) slice of the values in acceptedChan and
@@ -41,7 +45,11 @@ func (e *connectionedEndpoint) saveAcceptedChan() []*connectionedEndpoint {
 	return acceptedSlice
 }
 
-// loadAcceptedChan is invoked by stateify.
+// loadAcceptedChan is invoked by stateify. Generated serialization callers
+// supply quiescence rather than holding endpointMutex and are exempt from
+// checklocks.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) loadAcceptedChan(_ context.Context, acceptedSlice []*connectionedEndpoint) {
 	// If acceptedSlice is nil, then acceptedChan should also be nil.
 	if acceptedSlice != nil {
@@ -54,7 +62,10 @@ func (e *connectionedEndpoint) loadAcceptedChan(_ context.Context, acceptedSlice
 	}
 }
 
-// beforeSave is invoked by stateify.
+// beforeSave is invoked by stateify. Generated serialization callers supply
+// quiescence rather than holding endpointMutex and are exempt from checklocks.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionedEndpoint) beforeSave() {
 	if e.boundSocketFD != nil {
 		panic("Cannot save endpoint with bound host socket")
