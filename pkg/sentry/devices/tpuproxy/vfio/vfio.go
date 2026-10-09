@@ -112,14 +112,15 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 		containerName: containerName,
 		device:        dev,
 	}
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(hostFD)
+		return nil, err
+	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		SpecialFile:       true,
 	}); err != nil {
-		unix.Close(hostFD)
-		return nil, err
-	}
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		fdnotifier.RemoveFD(int32(hostFD))
 		unix.Close(hostFD)
 		return nil, err
 	}
@@ -150,14 +151,15 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 		containerName: containerName,
 		device:        dev,
 	}
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(hostFD)
+		return nil, err
+	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, d, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		SpecialFile:       true,
 	}); err != nil {
-		unix.Close(hostFD)
-		return nil, err
-	}
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		fdnotifier.RemoveFD(int32(hostFD))
 		unix.Close(hostFD)
 		return nil, err
 	}
