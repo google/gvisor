@@ -18,6 +18,7 @@ package boot
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
 	"strconv"
@@ -322,6 +323,12 @@ type Loader struct {
 	// +checklocks:mu
 	containerSpecs map[string]*specs.Spec
 
+	// nextUnnamed is the number in the name of the next container registered
+	// without a name. See registerContainerLocked.
+	//
+	// +checklocks:mu
+	nextUnnamed int
+
 	// failedToStart is a set of container IDs that failed to start.
 	//
 	// +checklocks:mu
@@ -397,6 +404,13 @@ func (n *noRootContainer) stop() {
 // waitExit blocks until stop is called. Tasks can still be running.
 func (n *noRootContainer) waitExit() {
 	<-n.exit
+}
+
+// stopIfKilled stops a no-root-container sandbox once its kernel is killed.
+func (l *Loader) stopIfKilled() {
+	if l.noRootContainer.enabled && l.k.TaskSet().IsExiting() {
+		l.noRootContainer.stop()
+	}
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -1853,6 +1867,7 @@ func (l *Loader) destroySubcontainer(cid string) error {
 	}
 	// Cleanup the device gofer.
 	l.k.RemoveDevGofer(l.k.ContainerName(cid))
+	l.unregisterContainerLocked(cid)
 
 	if l.root.conf.InSandboxCgroup == config.InSandboxCgroupV2 {
 		l.removeContainerCgroup2(cid)
@@ -1951,13 +1966,6 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 //
 // +checklocksexclude:l.mu
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
-	if l.noRootContainer.enabled && cid == l.sandboxID {
-		// No init to wait on; the only event left is the sandbox going away.
-		l.noRootContainer.waitExit()
-		*waitStatus = 0
-		return nil
-	}
-
 	l.mu.Lock()
 	state := l.state
 	if state == restoringUnstarted {
@@ -1966,6 +1974,21 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 		l.mu.Unlock()
 		log.Infof("Restore is completed, trying to wait for container %q again.", cid)
 		return l.waitContainer(cid, waitStatus)
+	}
+	if l.noRootContainer.enabled && cid == l.sandboxID {
+		l.mu.Unlock()
+		// Status 1 if restore failed, else 0 once the sandbox stops.
+		if state != restoreFailed {
+			l.noRootContainer.waitExit()
+			l.mu.Lock()
+			state = l.state
+			l.mu.Unlock()
+		}
+		*waitStatus = 0
+		if state == restoreFailed {
+			*waitStatus = 1
+		}
+		return nil
 	}
 	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
 	l.mu.Unlock()
@@ -2625,18 +2648,54 @@ func (l *Loader) registerContainer(spec *specs.Spec, cid string) string {
 	return l.registerContainerLocked(spec, cid)
 }
 
+// unnamedContainerPrefix starts the names given to containers that have none.
+// Such containers must be restored in the order they were created.
+const unnamedContainerPrefix = "__no_name_"
+
 // +checklocks:l.mu
 func (l *Loader) registerContainerLocked(spec *specs.Spec, cid string) string {
 	containerName := specutils.ContainerName(spec)
 	if len(containerName) == 0 {
-		// If no name was provided, require containers to be restored in the same order
-		// they were created.
-		containerName = "__no_name_" + strconv.Itoa(len(l.containerIDs))
+		containerName = unnamedContainerPrefix + strconv.Itoa(l.nextUnnamed)
 	}
+	l.registerContainerAsLocked(spec, cid, containerName)
+	return containerName
+}
 
+// registerContainerAsLocked registers container cid under containerName.
+//
+// +checklocks:l.mu
+func (l *Loader) registerContainerAsLocked(spec *specs.Spec, cid, containerName string) {
+	if n, ok := unnamedContainerNumber(containerName); ok && n >= l.nextUnnamed {
+		l.nextUnnamed = n + 1
+	}
 	l.containerIDs[containerName] = cid
 	l.containerSpecs[containerName] = spec
-	return containerName
+}
+
+// unregisterContainerLocked forgets container cid if it has no name. Named
+// containers stay registered.
+//
+// +checklocks:l.mu
+func (l *Loader) unregisterContainerLocked(cid string) {
+	containerName := l.k.ContainerName(cid)
+	if _, ok := unnamedContainerNumber(containerName); !ok {
+		return
+	}
+	l.k.UnregisterContainerName(cid)
+	delete(l.containerIDs, containerName)
+	delete(l.containerSpecs, containerName)
+}
+
+// unnamedContainerNumber returns the number in a name given to a container
+// that has none.
+func unnamedContainerNumber(containerName string) (int, bool) {
+	s, ok := strings.CutPrefix(containerName, unnamedContainerPrefix)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil
 }
 
 // +checklocksexclude:l.mu
@@ -2690,13 +2749,13 @@ func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
 	return RuntimeStateStopped
 }
 
-// GetContainerSpecs returns the container specs map.
+// GetContainerSpecs returns a copy of the container specs map.
 //
 // +checklocksexclude:l.mu
 func (l *Loader) GetContainerSpecs() map[string]*specs.Spec {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.containerSpecs
+	return maps.Clone(l.containerSpecs)
 }
 
 // signalUnkillablePolicy maps the runsc config signal-unkillable policy

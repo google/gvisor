@@ -17,6 +17,7 @@ package boot
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	time2 "time"
@@ -106,6 +107,9 @@ const (
 	annotationSaveRestoreExecTimeout = annotationCheckpointPrefix + "save-restore-exec-timeout"
 
 	networkKey = "network"
+
+	// noRootContainerKey marks a checkpoint of a sandbox with no root container.
+	noRootContainerKey = "no_root_container"
 )
 
 // GetAnnotationCheckpointPath returns the checkpoint path specified in the
@@ -289,7 +293,7 @@ type restorer struct {
 
 // restoreSubcontainer restores a subcontainer.
 func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf) error {
-	containerName := l.registerContainer(spec, cid)
+	containerName := r.registerContainer(l, spec, cid)
 	info := &containerInfo{
 		cid:               cid,
 		containerName:     containerName,
@@ -302,6 +306,33 @@ func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l 
 		goferMountConfs:   goferMountConfs,
 	}
 	return r.restoreContainerInfo(l, info)
+}
+
+// registerContainer registers container cid. A container without a name gets
+// the lowest unnamed container name in the checkpoint that is not yet taken.
+//
+// +checklocksexclude:l.mu
+func (r *restorer) registerContainer(l *Loader, spec *specs.Spec, cid string) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if specutils.ContainerName(spec) != "" {
+		return l.registerContainerLocked(spec, cid)
+	}
+	var free []int
+	for name := range r.checkpointedSpecs {
+		if n, ok := unnamedContainerNumber(name); ok {
+			if _, taken := l.containerIDs[name]; !taken {
+				free = append(free, n)
+			}
+		}
+	}
+	if len(free) == 0 {
+		return l.registerContainerLocked(spec, cid)
+	}
+	containerName := unnamedContainerPrefix + strconv.Itoa(slices.Min(free))
+	l.registerContainerAsLocked(spec, cid, containerName)
+	return containerName
 }
 
 // restoreContainerInfo restores a container.
@@ -469,6 +500,10 @@ func (r *restorer) restore(l *Loader) error {
 	defer cleanMnts.Clean()
 
 	for _, cont := range r.containers {
+		// The sandbox has no filesystem or stdios to restore.
+		if l.noRootContainer.enabled && cont.cid == l.root.cid {
+			continue
+		}
 		// TODO(b/298078576): Need to process hints here probably
 		mntr := l.newContainerMounter(cont)
 		if err = mntr.configureRestore(&restoreMnts); err != nil {
@@ -647,6 +682,7 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 		r.cm.onRestoreFailed(fmt.Errorf("post restore work failed: %w", err))
 		log.Warningf("Killing the sandbox after post restore work failed: %v", err)
 		k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+		r.cm.l.stopIfKilled()
 		return
 	}
 	timeline.Reached("post restore done")
@@ -664,6 +700,7 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 			r.cm.onRestoreFailed(fmt.Errorf("async MemoryFile loading failed: %w", err))
 			log.Warningf("Killing the sandbox after MemoryFile page loading failed: %v", err)
 			k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+			r.cm.l.stopIfKilled()
 			return
 		}
 	}
@@ -757,6 +794,9 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 	saveOpts.Metadata[VersionKey] = version.Version()
 
 	saveOpts.Metadata[networkKey] = l.root.conf.Network.String()
+	if l.noRootContainer.enabled {
+		saveOpts.Metadata[noRootContainerKey] = "true"
+	}
 
 	// Save container specs.
 	specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
@@ -779,6 +819,7 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		Kernel:   l.k,
 		Watchdog: l.watchdog,
 	}
+	defer l.stopIfKilled()
 	return state.SaveWithOpts(saveOpts, execOpts)
 }
 

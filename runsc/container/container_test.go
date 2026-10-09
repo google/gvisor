@@ -1594,11 +1594,6 @@ func TestNoRootContainerRejectsRootArgs(t *testing.T) {
 			wantErr: "ConsoleSocket cannot be set with NoRootContainer",
 		},
 		{
-			name:    "fs restore image path",
-			args:    Args{FSRestoreImagePath: "/tmp/image"},
-			wantErr: "FSRestoreImagePath cannot be set with NoRootContainer",
-		},
-		{
 			name:    "pass files",
 			args:    Args{PassFiles: map[int]*os.File{3: os.Stdin}},
 			wantErr: "PassFiles and ExecFile cannot be set with NoRootContainer",

@@ -709,6 +709,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 	if checkpointVersion != currentVersion {
 		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
+	if saved := cm.restorer.metadata[noRootContainerKey] == "true"; saved != cm.l.noRootContainer.enabled {
+		return fmt.Errorf("checkpoint taken with no-root-container=%t cannot be restored with no-root-container=%t", saved, cm.l.noRootContainer.enabled)
+	}
 	timer.Reached("restorer initialized")
 	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
 }
@@ -1242,6 +1245,7 @@ func (cm *containerManager) FSSave(args *FSSaveArgs, _ *struct{}) error {
 	if err != nil {
 		return err
 	}
+	defer cm.l.stopIfKilled()
 	return cm.l.k.FSSave(cm.l.k.SupervisorContext(), &kopts)
 }
 
