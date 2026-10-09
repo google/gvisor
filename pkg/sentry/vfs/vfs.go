@@ -105,6 +105,13 @@ type VirtualFilesystem struct {
 	// Configurable by userspace via /proc/sys/fs/mount-max.
 	MountMax atomicbitops.Int32
 
+	// numFiles is the number of live file descriptions: those for which
+	// FileDescription.Init has succeeded and whose last reference has not been
+	// dropped. numFiles is accessed using atomic memory operations.
+	//
+	// numFiles is analogous to Linux's nr_files (fs/file_table.c).
+	numFiles atomicbitops.Int64
+
 	// anonMount is a Mount, not included in mounts or mountpoints,
 	// representing an anonFilesystem. anonMount is used to back
 	// VirtualDentries returned by VirtualFilesystem.NewAnonVirtualDentry().
