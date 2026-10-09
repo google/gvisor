@@ -731,7 +731,9 @@ func getRestoreReadersForLocalCheckpointFiles(o *RestoreOpts) (io.ReadCloser, io
 	if err := unix.Fstat(stateFile.FD(), &stat); err != nil {
 		return nil, nil, nil, err
 	}
-	if stat.Size == 0 {
+	// st_size is only meaningful for regular files; pipes and other streams
+	// report 0 regardless of how much data is available.
+	if stat.Mode&unix.S_IFMT == unix.S_IFREG && stat.Size == 0 {
 		return nil, nil, nil, fmt.Errorf("statefile cannot be empty")
 	}
 
