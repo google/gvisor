@@ -1,3 +1,0 @@
-runtime,metric,result
-runc,cpu_events_per_second,103.62
-runsc,cpu_events_per_second,103.21
