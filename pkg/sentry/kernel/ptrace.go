@@ -115,12 +115,12 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	return t.canTraceWithMM(target, attach, targetMM, targetUserDumpable)
 }
 
-// memoryManagerAndUserDumpable returns target's MemoryManager and, for use
-// when it is nil, the dumpability it had when it was released.
-func (target *Task) memoryManagerAndUserDumpable() (*mm.MemoryManager, bool) {
+// memoryManagerAndUserDumpable returns t's MemoryManager and, for use when it
+// is nil, the dumpability it had when it was released.
+func (t *Task) memoryManagerAndUserDumpable() (*mm.MemoryManager, bool) {
 	var targetMM *mm.MemoryManager
 	var targetUserDumpable bool
-	target.WithMuLocked(func(t *Task) {
+	t.WithMuLocked(func(t *Task) {
 		targetMM = t.MemoryManager()
 		targetUserDumpable = t.userDumpable
 	})

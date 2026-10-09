@@ -20,6 +20,7 @@
 #include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
+#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -1063,7 +1064,7 @@ TEST(ExecTest, ACLExecuteOnlyBinary) {
   // file's group class so that only the named-user ACL entry (and not the
   // group bits, which mirror the ACL mask) denies reading.
   bool acl_enforced = true;
-  ScopedThread([&] {
+  ScopedThread t([&] {
     ASSERT_THAT(syscall(SYS_setgroups, 0, nullptr), SyscallSucceeds());
     ASSERT_THAT(syscall(SYS_setresgid, kUnprivilegedGid, kUnprivilegedGid,
                         kUnprivilegedGid),
@@ -1094,6 +1095,7 @@ TEST(ExecTest, ACLExecuteOnlyBinary) {
     CheckExec(exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
               /*expect_stderr=*/"");
   });
+  t.Join();
   if (!acl_enforced) {
     GTEST_SKIP() << "filesystem does not enforce POSIX ACLs";
   }
@@ -1182,6 +1184,8 @@ TEST(ExecTest, ExecuteOnlySpecialFiles) {
 // handler can run (Linux's fs/namei.c:may_open()).
 TEST(ExecTest, ExecuteOnlyPtyReplicaAcquiresNoControllingTerminal) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  // Some test environments have no devpts mount.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(Exists("/dev/ptmx")));
 
   const FileDescriptor master =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NOCTTY));
