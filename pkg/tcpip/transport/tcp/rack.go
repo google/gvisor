@@ -463,6 +463,9 @@ func (rc *rackControl) reorderTimerExpired() tcpip.Error {
 // +checklocksexclude:rc.snd.rtt.rttMutex
 func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 	snd := rc.snd
+	// detectLoss may have marked more segments lost, which are no longer in
+	// flight.
+	snd.SetPipe()
 	if fastRetransmit {
 		snd.resendSegment()
 	}

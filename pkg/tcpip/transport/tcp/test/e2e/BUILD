@@ -137,6 +137,7 @@ go_test(
     name = "tcp_rack_test",
     size = "small",
     srcs = ["tcp_rack_test.go"],
+    shard_count = more_shards,
     deps = [
         ":e2e",
         "//pkg/buffer",

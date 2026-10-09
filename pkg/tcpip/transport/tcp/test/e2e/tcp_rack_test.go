@@ -467,6 +467,116 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	}
 }
 
+// recoverAfterRTOTailLoss sends ten segments and acknowledges none of them, so
+// the PTO sends a TLP and the RTO retransmits #1. Acknowledging #1 makes RACK
+// mark #2-#10 lost and enter recovery with cwnd = ssthresh + 3 = 5. With GSO
+// the unacknowledged data is one segment that recovery splits, so the marks
+// must survive the split. It returns RACK's RTT sample from that ACK.
+func recoverAfterRTOTailLoss(t *testing.T, gso bool) (*context.Context, []byte, time.Duration) {
+	t.Helper()
+	rtts := make(chan time.Duration, 1)
+	c := context.NewWithProbe(t, uint32(mtu), func(state *tcp.TCPEndpointState) {
+		select {
+		case rtts <- state.Sender.RACKState.RTT:
+		default:
+		}
+	})
+	t.Cleanup(c.Cleanup)
+	c.SetGVisorGSOEnabled(gso)
+
+	const numPackets = 10
+	data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, true /* enableRACK */)
+	c.GetPacket().Release()
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, e2e.TSOptionSize)
+
+	for len(rtts) > 0 {
+		<-rtts
+	}
+	c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), maxPayload)
+	// #2 is fast-retransmitted and counted twice in pipe (RFC 6675 SetPipe
+	// rule (b)), which leaves room for #3-#5.
+	for i := 1; i < 5; i++ {
+		c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+	}
+	c.CheckNoPacketTimeout("unexpected packet beyond cwnd", 100*time.Millisecond)
+	if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+		t.Errorf("got stats.TCP.Timeouts.Value() = %d, want = 1", got)
+	}
+
+	var rtt time.Duration
+	select {
+	case rtt = <-rtts:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("no probe for the ACK of #1")
+	}
+	return c, data, rtt
+}
+
+// TestRACKRecoveryAfterRTOTailLoss tests that segments RACK marks lost are not
+// counted as in flight, so recovery retransmits them without waiting for
+// another RTO.
+func TestRACKRecoveryAfterRTOTailLoss(t *testing.T) {
+	for _, gso := range []bool{false, true} {
+		t.Run(fmt.Sprintf("gso=%t", gso), func(t *testing.T) {
+			recoverAfterRTOTailLoss(t, gso)
+		})
+	}
+}
+
+// TestRACKLossDuringRecovery tests that segments RACK marks lost on an ACK
+// during recovery stop counting as in flight before that ACK retransmits.
+func TestRACKLossDuringRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		gso  bool
+		// sacked is the range of retransmitted segments the ACK SACKs, as
+		// [first, last) zero-based segment indexes.
+		sacked [2]int
+		want   []int
+	}{
+		{
+			// RACK marks #2-#4 lost again. Pipe is 1 (#2 under rule (b)), so
+			// #2-#4 are retransmitted and #6 sent.
+			name:   "sack #5 gso=false",
+			sacked: [2]int{4, 5},
+			want:   []int{1, 2, 3, 5},
+		},
+		{
+			// RACK marks #2 lost again, which the scoreboard alone does not
+			// (one SACKed segment above it). Pipe is 3, so #2 and #6 are sent.
+			name:   "sack #3 gso=false",
+			sacked: [2]int{2, 3},
+			want:   []int{1, 5},
+		},
+		{
+			// With GSO, #3-#5 were retransmitted as one segment.
+			name:   "sack #3 gso=true",
+			gso:    true,
+			sacked: [2]int{2, 3},
+			want:   []int{1, 5},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, data, rtt := recoverAfterRTOTailLoss(t, tc.gso)
+
+			// RACK ignores an RTT sample of a retransmission that is below its
+			// minimum RTT.
+			time.Sleep(rtt + time.Millisecond)
+
+			start := c.IRS.Add(seqnum.Size(1 + tc.sacked[0]*maxPayload))
+			end := c.IRS.Add(seqnum.Size(1 + tc.sacked[1]*maxPayload))
+			c.SendAckWithSACK(seqnum.Value(context.TestInitialSequenceNumber).Add(1), maxPayload, []header.SACKBlock{{start, end}})
+			for _, i := range tc.want {
+				c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+			}
+			c.CheckNoPacketTimeout("unexpected packet beyond cwnd", 100*time.Millisecond)
+			if got := c.Stack().Stats().TCP.Timeouts.Value(); got != 1 {
+				t.Errorf("got stats.TCP.Timeouts.Value() = %d, want = 1", got)
+			}
+		})
+	}
+}
+
 // TestRACKDetectDSACK tests that RACK detects DSACK with duplicate segments.
 // See: https://tools.ietf.org/html/rfc2883#section-4.1.1.
 func TestRACKDetectDSACK(t *testing.T) {
@@ -1044,30 +1154,25 @@ func TestRACKWithWindowFull(t *testing.T) {
 	if err := c.EP.GetSockOpt(&info); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
-	// Wait for RTT to trigger recovery.
+	// Wait for RTT to trigger recovery. RACK marks #3-#9 lost and they are
+	// retransmitted up to cwnd: #3-#8.
 	time.Sleep(info.RTT)
+	for i := 2; i < numPkts-2; i++ {
+		c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+	}
 
-	// Expect retransmission of #2 packet.
-	c.ReceiveAndCheckPacketWithOptions(data, 2*maxPayload, maxPayload, e2e.TSOptionSize)
-
-	// Send ACK for #2 packet.
-	c.SendAck(seq, 3*maxPayload)
-
-	// Expect retransmission of #3 packet.
-	c.ReceiveAndCheckPacketWithOptions(data, 3*maxPayload, maxPayload, e2e.TSOptionSize)
-
-	// Send ACK with zero window size.
+	// ACK #3 with a zero window. cwnd now has room for #9, the window does not.
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: c.Port,
 		Flags:   header.TCPFlagAck,
 		SeqNum:  seq,
-		AckNum:  c.IRS.Add(1 + 4*maxPayload),
+		AckNum:  c.IRS.Add(1 + 3*maxPayload),
 		RcvWnd:  0,
 	})
 
 	// No packet should be received as the receive window size is zero.
-	c.CheckNoPacket("unexpected packet received after userTimeout has expired")
+	c.CheckNoPacket("unexpected packet received with a zero receive window")
 }
 
 func TestMain(m *testing.M) {
