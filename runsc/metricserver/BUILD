@@ -14,7 +14,10 @@ go_library(
         "metricserver_metrics.go",
         "metricserver_profile.go",
     ],
-    visibility = ["//runsc:__subpackages__"],
+    visibility = [
+        "//:__pkg__",
+        "//runsc:__subpackages__",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
