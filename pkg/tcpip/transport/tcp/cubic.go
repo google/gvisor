@@ -219,12 +219,11 @@ func (c *cubicState) Update(packetsAcked int, rtt time.Duration, ackTime tcpip.M
 		if packetsAcked == 0 {
 			return
 		}
-	} else {
-		c.s.rtt.Lock()
-		srtt := c.s.rtt.TCPRTTState.SRTT
-		c.s.rtt.Unlock()
-		c.s.SndCwnd = c.getCwnd(packetsAcked, c.s.SndCwnd, srtt)
 	}
+	c.s.rtt.Lock()
+	srtt := c.s.rtt.TCPRTTState.SRTT
+	c.s.rtt.Unlock()
+	c.s.SndCwnd = c.getCwnd(packetsAcked, c.s.SndCwnd, srtt)
 }
 
 // cubicCwnd computes the CUBIC congestion window after t seconds from last
@@ -235,7 +234,12 @@ func (c *cubicState) cubicCwnd(t float64) float64 {
 
 // getCwnd returns the current congestion window as computed by CUBIC.
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int {
+	if packetsAcked == 0 {
+		return sndCwnd
+	}
 	elapsed := c.s.ep.stack.Clock().NowMonotonic().Sub(c.T)
 	elapsedSeconds := elapsed.Seconds()
 
@@ -246,32 +250,38 @@ func (c *cubicState) getCwnd(packetsAcked, sndCwnd int, srtt time.Duration) int 
 	// Compute the TCP friendly estimate of the congestion window.
 	c.WEst = c.WMax*c.Beta + (3.0*((1.0-c.Beta)/(1.0+c.Beta)))*(elapsedSeconds/srtt.Seconds())
 
-	// Make sure in the TCP friendly region CUBIC performs at least
-	// as well as Reno.
-	if c.WC < c.WEst && float64(sndCwnd) < c.WEst {
-		// TCP Friendly region of cubic.
-		return int(c.WEst)
-	}
-
 	// In Concave/Convex region of CUBIC, calculate what CUBIC window
 	// will be after 1 RTT and use that to grow congestion window
 	// for every ack.
 	tEst := (elapsed + srtt).Seconds()
 	wtRtt := c.cubicCwnd(tEst - c.K)
-	// As per 4.3 for each received ACK cwnd must be incremented
-	// by (w_cubic(t+RTT) - cwnd/cwnd.
+	if c.WC < c.WEst {
+		wtRtt = max(wtRtt, c.WEst)
+	}
+	// Express the target as the number of acknowledged segments needed to
+	// grow cwnd by one. Keeping ACK credit across calls avoids discarding
+	// every sub-segment increase when ACKs arrive individually.
 	cwnd := float64(sndCwnd)
-	// RFC 9438 section 4.2 bounds the target at cwnd so an ACK does not
-	// reduce the congestion window.
-	if wtRtt < cwnd {
-		wtRtt = cwnd
+	acksPerSegment := math.MaxInt
+	if delta := wtRtt - cwnd; delta > 0 {
+		// RFC 9438 section 4.2 bounds new growth credit to half a segment
+		// per acknowledged segment, even when the target is far ahead.
+		// The positive float64 difference bounds the ratio by 2^53, so it
+		// fits in int64 even when int is 32 bits.
+		if count := int64(cwnd / delta); count < math.MaxInt {
+			acksPerSegment = max(int(count), 2)
+		}
 	}
-	for i := 0; i < packetsAcked; i++ {
-		// Concave/Convex regions of cubic have the same formulas.
-		// See: https://tools.ietf.org/html/rfc8312#section-4.3
-		cwnd += (wtRtt - cwnd) / cwnd
+	if c.s.SndCAAckCount >= acksPerSegment {
+		// Credit earned at an older, slower rate must not cause a burst
+		// when the target increases.
+		c.s.SndCAAckCount = 0
+		sndCwnd++
 	}
-	return int(cwnd)
+	c.s.SndCAAckCount += packetsAcked
+	sndCwnd += c.s.SndCAAckCount / acksPerSegment
+	c.s.SndCAAckCount %= acksPerSegment
+	return sndCwnd
 }
 
 // HandleLossDetected implements congestionControl.HandleLossDetected.
@@ -323,8 +333,11 @@ func (c *cubicState) fastConvergence() {
 }
 
 // PostRecovery implements congestionControl.PostRecovery.
+//
+// +checklocks:c.s.ep.mu
 func (c *cubicState) PostRecovery() {
 	c.T = c.s.ep.stack.Clock().NowMonotonic()
+	c.s.SndCAAckCount = 0
 }
 
 // reduceSlowStartThreshold returns new SsThresh as described in
@@ -332,5 +345,5 @@ func (c *cubicState) PostRecovery() {
 //
 // +checklocks:c.s.ep.mu
 func (c *cubicState) reduceSlowStartThreshold() {
-	c.s.Ssthresh = int(math.Max(float64(c.s.SndCwnd)*c.Beta, 2.0))
+	c.s.Ssthresh = max(int(float64(c.s.SndCwnd)*c.Beta), 2)
 }

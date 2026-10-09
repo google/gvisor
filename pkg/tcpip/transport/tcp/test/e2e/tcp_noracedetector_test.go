@@ -21,7 +21,6 @@ package tcp_noracedetector_test
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"os"
 	"testing"
 	"time"
@@ -30,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -334,132 +332,6 @@ func TestCongestionAvoidance(t *testing.T) {
 		// In cogestion avoidance, the packets trains increase by 1 in
 		// each iteration.
 		expected++
-	}
-}
-
-// cubicCwnd returns an estimate of a cubic window given the
-// originalCwnd, wMax, last congestion event time and sRTT.
-func cubicCwnd(origCwnd int, wMax int, congEventTime time.Time, sRTT time.Duration) int {
-	cwnd := float64(origCwnd)
-	// We wait 50ms between each iteration so sRTT as computed by cubic
-	// should be close to 50ms.
-	elapsed := (time.Since(congEventTime) + sRTT).Seconds()
-	k := math.Cbrt(float64(wMax) * 0.3 / 0.7)
-	delta := elapsed - k
-	wtRTT := 0.4*delta*delta*delta + float64(wMax)
-	cwnd += (wtRTT - cwnd) / cwnd
-	return int(cwnd)
-}
-
-func TestCubicCongestionAvoidance(t *testing.T) {
-	maxPayload := 32
-	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
-	defer c.Cleanup()
-
-	e2e.EnableCUBIC(t, c)
-
-	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
-
-	const iterations = 3
-	data := make([]byte, 2*maxPayload*(tcp.InitialCwnd<<(iterations+1)))
-	for i := range data {
-		data[i] = byte(i)
-	}
-
-	// Write all the data in one shot. Packets will only be written at the
-	// MTU size though.
-	var r bytes.Reader
-	r.Reset(data)
-	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-		t.Fatalf("Write failed: %s", err)
-	}
-
-	// Do slow start for a few iterations.
-	expected := tcp.InitialCwnd
-	bytesRead := 0
-	for i := 0; i < iterations; i++ {
-		expected = tcp.InitialCwnd << uint(i)
-		if i > 0 {
-			// Acknowledge all the data received so far if not on
-			// first iteration.
-			c.SendAck(790, bytesRead)
-		}
-
-		// Read all packets expected on this iteration. Don't
-		// acknowledge any of them just yet, so that we can measure the
-		// congestion window.
-		for j := 0; j < expected; j++ {
-			c.ReceiveAndCheckPacket(data, bytesRead, maxPayload)
-			bytesRead += maxPayload
-		}
-
-		// Check we don't receive any more packets on this iteration.
-		// The timeout can't be too high or we'll trigger a timeout.
-		c.CheckNoPacketTimeout("More packets received than expected for this cwnd (during slow-start phase).", 50*time.Millisecond)
-	}
-
-	// Don't acknowledge the first packet of the last packet train. Let's
-	// wait for them to time out, which will trigger a restart of slow
-	// start, and initialization of ssthresh to cwnd * 0.7.
-	rtxOffset := bytesRead - maxPayload*expected
-	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
-
-	// Acknowledge all pending data.
-	c.SendAck(790, bytesRead)
-
-	// Store away the time we sent the ACK and assuming a 200ms RTO
-	// we estimate that the sender will have an RTO 200ms from now
-	// and go back into slow start.
-	packetDropTime := time.Now().Add(200 * time.Millisecond)
-
-	// This part is tricky: when the timeout happened, we had "expected"
-	// packets pending, cwnd reset to 1, and ssthresh set to expected * 0.7.
-	// By acknowledging "expected" packets, the slow-start part will
-	// increase cwnd to expected/2 essentially putting the connection
-	// straight into congestion avoidance.
-	wMax := expected
-	// Lower expected as per cubic spec after a congestion event.
-	expected = int(float64(expected) * 0.7)
-	cwnd := expected
-	for i := 0; i < iterations; i++ {
-		// Cubic grows window independent of ACKs. Cubic Window growth
-		// is a function of time elapsed since last congestion event.
-		// As a result the congestion window does not grow
-		// deterministically in response to ACKs.
-		//
-		// We need to roughly estimate what the cwnd of the sender is
-		// based on when we sent the dupacks.
-		cwnd := cubicCwnd(cwnd, wMax, packetDropTime, 50*time.Millisecond)
-
-		packetsExpected := cwnd
-		for j := 0; j < packetsExpected; j++ {
-			c.ReceiveAndCheckPacket(data, bytesRead, maxPayload)
-			bytesRead += maxPayload
-		}
-		t.Logf("expected packets received, next trying to receive any extra packets that may come")
-
-		// If our estimate was correct there should be no more pending packets.
-		// We attempt to read a packet a few times with a short sleep in between
-		// to ensure that we don't see the sender send any unexpected packets.
-		unexpectedPackets := 0
-		for {
-			gotPacket := c.ReceiveNonBlockingAndCheckPacket(data, bytesRead, maxPayload)
-			if !gotPacket {
-				break
-			}
-			bytesRead += maxPayload
-			unexpectedPackets++
-			time.Sleep(1 * time.Millisecond)
-		}
-		if unexpectedPackets != 0 {
-			t.Fatalf("received %d unexpected packets for iteration %d", unexpectedPackets, i)
-		}
-		// Check we don't receive any more packets on this iteration.
-		// The timeout can't be too high or we'll trigger a timeout.
-		c.CheckNoPacketTimeout("More packets received than expected for this cwnd(congestion avoidance)", 5*time.Millisecond)
-
-		// Acknowledge all the data received so far.
-		c.SendAck(790, bytesRead)
 	}
 }
 

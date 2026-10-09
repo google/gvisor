@@ -192,7 +192,6 @@ go_test(
     # so exclude them from gotsan runs.
     tags = ["nogotsan"],
     deps = [
-        ":e2e",
         "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
