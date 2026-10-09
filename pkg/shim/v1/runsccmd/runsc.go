@@ -126,6 +126,9 @@ type CreateOpts struct {
 
 	// FSRestoreDirect configures direct IO for filesystem restore.
 	FSRestoreDirect bool
+
+	// NoRootContainer passes --no-root-container.
+	NoRootContainer bool
 }
 
 func (o *CreateOpts) args() (out []string, err error) {
@@ -147,6 +150,9 @@ func (o *CreateOpts) args() (out []string, err error) {
 	}
 	if o.FSRestoreDirect {
 		out = append(out, "--fs-restore-direct")
+	}
+	if o.NoRootContainer {
+		out = append(out, "--no-root-container")
 	}
 	return out, nil
 }

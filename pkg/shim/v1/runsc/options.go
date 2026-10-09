@@ -15,22 +15,66 @@
 package runsc
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/BurntSushi/toml"
+	runctypes "github.com/containerd/containerd/api/types/runc/options"
 	"github.com/containerd/log"
+	typeurl "github.com/containerd/typeurl/v2"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 )
 
 const optionsType = "io.containerd.runsc.v1.options"
 
+// resolveOptions returns the runsc options for the runtime options containerd
+// passed.
+//
+// A sandboxer = "shim" handler cannot declare a runsc options section:
+// containerd's WithTaskAPIEndpoint unmarshals them into runc options and fails
+// container start (client/task.go getRuncOptions in containerd v2.1). Without
+// the section its sandbox gets no options, and its containers get runc options
+// (containerd 2.x) or none (containerd 1.7, which creates them in the
+// sandbox's shim). All of them then read the config file (GetRuntimeOptions),
+// so they agree on Root and BinaryName. sandboxAPI selects that fallback for
+// missing options. A limitation follows: every sandboxer = "shim" runsc
+// handler on a node uses the same config file.
+func resolveOptions(a *anypb.Any, sandboxAPI bool) (*Options, error) {
+	if a == nil {
+		if sandboxAPI {
+			return GetRuntimeOptions(), nil
+		}
+		return &Options{}, nil
+	}
+	if typeurl.Is(a, &runctypes.Options{}) {
+		return GetRuntimeOptions(), nil
+	}
+	runtimeOptions := &runtimeoptions.Options{}
+	if err := typeurl.UnmarshalTo(a, runtimeOptions); err != nil {
+		return nil, fmt.Errorf("unmarshal runtime options: %w", err)
+	}
+	// An empty ConfigPath means defaults.
+	opts := &Options{}
+	if path := runtimeOptions.GetConfigPath(); path != "" {
+		if _, err := toml.DecodeFile(path, opts); err != nil {
+			return nil, fmt.Errorf("decode config file %q: %w", path, err)
+		}
+	}
+	return opts, nil
+}
+
+// shimConfigPaths are searched in order by GetRuntimeOptions.
+var shimConfigPaths = []string{
+	"/run/containerd/runsc/config.toml",
+	"/etc/containerd/runsc/config.toml",
+	"config.toml",
+}
+
 // GetRuntimeOptions returns the runtime options from the global config file.
 func GetRuntimeOptions() *Options {
 	opts := &Options{}
-	shimConfigPaths := []string{
-		"/run/containerd/runsc/config.toml",
-		"/etc/containerd/runsc/config.toml",
-		"config.toml",
-	}
 
 	tomlPath := ""
 	for _, path := range shimConfigPaths {
