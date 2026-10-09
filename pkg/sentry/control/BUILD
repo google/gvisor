@@ -96,6 +96,7 @@ go_test(
     srcs = [
         "fs_test.go",
         "proc_test.go",
+        "state_cuda_test.go",
     ],
     embed = [":control"],
     deps = [
@@ -104,6 +105,7 @@ go_test(
         "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sentry/contexttest",
+        "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/usage",
