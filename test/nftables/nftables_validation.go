@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -1161,9 +1162,26 @@ func (t *tcpMasq) setupClientNamespace(ipv6 bool) (func(), error) {
 		gateway = "fc00:1::1"
 	}
 
-	cmds := [][]string{
+	for _, cmd := range [][]string{
 		{"ip", "link", "add", "veth-router", "type", "veth", "peer", "name", "veth-client"},
 		{"ip", "link", "set", "veth-client", "netns", "client_ns"},
+	} {
+		if err := runCmd(cmd[0], cmd[1:]...); err != nil {
+			cleanup()
+			return nil, err
+		}
+	}
+	if ipv6 {
+		// New interfaces inherit the container's default IPv6 setting, which
+		// can be disabled even when its existing interfaces have IPv6 addresses.
+		// Netstack enables IPv6 without exposing this per-interface control.
+		if err := os.WriteFile("/proc/sys/net/ipv6/conf/veth-router/disable_ipv6", []byte("0"), 0644); err != nil && !errors.Is(err, os.ErrNotExist) {
+			cleanup()
+			return nil, fmt.Errorf("enable IPv6 on veth-router: %w", err)
+		}
+	}
+
+	cmds := [][]string{
 		{"ip", "addr", "add", routerIP, "dev", "veth-router"},
 		{"ip", "link", "set", "veth-router", "up"},
 		{"ip", "-n", "client_ns", "addr", "add", clientIP, "dev", "veth-client"},
