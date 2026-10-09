@@ -921,6 +921,29 @@ func (s *statmData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	return nil
 }
 
+// schedstatData implements vfs.DynamicBytesSource for /proc/[pid]/schedstat
+// and /proc/[pid]/task/[tid]/schedstat. As in Linux, both describe the one
+// task, not its thread group.
+//
+// +stateify savable
+type schedstatData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+}
+
+var _ dynamicInode = (*schedstatData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (s *schedstatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	// Linux: fs/proc/base.c:proc_pid_schedstat() prints time on a CPU, time
+	// waiting on a runqueue and the number of timeslices run. gVisor cannot
+	// tell the first two apart, so all of the time is reported as the first.
+	run, count := s.task.RunTime()
+	fmt.Fprintf(buf, "%d 0 %d\n", run.Nanoseconds(), count)
+	return nil
+}
+
 // statusInode implements kernfs.Inode for /proc/[pid]/status.
 //
 // +stateify savable
