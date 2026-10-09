@@ -17,6 +17,7 @@ package systrap
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
@@ -76,4 +77,8 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 			Action: seccomp.Allow,
 		},
 	}...)
+}
+
+func trapRestartArgs(_ uintptr, rules []bpf.Instruction) []bpf.Instruction {
+	return rules
 }

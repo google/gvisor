@@ -19,6 +19,7 @@ package systrap
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -74,14 +75,32 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 	return regs
 }
 
+var restartArgCodes = []unix.Errno{
+	ERESTARTSYS,
+	ERESTARTNOHAND,
+	ERESTART_RESTARTBLOCK,
+}
+
+const restartArgZeroExtended = 1 << 15
+
 // updateSyscallRegs updates registers after finishing sysemu.
-func updateSyscallRegs(regs *arch.Registers, ctxState sysmsg.ContextState) {
+func updateSyscallRegs(regs *arch.Registers, ctxState sysmsg.ContextState, signalInfo *linux.SignalInfo) {
 	// The host kernel only rewinds regs.Pc when delivering SIGSYS on the
 	// sighandler path (sysmsg.ContextStateSyscall). If the syscall fastpath
 	// was used (sysmsg.ContextStateSyscallTrap), no host signal was delivered,
 	// so regs.Pc was not rewound and must not be adjusted.
 	if ctxState == sysmsg.ContextStateSyscallTrap {
 		return
+	}
+
+	// The sysmsg thread filter passes in si_errno a restart code that the
+	// host kernel replaced with -EINTR in regs[0] (see trapRestartArgs).
+	if code := unix.Errno(signalInfo.Errno &^ restartArgZeroExtended); slices.Contains(restartArgCodes, code) {
+		arg := uint64(-int64(code))
+		if signalInfo.Errno&restartArgZeroExtended != 0 {
+			arg = uint64(uint32(arg))
+		}
+		regs.Regs[0] = arg
 	}
 
 	// In the Linux kernel (arch/arm64/kernel/signal.c:arch_do_signal_or_restart),

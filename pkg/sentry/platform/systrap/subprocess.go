@@ -925,7 +925,7 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		if maybePatchSignalInfo(regs, &c.signalInfo) {
 			return false, false, hostarch.Execute, nil
 		}
-		updateSyscallRegs(regs, ctxState)
+		updateSyscallRegs(regs, ctxState, &c.signalInfo)
 		return true, shouldPatchSyscall, hostarch.NoAccess, nil
 	} else if ctxState != sysmsg.ContextStateFault {
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
