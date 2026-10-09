@@ -1,23 +1,38 @@
 {::nomarkdown}
 {% assign fn = include.id | remove: " " | remove: "-" | downcase %}
-<figure><a href="{{ include.url }}"><svg id="{{ include.id }}" width=500 height=200><title>{{ include.title }}</title></svg></a></figure>
+{% assign chart_data = site.data.performance_latest[include.id] | jsonify %}
+<div class="benchmark-card" id="card-{{ include.id }}">
+  <div class="benchmark-card-header">
+    <div class="benchmark-card-title-group">
+      {% if include.url %}
+        <a class="benchmark-card-title-link" href="{{ include.url }}" target="_blank" rel="noopener">
+          <span class="benchmark-card-title">{{ include.title }}</span>
+          <i class="fas fa-external-link-alt benchmark-card-external-icon"></i>
+        </a>
+      {% else %}
+        <span class="benchmark-card-title">{{ include.title }}</span>
+      {% endif %}
+    </div>
+    <div class="benchmark-card-meta">
+      <span class="benchmark-badge" id="badge-{{ fn }}"></span>
+    </div>
+  </div>
+  <div class="benchmark-card-toolbar">
+    <div class="benchmark-metric-label" id="metric-label-{{ fn }}"></div>
+    <div class="benchmark-legend" id="legend-{{ fn }}"></div>
+  </div>
+  <div class="benchmark-svg-container">
+    <svg id="{{ include.id }}" class="benchmark-chart" role="img" aria-label="{{ include.title }}"><title>{{ include.title }}</title></svg>
+  </div>
+  <div class="benchmark-tooltip" id="tooltip-{{ fn }}"></div>
+</div>
 <script>
 function render_{{ fn }}() {
-d3.csv("{{ include.url }}", function(d, i, columns) {
-    return d; // Transformed below.
-}, function(error, data) {
-    if (error) throw(error);
-
-    // Create a new data that pivots on runtime.
-    //
-    // To start, we have:
-    //    runtime, ..., result
-    //    runc,    ..., 1
-    //    runsc,   ..., 2
-    //
-    // In the end we want:
-    //    ..., runsc, runc
-    //    ..., 1,     2
+  function drawWithData(raw) {
+    if (!raw || !raw.length) return;
+    var data = JSON.parse(JSON.stringify(raw));
+    var columns = Object.keys(data[0] || {});
+    data.columns = columns;
 
     // Filter by metric, if required.
     if ("{{ include.metric }}" != "") {
@@ -36,14 +51,10 @@ d3.csv("{{ include.url }}", function(d, i, columns) {
     // Enumerate runtimes.
     var runtimes = Array.from(new Set(data.map(d => d.runtime)));
     var metrics = Array.from(new Set(data.map(d => d.metric)));
-    if (metrics.length < 1) {
-        console.log(data);
-        throw("need at least one metric");
-    } else if (metrics.length == 1) {
+    var metric = "";
+    if (metrics.length == 1) {
         metric = metrics[0];
         data.columns = data.columns.filter(key => key != "metric");
-    } else {
-        metric = ""; // Used for grouping.
     }
 
     var isSubset = function(a, sup) {
@@ -58,16 +69,13 @@ d3.csv("{{ include.url }}", function(d, i, columns) {
 
     // Execute a pivot to include runtimes as attributes.
     var new_data = data.map(function(data_item) {
-        // Generate a prototype data item.
         var proto_item = Object.assign({}, data_item);
         delete proto_item.runtime;
         delete proto_item.result;
         var next_item = Object.assign({}, proto_item);
 
-        // Find all matching runtime items.
         data.forEach(function(d) {
             if (isSubset(proto_item, d)) {
-                // Add the result result.
                 next_item[d.runtime] = d.result;
             }
         });
@@ -75,131 +83,382 @@ d3.csv("{{ include.url }}", function(d, i, columns) {
     });
 
     // Remove any duplication.
-    new_data = Array.from(new Set(new_data));
-    new_data.columns = data.columns;
-    new_data.columns = new_data.columns.filter(key => key != "runtime" && key != "result");
-    new_data.columns = new_data.columns.concat(runtimes);
+    var uniqueKeys = new Set();
+    new_data = new_data.filter(function(item) {
+        var k = JSON.stringify(item);
+        if (uniqueKeys.has(k)) return false;
+        uniqueKeys.add(k);
+        return true;
+    });
+
+    new_data.columns = data.columns.filter(key => key != "runtime" && key != "result").concat(runtimes);
     data = new_data;
 
     // Slice based on the first key.
+    var x0_key = "runtime";
+    var x1_domain = runtimes;
     if (data.columns.length != runtimes.length) {
         x0_key = new_data.columns[0];
-        var x1_domain = data.columns.slice(1);
+        x1_domain = data.columns.slice(1);
     } else {
-        x0_key = "runtime";
-        var x1_domain = runtimes;
+        data.forEach(d => { d[x0_key] = ""; });
     }
 
-    // Determine variable margins.
+    // Determine direction indicator: "Lower is better" or "Higher is better".
+    var better = "{{ include.better }}";
+    if (!better) {
+        var idStr = "{{ include.id }}".toLowerCase();
+        var metricStr = (metric || "").toLowerCase();
+        if (idStr === "density" || idStr === "startup" || idStr === "syscall" ||
+            idStr === "tensorflow" || idStr === "hackbench" || idStr === "ffmpeg" ||
+            idStr === "bazel-build" || metricStr.indexOf("latency") !== -1 ||
+            metricStr.indexOf("time") !== -1 || metricStr.indexOf("usage") !== -1) {
+            better = "lower";
+        } else {
+            better = "higher";
+        }
+    }
+    var isLower = (better === "lower");
+
+    // Populate Direction Badge in Card Header with pulsing beacon dot
+    var badgeEl = document.getElementById("badge-{{ fn }}");
+    if (badgeEl) {
+        badgeEl.className = "benchmark-badge " + (isLower ? "benchmark-badge-lower" : "benchmark-badge-higher");
+        badgeEl.innerHTML = '<span class="benchmark-badge-dot"></span>' + (isLower ? "↓ Lower is better" : "↑ Higher is better");
+    }
+
+    // Populate Metric Label
+    var metricEl = document.getElementById("metric-label-{{ fn }}");
+    if (metricEl) {
+        metricEl.innerHTML = (metric && metric !== "default") ? '<span style="color:#2563eb;">⚡</span> ' + metric : "";
+    }
+
+    var svg = d3.select("#{{ include.id }}");
+    svg.selectAll("*").remove();
+
+    // Define SVG linear gradients in <defs>
+    var defs = svg.append("defs");
+    var addGradient = function(id, stop1, stop2) {
+        var grad = defs.append("linearGradient")
+            .attr("id", id)
+            .attr("x1", "0%").attr("y1", "0%")
+            .attr("x2", "0%").attr("y2", "100%");
+        grad.append("stop").attr("offset", "0%").attr("stop-color", stop1);
+        grad.append("stop").attr("offset", "100%").attr("stop-color", stop2);
+    };
+
+    addGradient("grad-systrap-{{ fn }}", "#3b82f6", "#1d4ed8");
+    addGradient("grad-runc-{{ fn }}", "#94a3b8", "#475569");
+    addGradient("grad-kvm-{{ fn }}", "#fbbf24", "#ea580c");
+    addGradient("grad-runsc-{{ fn }}", "#c084fc", "#7e22ce");
+
+    var z = function(runtime) {
+        if (runtime === "systrap") return "url(#grad-systrap-{{ fn }})";
+        if (runtime === "runc") return "url(#grad-runc-{{ fn }})";
+        if (runtime === "kvm") return "url(#grad-kvm-{{ fn }})";
+        if (runtime === "runsc") return "url(#grad-runsc-{{ fn }})";
+        return "#3b82f6";
+    };
+
+    var zColor = function(runtime) {
+        if (runtime === "systrap") return "#2563eb";
+        if (runtime === "runc") return "#64748b";
+        if (runtime === "kvm") return "#ea580c";
+        if (runtime === "runsc") return "#9333ea";
+        return "#2563eb";
+    };
+
+    // Populate Interactive Legend in Card Toolbar
+    var legendEl = document.getElementById("legend-{{ fn }}");
+    if (legendEl) {
+        legendEl.innerHTML = "";
+        x1_domain.forEach(function(rt) {
+            var item = document.createElement("span");
+            item.className = "benchmark-legend-item";
+            item.setAttribute("data-runtime", rt);
+            item.innerHTML = '<span class="benchmark-legend-dot" style="background-color:' + zColor(rt) + '"></span>' +
+                             '<span class="benchmark-legend-name">' + rt + '</span>';
+
+            item.addEventListener("mouseenter", function() {
+                item.className = "benchmark-legend-item active-" + rt;
+                svg.selectAll(".bar-rect").transition().duration(120)
+                    .style("opacity", function(d) { return d.key === rt ? 1 : 0.18; });
+            });
+            item.addEventListener("mouseleave", function() {
+                item.className = "benchmark-legend-item";
+                svg.selectAll(".bar-rect").transition().duration(150)
+                    .style("opacity", 1);
+            });
+            legendEl.appendChild(item);
+        });
+    }
+
+    // Responsive SVG Sizing and Variable Margins
     var x0_domain = data.map(d => d[x0_key]);
     var margin_bottom_pad = 0;
     if (x0_domain.length > 8) {
         margin_bottom_pad = 50;
+    } else if (x0_domain.length > 4) {
+        margin_bottom_pad = 22;
     }
+
+    var totalWidth = 540;
+    var totalHeight = 225 + margin_bottom_pad;
+    var margin = {top: 25, right: 15, bottom: 25 + margin_bottom_pad, left: 60};
+    var width = totalWidth - margin.left - margin.right;
+    var height = totalHeight - margin.top - margin.bottom;
+
+    svg.attr("viewBox", "0 0 " + totalWidth + " " + totalHeight)
+       .attr("preserveAspectRatio", "xMidYMid meet")
+       .style("width", "100%")
+       .style("max-width", totalWidth + "px")
+       .style("height", "auto");
+
+    var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
     // Use log scale if required.
     var y_min = 0;
     if ({{ include.log | default: "false" }}) {
-        // Need to cap lower end of the domain at 1.
         y_min = 1;
     }
-
     if ({{ include.y_min | default: "false" }}) {
         y_min = "{{ include.y_min }}";
     }
 
-    var svg = d3.select("#{{ include.id }}"),
-        margin = {top: 20, right: 20, bottom: 30 + margin_bottom_pad, left: 50},
-        width = +svg.attr("width") - margin.left - margin.right,
-        height = +svg.attr("height") - margin.top - margin.bottom,
-        g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-    var x0 = d3.scaleBand()
-        .rangeRound([margin.left / 2, width - (4 * margin.right)])
-        .paddingInner(0.1);
-
-    var x1 = d3.scaleBand()
-        .padding(0.05);
-
-    var y = d3.scaleLinear()
-        .rangeRound([height, 0]);
-    if ({{ include.log | default: "false" }}) {
-        y = d3.scaleLog()
-           .rangeRound([height, 0]);
+    // X0 scale (bandwidth proportional to domain size to center single-item charts)
+    var x0 = d3.scaleBand().domain(x0_domain).paddingInner(0.2);
+    if (x0_domain.length === 1) {
+        x0.rangeRound([width * 0.22, width * 0.78]);
+    } else if (x0_domain.length === 2) {
+        x0.rangeRound([width * 0.1, width * 0.9]);
+    } else {
+        x0.rangeRound([0, width]);
     }
 
-    var z = d3.scaleOrdinal()
-        .range(["#262362", "#FBB03B", "#286FD7", "#6b486b"]);
+    var x1 = d3.scaleBand()
+        .domain(x1_domain)
+        .rangeRound([0, x0.bandwidth()])
+        .padding(0.08);
 
-    // Set all domains.
-    x0.domain(x0_domain);
-    x1.domain(x1_domain).rangeRound([0, x0.bandwidth()]);
-    y.domain([y_min, d3.max(data, d => d3.max(x1_domain, key => parseFloat(d[key])))]).nice();
+    var y = d3.scaleLinear().rangeRound([height, 0]);
+    if ({{ include.log | default: "false" }}) {
+        y = d3.scaleLog().rangeRound([height, 0]);
+    }
 
-    // The data.
-    g.append("g")
+    var max_val = d3.max(data, d => d3.max(x1_domain, key => parseFloat(d[key]) || 0)) || 1;
+    if ({{ include.log | default: "false" }}) {
+        y.domain([y_min, max_val * 3]).nice();
+    } else {
+        y.domain([y_min, max_val * 1.25]).nice();
+    }
+
+    // Horizontal Subtle Gridlines
+    var yGrid = d3.axisLeft(y)
+        .ticks(5)
+        .tickSize(-width)
+        .tickFormat("");
+    var gridG = g.append("g")
+        .attr("class", "grid y-grid")
+        .call(yGrid);
+    gridG.select("path.domain").remove();
+    gridG.selectAll("line")
+        .attr("stroke", "#e2e8f0")
+        .attr("stroke-dasharray", "2,4");
+
+    // Category hover highlight column
+    var catHover = g.append("g").attr("class", "cat-hovers")
+        .selectAll("rect")
+        .data(data)
+        .enter().append("rect")
+          .attr("class", "cat-hover-bg")
+          .attr("x", d => x0(d[x0_key]) - 6)
+          .attr("y", 0)
+          .attr("width", x0.bandwidth() + 12)
+          .attr("height", height)
+          .attr("fill", "transparent")
+          .attr("rx", 6)
+          .style("pointer-events", "none")
+          .style("transition", "fill 0.15s ease");
+
+    // The data bars
+    var bar_groups = g.append("g")
+        .attr("class", "bar-groups")
         .selectAll("g")
         .data(data)
         .enter().append("g")
-          .attr("transform", function(d) { return "translate(" + x0(d[x0_key]) + ",0)"; })
-        .selectAll("rect")
-        .data(d => x1_domain.map(key => ({key, value: d[key]})))
-        .enter().append("rect")
-          .attr("x", d => x1(d.key))
-          .attr("y", d => y(d.value))
-          .attr("width", x1.bandwidth())
-          .attr("height", d => y(y_min) - y(d.value))
-          .attr("fill", d => z(d.key));
+          .attr("transform", function(d) { return "translate(" + x0(d[x0_key]) + ",0)"; });
 
-    // X0 ticks and labels.
+    bar_groups.selectAll(".bar-rect")
+        .data(d => x1_domain.map(key => ({key: key, value: d[key], category: d[x0_key], row: d})))
+        .enter().append("rect")
+          .attr("class", "bar-rect")
+          .attr("x", d => x1(d.key))
+          .attr("y", d => y(parseFloat(d.value) || y_min))
+          .attr("width", x1.bandwidth())
+          .attr("height", d => Math.max(0, y(y_min) - y(parseFloat(d.value) || y_min)))
+          .attr("fill", d => z(d.key))
+          .attr("rx", 4)
+          .attr("ry", 4)
+          .style("cursor", "pointer")
+          .style("transition", "all 0.15s ease");
+
+    // Scientific notation formatter for value labels
+    var formatScientific = function(v) {
+        if (v == null || isNaN(v)) return "";
+        var num = parseFloat(v);
+        if (num === 0) return "0";
+        var exp = num.toExponential(2);
+        return exp.replace("e+", "e").replace("e-0", "e-");
+    };
+
+    var bw = x1.bandwidth();
+    var rotate = bw < 32;
+
+    bar_groups.selectAll(".val-label")
+        .data(d => x1_domain.map(key => ({key: key, value: d[key]})))
+        .enter().append("text")
+          .attr("class", "val-label")
+          .attr("x", d => x1(d.key) + bw / 2)
+          .attr("y", d => {
+              var val = parseFloat(d.value);
+              if (isNaN(val)) return y(y_min);
+              return y(val) - 6;
+          })
+          .attr("text-anchor", rotate ? "start" : "middle")
+          .attr("transform", d => {
+              if (!rotate) return null;
+              var cx = x1(d.key) + bw / 2;
+              var cy = y(parseFloat(d.value) || y_min) - 6;
+              return "rotate(-45," + cx + "," + cy + ")";
+          })
+          .attr("font-family", "'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace")
+          .attr("font-size", bw < 22 ? "8px" : "9.5px")
+          .attr("font-weight", "600")
+          .attr("fill", "#475569")
+          .text(d => d.value != null && !isNaN(d.value) ? formatScientific(d.value) : "");
+
+    // X0 ticks and labels
     var x0_axis = g.append("g")
-        .attr("class", "axis")
+        .attr("class", "axis x-axis")
         .attr("transform", "translate(0," + height + ")")
         .call(d3.axisBottom(x0));
+
+    x0_axis.select("path.domain")
+        .attr("stroke", "#cbd5e1")
+        .attr("stroke-width", 1.5);
+    x0_axis.selectAll(".tick line")
+        .attr("stroke", "#e2e8f0");
+    x0_axis.selectAll(".tick text")
+        .attr("fill", "#475569")
+        .attr("font-size", "11px")
+        .attr("font-weight", "500")
+        .attr("font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
+
     if (x0_domain.length > 8) {
         x0_axis.selectAll("text")
             .style("text-anchor", "end")
             .attr("dx", "-.8em")
             .attr("dy", ".15em")
-            .attr("transform", "rotate(-65)");
+            .attr("transform", "rotate(-50)");
+    } else if (x0_domain.length > 4) {
+        x0_axis.selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", ".15em")
+            .attr("transform", "rotate(-30)");
     }
 
-    // Y ticks and top-label.
-    if (metric == "default") {
-        metric = ""; // Don't display.
-    }
-    g.append("g")
-        .attr("class", "axis")
-        .call(d3.axisLeft(y).ticks(null, ".1s"))
-        .append("text")
-        .attr("x", -30.0)
-        .attr("y", y(y.ticks().pop()) - 10.0)
-        .attr("dy", "0.32em")
-        .attr("fill", "#000")
-        .attr("font-weight", "bold")
-        .attr("text-anchor", "start")
-        .text(metric);
+    // Y ticks in scientific notation
+    var y0_axis = g.append("g")
+        .attr("class", "axis y-axis")
+        .call(d3.axisLeft(y).ticks(5, ".1e"));
 
-    // The legend.
-    var legend = g.append("g")
-        .attr("font-family", "sans-serif")
-        .attr("font-size", 10)
-        .attr("text-anchor", "end")
-        .selectAll("g")
-        .data(x1_domain.slice().reverse())
-        .enter().append("g")
-        .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
-    legend.append("rect")
-        .attr("x", width - 19)
-        .attr("width", 19)
-        .attr("height", 19)
-        .attr("fill", z);
-    legend.append("text")
-        .attr("x", width - 24)
-        .attr("y", 9.5)
-        .attr("dy", "0.32em")
-        .text(function(d) { return d; });
-});
+    y0_axis.select("path.domain").remove();
+    y0_axis.selectAll(".tick line")
+        .attr("stroke", "#e2e8f0");
+    y0_axis.selectAll(".tick text")
+        .attr("fill", "#64748b")
+        .attr("font-size", "10px")
+        .attr("font-weight", "500")
+        .attr("font-family", "'SF Mono', 'Roboto Mono', Menlo, monospace");
+
+    // Interactive Floating Glass Tooltip
+    var cardNode = document.getElementById("card-{{ include.id }}");
+    var tooltip = d3.select("#tooltip-{{ fn }}");
+
+    bar_groups.selectAll(".bar-rect")
+        .on("mouseenter", function(d) {
+            svg.selectAll(".bar-rect").style("opacity", 0.35);
+            d3.select(this).style("opacity", 1);
+            catHover.filter(c => c[x0_key] === d.category).attr("fill", "rgba(241, 245, 249, 0.7)");
+
+            var runtimeName = d.key;
+            var rawVal = parseFloat(d.value);
+            var runcRaw = parseFloat(d.row ? d.row["runc"] : null);
+
+            var valDisplay = !isNaN(rawVal) ? rawVal.toLocaleString() : "N/A";
+            var sciDisplay = !isNaN(rawVal) ? formatScientific(rawVal) : "";
+            var unitDisplay = metric && metric !== "default" ? " " + metric : "";
+
+            var html = '';
+            if (d.category) {
+                html += '<div class="tooltip-header">' + d.category + '</div>';
+            }
+            html += '<div class="tooltip-row"><span class="tooltip-dot" style="background-color:' + zColor(d.key) + '"></span> ' +
+                    '<span>' + d.key + ':</span> ' +
+                    '<span>' + valDisplay + unitDisplay + '</span> ' +
+                    '<span class="tooltip-sci">(' + sciDisplay + ')</span></div>';
+
+            if (runtimeName !== "runc" && !isNaN(runcRaw) && runcRaw > 0 && !isNaN(rawVal)) {
+                var diff = ((rawVal - runcRaw) / runcRaw) * 100;
+                var ratio = rawVal / runcRaw;
+                if (isLower) {
+                    if (diff < -0.5) {
+                        html += '<div class="tooltip-delta delta-better">⚡ ' + Math.abs(diff).toFixed(1) + '% faster than runc (' + ratio.toFixed(2) + 'x)</div>';
+                    } else if (diff > 0.5) {
+                        html += '<div class="tooltip-delta delta-worse">▲ ' + diff.toFixed(1) + '% overhead vs runc (' + ratio.toFixed(2) + 'x)</div>';
+                    } else {
+                        html += '<div class="tooltip-delta delta-neutral">● Parity with runc baseline</div>';
+                    }
+                } else {
+                    if (diff > 0.5) {
+                        html += '<div class="tooltip-delta delta-better">▲ ' + diff.toFixed(1) + '% higher than runc (' + ratio.toFixed(2) + 'x)</div>';
+                    } else if (diff < -0.5) {
+                        html += '<div class="tooltip-delta delta-worse">▼ ' + Math.abs(diff).toFixed(1) + '% vs runc (' + ratio.toFixed(2) + 'x)</div>';
+                    } else {
+                        html += '<div class="tooltip-delta delta-neutral">● Parity with runc baseline</div>';
+                    }
+                }
+            } else if (runtimeName === "runc") {
+                html += '<div class="tooltip-delta delta-baseline">● Native host container baseline</div>';
+            }
+
+            tooltip.html(html).style("display", "block");
+        })
+        .on("mousemove", function() {
+            if (!cardNode) return;
+            var mouse = d3.mouse(cardNode);
+            var cardWidth = cardNode.offsetWidth || 540;
+            var left = mouse[0];
+            var top = mouse[1] - 12;
+
+            if (left > cardWidth - 170) {
+                tooltip.style("left", (left - 160) + "px").style("top", top + "px");
+            } else if (left < 60) {
+                tooltip.style("left", (left + 15) + "px").style("top", top + "px");
+            } else {
+                tooltip.style("left", (left - 60) + "px").style("top", top + "px");
+            }
+        })
+        .on("mouseleave", function() {
+            svg.selectAll(".bar-rect").style("opacity", 1);
+            catHover.attr("fill", "transparent");
+            tooltip.style("display", "none");
+        });
+  }
+
+  var chartData = {{ chart_data }};
+  drawWithData(chartData);
 }
 $(render_{{ fn }});
 </script>

@@ -1,0 +1,565 @@
+{
+  "sysbench-memory": [
+    {
+      "runtime": "runc",
+      "metric": "memory_ops_per_second",
+      "result": 6803678.0
+    },
+    {
+      "runtime": "systrap",
+      "metric": "memory_ops_per_second",
+      "result": 6180150.0
+    },
+    {
+      "runtime": "kvm",
+      "metric": "memory_ops_per_second",
+      "result": 5955461.0
+    }
+  ],
+  "density": [
+    {
+      "runtime": "runc",
+      "method": "density.empty",
+      "metric": "memory_usage",
+      "result": 357990.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "density.empty",
+      "metric": "memory_usage",
+      "result": 17721116.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "density.empty",
+      "metric": "memory_usage",
+      "result": 39613781.0
+    },
+    {
+      "runtime": "runc",
+      "method": "density.node",
+      "metric": "memory_usage",
+      "result": 28832973.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "density.node",
+      "metric": "memory_usage",
+      "result": 51536213.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "density.node",
+      "metric": "memory_usage",
+      "result": 75683840.0
+    },
+    {
+      "runtime": "runc",
+      "method": "density.nginx",
+      "metric": "memory_usage",
+      "result": 2225664.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "density.nginx",
+      "metric": "memory_usage",
+      "result": 25965909.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "density.nginx",
+      "metric": "memory_usage",
+      "result": 48722550.0
+    }
+  ],
+  "sysbench-cpu": [
+    {
+      "runtime": "runc",
+      "metric": "cpu_events_per_second",
+      "result": 2592.0
+    },
+    {
+      "runtime": "systrap",
+      "metric": "cpu_events_per_second",
+      "result": 2588.0
+    },
+    {
+      "runtime": "kvm",
+      "metric": "cpu_events_per_second",
+      "result": 2566.0
+    }
+  ],
+  "hackbench": [
+    {
+      "runtime": "runc",
+      "metric": "execution_time_sec",
+      "result": 21.99
+    },
+    {
+      "runtime": "systrap",
+      "metric": "execution_time_sec",
+      "result": 33.15
+    },
+    {
+      "runtime": "kvm",
+      "metric": "execution_time_sec",
+      "result": 31.95
+    }
+  ],
+  "tensorflow": [
+    {
+      "runtime": "runc",
+      "metric": "run_time",
+      "result": 28.01
+    },
+    {
+      "runtime": "systrap",
+      "metric": "run_time",
+      "result": 37.99
+    },
+    {
+      "runtime": "kvm",
+      "metric": "run_time",
+      "result": 66.36
+    }
+  ],
+  "syscall": [
+    {
+      "runtime": "runc",
+      "metric": "syscall_time_ns",
+      "result": 960.3
+    },
+    {
+      "runtime": "systrap",
+      "metric": "syscall_time_ns",
+      "result": 1489.0
+    },
+    {
+      "runtime": "kvm",
+      "metric": "syscall_time_ns",
+      "result": 761.8
+    }
+  ],
+  "redis": [
+    {
+      "runtime": "runc",
+      "method": "SET",
+      "metric": "requests_per_second",
+      "result": 49770.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "SET",
+      "metric": "requests_per_second",
+      "result": 22466.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "SET",
+      "metric": "requests_per_second",
+      "result": 34191.0
+    },
+    {
+      "runtime": "runc",
+      "method": "LPUSH",
+      "metric": "requests_per_second",
+      "result": 49956.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "LPUSH",
+      "metric": "requests_per_second",
+      "result": 22068.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "LPUSH",
+      "metric": "requests_per_second",
+      "result": 34180.0
+    },
+    {
+      "runtime": "runc",
+      "method": "LRANGE_100",
+      "metric": "requests_per_second",
+      "result": 32564.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "LRANGE_100",
+      "metric": "requests_per_second",
+      "result": 15312.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "LRANGE_100",
+      "metric": "requests_per_second",
+      "result": 22875.0
+    }
+  ],
+  "startup": [
+    {
+      "runtime": "runc",
+      "method": "startup.empty",
+      "metric": "startup_time_ms",
+      "result": 480.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "startup.empty",
+      "metric": "startup_time_ms",
+      "result": 580.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "startup.empty",
+      "metric": "startup_time_ms",
+      "result": 650.0
+    },
+    {
+      "runtime": "runc",
+      "method": "startup.nginx",
+      "metric": "startup_time_ms",
+      "result": 993.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "startup.nginx",
+      "metric": "startup_time_ms",
+      "result": 1562.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "startup.nginx",
+      "metric": "startup_time_ms",
+      "result": 1296.0
+    },
+    {
+      "runtime": "runc",
+      "method": "startup.node",
+      "metric": "startup_time_ms",
+      "result": 988.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "startup.node",
+      "metric": "startup_time_ms",
+      "result": 1717.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "startup.node",
+      "metric": "startup_time_ms",
+      "result": 1778.0
+    }
+  ],
+  "iperf": [
+    {
+      "runtime": "runc",
+      "method": "network.download",
+      "metric": "bandwidth",
+      "result": 2709325824.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "network.download",
+      "metric": "bandwidth",
+      "result": 1719614464.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "network.download",
+      "metric": "bandwidth",
+      "result": 1847444480.0
+    }
+  ],
+  "applications": [
+    {
+      "runtime": "runc",
+      "method": "http.node",
+      "metric": "requests_per_second",
+      "result": 1136.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "http.node",
+      "metric": "requests_per_second",
+      "result": 580.9
+    },
+    {
+      "runtime": "kvm",
+      "method": "http.node",
+      "metric": "requests_per_second",
+      "result": 753.2
+    },
+    {
+      "runtime": "runc",
+      "method": "http.ruby",
+      "metric": "requests_per_second",
+      "result": 2866.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "http.ruby",
+      "metric": "requests_per_second",
+      "result": 1056.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "http.ruby",
+      "metric": "requests_per_second",
+      "result": 1408.0
+    }
+  ],
+  "continuous-nginx": [
+    {
+      "runtime": "runc",
+      "metric": "requests_per_second",
+      "result": 8955.0
+    },
+    {
+      "runtime": "systrap",
+      "metric": "requests_per_second",
+      "result": 3370.0
+    },
+    {
+      "runtime": "kvm",
+      "metric": "requests_per_second",
+      "result": 6499.0
+    }
+  ],
+  "fio-bw": [
+    {
+      "runtime": "runc",
+      "method": "fio.read",
+      "metric": "bandwidth",
+      "result": 5065583616.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.read",
+      "metric": "bandwidth",
+      "result": 3102295040.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.read",
+      "metric": "bandwidth",
+      "result": 600214528.0
+    },
+    {
+      "runtime": "runc",
+      "method": "fio.write",
+      "metric": "bandwidth",
+      "result": 1088863232.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.write",
+      "metric": "bandwidth",
+      "result": 1049625600.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.write",
+      "metric": "bandwidth",
+      "result": 591413248.0
+    },
+    {
+      "runtime": "runc",
+      "method": "fio.randread",
+      "metric": "bandwidth",
+      "result": 550722560.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.randread",
+      "metric": "bandwidth",
+      "result": 98273280.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.randread",
+      "metric": "bandwidth",
+      "result": 111823872.0
+    },
+    {
+      "runtime": "runc",
+      "method": "fio.randwrite",
+      "metric": "bandwidth",
+      "result": 107758592.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.randwrite",
+      "metric": "bandwidth",
+      "result": 69880832.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.randwrite",
+      "metric": "bandwidth",
+      "result": 31089664.0
+    }
+  ],
+  "fio-tmpfs-bw": [
+    {
+      "runtime": "runc",
+      "method": "fio.read",
+      "metric": "bandwidth",
+      "result": 8665916416.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.read",
+      "metric": "bandwidth",
+      "result": 4144568320.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.read",
+      "metric": "bandwidth",
+      "result": 765383680.0
+    },
+    {
+      "runtime": "runc",
+      "method": "fio.write",
+      "metric": "bandwidth",
+      "result": 1638400000.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.write",
+      "metric": "bandwidth",
+      "result": 1413174272.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.write",
+      "metric": "bandwidth",
+      "result": 1106092032.0
+    },
+    {
+      "runtime": "runc",
+      "method": "fio.randread",
+      "metric": "bandwidth",
+      "result": 940426240.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.randread",
+      "metric": "bandwidth",
+      "result": 101174272.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.randread",
+      "metric": "bandwidth",
+      "result": 113101824.0
+    },
+    {
+      "runtime": "runc",
+      "method": "fio.randwrite",
+      "metric": "bandwidth",
+      "result": 408801280.0
+    },
+    {
+      "runtime": "systrap",
+      "method": "fio.randwrite",
+      "metric": "bandwidth",
+      "result": 88427520.0
+    },
+    {
+      "runtime": "kvm",
+      "method": "fio.randwrite",
+      "metric": "bandwidth",
+      "result": 43803648.0
+    }
+  ],
+  "bazel-build": [
+    {
+      "runtime": "runc",
+      "method": "build.absl",
+      "metric": "build_time_sec",
+      "result": 93.5
+    },
+    {
+      "runtime": "systrap",
+      "method": "build.absl",
+      "metric": "build_time_sec",
+      "result": 134.01
+    },
+    {
+      "runtime": "kvm",
+      "method": "build.absl",
+      "metric": "build_time_sec",
+      "result": 200.51
+    },
+    {
+      "runtime": "runc",
+      "method": "build.grpc",
+      "metric": "build_time_sec",
+      "result": 318.51
+    },
+    {
+      "runtime": "systrap",
+      "method": "build.grpc",
+      "metric": "build_time_sec",
+      "result": 499.51
+    },
+    {
+      "runtime": "kvm",
+      "method": "build.grpc",
+      "metric": "build_time_sec",
+      "result": 672.01
+    }
+  ],
+  "httpd100k": [
+    {
+      "connections": "25",
+      "runtime": "runc",
+      "metric": "requests_per_second",
+      "result": 3740.0
+    },
+    {
+      "connections": "25",
+      "runtime": "systrap",
+      "metric": "requests_per_second",
+      "result": 2132.0
+    },
+    {
+      "connections": "25",
+      "runtime": "kvm",
+      "metric": "requests_per_second",
+      "result": 939.9
+    }
+  ],
+  "ffmpeg": [
+    {
+      "runtime": "runc",
+      "metric": "run_time",
+      "result": 56.22
+    },
+    {
+      "runtime": "systrap",
+      "metric": "run_time",
+      "result": 60.77
+    },
+    {
+      "runtime": "kvm",
+      "metric": "run_time",
+      "result": 62.01
+    }
+  ],
+  "vllm-throughput": [
+    {
+      "runtime": "runc",
+      "metric": "output_tokens_per_second",
+      "result": 84.5
+    },
+    {
+      "runtime": "systrap",
+      "metric": "output_tokens_per_second",
+      "result": 83.2
+    }
+  ]
+}
