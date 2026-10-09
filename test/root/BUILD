@@ -86,6 +86,7 @@ go_test(
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",
+        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",
     ],
 )

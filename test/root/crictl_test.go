@@ -398,7 +398,18 @@ func TestCrictlUpdateContainerResources(t *testing.T) {
 
 const containerdRuntime = "runsc"
 
-var extraEnv []string
+// setupOpts configures setupWith. The zero value is the default setup.
+type setupOpts struct {
+	// enableGrouping sets `grouping` in the runsc shim config.
+	enableGrouping bool
+
+	// containerdConfig returns containerd's config for its version. Defaults
+	// to getContainerdConfig.
+	containerdConfig func(major, minor uint64) string
+
+	// extraEnv is added to containerd's environment.
+	extraEnv []string
+}
 
 // containerdConfig is the containerd (1.5+) configuration file that
 // configures the gVisor shim.
@@ -425,6 +436,16 @@ disabled_plugins = ["io.containerd.internal.v1.restart"]
 //   - Runs containerd and waits for it to reach a "ready" state for testing.
 //   - Returns a cleanup function that should be called at the end of the test.
 func setup(t *testing.T, enableGrouping bool) (*criutil.Crictl, func(), error) {
+	return setupWith(t, setupOpts{enableGrouping: enableGrouping})
+}
+
+func setupWith(t *testing.T, opts setupOpts) (*criutil.Crictl, func(), error) {
+	enableGrouping := opts.enableGrouping
+	configFunc := opts.containerdConfig
+	if configFunc == nil {
+		configFunc = getContainerdConfig
+	}
+
 	runscConfigPath := "/etc/containerd/runsc/config.toml"
 	runscConfigDir := path.Dir(runscConfigPath)
 	if err := os.MkdirAll(runscConfigDir, 0755); err != nil {
@@ -441,7 +462,6 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
     debug = "true"
     debug-log = "/tmp/runsc-logs/"
     strace = "true"
-    file-access = "shared"
 `
 	if err := os.WriteFile(runscConfigPath, []byte(runscConfig), 0644); err != nil {
 		return nil, nil, fmt.Errorf("failed to write runsc config file %q: %v", runscConfigPath, err)
@@ -519,7 +539,7 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 	t.Logf("Using PATH: %v", modifiedPath)
 
 	// Generate the configuration for the test.
-	config := getContainerdConfig(major, minor)
+	config := configFunc(major, minor)
 	t.Logf("Using config: %s", config)
 	configFile, configCleanup, err := testutil.WriteTmpFile("containerd-config", config)
 	if err != nil {
@@ -539,7 +559,7 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 	t.Logf("Using args: %s", strings.Join(args, " "))
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Env = append(os.Environ(), "PATH="+modifiedPath)
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = append(cmd.Env, opts.extraEnv...)
 
 	// Include output in logs.
 	stderrPipe, err := cmd.StderrPipe()
@@ -604,6 +624,9 @@ grouping = ` + strconv.FormatBool(enableGrouping) + `
 // cwd contains the given ID, and returns their PIDs.
 // If id is empty, it finds all shim processes.
 func getShimPIDs(id string) ([]string, error) {
+	// Match the binary name: containerd finds the shim through PATH, so its
+	// directory varies.
+	const shimName = "containerd-shim-runsc-v1"
 	procDir, err := os.Open("/proc")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open /proc: %v", err)
@@ -628,7 +651,7 @@ func getShimPIDs(id string) ([]string, error) {
 			continue
 		}
 		cmdline := bytes.Split(cmdlineBytes, []byte{0})
-		if len(cmdline) == 0 || !strings.HasSuffix(string(cmdline[0]), "containerd-shim-runsc-v1") {
+		if !(len(cmdline) > 0 && path.Base(string(cmdline[0])) == shimName) {
 			continue
 		}
 
@@ -1067,6 +1090,10 @@ func httpGet(crictl *criutil.Crictl, podID, filePath string) error {
 }
 
 func getContainerd() string {
+	// CONTAINERD_BINARY selects a containerd build to test against.
+	if p, ok := os.LookupEnv("CONTAINERD_BINARY"); ok {
+		return p
+	}
 	// Use the local path if it exists, otherwise, use the system one.
 	if _, err := os.Stat("/usr/local/bin/containerd"); err == nil {
 		return "/usr/local/bin/containerd"
@@ -1077,7 +1104,7 @@ func getContainerd() string {
 // getContainerdConfig returns the containerd config.
 // The config could change based on the containerd features enabled
 // e.g. enable sandbox API in containerd or not.
-var getContainerdConfig = func(major, minor uint64) string {
+func getContainerdConfig(major, minor uint64) string {
 	return containerdConfig
 }
 
