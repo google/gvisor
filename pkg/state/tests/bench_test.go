@@ -68,17 +68,6 @@ var allObjects = map[string]struct {
 	},
 }
 
-func buildObjects(n int, fn func(int) any) (iters int, v any) {
-	// maxSize is the maximum size of an individual object below. For an N
-	// larger than this, we start to return multiple objects.
-	const maxSize = 1024
-	if n <= maxSize {
-		return 1, fn(n)
-	}
-	iters = (n + maxSize - 1) / maxSize
-	return iters, fn(maxSize)
-}
-
 // gobSave is a version of save using gob (no stats available).
 func gobSave(_ context.Context, w io.Writer, v any) (_ state.Stats, err error) {
 	enc := gob.NewEncoder(w)
@@ -112,16 +101,13 @@ func BenchmarkEncoding(b *testing.B) {
 	for objName, objInfo := range allObjects {
 		for algoName, algoInfo := range allAlgos {
 			b.Run(fmt.Sprintf("%s/%s", objName, algoName), func(b *testing.B) {
-				b.StopTimer()
-				n, v := buildObjects(b.N, objInfo.New)
+				v := objInfo.New(1024)
 				b.ReportAllocs()
-				b.StartTimer()
-				for i := 0; i < n; i++ {
+				for b.Loop() {
 					if _, err := algoInfo.Save(context.Background(), io.Discard, v); err != nil {
 						b.Errorf("save failed: %v", err)
 					}
 				}
-				b.StopTimer()
 			})
 		}
 	}
@@ -131,22 +117,19 @@ func BenchmarkDecoding(b *testing.B) {
 	for objName, objInfo := range allObjects {
 		for algoName, algoInfo := range allAlgos {
 			b.Run(fmt.Sprintf("%s/%s", objName, algoName), func(b *testing.B) {
-				b.StopTimer()
-				n, v := buildObjects(b.N, objInfo.New)
+				v := objInfo.New(1024)
 				buf := new(bytes.Buffer)
 				if _, err := algoInfo.Save(context.Background(), buf, v); err != nil {
 					b.Errorf("save failed: %v", err)
 				}
 				b.ReportAllocs()
-				b.StartTimer()
 				var r bytes.Reader
-				for i := 0; i < n; i++ {
+				for b.Loop() {
 					r.Reset(buf.Bytes())
 					if _, err := algoInfo.Load(context.Background(), &r, v); err != nil {
 						b.Errorf("load failed: %v", err)
 					}
 				}
-				b.StopTimer()
 			})
 		}
 	}
