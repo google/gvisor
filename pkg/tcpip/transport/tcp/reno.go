@@ -61,8 +61,9 @@ func (r *renoState) updateCongestionAvoidance(packetsAcked int) {
 	// Consume the packets in congestion avoidance mode.
 	r.s.SndCAAckCount += packetsAcked
 	if r.s.SndCAAckCount >= r.s.SndCwnd {
-		r.s.SndCwnd += r.s.SndCAAckCount / r.s.SndCwnd
-		r.s.SndCAAckCount = r.s.SndCAAckCount % r.s.SndCwnd
+		increase := r.s.SndCAAckCount / r.s.SndCwnd
+		r.s.SndCAAckCount %= r.s.SndCwnd
+		r.s.SndCwnd += increase
 	}
 }
 
