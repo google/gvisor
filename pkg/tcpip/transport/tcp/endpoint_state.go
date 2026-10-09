@@ -249,12 +249,11 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 				))
 			}
 		}
-		// Reset the scoreboard to reinitialize the sack information as
-		// we do not restore SACK information.
-		e.scoreboard.Reset()
 		// Unregister the endpoint before registering again during Connect.
 		e.stack.UnregisterTransportEndpoint(e.effectiveNetProtos, header.TCPProtocolNumber, e.TransportEndpointInfo.ID, e, e.boundPortFlags, e.boundBindToDevice)
 		e.mu.Lock()
+		// SACK information is not restored. Discard its segment credits too.
+		e.snd.resetSACK()
 		err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.TransportEndpointInfo.ID.RemotePort}, false /* handshake */)
 		if _, ok := err.(*tcpip.ErrConnectStarted); !ok {
 			log.Warningf("TCP endpoint connect failed for connected endpoint with ID: %+v err: %v", id, err)
