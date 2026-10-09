@@ -213,6 +213,7 @@ func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client, isRe
 	if err := conn.Call(boot.ContMgrSetNetworkArgs, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{link},
 		IsRestore:     isRestore,
+		LogPackets:    conf.LogPackets,
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
 	}
