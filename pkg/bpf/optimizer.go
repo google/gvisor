@@ -310,7 +310,8 @@ func removeRedundantLoads(insns []Instruction) ([]Instruction, bool) {
 			continue
 		}
 		// Walk backwards until either we've reached the beginning of the program,
-		// or we've reached an operation which modifies register A.
+		// we've reached an operation which modifies register A, or we've reached
+		// an operation which may change the value this load would load.
 		lastModifiedA := -1
 		beforePCs := reverseWalk[pc]
 	walk:
@@ -323,6 +324,9 @@ func removeRedundantLoads(insns []Instruction) ([]Instruction, bool) {
 				var beforePC int
 				for bpc := range beforePCs { // Note: we know that this map only has one element.
 					beforePC = bpc
+				}
+				if insns[beforePC].MayChangeLoad(ins) {
+					break walk
 				}
 				if !insns[beforePC].ModifiesRegisterA() {
 					beforePCs = reverseWalk[beforePC]
