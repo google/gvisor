@@ -33,11 +33,13 @@ type TCPProbeFunc func(s *TCPEndpointState)
 //
 // +stateify savable
 type TCPCubicState struct {
-	// WLastMax is the previous wMax value.
+	// WLastMax is the congestion window before the most recent congestion
+	// event (cwnd_prior in RFC 9438). Before any such event, it is the
+	// window at first entry into congestion avoidance.
 	WLastMax float64
 
-	// WMax is the value of the congestion window at the time of the last
-	// congestion event.
+	// WMax is the remembered congestion-window maximum, adjusted by fast
+	// convergence after successive congestion events.
 	WMax float64
 
 	// T is the time when the current congestion avoidance was entered.
@@ -47,29 +49,24 @@ type TCPCubicState struct {
 	// congestion avoidance was entered.
 	TimeSinceLastCongestion time.Duration
 
-	// C is the cubic constant as specified in RFC8312, page 11.
+	// C is the cubic scaling constant (RFC 9438 section 5).
 	C float64
 
-	// K is the time period (in seconds) that the above function takes to
-	// increase the current window size to WMax if there are no further
-	// congestion events and is calculated using the following equation:
-	//
-	// K = cubic_root(WMax*(1-beta_cubic)/C) (Eq. 2, page 5)
+	// K is the time in seconds for the cubic curve to reach WMax. It is
+	// zero if WMax does not exceed the initial window of this epoch.
+	// See RFC 9438 section 4.2.
 	K float64
 
-	// Beta is the CUBIC multiplication decrease factor. That is, when a
-	// congestion event is detected, CUBIC reduces its cwnd to
-	// WC(0)=WMax*beta_cubic.
+	// Beta is the multiplicative decrease factor applied to the congestion
+	// window when a congestion event is detected.
 	Beta float64
 
-	// WC is window computed by CUBIC at time TimeSinceLastCongestion. It's
-	// calculated using the formula:
-	//
-	//  WC(TimeSinceLastCongestion) = C*(t-K)^3 + WMax (Eq. 1)
+	// WC is the most recently computed value of the cubic window function.
+	// Its origin is the larger of WMax and the epoch's initial window.
 	WC float64
 
-	// WEst is the window computed by CUBIC at time
-	// TimeSinceLastCongestion+RTT i.e WC(TimeSinceLastCongestion+RTT).
+	// WEst is the ACK-driven Reno-friendly window estimate (RFC 9438
+	// section 4.3).
 	WEst float64
 
 	// EndSeq is the sequence number that, when cumulatively ACK'd, ends the

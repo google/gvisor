@@ -119,3 +119,10 @@ func (r *renoState) HandleRTOExpired() {
 func (r *renoState) PostRecovery() {
 	// noop.
 }
+
+// HandleWindowRestart implements congestionControl.HandleWindowRestart.
+//
+// +checklocks:r.s.ep.mu
+func (r *renoState) HandleWindowRestart() {
+	r.s.SndCAAckCount = 0
+}
