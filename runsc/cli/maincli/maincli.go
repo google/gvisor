@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
+	"gvisor.dev/gvisor/runsc/specutils"
 
 	// TODO(gvisor.dev/issue/13718): Temporary.
 	// Remove this import once sidecar binaries are replaced by on-disk binaries.
@@ -41,6 +42,8 @@ const (
 
 // Main is the main entrypoint.
 func Main() {
+	// Resolve binary path early, before entering any namespaces.
+	specutils.InitExePath()
 	alias.HandleAlias()
 	cmds, helpCmds := commands()
 	cli.Run(nil, cmds, helpCmds)
