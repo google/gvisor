@@ -62,6 +62,17 @@ func TestMapAliasing(t *testing.T) {
 	runTestCases(t, false, "", []any{ptrToV, aliases})
 }
 
+func TestMapScalarEntries(t *testing.T) {
+	type key int
+	type value string
+	runTestCases(t, false, "", []any{
+		map[key]value{-1: "negative", 0: "", 1: "positive"},
+		map[complex128]complex128{0: 0, 1 + 2i: 3 + 4i, -1 - 2i: -3 - 4i},
+		mapContainer{v: map[int]any{0: nil, 1: inner{v: 1}, 2: &inner{v: 2}}},
+		map[inner]int{{v: 1}: 10, {v: 2}: 20},
+	})
+}
+
 func TestMapNaNKeys(t *testing.T) {
 	// Identical NaNs compare unequal, so both entries must survive even
 	// though neither can be retrieved using a map lookup.

@@ -439,6 +439,20 @@ func traverse(rootType, targetType reflect.Type, rootAddr, targetAddr uintptr) [
 	panic("unreachable")
 }
 
+// mapScalarSlot allocates reusable iterator storage for values that encodeObject
+// copies directly into the wire representation. Composite values may retain
+// their reflect.Value for deferred encoding or struct identity tracking.
+func mapScalarSlot(typ reflect.Type) reflect.Value {
+	switch typ.Kind() {
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.String:
+		return reflect.New(typ).Elem()
+	default:
+		return reflect.Value{}
+	}
+}
+
 // encodeMap encodes a map.
 func (es *encodeState) encodeMap(obj reflect.Value, dest *wire.Object) {
 	if obj.IsNil() {
@@ -453,9 +467,24 @@ func (es *encodeState) encodeMap(obj reflect.Value, dest *wire.Object) {
 		Values: make([]wire.Object, l),
 	}
 	*dest = m
+	var keySlot, valueSlot reflect.Value
+	if l > 1 {
+		keySlot = mapScalarSlot(obj.Type().Key())
+		valueSlot = mapScalarSlot(obj.Type().Elem())
+	}
 	iter := obj.MapRange()
 	for i := 0; iter.Next(); i++ {
-		k, v := iter.Key(), iter.Value()
+		k, v := keySlot, valueSlot
+		if k.IsValid() {
+			k.SetIterKey(iter)
+		} else {
+			k = iter.Key()
+		}
+		if v.IsValid() {
+			v.SetIterValue(iter)
+		} else {
+			v = iter.Value()
+		}
 		// Map keys must be encoded using the full value because the
 		// type will be omitted after the first key.
 		es.encodeObject(k, encodeAsValue, &m.Keys[i])
