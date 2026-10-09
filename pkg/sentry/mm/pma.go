@@ -459,6 +459,13 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 							stackMaskAR.End = newEnd
 						}
 						copyAR = pseg.Range().Intersect(stackMaskAR)
+					} else if !oldpma.private {
+						// Copy-on-write breaks on non-private file-backed
+						// mappings (such as ELF .data.rel.ro, .got, .data, or
+						// .bss tail zeroing in a MAP_PRIVATE file mapping) do
+						// not justify copying up to 2 MiB of surrounding clean
+						// read-only file pages into anonymous memory.
+						copyAR = pseg.Range().Intersect(ar)
 					} else {
 						// Hugepage-align the range to be copied, for the same
 						// reasons as for private anonymous allocations.
