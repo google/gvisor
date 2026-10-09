@@ -1819,47 +1819,48 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
   EXPECT_THAT(close(s.release()), SyscallSucceeds());
 }
 
-// Test that setting a supported congestion control algorithm succeeds for an
-// unconnected TCP socket
+// Supported congestion controls can be selected before connecting and are
+// inherited by accepted sockets.
 TEST_P(SimpleTcpSocketTest, SetCongestionControlSucceedsForSupported) {
   // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
-  const int kTcpCaNameMax = 16;
+  constexpr int kTcpCaNameMax = 16;
 
-  FileDescriptor s =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
-  {
-    const char kSetCC[kTcpCaNameMax] = "reno";
-    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC,
-                           strlen(kSetCC)),
-                SyscallSucceedsWithValue(0));
-
-    char got_cc[kTcpCaNameMax];
-    memset(got_cc, '1', sizeof(got_cc));
-    socklen_t optlen = sizeof(got_cc);
+  for (const char* cc : {"reno", "cubic"}) {
+    SCOPED_TRACE(cc);
+    const FileDescriptor listener =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
     ASSERT_THAT(
-        getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
-        SyscallSucceedsWithValue(0));
-    // We ignore optlen here as the linux kernel sets optlen to the lower of the
-    // size of the buffer passed in or kTcpCaNameMax and not the length of the
-    // congestion control algorithm's actual name.
-    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kTcpCaNameMax)));
-  }
-  {
-    const char kSetCC[kTcpCaNameMax] = "cubic";
-    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC,
-                           strlen(kSetCC)),
-                SyscallSucceedsWithValue(0));
+        setsockopt(listener.get(), IPPROTO_TCP, TCP_CONGESTION, cc, strlen(cc)),
+        SyscallSucceeds());
+    const auto check_cc = [cc](int fd) {
+      char got_cc[kTcpCaNameMax];
+      memset(got_cc, '1', sizeof(got_cc));
+      socklen_t optlen = sizeof(got_cc);
+      ASSERT_THAT(getsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, got_cc, &optlen),
+                  SyscallSucceeds());
+      // Linux returns the buffer capacity rather than the algorithm name's
+      // length. Compare the full name, including its terminating NUL.
+      ASSERT_GE(optlen, strlen(cc) + 1);
+      EXPECT_EQ(0, memcmp(got_cc, cc, strlen(cc) + 1));
+    };
+    ASSERT_NO_FATAL_FAILURE(check_cc(listener.get()));
 
-    char got_cc[kTcpCaNameMax];
-    memset(got_cc, '1', sizeof(got_cc));
-    socklen_t optlen = sizeof(got_cc);
+    sockaddr_storage addr =
+        ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
+    socklen_t addrlen = sizeof(addr);
+    ASSERT_THAT(bind(listener.get(), AsSockAddr(&addr), addrlen),
+                SyscallSucceeds());
+    ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
+    ASSERT_THAT(getsockname(listener.get(), AsSockAddr(&addr), &addrlen),
+                SyscallSucceeds());
+    const FileDescriptor connector =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
     ASSERT_THAT(
-        getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
-        SyscallSucceedsWithValue(0));
-    // We ignore optlen here as the linux kernel sets optlen to the lower of the
-    // size of the buffer passed in or kTcpCaNameMax and not the length of the
-    // congestion control algorithm's actual name.
-    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kTcpCaNameMax)));
+        RetryEINTR(connect)(connector.get(), AsSockAddr(&addr), addrlen),
+        SyscallSucceeds());
+    const FileDescriptor accepted =
+        ASSERT_NO_ERRNO_AND_VALUE(Accept(listener.get(), nullptr, nullptr));
+    ASSERT_NO_FATAL_FAILURE(check_cc(accepted.get()));
   }
 }
 

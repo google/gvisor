@@ -365,6 +365,10 @@ func (l *listenContext) performHandshake(s *segment, opts header.TCPSynOptions, 
 // +checklocks:e.mu
 // +checklocks:n.mu
 func (e *Endpoint) propagateInheritableOptionsLocked(n *Endpoint) {
+	if e.ccSetBySockOpt {
+		n.cc = e.cc
+		n.ccSetBySockOpt = true
+	}
 	n.userTimeout = e.userTimeout
 	n.portFlags = e.portFlags
 	n.boundBindToDevice = e.boundBindToDevice

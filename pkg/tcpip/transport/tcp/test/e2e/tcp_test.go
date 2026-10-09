@@ -1280,6 +1280,37 @@ func TestUserSuppliedMSSOnListenAccept(t *testing.T) {
 	}
 }
 
+func listenAndAccept(t *testing.T, c *context.Context, cookieEnabled bool) tcpip.Endpoint {
+	t.Helper()
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatal("Bind failed:", err)
+	}
+
+	if err := c.EP.Listen(10); err != nil {
+		t.Fatal("Listen failed:", err)
+	}
+
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	c.WQ.EventRegister(&we)
+	defer c.WQ.EventUnregister(&we)
+
+	executeHandshake(t, c, context.TestPort, cookieEnabled)
+
+	ep, _, err := c.EP.Accept(nil)
+	if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
+		select {
+		case <-ch:
+			ep, _, err = c.EP.Accept(nil)
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+	if err != nil {
+		t.Fatalf("Accept failed: %s", err)
+	}
+	return ep
+}
+
 // TestAcceptedInheritsDelayOption tests that an accepted endpoint inherits the
 // delay option (the inverse of TCP_NODELAY) from the listening endpoint.
 func TestAcceptedInheritsDelayOption(t *testing.T) {
@@ -1302,38 +1333,60 @@ func TestAcceptedInheritsDelayOption(t *testing.T) {
 				c.Create(-1)
 				c.EP.SocketOptions().SetDelayOption(delay)
 
-				if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
-					t.Fatal("Bind failed:", err)
-				}
-
-				if err := c.EP.Listen(10); err != nil {
-					t.Fatal("Listen failed:", err)
-				}
-
-				we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-				c.WQ.EventRegister(&we)
-				defer c.WQ.EventUnregister(&we)
-
-				executeHandshake(t, c, context.TestPort, bool(cookieEnabled))
-
-				ep, _, err := c.EP.Accept(nil)
-				if cmp.Equal(&tcpip.ErrWouldBlock{}, err) {
-					select {
-					case <-ch:
-						ep, _, err = c.EP.Accept(nil)
-					case <-time.After(1 * time.Second):
-						t.Fatalf("Timed out waiting for accept")
-					}
-				}
-				if err != nil {
-					t.Fatalf("Accept failed: %s", err)
-				}
+				ep := listenAndAccept(t, c, bool(cookieEnabled))
 				defer ep.Close()
 
 				if got := ep.SocketOptions().GetDelayOption(); got != delay {
 					t.Errorf("got accepted GetDelayOption() = %t, want = %t", got, delay)
 				}
 			})
+		}
+	}
+}
+
+// TestAcceptedCongestionControl distinguishes explicit listener selections from
+// defaults that can change after the listener is created.
+func TestAcceptedCongestionControl(t *testing.T) {
+	for _, cookieEnabled := range []tcpip.TCPAlwaysUseSynCookies{false, true} {
+		for _, initialCC := range []tcpip.CongestionControlOption{"reno", "cubic"} {
+			for _, explicit := range []bool{false, true} {
+				t.Run(fmt.Sprintf("syn-cookies=%t/initial=%s/explicit=%t", cookieEnabled, initialCC, explicit), func(t *testing.T) {
+					c := context.New(t, e2e.DefaultMTU)
+					defer c.Cleanup()
+					if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cookieEnabled); err != nil {
+						t.Fatal("SetTransportProtocolOption(TCPAlwaysUseSynCookies):", err)
+					}
+					if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &initialCC); err != nil {
+						t.Fatal("SetTransportProtocolOption(CongestionControlOption):", err)
+					}
+					c.Create(-1)
+					if explicit {
+						if err := c.EP.SetSockOpt(&initialCC); err != nil {
+							t.Fatal("SetSockOpt(CongestionControlOption):", err)
+						}
+					}
+					newCC := tcpip.CongestionControlOption("cubic")
+					if initialCC == newCC {
+						newCC = "reno"
+					}
+					if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &newCC); err != nil {
+						t.Fatal("SetTransportProtocolOption(CongestionControlOption):", err)
+					}
+					ep := listenAndAccept(t, c, bool(cookieEnabled))
+					defer ep.Close()
+					var got tcpip.CongestionControlOption
+					if err := ep.GetSockOpt(&got); err != nil {
+						t.Fatal("GetSockOpt(CongestionControlOption):", err)
+					}
+					want := newCC
+					if explicit {
+						want = initialCC
+					}
+					if got != want {
+						t.Errorf("accepted congestion control = %s, want %s", got, want)
+					}
+				})
+			}
 		}
 	}
 }
