@@ -39,5 +39,8 @@ go_test(
         "struct_test.go",
     ],
     embed = [":tests"],
-    deps = ["//pkg/state"],
+    deps = [
+        "//pkg/state",
+        "//pkg/state/wire",
+    ],
 )
