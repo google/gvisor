@@ -963,6 +963,8 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 			t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
 		} else if nicInfo.Flags.Running != enabled {
 			t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+		} else if nicInfo.Flags.Up != enabled {
+			t.Errorf("got nicInfo.Flags.Up = %t, want = %t", nicInfo.Flags.Up, enabled)
 		}
 
 		if got := s.CheckNIC(nicID); got != enabled {
@@ -1050,6 +1052,56 @@ func TestRemoveNIC(t *testing.T) {
 				t.Error("link endpoint for removed NIC still attached to a network dispatcher")
 			}
 		})
+	}
+}
+
+// TestLocalRouteWithDisabledNIC tests that addresses of a disabled NIC do not
+// yield local routes.
+func TestLocalRouteWithDisabledNIC(t *testing.T) {
+	const nicID = 1
+	addr := tcpip.AddrFrom4Slice([]byte("\x01\x00\x00\x00"))
+
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
+		HandleLocal:      true,
+	})
+	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol: fakeNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   addr,
+			PrefixLen: fakeDefaultPrefixLen,
+		},
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+	}
+
+	findLocal := func() tcpip.Error {
+		t.Helper()
+		r, err := s.FindRoute(0, tcpip.Address{}, addr, fakeNetNumber, false /* multicastLoop */)
+		if err == nil {
+			r.Release()
+		}
+		return err
+	}
+
+	if err := findLocal(); err != nil {
+		t.Fatalf("got FindRoute to local address = %s, want = nil", err)
+	}
+	if err := s.DisableNIC(nicID); err != nil {
+		t.Fatalf("s.DisableNIC(%d): %s", nicID, err)
+	}
+	if err := findLocal(); err == nil {
+		t.Fatal("got FindRoute to local address on disabled NIC = nil, want error")
+	}
+	if err := s.EnableNIC(nicID); err != nil {
+		t.Fatalf("s.EnableNIC(%d): %s", nicID, err)
+	}
+	if err := findLocal(); err != nil {
+		t.Fatalf("got FindRoute to local address after enable = %s, want = nil", err)
 	}
 }
 

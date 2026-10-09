@@ -546,6 +546,121 @@ TEST(NetlinkRouteTest, LinkUp) {
   EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
 }
 
+// Returns the errno of connecting a fresh UDP socket to 127.0.0.1, or 0.
+int ConnectUdpToLoopback() {
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    return errno;
+  }
+  struct sockaddr_in addr = {};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(9);
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  int rc = connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+  int err = rc < 0 ? errno : 0;
+  close(fd);
+  return err;
+}
+
+TEST(NetlinkRouteTest, LinkDownUp) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  // Don't do cooperative save/restore because netstack state is not restored.
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  // A new network namespace's loopback may start down; bring it up. Bits that
+  // are not user-settable (IFF_RUNNING, IFF_LOWER_UP) are ignored.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP | IFF_RUNNING | IFF_LOWER_UP,
+                                  IFF_UP | IFF_RUNNING | IFF_LOWER_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+  EXPECT_EQ(ConnectUdpToLoopback(), 0);
+
+  // ifi_change selects the bits; with IFF_UP not selected it is unchanged even
+  // though ifi_flags has it clear.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_DEBUG));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & IFF_UP, IFF_UP);
+
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & (IFF_UP | IFF_RUNNING | IFF_LOWER_UP), 0);
+  EXPECT_EQ(ConnectUdpToLoopback(), ENETUNREACH);
+
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+  EXPECT_EQ(ConnectUdpToLoopback(), 0);
+}
+
+// netstack cannot model these user-settable flags, so a request that changes
+// one fails instead of being silently ignored. Linux applies them.
+TEST(NetlinkRouteTest, LinkUnsupportedFlagChange) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  const unsigned int current = lo.flags;
+
+  // Selecting a flag in ifi_change without changing its value is accepted.
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, 0, IFF_PROMISC));
+
+  for (unsigned int flag :
+       {IFF_PROMISC, IFF_ALLMULTI, IFF_NOARP, IFF_DEBUG, IFF_NOTRAILERS,
+        IFF_DYNAMIC, IFF_MULTICAST, IFF_PORTSEL, IFF_AUTOMEDIA}) {
+    SCOPED_TRACE(flag);
+    // The request also clears IFF_UP: nothing is applied if any part fails.
+    EXPECT_THAT(LinkChangeFlags(lo.index, flag, flag | IFF_UP),
+                PosixErrorIs(EOPNOTSUPP, _));
+    lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    EXPECT_EQ(lo.flags, current);
+    EXPECT_EQ(ConnectUdpToLoopback(), 0);
+  }
+}
+
+TEST(NetlinkRouteTest, LinkDownRequiresNetAdmin) {
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  const DisableSave ds;
+
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  Cleanup defer_netns = Cleanup([&] {
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNET), SyscallSucceedsWithValue(0));
+  });
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
+
+  Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+
+  {
+    AutoCapability cap(CAP_NET_ADMIN, false);
+    EXPECT_THAT(LinkChangeFlags(lo.index, 0, IFF_UP), PosixErrorIs(EPERM, _));
+  }
+  lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  EXPECT_EQ(lo.flags & IFF_UP, IFF_UP);
+}
+
 TEST(NetlinkRouteTest, GetLinkByName) {
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
