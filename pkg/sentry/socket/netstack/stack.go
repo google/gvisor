@@ -291,10 +291,35 @@ func (s *Stack) setInterfaceUpLocked(id tcpip.NICID, up bool) (bool, *syserr.Err
 		if err := s.Stack.EnableNIC(id); err != nil {
 			return false, syserr.TranslateNetstackError(err)
 		}
+		// Linux initializes loopback addresses on NETDEV_UP, not on a
+		// repeated UP request after userspace has removed an address.
+		s.maybeInitLoopbackAddrs(id)
 	} else if err := s.Stack.DisableNIC(id); err != nil {
 		return false, syserr.TranslateNetstackError(err)
 	}
 	return true, nil
+}
+
+// maybeInitLoopbackAddrs ensures the loopback interface has 127.0.0.1/8 and
+// ::1/128 when it is brought up, mirroring Linux's NETDEV_UP handling
+// (net/ipv4/devinet.c:inetdev_event for IPv4, net/ipv6/addrconf.c:init_loopback
+// for IPv6). Each address is added only if missing, so addresses the caller
+// already configured are preserved, matching Linux, where e.g. adding a custom
+// address to lo and then setting it up still yields 127.0.0.1. It is a no-op
+// for non-loopback interfaces.
+func (s *Stack) maybeInitLoopbackAddrs(nicID tcpip.NICID) {
+	nicInfo, ok := s.Stack.SingleNICInfo(nicID)
+	if !ok || !nicInfo.Flags.Loopback {
+		return
+	}
+	for _, addr := range []inet.InterfaceAddr{
+		{Family: linux.AF_INET, PrefixLen: 8, Addr: []byte{127, 0, 0, 1}},
+		{Family: linux.AF_INET6, PrefixLen: header.IPv6AddressSize * 8, Addr: header.IPv6Loopback.AsSlice()},
+	} {
+		// AddInterfaceAddr fails for existing addresses and does not
+		// duplicate the subnet route of another address on lo.
+		_ = s.AddInterfaceAddr(int32(nicID), addr)
+	}
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and

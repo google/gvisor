@@ -66,8 +66,6 @@ class NetdeviceNamespaceTest : public ::testing::Test {
     ASSERT_GE(original_namespace_.get(), 0);
     ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
     socket_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
-    // A new loopback is DOWN on Linux but UP on gVisor.
-    ASSERT_NO_FATAL_FAILURE(SetFlags(fd(), 0));
   }
 
   void TearDown() override {
@@ -138,6 +136,28 @@ class NetdeviceNamespaceTest : public ::testing::Test {
     return req.ifr_mtu;
   }
 
+  int IPv4AddressCount() {
+    struct ifreq addresses[4] = {};
+    struct ifconf config = {};
+    config.ifc_len = sizeof(addresses);
+    config.ifc_req = addresses;
+    EXPECT_THAT(ioctl(fd(), SIOCGIFCONF, &config), SyscallSucceeds());
+    return config.ifc_len / sizeof(struct ifreq);
+  }
+
+  PosixError BindIPv6Loopback() {
+    ASSIGN_OR_RETURN_ERRNO(FileDescriptor ipv6,
+                           Socket(AF_INET6, SOCK_DGRAM, 0));
+    struct sockaddr_in6 address = {};
+    address.sin6_family = AF_INET6;
+    address.sin6_addr = in6addr_loopback;
+    if (bind(ipv6.get(), reinterpret_cast<struct sockaddr*>(&address),
+             sizeof(address)) < 0) {
+      return PosixError(errno, "bind");
+    }
+    return NoError();
+  }
+
   int fd() const { return socket_.get(); }
 
  private:
@@ -146,9 +166,11 @@ class NetdeviceNamespaceTest : public ::testing::Test {
   FileDescriptor socket_;
 };
 
-// Setting IFF_UP brings loopback up with 127.0.0.1.
-TEST_F(NetdeviceNamespaceTest, LoopbackUp) {
+// A new loopback has no addresses; setting IFF_UP adds 127.0.0.1 and ::1.
+TEST_F(NetdeviceNamespaceTest, LoopbackUpInitializesAddress) {
   EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING), 0);
+  EXPECT_EQ(IPv4AddressCount(), 0);
+  EXPECT_THAT(BindIPv6Loopback(), PosixErrorIs(EADDRNOTAVAIL));
   SetFlags(fd(), Flags(fd()) | IFF_UP);
   EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING | IFF_LOOPBACK),
             IFF_UP | IFF_RUNNING | IFF_LOOPBACK);
@@ -158,6 +180,82 @@ TEST_F(NetdeviceNamespaceTest, LoopbackUp) {
   const auto* address =
       reinterpret_cast<const struct sockaddr_in*>(&req.ifr_addr);
   EXPECT_EQ(address->sin_addr.s_addr, htonl(INADDR_LOOPBACK));
+  EXPECT_NO_ERRNO(BindIPv6Loopback());
+}
+
+// UP keeps an address configured while DOWN and adds 127.0.0.1 without
+// duplicating the 127.0.0.0/8 route.
+TEST_F(NetdeviceNamespaceTest, LoopbackUpKeepsConfiguredAddress) {
+  struct ifreq iface = {};
+  snprintf(iface.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(fd(), SIOCGIFINDEX, &iface), SyscallSucceeds());
+
+  FileDescriptor netlink =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  constexpr uint32_t kSeq = 1;
+  struct {
+    struct nlmsghdr header;
+    struct ifaddrmsg address;
+    struct rtattr attr;
+    struct in_addr local;
+  } request = {};
+  request.header.nlmsg_len = sizeof(request);
+  request.header.nlmsg_type = RTM_NEWADDR;
+  request.header.nlmsg_flags =
+      NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL;
+  request.header.nlmsg_seq = kSeq;
+  request.address.ifa_family = AF_INET;
+  request.address.ifa_prefixlen = 8;
+  // Linux adds 127.0.0.1 on UP only if same-subnet addresses share its scope.
+  request.address.ifa_scope = RT_SCOPE_HOST;
+  request.address.ifa_index = iface.ifr_ifindex;
+  request.attr.rta_len = RTA_LENGTH(sizeof(request.local));
+  request.attr.rta_type = IFA_LOCAL;
+  request.local.s_addr = htonl(INADDR_LOOPBACK + 1);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(netlink, kSeq, &request, sizeof(request)));
+
+  SetFlags(fd(), IFF_UP);
+  EXPECT_EQ(IPv4AddressCount(), 2);
+
+  struct {
+    struct nlmsghdr header;
+    struct rtmsg route;
+  } dump = {};
+  dump.header.nlmsg_len = sizeof(dump);
+  dump.header.nlmsg_type = RTM_GETROUTE;
+  dump.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  dump.header.nlmsg_seq = kSeq + 1;
+  dump.route.rtm_family = AF_INET;
+  constexpr in_addr_t kLoopbackNet = 0x7f000000;
+  int routes = 0;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      netlink, &dump, sizeof(dump),
+      [&](const struct nlmsghdr* header) {
+        if (header->nlmsg_type != RTM_NEWROUTE) {
+          return;
+        }
+        const auto* route =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(header));
+        if (route->rtm_family != AF_INET || route->rtm_dst_len != 8) {
+          return;
+        }
+        int length = RTM_PAYLOAD(header);
+        for (const struct rtattr* attr = RTM_RTA(route); RTA_OK(attr, length);
+             attr = RTA_NEXT(attr, length)) {
+          in_addr_t destination;
+          if (attr->rta_type != RTA_DST ||
+              RTA_PAYLOAD(attr) != sizeof(destination)) {
+            continue;
+          }
+          memcpy(&destination, RTA_DATA(attr), sizeof(destination));
+          if (destination == htonl(kLoopbackNet)) {
+            ++routes;
+          }
+        }
+      },
+      false));
+  EXPECT_EQ(routes, 1);
 }
 
 // Repeated UP and DOWN requests preserve device identity and actual state.
@@ -171,6 +269,66 @@ TEST_F(NetdeviceNamespaceTest, LoopbackRepeatedUpDown) {
     EXPECT_EQ(Flags(fd()) & (IFF_UP | IFF_RUNNING), 0);
     EXPECT_EQ(Flags(fd()) & IFF_LOOPBACK, IFF_LOOPBACK);
   }
+}
+
+// An UP request on an enabled interface preserves userspace address removal.
+TEST_F(NetdeviceNamespaceTest, RepeatedUpPreservesDeletedAddress) {
+  SetFlags(fd(), IFF_UP);
+  struct ifreq iface = {};
+  snprintf(iface.ifr_name, IFNAMSIZ, "lo");
+  ASSERT_THAT(ioctl(fd(), SIOCGIFINDEX, &iface), SyscallSucceeds());
+
+  FileDescriptor netlink =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  constexpr uint32_t kSeq = 1;
+  struct {
+    struct nlmsghdr header;
+    struct ifaddrmsg address;
+    struct rtattr attr;
+    struct in_addr local;
+  } request = {};
+  request.header.nlmsg_len = sizeof(request);
+  request.header.nlmsg_type = RTM_DELADDR;
+  request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  request.header.nlmsg_seq = kSeq;
+  request.address.ifa_family = AF_INET;
+  request.address.ifa_prefixlen = 8;
+  request.address.ifa_index = iface.ifr_ifindex;
+  request.attr.rta_len = RTA_LENGTH(sizeof(request.local));
+  request.attr.rta_type = IFA_LOCAL;
+  request.local.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_NO_ERRNO(
+      NetlinkRequestAckOrError(netlink, kSeq, &request, sizeof(request)));
+
+  auto address_bytes = [&] {
+    struct ifreq addresses[4] = {};
+    struct ifconf config = {};
+    config.ifc_len = sizeof(addresses);
+    config.ifc_req = addresses;
+    EXPECT_THAT(ioctl(fd(), SIOCGIFCONF, &config), SyscallSucceeds());
+    return config.ifc_len;
+  };
+  EXPECT_EQ(address_bytes(), 0);
+  SetFlags(fd(), IFF_UP);
+  EXPECT_EQ(address_bytes(), 0);
+
+  struct {
+    struct nlmsghdr header;
+    struct ifinfomsg info;
+  } up = {};
+  up.header.nlmsg_len = sizeof(up);
+  up.header.nlmsg_type = RTM_NEWLINK;
+  up.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  up.header.nlmsg_seq = kSeq + 1;
+  up.info.ifi_index = iface.ifr_ifindex;
+  up.info.ifi_flags = IFF_UP;
+  up.info.ifi_change = IFF_UP;
+  ASSERT_NO_ERRNO(NetlinkRequestAckOrError(netlink, kSeq + 1, &up, sizeof(up)));
+  EXPECT_EQ(address_bytes(), 0);
+
+  SetFlags(fd(), 0);
+  SetFlags(fd(), IFF_UP);
+  EXPECT_EQ(address_bytes(), sizeof(struct ifreq));
 }
 
 // Netlink applies only selected bits; zero change retains legacy semantics.
@@ -329,7 +487,6 @@ TEST_F(NetdeviceNamespaceTest, SocketNamespaceSurvivesUnshare) {
   ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
   FileDescriptor inner =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
-  SetFlags(inner.get(), 0);
   EXPECT_EQ(Flags(fd()) & IFF_UP, IFF_UP);
   EXPECT_EQ(Flags(inner.get()) & IFF_UP, 0);
   SetFlags(fd(), 0);
