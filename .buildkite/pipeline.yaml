@@ -949,3 +949,12 @@ steps:
   - <<: *benchmarks
     label: ":thread: hackbench benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=hackbench BENCHMARKS_TARGETS=test/benchmarks/base:hackbench_test
+  - <<: *benchmarks
+    label: ":nvidia: vLLM GPU inference benchmarks"
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest"
+      - make load-gpu_vllm
+      - make -i benchmark-platforms BENCHMARKS_SUITE=vllm BENCHMARKS_TARGETS=test/gpu/vllm:vllm_test BENCHMARKS_PLATFORMS="systrap" BENCHMARKS_RUNC=true BENCHMARKS_OPTIONS="-test.benchtime=1x"
+    agents:
+      queue: "ubuntu-l4-gpu"
+
