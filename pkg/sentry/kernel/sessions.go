@@ -445,8 +445,8 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 
 // JoinProcessGroup joins an existing process group.
 //
-// This function will return EPERM if the Sessions are not the same or the
-// group does not exist.
+// This function will return EPERM if the ThreadGroup is a Session leader, the
+// Sessions are not the same or the group does not exist.
 func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID) error {
 	pidns.owner.mu.Lock()
 	defer pidns.owner.mu.Unlock()
@@ -454,6 +454,11 @@ func (tg *ThreadGroup) JoinProcessGroup(pidns *PIDNamespace, pgid ProcessGroupID
 	// Check whether the process still exists or not.
 	if _, ok := pidns.tgids[tg]; !ok {
 		return linuxerr.ESRCH
+	}
+
+	// A Session leader cannot leave its process group.
+	if tg.processGroup.session.leader == tg {
+		return linuxerr.EPERM
 	}
 
 	// Lookup the ProcessGroup.
