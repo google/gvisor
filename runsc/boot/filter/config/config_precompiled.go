@@ -37,6 +37,10 @@ const (
 
 	// selfPIDVarName is the variable name for the current process ID.
 	selfPIDVarName = "self_pid"
+
+	// procSelfFDVarName is the variable name for `Options.ProcSelfFD` used in
+	// the precompiled seccomp filters.
+	procSelfFDVarName = "proc_self_fd"
 )
 
 // allPrecompiledPlatforms returns a list of `platform.SeccompInfo` instances
