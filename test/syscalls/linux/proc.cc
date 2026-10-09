@@ -4038,6 +4038,59 @@ TEST(ProcSysKernel, RandomizeVaSpace) {
   }
 }
 
+// Parses /proc/sys/fs/file-nr into its three fields.
+PosixErrorOr<std::vector<int64_t>> ReadFileNr() {
+  ASSIGN_OR_RETURN_ERRNO(std::string contents,
+                         GetContents("/proc/sys/fs/file-nr"));
+  std::vector<int64_t> fields;
+  for (absl::string_view f :
+       absl::StrSplit(absl::StripAsciiWhitespace(contents),
+                      absl::ByAnyChar(" \t"), absl::SkipEmpty())) {
+    int64_t v;
+    if (!absl::SimpleAtoi(f, &v)) {
+      return PosixError(EINVAL, absl::StrCat("bad file-nr field: ", f));
+    }
+    fields.push_back(v);
+  }
+  return fields;
+}
+
+TEST(ProcSysFsFileNr, TracksOpenFiles) {
+  constexpr int kNumFiles = 200;
+
+  std::vector<int64_t> before = ASSERT_NO_ERRNO_AND_VALUE(ReadFileNr());
+  ASSERT_EQ(before.size(), 3);
+  EXPECT_GT(before[0], 0);
+  EXPECT_EQ(before[1], 0);
+
+  std::vector<FileDescriptor> fds;
+  for (int i = 0; i < kNumFiles; i++) {
+    fds.push_back(ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY)));
+  }
+  std::vector<int64_t> during = ASSERT_NO_ERRNO_AND_VALUE(ReadFileNr());
+  ASSERT_EQ(during.size(), 3);
+  // Other processes on a shared host may open and close files concurrently,
+  // so only require that most of the new files are visible.
+  EXPECT_GE(during[0], before[0] + kNumFiles / 2);
+  EXPECT_EQ(during[1], 0);
+
+  fds.clear();
+  std::vector<int64_t> after = ASSERT_NO_ERRNO_AND_VALUE(ReadFileNr());
+  ASSERT_EQ(after.size(), 3);
+  EXPECT_LE(after[0], during[0] - kNumFiles / 2);
+  EXPECT_EQ(after[1], 0);
+}
+
+TEST(ProcSysFsFileNr, MaxMatchesFileMax) {
+  std::vector<int64_t> fields = ASSERT_NO_ERRNO_AND_VALUE(ReadFileNr());
+  ASSERT_EQ(fields.size(), 3);
+  std::string file_max =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/fs/file-max"));
+  int64_t max;
+  ASSERT_TRUE(absl::SimpleAtoi(absl::StripAsciiWhitespace(file_max), &max));
+  EXPECT_EQ(fields[2], max);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

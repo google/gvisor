@@ -81,6 +81,8 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"version":   fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxVersion)),
 		}),
 		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"file-max":      fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", int64(math.MaxInt64)))),
+			"file-nr":       fs.newInode(ctx, root, 0444, &fileNrData{vfs: k.VFS()}),
 			"mount-max":     fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.VFS().MountMax, min: 1, max: math.MaxInt32}),
 			"nr_open":       fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit}),
 			"pipe-max-size": fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", pipe.MaximumPipeSize))),
@@ -682,6 +684,25 @@ func (f *atomicInt32File) Write(ctx context.Context, _ *vfs.FileDescription, src
 
 	f.val.Store(buf[0])
 	return n, nil
+}
+
+// fileNrData implements /proc/sys/fs/file-nr.
+//
+// +stateify savable
+type fileNrData struct {
+	kernfs.DynamicBytesFile
+
+	vfs *vfs.VirtualFilesystem
+}
+
+var _ dynamicInode = (*fileNrData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate. Like Linux's
+// proc_nr_files, the fields are the allocated file count, the unused file
+// count (always 0), and the maximum number of files.
+func (f *fileNrData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	_, err := fmt.Fprintf(buf, "%d\t0\t%d\n", f.vfs.NumFiles(), int64(math.MaxInt64))
+	return err
 }
 
 // randUUID returns a string containing a randomly-generated UUID followed by a
