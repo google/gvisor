@@ -910,14 +910,7 @@ class MMapFileTest : public MMapTest {
     // Extend file so it can be written once mapped. Deliberately make the file
     // only half a page in size, so we can test what happens when we access the
     // second half.
-    // Use ftruncate(2) once the sentry supports it.
-    char zero = 0;
-    size_t count = 0;
-    do {
-      const DisableSave ds;  // saving 2048 times is slow and useless.
-      Write(&zero, 1), SyscallSucceedsWithValue(1);
-    } while (++count < (kPageSize / 2));
-    ASSERT_THAT(lseek(fd_.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+    ASSERT_THAT(ftruncate(fd_.get(), kPageSize / 2), SyscallSucceeds());
   }
 
   // Close and delete file
