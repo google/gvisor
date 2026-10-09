@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strconv"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -140,6 +141,60 @@ func TestTPUProxyV4(t *testing.T) {
 		if _, err := os.ReadFile(vendorPath); err != nil {
 			t.Errorf("failed to read device file: %v", err)
 		}
+	}
+}
+
+// TestProcSelfFDBindMount checks that the bind mount of procfs' self/fd set
+// up for directfs resolves this process's FDs and does not lead back into
+// procfs.
+func TestProcSelfFDBindMount(t *testing.T) {
+	testDir, gvisorChroot := setup(t)
+	if err := setupMinimalProcfs(gvisorChroot, true /* directfs */, nil /* timer */); err != nil {
+		t.Fatalf("setupMinimalProcfs failed: %v", err)
+	}
+	fdDir, err := unix.Open(path.Join(gvisorChroot, procSelfFDBindMount), unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	if err != nil {
+		t.Fatalf("failed to open %q: %v", procSelfFDBindMount, err)
+	}
+	defer unix.Close(fdDir)
+
+	f, err := os.CreateTemp(testDir, "file")
+	if err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	defer f.Close()
+	var want, got unix.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &want); err != nil {
+		t.Fatalf("fstat failed: %v", err)
+	}
+	if err := unix.Fstatat(fdDir, strconv.Itoa(int(f.Fd())), &got, 0); err != nil {
+		t.Fatalf("failed to stat the file through its magic link: %v", err)
+	}
+	if got.Dev != want.Dev || got.Ino != want.Ino {
+		t.Errorf("magic link resolved to (dev %d, ino %d), want (dev %d, ino %d)", got.Dev, got.Ino, want.Dev, want.Ino)
+	}
+
+	parent, err := unix.Openat(fdDir, "..", unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	if err != nil {
+		t.Fatalf("failed to open parent of the bind mount: %v", err)
+	}
+	defer unix.Close(parent)
+	var statfs unix.Statfs_t
+	if err := unix.Fstatfs(parent, &statfs); err != nil {
+		t.Fatalf("fstatfs failed: %v", err)
+	}
+	if statfs.Type == unix.PROC_SUPER_MAGIC {
+		t.Errorf("parent of the bind mount is in procfs")
+	}
+	var procRoot unix.Stat_t
+	if err := unix.Stat(path.Join(gvisorChroot, "proc"), &procRoot); err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	if err := unix.Fstat(parent, &got); err != nil {
+		t.Fatalf("fstat failed: %v", err)
+	}
+	if got.Dev != procRoot.Dev || got.Ino != procRoot.Ino {
+		t.Errorf("parent of the bind mount is (dev %d, ino %d), want /proc in chroot (dev %d, ino %d)", got.Dev, got.Ino, procRoot.Dev, procRoot.Ino)
 	}
 }
 
