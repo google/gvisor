@@ -222,24 +222,12 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	if flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
 		return syserr.ErrExists
 	}
-	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
-		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
-			return syserr.ErrInvalidArgument
-		}
-		if ifinfomsg.Flags & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Flags)
-			return syserr.ErrInvalidArgument
-		}
-		// Netstack interfaces are always up.
-	}
-
 	dstNs, err := s.lockSrcAndDst(ctx, attrs)
 	if err != nil {
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
-	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, ifinfomsg.Flags, ifinfomsg.Change, dstNs)
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and
@@ -321,12 +309,18 @@ func (s *Stack) unlockSrcAndDst(ctx context.Context, ns *inet.Namespace) {
 
 // precondition: s.linkLock is held. If dstNs is not nil, dstNs.Stack.linkMu is
 // also held.
-func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace) *syserr.Error {
+func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, flags, change uint32, dstNs *inet.Namespace) *syserr.Error {
 	src := s
 	changed := false
 	nicInfo, ok := src.Stack.SingleNICInfo(id)
 	if !ok {
 		return syserr.ErrUnknownNICID
+	}
+	// Reject an unsupported flag change before any other attribute is applied.
+	if flags != 0 || change != 0 {
+		if _, err := combineLinkFlags(nicInfo.Flags, flags, change); err != nil {
+			return err
+		}
 	}
 
 	dst := src
@@ -409,8 +403,94 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 		}
 	}
 
+	// do_setlink applies ifi_flags/ifi_change through dev_change_flags once
+	// the attributes above are handled.
+	if flags != 0 || change != 0 {
+		flagsChanged, err := src.setLinkFlags(id, flags, change)
+		if err != nil {
+			if changed {
+				src.sendChangeEvent(ctx, id)
+			}
+			return err
+		}
+		changed = changed || flagsChanged
+	}
+
 	if changed {
 		src.sendChangeEvent(ctx, id)
+	}
+	return nil
+}
+
+// unmodeledLinkFlags are the flags that __dev_change_flags copies from the
+// request (IFF_DEBUG, IFF_NOTRAILERS, IFF_NOARP, IFF_DYNAMIC, IFF_MULTICAST,
+// IFF_PORTSEL, IFF_AUTOMEDIA) or applies through dev_set_promiscuity and
+// dev_set_allmulti (IFF_PROMISC, IFF_ALLMULTI) that netstack cannot honor:
+// there is no per-NIC storage for the former, and netstack's promiscuous mode
+// accepts any destination IP rather than disabling L2 filtering.
+const unmodeledLinkFlags = linux.IFF_DEBUG | linux.IFF_NOTRAILERS | linux.IFF_NOARP |
+	linux.IFF_DYNAMIC | linux.IFF_MULTICAST | linux.IFF_PORTSEL | linux.IFF_AUTOMEDIA |
+	linux.IFF_PROMISC | linux.IFF_ALLMULTI
+
+// combineLinkFlags returns the complete flag set requested for a NIC whose
+// current state is cur. flags is the requested interface flag set; if change
+// is nonzero, only the bits in change are taken from flags and the rest are
+// kept from the NIC's current flags (rtnl_dev_combine_flags). It fails with
+// EOPNOTSUPP if the request would change a flag in unmodeledLinkFlags from the
+// value the NIC reports, so a caller that echoes back the flags it read is
+// accepted but one that tries to change an unsupported flag is not.
+func combineLinkFlags(cur stack.NICStateFlags, flags, change uint32) (uint32, *syserr.Error) {
+	curFlags := nicStateFlagsToLinux(cur)
+	if change != 0 {
+		flags = (flags & change) | (curFlags &^ change)
+	}
+	if (flags^curFlags)&unmodeledLinkFlags != 0 {
+		return 0, syserr.ErrNotSupported
+	}
+	return flags, nil
+}
+
+// setLinkFlags implements the effect of dev_change_flags on NIC id; see
+// combineLinkFlags for the meaning of flags and change. It reports whether the
+// NIC's state changed. Bits that are not user-settable (IFF_RUNNING,
+// IFF_LOWER_UP, ...) are ignored. IFF_UP enables or disables the NIC.
+//
+// precondition: s.linkMu is held.
+func (s *Stack) setLinkFlags(id tcpip.NICID, flags, change uint32) (bool, *syserr.Error) {
+	nicInfo, ok := s.Stack.SingleNICInfo(id)
+	if !ok {
+		return false, syserr.ErrUnknownNICID
+	}
+	flags, err := combineLinkFlags(nicInfo.Flags, flags, change)
+	if err != nil {
+		return false, err
+	}
+	wasUp := nicInfo.Flags.Up
+	up := flags&linux.IFF_UP != 0
+	if up == wasUp {
+		return false, nil
+	}
+	if up {
+		if err := s.Stack.EnableNIC(id); err != nil {
+			return false, syserr.TranslateNetstackError(err)
+		}
+	} else if err := s.Stack.DisableNIC(id); err != nil {
+		return false, syserr.TranslateNetstackError(err)
+	}
+	return true, nil
+}
+
+// setLinkFlagsAndNotify is setLinkFlags for the SIOCSIFFLAGS path. It takes
+// linkMu and emits the link change event.
+func (s *Stack) setLinkFlagsAndNotify(ctx context.Context, id tcpip.NICID, flags uint32) *syserr.Error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+	changed, err := s.setLinkFlags(id, flags, 0)
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.sendChangeEvent(ctx, id)
 	}
 	return nil
 }
@@ -508,7 +588,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, 0, 0, dstNs); err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
 		peerEP.Close()
 		return err
@@ -535,7 +615,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs); err != nil {
+		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, 0, 0, peerDstNs); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -569,7 +649,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, 0, 0, dstNs); err != nil {
 		return err
 	}
 
