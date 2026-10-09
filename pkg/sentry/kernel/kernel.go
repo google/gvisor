@@ -2676,6 +2676,13 @@ func (k *Kernel) RegisterContainerName(cid, containerName string) {
 	k.containerNames[cid] = containerName
 }
 
+// UnregisterContainerName removes the name of container cid.
+func (k *Kernel) UnregisterContainerName(cid string) {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	delete(k.containerNames, cid)
+}
+
 // RestoreContainerMapping remaps old container IDs to new ones after a restore.
 // containerIDs maps "name -> new container ID". Note that container names remain
 // constant between restore sessions.

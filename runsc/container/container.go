@@ -259,11 +259,6 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if args.ConsoleSocket != "" {
 			return nil, fmt.Errorf("ConsoleSocket cannot be set with NoRootContainer: there is no root container process to give a terminal to")
 		}
-		// TODO(gvisor.dev/issue/13948): Allow this once checkpoint/restore supports
-		// sandboxes with no root container.
-		if args.FSRestoreImagePath != "" {
-			return nil, fmt.Errorf("FSRestoreImagePath cannot be set with NoRootContainer: checkpoint/restore is not supported for a sandbox with no root container")
-		}
 		if len(args.PassFiles) > 0 || args.ExecFile != nil {
 			return nil, fmt.Errorf("PassFiles and ExecFile cannot be set with NoRootContainer: there is no root container process to pass them to")
 		}
@@ -513,9 +508,6 @@ func (c *Container) Start(conf *config.Config) error {
 // to restore a container from its state file.
 func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
-	if err := c.checkpointRestoreSupported("restore"); err != nil {
-		return err
-	}
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
 		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
@@ -949,9 +941,6 @@ func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
 // The statefile will be written to f, the file at the specified image-path.
 func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandbox.CheckpointOpts) error {
 	log.Debugf("Checkpoint container, cid: %s", c.ID)
-	if err := c.checkpointRestoreSupported("checkpoint"); err != nil {
-		return err
-	}
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
@@ -1986,16 +1975,6 @@ func (c *Container) requireStatus(action string, statuses ...Status) error {
 		}
 	}
 	return fmt.Errorf("cannot %s container %q in state %s", action, c.ID, c.Status)
-}
-
-// checkpointRestoreSupported returns an error if the sandbox has no root
-// container: restore gives every container a gofer, so the image would not be
-// restorable.
-func (c *Container) checkpointRestoreSupported(action string) error {
-	if c.Sandbox != nil && c.Sandbox.NoRootContainer {
-		return fmt.Errorf("cannot %s container %q: not supported for a sandbox booted without a root container", action, c.ID)
-	}
-	return nil
 }
 
 // IsSandboxRoot returns true if this container is its sandbox's root container.

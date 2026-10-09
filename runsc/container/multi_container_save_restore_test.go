@@ -1586,3 +1586,616 @@ func resetOutputFile(t *testing.T, path string) *os.File {
 	t.Cleanup(func() { f.Close() })
 	return f
 }
+
+// restoreNoRootContainer restores imagePath into a new sandbox sbID with no root
+// container, then restores subSpecs in checkpoint order.
+func restoreNoRootContainer(t *testing.T, conf *config.Config, imagePath, sbID string, subSpecs []*specs.Spec) (*Container, []*Container) {
+	t.Helper()
+	return restoreSandbox(t, conf, imagePath, noRootContainerSandboxSpec(), sbID, true /* noRootContainer */, false /* background */, subSpecs)
+}
+
+// restoreSandbox restores imagePath into a new sandbox sbID created from
+// sbSpec, then restores subSpecs in checkpoint order.
+func restoreSandbox(t *testing.T, conf *config.Config, imagePath string, sbSpec *specs.Spec, sbID string, noRootContainer, background bool, subSpecs []*specs.Spec) (*Container, []*Container) {
+	t.Helper()
+
+	restoreOne := func(spec *specs.Spec, id string, noRootContainer bool) *Container {
+		t.Helper()
+		bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up bundle: %v", err)
+		}
+		t.Cleanup(cleanupBundle)
+		c, err := New(conf, Args{ID: id, Spec: spec, BundleDir: bundle, CheckpointDirPath: imagePath, NoRootContainer: noRootContainer})
+		if err != nil {
+			t.Fatalf("error creating container %q: %v", id, err)
+		}
+		t.Cleanup(func() { c.Destroy() })
+		if err := c.Restore(conf, imagePath, false /* direct */, background, nil /* networkArgs */); err != nil {
+			t.Fatalf("error restoring container %q: %v", id, err)
+		}
+		return c
+	}
+	sb := restoreOne(sbSpec, sbID, noRootContainer)
+	var subs []*Container
+	for _, spec := range subSpecs {
+		subs = append(subs, restoreOne(spec, testutil.RandomContainerID(), false /* noRootContainer */))
+	}
+	if err := sb.WaitRestore(); err != nil {
+		t.Fatalf("error waiting for restore: %v", err)
+	}
+	return sb, subs
+}
+
+// checkpointNoRootContainer checkpoints sandbox sb into imagePath and waits for
+// it to exit.
+func checkpointNoRootContainer(t *testing.T, conf *config.Config, sb *Container, imagePath string, opts sandbox.CheckpointOpts) {
+	t.Helper()
+
+	if err := sb.Checkpoint(conf, imagePath, opts); err != nil {
+		t.Fatalf("error checkpointing sandbox: %v", err)
+	}
+	// The sandbox exits without waiting for `runsc delete`.
+	if err := testutil.Poll(func() error {
+		if sandboxRunning(t, sb) {
+			return fmt.Errorf("sandbox %q still running", sb.ID)
+		}
+		return nil
+	}, 10*time.Second); err != nil {
+		t.Fatalf("sandbox did not exit after checkpoint: %v", err)
+	}
+}
+
+// TestCheckpointRestoreNoRootContainer checkpoints a sandbox booted with no
+// root container and restores it into a new one.
+func TestCheckpointRestoreNoRootContainer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+
+	dir := checkpointDir(t)
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath)
+	subArgs := [][]string{{"bash", "-c", script}, sleepCmd}
+
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	var subs []*Container
+	for _, args := range subArgs {
+		subs = append(subs, startNoRootContainerSubWithArgs(t, conf, sbID, nil /* pidnsPath */, args...))
+	}
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("Failed to wait for output file: %v", err)
+	}
+	sleeperPID := onlyPID(t, subs[1])
+
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{})
+	lastNum, err := readOutputNum(outputPath, -1)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+
+	if err := os.Remove(outputPath); err != nil {
+		t.Fatalf("error removing file: %v", err)
+	}
+	outputFile2, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile2.Close()
+
+	// The image does not restore into a sandbox with a root container.
+	t.Run("mismatch", func(t *testing.T) {
+		spec, ids := createSpecs(sleepCmd)
+		bundle, cleanupBundle, err := testutil.SetupBundleDir(spec[0])
+		if err != nil {
+			t.Fatalf("error setting up bundle: %v", err)
+		}
+		defer cleanupBundle()
+		c, err := New(conf, Args{ID: ids[0], Spec: spec[0], BundleDir: bundle, CheckpointDirPath: dir})
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer c.Destroy()
+		const want = "no-root-container=true cannot be restored with no-root-container=false"
+		if err := c.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Restore() = %v, want error containing %q", err, want)
+		}
+	})
+
+	newSbID := testutil.RandomContainerID()
+	var subSpecs []*specs.Spec
+	for _, args := range subArgs {
+		subSpecs = append(subSpecs, noRootContainerSubSpec(newSbID, args...))
+	}
+	sb2, subs2 := restoreNoRootContainer(t, conf, dir, newSbID, subSpecs)
+
+	// The counter picks up where it left off.
+	if err := waitForFileNotEmpty(outputFile2); err != nil {
+		t.Fatalf("Failed to wait for output file: %v", err)
+	}
+	firstNum, err := readOutputNum(outputPath, 0)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+	if lastNum+1 != firstNum {
+		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+	}
+	for _, c := range append([]*Container{sb2}, subs2...) {
+		if got := c.State().Status; got != Running {
+			t.Errorf("container %q is %v after restore, want %v", c.ID, got, Running)
+		}
+	}
+
+	// Restored tasks keep their PIDs.
+	if got := onlyPID(t, subs2[1]); got != sleeperPID {
+		t.Errorf("sleeper has PID %d after restore, want %d", got, sleeperPID)
+	}
+
+	// The restored sandbox still outlives its containers and takes new ones.
+	for _, sub := range subs2 {
+		if err := sub.Destroy(); err != nil {
+			t.Fatalf("error destroying container %q: %v", sub.ID, err)
+		}
+	}
+	if !sandboxRunning(t, sb2) {
+		t.Fatalf("restored sandbox stopped running after its last container was destroyed")
+	}
+	startNoRootContainerSub(t, conf, newSbID, nil /* pidnsPath */)
+}
+
+// TestCheckpointRestoreUnnamedContainers checks that containers without names
+// restore after others were destroyed, alongside a named one, with and without
+// a root container.
+func TestCheckpointRestoreUnnamedContainers(t *testing.T) {
+	for _, noRootContainer := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noRootContainer=%t", noRootContainer), func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			setupTestRootDir(t, conf)
+
+			sbSpec := noRootContainerSandboxSpec()
+			if !noRootContainer {
+				sbSpec = testutil.NewSpecWithArgs(sleepCmd...)
+				sbSpec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeSandbox
+			}
+			startSandbox := func(sbID string) *Container {
+				t.Helper()
+				if noRootContainer {
+					return startNoRootContainerSandboxWithSpec(t, conf, sbID, sbSpec)
+				}
+				conts, cleanup, err := startContainers(conf, []*specs.Spec{sbSpec}, []string{sbID})
+				if err != nil {
+					t.Fatalf("error starting sandbox: %v", err)
+				}
+				t.Cleanup(cleanup)
+				return conts[0]
+			}
+			// roundTrip checkpoints sb and restores subs into a new sandbox, checking
+			// that they keep their PIDs.
+			roundTrip := func(sb *Container, subs []*Container) (*Container, []*Container) {
+				t.Helper()
+				var pids []int
+				for _, sub := range subs {
+					pids = append(pids, onlyPID(t, sub))
+				}
+				dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+				if err != nil {
+					t.Fatalf("os.MkdirTemp() failed: %v", err)
+				}
+				t.Cleanup(func() { os.RemoveAll(dir) })
+				if err := sb.Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+					t.Fatalf("error checkpointing sandbox: %v", err)
+				}
+				newSbID := testutil.RandomContainerID()
+				var subSpecs []*specs.Spec
+				for _, sub := range subs {
+					spec := noRootContainerSubSpec(newSbID, sleepCmd...)
+					if name, ok := sub.Spec.Annotations[specutils.ContainerdContainerNameAnnotation]; ok {
+						spec.Annotations[specutils.ContainerdContainerNameAnnotation] = name
+					}
+					subSpecs = append(subSpecs, spec)
+				}
+				sb2, subs2 := restoreSandbox(t, conf, dir, sbSpec, newSbID, noRootContainer, false /* background */, subSpecs)
+				for i, sub := range subs2 {
+					if got := onlyPID(t, sub); got != pids[i] {
+						t.Errorf("container %d has PID %d after restore, want %d", i, got, pids[i])
+					}
+				}
+				return sb2, subs2
+			}
+
+			sbID := testutil.RandomContainerID()
+			sb := startSandbox(sbID)
+			namedSpec := noRootContainerSubSpec(sbID, sleepCmd...)
+			namedSpec.Annotations[specutils.ContainerdContainerNameAnnotation] = "named"
+			named := startNoRootContainerSubWithSpec(t, conf, namedSpec)
+			a := startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+			b := startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+			if err := a.Destroy(); err != nil {
+				t.Fatalf("error destroying container: %v", err)
+			}
+			c := startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+			sb, subs := roundTrip(sb, []*Container{named, b, c})
+
+			// Names given after a restore do not collide with restored ones.
+			d := startNoRootContainerSub(t, conf, sb.ID, nil /* pidnsPath */)
+			if err := subs[1].Destroy(); err != nil {
+				t.Fatalf("error destroying container: %v", err)
+			}
+			roundTrip(sb, []*Container{subs[0], subs[2], d})
+		})
+	}
+}
+
+// TestCheckpointRestoreRootContainerIntoNoRootContainer checks that an image of
+// a sandbox with a root container does not restore into one booted with no
+// root container.
+func TestCheckpointRestoreRootContainerIntoNoRootContainer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+
+	dir := checkpointDir(t)
+
+	spec, ids := createSpecs(sleepCmd)
+	conts, cleanup, err := startContainers(conf, spec, ids)
+	if err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	defer cleanup()
+	if err := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+
+	sbSpec := noRootContainerSandboxSpec()
+	bundle, cleanupBundle, err := testutil.SetupBundleDir(sbSpec)
+	if err != nil {
+		t.Fatalf("error setting up bundle: %v", err)
+	}
+	defer cleanupBundle()
+	sb, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: sbSpec, BundleDir: bundle, CheckpointDirPath: dir, NoRootContainer: true})
+	if err != nil {
+		t.Fatalf("error creating sandbox: %v", err)
+	}
+	defer sb.Destroy()
+	const want = "no-root-container=false cannot be restored with no-root-container=true"
+	if err := sb.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("Restore() = %v, want error containing %q", err, want)
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerFailedRestore checks that waiting on a
+// sandbox with no root container reports a failed restore as a root container
+// does.
+func TestCheckpointRestoreNoRootContainerFailedRestore(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+	conf.RestoreSpecValidation = config.RestoreSpecValidationEnforce
+
+	dir := checkpointDir(t)
+
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{})
+
+	restore := func(spec *specs.Spec, id string, noRootContainer bool) (*Container, error) {
+		t.Helper()
+		bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
+		if err != nil {
+			t.Fatalf("error setting up bundle: %v", err)
+		}
+		t.Cleanup(cleanupBundle)
+		c, err := New(conf, Args{ID: id, Spec: spec, BundleDir: bundle, CheckpointDirPath: dir, NoRootContainer: noRootContainer})
+		if err != nil {
+			t.Fatalf("error creating container %q: %v", id, err)
+		}
+		t.Cleanup(func() { c.Destroy() })
+		return c, c.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
+	}
+	newSbID := testutil.RandomContainerID()
+	sb2, err := restore(noRootContainerSandboxSpec(), newSbID, true /* noRootContainer */)
+	if err != nil {
+		t.Fatalf("error restoring sandbox: %v", err)
+	}
+	// A changed spec fails restore validation.
+	spec := noRootContainerSubSpec(newSbID, sleepCmd...)
+	spec.Process.Cwd = "/tmp"
+	if _, err := restore(spec, testutil.RandomContainerID(), false /* noRootContainer */); err == nil {
+		t.Fatalf("restoring a container with a changed spec succeeded, want error")
+	}
+
+	waitC := make(chan error, 1)
+	var ws unix.WaitStatus
+	go func() {
+		var err error
+		ws, err = sb2.Wait()
+		waitC <- err
+	}()
+	// Let the wait reach the sandbox before it goes away.
+	time.Sleep(2 * time.Second)
+	if err := sb2.Destroy(); err != nil {
+		t.Fatalf("error destroying sandbox: %v", err)
+	}
+	select {
+	case err := <-waitC:
+		if err != nil {
+			t.Fatalf("error waiting on sandbox: %v", err)
+		}
+		// Status of a failed restore, as for a root container.
+		if ws != 1 {
+			t.Errorf("sandbox wait status = %#x after a failed restore, want 0x1", uint32(ws))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("waiting on the sandbox blocked after it was destroyed")
+	}
+}
+
+// TestCheckpointResumeNoRootContainer checks that a sandbox with no root
+// container keeps running after a resuming checkpoint, and that the image
+// restores.
+func TestCheckpointResumeNoRootContainer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+
+	dir := checkpointDir(t)
+
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	sub := startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	pid := onlyPID(t, sub)
+
+	if err := sb.Checkpoint(conf, dir, sandbox.CheckpointOpts{Resume: true}); err != nil {
+		t.Fatalf("error checkpointing sandbox: %v", err)
+	}
+
+	// The sandbox and its container carry on.
+	if !sandboxRunning(t, sb) {
+		t.Fatalf("sandbox stopped running after a checkpoint that resumes")
+	}
+	for _, c := range []*Container{sb, sub} {
+		if got := c.State().Status; got != Running {
+			t.Errorf("container %q is %v after checkpoint, want %v", c.ID, got, Running)
+		}
+	}
+	if got := onlyPID(t, sub); got != pid {
+		t.Errorf("container has PID %d after checkpoint, want %d", got, pid)
+	}
+	if ws, err := execute(conf, sub, "/bin/true"); err != nil || ws.ExitStatus() != 0 {
+		t.Errorf("exec after checkpoint: status %v, err %v", ws, err)
+	}
+	// It still takes containers.
+	startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	if !sandboxRunning(t, sb) {
+		t.Fatalf("sandbox stopped running after a container was added")
+	}
+
+	// The image restores with the container it had at checkpoint.
+	newSbID := testutil.RandomContainerID()
+	_, subs := restoreNoRootContainer(t, conf, dir, newSbID, []*specs.Spec{noRootContainerSubSpec(newSbID, sleepCmd...)})
+	if got := onlyPID(t, subs[0]); got != pid {
+		t.Errorf("restored container has PID %d, want %d", got, pid)
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerImageFormats checks that a sandbox with no
+// root container restores from compressed and uncompressed images, including
+// with background loading.
+func TestCheckpointRestoreNoRootContainerImageFormats(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		compression statefile.CompressionLevel
+		background  bool
+	}{
+		{name: "uncompressed", compression: statefile.CompressionLevelNone},
+		{name: "compressed", compression: statefile.CompressionLevelFlateBestSpeed},
+		// Background loading needs an uncompressed image.
+		{name: "background", compression: statefile.CompressionLevelNone, background: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			setupTestRootDir(t, conf)
+			dir := checkpointDir(t)
+
+			sbID := testutil.RandomContainerID()
+			sb := startNoRootContainerSandbox(t, conf, sbID)
+			pid := onlyPID(t, startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */))
+			checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{Compression: tc.compression})
+
+			newSbID := testutil.RandomContainerID()
+			_, subs := restoreSandbox(t, conf, dir, noRootContainerSandboxSpec(), newSbID, true /* noRootContainer */, tc.background, []*specs.Spec{noRootContainerSubSpec(newSbID, sleepCmd...)})
+			if got := onlyPID(t, subs[0]); got != pid {
+				t.Errorf("container has PID %d after restore, want %d", got, pid)
+			}
+			if ws, err := execute(conf, subs[0], "/bin/true"); err != nil || ws.ExitStatus() != 0 {
+				t.Errorf("exec after restore: status %v, err %v", ws, err)
+			}
+		})
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerFork checks that one image of a sandbox
+// with no root container restores into two sandboxes running side by side.
+func TestCheckpointRestoreNoRootContainerFork(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+	dir := checkpointDir(t)
+
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	pid := onlyPID(t, startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */))
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{})
+
+	var copies []*Container
+	for range 2 {
+		newSbID := testutil.RandomContainerID()
+		_, subs := restoreNoRootContainer(t, conf, dir, newSbID, []*specs.Spec{noRootContainerSubSpec(newSbID, sleepCmd...)})
+		copies = append(copies, subs[0])
+	}
+	for i, c := range copies {
+		if got := c.State().Status; got != Running {
+			t.Errorf("copy %d is %v, want %v", i, got, Running)
+		}
+		if got := onlyPID(t, c); got != pid {
+			t.Errorf("copy %d has PID %d, want %d", i, got, pid)
+		}
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerPIDNamespace checks that containers in a
+// sandbox with no root container keep their PID namespaces across restore.
+func TestCheckpointRestoreNoRootContainerPIDNamespace(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+	dir := checkpointDir(t)
+
+	// One container has a PID namespace of its own, the other shares the
+	// sandbox's.
+	ownPIDNS := ""
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	own := startNoRootContainerSub(t, conf, sbID, &ownPIDNS)
+	shared := startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	ownPID, sharedPID := onlyPID(t, own), onlyPID(t, shared)
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{})
+
+	newSbID := testutil.RandomContainerID()
+	ownSpec := noRootContainerSubSpec(newSbID, sleepCmd...)
+	ownSpec.Linux = &specs.Linux{Namespaces: []specs.LinuxNamespace{{Type: specs.PIDNamespace, Path: ownPIDNS}}}
+	_, subs := restoreNoRootContainer(t, conf, dir, newSbID, []*specs.Spec{ownSpec, noRootContainerSubSpec(newSbID, sleepCmd...)})
+	if got := onlyPID(t, subs[0]); got != ownPID {
+		t.Errorf("container with its own PID namespace has PID %d after restore, want %d", got, ownPID)
+	}
+	if got := onlyPID(t, subs[1]); got != sharedPID {
+		t.Errorf("container sharing the sandbox PID namespace has PID %d after restore, want %d", got, sharedPID)
+	}
+	// In its own namespace, the container's process is still PID 1.
+	if out, err := executeCombinedOutput(conf, subs[0], nil, "/bin/cat", "/proc/1/comm"); err != nil || string(out) != "sleep\n" {
+		t.Errorf("cat /proc/1/comm in own PID namespace = %q, %v; want %q", out, err, "sleep\n")
+	}
+}
+
+// TestCheckpointRestoreNoRootContainerSplitFS checks that a sandbox with no
+// root container restores container filesystems from a split filesystem
+// checkpoint.
+func TestCheckpointRestoreNoRootContainerSplitFS(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+	conf.Overlay2.Set("root:self")
+
+	dir := checkpointDir(t)
+
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	sub := startNoRootContainerSubWithSpec(t, conf, testAppNoRootContainerSubSpec(t, sbID))
+
+	treeArgs := []string{"--depth=3", "--file-per-level=3", "--file-size=65537", "--target-dir=/tree", fmt.Sprintf("--seed=%d", rand.Uint64())}
+	if ws, err := execute(conf, sub, "/app", append([]string{"fsTreeCreate"}, treeArgs...)...); err != nil || ws != 0 {
+		t.Fatalf("error populating rootfs, ws: %v, err: %v", ws, err)
+	}
+
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{
+		SplitFSCheckpointPaths: []checkpoint.ResourceID{{Path: fscheckpoint.AllTmpfsPath}},
+	})
+	if _, err := os.Stat(filepath.Join(dir, checkpointfiles.FSCheckpointDir, checkpointfiles.FSCheckpointManifestFileName)); err != nil {
+		t.Fatalf("filesystem checkpoint manifest: %v", err)
+	}
+
+	// The new root holds only /app, so the tree comes from <image>/fs.
+	newSbID := testutil.RandomContainerID()
+	_, subs := restoreNoRootContainer(t, conf, dir, newSbID, []*specs.Spec{testAppNoRootContainerSubSpec(t, newSbID)})
+	if ws, err := execute(conf, subs[0], "/app", append([]string{"fsTreeVerify"}, treeArgs...)...); err != nil || ws != 0 {
+		t.Errorf("error verifying restored rootfs, ws: %v, err: %v", ws, err)
+	}
+	if err := subs[0].WaitFSRestore(); err != nil {
+		t.Errorf("error waiting for filesystem restore: %v", err)
+	}
+}
+
+// TestFSCheckpointNoRootContainer checks that a sandbox with no root container
+// exits after a filesystem checkpoint that exits after saving.
+func TestFSCheckpointNoRootContainer(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+	conf.Overlay2.Set("root:self")
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	startNoRootContainerSubWithSpec(t, conf, testAppNoRootContainerSubSpec(t, sbID))
+
+	if err := sb.FSSave(conf, dir, sandbox.FSSaveOpts{
+		ExitAfterSaving: true,
+		Paths:           []checkpoint.ResourceID{{Path: fscheckpoint.AllTmpfsPath}},
+	}); err != nil {
+		t.Fatalf("error saving filesystem checkpoint: %v", err)
+	}
+	if err := testutil.Poll(func() error {
+		if sandboxRunning(t, sb) {
+			return fmt.Errorf("sandbox %q still running", sbID)
+		}
+		return nil
+	}, 10*time.Second); err != nil {
+		t.Fatalf("sandbox did not exit after filesystem checkpoint: %v", err)
+	}
+}
+
+// testAppNoRootContainerSubSpec returns the spec of a container named "sub" in
+// sandbox sbID, running test_app from a writable root of its own that can hold
+// an overlay filestore.
+func testAppNoRootContainerSubSpec(t *testing.T, sbID string) *specs.Spec {
+	t.Helper()
+	appSrc, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("Error finding test_app:", err)
+	}
+	spec := noRootContainerSubSpec(sbID, "/app", "reaper")
+	spec.Annotations[specutils.ContainerdContainerNameAnnotation] = "sub"
+	root, err := os.MkdirTemp(testutil.TmpDir(), "root")
+	if err != nil {
+		t.Fatalf("error creating container root: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	if err := copyFile(appSrc, filepath.Join(root, "app")); err != nil {
+		t.Fatalf("error copying test_app: %v", err)
+	}
+	spec.Root.Path = root
+	spec.Root.Readonly = false
+	return spec
+}
+
+// checkpointDir returns a new directory for a checkpoint image.
+func checkpointDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+	return dir
+}
+
+// onlyPID returns the in-sandbox PID of c's only process.
+func onlyPID(t *testing.T, c *Container) int {
+	t.Helper()
+	pl, err := c.Processes()
+	if err != nil {
+		t.Fatalf("error getting processes of %q: %v", c.ID, err)
+	}
+	if len(pl) != 1 {
+		t.Fatalf("got %d processes in %q, want 1: %v", len(pl), c.ID, pl)
+	}
+	return int(pl[0].PID)
+}

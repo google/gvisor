@@ -147,5 +147,6 @@ set up by hand, re-add the addresses first.
 *   The sandbox outlives its containers. It stays up with zero containers in it
     and accepts new ones.
 *   `runsc kill` does not apply to the sandbox; `runsc delete` stops it.
-*   Checkpoint and restore are refused. See
-    `Container.checkpointRestoreSupported`.
+*   `runsc restore` of the sandbox needs `--no-root-container`, and an image
+    only restores into a sandbox booted the same way.
+    The save/restore binary runs only when checkpointing a container's ID.
