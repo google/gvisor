@@ -30,6 +30,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/statvfs.h>
+#include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
@@ -78,6 +80,36 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+
+#ifndef SYS_fsopen
+#if defined(__x86_64__) || defined(__aarch64__)
+#define SYS_fsopen 430
+#define SYS_fsconfig 431
+#define SYS_fsmount 432
+#else
+#error "Unknown architecture"
+#endif
+#endif
+
+#ifndef SYS_move_mount
+#define SYS_move_mount 429
+#endif
+
+#ifndef MOVE_MOUNT_F_EMPTY_PATH
+#define MOVE_MOUNT_F_EMPTY_PATH 0x4
+#endif
+
+#ifndef FSCONFIG_CMD_CREATE
+#define FSCONFIG_CMD_CREATE 0x6
+#endif
+
+#ifndef MOUNT_ATTR_RDONLY
+#define MOUNT_ATTR_RDONLY 0x1
+#endif
+
+#ifndef MOUNT_ATTR_NOEXEC
+#define MOUNT_ATTR_NOEXEC 0x8
+#endif
 
 namespace gvisor {
 namespace testing {
@@ -2968,6 +3000,274 @@ TEST(MountTest, MountProc) {
       EXPECT_EQ(e.mount_source, "none");
     }
   }
+}
+
+constexpr unsigned long kUserNamespaceMountFlags =
+    MS_NOSUID | MS_NODEV | MS_NOEXEC;
+
+// Runs setup in a private mount namespace, then runs fn in a copy of that
+// mount namespace owned by a child user namespace, after also unsharing
+// unshare_flags.
+PosixErrorOr<int> InUserNamespaceAfterSetup(const std::function<void()>& setup,
+                                            int unshare_flags,
+                                            const std::function<void()>& fn) {
+  const std::string uid_map = absl::StrCat("0 ", geteuid(), " 1");
+  const std::string gid_map = absl::StrCat("0 ", getegid(), " 1");
+  return InForkedProcess([&] {
+    TEST_PCHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_PCHECK(mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr) ==
+                0);
+    int ready[2];
+    int go[2];
+    TEST_PCHECK(pipe(ready) == 0);
+    TEST_PCHECK(pipe(go) == 0);
+    char c = 0;
+    const pid_t child = fork();
+    TEST_PCHECK(child >= 0);
+    if (child == 0) {
+      TEST_PCHECK(close(ready[0]) == 0);
+      TEST_PCHECK(close(go[1]) == 0);
+      TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+      TEST_PCHECK(write(ready[1], &c, 1) == 1);
+      TEST_PCHECK(read(go[0], &c, 1) == 1);
+      TEST_PCHECK(unshare(CLONE_NEWNS | unshare_flags) == 0);
+      const pid_t grandchild = fork();
+      TEST_PCHECK(grandchild >= 0);
+      if (grandchild == 0) {
+        fn();
+        _exit(0);
+      }
+      int status;
+      TEST_PCHECK(waitpid(grandchild, &status, 0) == grandchild);
+      TEST_CHECK(WIFEXITED(status));
+      _exit(WEXITSTATUS(status));
+    }
+    TEST_PCHECK(close(ready[1]) == 0);
+    TEST_PCHECK(close(go[0]) == 0);
+    TEST_PCHECK(read(ready[0], &c, 1) == 1);
+    const auto write_file = [](const std::string& path,
+                               const std::string& data) {
+      const int fd = open(path.c_str(), O_WRONLY);
+      TEST_PCHECK(fd >= 0);
+      TEST_PCHECK(write(fd, data.data(), data.size()) ==
+                  static_cast<ssize_t>(data.size()));
+      TEST_PCHECK(close(fd) == 0);
+    };
+    write_file(absl::StrCat("/proc/", child, "/uid_map"), uid_map);
+    write_file(absl::StrCat("/proc/", child, "/setgroups"), "deny");
+    write_file(absl::StrCat("/proc/", child, "/gid_map"), gid_map);
+    setup();
+    TEST_PCHECK(write(go[1], &c, 1) == 1);
+    int status;
+    TEST_PCHECK(waitpid(child, &status, 0) == child);
+    TEST_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  });
+}
+
+TEST(MountTest, UserNamespaceProcMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_SUCCESS(mount("proc", dir.path().c_str(), "proc",
+                             kUserNamespaceMountFlags, nullptr));
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup([] {}, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcMountRevealingLockedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", "/proc/sys", "tmpfs", 0, nullptr));
+  };
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_ERRNO(mount("proc", dir.path().c_str(), "proc",
+                           kUserNamespaceMountFlags, nullptr),
+                     EPERM);
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceSysfsMountRevealingLockedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", "/sys/kernel", "tmpfs", 0, nullptr));
+  };
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_ERRNO(mount("sysfs", dir.path().c_str(), "sysfs",
+                           kUserNamespaceMountFlags, nullptr),
+                     EPERM);
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID | CLONE_NEWNET, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceSysfsMountOverEmptyDir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(Exists("/sys/fs/cgroup")));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", "/sys/fs/cgroup", "tmpfs", 0, nullptr));
+  };
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_SUCCESS(mount("sysfs", dir.path().c_str(), "sysfs",
+                             kUserNamespaceMountFlags, nullptr));
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID | CLONE_NEWNET, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcMountLockedReadOnly) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount(
+        nullptr, "/proc", nullptr,
+        MS_REMOUNT | MS_BIND | MS_RDONLY | kUserNamespaceMountFlags, nullptr));
+  };
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_ERRNO(mount("proc", dir.path().c_str(), "proc",
+                           kUserNamespaceMountFlags, nullptr),
+                     EPERM);
+    TEST_CHECK_SUCCESS(mount("proc", dir.path().c_str(), "proc",
+                             MS_RDONLY | kUserNamespaceMountFlags, nullptr));
+    TEST_CHECK_ERRNO(
+        mount(nullptr, dir.path().c_str(), nullptr,
+              MS_REMOUNT | MS_BIND | kUserNamespaceMountFlags, nullptr),
+        EPERM);
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcBindMountIsNotVisible) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath bind_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", "/proc/sys", "tmpfs", 0, nullptr));
+  };
+  const std::function<void()> fn = [&dir, &bind_dir] {
+    TEST_CHECK_SUCCESS(mount("/proc/self", bind_dir.path().c_str(), nullptr,
+                             MS_BIND, nullptr));
+    TEST_CHECK_ERRNO(mount("proc", dir.path().c_str(), "proc",
+                           kUserNamespaceMountFlags, nullptr),
+                     EPERM);
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcFsmountRevealingLockedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const int probe = syscall(SYS_fsopen, "proc", 0);
+  SKIP_IF(probe < 0 && errno == ENOSYS);
+  ASSERT_THAT(probe, SyscallSucceeds());
+  ASSERT_THAT(close(probe), SyscallSucceeds());
+
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", "/proc/sys", "tmpfs", 0, nullptr));
+  };
+  const std::function<void()> fn = [] {
+    const int fs_fd = syscall(SYS_fsopen, "proc", 0);
+    TEST_CHECK_SUCCESS(fs_fd);
+    TEST_CHECK_SUCCESS(
+        syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_CREATE, nullptr, nullptr, 0));
+    TEST_CHECK_ERRNO(syscall(SYS_fsmount, fs_fd, 0, 0), EPERM);
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcMountIgnoresUnlockedMount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_SUCCESS(mount("tmpfs", "/proc/sys", "tmpfs",
+                             kUserNamespaceMountFlags, nullptr));
+    TEST_CHECK_SUCCESS(mount("proc", dir.path().c_str(), "proc",
+                             kUserNamespaceMountFlags, nullptr));
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup([] {}, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcFsmount) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const int probe = syscall(SYS_fsopen, "proc", 0);
+  SKIP_IF(probe < 0 && errno == ENOSYS);
+  ASSERT_THAT(probe, SyscallSucceeds());
+  ASSERT_THAT(close(probe), SyscallSucceeds());
+
+  const std::function<void()> fn = [] {
+    const int fs_fd = syscall(SYS_fsopen, "proc", 0);
+    TEST_CHECK_SUCCESS(fs_fd);
+    TEST_CHECK_SUCCESS(
+        syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_CREATE, nullptr, nullptr, 0));
+    TEST_CHECK_SUCCESS(syscall(SYS_fsmount, fs_fd, 0, 0));
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup([] {}, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, UserNamespaceProcFsmountRetryReadOnly) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const int probe = syscall(SYS_fsopen, "proc", 0);
+  SKIP_IF(probe < 0 && errno == ENOSYS);
+  ASSERT_THAT(probe, SyscallSucceeds());
+  ASSERT_THAT(close(probe), SyscallSucceeds());
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> setup = [] {
+    TEST_CHECK_SUCCESS(mount(
+        nullptr, "/proc", nullptr,
+        MS_REMOUNT | MS_BIND | MS_RDONLY | kUserNamespaceMountFlags, nullptr));
+  };
+  const std::function<void()> fn = [&dir] {
+    const int fs_fd = syscall(SYS_fsopen, "proc", 0);
+    TEST_CHECK_SUCCESS(fs_fd);
+    TEST_CHECK_SUCCESS(
+        syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_CREATE, nullptr, nullptr, 0));
+    TEST_CHECK_ERRNO(syscall(SYS_fsmount, fs_fd, 0, MOUNT_ATTR_NOEXEC), EPERM);
+    const int mnt_fd = syscall(SYS_fsmount, fs_fd, 0, MOUNT_ATTR_RDONLY);
+    TEST_CHECK_SUCCESS(mnt_fd);
+    struct statvfs st;
+    TEST_CHECK_SUCCESS(fstatvfs(mnt_fd, &st));
+    TEST_CHECK((st.f_flag & ST_NOEXEC) == 0);
+    TEST_CHECK_SUCCESS(syscall(SYS_move_mount, mnt_fd, "", AT_FDCWD,
+                               dir.path().c_str(), MOVE_MOUNT_F_EMPTY_PATH));
+    TEST_CHECK_ERRNO(
+        mount(nullptr, dir.path().c_str(), nullptr,
+              MS_REMOUNT | MS_BIND | kUserNamespaceMountFlags, nullptr),
+        EPERM);
+  };
+  EXPECT_THAT(InUserNamespaceAfterSetup(setup, CLONE_NEWPID, fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(MountTest, InitUserNamespaceProcMountWithoutVisibleProc) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::function<void()> fn = [&dir] {
+    TEST_CHECK_SUCCESS(unshare(CLONE_NEWNS));
+    TEST_CHECK_SUCCESS(
+        mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr));
+    TEST_CHECK_SUCCESS(umount2("/proc", MNT_DETACH));
+    TEST_CHECK_SUCCESS(mount("proc", dir.path().c_str(), "proc", 0, nullptr));
+  };
+  EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
 }
 
 TEST(MountTest, OverlayfsSgidBitIsCopiedUp) {

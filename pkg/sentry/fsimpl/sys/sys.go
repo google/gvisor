@@ -475,6 +475,11 @@ func (d *cgroupDir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statf
 	return vfs.GenericStatFS(linux.TMPFS_MAGIC), nil
 }
 
+// IsEmptyDir implements kernfs.emptyDirInode.IsEmptyDir.
+func (*cgroupDir) IsEmptyDir() bool {
+	return true
+}
+
 // cpuFile implements kernfs.Inode.
 //
 // +stateify savable

@@ -698,6 +698,17 @@ func (d *Dentry) Parent() *Dentry {
 	return d.parent.Load()
 }
 
+// IsFilesystemRoot implements vfs.MountVisibilityDentry.IsFilesystemRoot.
+func (d *Dentry) IsFilesystemRoot() bool {
+	return d.fs.root == d
+}
+
+// IsEmptyDir implements vfs.MountVisibilityDentry.IsEmptyDir.
+func (d *Dentry) IsEmptyDir() bool {
+	inode, ok := d.inode.(emptyDirInode)
+	return ok && inode.IsEmptyDir()
+}
+
 // The Inode interface maps filesystem-level operations that operate on paths to
 // equivalent operations on specific filesystem nodes.
 //
@@ -921,4 +932,8 @@ type InodeWithXattrs interface {
 
 	// RemoveXattr removes the given extended attribute.
 	RemoveXattr(ctx context.Context, name string) error
+}
+
+type emptyDirInode interface {
+	IsEmptyDir() bool
 }
