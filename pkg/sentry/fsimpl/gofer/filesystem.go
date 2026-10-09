@@ -1102,11 +1102,10 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 	}
 	if !d.inode.isSynthetic() {
-		// renameMu is locked here because it is required by d.openHandle(), which
-		// is called by d.ensureSharedHandle() and d.openSpecialFile() below. It is
-		// also required by d.connect() which is called by
-		// d.openSocketByConnecting(). Note that opening non-synthetic pipes may
-		// block, renameMu is unlocked separately in d.openSpecialFile() for pipes.
+		// renameMu is locked here because it is required by d.connect() which is
+		// called by d.openSocketByConnecting(). Note that opening non-synthetic
+		// pipes may block, renameMu is unlocked separately in d.openSpecialFile()
+		// for pipes.
 		d.inode.fs.renameMu.RLock()
 		defer d.inode.fs.renameMu.RUnlock()
 	}

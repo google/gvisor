@@ -50,6 +50,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/rdmaproxy/genericproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
@@ -243,6 +244,9 @@ type Loader struct {
 
 	// PreSeccompCallback is called right before installing seccomp filters.
 	PreSeccompCallback func()
+
+	// procSelfFD is Args.ProcSelfFD.
+	procSelfFD int
 
 	// restoreDone is used to wait for restore to complete. Note that this may be
 	// much after the sandbox has started because under some configurations, the
@@ -497,6 +501,9 @@ type Args struct {
 	PassFDs []FDMapping
 	// ExecFD is the host file descriptor used for program execution.
 	ExecFD int
+	// ProcSelfFD is a directory FD to procfs' self/fd. Required with directfs,
+	// -1 otherwise. It must stay open for the lifetime of the sandbox.
+	ProcSelfFD int
 	// GoferFilestoreFDs are FDs to the regular files that will back the tmpfs or
 	// overlayfs mount for certain gofer mounts.
 	GoferFilestoreFDs []int
@@ -779,6 +786,13 @@ func New(args Args) (*Loader, error) {
 	if args.ExecFD >= 0 {
 		l.root.execFD = fd.New(args.ExecFD)
 	}
+	if args.Conf.DirectFS {
+		if args.ProcSelfFD < 0 {
+			return nil, fmt.Errorf("directfs requires ProcSelfFD")
+		}
+		gofer.SetProcSelfFD(args.ProcSelfFD)
+	}
+	l.procSelfFD = args.ProcSelfFD
 
 	for _, customFD := range args.PassFDs {
 		l.root.passFDs = append(l.root.passFDs, fdMapping{
@@ -1312,6 +1326,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
+			ProcSelfFD:            uint32(l.procSelfFD),
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,

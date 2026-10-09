@@ -603,6 +603,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	if _, ok := mopts[moptDirectfs]; ok {
 		delete(mopts, moptDirectfs)
+		if procSelfFD < 0 {
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: directfs requires SetProcSelfFD()")
+			return nil, nil, linuxerr.EINVAL
+		}
 		fsopts.directfs.enabled = true
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
@@ -2145,7 +2149,6 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 // Preconditions:
 //   - !d.inode.isSynthetic().
 //   - d.isRegularFile() || d.isDir().
-//   - fs.renameMu is locked.
 func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool) error {
 	// O_TRUNC unconditionally requires us to obtain a new handle (opened with
 	// O_TRUNC).

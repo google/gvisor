@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 )
 
@@ -379,7 +380,10 @@ func selfPIDFilters(pid uint64) seccomp.SyscallRules {
 }
 
 // hostFilesystemFilters contains syscalls that are needed by directfs.
-func hostFilesystemFilters() seccomp.SyscallRules {
+func hostFilesystemFilters(vars precompiledseccomp.Values) seccomp.SyscallRules {
+	// procSelfFD is the directory FD through which directfs reopens host FDs
+	// by following their magic links (see gofer.SetProcSelfFD).
+	procSelfFD := vars[procSelfFDVarName]
 	// Directfs allows FD-based filesystem syscalls. We deny these syscalls with
 	// negative FD values (like AT_FDCWD or invalid FD numbers). We try to be as
 	// restrictive as possible because any restriction here improves security. We
@@ -407,18 +411,27 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
-		unix.SYS_OPENAT: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
-			seccomp.AnyValue{},
-			seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW),
-			seccomp.AnyValue{},
+		unix.SYS_OPENAT: seccomp.Or{
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.AnyValue{},
+				seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW),
+				seccomp.AnyValue{},
+			},
+			// Magic links must be followed to reopen host FDs.
+			seccomp.PerArg{
+				seccomp.EqualTo(procSelfFD),
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+			},
 		},
 		unix.SYS_LINKAT: seccomp.PerArg{
-			seccomp.NonNegativeFD{},
+			seccomp.EqualTo(procSelfFD),
 			seccomp.AnyValue{},
 			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
-			seccomp.EqualTo(0),
+			seccomp.EqualTo(unix.AT_SYMLINK_FOLLOW),
 		},
 		unix.SYS_MKDIRAT: seccomp.PerArg{
 			seccomp.NonNegativeFD{},
