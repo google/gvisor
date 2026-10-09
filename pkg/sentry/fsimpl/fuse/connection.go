@@ -64,14 +64,7 @@ func (dc *deviceConn) call(ctx context.Context, r *Request) (*Response, error) {
 	}
 	res, err := fut.resolve(ctx)
 	if err != nil {
-		// If the waiting task is interrupted (e.g. by Kernel.Pause during
-		// save/restore or by a signal), linuxError converts ErrInterrupted to
-		// ERESTARTSYS so the syscall will be re-executed with a new request.
-		// Remove this abandoned request from the queue, completions map, and
-		// active-request count so it is not processed twice or leaked across
-		// checkpoint/restore.
-		dc.conn.cancelRequest(r)
-		return nil, linuxError(err)
+		return res, linuxError(err)
 	}
 	return res, nil
 }
@@ -289,35 +282,10 @@ func linuxError(err error) error {
 			return linuxerr.ErrorFromUnix(e)
 		}
 	default:
-		return linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
+		return err
 	}
 	log.Warningf("fusefs: failed with invalid error: %v", err)
 	return linuxerr.EINVAL
-}
-
-// cancelRequest removes an aborted request from the queue and completions map
-// if it has not yet been sent to the FUSE server, or marks its completion entry
-// as abandoned if the server has already dequeued it so the late reply can be
-// consumed and discarded without failing with EINVAL.
-func (conn *connection) cancelRequest(r *Request) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-
-	fut, ok := conn.completions[r.id]
-	if !ok {
-		return
-	}
-	if !r.sent {
-		conn.queue.Remove(r)
-		delete(conn.completions, r.id)
-		conn.numActiveRequests--
-		select {
-		case conn.fullQueueCh <- struct{}{}:
-		default:
-		}
-		return
-	}
-	fut.abandoned = true
 }
 
 // setInitializedLocked atomically sets the connection as initialized.
@@ -527,10 +495,6 @@ func (conn *connection) sendResponse(ctx context.Context, fut *futureResponse) e
 	}
 	conn.numActiveRequests--
 
-	if fut.abandoned {
-		return nil
-	}
-
 	if fut.async {
 		return conn.asyncCallBack(ctx, fut.getResponse())
 	}
@@ -618,7 +582,6 @@ func (conn *connection) read(ctx context.Context, dst usermem.IOSequence) (int64
 		return 0, linuxerr.EIO
 	}
 	conn.queue.Remove(req)
-	req.sent = true
 	// Remove noReply ones from the map of requests expecting a reply.
 	if req.noReply {
 		conn.numActiveRequests--

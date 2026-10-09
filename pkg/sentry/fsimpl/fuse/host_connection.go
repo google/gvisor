@@ -134,7 +134,6 @@ func (hc *hostConnection) call(ctx context.Context, r *Request) (*Response, erro
 		return nil, linuxerr.ECONNABORTED
 	}
 	hc.conn.numActiveRequests++
-	r.sent = true
 	fut := newFutureResponse(r)
 	hc.conn.completions[r.id] = fut
 	hc.conn.mu.Unlock()
@@ -144,20 +143,10 @@ func (hc *hostConnection) call(ctx context.Context, r *Request) (*Response, erro
 		delete(hc.conn.completions, r.id)
 		hc.conn.numActiveRequests--
 		hc.conn.mu.Unlock()
-		return nil, linuxError(err)
+		return nil, err
 	}
 
-	res, err := fut.resolve(ctx)
-	if err != nil {
-		// If the waiting task is interrupted (e.g. by Kernel.Pause during
-		// save/restore or by a signal), linuxError converts ErrInterrupted to
-		// ERESTARTSYS so the syscall will be re-executed with a new request.
-		// Mark this in-flight request's completion entry as abandoned so that
-		// readLoop can consume and discard the late reply when it arrives.
-		hc.conn.cancelRequest(r)
-		return nil, linuxError(err)
-	}
-	return res, nil
+	return fut.resolve(ctx)
 }
 
 // Call makes a request to the server via the host FD and blocks until a

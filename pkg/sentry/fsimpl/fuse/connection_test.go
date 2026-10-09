@@ -20,34 +20,10 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
-
-// interruptibleTaskContext wraps a context.Context to simulate a kernel.Task
-// whose Block() returns linuxerr.ErrInterrupted when interrupted by
-// Kernel.Pause() / TaskSet.BeginExternalStop().
-type interruptibleTaskContext struct {
-	context.Context
-	enteredBlock chan struct{}
-	interruptCh  chan struct{}
-}
-
-func (c *interruptibleTaskContext) Block(ch <-chan struct{}) error {
-	select {
-	case c.enteredBlock <- struct{}{}:
-	default:
-	}
-	select {
-	case <-ch:
-		return nil
-	case <-c.interruptCh:
-		return linuxerr.ErrInterrupted
-	}
-}
 
 // TestConnectionInitBlock tests if initialization
 // correctly blocks and unblocks the connection.
@@ -151,119 +127,4 @@ func TestIterDirentsRejectsEmptyName(t *testing.T) {
 		}
 	}
 	t.Fatalf("expected empty name to be rejected")
-}
-
-// TestConnectionCallInterruptedByPause reproduces b/569841594: when a task is
-// blocked in conn.Call() waiting for a paused FUSE daemon (such as srcfsd
-// during a gVisor snapshot) and Kernel.Pause() interrupts the task (causing
-// Task.block to return linuxerr.ErrInterrupted), conn.Call() must return
-// linuxerr.ERESTARTSYS so the VFS syscall is restarted upon resume/restore
-// rather than failing with EINTR, and must clean up the aborted request from
-// conn.queue and conn.completions.
-func TestConnectionCallInterruptedByPause(t *testing.T) {
-	s := setup(t)
-	defer s.Destroy()
-
-	creds := auth.CredentialsFromContext(s.Ctx)
-	conn, _, err := newTestConnection(s, maxActiveRequestsDefault)
-	if err != nil {
-		t.Fatalf("newTestConnection: %v", err)
-	}
-	conn.setInitialized()
-
-	taskCtx := &interruptibleTaskContext{
-		Context:      s.Ctx,
-		enteredBlock: make(chan struct{}, 1),
-		interruptCh:  make(chan struct{}),
-	}
-
-	testObj := primitive.Uint32(42)
-	req := conn.NewRequest(creds, 1, 1, linux.FUSE_GETATTR, &testObj)
-
-	callErrCh := make(chan error, 1)
-	go func() {
-		_, err := conn.Call(taskCtx, req)
-		callErrCh <- err
-	}()
-
-	// Wait until the request is queued and the task is blocked in
-	// futureResponse.resolve() waiting for the paused FUSE daemon.
-	<-taskCtx.enteredBlock
-
-	// Simulate Kernel.Pause() -> TaskSet.BeginExternalStop() interrupting the
-	// blocked task goroutine.
-	close(taskCtx.interruptCh)
-
-	callErr := <-callErrCh
-	if !linuxerr.Equals(linuxerr.ERESTARTSYS, callErr) {
-		t.Errorf("conn.Call() after Kernel.Pause interrupt = %v, want %v (ERESTARTSYS)", callErr, linuxerr.ERESTARTSYS)
-	}
-
-	conn.mu.Lock()
-	activeReqs := conn.numActiveRequests
-	queueEmpty := conn.queue.Empty()
-	numCompletions := len(conn.completions)
-	conn.mu.Unlock()
-
-	if activeReqs != 0 {
-		t.Errorf("conn.numActiveRequests after interrupted Call = %d, want 0", activeReqs)
-	}
-	if !queueEmpty {
-		t.Errorf("conn.queue.Empty() after interrupted Call = false, want true")
-	}
-	if numCompletions != 0 {
-		t.Errorf("len(conn.completions) after interrupted Call = %d, want 0", numCompletions)
-	}
-
-	// Now test interrupting a request AFTER the FUSE daemon has already
-	// dequeued it via fd.Read(). The completion entry must remain registered as
-	// abandoned until the daemon writes its reply via fd.Write() so that the
-	// reply does not fail with EINVAL.
-	taskCtx2 := &interruptibleTaskContext{
-		Context:      s.Ctx,
-		enteredBlock: make(chan struct{}, 1),
-		interruptCh:  make(chan struct{}),
-	}
-	req2 := conn.NewRequest(creds, 1, 1, linux.FUSE_GETATTR, &testObj)
-	callErrCh2 := make(chan error, 1)
-	go func() {
-		_, err := conn.Call(taskCtx2, req2)
-		callErrCh2 <- err
-	}()
-
-	<-taskCtx2.enteredBlock
-
-	readBuf := make([]byte, linux.FUSE_MIN_READ_BUFFER)
-	if _, err := conn.read(s.Ctx, usermem.BytesIOSequence(readBuf)); err != nil {
-		t.Fatalf("conn.read() failed: %v", err)
-	}
-
-	close(taskCtx2.interruptCh)
-	callErr2 := <-callErrCh2
-	if !linuxerr.Equals(linuxerr.ERESTARTSYS, callErr2) {
-		t.Errorf("conn.Call() after interrupt of dequeued req = %v, want %v (ERESTARTSYS)", callErr2, linuxerr.ERESTARTSYS)
-	}
-
-	// Because the daemon is still processing req2, its completion entry should
-	// remain as abandoned until conn.write() delivers the reply.
-	var hdrOut linux.FUSEHeaderOut
-	hdrOut.Len = uint32(hdrOut.SizeBytes())
-	hdrOut.Error = 0
-	hdrOut.Unique = req2.id
-	writeBuf := make([]byte, hdrOut.Len)
-	hdrOut.MarshalUnsafe(writeBuf)
-	if _, err := conn.write(s.Ctx, usermem.BytesIOSequence(writeBuf)); err != nil {
-		t.Errorf("conn.write() for abandoned request failed: %v, want nil", err)
-	}
-
-	conn.mu.Lock()
-	activeReqsAfterReply := conn.numActiveRequests
-	numCompletionsAfterReply := len(conn.completions)
-	conn.mu.Unlock()
-	if activeReqsAfterReply != 0 {
-		t.Errorf("conn.numActiveRequests after late reply = %d, want 0", activeReqsAfterReply)
-	}
-	if numCompletionsAfterReply != 0 {
-		t.Errorf("len(conn.completions) after late reply = %d, want 0", numCompletionsAfterReply)
-	}
 }
