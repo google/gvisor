@@ -462,7 +462,11 @@ afterTrailingSymlink:
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if !afterCreate {
-		if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
+		permAts, err := vfs.AccessTypesForOpenPermissionCheck(opts, linux.FileMode(d.inode.mode.Load()))
+		if err != nil {
+			return nil, err
+		}
+		if err := d.inode.checkPermissions(rp.Credentials(), permAts); err != nil {
 			return nil, err
 		}
 		if ats.MayWrite() {

@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -45,6 +46,16 @@ func (mm *MemoryManager) Dumpability() Dumpability {
 // SetDumpability sets the dumpability.
 func (mm *MemoryManager) SetDumpability(d Dumpability) {
 	mm.dumpability.Store(int32(d))
+}
+
+// UserNamespace returns MemoryManager.userns. It can be nil.
+func (mm *MemoryManager) UserNamespace() *auth.UserNamespace {
+	return mm.userns.Load()
+}
+
+// SetUserNamespace sets the user namespace returned by UserNamespace.
+func (mm *MemoryManager) SetUserNamespace(ns *auth.UserNamespace) {
+	mm.userns.Store(ns)
 }
 
 // ArgvStart returns the start of the application argument vector.

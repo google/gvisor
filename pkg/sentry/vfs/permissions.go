@@ -164,6 +164,8 @@ func MayLink(creds *auth.Credentials, mode linux.FileMode, acl *PosixACL, kuid a
 //     AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
 //
 // Use May{Read,Write}FileWithOpenFlags() for these checks instead.
+//
+// For permission checks, use AccessTypesForOpenPermissionCheck().
 func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
 	ats := AccessTypes(0)
 	if opts.FileExec {
@@ -181,6 +183,24 @@ func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
 	default:
 		return ats | MayRead | MayWrite
 	}
+}
+
+// AccessTypesForOpenPermissionCheck returns the access types that the file
+// permissions must allow. For FileExec, it removes MayRead and rejects a file
+// that is not regular. This prevents a block on a FIFO.
+func AccessTypesForOpenPermissionCheck(opts *OpenOptions, mode linux.FileMode) (AccessTypes, error) {
+	ats := AccessTypesForOpenFlags(opts)
+	if opts.FileExec {
+		switch mode.FileType() {
+		case linux.ModeRegular:
+		case linux.ModeSymlink:
+			return 0, linuxerr.ELOOP
+		default:
+			return 0, linuxerr.EACCES
+		}
+		ats &^= MayRead
+	}
+	return ats, nil
 }
 
 // MayReadFileWithOpenFlags returns true if a file with the given open flags
@@ -358,6 +378,17 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 		return linuxerr.EOPNOTSUPP
 	}
 	return nil
+}
+
+// XattrRequiresInodePermission returns true if access to the xattr needs inode
+// permissions. A read of a trusted.*, security.* or system.* xattr does not.
+func XattrRequiresInodePermission(name string, ats AccessTypes) bool {
+	if ats.MayWrite() {
+		return true
+	}
+	return !strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) &&
+		!strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) &&
+		!strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX)
 }
 
 // ClearSUIDAndSGID clears the setuid and/or setgid bits after a chown or write.

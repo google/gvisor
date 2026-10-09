@@ -516,6 +516,15 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return nil
 }
 
+// checkOpenPermissions returns an error if rp's credentials cannot open d.
+func (d *Dentry) checkOpenPermissions(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) error {
+	ats, err := vfs.AccessTypesForOpenPermissionCheck(opts, d.inode.Mode())
+	if err != nil {
+		return err
+	}
+	return d.inode.CheckPermissions(ctx, rp.Credentials(), ats)
+}
+
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(&opts)
@@ -531,7 +540,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 			fs.mu.RUnlock()
 			return nil, err
 		}
-		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := d.checkOpenPermissions(ctx, rp, &opts); err != nil {
 			fs.mu.RUnlock()
 			return nil, err
 		}
@@ -574,7 +583,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, linuxerr.EEXIST
 		}
-		if err := start.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := start.checkOpenPermissions(ctx, rp, &opts); err != nil {
 			return nil, err
 		}
 		if trunc && start.isRegular() {
@@ -669,7 +678,7 @@ afterTrailingSymlink:
 	if rp.MustBeDir() && !child.isDir() {
 		return nil, linuxerr.ENOTDIR
 	}
-	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+	if err := child.checkOpenPermissions(ctx, rp, &opts); err != nil {
 		return nil, err
 	}
 	if trunc && child.isRegular() {
@@ -1139,8 +1148,10 @@ func (fs *Filesystem) GetXattrAt(ctx context.Context, rp *vfs.ResolvingPath, opt
 		mode := d.inode.Mode()
 		kuid := d.inode.UID()
 		kgid := d.inode.GID()
-		if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, nil, kuid, kgid); err != nil {
-			return "", err
+		if vfs.XattrRequiresInodePermission(opts.Name, vfs.MayRead) {
+			if err := vfs.GenericCheckPermissions(creds, vfs.MayRead, mode, nil, kuid, kgid); err != nil {
+				return "", err
+			}
 		}
 		if err := vfs.CheckXattrPermissions(creds, vfs.MayRead, mode, kuid, opts.Name); err != nil {
 			return "", err

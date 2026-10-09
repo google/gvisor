@@ -1090,7 +1090,11 @@ var logUnimplementedBlockDevOpenOnce sync.Once
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 
-	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
+	permAts, err := vfs.AccessTypesForOpenPermissionCheck(opts, linux.FileMode(d.inode.mode.Load()))
+	if err != nil {
+		return nil, err
+	}
+	if err := d.checkPermissions(rp.Credentials(), permAts); err != nil {
 		return nil, err
 	}
 	if ats.MayWrite() {
@@ -1125,7 +1129,6 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	}
 
 	var vfd *vfs.FileDescription
-	var err error
 	switch d.inode.fileType() {
 	case linux.S_IFREG:
 		if !d.inode.fs.opts.regularFilesUseSpecialFileFD {

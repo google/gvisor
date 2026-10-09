@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -201,6 +202,12 @@ type MemoryManager struct {
 	//
 	// +checkatomic
 	dumpability atomicbitops.Int32
+
+	// userns is the namespace in which a tracer needs CAP_SYS_PTRACE when mm
+	// is not UserDumpable. Exec sets it. If the task cannot read the file,
+	// it is an ancestor of the task namespace. It is nil if exec did not
+	// create mm.
+	userns atomic.Pointer[auth.UserNamespace] `state:".(*auth.UserNamespace)"`
 
 	metadataMu metadataMutex `state:"nosave"`
 

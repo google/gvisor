@@ -108,18 +108,14 @@ type LoadArgs struct {
 // openPath returns an *fs.Dirent and *fs.File for args.Filename, which is not
 // installed in the Task FDTable. The caller takes ownership of both.
 //
-// args.Filename must be a readable, executable, regular file.
+// args.Filename must be an executable, regular file. The task does not need
+// read permission.
 func openPath(ctx context.Context, args LoadArgs) (*vfs.FileDescription, error) {
 	if args.Filename == "" {
 		ctx.Infof("cannot open empty name")
 		return nil, linuxerr.ENOENT
 	}
 
-	// TODO(gvisor.dev/issue/160): Linux requires only execute permission,
-	// not read. However, our backing filesystems may prevent us from reading
-	// the file without read permission. Additionally, a task with a
-	// non-readable executable has additional constraints on access via
-	// ptrace and procfs.
 	opts := vfs.OpenOptions{
 		Flags:    linux.O_RDONLY,
 		FileExec: true,
@@ -144,6 +140,28 @@ func openPath(ctx context.Context, args LoadArgs) (*vfs.FileDescription, error) 
 		args.AfterOpen(fd)
 	}
 	return fd, nil
+}
+
+// mayRead returns true if the credentials in ctx can read fd.
+func mayRead(ctx context.Context, fd *vfs.FileDescription) bool {
+	vd := fd.VirtualDentry()
+	vfsObj := vd.Mount().Filesystem().VirtualFilesystem()
+	creds := auth.CredentialsFromContext(ctx)
+	return vfsObj.AccessAt(ctx, creds, vfs.MayRead, &vfs.PathOperation{
+		Root:  vd,
+		Start: vd,
+	}) == nil
+}
+
+// privilegedOver returns the nearest ancestor of ns, or ns, that maps the owner
+// of fd. If the owner is not known, it returns the root namespace.
+func privilegedOver(ctx context.Context, fd *vfs.FileDescription, ns *auth.UserNamespace) *auth.UserNamespace {
+	const mask = linux.STATX_UID | linux.STATX_GID
+	stat, err := fd.Stat(ctx, vfs.StatOptions{Mask: mask})
+	if err != nil || stat.Mask&mask != mask {
+		return ns.Root()
+	}
+	return ns.PrivilegedOver(auth.KUID(stat.UID), auth.KGID(stat.GID))
 }
 
 // checkIsRegularFile prevents us from trying to execute a directory, pipe, etc.
@@ -375,6 +393,11 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	m.SetAuxv(auxv)
 	m.SetExecutable(ctx, file)
 	m.SetVDSOSigReturn(uint64(vdsoAddr) + vdsoSigreturnOffset - vdsoPrelink)
+	m.SetUserNamespace(loaded.userns)
+	if loaded.nonDumpable {
+		// suid_dumpable is not implemented.
+		m.SetDumpability(mm.NotDumpable)
+	}
 
 	ac.SetIP(uintptr(loaded.entry))
 	ac.SetStack(uintptr(stack.Bottom))
