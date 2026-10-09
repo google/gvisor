@@ -26,6 +26,7 @@
 #include <sys/vfs.h>
 #include <unistd.h>
 
+#include <functional>
 #include <string>
 
 #include "gmock/gmock.h"
@@ -33,6 +34,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -957,6 +959,79 @@ TEST(OpenTreeTest, OpenTreeCloneRecursiveOnDetached) {
   auto cleanup_tree = Cleanup([&]() { close(treefd); });
 
   EXPECT_THAT(faccessat(treefd, "sub/marker_sub", F_OK, 0), SyscallSucceeds());
+}
+
+// The root of a detached mount, such as an open_tree(2) clone, can be an
+// overlay layer. See https://github.com/torvalds/linux/commit/db04662e2f4f,
+// which first appears in Linux 6.15.
+TEST(OpenTreeTest, OpenTreeCloneAsOverlayLowerdir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major < 6 || (version.major == 6 && version.minor < 15));
+  }
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, ""), SyscallSucceeds());
+  auto cleanup_umount =
+      Cleanup([&]() { umount2(dir.path().c_str(), MNT_DETACH); });
+  const std::string lower = JoinPath(dir.path(), "lower");
+  const std::string other = JoinPath(dir.path(), "other");
+  const std::string merged = JoinPath(dir.path(), "merged");
+  for (const std::string& path : {lower, other, merged}) {
+    ASSERT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
+  }
+
+  int treefd =
+      open_tree(AT_FDCWD, lower.c_str(), OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  const std::string opts =
+      "lowerdir=/proc/self/fd/" + std::to_string(treefd) + ":" + other;
+  ASSERT_THAT(mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(umount2(merged.c_str(), 0), SyscallSucceeds());
+}
+
+// A detached mount cloned in a more privileged user namespace cannot be an
+// overlay layer. See
+// https://github.com/torvalds/linux/commit/c28f922c9dce, which first appears
+// in Linux 6.16.
+TEST(OpenTreeTest, OpenTreeCloneFromAnotherUserNamespaceAsOverlayLowerdir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major < 6 || (version.major == 6 && version.minor < 16));
+  }
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, ""), SyscallSucceeds());
+  auto cleanup_umount =
+      Cleanup([&]() { umount2(dir.path().c_str(), MNT_DETACH); });
+  const std::string lower = JoinPath(dir.path(), "lower");
+  const std::string hidden = JoinPath(lower, "hidden");
+  const std::string other = JoinPath(dir.path(), "other");
+  const std::string merged = JoinPath(dir.path(), "merged");
+  for (const std::string& path : {lower, hidden, other, merged}) {
+    ASSERT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
+  }
+  ASSERT_THAT(mount("", hidden.c_str(), kTmpfs, 0, ""), SyscallSucceeds());
+  auto cleanup_hidden = Cleanup([&]() { umount2(hidden.c_str(), MNT_DETACH); });
+
+  int treefd = open_tree(AT_FDCWD, lower.c_str(),
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_RECURSIVE);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  const std::string opts =
+      "lowerdir=/proc/self/fd/" + std::to_string(treefd) + ":" + other;
+  const std::function<void()> child = [&] {
+    TEST_CHECK_ERRNO(
+        mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()), EPERM);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, child),
+              IsPosixErrorOkAndHolds(0));
 }
 
 }  // namespace
