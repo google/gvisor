@@ -211,6 +211,25 @@ restore` does not require any special flags. If the snapshot was created with
 `runsc checkpoint --cuda-checkpoint-path`, then the same configuration will
 automatically be used on restore.
 
+### CUDA IPC (multi-process) support
+
+Processes that share GPU memory via CUDA IPC (`cuIpcGetMemHandle`) can only be
+checkpointed and restored coherently when they belong to the same
+`cuda-checkpoint` *job*. This requires driver R610+ (see
+[cuda-checkpoint 610 features](https://github.com/NVIDIA/cuda-checkpoint#610-features)).
+
+To enable this, set the `--cuda-checkpoint-path` flag to the path of the
+`cuda-checkpoint` binary inside the container filesystem. When it is set for a
+GPU container on driver R610+, gVisor automatically wraps that container's command in
+`cuda-checkpoint --launch-job`, which launches the workload inside a job so that
+all of its CUDA processes are grouped together. The flag is applied per
+container, so a sidecar container that does no GPU work (or lacks the binary) is
+unaffected.
+
+Processes in a job must be toggled sequentially, so this must be paired with
+`runsc checkpoint --cuda-checkpoint-sequential`, which invokes `cuda-checkpoint`
+sequentially instead of in parallel.
+
 ### Limitation
 
 GPU checkpoint/restore is not supported on the arm64 architecture due to lack of
