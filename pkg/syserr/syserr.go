@@ -272,6 +272,9 @@ func FromError(err error) *Error {
 	case unix.Errno:
 		return FromHost(e)
 	case *errors.Error:
+		if linuxerr.IsRestartError(e) {
+			return ErrInterrupted
+		}
 		return FromHost(unix.Errno(e.Errno()))
 	case safecopy.SegvError, safecopy.BusError, safecopy.AlignmentError:
 		return FromHost(unix.EFAULT)
