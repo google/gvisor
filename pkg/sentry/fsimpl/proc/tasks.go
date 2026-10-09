@@ -164,9 +164,11 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 	// fs/proc/internal.h: #define FIRST_PROCESS_ENTRY 256
 	const FIRST_PROCESS_ENTRY = 256
 
-	// Use maxTaskID to shortcut searches that will result in 0 entries.
-	const maxTaskID = kernel.TasksLimit + 1
-	if offset >= maxTaskID {
+	// A process entry's position is 258+PID, not an entry count. The first
+	// position with no representable PID is therefore 258+TasksLimit+1. Comparing
+	// the raw position with TasksLimit drops PIDs at or above 65279.
+	const endOff = FIRST_PROCESS_ENTRY + 2 + kernel.TasksLimit + 1
+	if offset >= endOff {
 		return offset, nil
 	}
 
@@ -224,18 +226,22 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 
 	sort.Ints(tids)
 	for _, tid := range tids {
+		// Continuation is a PID threshold, not an entry count. Align the saved
+		// position with this candidate before emitting it. If the buffer fills,
+		// the next read retries this PID instead of an earlier one.
+		offset = FIRST_PROCESS_ENTRY + 2 + int64(tid)
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(tid), 10),
 			Type:    linux.DT_DIR,
 			Ino:     i.fs.NextIno(),
-			NextOff: FIRST_PROCESS_ENTRY + 2 + int64(tid) + 1,
+			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {
 			return offset, err
 		}
 		offset++
 	}
-	return maxTaskID, nil
+	return endOff, nil
 }
 
 // Open implements kernfs.Inode.Open.

@@ -436,8 +436,15 @@ func TestTasksOffset(t *testing.T) {
 			wants:  nil,
 		},
 		{
-			name:   "TaskLimit+1",
+			// 65537 is 258+65279, a valid continuation for a high PID. It is empty
+			// here only because this fixture has no such PID.
+			name:   "high PID continuation",
 			offset: kernel.TasksLimit + 1,
+			wants:  nil,
+		},
+		{
+			name:   "past every representable PID",
+			offset: 256 + 2 + kernel.TasksLimit + 1,
 			wants:  nil,
 		},
 		{
