@@ -16,6 +16,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <linux/capability.h>
+#include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -47,6 +49,8 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
@@ -1255,7 +1259,7 @@ TEST(ElfTest, PtraceExecuteOnlyBinary) {
       RetryEINTR(waitpid)(child, nullptr, 0);
     };
 
-    long peeked, poked;
+    int64_t peeked, poked;
     // Control: a readable binary's memory is accessible to the tracer.
     ASSERT_NO_FATAL_FAILURE(peek_after_exec(readable.path(), &peeked, &poked));
     EXPECT_EQ(peeked, 0);
@@ -1304,7 +1308,7 @@ TEST(ElfTest, UsernsAttachExecuteOnlyBinary) {
     // was denied) so that PTRACE_ATTACH performs a fresh access check.
     ptrace(PTRACE_DETACH, child, 0, SIGSTOP);
     errno = 0;
-    long ret = ptrace(PTRACE_ATTACH, child, 0, 0);
+    int64_t ret = ptrace(PTRACE_ATTACH, child, 0, 0);
     int attach_errno = errno;
     kill(child, SIGKILL);
     waitpid(child, nullptr, 0);
@@ -1449,7 +1453,7 @@ TEST(ElfTest, ProcessVMReadExecuteOnlyBinary) {
     // Restore dumpability, cleared by the uid change.
     ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
 
-    const auto read_after_exec = [](const std::string& path) -> long {
+    const auto read_after_exec = [](const std::string& path) -> int64_t {
       pid_t child = fork();
       if (child == 0) {
         char* const argv[] = {const_cast<char*>(path.c_str()), nullptr};
@@ -1468,8 +1472,9 @@ TEST(ElfTest, ProcessVMReadExecuteOnlyBinary) {
       // The first segment of StandardElf is loaded at 0x40000.
       struct iovec remote = {reinterpret_cast<void*>(0x40000), sizeof(buf)};
       errno = 0;
-      long n = syscall(SYS_process_vm_readv, child, &local, 1, &remote, 1, 0);
-      long result = (n < 0) ? -errno : n;
+      int64_t n =
+          syscall(SYS_process_vm_readv, child, &local, 1, &remote, 1, 0);
+      int64_t result = (n < 0) ? -errno : n;
       kill(child, SIGKILL);
       RetryEINTR(waitpid)(child, nullptr, 0);
       return result;

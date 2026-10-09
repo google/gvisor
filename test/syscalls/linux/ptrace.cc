@@ -49,6 +49,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
@@ -60,7 +61,6 @@
 #include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
-#include "test/util/cleanup.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 #include "test/util/time_util.h"
@@ -270,7 +270,7 @@ TEST(PtraceTest, AttachSameThreadGroup) {
 // Memory access to a tracee that became non-dumpable after attach is governed
 // by the tracer credentials captured when tracing began, not the tracer's
 // current credentials; see Linux's kernel/ptrace.c:ptrace_access_vm().
-volatile long ptrace_access_vm_marker = 0x123456789abcdef;
+volatile int64_t ptrace_access_vm_marker = 0x123456789abcdef;
 
 void CheckPeekAfterEffectiveCapChange(bool cap_at_attach) {
   int fds[2];
@@ -329,13 +329,13 @@ void CheckPeekAfterEffectiveCapChange(bool cap_at_attach) {
   {
     AutoCapability cap(CAP_SYS_PTRACE, !cap_at_attach);
     errno = 0;
-    long const peeked = ptrace(PTRACE_PEEKDATA, child_pid,
-                               &ptrace_access_vm_marker, 0);
-    long const peek_errno = (peeked == -1) ? errno : 0;
+    int64_t const peeked =
+        ptrace(PTRACE_PEEKDATA, child_pid, &ptrace_access_vm_marker, 0);
+    int64_t const peek_errno = (peeked == -1) ? errno : 0;
     errno = 0;
-    long const poked = ptrace(PTRACE_POKEDATA, child_pid,
-                              &ptrace_access_vm_marker, 0x11223344);
-    long const poke_errno = (poked == -1) ? errno : 0;
+    int64_t const poked = ptrace(PTRACE_POKEDATA, child_pid,
+                                 &ptrace_access_vm_marker, 0x11223344);
+    int64_t const poke_errno = (poked == -1) ? errno : 0;
     if (cap_at_attach) {
       EXPECT_EQ(peek_errno, 0);
       EXPECT_EQ(poke_errno, 0);
