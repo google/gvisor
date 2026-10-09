@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -51,6 +52,7 @@ func newRACKTestContext(clock tcpip.Clock, resolution time.Duration) *rackTestCo
 		scoreboard: NewSACKScoreboard(1, 0),
 	}
 	ctx.snd.writeList.set = make(map[*segment]struct{})
+	ctx.snd.cc = newRenoCC(&ctx.snd)
 	ctx.snd.reorderTimer.init(clock, func() {})
 	ctx.snd.rc.init(&ctx.snd, 0)
 	return ctx
@@ -320,5 +322,84 @@ func TestRACKZeroClockResolutionPreservesLossBoundary(t *testing.T) {
 
 	if got := ctx.snd.rc.detectLoss(tcpip.MonotonicTime{}); got != 1 {
 		t.Fatalf("detectLoss at zero-resolution boundary got %d losses, want 1", got)
+	}
+}
+
+// TestSACKCreditMSSAndSplit keeps credited entries beyond a rewound send cursor.
+// MSS changes and queue fragmentation must conserve that credit.
+func TestSACKCreditMSSAndSplit(t *testing.T) {
+	clock := faketime.NewManualClock()
+	ctx := newRACKTestContext(clock, testClockResolution)
+	defer ctx.cleanup()
+	s := &ctx.snd
+	s.ep.mu.Lock()
+	defer s.ep.mu.Unlock()
+	defer s.updateWriteNext(nil)
+	s.MaxPayloadSize = 10
+	s.SndWnd = 100
+	s.SndNxt = 40
+	s.Outstanding = 1
+	s.SackedOut = 3
+	s.FastRecovery.Active = true
+	s.state = tcpip.SACKRecovery
+	s.ep.SACKPermitted = true
+	s.ep.scoreboard.smss = 10
+	// Keep retransmission disabled; this test exercises the rare MSS update
+	// and split owners, while the packet fixture covers recovery traffic.
+	s.SndCwnd = 0
+	for _, entry := range []struct {
+		seq   seqnum.Value
+		size  int
+		acked bool
+	}{
+		{seq: 0, size: 10},
+		{seq: 10, size: 30, acked: true},
+	} {
+		seg := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.MakeWithView(buffer.NewViewSize(entry.size)), 0)
+		seg.sequenceNumber = entry.seq
+		seg.flags = header.TCPFlagAck
+		seg.xmitCount = 1
+		seg.acked = entry.acked
+		seg.lost = entry.acked
+		s.writeList.PushBack(seg)
+		ctx.segs = append(ctx.segs, seg)
+	}
+	s.ep.scoreboard.Insert(header.SACKBlock{Start: 10, End: 40})
+	s.updateWriteNext(s.writeList.Front())
+
+	for _, test := range []struct {
+		mss   int
+		count int
+		want  int
+	}{
+		{mss: 5, count: 0, want: 6},
+		{mss: 3, count: 1, want: 10},
+	} {
+		s.updateMaxPayloadSize(header.TCPMinimumSize+s.ep.maxOptionSize()+test.mss, test.count)
+		if got, want := s.SackedOut, test.want; got != want {
+			t.Errorf("SackedOut at MSS %d = %d, want %d", test.mss, got, want)
+		}
+	}
+
+	credited := s.writeList.Front().Next()
+	s.splitSeg(credited, 8)
+	remainder := credited.Next()
+	if remainder == nil {
+		t.Fatal("split did not create a remainder")
+	}
+	ctx.segs = append(ctx.segs, remainder)
+	for _, seg := range []*segment{credited, remainder} {
+		if got, want := seg.acked, true; got != want {
+			t.Errorf("split SACK credit = %t, want %t", got, want)
+		}
+		if got, want := seg.lost, true; got != want {
+			t.Errorf("split loss state = %t, want %t", got, want)
+		}
+		if got, want := seg.flags&header.TCPFlagPsh, header.TCPFlags(0); got != want {
+			t.Errorf("split PSH = %v, want %v", got, want)
+		}
+	}
+	if got, want := s.SackedOut, 11; got != want {
+		t.Errorf("SackedOut after split = %d, want %d", got, want)
 	}
 }
