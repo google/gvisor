@@ -805,7 +805,7 @@ func New(args Args) (*Loader, error) {
 		}
 		unix.Close(args.CPUDMALatencyFD)
 	}
-	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing)
+	p, err := createPlatform(args.Conf, args.NumCPU, args.Device, args.ID, args.StartupTimer, &l.pinRing, 0 /* tscOffset */)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
@@ -1199,7 +1199,7 @@ func (l *Loader) Destroy() {
 	refs.OnExit()
 }
 
-func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing) (platform.Platform, error) {
+func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxID string, startupTimer *timing.Timer, pinRing *pinring.PinRing, tscOffset uint64) (platform.Platform, error) {
 	platformName := conf.Platform
 	p, err := platform.Lookup(conf.Platform)
 	if err != nil {
@@ -1207,16 +1207,32 @@ func createPlatform(conf *config.Config, numCPU int, deviceFile *fd.FD, sandboxI
 	}
 
 	log.Infof("Platform: %s", platformName)
-	return p.New(platform.Options{
+	plat, err := p.New(platform.Options{
 		DeviceFile:             deviceFile,
 		DisableSyscallPatching: platformName == "systrap" && conf.SystrapDisableSyscallPatching,
 		DisableFastPath:        platformName == "systrap" && conf.SystrapDisableFastPath,
 		ApplicationCores:       numCPU,
 		UseCPUNums:             platformName == "kvm" && conf.UseCPUNums,
+		TSCOffset:              tscOffset,
 		SandboxID:              sandboxID,
 		StartupTimer:           startupTimer,
 		PinRing:                pinRing,
 	})
+	if err != nil {
+		return nil, err
+	}
+	// Sentry timekeeping must run in the same TSC domain as the guest, so
+	// publish the offset the platform actually applied. Platforms that cannot
+	// offset the guest TSC leave the sentry in the host TSC domain, and the
+	// caller is responsible for warning about the resulting time jump.
+	var offset int64
+	if top, ok := plat.(platform.TSCAdjustablePlatform); ok {
+		offset = int64(top.TSCOffset())
+	}
+	if err := time.SetTSCOffset(offset); err != nil {
+		return nil, fmt.Errorf("platform %q: %w", platformName, err)
+	}
+	return plat, nil
 }
 
 func createMemoryFile(appHugePages bool, hostTHP HostTHP) (*pgalloc.MemoryFile, error) {
