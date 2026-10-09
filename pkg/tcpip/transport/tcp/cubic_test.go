@@ -24,6 +24,133 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+func newTestCubic(t *testing.T, clock *faketime.ManualClock, rtt time.Duration) *cubicState {
+	t.Helper()
+	s := stack.New(stack.Options{Clock: clock})
+	t.Cleanup(func() {
+		s.Close()
+		s.Wait()
+	})
+	snd := &sender{
+		ep: &Endpoint{stack: s},
+		TCPSenderState: TCPSenderState{
+			SndCwnd:  InitialCwnd,
+			Ssthresh: InitialSsthresh,
+		},
+	}
+	snd.ep.mu.Lock()
+	defer snd.ep.mu.Unlock()
+	snd.rtt.Lock()
+	snd.rtt.TCPRTTState.SRTT = rtt
+	snd.rtt.Unlock()
+	c := newCubicCC(snd)
+	snd.cc = c
+	return c
+}
+
+func TestCubicCongestionAvoidanceLimitsGrowth(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		pendingSegments int
+		maxGrowth       int
+	}{
+		{name: "new_credit", pendingSegments: 0, maxGrowth: 1},
+		{name: "retained_credit", pendingSegments: 4, maxGrowth: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			const rtt = 100 * time.Millisecond
+			c := newTestCubic(t, clock, rtt)
+			c.s.ep.mu.Lock()
+			defer c.s.ep.mu.Unlock()
+			c.HandleLossDetected()
+			c.s.leaveRecovery()
+			windowAfterLoss := c.s.SndCwnd
+
+			// The retained-credit case acknowledges four segments at the slow
+			// post-loss growth rate. At the later maximum rate, those credits
+			// could buy two segments, so they distinguish a stale-credit burst
+			// from the permitted one-segment increase.
+			c.Update(test.pendingSegments, rtt, clock.NowMonotonic())
+			// Make the time-based target much larger than the actual window.
+			// Two newly acknowledged segments may add at most one segment
+			// (RFC 9438 section 4.2). Earlier credit may add one more segment,
+			// but must not all become immediately spendable at the new rate.
+			clock.Advance(time.Minute)
+			c.Update(2, rtt, clock.NowMonotonic())
+			if got, want := c.s.SndCwnd, windowAfterLoss+test.maxGrowth; got > want {
+				t.Fatalf("2 newly acknowledged segments with %d pending credits grew cwnd from %d to %d, want <= %d", test.pendingSegments, windowAfterLoss, got, want)
+			}
+		})
+	}
+}
+
+func TestCubicCongestionAvoidanceNeedsAcknowledgments(t *testing.T) {
+	clock := faketime.NewManualClock()
+	const rtt = 100 * time.Millisecond
+	c := newTestCubic(t, clock, rtt)
+	c.s.ep.mu.Lock()
+	defer c.s.ep.mu.Unlock()
+	c.HandleLossDetected()
+	c.s.leaveRecovery()
+	c.Update(3, rtt, clock.NowMonotonic())
+	windowBeforeZeroACK := c.s.SndCwnd
+	creditBeforeZeroACK := c.s.SndCAAckCount
+
+	// Advancing time raises the target, but without new ACKs neither the
+	// actual window nor the saved credit may change.
+	clock.Advance(time.Second)
+	c.Update(0, rtt, clock.NowMonotonic())
+	if got, want := c.s.SndCwnd, windowBeforeZeroACK; got != want {
+		t.Errorf("no newly acknowledged segments: cwnd=%d, want unchanged %d", got, want)
+	}
+	if got, want := c.s.SndCAAckCount, creditBeforeZeroACK; got != want {
+		t.Errorf("no newly acknowledged segments: credit=%d, want unchanged %d", got, want)
+	}
+}
+
+func TestCubicRecoveryDiscardsACKCredit(t *testing.T) {
+	clock := faketime.NewManualClock()
+	const rtt = 100 * time.Millisecond
+	c := newTestCubic(t, clock, rtt)
+	c.s.ep.mu.Lock()
+	defer c.s.ep.mu.Unlock()
+	c.HandleLossDetected()
+	c.s.leaveRecovery()
+	c.Update(3, rtt, clock.NowMonotonic())
+
+	c.HandleLossDetected()
+	c.s.leaveRecovery()
+	windowAfterSecondLoss := c.s.SndCwnd
+	clock.Advance(time.Second)
+	// One newly acknowledged segment cannot buy a segment even at the maximum growth rate.
+	// Retaining the three pre-recovery credits would incorrectly allow growth.
+	c.Update(1, rtt, clock.NowMonotonic())
+	if got, want := c.s.SndCwnd, windowAfterSecondLoss; got != want {
+		t.Fatalf("first acknowledged segment after recovery grew cwnd from %d to %d", want, got)
+	}
+}
+
+func TestCubicSlowStartPreservesExcessACKs(t *testing.T) {
+	clock := faketime.NewManualClock()
+	const rtt = 100 * time.Millisecond
+	c := newTestCubic(t, clock, rtt)
+	c.s.ep.mu.Lock()
+	defer c.s.ep.mu.Unlock()
+	c.s.Ssthresh = c.s.SndCwnd + 1
+
+	// Of two acknowledged segments, one reaches the slow-start threshold.
+	// The other must enter congestion avoidance, where one segment earns credit
+	// but cannot grow the window yet.
+	c.Update(2, rtt, clock.NowMonotonic())
+	if got, want := c.s.SndCwnd, c.s.Ssthresh; got != want {
+		t.Fatalf("crossing ssthresh: cwnd=%d, want %d", got, want)
+	}
+	if got, want := c.s.SndCAAckCount, 1; got != want {
+		t.Fatalf("crossing ssthresh: credit=%d, want %d", got, want)
+	}
+}
+
 // TestHyStartAckTrainOK tests that HyStart triggers early exit from slow start
 // if ACKs come in the same round for longer than RTT/2.
 func TestHyStartAckTrainOK(t *testing.T) {
