@@ -467,3 +467,14 @@ cc_library(
         "errno_safe_allocator.cc",
     ],
 )
+
+cc_test(
+    name = "errno_safe_allocator_test",
+    size = "small",
+    srcs = ["errno_safe_allocator_test.cc"],
+    malloc = ":errno_safe_allocator",
+    deps = select_gtest() + [
+        ":cleanup",
+        ":test_main",
+    ],
+)
