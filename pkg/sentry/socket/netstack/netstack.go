@@ -3482,18 +3482,23 @@ func (s *sock) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args ar
 		return 0, err
 	}
 
-	return Ioctl(ctx, s.Endpoint, uio, sysno, args)
+	return Ioctl(ctx, s.Endpoint, s.namespace, uio, sysno, args)
 }
 
 // Ioctl performs a socket ioctl.
-func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+func Ioctl(ctx context.Context, ep commonEndpoint, namespace *inet.Namespace, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		panic("ioctl(2) may only be called from a task goroutine")
 	}
+	// Sockets imported from the host have no sentry network namespace.
+	if namespace == nil {
+		namespace = t.NetworkNamespace()
+	}
 
 	switch arg := int(args[1].Int()); arg {
 	case linux.SIOCGIFFLAGS,
+		linux.SIOCSIFFLAGS,
 		linux.SIOCGIFADDR,
 		linux.SIOCGIFBRDADDR,
 		linux.SIOCGIFDSTADDR,
@@ -3511,7 +3516,27 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
-		if err := interfaceIoctl(ctx, io, arg, &ifr); err != nil {
+		if namespace == nil || namespace.Stack() == nil {
+			return 0, linuxerr.ENODEV
+		}
+		stk := namespace.Stack()
+		if arg == linux.SIOCSIFFLAGS {
+			if !namespace.HasCapability(ctx, linux.CAP_NET_ADMIN) {
+				return 0, linuxerr.EPERM
+			}
+			netstack, ok := stk.(*Stack)
+			if !ok {
+				return 0, linuxerr.EOPNOTSUPP
+			}
+			// Linux terminates ifr_name before looking up the interface.
+			ifr.IFName[linux.IFNAMSIZ-1] = 0
+			flags := uint32(hostarch.ByteOrder.Uint16(ifr.Data[:2]))
+			if err := netstack.setInterfaceFlags(ctx, ifr.Name(), flags); err != nil {
+				return 0, err.ToError()
+			}
+			return 0, nil
+		}
+		if err := interfaceIoctl(ctx, stk, arg, &ifr); err != nil {
 			return 0, err.ToError()
 		}
 		_, err := ifr.CopyOut(t, args[2].Pointer())
@@ -3525,7 +3550,10 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 			return 0, err
 		}
 
-		if err := ifconfIoctl(ctx, t, io, &ifc); err != nil {
+		if namespace == nil || namespace.Stack() == nil {
+			return 0, linuxerr.ENODEV
+		}
+		if err := ifconfIoctl(ctx, t, namespace.Stack(), &ifc); err != nil {
 			return 0, err
 		}
 
@@ -3569,7 +3597,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 }
 
 // interfaceIoctl implements interface requests.
-func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq) *syserr.Error {
+func interfaceIoctl(ctx context.Context, stk inet.Stack, arg int, ifr *linux.IFReq) *syserr.Error {
 	var (
 		iface inet.Interface
 		index int32
@@ -3577,7 +3605,6 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 	)
 
 	// Find the relevant device.
-	stk := inet.StackFromContext(ctx)
 	if stk == nil {
 		return syserr.ErrNoDevice
 	}
@@ -3707,11 +3734,10 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 }
 
 // ifconfIoctl populates a struct ifconf for the SIOCGIFCONF ioctl.
-func ifconfIoctl(ctx context.Context, t *kernel.Task, _ usermem.IO, ifc *linux.IFConf) error {
+func ifconfIoctl(ctx context.Context, t *kernel.Task, stk inet.Stack, ifc *linux.IFConf) error {
 	// If Ptr is NULL, return the necessary buffer size via Len.
 	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
 	// structs.
-	stk := inet.StackFromContext(ctx)
 	if stk == nil {
 		return syserr.ErrNoDevice.ToError()
 	}

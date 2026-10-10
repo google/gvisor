@@ -2217,9 +2217,15 @@ func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
+		Disabled:           true,
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
+	// New network namespaces should start with an unconfigured loopback
+	// interface. Userspace (e.g. bwrap or iproute2) configures lo with
+	// RTM_NEWADDR/RTM_NEWLINK, matching Linux network namespace semantics.
+	// The interface starts DOWN; ioctl and rtnetlink UP requests initialize
+	// its addresses (see pkg/sentry/socket/netstack/stack.go).
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, nil); err != nil {
 		return nil, err
 	}
 

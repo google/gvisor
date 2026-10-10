@@ -287,7 +287,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 
 // Ioctl implements vfs.FileDescriptionImpl.
 func (s *Socket) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-	return netstack.Ioctl(ctx, s.ep, uio, sysno, args)
+	return netstack.Ioctl(ctx, s.ep, s.namespace, uio, sysno, args)
 }
 
 // PRead implements vfs.FileDescriptionImpl.

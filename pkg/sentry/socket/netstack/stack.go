@@ -222,24 +222,104 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	if flags&(linux.NLM_F_EXCL|linux.NLM_F_REPLACE) != 0 {
 		return syserr.ErrExists
 	}
-	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
-		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
-			return syserr.ErrInvalidArgument
-		}
-		if ifinfomsg.Flags & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Flags)
-			return syserr.ErrInvalidArgument
-		}
-		// Netstack interfaces are always up.
-	}
 
 	dstNs, err := s.lockSrcAndDst(ctx, attrs)
 	if err != nil {
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
-	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
+	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, ifinfomsg.Flags, ifinfomsg.Change, dstNs)
+}
+
+// combineLinkFlags implements rtnl_dev_combine_flags. A zero change mask
+// replaces all flags, as required by SIOCSIFFLAGS and legacy rtnetlink callers.
+func combineLinkFlags(current stack.NICStateFlags, flags, change uint32) (uint32, *syserr.Error) {
+	oldFlags := nicStateFlagsToLinux(current)
+	if change != 0 {
+		flags = (flags & change) | (oldFlags &^ change)
+	}
+	// Netstack only implements changes to IFF_UP. In particular, its
+	// promiscuous mode accepts arbitrary network addresses, which is not
+	// Linux's link-layer IFF_PROMISC. Allow unsupported flags to be echoed
+	// unchanged, but reject attempts to change them.
+	const unsupported = linux.IFF_DEBUG | linux.IFF_NOTRAILERS | linux.IFF_NOARP |
+		linux.IFF_PROMISC | linux.IFF_ALLMULTI | linux.IFF_MULTICAST |
+		linux.IFF_PORTSEL | linux.IFF_AUTOMEDIA | linux.IFF_DYNAMIC
+	if (flags^oldFlags)&unsupported != 0 {
+		return 0, syserr.ErrNotSupported
+	}
+	return flags, nil
+}
+
+// setInterfaceFlags implements SIOCSIFFLAGS. Read-only flags are ignored,
+// as in Linux's __dev_change_flags.
+func (s *Stack) setInterfaceFlags(ctx context.Context, name string, flags uint32) *syserr.Error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
+	for id, info := range s.Stack.NICInfo() {
+		if info.Name != name {
+			continue
+		}
+		flags, err := combineLinkFlags(info.Flags, flags, 0)
+		if err != nil {
+			return err
+		}
+		changed, err := s.setInterfaceUpLocked(id, flags&linux.IFF_UP != 0)
+		if changed {
+			s.sendChangeEvent(ctx, id)
+		}
+		return err
+	}
+	return syserr.ErrNoDevice
+}
+
+// setInterfaceUpLocked shares UP/DOWN handling between ioctl and rtnetlink.
+// It reports whether the state changed so callers can notify subscribers,
+// including when a later attribute in the same request fails.
+//
+// Preconditions: s.linkMu must be held.
+func (s *Stack) setInterfaceUpLocked(id tcpip.NICID, up bool) (bool, *syserr.Error) {
+	info, ok := s.Stack.SingleNICInfo(id)
+	if !ok {
+		return false, syserr.ErrNoDevice
+	}
+	if info.Flags.Up == up {
+		return false, nil
+	}
+	if up {
+		if err := s.Stack.EnableNIC(id); err != nil {
+			return false, syserr.TranslateNetstackError(err)
+		}
+		// Linux initializes loopback addresses on NETDEV_UP, not on a
+		// repeated UP request after userspace has removed an address.
+		s.maybeInitLoopbackAddrs(id)
+	} else if err := s.Stack.DisableNIC(id); err != nil {
+		return false, syserr.TranslateNetstackError(err)
+	}
+	return true, nil
+}
+
+// maybeInitLoopbackAddrs ensures the loopback interface has 127.0.0.1/8 and
+// ::1/128 when it is brought up, mirroring Linux's NETDEV_UP handling
+// (net/ipv4/devinet.c:inetdev_event for IPv4, net/ipv6/addrconf.c:init_loopback
+// for IPv6). Each address is added only if missing, so addresses the caller
+// already configured are preserved, matching Linux, where e.g. adding a custom
+// address to lo and then setting it up still yields 127.0.0.1. It is a no-op
+// for non-loopback interfaces.
+func (s *Stack) maybeInitLoopbackAddrs(nicID tcpip.NICID) {
+	nicInfo, ok := s.Stack.SingleNICInfo(nicID)
+	if !ok || !nicInfo.Flags.Loopback {
+		return
+	}
+	for _, addr := range []inet.InterfaceAddr{
+		{Family: linux.AF_INET, PrefixLen: 8, Addr: []byte{127, 0, 0, 1}},
+		{Family: linux.AF_INET6, PrefixLen: header.IPv6AddressSize * 8, Addr: header.IPv6Loopback.AsSlice()},
+	} {
+		// AddInterfaceAddr fails for existing addresses and does not
+		// duplicate the subnet route of another address on lo.
+		_ = s.AddInterfaceAddr(int32(nicID), addr)
+	}
 }
 
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and
@@ -319,15 +399,36 @@ func (s *Stack) unlockSrcAndDst(ctx context.Context, ns *inet.Namespace) {
 	ns.DecRef(ctx)
 }
 
-// precondition: s.linkLock is held. If dstNs is not nil, dstNs.Stack.linkMu is
+// Preconditions: s.linkMu is held. If dstNs is not nil, dstNs.Stack.linkMu is
 // also held.
-func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, dstNs *inet.Namespace) *syserr.Error {
+func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map[uint16]nlmsg.BytesView, flags, change uint32, dstNs *inet.Namespace) *syserr.Error {
 	src := s
-	changed := false
 	nicInfo, ok := src.Stack.SingleNICInfo(id)
 	if !ok {
 		return syserr.ErrUnknownNICID
 	}
+	// Validate fixed-size attributes before changing the device, as Linux's
+	// netlink attribute policy does before do_setlink.
+	for _, attr := range []uint16{linux.IFLA_MTU, linux.IFLA_MASTER, linux.IFLA_TXQLEN} {
+		if v, ok := linkAttrs[attr]; ok {
+			if _, ok := v.Uint32(); !ok {
+				return syserr.ErrInvalidArgument
+			}
+		}
+	}
+	if flags != 0 || change != 0 {
+		if _, err := combineLinkFlags(nicInfo.Flags, flags, change); err != nil {
+			return err
+		}
+	}
+	changed := false
+	defer func() {
+		// Linux retains earlier changes if a later attribute fails. Notify
+		// subscribers of those changes even when returning an error.
+		if changed {
+			src.sendChangeEvent(ctx, id)
+		}
+	}()
 
 	dst := src
 	if dstNs != nil {
@@ -342,76 +443,73 @@ func (s *Stack) setLinkLocked(ctx context.Context, id tcpip.NICID, linkAttrs map
 		}
 
 		src.sendDeleteEvent(ctx, oldID, nicInfo) // inform about exit from old ns
-		changed = true                           // inform about entry into new ns
+		src = dst
+		changed = true // inform about entry into new ns
 
-		nicInfo, ok = dst.Stack.SingleNICInfo(id)
+		nicInfo, ok = src.Stack.SingleNICInfo(id)
 		if !ok {
 			// Because we hold dst.linkMu, this should never happen.
 			ctx.Warningf("Newly rehomed NIC %d not found in new stack %p", id, dst.Stack)
 			return syserr.ErrUnknownNICID
 		}
-		src = dst
 
 		// TODO (b/465141970): Once we support IFLA_LINK_NETNSID, we need to call sendChangeEvent on
 		// the peer interface if this interface is part of a veth pair.
 	}
 
-	for t, v := range linkAttrs {
-		switch t {
-		case linux.IFLA_MASTER:
-			master, ok := v.Uint32()
-			if !ok {
-				return syserr.ErrInvalidArgument
-			}
-			if mid, ok := src.Stack.GetNICCoordinatorID(id); ok && mid == tcpip.NICID(master) {
-				continue
-			}
-			if master != 0 {
-				if err := src.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
-					return syserr.TranslateNetstackError(err)
-				}
-				changed = true
-			}
-		case linux.IFLA_ADDRESS:
-			if len(v) != tcpip.LinkAddressSize {
-				return syserr.ErrInvalidArgument
-			}
-			addr := tcpip.LinkAddress(v)
-			if nicInfo.LinkAddress == addr {
-				continue
-			}
+	// Match do_setlink's order instead of depending on map iteration order:
+	// namespace, address, MTU, name, flags, master, then queue length.
+	if v, ok := linkAttrs[linux.IFLA_ADDRESS]; ok {
+		if len(v) != tcpip.LinkAddressSize {
+			return syserr.ErrInvalidArgument
+		}
+		addr := tcpip.LinkAddress(v)
+		if nicInfo.LinkAddress != addr {
 			if err := src.Stack.SetNICAddress(id, addr); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 			changed = true
-		case linux.IFLA_IFNAME:
-			if nicInfo.Name == v.String() {
-				continue
-			}
-			if err := src.Stack.SetNICName(id, v.String()); err != nil {
-				return syserr.TranslateNetstackError(err)
-			}
-			changed = true
-		case linux.IFLA_MTU:
-			mtu, ok := v.Uint32()
-			if !ok {
-				return syserr.ErrInvalidArgument
-			}
-			if nicInfo.MTU == mtu {
-				continue
-			}
+		}
+	}
+	if v, ok := linkAttrs[linux.IFLA_MTU]; ok {
+		mtu, _ := v.Uint32()
+		if nicInfo.MTU != mtu {
 			if err := src.Stack.SetNICMTU(id, mtu); err != nil {
 				return syserr.TranslateNetstackError(err)
 			}
 			changed = true
-		case linux.IFLA_TXQLEN:
-			// TODO(b/340388892): support IFLA_TXQLEN.
 		}
 	}
-
-	if changed {
-		src.sendChangeEvent(ctx, id)
+	if v, ok := linkAttrs[linux.IFLA_IFNAME]; ok {
+		if nicInfo.Name != v.String() {
+			if err := src.Stack.SetNICName(id, v.String()); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+			changed = true
+		}
 	}
+	if flags != 0 || change != 0 {
+		combined, err := combineLinkFlags(nicInfo.Flags, flags, change)
+		if err != nil {
+			return err
+		}
+		flagsChanged, err := src.setInterfaceUpLocked(id, combined&linux.IFF_UP != 0)
+		changed = changed || flagsChanged
+		if err != nil {
+			return err
+		}
+	}
+	if v, ok := linkAttrs[linux.IFLA_MASTER]; ok {
+		master, _ := v.Uint32()
+		mid, attached := src.Stack.GetNICCoordinatorID(id)
+		if master != 0 && (!attached || mid != tcpip.NICID(master)) {
+			if err := src.Stack.SetNICCoordinator(id, tcpip.NICID(master)); err != nil {
+				return syserr.TranslateNetstackError(err)
+			}
+			changed = true
+		}
+	}
+	// TODO(b/340388892): support IFLA_TXQLEN.
 	return nil
 }
 
@@ -508,7 +606,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		peerEP.Close()
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, 0, 0, dstNs); err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
 		peerEP.Close()
 		return err
@@ -535,7 +633,7 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		return syserr.TranslateNetstackError(err)
 	}
 	if peerLinkAttrs != nil {
-		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, peerDstNs); err != nil {
+		if err := peerStack.setLinkLocked(ctx, peerID, peerLinkAttrs, 0, 0, peerDstNs); err != nil {
 			peerStack.Stack.RemoveNIC(peerID)
 			peerEP.Close()
 			return err
@@ -569,7 +667,7 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
-	if err := s.setLinkLocked(ctx, id, linkAttrs, dstNs); err != nil {
+	if err := s.setLinkLocked(ctx, id, linkAttrs, 0, 0, dstNs); err != nil {
 		return err
 	}
 
