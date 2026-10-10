@@ -18,11 +18,13 @@ import (
 	"fmt"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -198,6 +200,8 @@ func (t *syscallThread) attach() error {
 
 const maxErrno = 4095
 
+var stubSyscallErrorLogger = log.BasicRateLimitedLogger(time.Minute)
+
 func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
 	if t.subproc.dead.Load() {
 		return 0, errDeadSubprocess
@@ -236,7 +240,9 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
 
 	errno := -uintptr(stubMsg.ret)
 	if errno > 0 && errno < maxErrno {
-		return 0, fmt.Errorf("stub syscall (%x, %#v) failed with %w", sysno, args, unix.Errno(errno))
+		err := unix.Errno(errno)
+		stubSyscallErrorLogger.Infof("stub syscall (%x, %#v) failed with %v", sysno, args, err)
+		return 0, err
 	}
 
 	return uintptr(stubMsg.ret), nil
