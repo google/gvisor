@@ -21,6 +21,20 @@ import (
 
 func cgoFilters() seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		// musl pthread_create uses legacy clone with TID pointers, unlike the
+		// Go runtime's clone call. Keep this exact thread-only flag set in
+		// the cgo policy; it cannot create a process or a new namespace.
+		// https://git.musl-libc.org/cgit/musl/tree/src/thread/pthread_create.c?id=9fa28ece7#n243
+		unix.SYS_CLONE: seccomp.PerArg{
+			seccomp.EqualTo(unix.CLONE_VM | unix.CLONE_FS | unix.CLONE_FILES |
+				unix.CLONE_SIGHAND | unix.CLONE_THREAD | unix.CLONE_SYSVSEM |
+				unix.CLONE_SETTLS | unix.CLONE_PARENT_SETTID |
+				unix.CLONE_CHILD_CLEARTID | unix.CLONE_DETACHED),
+			seccomp.AnyValue{}, // stack
+			seccomp.AnyValue{}, // parent_tid
+			seccomp.AnyValue{}, // child_tid (amd64), tls (arm64)
+			seccomp.AnyValue{}, // tls (amd64), child_tid (arm64)
+		},
 		unix.SYS_MMAP: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.AnyValue{},
