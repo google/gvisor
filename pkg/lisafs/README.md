@@ -279,41 +279,570 @@ paths.
     standard LISAFS protocol. Proprietary extensions of LISAFS can use the
     remainder of the available range.
 
-MID | Message      | Request         | Response                                                           | Description
---- | ------------ | --------------- | ------------------------------------------------------------------ | -----------
-0   | Error        | N/A             | ErrorResp                                                          | Returned from server to indicate error while handling RPC. If Error is returned, the failed RPC should have no side effects. Any intermediate changes made should be rolled back. This is a response-only message. ErrorResp.errno should be interpreted as a Linux error code.
-1   | Mount        |                 | MountResp<br><br>Optionally donates: \[mountPointHostFD\]          | Mount establishes a connection. MountResp.root is a Control FD for the mountpoint, which becomes the root for this connection. The location of the connection’s mountpoint on the server is predetermined as per sandbox configuration. Clients can not request to mount the connection at a certain path, unlike mount(2). MountResp.maxMessageSize dictates the maximum message size the server can tolerate across all communicators. This limit does not include the communicator’s header size. MountResp.supportedMs contains all the MIDs that the server supports. Clients can use this information for checking feature support. The server must provide a read concurrency guarantee on the root node during this operation.
-2   | Channel      |                 | ChannelResp<br><br>Donates: \[dataFD, fdSock\]                     | Channel sets up a new communicator based on a shared memory region between the client and server. dataFD is the host FD for the shared memory file. fdSock is a host socket FD that the server will use to donate FDs over this channel. ChannelResp’s dataOffset and dataLength describe the shared memory file region owned by this channel. No concurrency guarantees are needed. ENOMEM is returned to indicate that the server hit the max channels limit.
-3   | FStat        | StatReq         | [struct statx](https://man7.org/linux/man-pages/man2/statx.2.html) | Fstat is analogous to fstat(2). It returns struct statx for the file represented by StatReq.fd. FStat may be called on a Control FD or Open FD. The server must provide a read concurrency guarantee on the file node during this operation.
-4   | SetStat      | SetStatReq      | SetStatResp                                                        | SetStat does not correspond to any particular syscall. It serves the purpose of fchmod(2), fchown(2), ftruncate(2) and futimesat(2) in one message. This enables client-side optimizations where the client is able to change multiple attributes in 1 RPC. It must be called on Control FDs only. One instance where this is helpful is in overlayfs implementation which requires changing multiple attributes at the same time. The failure of setting one attribute does not terminate the entire operation. SetStatResp.failureMask should be interpreted as stx\_mask and indicates all attributes that failed to be modified. In case failureMask != 0, SetStatResp.failiureErrno indicates any one of the failure errnos. The server must provide a write concurrency guarantee on the file node during this operation.
-5   | Walk         | WalkReq         | WalkResp                                                           | Walk walks multiple path components described by WalkReq.path starting from Control FD WalkReq.dirFD. The walk must terminate if a path component is a symlink or a path component does not exist and return all the inodes walked so far. The reason for premature termination of walk is indicated via WalkResp.status. Symlinks can not be walked on the server. The client must Readlink the symlink and rewalk its target + the remaining path. The server must provide a read concurrency guarantee on the directory node being walked and should protect against renames during the entire walk.
-6   | WalkStat     | WalkReq         | WalkStatResp                                                       | WalkStat is similar to Walk, except that it only returns the statx results for the path components. It does not return a Control FD for each path component. Additionally, if the first element of WalkReq.path is an empty string, WalkStat also returns the statx results for WalkReq.dirFD. This is useful in scenarios where the client already has the Control FDs for a path but just needs statx results to revalidate its state. The server must provide a read concurrency guarantee on the directory node being walked and should protect against renames during the entire walk.
-7   | OpenAt       | OpenAtReq       | OpenAtResp<br><br>Optionally donates: \[openHostFD\]               | OpenAt is analogous to openat(2). It creates an Open FD on the Control FD OpenAtReq.fd using OpenAtReq.flags. The server may donate a host FD opened with the same flags. The client can directly make syscalls on this FD, instead of making RPCs as an optimization. The server must provide a read concurrency guarantee on the file node during this operation.
-8   | OpenCreateAt | OpenCreateAtReq | OpenCreateAtResp<br><br>Optionally donates: \[openHostFD\]         | OpenCreateAt is analogous to openat(2) with flags that include O\_CREAT
-9   | Close        | CloseReq        |                                                                    | Close is analogous to calling close(2) on multiple FDs. CloseReq.fds accepts an array of FDIDs. The server drops the client’s reference on the FD and stops tracking it. Future calls to the same FDID will return EBADF. However, this may not necessarily release the FD’s resources as other references might be held as per reference model. No concurrency guarantees are needed.
-10  | FSync        | FsyncReq        |                                                                    | FSync is analogous to calling fsync(2) on multiple FDs. FsyncReq.fds accepts an array of FDIDs. The errors from syncing the FDs are ignored. The server must provide a read concurrency guarantee on the file node during this operation.
-11  | PWrite       | PWriteReq       | PWriteResp                                                         | PWrite is analogous to pwrite(2). PWriteReq.fd must be an Open FD. Fields in PWriteReq are similar to pwrite(2) arguments. PWriteResp.count is the number of bytes written to the file. The server must provide a write concurrency guarantee on the file node during this operation.
-12  | PRead        | PReadReq        | PReadResp                                                          | PRead is analogous to pread(2). PReadReq.fd must be an Open FD. Fields in PReadReq are similar to pread(2) arguments. PReadResp contains a buffer with the bytes read. The server must provide a read concurrency guarantee on the file node during this operation.
-13  | MkdirAt      | MkdirAtReq      | MkdirAtResp                                                        | MkdirAt is analogous to mkdirat(2). It additionally allows the client to set the UID and GID for the newly created directory. MkdirAtReq.dirFD must be a Control FD for the directory inside which the new directory named MkdirAtReq.name will be created. It returns the new directory’s Inode. The server must provide a write concurrency guarantee on the directory node during this operation.
-14  | MknodAt      | MknodAtReq      | MknodAtResp                                                        | MknodAt is analogous to mknodat(2). It additionally allows the client to set the UID and GID for the newly created file. MknodAtReq.dirFD must be a Control FD for the directory inside which the new file named MknodAtReq.name will be created. It returns the new file’s Inode. The server must provide a write concurrency guarantee on the directory node during this operation.
-15  | SymlinkAt    | SymlinkAtReq    | SymlinkAtResp                                                      | SymlinkAt is analogous to symlinkat(2). It additionally allows the client to set the UID and GID for the newly created symlink. SymlinkAtReq.dirFD must be a Control FD for the directory inside which the new symlink named SymlinkAtReq.name is created. The symlink file contains SymlinkAtReq.target. It returns the new symlink’s Inode. The server must provide a write concurrency guarantee on the directory node during this operation.
-16  | LinkAt       | LinkAtReq       | LinkAtResp                                                         | LinkAt is analogous to linkat(2) except it does not accept any flags. In Linux, AT\_SYMLINK\_FOLLOW can be specified in flags but following symlinks on the server is not allowed in lisafs. LinkAtReq.dirFD must be a Control FD for the directory inside which the hard link named LinkAtReq.name is created. This hard link is an existing file identified by LinkAtReq.target. It returns the link’s Inode. The server must provide a write concurrency guarantee on the directory node during this operation.
-17  | FStatFS      | FStatFSReq      | StatFS                                                             | FStatFS is analogous to fstatfs(2). It returns information about the mounted file system in which FStatFSReq.fd is located. FStatFSReq.fd must be a Control FD. The server must provide a read concurrency guarantee on the file node during this operation.
-18  | FAllocate    | FAllocateReq    |                                                                    | FAllocate is analogous to fallocate(2). Fields in FAllocateReq correspond to arguments of fallocate(2). FAllocateReq.fd must be an Open FD. The server must provide a write concurrency guarantee on the file node during this operation.
-19  | ReadLinkAt   | ReadLinkAtReq   | ReadLinkAtResp                                                     | ReadLinkAt is analogous to readlinkat(2) except, it does not perform any path traversal. ReadLinkAtReq.fd must be a Control FD on a symlink file. It returns the contents of the symbolic link. The server must provide a read concurrency guarantee on the file node during this operation.
-20  | Flush        | FlushReq        |                                                                    | Flush may be called before Close on an Open FD. It cleans up the file state. Its behavior is implementation specific. The server must provide a read concurrency guarantee on the file node during this operation.
-21  | Connect      | ConnectReq      | Donates: \[sockFD\]                                                | Connect is analogous to calling socket(2) and then connect(2) on that socket FD. The socket FD is created using socket(AF\_UNIX, ConnectReq.sockType, 0). ConnectReq.fd must be a Control FD on a socket file that is connect(2)-ed to. On success, the socket FD is donated. The server must provide a read concurrency guarantee on the file node during this operation.
-22  | UnlinkAt     | UnlinkAtReq     |                                                                    | UnlinkAt is analogous to unlinkat(2). Fields in UnlinkAtReq are similar to unlinkat(2) arguments. UnlinkAtReq.dirFD must be a Control FD for the directory inside which the child named UnlinkAtReq.name is to be unlinked. The server must provide a write concurrency guarantee on the directory and to-be-deleted file node during this operation.
-23  | RenameAt     | RenameAtReq     |                                                                    | RenameAt is equivalent to RenameAt2 with a 0 flag argument.
-24  | Getdents64   | Getdents64Req   | Getdents64Resp                                                     | Getdents64 is analogous to getdents64(2). Fields in Getdents64Req are similar to getdents64(2) arguments. Getdents64Req.dirFD should be a Open FD on a directory. It returns an array of directory entries (Dirent). Each dirent also contains the dev\_t for the entry inode. This operation advances the open directory FD’s offset. The server must provide a read concurrency guarantee on the file node during this operation.
-25  | FGetXattr    | FGetXattrReq    | FGetXattrResp                                                      | FGetXattr is analogous to fgetxattr(2). Fields in FGetXattrReq are similar to fgetxattr(2) arguments. It must be invoked on a Control FD. The server must provide a read concurrency guarantee on the file node during this operation.
-26  | FSetXattr    | FSetXattrReq    |                                                                    | FSetXattr is analogous to fsetxattr(2). Fields in FSetXattrReq are similar to fsetxattr(2) arguments. It must be invoked on a Control FD. The server must provide a write concurrency guarantee on the file node during this operation.
-27  | FListXattr   | FListXattrReq   | FListXattrResp                                                     | FListXattr is analogous to flistxattr(2). Fields in FListXattrReq are similar to flistxattr(2) arguments. It must be invoked on a Control FD. The server must provide a read concurrency guarantee on the file node during this operation.
-28  | FRemoveXattr | FRemoveXattrReq |                                                                    | FRemoveXattr is analogous to fremovexattr(2). Fields in FRemoveXattrReq are similar to fremovexattr(2) arguments. It must be invoked on a Control FD. The server must provide a write concurrency guarantee on the file node during this operation.
-29  | BindAt       | BindAtReq       | BindAtResp<br>Donates: \[sockFD\]                                  | BindAt is analogous to calling socket(2) and then bind(2) on that socket FD with a path. The path which is binded to is the host path of the directory represented by the control FD BindAtReq.DirFD + ‘/’ + BindAtReq.Name. The socket FD is created using socket(AF\_UNIX, BindAtReq.sockType, 0). It additionally allows the client to set the UID and GID for the newly created socket. On success, the socket FD is donated to the client. The client may use this donated socket FD to poll for notifications. The client may listen(2) and accept(2) from the FD if syscall filters permit. There are other RPCs to perform those operations. On success a Bound Socket FD is also returned along with an Inode for the newly created socket file. The server must provide a write concurrency guarantee on the directory node during this operation.
-30  | Listen       | ListenReq       |                                                                    | Listen is analogous to calling listen(2) on the host socket FD represented by the Bound Socket FD ListenReq.fd with backlog ListenReq.backlog. The server must provide a read concurrency guarantee on the socket node during this operation.
-31  | Accept       | AcceptReq       | AcceptResp<br>Donates: \[connFD\]                                  | Accept is analogous to calling accept(2) on the host socket FD represented by the Bound Socket FD AcceptReq.fd. On success, Accept donates the connection FD which was accepted and also returns the peer address as a string in AcceptResp.peerAddr. The server may choose to protect the peer address by returning an empty string. Accept must not block. The server must provide a read concurrency guarantee on the socket node during this operation.
-33  | RenameAt2    | RenameAt2Req    |                                                                    | RenameAt2 is analogous to renameat2. Fields in RenameAtReq are similar to renameat2 arguments. RenameAtReq.oldDir and RenameAtReq.newDir must be Control FDs on the old directory and new directory respectively. The file named RenameAt2Req.oldName inside old directory is renamed into new directory with the name RenameAtReq.newName. The server must provide global concurrency guarantee during this operation.
+| MID | Message           | Request              | Response                                                    | Description               |
+| --- | ----------------- | -------------------- | ----------------------------------------------------------- | ------------------------- |
+| 0   | Error             | N/A                  | ErrorResp                                                   | Returned from server to   |
+:     :                   :                      :                                                             : indicate error while      :
+:     :                   :                      :                                                             : handling RPC. If Error is :
+:     :                   :                      :                                                             : returned, the failed RPC  :
+:     :                   :                      :                                                             : should have no side       :
+:     :                   :                      :                                                             : effects. Any intermediate :
+:     :                   :                      :                                                             : changes made should be    :
+:     :                   :                      :                                                             : rolled back. This is a    :
+:     :                   :                      :                                                             : response-only message.    :
+:     :                   :                      :                                                             : ErrorResp.errno should be :
+:     :                   :                      :                                                             : interpreted as a Linux    :
+:     :                   :                      :                                                             : error code.               :
+| 1   | Mount             |                      | MountResp<br><br>Optionally donates: \[mountPointHostFD\]   | Mount establishes a       |
+:     :                   :                      :                                                             : connection.               :
+:     :                   :                      :                                                             : MountResp.root is a       :
+:     :                   :                      :                                                             : Control FD for the        :
+:     :                   :                      :                                                             : mountpoint, which becomes :
+:     :                   :                      :                                                             : the root for this         :
+:     :                   :                      :                                                             : connection. The location  :
+:     :                   :                      :                                                             : of the connection’s       :
+:     :                   :                      :                                                             : mountpoint on the server  :
+:     :                   :                      :                                                             : is predetermined as per   :
+:     :                   :                      :                                                             : sandbox configuration.    :
+:     :                   :                      :                                                             : Clients can not request   :
+:     :                   :                      :                                                             : to mount the connection   :
+:     :                   :                      :                                                             : at a certain path, unlike :
+:     :                   :                      :                                                             : mount(2).                 :
+:     :                   :                      :                                                             : MountResp.maxMessageSize  :
+:     :                   :                      :                                                             : dictates the maximum      :
+:     :                   :                      :                                                             : message size the server   :
+:     :                   :                      :                                                             : can tolerate across all   :
+:     :                   :                      :                                                             : communicators. This limit :
+:     :                   :                      :                                                             : does not include the      :
+:     :                   :                      :                                                             : communicator’s header     :
+:     :                   :                      :                                                             : size.                     :
+:     :                   :                      :                                                             : MountResp.supportedMs     :
+:     :                   :                      :                                                             : contains all the MIDs     :
+:     :                   :                      :                                                             : that the server supports. :
+:     :                   :                      :                                                             : Clients can use this      :
+:     :                   :                      :                                                             : information for checking  :
+:     :                   :                      :                                                             : feature support. The      :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the root     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 2   | Channel           |                      | ChannelResp<br><br>Donates: \[dataFD, fdSock\]              | Channel sets up a new     |
+:     :                   :                      :                                                             : communicator based on a   :
+:     :                   :                      :                                                             : shared memory region      :
+:     :                   :                      :                                                             : between the client and    :
+:     :                   :                      :                                                             : server. dataFD is the     :
+:     :                   :                      :                                                             : host FD for the shared    :
+:     :                   :                      :                                                             : memory file. fdSock is a  :
+:     :                   :                      :                                                             : host socket FD that the   :
+:     :                   :                      :                                                             : server will use to donate :
+:     :                   :                      :                                                             : FDs over this channel.    :
+:     :                   :                      :                                                             : ChannelResp’s dataOffset  :
+:     :                   :                      :                                                             : and dataLength describe   :
+:     :                   :                      :                                                             : the shared memory file    :
+:     :                   :                      :                                                             : region owned by this      :
+:     :                   :                      :                                                             : channel. No concurrency   :
+:     :                   :                      :                                                             : guarantees are needed.    :
+:     :                   :                      :                                                             : ENOMEM is returned to     :
+:     :                   :                      :                                                             : indicate that the server  :
+:     :                   :                      :                                                             : hit the max channels      :
+:     :                   :                      :                                                             : limit.                    :
+| 3   | FStat             | StatReq              | [struct                                                     | Fstat is analogous to     |
+:     :                   :                      : statx](https\://man7.org/linux/man-pages/man2/statx.2.html) : fstat(2). It returns      :
+:     :                   :                      :                                                             : struct statx for the file :
+:     :                   :                      :                                                             : represented by            :
+:     :                   :                      :                                                             : StatReq.fd. FStat may be  :
+:     :                   :                      :                                                             : called on a Control FD or :
+:     :                   :                      :                                                             : Open FD. The server must  :
+:     :                   :                      :                                                             : provide a read            :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the file node during this :
+:     :                   :                      :                                                             : operation.                :
+| 4   | SetStat           | SetStatReq           | SetStatResp                                                 | SetStat does not          |
+:     :                   :                      :                                                             : correspond to any         :
+:     :                   :                      :                                                             : particular syscall. It    :
+:     :                   :                      :                                                             : serves the purpose of     :
+:     :                   :                      :                                                             : fchmod(2), fchown(2),     :
+:     :                   :                      :                                                             : ftruncate(2) and          :
+:     :                   :                      :                                                             : futimesat(2) in one       :
+:     :                   :                      :                                                             : message. This enables     :
+:     :                   :                      :                                                             : client-side optimizations :
+:     :                   :                      :                                                             : where the client is able  :
+:     :                   :                      :                                                             : to change multiple        :
+:     :                   :                      :                                                             : attributes in 1 RPC. It   :
+:     :                   :                      :                                                             : must be called on Control :
+:     :                   :                      :                                                             : FDs only. One instance    :
+:     :                   :                      :                                                             : where this is helpful is  :
+:     :                   :                      :                                                             : in overlayfs              :
+:     :                   :                      :                                                             : implementation which      :
+:     :                   :                      :                                                             : requires changing         :
+:     :                   :                      :                                                             : multiple attributes at    :
+:     :                   :                      :                                                             : the same time. The        :
+:     :                   :                      :                                                             : failure of setting one    :
+:     :                   :                      :                                                             : attribute does not        :
+:     :                   :                      :                                                             : terminate the entire      :
+:     :                   :                      :                                                             : operation.                :
+:     :                   :                      :                                                             : SetStatResp.failureMask   :
+:     :                   :                      :                                                             : should be interpreted as  :
+:     :                   :                      :                                                             : stx\_mask and indicates   :
+:     :                   :                      :                                                             : all attributes that       :
+:     :                   :                      :                                                             : failed to be modified. In :
+:     :                   :                      :                                                             : case failureMask != 0,    :
+:     :                   :                      :                                                             : SetStatResp.failiureErrno :
+:     :                   :                      :                                                             : indicates any one of the  :
+:     :                   :                      :                                                             : failure errnos. The       :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : write concurrency         :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 5   | Walk              | WalkReq              | WalkResp                                                    | Walk walks multiple path  |
+:     :                   :                      :                                                             : components described by   :
+:     :                   :                      :                                                             : WalkReq.path starting     :
+:     :                   :                      :                                                             : from Control FD           :
+:     :                   :                      :                                                             : WalkReq.dirFD. The walk   :
+:     :                   :                      :                                                             : must terminate if a path  :
+:     :                   :                      :                                                             : component is a symlink or :
+:     :                   :                      :                                                             : a path component does not :
+:     :                   :                      :                                                             : exist and return all the  :
+:     :                   :                      :                                                             : inodes walked so far. The :
+:     :                   :                      :                                                             : reason for premature      :
+:     :                   :                      :                                                             : termination of walk is    :
+:     :                   :                      :                                                             : indicated via             :
+:     :                   :                      :                                                             : WalkResp.status. Symlinks :
+:     :                   :                      :                                                             : can not be walked on the  :
+:     :                   :                      :                                                             : server. The client must   :
+:     :                   :                      :                                                             : Readlink the symlink and  :
+:     :                   :                      :                                                             : rewalk its target + the   :
+:     :                   :                      :                                                             : remaining path. The       :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the          :
+:     :                   :                      :                                                             : directory node being      :
+:     :                   :                      :                                                             : walked and should protect :
+:     :                   :                      :                                                             : against renames during    :
+:     :                   :                      :                                                             : the entire walk.          :
+| 6   | WalkStat          | WalkReq              | WalkStatResp                                                | WalkStat is similar to    |
+:     :                   :                      :                                                             : Walk, except that it only :
+:     :                   :                      :                                                             : returns the statx results :
+:     :                   :                      :                                                             : for the path components.  :
+:     :                   :                      :                                                             : It does not return a      :
+:     :                   :                      :                                                             : Control FD for each path  :
+:     :                   :                      :                                                             : component. Additionally,  :
+:     :                   :                      :                                                             : if the first element of   :
+:     :                   :                      :                                                             : WalkReq.path is an empty  :
+:     :                   :                      :                                                             : string, WalkStat also     :
+:     :                   :                      :                                                             : returns the statx results :
+:     :                   :                      :                                                             : for WalkReq.dirFD. This   :
+:     :                   :                      :                                                             : is useful in scenarios    :
+:     :                   :                      :                                                             : where the client already  :
+:     :                   :                      :                                                             : has the Control FDs for a :
+:     :                   :                      :                                                             : path but just needs statx :
+:     :                   :                      :                                                             : results to revalidate its :
+:     :                   :                      :                                                             : state. The server must    :
+:     :                   :                      :                                                             : provide a read            :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the directory node being  :
+:     :                   :                      :                                                             : walked and should protect :
+:     :                   :                      :                                                             : against renames during    :
+:     :                   :                      :                                                             : the entire walk.          :
+| 7   | OpenAt            | OpenAtReq            | OpenAtResp<br><br>Optionally donates: \[openHostFD\]        | OpenAt is analogous to    |
+:     :                   :                      :                                                             : openat(2). It creates an  :
+:     :                   :                      :                                                             : Open FD on the Control FD :
+:     :                   :                      :                                                             : OpenAtReq.fd using        :
+:     :                   :                      :                                                             : OpenAtReq.flags. The      :
+:     :                   :                      :                                                             : server may donate a host  :
+:     :                   :                      :                                                             : FD opened with the same   :
+:     :                   :                      :                                                             : flags. The client can     :
+:     :                   :                      :                                                             : directly make syscalls on :
+:     :                   :                      :                                                             : this FD, instead of       :
+:     :                   :                      :                                                             : making RPCs as an         :
+:     :                   :                      :                                                             : optimization. The server  :
+:     :                   :                      :                                                             : must provide a read       :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the file node during this :
+:     :                   :                      :                                                             : operation.                :
+| 8   | OpenCreateAt      | OpenCreateAtReq      | OpenCreateAtResp<br><br>Optionally donates: \[openHostFD\]  | OpenCreateAt is analogous |
+:     :                   :                      :                                                             : to openat(2) with flags   :
+:     :                   :                      :                                                             : that include O\_CREAT     :
+| 9   | Close             | CloseReq             |                                                             | Close is analogous to     |
+:     :                   :                      :                                                             : calling close(2) on       :
+:     :                   :                      :                                                             : multiple FDs.             :
+:     :                   :                      :                                                             : CloseReq.fds accepts an   :
+:     :                   :                      :                                                             : array of FDIDs. The       :
+:     :                   :                      :                                                             : server drops the client’s :
+:     :                   :                      :                                                             : reference on the FD and   :
+:     :                   :                      :                                                             : stops tracking it. Future :
+:     :                   :                      :                                                             : calls to the same FDID    :
+:     :                   :                      :                                                             : will return EBADF.        :
+:     :                   :                      :                                                             : However, this may not     :
+:     :                   :                      :                                                             : necessarily release the   :
+:     :                   :                      :                                                             : FD’s resources as other   :
+:     :                   :                      :                                                             : references might be held  :
+:     :                   :                      :                                                             : as per reference model.   :
+:     :                   :                      :                                                             : No concurrency guarantees :
+:     :                   :                      :                                                             : are needed.               :
+| 10  | FSync             | FsyncReq             |                                                             | FSync is analogous to     |
+:     :                   :                      :                                                             : calling fsync(2) on       :
+:     :                   :                      :                                                             : multiple FDs.             :
+:     :                   :                      :                                                             : FsyncReq.fds accepts an   :
+:     :                   :                      :                                                             : array of FDIDs. The       :
+:     :                   :                      :                                                             : errors from syncing the   :
+:     :                   :                      :                                                             : FDs are ignored. The      :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 11  | PWrite            | PWriteReq            | PWriteResp                                                  | PWrite is analogous to    |
+:     :                   :                      :                                                             : pwrite(2). PWriteReq.fd   :
+:     :                   :                      :                                                             : must be an Open FD.       :
+:     :                   :                      :                                                             : Fields in PWriteReq are   :
+:     :                   :                      :                                                             : similar to pwrite(2)      :
+:     :                   :                      :                                                             : arguments.                :
+:     :                   :                      :                                                             : PWriteResp.count is the   :
+:     :                   :                      :                                                             : number of bytes written   :
+:     :                   :                      :                                                             : to the file. The server   :
+:     :                   :                      :                                                             : must provide a write      :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the file node during this :
+:     :                   :                      :                                                             : operation.                :
+| 12  | PRead             | PReadReq             | PReadResp                                                   | PRead is analogous to     |
+:     :                   :                      :                                                             : pread(2). PReadReq.fd     :
+:     :                   :                      :                                                             : must be an Open FD.       :
+:     :                   :                      :                                                             : Fields in PReadReq are    :
+:     :                   :                      :                                                             : similar to pread(2)       :
+:     :                   :                      :                                                             : arguments. PReadResp      :
+:     :                   :                      :                                                             : contains a buffer with    :
+:     :                   :                      :                                                             : the bytes read. The       :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 13  | MkdirAt           | MkdirAtReq           | MkdirAtResp                                                 | MkdirAt is analogous to   |
+:     :                   :                      :                                                             : mkdirat(2). It            :
+:     :                   :                      :                                                             : additionally allows the   :
+:     :                   :                      :                                                             : client to set the UID and :
+:     :                   :                      :                                                             : GID for the newly created :
+:     :                   :                      :                                                             : directory.                :
+:     :                   :                      :                                                             : MkdirAtReq.dirFD must be  :
+:     :                   :                      :                                                             : a Control FD for the      :
+:     :                   :                      :                                                             : directory inside which    :
+:     :                   :                      :                                                             : the new directory named   :
+:     :                   :                      :                                                             : MkdirAtReq.name will be   :
+:     :                   :                      :                                                             : created. It returns the   :
+:     :                   :                      :                                                             : new directory’s Inode.    :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : write concurrency         :
+:     :                   :                      :                                                             : guarantee on the          :
+:     :                   :                      :                                                             : directory node during     :
+:     :                   :                      :                                                             : this operation.           :
+| 14  | MknodAt           | MknodAtReq           | MknodAtResp                                                 | MknodAt is analogous to   |
+:     :                   :                      :                                                             : mknodat(2). It            :
+:     :                   :                      :                                                             : additionally allows the   :
+:     :                   :                      :                                                             : client to set the UID and :
+:     :                   :                      :                                                             : GID for the newly created :
+:     :                   :                      :                                                             : file. MknodAtReq.dirFD    :
+:     :                   :                      :                                                             : must be a Control FD for  :
+:     :                   :                      :                                                             : the directory inside      :
+:     :                   :                      :                                                             : which the new file named  :
+:     :                   :                      :                                                             : MknodAtReq.name will be   :
+:     :                   :                      :                                                             : created. It returns the   :
+:     :                   :                      :                                                             : new file’s Inode. The     :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : write concurrency         :
+:     :                   :                      :                                                             : guarantee on the          :
+:     :                   :                      :                                                             : directory node during     :
+:     :                   :                      :                                                             : this operation.           :
+| 15  | SymlinkAt         | SymlinkAtReq         | SymlinkAtResp                                               | SymlinkAt is analogous to |
+:     :                   :                      :                                                             : symlinkat(2). It          :
+:     :                   :                      :                                                             : additionally allows the   :
+:     :                   :                      :                                                             : client to set the UID and :
+:     :                   :                      :                                                             : GID for the newly created :
+:     :                   :                      :                                                             : symlink.                  :
+:     :                   :                      :                                                             : SymlinkAtReq.dirFD must   :
+:     :                   :                      :                                                             : be a Control FD for the   :
+:     :                   :                      :                                                             : directory inside which    :
+:     :                   :                      :                                                             : the new symlink named     :
+:     :                   :                      :                                                             : SymlinkAtReq.name is      :
+:     :                   :                      :                                                             : created. The symlink file :
+:     :                   :                      :                                                             : contains                  :
+:     :                   :                      :                                                             : SymlinkAtReq.target. It   :
+:     :                   :                      :                                                             : returns the new symlink’s :
+:     :                   :                      :                                                             : Inode. The server must    :
+:     :                   :                      :                                                             : provide a write           :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the directory node during :
+:     :                   :                      :                                                             : this operation.           :
+| 16  | LinkAt            | LinkAtReq            | LinkAtResp                                                  | LinkAt is analogous to    |
+:     :                   :                      :                                                             : linkat(2) except it does  :
+:     :                   :                      :                                                             : not accept any flags. In  :
+:     :                   :                      :                                                             : Linux,                    :
+:     :                   :                      :                                                             : AT\_SYMLINK\_FOLLOW can   :
+:     :                   :                      :                                                             : be specified in flags but :
+:     :                   :                      :                                                             : following symlinks on the :
+:     :                   :                      :                                                             : server is not allowed in  :
+:     :                   :                      :                                                             : lisafs. LinkAtReq.dirFD   :
+:     :                   :                      :                                                             : must be a Control FD for  :
+:     :                   :                      :                                                             : the directory inside      :
+:     :                   :                      :                                                             : which the hard link named :
+:     :                   :                      :                                                             : LinkAtReq.name is         :
+:     :                   :                      :                                                             : created. This hard link   :
+:     :                   :                      :                                                             : is an existing file       :
+:     :                   :                      :                                                             : identified by             :
+:     :                   :                      :                                                             : LinkAtReq.target. It      :
+:     :                   :                      :                                                             : returns the link’s Inode. :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : write concurrency         :
+:     :                   :                      :                                                             : guarantee on the          :
+:     :                   :                      :                                                             : directory node during     :
+:     :                   :                      :                                                             : this operation.           :
+| 17  | FStatFS           | FStatFSReq           | StatFS                                                      | FStatFS is analogous to   |
+:     :                   :                      :                                                             : fstatfs(2). It returns    :
+:     :                   :                      :                                                             : information about the     :
+:     :                   :                      :                                                             : mounted file system in    :
+:     :                   :                      :                                                             : which FStatFSReq.fd is    :
+:     :                   :                      :                                                             : located. FStatFSReq.fd    :
+:     :                   :                      :                                                             : must be a Control FD. The :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 18  | FAllocate         | FAllocateReq         |                                                             | FAllocate is analogous to |
+:     :                   :                      :                                                             : fallocate(2). Fields in   :
+:     :                   :                      :                                                             : FAllocateReq correspond   :
+:     :                   :                      :                                                             : to arguments of           :
+:     :                   :                      :                                                             : fallocate(2).             :
+:     :                   :                      :                                                             : FAllocateReq.fd must be   :
+:     :                   :                      :                                                             : an Open FD. The server    :
+:     :                   :                      :                                                             : must provide a write      :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the file node during this :
+:     :                   :                      :                                                             : operation.                :
+| 19  | ReadLinkAt        | ReadLinkAtReq        | ReadLinkAtResp                                              | ReadLinkAt is analogous   |
+:     :                   :                      :                                                             : to readlinkat(2) except,  :
+:     :                   :                      :                                                             : it does not perform any   :
+:     :                   :                      :                                                             : path traversal.           :
+:     :                   :                      :                                                             : ReadLinkAtReq.fd must be  :
+:     :                   :                      :                                                             : a Control FD on a symlink :
+:     :                   :                      :                                                             : file. It returns the      :
+:     :                   :                      :                                                             : contents of the symbolic  :
+:     :                   :                      :                                                             : link. The server must     :
+:     :                   :                      :                                                             : provide a read            :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the file node during this :
+:     :                   :                      :                                                             : operation.                :
+| 20  | Flush             | FlushReq             |                                                             | Flush may be called       |
+:     :                   :                      :                                                             : before Close on an Open   :
+:     :                   :                      :                                                             : FD. It cleans up the file :
+:     :                   :                      :                                                             : state. Its behavior is    :
+:     :                   :                      :                                                             : implementation specific.  :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 21  | Connect           | ConnectReq           | Donates: \[sockFD\]                                         | Connect is analogous to   |
+:     :                   :                      :                                                             : calling socket(2) and     :
+:     :                   :                      :                                                             : then connect(2) on that   :
+:     :                   :                      :                                                             : socket FD. The socket FD  :
+:     :                   :                      :                                                             : is created using          :
+:     :                   :                      :                                                             : socket(AF\_UNIX,          :
+:     :                   :                      :                                                             : ConnectReq.sockType, 0).  :
+:     :                   :                      :                                                             : ConnectReq.fd must be a   :
+:     :                   :                      :                                                             : Control FD on a socket    :
+:     :                   :                      :                                                             : file that is              :
+:     :                   :                      :                                                             : connect(2)-ed to. On      :
+:     :                   :                      :                                                             : success, the socket FD is :
+:     :                   :                      :                                                             : donated. The server must  :
+:     :                   :                      :                                                             : provide a read            :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the file node during this :
+:     :                   :                      :                                                             : operation.                :
+| 22  | UnlinkAt          | UnlinkAtReq          |                                                             | UnlinkAt is analogous to  |
+:     :                   :                      :                                                             : unlinkat(2). Fields in    :
+:     :                   :                      :                                                             : UnlinkAtReq are similar   :
+:     :                   :                      :                                                             : to unlinkat(2) arguments. :
+:     :                   :                      :                                                             : UnlinkAtReq.dirFD must be :
+:     :                   :                      :                                                             : a Control FD for the      :
+:     :                   :                      :                                                             : directory inside which    :
+:     :                   :                      :                                                             : the child named           :
+:     :                   :                      :                                                             : UnlinkAtReq.name is to be :
+:     :                   :                      :                                                             : unlinked. The server must :
+:     :                   :                      :                                                             : provide a write           :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the directory and         :
+:     :                   :                      :                                                             : to-be-deleted file node   :
+:     :                   :                      :                                                             : during this operation.    :
+| 23  | RenameAt          | RenameAtReq          |                                                             | RenameAt is equivalent to |
+:     :                   :                      :                                                             : RenameAt2 with a 0 flag   :
+:     :                   :                      :                                                             : argument.                 :
+| 24  | Getdents64        | Getdents64Req        | Getdents64Resp                                              | Getdents64 is analogous   |
+:     :                   :                      :                                                             : to getdents64(2). Fields  :
+:     :                   :                      :                                                             : in Getdents64Req are      :
+:     :                   :                      :                                                             : similar to getdents64(2)  :
+:     :                   :                      :                                                             : arguments.                :
+:     :                   :                      :                                                             : Getdents64Req.dirFD       :
+:     :                   :                      :                                                             : should be a Open FD on a  :
+:     :                   :                      :                                                             : directory. It returns an  :
+:     :                   :                      :                                                             : array of directory        :
+:     :                   :                      :                                                             : entries (Dirent). Each    :
+:     :                   :                      :                                                             : dirent also contains the  :
+:     :                   :                      :                                                             : dev\_t for the entry      :
+:     :                   :                      :                                                             : inode. This operation     :
+:     :                   :                      :                                                             : advances the open         :
+:     :                   :                      :                                                             : directory FD’s offset.    :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 25  | FGetXattr         | FGetXattrReq         | FGetXattrResp                                               | FGetXattr is analogous to |
+:     :                   :                      :                                                             : fgetxattr(2). Fields in   :
+:     :                   :                      :                                                             : FGetXattrReq are similar  :
+:     :                   :                      :                                                             : to fgetxattr(2)           :
+:     :                   :                      :                                                             : arguments. It must be     :
+:     :                   :                      :                                                             : invoked on a Control FD.  :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 26  | FSetXattr         | FSetXattrReq         |                                                             | FSetXattr is analogous to |
+:     :                   :                      :                                                             : fsetxattr(2). Fields in   :
+:     :                   :                      :                                                             : FSetXattrReq are similar  :
+:     :                   :                      :                                                             : to fsetxattr(2)           :
+:     :                   :                      :                                                             : arguments. It must be     :
+:     :                   :                      :                                                             : invoked on a Control FD.  :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : write concurrency         :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 27  | FListXattr        | FListXattrReq        | FListXattrResp                                              | FListXattr is analogous   |
+:     :                   :                      :                                                             : to flistxattr(2). Fields  :
+:     :                   :                      :                                                             : in FListXattrReq are      :
+:     :                   :                      :                                                             : similar to flistxattr(2)  :
+:     :                   :                      :                                                             : arguments. It must be     :
+:     :                   :                      :                                                             : invoked on a Control FD.  :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 28  | FRemoveXattr      | FRemoveXattrReq      |                                                             | FRemoveXattr is analogous |
+:     :                   :                      :                                                             : to fremovexattr(2).       :
+:     :                   :                      :                                                             : Fields in FRemoveXattrReq :
+:     :                   :                      :                                                             : are similar to            :
+:     :                   :                      :                                                             : fremovexattr(2)           :
+:     :                   :                      :                                                             : arguments. It must be     :
+:     :                   :                      :                                                             : invoked on a Control FD.  :
+:     :                   :                      :                                                             : The server must provide a :
+:     :                   :                      :                                                             : write concurrency         :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 29  | BindAt            | BindAtReq            | BindAtResp<br>Donates: \[sockFD\]                           | BindAt is analogous to    |
+:     :                   :                      :                                                             : calling socket(2) and     :
+:     :                   :                      :                                                             : then bind(2) on that      :
+:     :                   :                      :                                                             : socket FD with a path.    :
+:     :                   :                      :                                                             : The path which is binded  :
+:     :                   :                      :                                                             : to is the host path of    :
+:     :                   :                      :                                                             : the directory represented :
+:     :                   :                      :                                                             : by the control FD         :
+:     :                   :                      :                                                             : BindAtReq.DirFD + ‘/’ +   :
+:     :                   :                      :                                                             : BindAtReq.Name. The       :
+:     :                   :                      :                                                             : socket FD is created      :
+:     :                   :                      :                                                             : using socket(AF\_UNIX,    :
+:     :                   :                      :                                                             : BindAtReq.sockType, 0).   :
+:     :                   :                      :                                                             : It additionally allows    :
+:     :                   :                      :                                                             : the client to set the UID :
+:     :                   :                      :                                                             : and GID for the newly     :
+:     :                   :                      :                                                             : created socket. On        :
+:     :                   :                      :                                                             : success, the socket FD is :
+:     :                   :                      :                                                             : donated to the client.    :
+:     :                   :                      :                                                             : The client may use this   :
+:     :                   :                      :                                                             : donated socket FD to poll :
+:     :                   :                      :                                                             : for notifications. The    :
+:     :                   :                      :                                                             : client may listen(2) and  :
+:     :                   :                      :                                                             : accept(2) from the FD if  :
+:     :                   :                      :                                                             : syscall filters permit.   :
+:     :                   :                      :                                                             : There are other RPCs to   :
+:     :                   :                      :                                                             : perform those operations. :
+:     :                   :                      :                                                             : On success a Bound Socket :
+:     :                   :                      :                                                             : FD is also returned along :
+:     :                   :                      :                                                             : with an Inode for the     :
+:     :                   :                      :                                                             : newly created socket      :
+:     :                   :                      :                                                             : file. The server must     :
+:     :                   :                      :                                                             : provide a write           :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the directory node during :
+:     :                   :                      :                                                             : this operation.           :
+| 30  | Listen            | ListenReq            |                                                             | Listen is analogous to    |
+:     :                   :                      :                                                             : calling listen(2) on the  :
+:     :                   :                      :                                                             : host socket FD            :
+:     :                   :                      :                                                             : represented by the Bound  :
+:     :                   :                      :                                                             : Socket FD ListenReq.fd    :
+:     :                   :                      :                                                             : with backlog              :
+:     :                   :                      :                                                             : ListenReq.backlog. The    :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the socket   :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
+| 31  | Accept            | AcceptReq            | AcceptResp<br>Donates: \[connFD\]                           | Accept is analogous to    |
+:     :                   :                      :                                                             : calling accept(2) on the  :
+:     :                   :                      :                                                             : host socket FD            :
+:     :                   :                      :                                                             : represented by the Bound  :
+:     :                   :                      :                                                             : Socket FD AcceptReq.fd.   :
+:     :                   :                      :                                                             : On success, Accept        :
+:     :                   :                      :                                                             : donates the connection FD :
+:     :                   :                      :                                                             : which was accepted and    :
+:     :                   :                      :                                                             : also returns the peer     :
+:     :                   :                      :                                                             : address as a string in    :
+:     :                   :                      :                                                             : AcceptResp.peerAddr. The  :
+:     :                   :                      :                                                             : server may choose to      :
+:     :                   :                      :                                                             : protect the peer address  :
+:     :                   :                      :                                                             : by returning an empty     :
+:     :                   :                      :                                                             : string. Accept must not   :
+:     :                   :                      :                                                             : block. The server must    :
+:     :                   :                      :                                                             : provide a read            :
+:     :                   :                      :                                                             : concurrency guarantee on  :
+:     :                   :                      :                                                             : the socket node during    :
+:     :                   :                      :                                                             : this operation.           :
+| 33  | RenameAt2         | RenameAt2Req         |                                                             | RenameAt2 is analogous to |
+:     :                   :                      :                                                             : renameat2. Fields in      :
+:     :                   :                      :                                                             : RenameAtReq are similar   :
+:     :                   :                      :                                                             : to renameat2 arguments.   :
+:     :                   :                      :                                                             : RenameAtReq.oldDir and    :
+:     :                   :                      :                                                             : RenameAtReq.newDir must   :
+:     :                   :                      :                                                             : be Control FDs on the old :
+:     :                   :                      :                                                             : directory and new         :
+:     :                   :                      :                                                             : directory respectively.   :
+:     :                   :                      :                                                             : The file named            :
+:     :                   :                      :                                                             : RenameAt2Req.oldName      :
+:     :                   :                      :                                                             : inside old directory is   :
+:     :                   :                      :                                                             : renamed into new          :
+:     :                   :                      :                                                             : directory with the name   :
+:     :                   :                      :                                                             : RenameAtReq.newName. The  :
+:     :                   :                      :                                                             : server must provide       :
+:     :                   :                      :                                                             : global concurrency        :
+:     :                   :                      :                                                             : guarantee during this     :
+:     :                   :                      :                                                             : operation.                :
+| 34  | ConnectWithGroups | ConnectWithGroupsReq | Donates: \[sockFD\]                                         | ConnectWithGroups is      |
+:     :                   :                      :                                                             : Connect with the socket   :
+:     :                   :                      :                                                             : created and connected     :
+:     :                   :                      :                                                             : under the effective uid,  :
+:     :                   :                      :                                                             : gid and supplementary     :
+:     :                   :                      :                                                             : groups in                 :
+:     :                   :                      :                                                             : ConnectWithGroupsReq. The :
+:     :                   :                      :                                                             : server must provide a     :
+:     :                   :                      :                                                             : read concurrency          :
+:     :                   :                      :                                                             : guarantee on the file     :
+:     :                   :                      :                                                             : node during this          :
+:     :                   :                      :                                                             : operation.                :
 
 ### Chunking
 
