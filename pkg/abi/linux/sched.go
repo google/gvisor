@@ -38,6 +38,11 @@ const (
 	PRIO_USER    = 0x2
 )
 
+// Per-process flags, defined in include/linux/sched.h.
+const (
+	PF_EXITING = 0x00000004
+)
+
 // SchedAttr represents struct sched_attr, as used by sched_setattr(2) and sched_getattr(2).
 //
 // +marshal
