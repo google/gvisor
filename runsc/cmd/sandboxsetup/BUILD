@@ -31,6 +31,7 @@ go_library(
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",
+        "//runsc/gvisorbinaries",
         "//runsc/specutils",
         "//runsc/starttime",
         "@com_github_moby_sys_capability//:go_default_library",

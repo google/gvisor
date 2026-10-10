@@ -211,6 +211,11 @@ type Boot struct {
 	// procfs mount isn't needed anymore.
 	procMountSyncFD int
 
+	// procUmounterFD is the /proc unmounter sidecar binary, which is spawned
+	// to unmount /proc on behalf of this process. Only set with setUpRoot
+	// and without rootless.
+	procUmounterFD int
+
 	// procMountSyncFile holds the *os.File for procMountSyncFD when this
 	// process continues without re-exec'ing itself (see
 	// `applyCapsAllThreads`). It keeps the FD alive.
@@ -275,6 +280,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Int64Var(&b.cpuPeriod, "cpu-period", 0, "raw CFS cpu period in usecs to expose via sandbox cgroupfs (0 means use default 100ms)")
 	f.IntVar(&b.cpuDMALatencyFD, "cpu-dma-latency-fd", -1, "file descriptor holding /dev/cpu_dma_latency open")
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
+	f.IntVar(&b.procUmounterFD, "proc-umounter-fd", -1, "file descriptor of the /proc unmounter binary")
 	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.Uint64Var(&b.totalHostMem, "total-host-memory", 0, "total memory reported by host /proc/meminfo")
@@ -480,7 +486,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// /proc is umounted from a forked process, because the
 			// current one is going to drop capabilities and won't be
 			// able to umount it.
-			cmd, w := sandboxsetup.ExecProcUmounter()
+			if b.procUmounterFD < 0 {
+				util.Fatalf("--proc-umounter-fd is required to set up the root")
+			}
+			umounter := os.NewFile(uintptr(b.procUmounterFD), "proc umounter")
+			cmd, w := sandboxsetup.ExecProcUmounter(umounter)
+			umounter.Close()
+			argOverride["proc-umounter-fd"] = "-1"
 			if b.willReexec() {
 				defer cmd.Wait()
 				defer w.Close()

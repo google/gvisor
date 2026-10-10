@@ -37,6 +37,7 @@ OTHER_SIDECARS = {
     "//runsc/cmd/metricserver:runsc-metric-server": "runsc-metric-server",
     "//runsc/fdparking:fdparking_binary": "runsc-fd-parking",
     "//runsc/prewarmer:prewarmer_binary": "gvisor-sentry-prewarmer",
+    "//runsc/procumounter:procumounter_binary": "gvisor-proc-umounter",
 }
 
 def sidecars(flavor):
