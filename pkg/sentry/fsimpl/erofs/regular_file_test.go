@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -113,5 +114,20 @@ func TestReadSpansInlineTail(t *testing.T) {
 				t.Fatalf("PRead returned %d bytes, want all %d", n, size)
 			}
 		})
+	}
+}
+
+func TestTranslateBeyondEOF(t *testing.T) {
+	file := erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatPlain << erofs.InodeDataLayoutBit, Size: hostarch.PageSize + 17, RawBlockAddr: 4}
+	fd := openTestFile(t, newTestImage(0, file))
+	ctx := contexttest.Context(t)
+	end := uint64(2 * hostarch.PageSize)
+	r := memmap.MappableRange{Start: end - hostarch.PageSize, End: end + hostarch.PageSize}
+	ts, err := fd.inode().Translate(ctx, r, r, hostarch.Read)
+	if err := memmap.CheckTranslateResult(r, r, hostarch.Read, ts, err); err != nil {
+		t.Fatal(err)
+	}
+	if err == nil {
+		t.Fatalf("Translate(%v) returned no error", r)
 	}
 }
