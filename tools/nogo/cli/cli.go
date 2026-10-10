@@ -29,6 +29,7 @@ import (
 	"text/template" // NOLINT
 
 	"github.com/google/subcommands"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/term"
 	yaml "gopkg.in/yaml.v2"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -513,9 +514,6 @@ func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 	return subcommands.ExitSuccess
 }
 
-// goVersionRe matches a `go VERSION` line in go.mod, capturing VERSION.
-var goVersionRe = regexp.MustCompile(`(?m)^go[ \t]+(\S+)`)
-
 // resolveGOVERSION sets flags.GOVERSION from flags.GOVERSIONModFile, if necessary.
 func resolveGOVERSION() error {
 	if flags.GOVERSIONModFile == "" {
@@ -531,11 +529,14 @@ func resolveGOVERSION() error {
 		return err
 	}
 
-	m := goVersionRe.FindStringSubmatch(string(b))
-	if len(m) != 2 {
-		return fmt.Errorf("go line not found in go.mod:\n%s", string(b))
+	m, err := modfile.Parse(flags.GOVERSIONModFile, b, nil)
+	if err != nil {
+		return err
 	}
-	flags.GOVERSION = "go" + m[1]
+	if m.Go == nil {
+		return fmt.Errorf("go directive not found in %s", flags.GOVERSIONModFile)
+	}
+	flags.GOVERSION = "go" + m.Go.Version
 	return nil
 }
 
