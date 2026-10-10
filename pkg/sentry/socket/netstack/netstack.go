@@ -1552,12 +1552,12 @@ func (s *sock) getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, outPt
 		return a.(*linux.SockAddrInet6), nil
 
 	case linux.IP6T_SO_GET_INFO:
-		if outLen < linux.SizeOfIPTGetinfo {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return nil, syserr.ErrNotPermitted
+		}
+
+		if outLen != linux.SizeOfIPTGetinfo {
+			return nil, syserr.ErrInvalidArgument
 		}
 
 		stk := inet.StackFromContext(t)
@@ -1790,12 +1790,12 @@ func (s *sock) getSockOptIP(t *kernel.Task, ep commonEndpoint, name int, outPtr 
 		return a.(*linux.SockAddrInet), nil
 
 	case linux.IPT_SO_GET_INFO:
-		if outLen < linux.SizeOfIPTGetinfo {
-			return nil, syserr.ErrInvalidArgument
-		}
-
 		if !s.HasCapability(linux.CAP_NET_ADMIN, t) {
 			return nil, syserr.ErrNotPermitted
+		}
+
+		if outLen != linux.SizeOfIPTGetinfo {
+			return nil, syserr.ErrInvalidArgument
 		}
 
 		stk := inet.StackFromContext(t)
