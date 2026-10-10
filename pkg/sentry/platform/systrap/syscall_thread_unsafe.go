@@ -108,7 +108,12 @@ func (t *syscallThread) waitForSeccompNotify() error {
 			t.seccompNotifyResp.ID = req.ID
 			break
 		}
-		if errno == unix.EINTR && t.subproc.alive() {
+		// ENOENT: the stub thread's notifying syscall was interrupted between
+		// the wakeup and the lookup (by the cgroup freezer, say, which kicks
+		// every task out of its waits). The syscall restarts and the kernel
+		// issues a new notification for it, as notifySeccompThread already
+		// expects for SEND: wait for that one.
+		if (errno == unix.EINTR || errno == unix.ENOENT) && t.subproc.alive() {
 			continue
 		}
 		t.thread.kill()
