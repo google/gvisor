@@ -2093,6 +2093,15 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 			log.Warningf("Process (%d) not found setting oom_score_adj", pid)
 			return nil
 		}
+		// An exited process without an mm has root-owned proc files. For a
+		// nonroot caller, opening oom_score_adj can fail before reaching the
+		// write that would otherwise report ESRCH.
+		if errors.Is(err, unix.EACCES) {
+			if running, err := specutils.IsProcessRunning(pid); err == nil && !running {
+				log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
+				return nil
+			}
+		}
 		return err
 	}
 	defer f.Close()
