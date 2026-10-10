@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -335,6 +336,7 @@ func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	if pkt := c.linkEP.ReadContext(ctx); pkt != nil {
+		pkt.DecRef()
 		c.t.Fatal(errMsg)
 	}
 }
@@ -372,12 +374,15 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) *buffer.View {
 	}
 
 	view := pkt.ToView()
+	cu := cleanup.Make(view.Release)
+	defer cu.Clean()
 
 	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
 		c.t.Errorf("got L3HdrLen = %d, want = %d", pkt.GSOOptions.L3HdrLen, header.IPv4MinimumSize)
 	}
 
 	checker.IPv4(c.t, view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	cu.Release()
 	return view
 }
 
@@ -422,8 +427,11 @@ func (c *Context) GetPacketNonBlocking() *buffer.View {
 	}
 
 	view := pkt.ToView()
+	cu := cleanup.Make(view.Release)
+	defer cu.Clean()
 
 	checker.IPv4(c.t, view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	cu.Release()
 	return view
 }
 
@@ -661,8 +669,11 @@ func (c *Context) GetV6Packet() *buffer.View {
 		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
 	}
 	v := pkt.ToView()
+	cu := cleanup.Make(v.Release)
+	defer cu.Clean()
 
 	checker.IPv6(c.t, v, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
+	cu.Release()
 	return v
 }
 

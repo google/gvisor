@@ -15,6 +15,7 @@ go_library(
     ],
     deps = [
         "//pkg/buffer",
+        "//pkg/cleanup",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/checksum",
