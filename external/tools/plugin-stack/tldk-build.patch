@@ -1,0 +1,164 @@
+# Adapt TLDK's Make entry points to rules_foreign_cc: use declared DPDK sources
+# and Bazel-selected tools, preserve inherited parallelism, and install only
+# the static archive consumed by gVisor.
+
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -13,6 +13,15 @@
+ 
+ TLDK_ROOT := $(CURDIR)
+ export TLDK_ROOT
++
++# Preserve the selected Bazel toolchain flags before DPDK constructs CFLAGS.
++export BAZEL_CFLAGS := $(CFLAGS)
++export BAZEL_LDFLAGS := $(LDFLAGS)
++export BAZEL_LD := $(LD)
++
++# foreign_cc exports the execution root; relative tools must keep that base
++# when recursive Make invocations change directories.
++export OBJDUMP := $(if $(filter /%,$(OBJDUMP)),$(OBJDUMP),$(EXT_BUILD_ROOT)/$(OBJDUMP))
+ 
+ LOCAL_RTE_SDK=$(TLDK_ROOT)/dpdk/_build/dpdk
+ 
+@@ -41,7 +50,7 @@
+ 
+ .PHONY: clean
+ clean:
+-	@make clean -C test/packetdrill
++	@$(MAKE) clean -C test/packetdrill
+ 	@rm -rf $(RTE_TARGET)
+ 	@rm -rf libtldk.so libtldk.a
+ 
+@@ -56,7 +65,7 @@
+ 		S=$(CURDIR)/$(@) \
+ 		RTE_TARGET=$(RTE_TARGET) \
+ 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
+-		$(filter-out $(DIRS-y),$(MAKECMDGOALS))
++		$(filter-out $(DIRS-y) install-plugin,$(MAKECMDGOALS))
+ 
+ test: libtldk.a libtldk.so
+ 
+@@ -74,10 +83,10 @@
+ 		echo $$fn ;				\
+ 		mkdir $$fn"_obj" ;			\
+ 		cd $$fn"_obj" ;				\
+-		ar x $$f ;				\
++		$(AR) x $$f ;				\
+ 		cd .. ;					\
+ 	done;						\
+-ar cru ../$1 $$(find */*.o | paste -sd " " -); cd ..; rm -rf $2
++$(AR) cru ../$1 $$(find */*.o | paste -sd " " -); cd ..; rm -rf $2
+ endef
+ 
+ ifeq ($(SHARED_HUGE),y)
+@@ -93,5 +102,10 @@
+ 
+ $(RTE_SDK)/mk/rte.vars.mk:
+ ifeq ($(RTE_SDK),$(LOCAL_RTE_SDK))
+-	@make RTE_TARGET=$(RTE_TARGET) config all -C $(TLDK_ROOT)/dpdk/
++	@$(MAKE) RTE_TARGET=$(RTE_TARGET) config all -C $(TLDK_ROOT)/dpdk/
+ endif
++
++.PHONY: install-plugin
++install-plugin: libtldk.a
++	mkdir -p $(PREFIX)/lib $(PREFIX)/include
++	cp -L libtldk.a $(PREFIX)/lib/libpluginstack.a
+diff --git a/dpdk/Makefile b/dpdk/Makefile
+--- a/dpdk/Makefile
++++ b/dpdk/Makefile
+@@ -30,20 +30,10 @@
+ 
+ B := $(DPDK_BUILD_DIR)
+ I := $(DPDK_INSTALL_DIR)
+-DPDK_GIT_REPO ?= http://dpdk.org/git/dpdk
+ DPDK_SOURCE := $(B)/dpdk
+ 
+-ifneq (,$(findstring clang,$(CC)))
+-DPDK_CC=clang
+-else
+-DPDK_CC=gcc
+-endif
+-
+-ifeq (,$(DPDK_TARGET))
+-DPDK_TARGET := x86_64-native-linuxapp-$(DPDK_CC)
+-endif
+-
+-JOBS := $(shell grep processor /proc/cpuinfo | wc -l)
++DPDK_TARGET ?= $(RTE_TARGET)
++
+ 
+ # compiler/linker custom arguments
+ DPDK_CPU_CFLAGS := -fPIC
+@@ -76,7 +66,7 @@
+ endif
+ 
+ # assemble DPDK make arguments
+-DPDK_MAKE_ARGS := -C $(DPDK_SOURCE) -j $(JOBS) \
++DPDK_MAKE_ARGS := -C $(DPDK_SOURCE) \
+ 	T=$(DPDK_TARGET) \
+ 	RTE_CONFIG_TEMPLATE=../custom-config \
+ 	RTE_OUTPUT=$(I) \
+@@ -99,11 +89,11 @@
+ 
+ all: build
+ 
+-$(B)/custom-config: $(B)/.patch.ok Makefile
++$(B)/custom-config: $(B)/.source.ok Makefile
+ 	@echo --- generating custom config from \
+ 		$(DPDK_SOURCE)/config/defconfig_$(DPDK_TARGET) --- $@
+-	@cpp -undef -ffreestanding -x assembler-with-cpp \
+-		$(DPDK_SOURCE)/config/defconfig_$(DPDK_TARGET) $@
++	@$(CC) -E -undef -ffreestanding -x assembler-with-cpp \
++		$(DPDK_SOURCE)/config/defconfig_$(DPDK_TARGET) -o $@
+ 	$(call set,RTE_MACHINE,$(DPDK_MACHINE))
+ 	@# modify options
+ 	$(call set,RTE_MAX_LCORE,256)
+@@ -219,39 +209,22 @@
+ 	$(call set,RTE_LIBRTE_PDUMP,n)
+ 	@rm -f .config.ok
+ 
+-$(B)/.download.ok:
+-	@mkdir -p $(B)
+-	@if [ -e $(DPDK_SOURCE) ] ; \
+-		then rm -rf $(DPDK_SOURCE) ; \
+-	fi
+-	@git clone $(DPDK_GIT_REPO) --branch $(DPDK_VERSION) --depth 1 $(DPDK_SOURCE)
++# Sources and the complete TLDK patch series are fetched and verified by
++# Bazel. Copy the declared source tree because this Make build writes into it.
++$(B)/.source.ok:
++	@mkdir -p $(DPDK_SOURCE)
++	@cp -R $(dir $(DPDK_MAKEFILE)). $(DPDK_SOURCE)
+ 	@touch $@
+ 
+-.PHONY: download
+-download: $(B)/.download.ok
+-
+-$(B)/.patch.ok: $(B)/.download.ok
+-ifneq ($(wildcard $(CURDIR)/dpdk-$(DPDK_VERSION)_patches/*.patch),)
+-	@echo --- patching ---
+-	for f in $(CURDIR)/dpdk-$(DPDK_VERSION)_patches/*.patch ; do \
+-		echo Applying patch: $$(basename $$f) ; \
+-		patch -p1 -d $(DPDK_SOURCE) < $$f ; \
+-	done
+-endif
+-	@touch $@
+-
+-.PHONY: patch
+-patch: $(B)/.patch.ok
+-
+-$(B)/.config.ok: $(B)/.patch.ok $(B)/custom-config
+-	@make $(DPDK_MAKE_ARGS) config
++$(B)/.config.ok: $(B)/.source.ok $(B)/custom-config
++	@$(MAKE) $(DPDK_MAKE_ARGS) config
+ 	@touch $@
+ 
+ .PHONY: config
+ config: $(B)/.config.ok
+ 
+ $(B)/.build.ok: $(DPDK_SOURCE_FILES) $(B)/.config.ok
+-	@make $(DPDK_MAKE_ARGS) install -j
++	@$(MAKE) $(DPDK_MAKE_ARGS) install
+ 	@cp $(I)/.config $(B)/.config
+ 	@touch $@
+ 

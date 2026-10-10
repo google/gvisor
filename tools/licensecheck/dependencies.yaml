@@ -1083,6 +1083,21 @@
   license:
     - Apache-2.0
     - MIT
+- dependency: libbacktrace
+  version: https://github.com/ianlancetaylor/libbacktrace/archive/793921876c981ce49759114d7bb89bb89b2d3a2d.tar.gz
+  retrieved: "2026-09-26"
+  commit: 793921876c981ce49759114d7bb89bb89b2d3a2d
+  sha256: 858b1225351052234f7e71f0f36622fc9ad33aac947db7816d0b443ae0dd33ce
+  license: BSD-3-Clause
+- dependency: libpluginstack
+  version: https://github.com/alipay/tldk/archive/cec8ff773c2ee609a1fcbc389aecb4dbb4e3bb88.tar.gz
+  retrieved: "2026-09-26"
+  commit: cec8ff773c2ee609a1fcbc389aecb4dbb4e3bb88
+  sha256: 00bc2824cbc3024c4e5514ebac7ecab6598dd60e444af9dfeece079bc5b96980
+  license:
+    - Apache-2.0
+    - BSD-3-Clause
+    - CC0-1.0
 - dependency: llvm-raw
   version: https://github.com/llvm/llvm-project/archive/cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f.tar.gz
   retrieved: "2026-08-27"
@@ -1103,6 +1118,20 @@
   commit: 2d4b4996f0bf52376704c49264164e166213159e
   sha256: dbad4a23abcca6171e47b79edc53bd6a41067a3b75f9e8b104656b459ff25046
   license: Apache-2.0
+- dependency: plugin_bsd_queue
+  version: https://raw.githubusercontent.com/alpinelinux/aports/988f183cc9d6699930c3e18ccf4a9e36010afb56/main/libc-dev/sys-queue.h
+  retrieved: "2026-09-26"
+  commit: 988f183cc9d6699930c3e18ccf4a9e36010afb56
+  sha256: c13407edd0e33be73cae72514cb234f8612e1c0e54401c9448daffd3a240158b
+  license: BSD-3-Clause
+- dependency: plugin_dpdk
+  version: https://github.com/DPDK/dpdk/archive/refs/tags/v18.11.tar.gz
+  retrieved: "2026-09-26"
+  commit: 0da7f445df445630c794897347ee360d6fe6348b
+  sha256: 0026a9bc67f37f07969101bdf72fd5921169b4744f765118e5db57cace645bee
+  license:
+    - BSD-3-Clause
+    - GPL-2.0-only
 - dependency: protobuf
   version: https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.bazel.tar.gz
   retrieved: "2026-10-06"
@@ -1120,6 +1149,12 @@
   retrieved: "2026-10-06"
   commit: 21e14308c2afc7691f43295acc9852d9a6844f04
   sha256: 81c10a95a5c22d838276ee90d712635d6042419fdfca5ef88328226b6321e53b
+  license: Apache-2.0
+- dependency: rules_foreign_cc
+  version: https://github.com/bazel-contrib/rules_foreign_cc/releases/download/0.16.0/rules_foreign_cc-0.16.0.tar.gz
+  retrieved: "2026-09-26"
+  commit: 931cb33cf882380394a9c32dcd548259a2a0a357
+  sha256: 327b3fcacde97b9665424db2b6c37e6f8da59ecc783dc5b8683c69396f820a12
   license: Apache-2.0
 - dependency: rules_go
   version: https://github.com/bazel-contrib/rules_go/releases/download/v0.63.0/rules_go-v0.63.0.zip
