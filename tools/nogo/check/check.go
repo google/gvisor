@@ -532,6 +532,20 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 	// If packages are available locally, we can refer to those directly.
 	astFacts := facts.NewPackage()
 
+	// Analysis can refer to a package through a field or method selection on
+	// an imported type without importing that package directly.
+	packageFacts := map[*types.Package]*facts.Package{astPackage: astFacts}
+	for _, pkg := range astPackage.Imports() {
+		packageFacts[pkg] = i.fastFacts(pkg)
+	}
+	for _, obj := range typesInfo.Uses {
+		if pkg := obj.Pkg(); pkg != nil {
+			if _, ok := packageFacts[pkg]; !ok {
+				packageFacts[pkg] = i.fastFacts(pkg)
+			}
+		}
+	}
+
 	// Recursively visit all analyzers.
 	var (
 		resultsMu sync.RWMutex // protects results & errs, findings.
@@ -640,30 +654,12 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				AllPackageFacts: func() (rv []analysis.PackageFact) {
 					factsMu.RLock()
 					defer factsMu.RUnlock()
-					// Pull all dependencies.
-					for _, importedPkg := range astPackage.Imports() {
-						otherFacts := i.fastFacts(importedPkg)
-						if otherFacts == nil {
-							continue
-						}
+					for pkg, fs := range packageFacts {
 						for typ := range localFactTypes {
-							v := reflect.New(typ.Elem())
-							if otherFacts.ImportFact(nil, v.Interface().(analysis.Fact)) {
-								rv = append(rv, analysis.PackageFact{
-									Package: importedPkg,
-									Fact:    v.Interface().(analysis.Fact),
-								})
+							fact := reflect.New(typ.Elem()).Interface().(analysis.Fact)
+							if fs.ImportFact(nil, fact) {
+								rv = append(rv, analysis.PackageFact{Package: pkg, Fact: fact})
 							}
-						}
-					}
-					// Pull all local facts.
-					for typ := range localFactTypes {
-						v := reflect.New(typ.Elem())
-						if astFacts.ImportFact(nil, v.Interface().(analysis.Fact)) {
-							rv = append(rv, analysis.PackageFact{
-								Package: astPackage,
-								Fact:    v.Interface().(analysis.Fact),
-							})
 						}
 					}
 					return
@@ -671,15 +667,19 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				AllObjectFacts: func() (rv []analysis.ObjectFact) {
 					factsMu.RLock()
 					defer factsMu.RUnlock()
-					// Pull all local facts.
-					for obj := range astFacts.Objects {
-						for typ := range localFactTypes {
-							v := reflect.New(typ.Elem())
-							if astFacts.ImportFact(obj, v.Interface().(analysis.Fact)) {
-								rv = append(rv, analysis.ObjectFact{
-									Object: obj,
-									Fact:   v.Interface().(analysis.Fact),
-								})
+					for _, fs := range packageFacts {
+						if fs == nil {
+							continue
+						}
+						for obj := range fs.Objects {
+							if obj == nil {
+								continue // Package facts are not object facts.
+							}
+							for typ := range localFactTypes {
+								fact := reflect.New(typ.Elem()).Interface().(analysis.Fact)
+								if fs.ImportFact(obj, fact) {
+									rv = append(rv, analysis.ObjectFact{Object: obj, Fact: fact})
+								}
 							}
 						}
 					}
