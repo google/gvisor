@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -89,7 +90,8 @@ const (
 //
 // This is not exhaustive, unused features are not listed.
 const (
-	FeatureIncompatSupported = 0x0
+	FeatureIncompatChunkedFile = 0x4
+	FeatureIncompatSupported   = FeatureIncompatChunkedFile
 )
 
 // Sizes of on-disk structures in bytes.
@@ -98,7 +100,22 @@ const (
 	InodeCompactSize  = 32
 	InodeExtendedSize = 64
 	DirentSize        = 12
+	BlockMapEntrySize = 4
+	ChunkIndexSize    = 8
 )
+
+// Chunk formats of chunk-based inodes.
+//
+// Any formats that aren't in ChunkFormatSupported are incompatible with this
+// implementation.
+const (
+	ChunkFormatBlkBits   = 0x001f
+	ChunkFormatIndexes   = 0x0020
+	ChunkFormatSupported = ChunkFormatBlkBits | ChunkFormatIndexes
+)
+
+// NullAddr is the block address of a sparse hole.
+const NullAddr = math.MaxUint32
 
 // SuperBlock represents on-disk superblock.
 //
@@ -191,6 +208,15 @@ type Dirent struct {
 	NameOff  uint16
 	FileType uint8
 	Reserved uint8
+}
+
+// ChunkIndex represents an on-disk chunk index entry.
+//
+// +marshal
+type ChunkIndex struct {
+	StartBlkHi uint16
+	DeviceID   uint16
+	StartBlkLo uint32
 }
 
 // Nid returns the inode number of the inode referenced by this dirent.
@@ -492,6 +518,11 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 	case InodeDataLayoutFlatPlain:
 		inode.dataOff = i.sb.BlockAddrToOffset(rawBlockAddr)
 
+	case InodeDataLayoutChunkBased:
+		if err := inode.initChunks(off+uint64(inodeSize), uint16(rawBlockAddr)); err != nil {
+			return Inode{}, err
+		}
+
 	default:
 		log.Warningf("Unsupported data layout 0x%x at inode (nid=%v)", dataLayout, nid)
 		return Inode{}, linuxerr.ENOTSUP
@@ -522,6 +553,9 @@ type Inode struct {
 
 	// format is the format of this inode.
 	format uint16
+
+	// chunkFormat is the chunk format of a chunk-based inode.
+	chunkFormat uint16
 
 	// Metadata.
 	mode      uint16
@@ -624,59 +658,143 @@ func (i *Inode) GID() uint32 {
 	return i.gid
 }
 
-// DataOffset returns the data offset of this inode in image file.
-func (i *Inode) DataOffset() (uint64, error) {
-	// TODO: We don't support regular files with inline data yet, which means the image
-	// should be created with the "-E noinline_data" option. The "-E noinline_data" option
-	// was introduced for the DAX feature support in Linux [1].
-	// [1] https://github.com/erofs/erofs-utils/commit/60549d52c3b636f0ddd1d51b0c1517c1dee22595
-	if dataLayout := i.DataLayout(); dataLayout != InodeDataLayoutFlatPlain {
-		log.Warningf("Unsupported data layout 0x%x at inode (nid=%v)", dataLayout, i.Nid())
-		return 0, linuxerr.ENOTSUP
-	}
-	return i.dataOff, nil
-}
-
-// FileRange represents a range of bytes within the image file.
-type FileRange struct {
-	// Off is the offset of the range within the image file.
+// Extent describes a contiguous range of an inode's data.
+type Extent struct {
+	// Off is the offset of the extent within the file.
 	Off uint64
-	// Size is the length of the range in bytes.
-	Size uint64
-	// Bytes is the byte slice of the range within the image file.
-	Bytes []byte
+
+	// Length is the length of the extent in bytes. An extent that reaches
+	// the end of the file extends to a block boundary, except for tail-packed
+	// inline data.
+	Length uint64
+
+	// ImageOff is the offset of the extent's data within the image file. It
+	// is valid only if Mapped is true.
+	ImageOff uint64
+
+	// Mapped is false for a sparse hole, which reads as zeroes.
+	Mapped bool
 }
 
-// DataRanges returns the ranges within the image file that hold this inode's
-// data, in file order. An inode's data occupies at most two ranges: a run of
-// plain data blocks and, for files with tail-packed inline data, the inline
-// tail. Entries that are not used (or hold no data) have a zero Size.
-func (i *Inode) DataRanges() ([2]FileRange, error) {
-	var ranges [2]FileRange
+// MapBlocks returns the extent containing offset off of this inode's data.
+//
+// Precondition: off < i.Size().
+func (i *Inode) MapBlocks(off uint64) (Extent, error) {
+	var e Extent
 	switch dataLayout := i.DataLayout(); dataLayout {
 	case InodeDataLayoutFlatPlain:
-		ranges[0] = FileRange{Off: i.dataOff, Size: i.size}
+		blockMask := uint64(i.image.BlockSize()) - 1
+		e = Extent{Length: (i.size + blockMask) &^ blockMask, ImageOff: i.dataOff, Mapped: true}
+		if e.Length < i.size {
+			return Extent{}, linuxerr.EUCLEAN
+		}
 
 	case InodeDataLayoutFlatInline:
-		idataSize := i.size & (uint64(i.image.BlockSize()) - 1)
-		ranges[0] = FileRange{Off: i.dataOff, Size: i.size - idataSize}
-		ranges[1] = FileRange{Off: i.idataOff, Size: idataSize}
+		tailOff := i.size &^ (uint64(i.image.BlockSize()) - 1)
+		if off < tailOff {
+			e = Extent{Length: tailOff, ImageOff: i.dataOff, Mapped: true}
+		} else {
+			e = Extent{Off: tailOff, Length: i.size - tailOff, ImageOff: i.idataOff, Mapped: true}
+		}
+
+	case InodeDataLayoutChunkBased:
+		var err error
+		if e, err = i.mapChunks(off); err != nil {
+			return Extent{}, err
+		}
 
 	default:
 		log.Warningf("Unsupported data layout 0x%x at inode (nid=%v)", dataLayout, i.Nid())
-		return [2]FileRange{}, linuxerr.ENOTSUP
+		return Extent{}, linuxerr.ENOTSUP
 	}
-	for j := range ranges {
-		if ranges[j].Size == 0 {
-			continue
-		}
-		bytes, err := i.image.BytesAt(ranges[j].Off, ranges[j].Size)
+	if e.Mapped && !i.image.checkRange(e.ImageOff, e.Length) {
+		log.Warningf("Invalid extent (off: 0x%x, length: 0x%x) at inode (nid=%v)", e.ImageOff, e.Length, i.Nid())
+		return Extent{}, linuxerr.EUCLEAN
+	}
+	return e, nil
+}
+
+func (i *Inode) initChunks(off uint64, format uint16) error {
+	if !i.IsRegular() || format&^ChunkFormatSupported != 0 {
+		log.Warningf("Unsupported chunk format 0x%x at inode (nid=%v)", format, i.Nid())
+		return linuxerr.ENOTSUP
+	}
+	// Linux limits file sizes to MAX_LFS_FILESIZE, which also keeps extent
+	// arithmetic from overflowing.
+	if i.size > math.MaxInt64 {
+		log.Warningf("Invalid file size 0x%x at inode (nid=%v)", i.size, i.Nid())
+		return linuxerr.EUCLEAN
+	}
+	i.chunkFormat = format
+	unit := i.chunkEntrySize()
+	i.dataOff = (off + unit - 1) &^ (unit - 1)
+	return nil
+}
+
+func (i *Inode) chunkBits() uint8 {
+	return i.image.sb.BlockSizeBits + uint8(i.chunkFormat&ChunkFormatBlkBits)
+}
+
+func (i *Inode) chunkEntrySize() uint64 {
+	if i.chunkFormat&ChunkFormatIndexes != 0 {
+		return ChunkIndexSize
+	}
+	return BlockMapEntrySize
+}
+
+// chunkBlockAddr returns the block address in the chunk map entry at offset
+// off in the image.
+func (i *Inode) chunkBlockAddr(off uint64) (uint32, error) {
+	if !i.image.checkRange(off, i.chunkEntrySize()) {
+		log.Warningf("Chunk map out of range at inode (nid=%v)", i.Nid())
+		return 0, linuxerr.EUCLEAN
+	}
+	if i.chunkFormat&ChunkFormatIndexes != 0 {
+		// Without the device table feature, the device ID is always ignored.
+		return (*ChunkIndex)(i.image.pointerAt(off)).StartBlkLo, nil
+	}
+	return *(*uint32)(i.image.pointerAt(off)), nil
+}
+
+// mapChunks returns the extent containing offset off of a chunk-based inode.
+// Like Linux, it merges adjacent chunks that are contiguous in the image or
+// are all holes, scanning only the map entries within one block.
+//
+// Precondition: off < i.size.
+func (i *Inode) mapChunks(off uint64) (Extent, error) {
+	bits := i.chunkBits()
+	unit := i.chunkEntrySize()
+	blockMask := uint64(i.image.BlockSize()) - 1
+	first := off >> bits
+	pos := i.dataOff + first*unit
+	end := min((pos+blockMask+1)&^blockMask, i.dataOff+((i.size-1)>>bits+1)*unit)
+	addr, err := i.chunkBlockAddr(pos)
+	if err != nil {
+		return Extent{}, err
+	}
+	n := uint64(1)
+	for ; pos+n*unit < end; n++ {
+		next, err := i.chunkBlockAddr(pos + n*unit)
 		if err != nil {
-			return [2]FileRange{}, err
+			return Extent{}, err
 		}
-		ranges[j].Bytes = bytes
+		want := uint64(NullAddr)
+		if addr != NullAddr {
+			want = uint64(addr) + n<<(i.chunkFormat&ChunkFormatBlkBits)
+		}
+		if uint64(next) != want {
+			break
+		}
 	}
-	return ranges, nil
+	e := Extent{Off: first << bits, Length: n << bits}
+	if rest := i.size - e.Off; rest < e.Length {
+		e.Length = (rest + blockMask) &^ blockMask
+	}
+	if addr != NullAddr {
+		e.ImageOff = i.image.sb.BlockAddrToOffset(addr)
+		e.Mapped = true
+	}
+	return e, nil
 }
 
 // blockData represents the information of the data in a block.

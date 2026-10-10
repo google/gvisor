@@ -27,7 +27,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -1187,7 +1186,7 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 		return fmt.Errorf("unsupported filesystem type: %v", fstype)
 	}
 
-	ctx := context.Background()
+	ctx := t.Kernel().SupervisorContext()
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef(ctx)
 

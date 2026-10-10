@@ -4718,6 +4718,8 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 			name:    "image4",
 			options: "-E force-inode-compact -E noinline_data",
 		},
+		{name: "chunk-blockmap", options: "--chunksize=8192 -E force-inode-blockmap,force-inode-compact"},
+		{name: "chunk-indexes", options: "--chunksize=8192 -E force-chunk-indexes,force-inode-extended"},
 	}
 
 	var resultImages []erofsImageInfo
@@ -4867,7 +4869,7 @@ func TestMountEROFSConfig(t *testing.T) {
 
 // createRootfsEROFS creates a rootfs directory and an EROFS rootfs image in
 // the directory dir.
-func createRootfsEROFS(dir string) (string, string, error) {
+func createRootfsEROFS(dir string, options ...string) (string, string, error) {
 	// Create a rootfs directory with busybox in root.
 	rootfsDir := filepath.Join(dir, "rootfs")
 	if err := os.Mkdir(rootfsDir, 0755); err != nil {
@@ -4892,7 +4894,7 @@ func createRootfsEROFS(dir string) (string, string, error) {
 
 	// Build the EROFS rootfs image.
 	rootfsImage := filepath.Join(dir, "rootfs.img")
-	if err := createImageEROFS(rootfsImage, rootfsDir, "-E noinline_data"); err != nil {
+	if err := createImageEROFS(rootfsImage, rootfsDir, append([]string{"-E noinline_data"}, options...)...); err != nil {
 		return "", "", fmt.Errorf("error creating EROFS image: %v", err)
 	}
 
