@@ -230,6 +230,10 @@ func (c *Context64) SetStack(value uintptr) {
 	c.Regs.Sp = uint64(value)
 }
 
+func (c *Context64) FramePointer() uintptr {
+	return uintptr(c.Regs.Regs[29])
+}
+
 // TLS returns the current TLS pointer.
 func (c *Context64) TLS() uintptr {
 	return uintptr(c.Regs.TPIDR_EL0)
