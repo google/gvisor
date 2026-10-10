@@ -122,3 +122,88 @@ func TestApplicationPAC(t *testing.T) {
 		return false
 	})
 }
+
+// TestKernelFaultOnUnmappedSP verifies that an EL1 data abort occurring when
+// SP_EL1 (RSP) points to a page unmapped in Guest EL1 TTBR0_EL1 cleanly exits
+// to Host EL0 without triggering a recursive fault in KERNEL_ENTRY_FROM_EL1,
+// and preserves R18 and R19 across the exception and VM exit.
+func TestKernelFaultOnUnmappedSP(t *testing.T) {
+	const (
+		wantR18 = uintptr(0xdeadbeefcafebabe)
+		wantR19 = uintptr(0x123456789abcdef0)
+	)
+
+	mem, err := unix.Mmap(-1, 0, hostarch.PageSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_PRIVATE)
+	if err != nil {
+		t.Fatalf("mmap failed: %v", err)
+	}
+	defer unix.Munmap(mem)
+
+	pageAddr := uintptr(unsafe.Pointer(&mem[0]))
+	phys, length, ok := translateToPhysical(pageAddr)
+	if !ok || length < hostarch.PageSize {
+		t.Fatalf("translateToPhysical(%#x) = (%#x, %#x, %v), want ok with length >= %#x", pageAddr, phys, length, ok, hostarch.PageSize)
+	}
+
+	kvmTest(t, nil, func(c *vCPU) bool {
+		// Unmap pageAddr from the guest EL1 kernel page tables (TTBR0_EL1)
+		// while keeping it mapped in the host process.
+		c.machine.kernel.PageTables.Unmap(hostarch.Addr(pageAddr), hostarch.PageSize)
+		defer c.machine.kernel.PageTables.Map(
+			hostarch.Addr(pageAddr),
+			hostarch.PageSize,
+			pagetables.MapOpts{AccessType: hostarch.ReadWrite},
+			phys,
+		)
+
+		sp := pageAddr + hostarch.PageSize - 16
+		bluepill(c)
+		ring0.FlushTlbAll()
+
+		gotR18, gotR19 := testutil.StorePairAtSP(sp, wantR18, wantR19)
+		if got := c.state.Load(); got != vCPUUser {
+			t.Fatalf("vCPU state after EL1 fault on unmapped SP = %v, want %v", got, vCPUUser)
+		}
+		if gotR18 != wantR18 || gotR19 != wantR19 {
+			t.Fatalf("StorePairAtSP R18/R19 = (%#x, %#x), want (%#x, %#x)", gotR18, gotR19, wantR18, wantR19)
+		}
+		stored0 := uintptr(binary.NativeEndian.Uint64(mem[hostarch.PageSize-16 : hostarch.PageSize-8]))
+		stored1 := uintptr(binary.NativeEndian.Uint64(mem[hostarch.PageSize-8 : hostarch.PageSize]))
+		if stored0 != wantR18 || stored1 != wantR19 {
+			t.Fatalf("stored pair at SP = (%#x, %#x), want (%#x, %#x)", stored0, stored1, wantR18, wantR19)
+		}
+		return false
+	})
+}
+
+// TestTopUserPageMapped verifies that MaximumUserAddress covers the full
+// 48-bit user address space up to UserspaceSize (including the top page at
+// [0x0000fffffffff000, 0x0001000000000000) where Linux ARM64 places the
+// initial thread stack).
+func TestTopUserPageMapped(t *testing.T) {
+	if ring0.MaximumUserAddress != ring0.UserspaceSize {
+		t.Fatalf("ring0.MaximumUserAddress = %#x, want %#x", ring0.MaximumUserAddress, ring0.UserspaceSize)
+	}
+	const topPage = ring0.UserspaceSize - hostarch.PageSize
+	kvmTest(t, nil, func(c *vCPU) bool {
+		// Check whether the top page is present in a non-excluded VMA (such as [stack]).
+		var topPageMappedInHost bool
+		_ = applyVirtualRegions(func(vr virtualRegion) bool {
+			if vr.virtual <= topPage && topPage < vr.virtual+vr.length && !excludeVirtualRegion(vr) {
+				topPageMappedInHost = true
+				return true
+			}
+			return false
+		})
+		if !topPageMappedInHost {
+			return false
+		}
+		if _, _, ok := translateToPhysical(topPage); !ok {
+			t.Fatalf("top user page %#x is mapped on host but missing from physicalRegions", topPage)
+		}
+		if _, _, size, _ := c.machine.kernel.PageTables.Lookup(hostarch.Addr(topPage), false); size == 0 {
+			t.Fatalf("top user page %#x is missing from kernel PageTables (TTBR0_EL1)", topPage)
+		}
+		return false
+	})
+}

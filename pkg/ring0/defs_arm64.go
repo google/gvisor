@@ -17,16 +17,15 @@
 
 package ring0
 
-import (
-	"gvisor.dev/gvisor/pkg/hostarch"
-)
-
 const (
 	// UserspaceSize is the total size of userspace.
 	UserspaceSize = uintptr(1) << VirtualAddressBits
 
-	// MaximumUserAddress is the largest possible user address.
-	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
+	// MaximumUserAddress is the largest possible user address (exclusive
+	// upper bound). Unlike x86_64, which reserves a guard page below the
+	// non-canonical boundary, ARM64 Linux maps user pages (such as the
+	// initial thread stack) all the way up to TASK_SIZE_64 (UserspaceSize).
+	MaximumUserAddress = UserspaceSize
 
 	// KernelStartAddress is the starting kernel address.
 	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)

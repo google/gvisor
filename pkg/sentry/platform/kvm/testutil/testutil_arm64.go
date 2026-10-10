@@ -40,6 +40,11 @@ func pacLoop()
 // Stage-2).
 func LoadPair(addr uintptr) (uint64, uint64)
 
+// StorePairAtSP temporarily switches RSP to sp, sets R18 and R19 to r18 and
+// r19, stores (R18, R19) to 0(RSP), restores RSP, and returns the resulting
+// R18 and R19 values.
+func StorePairAtSP(sp, r18, r19 uintptr) (uintptr, uintptr)
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn uintptr) {
 	regs.Pc = uint64(fn)

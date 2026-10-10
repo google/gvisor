@@ -401,14 +401,20 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 // Match KERNEL_ENTRY_FROM_EL0: r18 must be saved as well because EL1 exceptions
 // can also interrupt the host vdso executing in guest mode, and the vdso C code
 // that may freely use r18 as a temporary.
+//
+// Unlike KERNEL_ENTRY_FROM_EL0 (where RSP is already the per-CPU kernel stack
+// SP_EL1), on EL1-to-EL1 entry RSP is still the interrupted sentry stack
+// pointer. Do not push onto RSP before switching to the kernel stack: if the
+// EL1 exception was a data abort on RSP (for example, an unmapped stack page),
+// storing to RSP here would trigger a recursive data abort in El1_sync and
+// overwrite ELR_EL1. Instead, stash r18 in SP_EL0 (which is unused while
+// executing in EL1) before loading TPIDR_EL1 into r18.
 #define KERNEL_ENTRY_FROM_EL1 \
-	SUB $16, RSP, RSP; \		// save r18, r19 into the stack.
-	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
-	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
+	WORD $0xd5184112; \   // MSR R18, SP_EL0 (save r18 without touching RSP)
+	WORD $0xd538d092; \   // MRS TPIDR_EL1, R18
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// save sentry context (except r18, r19).
-	LDP 16*0(RSP), (R4, R5); \	// load the original r18, r19.
-	ADD $16, RSP, RSP; \
-	STP (R4, R5), CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18, r19.
+	WORD $0xd5384104; \   // MRS SP_EL0, R4 (load the original r18)
+	STP (R4, RSV_REG_APP), CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18, r19.
 	MRS TPIDR_EL0, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_TLS(RSV_REG); \
 	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
@@ -676,6 +682,7 @@ el1_sve_acc:
 	// Restore common registers.
 	REGISTERS_LOAD(RSV_REG, CPU_REGISTERS)
 	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
+	MOVD CPU_REGISTERS+PTRACE_R18(RSV_REG), RSV_REG
 
 	ERET()	// return to el1.
 
