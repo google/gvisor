@@ -34,6 +34,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_format.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/fs_util.h"
@@ -68,6 +69,9 @@ namespace {
 #endif
 #ifndef SECBIT_KEEP_CAPS_LOCKED
 #define SECBIT_KEEP_CAPS_LOCKED (1 << 5)
+#endif
+#ifndef SECBIT_NO_SETUID_FIXUP
+#define SECBIT_NO_SETUID_FIXUP (1 << 2)
 #endif
 
 // Helper to check if a capability is in the ambient set.
@@ -506,6 +510,10 @@ TEST_F(AmbientCapabilitiesTest, SecurebitsKeepCapsEPERM) {
     EXPECT_THAT(
         prctl(PR_SET_SECUREBITS, current_sec ^ SECBIT_KEEP_CAPS, 0, 0, 0),
         SyscallFailsWithErrno(EPERM));
+    // 3. Toggle SECBIT_NO_SETUID_FIXUP to witness EPERM.
+    EXPECT_THAT(
+        prctl(PR_SET_SECUREBITS, current_sec ^ SECBIT_NO_SETUID_FIXUP, 0, 0, 0),
+        SyscallFailsWithErrno(EPERM));
   });
 }
 
@@ -534,6 +542,100 @@ TEST_F(AmbientCapabilitiesTest, SecurebitsNoKeepCapsTransition) {
     CapSet post_cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
     EXPECT_EQ(post_cs.permitted, 0);
   });
+}
+
+TEST_F(AmbientCapabilitiesTest, SecurebitsNoSetuidFixupDropRoot) {
+  ScopedThread([] {
+    CapSet cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    cs.inheritable |= (1ULL << CAP_NET_BIND_SERVICE);
+    ASSERT_NO_ERRNO(SetCapabilitySets(cs));
+    ASSERT_NO_ERRNO(AmbientCapRaise(CAP_NET_BIND_SERVICE));
+    ASSERT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP, 0, 0, 0),
+                SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_GET_SECUREBITS, 0, 0, 0, 0),
+                SyscallSucceedsWithValue(SECBIT_NO_SETUID_FIXUP));
+    cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    ASSERT_NE(cs.effective, 0);
+
+    // All UIDs become nonzero. Without the fixup, the permitted, effective and
+    // ambient sets are unchanged.
+    ASSERT_THAT(syscall(SYS_setresuid, 65534, 65534, 65534), SyscallSucceeds());
+
+    CapSet post_cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    EXPECT_EQ(post_cs.permitted, cs.permitted);
+    EXPECT_EQ(post_cs.effective, cs.effective);
+    EXPECT_THAT(AmbientCapIsSet(CAP_NET_BIND_SERVICE),
+                IsPosixErrorOkAndHolds(true));
+  });
+}
+
+TEST_F(AmbientCapabilitiesTest, SecurebitsNoSetuidFixupEffectiveUID) {
+  ScopedThread([] {
+    ASSERT_THAT(prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP, 0, 0, 0),
+                SyscallSucceeds());
+    CapSet cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    ASSERT_NE(cs.effective, 0);
+
+    // Effective UID 0 to nonzero does not clear the effective set.
+    ASSERT_THAT(syscall(SYS_setresuid, -1, 65534, -1), SyscallSucceeds());
+    CapSet post_cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    EXPECT_EQ(post_cs.effective, cs.effective);
+
+    // Effective UID nonzero to 0 does not copy the permitted set to the
+    // effective set.
+    post_cs.effective = 0;
+    ASSERT_NO_ERRNO(SetCapabilitySets(post_cs));
+    ASSERT_THAT(syscall(SYS_setresuid, -1, 0, -1), SyscallSucceeds());
+    post_cs = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    EXPECT_EQ(post_cs.effective, 0);
+    EXPECT_EQ(post_cs.permitted, cs.permitted);
+  });
+}
+
+TEST_F(AmbientCapabilitiesTest, SecurebitsNoSetuidFixupInNewUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  int child_ready[2];
+  int maps_ready[2];
+  ASSERT_THAT(pipe(child_ready), SyscallSucceeds());
+  ASSERT_THAT(pipe(maps_ready), SyscallSucceeds());
+  const pid_t child = fork();
+  ASSERT_THAT(child, SyscallSucceeds());
+  if (child == 0) {
+    close(child_ready[0]);
+    close(maps_ready[1]);
+    TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+    char byte = 0;
+    TEST_PCHECK(write(child_ready[1], &byte, sizeof(byte)) == sizeof(byte));
+    TEST_PCHECK(read(maps_ready[0], &byte, sizeof(byte)) == sizeof(byte));
+    constexpr int securebits = SECBIT_KEEP_CAPS | SECBIT_NO_SETUID_FIXUP;
+    TEST_PCHECK(prctl(PR_SET_SECUREBITS, securebits, 0, 0, 0) == 0);
+    TEST_CHECK(prctl(PR_GET_SECUREBITS, 0, 0, 0, 0) == securebits);
+
+    CapSet caps = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+    TEST_CHECK(caps.permitted != 0);
+    TEST_CHECK(caps.effective != 0);
+    _exit(0);
+  }
+  close(child_ready[1]);
+  close(maps_ready[0]);
+  char byte = 0;
+  ASSERT_THAT(read(child_ready[0], &byte, sizeof(byte)),
+              SyscallSucceedsWithValue(sizeof(byte)));
+  const std::string gid_map = absl::StrFormat("0 %d 1", getgid());
+  FileDescriptor gid_map_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(absl::StrFormat("/proc/%d/gid_map", child), O_WRONLY));
+  ASSERT_THAT(write(gid_map_fd.get(), gid_map.data(), gid_map.size()),
+              SyscallSucceedsWithValue(gid_map.size()));
+  const std::string uid_map = absl::StrFormat("0 %d 1", getuid());
+  FileDescriptor uid_map_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(absl::StrFormat("/proc/%d/uid_map", child), O_WRONLY));
+  ASSERT_THAT(write(uid_map_fd.get(), uid_map.data(), uid_map.size()),
+              SyscallSucceedsWithValue(uid_map.size()));
+  ASSERT_THAT(write(maps_ready[1], &byte, sizeof(byte)),
+              SyscallSucceedsWithValue(sizeof(byte)));
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
 }
 
 }  // namespace
