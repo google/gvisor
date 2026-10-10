@@ -232,6 +232,7 @@ func Init() {
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID:                         ctrlHandler(rmControlSimple, compUtil|nvconf.CapGraphics),
 					nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE:                            ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE:                             ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV0000_CTRL_CMD_EVENT_SET_NOTIFICATION:                           ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS:                           ctrlHandler(rmControlSimple, nvconf.CapGraphics),
 					nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO:                        ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_CPU_INFO:                              ctrlHandler(rmControlSimple, compUtil|nvconf.CapGraphics),
@@ -320,8 +321,13 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS:                           ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS:                         ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_COUNTERS_V2:                           ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_PERF_BOOST:                                       ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2:          ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_GPM_QUERY_SUPPORT:                    ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_QUERY_INFO:                           ctrlHandler(rmControlSimple, compUtil),
+					nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_GPM_METRICS_GET:                      ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_GPM_SAMPLE_GET:                       ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS:                     ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG:                         ctrlHandler(rmControlSimple, compUtil),
@@ -365,6 +371,10 @@ func Init() {
 					nvgpu.NVB0CC_CTRL_CMD_SET_HS_CREDITS:                                   ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_POWER_REQUEST_FEATURES:                           ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NVB0CC_CTRL_CMD_POWER_RELEASE_FEATURES:                           ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SUBSCRIBE:                    ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_UNSUBSCRIBE:                  ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SET_STREAM_STATE:             ctrlHandler(rmControlSimple, nvconf.CapProfiling),
+					nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_GET_STREAM_STATE:             ctrlHandler(rmControlSimple, nvconf.CapProfiling),
 					nvgpu.NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK: ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID:                                   ctrlHandler(rmControlSimple, compUtil),
 					nvgpu.NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN:                     ctrlHandler(rmControlSimple, compUtil),
@@ -563,6 +573,7 @@ func Init() {
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID:                         ioctlInfo("NV0000_CTRL_CMD_GPU_GET_UUID_FROM_GPU_ID", nvgpu.NV0000_CTRL_GPU_GET_UUID_FROM_GPU_ID_PARAMS{}),
 							nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE:                            simpleIoctlInfo("NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE", "NV0000_CTRL_GPU_QUERY_DRAIN_STATE_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE:                             simpleIoctlInfo("NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE", "NV0000_CTRL_GPU_GET_MEMOP_ENABLE_PARAMS"),
+							nvgpu.NV0000_CTRL_CMD_EVENT_SET_NOTIFICATION:                           simpleIoctlInfo("NV0000_CTRL_CMD_EVENT_SET_NOTIFICATION", "NV0000_CTRL_EVENT_SET_NOTIFICATION_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS:                           simpleIoctlInfo("NV0000_CTRL_CMD_GSYNC_GET_ATTACHED_IDS", "NV0000_CTRL_GSYNC_GET_ATTACHED_IDS_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO:                        simpleIoctlInfo("NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO", "NV0000_SYNC_GPU_BOOST_GROUP_INFO_PARAMS"),
 							nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_CPU_INFO:                              simpleIoctlInfo("NV0000_CTRL_CMD_SYSTEM_GET_CPU_INFO", "NV0000_CTRL_SYSTEM_GET_CPU_INFO_PARAMS"),
@@ -651,8 +662,13 @@ func Init() {
 							nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            simpleIoctlInfo("NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS", "NV2080_CTRL_MC_SERVICE_INTERRUPTS_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS:                           simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS", "NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS:                         simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS", "NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_NVLINK_GET_COUNTERS_V2:                           simpleIoctlInfo("NV2080_CTRL_CMD_NVLINK_GET_COUNTERS_V2", "NV2080_CTRL_NVLINK_GET_COUNTERS_V2_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_PERF_BOOST:                                       simpleIoctlInfo("NV2080_CTRL_CMD_PERF_BOOST", "NV2080_CTRL_PERF_BOOST_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2:          simpleIoctlInfo("NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2", "NV2080_CTRL_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES_V2_PARAMS"),
+							nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_GPM_QUERY_SUPPORT:                    simpleIoctlInfo("NV2080_CTRL_CMD_PERF_LEGACY_GPM_QUERY_SUPPORT"), // No public param struct.
+							nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_QUERY_INFO:                           simpleIoctlInfo("NV2080_CTRL_CMD_PERF_LEGACY_QUERY_INFO"),        // No public param struct.
+							nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_GPM_METRICS_GET:                      simpleIoctlInfo("NV2080_CTRL_CMD_PERF_LEGACY_GPM_METRICS_GET"),   // No public param struct.
+							nvgpu.NV2080_CTRL_CMD_PERF_LEGACY_GPM_SAMPLE_GET:                       simpleIoctlInfo("NV2080_CTRL_CMD_PERF_LEGACY_GPM_SAMPLE_GET"),    // No public param struct.
 							nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             simpleIoctlInfo("NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO", "NV2080_CTRL_RC_GET_WATCHDOG_INFO_PARAMS"),
 							nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS:                     simpleIoctlInfo("NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS"), // No params.
 							nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG:                         simpleIoctlInfo("NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG"),     // No params.
@@ -696,6 +712,10 @@ func Init() {
 							nvgpu.NVB0CC_CTRL_CMD_SET_HS_CREDITS:                                   simpleIoctlInfo("NVB0CC_CTRL_CMD_SET_HS_CREDITS", "NVB0CC_CTRL_SET_HS_CREDITS_PARAMS"),
 							nvgpu.NVB0CC_CTRL_CMD_POWER_REQUEST_FEATURES:                           simpleIoctlInfo("NVB0CC_CTRL_CMD_POWER_REQUEST_FEATURES", "NVB0CC_CTRL_POWER_REQUEST_FEATURES_PARAMS"),
 							nvgpu.NVB0CC_CTRL_CMD_POWER_RELEASE_FEATURES:                           simpleIoctlInfo("NVB0CC_CTRL_CMD_POWER_RELEASE_FEATURES", "NVB0CC_CTRL_POWER_RELEASE_FEATURES_PARAMS"),
+							nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SUBSCRIBE:                    simpleIoctlInfo("NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SUBSCRIBE", "NV_COUNTER_COLLECTION_UNIT_SUBSCRIBE_PARAMS"),
+							nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_UNSUBSCRIBE:                  simpleIoctlInfo("NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_UNSUBSCRIBE"), // No params.
+							nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SET_STREAM_STATE:             simpleIoctlInfo("NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_SET_STREAM_STATE", "NV_COUNTER_COLLECTION_UNIT_STREAM_STATE_PARAMS"),
+							nvgpu.NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_GET_STREAM_STATE:             simpleIoctlInfo("NV_COUNTER_COLLECTION_UNIT_CTRL_CMD_GET_STREAM_STATE"), // No params.
 							nvgpu.NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK: simpleIoctlInfo("NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK", "NV90E6_CTRL_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK_PARAMS"),
 							nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID:                                   simpleIoctlInfo("NVC36F_CTRL_GET_CLASS_ENGINEID", "NVC36F_CTRL_GET_CLASS_ENGINEID_PARAMS"),
 							nvgpu.NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN:                     simpleIoctlInfo("NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN", "NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN_PARAMS"),
