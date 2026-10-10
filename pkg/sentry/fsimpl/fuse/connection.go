@@ -93,6 +93,15 @@ type connection struct {
 	// is a *deviceConn; for host passthrough this is a *hostConnection.
 	fuseConn fuseConn `state:"nosave"`
 
+	// hostTransport is true if fuseConn is a *hostConnection, i.e. the FUSE
+	// server is outside the sandbox. Unlike fuseConn, it is saved, so that
+	// restore can tell that the connection to the server has been lost:
+	// the host FD isn't carried across checkpoint/restore, and requests that
+	// were in flight on it can never be answered.
+	//
+	// Immutable after mount.
+	hostTransport bool
+
 	// We target FUSE 7.23.
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
 	//	- FUSE_EXPORT_SUPPORT
