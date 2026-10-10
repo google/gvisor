@@ -254,7 +254,10 @@ func (c *ControlMessage) EnableFDs(count int) {
 
 // ExtractFDs returns the list of FDs in the control message.
 //
-// Either this or CloseFDs should be used after EnableFDs.
+// Non-SCM_RIGHTS control messages (for example host-attached
+// SCM_CREDENTIALS on a SO_PASSCRED socket) are ignored so callers can
+// still receive passed file descriptors. Either this or CloseFDs should
+// be used after EnableFDs.
 func (c *ControlMessage) ExtractFDs() ([]int, error) {
 	msgs, err := unix.ParseSocketControlMessage(*c)
 	if err != nil {
@@ -262,9 +265,12 @@ func (c *ControlMessage) ExtractFDs() ([]int, error) {
 	}
 	var fds []int
 	for _, msg := range msgs {
+		if msg.Header.Level != unix.SOL_SOCKET || msg.Header.Type != unix.SCM_RIGHTS {
+			// Different control message (e.g. SCM_CREDENTIALS).
+			continue
+		}
 		thisFds, err := unix.ParseUnixRights(&msg)
 		if err != nil {
-			// Different control message.
 			return nil, err
 		}
 		for _, fd := range thisFds {
