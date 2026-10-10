@@ -1091,6 +1091,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 	case sys.Name:
 		sysData := &sys.InternalData{
 			EnableTPUProxyPaths: specutils.TPUProxyEnabled(spec, conf),
+			EnableNUMATopology:  specutils.RDMAEnabled(spec, conf) || specutils.NVProxyEnabled(spec, conf),
 			RDMASysfs:           rdmaSysfs,
 		}
 		if len(productName) > 0 {
