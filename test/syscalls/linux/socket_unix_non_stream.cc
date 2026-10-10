@@ -24,6 +24,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <functional>
@@ -53,12 +54,19 @@ TEST_P(UnixNonStreamSocketPairTest, RecvMsgTooLarge) {
   ASSERT_THAT(
       getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &rcvbuf, &length),
       SyscallSucceeds());
+  int sndbuf;
+  length = sizeof(sndbuf);
+  ASSERT_THAT(
+      getsockopt(sockets->second_fd(), SOL_SOCKET, SO_SNDBUF, &sndbuf, &length),
+      SyscallSucceeds());
 
   // Make the call larger than the receive buffer.
   const int recv_size = 3 * rcvbuf;
 
-  // Write a message that does fit in the receive buffer.
-  const int write_size = rcvbuf - kPageSize;
+  // UNIX messages are limited by SO_SNDBUF, which can be smaller than
+  // SO_RCVBUF.
+  const int write_size = std::min(rcvbuf, sndbuf) - kPageSize;
+  ASSERT_GT(write_size, 0);
 
   std::vector<char> write_buf(write_size, 'a');
   const int ret = RetryEINTR(write)(sockets->second_fd(), write_buf.data(),
@@ -69,7 +77,8 @@ TEST_P(UnixNonStreamSocketPairTest, RecvMsgTooLarge) {
     // result in the same error.
     return;
   }
-  ASSERT_THAT(ret, SyscallSucceeds());
+  ASSERT_THAT(ret, SyscallSucceeds())
+      << "SO_RCVBUF=" << rcvbuf << ", SO_SNDBUF=" << sndbuf;
 
   std::vector<char> recv_buf(recv_size);
 
