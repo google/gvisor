@@ -95,3 +95,40 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+// Keep invalid indices small so a bounds regression fails without causing a
+// large allocation or overflowing the parser's range counter.
+func TestParseBounds(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		input     string
+		limit     uint32
+		want      []uint32
+		wantError bool
+	}{
+		{name: "empty", input: "", limit: 0, want: []uint32{}},
+		{name: "zero_limit", input: "0", limit: 0, wantError: true},
+		{name: "last_bit", input: "63", limit: 64, want: []uint32{63}},
+		{name: "at_limit", input: "64", limit: 64, wantError: true},
+		{name: "range_at_limit", input: "0-64", limit: 64, wantError: true},
+		{name: "next_word", input: "64", limit: 65, want: []uint32{64}},
+		{name: "unaligned_limit", input: "64-65", limit: 65, wantError: true},
+		{name: "later_token", input: "1,65", limit: 65, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ParseList(test.input, test.limit)
+			if (err != nil) != test.wantError {
+				t.Fatalf("ParseList(%q, %d) error = %v, want error: %t", test.input, test.limit, err, test.wantError)
+			}
+			if test.wantError {
+				if got != nil {
+					t.Fatalf("ParseList(%q, %d) returned a partial bitmap on error", test.input, test.limit)
+				}
+				return
+			}
+			if !slices.Equal(got.ToSlice(), test.want) {
+				t.Errorf("ParseList(%q, %d) = %v, want %v", test.input, test.limit, got.ToSlice(), test.want)
+			}
+		})
+	}
+}
