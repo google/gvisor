@@ -28,6 +28,20 @@ type CapabilitySet uint64
 // AllCapabilities is a CapabilitySet containing all valid capabilities.
 var AllCapabilities = CapabilitySetOf(linux.CAP_LAST_CAP+1) - 1
 
+// FilesystemCapabilities is the set of effective capabilities that
+// setfsuid(2) drops or restores when the filesystem UID leaves or returns to
+// root. Analogous to Linux's CAP_FS_SET.
+var FilesystemCapabilities = CapabilitySetOfMany([]linux.Capability{
+	linux.CAP_CHOWN,
+	linux.CAP_MKNOD,
+	linux.CAP_DAC_OVERRIDE,
+	linux.CAP_DAC_READ_SEARCH,
+	linux.CAP_FOWNER,
+	linux.CAP_FSETID,
+	linux.CAP_MAC_OVERRIDE,
+	linux.CAP_LINUX_IMMUTABLE,
+})
+
 // CapabilitySetOf returns a CapabilitySet containing only the given
 // capability.
 func CapabilitySetOf(cp linux.Capability) CapabilitySet {
@@ -295,6 +309,8 @@ func ComputeCredsForExec(c *Credentials, f FilePrivileges, filename string,
 	}
 	newC.SavedKUID = newC.EffectiveKUID
 	newC.SavedKGID = newC.EffectiveKGID
+	newC.FilesystemKUID = newC.EffectiveKUID
+	newC.FilesystemKGID = newC.EffectiveKGID
 
 	// P'(effective) = effective ? P'(permitted) : P'(ambient).
 	newC.EffectiveCaps = ambientCaps
