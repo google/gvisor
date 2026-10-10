@@ -273,6 +273,28 @@ toolchain(
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
+genrule(
+    name = "go_export",
+    srcs = [
+        ":gopath",
+        "AUTHORS",
+        "LICENSE",
+        "go.mod",
+        "go.sum",
+        "//runsc:go_export_sources",
+        "//shim:go_export_sources",
+        "//tools/checklocks/cmd/checklocks:go_export_sources",
+        "//webhook:go_export_sources",
+    ],
+    outs = ["go_export.zip"],
+    cmd = "$(execpath //tools/go_export:assemble) --gopath $(execpath :gopath) --output $@ --go-mod $(execpath go.mod) " +
+          "$(execpath AUTHORS) $(execpath LICENSE) $(execpath go.sum) " +
+          "$(execpaths //runsc:go_export_sources) $(execpaths //shim:go_export_sources) " +
+          "$(execpaths //tools/checklocks/cmd/checklocks:go_export_sources) $(execpaths //webhook:go_export_sources)",
+    tools = ["//tools/go_export:assemble"],
+    visibility = ["//visibility:public"],
+)
+
 # gazelle generates Go BUILD rules from sources.
 #
 # Packages listed in GAZELLE_PACKAGES must match gazelle's output; presubmit
