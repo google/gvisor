@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -47,6 +48,8 @@ const (
 
 	// UNIX_PATH_MAX as defined in include/uapi/linux/un.h.
 	unixPathMax = 108
+
+	overflowGID = 65534
 )
 
 // Config holds configuration options for the fsgofer server.
@@ -76,6 +79,14 @@ type Config struct {
 
 	// Gofer process's EGID.
 	EGID int
+
+	// Gofer process's supplementary groups.
+	Groups []int
+
+	// Whether the gofer's user namespace allows setgroups(2) and, when host
+	// unix sockets are open, the gofer was permitted to drop its own
+	// supplementary groups.
+	CanSetGroups bool
 }
 
 var procSelfFD *rwfd.FD
@@ -169,7 +180,7 @@ func (i *connectionImpl) MaxMessageSize() uint32 {
 // SupportedMessages implements lisafs.ConnectionImpl.SupportedMessages.
 func (i *connectionImpl) SupportedMessages() []lisafs.MID {
 	// Note that Flush is not supported.
-	return []lisafs.MID{
+	msgs := []lisafs.MID{
 		lisafs.Mount,
 		lisafs.Channel,
 		lisafs.FStat,
@@ -203,6 +214,10 @@ func (i *connectionImpl) SupportedMessages() []lisafs.MID {
 		lisafs.ConnectWithCreds,
 		lisafs.RenameAt2,
 	}
+	if i.config.CanSetGroups {
+		msgs = append(msgs, lisafs.ConnectWithGroups)
+	}
+	return msgs
 }
 
 // controlFDLisa implements lisafs.ControlFDImpl.
@@ -977,6 +992,97 @@ func (fd *controlFDLisa) ConnectWithCreds(sockType uint32, uid lisafs.UID, gid l
 	}()
 
 	return fd.Connect(sockType)
+}
+
+// ConnectWithGroups implements lisafs.ControlFDImpl.ConnectWithGroups.
+func (fd *controlFDLisa) ConnectWithGroups(sockType uint32, uid lisafs.UID, gid lisafs.GID, groups []lisafs.GID) (int, error) {
+	impl := fd.Conn().Impl().(*connectionImpl)
+	if !impl.config.HostUDS.AllowOpen() {
+		logRejectedUdsConnectOnce.Do(func() {
+			log.Warningf("Rejecting attempt to connect to unix domain socket from host filesystem: %q. If you want to allow this, set flag --host-uds=open", fd.ControlFD.Node().FilePath())
+		})
+		return -1, unix.EPERM
+	}
+	gids := make([]int, len(groups))
+	for i, group := range groups {
+		gids[i] = int(group)
+	}
+	if groupsAlreadySet(gids, impl.config.Groups) {
+		return fd.ConnectWithCreds(sockType, uid, gid)
+	}
+	// setgroups(2) needs CAP_SETGID in the effective set, which ConnectWithCreds
+	// clears while the euid is changed. So the supplementary groups are changed
+	// before it.
+	return connectWithGroups(gids, func() (int, error) {
+		return fd.ConnectWithCreds(sockType, uid, gid)
+	})
+}
+
+// connectWithGroups calls connect on a dedicated OS thread whose supplementary
+// groups are set to gids. unix.Setgroups changes only the calling thread, which
+// is what we want here (syscall.Setgroups would change every thread). The
+// thread is never reused: connectOnItsOwnThread returns while still locked to
+// it, so the runtime terminates it along with its groups. Threads the runtime
+// starts from a locked thread are created by its template thread instead (see
+// runtime.newm), so they don't inherit the groups either.
+func connectWithGroups(gids []int, connect func() (int, error)) (int, error) {
+	done := make(chan connectResult, 1)
+	go connectOnItsOwnThread(gids, connect, done)
+	res := <-done
+	if res.panicValue != nil {
+		panic(res.panicValue)
+	}
+	return res.sock, res.err
+}
+
+type connectResult struct {
+	sock       int
+	err        error
+	panicValue any
+}
+
+func connectOnItsOwnThread(gids []int, connect func() (int, error), done chan connectResult) {
+	runtime.LockOSThread()
+	if isThreadGroupLeader() {
+		// The runtime never terminates the thread group leader; it parks it for
+		// the life of the process instead, so its groups must not change. Stay
+		// locked to it so that the new goroutine runs on another thread.
+		defer runtime.UnlockOSThread()
+		mainless := make(chan connectResult, 1)
+		go connectOnItsOwnThread(gids, connect, mainless)
+		done <- <-mainless
+		return
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			done <- connectResult{sock: -1, panicValue: p}
+		}
+	}()
+	if err := unix.Setgroups(gids); err != nil {
+		log.Warningf("Failed to set %d supplementary groups; err: %v", len(gids), err)
+		done <- connectResult{sock: -1, err: err}
+		return
+	}
+	log.Debugf("Successfully set supplementary groups to %v", gids)
+	sock, err := connect()
+	done <- connectResult{sock: sock, err: err}
+}
+
+// isThreadGroupLeader returns true if the calling thread is the thread group
+// leader, whose thread ID is the process ID.
+func isThreadGroupLeader() bool {
+	return unix.Gettid() == unix.Getpid()
+}
+
+func groupsAlreadySet(want, have []int) bool {
+	if slices.Contains(have, overflowGID) {
+		return false
+	}
+	x := slices.Clone(want)
+	y := slices.Clone(have)
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(slices.Compact(x), slices.Compact(y))
 }
 
 // BindAt implements lisafs.ControlFDImpl.BindAt.

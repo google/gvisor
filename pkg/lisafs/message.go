@@ -179,6 +179,10 @@ const (
 
 	// RenameAt2 is loosely analogous to renameat2(2).
 	RenameAt2 MID = 33
+
+	// ConnectWithGroups is analogous to connect(2) but it asks the server to
+	// connect with the provided effective uid/gid and supplementary groups.
+	ConnectWithGroups MID = 34
 )
 
 const (
@@ -211,7 +215,7 @@ func (uid UID) Ok() bool {
 
 // GID represents a group ID.
 //
-// +marshal
+// +marshal slice:GIDSlice
 type GID uint32
 
 // Ok returns true if gid is not NoGID.
@@ -1338,6 +1342,92 @@ type ConnectWithCredsReq struct {
 // String implements fmt.Stringer.String.
 func (c *ConnectWithCredsReq) String() string {
 	return fmt.Sprintf("ConnectWithCredsReq{FD: %d, SockType: %d, UID: %d, GID: %d}", c.FD, c.SockType, c.UID, c.GID)
+}
+
+// GIDArray represents an array of GIDs in memory. The marshalled array data is
+// preceded by a uint32 signifying the array length, since a process may hold
+// up to NGROUPS_MAX (65536) supplementary groups.
+type GIDArray []GID
+
+// String implements fmt.Stringer.String.
+func (g *GIDArray) String() string {
+	var b strings.Builder
+	b.WriteString("[")
+	for i, gid := range *g {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%d", gid)
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (g *GIDArray) SizeBytes() int {
+	return (*primitive.Uint32)(nil).SizeBytes() + (len(*g) * (*GID)(nil).SizeBytes())
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (g *GIDArray) MarshalBytes(dst []byte) []byte {
+	arrLen := primitive.Uint32(len(*g))
+	dst = arrLen.MarshalUnsafe(dst)
+	return MarshalUnsafeGIDSlice(*g, dst)
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (g *GIDArray) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	*g = (*g)[:0]
+	if g.SizeBytes() > len(src) {
+		return src, false
+	}
+	var arrLen primitive.Uint32
+	srcRemain := arrLen.UnmarshalUnsafe(src)
+	if int(arrLen)*(*GID)(nil).SizeBytes() > len(srcRemain) {
+		return src, false
+	}
+	if cap(*g) < int(arrLen) {
+		*g = make(GIDArray, arrLen)
+	} else {
+		*g = (*g)[:arrLen]
+	}
+	return UnmarshalUnsafeGIDSlice(*g, srcRemain), true
+}
+
+// ConnectWithGroupsReq is used to make a ConnectWithGroups request. The response is also ConnectResp.
+type ConnectWithGroupsReq struct {
+	ConnectWithCredsReq
+	// Groups are the supplementary groups to connect with.
+	Groups GIDArray
+}
+
+// String implements fmt.Stringer.String.
+func (c *ConnectWithGroupsReq) String() string {
+	return fmt.Sprintf("ConnectWithGroupsReq{FD: %d, SockType: %d, UID: %d, GID: %d, Groups: %s}", c.FD, c.SockType, c.UID, c.GID, c.Groups.String())
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (c *ConnectWithGroupsReq) SizeBytes() int {
+	return c.ConnectWithCredsReq.SizeBytes() + c.Groups.SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (c *ConnectWithGroupsReq) MarshalBytes(dst []byte) []byte {
+	dst = c.ConnectWithCredsReq.MarshalUnsafe(dst)
+	return c.Groups.MarshalBytes(dst)
+}
+
+// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.
+func (c *ConnectWithGroupsReq) CheckedUnmarshal(src []byte) ([]byte, bool) {
+	c.Groups = c.Groups[:0]
+	if c.SizeBytes() > len(src) {
+		return src, false
+	}
+	srcRemain := c.ConnectWithCredsReq.UnmarshalUnsafe(src)
+	if srcRemain, ok := c.Groups.CheckedUnmarshal(srcRemain); ok {
+		return srcRemain, true
+	}
+	return src, false
 }
 
 // BindAtReq is used to make BindAt requests.

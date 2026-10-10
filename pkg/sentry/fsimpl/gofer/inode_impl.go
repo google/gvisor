@@ -456,15 +456,20 @@ func (d *dentry) connect(ctx context.Context, sockType linux.SockType) (int, err
 	creds := auth.CredentialsOrNilFromContext(ctx)
 	euid := lisafs.NoUID
 	egid := lisafs.NoGID
+	var groups []lisafs.GID
 	if creds != nil {
 		euid = lisafs.UID(creds.EffectiveKUID)
 		egid = lisafs.GID(creds.EffectiveKGID)
+		groups = make([]lisafs.GID, len(creds.ExtraKGIDs))
+		for i, kgid := range creds.ExtraKGIDs {
+			groups[i] = lisafs.GID(kgid)
+		}
 	}
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
-		return it.controlFD.Connect(ctx, sockType, euid, egid)
+		return it.controlFD.Connect(ctx, sockType, euid, egid, groups)
 	case *directfsInode:
-		return it.connect(ctx, sockType, euid, egid, d)
+		return it.connect(ctx, sockType, euid, egid, groups, d)
 	default:
 		panic("unknown inode implementation")
 	}
