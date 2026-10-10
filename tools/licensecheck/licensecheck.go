@@ -263,11 +263,17 @@ func Fetch(p Paths) error {
 			SHA256:     r.fetched.sha256,
 			License:    r.fetched.license,
 		}
-		// Keep the old retrieval date when nothing changed, so that re-running
-		// fetch does not churn the file.
-		if o, ok := oldByName[d.name]; ok && o.Version == e.Version && o.Commit == e.Commit &&
-			o.SHA256 == e.SHA256 && slices.Equal(o.License, e.License) {
-			e.Retrieved = o.Retrieved
+		if o, ok := oldByName[d.name]; ok && o.Version == e.Version && o.SHA256 == e.SHA256 {
+			// Commit lookup is best-effort. A missing response does not
+			// invalidate known metadata for the same module archive.
+			if d.kind == kindGoModule && e.Commit == "" && e.SHA256 != "" {
+				e.Commit = o.Commit
+			}
+			// Keep the old retrieval date when nothing changed, so that
+			// re-running fetch does not churn the file.
+			if o.Commit == e.Commit && slices.Equal(o.License, e.License) {
+				e.Retrieved = o.Retrieved
+			}
 		}
 		fmt.Fprintf(os.Stderr, "%-60s %s\n", d.name, e.License)
 		entries = append(entries, e)
