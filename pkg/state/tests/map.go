@@ -14,6 +14,8 @@
 
 package tests
 
+import "context"
+
 // +stateify savable
 type mapContainer struct {
 	v map[int]any
@@ -26,3 +28,14 @@ type mapPtrContainer struct {
 
 // +stateify savable
 type registeredMapStruct struct{}
+
+// +stateify savable
+type mapLoadHook struct {
+	value int
+}
+
+type mapLoadHookContextKey struct{}
+
+func (v *mapLoadHook) afterLoad(ctx context.Context) {
+	ctx.Value(mapLoadHookContextKey{}).(func(*mapLoadHook))(v)
+}

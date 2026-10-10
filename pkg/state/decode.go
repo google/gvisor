@@ -418,10 +418,27 @@ func (ds *decodeState) decodeMap(ods *objectDecodeState, obj reflect.Value, enco
 		// See pointerTo.
 		obj.Set(reflect.MakeMap(obj.Type()))
 	}
+	keyType, valueType := obj.Type().Key(), obj.Type().Elem()
+	// Struct loaders and array element loaders can retain their addresses in
+	// delayed callbacks. Other kinds are copied into the map; interface values
+	// get independent dynamic storage in decodeInterface.
+	reuseKey := keyType.Kind() != reflect.Struct && keyType.Kind() != reflect.Array
+	reuseValue := valueType.Kind() != reflect.Struct && valueType.Kind() != reflect.Array
+	var kv, vv reflect.Value
 	for i := 0; i < len(encoded.Keys); i++ {
+		if i == 0 || !reuseKey {
+			kv = reflect.New(keyType).Elem()
+		} else {
+			// Nil wire values leave the destination unchanged.
+			kv.SetZero()
+		}
+		if i == 0 || !reuseValue {
+			vv = reflect.New(valueType).Elem()
+		} else {
+			vv.SetZero()
+		}
+
 		// Decode the objects.
-		kv := reflect.New(obj.Type().Key()).Elem()
-		vv := reflect.New(obj.Type().Elem()).Elem()
 		ds.decodeObject(ods, kv, encoded.Keys[i])
 		ds.decodeObject(ods, vv, encoded.Values[i])
 		ds.waitObject(ods, encoded.Keys[i], nil)
