@@ -335,6 +335,7 @@ func (c *Context) CheckNoPacketTimeout(errMsg string, wait time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	if pkt := c.linkEP.ReadContext(ctx); pkt != nil {
+		pkt.DecRef()
 		c.t.Fatal(errMsg)
 	}
 }
@@ -371,14 +372,14 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) *buffer.View {
 		c.t.Fatalf("got pkt.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	view := pkt.ToView()
+	view := pkt.AsView()
 
 	if pkt.GSOOptions.Type != stack.GSONone && pkt.GSOOptions.L3HdrLen != header.IPv4MinimumSize {
 		c.t.Errorf("got L3HdrLen = %d, want = %d", pkt.GSOOptions.L3HdrLen, header.IPv4MinimumSize)
 	}
 
-	checker.IPv4(c.t, view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
-	return view
+	checker.IPv4(c.t, &view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	return pkt.ToView()
 }
 
 // GetPacket reads a packet from the link layer endpoint and verifies
@@ -421,10 +422,10 @@ func (c *Context) GetPacketNonBlocking() *buffer.View {
 		c.t.Fatalf("got pkt.TransportProtocolNumber = %d, want = %d", got, want)
 	}
 
-	view := pkt.ToView()
+	view := pkt.AsView()
 
-	checker.IPv4(c.t, view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
-	return view
+	checker.IPv4(c.t, &view, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+	return pkt.ToView()
 }
 
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
@@ -660,10 +661,10 @@ func (c *Context) GetV6Packet() *buffer.View {
 	if got, want := pkt.NetworkProtocolNumber, ipv6.ProtocolNumber; got != want {
 		c.t.Fatalf("got pkt.NetworkProtocolNumber = %d, want = %d", got, want)
 	}
-	v := pkt.ToView()
+	v := pkt.AsView()
 
-	checker.IPv6(c.t, v, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
-	return v
+	checker.IPv6(c.t, &v, checker.SrcAddr(StackV6Addr), checker.DstAddr(TestV6Addr))
+	return pkt.ToView()
 }
 
 // SendV6Packet builds and sends an IPv6 Packet via the link layer endpoint of
