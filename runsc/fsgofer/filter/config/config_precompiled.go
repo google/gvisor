@@ -90,10 +90,15 @@ func optionsToPrecompile() []Options {
 
 // PrecompiledPrograms returns the set of seccomp programs to precompile.
 func PrecompiledPrograms() ([]precompiledseccomp.Program, error) {
+	return precompiledPrograms(precompiledseccomp.Parallelism())
+}
+
+func precompiledPrograms(parallelism int) ([]precompiledseccomp.Program, error) {
 	opts := optionsToPrecompile()
 	programs := make([]precompiledseccomp.Program, len(opts))
 	var programsMu sync.Mutex
 	var errGroup errgroup.Group
+	errGroup.SetLimit(parallelism)
 	for i, opt := range opts {
 		i, opt := i, opt
 		errGroup.Go(func() error {
