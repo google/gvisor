@@ -25,13 +25,13 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/seccheck/scsdk"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/test"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/procfs"
 )
 
 func remoteSinkConfig(endpoint string) seccheck.SinkConfig {
@@ -412,7 +412,7 @@ func TestProcfsDump(t *testing.T) {
 		t.Errorf("expected FD limit to be %+v, but got %+v", fdLimit, got)
 	}
 
-	wantCgroup := []kernel.TaskCgroupEntry{
+	wantCgroup := []procfs.CgroupEntry{
 		{HierarchyID: 7, Controllers: "pids", Path: "/"},
 		{HierarchyID: 6, Controllers: "memory", Path: "/"},
 		{HierarchyID: 5, Controllers: "job", Path: "/"},
