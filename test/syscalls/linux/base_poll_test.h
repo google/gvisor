@@ -39,18 +39,18 @@ class TimerThread {
  public:
   TimerThread(absl::Time deadline, pid_t tgid, pid_t tid)
       : thread_([=] {
-          mu_.Lock();
+          mu_.lock();
           mu_.AwaitWithDeadline(absl::Condition(&cancel_), deadline);
           if (!cancel_) {
             TEST_PCHECK(tgkill(tgid, tid, SIGALRM) == 0);
           }
-          mu_.Unlock();
+          mu_.unlock();
         }) {}
 
   ~TimerThread() { Cancel(); }
 
   void Cancel() {
-    absl::MutexLock ml(&mu_);
+    absl::MutexLock ml(mu_);
     cancel_ = true;
   }
 
