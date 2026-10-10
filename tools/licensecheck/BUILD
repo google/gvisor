@@ -29,4 +29,5 @@ go_test(
         "//governance:licensing.yaml",
     ],
     embed = [":licensecheck"],
+    embedsrcs = glob(["testdata/*.txt"]),
 )
