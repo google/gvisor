@@ -355,24 +355,40 @@ ensure-bazel-server:
 endif
 .PHONY: ensure-bazel-server
 
+# target_query quotes target patterns as one cquery expression, preserving
+# build's ordered additions, exclusions and re-additions.
+target_query = "$$(query='set()'; \
+  for target in $(1); do \
+    case "$$target" in \
+      -*) query="$$query except"; target="$${target:1}" ;; \
+      *) query="$$query union" ;; \
+    esac; \
+    case "$$target" in \
+      *\"*) query="$$query '$$target'" ;; \
+      *) query="$$query \"$$target\"" ;; \
+    esac; \
+  done; \
+  printf '%s' "$$query")"
+
 # build_paths materializes selected outputs and passes cquery's path/destination
 # pairs to $(2). cquery also includes manual targets that build may exclude, so
 # filter missing paths before translating them from the build environment.
 # https://github.com/bazelbuild/bazel/blob/61aa5a57c/src/main/java/com/google/devtools/build/lib/runtime/commands/CqueryCommand.java#L90-L94
 # Host filtering also permits builds whose Docker cache volume is not mounted
 # on the host; callers that consume printed paths still require local outputs.
+# Optional $(3) supplies cquery arguments separately from build arguments $(1).
 build_paths = \
   (set -euo pipefail; \
   $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) --remote_download_outputs=toplevel $(1)) && \
-  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(1)) \
+  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) --output=starlark --starlark:file=tools/show_paths.bzl $(if $(3),$(3),$(1))) \
   | $(call wrapper,xargs -r -n 2 bash -c 'set -euo pipefail; test -e "$$0" || exit 0; output_path="$$($(REALPATH_M) "$$0")"; printf "%s %s\n" "$$output_path" "$$1"') \
   | sed 's~^$(HOME)/\.cache/bazel/~$(patsubst %/,%,$(BAZEL_CACHE))/~' \
   | xargs -r -n 2 bash -c 'set -euo pipefail; test -e "$$0" || exit 0; output_path="$$($(REALPATH_M) "$$0")"; printf "%s %s\n" "$$output_path" "$$1"' \
   | xargs -r -n 2 bash -c 'set -euo pipefail; $(2)')
 
 clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
-build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0")
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p -m 0755 "$$(dirname "$${dest}")" && chmod a+rx "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi)
+build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo "$$0",$(2))
+copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),if test -d "$(2)"; then dest="$(2)/$$1"; else dest="$(2)"; fi; mkdir -p -m 0755 "$$(dirname "$${dest}")" && chmod a+rx "$$(dirname "$${dest}")" && cp -fa "$$0" "$${dest}" && if test -d "$$0"; then chmod -R u+w "$${dest}"; fi,$(3))
 run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),"$$0" $(2))
 sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E "$$0" $(2))
 test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test --strip=never $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
