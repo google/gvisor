@@ -555,11 +555,12 @@ func TestParseForDestinationFamily(t *testing.T) {
 	v6 := net.ParseIP("2001:db8::1").To16()
 
 	tests := []struct {
-		name    string
-		family  uint8
-		dst     []byte
-		wantDst []byte
-		wantErr *syserr.Error
+		name       string
+		family     uint8
+		familyOnly bool
+		dst        []byte
+		wantDst    []byte
+		wantErr    *syserr.Error
 	}{
 		{
 			name:    "ipv4",
@@ -610,6 +611,18 @@ func TestParseForDestinationFamily(t *testing.T) {
 			wantErr: syserr.ErrNotSupported,
 		},
 		{
+			name:       "unspecified family with only the family byte",
+			family:     linux.AF_UNSPEC,
+			familyOnly: true,
+			wantErr:    syserr.ErrNotSupported,
+		},
+		{
+			name:       "ipv4 with only the family byte",
+			family:     linux.AF_INET,
+			familyOnly: true,
+			wantErr:    syserr.ErrInvalidArgument,
+		},
+		{
 			name:    "unspecified family without a destination",
 			family:  linux.AF_UNSPEC,
 			wantErr: syserr.ErrNotSupported,
@@ -621,9 +634,14 @@ func TestParseForDestinationFamily(t *testing.T) {
 			msg := nlmsg.NewMessage(linux.NetlinkMessageHeader{
 				Type: linux.RTM_GETROUTE,
 			})
-			msg.Put(&linux.RouteMessage{
-				Family: test.family,
-			})
+			if test.familyOnly {
+				family := primitive.Uint8(test.family)
+				msg.Put(&family)
+			} else {
+				msg.Put(&linux.RouteMessage{
+					Family: test.family,
+				})
+			}
 			if test.dst != nil {
 				msg.PutAttr(linux.RTA_DST, primitive.AsByteSlice(test.dst))
 			}
