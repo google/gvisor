@@ -4042,8 +4042,17 @@ TEST(ProcSysKernelKeysMax, Exists) {
   EXPECT_EQ(mk, 200);
 }
 
+// Returns true if the caller can write to /proc/sys/kernel/keys/maxkeys. On
+// Linux, sysctl file permissions ignore capabilities and only allow the global
+// root user to write to this file (see test_perm() in fs/proc/proc_sysctl.c).
+PosixErrorOr<bool> CanSetMaxKeys() {
+  ASSIGN_OR_RETURN_ERRNO(bool have_sys_admin, HaveCapability(CAP_SYS_ADMIN));
+  ASSIGN_OR_RETURN_ERRNO(bool in_init_userns, InInitialUserNamespace());
+  return have_sys_admin && in_init_userns && geteuid() == 0;
+}
+
 TEST(ProcSysKernelKeysMax, InvalidMaxKeysValue) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetMaxKeys()));
   ASSERT_THAT(SetContents("/proc/sys/kernel/keys/maxkeys", "-1"),
               PosixErrorIs(EINVAL));
   auto maxkeys =
@@ -4054,7 +4063,7 @@ TEST(ProcSysKernelKeysMax, InvalidMaxKeysValue) {
 }
 
 TEST(ProcSysKernelKeysMax, SetMaxKeys) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetMaxKeys()));
   ASSERT_NO_ERRNO(SetContents("/proc/sys/kernel/keys/maxkeys", "100"));
   auto maxkeys =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/keys/maxkeys"));
