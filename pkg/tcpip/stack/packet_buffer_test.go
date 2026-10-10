@@ -392,6 +392,42 @@ func TestPacketHeaderConsumeThenPushPanics(t *testing.T) {
 	}
 }
 
+func TestPacketBufferAsView(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		header  string
+		payload []string
+	}{
+		{name: "empty"},
+		{name: "single buffer", payload: []string{"payload"}},
+		{name: "fragmented with reserved header", header: "header", payload: []string{"first", "second"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var payload buffer.Buffer
+			want := test.header
+			for _, part := range test.payload {
+				payload.Append(buffer.NewViewWithData([]byte(part)))
+				want += part
+			}
+			pkt := NewPacketBuffer(PacketBufferOptions{ReserveHeaderBytes: 16, Payload: payload})
+			copy(pkt.NetworkHeader().Push(len(test.header)), test.header)
+			borrowed := pkt.AsView()
+			// Retain only copied bytes from the borrowed view. The result
+			// returned by ToView owns its storage after the packet is freed.
+			gotBorrowed := string(borrowed.AsSlice())
+			owned := pkt.ToView()
+			pkt.DecRef()
+			defer owned.Release()
+			if got, want := gotBorrowed, want; got != want {
+				t.Errorf("borrowed packet = %q, want %q", got, want)
+			}
+			if got, want := string(owned.AsSlice()), want; got != want {
+				t.Errorf("owned packet after release = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestPacketBufferData(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
