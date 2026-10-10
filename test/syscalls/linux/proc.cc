@@ -3832,6 +3832,66 @@ TEST(ProcPid, RootDumpableOwner) {
   EXPECT_THAT(st.st_gid, AnyOf(Eq(0), Eq(65534)));
 }
 
+// Regression test for gvisor.dev/issues/15504.
+TEST(Proc, GetdentsPartialBufferSparsePids) {
+  const DisableSave ds;  // Keep the process IDs stable throughout the scan.
+  std::map<pid_t, int> children;
+  auto cleanup = Cleanup([&] {
+    for (const auto& child : children) {
+      EXPECT_THAT(RetryEINTR(waitpid)(child.first, nullptr, 0),
+                  SyscallSucceedsWithValue(child.first));
+    }
+  });
+
+  for (int i = 0; i < 8; ++i) {
+    // Leave a gap before each child that remains visible in /proc.
+    pid_t gap = fork();
+    if (gap == 0) {
+      _exit(0);
+    }
+    ASSERT_THAT(gap, SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(waitpid)(gap, nullptr, 0),
+                SyscallSucceedsWithValue(gap));
+
+    pid_t child = fork();
+    if (child == 0) {
+      _exit(0);
+    }
+    ASSERT_THAT(child, SyscallSucceeds());
+    // Retain the child, including after it becomes a zombie, until the scan
+    // finishes. Only check these PIDs, since unrelated processes may churn.
+    children.emplace(child, 0);
+  }
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc", O_RDONLY | O_DIRECTORY));
+  // Force continuation across calls even with a small number of processes.
+  alignas(struct dirent) char buf[64];
+  while (true) {
+    int n;
+    ASSERT_THAT(
+        n = RetryEINTR(syscall)(SYS_getdents64, fd.get(), buf, sizeof(buf)),
+        SyscallSucceeds());
+    if (n == 0) {
+      break;
+    }
+    for (int pos = 0; pos < n;) {
+      const auto* d = reinterpret_cast<const struct dirent*>(buf + pos);
+      pid_t pid;
+      if (absl::SimpleAtoi(d->d_name, &pid)) {
+        auto child = children.find(pid);
+        if (child != children.end()) {
+          ASSERT_EQ(++child->second, 1) << "Repeated PID " << pid;
+        }
+      }
+      pos += d->d_reclen;
+    }
+  }
+  for (const auto& child : children) {
+    EXPECT_EQ(child.second, 1) << "Missing PID " << child.first;
+  }
+}
+
 TEST(Proc, GetdentsEnoent) {
   FileDescriptor fd;
   ASSERT_NO_ERRNO(WithSubprocess(

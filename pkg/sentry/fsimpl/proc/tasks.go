@@ -164,9 +164,9 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 	// fs/proc/internal.h: #define FIRST_PROCESS_ENTRY 256
 	const FIRST_PROCESS_ENTRY = 256
 
-	// Use maxTaskID to shortcut searches that will result in 0 entries.
-	const maxTaskID = kernel.TasksLimit + 1
-	if offset >= maxTaskID {
+	// FIRST_PROCESS_ENTRY + 2 + TasksLimit + 1 is the first position past all PIDs.
+	const endOff = FIRST_PROCESS_ENTRY + 2 + kernel.TasksLimit + 1
+	if offset >= endOff {
 		return offset, nil
 	}
 
@@ -224,18 +224,19 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 
 	sort.Ints(tids)
 	for _, tid := range tids {
+		// A process entry's directory offset is FIRST_PROCESS_ENTRY + 2 + tid.
+		offset = FIRST_PROCESS_ENTRY + 2 + int64(tid)
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(tid), 10),
 			Type:    linux.DT_DIR,
 			Ino:     i.fs.NextIno(),
-			NextOff: FIRST_PROCESS_ENTRY + 2 + int64(tid) + 1,
+			NextOff: offset + 1,
 		}
 		if err := cb.Handle(dirent); err != nil {
 			return offset, err
 		}
-		offset++
 	}
-	return maxTaskID, nil
+	return endOff, nil
 }
 
 // Open implements kernfs.Inode.Open.
