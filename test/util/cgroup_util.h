@@ -68,7 +68,7 @@ class Cgroup {
 
   // Writes a string to a cgroup control file.
   PosixError WriteControlFile(absl::string_view name,
-                              const std::string& value) const;
+                              absl::string_view value) const;
 
   // Writes an integer value to a cgroup control file.
   PosixError WriteIntegerControlFile(absl::string_view name,
@@ -121,9 +121,9 @@ class Mounter {
  public:
   Mounter(TempPath root) : root_(std::move(root)) {}
 
-  PosixErrorOr<Cgroup> MountCgroupfs(std::string mopts);
+  PosixErrorOr<Cgroup> MountCgroupfs(const std::string& mopts);
 
-  PosixErrorOr<Cgroup> MountCgroup2fs(std::string mopts = "");
+  PosixErrorOr<Cgroup> MountCgroup2fs(const std::string& mopts = "");
 
   PosixError Unmount(const Cgroup& c);
 
