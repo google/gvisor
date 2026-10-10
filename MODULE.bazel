@@ -260,6 +260,7 @@ use_repo(
     "com_github_google_go_github_v84",
     "com_github_google_go_querystring",
     "com_github_google_gopacket",
+    "com_github_google_licensecheck",
     "com_github_google_pprof",
     "com_github_google_s2a_go",
     "com_github_google_subcommands",
