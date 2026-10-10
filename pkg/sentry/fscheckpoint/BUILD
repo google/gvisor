@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "proto_library")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -18,5 +18,15 @@ go_library(
     deps = [
         ":fscheckpoint_proto_go_proto",
         "//pkg/sentry/checkpoint",
+    ],
+)
+
+go_test(
+    name = "fscheckpoint_test",
+    srcs = ["fscheckpoint_test.go"],
+    embed = [":fscheckpoint"],
+    deps = [
+        "//pkg/sentry/checkpoint",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

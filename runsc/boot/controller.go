@@ -32,8 +32,8 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -1221,8 +1221,9 @@ type FSSaveArgs struct {
 	// 4. pages file
 	urpc.FilePayload
 
-	// Paths are the paths inside the containers to save to the checkpoint.
-	Paths []checkpoint.ResourceID `json:"paths"`
+	// Paths are the filesystem checkpoint bundles inside the containers to
+	// save to the checkpoint.
+	Paths []fscheckpoint.Bundle `json:"paths"`
 
 	// Equivalent to kernel.FSSaveOpts fields.
 	ExitAfterSaving bool `json:"exit_after_saving"`
