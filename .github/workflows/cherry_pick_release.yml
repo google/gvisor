@@ -35,7 +35,7 @@ jobs:
       - name: Checkout
         # Do not set ref: github.sha is the release branch head when the run
         # was created, and the pull request is computed against it.
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history is required to check and cherry-pick the commits.
           fetch-depth: 0
