@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package goferfilter
 
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-var profileFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+// ProfileFilters are additional syscall rules required when profiling is enabled.
+var ProfileFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_OPENAT: seccomp.PerArg{
 		seccomp.AnyValue{},
 		seccomp.AnyValue{},
