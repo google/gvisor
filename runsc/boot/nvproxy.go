@@ -75,31 +75,36 @@ func (l *Loader) setNvproxyDeviceRemapMetadata(saveOpts *state.SaveOpts) error {
 	return nil
 }
 
+// getNvproxyDeviceRemapping returns the remapping from the GPUs the sandbox
+// was saved with to the GPUs available now, or nil if there is nothing to
+// remap.
+//
 // +checklocks:l.mu
-func (r *restorer) prepareNvproxyRestoreContextLocked(ctx context.Context, l *Loader) (context.Context, error) {
-	if idsJSON, ok := r.metadata[nvproxyDeviceRemapIDsKey]; ok {
-		var oldIDs []nvproxy.DeviceRemapID
-		if err := json.Unmarshal([]byte(idsJSON), &oldIDs); err != nil {
-			return ctx, fmt.Errorf("failed to unmarshal checkpointed nvproxy device IDs: %w", err)
-		}
-		newIDs, err := getNvproxyDeviceRemapIDs(ctx, l.k, l.containerSpecs, l.root.conf)
-		if err != nil {
-			return ctx, fmt.Errorf("failed to get nvproxy device IDs: %w", err)
-		}
-		dr, err := nvproxy.MakeDeviceRemapping(oldIDs, newIDs)
-		if err != nil {
-			return ctx, fmt.Errorf("failed to remap nvproxy devices: %w", err)
-		}
-		ctx = context.WithValue(ctx, nvproxy.CtxDeviceRemapping, dr)
-		if log.IsLogging(log.Debug) {
-			log.Debugf("Remapping %d nvproxy devices:", len(dr.NewDeviceByOld))
-			for _, oldMinor := range slices.Sorted(maps.Keys(dr.OldDeviceByMinor)) {
-				oldID := dr.OldDeviceByMinor[oldMinor]
-				log.Debugf("%v => %v", oldID, dr.NewDeviceByOld[oldID])
-			}
+func (r *restorer) getNvproxyDeviceRemapping(ctx context.Context, l *Loader) (*nvproxy.DeviceRemapping, error) {
+	idsJSON, ok := r.metadata[nvproxyDeviceRemapIDsKey]
+	if !ok {
+		return nil, nil
+	}
+	var oldIDs []nvproxy.DeviceRemapID
+	if err := json.Unmarshal([]byte(idsJSON), &oldIDs); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal checkpointed nvproxy device IDs: %w", err)
+	}
+	newIDs, err := getNvproxyDeviceRemapIDs(ctx, l.k, l.containerSpecs, l.root.conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get nvproxy device IDs: %w", err)
+	}
+	dr, err := nvproxy.MakeDeviceRemapping(oldIDs, newIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remap nvproxy devices: %w", err)
+	}
+	if dr != nil && log.IsLogging(log.Debug) {
+		log.Debugf("Remapping %d nvproxy devices:", len(dr.NewDeviceByOld))
+		for _, oldMinor := range slices.Sorted(maps.Keys(dr.OldDeviceByMinor)) {
+			oldID := dr.OldDeviceByMinor[oldMinor]
+			log.Debugf("%v => %v", oldID, dr.NewDeviceByOld[oldID])
 		}
 	}
-	return ctx, nil
+	return dr, nil
 }
 
 func getNvproxyDeviceRemapIDs(ctx context.Context, k *kernel.Kernel, specs map[string]*specs.Spec, conf *config.Config) ([]nvproxy.DeviceRemapID, error) {
