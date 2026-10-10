@@ -43,6 +43,7 @@ go_test(
     name = "fragmentation_test",
     size = "small",
     srcs = [
+        "afterload_test.go",
         "fragmentation_test.go",
         "main_test.go",
         "reassembler_test.go",
@@ -51,6 +52,8 @@ go_test(
     deps = [
         "//pkg/buffer",
         "//pkg/refs",
+        "//pkg/state",
+        "//pkg/tcpip",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
