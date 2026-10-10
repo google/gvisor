@@ -20,6 +20,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -94,6 +95,56 @@ func TestGetMountAccessType(t *testing.T) {
 			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
 			if got := getMountAccessType(conf, podHints.FindMount(source)); got != tst.want {
 				t.Errorf("getMountAccessType(), got: %v, want: %v", got, tst.want)
+			}
+		})
+	}
+}
+
+func TestNUMATopologyBootGate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		spec *specs.Spec
+		conf *config.Config
+		want bool
+	}{
+		{
+			name: "disabled",
+			spec: &specs.Spec{},
+			conf: &config.Config{},
+		},
+		{
+			name: "NVIDIA device",
+			spec: &specs.Spec{Linux: &specs.Linux{Devices: []specs.LinuxDevice{{Path: "/dev/nvidiactl"}}}},
+			conf: &config.Config{},
+			want: true,
+		},
+		{
+			name: "RDMA enabled",
+			spec: &specs.Spec{Linux: &specs.Linux{Devices: []specs.LinuxDevice{{Path: "/dev/infiniband/uverbs0"}}}},
+			conf: &config.Config{RDMAProxy: true},
+			want: true,
+		},
+		{
+			name: "RDMA proxy without device",
+			spec: &specs.Spec{},
+			conf: &config.Config{RDMAProxy: true},
+		},
+		{
+			name: "NVProxy enabled",
+			spec: &specs.Spec{},
+			conf: &config.Config{NVProxy: true},
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &mountInfo{mount: &specs.Mount{Type: sys.Name}}
+			_, opts, err := getMountNameAndOptions(tc.spec, tc.conf, m, "", "", "", nil, nil)
+			if err != nil {
+				t.Fatalf("getMountNameAndOptions failed: %v", err)
+			}
+			got := opts.GetFilesystemOptions.InternalData.(*sys.InternalData).EnableNUMATopology
+			if got != tc.want {
+				t.Errorf("EnableNUMATopology = %t, want %t", got, tc.want)
 			}
 		})
 	}

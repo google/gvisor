@@ -17,6 +17,7 @@ package sys
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -61,8 +62,6 @@ type rdmaSysfsDirs struct {
 	// busPCIDrivers maps a kernel driver name to its
 	// /sys/bus/pci/drivers/<driver> directory of bound-device back-symlinks.
 	busPCIDrivers map[string]kernfs.Inode
-	// node is the /sys/devices/system/node subtree, or nil.
-	node kernfs.Inode
 }
 
 // rdmaDirTree is the intermediate mutable representation, keyed by entry name.
@@ -290,11 +289,21 @@ func (fs *filesystem) newRDMASysfs(ctx context.Context, creds *auth.Credentials,
 		}
 		out.busPCIDrivers[drv] = fs.newDir(ctx, creds, defaultSysDirMode, entries)
 	}
-
-	if snap.NUMA != nil {
-		out.node = fs.buildNUMA(ctx, creds, snap.NUMA, cores)
-	}
 	return out, nil
+}
+
+func numaAggregateFilesFromRDMASnapshot(snap *rdma.Snapshot) []string {
+	if snap.NUMA == nil {
+		return nil
+	}
+	files := make([]string, 0, len(snap.NUMA.Aggregate))
+	for name := range snap.NUMA.Aggregate {
+		if rdma.SafeName(name) {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	return files
 }
 
 // addPorts populates <ibdev>/ports/<n>/ with static attributes and
@@ -356,36 +365,6 @@ func (fs *filesystem) addPCIBus(root *rdmaDirTree, leaf string, classPCIBus map[
 	parent := path.Dir(leaf)
 	root.get(parent + "/pci_bus/" + bus)
 	classPCIBus[bus] = "../../" + parent + "/pci_bus/" + bus
-}
-
-// buildNUMA synthesizes the /sys/devices/system/node subtree. The sentry's
-// memory model has a single NUMA node. So advertise exactly one node holding
-// every sandbox CPU, matching the single-socket /proc/cpuinfo view.
-func (fs *filesystem) buildNUMA(ctx context.Context, creds *auth.Credentials, numa *rdma.NUMA, cores uint) kernfs.Inode {
-	entries := map[string]kernfs.Inode{}
-	// The aggregate files (online, possible, has_cpu, ...) are all
-	// node-range lists; the single node 0 covers them all.
-	for name := range numa.Aggregate {
-		if rdma.SafeName(name) {
-			entries[name] = fs.newStaticFile(ctx, creds, defaultSysMode, "0\n")
-		}
-	}
-	entries["node0"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-		"cpumap":  fs.newStaticFile(ctx, creds, defaultSysMode, fullCPUMask(cores)+"\n"),
-		"cpulist": fs.newStaticFile(ctx, creds, defaultSysMode, cpuListString(cores)),
-		// The only node's distance to itself (LOCAL_DISTANCE).
-		"distance": fs.newStaticFile(ctx, creds, defaultSysMode, "10\n"),
-	})
-	return fs.newDir(ctx, creds, defaultSysDirMode, entries)
-}
-
-// cpuListString formats CPUs 0..cores-1 in the kernel's cpulist format
-// (lib/bitmap.c:bitmap_print_to_pagebuf(list=true)).
-func cpuListString(cores uint) string {
-	if cores == 1 {
-		return "0\n"
-	}
-	return fmt.Sprintf("0-%d\n", cores-1)
 }
 
 // buildRDMADir converts an rdmaDirTree into kernfs inodes.
