@@ -164,9 +164,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 	// fs/proc/internal.h: #define FIRST_PROCESS_ENTRY 256
 	const FIRST_PROCESS_ENTRY = 256
 
-	// A process entry's position is 258+PID, not an entry count. The first
-	// position with no representable PID is therefore 258+TasksLimit+1. Comparing
-	// the raw position with TasksLimit drops PIDs at or above 65279.
+	// FIRST_PROCESS_ENTRY + 2 + TasksLimit + 1 is the first position past all PIDs.
 	const endOff = FIRST_PROCESS_ENTRY + 2 + kernel.TasksLimit + 1
 	if offset >= endOff {
 		return offset, nil
@@ -226,9 +224,7 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 
 	sort.Ints(tids)
 	for _, tid := range tids {
-		// Continuation is a PID threshold, not an entry count. Align the saved
-		// position with this candidate before emitting it. If the buffer fills,
-		// the next read retries this PID instead of an earlier one.
+		// A process entry's directory offset is FIRST_PROCESS_ENTRY + 2 + tid.
 		offset = FIRST_PROCESS_ENTRY + 2 + int64(tid)
 		dirent := vfs.Dirent{
 			Name:    strconv.FormatUint(uint64(tid), 10),
@@ -239,7 +235,6 @@ func (i *tasksInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 		if err := cb.Handle(dirent); err != nil {
 			return offset, err
 		}
-		offset++
 	}
 	return endOff, nil
 }
