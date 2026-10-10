@@ -578,7 +578,8 @@ func (n *NVOS32_PARAMETERS) SetStatus(status uint32) {
 
 // Possible values for NVOS32Parameters.Function:
 const (
-	NVOS32_FUNCTION_ALLOC_SIZE = 2
+	NVOS32_FUNCTION_ALLOC_SIZE          = 2
+	NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR = 27
 )
 
 // NVOS32AllocSize is the type of NVOS32Parameters.Data for
@@ -608,6 +609,22 @@ type NVOS32AllocSize struct {
 	CtagOffset      uint32
 }
 
+// NVOS32AllocOsDesc is the type of NVOS32Parameters.Data for
+// NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR.
+type NVOS32AllocOsDesc struct {
+	_              structs.HostLayout
+	HMemory        Handle
+	Type           uint32
+	Flags          uint32
+	Attr           uint32
+	Attr2          uint32
+	Pad0           [4]byte
+	Descriptor     P64
+	Limit          uint64
+	DescriptorType uint32
+	Pad1           [4]byte
+}
+
 // Flags in NVOS32AllocSize.Flags:
 const (
 	NVOS32_ALLOC_FLAGS_VIRTUAL = 0x00080000
@@ -620,8 +637,12 @@ const (
 	NVOS32_ATTR_LOCATION_VIDMEM = 0
 )
 
-// Bitfields in NVOS32AllocSize.Attr2:
+// Bitfields in NVOS32AllocSize.Attr2 and NVOS32AllocOsDesc.Attr2:
 const (
+	NVOS32_ATTR2_PROTECTION_USER_SHIFT      = 22
+	NVOS32_ATTR2_PROTECTION_USER_MASK       = 0x1
+	NVOS32_ATTR2_PROTECTION_USER_READ_WRITE = 0
+
 	NVOS32_ATTR2_USE_EGM_SHIFT = 24
 	NVOS32_ATTR2_USE_EGM_MASK  = 0x1
 	NVOS32_ATTR2_USE_EGM_FALSE = 0

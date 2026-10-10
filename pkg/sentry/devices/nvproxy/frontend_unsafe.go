@@ -20,7 +20,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
@@ -527,6 +529,54 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 			return n, err
 		}
 	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+
+	return n, nil
+}
+
+func rmVidHeapControlAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32_PARAMETERS) (uintptr, error) {
+	allocOSDescParams := (*nvgpu.NVOS32AllocOsDesc)(unsafe.Pointer(&ioctlParams.Data))
+	// Compare src/nvidia/arch/nvalloc/unix/src/escape.c:RmCreateOsDescriptor().
+	at := hostarch.Read
+	if (allocOSDescParams.Attr2>>nvgpu.NVOS32_ATTR2_PROTECTION_USER_SHIFT)&nvgpu.NVOS32_ATTR2_PROTECTION_USER_MASK == nvgpu.NVOS32_ATTR2_PROTECTION_USER_READ_WRITE {
+		at.Write = true
+	}
+	obj, m, status, err := pinOSDescriptor(fi, allocOSDescParams.Descriptor, allocOSDescParams.Limit, at)
+	if err != nil {
+		return 0, err
+	}
+	if status != nvgpu.NV_OK {
+		return 0, frontendFailWithStatus(fi, ioctlParams, status)
+	}
+	releaseObj := cleanup.Make(obj.Release(fi.ctx))
+	defer releaseObj.Clean()
+
+	origDescriptor := allocOSDescParams.Descriptor
+	allocOSDescParams.Descriptor = nvgpu.P64(uint64(m))
+
+	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.HRoot)
+	if client == nil {
+		allocOSDescParams.Descriptor = origDescriptor
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
+	}
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
+		// The driver returns the handle in HMemory, including when it
+		// generated the handle.
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, allocOSDescParams.HMemory, nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR, obj, ioctlParams.HObjectParent)
+		releaseObj.Release()
+		if fi.ctx.IsLogging(log.Debug) {
+			fi.ctx.Debugf("nvproxy: pinned %d bytes for OS descriptor with handle %v", allocOSDescParams.Limit+1, allocOSDescParams.HMemory)
+		}
+	}
+	unlock()
+	allocOSDescParams.Descriptor = origDescriptor
+	if err != nil {
+		return n, err
+	}
+
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
