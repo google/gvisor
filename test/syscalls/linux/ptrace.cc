@@ -968,6 +968,9 @@ TEST(PtraceTest, PrctlClearPtracerDoesNotAffectCurrentTracer) {
   pid_t const tracee_pid = fork();
   if (tracee_pid == 0) {
     TEST_PCHECK(close(sockets[1]) == 0);
+    // /proc/PID/mem checks the tracer's effective capabilities against the
+    // tracee's permitted set. AutoCapability only cleared the effective bit.
+    TEST_CHECK(DropPermittedCapability(CAP_SYS_PTRACE).ok());
     TEST_PCHECK(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY) == 0);
     MaybeSave();
     // Indicate that the prctl has been set.
