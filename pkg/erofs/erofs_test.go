@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"os"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func TestOnDiskStructureSizes(t *testing.T) {
@@ -99,4 +101,49 @@ func TestInlineInodeStraddlingBlockBoundary(t *testing.T) {
 	if !bytes.Equal(got, want) {
 		t.Errorf("inline data mismatch: got %d bytes, want %d", len(got), len(want))
 	}
+}
+
+// TestBlockSizeBits checks that only block sizes from the host page size up to
+// 64 KiB are accepted, and that a bad size is rejected before the superblock
+// checksum is read.
+func TestBlockSizeBits(t *testing.T) {
+	open := func(bits uint8, compat uint32) error {
+		img := make([]byte, hostarch.PageSize)
+		sb := SuperBlock{Magic: SuperBlockMagicV1, BlockSizeBits: bits, Blocks: 1, FeatureCompat: compat}
+		sb.MarshalUnsafe(img[SuperBlockOffset:])
+		f, err := os.CreateTemp(t.TempDir(), "erofs")
+		if err != nil {
+			t.Fatalf("CreateTemp: %v", err)
+		}
+		if _, err := f.Write(img); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		image, err := OpenImage(f) // takes ownership of f on success
+		if err != nil {
+			f.Close()
+			return err
+		}
+		image.Close()
+		return nil
+	}
+	for bits := uint8(hostarch.PageShift); bits <= maxBlockSizeBits; bits++ {
+		if err := open(bits, 0); err != nil {
+			t.Errorf("OpenImage with BlockSizeBits=%d: %v", bits, err)
+		}
+	}
+	for _, bits := range []uint8{hostarch.PageShift - 1, maxBlockSizeBits + 1, 32, 40} {
+		for _, compat := range []uint32{0, FeatureCompatSuperBlockChecksum} {
+			if err := open(bits, compat); err == nil {
+				t.Errorf("OpenImage with BlockSizeBits=%d and FeatureCompat=%#x succeeded", bits, compat)
+			}
+		}
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Errorf("BlockSize with BlockSizeBits=%d didn't panic", maxBlockSizeBits+1)
+		}
+	}()
+	sb := SuperBlock{BlockSizeBits: maxBlockSizeBits + 1}
+	sb.BlockSize()
 }
