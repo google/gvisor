@@ -119,7 +119,7 @@ func TestClassify(t *testing.T) {
 			t.Errorf("%s: classify = %v, want %v", test.name, got, test.want)
 		}
 		for _, license := range got {
-			if !knownLicenses[license] {
+			if _, ok := knownLicenses[license]; !ok {
 				t.Errorf("%s: classify returned unknown license %q", test.name, license)
 			}
 		}
