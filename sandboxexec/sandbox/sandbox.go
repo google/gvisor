@@ -633,12 +633,13 @@ type ExecOption func(*execOptions)
 
 // execOptions holds the configuration for one Exec call.
 type execOptions struct {
-	args         []string
-	execPath     string
-	stdin        io.Reader
-	stdout       io.Writer
-	stderr       io.Writer
-	relaySignals bool
+	args            []string
+	execPath        string
+	stdin           io.Reader
+	stdout          io.Writer
+	stderr          io.Writer
+	relaySignals    bool
+	newPIDNamespace bool
 }
 
 // WithExecStdio streams the command's standard streams to the given ones. A
@@ -663,6 +664,13 @@ func WithExecSignalRelay() ExecOption {
 func WithExecPath(path string) ExecOption {
 	return func(o *execOptions) {
 		o.execPath = path
+	}
+}
+
+// WithExecNewPIDNamespace runs the command as PID 1 of a new PID namespace.
+func WithExecNewPIDNamespace() ExecOption {
+	return func(o *execOptions) {
+		o.newPIDNamespace = true
 	}
 }
 
@@ -707,6 +715,9 @@ func (s *Sandbox) Exec(ctx context.Context, argv []string, opts ...ExecOption) (
 	}
 	if options.execPath != "" {
 		args = append(args, "--exec-path", options.execPath)
+	}
+	if options.newPIDNamespace {
+		args = append(args, "--new-pidns")
 	}
 	args = append(append(args, s.id), options.args...)
 	cmd := exec.CommandContext(ctx, s.runscPath, args...)
