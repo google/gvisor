@@ -174,7 +174,17 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, creds *a
 	d.IncRef()
 	fd.opts = *opts
 	fd.impl = impl
+	mnt.vfs.numFiles.Add(1)
 	return nil
+}
+
+// NumFiles returns the number of live file descriptions, as reported in the
+// first field of /proc/sys/fs/file-nr.
+func (vfs *VirtualFilesystem) NumFiles() int64 {
+	if n := vfs.numFiles.Load(); n > 0 {
+		return n
+	}
+	return 0
 }
 
 // DecRef decrements fd's reference count.
@@ -228,6 +238,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		if fd.IsWritable() && !fd.opts.SpecialFile {
 			fd.vd.mount.EndWrite()
 		}
+		fd.vd.mount.vfs.numFiles.Add(-1)
 		fd.vd.DecRef(ctx)
 	})
 }

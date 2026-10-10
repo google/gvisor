@@ -504,6 +504,10 @@ type Endpoint struct {
 	// this endpoint.
 	cc tcpip.CongestionControlOption
 
+	// ccSetBySockOpt distinguishes an explicit selection from the stack
+	// default, which accepted endpoints should query when they are created.
+	ccSetBySockOpt bool
+
 	// keepalive manages TCP keepalive state. When the connection is idle
 	// (no data sent or received) for keepaliveIdle, we start sending
 	// keepalives every keepalive.interval. If we send keepalive.count
@@ -2067,6 +2071,7 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 				e.LockUser()
 				state := e.EndpointState()
 				e.cc = *v
+				e.ccSetBySockOpt = true
 				switch state {
 				case StateEstablished:
 					if e.EndpointState() == state {

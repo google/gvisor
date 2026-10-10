@@ -3135,6 +3135,34 @@ func (f *atomicInt32File) StateLoad(ctx context.Context, stateSourceObject state
 	stateSourceObject.Load(3, &f.max)
 }
 
+func (f *fileNrData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.fileNrData"
+}
+
+func (f *fileNrData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"vfs",
+	}
+}
+
+func (f *fileNrData) beforeSave() {}
+
+// +checklocksignore
+func (f *fileNrData) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DynamicBytesFile)
+	stateSinkObject.Save(1, &f.vfs)
+}
+
+func (f *fileNrData) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (f *fileNrData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DynamicBytesFile)
+	stateSourceObject.Load(1, &f.vfs)
+}
+
 func (s *yamaPtraceScope) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.yamaPtraceScope"
 }
@@ -3259,5 +3287,6 @@ func init() {
 	state.Register((*routeLocalnetData)(nil))
 	state.Register((*portRange)(nil))
 	state.Register((*atomicInt32File)(nil))
+	state.Register((*fileNrData)(nil))
 	state.Register((*yamaPtraceScope)(nil))
 }

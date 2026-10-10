@@ -453,8 +453,9 @@ func (es *encodeState) encodeMap(obj reflect.Value, dest *wire.Object) {
 		Values: make([]wire.Object, l),
 	}
 	*dest = m
-	for i, k := range obj.MapKeys() {
-		v := obj.MapIndex(k)
+	iter := obj.MapRange()
+	for i := 0; iter.Next(); i++ {
+		k, v := iter.Key(), iter.Value()
 		// Map keys must be encoded using the full value because the
 		// type will be omitted after the first key.
 		es.encodeObject(k, encodeAsValue, &m.Keys[i])
