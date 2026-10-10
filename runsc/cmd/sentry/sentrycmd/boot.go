@@ -685,13 +685,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
 	var rdmaSnap *rdma.Snapshot
-	if specutils.RDMAEnabled(spec, conf) {
-		// Load the RDMA sysfs snapshot serialized by the chroot stage.
+	if specutils.RDMAEnabled(spec, conf) || specutils.NVProxyEnabled(spec, conf) {
+		// Load the sysfs snapshot serialized by the chroot stage.
 		var err error
 		if rdmaSnap, err = rdma.Load(rdma.Path); err != nil {
-			util.Fatalf("loading RDMA sysfs snapshot: %v", err)
+			util.Fatalf("loading sysfs snapshot: %v", err)
 		}
-		timer.Reached("RDMA snapshot loaded")
+		if rdmaSnap != nil {
+			timer.Reached("sysfs snapshot loaded")
+		}
 	}
 
 	// Create the loader.

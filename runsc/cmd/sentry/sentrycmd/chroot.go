@@ -276,18 +276,24 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 // support here). GID tables and port state therefore stay readable through
 // those mounts.
 func rdmaSysfsUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
-	if !specutils.RDMAEnabled(spec, conf) {
+	rdmaEnabled := specutils.RDMAEnabled(spec, conf)
+	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
+	if !rdmaEnabled && !nvproxyEnabled {
 		return nil
 	}
-	snap, err := rdma.Collect("/sys", specutils.UverbsDevicesInSpec(spec))
+	var uverbs []rdma.UverbsSpec
+	if rdmaEnabled {
+		uverbs = specutils.UverbsDevicesInSpec(spec)
+	}
+	snap, err := rdma.Collect("/sys", uverbs)
 	if err != nil {
-		return fmt.Errorf("collecting RDMA sysfs snapshot: %w", err)
+		return fmt.Errorf("collecting sysfs snapshot: %w", err)
 	}
 	if snap == nil {
 		return nil
 	}
 	if err := snap.Save(filepath.Join(chroot, rdma.Path)); err != nil {
-		return fmt.Errorf("saving RDMA sysfs snapshot: %w", err)
+		return fmt.Errorf("saving sysfs snapshot: %w", err)
 	}
 	for i := range snap.Devices {
 		// Bind-mount the host's per-ibdev "ports" subtree inside the chroot at

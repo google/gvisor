@@ -80,6 +80,17 @@ var numaAggregateNames = []string{
 // derived from the spec): 3D controller, VGA controller, NVSwitch bridge.
 var gpuClassPrefixes = []string{"0x0302", "0x0300", "0x0680"}
 
+// IsGPUClass reports whether a PCI class string matches a GPU/accelerator class.
+func IsGPUClass(class string) bool {
+	class = strings.TrimSpace(class)
+	for _, p := range gpuClassPrefixes {
+		if strings.HasPrefix(class, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // Maps a host PCI driver module name (the DRIVER= field of the leaf PCI
 // function's uevent) to the kernel's enum rdma_driver_id value
 // (linux.RDMA_DRIVER_*) of the RDMA driver stacked on that module. The
@@ -110,16 +121,18 @@ var rdmaDriverIDFromName = map[string]uint32{
 // closure starts at the spec's /dev/infiniband/uverbs* entries and expands
 // to their ibdevs, associated netdevs, PCI ancestor chains, GPU PCI
 // functions, and the NUMA node topology. Nothing outside that closure is
-// exposed to the sandbox.
+// exposed to the sandbox. If uverbs is empty, GPU PCI topology and NUMA
+// nodes are collected for nvproxy.
 //
 // It must run while the RDMA netdevs are still in the host netns.
 func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
-	if len(uverbs) == 0 {
-		return nil, nil
-	}
-	abi, err := mustReadAttr(path.Join(sysRoot, "class/infiniband_verbs/abi_version"))
-	if err != nil {
-		return nil, fmt.Errorf("reading verbs abi_version: %w", err)
+	var abi string
+	if len(uverbs) > 0 {
+		var err error
+		abi, err = mustReadAttr(path.Join(sysRoot, "class/infiniband_verbs/abi_version"))
+		if err != nil {
+			return nil, fmt.Errorf("reading verbs abi_version: %w", err)
+		}
 	}
 	s := &Snapshot{VerbsABIVersion: abi}
 
@@ -201,6 +214,10 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 		}
 	}
 
+	if len(pciPaths) == 0 {
+		return nil, nil
+	}
+
 	// Materialize every PCI node with its static attributes and config space.
 	for p := range pciPaths {
 		attrs, err := readAttrs(path.Join(sysRoot, p), pciAttrNames)
@@ -218,16 +235,18 @@ func Collect(sysRoot string, uverbs []UverbsSpec) (*Snapshot, error) {
 
 	// Assign driver IDs to each driver by matching the driver name from the
 	// DRIVER= line in the uevent of each PCI node.
-	uevents := make(map[string]string, len(s.PCINodes))
-	for i := range s.PCINodes {
-		uevents[s.PCINodes[i].Path] = s.PCINodes[i].Attrs["uevent"]
-	}
-	for i := range s.Devices {
-		driver_name, err := pciDriverName(uevents[s.Devices[i].LeafPCI])
-		if err != nil {
-			return nil, err
+	if len(s.Devices) > 0 {
+		uevents := make(map[string]string, len(s.PCINodes))
+		for i := range s.PCINodes {
+			uevents[s.PCINodes[i].Path] = s.PCINodes[i].Attrs["uevent"]
 		}
-		s.Devices[i].DriverID = rdmaDriverIDFromName[driver_name]
+		for i := range s.Devices {
+			driver_name, err := pciDriverName(uevents[s.Devices[i].LeafPCI])
+			if err != nil {
+				return nil, err
+			}
+			s.Devices[i].DriverID = rdmaDriverIDFromName[driver_name]
+		}
 	}
 
 	numa, err := collectNUMA(sysRoot)
@@ -370,14 +389,7 @@ func gpuLeaves(sysRoot string) ([]string, error) {
 		if !present {
 			continue
 		}
-		match := false
-		for _, p := range gpuClassPrefixes {
-			if strings.HasPrefix(strings.TrimSpace(class), p) {
-				match = true
-				break
-			}
-		}
-		if !match {
+		if !IsGPUClass(class) {
 			continue
 		}
 		leaf, err := relRealpath(sysRoot, path.Join(busDir, e.Name()))
@@ -426,7 +438,7 @@ func relRealpath(sysRoot, p string) (string, error) {
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return "", fmt.Errorf("%q resolves outside %q", p, sysRoot)
 	}
-	return rel, nil
+	return filepath.ToSlash(rel), nil
 }
 
 // readAttr reads the attribute file at p and returns its contents. present is
