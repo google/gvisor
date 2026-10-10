@@ -952,6 +952,9 @@ const sentryExeFD = 3
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
+	if err := specutils.ValidatePodUserNamespaceNetwork(conf.Network == config.NetworkHost, args.Spec); err != nil {
+		return err
+	}
 	// Ensure we don't leak FDs to the sandbox process.
 	if err := SetCloExeOnAllFDs(); err != nil {
 		return fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
@@ -1224,6 +1227,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	setUserMappings := false
 	if conf.Network == config.NetworkHost || conf.DirectFS {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
+			userns = specutils.PrepareUserNamespaceForStart(userns, args.Spec)
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
 			if rootlessEUID {
