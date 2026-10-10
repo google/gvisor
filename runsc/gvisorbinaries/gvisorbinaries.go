@@ -260,16 +260,21 @@ var (
 
 // resolveDir resolves the directory in which sidecar binaries are located.
 func resolveDir() (string, error) {
+	return DirForExecutable(specutils.ExePath)
+}
+
+// DirForExecutable resolves sidecars for the given runsc executable.
+func DirForExecutable(executable string) (string, error) {
 	if dir := os.Getenv(sidecarBinariesDirEnv); dir != "" {
 		return dir, nil
 	}
-	dir := filepath.Join(filepath.Dir(specutils.ExePath), binDirName)
+	dir := filepath.Join(filepath.Dir(executable), binDirName)
 	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 		return dir, nil
 	}
-	exe, err := filepath.EvalSymlinks(specutils.ExePath)
+	exe, err := filepath.EvalSymlinks(executable)
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve path to runsc binary %q: %w", specutils.ExePath, err)
+		return "", fmt.Errorf("cannot resolve path to runsc binary %q: %w", executable, err)
 	}
 	return filepath.Join(filepath.Dir(exe), binDirName), nil
 }

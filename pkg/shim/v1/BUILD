@@ -22,6 +22,7 @@ go_library(
         "//pkg/shim/v1/runsc",
         "//pkg/shim/v1/runsccmd",
         "//pkg/shim/v1/taskserver",
+        "//pkg/shim/v1/utils",
         "//pkg/sync",
         "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/sandbox/v1:go_default_library",
@@ -50,12 +51,15 @@ go_test(
     ],
     embed = [":v1"],
     deps = [
+        "//pkg/shim/v1/runsc",
         "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/namespaces:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/shim:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/shutdown:go_default_library",
         "@com_github_containerd_typeurl_v2//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go/features:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
