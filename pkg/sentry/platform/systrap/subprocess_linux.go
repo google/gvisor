@@ -46,13 +46,6 @@ func createStub() (*thread, error) {
 	if err != nil {
 		return nil, err
 	}
-	// On ARM, disable pointer authentication. This will be inherited by future
-	// stub processes.
-	//
-	// TODO(gvisor.dev/issue/13542): Preserve PAC keys across checkpoint/restore.
-	if err := t.disablePointerAuth(); err != nil {
-		return nil, err
-	}
 	return t, nil
 }
 
