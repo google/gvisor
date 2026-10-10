@@ -46,6 +46,10 @@ const (
 	iommuGroupSysPath        = "/sys/kernel/iommu_groups/"
 )
 
+var defaultNUMAAggregateFiles = []string{
+	"online", "possible", "has_cpu", "has_memory", "has_normal_memory",
+}
+
 // FilesystemType implements vfs.FilesystemType.
 //
 // +stateify savable
@@ -61,10 +65,13 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// EnableNUMATopology exposes one virtual NUMA node containing every
+	// application CPU when RDMASysfs does not select a topology.
+	EnableNUMATopology bool
 	// RDMASysfs, when non-nil, is the host sysfs snapshot from which the
 	// RDMA device topology (/sys/devices/pci..., /sys/class/infiniband*,
-	// /sys/class/net, /sys/class/pci_bus, /sys/bus/pci/devices,
-	// /sys/devices/system/node) is constructed.
+	// /sys/class/net, /sys/class/pci_bus, /sys/bus/pci/devices) is constructed.
+	// Its NUMA metadata selects aggregate filenames for the virtual topology.
 	RDMASysfs *rdma.Snapshot
 	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
@@ -79,6 +86,7 @@ type filesystem struct {
 
 	devMinor            uint32
 	enableTPUProxyPaths bool
+	numaAggregateFiles  []string
 	testSysfsPathPrefix string
 	root                *dir
 }
@@ -209,9 +217,10 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for name, sub := range rdmaDirs.busPCIDrivers {
 				pciDrivers[name] = sub
 			}
-			if rdmaDirs.node != nil {
-				systemSub["node"] = rdmaDirs.node
-			}
+		}
+		fs.numaAggregateFiles = selectNUMAAggregateFiles(idata)
+		if fs.numaAggregateFiles != nil {
+			systemSub["node"] = fs.buildNUMATopology(ctx, creds, fs.numaAggregateFiles, k.ApplicationCores())
 		}
 	}
 	if len(pciDevices) > 0 || len(pciDrivers) > 0 {
@@ -336,6 +345,43 @@ func oneCPUMask(i, cores uint) string {
 		sep = ","
 	}
 	return b.String()
+}
+
+// selectNUMAAggregateFiles returns names of the aggregate files for the virtual
+// NUMA topology. RDMA snapshot metadata takes precedence over the default set.
+func selectNUMAAggregateFiles(data *InternalData) []string {
+	if data.RDMASysfs != nil {
+		if snapshotFiles := numaAggregateFilesFromRDMASnapshot(data.RDMASysfs); snapshotFiles != nil {
+			return snapshotFiles
+		}
+	}
+	if data.EnableNUMATopology {
+		return append([]string(nil), defaultNUMAAggregateFiles...)
+	}
+	return nil
+}
+
+// buildNUMATopology synthesizes the /sys/devices/system/node subtree. gVisor's
+// memory model has a single NUMA node containing every application CPU.
+func (fs *filesystem) buildNUMATopology(ctx context.Context, creds *auth.Credentials, aggregateFiles []string, cores uint) kernfs.Inode {
+	entries := map[string]kernfs.Inode{}
+	for _, name := range aggregateFiles {
+		entries[name] = fs.newStaticFile(ctx, creds, defaultSysMode, "0\n")
+	}
+	entries["node0"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+		"cpumap":   fs.newStaticFile(ctx, creds, defaultSysMode, fullCPUMask(cores)+"\n"),
+		"cpulist":  fs.newStaticFile(ctx, creds, defaultSysMode, cpuListString(cores)),
+		"distance": fs.newStaticFile(ctx, creds, defaultSysMode, "10\n"),
+	})
+	return fs.newDir(ctx, creds, defaultSysDirMode, entries)
+}
+
+// cpuListString formats CPUs 0..cores-1 in the kernel's cpulist format.
+func cpuListString(cores uint) string {
+	if cores == 1 {
+		return "0\n"
+	}
+	return fmt.Sprintf("0-%d\n", cores-1)
 }
 
 func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) map[string]kernfs.Inode {

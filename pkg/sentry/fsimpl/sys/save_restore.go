@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -56,10 +57,14 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	classSub := map[string]kernfs.Inode{
 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	}
+	systemSub := map[string]kernfs.Inode{
+		"cpu": cpuDir(ctx, fs, creds),
+	}
+	if fs.numaAggregateFiles != nil {
+		systemSub["node"] = fs.buildNUMATopology(ctx, creds, fs.numaAggregateFiles, kernel.KernelFromContext(ctx).ApplicationCores())
+	}
 	devicesSub := map[string]kernfs.Inode{
-		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"cpu": cpuDir(ctx, fs, creds),
-		}),
+		"system": fs.newDir(ctx, creds, defaultSysDirMode, systemSub),
 	}
 	busSub := make(map[string]kernfs.Inode)
 	kernelSub := kernelDir(ctx, fs, creds)

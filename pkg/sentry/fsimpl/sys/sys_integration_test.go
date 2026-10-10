@@ -19,12 +19,14 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -98,6 +100,82 @@ func TestReadCPUFile(t *testing.T) {
 		if diff := cmp.Diff(expected, content); diff != "" {
 			t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
 		}
+	}
+}
+
+func TestNUMATopology(t *testing.T) {
+	s := newTestSystemWithInternalData(t, &sys.InternalData{EnableNUMATopology: true})
+	defer s.Destroy()
+
+	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("/devices/system/node")), map[string]testutil.DirentType{
+		"has_cpu":           linux.DT_REG,
+		"has_memory":        linux.DT_REG,
+		"has_normal_memory": linux.DT_REG,
+		"online":            linux.DT_REG,
+		"possible":          linux.DT_REG,
+		"node0":             linux.DT_DIR,
+	})
+	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("/devices/system/node/node0")), map[string]testutil.DirentType{
+		"cpumap":   linux.DT_REG,
+		"cpulist":  linux.DT_REG,
+		"distance": linux.DT_REG,
+	})
+
+	for p, want := range map[string]string{
+		"/devices/system/node/online":            "0\n",
+		"/devices/system/node/possible":          "0\n",
+		"/devices/system/node/has_cpu":           "0\n",
+		"/devices/system/node/has_memory":        "0\n",
+		"/devices/system/node/has_normal_memory": "0\n",
+		"/devices/system/node/node0/distance":    "10\n",
+	} {
+		got, err := readTestFile(s, p)
+		if err != nil {
+			t.Fatalf("reading %q: %v", p, err)
+		}
+		if got != want {
+			t.Errorf("%q contains %q, want %q", p, got, want)
+		}
+	}
+}
+
+func TestNUMATopologyCPUFormats(t *testing.T) {
+	for _, tc := range []struct {
+		cores       int
+		wantCPUList string
+		wantCPUMap  string
+	}{
+		{cores: 1, wantCPUList: "0\n", wantCPUMap: "1\n"},
+		{cores: 64, wantCPUList: "0-63\n", wantCPUMap: "ffffffff,ffffffff\n"},
+	} {
+		t.Run(fmt.Sprintf("%d cores", tc.cores), func(t *testing.T) {
+			previous := runtime.GOMAXPROCS(tc.cores)
+			defer runtime.GOMAXPROCS(previous)
+
+			s := newTestSystemWithInternalData(t, &sys.InternalData{EnableNUMATopology: true})
+			defer s.Destroy()
+			for p, want := range map[string]string{
+				"/devices/system/node/node0/cpulist": tc.wantCPUList,
+				"/devices/system/node/node0/cpumap":  tc.wantCPUMap,
+			} {
+				got, err := readTestFile(s, p)
+				if err != nil {
+					t.Fatalf("reading %q: %v", p, err)
+				}
+				if got != want {
+					t.Errorf("%q contains %q, want %q", p, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestNUMATopologyDisabled(t *testing.T) {
+	s := newTestSystemWithInternalData(t, &sys.InternalData{})
+	defer s.Destroy()
+
+	if _, err := s.VFS.StatAt(s.Ctx, s.Creds, s.PathOpAtRoot("/devices/system/node"), &vfs.StatOptions{Mask: linux.STATX_TYPE}); !linuxerr.Equals(linuxerr.ENOENT, err) {
+		t.Fatalf("StatAt(/devices/system/node) returned %v, want ENOENT", err)
 	}
 }
 
@@ -396,7 +474,10 @@ func readTestFile(s *testutil.System, p string) (string, error) {
 }
 
 func TestRDMASysfs(t *testing.T) {
-	s := newTestSystemWithInternalData(t, &sys.InternalData{RDMASysfs: newRDMATestSnapshot()})
+	s := newTestSystemWithInternalData(t, &sys.InternalData{
+		EnableNUMATopology: true,
+		RDMASysfs:          newRDMATestSnapshot(),
+	})
 	defer s.Destroy()
 
 	const nicLeaf = "/devices/pci0000:07/0000:07:01.0/0000:0c:00.0"
