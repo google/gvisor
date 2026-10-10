@@ -54,9 +54,8 @@ type fieldEntry interface {
 	// synthesize produces a string that is compatible with valueAndObject,
 	// along with the same object that should be produced in that case.
 	//
-	// Note that it is called synthesize because this is produced only the
-	// type information, and not with any ssa.Value objects.
-	synthesize(s string, typ types.Type) (string, types.Object)
+	// This uses the type and memory state without constructing SSA values.
+	synthesize(s string, typ types.Type, ls *lockState) (string, types.Object)
 }
 
 // fieldStruct is a non-pointer struct element.
@@ -65,13 +64,13 @@ type fieldStruct struct {
 }
 
 // synthesize implements fieldEntry.synthesize.
-func (f *fieldStruct) synthesize(s string, typ types.Type) (string, types.Object) {
+func (f *fieldStruct) synthesize(s string, typ types.Type, _ *lockState) (string, types.Object) {
 	field, ok := findField(typ, f.Field)
 	if !ok {
 		// Should not happen as long as fieldList construction is correct.
 		panic(fmt.Sprintf("unable to resolve field %d in %s", f.Field, typ.String()))
 	}
-	return fmt.Sprintf("&(%s.%s)", s, field.Name()), field
+	return fieldKey(s, field), field
 }
 
 // fieldStructPtr is a pointer struct element.
@@ -80,13 +79,14 @@ type fieldStructPtr struct {
 }
 
 // synthesize implements fieldEntry.synthesize.
-func (f *fieldStructPtr) synthesize(s string, typ types.Type) (string, types.Object) {
+func (f *fieldStructPtr) synthesize(s string, typ types.Type, ls *lockState) (string, types.Object) {
 	field, ok := findField(typ, f.Field)
 	if !ok {
 		// See above, this should not happen.
 		panic(fmt.Sprintf("unable to resolve ptr field %d in %s", f.Field, typ.String()))
 	}
-	return fmt.Sprintf("*(&(%s.%s))", s, field.Name()), field
+	value, _ := ls.loadKeyAndObject(fieldKey(s, field), field)
+	return value, field
 }
 
 func fieldEntryEqual(left, right fieldEntry) bool {
@@ -143,7 +143,7 @@ func (rv *resolvedValue) valueAndObject(ls *lockState) (string, types.Object) {
 	s, obj := ls.valueAndObject(rv.value)
 	typ := rv.value.Type()
 	for _, entry := range rv.fieldList {
-		s, obj = entry.synthesize(s, typ)
+		s, obj = entry.synthesize(s, typ, ls)
 		typ = obj.Type()
 	}
 	return s, obj
@@ -846,9 +846,10 @@ func (pc *passContext) findGlobalGuard(pos token.Pos, guardName string) (*global
 	}
 	key := globalLockKey(pc.pass.Pkg.Path(), globalObj.Name())
 	typ := globalObj.Type()
+	ls := newLockState()
 	for _, entry := range fl {
 		var obj types.Object
-		key, obj = entry.synthesize(key, typ)
+		key, obj = entry.synthesize(key, typ, ls)
 		typ = obj.Type()
 	}
 	return &globalGuard{
