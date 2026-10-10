@@ -29,7 +29,7 @@ func TestShouldExposeNvidiaDevice(t *testing.T) {
 		{name: "nvidia0", path: "/dev/nvidia0", want: true},
 		{name: "nvidia1", path: "/dev/nvidia1", want: true},
 		{name: "nvidia42", path: "/dev/nvidia42", want: true},
-		{name: "nvidia-uvm-tools", path: "/dev/nvidia-uvm-tools", want: false},
+		{name: "nvidia-uvm-tools", path: "/dev/nvidia-uvm-tools", want: true},
 		{name: "nvidia-modeset", path: "/dev/nvidia-modeset", want: false},
 		{name: "not nvidia", path: "/dev/sda", want: false},
 		{name: "nvidia prefix but not device", path: "/dev/nvidia-cap1", want: false},

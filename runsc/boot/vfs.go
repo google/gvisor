@@ -1871,6 +1871,9 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_MINOR_DEVICE_NUMBER_CONTROL_DEVICE},
 			{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER},
 		}
+		if info.nvproxyDevInfo.HaveUVMTools {
+			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: "/dev/nvidia-uvm-tools", Type: "c", Major: int64(info.nvproxyDevInfo.UVMDevMajor), Minor: nvgpu.NVIDIA_UVM_TOOLS_MINOR_NUMBER})
+		}
 		// There is no nvidia-container-cli flag to enable fabric-imex-mgmt, so
 		// we never create a /dev/nvidia-caps/nvidia-cap# file for it here.
 		devClient := devutil.GoferClientFromContext(ctx)
@@ -1936,10 +1939,10 @@ func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *contai
 			}
 			log.Infof("Switching %v device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 		}
-	} else if devSpec.Path == "/dev/nvidia-uvm" {
+	} else if devSpec.Path == "/dev/nvidia-uvm" || devSpec.Path == "/dev/nvidia-uvm-tools" {
 		if info.nvproxyDevInfo.UVMDevMajor != 0 && major != info.nvproxyDevInfo.UVMDevMajor {
 			major = info.nvproxyDevInfo.UVMDevMajor
-			log.Infof("Switching /dev/nvidia-uvm device major number from %d to %d", devSpec.Major, major)
+			log.Infof("Switching %s device major number from %d to %d", devSpec.Path, devSpec.Major, major)
 		}
 	} else if strings.HasPrefix(devSpec.Path, "/dev/nvidia-caps/") {
 		if info.nvproxyDevInfo.CapsDevMajor != 0 && major != info.nvproxyDevInfo.CapsDevMajor {

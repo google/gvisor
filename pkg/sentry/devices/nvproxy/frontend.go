@@ -663,6 +663,110 @@ func rmAllocMemorySimple(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 
 var madvPopulateWriteDisabled atomicbitops.Bool
 
+// appMirror is application memory that is pinned and mapped contiguously into
+// the sentry's address space, so that the host driver can pin it from there.
+type appMirror struct {
+	pinnedRanges []mm.PinnedRange
+
+	// If m is non-zero, it is the start address of a mapping of length len
+	// that is unmapped when the appMirror is released. Unmapping can be very
+	// expensive, so it is deferred until the host driver no longer uses the
+	// mirror.
+	m   uintptr
+	len uintptr
+}
+
+func (am *appMirror) release(ctx context.Context) {
+	if am.m != 0 {
+		if _, _, errno := unix.RawSyscall(unix.SYS_MUNMAP, am.m, am.len, 0); errno != 0 {
+			ctx.Warningf("nvproxy: failed to unmap %#x-%#x: %v", am.m, am.m+am.len, errno)
+		}
+	}
+	mm.Unpin(am.pinnedRanges)
+}
+
+// mirrorAppRange pins the application memory in ar, which must be
+// page-aligned, and maps it contiguously into the sentry's address space. It
+// returns the sentry address of the mirror.
+func mirrorAppRange(ctx context.Context, t *kernel.Task, ar hostarch.AddrRange, at hostarch.AccessType) (appMirror, uintptr, error) {
+	prs, err := t.MemoryManager().Pin(ctx, ar, at, false /* ignorePermissions */)
+	am := appMirror{pinnedRanges: prs}
+	releaseMirror := cleanup.Make(func() {
+		am.release(ctx)
+	})
+	defer releaseMirror.Clean()
+	if err != nil {
+		return appMirror{}, 0, err
+	}
+	var m uintptr
+	if len(prs) == 1 {
+		pr := prs[0]
+		ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
+		if err != nil {
+			return appMirror{}, 0, err
+		}
+		if ims.NumBlocks() == 1 {
+			// We can use this singular internal mapping directly.
+			m = ims.Head().Addr()
+		}
+	}
+	if m == 0 {
+		// Reserve a range in our address space.
+		var errno unix.Errno
+		m, _, errno = unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(ar.Length()), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
+		if errno != 0 {
+			return appMirror{}, 0, errno
+		}
+		am.m = m
+		am.len = uintptr(ar.Length())
+		// Mirror application mappings into the reserved range.
+		sentryAddr := m
+		for _, pr := range prs {
+			ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
+			if err != nil {
+				return appMirror{}, 0, err
+			}
+			for !ims.IsEmpty() {
+				im := ims.Head()
+				if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0 /* old_size */, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
+					return appMirror{}, 0, errno
+				}
+				sentryAddr += uintptr(im.Len())
+				ims = ims.Tail()
+			}
+		}
+	}
+	if !madvPopulateWriteDisabled.Load() {
+		// The host driver pins mirrored pages with NV_PIN_USER_PAGES() =>
+		// (Linux) mm/gup.c:pin_user_pages(), e.g. in
+		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor() =>
+		// RmCreateOsDescriptor() =>
+		// kernel-open/nvidia/os-mlock.c:os_lock_user_pages() and
+		// kernel-open/nvidia-uvm/uvm_tools.c:map_user_pages().
+		// pin_user_pages() calls is_valid_gup_args(locked=NULL), so
+		// FOLL_UNLOCKABLE is *not* added to gup_flags. Consequently, if
+		// pin_user_pages() needs to fault in pages, it will not unlock
+		// mmap_lock while doing so.
+		//
+		// If another thread attempts to lock mmap_lock for writing (in this
+		// context, this typically occurs when another process also tries to
+		// mirror application memory and calls mmap or mremap above), that
+		// thread will block until mmap_lock is released, and will also prevent
+		// other threads from locking mmap_lock for reading.
+		//
+		// To avoid this, fault in these pages via MADV_POPULATE_WRITE;
+		// mm/madvise.c:madvise_populate() => mm/gup.c:faultin_page_range()
+		// does pass FOLL_UNLOCKABLE to __get_user_pages_locked().
+		if _, _, errno := unix.Syscall(unix.SYS_MADVISE, m, uintptr(ar.Length()), unix.MADV_POPULATE_WRITE); errno != 0 {
+			if !madvPopulateWriteDisabled.Swap(true) {
+				log.Infof("nvproxy: disabling MADV_POPULATE_WRITE before host driver pinning: %s", errno)
+			}
+		}
+	}
+	releaseMirror.Release()
+	return am, m, nil
+}
+
 func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
 	// Compare src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor()
 	// => RmCreateOsDescriptor().
@@ -689,88 +793,19 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
 	}
 
-	// The host driver will collect pages from our address space starting at
-	// PMemory, so we need a contiguous mapping equivalent to the
-	// application's.
 	at := hostarch.Read
 	if ((ioctlParams.Params.Flags >> 21) & 0x1) == 0 /* NVOS02_FLAGS_ALLOC_USER_READ_ONLY_NO */ {
 		at.Write = true
 	}
-	prs, err := fi.t.MemoryManager().Pin(fi.ctx, appAR, at, false /* ignorePermissions */)
-	unpinCleanup := cleanup.Make(func() {
-		mm.Unpin(prs)
-	})
-	defer unpinCleanup.Clean()
+	am, m, err := mirrorAppRange(fi.ctx, fi.t, appAR, at)
 	if err != nil {
 		return 0, err
 	}
-	var m uintptr
-	mOwned := false
-	if len(prs) == 1 {
-		pr := prs[0]
-		ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
-		if err != nil {
-			return 0, err
-		}
-		if ims.NumBlocks() == 1 {
-			// We can use this singular internal mapping directly.
-			m = ims.Head().Addr()
-		}
-	}
-	if m == 0 {
-		// Reserve a range in our address space.
-		var errno unix.Errno
-		m, _, errno = unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(arLen), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0) /* fd */, 0 /* offset */)
-		if errno != 0 {
-			return 0, errno
-		}
-		mOwned = true
-		unpinCleanup.Add(func() {
-			unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(arLen), 0)
-		})
-		// Mirror application mappings into the reserved range.
-		sentryAddr := uintptr(m)
-		for _, pr := range prs {
-			ims, err := pr.File.MapInternal(memmap.FileRange{pr.Offset, pr.Offset + uint64(pr.Source.Length())}, at)
-			if err != nil {
-				return 0, err
-			}
-			for !ims.IsEmpty() {
-				im := ims.Head()
-				if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0 /* old_size */, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
-					return 0, errno
-				}
-				sentryAddr += uintptr(im.Len())
-				ims = ims.Tail()
-			}
-		}
-	}
-	if !madvPopulateWriteDisabled.Load() {
-		// In the kernel driver,
-		// src/nvidia/arch/nvalloc/unix/src/escape.c:RmAllocOsDescriptor() =>
-		// RmCreateOsDescriptor() =>
-		// kernel-open/nvidia/os-mlock.c:os_lock_user_pages() will call
-		// NV_PIN_USER_PAGES() => (Linux) mm/gup.c:pin_user_pages() with
-		// gup_flags=FOLL_WRITE|FOLL_LONGTERM. pin_user_pages() calls
-		// is_valid_gup_args(locked=NULL), so FOLL_UNLOCKABLE is *not* added to
-		// gup_flags. Consequently, if pin_user_pages() needs to fault in
-		// pages, it will not unlock mmap_lock while doing so.
-		//
-		// If another thread attempts to lock mmap_lock for writing (in this
-		// context, this typically occurs when another process also tries to
-		// rmAllocOSDescriptor() and calls mmap or mremap above), that thread
-		// will block until mmap_lock is released, and will also prevent other
-		// threads from locking mmap_lock for reading.
-		//
-		// To avoid this, fault in these pages via MADV_POPULATE_WRITE;
-		// mm/madvise.c:madvise_populate() => mm/gup.c:faultin_page_range()
-		// does pass FOLL_UNLOCKABLE to __get_user_pages_locked().
-		if _, _, errno := unix.Syscall(unix.SYS_MADVISE, m, uintptr(arLen), unix.MADV_POPULATE_WRITE); errno != 0 {
-			if !madvPopulateWriteDisabled.Swap(true) {
-				log.Infof("nvproxy: disabling MADV_POPULATE_WRITE before NV01_MEMORY_SYSTEM_OS_DESCRIPTOR allocation: %s", errno)
-			}
-		}
-	}
+	releaseMirror := cleanup.Make(func() {
+		am.release(fi.ctx)
+	})
+	defer releaseMirror.Clean()
+
 	origPMemory := ioctlParams.Params.PMemory
 	ioctlParams.Params.PMemory = nvgpu.P64(uint64(m))
 	// NV01_MEMORY_SYSTEM_OS_DESCRIPTOR shouldn't use ioctlParams.FD; clobber
@@ -784,21 +819,13 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	}
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
-		// Transfer ownership of pinned pages to an osDescMem object, to be
-		// unpinned when the driver OsDescMem is freed.
+		// Transfer ownership of the mirror to an osDescMem object, to be
+		// released when the driver OsDescMem is freed.
 		obj := &osDescMem{
-			pinnedRanges: prs,
-		}
-		if mOwned {
-			// Transfer ownership of the temporary mapping as well. It isn't
-			// actually needed anymore, but unmapping can be very expensive and
-			// allocation tends to be a critical path, so not unmapping it
-			// until the osDescMem object is released improves performance.
-			obj.m = m
-			obj.len = uintptr(arLen)
+			appMirror: am,
 		}
 		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, obj, ioctlParams.Params.HObjectParent)
-		unpinCleanup.Release()
+		releaseMirror.Release()
 		if fi.ctx.IsLogging(log.Debug) {
 			fi.ctx.Debugf("nvproxy: pinned %d bytes for OS descriptor with handle %v", arLen, ioctlParams.Params.HObjectNew)
 		}

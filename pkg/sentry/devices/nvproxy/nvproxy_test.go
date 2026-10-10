@@ -215,16 +215,8 @@ func TestHandlers(t *testing.T) {
 			uvmHandler(func(*uvmIoctlState) (uintptr, error) {
 				return 42, nil
 			}, capCompute),
-			&uvmIoctlState{
-				fd: &uvmFD{
-					dev: &uvmDevice{nvp: capComputeNVP},
-				},
-			},
-			&uvmIoctlState{
-				fd: &uvmFD{
-					dev: &uvmDevice{nvp: capUtilityNVP},
-				},
-			},
+			&uvmIoctlState{nvp: capComputeNVP},
+			&uvmIoctlState{nvp: capUtilityNVP},
 		)
 	})
 }

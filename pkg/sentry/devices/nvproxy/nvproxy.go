@@ -126,6 +126,16 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 	}); err != nil {
 		return nil, err
 	}
+	if _, ok := nvp.abi.uvmIoctl[nvgpu.UVM_TOOLS_INIT_EVENT_TRACKER]; ok {
+		if err := vfsObj.RegisterDevice(vfs.CharDevice, uvmDevMajor, nvgpu.NVIDIA_UVM_TOOLS_MINOR_NUMBER, &uvmToolsDevice{
+			nvp: nvp,
+		}, &vfs.RegisterDeviceOptions{
+			GroupName: "nvidia-uvm",
+		}); err != nil {
+			return nil, err
+		}
+		nvp.devInfo.HaveUVMTools = true
+	}
 
 	if opts.DriverCaps&nvconf.CapFabricIMEXManagement != 0 {
 		if !opts.HostSettings.HaveFabricIMEXManagement {
@@ -192,6 +202,10 @@ type DeviceInfo struct {
 	// UVMDevMajor is nvidia-uvm's device major number. If UVMDevMajor is 0,
 	// nvidia-uvm is enabled.
 	UVMDevMajor uint32
+
+	// HaveUVMTools is true if nvidia-uvm-tools is enabled, with device major
+	// number UVMDevMajor.
+	HaveUVMTools bool
 }
 
 // DeviceInfoFromVFS returns device information for nvproxy devices registered

@@ -21,11 +21,12 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
 func uvmIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), uintptr(unsafe.Pointer(ioctlParams)))
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.hostFD), uintptr(ui.cmd), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno != 0 {
 		return n, errno
 	}
@@ -91,4 +92,36 @@ func (mf *uvmFDMemmapFile) BufferWriteAt(off uint64, src []byte) (uint64, error)
 		return params.BytesWritten, linuxerr.EINVAL
 	}
 	return params.BytesWritten, nil
+}
+
+// uvmToolsGetProcessorUUIDTable handles
+// UVM_TOOLS_GET_PROCESSOR_UUID_TABLE(_V2), for which the host driver copies a
+// table of at most UVM_MAX_PROCESSORS(_V1) entries to TablePtr.
+func uvmToolsGetProcessorUUIDTable(ui *uvmIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS
+	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	count := nvgpu.UVM_MAX_PROCESSORS_V1
+	if ui.cmd == nvgpu.UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_V2 {
+		count = nvgpu.UVM_MAX_PROCESSORS
+	}
+	table := make([]byte, count*len(nvgpu.NvUUID{}))
+	origTablePtr := ioctlParams.TablePtr
+	ioctlParams.TablePtr = uint64(uintptr(unsafe.Pointer(&table[0])))
+	n, err := uvmIoctlInvoke(ui, &ioctlParams)
+	runtime.KeepAlive(table)
+	ioctlParams.TablePtr = origTablePtr
+	if err != nil {
+		return n, err
+	}
+	if ioctlParams.RMStatus == nvgpu.NV_OK {
+		if _, err := ui.t.CopyOutBytes(hostarch.Addr(origTablePtr), table); err != nil {
+			ioctlParams.RMStatus = nvgpu.NV_ERR_INVALID_ADDRESS
+		}
+	}
+	if _, err := ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
 }
