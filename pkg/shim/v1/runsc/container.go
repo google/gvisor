@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/BurntSushi/toml"
 	cgroups "github.com/containerd/cgroups/v3"
 	cgroupsstats "github.com/containerd/cgroups/v3/cgroup1/stats"
 	cgroupsv2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
@@ -43,7 +42,6 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
-	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 )
 
 // CgroupMode is the cgroups mode that is being used by the container.
@@ -85,6 +83,10 @@ type ContainerConfig struct {
 	Stderr             string
 	FSRestoreImagePath string
 	FSRestoreDirect    bool
+
+	// NoRootContainer creates a sandbox with no root container, for the
+	// sandbox API.
+	NoRootContainer bool
 }
 
 // NewContainer returns a new runsc container
@@ -93,21 +95,11 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 	if err != nil {
 		return nil, fmt.Errorf("create namespace: %w", err)
 	}
-	var opts Options
-	if conf.Options != nil {
-		runtimeOptions := &runtimeoptions.Options{}
-		if err := typeurl.UnmarshalTo(conf.Options, runtimeOptions); err != nil {
-			return nil, fmt.Errorf("unmarshal runtime options: %w", err)
-		}
-
-		path := runtimeOptions.GetConfigPath()
-		if path != "" {
-			// Read runsc options from the config file.
-			if _, err = toml.DecodeFile(path, &opts); err != nil {
-				return nil, fmt.Errorf("decode config file %q: %w", path, err)
-			}
-		}
+	optsPtr, err := resolveOptions(conf.Options, conf.NoRootContainer)
+	if err != nil {
+		return nil, err
 	}
+	opts := *optsPtr
 
 	if len(opts.LogLevel) != 0 {
 		lvl, err := logrus.ParseLevel(opts.LogLevel)
@@ -200,6 +192,7 @@ func NewContainer(ctx context.Context, platform stdio.Platform, conf *ContainerC
 		Stderr:             conf.Stderr,
 		FSRestoreImagePath: conf.FSRestoreImagePath,
 		FSRestoreDirect:    conf.FSRestoreDirect,
+		NoRootContainer:    conf.NoRootContainer,
 	}
 
 	process, err := newInit(filepath.Join(conf.Bundle, "work"), ns, platform, config, &opts, st.Rootfs)

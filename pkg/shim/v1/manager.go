@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -108,21 +109,39 @@ func resolveGrouping(id string, annotations map[string]string) string {
 
 // Start implements shim.Manager.Start.
 func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (shim.BootstrapParams, error) {
-	grouping := id
-	enableGrouping := getEnableGrouping()
-	if enableGrouping {
-		// The config.json is always at the current directory by containerd.
-		configFile, err := os.Open("config.json")
-		if err != nil {
-			return shim.BootstrapParams{}, fmt.Errorf("failed to read config.json when starting shim: %w", err)
-		}
-		var readSpec spec
-		if err := json.NewDecoder(configFile).Decode(&readSpec); err != nil {
-			configFile.Close()
+	// containerd runs us in the bundle directory with the handler's runtime
+	// options on stdin.
+	options, err := utils.DrainRuntimeOptions(os.Stdin)
+	if err != nil {
+		return shim.BootstrapParams{}, err
+	}
+
+	// Under CRI, a sandbox bundle has no config.json.
+	readSpec, specErr := readBundleSpec()
+
+	// Containers get their options in every CreateTaskRequest, but
+	// CreateSandboxRequest has no options field, so save them for the sandbox.
+	if readSpec == nil && specErr == nil {
+		if err := utils.SaveRuntimeOptions(".", options); err != nil {
 			return shim.BootstrapParams{}, err
 		}
-		configFile.Close()
-		grouping = resolveGrouping(id, readSpec.Annotations)
+	}
+
+	// Grouping serves a whole pod from one shim by naming the socket after the
+	// pod. Sandbox API pods need it too: below bootstrap version 3, containerd
+	// starts a shim per container instead of using the sandbox's shim
+	// (supportSandboxAPIVersion in core/runtime/v2/shim_manager.go).
+	grouping := id
+	if getEnableGrouping() {
+		if specErr != nil {
+			return shim.BootstrapParams{}, specErr
+		}
+		if readSpec == nil {
+			// A sandbox: its id is the group.
+			log.L.Debugf("no config.json found, grouping shim by its own id %v", id)
+		} else {
+			grouping = resolveGrouping(id, readSpec.Annotations)
+		}
 	}
 
 	cmd, err := newCommand(ctx, id, opts.Address, opts.Debug)
@@ -195,7 +214,27 @@ func (m *manager) Start(ctx context.Context, id string, opts shim.StartOpts) (sh
 		return shim.BootstrapParams{}, fmt.Errorf("failed to set OOM Score on shim: %w", err)
 	}
 	cu.Release()
+	// containerd 1.7 rejects shims above version 2.
 	return shim.BootstrapParams{Version: 2, Address: address, Protocol: "ttrpc"}, nil
+}
+
+// readBundleSpec decodes config.json in the current directory, or returns nil
+// if there is none.
+func readBundleSpec() (*spec, error) {
+	configFile, err := os.Open("config.json")
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config.json when starting shim: %w", err)
+	}
+	defer configFile.Close()
+
+	readSpec := &spec{}
+	if err := json.NewDecoder(configFile).Decode(readSpec); err != nil {
+		return nil, fmt.Errorf("failed to decode config.json when starting shim: %w", err)
+	}
+	return readSpec, nil
 }
 
 // Stop implements shim.Manager.Stop.

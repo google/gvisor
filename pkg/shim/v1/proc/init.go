@@ -143,6 +143,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		PidFile:            pidFile,
 		FSRestoreImagePath: r.FSRestoreImagePath,
 		FSRestoreDirect:    r.FSRestoreDirect,
+		NoRootContainer:    r.NoRootContainer,
 	}
 	if socket != nil {
 		opts.ConsoleSocket = socket
