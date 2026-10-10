@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -99,16 +100,36 @@ const (
 // not support LSMs, we do add additional restrictions based on the commoncap
 // and YAMA LSMs.
 //
-// TODO(gvisor.dev/issue/212): The result of CanTrace is immediately stale (e.g., a
-// racing setuid(2) may change traceability). This may pose a risk when a task
-// changes from traceable to not traceable. This is only problematic across
-// execve, where privileges may increase.
-//
-// We currently do not implement privileged executables (set-user/group-ID bits
-// and file capabilities), so that case is not reachable.
+// TODO(gvisor.dev/issue/212): The result of CanTrace is immediately stale
+// (e.g., a racing setuid(2) or execve(2) may change traceability; in
+// particular, a target exec of a set-user/group-ID or non-readable file
+// replaces its MemoryManager with a non-dumpable one). Linux prevents the
+// execve race by holding signal_struct::exec_update_lock across the check and
+// the use of the target's mm (kernel/fork.c:mm_access()). Callers that go on
+// to access the target's memory should use CanTraceAndGetMM so that the
+// access check applies to the MemoryManager they use.
 //
 // +checklocksexclude:target.mu
 func (t *Task) CanTrace(target *Task, attach bool) bool {
+	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
+	return t.canTraceWithMM(target, attach, targetMM, targetUserDumpable)
+}
+
+// memoryManagerAndUserDumpable returns t's MemoryManager and, for use when it
+// is nil, the dumpability it had when it was released.
+func (t *Task) memoryManagerAndUserDumpable() (*mm.MemoryManager, bool) {
+	var targetMM *mm.MemoryManager
+	var targetUserDumpable bool
+	t.WithMuLocked(func(t *Task) {
+		targetMM = t.MemoryManager()
+		targetUserDumpable = t.userDumpable
+	})
+	return targetMM, targetUserDumpable
+}
+
+// canTraceWithMM implements CanTrace, performing the dumpability check
+// against the given targetMM and targetUserDumpable.
+func (t *Task) canTraceWithMM(target *Task, attach bool, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
 	// "If the calling thread and the target thread are in the same thread
 	// group, access is always allowed." - ptrace(2)
 	//
@@ -121,7 +142,7 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return true
 	}
 
-	if !t.canTraceStandard(target, attach) {
+	if !t.canTraceStandardWithMM(target, attach, targetMM, targetUserDumpable) {
 		return false
 	}
 
@@ -133,6 +154,34 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		}
 	}
 	return true
+}
+
+// CanTraceAndGetMM is the equivalent of Linux's kernel/fork.c:mm_access():
+// it performs the CanTrace check and, on success, returns target's
+// MemoryManager with a user reference held (which the caller must drop with
+// DecUsers). The access check is performed against the returned
+// MemoryManager, so a concurrent execve cannot substitute a different
+// (possibly non-dumpable) mm between the check and the caller's use of it;
+// Linux prevents the same race by holding signal_struct::exec_update_lock.
+// As in Linux, it returns ESRCH if target has no MemoryManager and EACCES if
+// the access check fails.
+//
+// +checklocksexclude:target.mu
+func (t *Task) CanTraceAndGetMM(target *Task, attach bool) (*mm.MemoryManager, error) {
+	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
+	if targetMM == nil {
+		return nil, linuxerr.ESRCH
+	}
+	if !targetMM.IncUsers() {
+		return nil, linuxerr.EFAULT
+	}
+	if !t.canTraceWithMM(target, attach, targetMM, targetUserDumpable) {
+		// canTraceWithMM holds no locks on return, so dropping what may be
+		// the last reference to the MemoryManager is safe here.
+		targetMM.DecUsers(t)
+		return nil, linuxerr.EACCES
+	}
+	return targetMM, nil
 }
 
 // canTraceLocked is the same as CanTrace, except the caller must already hold
@@ -206,25 +255,32 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	// PTRACE_MODE_READ and PTRACE_MODE_ATTACH. (ED: From earlier in this
 	// section: "the commoncap LSM ... is always invoked".)
 	// """
+	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
+	return t.canTraceStandardWithMM(target, attach, targetMM, targetUserDumpable)
+}
+
+// canTraceStandardWithMM is the same as canTraceStandard, but performs the
+// dumpability check against the given targetMM and targetUserDumpable rather
+// than fetching them from target.
+func (t *Task) canTraceStandardWithMM(target *Task, attach bool, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
 	callerCreds := t.Credentials()
 	targetCreds := target.Credentials()
-	if callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace) {
-		return true
+	hasPtraceCapInTargetNS := callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace)
+	if !hasPtraceCapInTargetNS {
+		if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
+			return false
+		}
+		if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
+			return false
+		}
 	}
-	if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
-		return false
-	}
-	if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
-		return false
-	}
-	var targetMM *mm.MemoryManager
-	var targetUserDumpable bool
-	target.WithMuLocked(func(t *Task) {
-		targetMM = t.MemoryManager()
-		targetUserDumpable = t.userDumpable
-	})
 	if targetMM != nil {
-		if targetMM.Dumpability() != mm.UserDumpable {
+		// The capability against non-dumpable targets must be held in the
+		// MemoryManager's user namespace (Linux: mm_struct::user_ns), which
+		// fs/exec.c:would_dump() may have lowered to an ancestor of the
+		// target's namespace at execve.
+		if targetMM.Dumpability() != mm.UserDumpable &&
+			!callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM)) {
 			return false
 		}
 	} else {
@@ -232,13 +288,52 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 			return false
 		}
 	}
-	if callerCreds.UserNamespace != targetCreds.UserNamespace {
-		return false
-	}
-	if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
-		return false
+	if !hasPtraceCapInTargetNS {
+		if callerCreds.UserNamespace != targetCreds.UserNamespace {
+			return false
+		}
+		if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
+			return false
+		}
 	}
 	return true
+}
+
+// mmUserNamespace returns m's user namespace, which the loader sets on every
+// MemoryManager before it becomes reachable by other tasks.
+func mmUserNamespace(m *mm.MemoryManager) *auth.UserNamespace {
+	ns := m.UserNamespace()
+	if ns == nil {
+		panic("MemoryManager has no user namespace")
+	}
+	return ns
+}
+
+// ptraceAccessVM returns whether t, which must be target's tracer, may access
+// target's memory via ptrace requests such as PTRACE_PEEKDATA, per Linux's
+// kernel/ptrace.c:ptrace_access_vm().
+func (t *Task) ptraceAccessVM(target *Task) bool {
+	var targetMM *mm.MemoryManager
+	var tracerCreds *auth.Credentials
+	ts := t.tg.pidns.owner
+	ts.mu.RLock()
+	tracerCreds = target.ptracerCreds
+	target.WithMuLocked(func(t *Task) {
+		targetMM = t.MemoryManager()
+	})
+	ts.mu.RUnlock()
+	if targetMM == nil {
+		return false
+	}
+	if targetMM.Dumpability() == mm.UserDumpable {
+		return true
+	}
+	if tracerCreds == nil {
+		// Every path that establishes a tracing relationship snapshots the
+		// tracer credentials, and saved states preserve them.
+		panic("traced task has no tracer credential snapshot")
+	}
+	return tracerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM))
 }
 
 // canTraceYAMALocked performs ptrace access checks as defined by the YAMA LSM
@@ -480,6 +575,23 @@ func (t *Task) ptraceUnstop(mode ptraceSyscallMode, singlestep bool, sig linux.S
 	return nil
 }
 
+// canTracemeLocked returns true if t's parent may trace t via PTRACE_TRACEME.
+// Unlike attachment, Linux's kernel/ptrace.c:ptrace_traceme() performs no
+// __ptrace_may_access() check (so the target's dumpability is irrelevant);
+// authorization is security_ptrace_traceme(), implemented by
+// security/commoncap.c:cap_ptrace_traceme().
+//
+// Preconditions: t.parent != nil. The TaskSet mutex must be locked.
+func (t *Task) canTracemeLocked() bool {
+	parentCreds := t.parent.Credentials()
+	childCreds := t.Credentials()
+	if parentCreds.UserNamespace == childCreds.UserNamespace &&
+		childCreds.PermittedCaps&^parentCreds.PermittedCaps == 0 {
+		return true
+	}
+	return parentCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, childCreds.UserNamespace)
+}
+
 // +checklocksexclude:t.mu
 func (t *Task) ptraceTraceme() error {
 	t.tg.pidns.owner.mu.Lock()
@@ -500,7 +612,7 @@ func (t *Task) ptraceTraceme() error {
 		// returning nil here is correct.
 		return nil
 	}
-	if !t.parent.canTraceLocked(t, true) {
+	if !t.canTracemeLocked() {
 		return linuxerr.EPERM
 	}
 	if t.parent.exitStateLocked() != TaskExitNone {
@@ -509,6 +621,9 @@ func (t *Task) ptraceTraceme() error {
 		return nil
 	}
 	t.ptraceTracer.Store(t.parent)
+	// Linux's ptrace_traceme() => ptrace_link() snapshots the caller's (i.e.
+	// the tracee's own) credentials.
+	t.ptracerCreds = t.Credentials()
 	t.parent.ptraceTracees[t] = struct{}{}
 	return nil
 }
@@ -538,6 +653,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 		}
 	}
 	target.ptraceTracer.Store(t)
+	target.ptracerCreds = t.Credentials()
 	t.ptraceTracees[target] = struct{}{}
 	target.tg.signalHandlers.mu.Lock()
 	target.ptraceSeized = seize
@@ -619,6 +735,7 @@ func (t *Task) forgetTracerLocked() {
 	t.ptraceSyscallMode = ptraceSyscallNone
 	t.ptraceSinglestep = false
 	t.ptraceTracer.Store(nil)
+	t.ptracerCreds = nil
 	if t.exitTracerNotified && !t.exitTracerAcked {
 		t.exitTracerAcked = true
 		// Don't hold signalHandlers.mu while calling exitNotifyLocked,
@@ -818,6 +935,10 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 		tracer := t.Tracer()
 		if tracer != nil {
 			child.ptraceTracer.Store(tracer)
+			// Automatically attached children inherit the forking tracee's
+			// tracer credential snapshot, as in Linux's
+			// include/linux/ptrace.h:ptrace_init_task().
+			child.ptracerCreds = t.ptracerCreds
 			tracer.ptraceTracees[child] = struct{}{}
 			child.tg.signalHandlers.mu.Lock()
 			// "The "seized" behavior ... is inherited by children that are
@@ -1193,6 +1314,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 
 	switch req {
 	case linux.PTRACE_PEEKTEXT, linux.PTRACE_PEEKDATA:
+		if !t.ptraceAccessVM(target) {
+			return linuxerr.EIO
+		}
 		// "At the system call level, the PTRACE_PEEKTEXT, PTRACE_PEEKDATA, and
 		// PTRACE_PEEKUSER requests have a different API: they store the result
 		// at the address specified by the data parameter, and the return value
@@ -1205,6 +1329,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		return err
 
 	case linux.PTRACE_POKETEXT, linux.PTRACE_POKEDATA:
+		if !t.ptraceAccessVM(target) {
+			return linuxerr.EIO
+		}
 		word := t.Arch().Native(uintptr(data))
 		_, err := word.CopyOut(target.CopyContext(t, usermem.IOOpts{IgnorePermissions: true}), addr)
 		return err

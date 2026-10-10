@@ -20,7 +20,9 @@
 #include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
+#include <string.h>
 #include <sys/eventfd.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
@@ -29,7 +31,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/time.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
 #include <unistd.h>
@@ -964,6 +968,14 @@ PosixErrorOr<TempPath> CreateSgidExecutable(std::string path) {
   return TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, mode);
 }
 
+PosixErrorOr<TempPath> CreateExecuteOnlyExecutable(std::string path) {
+  std::string exec_blob;
+  PosixError perr = GetContents(path, &exec_blob);
+  RETURN_IF_ERRNO(perr);
+
+  return TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, 0111);
+}
+
 constexpr int kUnprivilegedUid = 12345;
 constexpr int kUnprivilegedGid = 12345;
 
@@ -1021,6 +1033,261 @@ TEST(ExecTest, SGIDExecGainsGID) {
         /*want_egid=*/absl::StrCat(privilegedGid),  // gained back original gid
         /*want_dumpability=*/absl::StrCat(SUID_DUMP_DISABLE)};  // but lost this
     CheckExec(suid_exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+}
+
+// Returns the expected dumpability of a task after an exec that enforces
+// non-dumpability: gVisor hardcodes SUID_DUMP_DISABLE, while Linux uses the
+// value of the fs.suid_dumpable sysctl (fs/exec.c:begin_new_exec() =>
+// set_dumpable(current->mm, suid_dumpable)).
+PosixErrorOr<int> WantNonDumpable() {
+  if (IsRunningOnGvisor()) {
+    return SUID_DUMP_DISABLE;
+  }
+  std::string contents;
+  RETURN_IF_ERRNO(GetContents("/proc/sys/fs/suid_dumpable", &contents));
+  return atoi(contents.c_str());
+}
+
+// Mirrors struct posix_acl_xattr_entry.
+struct ACLEntry {
+  uint16_t tag;
+  uint16_t perm;
+  uint32_t id;
+};
+
+// BuildACL builds the raw xattr representation for a POSIX ACL.
+std::string BuildACL(const std::vector<ACLEntry>& entries) {
+  uint32_t version = 2;
+  std::string buf(reinterpret_cast<const char*>(&version), sizeof(version));
+  for (const ACLEntry& e : entries) {
+    buf.append(reinterpret_cast<const char*>(&e), sizeof(e));
+  }
+  return buf;
+}
+
+// A binary whose mode bits permit reading but whose ACL denies it to the
+// executing user must still make the task non-dumpable.
+TEST(ExecTest, ACLExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  std::string exec_blob;
+  ASSERT_NO_ERRNO(GetContents(RunfilePath(kCheckEuidProgram), &exec_blob));
+  TempPath exe = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetShortTestTmpdir(), exec_blob, 0755));
+
+  // ACL: named user kUnprivilegedUid gets --x, so the named-user entry (not
+  // the readable "other" class) governs its access.
+  constexpr uint16_t kTagUserObj = 0x01, kTagUser = 0x02, kTagGroupObj = 0x04,
+                     kTagMask = 0x10, kTagOther = 0x20;
+  constexpr uint32_t kIdUndef = 0xffffffff;
+  const std::string acl = BuildACL({
+      {kTagUserObj, 7, kIdUndef},
+      {kTagUser, 1, kUnprivilegedUid},
+      {kTagGroupObj, 5, kIdUndef},
+      {kTagMask, 1, kIdUndef},
+      {kTagOther, 5, kIdUndef},
+  });
+  int ret = setxattr(exe.path().c_str(), "system.posix_acl_access", acl.data(),
+                     acl.size(), 0);
+  SKIP_IF(ret < 0 && (errno == ENOTSUP || errno == EOPNOTSUPP));
+  ASSERT_THAT(ret, SyscallSucceeds());
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid/gid we're about to set. The gid must also leave the
+  // file's group class so that only the named-user ACL entry (and not the
+  // group bits, which mirror the ACL mask) denies reading.
+  bool acl_enforced = true;
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setgroups, 0, nullptr), SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_setresgid, kUnprivilegedGid, kUnprivilegedGid,
+                        kUnprivilegedGid),
+                SyscallSucceeds());
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+
+    // The ACL must deny reading. Some filesystems (e.g. gVisor's overlay)
+    // accept the ACL xattr but do not enforce ACLs; skip on those.
+    int fd = open(exe.path().c_str(), O_RDONLY);
+    if (fd >= 0) {
+      close(fd);
+      acl_enforced = false;
+      return;
+    }
+    EXPECT_THAT(open(exe.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // ...but the ACL must permit executing, and the resulting task must be
+    // non-dumpable.
+    const int want_dumpability = ASSERT_NO_ERRNO_AND_VALUE(WantNonDumpable());
+    const ExecveArray argv = {
+        exe.path(),
+        /*want_euid=*/absl::StrCat(kUnprivilegedUid),
+        /*want_egid=*/absl::StrCat(kUnprivilegedGid),
+        /*want_dumpability=*/absl::StrCat(want_dumpability)};
+    CheckExec(exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
+              /*expect_stderr=*/"");
+  });
+  if (!acl_enforced) {
+    GTEST_SKIP() << "filesystem does not enforce POSIX ACLs";
+  }
+}
+
+// Only regular files may be executed: Linux's fs/namei.c:may_open() rejects
+// exec opens of special files with EACCES regardless of their permission
+// bits, before the open can block (e.g. on a FIFO with no writer). Execute
+// permission also does not make a special file readable.
+TEST(ExecTest, ExecuteOnlySpecialFiles) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const std::string dir = GetShortTestTmpdir();
+
+  const std::string fifo = absl::StrCat(dir, "/exec-only-fifo.", getpid());
+  ASSERT_THAT(mkfifo(fifo.c_str(), 0111), SyscallSucceeds());
+  // mkfifo's mode is affected by the umask.
+  ASSERT_THAT(chmod(fifo.c_str(), 0111), SyscallSucceeds());
+  const auto fifo_cleanup = Cleanup([&fifo] { unlink(fifo.c_str()); });
+
+  const std::string sock = absl::StrCat(dir, "/exec-only-sock.", getpid());
+  const FileDescriptor sock_fd(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_THAT(sock_fd.get(), SyscallSucceeds());
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  ASSERT_LT(sock.size(), sizeof(addr.sun_path));
+  strncpy(addr.sun_path, sock.c_str(), sizeof(addr.sun_path) - 1);
+  ASSERT_THAT(bind(sock_fd.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                   sizeof(addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(chmod(sock.c_str(), 0111), SyscallSucceeds());
+  const auto sock_cleanup = Cleanup([&sock] { unlink(sock.c_str()); });
+
+  // A character device (a /dev/null clone). mknod of character devices
+  // requires privileges the environment may not have; skip it if so.
+  const std::string chr = absl::StrCat(dir, "/exec-only-chr.", getpid());
+  const bool have_chr =
+      mknod(chr.c_str(), S_IFCHR | 0111, makedev(1, 3)) == 0 &&
+      chmod(chr.c_str(), 0111) == 0;
+  const auto chr_cleanup = Cleanup([&chr, have_chr] {
+    if (have_chr) unlink(chr.c_str());
+  });
+
+  std::vector<std::string> paths = {fifo, sock};
+  if (have_chr) {
+    paths.push_back(chr);
+  }
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+
+    for (const auto& path : paths) {
+      // Exec is rejected for non-regular files. Bound the exec with an alarm
+      // so that a regression to a blocking open (e.g. a FIFO waiting for a
+      // writer) fails promptly instead of hanging the test.
+      pid_t child;
+      int execve_errno;
+      const auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+          path, {path}, {}, +[] { alarm(10); }, &child, &execve_errno));
+      EXPECT_EQ(execve_errno, EACCES) << path;
+
+      // Execute permission does not make the file readable...
+      EXPECT_THAT(open(path.c_str(), O_RDONLY | O_NONBLOCK),
+                  SyscallFailsWithErrno(EACCES))
+          << path;
+
+      // ...including via the exec-open path, also bounded by an alarm.
+      const FileDescriptor path_fd =
+          ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_PATH));
+      pid_t at_child;
+      int execveat_errno;
+      const auto at_cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(
+          path_fd.get(), "", {path}, {}, AT_EMPTY_PATH, +[] { alarm(10); },
+          &at_child, &execveat_errno));
+      EXPECT_EQ(execveat_errno, EACCES) << path;
+    }
+  });
+}
+
+// A failed exec of a PTY replica must not acquire it as the caller's
+// controlling terminal: the exec open is rejected before the device's open
+// handler can run (Linux's fs/namei.c:may_open()).
+TEST(ExecTest, ExecuteOnlyPtyReplicaAcquiresNoControllingTerminal) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  // Some test environments have no devpts mount.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(Exists("/dev/ptmx")));
+
+  const FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR | O_NOCTTY));
+  int n;
+  ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &n), SyscallSucceeds());
+  int unlock = 0;
+  ASSERT_THAT(ioctl(master.get(), TIOCSPTLCK, &unlock), SyscallSucceeds());
+  const std::string replica = absl::StrCat("/dev/pts/", n);
+  ASSERT_THAT(chmod(replica.c_str(), 0111), SyscallSucceeds());
+
+  pid_t child = fork();
+  if (child == 0) {
+    // Become a session leader with no controlling terminal, as an
+    // unprivileged user. No group change is needed: the 0111 fixture denies
+    // reading to every class, and changing groups would require CAP_SETGID.
+    if (setsid() < 0) _exit(10);
+    if (syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                kUnprivilegedUid) != 0) {
+      _exit(13);
+    }
+    char* const argv[] = {const_cast<char*>(replica.c_str()), nullptr};
+    char* const envv[] = {nullptr};
+    if (execve(replica.c_str(), argv, envv) == 0 || errno != EACCES) {
+      _exit(14);
+    }
+    // The failed exec must not have acquired a controlling terminal.
+    errno = 0;
+    int tty = open("/dev/tty", O_RDONLY | O_NOCTTY | O_NONBLOCK);
+    if (tty >= 0 || errno != ENXIO) _exit(15);
+    _exit(0);
+  }
+  ASSERT_GT(child, 0);
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "child status: " << status;
+}
+
+// Linux requires only execute permission (not read) to execve a binary, but
+// marks the resulting task non-dumpable so that the binary's contents cannot
+// be recovered via ptrace or procfs. See gvisor.dev/issue/160.
+TEST(ExecTest, ExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  TempPath exec_only_exe = ASSERT_NO_ERRNO_AND_VALUE(
+      CreateExecuteOnlyExecutable(RunfilePath(kCheckEuidProgram)));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_EQ(geteuid(), kUnprivilegedUid);
+
+    // The binary must not be readable...
+    EXPECT_THAT(open(exec_only_exe.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // ...but must still be executable, and the resulting task must be
+    // non-dumpable.
+    const int want_dumpability = ASSERT_NO_ERRNO_AND_VALUE(WantNonDumpable());
+    const ExecveArray argv = {
+        exec_only_exe.path(),
+        /*want_euid=*/absl::StrCat(kUnprivilegedUid),
+        /*want_egid=*/absl::StrCat(getegid()),
+        /*want_dumpability=*/absl::StrCat(want_dumpability)};
+    CheckExec(exec_only_exe.path(), argv, /*envv=*/{}, /*expect_status=*/0,
               /*expect_stderr=*/"");
   });
 }

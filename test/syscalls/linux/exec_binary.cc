@@ -15,12 +15,18 @@
 #include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <linux/capability.h>
+#include <linux/prctl.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -36,17 +42,22 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -1073,6 +1084,472 @@ TEST(ElfTest, ELFInterpreter) {
               })));
 }
 
+// Returns the Yama ptrace scope (0 if Yama is not enabled).
+PosixErrorOr<int> YamaPtraceScope() {
+  constexpr char kYamaPtraceScopePath[] = "/proc/sys/kernel/yama/ptrace_scope";
+  ASSIGN_OR_RETURN_ERRNO(bool exists, Exists(kYamaPtraceScopePath));
+  if (!exists) {
+    return 0;
+  }
+  std::string contents;
+  RETURN_IF_ERRNO(GetContents(kYamaPtraceScopePath, &contents));
+  int scope;
+  if (!absl::SimpleAtoi(contents, &scope)) {
+    return PosixError(EINVAL, absl::StrCat(contents, ": not a valid number"));
+  }
+  return scope;
+}
+
+// Returns whether an exec that Linux would mark BINPRM_FLAGS_ENFORCE_NONDUMP
+// actually leaves the task non-dumpable. Under the native fs.suid_dumpable=1
+// ("debug") policy it does not; gVisor always enforces non-dumpability.
+PosixErrorOr<bool> ExecNonDumpEnforced() {
+  if (IsRunningOnGvisor()) {
+    return true;
+  }
+  std::string contents;
+  RETURN_IF_ERRNO(GetContents("/proc/sys/fs/suid_dumpable", &contents));
+  return atoi(contents.c_str()) != 1;
+}
+
+// An ELF interpreter requires only execute permission, and executing a binary
+// whose interpreter is not readable makes the task non-dumpable, as with a
+// non-readable binary. See gvisor.dev/issue/160.
+TEST(ElfTest, ExecuteOnlyELFInterpreter) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(ExecNonDumpEnforced()));
+
+  ElfBinary<64> interpreter = StandardElf();
+  interpreter.header.e_type = ET_DYN;
+  interpreter.header.e_entry = 0x0;
+  interpreter.UpdateOffsets();
+
+  // See ElfTest.ELFInterpreter above for the rationale.
+  uint64_t const offset = interpreter.phdrs[1].p_offset;
+  interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
+  interpreter.phdrs[1].p_offset = 0x0;
+  interpreter.phdrs[1].p_vaddr = 0x0;
+  interpreter.phdrs[1].p_filesz += offset;
+  interpreter.phdrs[1].p_memsz += offset;
+
+  // Use /tmp: an unprivileged host gofer cannot read an execute-only backing
+  // file, which is not what this test exercises.
+  TempPath interpreter_file =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", interpreter));
+  ASSERT_THAT(chmod(interpreter_file.path().c_str(), 0111), SyscallSucceeds());
+
+  ElfBinary<64> binary = StandardElf();
+
+  // Append the interpreter path.
+  int const interp_data_start = binary.data.size();
+  for (char const c : interpreter_file.path()) {
+    binary.data.push_back(c);
+  }
+  // NUL-terminate.
+  binary.data.push_back(0);
+  int const interp_data_size = binary.data.size() - interp_data_start;
+
+  decltype(binary)::ElfPhdr phdr = {};
+  phdr.p_type = PT_INTERP;
+  phdr.p_offset = interp_data_start;
+  phdr.p_filesz = interp_data_size;
+  phdr.p_memsz = interp_data_size;
+  binary.phdrs.push_back(phdr);
+
+  binary.UpdateOffsets();
+
+  // /tmp is also traversable by the unprivileged uid below, unlike the test
+  // tmpdir.
+  TempPath binary_file =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", binary));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    constexpr int kUnprivilegedUid = 12345;
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+
+    // The interpreter must not be readable...
+    EXPECT_THAT(open(interpreter_file.path().c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+
+    // ...but the binary must still be executable.
+    pid_t child;
+    int execve_errno;
+    auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+        binary_file.path(), {binary_file.path()}, {}, &child, &execve_errno));
+    ASSERT_EQ(execve_errno, 0);
+
+    // WUNTRACED, unlike WaitStopped, also observes the group stop that occurs
+    // if the child's PTRACE_TRACEME was denied for the non-dumpable child.
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, WUNTRACED),
+                SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << status;
+
+    // The task must be non-dumpable: even the same-uid parent cannot access
+    // /proc/<pid>/mem.
+    EXPECT_THAT(open(absl::StrCat("/proc/", child, "/mem").c_str(), O_RDONLY),
+                SyscallFailsWithErrno(AnyOf(Eq(EACCES), Eq(EPERM))));
+  });
+}
+
+// An existing tracer must not be able to access the memory of a task that
+// exec'd a non-readable binary, matching Linux's
+// kernel/ptrace.c:ptrace_access_vm().
+TEST(ElfTest, PtraceExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(ExecNonDumpEnforced()));
+
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+
+  // /tmp is also traversable by the unprivileged uid below, unlike the test
+  // tmpdir.
+  TempPath exec_only = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+  ASSERT_THAT(chmod(exec_only.path().c_str(), 0111), SyscallSucceeds());
+  TempPath readable = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    constexpr int kUnprivilegedUid = 12345;
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    // Restore dumpability, cleared by the uid change, so that the forked
+    // children below start out traceable.
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
+
+    // Trace a child across execve and try to read its memory. The first
+    // segment of StandardElf is loaded at 0x40000.
+    const auto peek_after_exec = [](const std::string& path, long* peeked,
+                                    long* poked) {
+      pid_t child = fork();
+      if (child == 0) {
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) != 0) {
+          _exit(40);
+        }
+        raise(SIGSTOP);
+        execl(path.c_str(), path.c_str(), nullptr);
+        _exit(41);
+      }
+      MaybeSave();
+      ASSERT_GT(child, 0);
+      int status;
+      ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                  SyscallSucceedsWithValue(child));
+      ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << status;
+      ASSERT_THAT(ptrace(PTRACE_CONT, child, 0, 0), SyscallSucceeds());
+      // The traced child stops with SIGTRAP after execve.
+      ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                  SyscallSucceedsWithValue(child));
+      ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) << status;
+
+      errno = 0;
+      *peeked = ptrace(PTRACE_PEEKDATA, child, 0x40000, 0);
+      *peeked = (*peeked == -1) ? -errno : 0;
+      errno = 0;
+      *poked = ptrace(PTRACE_POKEDATA, child, 0x40000, 0x11223344);
+      *poked = (*poked == -1) ? -errno : 0;
+
+      kill(child, SIGKILL);
+      RetryEINTR(waitpid)(child, nullptr, 0);
+    };
+
+    int64_t peeked, poked;
+    // Control: a readable binary's memory is accessible to the tracer.
+    ASSERT_NO_FATAL_FAILURE(peek_after_exec(readable.path(), &peeked, &poked));
+    EXPECT_EQ(peeked, 0);
+    EXPECT_EQ(poked, 0);
+    // An execute-only binary's memory is not.
+    ASSERT_NO_FATAL_FAILURE(peek_after_exec(exec_only.path(), &peeked, &poked));
+    EXPECT_EQ(peeked, -EIO);
+    EXPECT_EQ(poked, -EIO);
+  });
+}
+
+// CAP_SYS_PTRACE in a user namespace that does not contain the executable's
+// owner must not permit tracing a task that exec'd that non-readable binary;
+// Linux checks the capability in mm->user_ns, which fs/exec.c:would_dump()
+// lowers to an ancestor namespace containing the executable's owner.
+TEST(ElfTest, UsernsAttachExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(ExecNonDumpEnforced()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath exec_only = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+  ASSERT_THAT(chmod(exec_only.path().c_str(), 0111), SyscallSucceeds());
+
+  // The helper must be single-threaded to unshare a user namespace, so fork
+  // before dropping privileges.
+  pid_t helper = fork();
+  if (helper == 0) {
+    if (setgroups(0, nullptr) != 0) _exit(20);
+    if (setresgid(12345, 12345, 12345) != 0) _exit(21);
+    if (setresuid(12345, 12345, 12345) != 0) _exit(22);
+    if (prctl(PR_SET_DUMPABLE, 1) != 0) _exit(23);
+    // The helper holds all capabilities in the new user namespace, but the
+    // executable's owner (root) is not mapped into it.
+    if (unshare(CLONE_NEWUSER) != 0) _exit(24);
+    pid_t child = fork();
+    if (child == 0) {
+      execl(exec_only.path().c_str(), exec_only.path().c_str(), nullptr);
+      _exit(25);
+    }
+    int status;
+    if (waitpid(child, &status, WUNTRACED) != child) _exit(26);
+    if (!WIFSTOPPED(status)) _exit(27);
+    // The stub PTRACE_TRACEMEs; detach (ignoring failure, in case the traceme
+    // was denied) so that PTRACE_ATTACH performs a fresh access check.
+    ptrace(PTRACE_DETACH, child, 0, SIGSTOP);
+    errno = 0;
+    int64_t ret = ptrace(PTRACE_ATTACH, child, 0, 0);
+    int attach_errno = errno;
+    kill(child, SIGKILL);
+    waitpid(child, nullptr, 0);
+    if (ret == 0) _exit(1);  // Attach must be denied.
+    _exit(attach_errno == EPERM ? 0 : 2);
+  }
+  ASSERT_GT(helper, 0);
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(helper, &status, 0),
+              SyscallSucceedsWithValue(helper));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "helper status: " << status;
+}
+
+// How CheckExecuteOnlyScriptStaysDumpable launches the script.
+enum class ScriptExecMode {
+  kPath,          // execve(path)
+  kEmptyPathFd,   // execveat(fd, "", AT_EMPTY_PATH), fd opened O_PATH
+  kRelativeDirfd  // execveat(dirfd, "name", 0)
+};
+
+// An interpreter script that is itself execute-only does not make the task
+// non-dumpable when its interpreter is readable: fs/exec.c:begin_new_exec()
+// applies would_dump() to the final binprm file (the interpreter binary), not
+// to the script, for both by-path and by-fd execution.
+void CheckExecuteOnlyScriptStaysDumpable(ScriptExecMode mode) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  // /tmp is also traversable by the unprivileged uid below, unlike the test
+  // tmpdir.
+  TempPath interpreter_file =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+  TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      "/tmp", absl::StrCat("#!", interpreter_file.path()), 0111));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    constexpr int kUnprivilegedUid = 12345;
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    // Restore dumpability, cleared by the uid change.
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
+
+    pid_t child = fork();
+    if (child == 0) {
+      if (ptrace(PTRACE_TRACEME, 0, 0, 0) != 0) {
+        _exit(40);
+      }
+      raise(SIGSTOP);
+      char* const argv[] = {const_cast<char*>(script.path().c_str()), nullptr};
+      char* const envv[] = {nullptr};
+      switch (mode) {
+        case ScriptExecMode::kPath:
+          execve(script.path().c_str(), argv, envv);
+          break;
+        case ScriptExecMode::kEmptyPathFd: {
+          int fd = open(script.path().c_str(), O_PATH);
+          if (fd < 0) {
+            _exit(42);
+          }
+          syscall(SYS_execveat, fd, "", argv, envv, AT_EMPTY_PATH);
+          break;
+        }
+        case ScriptExecMode::kRelativeDirfd: {
+          int dirfd = open(std::string(Dirname(script.path())).c_str(),
+                           O_RDONLY | O_DIRECTORY);
+          if (dirfd < 0) {
+            _exit(43);
+          }
+          syscall(SYS_execveat, dirfd,
+                  std::string(Basename(script.path())).c_str(), argv, envv, 0);
+          break;
+        }
+      }
+      _exit(41);
+    }
+    MaybeSave();
+    ASSERT_GT(child, 0);
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << status;
+    ASSERT_THAT(ptrace(PTRACE_CONT, child, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP) << status;
+
+    // The task must remain dumpable: its tracer can read its memory.
+    errno = 0;
+    ptrace(PTRACE_PEEKDATA, child, 0x40000, 0);
+    EXPECT_EQ(errno, 0);
+
+    kill(child, SIGKILL);
+    RetryEINTR(waitpid)(child, nullptr, 0);
+  });
+}
+
+TEST(ElfTest, ExecuteOnlyScriptReadableInterpreter) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  CheckExecuteOnlyScriptStaysDumpable(ScriptExecMode::kPath);
+}
+
+TEST(ElfTest, ExecuteOnlyScriptReadableInterpreterEmptyPathFd) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  CheckExecuteOnlyScriptStaysDumpable(ScriptExecMode::kEmptyPathFd);
+}
+
+TEST(ElfTest, ExecuteOnlyScriptReadableInterpreterRelativeDirfd) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  CheckExecuteOnlyScriptStaysDumpable(ScriptExecMode::kRelativeDirfd);
+}
+
+// A task that exec'd an execute-only binary is non-dumpable and therefore
+// unreadable via process_vm_readv. This verifies permission enforcement after
+// the exec has completed; it does not exercise the window during a concurrent
+// execve, which CanTraceAndGetMM closes by checking against the MemoryManager
+// it returns.
+TEST(ElfTest, ProcessVMReadExecuteOnlyBinary) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(ExecNonDumpEnforced()));
+  // The readable control drops capabilities, which Yama scope > 1 requires
+  // for process_vm_readv.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 1);
+
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  // /tmp is also traversable by the unprivileged uid below, unlike the test
+  // tmpdir.
+  TempPath exec_only = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+  ASSERT_THAT(chmod(exec_only.path().c_str(), 0111), SyscallSucceeds());
+  TempPath readable = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+
+  // Use a separate thread so as to not pollute the other tests with the
+  // unprivileged uid we're about to set.
+  ScopedThread([&] {
+    constexpr int kUnprivilegedUid = 12345;
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    // Restore dumpability, cleared by the uid change.
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
+
+    const auto read_after_exec = [](const std::string& path) -> int64_t {
+      pid_t child = fork();
+      if (child == 0) {
+        char* const argv[] = {const_cast<char*>(path.c_str()), nullptr};
+        char* const envv[] = {nullptr};
+        execve(path.c_str(), argv, envv);
+        _exit(41);
+      }
+      TEST_CHECK(child > 0);
+      // The exec'd stub stops itself with SIGSTOP.
+      int status;
+      TEST_CHECK(RetryEINTR(waitpid)(child, &status, WUNTRACED) == child);
+      TEST_CHECK(WIFSTOPPED(status));
+
+      char buf[8] = {};
+      struct iovec local = {buf, sizeof(buf)};
+      // The first segment of StandardElf is loaded at 0x40000.
+      struct iovec remote = {reinterpret_cast<void*>(0x40000), sizeof(buf)};
+      errno = 0;
+      int64_t n =
+          syscall(SYS_process_vm_readv, child, &local, 1, &remote, 1, 0);
+      int64_t result = (n < 0) ? -errno : n;
+      kill(child, SIGKILL);
+      RetryEINTR(waitpid)(child, nullptr, 0);
+      return result;
+    };
+
+    // Control: a readable binary's memory is readable.
+    EXPECT_EQ(read_after_exec(readable.path()), 8);
+    // An execute-only binary's is not.
+    EXPECT_EQ(read_after_exec(exec_only.path()), -EPERM);
+  });
+}
+
+// A /proc/[pid]/mem file stays bound to the mm that its open-time access
+// check validated. After the target execs an execute-only binary, that old mm
+// has no users, so reads through the old fd return EOF rather than any data
+// from the new image, and a fresh open is denied.
+TEST(ElfTest, ProcMemFdAcrossExecuteOnlyExec) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(ExecNonDumpEnforced()));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(YamaPtraceScope()) > 1);
+
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath exec_only = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
+  ASSERT_THAT(chmod(exec_only.path().c_str(), 0111), SyscallSucceeds());
+
+  static volatile int64_t marker = 0x1111;
+
+  ScopedThread([&] {
+    constexpr int kUnprivilegedUid = 12345;
+    ASSERT_THAT(syscall(SYS_setresuid, kUnprivilegedUid, kUnprivilegedUid,
+                        kUnprivilegedUid),
+                SyscallSucceeds());
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
+
+    int go[2];
+    ASSERT_THAT(pipe(go), SyscallSucceeds());
+    const FileDescriptor go_rfd(go[0]);
+    const FileDescriptor go_wfd(go[1]);
+    pid_t child = fork();
+    if (child == 0) {
+      char g;
+      if (ReadFd(go_rfd.get(), &g, 1) != 1) _exit(40);
+      char* const argv[] = {const_cast<char*>(exec_only.path().c_str()),
+                            nullptr};
+      execve(exec_only.path().c_str(), argv, nullptr);
+      _exit(41);
+    }
+    MaybeSave();
+    ASSERT_GT(child, 0);
+    const auto cleanup = Cleanup([child] {
+      kill(child, SIGKILL);
+      RetryEINTR(waitpid)(child, nullptr, 0);
+    });
+
+    const FileDescriptor mem = ASSERT_NO_ERRNO_AND_VALUE(
+        Open(absl::StrCat("/proc/", child, "/mem"), O_RDONLY));
+    int64_t v = 0;
+    ASSERT_THAT(pread(mem.get(), &v, sizeof(v), (off_t)&marker),
+                SyscallSucceedsWithValue(sizeof(v)));
+    EXPECT_EQ(v, marker);
+
+    ASSERT_THAT(WriteFd(go_wfd.get(), "g", 1), SyscallSucceedsWithValue(1));
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, WUNTRACED),
+                SyscallSucceedsWithValue(child));
+    ASSERT_TRUE(WIFSTOPPED(status)) << status;
+
+    EXPECT_THAT(pread(mem.get(), &v, sizeof(v), (off_t)&marker),
+                SyscallSucceedsWithValue(0));
+    EXPECT_THAT(open(absl::StrCat("/proc/", child, "/mem").c_str(), O_RDONLY),
+                SyscallFailsWithErrno(EACCES));
+  });
+}
+
 // Test parameter to ElfInterpterStaticTest cases. The first item is a suffix to
 // add to the end of the interpreter path in the PT_INTERP segment and the
 // second is the expected execve(2) errno.
@@ -1316,16 +1793,18 @@ TEST(ElfTest, NoExecute) {
   EXPECT_EQ(execve_errno, EACCES);
 }
 
-// Execute, but no read permissions on the binary works just fine.
+// Execute, but no read permissions on the binary works just fine. A task
+// whose credentials cannot read its executable is marked non-dumpable (see
+// ExecuteOnlyBinary and PtraceExecuteOnlyBinary), but this test runs with
+// CAP_DAC_OVERRIDE, so the executable remains readable to it and the task
+// stays dumpable.
 TEST(ElfTest, NoRead) {
-  // TODO(gvisor.dev/issue/160): gVisor's backing filesystem may prevent the
-  // sentry from reading the executable.
-  SKIP_IF(IsRunningOnGvisor());
-
   ElfBinary<64> elf = StandardElf();
   elf.UpdateOffsets();
 
-  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+  // Use /tmp: an unprivileged host gofer cannot read an execute-only backing
+  // file.
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith("/tmp", elf));
 
   ASSERT_THAT(chmod(file.path().c_str(), 0111), SyscallSucceeds());
 
@@ -1336,10 +1815,6 @@ TEST(ElfTest, NoRead) {
   ASSERT_EQ(execve_errno, 0);
 
   ASSERT_NO_ERRNO(WaitStopped(child));
-
-  // TODO(gvisor.dev/issue/160): A task with a non-readable executable is marked
-  // non-dumpable, preventing access to proc files. gVisor does not implement
-  // this behavior.
 }
 
 // No execute permissions on the ELF interpreter.

@@ -461,6 +461,17 @@ afterTrailingSymlink:
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
+	if opts.FileExec {
+		_, isRegular := d.inode.impl.(*regularFile)
+		_, isSymlink := d.inode.impl.(*symlink)
+		// Only regular files may be executed; reject before the open can
+		// block (e.g. on a FIFO with no writer), as in Linux's
+		// fs/namei.c:may_open(). Symlinks are exempt so that they produce
+		// ELOOP below, also per may_open().
+		if !isRegular && !isSymlink {
+			return nil, linuxerr.EACCES
+		}
+	}
 	if !afterCreate {
 		if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 			return nil, err

@@ -526,8 +526,14 @@ func (f *memInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.De
 	if err := checkTaskState(f.task); err != nil {
 		return nil, err
 	}
+	// The file must use the mm that the access check above was performed
+	// against: a concurrent execve may have already substituted a new,
+	// possibly non-dumpable mm that the check did not apply to. Linux's
+	// proc_mem_open() similarly captures the mm returned by mm_access(). No
+	// user reference is held; as in Linux, reads fail once the mm has no
+	// users left (see PRead).
 	fd := &memFD{
-		mm: getMM(f.task),
+		mm: m,
 	}
 	if err := fd.Init(rp.Mount(), d, f, opts.Flags, rp.Credentials()); err != nil {
 		return nil, err
