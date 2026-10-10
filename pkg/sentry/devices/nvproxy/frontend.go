@@ -67,16 +67,17 @@ func (dev *frontendDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.D
 	if err != nil {
 		return nil, err
 	}
+	fd.internalEntry.Init(fd, waiter.AllEvents)
+	fd.internalQueue.EventRegister(&fd.internalEntry)
+	if err := fdnotifier.AddFD(fd.hostFD, &fd.internalQueue); err != nil {
+		unix.Close(int(fd.hostFD))
+		return nil, err
+	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		SpecialFile:       true,
 	}); err != nil {
-		unix.Close(int(fd.hostFD))
-		return nil, err
-	}
-	fd.internalEntry.Init(fd, waiter.AllEvents)
-	fd.internalQueue.EventRegister(&fd.internalEntry)
-	if err := fdnotifier.AddFD(fd.hostFD, &fd.internalQueue); err != nil {
+		fdnotifier.RemoveFD(fd.hostFD)
 		unix.Close(int(fd.hostFD))
 		return nil, err
 	}
