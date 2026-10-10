@@ -39,6 +39,9 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"
@@ -688,6 +691,88 @@ TEST(SeccompTest, SeccompValidatesAllFilterFlags) {
     close(ret);
   }
   // LINT.ThenChange(../../../runsc/specutils/seccomp.go)
+}
+
+// Linux evaluates seccomp filters on the restart_syscall that resumes a syscall
+// interrupted by a stop, so a filter that kills restart_syscall kills the task
+// once a group stop ends.
+TEST(SeccompTest, RestartSyscallAfterGroupStopIsFiltered) {
+  DisableSave ds;
+  pid_t const pid = fork();
+  if (pid == 0) {
+    ApplySeccompFilter(__NR_restart_syscall, SECCOMP_RET_KILL);
+    struct timespec req = {.tv_sec = 5, .tv_nsec = 0};
+    syscall(SYS_nanosleep, &req, nullptr);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  absl::SleepFor(absl::Milliseconds(200));
+  ASSERT_THAT(kill(pid, SIGSTOP), SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, WUNTRACED), SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFSTOPPED(status)) << "status " << status;
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
+// A checkpoint is not a Linux concept: the sentry interrupts a blocked syscall
+// to quiesce the task, and the guest never asked for the restart_syscall that
+// resumes it. That restart must not be subject to the guest's filter.
+TEST(SeccompTest, RestartSyscallAfterCheckpointIsNotFiltered) {
+  SKIP_IF(!IsRunningWithSaveRestore());
+  int pipefd[2];
+  ASSERT_THAT(pipe(pipefd), SyscallSucceeds());
+  FileDescriptor read_fd(pipefd[0]);
+  FileDescriptor write_fd(pipefd[1]);
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Created before the filter is installed so that it is unfiltered. A kill
+    // from the filter only ends the calling thread, so completion is reported
+    // through the pipe instead of the process exit status.
+    ScopedThread saver(+[] {
+      absl::SleepFor(absl::Milliseconds(500));
+      internal::DoCooperativeSave();
+    });
+    ApplySeccompFilter(__NR_restart_syscall, SECCOMP_RET_KILL);
+    struct timespec req = {.tv_sec = 2, .tv_nsec = 0};
+    TEST_PCHECK(syscall(SYS_nanosleep, &req, nullptr) == 0);
+    TEST_PCHECK(write(pipefd[1], "k", 1) == 1);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  write_fd.reset();
+  char c = 0;
+  EXPECT_THAT(read(read_fd.get(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'k');
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+}
+
+// A task that is in a group stop when the checkpoint is taken restarts through
+// the same filter as on Linux once the stop ends.
+TEST(SeccompTest, RestartSyscallAfterGroupStopAndCheckpointIsFiltered) {
+  SKIP_IF(!IsRunningWithSaveRestore());
+  DisableSave ds;
+  pid_t const pid = fork();
+  if (pid == 0) {
+    ApplySeccompFilter(__NR_restart_syscall, SECCOMP_RET_KILL);
+    struct timespec req = {.tv_sec = 5, .tv_nsec = 0};
+    syscall(SYS_nanosleep, &req, nullptr);
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  absl::SleepFor(absl::Milliseconds(200));
+  ASSERT_THAT(kill(pid, SIGSTOP), SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, WUNTRACED), SyscallSucceedsWithValue(pid));
+  ASSERT_TRUE(WIFSTOPPED(status)) << "status " << status;
+  internal::DoCooperativeSave();
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
 }
 
 }  // namespace

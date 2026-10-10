@@ -2846,6 +2846,7 @@ cc_binary(
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
+        "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:multiprocess_util",
@@ -2856,6 +2857,7 @@ cc_binary(
         "//test/util:test_util",
         "//test/util:thread_util",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/time",
     ],
 )
 

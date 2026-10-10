@@ -207,6 +207,8 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 			// behavior of an interrupted syscall is determined by the first
 			// signal that is actually handled (by userspace).
 			if sigact == SignalActionHandler {
+				// Delivering a handler abandons a checkpoint-armed bypass.
+				t.bypassSeccompRestartSyscall.Store(false)
 				switch {
 				case sre == linuxerr.ERESTARTNOHAND:
 					fallthrough

@@ -100,6 +100,13 @@ type Task struct {
 	// haveSyscallReturn is exclusive to the task goroutine.
 	haveSyscallReturn bool
 
+	// bypassSeccompRestartSyscall causes the next restart_syscall to skip
+	// seccomp filtering. It is armed for a task that is checkpointed or
+	// restored with ERESTART_RESTARTBLOCK pending (see
+	// armSeccompRestartSyscallBypass), and cleared when consumed, when a
+	// signal handler is invoked, or when the task enters an internal stop.
+	bypassSeccompRestartSyscall atomicbitops.Bool `state:"nosave"`
+
 	// interruptChan is notified whenever the task goroutine is interrupted
 	// (usually by a pending signal). interruptChan is effectively a condition
 	// variable that can be used in select statements.
@@ -760,6 +767,11 @@ func (t *Task) afterLoad(gocontext.Context) {
 	t.rseqPreempted = true
 	t.futexWaiter = futex.NewWaiter()
 	t.p = t.k.Platform.NewContext(t.AsyncContext())
+	// A restored task resumes a restart_syscall the guest did not issue, unless
+	// it was saved in an internal stop, which keeps Linux semantics.
+	if t.stop == nil {
+		t.armSeccompRestartSyscallBypass()
+	}
 }
 
 // copyScratchBufferLen is the length of Task.copyScratchBuffer.
