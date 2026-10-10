@@ -525,3 +525,95 @@ func TestRDMASysfs(t *testing.T) {
 		t.Errorf("reading speed of a down link returned %v, want EINVAL", err)
 	}
 }
+
+func TestNVProxyGPUSysfs(t *testing.T) {
+	const gpuLeaf = "devices/pci0000:00/0000:00:01.0/0000:01:00.0"
+	snap := &rdma.Snapshot{
+		PCINodes: []rdma.PCINode{
+			{Path: "devices/pci0000:00"},
+			{Path: "devices/pci0000:00/0000:00:01.0", Attrs: map[string]string{
+				"class": "0x060400\n",
+			}},
+			{Path: gpuLeaf, Attrs: map[string]string{
+				"class":      "0x030000\n",
+				"vendor":     "0x10de\n",
+				"device":     "0x2330\n",
+				"uevent":     "DRIVER=nvidia\nPCI_SLOT_NAME=0000:01:00.0\n",
+				"numa_node":  "0\n",
+				"local_cpus":    "ffffffff\n",
+				"local_cpulist": "0-3\n",
+			}, Config: []byte{0xde, 0x10, 0x30, 0x23}},
+		},
+		NUMA: &rdma.NUMA{
+			Aggregate: map[string]string{"online": "0\n", "possible": "0\n"},
+		},
+	}
+	s := newTestSystemWithInternalData(t, &sys.InternalData{RDMASysfs: snap})
+	defer s.Destroy()
+
+	for p, want := range map[string]map[string]testutil.DirentType{
+		"/devices/pci0000:00": {
+			"0000:00:01.0": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+		},
+		"/devices/pci0000:00/0000:00:01.0": {
+			"0000:01:00.0": linux.DT_DIR,
+			"pci_bus":      linux.DT_DIR,
+			"subsystem":    linux.DT_LNK,
+			"class":        linux.DT_REG,
+		},
+		"/" + gpuLeaf: {
+			"subsystem":     linux.DT_LNK,
+			"driver":        linux.DT_LNK,
+			"vendor":        linux.DT_REG,
+			"device":        linux.DT_REG,
+			"class":         linux.DT_REG,
+			"uevent":        linux.DT_REG,
+			"numa_node":     linux.DT_REG,
+			"local_cpus":    linux.DT_REG,
+			"local_cpulist": linux.DT_REG,
+			"config":        linux.DT_REG,
+		},
+		"/bus/pci/devices": {
+			"0000:00:01.0": linux.DT_LNK,
+			"0000:01:00.0": linux.DT_LNK,
+		},
+		"/bus/pci/drivers":        {"nvidia": linux.DT_DIR},
+		"/bus/pci/drivers/nvidia": {"0000:01:00.0": linux.DT_LNK},
+		"/class/pci_bus": {
+			"0000:00": linux.DT_LNK,
+			"0000:01": linux.DT_LNK,
+		},
+	} {
+		pop := s.PathOpAtRoot(p)
+		s.AssertAllDirentTypes(s.ListDirents(pop), want)
+	}
+
+	// Verify that RDMA class directories are absent when no RDMA devices exist.
+	for _, absentPath := range []string{"/class/infiniband", "/class/infiniband_verbs", "/class/net"} {
+		pop := s.PathOpAtRoot(absentPath)
+		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
+		if err == nil {
+			fd.DecRef(s.Ctx)
+			t.Errorf("path %q unexpectedly exists", absentPath)
+		}
+	}
+
+	// Verify attribute reads and symlink resolution.
+	for p, want := range map[string]string{
+		"/" + gpuLeaf + "/vendor":                     "0x10de\n",
+		"/" + gpuLeaf + "/device":                     "0x2330\n",
+		"/" + gpuLeaf + "/config":                     string([]byte{0xde, 0x10, 0x30, 0x23}),
+		"/bus/pci/devices/0000:01:00.0/vendor":        "0x10de\n",
+		"/bus/pci/drivers/nvidia/0000:01:00.0/vendor": "0x10de\n",
+		"/" + gpuLeaf + "/driver/0000:01:00.0/vendor": "0x10de\n",
+	} {
+		got, err := readTestFile(s, p)
+		if err != nil {
+			t.Fatalf("reading %q: %v", p, err)
+		}
+		if got != want {
+			t.Errorf("%q contains %q, want %q", p, got, want)
+		}
+	}
+}

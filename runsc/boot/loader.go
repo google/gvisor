@@ -682,7 +682,7 @@ func New(args Args) (*Loader, error) {
 	// providers without a PCI-ID match table (e.g. libirdma) are unusable
 	// without it. A nil snapshot leaves the protocol unregistered-equivalent:
 	// socket(AF_NETLINK, ..., NETLINK_RDMA) fails as on a host without RDMA.
-	if args.RDMASysfs != nil {
+	if specutils.RDMAEnabled(args.Spec, args.Conf) && args.RDMASysfs != nil {
 		rdmanetlink.Init(args.RDMASysfs)
 	}
 
