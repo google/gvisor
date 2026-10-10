@@ -437,6 +437,7 @@ go_test(
         "fd_table_test.go",
         "kernel_restore_test.go",
         "pending_signals_test.go",
+        "ptrace_mode_test.go",
         "table_test.go",
         "task_signals_test.go",
         "task_syscall_benchmark_test.go",
