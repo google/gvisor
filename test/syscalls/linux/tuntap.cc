@@ -22,6 +22,7 @@
 #include <linux/if_packet.h>
 #include <linux/if_tun.h>
 #include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -53,6 +54,7 @@
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
@@ -815,6 +817,68 @@ TEST_F(TuntapTest, RawPacketSocket) {
       }
     }
   }
+}
+
+TEST_F(TuntapTest, SaveRestoreAfterNetnsMove) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  constexpr char kName[] = "tun_move";
+  FileDescriptor tun;
+  {
+    // Only checkpoint after the device has moved back to the original stack.
+    const DisableSave disable_save;
+    const FileDescriptor original_netns =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    Cleanup restore_netns([&] {
+      ASSERT_THAT(setns(original_netns.get(), CLONE_NEWNET), SyscallSucceeds());
+    });
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+
+    tun = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+    struct ifreq ifr = {};
+    ifr.ifr_flags = IFF_TUN;
+    strncpy(ifr.ifr_name, kName, IFNAMSIZ);
+    ASSERT_THAT(ioctl(tun.get(), TUNSETIFF, &ifr), SyscallSucceeds());
+    const auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kName));
+    const FileDescriptor nlsk =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    struct {
+      struct nlmsghdr hdr;
+      struct ifinfomsg msg;
+      struct rtattr netns;
+      int fd;
+    } req = {};
+    req.hdr.nlmsg_len = sizeof(req);
+    req.hdr.nlmsg_type = RTM_NEWLINK;
+    req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    req.hdr.nlmsg_seq = 1;
+    req.msg.ifi_family = AF_UNSPEC;
+    req.msg.ifi_index = link.index;
+    req.netns.rta_type = IFLA_NET_NS_FD;
+    req.netns.rta_len = RTA_LENGTH(sizeof(req.fd));
+    req.fd = original_netns.get();
+    ASSERT_NO_ERRNO(NetlinkRequestAckOrError(nlsk, req.hdr.nlmsg_seq, &req,
+                                             req.hdr.nlmsg_len));
+    ASSERT_THAT(setns(original_netns.get(), CLONE_NEWNET), SyscallSucceeds());
+    restore_netns.Release();
+  }
+
+  MaybeSave();
+
+  const auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kName));
+  EXPECT_EQ(link.kind, "tun");
+  ASSERT_NO_ERRNO(LinkChangeFlags(link.index, IFF_UP, IFF_UP));
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  const struct in_addr addr = {.s_addr = kTapIPAddr};
+  ASSERT_NO_ERRNO(
+      LinkAddLocalAddr(nlsk, link.index, AF_INET, 24, &addr, sizeof(addr)));
+
+  // Restore must bind teardown to the destination stack and its new NIC ID.
+  tun.reset();
+  EXPECT_THAT(DumpLinkNames(),
+              IsPosixErrorOkAndHolds(::testing::Not(::testing::Contains(kName))));
 }
 
 TEST_F(TuntapTest, SaveRestorePreservesAddressesAndPendingPackets) {

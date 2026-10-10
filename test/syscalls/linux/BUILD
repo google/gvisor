@@ -4889,6 +4889,7 @@ cc_binary(
         ":socket_netlink_route_util",
         ":socket_netlink_util",
         "//test/util:capability_util",
+        "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:logging",
