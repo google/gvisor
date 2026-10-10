@@ -360,7 +360,9 @@ func (c *Container) Pause(ctx context.Context, r *task.PauseRequest) error {
 		log.L.Debugf("Pause error, id: %s: container not created", r.ID)
 		return fmt.Errorf("container must be created")
 	}
-	return c.task.Runtime().Pause(ctx, r.ID)
+	return c.task.RuntimeCall(ctx, func(ctx context.Context, runtime *runsccmd.Runsc) error {
+		return runtime.Pause(ctx, r.ID)
+	})
 }
 
 // Resume the container.
@@ -369,7 +371,9 @@ func (c *Container) Resume(ctx context.Context, r *task.ResumeRequest) error {
 		log.L.Debugf("Resume error, id: %s: container not created", r.ID)
 		return fmt.Errorf("container must be created")
 	}
-	return c.task.Runtime().Resume(ctx, r.ID)
+	return c.task.RuntimeCall(ctx, func(ctx context.Context, runtime *runsccmd.Runsc) error {
+		return runtime.Resume(ctx, r.ID)
+	})
 }
 
 // Kill a process with the provided signal

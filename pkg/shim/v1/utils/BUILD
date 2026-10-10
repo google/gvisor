@@ -9,6 +9,7 @@ go_library(
     name = "utils",
     srcs = [
         "annotations.go",
+        "cleanup.go",
         "fuse.go",
         "utils.go",
         "volumes.go",
@@ -29,6 +30,7 @@ go_test(
     name = "utils_test",
     size = "small",
     srcs = [
+        "cleanup_test.go",
         "fuse_test.go",
         "volumes_test.go",
     ],
