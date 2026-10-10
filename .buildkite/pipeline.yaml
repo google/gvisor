@@ -416,6 +416,7 @@ steps:
       <<: *kvm_agents
       arch: "amd64"
       queue: "default"
+      stacktest: "yes"
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
