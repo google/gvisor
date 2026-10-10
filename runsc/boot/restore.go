@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
@@ -133,7 +134,7 @@ func (l *Loader) SaveAsync() (err error) {
 
 // saveOptsFromSpec returns the saveOpts based on annotations from the spec. `fds` are
 // no longer needed and can be closed after this is called.
-func saveOptsFromSpec(spec *specs.Spec, fds []*fd.FD, useCheckpointGofer bool) (*control.SaveOpts, error) {
+func saveOptsFromSpec(spec *specs.Spec, fds []*fd.FD, useCheckpointGofer bool) (*controlapi.SaveOpts, error) {
 	// Convert the FDs to files which is required by the saveOpts.
 	files := make([]*os.File, len(fds))
 	for i, fd := range fds {
@@ -149,7 +150,7 @@ func saveOptsFromSpec(spec *specs.Spec, fds []*fd.FD, useCheckpointGofer bool) (
 		return nil, err
 	}
 
-	saveOpts := &control.SaveOpts{
+	saveOpts := &controlapi.SaveOpts{
 		AppMFExcludeCommittedZeroPages: specutils.AnnotationToBool(spec, annotationCheckpointExcludeCommittedZeroPages),
 		FilePayload: urpc.FilePayload{
 			Files: files,
@@ -170,14 +171,14 @@ func saveOptsFromSpec(spec *specs.Spec, fds []*fd.FD, useCheckpointGofer bool) (
 	}
 
 	if spec.Annotations[annotationSaveRestoreExecArgv] != "" {
-		saveRestoreExecTimeout := control.DefaultSaveRestoreExecTimeout
+		saveRestoreExecTimeout := controlapi.DefaultSaveRestoreExecTimeout
 		if spec.Annotations[annotationSaveRestoreExecTimeout] != "" {
 			saveRestoreExecTimeout, err = time2.ParseDuration(spec.Annotations[annotationSaveRestoreExecTimeout])
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse save-restore-exec-timeout: %w", err)
 			}
 		}
-		saveOpts.ExecOpts = control.SaveRestoreExecOpts{
+		saveOpts.ExecOpts = controlapi.SaveRestoreExecOpts{
 			Argv:    spec.Annotations[annotationSaveRestoreExecArgv],
 			Timeout: saveRestoreExecTimeout,
 		}
@@ -701,7 +702,7 @@ func (r *restorer) calculateWallTimeSavings(s *sentryapi.Savings) error {
 	return nil
 }
 
-func (l *Loader) save(o *control.SaveOpts) error {
+func (l *Loader) save(o *controlapi.SaveOpts) error {
 	saveOpts, err := control.ConvertToStateSaveOpts(o)
 	if err != nil {
 		l.k.OnCheckpointAttempt(err)
@@ -716,7 +717,7 @@ func (l *Loader) save(o *control.SaveOpts) error {
 }
 
 // saveWithOpts saves the kernel with the given options.
-func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRestoreExecOpts) (err error) {
+func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) (err error) {
 	// Fully serialize save operations, including post-save cleanup. See
 	// Loader.saveMu.
 	l.saveMu.Lock()

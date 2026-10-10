@@ -35,7 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -678,7 +678,7 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 
 // Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
-func (c *Container) Execute(conf *config.Config, args *control.ExecArgs) (int32, error) {
+func (c *Container) Execute(conf *config.Config, args *controlapi.ExecArgs) (int32, error) {
 	log.Debugf("Execute in container, cid: %s, args: %+v", c.ID, args)
 	if err := c.requireStatus("execute in", Created, Running); err != nil {
 		return 0, err
@@ -1016,7 +1016,7 @@ func (c *Container) State() specs.State {
 
 // Processes retrieves the list of processes and associated metadata inside a
 // container.
-func (c *Container) Processes() ([]*control.Process, error) {
+func (c *Container) Processes() ([]*controlapi.Process, error) {
 	if err := c.requireStatus("get processes of", Running, Paused); err != nil {
 		return nil, err
 	}

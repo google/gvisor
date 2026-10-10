@@ -14,7 +14,7 @@ go_library(
     ],
     deps = [
         "//pkg/log",
-        "//pkg/sentry/control",
+        "//pkg/sentry/control/controlapi",
         "//runsc/config",
         "//runsc/donation",
         "//runsc/flag",

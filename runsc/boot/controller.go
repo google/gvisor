@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -169,7 +170,7 @@ func (cm *containerManager) onStart() error {
 }
 
 // Processes retrieves information about processes running in the sandbox.
-func (cm *containerManager) Processes(cid *string, out *[]*control.Process) error {
+func (cm *containerManager) Processes(cid *string, out *[]*controlapi.Process) error {
 	log.Debugf("containerManager.Processes, cid: %s", *cid)
 	return control.Processes(cm.l.k, *cid, out)
 }
@@ -335,7 +336,7 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 }
 
 // Checkpoint pauses a sandbox and saves its state.
-func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
+func (cm *containerManager) Checkpoint(o *controlapi.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
 	o.RunscVersion = version.Version()
 	return cm.l.save(o)

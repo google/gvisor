@@ -24,8 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
-	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -44,9 +44,6 @@ import (
 type SaveRestoreExecMode string
 
 const (
-	// DefaultSaveRestoreExecTimeout is the default timeout for the save/restore
-	// binary.
-	DefaultSaveRestoreExecTimeout = 10 * time.Minute
 	// SaveRestoreExecSave is the save mode for the save/restore exec.
 	SaveRestoreExecSave SaveRestoreExecMode = "save"
 	// SaveRestoreExecRestore is the restore mode for the save/restore exec.
@@ -67,75 +64,10 @@ type State struct {
 	Watchdog *watchdog.Watchdog
 }
 
-// SaveOpts contains options for the Save RPC call.
-type SaveOpts struct {
-	// Key is used to enable state integrity check.
-	Key []byte `json:"key"`
-
-	// Metadata is the set of metadata to prepend to the state file.
-	Metadata map[string]string `json:"metadata"`
-
-	// AppMFExcludeCommittedZeroPages is the value of
-	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
-	// file.
-	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
-
-	// HavePagesFile indicates whether the pages file and its corresponding
-	// metadata file is provided.
-	HavePagesFile bool `json:"have_pages_file"`
-
-	// FilePayload contains the following:
-	// 1. checkpoint state file.
-	// 2. optional checkpoint pages metadata file.
-	// 3. optional checkpoint pages file.
-	urpc.FilePayload
-
-	// Resume indicates if the sandbox process should continue running
-	// after checkpointing.
-	Resume bool
-
-	// ExecOpts contains options for executing a binary during save/restore.
-	ExecOpts SaveRestoreExecOpts
-
-	// If UseCheckpointGofer is true, the first and only file in FilePayload is
-	// a Unix domain socket connected to a URPC server implementing
-	// stateipc.AsyncFileServer and providing checkpoint files.
-	UseCheckpointGofer bool `json:"use_checkpoint_gofer"`
-
-	// CudaCheckpointPath is the path to the cuda-checkpoint binary.
-	CudaCheckpointPath string `json:"cuda_checkpoint_path"`
-
-	// CudaCheckpointSequential indicates whether cuda-checkpoint should be run
-	// sequentially (rather than in parallel).
-	CudaCheckpointSequential bool `json:"cuda_checkpoint_sequential"`
-
-	// SplitFSCheckpointPaths lists the filesystem checkpoint bundles to save in
-	// separate files. Filesystems not in any bundle are saved in the regular
-	// checkpoint files. Use the path "all-tmpfs" to include all tmpfs mounts.
-	SplitFSCheckpointPaths []fscheckpoint.Bundle `json:"split_fs_checkpoint_paths"`
-
-	// RunscVersion is the runsc binary version.
-	RunscVersion string `json:"runsc_version"`
-}
-
-// SaveRestoreExecOpts contains options for executing a binary
-// during save/restore.
-type SaveRestoreExecOpts struct {
-	// Argv is the argv of the save/restore binary split by spaces.
-	// The first element is the path to the binary.
-	Argv string
-
-	// Timeout is the timeout for waiting for the save/restore binary.
-	Timeout time.Duration
-
-	// ContainerID is the ID of the container that the save/restore binary executes in.
-	ContainerID string
-}
-
 // ConvertToStateSaveOpts converts a control.SaveOpts to a state.SaveOpts.
 // state.SaveOpts.Close() must be called when the state.SaveOpts is no longer
 // needed.
-func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
+func ConvertToStateSaveOpts(o *controlapi.SaveOpts) (*state.SaveOpts, error) {
 	saveOpts := &state.SaveOpts{
 		Key:                            o.Key,
 		Metadata:                       o.Metadata,
@@ -151,7 +83,7 @@ func ConvertToStateSaveOpts(o *SaveOpts) (*state.SaveOpts, error) {
 	return saveOpts, nil
 }
 
-func setSaveOpts(o *SaveOpts, saveOpts *state.SaveOpts) error {
+func setSaveOpts(o *controlapi.SaveOpts, saveOpts *state.SaveOpts) error {
 	// TODO(b/541219576): Support checkpoint gofer with split checkpoint.
 	if len(o.SplitFSCheckpointPaths) > 0 && o.UseCheckpointGofer {
 		return fmt.Errorf("split filesystem checkpoint is not supported with checkpoint gofer")
@@ -162,7 +94,7 @@ func setSaveOpts(o *SaveOpts, saveOpts *state.SaveOpts) error {
 	return setSaveOptsForLocalCheckpointFiles(o, saveOpts)
 }
 
-func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) error {
+func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.SaveOpts) error {
 	wantFiles := 1
 	if o.HavePagesFile {
 		wantFiles += 2
@@ -232,7 +164,7 @@ func setSaveOptsForLocalCheckpointFiles(o *SaveOpts, saveOpts *state.SaveOpts) e
 	return nil
 }
 
-func setSaveOptsForCheckpointGofer(o *SaveOpts, saveOpts *state.SaveOpts) error {
+func setSaveOptsForCheckpointGofer(o *controlapi.SaveOpts, saveOpts *state.SaveOpts) error {
 	if gotFiles := len(o.Files); gotFiles != 1 {
 		return fmt.Errorf("got %d files, wanted 1", gotFiles)
 	}
@@ -279,7 +211,7 @@ func setSaveOptsForCheckpointGofer(o *SaveOpts, saveOpts *state.SaveOpts) error 
 }
 
 // Save saves the running system.
-func (s *State) Save(o *SaveOpts, _ *struct{}) (err error) {
+func (s *State) Save(o *controlapi.SaveOpts, _ *struct{}) (err error) {
 	if len(o.SplitFSCheckpointPaths) > 0 {
 		defer func() {
 			s.Kernel.SignalAllFSSaveWaiters(err)
@@ -296,7 +228,7 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) (err error) {
 }
 
 // SaveWithOpts saves the running system with the given options.
-func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *SaveRestoreExecOpts) error {
+func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) error {
 	if err := preSave(s.Kernel, saveOpts, execOpts); err != nil {
 		return err
 	}
@@ -312,7 +244,7 @@ func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *SaveRestoreExec
 }
 
 // preSave is called before saving the kernel.
-func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *SaveRestoreExecOpts) error {
+func preSave(k *kernel.Kernel, o *state.SaveOpts, execOpts *controlapi.SaveRestoreExecOpts) error {
 	if err := preSaveTPU(k); err != nil {
 		return err
 	}
@@ -442,10 +374,12 @@ func SaveRestoreExec(k *kernel.Kernel, mode SaveRestoreExecMode) error {
 		Kernel: k,
 	}
 	execArgs := ExecArgs{
-		Filename:       argv[0],
-		Argv:           argv,
-		Envv:           append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
-		ContainerID:    contID,
+		ExecArgs: controlapi.ExecArgs{
+			Filename:    argv[0],
+			Argv:        argv,
+			Envv:        append(envv, fmt.Sprintf("%s=%s", saveRestoreExecEnvVar, mode)),
+			ContainerID: contID,
+		},
 		MountNamespace: mntns,
 		PIDNamespace:   leader.PIDNamespace(),
 		Limits:         limits.NewLimitSet(),
