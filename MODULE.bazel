@@ -42,6 +42,15 @@ single_version_override(
     version = "0.63.0",
 )
 
+# Enable Benchmark's mutex annotations with Clang and libc++.
+# https://github.com/google/benchmark/commit/82a895089
+# Remove when the selected Benchmark release includes this fix.
+single_version_override(
+    module_name = "google_benchmark",
+    patch_strip = 1,
+    patches = ["//tools:benchmark-thread-safety.patch"],
+)
+
 ### LLVM
 # TODO: try using "llvm-raw" from BCR
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
