@@ -24,6 +24,7 @@ import (
 
 	"github.com/containerd/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -65,6 +66,9 @@ const (
 // /var/lib/kubelet/pods/{uid}/volumes/{type} where `uid` is the pod UID and
 // `type` is the volume type.
 var kubeletPodsDir = "/var/lib/kubelet/pods"
+
+// statfs is unix.Statfs. It is a variable so tests can override it.
+var statfs = unix.Statfs
 
 // volumeName gets volume name from volume annotation key, example:
 //
@@ -126,6 +130,11 @@ func volumeShareKey(volume string) string {
 	return volumeKeyPrefix + volume + ".share"
 }
 
+// volumeOptionsKey constructs the annotation key for volume mount options.
+func volumeOptionsKey(volume string) string {
+	return volumeKeyPrefix + volume + ".options"
+}
+
 // volumePath searches the volume path in the kubelet pod directory.
 func volumePath(volume, uid string) (string, error) {
 	// TODO: Support subpath when gvisor supports pod volume bind mount.
@@ -167,6 +176,14 @@ func isVolumePath(volume, path string) (bool, error) {
 //   - tmpfs annotation type + tmpfs mount type = memory-backed EmptyDir
 //   - tmpfs annotation type + bind mount type = disk-backed EmptyDir
 //
+// Note about EmptyDir sizes:
+// For memory-backed EmptyDirs, the kubelet mounts a tmpfs on the host volume
+// directory, sized to the smallest of the EmptyDir's sizeLimit, the pod's
+// memory limit and the node's allocatable memory. runsc doesn't use that
+// mount. It mounts a sandbox-internal tmpfs instead, which would otherwise
+// default to half of the total memory. So the host tmpfs size is added as a
+// "size" option to the "options" mount annotation, unless one is already set.
+//
 // NOTE(b/416567832): Some CSI drivers (like GCS FUSE driver) use EmptyDirs to
 // communicate with the Pod over a UDS. While not foolproof, we detect such
 // EmptyDirs by checking if the host directory is not empty and turn off the
@@ -186,6 +203,7 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 			// consumed from this container's spec. So fix mount annotations by:
 			// 1. Adding source annotation.
 			// 2. Fixing type annotation.
+			// 3. Adding size option for memory-backed EmptyDirs.
 			uid, err := PodUID(s, "")
 			if err != nil {
 				// Skip if we can't get pod UID, because this doesn't work
@@ -202,6 +220,10 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 				empty := isEmptyDirEmpty(path)
 				if !forceShared && empty {
 					s.Annotations[k] = "tmpfs" // See note about EmptyDir.
+					if v == "tmpfs" {
+						// Memory-backed EmptyDir. See note about EmptyDir sizes.
+						setSizeFromHostTmpfs(s.Annotations, volume, path)
+					}
 				} else {
 					// The EmptyDir was either forced to be shared by annotation
 					// or it is non-empty. Configure it as a bind mount.
@@ -313,6 +335,69 @@ func isEmptyDirEmpty(path string) bool {
 	return false
 }
 
+// hostTmpfsSize returns the size limit in bytes of the host tmpfs containing
+// path. It returns false if path is not on a tmpfs, or if the tmpfs has no size
+// limit.
+func hostTmpfsSize(path string) (uint64, bool) {
+	var st unix.Statfs_t
+	if err := statfs(path, &st); err != nil {
+		log.L.Warningf("Failed to statfs %q to get its tmpfs size: %v", path, err)
+		return 0, false
+	}
+	if st.Type != unix.TMPFS_MAGIC {
+		return 0, false
+	}
+	// f_blocks is in units of f_frsize, which equals f_bsize for tmpfs. Fall
+	// back to f_bsize in case f_frsize isn't set.
+	blockSize := uint64(st.Frsize)
+	if blockSize == 0 {
+		blockSize = uint64(st.Bsize)
+	}
+	// A tmpfs mounted with size=0 has no size limit and reports f_blocks=0.
+	if st.Blocks == 0 || blockSize == 0 {
+		return 0, false
+	}
+	return st.Blocks * blockSize, true
+}
+
+// withSizeOption returns the comma-separated mount options in opts with a
+// "size" option for size bytes appended. opts is returned unchanged if it
+// already has a "size" option.
+func withSizeOption(opts string, size uint64) string {
+	if opts == "" {
+		return fmt.Sprintf("size=%d", size)
+	}
+	for _, o := range strings.Split(opts, ",") {
+		if strings.HasPrefix(o, "size=") {
+			return opts
+		}
+	}
+	return fmt.Sprintf("%s,size=%d", opts, size)
+}
+
+// setSizeFromHostTmpfs adds the size of the host tmpfs containing hostPath, if
+// any, as a "size" option to the mount options annotation of volume. This
+// makes the sandbox-internal tmpfs that replaces the host mount enforce the
+// same size limit. A "size" option already in the annotation takes precedence.
+//
+// This calls statfs(2) on hostPath, so hostPath must not be on a FUSE
+// filesystem whose server may be unresponsive.
+func setSizeFromHostTmpfs(annotations map[string]string, volume, hostPath string) {
+	size, ok := hostTmpfsSize(hostPath)
+	if !ok {
+		return
+	}
+	key := volumeOptionsKey(volume)
+	opts := annotations[key]
+	newOpts := withSizeOption(opts, size)
+	if newOpts == opts {
+		log.L.Infof("Volume %q already has a size option in %q, ignoring host tmpfs size %d of %q", volume, opts, size, hostPath)
+		return
+	}
+	log.L.Infof("Setting size of volume %q to %d bytes, matching host tmpfs %q", volume, size, hostPath)
+	annotations[key] = newOpts
+}
+
 // configureShm sets up annotations to mount /dev/shm as a pod shared tmpfs
 // mount inside containers.
 //
@@ -321,7 +406,8 @@ func isEmptyDirEmpty(path string) bool {
 // converted to a tmpfs mount inside the sandbox, otherwise shm_open(3) doesn't
 // use it (see where_is_shmfs() in glibc). Mount annotation hints are used to
 // instruct runsc to mount the same tmpfs volume in all containers inside the
-// pod.
+// pod. If the host path is a size-limited tmpfs, the sandbox tmpfs gets the
+// same size limit.
 func configureShm(s *specs.Spec) (bool, error) {
 	const (
 		shmPath    = "/dev/shm"
@@ -356,6 +442,10 @@ func configureShm(s *specs.Spec) (bool, error) {
 				// inside the sandbox anyways) and apply options to subcontainers as
 				// they bind mount individually.
 				s.Annotations[volumeKeyPrefix+devshmName+".options"] = "rw"
+				// The host /dev/shm is usually a size-limited tmpfs, e.g. containerd
+				// mounts a 64MiB tmpfs for each pod. Apply the same limit inside the
+				// sandbox.
+				setSizeFromHostTmpfs(s.Annotations, devshmName, m.Source)
 				updated = true
 			}
 
