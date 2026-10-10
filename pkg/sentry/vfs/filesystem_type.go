@@ -40,6 +40,8 @@ type FilesystemType interface {
 }
 
 // GetFilesystemOptions contains options to FilesystemType.GetFilesystem.
+//
+// +stateify savable
 type GetFilesystemOptions struct {
 	// InternalMount indicates whether the mount operation is coming from the
 	// application, i.e. through mount(2). If InternalMount is true, allow the use
@@ -54,7 +56,7 @@ type GetFilesystemOptions struct {
 	// InternalData holds opaque FilesystemType-specific data. There is
 	// intentionally no way for applications to specify InternalData; if it is
 	// not nil, the call to GetFilesystem originates from within the sentry.
-	InternalData any
+	InternalData any `state:"nosave"`
 }
 
 // +stateify savable
