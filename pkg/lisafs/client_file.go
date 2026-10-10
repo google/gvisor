@@ -17,6 +17,7 @@ package lisafs
 import (
 	"fmt"
 	"io"
+	"math"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -595,6 +596,12 @@ func (f *ClientFD) GetXattr(ctx context.Context, name string, size uint64) (stri
 
 // SetXattr makes the FSetXattr RPC.
 func (f *ClientFD) SetXattr(ctx context.Context, name string, value string, flags uint32) error {
+	// This is a shortcoming of lisafs, specifically its dependence on
+	// lisafs.SizedString which encodes size with uint16, making it incapable of
+	// carrying a string sized 65536 (2^16), which is a valid value for setxattr.
+	if len(value) > math.MaxUint16 {
+		return unix.E2BIG
+	}
 	req := FSetXattrReq{
 		FD:    f.fd,
 		Name:  SizedString(name),
