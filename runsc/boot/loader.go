@@ -1331,6 +1331,8 @@ func (l *Loader) installSeccompFilters() error {
 // Run runs the root container.
 //
 // +checklocksexclude:l.mu
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) Run() error {
 	err := l.run()
 	l.ctrl.manager.startResultChan <- err
@@ -1346,6 +1348,8 @@ func (l *Loader) Run() error {
 }
 
 // +checklocksexclude:l.mu
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) run() error {
 	if l.root.conf.Network == config.NetworkHost {
 		// Delay host network configuration to this point because network namespace
@@ -1523,6 +1527,8 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // for the caller to close any remaining files upon return.
 //
 // +checklocksexclude:l.mu
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf, rootfsUpperTarFD *fd.FD) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1655,6 +1661,8 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 }
 
 // +checklocks:l.mu
+// +checklocksexclude:l.fsRestore.apfl.amflsMu
+// +checklocksexclude:l.fsRestore.apfl.mu
 func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
