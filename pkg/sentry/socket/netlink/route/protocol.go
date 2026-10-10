@@ -466,7 +466,29 @@ func parseForDestination(msg *nlmsg.Message) (uint8, []byte, *syserr.Error) {
 			return rtMsg.Family, value[:addrSize], nil
 		}
 	}
-	return 0, nil, syserr.ErrInvalidArgument
+	return rtMsg.Family, make([]byte, addrSize), nil
+}
+
+func loopbackRoute(stack inet.Stack, dst []byte) (inet.Route, bool) {
+	if !bytes.Equal(dst, header.IPv4Any.AsSlice()) {
+		return inet.Route{}, false
+	}
+	for id, iface := range stack.Interfaces() {
+		if (iface.Flags & linux.IFF_LOOPBACK) != 0 {
+			return inet.Route{
+				Family:          linux.AF_INET,
+				OutputInterface: id,
+				Scope:           linux.RT_SCOPE_UNIVERSE,
+				Type:            linux.RTN_LOCAL,
+				Protocol:        linux.RTPROT_UNSPEC,
+				Table:           linux.RT_TABLE_MAIN,
+				DstAddr:         dst,
+				DstLen:          32,
+				Flags:           linux.RTM_F_CLONED,
+			}, true
+		}
+	}
+	return inet.Route{}, false
 }
 
 // newRoute handles RTM_NEWROUTE requests.
@@ -518,7 +540,10 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 		if err != nil {
 			return err
 		}
-		route, err := fillRoute(routeTables, family, dst)
+		route, ok := loopbackRoute(stack, dst)
+		if !ok {
+			route, err = fillRoute(routeTables, family, dst)
+		}
 		if FallbackNonHostRoutes && err != nil {
 			for _, id := range stack.InterfaceIDs() {
 				iface := stack.Interfaces()[id]
