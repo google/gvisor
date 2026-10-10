@@ -15,6 +15,8 @@
 #include "test/syscalls/linux/socket_unix_peercred.h"
 
 #include <errno.h>
+#include <grp.h>
+#include <limits.h>
 #include <linux/capability.h>
 #include <sched.h>
 #include <signal.h>
@@ -27,9 +29,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -49,6 +53,10 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+#ifndef SO_PEERGROUPS
+#define SO_PEERGROUPS 59
+#endif
 
 void AssertCredSetTo(struct ucred peerCreds, pid_t pid, uid_t uid, gid_t gid) {
   ASSERT_EQ(peerCreds.pid, pid);
@@ -484,6 +492,173 @@ TEST(UnixSocketPeerCredRaceTest, SendCredsRacesWithPeerReap) {
   const int err = sender_errno.load(std::memory_order_relaxed);
   EXPECT_EQ(err, 0) << "sendmsg failed with unexpected error: "
                     << strerror(err);
+}
+
+// GetGroups returns the supplementary groups of the calling process, sorted.
+PosixErrorOr<std::vector<gid_t>> GetGroups() {
+  int n = getgroups(0, nullptr);
+  if (n < 0) {
+    return PosixError(errno, "getgroups(0)");
+  }
+  std::vector<gid_t> groups(n);
+  n = getgroups(groups.size(), groups.data());
+  if (n < 0) {
+    return PosixError(errno, "getgroups");
+  }
+  groups.resize(n);
+  std::sort(groups.begin(), groups.end());
+  return groups;
+}
+
+// GetPeerGroups returns the result of SO_PEERGROUPS on fd, sorted.
+PosixErrorOr<std::vector<gid_t>> GetPeerGroups(int fd) {
+  std::vector<gid_t> groups(NGROUPS_MAX);
+  socklen_t len = groups.size() * sizeof(gid_t);
+  if (getsockopt(fd, SOL_SOCKET, SO_PEERGROUPS, groups.data(), &len) < 0) {
+    return PosixError(errno, "getsockopt(SO_PEERGROUPS)");
+  }
+  if (len % sizeof(gid_t) != 0) {
+    return PosixError(EINVAL, "bad SO_PEERGROUPS length");
+  }
+  groups.resize(len / sizeof(gid_t));
+  std::sort(groups.begin(), groups.end());
+  return groups;
+}
+
+TEST_P(UnixSocketPeerCredTest, GetPeerGroups) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  const std::vector<gid_t> groups = ASSERT_NO_ERRNO_AND_VALUE(GetGroups());
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetPeerGroups(sockets->first_fd())),
+            groups);
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetPeerGroups(sockets->second_fd())),
+            groups);
+}
+
+// SO_PEERGROUPS fails with ERANGE when the buffer can't hold every group, and
+// reports the size it needs in optlen.
+TEST_P(UnixSocketPeerCredTest, PeerGroupsBufferTooSmall) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+
+  const std::vector<gid_t> groups = {1001, 1002, 1003};
+  const socklen_t want_len = groups.size() * sizeof(gid_t);
+  const auto fn = [&] {
+    TEST_PCHECK(setgroups(groups.size(), groups.data()) == 0);
+    auto sockets = NewSocketPair();
+    TEST_CHECK(sockets.ok());
+    const int fd = sockets.ValueOrDie()->first_fd();
+
+    gid_t buf[8] = {};
+    socklen_t len = 0;
+    TEST_CHECK(getsockopt(fd, SOL_SOCKET, SO_PEERGROUPS, buf, &len) == -1);
+    TEST_PCHECK(errno == ERANGE);
+    TEST_CHECK(len == want_len);
+
+    len = want_len - 1;
+    TEST_CHECK(getsockopt(fd, SOL_SOCKET, SO_PEERGROUPS, buf, &len) == -1);
+    TEST_PCHECK(errno == ERANGE);
+    TEST_CHECK(len == want_len);
+
+    // An exact or larger buffer succeeds, and optlen is set to the size used.
+    for (socklen_t buf_len : {want_len, static_cast<socklen_t>(sizeof(buf))}) {
+      len = buf_len;
+      TEST_PCHECK(getsockopt(fd, SOL_SOCKET, SO_PEERGROUPS, buf, &len) == 0);
+      TEST_CHECK(len == want_len);
+      std::vector<gid_t> got(buf, buf + groups.size());
+      std::sort(got.begin(), got.end());
+      TEST_CHECK(got == groups);
+    }
+  };
+  EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
+}
+
+// SO_PEERGROUPS reports the groups each side had when the connection was
+// made, and doesn't follow later setgroups(2) calls.
+TEST_P(UnixSocketPeerCredTest, PeerGroupsCapturedAtConnect) {
+  if (GetParam().type != SOCK_STREAM) {
+    GTEST_SKIP() << "Test requires SOCK_STREAM";
+  }
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+
+  const std::vector<gid_t> server_groups =
+      ASSERT_NO_ERRNO_AND_VALUE(GetGroups());
+  const std::vector<gid_t> client_groups = {1001, 1002};
+  const std::vector<gid_t> later_groups = {2001};
+
+  auto addr = ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
+  auto server_socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_THAT(bind(server_socket.get(), AsSockAddr(&addr), sizeof(addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(server_socket.get(), 5), SyscallSucceeds());
+
+  // The listening socket reports its own groups, like SO_PEERCRED.
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetPeerGroups(server_socket.get())),
+            server_groups);
+
+  int pipe_fd[2];
+  ASSERT_THAT(pipe(pipe_fd), SyscallSucceeds());
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    TEST_PCHECK(close(pipe_fd[0]) == 0);
+    TEST_PCHECK(setgroups(client_groups.size(), client_groups.data()) == 0);
+    int s = socket(AF_UNIX, SOCK_STREAM, 0);
+    TEST_PCHECK(s >= 0);
+    TEST_PCHECK(connect(s, AsSockAddr(&addr), sizeof(addr)) == 0);
+    auto got = GetPeerGroups(s);
+    TEST_CHECK(got.ok());
+    TEST_CHECK(got.ValueOrDie() == server_groups);
+
+    // Change our groups after connecting. The server must not see this.
+    TEST_PCHECK(setgroups(later_groups.size(), later_groups.data()) == 0);
+    char ok = 1;
+    TEST_PCHECK(write(pipe_fd[1], &ok, sizeof(ok)) == sizeof(ok));
+    TEST_PCHECK(close(pipe_fd[1]) == 0);
+
+    // Wait for the server to close the connection.
+    char c;
+    while (read(s, &c, sizeof(c)) > 0) {
+    }
+    _exit(0);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  ASSERT_THAT(close(pipe_fd[1]), SyscallSucceeds());
+
+  char ok = 0;
+  ASSERT_THAT(read(pipe_fd[0], &ok, sizeof(ok)),
+              SyscallSucceedsWithValue(sizeof(ok)));
+  ASSERT_THAT(close(pipe_fd[0]), SyscallSucceeds());
+
+  {
+    auto accepted_socket = ASSERT_NO_ERRNO_AND_VALUE(
+        Accept(server_socket.get(), nullptr, nullptr));
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetPeerGroups(accepted_socket.get())),
+              client_groups);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "child exited abnormally: status=" << status;
+}
+
+// Unlike SO_PEERCRED, SO_PEERGROUPS fails with ENODATA when there is no peer.
+TEST(UnixSocketPeerGroupsTest, NotConnected) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  gid_t buf[8];
+  socklen_t len = sizeof(buf);
+  EXPECT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_PEERGROUPS, buf, &len),
+              SyscallFailsWithErrno(ENODATA));
+}
+
+// Only unix sockets carry peer credentials.
+TEST(UnixSocketPeerGroupsTest, NotUnixSocket) {
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  gid_t buf[8];
+  socklen_t len = sizeof(buf);
+  EXPECT_THAT(getsockopt(s.get(), SOL_SOCKET, SO_PEERGROUPS, buf, &len),
+              SyscallFailsWithErrno(ENODATA));
 }
 
 }  // namespace
