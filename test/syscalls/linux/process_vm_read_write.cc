@@ -312,6 +312,41 @@ TEST_P(ProcessVMTest, TestWritevSubProcess) {
   close(pipefd[1]);
 }
 
+// Linux validates and imports the local iovecs and returns 0 for an empty
+// local transfer before examining the remote iovecs at all, and returns 0 for
+// an empty remote transfer before looking up the target task; see
+// mm/process_vm_access.c:process_vm_rw().
+TEST(ProcessVMInvalidTest, EmptyTransferPrecedesRemoteValidation) {
+  char buf[8] = {};
+  struct iovec zero_len = {buf, 0};
+  struct iovec valid = {buf, sizeof(buf)};
+  struct iovec* bad_iovec = reinterpret_cast<struct iovec*>(1);
+
+  // An empty local transfer returns 0 even with an invalid remote iovec
+  // pointer or an excessive remote count.
+  EXPECT_THAT(process_vm_readv(getpid(), &zero_len, 1, bad_iovec, 1, 0),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(process_vm_readv(getpid(), nullptr, 0, bad_iovec, 1, 0),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(process_vm_readv(getpid(), &zero_len, 1, &valid, IOV_MAX + 1, 0),
+              SyscallSucceedsWithValue(0));
+
+  // An invalid local iovec pointer fails with EFAULT even with an empty
+  // remote transfer.
+  EXPECT_THAT(process_vm_readv(getpid(), bad_iovec, 1, nullptr, 0, 0),
+              SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(process_vm_readv(getpid(), bad_iovec, 1, &zero_len, 1, 0),
+              SyscallFailsWithErrno(EFAULT));
+
+  // An empty transfer in either direction returns 0 even for a nonexistent
+  // target pid.
+  pid_t const absent = 0x7fffffff;
+  EXPECT_THAT(process_vm_readv(absent, &zero_len, 1, &valid, 1, 0),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(process_vm_readv(absent, &valid, 1, &zero_len, 1, 0),
+              SyscallSucceedsWithValue(0));
+}
+
 TEST(ProcessVMInvalidTest, NonZeroFlags) {
   struct iovec iov = {};
   // Flags should be 0.
