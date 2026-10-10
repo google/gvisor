@@ -14,6 +14,7 @@
 
 #include <signal.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
 #include <cstdint>
 
@@ -116,6 +117,34 @@ TEST(ExceptionTest, Halt) {
   EXPECT_EXIT(Halt(), ::testing::KilledBySignal(SIGILL), "");
 #endif
 }
+
+#if defined(__x86_64__)
+void ExitIfSiKernelHandler(int sig, siginfo_t* info, void* ctx) {
+  _exit(info->si_code == SI_KERNEL ? 0 : 1);
+}
+
+// A general protection fault is not a page fault and reports SI_KERNEL.
+TEST(ExceptionTest, HaltIsSiKernel) {
+  struct sigaction sa = {};
+  sa.sa_sigaction = ExitIfSiKernelHandler;
+  sa.sa_flags = SA_SIGINFO;
+  auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGSEGV, sa));
+
+  EXPECT_EXIT(Halt(), ::testing::ExitedWithCode(0), "");
+}
+
+// So does an access to a non-canonical address.
+TEST(ExceptionTest, NonCanonicalAccessIsSiKernel) {
+  struct sigaction sa = {};
+  sa.sa_sigaction = ExitIfSiKernelHandler;
+  sa.sa_flags = SA_SIGINFO;
+  auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGSEGV, sa));
+
+  constexpr uintptr_t kNonCanonicalAddress = 0x8000000000000000;
+  EXPECT_EXIT(*reinterpret_cast<volatile char*>(kNonCanonicalAddress) = 1,
+              ::testing::ExitedWithCode(0), "");
+}
+#endif
 
 #if defined(__x86_64__)
 TEST(ExceptionTest, DivideByZero) {

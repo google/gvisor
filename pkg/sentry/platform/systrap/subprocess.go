@@ -931,8 +931,11 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 		return false, false, hostarch.NoAccess, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
 	}
 
+	// Only page faults carry an access type. Other SIGSEGVs, e.g. general
+	// protection faults (SI_KERNEL), have unrelated bits in SigError.
 	at = hostarch.NoAccess
-	if c.signalInfo.Signo == int32(linux.SIGSEGV) {
+	if c.signalInfo.Signo == int32(linux.SIGSEGV) &&
+		(c.signalInfo.Code == linux.SEGV_MAPERR || c.signalInfo.Code == linux.SEGV_ACCERR) {
 		at = sigErrorToAccessType(ctx.shared.SigError)
 	}
 	return false, false, at, nil

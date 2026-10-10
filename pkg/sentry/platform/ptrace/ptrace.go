@@ -182,6 +182,12 @@ restart:
 		goto restart
 	}
 
+	// Only page faults carry an access type. Other SIGSEGVs, e.g. general
+	// protection faults (SI_KERNEL), are delivered as plain signals.
+	if si.Code != linux.SEGV_MAPERR && si.Code != linux.SEGV_ACCERR {
+		return &si, hostarch.NoAccess, platform.ErrContextSignal
+	}
+
 	// Got a page fault. Ideally, we'd get real fault type here, but ptrace
 	// doesn't expose this information. Instead, we use a simple heuristic:
 	//
