@@ -97,9 +97,6 @@ const (
 	// hostPTYHostFD is the FD number on the host that is passed to the sandbox.
 	// FDs passed via ExtraFiles start at 3.
 	hostPTYHostFD = 3
-
-	// uniqueXMLSuffix is the suffix for individual per-testcase XML outputs.
-	uniqueXMLSuffix = ".unique.xml"
 )
 
 // getSetupContainerPath returns the path to the setup_container binary.
@@ -1260,45 +1257,6 @@ func main() {
 	}
 
 	testing.Main(matchString, tests, nil, nil)
-}
-
-func collateXMLs(origXML string) error {
-	matches, err := filepath.Glob(origXML + ".*" + uniqueXMLSuffix)
-	if err != nil {
-		return fmt.Errorf("failed to glob individual XML files: %v", err)
-	}
-	if len(matches) == 0 {
-		return nil
-	}
-
-	f, err := os.Create(origXML)
-	if err != nil {
-		return fmt.Errorf("failed to create collated XML file %s: %v", origXML, err)
-	}
-	defer f.Close()
-	fmt.Fprintln(f, `<?xml version="1.0" encoding="UTF-8"?><testsuites name="AllTests"><testsuite name="Collated">`)
-
-	for _, m := range matches {
-		data, err := os.ReadFile(m)
-		if err != nil {
-			return fmt.Errorf("failed to read unique XML file %s: %v", m, err)
-		}
-		s := string(data)
-		start := strings.Index(s, "<testcase")
-		end := strings.LastIndex(s, "</testcase>")
-
-		if start >= 0 && end >= 0 {
-			fmt.Fprintln(f, s[start:end+len("</testcase>")])
-		} else if start >= 0 {
-			end = strings.Index(s[start:], "/>")
-			if end >= 0 {
-				fmt.Fprintln(f, s[start:start+end+2])
-			}
-		}
-	}
-
-	fmt.Fprintln(f, `</testsuite></testsuites>`)
-	return nil
 }
 
 func enableAllTraces(dir string) (string, error) {
