@@ -515,7 +515,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	var rootfsUpperTarFile *os.File
 	if path := specutils.RootfsTarUpperPath(spec); path != "" {
 		var err error
-		rootfsUpperTarFile, err = os.OpenFile(path, os.O_RDONLY, 0644)
+		rootfsUpperTarFile, err = os.OpenFile(path, rootfsUpperTarFlags(path), 0644)
 		if err != nil {
 			return fmt.Errorf("opening rootfs upper tar file: %v", err)
 		}
@@ -1104,7 +1104,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if err := donations.DonateLogFile("final-metrics-log-fd", conf.FinalMetricsLog, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, lfOpts); err != nil {
 		return fmt.Errorf("donating final metrics log file: %w", err)
 	}
-	if err := donations.DonateLogFile("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec), os.O_RDONLY, lfOpts); err != nil {
+	rootfsTarPath := specutils.RootfsTarUpperPath(args.Spec)
+	if err := donations.DonateLogFile("rootfs-upper-tar-fd", rootfsTarPath, rootfsUpperTarFlags(rootfsTarPath), lfOpts); err != nil {
 		return fmt.Errorf("donating rootfs tar file: %w", err)
 	}
 
@@ -2920,4 +2921,22 @@ func (s *Sandbox) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
 		return nil, fmt.Errorf("error getting network config (CID: %q): %w", s.ID, err)
 	}
 	return &networkArgs, nil
+}
+
+func isProcFDPath(p string) bool {
+	for _, prefix := range []string{"/proc/self/fd/", "/proc/thread-self/fd/", "/dev/fd/"} {
+		if suffix, ok := strings.CutPrefix(p, prefix); ok {
+			_, err := strconv.ParseUint(suffix, 10, 31)
+			return err == nil
+		}
+	}
+	return false
+}
+
+func rootfsUpperTarFlags(p string) int {
+	flags := os.O_RDONLY
+	if !isProcFDPath(p) {
+		flags |= unix.O_NOFOLLOW
+	}
+	return flags
 }
