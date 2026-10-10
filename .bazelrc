@@ -15,6 +15,10 @@
 # Ensure a strong hash function.
 startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
 
+# Start Python programs with the declared interpreter, without requiring a host
+# Python interpreter to bootstrap it.
+build --@rules_python//python/config_settings:bootstrap_impl=script
+
 # Build with C++17.
 # com_google_protobuf is compiled with a few warnings.
 build --cxxopt=-std=c++17 --cxxopt=-Wno-error=maybe-uninitialized
