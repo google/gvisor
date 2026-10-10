@@ -1083,6 +1083,18 @@
   license:
     - Apache-2.0
     - MIT
+- dependency: libbpf
+  version: https://github.com/libbpf/libbpf/archive/refs/tags/v1.7.0.tar.gz
+  retrieved: "2026-09-26"
+  commit: f5dcbae736e5d7f83a35718e01be1a8e3010fa39
+  sha256: 7ab5feffbf78557f626f2e3e3204788528394494715a30fc2070fcddc2051b7b
+  license: BSD-2-Clause
+- dependency: llvm
+  version: https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.24/hermetic-llvm-v0.8.24.tar.gz
+  retrieved: "2026-10-02"
+  commit: 39e71f9391895169b05ccd62cbb1956ae5322ff3
+  sha256: 64d421959bba30cb3bcdd1e57a01b8ef2f12b93db3d1ab4a34fe5f4d2ca78aa4
+  license: MIT
 - dependency: llvm-raw
   version: https://github.com/llvm/llvm-project/archive/cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f.tar.gz
   retrieved: "2026-08-27"
@@ -1116,10 +1128,10 @@
   sha256: 26dc6db523ee943af51fdfc292658a2dbe7046735654f1dc839745988f0fe26b
   license: Apache-2.0
 - dependency: rules_cc
-  version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.22/rules_cc-0.2.22.tar.gz
-  retrieved: "2026-10-06"
-  commit: 21e14308c2afc7691f43295acc9852d9a6844f04
-  sha256: 81c10a95a5c22d838276ee90d712635d6042419fdfca5ef88328226b6321e53b
+  version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.25/rules_cc-0.2.25.tar.gz
+  retrieved: "2026-10-02"
+  commit: 77064f0caa37d0fb2232f54feb5fba275aeebbd3
+  sha256: bd7124a844d0403b4b353bcea34d6c8b2ba88dc26881c26c9ee668da89b71846
   license: Apache-2.0
 - dependency: rules_go
   version: https://github.com/bazel-contrib/rules_go/releases/download/v0.63.0/rules_go-v0.63.0.zip
@@ -1187,8 +1199,8 @@
   sha256: 58dddbe703a26df30f79a6335ab13f4a4a0c128dc2f9371ec7a4722e12f258cc
   license: Apache-2.0
 - dependency: zstd
-  version: https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz
-  retrieved: "2026-08-27"
-  commit: 63779c798237346c2b245c546c40b72a5a5913fe
-  sha256: 9c4396cc829cfae319a6e2615202e82aad41372073482fce286fac78646d3ee4
+  version: https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+  retrieved: "2026-10-02"
+  commit: f8745da6ff1ad1e7bab384bd1f9d742439278e99
+  sha256: eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
   license: BSD-3-Clause
