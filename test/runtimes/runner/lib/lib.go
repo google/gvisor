@@ -159,7 +159,9 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 		})
 	}
 	containerProctor := "/proctor/" + filepath.Base(proctorSettings.Runner)
-	d.CopyFiles(&opts, "/proctor", proctorSettings.Runner)
+	if err := d.CopyFiles(&opts, "/proctor", proctorSettings.Runner); err != nil {
+		return nil, fmt.Errorf("copy proctor: %w", err)
+	}
 	if err := d.Spawn(ctx, opts, containerProctor, "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}

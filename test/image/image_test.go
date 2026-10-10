@@ -160,7 +160,9 @@ func TestHttpd(t *testing.T) {
 	opts := dockerutil.RunOpts{
 		Image: "basic/httpd",
 	}
-	d.CopyFiles(&opts, "/usr/local/apache2/htdocs", "test/image/latin10k.txt")
+	if err := d.CopyFiles(&opts, "/usr/local/apache2/htdocs", "test/image/latin10k.txt"); err != nil {
+		t.Fatalf("copy HTTP test input: %v", err)
+	}
 	if err := d.Spawn(ctx, opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -189,7 +191,9 @@ func TestNginx(t *testing.T) {
 	opts := dockerutil.RunOpts{
 		Image: "basic/nginx",
 	}
-	d.CopyFiles(&opts, "/usr/share/nginx/html", "test/image/latin10k.txt")
+	if err := d.CopyFiles(&opts, "/usr/share/nginx/html", "test/image/latin10k.txt"); err != nil {
+		t.Fatalf("copy HTTP test input: %v", err)
+	}
 	if err := d.Spawn(ctx, opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
@@ -239,7 +243,9 @@ func TestMysql(t *testing.T) {
 		Image: "basic/mysql",
 		Links: []string{server.MakeLink("mysql")},
 	}
-	client.CopyFiles(&opts, "/sql", "test/image/mysql.sql")
+	if err := client.CopyFiles(&opts, "/sql", "test/image/mysql.sql"); err != nil {
+		t.Fatalf("copy SQL test input: %v", err)
+	}
 	if _, err := client.Run(ctx, opts, "mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
