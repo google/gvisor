@@ -18,12 +18,14 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
+	"gvisor.dev/gvisor/pkg/syncevent"
 )
 
 func newTestSharedContext(t *testing.T) *sharedContext {
@@ -117,6 +119,131 @@ func TestSleepOnStateRecoveredContext(t *testing.T) {
 	}
 }
 
+func emptyContextQueue(sc *sharedContext) {
+	q := sc.subprocess.contextQueue
+	atomic.StoreUint32(&q.end, atomic.LoadUint32(&q.start))
+}
+
+// sleepOnStateBounded fails the test instead of hanging if the wait never
+// returns.
+func sleepOnStateBounded(t *testing.T, sc *sharedContext, stuckTimeout, checkupTimeout time.Duration) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- sc.sleepOnStateWithTimeout(sysmsg.ContextStateNone, stuckTimeout, checkupTimeout) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(10 * time.Second):
+		sc.setState(sysmsg.ContextStateSyscall)
+		<-done
+		t.Fatalf("sleepOnStateWithTimeout did not return")
+		return nil
+	}
+}
+
+func TestSleepOnStateRequestedInterruptEmptyQueue(t *testing.T) {
+	sc := newTestSharedContext(t)
+	emptyContextQueue(sc)
+	sc.NotifyInterrupt()
+	// Clear the guest-writable flag so only sentry-side state drives the resend.
+	atomic.StoreUint32(&sc.shared.Interrupt, 0)
+
+	err := sleepOnStateBounded(t, sc, 15*time.Millisecond, 10*time.Millisecond)
+	if !errors.Is(err, errStuckContext) {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want %v", err, errStuckContext)
+	}
+	if atomic.LoadUint32(&sc.shared.Interrupt) == 0 {
+		t.Fatalf("interrupt was not resent")
+	}
+}
+
+func TestSleepOnStateRequestedInterruptRecovers(t *testing.T) {
+	sc := newTestSharedContext(t)
+	emptyContextQueue(sc)
+	sc.NotifyInterrupt()
+	atomic.StoreUint32(&sc.shared.Interrupt, 0)
+
+	recovered := make(chan struct{})
+	go func() {
+		defer close(recovered)
+		for atomic.LoadUint32(&sc.shared.Interrupt) == 0 {
+			if sc.state() != sysmsg.ContextStateNone {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		sc.setState(sysmsg.ContextStateSyscall)
+	}()
+	err := sleepOnStateBounded(t, sc, 5*time.Second, 10*time.Millisecond)
+	<-recovered
+	if err != nil {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want nil", err)
+	}
+}
+
+func TestSleepOnStateEmptyQueueAfterClearInterrupt(t *testing.T) {
+	sc := newTestSharedContext(t)
+	emptyContextQueue(sc)
+	// A request cleared by the previous switch must not interrupt the next run.
+	sc.NotifyInterrupt()
+	sc.clearInterrupt()
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		sc.setState(sysmsg.ContextStateSyscall)
+	}()
+	if err := sleepOnStateBounded(t, sc, 5*time.Millisecond, 5*time.Millisecond); err != nil {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want nil", err)
+	}
+	if atomic.LoadUint32(&sc.shared.Interrupt) != 0 {
+		t.Fatalf("stub was interrupted with an empty queue and no requested interrupt")
+	}
+}
+
+func TestStuckState(t *testing.T) {
+	sc := newTestSharedContext(t)
+	sc.subprocess.sysmsgThreads[1].msg = &sysmsg.Msg{Line: 42}
+	if got := sc.stuckState(); !strings.Contains(got, "line 42") {
+		t.Fatalf("stuckState got %q, want the stub line", got)
+	}
+	delete(sc.subprocess.sysmsgThreads, 1)
+	if got := sc.stuckState(); !strings.HasSuffix(got, "no stub thread") {
+		t.Fatalf("stuckState without a stub thread got %q, want no stub thread", got)
+	}
+}
+
+func TestDispatcherSlowPathUnderChurn(t *testing.T) {
+	initSleepTimeouts()
+	enabled := fastpath.sentryFastPathEnabled.Load()
+	fastpath.sentryFastPathEnabled.Store(true)
+	// Other contexts completing on every pass keep the dispatcher from ever
+	// idling into the slow path; model that by making the idle timeout
+	// unreachable.
+	idle := deepSleepTimeout
+	deepSleepTimeout = ^uint64(0)
+	defer func() {
+		deepSleepTimeout = idle
+		fastpath.sentryFastPathEnabled.Store(enabled)
+	}()
+
+	stuck := newTestSharedContext(t)
+	stuck.sync.Init()
+	stuck.startWaitingTS = cputicks()
+
+	got := make(chan syncevent.Set, 1)
+	go func() { got <- dispatcher.waitFor(stuck) }()
+	select {
+	case events := <-got:
+		if events&sharedContextSlowPath == 0 {
+			t.Fatalf("stuck context got events %v, want sharedContextSlowPath", events)
+		}
+	case <-time.After(5 * time.Second):
+		stuck.setState(sysmsg.ContextStateSyscall)
+		<-got
+		t.Fatalf("stuck context was never handed to the slow path")
+	}
+}
+
 func TestSleepOnStateDeadSubprocess(t *testing.T) {
 	sc := newTestSharedContext(t)
 	sc.subprocess.dead.Store(true)
@@ -202,4 +329,56 @@ func TestStuckSubprocessHelper(t *testing.T) {
 		return
 	}
 	select {}
+}
+
+func TestSleepOnStateUnackedStalledQueue(t *testing.T) {
+	sc := newTestSharedContext(t)
+	atomic.StoreUint64(&sc.shared.AckedTime, 0)
+
+	err := sleepOnStateBounded(t, sc, 15*time.Millisecond, 10*time.Millisecond)
+	if !errors.Is(err, errStuckContext) {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want %v", err, errStuckContext)
+	}
+}
+
+func TestSleepOnStateUnackedProgressingQueue(t *testing.T) {
+	sc := newTestSharedContext(t)
+	atomic.StoreUint64(&sc.shared.AckedTime, 0)
+	q := sc.subprocess.contextQueue
+
+	go func() {
+		for i := 0; i < 20; i++ {
+			time.Sleep(5 * time.Millisecond)
+			atomic.AddUint32(&q.end, 1)
+			atomic.AddUint32(&q.start, 1)
+		}
+		sc.setState(sysmsg.ContextStateSyscall)
+	}()
+	if err := sleepOnStateBounded(t, sc, 30*time.Millisecond, 10*time.Millisecond); err != nil {
+		t.Fatalf("sleepOnStateWithTimeout got error %v, want nil", err)
+	}
+}
+
+func TestSleepOnStateKeepStuckContexts(t *testing.T) {
+	sc := newTestSharedContext(t)
+	sc.subprocess.sysmsgThreads[1].msg = &sysmsg.Msg{}
+	atomic.StoreUint64(&sc.shared.AckedTime, 0)
+	oldTimeout, oldKeep := stuckContextTimeout, keepStuckContexts
+	stuckContextTimeout, keepStuckContexts = 15*time.Millisecond, true
+	t.Cleanup(func() { stuckContextTimeout, keepStuckContexts = oldTimeout, oldKeep })
+
+	done := make(chan error, 1)
+	go func() { done <- sc.sleepOnState(sc.state()) }()
+	select {
+	case err := <-done:
+		t.Fatalf("sleepOnState returned %v while the context was stuck, want it to keep waiting", err)
+	case <-time.After(10 * stuckContextTimeout):
+	}
+	sc.setState(sysmsg.ContextStateSyscall)
+	if err := <-done; err != nil {
+		t.Fatalf("sleepOnState got error %v, want nil", err)
+	}
+	if sc.subprocess.dead.Load() {
+		t.Fatalf("subprocess was killed with keepStuckContexts set")
+	}
 }

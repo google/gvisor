@@ -457,6 +457,10 @@ type Config struct {
 	// SystrapDisableFastPath disables the Systrap fast path entirely.
 	SystrapDisableFastPath bool `flag:"systrap-disable-fast-path"`
 
+	// SystrapStuckContextTimeout is how long a Systrap context may stay stuck
+	// before its subprocess is killed. Zero disables the kill.
+	SystrapStuckContextTimeout time.Duration `flag:"systrap-stuck-context-timeout"`
+
 	// Nftables enables support for nftables to be used instead of iptables.
 	Nftables bool `flag:"TESTONLY-nftables"`
 
@@ -517,6 +521,9 @@ func (c *Config) Validate() error {
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
+	}
+	if c.SystrapStuckContextTimeout < 0 {
+		return fmt.Errorf("systrap-stuck-context-timeout must be >= 0, got: %v", c.SystrapStuckContextTimeout)
 	}
 	if c.PauseExternalNetworking && c.Network != NetworkSandbox {
 		return fmt.Errorf("pause-external-networking flag is only supported with sandbox networking")

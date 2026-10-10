@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -63,6 +64,9 @@ type sharedContext struct {
 	kicked         bool
 	// The task associated with the context fell asleep.
 	sleeping bool
+	// interruptRequested is set while the sentry wants the running context
+	// interrupted. Unlike shared.Interrupt, the stub cannot modify it.
+	interruptRequested atomicbitops.Bool
 }
 
 // String returns the ID of this shared context.
@@ -159,6 +163,24 @@ func (sc *sharedContext) interruptStub() (*thread, error) {
 	}
 }
 
+// stuckState describes the context and its stub thread for debugging.
+func (sc *sharedContext) stuckState() string {
+	threadID := sc.threadID()
+	desc := fmt.Sprintf("state %v interrupt %d thread %d last thread %d acked %d state changed %d",
+		sc.state(), atomic.LoadUint32(&sc.shared.Interrupt), threadID,
+		atomic.LoadUint32(&sc.shared.LastThreadID), atomic.LoadUint64(&sc.shared.AckedTime),
+		atomic.LoadUint64(&sc.shared.StateChangedTime))
+	s := sc.subprocess
+	s.sysmsgThreadsMu.RLock()
+	defer s.sysmsgThreadsMu.RUnlock()
+	t, ok := s.sysmsgThreads[threadID]
+	if !ok {
+		return desc + ", no stub thread"
+	}
+	return fmt.Sprintf("%s, stub %d state %v err %d line %d debug %x", desc, t.thread.tid, t.msg.State.Get(),
+		atomic.LoadInt32(&t.msg.Err), atomic.LoadInt32(&t.msg.Line), atomic.LoadUint64(&t.msg.Debug))
+}
+
 // killSubprocess marks the subprocess dead and kills its syscall thread.
 func (sc *sharedContext) killSubprocess() {
 	sc.subprocess.kill()
@@ -166,6 +188,7 @@ func (sc *sharedContext) killSubprocess() {
 
 // NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
 func (sc *sharedContext) NotifyInterrupt() {
+	sc.interruptRequested.Store(true)
 	t, err := sc.interruptStub()
 	if err == errStubThreadGone {
 		sc.subprocess.syscallThread.thread.Warningf("Cannot interrupt stub thread %sas it no longer exists; killing syscall thread.", *t.loadLogPrefix())
@@ -186,6 +209,7 @@ func (sc *sharedContext) setInterrupt() {
 }
 
 func (sc *sharedContext) clearInterrupt() {
+	sc.interruptRequested.Store(false)
 	atomic.StoreUint32(&sc.shared.Interrupt, 0)
 }
 
@@ -249,7 +273,11 @@ func (sc *sharedContext) resetLatencyMeasures() {
 const (
 	contextPreemptTimeout = 10 * time.Millisecond
 	contextCheckupTimeout = 5 * time.Second
-	stuckContextTimeout   = 30 * time.Second
+)
+
+var (
+	stuckContextTimeout = 30 * time.Second
+	keepStuckContexts   bool
 )
 
 var (
@@ -264,34 +292,55 @@ var (
 )
 
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
-	err := sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout)
-	switch err {
-	case errStuckContext:
-		log.TracebackAll(fmt.Sprintf("Systrap context is stuck; killing its subprocess. ThreadContext: %v", sc))
-		sc.killSubprocess()
-		return errDeadSubprocess
-	case errStubThreadGone, errNoStubThread:
-		log.Warningf("Stub thread no longer exists; killing subprocess. ThreadContext: %v", sc)
-		sc.killSubprocess()
-		return errDeadSubprocess
+	for stuck := 0; ; stuck++ {
+		err := sc.sleepOnStateWithTimeout(state, stuckContextTimeout, contextCheckupTimeout)
+		switch err {
+		case errStuckContext:
+			if !keepStuckContexts {
+				log.TracebackAll(fmt.Sprintf("Systrap context is stuck; killing its subprocess. ThreadContext: %v, %s", sc, sc.stuckState()))
+				sc.killSubprocess()
+				return errDeadSubprocess
+			}
+			if stuck == 0 {
+				log.TracebackAll(fmt.Sprintf("Systrap context is stuck; still waiting. ThreadContext: %v, %s", sc, sc.stuckState()))
+			} else {
+				log.Warningf("Systrap context still stuck after %v. ThreadContext: %v", time.Duration(stuck+1)*stuckContextTimeout, sc)
+			}
+			continue
+		case errStubThreadGone, errNoStubThread:
+			log.Warningf("Stub thread no longer exists; killing subprocess. ThreadContext: %v", sc)
+			sc.killSubprocess()
+			return errDeadSubprocess
+		}
+		return err
 	}
-	return err
 }
 
 func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuckTimeout, checkupTimeout time.Duration) error {
 	timeout := unix.NsecToTimespec(contextPreemptTimeout.Nanoseconds())
 	interruptsSent := 0
 	deadline := time.Now().Add(stuckTimeout)
+	queueStart := atomic.LoadUint32(&sc.subprocess.contextQueue.start)
+	queueDeadline := deadline
 	for sc.state() == state {
 		if sc.subprocess.dead.Load() {
 			return errDeadSubprocess
 		}
 		errno := sc.shared.SleepOnState(state, &timeout)
+		if errno != 0 && errno != unix.ETIMEDOUT {
+			panic(fmt.Sprintf("error waiting for state: %v", errno))
+		}
+		// No stub took any context for the whole deadline, so none will take this one.
+		if !sc.isAcked() {
+			if start := atomic.LoadUint32(&sc.subprocess.contextQueue.start); start != queueStart {
+				queueStart = start
+				queueDeadline = time.Now().Add(stuckTimeout)
+			} else if time.Now().After(queueDeadline) && sc.state() == state {
+				return errStuckContext
+			}
+		}
 		if errno == 0 {
 			continue
-		}
-		if errno != unix.ETIMEDOUT {
-			panic(fmt.Sprintf("error waiting for state: %v", errno))
 		}
 		if !sc.subprocess.alive() {
 			return errDeadSubprocess
@@ -303,7 +352,7 @@ func (sc *sharedContext) sleepOnStateWithTimeout(state sysmsg.ContextState, stuc
 			}
 			return errStuckContext
 		}
-		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
+		if !sc.isAcked() || (sc.subprocess.contextQueue.isEmpty() && !sc.interruptRequested.Load()) {
 			continue
 		}
 		if _, err := sc.interruptStub(); err != nil {
@@ -377,6 +426,9 @@ const (
 var (
 	deepSleepTimeout uint64
 	handshakeTimeout uint64
+	// fastPathMaxWait bounds how long the dispatcher polls one context before
+	// handing it to the slow path, where a stuck stub is detected.
+	fastPathMaxWait uint64
 )
 
 // initSleepTimeouts converts deepSleepTimeoutNS and handshakeTimeoutNS from
@@ -391,6 +443,7 @@ func initSleepTimeouts() {
 	const nsPerSec = uint64(1000000000)
 	deepSleepTimeout = max(1, freq*deepSleepTimeoutNS/nsPerSec)
 	handshakeTimeout = max(1, freq*handshakeTimeoutNS/nsPerSec)
+	fastPathMaxWait = max(1, freq*uint64(contextPreemptTimeout.Nanoseconds())/nsPerSec)
 }
 
 // loop is processing contexts in the queue. Only one instance of it can be
@@ -429,7 +482,7 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 
 			event := sharedContextReady
 			if ctx.state() == sysmsg.ContextStateNone {
-				if slowPath {
+				if slowPath || uint64(now-ctx.startWaitingTS) > fastPathMaxWait {
 					event = sharedContextSlowPath
 				} else if !ctx.kicked && uint64(now-ctx.startWaitingTS) > handshakeTimeout {
 					if ctx.isAcked() {
