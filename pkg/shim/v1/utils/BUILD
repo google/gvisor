@@ -9,6 +9,7 @@ go_library(
     name = "utils",
     srcs = [
         "annotations.go",
+        "cleanup.go",
         "fuse.go",
         "utils.go",
         "volumes.go",
@@ -29,6 +30,7 @@ go_test(
     name = "utils_test",
     size = "small",
     srcs = [
+        "cleanup_test.go",
         "fuse_test.go",
         "volumes_test.go",
     ],
@@ -37,5 +39,6 @@ go_test(
         "//runsc/specutils",
         "@com_github_mohae_deepcopy//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

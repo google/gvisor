@@ -30,6 +30,7 @@ go_library(
         "//pkg/shim/v1/extension",
         "//pkg/shim/v1/runsccmd",
         "//pkg/shim/v1/utils",
+        "//runsc/gvisorbinaries",
         "@com_github_containerd_console//:go_default_library",
         "@com_github_containerd_containerd_v2//core/mount:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/protobuf/types:go_default_library",
@@ -49,12 +50,14 @@ go_test(
     size = "small",
     srcs = [
         "init_kill_test.go",
+        "init_runtime_test.go",
         "init_state_test.go",
         "update_test.go",
         "utils_test.go",
     ],
     embed = [":proc"],
     deps = [
+        "//pkg/shim/v1/extension",
         "//pkg/shim/v1/runsccmd",
         "@com_github_containerd_console//:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/protobuf/types:go_default_library",
