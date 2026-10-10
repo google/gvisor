@@ -17,7 +17,7 @@ package tcp
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -387,15 +387,23 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		s.ep.gso.MSS = uint16(m)
 	}
 
+	// Sender initialization creates the scoreboard after selecting the MSS;
+	// restored senders already have one and may retain queued data.
+	if s.ep.scoreboard != nil {
+		s.ep.scoreboard.smss = uint16(m)
+	}
+	// Rebase every credited entry, including ones beyond a rewound
+	// retransmission cursor. This is also needed after restore.
+	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
+		if seg.acked {
+			s.SackedOut -= s.pCount(seg, oldMSS)
+			s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
+		}
+	}
 	if count == 0 {
-		// updateMaxPayloadSize is also called when the sender is created.
-		// and there is no data to send in such cases. Return immediately.
+		// Initialization and restore do not request retransmission here.
 		return
 	}
-
-	// Update the scoreboard's smss to reflect the new lowered
-	// maxPayloadSize.
-	s.ep.scoreboard.smss = uint16(m)
 
 	s.Outstanding -= count
 	if s.Outstanding < 0 {
@@ -416,12 +424,6 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 			// We found a segment exceeding the MTU. Rewind
 			// writeNext and try to retransmit it.
 			nextSeg = seg
-		}
-
-		if s.ep.SACKPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
-			// Update sackedOut for new maximum payload size.
-			s.SackedOut -= s.pCount(seg, oldMSS)
-			s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
 		}
 	}
 
@@ -655,7 +657,7 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	// NOTE: We take the stricter interpretation and just expunge all
 	// information as we lack more rigorous checks to validate if the SACK
 	// information is usable after an RTO.
-	s.ep.scoreboard.Reset()
+	s.resetSACK()
 	s.updateWriteNext(s.writeList.Front())
 
 	// RFC 1122 4.2.2.17: Start sending zero window probes when we still see a
@@ -683,6 +685,16 @@ func (s *sender) retransmitTimerExpired() tcpip.Error {
 	return nil
 }
 
+// resetSACK discards the scoreboard and the credits associated with its ranges.
+// +checklocks:s.ep.mu
+func (s *sender) resetSACK() {
+	s.ep.scoreboard.Reset()
+	s.SackedOut = 0
+	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
+		seg.acked = false
+	}
+}
+
 // pCount returns the number of packets in the segment. Due to GSO, a segment
 // can be composed of multiple packets.
 func (s *sender) pCount(seg *segment, maxPayloadSize int) int {
@@ -702,7 +714,8 @@ func (s *sender) splitSeg(seg *segment, size int) {
 	if seg.payloadSize() <= size {
 		return
 	}
-	// Split this segment up.
+	// Split this segment up, preserving any existing selective ACK credit.
+	oldPackets := s.pCount(seg, s.MaxPayloadSize)
 	nSeg := seg.clone()
 	nSeg.pkt.Data().TrimFront(size)
 	nSeg.sequenceNumber.UpdateForward(seqnum.Size(size))
@@ -718,9 +731,12 @@ func (s *sender) splitSeg(seg *segment, size int) {
 	// ref: net/ipv4/tcp_output.c::tcp_write_xmit(), tcp_mss_split_point()
 	// ref: net/ipv4/tcp_output.c::tcp_write_wakeup(), tcp_snd_wnd_test()
 	if seg.payloadSize() > s.MaxPayloadSize {
-		seg.flags ^= header.TCPFlagPsh
+		seg.flags &^= header.TCPFlagPsh
 	}
 	seg.pkt.Data().CapLength(size)
+	if seg.acked {
+		s.SackedOut += s.pCount(seg, s.MaxPayloadSize) + s.pCount(nSeg, s.MaxPayloadSize) - oldPackets
+	}
 }
 
 // NextSeg implements the RFC6675 NextSeg() operation.
@@ -1148,7 +1164,6 @@ func (s *sender) enterRecovery() {
 	// We inflate the cwnd by 3 to account for the 3 packets which triggered
 	// the 3 duplicate ACKs and are now not in flight.
 	s.SndCwnd = s.Ssthresh + 3
-	s.SackedOut = 0
 	s.DupAckCount = 0
 	s.FastRecovery.First = s.SndUna
 	s.FastRecovery.Last = s.SndNxt - 1
@@ -1341,9 +1356,9 @@ func (s *sender) isDupAck(seg *segment) bool {
 		s.SndWnd == seg.window
 }
 
-// Iterate the writeList and update RACK for each segment which is newly acked
-// either cumulatively or selectively. Loop through the segments which are
-// sacked, and update the RACK related variables and check for reordering.
+// walkSACK tags selectively acknowledged queue entries and records their
+// packet credit. When RACK is enabled, it also updates its delivery and
+// reordering state for newly acknowledged entries.
 // Returns true when the DSACK block has been detected in the received ACK.
 //
 // See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
@@ -1377,21 +1392,67 @@ func (s *sender) walkSACK(rcvdSeg *segment) bool {
 
 	// Sort the SACK blocks. The first block is the most recent unacked
 	// block. The following blocks can be in arbitrary order.
-	sackBlocks := make([]header.SACKBlock, n)
-	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks[idx:])
-	sort.Slice(sackBlocks, func(i, j int) bool {
-		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
+	sackBlocks := make([]header.SACKBlock, 0, n)
+	for _, sb := range rcvdSeg.parsedOptions.SACKBlocks[idx:] {
+		// Bound every incoming block to the current flight before lookup.
+		// Ignore ranges that the scoreboard did not retain.
+		if !s.isValidSACKBlock(sb, rcvdSeg.ackNumber) {
+			continue
+		}
+		if retained, ok := s.ep.scoreboard.sackedBlock(sb); ok {
+			// Overlapping partial blocks may cover an MSS only after merging.
+			// This ACK may also make a prefix cumulative; retirement below
+			// removes that prefix's credit from the retained range.
+			sackBlocks = append(sackBlocks, retained)
+		}
+	}
+	slices.SortFunc(sackBlocks, func(a, b header.SACKBlock) int {
+		if a.Start.LessThan(b.Start) {
+			return -1
+		}
+		if b.Start.LessThan(a.Start) {
+			return 1
+		}
+		return 0
 	})
 
 	seg := s.writeList.Front()
 	for _, sb := range sackBlocks {
-		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 {
-			if sb.Start.LessThanEq(seg.sequenceNumber) && !seg.acked {
+		for seg != nil && seg.sequenceNumber.LessThan(sb.End) && seg.xmitCount != 0 && seg.payloadSize() != 0 {
+			if seg.acked || seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())).LessThanEq(sb.Start) {
+				seg = seg.Next()
+				continue
+			}
+			// A GSO segment can cover several wire packets. Split only at
+			// MSS boundaries so the credited entry is entirely SACKed.
+			// See Linux tcp_match_skb_to_sack:
+			// https://github.com/torvalds/linux/blob/e5f0a698b/net/ipv4/tcp_input.c#L1334-L1388
+			if seg.sequenceNumber.LessThan(sb.Start) {
+				prefix := int(seg.sequenceNumber.Size(sb.Start))
+				prefix = ((prefix-1)/s.MaxPayloadSize + 1) * s.MaxPayloadSize
+				if prefix >= seg.payloadSize() {
+					seg = seg.Next()
+					continue
+				}
+				s.splitSeg(seg, prefix)
+				seg = seg.Next()
+				if !seg.sequenceNumber.LessThan(sb.End) {
+					break
+				}
+			}
+			if sb.End.LessThan(seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))) {
+				prefix := int(seg.sequenceNumber.Size(sb.End)) / s.MaxPayloadSize * s.MaxPayloadSize
+				if prefix == 0 {
+					break
+				}
+				s.splitSeg(seg, prefix)
+			}
+			if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
 				s.rc.update(seg, rcvdSeg)
 				s.rc.detectReorder(seg)
-				seg.acked = true
-				s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
 			}
+			seg.acked = true
+			s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
 			seg = seg.Next()
 		}
 	}
@@ -1530,6 +1591,12 @@ func (s *sender) inRecovery() bool {
 	return false
 }
 
+// isValidSACKBlock checks whether a non-DSACK range is within the current flight.
+// +checklocks:s.ep.mu
+func (s *sender) isValidSACKBlock(sb header.SACKBlock, ack seqnum.Value) bool {
+	return ack.LessThan(sb.Start) && s.SndUna.LessThan(sb.Start) && sb.Start.LessThan(sb.End) && sb.End.LessThanEq(s.SndNxt)
+}
+
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 // +checklocks:s.ep.mu
@@ -1569,7 +1636,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 			// NOTE: This check specifically excludes DSACK blocks
 			// which have start/end before sndUna and are used to
 			// indicate spurious retransmissions.
-			if rcvdSeg.ackNumber.LessThan(sb.Start) && s.SndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.SndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
+			if s.isValidSACKBlock(sb, rcvdSeg.ackNumber) && !s.ep.scoreboard.IsSACKED(sb) {
 				s.ep.scoreboard.Insert(sb)
 				rcvdSeg.hasNewSACKInfo = true
 			}
@@ -1588,12 +1655,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		//		unacknowledged and also never retransmitted sequence below
 		//		RACK.fack, then the corresponding packet has been
 		//		reordered and RACK.reord is set to TRUE.
-		if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
-			hasDSACK = s.walkSACK(rcvdSeg)
-		}
+		hasDSACK = s.walkSACK(rcvdSeg)
 		s.SetPipe()
 	}
 
+	// SetPipe excluded SACKed data only if this ACK arrived during recovery.
+	// Keep that accounting mode even if the ACK below leaves recovery.
+	sackedExcluded := s.ep.SACKPermitted && s.FastRecovery.Active
 	ack := rcvdSeg.ackNumber
 	fastRetransmit := false
 	// Do not leave fast recovery, if the ACK is out of range.
@@ -1690,7 +1758,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 				prevCount := s.pCount(seg, s.MaxPayloadSize)
 				seg.TrimFront(ackLeft)
 				seg.sequenceNumber.UpdateForward(ackLeft)
-				s.Outstanding -= prevCount - s.pCount(seg, s.MaxPayloadSize)
+				retired := prevCount - s.pCount(seg, s.MaxPayloadSize)
+				if seg.acked {
+					s.SackedOut -= retired
+				}
+				if !seg.acked || !sackedExcluded {
+					s.Outstanding -= retired
+				}
 				break
 			}
 
@@ -1706,13 +1780,13 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 
 			s.writeList.Remove(seg)
 
-			// If SACK is enabled then only reduce outstanding if
-			// the segment was not previously SACKED as these have
-			// already been accounted for in SetPipe().
-			if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
-				s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
-			} else {
+			// Retire the same credit recorded when the segment was tagged.
+			// Outside recovery, it is also still included in Outstanding.
+			if seg.acked {
 				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
+			}
+			if !seg.acked || !sackedExcluded {
+				s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
 			}
 			seg.DecRef()
 			ackLeft -= datalen
