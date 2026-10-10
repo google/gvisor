@@ -897,7 +897,7 @@ func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime ti
 
 			state := offLinkRouteState{
 				prf:             prf,
-				invalidationJob: ndp.newOffLinkRouteInvalidationJob(route),
+				invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.offLinkRouteInvalidationFunc(route)),
 			}
 
 			state.invalidationJob.Schedule(lifetime)
@@ -926,10 +926,10 @@ func (ndp *ndpState) handleOffLinkRouteDiscovery(route offLinkRoute, lifetime ti
 	}
 }
 
-func (ndp *ndpState) newOffLinkRouteInvalidationJob(route offLinkRoute) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
-		ndp.invalidateOffLinkRoute(route) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-	})
+func (ndp *ndpState) offLinkRouteInvalidationFunc(route offLinkRoute) func() {
+	return func() {
+		ndp.invalidateOffLinkRoute(route) // +checklocksforce: Job calls back with ndp.ep.mu held.
+	}
 }
 
 // rememberOnLinkPrefix remembers a newly discovered on-link prefix with IPv6
@@ -948,7 +948,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	ndpDisp.OnOnLinkPrefixDiscovered(ndp.ep.nic.ID(), prefix)
 
 	state := onLinkPrefixState{
-		invalidationJob: ndp.newOnLinkPrefixInvalidationJob(prefix),
+		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.onLinkPrefixInvalidationFunc(prefix)),
 	}
 
 	if l < header.NDPInfiniteLifetime {
@@ -958,10 +958,10 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	ndp.onLinkPrefixes[prefix] = state
 }
 
-func (ndp *ndpState) newOnLinkPrefixInvalidationJob(prefix tcpip.Subnet) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
-		ndp.invalidateOnLinkPrefix(prefix) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-	})
+func (ndp *ndpState) onLinkPrefixInvalidationFunc(prefix tcpip.Subnet) func() {
+	return func() {
+		ndp.invalidateOnLinkPrefix(prefix) // +checklocksforce: Job calls back with ndp.ep.mu held.
+	}
 }
 
 // invalidateOnLinkPrefix invalidates a discovered on-link prefix.
@@ -1102,8 +1102,8 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	}
 
 	state := slaacPrefixState{
-		deprecationJob:        ndp.newSLAACPrefixDeprecationJob(prefix),
-		invalidationJob:       ndp.newSLAACPrefixInvalidationJob(prefix),
+		deprecationJob:        tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.slaacPrefixDeprecationFunc(prefix)),
+		invalidationJob:       tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.slaacPrefixInvalidationFunc(prefix)),
 		tempAddrs:             make(map[tcpip.Address]tempSLAACAddrState),
 		maxGenerationAttempts: ndp.configs.AutoGenAddressConflictRetries + 1,
 	}
@@ -1150,26 +1150,26 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	ndp.slaacPrefixes[prefix] = state
 }
 
-func (ndp *ndpState) newSLAACPrefixDeprecationJob(prefix tcpip.Subnet) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
+func (ndp *ndpState) slaacPrefixDeprecationFunc(prefix tcpip.Subnet) func() {
+	return func() {
 		state, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the deprecated SLAAC prefix %s", prefix))
 		}
 
-		ndp.deprecateSLAACAddress(state.stableAddr.addressEndpoint) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-	})
+		ndp.deprecateSLAACAddress(state.stableAddr.addressEndpoint) // +checklocksforce: Job calls back with ndp.ep.mu held.
+	}
 }
 
-func (ndp *ndpState) newSLAACPrefixInvalidationJob(prefix tcpip.Subnet) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
+func (ndp *ndpState) slaacPrefixInvalidationFunc(prefix tcpip.Subnet) func() {
+	return func() {
 		state, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for the invalidated SLAAC prefix %s", prefix))
 		}
 
-		ndp.invalidateSLAACPrefix(prefix, state) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-	})
+		ndp.invalidateSLAACPrefix(prefix, state) // +checklocksforce: Job calls back with ndp.ep.mu held.
+	}
 }
 
 // addAndAcquireSLAACAddr adds a SLAAC address to the IPv6 endpoint.
@@ -1410,9 +1410,9 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	}
 
 	state := tempSLAACAddrState{
-		deprecationJob:  ndp.newTempSLAACAddrDeprecationJob(prefix, generatedAddr),
-		invalidationJob: ndp.newTempSLAACAddrInvalidationJob(prefix, generatedAddr),
-		regenJob:        ndp.newTempSLAACAddrRegenJob(prefix, generatedAddr),
+		deprecationJob:  tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.tempSLAACAddrDeprecationFunc(prefix, generatedAddr)),
+		invalidationJob: tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.tempSLAACAddrInvalidationFunc(prefix, generatedAddr)),
+		regenJob:        tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, ndp.tempSLAACAddrRegenFunc(prefix, generatedAddr)),
 		createdAt:       now,
 		addressEndpoint: addressEndpoint,
 	}
@@ -1427,8 +1427,8 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	return true
 }
 
-func (ndp *ndpState) newTempSLAACAddrDeprecationJob(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
+func (ndp *ndpState) tempSLAACAddrDeprecationFunc(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) func() {
+	return func() {
 		prefixState, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to deprecate temporary address %s", prefix, generatedAddr))
@@ -1439,12 +1439,12 @@ func (ndp *ndpState) newTempSLAACAddrDeprecationJob(prefix tcpip.Subnet, generat
 			panic(fmt.Sprintf("ndp: must have a tempAddr entry to deprecate temporary address %s", generatedAddr))
 		}
 
-		ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-	})
+		ndp.deprecateSLAACAddress(tempAddrState.addressEndpoint) // +checklocksforce: Job calls back with ndp.ep.mu held.
+	}
 }
 
-func (ndp *ndpState) newTempSLAACAddrInvalidationJob(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
+func (ndp *ndpState) tempSLAACAddrInvalidationFunc(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) func() {
+	return func() {
 		prefixState, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to invalidate temporary address %s", prefix, generatedAddr))
@@ -1455,12 +1455,12 @@ func (ndp *ndpState) newTempSLAACAddrInvalidationJob(prefix tcpip.Subnet, genera
 			panic(fmt.Sprintf("ndp: must have a tempAddr entry to invalidate temporary address %s", generatedAddr))
 		}
 
-		ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-	})
+		ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState) // +checklocksforce: Job calls back with ndp.ep.mu held.
+	}
 }
 
-func (ndp *ndpState) newTempSLAACAddrRegenJob(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) *tcpip.Job {
-	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
+func (ndp *ndpState) tempSLAACAddrRegenFunc(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) func() {
+	return func() {
 		prefixState, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to regenerate temporary address after %s", prefix, generatedAddr))
@@ -1479,10 +1479,10 @@ func (ndp *ndpState) newTempSLAACAddrRegenJob(prefix tcpip.Subnet, generatedAddr
 
 		// Reset the generation attempts counter as we are starting the generation
 		// of a new address for the SLAAC prefix.
-		tempAddrState.regenerated = ndp.generateTempSLAACAddr(prefix, &prefixState, true /* resetGenAttempts */) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
+		tempAddrState.regenerated = ndp.generateTempSLAACAddr(prefix, &prefixState, true /* resetGenAttempts */) // +checklocksforce: Job calls back with ndp.ep.mu held.
 		prefixState.tempAddrs[generatedAddr.Address] = tempAddrState
 		ndp.slaacPrefixes[prefix] = prefixState
-	})
+	}
 }
 
 // regenerateTempSLAACAddr regenerates a temporary address for a SLAAC prefix.
@@ -2022,24 +2022,20 @@ func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 func (ndp *ndpState) restore() {
 	ndp.dad.Restore(&ndp.ep.mu, ndp.ep.protocol.stack.SecureRNG().Reader)
 	for route, state := range ndp.offLinkRoutes {
-		state.invalidationJob = ndp.newOffLinkRouteInvalidationJob(route)
-		ndp.offLinkRoutes[route] = state
+		state.invalidationJob.Restore(&ndp.ep.mu, ndp.offLinkRouteInvalidationFunc(route))
 	}
 	for prefix, state := range ndp.onLinkPrefixes {
-		state.invalidationJob = ndp.newOnLinkPrefixInvalidationJob(prefix)
-		ndp.onLinkPrefixes[prefix] = state
+		state.invalidationJob.Restore(&ndp.ep.mu, ndp.onLinkPrefixInvalidationFunc(prefix))
 	}
 	for prefix, state := range ndp.slaacPrefixes {
-		state.deprecationJob = ndp.newSLAACPrefixDeprecationJob(prefix)
-		state.invalidationJob = ndp.newSLAACPrefixInvalidationJob(prefix)
-		for addr, tempState := range state.tempAddrs {
+		state.deprecationJob.Restore(&ndp.ep.mu, ndp.slaacPrefixDeprecationFunc(prefix))
+		state.invalidationJob.Restore(&ndp.ep.mu, ndp.slaacPrefixInvalidationFunc(prefix))
+		for _, tempState := range state.tempAddrs {
 			generatedAddr := tempState.addressEndpoint.AddressWithPrefix()
-			tempState.deprecationJob = ndp.newTempSLAACAddrDeprecationJob(prefix, generatedAddr)
-			tempState.invalidationJob = ndp.newTempSLAACAddrInvalidationJob(prefix, generatedAddr)
-			tempState.regenJob = ndp.newTempSLAACAddrRegenJob(prefix, generatedAddr)
-			state.tempAddrs[addr] = tempState
+			tempState.deprecationJob.Restore(&ndp.ep.mu, ndp.tempSLAACAddrDeprecationFunc(prefix, generatedAddr))
+			tempState.invalidationJob.Restore(&ndp.ep.mu, ndp.tempSLAACAddrInvalidationFunc(prefix, generatedAddr))
+			tempState.regenJob.Restore(&ndp.ep.mu, ndp.tempSLAACAddrRegenFunc(prefix, generatedAddr))
 		}
-		ndp.slaacPrefixes[prefix] = state
 	}
 	if ndp.rtrSolicitTimer.done != nil && !*ndp.rtrSolicitTimer.done {
 		ndp.rtrSolicitTimer = timer{}
