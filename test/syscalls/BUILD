@@ -1382,6 +1382,7 @@ syscall_test(
     test = "//test/syscalls/linux:close_range_test",
 )
 
+# Internal socket-option tests depend on these generated test targets.
 syscall_test(
     save = False,
     test = "//test/syscalls/linux:socketopt_test",
