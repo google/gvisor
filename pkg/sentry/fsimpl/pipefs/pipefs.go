@@ -113,8 +113,8 @@ func newInode(ctx context.Context, fs *filesystem) *inode {
 	return &inode{
 		pipe:  pipe.NewVFSPipe(false /* isNamed */, pipe.DefaultPipeSize),
 		ino:   fs.Filesystem.NextIno(),
-		uid:   creds.EffectiveKUID,
-		gid:   creds.EffectiveKGID,
+		uid:   creds.FilesystemKUID,
+		gid:   creds.FilesystemKGID,
 		ctime: ktime.NowFromContext(ctx),
 	}
 }

@@ -85,8 +85,8 @@ func (fstype *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	fsOpts := fileSystemOpts{
 		mode:     defaultReplicaMode,
 		ptmxMode: defaultPtmxMode,
-		uid:      creds.EffectiveKUID,
-		gid:      creds.EffectiveKGID,
+		uid:      creds.FilesystemKUID,
+		gid:      creds.FilesystemKGID,
 	}
 	if modeStr, ok := mopts["mode"]; ok {
 		delete(mopts, "mode")
@@ -310,7 +310,7 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 	}
 	// The uid and gid options name the owner of a replica. Without them it is
 	// owned by whoever created it. See fs/devpts/inode.c:devpts_pty_new().
-	uid, gid := creds.EffectiveKUID, creds.EffectiveKGID
+	uid, gid := creds.FilesystemKUID, creds.FilesystemKGID
 	if i.opts.setuid {
 		uid = i.opts.uid
 	}

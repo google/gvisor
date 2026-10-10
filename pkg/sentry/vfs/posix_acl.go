@@ -166,7 +166,7 @@ func (a *PosixACL) Mode() (uint16, bool) {
 // passes indicates whether the permission check succeeds.
 func (a *PosixACL) checkUserWithMask(creds *auth.Credentials, ats AccessTypes) (found bool, passes bool) {
 	for _, user := range a.Users {
-		if user.UID == creds.EffectiveKUID {
+		if user.UID == creds.FilesystemKUID {
 			found = true
 			if ats.checkPerms(a.masked(user.Perms)) {
 				passes = true
@@ -196,8 +196,9 @@ func (a *PosixACL) checkGroupsWithMask(creds *auth.Credentials, ats AccessTypes)
 
 // checkPermissions implements the ACL portion of the access check algorithm as described in acl(5).
 func (a *PosixACL) checkPermissions(creds *auth.Credentials, ats AccessTypes, kuid auth.KUID, kgid auth.KGID) bool {
-	// [From acl(5):]
-	if creds.EffectiveKUID == kuid {
+	// [From acl(5):] (Like Linux's posix_acl_permission(), "effective" IDs
+	// below are the filesystem IDs.)
+	if creds.FilesystemKUID == kuid {
 		// 1. if the effective user ID of the process matches
 		//    the user ID of the file object owner, then
 		if ats.checkPerms(a.UserPerms()) {

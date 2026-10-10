@@ -138,8 +138,8 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 		Opcode: opcode,
 		Unique: conn.nextOpID,
 		NodeID: ino,
-		UID:    uint32(creds.EffectiveKUID),
-		GID:    uint32(creds.EffectiveKGID),
+		UID:    uint32(creds.FilesystemKUID),
+		GID:    uint32(creds.FilesystemKGID),
 		PID:    pid,
 	}
 

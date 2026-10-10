@@ -301,7 +301,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		if parentDir.inode.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
-		childDir, err := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+		childDir, err := fs.newDirectory(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		if err != nil {
 			return err
 		}
@@ -320,13 +320,13 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		var err error
 		switch opts.Mode.FileType() {
 		case linux.S_IFREG:
-			childInode, err = fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+			childInode, err = fs.newRegularFile(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		case linux.S_IFIFO:
-			childInode, err = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+			childInode, err = fs.newNamedPipe(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		case linux.S_IFBLK, linux.S_IFCHR:
-			childInode, err = fs.newDeviceFileLocked(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
+			childInode, err = fs.newDeviceFileLocked(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
 		case linux.S_IFSOCK:
-			childInode, err = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
+			childInode, err = fs.newSocketFile(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, opts.Endpoint, parentDir)
 		default:
 			return linuxerr.EINVAL
 		}
@@ -429,7 +429,7 @@ afterTrailingSymlink:
 		defer rp.Mount().EndWrite()
 		// Create and open the child.
 		creds := rp.Credentials()
-		childInode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+		childInode, err := fs.newRegularFile(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		if err != nil {
 			return nil, err
 		}
@@ -915,7 +915,7 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 			}
 		}
 		creds := rp.Credentials()
-		childInode, err := fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target, parentDir)
+		childInode, err := fs.newSymlink(creds.FilesystemKUID, creds.FilesystemKGID, 0777, target, parentDir)
 		if err != nil {
 			return err
 		}

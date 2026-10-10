@@ -92,11 +92,11 @@ func TestStatAfterCreate(t *testing.T) {
 
 			// UID and GID are set from context creds.
 			creds := auth.CredentialsFromContext(ctx)
-			if got.UID != uint32(creds.EffectiveKUID) {
-				t.Errorf("got uid %d, want %d", got.UID, uint32(creds.EffectiveKUID))
+			if got.UID != uint32(creds.FilesystemKUID) {
+				t.Errorf("got uid %d, want %d", got.UID, uint32(creds.FilesystemKUID))
 			}
-			if got.GID != uint32(creds.EffectiveKGID) {
-				t.Errorf("got gid %d, want %d", got.GID, uint32(creds.EffectiveKGID))
+			if got.GID != uint32(creds.FilesystemKGID) {
+				t.Errorf("got gid %d, want %d", got.GID, uint32(creds.FilesystemKGID))
 			}
 
 			// Mode.
