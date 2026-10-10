@@ -2967,6 +2967,12 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 // setSockOptPacket implements the linux setsockopt(2) when the level is SOL_PACKET.
 func (s *sock) setSockOptPacket(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
+	case linux.PACKET_COPY_THRESH:
+		if len(optVal) != sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := hostarch.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PacketMMapCopyThresholdOption, int(v)))
 	case linux.PACKET_RX_RING:
 		var tpacketReq linux.TpacketReq
 		if len(optVal) < tpacketReq.SizeBytes() {
