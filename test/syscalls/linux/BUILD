@@ -2934,6 +2934,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:posix_error",
+        "//test/util:socket_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
