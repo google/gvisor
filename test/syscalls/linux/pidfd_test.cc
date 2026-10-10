@@ -555,6 +555,30 @@ TEST(PidfdTest, InvalidPidfd) {
   EXPECT_THAT(PidfdGetfd(kNotAPidfd, 0, 0), PosixErrorIs(EBADF));
 }
 
+// Only /proc/PID itself is a pidfd, not the files and directories under it.
+TEST(PidfdTest, ProcPidFdinfoIsNotAPidfd) {
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open("/proc/self/fdinfo", O_RDONLY | O_DIRECTORY));
+  EXPECT_THAT(PidfdSendSignal(fd.get(), 0, nullptr, 0),
+              SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(setns(fd.get(), 0), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(PidfdTest, ProcPidFdLinkIsNotAPidfd) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/fd/0", O_PATH | O_NOFOLLOW));
+  EXPECT_THAT(PidfdSendSignal(fd.get(), 0, nullptr, 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
+TEST(PidfdTest, ProcPidStatusIsNotAPidfd) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/status", O_RDONLY));
+  EXPECT_THAT(PidfdSendSignal(fd.get(), 0, nullptr, 0),
+              SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(setns(fd.get(), 0), SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(PidfdTest, WaitSingleState) {
   pid_t child = -1;
   auto pidfd =

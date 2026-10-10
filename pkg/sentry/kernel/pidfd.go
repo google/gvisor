@@ -298,9 +298,11 @@ func (t *Task) notifyPIDFDsLocked() {
 	}
 }
 
-// TaskOwnedInode is an interface for /proc/$pid inodes so that pidfd syscalls can
-// also work on "classic" pidfds from procfs.
+// TaskOwnedInode is implemented by inodes under /proc/$pid so that pidfd
+// syscalls can also work on "classic" pidfds from procfs.
 type TaskOwnedInode interface {
+	// TaskFromProcPIDInode returns the task if the inode is /proc/$pid itself,
+	// and nil for any other inode under it.
 	TaskFromProcPIDInode() *Task
 }
 
@@ -328,7 +330,8 @@ func taskFromProcPIDFD(vfsfd *vfs.FileDescription) (*Task, error) {
 	}
 	t := i.TaskFromProcPIDInode()
 	if t == nil {
-		return nil, linuxerr.ESRCH
+		// Only /proc/[pid] itself is a pidfd, not the files under it.
+		return nil, linuxerr.EBADF
 	}
 	return t, nil
 }
