@@ -134,3 +134,56 @@ func TestSeveredRecvSend(t *testing.T) {
 		t.Errorf("Send on severed endpoint returned %v, want %v", serr, syserr.ErrClosedForSend)
 	}
 }
+
+// TestHostSenderStreamRecvExceedsSndbuf verifies that HostSender.Recv on a
+// stream socket is not artificially capped to SO_SNDBUF when the caller supplies
+// a larger receive buffer, ensuring edge-triggered readers are not stalled.
+func TestHostSenderStreamRecvExceedsSndbuf(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("Socketpair failed: %v", err)
+	}
+	defer unix.Close(fds[1])
+
+	ep, serr := NewSCMSender(fds[0], &waiter.Queue{}, "test-stream")
+	if serr != nil {
+		unix.Close(fds[0])
+		t.Fatalf("NewSCMSender failed: %v", serr)
+	}
+	if err := ep.Init(); err != nil {
+		unix.Close(fds[0])
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer ep.Release(nil)
+
+	// Artificially clamp sndbuf to a small value so that the payload exceeds it.
+	const smallSndbuf = 4096
+	ep.sndbuf.Store(smallSndbuf)
+
+	const payloadSize = 16384
+	payload := make([]byte, payloadSize)
+	for i := range payload {
+		payload[i] = byte(i % 256)
+	}
+
+	// Write payload into peer socket.
+	n, err := unix.Write(fds[1], payload)
+	if err != nil {
+		t.Fatalf("Write to peer socket failed: %v", err)
+	}
+	if n != payloadSize {
+		t.Fatalf("Write returned %d, want %d", n, payloadSize)
+	}
+
+	// Receive with a buffer large enough for the entire payload.
+	recvBuf := make([]byte, payloadSize)
+	out, _, serr := ep.Recv(nil, [][]byte{recvBuf}, RecvArgs{})
+	if serr != nil {
+		t.Fatalf("Recv failed: %v", serr)
+	}
+
+	if out.RecvLen != payloadSize {
+		t.Fatalf("RecvLen = %d, want %d (capped to sndbuf %d?)", out.RecvLen, payloadSize, smallSndbuf)
+	}
+}
+
