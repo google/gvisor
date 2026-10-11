@@ -60,6 +60,9 @@ func TestFromFlags(t *testing.T) {
 	if err := testFlags.Lookup("num-network-channels").Value.Set("123"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
+	if err := testFlags.Lookup("clock-source").Value.Set("reference"); err != nil {
+		t.Fatal(err)
+	}
 	if err := testFlags.Lookup("network").Value.Set("none"); err != nil {
 		t.Errorf("Flag set: %v", err)
 	}
@@ -79,6 +82,9 @@ func TestFromFlags(t *testing.T) {
 	}
 	if want := 123; c.NumNetworkChannels != want {
 		t.Errorf("NumNetworkChannels=%v, want: %v", c.NumNetworkChannels, want)
+	}
+	if got, want := c.ClockSource, ClockSourceReference; got != want {
+		t.Errorf("ClockSource = %v, want %v", got, want)
 	}
 	if want := NetworkNone; c.Network != want {
 		t.Errorf("Network=%v, want: %v", c.Network, want)
@@ -108,6 +114,7 @@ func TestToFlagsFromFlags(t *testing.T) {
 	testFlags.Set("root", "some-path")
 	testFlags.Set("debug", "true")
 	testFlags.Set("profile", "false") // Matches default value.
+	testFlags.Set("clock-source", "reference")
 	testFlags.Set("num-network-channels", "123")
 	testFlags.Set("network", "none")
 	testFlags.Set("gofer-network-namespace", "host")
@@ -117,8 +124,8 @@ func TestToFlagsFromFlags(t *testing.T) {
 	}
 
 	flags := c.ToFlags()
-	if len(flags) != 6 {
-		t.Errorf("wrong number of flags set, want: 6, got: %d: %s", len(flags), flags)
+	if got, want := len(flags), 7; got != want {
+		t.Errorf("number of flags = %d, want %d: %s", got, want, flags)
 	}
 	t.Logf("Flags: %s", flags)
 	fm := map[string]string{}
@@ -130,6 +137,7 @@ func TestToFlagsFromFlags(t *testing.T) {
 		"--root":                    "some-path",
 		"--debug":                   "true",
 		"--profile":                 "false",
+		"--clock-source":            "reference",
 		"--num-network-channels":    "123",
 		"--network":                 "none",
 		"--gofer-network-namespace": "host",

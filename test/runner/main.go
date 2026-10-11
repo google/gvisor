@@ -58,6 +58,7 @@ var (
 	oneSandbox         = flag.Bool("one-sandbox", false, "run all test cases in one sandbox")
 	strace             = flag.Bool("strace", false, "enable strace logs")
 	platform           = flag.String("platform", "ptrace", "platform to run on")
+	clockSource        = flag.String("clock-source", "", "runsc clock source (empty uses the runtime default)")
 	platformSupport    = flag.String("platform-support", "", "String passed to the test as GVISOR_PLATFORM_SUPPORT environment variable. Used to determine which syscall tests are expected to work with the current platform.")
 	network            = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
 	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
@@ -427,6 +428,10 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-gvisor-gro",
 		"-host-settings=check_mandatory",
 		"-allow-suid",
+	}
+
+	if *clockSource != "" {
+		args = append(args, "-clock-source="+*clockSource)
 	}
 
 	if *network == "host" && !testutil.TestEnvSupportsNetAdmin {

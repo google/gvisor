@@ -639,6 +639,16 @@ func shouldEnableClockMonotonicRaw(spec *specs.Spec, conf *config.Config) bool {
 	return err == nil && caps&nvconf.CapProfiling != 0
 }
 
+// newClocks selects the clock source for both initial boot and restore.
+// Selection uses the destination runtime configuration, not saved calibration.
+func newClocks(spec *specs.Spec, conf *config.Config) time.Clocks {
+	rawEnabled := shouldEnableClockMonotonicRaw(spec, conf)
+	if conf.ClockSource == config.ClockSourceReference {
+		return time.NewReferenceClocks(rawEnabled)
+	}
+	return time.NewCalibratedClocks(rawEnabled)
+}
+
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
@@ -842,7 +852,7 @@ func New(args Args) (*Loader, error) {
 	// Create timekeeper.
 	tk := kernel.NewTimekeeper()
 	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamPage.FileRange())
-	tk.SetClocks(time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(args.Spec, args.Conf)), params)
+	tk.SetClocks(newClocks(args.Spec, args.Conf), params)
 	args.StartupTimer.Reached("timekeeper configured")
 
 	if err := enableStrace(args.Conf); err != nil {

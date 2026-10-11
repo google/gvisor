@@ -38,7 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -514,7 +513,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	// Load the state.
-	clocks := time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(l.root.spec, l.root.conf))
+	clocks := newClocks(l.root.spec, l.root.conf)
 	r.timer.Reached("loading kernel")
 	if r.extractRootFsMode {
 		if err := l.k.ExtractRootfsUpperLayer(ctx, r.stateFile, r.asyncMFLoader, nil, clocks, r.rootFsOutputTar); err != nil {

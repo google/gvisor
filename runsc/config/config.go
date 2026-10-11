@@ -118,6 +118,9 @@ type Config struct {
 	// mounts (the rootfs and bind mounts) are handled.
 	CharacterDevicePolicy CharacterDevicePolicy `flag:"character-device-policy"`
 
+	// ClockSource selects calibrated hardware counters or direct host clocks.
+	ClockSource ClockSource `flag:"clock-source"`
+
 	// HostSettings controls how host settings are handled.
 	HostSettings HostSettingsPolicy `flag:"host-settings"`
 
@@ -1354,6 +1357,52 @@ func (o *Overlay2) SubMountOverlaySize() string {
 // Medium returns the overlay medium config.
 func (o Overlay2) Medium() OverlayMedium {
 	return o.medium
+}
+
+// ClockSource selects the source used for application wall clocks.
+type ClockSource int
+
+// ClockSource values.
+const (
+	// ClockSourceCalibrated projects time from calibrated hardware counters.
+	ClockSourceCalibrated ClockSource = iota
+	// ClockSourceReference reads the host clocks without counter calibration.
+	ClockSourceReference
+)
+
+// Set implements flag.Value.
+func (c *ClockSource) Set(value string) error {
+	switch value {
+	case "calibrated":
+		*c = ClockSourceCalibrated
+	case "reference":
+		*c = ClockSourceReference
+	default:
+		return fmt.Errorf("invalid clock source %q", value)
+	}
+	return nil
+}
+
+// Ptr returns a pointer to c for flag registration.
+func (c ClockSource) Ptr() *ClockSource {
+	return &c
+}
+
+// Get implements flag.Get.
+func (c *ClockSource) Get() any {
+	return *c
+}
+
+// String implements flag.String.
+func (c ClockSource) String() string {
+	switch c {
+	case ClockSourceCalibrated:
+		return "calibrated"
+	case ClockSourceReference:
+		return "reference"
+	default:
+		panic(fmt.Sprintf("invalid clock source %d", c))
+	}
 }
 
 // HostSettingsPolicy dictates how host settings should be handled.
