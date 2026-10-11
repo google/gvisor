@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_importpath", "go_rule", "nogo_extra_proto_deps")
+load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -264,7 +264,8 @@ def _nogo_aspect_impl(target, ctx):
     # we should not introduce new go_tool_library dependencies unless strictly
     # necessary.
     is_binary = ctx.rule.kind in ("go_binary", "go_non_executable_binary")
-    if is_binary or ctx.rule.kind in ("go_library", "go_tool_library", "go_test"):
+    analyze_sources = is_binary or ctx.rule.kind in ("go_library", "go_tool_library", "go_test")
+    if analyze_sources:
         srcs = ctx.rule.files.srcs
         deps = ctx.rule.attr.deps
     elif ctx.rule.kind in ("go_proto_library", "go_wrap_cc"):
@@ -278,13 +279,18 @@ def _nogo_aspect_impl(target, ctx):
     else:
         return [NogoInfo()]
 
-    # If we're using the "library" attribute, then we need to aggregate the
-    # original library sources and dependencies into this target to perform
-    # proper type analysis.
+    # Match the compiler's source order: objectpath identifies named methods
+    # by their source-order index, which compiler exports preserve.
+    # https://github.com/golang/tools/blob/ea2f152dc/go/types/objectpath/objectpath.go#L718-L724
+    has_source_info = analyze_sources and go_has_source(target)
+    if has_source_info:
+        srcs = go_source_files(target)
     for embed in go_embed_libraries(ctx.rule):
         info = embed[NogoInfo]
-        if hasattr(info, "srcs"):
-            srcs = srcs + info.srcs
+        if analyze_sources and not has_source_info:
+            # Binary/test targets may expose only an archive. Retain their
+            # own sources and rules_go's prepend order for each embed.
+            srcs = go_source_files(embed) + srcs
         if hasattr(info, "deps"):
             deps = deps + info.deps
 

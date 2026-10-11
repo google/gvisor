@@ -3,7 +3,7 @@
 load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
-load("@io_bazel_rules_go//go:def.bzl", "GoArchive", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_library = "go_library", _go_path = "go_path", _go_reset_target = "go_reset_target", _go_rule = "go_rule", _go_test = "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "GoArchive", "GoInfo", "GoLibrary", _go_binary = "go_binary", _go_context = "go_context", _go_library = "go_library", _go_path = "go_path", _go_reset_target = "go_reset_target", _go_rule = "go_rule", _go_test = "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", _go_grpc_library = "go_grpc_library", _go_proto_library = "go_proto_library")
 load("//tools/bazeldefs:defs.bzl", "select_arch", "select_system")
 
@@ -92,6 +92,14 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
 def go_importpath(target):
     """Returns the importpath for the target."""
     return target[GoLibrary].importpath
+
+def go_source_files(target):
+    """Returns the canonical source membership, including source-only embeds."""
+    return target[GoInfo].srcs
+
+def go_has_source(target):
+    """Returns whether the target exposes its canonical Go source view."""
+    return GoInfo in target
 
 def go_binary_archive(target):
     """Returns compiled Go archive metadata for a binary target."""
