@@ -7051,6 +7051,10 @@ func TestSYNRetransmit(t *testing.T) {
 	// Send the same SYN packet multiple times. We should still get a valid SYN-ACK
 	// reply.
 	irs := seqnum.Value(context.TestInitialSequenceNumber)
+	// Queue every retransmission before the first SYN creates a child endpoint.
+	// Otherwise the demultiplexer can send later SYNs directly to that child.
+	listener := c.EP.(*tcp.Endpoint)
+	listener.LockUser()
 	for i := 0; i < 5; i++ {
 		c.SendPacket(nil, &context.Headers{
 			SrcPort: context.TestPort,
@@ -7060,6 +7064,7 @@ func TestSYNRetransmit(t *testing.T) {
 			RcvWnd:  30000,
 		})
 	}
+	listener.UnlockUser()
 
 	// Receive the SYN-ACK reply.
 	tcpCheckers := []checker.TransportChecker{
@@ -7071,6 +7076,15 @@ func TestSYNRetransmit(t *testing.T) {
 	v := c.GetPacket()
 	defer v.Release()
 	checker.IPv4(t, v, checker.TCP(tcpCheckers...))
+
+	// The first reply is sent while processing the listener's queue. Acquiring
+	// its lock waits for the rest of that batch to finish.
+	listener.LockUser()
+	failed := c.Stack().Stats().TCP.FailedConnectionAttempts.Value()
+	listener.UnlockUser()
+	if got, want := failed, uint64(0); got != want {
+		t.Errorf("FailedConnectionAttempts = %d, want %d", got, want)
+	}
 }
 
 func TestSynRcvdBadSeqNumber(t *testing.T) {
