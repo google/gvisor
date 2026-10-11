@@ -1277,6 +1277,7 @@ func (s *sock) getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int
 			RTTVar:      uint32(v.RTTVar / time.Microsecond),
 			SndSsthresh: v.SndSsthresh,
 			SndCwnd:     v.SndCwnd,
+			SndMss:      v.SndMss,
 		}
 		switch v.CcState {
 		case tcpip.RTORecovery:

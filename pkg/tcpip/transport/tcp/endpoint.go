@@ -2254,6 +2254,7 @@ func (e *Endpoint) getTCPInfo() tcpip.TCPInfoOption {
 		info.CcState = snd.state
 		info.SndSsthresh = uint32(snd.Ssthresh)
 		info.SndCwnd = uint32(snd.SndCwnd)
+		info.SndMss = uint32(snd.MaxPayloadSize)
 		info.ReorderSeen = snd.rc.Reord
 	}
 	e.UnlockUser()

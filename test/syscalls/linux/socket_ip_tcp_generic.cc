@@ -109,6 +109,7 @@ TEST_P(TCPSocketPairTest, CheckTcpInfoFields) {
   // Validates the received tcp_info fields.
   EXPECT_EQ(opt.tcpi_ca_state, TCP_CA_OPEN);
   EXPECT_GT(opt.tcpi_snd_cwnd, 0);
+  EXPECT_GT(opt.tcpi_snd_mss, 0);
   EXPECT_GT(opt.tcpi_rto, 0);
 }
 
