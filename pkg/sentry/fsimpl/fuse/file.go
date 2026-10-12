@@ -168,12 +168,20 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *fileDescription) Sync(ctx context.Context, opts vfs.SyncOptions) error {
 	inode := fd.inode()
-	inode.attrMu.Lock()
-	defer inode.attrMu.Unlock()
 	fs := inode.fs
 	// no need to proceed if FUSE server doesn't implement Open.
 	if fs.conn.noOpen {
 		return linuxerr.EINVAL
+	}
+
+	opcode := linux.FUSEOpcode(linux.FUSE_FSYNC)
+	unsupported := &fs.conn.noFsync
+	if inode.Mode().IsDir() {
+		opcode = linux.FUSE_FSYNCDIR
+		unsupported = &fs.conn.noFsyncdir
+	}
+	if unsupported.Load() {
+		return nil
 	}
 
 	var syncFlags uint32
@@ -185,11 +193,14 @@ func (fd *fileDescription) Sync(ctx context.Context, opts vfs.SyncOptions) error
 		Fh:         fd.Fh,
 		FsyncFlags: syncFlags,
 	}
-	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
-	req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FSYNC, &in)
-	// The reply will be ignored since no callback is defined in asyncCallBack().
-	fs.conn.CallAsync(ctx, req)
-	return nil
+	// As in Linux, wait for the reply and return the server's error, except
+	// that ENOSYS means the server does not implement the operation.
+	err := inode.callNoReply(ctx, opcode, &in)
+	if linuxerr.Equals(linuxerr.ENOSYS, err) {
+		unsupported.Store(true)
+		return nil
+	}
+	return err
 }
 
 // GetXattr implements vfs.FileDescriptionImpl.GetXattr.
