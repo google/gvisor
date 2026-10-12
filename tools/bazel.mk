@@ -122,7 +122,7 @@ BAZEL              := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS       := --color=no --curses=no $(BAZEL_REMOTE_CACHE)
 BAZEL_TEST_OUTPUT  ?= errors
 TEST_OPTIONS       += $(BASE_OPTIONS) \
-  --incompatible_sandbox_hermetic_tmp=false \
+  --sandbox_add_mount_pair=/tmp \
   --test_output=$(BAZEL_TEST_OUTPUT) \
   --keep_going \
   --verbose_failures=true \
