@@ -58,7 +58,7 @@ help: ## Shows all targets and help from the Makefile (this message).
 		}'
 
 build: ## Builds the given $(TARGETS) with the given $(OPTIONS). E.g. make build TARGETS=runsc
-	@$(call build,$(OPTIONS) -- $(TARGETS))
+	@$(call build,$(OPTIONS) -- $(TARGETS),$(OPTIONS) -- $(call target_query,$(TARGETS)))
 .PHONY: build
 
 test: ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TARGETS=pkg/buffer:buffer_test
@@ -66,7 +66,7 @@ test: ## Tests the given $(TARGETS) with the given $(OPTIONS). E.g. make test TA
 .PHONY: test
 
 copy: ## Copies the given $(TARGETS), built with the given $(OPTIONS), to the given $(DESTINATION). E.g. make copy TARGETS=runsc DESTINATION=/tmp
-	@$(call copy,$(OPTIONS) -- $(TARGETS),$(DESTINATION))
+	@$(call copy,$(OPTIONS) -- $(TARGETS),$(DESTINATION),$(OPTIONS) -- $(call target_query,$(TARGETS)))
 .PHONY: copy
 
 run: ## Runs the given $(TARGETS), built with $(OPTIONS), using $(ARGS). E.g. make run TARGETS=runsc ARGS=-version
