@@ -134,9 +134,21 @@ func NewState() State {
 
 // Fork creates and returns an identical copy of the x86 floating point state.
 func (s *State) Fork() State {
-	n := newX86FPStateSlice()
+	n := newX86FPStateSlice()[:len(*s)]
 	copy(n, *s)
 	return n
+}
+
+// EnableAMX extends s to hold AMX tile data state, if it does not already.
+func (s *State) EnableAMX() {
+	maxsize, _ := cpuid.HostFeatureSet().ExtendedStateSize()
+	n := int(maxsize) + FP_XSTATE_MAGIC2_SIZE
+	if len(*s) >= n {
+		return
+	}
+	f := (*s)[:n]
+	clear(f[len(*s)-FP_XSTATE_MAGIC2_SIZE:])
+	*s = f
 }
 
 // Reset resets s to its initial state.
@@ -390,6 +402,9 @@ func (s *State) AfterLoad() {
 	// smaller state component bitmap. Intel SDM Volume 1 Chapter 13 has
 	// more info.
 	*s = NewState()
+	if len(old) > len(s.Slice()) {
+		s.EnableAMX()
+	}
 
 	// x86FPState always contains all the FP state supported by the host.
 	// We may have come from a newer machine that supports additional state

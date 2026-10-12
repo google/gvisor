@@ -304,6 +304,8 @@ go_library(
         "task_context.go",
         "task_exec.go",
         "task_exit.go",
+        "task_fpu_amd64.go",
+        "task_fpu_arm64.go",
         "task_futex.go",
         "task_identity.go",
         "task_image.go",
