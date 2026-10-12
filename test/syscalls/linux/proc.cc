@@ -43,6 +43,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <ctime>
 #include <functional>
@@ -50,6 +51,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <regex>  // NOLINT
 #include <string>
@@ -73,6 +75,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/synchronization/blocking_counter.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
@@ -2889,29 +2892,22 @@ TEST(ProcTask, VerifyTaskChildrenNeverReportsZeroTID) {
   const std::string path = JoinPath("/proc", absl::StrCat(getpid()), "task",
                                     absl::StrCat(gettid()), "children");
 
-  std::atomic<bool> stop = false;
   std::atomic<bool> reported_zero = false;
   auto scan = [&] {
-    while (!stop.load(std::memory_order_relaxed)) {
-      auto contents = GetContents(path);
-      if (!contents.ok()) {
-        continue;
-      }
-      for (absl::string_view tid :
-           absl::StrSplit(contents.ValueOrDie(), ' ', absl::SkipWhitespace())) {
-        if (tid == "0") {
-          reported_zero.store(true, std::memory_order_relaxed);
-        }
+    auto contents = GetContents(path);
+    if (!contents.ok()) {
+      ADD_FAILURE() << "GetContents(" << path
+                    << "): " << contents.error().ToString();
+      return false;
+    }
+    for (absl::string_view tid :
+         absl::StrSplit(contents.ValueOrDie(), ' ', absl::SkipWhitespace())) {
+      if (tid == "0") {
+        reported_zero.store(true, std::memory_order_relaxed);
       }
     }
+    return true;
   };
-  ScopedThread reader1(scan);
-  ScopedThread reader2(scan);
-  ScopedThread reader3(scan);
-  ScopedThread reader4(scan);
-  // Stop the readers before they are joined, including on a failed assertion.
-  auto stop_readers =
-      Cleanup([&] { stop.store(true, std::memory_order_relaxed); });
 
   constexpr int kChildrenPerBatch = 64;
   for (int batch = 0; batch < 32; ++batch) {
@@ -2926,24 +2922,47 @@ TEST(ProcTask, VerifyTaskChildrenNeverReportsZeroTID) {
       children.push_back(child);
     }
 
-    // Ensure all children are zombies, then reap the whole batch while readers
-    // repeatedly snapshot children and resolve each snapshot's TID.
+    // Prepare all zombies before starting readers. The regression is a read
+    // racing with reaping, not with child creation or waiting for exit.
     for (pid_t child : children) {
       siginfo_t info = {};
       ASSERT_THAT(RetryEINTR(waitid)(P_PID, child, &info, WEXITED | WNOWAIT),
                   SyscallSucceeds());
     }
+
+    std::atomic<bool> stop = false;
+    std::array<std::optional<ScopedThread>, 4> readers;
+    absl::BlockingCounter readers_started(readers.size());
+    auto read = [&] {
+      bool success = scan();
+      readers_started.DecrementCount();
+      while (success && !stop.load(std::memory_order_relaxed)) {
+        success = scan();
+      }
+    };
+    // Stop before joining, including when a reap assertion fails. Joining the
+    // readers also keeps them out of the next batch's setup.
+    auto stop_readers = Cleanup([&] {
+      stop.store(true, std::memory_order_relaxed);
+      for (auto& reader : readers) {
+        if (reader) {
+          reader->Join();
+        }
+      }
+    });
+    for (auto& reader : readers) {
+      reader.emplace(read);
+    }
+    readers_started.Wait();
+
+    // Every reader has attempted a scan and successful readers continue while
+    // we reap. Failed readers still release the readiness counter.
     for (pid_t child : children) {
       ASSERT_THAT(RetryEINTR(waitpid)(child, nullptr, 0),
                   SyscallSucceedsWithValue(child));
     }
   }
 
-  stop_readers.Release()();
-  reader1.Join();
-  reader2.Join();
-  reader3.Join();
-  reader4.Join();
   EXPECT_FALSE(reported_zero.load(std::memory_order_relaxed));
 }
 
