@@ -344,6 +344,10 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 	if len(f) >= minXstateBytes {
 		// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
 		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:]) &^ ignoredXFeatureStates
+		if xstateBV&cpuid.XCR0AmxDataMask != 0 && !f.HasAMX() {
+			// Tile data is restored only into state that holds it.
+			xstateBV &^= cpuid.XCR0AmxDataMask
+		}
 		allowedMask := featureSet.ValidXCR0Mask() & SupportedXFeatureStates
 		if disallowedXstateBV := xstateBV &^ allowedMask; disallowedXstateBV != 0 {
 			// FIXME: b/478302010, b/478302512: If the app is using features
