@@ -610,6 +610,19 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	}
 	parent.childrenMu.Unlock()
 
+	if !dir && rp.MustBeDir() {
+		// The trailing slash makes this fail regardless, but the error depends
+		// on whether the child exists and is a directory.
+		child, err := fs.getChildLocked(ctx, parent, name, &ds)
+		if err != nil {
+			return err
+		}
+		if child.isDir() {
+			return linuxerr.EISDIR
+		}
+		return linuxerr.ENOTDIR
+	}
+
 	// Load child if sticky bit is set because we need to determine whether
 	// deletion is allowed.
 	var child *dentry
@@ -687,12 +700,6 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 		if child != nil && child.isDir() {
 			vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			return linuxerr.EISDIR
-		}
-		if rp.MustBeDir() {
-			if child != nil {
-				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
-			}
-			return linuxerr.ENOTDIR
 		}
 	}
 	if parent.inode.isSynthetic() {

@@ -233,6 +233,31 @@ TEST(RmdirTest, CanRemoveWithTrailingSlashes) {
   ASSERT_THAT(rmdir(slashslash.c_str()), SyscallSucceeds());
 }
 
+TEST(UnlinkTest, TrailingSlash) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // A nonexistent path is reported as such, whether or not it has a trailing
+  // slash.
+  const std::string missing = JoinPath(dir.path(), "missing");
+  EXPECT_THAT(unlink(missing.c_str()), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(unlink(absl::StrCat(missing, "/").c_str()),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(unlinkat(AT_FDCWD, absl::StrCat(missing, "/").c_str(), 0),
+              SyscallFailsWithErrno(ENOENT));
+
+  // An existing directory is a directory, whether or not it has a trailing
+  // slash.
+  auto subdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  EXPECT_THAT(unlink(absl::StrCat(subdir.path(), "/").c_str()),
+              SyscallFailsWithErrno(EISDIR));
+
+  // An existing file can't be named with a trailing slash, and isn't removed.
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  EXPECT_THAT(unlink(absl::StrCat(file.path(), "/").c_str()),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(access(file.path().c_str(), F_OK), SyscallSucceeds());
+}
+
 TEST(UnlinkTest, UnlinkAtEmptyPath) {
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 

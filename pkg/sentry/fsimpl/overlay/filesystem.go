@@ -1749,14 +1749,25 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if name == "." || name == ".." {
 		return linuxerr.EISDIR
 	}
-	if rp.MustBeDir() {
-		return linuxerr.ENOTDIR
-	}
 	vfsObj := rp.VirtualFilesystem()
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
+
+	if rp.MustBeDir() {
+		// The trailing slash makes this fail regardless, but the error depends
+		// on whether the child exists and is a directory. Check before copying
+		// up the parent, so that a failing unlink doesn't copy it up.
+		child, _, err := fs.getChildLocked(ctx, parent, name, &ds)
+		if err != nil {
+			return err
+		}
+		if child.isDir() {
+			return linuxerr.EISDIR
+		}
+		return linuxerr.ENOTDIR
+	}
 
 	// Ensure that parent is copied-up before potentially holding child.copyMu
 	// below.
