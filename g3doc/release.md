@@ -1,0 +1,338 @@
+# gVisor Releases
+
+This document has two parts:
+
+-   [Release policy](#release-policy), for users: versions, cadence, where to
+    get a release, and the backport policy.
+-   [Release process](#release-process), for maintainers: how to make a release,
+    and the playbooks to follow.
+
+## Release policy
+
+### Versions
+
+A release has a name of the form `release-<yyyymmdd>.<N>`, for example
+`release-20261005.0`.
+
+-   `<yyyymmdd>` is the date of the release branch. It is the Monday (UTC) of
+    the week in which the release was cut. The release is usually published a
+    few days later.
+-   `<N>` is the point release number. The first release for a date is `.0`. A
+    point release (`.1`, `.2`, ...) adds backported security fixes to the
+    release of that date.
+
+Versions are ordered by date, then by point number: `20261005.0` is newer than
+`20260928.1`, even if `20260928.1` was published later.
+
+### Cadence
+
+gVisor publishes a new release weekly. Each release is cut from the `master`
+branch.
+
+gVisor does not offer long-term support (LTS) releases. Users are expected to
+track the newest release. Bug fixes land on `master` and roll out with the next
+weekly release.
+
+### Where to get a release
+
+The Google Cloud Storage release bucket (`gs://gvisor/releases/`) and the apt
+repository are the canonical channels. The
+[GitHub releases](https://github.com/google/gvisor/releases) page mirrors these
+artifacts. See [Installation](./user_guide/install.md) for the channels (latest,
+specific release, point release, nightly, and HEAD) and the install commands.
+
+`latest`, the apt `release` suite, and the "Latest" label on GitHub always point
+to the highest version. A backport to an older release branch does not affect
+them.
+
+Each artifact is accompanied by a `.sha512` file. The GitHub release also
+provides `SHA256SUMS` and `SHA512SUMS`. Verify the digest before installing.
+
+### Backport policy
+
+A backport applies a security fix to a published release branch, producing a
+point release (for example `20261005.1`). gVisor backports only security fixes:
+
+-   To the newest release: any security fix. Most users install the latest
+    release, so the newest release is always fixed.
+-   To an older release: only a fix for an issue that crosses the sandbox
+    boundary (see [SECURITY.md][security]), and only for a release date that
+    users pin.
+
+gVisor does not backport other bug fixes or new features; these roll out with
+the next weekly release.
+
+If you pin a release date, use the specific release channel for that date to
+receive its backports. A pinned point release (for example `20260928.0`) never
+receives backports.
+
+### Security issues and embargoes
+
+Report a vulnerability as described in [SECURITY.md][security].
+
+If a fix is under embargo, it stays private until the disclosure date agreed
+upon with the reporter. On that date, the fix merges to `master`, and point
+releases are published shortly thereafter, once the builds complete. The
+security advisory is published concurrently with the release.
+
+## Release process
+
+This part is for gVisor maintainers.
+
+### Core principles
+
+The release branch holds the code for one release. The release tag comes from
+that branch.
+
+The commit is the input of a release, not a result. The maintainer who starts a
+release chooses the commit when they cut the branch. The branch moves only when
+a gVisor maintainer explicitly moves it.
+
+Release branches have a short lifecycle: they are cut from `master`, may receive
+cherry-picked fixes through pull requests, and are published. Once published,
+the branch remains inert unless a security backport is required (see
+[Backports](#backports)).
+
+### Sequence
+
+| Step           | Who                  | Result                           |
+| -------------- | -------------------- | -------------------------------- |
+| 1. Cut         | A maintainer         | `release/<yyyymmdd>` at one      |
+:                :                      : commit on master                 :
+| 2. Cherry-pick | A maintainer         | Cherry-picks from master, merged |
+: (optional)     :                      : to the branch by pull request    :
+| 3. Stage       | A maintainer, with a | Tag                              |
+:                : GitHub workflow      : `release-<yyyymmdd>.<N>-staging` :
+:                :                      : on the branch head               :
+| 4. Publish     | Buildkite            | Artifacts in                     |
+:                :                      : `gs\://gvisor/releases/`, then   :
+:                :                      : tag `release-<yyyymmdd>.<N>`     :
+| 5. Mirror      | GitHub workflow      | GitHub release with the          |
+:                :                      : artifacts and release notes      :
+
+All cherry-picks go to the branch before step 3. After step 3, the branch does
+not change, except for a backport.
+
+### Backports
+
+A backport applies a fix to a published release branch to produce a point
+release, for example `20260928.1`. Create one only if the
+[backport policy](#backport-policy) allows it; otherwise, merge the fix to
+`master` and let it roll out in the next weekly release.
+
+1.  Always merge the fix to master first. The workflows refuse a commit that is
+    not on master.
+2.  Backport to the newest release if it does not have the fix.
+3.  Backport to an older release only for an issue that crosses the sandbox
+    boundary, and only if users pin that date.
+4.  For a vulnerability, obey the [embargo](#embargo) rules.
+
+### Embargo
+
+An embargo is an agreement with the reporter: the fix stays private until an
+agreed date. GitHub supplies the private workspace (a draft security advisory
+and its temporary private fork), and gVisor uses it.
+
+Before the embargo date:
+
+-   Do the work only in the private fork of the advisory.
+-   Do not push a branch, open a pull request, or run a release workflow in
+    `google/gvisor`. All of these are public.
+
+On the embargo date:
+
+1.  Merge the fix from the advisory to master.
+2.  Backport the fix and stage the releases
+    ([Playbook C](#playbook-c-security-backport)).
+3.  Publish the advisory when the release is published.
+
+The fix becomes public immediately upon merging to `master`. The release follows
+several hours later because artifact builds take time. Be sure to notify the
+reporter about this gap when coordinating disclosure timing.
+
+Only repository admins and security managers can create advisories. Ensure
+release maintainers are granted the security manager role.
+
+### Playbook A: GitHub Actions
+
+Start each workflow from **Actions → *workflow name* → Run workflow**. The **Use
+workflow from** branch is the target branch.
+
+#### A1. Cut
+
+1.  Open **Cut Release Branch**.
+2.  Set **Use workflow from** to `master`.
+3.  Leave `commit` empty to use the head of master, or enter a commit on master.
+4.  Click **Run workflow**.
+5.  Make sure that the run summary shows `Cut release/<yyyymmdd> at <commit>`.
+
+#### A2. Cherry-pick (optional)
+
+1.  Merge each fix to master first.
+2.  Open **Cherry-pick to Release Branch**.
+3.  Set **Use workflow from** to `release/<yyyymmdd>`.
+4.  In `commits`, enter the master commits, oldest first, separated by spaces.
+5.  Click **Run workflow**. Open the pull request link in the run summary.
+6.  Review the pull request and merge it. Use "Create a merge commit" or "Rebase
+    and merge", not "Squash and merge".
+7.  If a commit has conflicts, the run stops and lists the files. Do that
+    cherry-pick by hand ([B2](#b2-cherry-pick-optional)).
+
+#### A3. Stage
+
+1.  Make sure that all cherry-pick pull requests are merged.
+2.  Open **Stage Release**.
+3.  Set **Use workflow from** to `release/<yyyymmdd>`.
+4.  In `version`, enter `<yyyymmdd>.0`.
+5.  Click **Run workflow**.
+
+#### A4. Verify the publish
+
+1.  Open
+    `https://buildkite.com/gvisor/release/builds?branch=release-<version>-staging`.
+    Make sure that the build started. If it did not, see
+    [Troubleshooting](#troubleshooting).
+2.  When the build passes, make sure that:
+    -   The tag `release-<version>` exists, and the staging tag does not.
+    -   `https://storage.googleapis.com/gvisor/releases/release/<version>/x86_64/gvisor.tar.zstd`
+        exists. Do the same check for `aarch64`.
+    -   The **Release Mirror** run passed, and the GitHub release exists.
+    -   If this is the highest version, the GitHub release has the "Latest"
+        label.
+
+### Playbook B: Command line
+
+Use this playbook only if GitHub Actions is not available. You must have push
+access to `google/gvisor`, and `origin` must point to it. These steps do not run
+the workflow checks, so do each check yourself.
+
+```bash
+git fetch origin --tags
+date=20261005            # The Monday of this week.
+```
+
+#### B1. Cut
+
+```bash
+commit="$(git rev-parse origin/master)"       # Or a chosen commit on master.
+
+# Checks. Each one prints STOP if it fails.
+git merge-base --is-ancestor "${commit}" origin/master ||
+  echo "STOP: ${commit} is not on master."
+git ls-remote --exit-code origin "refs/heads/release/${date}" >/dev/null &&
+  echo "STOP: release/${date} already exists."
+[[ -z "$(git tag -l "release-${date}.*")" ]] ||
+  echo "STOP: a release-${date}.* tag already exists."
+```
+
+Run the next command only if no check printed `STOP`:
+
+```bash
+git push origin "${commit}:refs/heads/release/${date}"
+```
+
+#### B2. Cherry-pick (optional)
+
+You can push the cherry-pick branch to your fork.
+
+```bash
+git switch -c "cherry-pick/${date}-<topic>" "origin/release/${date}"
+git cherry-pick -x <sha>                      # Add "-m 1" for a merge commit.
+git push <your-remote> HEAD
+gh pr create --repo google/gvisor --base "release/${date}" \
+  --head "<you>:cherry-pick/${date}-<topic>"
+```
+
+Get a review, then merge the pull request.
+
+#### B3. Stage
+
+```bash
+git fetch origin --tags
+commit="$(git rev-parse "origin/release/${date}")"
+
+# Check. It prints STOP if it fails.
+released="$(git tag --points-at "${commit}" -l 'release-*' |
+  grep -v -- '-staging$')"
+[[ -z "${released}" ]] ||
+  echo "STOP: ${commit} is already released."
+```
+
+Run the next commands only if the check did not print `STOP`:
+
+```bash
+echo "Release ${date}.0" >/tmp/msg
+tools/tag_release.sh "${commit}" "${date}.0" /tmp/msg
+```
+
+This is the same as `make tag RELEASE_COMMIT="${commit}"
+RELEASE_NAME="${date}.0" RELEASE_NOTES=/tmp/msg`.
+
+#### B4. Verify
+
+Do the steps in [A4](#a4-verify-the-publish).
+
+### Playbook C: Security backport
+
+Follow this playbook only when the [backport policy](#backport-policy) allows
+it. For an embargoed fix, start on the embargo date.
+
+1.  Merge the fix to master.
+2.  Find the releases that need the fix:
+    -   The newest release. Run cherry-pick on its branch. If the branch already
+        has the fix, the run stops with "already on release/...".
+    -   Older releases, only for an issue that crosses the sandbox boundary, and
+        only if users pin them.
+3.  For each branch, do [A2](#a2-cherry-pick-optional) and merge the pull
+    request.
+4.  For each branch, do [A3](#a3-stage) with the next point version, for example
+    `20261005.1`. You can stage the branches in any order.
+5.  For each release, do [A4](#a4-verify-the-publish). Only the highest version
+    gets `latest` and the "Latest" label.
+6.  Publish the security advisory.
+
+Releases made before this process (for example `release-20260928.0`) do not have
+a branch. Create the branch one time from the tag. Then add the release workflow
+files to the branch, or use [Playbook B](#playbook-b-command-line):
+
+```bash
+git push origin 'release-20260928.0^{commit}:refs/heads/release/20260928'
+```
+
+### Troubleshooting
+
+| Symptom            | Cause              | Action                             |
+| ------------------ | ------------------ | ---------------------------------- |
+| Cut: `release-X is | This date has a    | Wait for the next week. To fix the |
+: not older than     : release, or a      : existing release, use [Playbook    :
+: <date>`            : newer release      : C](#playbook-c-security-backport). :
+:                    : exists             :                                    :
+| "Workflow does not | The selected       | Use a branch that was cut from     |
+: exist or does not  : branch does not    : master after the workflows were    :
+: have a             : contain the        : added.                             :
+: workflow_dispatch  : workflow           :                                    :
+: trigger in this    :                    :                                    :
+: branch"            :                    :                                    :
+| Stage: `already    | There is no new    | Merge the cherry-pick pull request |
+: released as ...`   : commit since the   : first.                             :
+:                    : last release       :                                    :
+| No Buildkite build | The webhook did    | Examine the Buildkite webhook. As  |
+: after stage        : not start a build  : a fallback, do [B3](#b3-stage).    :
+:                    : for the tag        :                                    :
+| The Buildkite      | A build or upload  | Fix the problem. Then stage again  |
+: build failed       : error              : with the same version. This        :
+:                    :                    : replaces the staging tag.          :
+| Release Mirror     | The artifacts were | Run **Release Mirror** again with  |
+: failed             : late, or a network : the tag.                           :
+:                    : error occurred     :                                    :
+
+### Restrictions
+
+-   Do not delete or move a published `release-*` tag.
+-   Do not use `gh release delete --cleanup-tag`.
+-   Do not run a release workflow or open a public pull request for an embargoed
+    fix before the embargo date.
+-   Do not backport a fix that is not a security fix.
+-   Do not use another release process at the same time as this one.
+
+[security]: https://github.com/google/gvisor/blob/master/SECURITY.md

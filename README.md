@@ -169,6 +169,10 @@ questions and discussion.
 
 See [SECURITY.md](SECURITY.md).
 
+## Releases
+
+See [Releases](g3doc/release.md).
+
 ## Contributing
 
 See [Contributing.md](CONTRIBUTING.md).
