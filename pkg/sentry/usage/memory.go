@@ -91,6 +91,30 @@ type memoryStats struct {
 	Tmpfs     atomicbitops.Uint64
 	Mapped    atomicbitops.Uint64
 	Ramdiskfs atomicbitops.Uint64
+	// Peak is the high-water mark, in bytes, of the cgroup's committed memory
+	// usage excluding System (see committedPerCgLocked). It is maintained only
+	// for per-cgroup entries in MemoryLocked.MemCgIDToMemStats, and is raised
+	// whenever committed usage is observed to grow, e.g. by
+	// pgalloc.MemoryFile.UpdateUsage.
+	Peak atomicbitops.Uint64
+}
+
+// committedPerCgLocked returns the committed memory usage for a cgroup,
+// excluding System memory (which on per-cgroup stats holds deallocated waste
+// pages awaiting asynchronous release).
+//
+// Preconditions: the owning MemoryLocked.mu is held.
+func (ms *memoryStats) committedPerCgLocked() uint64 {
+	return ms.Anonymous.RacyLoad() + ms.PageCache.RacyLoad() + ms.Mapped.RacyLoad() + ms.Tmpfs.RacyLoad() + ms.Ramdiskfs.RacyLoad()
+}
+
+// updatePeakLocked raises Peak to the current committed usage if it is higher.
+//
+// Preconditions: the owning MemoryLocked.mu is held.
+func (ms *memoryStats) updatePeakLocked() {
+	if cur := ms.committedPerCgLocked(); cur > ms.Peak.RacyLoad() {
+		ms.Peak.Store(cur)
+	}
 }
 
 // incLocked adds a usage of 'val' bytes from memory category 'kind'.
@@ -310,6 +334,7 @@ func (m *MemoryLocked) incLockedPerCg(val uint64, kind MemoryKind, memCgID uint3
 
 	ms := m.MemCgIDToMemStats[memCgID]
 	ms.incLocked(val, kind)
+	ms.updatePeakLocked()
 }
 
 // Inc adds an additional usage of 'val' bytes to memory category 'kind' for a
@@ -446,6 +471,23 @@ func (m *MemoryLocked) CopyPerCg(memCgID uint32) (MemoryStats, uint64) {
 		return MemoryStats{}, 0
 	}
 	return ms.copyLocked(), ms.totalLocked()
+}
+
+// PeakPerCg returns the peak committed memory usage in bytes, excluding System,
+// recorded for memCgID. Callers that need an up-to-date value should first call
+// pgalloc.MemoryFile.UpdateUsage for memCgID.
+//
+// This method is thread-safe.
+//
+// +checklocksexclude:m.mu
+func (m *MemoryLocked) PeakPerCg(memCgID uint32) uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms, ok := m.MemCgIDToMemStats[memCgID]
+	if !ok {
+		return 0
+	}
+	return ms.Peak.RacyLoad()
 }
 
 // These options control how much total memory the is reported to the

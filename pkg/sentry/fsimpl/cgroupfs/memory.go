@@ -84,6 +84,7 @@ func (c *memoryController) Clone() controller {
 func (c *memoryController) AddControlFiles(ctx context.Context, creds *auth.Credentials, cg *cgroupInode, contents map[string]kernfs.Inode) {
 	c.memCg = &memoryCgroup{cg}
 	contents["memory.usage_in_bytes"] = c.fs.newControllerFile(ctx, creds, &memoryUsageInBytesData{memCg: &memoryCgroup{cg}}, true)
+	contents["memory.max_usage_in_bytes"] = c.fs.newControllerFile(ctx, creds, &memoryMaxUsageInBytesData{memCg: c.memCg}, true)
 	contents["memory.limit_in_bytes"] = c.fs.newStubControllerFile(ctx, creds, &c.limitBytes, true)
 	contents["memory.soft_limit_in_bytes"] = c.fs.newStubControllerFile(ctx, creds, &c.softLimitBytes, true)
 	contents["memory.move_charge_at_immigrate"] = c.fs.newStubControllerFile(ctx, creds, &c.moveChargeAtImmigrate, true)
@@ -156,5 +157,32 @@ func (d *memoryUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer
 	d.memCg.collectMemCgIDs(memCgIDs)
 	totalBytes := getUsage(k, memCgIDs)
 	fmt.Fprintf(buf, "%d\n", totalBytes)
+	return nil
+}
+
+// getPeak returns the sum of the peak memory usage of all cgroup IDs in
+// memCgIDs, after bringing their committed usage up to date.
+//
+// For a cgroup with descendants this is an upper bound on its hierarchical
+// peak, since descendants may have peaked at different times.
+func getPeak(k *kernel.Kernel, memCgIDs map[uint32]struct{}) uint64 {
+	k.MemoryFile().UpdateUsage(memCgIDs)
+	var peak uint64
+	for id := range memCgIDs {
+		peak += usage.MemoryAccounting.PeakPerCg(id)
+	}
+	return peak
+}
+
+// +stateify savable
+type memoryMaxUsageInBytesData struct {
+	memCg *memoryCgroup
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *memoryMaxUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	memCgIDs := make(map[uint32]struct{})
+	d.memCg.collectMemCgIDs(memCgIDs)
+	fmt.Fprintf(buf, "%d\n", getPeak(kernel.KernelFromContext(ctx), memCgIDs))
 	return nil
 }
