@@ -197,3 +197,18 @@ func TestWriteFullToBlocks(t *testing.T) {
 		t.Errorf("dst: got %q, wanted %q", got, want)
 	}
 }
+
+func TestToIOWriter(t *testing.T) {
+	// Write one byte per call to check that partial writes are retried.
+	var got []byte
+	w := ToIOWriter{WriterFunc(func(srcs BlockSeq) (uint64, error) {
+		got = append(got, srcs.Head().ToSlice()[0])
+		return 1, nil
+	})}
+	if n, err := w.Write([]byte("foobar")); n != 6 || err != nil {
+		t.Errorf("Write: got (%v, %v), wanted (6, nil)", n, err)
+	}
+	if want := "foobar"; string(got) != want {
+		t.Errorf("got %q, wanted %q", got, want)
+	}
+}
