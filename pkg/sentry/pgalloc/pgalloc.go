@@ -803,6 +803,9 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 				ma.wasteOrReleasing = false
 				return true
 			})
+			if !f.opts.DisableMemoryAccounting && alloc.opts.MemCgID != 0 {
+				usage.MemoryAccounting.IncAllocated(fr.Length(), alloc.opts.MemCgID)
+			}
 			return
 		}
 	}
@@ -851,6 +854,9 @@ retryFree:
 		knownCommitted: false,
 		commitSeq:      f.commitSeq,
 	})
+	if !f.opts.DisableMemoryAccounting && alloc.opts.MemCgID != 0 {
+		usage.MemoryAccounting.IncAllocated(fr.Length(), alloc.opts.MemCgID)
+	}
 	return
 }
 
@@ -1237,6 +1243,9 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 				// released.
 				f.memAcct.MutateFullRange(wasteFR, func(maseg memAcctIterator) bool {
 					ma := maseg.ValuePtr()
+					if !f.opts.DisableMemoryAccounting && !ma.wasteOrReleasing && ma.memCgID != 0 {
+						usage.MemoryAccounting.DecAllocated(maseg.Range().Length(), ma.memCgID)
+					}
 					if !f.opts.DisableMemoryAccounting && ma.knownCommitted {
 						usage.MemoryAccounting.Move(maseg.Range().Length(), usage.System, ma.kind, ma.memCgID)
 					}
