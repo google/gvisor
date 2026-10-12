@@ -719,7 +719,6 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			mss:                 rcvdSynOptions.MSS,
 			sampleRTTWithTSOnly: true,
 		}
-		h.ep.AssertLockHeld(n)
 		h.transitionToStateEstablishedLocked(s)
 		n.mu.Unlock()
 

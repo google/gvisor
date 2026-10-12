@@ -172,7 +172,6 @@ func (e *Endpoint) newHandshake() (h *handshake) {
 		rcvWnd:      seqnum.Size(e.initialReceiveWindow()),
 		rcvWndScale: e.rcvWndScaleForHandshake(),
 	}
-	h.ep.AssertLockHeld(e)
 	h.resetState()
 	// Store reference to handshake state in endpoint.
 	e.h = h
