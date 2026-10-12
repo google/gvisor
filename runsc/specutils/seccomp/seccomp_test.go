@@ -46,6 +46,11 @@ func testInput(arch uint32, syscallName string, args *[6]uint64) bpf.Input {
 	return seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes()))
 }
 
+func errnoRet(e unix.Errno) *uint {
+	v := uint(e)
+	return &v
+}
+
 // testCase holds a seccomp test case.
 type testCase struct {
 	name     string
@@ -155,6 +160,66 @@ var (
 			},
 			input:    testInput(nativeArchAuditNo, "write", nil),
 			expected: uint32(linux.SECCOMP_RET_LOG),
+		},
+		{
+			name: "match_name_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"clone3",
+						},
+						Action:   specs.ActErrno,
+						ErrnoRet: errnoRet(unix.ENOSYS),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			name: "match_name_trace_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action:   specs.ActTrace,
+						ErrnoRet: errnoRet(unix.EACCES),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_TRACE.WithReturnCode(uint16(unix.EACCES))),
+		},
+		{
+			name: "match_name_allow_ignores_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action:   specs.ActAllow,
+						ErrnoRet: errnoRet(unix.EACCES),
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			name: "default_errno_ret",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: errnoRet(unix.EACCES),
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EACCES))),
 		},
 		{
 			name: "no_match_name_allow",
@@ -398,6 +463,41 @@ func TestRunscSeccomp(t *testing.T) {
 
 			if err := checkProgram(runscProgram, tc.input, tc.expected); err != nil {
 				t.Fatalf("running runsc BPF: %v", err)
+			}
+		})
+	}
+}
+
+func TestInvalidErrnoRet(t *testing.T) {
+	tooBig := uint(0x10000)
+	for _, tc := range []struct {
+		name   string
+		config specs.LinuxSeccomp
+	}{
+		{
+			name: "default",
+			config: specs.LinuxSeccomp{
+				DefaultAction:   specs.ActErrno,
+				DefaultErrnoRet: &tooBig,
+			},
+		},
+		{
+			name: "rule",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names:    []string{"write"},
+						Action:   specs.ActTrace,
+						ErrnoRet: &tooBig,
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := BuildProgram(&tc.config); err == nil {
+				t.Fatalf("BuildProgram succeeded with errnoRet %#x, want error", tooBig)
 			}
 		})
 	}

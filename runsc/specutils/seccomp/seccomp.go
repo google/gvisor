@@ -32,18 +32,14 @@ import (
 var (
 	killThreadAction = seccomp.KillThread
 	trapAction       = seccomp.Trap
-	// runc always returns EPERM as the errorcode for SECCOMP_RET_ERRNO
-	errnoAction = seccomp.ReturnError.Code(uint16(unix.EPERM))
-	// runc always returns EPERM as the errorcode for SECCOMP_RET_TRACE
-	traceAction = seccomp.Trace.Code(uint16(unix.EPERM))
-	allowAction = seccomp.Allow
-	logAction   = seccomp.Log
+	allowAction      = seccomp.Allow
+	logAction        = seccomp.Log
 )
 
 // BuildProgram generates a bpf program based on the given OCI seccomp
 // config.
 func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
-	defaultAction, err := convertAction(s.DefaultAction)
+	defaultAction, err := convertAction(s.DefaultAction, s.DefaultErrnoRet)
 	if err != nil {
 		return bpf.Program{}, fmt.Errorf("secomp default action: %w", err)
 	}
@@ -94,8 +90,9 @@ func lookupSyscallNo(arch uint32, name string) (uint32, error) {
 	return uint32(n), nil
 }
 
-// convertAction converts a LinuxSeccompAction to BPFAction
-func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
+// convertAction converts a LinuxSeccompAction to BPFAction. Like runc, it
+// ignores errnoRet for actions other than ERRNO and TRACE.
+func convertAction(act specs.LinuxSeccompAction, errnoRet *uint) (seccomp.Action, error) {
 	// TODO(gvisor.dev/issue/3124): Update specs package to include ActLog and ActKillProcess.
 	// LINT.IfChange
 	switch act {
@@ -104,9 +101,9 @@ func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
 	case specs.ActTrap:
 		return trapAction, nil
 	case specs.ActErrno:
-		return errnoAction, nil
+		return withErrnoRet(seccomp.ReturnError, errnoRet)
 	case specs.ActTrace:
-		return traceAction, nil
+		return withErrnoRet(seccomp.Trace, errnoRet)
 	case specs.ActLog:
 		return logAction, nil
 	case specs.ActAllow:
@@ -115,6 +112,18 @@ func convertAction(act specs.LinuxSeccompAction) (seccomp.Action, error) {
 		return seccomp.Default, fmt.Errorf("invalid action: %v", act)
 	}
 	// LINT.ThenChange(../seccomp.go:knownSeccompActions)
+}
+
+// withErrnoRet sets errnoRet as the return code of act. Like runc, the return
+// code is EPERM if errnoRet is not set.
+func withErrnoRet(act seccomp.Action, errnoRet *uint) (seccomp.Action, error) {
+	if errnoRet == nil {
+		return act.Code(uint16(unix.EPERM)), nil
+	}
+	if *errnoRet > linux.SECCOMP_RET_DATA {
+		return seccomp.Default, fmt.Errorf("errnoRet %d does not fit in SECCOMP_RET_DATA", *errnoRet)
+	}
+	return act.Code(uint16(*errnoRet)), nil
 }
 
 // convertRules converts OCI linux seccomp rules into RuleSets that can be used by
@@ -129,7 +138,7 @@ func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
 	for _, syscall := range s.Syscalls {
 		sysRules := seccomp.NewSyscallRules()
 
-		action, err := convertAction(syscall.Action)
+		action, err := convertAction(syscall.Action, syscall.ErrnoRet)
 		if err != nil {
 			return nil, err
 		}
