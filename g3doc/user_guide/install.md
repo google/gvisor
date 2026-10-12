@@ -76,10 +76,10 @@ For more details about using gVisor with Docker, see
 production purposes.
 
 > **Note**: It is important to copy `runsc` to a location that is readable and
-> executable to all users, since `runsc` may need to re-execute itself as an
-> unprivileged user to increase security. The `/usr/local/bin` directory is a
-> good place to put the `runsc` binary. The `gvisor-bin/` directory needs to be
-> moved with it.
+> executable to all users, since the Sentry binary in `gvisor-bin/` may need to
+> re-execute itself as an unprivileged user to increase security. The
+> `/usr/local/bin` directory is a good place to put the `runsc` binary. The
+> `gvisor-bin/` directory needs to be moved with it.
 
 ## Migrating from legacy `runsc`-binary-only installations {#install-legacy}
 

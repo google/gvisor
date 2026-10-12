@@ -21,7 +21,6 @@ package main
 
 import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin/cgo"
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/plugin/stack"
 	"gvisor.dev/gvisor/runsc/cli/maincli"
 	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/version"

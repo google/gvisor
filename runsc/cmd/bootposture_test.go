@@ -28,10 +28,10 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
-	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
-// This test checks the security posture of the `runsc boot` process.
+// This test checks the security posture of the Sentry (`boot`) process.
 // This includes process credentials, capabilities, namespaces, chroot,
 // file descriptors, seccomp state, etc.
 
@@ -50,7 +50,7 @@ type postureCase struct {
 	fdLimit int
 }
 
-// TestBootPosture checks the Sentry process (`runsc boot`)'s security posture.
+// TestBootPosture checks the Sentry process (`boot`)'s security posture.
 func TestBootPosture(t *testing.T) {
 	if sync.RaceEnabled {
 		t.Skip("Skipping test when running with race detector (gotsan); dynamically linked binary cannot re-exec in minimal chroot")
@@ -117,13 +117,17 @@ func testBootPosture(t *testing.T, tc postureCase) {
 		if !mapped {
 			t.Skip("UID 65534 is not mapped in this user namespace")
 		}
-		// Check if `runsc` is runnable by `nobody`.
-		reachable, err := sandboxposture.ExecutableByOthers(specutils.ExePath)
+		// Check if the Sentry binary is runnable by `nobody`.
+		sentryPath, err := gvisorbinaries.GvisorSentry.Path()
 		if err != nil {
-			t.Fatalf("Checking whether %q is reachable by an unprivileged user: %v", specutils.ExePath, err)
+			t.Fatalf("Finding the Sentry binary: %v", err)
+		}
+		reachable, err := sandboxposture.ExecutableByOthers(sentryPath)
+		if err != nil {
+			t.Fatalf("Checking whether %q is reachable by an unprivileged user: %v", sentryPath, err)
 		}
 		if !reachable {
-			t.Fatalf("%q cannot be executed by an unprivileged user, so the sandbox cannot exec it as nobody", specutils.ExePath)
+			t.Fatalf("%q cannot be executed by an unprivileged user, so the sandbox cannot exec it as nobody", sentryPath)
 		}
 	}
 

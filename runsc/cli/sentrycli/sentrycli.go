@@ -17,6 +17,7 @@ package sentrycli
 
 import (
 	"gvisor.dev/gvisor/runsc/cli"
+	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/gvisorbinaries"
@@ -27,6 +28,6 @@ func Main(sentry *gvisorbinaries.Binary) {
 	cli.Run(sentry, map[util.SubCommand]string{
 		new(sentrycmd.Boot):      "internal use only",
 		new(sentrycmd.Symbolize): "internal use only",
-		new(sentrycmd.Umount):    "internal use only",
+		new(sandboxsetup.Umount): "internal use only",
 	}, nil)
 }

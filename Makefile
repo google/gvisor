@@ -355,9 +355,10 @@ do-tests: $(RUNTIME_BIN)
 arm-qemu-smoke-test: BAZEL_OPTIONS=--config=aarch64
 arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 	export T=$$(mktemp -d --tmpdir release.XXXXXX); \
-	mkdir -p $$T/bin/arm64/ && \
+	mkdir -p $$T/bin/arm64/gvisor-bin && \
 	cp $(RUNTIME_BIN) $$T/bin/arm64 && \
-	docker run --rm -v $$T/bin/arm64/runsc:/workdir/initramfs/runsc gvisor.dev/images/arm-qemu
+	cp $(RUNTIME_DIR)/gvisor-bin/gvisor_sentry $(RUNTIME_DIR)/gvisor-bin/gvisor-sentry-prewarmer $(RUNTIME_DIR)/gvisor-bin/runsc-fd-parking $$T/bin/arm64/gvisor-bin && \
+	docker run --rm -v $$T/bin/arm64/runsc:/workdir/initramfs/runsc -v $$T/bin/arm64/gvisor-bin:/workdir/initramfs/gvisor-bin gvisor.dev/images/arm-qemu
 .PHONY: arm-qemu-smoke-test
 
 simple-tests: unit-tests # Compatibility target.

@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//runsc/cli",
+        "//runsc/cmd/sandboxsetup",
         "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/util",
         "//runsc/gvisorbinaries",
