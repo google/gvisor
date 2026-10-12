@@ -15,20 +15,14 @@
 #ifndef TOOLS_IOCTL_SNIFFER_SNIFFER_BRIDGE_H_
 #define TOOLS_IOCTL_SNIFFER_SNIFFER_BRIDGE_H_
 
-#include <sys/types.h>
-#include <syscall.h>
-#include <unistd.h>
+namespace gvisor {
+class Ioctl;
+}  // namespace gvisor
 
-#include "tools/ioctl_sniffer/ioctl.pb.h"
-
-inline pid_t gettid() { return syscall(SYS_gettid); }
-
-// Write the ioctl proto to the log output file descriptor. Our format is:
+// Write the ioctl proto to the sniffer socket. Our format is:
 //   - 8 byte little endian uint64 containing the size of the proto.
 //   - The proto bytes.
 // This should match the format in sniffer_bridge.go.
-void WriteIoctlProto(gvisor::Ioctl& ioctl);
-
-void InitializeSocket();
+void WriteIoctlProto(const gvisor::Ioctl& ioctl);
 
 #endif  // TOOLS_IOCTL_SNIFFER_SNIFFER_BRIDGE_H_

@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -25,50 +26,101 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <vector>
+#include <string>
+#include <string_view>
 
 #include "tools/ioctl_sniffer/ioctl.pb.h"
 
-thread_local pid_t socket_owner_tid = -1;
-thread_local int socket_fd = -1;
+namespace {
 
-void InitializeSocket() {
-  int sfd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sfd < 0) {
-    std::cerr << "Failed to create socket: " << strerror(errno) << "\n";
-    exit(1);
+void WriteAll(int fd, std::string_view bytes) {
+  while (!bytes.empty()) {
+    const ssize_t n = send(fd, bytes.data(), bytes.size(), MSG_NOSIGNAL);
+    if (n < 0) {
+      const int send_errno = errno;
+      if (send_errno == EINTR) {
+        continue;
+      }
+      std::cerr << "Failed to write ioctl message: " << strerror(send_errno)
+                << "\n";
+      exit(1);
+    }
+    if (n == 0) {
+      std::cerr << "Failed to write ioctl message: no progress\n";
+      exit(1);
+    }
+    bytes.remove_prefix(static_cast<size_t>(n));
   }
-
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, std::getenv("GVISOR_IOCTL_SNIFFER_SOCKET_PATH"),
-          sizeof(addr.sun_path));
-
-  // Ensure the path is null terminated.
-  addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';
-
-  if (connect(sfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    std::cerr << "Failed to connect to socket " << addr.sun_path << ": "
-              << strerror(errno) << "\n";
-    exit(1);
-  }
-
-  socket_owner_tid = gettid();
-  socket_fd = sfd;
 }
 
-void WriteIoctlProto(gvisor::Ioctl& ioctl) {
-  if (socket_owner_tid != gettid()) {
-    InitializeSocket();
+class Connection {
+ public:
+  Connection() = default;
+  Connection(const Connection&) = delete;
+  Connection& operator=(const Connection&) = delete;
+
+  ~Connection() {
+    if (fd_ >= 0) {
+      close(fd_);
+    }
   }
 
-  static thread_local std::vector<char> buffer;
-  uint64_t size = ioctl.ByteSizeLong();
-  buffer.resize(size + sizeof(size));
+  void Write(const gvisor::Ioctl& ioctl) {
+    const pid_t tid = syscall(SYS_gettid);
+    if (owner_tid_ != tid) {
+      // A fork inherits the calling thread's connection. The child needs its
+      // own stream so frames from the two processes cannot interleave.
+      if (fd_ >= 0) {
+        close(fd_);
+      }
+      Connect();
+      owner_tid_ = tid;
+    }
 
-  // Write size of the proto message first.
-  memcpy(buffer.data(), &size, sizeof(size));
-  ioctl.SerializeToArray(buffer.data() + sizeof(size), size);
+    buffer_.resize(sizeof(uint64_t));
+    if (!ioctl.AppendToString(&buffer_)) {
+      std::cerr << "Failed to serialize ioctl message\n";
+      exit(1);
+    }
+    const uint64_t size = buffer_.size() - sizeof(uint64_t);
+    memcpy(buffer_.data(), &size, sizeof(size));
+    WriteAll(fd_, buffer_);
+  }
 
-  write(socket_fd, buffer.data(), buffer.size());
+ private:
+  void Connect() {
+    fd_ = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd_ < 0) {
+      const int socket_errno = errno;
+      std::cerr << "Failed to create socket: " << strerror(socket_errno)
+                << "\n";
+      exit(1);
+    }
+
+    struct sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    const char* path = std::getenv("GVISOR_IOCTL_SNIFFER_SOCKET_PATH");
+    if (path == nullptr || strlen(path) >= sizeof(addr.sun_path)) {
+      std::cerr << "Missing or overlong GVISOR_IOCTL_SNIFFER_SOCKET_PATH\n";
+      exit(1);
+    }
+    memcpy(addr.sun_path, path, strlen(path) + 1);
+    if (connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+      const int connect_errno = errno;
+      std::cerr << "Failed to connect to socket " << addr.sun_path << ": "
+                << strerror(connect_errno) << "\n";
+      exit(1);
+    }
+  }
+
+  pid_t owner_tid_ = -1;
+  int fd_ = -1;
+  std::string buffer_;
+};
+
+}  // namespace
+
+void WriteIoctlProto(const gvisor::Ioctl& ioctl) {
+  static thread_local Connection connection;
+  connection.Write(ioctl);
 }
