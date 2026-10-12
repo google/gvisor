@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/timing"
 )
 
@@ -43,12 +44,18 @@ const (
 
 // Install generates BPF code based on the set of syscalls provided. It only
 // allows syscalls that conform to the specification. Syscalls that violate the
-// specification will trigger RET_KILL_PROCESS. RET_KILL_THREAD is not used
-// because it only kills the offending thread and often keeps the sentry
+// specification will trigger RET_KILL_PROCESS. If RET_KILL_PROCESS is not
+// supported, violations will trigger RET_TRAP instead. RET_KILL_THREAD is not
+// used because it only kills the offending thread and often keeps the sentry
 // hanging.
 //
 // denyRules describes forbidden syscalls. rules describes allowed syscalls.
 // denyRules is executed before rules.
+//
+// Be aware that RET_TRAP sends SIGSYS to the process and it may be ignored,
+// making it possible for the process to continue running after a violation.
+// However, it will leave a SECCOMP audit event trail behind. In any case, the
+// syscall is still blocked from executing.
 func (p *Program) Install(timer *timing.Timer) error {
 	// ***   DEBUG TIP   ***
 	// If you suspect the Sentry is getting killed due to a seccomp violation,
@@ -91,8 +98,7 @@ type Action string
 
 // Values for SeccompAction.
 const (
-	// Default is the default action: ProgramOptions.DefaultAction, or
-	// KillProcess if that is Default too.
+	// Default is the default action; see saneDefaultAction().
 	Default Action = ""
 
 	// Allow the syscall.
@@ -138,27 +144,31 @@ func (a Action) String() string {
 }
 
 // bpf returns the corresponding BPF action for the given seccomp action.
-// If the action is `Default`, `defaultAction` is returned.
-func (a Action) bpf(defaultAction linux.BPFAction) linux.BPFAction {
+// If the action is `Default`, `defaultAction` is called.
+func (a Action) bpf(defaultAction func() (linux.BPFAction, error)) (linux.BPFAction, error) {
 	switch a {
 	case Default:
-		return defaultAction
+		da, err := defaultAction()
+		if err != nil {
+			return 0, fmt.Errorf("failed to determine default seccomp action: %w", err)
+		}
+		return da, nil
 	case Allow:
-		return linux.SECCOMP_RET_ALLOW
+		return linux.SECCOMP_RET_ALLOW, nil
 	case UserNotify:
-		return linux.SECCOMP_RET_USER_NOTIF
+		return linux.SECCOMP_RET_USER_NOTIF, nil
 	case Log:
-		return linux.SECCOMP_RET_LOG
+		return linux.SECCOMP_RET_LOG, nil
 	case Trap:
-		return linux.SECCOMP_RET_TRAP
+		return linux.SECCOMP_RET_TRAP, nil
 	case Trace:
-		return linux.SECCOMP_RET_TRACE
+		return linux.SECCOMP_RET_TRACE, nil
 	case ReturnError:
-		return linux.SECCOMP_RET_ERRNO
+		return linux.SECCOMP_RET_ERRNO, nil
 	case KillThread:
-		return linux.SECCOMP_RET_KILL_THREAD
+		return linux.SECCOMP_RET_KILL_THREAD, nil
 	case KillProcess:
-		return linux.SECCOMP_RET_KILL_PROCESS
+		return linux.SECCOMP_RET_KILL_PROCESS, nil
 	default:
 		colonIndex := strings.Index(string(a), ":")
 		if colonIndex == -1 {
@@ -169,8 +179,40 @@ func (a Action) bpf(defaultAction linux.BPFAction) linux.BPFAction {
 		if err != nil {
 			panic(fmt.Sprintf("failed to parse seccomp action: %v", err))
 		}
-		return ins.bpf(defaultAction).WithReturnCode(uint16(code))
+		act, err := ins.bpf(defaultAction)
+		if err != nil {
+			return 0, err
+		}
+		return act.WithReturnCode(uint16(code)), nil
 	}
+}
+
+var (
+	// killProcessAvailableOnce is used to ensure that isKillProcessAvailable is
+	// only called once.
+	killProcessAvailableOnce sync.Once
+
+	// killProcessAvailable is true if SECCOMP_RET_KILL_PROCESS is available.
+	killProcessAvailable bool
+
+	// killProcessAvailableErr is the error obtained when trying to determine if
+	// SECCOMP_RET_KILL_PROCESS is available.
+	killProcessAvailableErr error
+)
+
+// saneDefaultAction returns a sane default for a failure to match
+// a seccomp-bpf filter. Either kill the process, or trap.
+func saneDefaultAction() (linux.BPFAction, error) {
+	killProcessAvailableOnce.Do(func() {
+		killProcessAvailable, killProcessAvailableErr = isKillProcessAvailable()
+	})
+	if killProcessAvailableErr != nil {
+		return 0, killProcessAvailableErr
+	}
+	if killProcessAvailable {
+		return linux.SECCOMP_RET_KILL_PROCESS, nil
+	}
+	return linux.SECCOMP_RET_TRAP, nil
 }
 
 // RuleSet is a set of rules and associated action.
@@ -403,12 +445,6 @@ type ProgramOptions struct {
 	HotSyscalls []uintptr
 }
 
-// defaultBPFAction returns the BPF action that `Default` actions resolve to:
-// `o.DefaultAction`, or SECCOMP_RET_KILL_PROCESS if that is `Default` too.
-func (o ProgramOptions) defaultBPFAction() linux.BPFAction {
-	return o.DefaultAction.bpf(linux.SECCOMP_RET_KILL_PROCESS)
-}
-
 // BuildStats contains information about seccomp program generation.
 type BuildStats struct {
 	// SizeBeforeOptimizations and SizeAfterOptimizations correspond to the
@@ -438,10 +474,20 @@ func (p *Program) Build() ([]bpf.Instruction, BuildStats, error) {
 		return nil, BuildStats{}, err
 	}
 
-	defaultAction := p.Options.defaultBPFAction()
+	defaultActionFn := func() (linux.BPFAction, error) {
+		return p.Options.DefaultAction.bpf(saneDefaultAction)
+	}
+	defaultAction, err := defaultActionFn()
+	if err != nil {
+		return nil, BuildStats{}, err
+	}
 	possibleActions := make(map[linux.BPFAction]struct{})
 	for _, ruleSet := range p.RuleSets {
-		possibleActions[ruleSet.Action.bpf(defaultAction)] = struct{}{}
+		action, err := ruleSet.Action.bpf(defaultActionFn)
+		if err != nil {
+			return nil, BuildStats{}, err
+		}
+		possibleActions[action] = struct{}{}
 	}
 
 	program := &syscallProgram{
@@ -467,7 +513,11 @@ func (p *Program) Build() ([]bpf.Instruction, BuildStats, error) {
 
 	// Label if the architecture didn't match:
 	program.Label(badArchLabel)
-	program.Ret(p.Options.BadArchAction.bpf(defaultAction))
+	badArchAction, err := p.Options.BadArchAction.bpf(defaultActionFn)
+	if err != nil {
+		return nil, BuildStats{}, err
+	}
+	program.Ret(badArchAction)
 
 	insns, err := program.program.Instructions()
 	if err != nil {
@@ -637,9 +687,14 @@ func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, ti
 	// Build a single map of per-syscall syscallRuleActions.
 	// We will split this map up later.
 	allSyscallRuleActions := make(map[uintptr][]syscallRuleAction)
-	defaultAction := options.defaultBPFAction()
+	defaultActionFn := func() (linux.BPFAction, error) {
+		return options.DefaultAction.bpf(saneDefaultAction)
+	}
 	for _, rs := range rules {
-		action := rs.Action.bpf(defaultAction)
+		action, err := rs.Action.bpf(defaultActionFn)
+		if err != nil {
+			return orderedRuleSets{}, 0, err
+		}
 		for sysno, rule := range rs.Rules.rules {
 			existing, found := allSyscallRuleActions[sysno]
 			if !found {

@@ -96,6 +96,19 @@ func SetFilterInChild(instrs []bpf.Instruction) unix.Errno {
 	return 0
 }
 
+func isKillProcessAvailable() (bool, error) {
+	action := uint32(linux.SECCOMP_RET_KILL_PROCESS)
+	if _, errno := seccomp(linux.SECCOMP_GET_ACTION_AVAIL, 0, unsafe.Pointer(&action)); errno != 0 {
+		// EINVAL: SECCOMP_GET_ACTION_AVAIL not in this kernel yet.
+		// EOPNOTSUPP: SECCOMP_RET_KILL_PROCESS not supported.
+		if errno == unix.EINVAL || errno == unix.EOPNOTSUPP {
+			return false, nil
+		}
+		return false, errno
+	}
+	return true, nil
+}
+
 // seccomp calls seccomp(2). This is safe to call from an afterFork context.
 //
 //go:nosplit

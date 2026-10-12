@@ -20,7 +20,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -99,15 +98,6 @@ func (v Values) Copy() Values {
 	v2 := Values(make(map[string]uint32, len(v)))
 	maps.Copy(v2, v)
 	return v2
-}
-
-// maxParallelism is the maximum value returned by Parallelism.
-const maxParallelism = 8
-
-// Parallelism returns the number of programs that `PrecompiledPrograms`
-// implementations should compile concurrently.
-func Parallelism() int {
-	return min(runtime.GOMAXPROCS(0), maxParallelism)
 }
 
 // Precompile compiles a `seccomp.Program` with the given values.
