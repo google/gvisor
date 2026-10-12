@@ -13,17 +13,24 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <features.h>
 #include <linux/capability.h>
 #include <linux/fuse.h>
-#include <linux/stat.h>
 #include <poll.h>
 #include <stdio.h>
+#include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #include <unistd.h>
+
+// Only some versions of glibc define the statx types in sys/stat.h.
+#if defined(__GLIBC__) && \
+    !(__GLIBC__ == 2 && (__GLIBC_MINOR__ == 28 || __GLIBC_MINOR__ == 29))
+#include <linux/stat.h>
+#endif
 
 #include <cerrno>
 #include <cstdint>
