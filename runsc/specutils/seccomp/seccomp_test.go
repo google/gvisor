@@ -157,6 +157,54 @@ var (
 			expected: uint32(linux.SECCOMP_RET_LOG),
 		},
 		{
+			name: "match_name_kill_thread",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action: specs.ActKillThread,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
+		},
+		{
+			name: "match_name_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action: specs.ActKillProcess,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "write", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
+			name: "default_kill_process",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActKillProcess,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"write",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "read", nil),
+			expected: uint32(linux.SECCOMP_RET_KILL_PROCESS),
+		},
+		{
 			name: "no_match_name_allow",
 			config: specs.LinuxSeccomp{
 				DefaultAction: specs.ActAllow,
