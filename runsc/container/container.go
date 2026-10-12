@@ -675,7 +675,9 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 
 	c.Spec.Linux.Resources = res
 
-	c.Saver.lock(BlockAcquire)
+	if err := c.Saver.lock(BlockAcquire); err != nil {
+		return err
+	}
 	defer c.Saver.unlock()
 	return c.saveLocked()
 }
