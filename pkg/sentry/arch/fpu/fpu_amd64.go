@@ -139,10 +139,20 @@ func (s *State) Fork() State {
 	return n
 }
 
+// amxStateLen returns the length of a State that holds AMX tile data state.
+func amxStateLen() int {
+	maxsize, _ := cpuid.HostFeatureSet().ExtendedStateSize()
+	return int(maxsize) + FP_XSTATE_MAGIC2_SIZE
+}
+
+// HasAMX returns true if s is large enough to hold AMX tile data state.
+func (s State) HasAMX() bool {
+	return len(s) >= amxStateLen()
+}
+
 // EnableAMX extends s to hold AMX tile data state, if it does not already.
 func (s *State) EnableAMX() {
-	maxsize, _ := cpuid.HostFeatureSet().ExtendedStateSize()
-	n := int(maxsize) + FP_XSTATE_MAGIC2_SIZE
+	n := amxStateLen()
 	if len(*s) >= n {
 		return
 	}
@@ -312,6 +322,10 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 	if len(f) >= minXstateBytes {
 		// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
 		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:]) &^ ignoredXFeatureStates
+		if !f.HasAMX() {
+			// As in Linux, tile data is not restored without permission.
+			xstateBV &^= cpuid.XCR0AmxDataMask
+		}
 		allowedMask := featureSet.ValidXCR0Mask() & SupportedXFeatureStates
 		if disallowedXstateBV := xstateBV &^ allowedMask; disallowedXstateBV != 0 {
 			// FIXME: b/478302010, b/478302512: If the app is using features

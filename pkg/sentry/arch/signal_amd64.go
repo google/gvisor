@@ -171,10 +171,14 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	if _, err := st.IO.CopyOut(context.Background(), fpStart, fpState[:fpu.FP_SW_FRAME_OFFSET], usermem.IOOpts{}); err != nil {
 		return err
 	}
+	xfeatures := fpu.XFEATURE_MASK_FPSSE | featureSet.ValidXCR0Mask()
+	if !c.fpState.HasAMX() {
+		xfeatures &^= cpuid.XCR0AmxDataMask
+	}
 	fpsw := fpu.FPSoftwareFrame{
 		Magic1:       fpu.FP_XSTATE_MAGIC1,
 		ExtendedSize: uint32(fpSize),
-		Xfeatures:    fpu.XFEATURE_MASK_FPSSE | featureSet.ValidXCR0Mask(),
+		Xfeatures:    xfeatures,
 		XstateSize:   uint32(fpSize) - fpu.FP_XSTATE_MAGIC2_SIZE,
 	}
 	st.Bottom = fpStart + 512
