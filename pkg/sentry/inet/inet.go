@@ -46,14 +46,14 @@ type Stack interface {
 
 	// AddInterfaceAddr adds an address to the network interface identified by
 	// idx.
-	AddInterfaceAddr(idx int32, addr InterfaceAddr) error
+	AddInterfaceAddr(ctx context.Context, idx int32, addr InterfaceAddr) error
 
 	// SetInterface modifies or adds a new interface.
 	SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Error
 
 	// RemoveInterfaceAddr removes an address from the network interface
 	// identified by idx.
-	RemoveInterfaceAddr(idx int32, addr InterfaceAddr) error
+	RemoveInterfaceAddr(ctx context.Context, idx int32, addr InterfaceAddr) error
 
 	// SupportsIPv6 returns true if the stack supports IPv6 connectivity.
 	SupportsIPv6() bool
