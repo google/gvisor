@@ -39,6 +39,10 @@ endif
 
 DOCKER_BUILD_ARGS ?=
 
+# Prepared contexts invoke this makefile directly.
+SHELL = /bin/bash
+header ?= echo --- $(1) >&2
+
 # Note that the image prefixes used here must match the image mangling in
 # runsc/testutil.MangleImage. Names are mangled in this way to ensure that all
 # tests are using locally-defined images (that are consistent and idempotent).
@@ -230,4 +234,24 @@ else
 endif
 else
 	@
+endif
+
+# Raw-checkout callers first obtain the same context artifact used by Bazel
+# image actions. Prepared contexts are staged before any image hash or cache
+# decision and never invoke Bazel recursively.
+ifneq ($(_IMAGE_CONTEXT_PREPARED),1)
+_cuda_images_makefile := $(abspath $(lastword $(MAKEFILE_LIST)))
+_cuda_root_makefile := $(abspath $(dir $(_cuda_images_makefile))/../Makefile)
+_cuda_context_options = $(if $(filter x86_64 aarch64,$(ARCH)),--config=$(ARCH),$(error Unsupported CUDA image architecture $(ARCH))) --@io_bazel_rules_go//go/config:race=false
+_cuda_context_operations := tag pull rebuild load test local-image push
+_cuda_context_targets := $(foreach op,$(_cuda_context_operations),$(addprefix $(op)-,gpu_cuda-tests gpu_cuda-tests-12-8))
+$(_cuda_context_targets):
+	@set -eu; image_context_dir=$$(mktemp -d); trap 'rm -rf "$$image_context_dir"' EXIT; \
+	$(MAKE) --no-print-directory -C "$(dir $(_cuda_root_makefile))" -f "$(_cuda_root_makefile)" copy \
+	  TARGETS=//images:source_contexts DESTINATION="$$image_context_dir/contexts.tar" \
+	  OPTIONS="$(OPTIONS) $(_cuda_context_options)" && \
+	tar --extract --file "$$image_context_dir/contexts.tar" --directory "$$image_context_dir" --same-permissions --no-same-owner && \
+	cd "$$image_context_dir" && \
+	$(MAKE) --no-print-directory -f "$(_cuda_images_makefile)" _IMAGE_CONTEXT_PREPARED=1 ARCH="$(ARCH)" "$@"
+.PHONY: $(_cuda_context_targets)
 endif
