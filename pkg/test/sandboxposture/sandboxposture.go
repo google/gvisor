@@ -354,10 +354,20 @@ var PlatformCapSysPtrace = map[string]bool{
 	"ptrace":  true,
 }
 
-// PlatformGoDebug contains the expected GODEBUG for each platform, if any.
-var PlatformGoDebug = map[string]string{
+// platformGoDebug contains the GODEBUG settings expected for each platform
+// in addition to those expected for all platforms, if any.
+var platformGoDebug = map[string]string{
 	"kvm":    "asyncpreemptoff=1",
 	"slimvm": "asyncpreemptoff=1",
+}
+
+// GoDebug returns the expected GODEBUG for a platform.
+func GoDebug(platform string) string {
+	godebug := "containermaxprocs=0"
+	if p := platformGoDebug[platform]; p != "" {
+		godebug += "," + p
+	}
+	return godebug
 }
 
 // Opts is the set of options to `Collect`.
