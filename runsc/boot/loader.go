@@ -244,6 +244,10 @@ type Loader struct {
 	// PreSeccompCallback is called right before installing seccomp filters.
 	PreSeccompCallback func()
 
+	// PostStartCallback is called once Run has started the sandbox, right
+	// before the result of the start is reported to the controller.
+	PostStartCallback func()
+
 	// restoreDone is used to wait for restore to complete. Note that this may be
 	// much after the sandbox has started because under some configurations, the
 	// restore is allowed to proceed in the background while the sandbox runs.
@@ -565,6 +569,25 @@ type Args struct {
 	// The `Loader` records midpoints on it as it goes through loader creation
 	// and sandbox startup. The `Loader` does not take ownership of it.
 	StartupTimer *timing.Timer
+}
+
+// Times is how long the sandbox took to boot. `runsc boot` reports it as JSON,
+// to the file given by --boot-times-log.
+type Times struct {
+	// Boot is the total active sandbox boot time from when the sandbox process
+	// was spawned until the kernel was started in Loader.Run. It includes New
+	// and Run, as well as process spawn and Go runtime initialization, and
+	// excludes the idle time spent in WaitForStartSignal between `runsc create`
+	// and `runsc start`.
+	Boot gtime.Duration
+	// New is the portion of Boot spent in boot.New (initializing the platform,
+	// kernel, network stack, and control server).
+	New gtime.Duration
+	// Run is the portion of Boot spent in Loader.Run (configuring the network,
+	// installing seccomp filters, creating the root container process and
+	// mounts, and starting the kernel). It ends as soon as the kernel is
+	// started and does not include guest application execution time.
+	Run gtime.Duration
 }
 
 // HostTHP holds host transparent hugepage settings.
@@ -1333,6 +1356,9 @@ func (l *Loader) installSeccompFilters() error {
 // +checklocksexclude:l.mu
 func (l *Loader) Run() error {
 	err := l.run()
+	if err == nil && l.PostStartCallback != nil {
+		l.PostStartCallback()
+	}
 	l.ctrl.manager.startResultChan <- err
 	if err != nil {
 		// Give the controller some time to send the error to the

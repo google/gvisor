@@ -1099,6 +1099,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if err := donations.DonateLogFile("final-metrics-log-fd", conf.FinalMetricsLog, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, lfOpts); err != nil {
 		return fmt.Errorf("donating final metrics log file: %w", err)
 	}
+	if err := donations.DonateLogFile("boot-times-log-fd", conf.BootTimesLog, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, lfOpts); err != nil {
+		return fmt.Errorf("donating boot times log file: %w", err)
+	}
 	if err := donations.DonateLogFile("rootfs-upper-tar-fd", specutils.RootfsTarUpperPath(args.Spec), os.O_RDONLY, lfOpts); err != nil {
 		return fmt.Errorf("donating rootfs tar file: %w", err)
 	}
@@ -1448,6 +1451,8 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donation.LogDonations(cmd)
 	log.Debugf("Starting sandbox: %s %v", cmd.Path, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
+	// Pass the current time so the sandbox process knows when it was spawned.
+	cmd.Env = starttime.PutEnviron(cmd.Env, time.Now())
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		err := fmt.Errorf("starting sandbox: %v", err)
 		// If the sandbox failed to start, it may be because the binary
