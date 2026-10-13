@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,6 +46,30 @@ func TestDefault(t *testing.T) {
 	flags := c.ToFlags()
 	if len(flags) > 0 {
 		t.Errorf("default flags not set correctly for: %s", flags)
+	}
+}
+
+func TestRegisterFlagsXDPIsolation(t *testing.T) {
+	first := flag.NewFlagSet("first", flag.ContinueOnError)
+	RegisterFlags(first)
+	if err := first.Set("EXPERIMENTAL-xdp", "ns"); err != nil {
+		t.Fatal(err)
+	}
+
+	second := flag.NewFlagSet("second", flag.ContinueOnError)
+	RegisterFlags(second)
+	fl := second.Lookup("EXPERIMENTAL-xdp")
+	if got := fl.DefValue; got != "off" {
+		t.Errorf("second FlagSet default = %q, want off", got)
+	}
+	if got := fl.Value.String(); got != "off" {
+		t.Errorf("second FlagSet value = %q, want off", got)
+	}
+	if err := second.Set("EXPERIMENTAL-xdp", "redirect:eth0"); err != nil {
+		t.Fatal(err)
+	}
+	if got := first.Lookup("EXPERIMENTAL-xdp").Value.String(); got != "ns" {
+		t.Errorf("first FlagSet value = %q, want ns", got)
 	}
 }
 
@@ -432,9 +457,6 @@ func TestValidationFail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
 			RegisterFlags(testFlags)
-			t.Cleanup(func() {
-				_ = testFlags.Lookup("EXPERIMENTAL-xdp").Value.Set("off")
-			})
 			for name, val := range tc.flags {
 				if err := testFlags.Lookup(name).Value.Set(val); err != nil {
 					t.Errorf("%s=%q: %v", name, val, err)
@@ -486,6 +508,18 @@ func TestOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.AllowFlagOverride = true
+
+	t.Run("XDP", func(t *testing.T) {
+		if err := c.Override(testFlags, "EXPERIMENTAL-xdp", "ns", false); err != nil {
+			t.Fatal(err)
+		}
+		if got := c.XDP; got != (XDP{Mode: XDPModeNS}) {
+			t.Errorf("Override XDP = %+v, want ns", got)
+		}
+		if flags := c.ToFlags(); !slices.Contains(flags, "--EXPERIMENTAL-xdp=ns") {
+			t.Errorf("ToFlags() = %v, want --EXPERIMENTAL-xdp=ns", flags)
+		}
+	})
 
 	t.Run("string", func(t *testing.T) {
 		c.RootDir = "foobar"
