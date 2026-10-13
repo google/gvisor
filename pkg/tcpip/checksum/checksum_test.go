@@ -130,30 +130,24 @@ func TestChecksum(t *testing.T) {
 		rnd.Read(testCases[i].buf)
 	}
 
-	checkSumImpls := []struct {
-		fn   func([]byte, uint16) uint16
-		name string
-	}{
-		{old, "checksum_old"},
-		{Checksum, "checksum"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("buf size %d", len(tc.buf)), func(t *testing.T) {
+	for sizeIndex, size := range bufSizes {
+		t.Run(fmt.Sprintf("buf size %d", size), func(t *testing.T) {
 			// Also test different offsets into the buffers. This
-			// tests the correctess of optimizations dealing with
+			// tests the correctness of optimizations dealing with
 			// non-64-bit aligned numbers.
 			for offset := 0; offset < 8; offset++ {
 				t.Run(fmt.Sprintf("offset %d", offset), func(t *testing.T) {
-					if offset > len(tc.buf) {
+					if offset > size {
 						t.Skip("offset is greater than buffer size")
 					}
-					buf := tc.buf[offset:]
-					for i := 0; i < len(checkSumImpls)-1; i++ {
-						first := checkSumImpls[i].fn(buf, tc.initial)
-						second := checkSumImpls[i+1].fn(buf, tc.initial)
-						if first != second {
-							t.Fatalf("for (buf = 0x%x, initial = 0x%x) checksum %q does not match %q: got: 0x%x and 0x%x", buf, tc.initial, checkSumImpls[i].name, checkSumImpls[i+1].name, first, second)
+					for i := sizeIndex; i < len(testCases); i += len(bufSizes) {
+						tc := testCases[i]
+						buf := tc.buf[offset:]
+						// Evaluate the reference first so input mutation cannot
+						// also change the expected checksum.
+						want := old(buf, tc.initial)
+						if got := Checksum(buf, tc.initial); got != want {
+							t.Fatalf("case %d: Checksum(%x, %#x) = %#x, want %#x", i, buf, tc.initial, got, want)
 						}
 					}
 				})
