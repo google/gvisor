@@ -36,6 +36,17 @@ func execSentry() subcommands.ExitStatus {
 	return util.Errorf("Failed to run %q in sidecar %q: %v", strings.Join(flag.CommandLine.Args(), " "), sentry.Name, err)
 }
 
+// MetricMetadata implements subcommands.Command for the "metric-metadata"
+// command.
+type MetricMetadata struct {
+	forwardcmd.MetricMetadata
+}
+
+// Execute implements subcommands.Command.Execute.
+func (*MetricMetadata) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
+	return execSentry()
+}
+
 // Nvproxy implements subcommands.Command for the "nvproxy" command.
 type Nvproxy struct {
 	nvproxy.Nvproxy
