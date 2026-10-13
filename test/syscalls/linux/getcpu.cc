@@ -26,6 +26,7 @@ namespace testing {
 
 namespace {
 
+// Dummy change to trigger tests.
 TEST(GetcpuTest, IsValidCpuStress) {
   const int num_cpus = NumCPUs();
   absl::Time deadline = absl::Now() + absl::Seconds(10);
