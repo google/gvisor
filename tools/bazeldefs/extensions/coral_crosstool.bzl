@@ -8,6 +8,7 @@ def _crosstool_impl(_ctx):
         patch_args = ["-p1"],
         patches = [
             "//tools:crosstool-arm-dirs.patch",
+            "//tools:crosstool-link-flags.patch",
             "//tools:remove_windows_deps.patch",
         ],
         sha256 = "f86d488ca353c5ee99187579fe408adb73e9f2bb1d69c6e3a42ffb904ce3ba01",

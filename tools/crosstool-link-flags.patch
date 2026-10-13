@@ -1,0 +1,30 @@
+Retain transitive shared libraries when linking with GCC's --as-needed default.
+Bazel injects legacy link features before ordinary custom features, so Coral's
+late --no-as-needed did not affect its dependency libraries. Use the existing
+hoisted feature for this link-only flag, leaving runtime libraries in place.
+https://github.com/bazelbuild/rules_cc/blob/541eda5d7/cc/private/toolchain_config/cc_toolchain_config_info.bzl#L98-L113
+
+diff --git a/cc_toolchain_config.bzl.tpl b/cc_toolchain_config.bzl.tpl
+--- a/cc_toolchain_config.bzl.tpl
++++ b/cc_toolchain_config.bzl.tpl
+@@ -170,7 +170,6 @@
+ COMMON_LINKER_FLAGS = [
+     "-lstdc++",
+     "-lm",
+-    "-Wl,-no-as-needed",
+     "-Wl,-z,relro,-z,now",
+     "-Wall",
+     "-pass-exit-codes",
+@@ -212,6 +211,12 @@
+         name = "default_compile_flags",
+         enabled = True,
+         flag_sets = [
++            # Bazel puts this feature before its injected libraries_to_link.
++            # --no-as-needed must precede the shared libraries it protects.
++            flag_set(
++                actions = ALL_LINK_ACTIONS,
++                flag_groups = [flag_group(flags = ["-Wl,--no-as-needed"])],
++            ),
+             flag_set(
+                 actions = ALL_COMPILE_ACTIONS,
+                 flag_groups = [
