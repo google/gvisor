@@ -808,6 +808,9 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		return fs.openTmpfile(ctx, rp, &opts)
+	}
 	mayCreate := opts.Flags&linux.O_CREAT != 0
 	mustCreate := opts.Flags&(linux.O_CREAT|linux.O_EXCL) == (linux.O_CREAT | linux.O_EXCL)
 
@@ -977,6 +980,104 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	layerFDOpts := layerFD.Options()
 	if err := fd.vfsfd.Init(fd, layerFlags, rp.Credentials(), mnt, &d.vfsd, &layerFDOpts); err != nil {
 		layerFD.DecRef(ctx)
+		return nil, err
+	}
+	return &fd.vfsfd, nil
+}
+
+// openTmpfile implements OpenAt for open(O_TMPFILE). The unnamed file is
+// created on the upper layer in the directory at rp; it only becomes visible
+// in the directory tree if it is later named by LinkAt.
+func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	var ds *[]*dentry
+	fs.renameMu.RLock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
+			unlocked = true
+		}
+	}
+	defer unlock()
+	dir, err := fs.resolveLocked(ctx, rp, &ds)
+	if err != nil {
+		return nil, err
+	}
+	if !dir.isDir() {
+		return nil, linuxerr.ENOTDIR
+	}
+	creds := rp.Credentials()
+	if err := dir.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
+		return nil, err
+	}
+	mnt := rp.Mount()
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return nil, err
+	}
+	defer mnt.EndWrite()
+	if err := dir.copyUpLocked(ctx); err != nil {
+		return nil, err
+	}
+	vfsObj := fs.vfsfs.VirtualFilesystem()
+	upperFD, err := vfsObj.OpenAt(ctx, dir.credsForCreate(creds, dir.isSGIDSet()), &vfs.PathOperation{
+		Root:  dir.upperVD,
+		Start: dir.upperVD,
+	}, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Describe the new file as lookupLocked() would, except that it has no
+	// name in dir and is not inserted into dir.children.
+	upperVD := upperFD.VirtualDentry()
+	childPop := vfs.PathOperation{
+		Root:  upperVD,
+		Start: upperVD,
+	}
+	stat, err := upperFD.Stat(ctx, vfs.StatOptions{
+		Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO,
+	})
+	if err != nil {
+		upperFD.DecRef(ctx)
+		return nil, err
+	}
+	acl, err := vfsObj.GetPosixACLAt(ctx, fs.creds, &childPop, vfs.AccessACL)
+	if err != nil {
+		upperFD.DecRef(ctx)
+		return nil, err
+	}
+	defaultACL, err := vfsObj.GetPosixACLAt(ctx, fs.creds, &childPop, vfs.DefaultACL)
+	if err != nil {
+		upperFD.DecRef(ctx)
+		return nil, err
+	}
+	child := fs.newDentry()
+	upperVD.IncRef()
+	child.upperVD = upperVD
+	child.copiedUp = atomicbitops.FromUint32(1)
+	child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+	child.accessACL.Store(acl)
+	child.defaultACL.Store(defaultACL)
+	child.uid = atomicbitops.FromUint32(stat.UID)
+	child.gid = atomicbitops.FromUint32(stat.GID)
+	child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
+	child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
+	child.ino = atomicbitops.FromUint64(stat.Ino)
+	child.name = fmt.Sprintf("#%d", stat.Ino)
+	child.IncRef()
+	defer child.DecRef(ctx)
+	unlock()
+
+	layerFlags := upperFD.StatusFlags()
+	fd := &regularFileFD{
+		copiedUp:    true,
+		cachedFD:    upperFD,
+		cachedFlags: layerFlags,
+	}
+	fd.LockFD.Init(&child.locks)
+	layerFDOpts := upperFD.Options()
+	if err := fd.vfsfd.Init(fd, layerFlags, creds, mnt, &child.vfsd, &layerFDOpts); err != nil {
+		upperFD.DecRef(ctx)
 		return nil, err
 	}
 	return &fd.vfsfd, nil
@@ -2114,7 +2215,20 @@ func (fs *filesystem) setPosixACLLocked(ctx context.Context, d *dentry, creds *a
 
 // PrependPath implements vfs.FilesystemImpl.PrependPath.
 func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDentry, b *fspath.Builder) error {
-	return genericPrependPath(fs, vfsroot, vd.Mount(), vd.Dentry().Impl().(*dentry), b)
+	d := vd.Dentry().Impl().(*dentry)
+	if d.parent.Load() == nil {
+		fs.ancestryMu.RLock()
+		name := d.name
+		fs.ancestryMu.RUnlock()
+		if name != "" {
+			// d was created by openTmpfile() and has no place in the directory
+			// tree. Compare tmpfs.filesystem.PrependPath().
+			b.PrependComponent("/" + name)
+			b.AppendString(" (deleted)")
+			return vfs.PrependPathSyntheticError{}
+		}
+	}
+	return genericPrependPath(fs, vfsroot, vd.Mount(), d, b)
 }
 
 // IsDescendant implements vfs.FilesystemImpl.IsDescendant.
