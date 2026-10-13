@@ -57,15 +57,20 @@ def _matches_prefix(label, prefix):
     workspace, pkg = _parse_prefix(prefix)
     return _workspace_of(label) == workspace and label.package.startswith(pkg)
 
-def _is_allowed(target, allowlist, prefixes):
-    # Check for allowed prefixes.
-    for prefix in prefixes:
-        if _matches_prefix(target, prefix):
+def _is_allowed(target, ctx):
+    # Check the allowlist. It takes precedence over denied prefixes.
+    for allowed in ctx.attr.allowed:
+        if target == allowed.label:
             return True
 
-    # Check the allowlist.
-    for allowed in allowlist:
-        if target == allowed.label:
+    # Check for denied prefixes.
+    for prefix in ctx.attr.denied_prefixes:
+        if _matches_prefix(target, prefix):
+            return False
+
+    # Check for allowed prefixes.
+    for prefix in ctx.attr.allowed_prefixes:
+        if _matches_prefix(target, prefix):
             return True
 
     return False
@@ -95,11 +100,11 @@ def _deps_test_impl(ctx):
             # messages. Consider the case where A dependes on B and B depends
             # on C, and both B and C are disallowed. Avoid emitting an error
             # that B depends on C, when the real issue is that A depends on B.
-            if not _is_allowed(node_target.label, ctx.attr.allowed, ctx.attr.allowed_prefixes) and node_target.label != target.label:
+            if not _is_allowed(node_target.label, ctx) and node_target.label != target.label:
                 continue
             bad_deps = []
             for dep in node_deps:
-                if not _is_allowed(dep.label, ctx.attr.allowed, ctx.attr.allowed_prefixes):
+                if not _is_allowed(dep.label, ctx):
                     bad_deps.append(dep)
             if len(bad_deps) > 0:
                 nodes[node_target] = bad_deps
@@ -156,6 +161,11 @@ deps_test = rule(
         ),
         "allowed_prefixes": attr.string_list(
             doc = "Any packages beginning with these prefixes are allowed.",
+        ),
+        "denied_prefixes": attr.string_list(
+            doc = "Packages beginning with these prefixes are not allowed, " +
+                  "even if covered by allowed_prefixes. Targets listed in " +
+                  "allowed are still allowed.",
         ),
         "definitely_not_allowed_prefixes": attr.string_list(
             doc = "Packages beginning with these prefixes must not be " +
