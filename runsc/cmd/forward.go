@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,36 +17,30 @@ package cmd
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/google/subcommands"
-
-	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
+	"gvisor.dev/gvisor/runsc/cmd/sentry/forwardcmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 )
 
+// execSentry replaces the current process with the Sentry binary, running the
+// same command line that runsc was invoked with.
+func execSentry() subcommands.ExitStatus {
+	sentry := &gvisorbinaries.GvisorSentry
+	err := sentry.Exec(gvisorbinaries.Options{Argv: os.Args, Envv: os.Environ()})
+	// Unreachable unless `sentry.Exec` fails.
+	return util.Errorf("Failed to run %q in sidecar %q: %v", strings.Join(flag.CommandLine.Args(), " "), sentry.Name, err)
+}
+
 // Symbolize implements subcommands.Command for the "symbolize" command.
 type Symbolize struct {
-	sentrycmd.Symbolize
+	forwardcmd.Symbolize
 }
 
 // Execute implements subcommands.Command.Execute.
-func (c *Symbolize) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if f.NArg() != 0 {
-		f.Usage()
-		return subcommands.ExitUsageError
-	}
-	sentry := &gvisorbinaries.GvisorSentry
-	p, err := sentry.Path()
-	if err != nil {
-		return util.Errorf("Sentry sidecar binary %q is not available: %v", sentry.Name, err)
-	}
-	argv := []string{p, c.Name()}
-	if c.DumpAll {
-		argv = append(argv, "-all")
-	}
-	err = sentry.Exec(gvisorbinaries.Options{Argv: argv, Envv: os.Environ()})
-	// Unreachable unless `sentry.Exec` fails.
-	return util.Errorf("Failed to execute %v: %v", argv, err)
+func (*Symbolize) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
+	return execSentry()
 }
