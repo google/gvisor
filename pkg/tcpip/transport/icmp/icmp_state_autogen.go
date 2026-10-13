@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (p *icmpPacket) StateTypeName() string {
+func (i *icmpPacket) StateTypeName() string {
 	return "pkg/tcpip/transport/icmp.icmpPacket"
 }
 
-func (p *icmpPacket) StateFields() []string {
+func (i *icmpPacket) StateFields() []string {
 	return []string{
 		"icmpPacketEntry",
 		"senderAddress",
@@ -24,33 +24,31 @@ func (p *icmpPacket) StateFields() []string {
 	}
 }
 
-func (p *icmpPacket) beforeSave() {}
+func (i *icmpPacket) beforeSave() {}
 
 // +checklocksignore
-func (p *icmpPacket) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	receivedAtValue := p.saveReceivedAt()
-	_ = (int64)(receivedAtValue)
-	stateSinkObject.SaveValue(4, receivedAtValue)
-	stateSinkObject.Save(0, &p.icmpPacketEntry)
-	stateSinkObject.Save(1, &p.senderAddress)
-	stateSinkObject.Save(2, &p.packetInfo)
-	stateSinkObject.Save(3, &p.data)
-	stateSinkObject.Save(5, &p.tosOrTClass)
-	stateSinkObject.Save(6, &p.ttlOrHopLimit)
+func (i *icmpPacket) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.icmpPacketEntry)
+	stateSinkObject.Save(1, &i.senderAddress)
+	stateSinkObject.Save(2, &i.packetInfo)
+	stateSinkObject.Save(3, &i.data)
+	stateSinkObject.Save(4, &i.receivedAt)
+	stateSinkObject.Save(5, &i.tosOrTClass)
+	stateSinkObject.Save(6, &i.ttlOrHopLimit)
 }
 
-func (p *icmpPacket) afterLoad(context.Context) {}
+func (i *icmpPacket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *icmpPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.icmpPacketEntry)
-	stateSourceObject.Load(1, &p.senderAddress)
-	stateSourceObject.Load(2, &p.packetInfo)
-	stateSourceObject.Load(3, &p.data)
-	stateSourceObject.Load(5, &p.tosOrTClass)
-	stateSourceObject.Load(6, &p.ttlOrHopLimit)
-	stateSourceObject.LoadValue(4, new(int64), func(y any) { p.loadReceivedAt(ctx, y.(int64)) })
+func (i *icmpPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.icmpPacketEntry)
+	stateSourceObject.Load(1, &i.senderAddress)
+	stateSourceObject.Load(2, &i.packetInfo)
+	stateSourceObject.Load(3, &i.data)
+	stateSourceObject.Load(4, &i.receivedAt)
+	stateSourceObject.Load(5, &i.tosOrTClass)
+	stateSourceObject.Load(6, &i.ttlOrHopLimit)
 }
 
 func (e *endpoint) StateTypeName() string {

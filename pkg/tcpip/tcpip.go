@@ -634,7 +634,7 @@ type SendableControlMessages struct {
 type ReceivableControlMessages struct {
 	// Timestamp is the time that the last packet used to create the read data
 	// was received.
-	Timestamp time.Time `state:".(int64)"`
+	Timestamp time.Time
 
 	// HasInq indicates whether Inq is valid/set.
 	HasInq bool

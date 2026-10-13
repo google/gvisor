@@ -16,24 +16,9 @@ package netstack
 
 import (
 	"context"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
-
-// +checklocksexclude:s.readMu
-func (s *sock) saveTimestamp() int64 {
-	s.readMu.Lock()
-	defer s.readMu.Unlock()
-	return s.timestamp.UnixNano()
-}
-
-// +checklocksexclude:s.readMu
-func (s *sock) loadTimestamp(_ context.Context, nsec int64) {
-	s.readMu.Lock()
-	defer s.readMu.Unlock()
-	s.timestamp = time.Unix(0, nsec)
-}
 
 func (s *Stack) saveStack() *stack.Stack {
 	return s.Stack

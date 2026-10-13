@@ -27,11 +27,9 @@ func (p *packet) beforeSave() {}
 // +checklocksignore
 func (p *packet) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	receivedAtValue := p.saveReceivedAt()
-	_ = (int64)(receivedAtValue)
-	stateSinkObject.SaveValue(2, receivedAtValue)
 	stateSinkObject.Save(0, &p.packetEntry)
 	stateSinkObject.Save(1, &p.data)
+	stateSinkObject.Save(2, &p.receivedAt)
 	stateSinkObject.Save(3, &p.senderAddr)
 	stateSinkObject.Save(4, &p.packetInfo)
 }
@@ -42,9 +40,9 @@ func (p *packet) afterLoad(context.Context) {}
 func (p *packet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.packetEntry)
 	stateSourceObject.Load(1, &p.data)
+	stateSourceObject.Load(2, &p.receivedAt)
 	stateSourceObject.Load(3, &p.senderAddr)
 	stateSourceObject.Load(4, &p.packetInfo)
-	stateSourceObject.LoadValue(2, new(int64), func(y any) { p.loadReceivedAt(ctx, y.(int64)) })
 }
 
 func (ep *endpoint) StateTypeName() string {

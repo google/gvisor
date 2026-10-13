@@ -1450,11 +1450,11 @@ func (s *SendableControlMessages) StateLoad(ctx context.Context, stateSourceObje
 	stateSourceObject.Load(5, &s.IPv6PacketInfo)
 }
 
-func (c *ReceivableControlMessages) StateTypeName() string {
+func (r *ReceivableControlMessages) StateTypeName() string {
 	return "pkg/tcpip.ReceivableControlMessages"
 }
 
-func (c *ReceivableControlMessages) StateFields() []string {
+func (r *ReceivableControlMessages) StateFields() []string {
 	return []string{
 		"Timestamp",
 		"HasInq",
@@ -1478,57 +1478,55 @@ func (c *ReceivableControlMessages) StateFields() []string {
 	}
 }
 
-func (c *ReceivableControlMessages) beforeSave() {}
+func (r *ReceivableControlMessages) beforeSave() {}
 
 // +checklocksignore
-func (c *ReceivableControlMessages) StateSave(stateSinkObject state.Sink) {
-	c.beforeSave()
-	TimestampValue := c.saveTimestamp()
-	_ = (int64)(TimestampValue)
-	stateSinkObject.SaveValue(0, TimestampValue)
-	stateSinkObject.Save(1, &c.HasInq)
-	stateSinkObject.Save(2, &c.Inq)
-	stateSinkObject.Save(3, &c.HasTOS)
-	stateSinkObject.Save(4, &c.TOS)
-	stateSinkObject.Save(5, &c.HasTTL)
-	stateSinkObject.Save(6, &c.TTL)
-	stateSinkObject.Save(7, &c.HasHopLimit)
-	stateSinkObject.Save(8, &c.HopLimit)
-	stateSinkObject.Save(9, &c.HasTimestamp)
-	stateSinkObject.Save(10, &c.HasTClass)
-	stateSinkObject.Save(11, &c.TClass)
-	stateSinkObject.Save(12, &c.HasIPPacketInfo)
-	stateSinkObject.Save(13, &c.PacketInfo)
-	stateSinkObject.Save(14, &c.HasIPv6PacketInfo)
-	stateSinkObject.Save(15, &c.IPv6PacketInfo)
-	stateSinkObject.Save(16, &c.HasOriginalDstAddress)
-	stateSinkObject.Save(17, &c.OriginalDstAddress)
-	stateSinkObject.Save(18, &c.SockErr)
+func (r *ReceivableControlMessages) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Timestamp)
+	stateSinkObject.Save(1, &r.HasInq)
+	stateSinkObject.Save(2, &r.Inq)
+	stateSinkObject.Save(3, &r.HasTOS)
+	stateSinkObject.Save(4, &r.TOS)
+	stateSinkObject.Save(5, &r.HasTTL)
+	stateSinkObject.Save(6, &r.TTL)
+	stateSinkObject.Save(7, &r.HasHopLimit)
+	stateSinkObject.Save(8, &r.HopLimit)
+	stateSinkObject.Save(9, &r.HasTimestamp)
+	stateSinkObject.Save(10, &r.HasTClass)
+	stateSinkObject.Save(11, &r.TClass)
+	stateSinkObject.Save(12, &r.HasIPPacketInfo)
+	stateSinkObject.Save(13, &r.PacketInfo)
+	stateSinkObject.Save(14, &r.HasIPv6PacketInfo)
+	stateSinkObject.Save(15, &r.IPv6PacketInfo)
+	stateSinkObject.Save(16, &r.HasOriginalDstAddress)
+	stateSinkObject.Save(17, &r.OriginalDstAddress)
+	stateSinkObject.Save(18, &r.SockErr)
 }
 
-func (c *ReceivableControlMessages) afterLoad(context.Context) {}
+func (r *ReceivableControlMessages) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *ReceivableControlMessages) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(1, &c.HasInq)
-	stateSourceObject.Load(2, &c.Inq)
-	stateSourceObject.Load(3, &c.HasTOS)
-	stateSourceObject.Load(4, &c.TOS)
-	stateSourceObject.Load(5, &c.HasTTL)
-	stateSourceObject.Load(6, &c.TTL)
-	stateSourceObject.Load(7, &c.HasHopLimit)
-	stateSourceObject.Load(8, &c.HopLimit)
-	stateSourceObject.Load(9, &c.HasTimestamp)
-	stateSourceObject.Load(10, &c.HasTClass)
-	stateSourceObject.Load(11, &c.TClass)
-	stateSourceObject.Load(12, &c.HasIPPacketInfo)
-	stateSourceObject.Load(13, &c.PacketInfo)
-	stateSourceObject.Load(14, &c.HasIPv6PacketInfo)
-	stateSourceObject.Load(15, &c.IPv6PacketInfo)
-	stateSourceObject.Load(16, &c.HasOriginalDstAddress)
-	stateSourceObject.Load(17, &c.OriginalDstAddress)
-	stateSourceObject.Load(18, &c.SockErr)
-	stateSourceObject.LoadValue(0, new(int64), func(y any) { c.loadTimestamp(ctx, y.(int64)) })
+func (r *ReceivableControlMessages) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Timestamp)
+	stateSourceObject.Load(1, &r.HasInq)
+	stateSourceObject.Load(2, &r.Inq)
+	stateSourceObject.Load(3, &r.HasTOS)
+	stateSourceObject.Load(4, &r.TOS)
+	stateSourceObject.Load(5, &r.HasTTL)
+	stateSourceObject.Load(6, &r.TTL)
+	stateSourceObject.Load(7, &r.HasHopLimit)
+	stateSourceObject.Load(8, &r.HopLimit)
+	stateSourceObject.Load(9, &r.HasTimestamp)
+	stateSourceObject.Load(10, &r.HasTClass)
+	stateSourceObject.Load(11, &r.TClass)
+	stateSourceObject.Load(12, &r.HasIPPacketInfo)
+	stateSourceObject.Load(13, &r.PacketInfo)
+	stateSourceObject.Load(14, &r.HasIPv6PacketInfo)
+	stateSourceObject.Load(15, &r.IPv6PacketInfo)
+	stateSourceObject.Load(16, &r.HasOriginalDstAddress)
+	stateSourceObject.Load(17, &r.OriginalDstAddress)
+	stateSourceObject.Load(18, &r.SockErr)
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {

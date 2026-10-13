@@ -37,7 +37,7 @@ type icmpPacket struct {
 	senderAddress tcpip.FullAddress
 	packetInfo    tcpip.IPPacketInfo
 	data          *stack.PacketBuffer
-	receivedAt    time.Time `state:".(int64)"`
+	receivedAt    time.Time
 
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.

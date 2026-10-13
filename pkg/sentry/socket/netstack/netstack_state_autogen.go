@@ -38,9 +38,6 @@ func (s *sock) beforeSave() {}
 // +checklocksignore
 func (s *sock) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	timestampValue := s.saveTimestamp()
-	_ = (int64)(timestampValue)
-	stateSinkObject.SaveValue(13, timestampValue)
 	stateSinkObject.Save(0, &s.vfsfd)
 	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
@@ -54,6 +51,7 @@ func (s *sock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &s.namespace)
 	stateSinkObject.Save(11, &s.sockOptTimestamp)
 	stateSinkObject.Save(12, &s.timestampValid)
+	stateSinkObject.Save(13, &s.timestamp)
 	stateSinkObject.Save(14, &s.sockOptInq)
 }
 
@@ -74,8 +72,8 @@ func (s *sock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(10, &s.namespace)
 	stateSourceObject.Load(11, &s.sockOptTimestamp)
 	stateSourceObject.Load(12, &s.timestampValid)
+	stateSourceObject.Load(13, &s.timestamp)
 	stateSourceObject.Load(14, &s.sockOptInq)
-	stateSourceObject.LoadValue(13, new(int64), func(y any) { s.loadTimestamp(ctx, y.(int64)) })
 }
 
 func (s *Stack) StateTypeName() string {

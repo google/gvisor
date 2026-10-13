@@ -47,7 +47,7 @@ type rawPacket struct {
 	// data holds the actual packet data, including any headers and
 	// payload.
 	data       *stack.PacketBuffer
-	receivedAt time.Time `state:".(int64)"`
+	receivedAt time.Time
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 	packetInfo tcpip.IPPacketInfo

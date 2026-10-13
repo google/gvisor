@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (p *rawPacket) StateTypeName() string {
+func (r *rawPacket) StateTypeName() string {
 	return "pkg/tcpip/transport/raw.rawPacket"
 }
 
-func (p *rawPacket) StateFields() []string {
+func (r *rawPacket) StateFields() []string {
 	return []string{
 		"rawPacketEntry",
 		"data",
@@ -24,33 +24,31 @@ func (p *rawPacket) StateFields() []string {
 	}
 }
 
-func (p *rawPacket) beforeSave() {}
+func (r *rawPacket) beforeSave() {}
 
 // +checklocksignore
-func (p *rawPacket) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	receivedAtValue := p.saveReceivedAt()
-	_ = (int64)(receivedAtValue)
-	stateSinkObject.SaveValue(2, receivedAtValue)
-	stateSinkObject.Save(0, &p.rawPacketEntry)
-	stateSinkObject.Save(1, &p.data)
-	stateSinkObject.Save(3, &p.senderAddr)
-	stateSinkObject.Save(4, &p.packetInfo)
-	stateSinkObject.Save(5, &p.tosOrTClass)
-	stateSinkObject.Save(6, &p.ttlOrHopLimit)
+func (r *rawPacket) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.rawPacketEntry)
+	stateSinkObject.Save(1, &r.data)
+	stateSinkObject.Save(2, &r.receivedAt)
+	stateSinkObject.Save(3, &r.senderAddr)
+	stateSinkObject.Save(4, &r.packetInfo)
+	stateSinkObject.Save(5, &r.tosOrTClass)
+	stateSinkObject.Save(6, &r.ttlOrHopLimit)
 }
 
-func (p *rawPacket) afterLoad(context.Context) {}
+func (r *rawPacket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *rawPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.rawPacketEntry)
-	stateSourceObject.Load(1, &p.data)
-	stateSourceObject.Load(3, &p.senderAddr)
-	stateSourceObject.Load(4, &p.packetInfo)
-	stateSourceObject.Load(5, &p.tosOrTClass)
-	stateSourceObject.Load(6, &p.ttlOrHopLimit)
-	stateSourceObject.LoadValue(2, new(int64), func(y any) { p.loadReceivedAt(ctx, y.(int64)) })
+func (r *rawPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.rawPacketEntry)
+	stateSourceObject.Load(1, &r.data)
+	stateSourceObject.Load(2, &r.receivedAt)
+	stateSourceObject.Load(3, &r.senderAddr)
+	stateSourceObject.Load(4, &r.packetInfo)
+	stateSourceObject.Load(5, &r.tosOrTClass)
+	stateSourceObject.Load(6, &r.ttlOrHopLimit)
 }
 
 func (e *endpoint) StateTypeName() string {

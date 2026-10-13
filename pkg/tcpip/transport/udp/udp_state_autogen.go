@@ -8,11 +8,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (p *udpPacket) StateTypeName() string {
+func (u *udpPacket) StateTypeName() string {
 	return "pkg/tcpip/transport/udp.udpPacket"
 }
 
-func (p *udpPacket) StateFields() []string {
+func (u *udpPacket) StateFields() []string {
 	return []string{
 		"udpPacketEntry",
 		"netProto",
@@ -26,37 +26,35 @@ func (p *udpPacket) StateFields() []string {
 	}
 }
 
-func (p *udpPacket) beforeSave() {}
+func (u *udpPacket) beforeSave() {}
 
 // +checklocksignore
-func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	receivedAtValue := p.saveReceivedAt()
-	_ = (int64)(receivedAtValue)
-	stateSinkObject.SaveValue(6, receivedAtValue)
-	stateSinkObject.Save(0, &p.udpPacketEntry)
-	stateSinkObject.Save(1, &p.netProto)
-	stateSinkObject.Save(2, &p.senderAddress)
-	stateSinkObject.Save(3, &p.destinationAddress)
-	stateSinkObject.Save(4, &p.packetInfo)
-	stateSinkObject.Save(5, &p.pkt)
-	stateSinkObject.Save(7, &p.tosOrTClass)
-	stateSinkObject.Save(8, &p.ttlOrHopLimit)
+func (u *udpPacket) StateSave(stateSinkObject state.Sink) {
+	u.beforeSave()
+	stateSinkObject.Save(0, &u.udpPacketEntry)
+	stateSinkObject.Save(1, &u.netProto)
+	stateSinkObject.Save(2, &u.senderAddress)
+	stateSinkObject.Save(3, &u.destinationAddress)
+	stateSinkObject.Save(4, &u.packetInfo)
+	stateSinkObject.Save(5, &u.pkt)
+	stateSinkObject.Save(6, &u.receivedAt)
+	stateSinkObject.Save(7, &u.tosOrTClass)
+	stateSinkObject.Save(8, &u.ttlOrHopLimit)
 }
 
-func (p *udpPacket) afterLoad(context.Context) {}
+func (u *udpPacket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *udpPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.udpPacketEntry)
-	stateSourceObject.Load(1, &p.netProto)
-	stateSourceObject.Load(2, &p.senderAddress)
-	stateSourceObject.Load(3, &p.destinationAddress)
-	stateSourceObject.Load(4, &p.packetInfo)
-	stateSourceObject.Load(5, &p.pkt)
-	stateSourceObject.Load(7, &p.tosOrTClass)
-	stateSourceObject.Load(8, &p.ttlOrHopLimit)
-	stateSourceObject.LoadValue(6, new(int64), func(y any) { p.loadReceivedAt(ctx, y.(int64)) })
+func (u *udpPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &u.udpPacketEntry)
+	stateSourceObject.Load(1, &u.netProto)
+	stateSourceObject.Load(2, &u.senderAddress)
+	stateSourceObject.Load(3, &u.destinationAddress)
+	stateSourceObject.Load(4, &u.packetInfo)
+	stateSourceObject.Load(5, &u.pkt)
+	stateSourceObject.Load(6, &u.receivedAt)
+	stateSourceObject.Load(7, &u.tosOrTClass)
+	stateSourceObject.Load(8, &u.ttlOrHopLimit)
 }
 
 func (e *endpoint) StateTypeName() string {

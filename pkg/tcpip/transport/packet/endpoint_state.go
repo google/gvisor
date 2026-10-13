@@ -16,22 +16,11 @@ package packet
 
 import (
 	"context"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
-
-// saveReceivedAt is invoked by stateify.
-func (p *packet) saveReceivedAt() int64 {
-	return p.receivedAt.UnixNano()
-}
-
-// loadReceivedAt is invoked by stateify.
-func (p *packet) loadReceivedAt(_ context.Context, nsec int64) {
-	p.receivedAt = time.Unix(0, nsec)
-}
 
 // beforeSave is invoked by stateify.
 func (ep *endpoint) beforeSave() {

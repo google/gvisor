@@ -40,10 +40,8 @@ func (i *IPControlMessages) beforeSave() {}
 // +checklocksignore
 func (i *IPControlMessages) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	TimestampValue := i.saveTimestamp()
-	_ = (int64)(TimestampValue)
-	stateSinkObject.SaveValue(1, TimestampValue)
 	stateSinkObject.Save(0, &i.HasTimestamp)
+	stateSinkObject.Save(1, &i.Timestamp)
 	stateSinkObject.Save(2, &i.HasInq)
 	stateSinkObject.Save(3, &i.Inq)
 	stateSinkObject.Save(4, &i.HasTOS)
@@ -67,6 +65,7 @@ func (i *IPControlMessages) afterLoad(context.Context) {}
 // +checklocksignore
 func (i *IPControlMessages) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.HasTimestamp)
+	stateSourceObject.Load(1, &i.Timestamp)
 	stateSourceObject.Load(2, &i.HasInq)
 	stateSourceObject.Load(3, &i.Inq)
 	stateSourceObject.Load(4, &i.HasTOS)
@@ -83,7 +82,6 @@ func (i *IPControlMessages) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(15, &i.IPv6PacketInfo)
 	stateSourceObject.Load(16, &i.OriginalDstAddress)
 	stateSourceObject.Load(17, &i.SockErr)
-	stateSourceObject.LoadValue(1, new(int64), func(y any) { i.loadTimestamp(ctx, y.(int64)) })
 }
 
 func (to *SendReceiveTimeout) StateTypeName() string {
