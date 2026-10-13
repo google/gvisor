@@ -357,7 +357,8 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 	export T=$$(mktemp -d --tmpdir release.XXXXXX); \
 	mkdir -p $$T/bin/arm64/ && \
 	cp $(RUNTIME_BIN) $$T/bin/arm64 && \
-	docker run --rm -v $$T/bin/arm64/runsc:/workdir/initramfs/runsc gvisor.dev/images/arm-qemu
+	cp -r --preserve=mode $(RUNTIME_DIR)/gvisor-bin $$T/bin/arm64 && \
+	docker run --rm -v $$T/bin/arm64/runsc:/workdir/initramfs/runsc -v $$T/bin/arm64/gvisor-bin:/workdir/initramfs/gvisor-bin gvisor.dev/images/arm-qemu
 .PHONY: arm-qemu-smoke-test
 
 simple-tests: unit-tests # Compatibility target.

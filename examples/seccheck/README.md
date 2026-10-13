@@ -32,7 +32,8 @@ needed for this example, rather than accidentally using an older system-provided
 binary:
 
 ```shell
-$ bazel run runsc -- \
+$ bazel build //:release
+$ bazel-bin/release/runsc \
     --rootless --network=none \
     --pod-init-config=$PWD/examples/seccheck/pod_init.json \
     do echo 123

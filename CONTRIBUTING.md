@@ -66,10 +66,13 @@ clangd compilation database is generated. Afterwards, language server features
 the box" for both Go and C++. VSCode's terminal will open in the dev container,
 where you can run `bazel build`, `bazel test`, and so on to work on gVisor.
 
-For example, you can build and run `runsc` in the dev container as follows:
+For example, you can build and run `runsc` in the dev container as follows.
+The `//:release` target builds `runsc` together with the `gvisor-bin/`
+directory of sidecar binaries, such as the Sentry, that `runsc` runs:
 
 ```
-bazel run //runsc -- --rootless do bash
+bazel build //:release
+bazel-bin/release/runsc --rootless do bash
 ```
 
 Alternatively, it is possible to develop gVisor without a dev container. For the
@@ -80,14 +83,9 @@ run, and test gVisor in a container, which is handled automatically using
 `make`. For example, to build and run `runsc`:
 
 ```
-make copy TARGETS=//runsc DESTINATION=./runsc-dev
-./runsc-dev --rootless do bash
-```
-
-For non-interactive commands, `make run` can be used as a shorthand as follows:
-
-```
-make run TARGETS=//runsc ARGS="--rootless do echo hello world"
+mkdir -p runsc-dev
+make copy TARGETS=//:release DESTINATION=./runsc-dev
+./runsc-dev/runsc --rootless do bash
 ```
 
 In addition, for language server support in C++ files (e.g. the syscall tests):
@@ -176,7 +174,8 @@ Rules:
     *   `@com_github_opencontainers_runtime_spec//specs_go:go_default_library`
         (Go import `github.com/opencontainers/runtime-spec/specs_go`).
 
-*   For performance reasons, `runsc boot` may not run the `netpoller` goroutine.
+*   For performance reasons, the Sentry (`gvisor_sentry boot`) may not run the
+    `netpoller` goroutine.
 
 ## Code reviews
 

@@ -61,7 +61,7 @@ Your test is now runnable with bazel!
 Build and install `runsc`. Re-run this when you modify gVisor:
 
 ```bash
-$ bazel build //runsc && sudo cp bazel-out/k8-fastbuild-ST-4c64f0b3d5c7/bin/runsc/runsc_/runsc $(which runsc)
+$ bazel build //:release && sudo cp -r --preserve=mode bazel-bin/release/runsc bazel-bin/release/gvisor-bin $(dirname $(which runsc))
 ```
 
 Build the testing Docker container. Re-run this when you modify the test code in
