@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !pagesize_64k
+//go:build amd64
 
 package sysmsg
 
@@ -20,6 +20,9 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
+// LINT.IfChange
+
+// Per-thread memory layout. See the diagram in sysmsg.go.
 const (
 	// PerThreadMemSize is the size of a per-thread memory region (32KB).
 	PerThreadMemSize = 8 * hostarch.PageSize
@@ -30,4 +33,13 @@ const (
 	// PerThreadSharedStackSize is the size of a per-thread stack region (16KB, includes stack + sysmsg).
 	PerThreadSharedStackSize   = 4 * hostarch.PageSize
 	PerThreadSharedStackOffset = 4 * hostarch.PageSize
+
+	// MsgOffsetFromSharedStack is the offset of the Msg structure on
+	// the thread stack.
+	MsgOffsetFromSharedStack = PerThreadMemSize - hostarch.PageSize - PerThreadSharedStackOffset
+
+	// SpinningQueueMemSize is the size of a spinning queue memory region.
+	SpinningQueueMemSize = hostarch.PageSize
 )
+
+// LINT.ThenChange(sysmsg.h)

@@ -78,8 +78,8 @@ var (
 
 // New returns a new KVM-based implementation of the platform interface.
 func New(deviceFile *fd.FD, config Config) (*KVM, error) {
-	if hostPageSize := unix.Getpagesize(); hostPageSize != hostarch.PageSize {
-		return nil, fmt.Errorf("KVM platform requires a %d-byte page host, but the host page size is %d bytes", hostarch.PageSize, hostPageSize)
+	if err := hostarch.CheckHostPageSize(); err != nil {
+		return nil, fmt.Errorf("KVM platform: %w", err)
 	}
 	mbCh := hostmm.Probe(true)
 	fd := deviceFile.FD()
@@ -149,7 +149,7 @@ func (*KVM) MapUnit() uint64 {
 
 // MinUserAddress returns the lowest available address.
 func (*KVM) MinUserAddress() hostarch.Addr {
-	return hostarch.PageSize
+	return hostarch.Addr(hostarch.PageSize)
 }
 
 // MaxUserAddress returns the first address that may not be used.
