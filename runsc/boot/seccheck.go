@@ -15,62 +15,24 @@
 package boot
 
 import (
-	"encoding/json"
-	"io"
-	"os"
-
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 
-	// Register supported of sinks.
-	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/null"
-	_ "gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
-
-// InitConfig represents the configuration to apply during pod creation. For
-// now, it supports setting up a seccheck session.
-type InitConfig struct {
-	TraceSession seccheck.SessionConfig `json:"trace_session"`
-}
 
 func setupSeccheck(configFD int, sinkFDs []int) error {
 	config := fd.New(configFD)
 	defer config.Close()
 
-	initConf, err := loadInitConfig(config)
+	initConf, err := sentryapi.ReadInitConfig(config)
 	if err != nil {
 		return err
 	}
-	return initConf.create(sinkFDs)
+	return createInitConfig(initConf, sinkFDs)
 }
 
-// LoadInitConfig loads an InitConfig struct from a json formatted file.
-func LoadInitConfig(path string) (*InitConfig, error) {
-	config, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer config.Close()
-	return loadInitConfig(config)
-}
-
-func loadInitConfig(reader io.Reader) (*InitConfig, error) {
-	decoder := json.NewDecoder(reader)
-	decoder.DisallowUnknownFields()
-	init := &InitConfig{}
-	if err := decoder.Decode(init); err != nil {
-		return nil, err
-	}
-	return init, nil
-}
-
-// Setup performs the actions defined in the InitConfig, e.g. setup seccheck
-// session.
-func (c *InitConfig) Setup() ([]*os.File, error) {
-	return seccheck.SetupSinks(c.TraceSession.Sinks)
-}
-
-func (c *InitConfig) create(sinkFDs []int) error {
+func createInitConfig(c *sentryapi.InitConfig, sinkFDs []int) error {
 	for i, sinkFD := range sinkFDs {
 		if sinkFD >= 0 {
 			c.TraceSession.Sinks[i].FD = fd.New(sinkFD)

@@ -40,7 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -410,7 +410,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		}
 	}
 	c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
-	mountHints, err := boot.NewPodMountHints(args.Spec)
+	mountHints, err := sentryapi.NewPodMountHints(args.Spec)
 	if err != nil {
 		return parentCgroup, fmt.Errorf("error creating pod mount hints: %w", err)
 	}
@@ -505,7 +505,7 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *boot.CreateLinksAndRoutesArgs) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 	if err := c.checkpointRestoreSupported("restore"); err != nil {
 		return err
@@ -688,7 +688,7 @@ func (c *Container) Execute(conf *config.Config, args *control.ExecArgs) (int32,
 }
 
 // Event returns events for the container.
-func (c *Container) Event() (*boot.EventOut, error) {
+func (c *Container) Event() (*sentryapi.EventOut, error) {
 	log.Debugf("Getting events for container, cid: %s", c.ID)
 	if err := c.requireStatus("get events for", Created, Running, Paused); err != nil {
 		return nil, err
@@ -705,7 +705,7 @@ func (c *Container) Event() (*boot.EventOut, error) {
 }
 
 // PortForward starts port forwarding to the container.
-func (c *Container) PortForward(opts *boot.PortForwardOpts) error {
+func (c *Container) PortForward(opts *sentryapi.PortForwardOpts) error {
 	if err := c.requireStatus("port forward", Running); err != nil {
 		return err
 	}
@@ -1070,7 +1070,7 @@ func (c *Container) Destroy() error {
 				return
 			}
 		}
-		filestorePath := boot.SelfFilestorePath(mountSrc, c.sandboxID())
+		filestorePath := sentryapi.SelfFilestorePath(mountSrc, c.sandboxID())
 		if err := os.Remove(filestorePath); err != nil {
 			err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
 			log.Warningf("%v", err)
@@ -1086,7 +1086,7 @@ func (c *Container) Destroy() error {
 			}
 			// Assume this is a self-backed shared mount and try to delete the
 			// filestore. Subsequently ignore the ENOENT if the assumption is wrong.
-			filestorePath := boot.SelfFilestorePath(hint.Mount.Source, c.sandboxID())
+			filestorePath := sentryapi.SelfFilestorePath(hint.Mount.Source, c.sandboxID())
 			if err := os.Remove(filestorePath); err != nil && !os.IsNotExist(err) {
 				err = fmt.Errorf("failed to delete shared filestore file %q: %v", filestorePath, err)
 				log.Warningf("%v", err)
@@ -1155,7 +1155,7 @@ func (c *Container) forEachSelfMount(fn func(mountSrc string)) {
 func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mountType string, mountSrc string) (specutils.GoferMountConf, error) {
 	var lower specutils.GoferMountConfLowerType
 	switch mountType {
-	case boot.Bind:
+	case sentryapi.Bind:
 		lower = specutils.Lisafs
 	case "tmpfs":
 		lower = specutils.NoneLower
@@ -1189,11 +1189,11 @@ func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mou
 
 // initGoferConfs initializes c.GoferMountConfs with all the gofer configs that
 // dictate how each gofer mount should be configured.
-func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint) error {
+func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints, rootfsHint *sentryapi.RootfsHint) error {
 	// Handle root mount first.
 	overlayMedium := ovlConf.RootOverlayMedium()
 	overlaySize := ovlConf.RootOverlaySize()
-	mountType := boot.Bind
+	mountType := sentryapi.Bind
 	if rootfsHint != nil {
 		overlayMedium = rootfsHint.Overlay
 		if !specutils.IsGoferMount(rootfsHint.Mount) {
@@ -1216,7 +1216,7 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 			continue
 		}
 		// Determine mount type: Bind for gofer mounts, "erofs" for EROFS mounts
-		mountType := boot.Bind
+		mountType := sentryapi.Bind
 		if specutils.IsErofsMount(c.Spec.Mounts[i]) {
 			mountType = "erofs"
 		}
@@ -1248,7 +1248,7 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 // tmpfs/overlayfs mounts that will overlay some gofer mounts.
 //
 // Precondition: gofer process must be running.
-func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *boot.PodMountHints) ([]*os.File, error) {
+func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints) ([]*os.File, error) {
 	var goferFilestores []*os.File
 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
 	// namespace, so that they don't prevent the host mount points from being
@@ -1290,7 +1290,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	return goferFilestores, nil
 }
 
-func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
+func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
 	if !goferConf.IsFilestorePresent() {
 		return nil, nil
 	}
@@ -1304,7 +1304,7 @@ func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Over
 	}
 }
 
-func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *boot.PodMountHints) (*os.File, error) {
+func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
 	// Create the self filestore file.
 	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
 	if hint := mountHints.FindMount(mountSrc); hint == nil || !hint.ShouldShareMount() {
@@ -1313,7 +1313,7 @@ func (c *Container) createGoferFilestoreInSelf(goferRootfs string, mountSrc stri
 		createFlags |= unix.O_EXCL
 	}
 	dirPath := path.Join(goferRootfs, mountSrc)
-	fileName := boot.SelfFilestoreName(c.sandboxID())
+	fileName := sentryapi.SelfFilestoreName(c.sandboxID())
 
 	dirFD, err := unix.Open(dirPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
@@ -1511,8 +1511,8 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, mountHints *boot.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
-	rootfsHint, err := boot.NewRootfsHint(c.Spec)
+func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+	rootfsHint, err := sentryapi.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
 	}
@@ -2104,7 +2104,7 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 
 // populateStats populates event with stats estimates based on cgroups and the
 // sentry's accounting.
-func (c *Container) populateStats(event *boot.EventOut) {
+func (c *Container) populateStats(event *sentryapi.EventOut) {
 	// The events command, when run for all running containers, should
 	// account for the full cgroup CPU usage. We split cgroup usage
 	// proportionally according to the sentry-internal usage measurements,
@@ -2573,7 +2573,7 @@ func (c *Container) CheckStopped() error {
 			c.changeStatus(Stopped)
 		}
 	} else {
-		if state == boot.RuntimeStateStopped {
+		if state == sentryapi.RuntimeStateStopped {
 			log.Warningf("Container %v is stopped", c.ID)
 			c.changeStatus(Stopped)
 		}
@@ -2582,7 +2582,7 @@ func (c *Container) CheckStopped() error {
 }
 
 // GetNetworkConfig returns the network configuration.
-func (c *Container) GetNetworkConfig() (*boot.CreateLinksAndRoutesArgs, error) {
+func (c *Container) GetNetworkConfig() (*sentryapi.CreateLinksAndRoutesArgs, error) {
 	log.Debugf("Returns network config, cid: %s", c.ID)
 	if err := c.CheckSandboxRunning(); err != nil {
 		return nil, err

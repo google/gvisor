@@ -30,8 +30,8 @@ import (
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/test"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
 func remoteSinkConfig(endpoint string) seccheck.SinkConfig {
@@ -62,7 +62,7 @@ func TestTraceStartup(t *testing.T) {
 			}
 			defer podInitConfig.Close()
 
-			initConfig := boot.InitConfig{
+			initConfig := sentryapi.InitConfig{
 				TraceSession: seccheck.SessionConfig{
 					Name: seccheck.DefaultSessionName,
 					Points: []seccheck.PointConfig{

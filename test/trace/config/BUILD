@@ -13,6 +13,6 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/sentry/seccheck",
-        "//runsc/boot",
+        "//runsc/boot/sentryapi",
     ],
 )

@@ -47,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -848,7 +849,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 // validateOpenFDs checks that the sandbox process does not have any open
 // directory FDs.
-func validateOpenFDs(passFDs []boot.FDMapping) {
+func validateOpenFDs(passFDs []sentryapi.FDMapping) {
 	passHostFDs := make(map[int]struct{})
 	for _, passFD := range passFDs {
 		passHostFDs[passFD.Host] = struct{}{}

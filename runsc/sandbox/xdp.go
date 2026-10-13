@@ -31,7 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/pkg/xdp"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/sandbox/bpf"
 )
@@ -57,7 +57,7 @@ import (
 // TODO(b/240191988): Merge redundant code with CreateLinksAndRoutes once
 // features are finalized.
 func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config, disableIPv6 bool) error {
-	args, iface, err := prepareRedirectInterfaceArgs(boot.BindRunsc, conf, disableIPv6)
+	args, iface, err := prepareRedirectInterfaceArgs(sentryapi.BindRunsc, conf, disableIPv6)
 	if err != nil {
 		return fmt.Errorf("failed to generate redirect interface args: %w", err)
 	}
@@ -82,7 +82,7 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config, d
 	// Keep this synchronous: the sentry must initialize the socket's UMEM
 	// and rings before runsc binds it below.
 	log.Infof("Setting up network, config: %+v", args)
-	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
+	if err := conn.Call(sentryapi.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
 
@@ -116,13 +116,13 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config, d
 // process two interfaces: the loopback and the interface we've been told to
 // bind to. This all takes place in the netns where the runsc binary is run,
 // *not* the netns passed to the container.
-func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disableIPv6 bool) (boot.CreateLinksAndRoutesArgs, net.Interface, error) {
+func prepareRedirectInterfaceArgs(bind sentryapi.BindOpt, conf *config.Config, disableIPv6 bool) (sentryapi.CreateLinksAndRoutesArgs, net.Interface, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("querying interfaces: %w", err)
+		return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("querying interfaces: %w", err)
 	}
 
-	var args boot.CreateLinksAndRoutesArgs
+	var args sentryapi.CreateLinksAndRoutesArgs
 	var netIface net.Interface
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 {
@@ -132,14 +132,14 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 
 		allAddrs, err := iface.Addrs()
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
 		}
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
 			link, err := loopbackLink(conf, iface, allAddrs, disableIPv6)
 			if err != nil {
-				return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
+				return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
@@ -154,7 +154,7 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 		for _, ifaddr := range allAddrs {
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
-				return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("address is not IPNet: %+v", ifaddr)
+				return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("address is not IPNet: %+v", ifaddr)
 			}
 			if ipNet.IP.To4() == nil {
 				log.Infof("Skipping non-IPv4 address %s", ipNet.IP)
@@ -163,36 +163,36 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 			ipAddrs = append(ipAddrs, ipNet)
 		}
 		if len(ipAddrs) != 1 {
-			return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("we only handle a single IPv4 address, but interface %q has %d: %v", iface.Name, len(ipAddrs), ipAddrs)
+			return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("we only handle a single IPv4 address, but interface %q has %d: %v", iface.Name, len(ipAddrs), ipAddrs)
 		}
 		prefix, _ := ipAddrs[0].Mask.Size()
-		addr := boot.IPWithPrefix{Address: ipAddrs[0].IP, PrefixLen: prefix}
+		addr := sentryapi.IPWithPrefix{Address: ipAddrs[0].IP, PrefixLen: prefix}
 
 		// Collect data from the ARP table.
 		dump, err := netlink.NeighList(iface.Index, 0)
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
 		}
 
-		var neighbors []boot.Neighbor
+		var neighbors []sentryapi.Neighbor
 		for _, n := range dump {
 			// There are only two "good" states NUD_PERMANENT and NUD_REACHABLE,
 			// but NUD_REACHABLE is fully dynamic and will be re-probed anyway.
 			if n.State == netlink.NUD_PERMANENT {
 				log.Debugf("Copying a static ARP entry: %+v %+v", n.IP, n.HardwareAddr)
 				// No flags are copied because Stack.AddStaticNeighbor does not support flags right now.
-				neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
+				neighbors = append(neighbors, sentryapi.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
 			}
 		}
 
 		// Scrape routes.
 		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
 		if defv4 != nil {
 			if !args.Defaultv4Gateway.Route.Empty() {
-				return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
+				return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
 			}
 			args.Defaultv4Gateway.Route = *defv4
 			args.Defaultv4Gateway.Name = iface.Name
@@ -200,7 +200,7 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 
 		if defv6 != nil {
 			if !args.Defaultv6Gateway.Route.Empty() {
-				return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+				return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
 			}
 			args.Defaultv6Gateway.Route = *defv6
 			args.Defaultv6Gateway.Name = iface.Name
@@ -209,11 +209,11 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 		// Get the link address of the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
 		}
 		linkAddress := ifaceLink.Attrs().HardwareAddr
 
-		xdplink := boot.XDPLink{
+		xdplink := sentryapi.XDPLink{
 			Name:              iface.Name,
 			InterfaceIndex:    iface.Index,
 			Routes:            routes,
@@ -223,7 +223,7 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 			QDisc:             conf.QDisc,
 			Neighbors:         neighbors,
 			LinkAddress:       linkAddress,
-			Addresses:         []boot.IPWithPrefix{addr},
+			Addresses:         []sentryapi.IPWithPrefix{addr},
 			GVisorGRO:         conf.GVisorGRO,
 			Bind:              bind,
 		}
@@ -232,7 +232,7 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config, disabl
 	}
 
 	if len(args.XDPLinks) != 1 {
-		return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("expected 1 XDP link, but found %d", len(args.XDPLinks))
+		return sentryapi.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("expected 1 XDP link, but found %d", len(args.XDPLinks))
 	}
 	return args, netIface, nil
 }
@@ -315,7 +315,7 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 // TODO(b/240191988): Cleanup / GC of pinned BPF objects.
 func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config, disableIPv6 bool) error {
 	// Get the setup for the sentry nic. We need the host neighbors and routes.
-	args, hostIface, err := prepareRedirectInterfaceArgs(boot.BindSentry, conf, disableIPv6)
+	args, hostIface, err := prepareRedirectInterfaceArgs(sentryapi.BindSentry, conf, disableIPv6)
 	if err != nil {
 		return fmt.Errorf("failed to generate tunnel interface args: %w", err)
 	}
@@ -542,7 +542,7 @@ func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config, disa
 	}
 
 	log.Debugf("Setting up network, config: %+v", args)
-	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
+	if err := conn.Call(sentryapi.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
 	return nil

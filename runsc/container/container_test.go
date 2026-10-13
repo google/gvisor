@@ -51,7 +51,7 @@ import (
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -5003,11 +5003,11 @@ func TestRootfsEROFS(t *testing.T) {
 	if spec.Annotations == nil {
 		spec.Annotations = make(map[string]string)
 	}
-	spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
-	spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
+	spec.Annotations[sentryapi.RootfsPrefix+"type"] = erofs.Name
+	spec.Annotations[sentryapi.RootfsPrefix+"source"] = rootfsImage
 	// Disable the overlay, as we want to be sure that rootfs will always be
 	// shown as EROFS in mountinfo.
-	spec.Annotations[boot.RootfsPrefix+"overlay"] = config.NoOverlay.String()
+	spec.Annotations[sentryapi.RootfsPrefix+"overlay"] = config.NoOverlay.String()
 
 	conf := testutil.TestConfig(t)
 	mountDir, err := os.MkdirTemp(testutil.TmpDir(), "mount_dir")

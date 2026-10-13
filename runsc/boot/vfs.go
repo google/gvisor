@@ -34,7 +34,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -67,34 +66,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/timing"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
-
-// Supported filesystems that map to different internal filesystems.
-const (
-	Bind   = "bind"
-	Nonefs = "none"
-)
-
-// SelfFilestorePath returns the path at which the self filestore file is
-// stored for a given mount.
-func SelfFilestorePath(mountSrc, sandboxID string) string {
-	// We will place the filestore file in a gVisor specific hidden file inside
-	// the mount being overlaid itself. The same volume can be overlaid by
-	// multiple sandboxes. So make the filestore file unique to a sandbox by
-	// suffixing the sandbox ID.
-	return path.Join(mountSrc, selfFilestoreName(sandboxID))
-}
-
-// SelfFilestoreName returns the name of the self filestore file for a given sandbox.
-func SelfFilestoreName(sandboxID string) string {
-	return selfFilestoreName(sandboxID)
-}
-
-func selfFilestoreName(sandboxID string) string {
-	return fsutil.SelfFilestorePrefix + sandboxID
-}
 
 // tmpfs has some extra supported options that we must pass through.
 var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
@@ -556,9 +531,9 @@ func (c *containerMounter) checkDispenser() error {
 	return nil
 }
 
-func getMountAccessType(conf *config.Config, hint *MountHint) config.FileAccessType {
+func getMountAccessType(conf *config.Config, hint *sentryapi.MountHint) config.FileAccessType {
 	if hint != nil {
-		return hint.fileAccessType()
+		return hint.FileAccessType()
 	}
 	return conf.FileAccessMounts
 }
@@ -602,7 +577,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, spec *specs
 	ioFD := c.goferFDs.remove()
 	rootfsConf := c.goferMountConfs[0]
 
-	rootfsHint, err := NewRootfsHint(spec)
+	rootfsHint, err := sentryapi.NewRootfsHint(spec)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rootfs hint: %w", err)
 	}
@@ -832,7 +807,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		if err := overlay.CreateWhiteout(ctx, c.l.k.VFS(), creds, &vfs.PathOperation{
 			Root:  upperRootVD,
 			Start: upperRootVD,
-			Path:  fspath.Parse(selfFilestoreName(c.l.sandboxID)),
+			Path:  fspath.Parse(sentryapi.SelfFilestoreName(c.l.sandboxID)),
 		}); err != nil {
 			return nil, nil, fmt.Errorf("failed to create whiteout to hide self overlay filestore: %w", err)
 		}
@@ -941,7 +916,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 type mountInfo struct {
 	mount          *specs.Mount
 	goferFD        *fd.FD
-	hint           *MountHint
+	hint           *sentryapi.MountHint
 	goferMountConf specutils.GoferMountConf
 	filestoreFD    *fd.FD
 }
@@ -1082,7 +1057,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 	case devpts.Name, dev.Name, cgroup2fs.Name:
 		// Nothing to do.
 
-	case Nonefs:
+	case sentryapi.Nonefs:
 		fsName = sys.Name
 
 	case proc.Name:
@@ -1131,7 +1106,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			internalData = tmpfsOpts
 		}
 
-	case Bind:
+	case sentryapi.Bind:
 		fsName = gofer.Name
 		if m.goferFD == nil {
 			// Check that an FD was provided to fails fast.
@@ -1674,7 +1649,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
 func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mntInfo *mountInfo, sharedMount *vfs.Mount) (*vfs.Mount, error) {
-	if err := mntInfo.hint.checkCompatible(mntInfo.mount); err != nil {
+	if err := checkCompatible(mntInfo.hint, mntInfo.mount); err != nil {
 		return nil, err
 	}
 

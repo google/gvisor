@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/timing"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
@@ -62,74 +63,36 @@ const (
 	// metadata during save/restore.
 	ContainerSpecsKey = "container_specs"
 
-	annotationCheckpointPrefix = "dev.gvisor.internal.checkpoint."
-
-	// annotationCheckpointPath is the path to the directory where the checkpoint files will be
-	// created. When present, it allows for the workload running inside to trigger a checkpoint
-	// without having to use the runsc CLI.
-	annotationCheckpointPath = annotationCheckpointPrefix + "path"
-
 	// annotationCheckpointResume indicates whether the sandbox should continue running after the
 	// checkpoint. Optional, defaults to false.
-	annotationCheckpointResume = annotationCheckpointPrefix + "resume"
-
-	// annotationCheckpointCompression is the compression to use for the checkpoint file. Optional,
-	// defaults to best speed compression.
-	annotationCheckpointCompression = annotationCheckpointPrefix + "compression"
-
-	// annotationCheckpointDirect indicates whether the checkpoint IOs should use O_DIRECT. Optional,
-	// defaults to false.
-	annotationCheckpointDirect = annotationCheckpointPrefix + "direct"
+	annotationCheckpointResume = sentryapi.AnnotationCheckpointPrefix + "resume"
 
 	// annotationCheckpointExcludeCommittedZeroPages indicates whether the checkpoint should exclude
 	// committed zero pages. Optional, defaults to false.
-	annotationCheckpointExcludeCommittedZeroPages = annotationCheckpointPrefix + "exclude-committed-zero-pages"
+	annotationCheckpointExcludeCommittedZeroPages = sentryapi.AnnotationCheckpointPrefix + "exclude-committed-zero-pages"
 
 	// annotationCheckpointCudaCheckpointPath is the path to the cuda-checkpoint binary. It's required
 	// if the workload has CUDA processes.
-	annotationCheckpointCudaCheckpointPath = annotationCheckpointPrefix + "cuda-checkpoint-path"
+	annotationCheckpointCudaCheckpointPath = sentryapi.AnnotationCheckpointPrefix + "cuda-checkpoint-path"
 
 	// annotationCheckpointCudaCheckpointSequential indicates whether cuda-checkpoint should be run
 	// sequentially. Optional, defaults to false.
-	annotationCheckpointCudaCheckpointSequential = annotationCheckpointPrefix + "cuda-checkpoint-sequential"
+	annotationCheckpointCudaCheckpointSequential = sentryapi.AnnotationCheckpointPrefix + "cuda-checkpoint-sequential"
 
 	// annotationCheckpointEnable indicates whether files under /proc/gvisor should be present in
 	// the container to allow the workload to trigger a checkpoint.
-	annotationCheckpointEnable = annotationCheckpointPrefix + "enable"
+	annotationCheckpointEnable = sentryapi.AnnotationCheckpointPrefix + "enable"
 
 	// annotationSaveRestoreExecArgv is the argv to use for the save/restore exec
 	// binary.
-	annotationSaveRestoreExecArgv = annotationCheckpointPrefix + "save-restore-exec-argv"
+	annotationSaveRestoreExecArgv = sentryapi.AnnotationCheckpointPrefix + "save-restore-exec-argv"
 
 	// annotationSaveRestoreExecTimeout is the timeout to use for the save/restore
 	// exec binary.
-	annotationSaveRestoreExecTimeout = annotationCheckpointPrefix + "save-restore-exec-timeout"
+	annotationSaveRestoreExecTimeout = sentryapi.AnnotationCheckpointPrefix + "save-restore-exec-timeout"
 
 	networkKey = "network"
 )
-
-// GetAnnotationCheckpointPath returns the checkpoint path specified in the
-// container annotation. Return empty string if no annotation is specified.
-func GetAnnotationCheckpointPath(conf *config.Config, spec *specs.Spec) (string, error) {
-	path := spec.Annotations[annotationCheckpointPath]
-	if len(path) != 0 {
-		if len(conf.TestOnlyAutosaveImagePath) != 0 {
-			return "", fmt.Errorf("autosave is not supported with %q annotation", annotationCheckpointPath)
-		}
-	}
-	return path, nil
-}
-
-// GetAnnotationCheckpointCompression returns the checkpoint compression level
-// specified in the container annotation.
-func GetAnnotationCheckpointCompression(spec *specs.Spec) (statefile.CompressionLevel, error) {
-	return statefile.CompressionLevelFromString(spec.Annotations[annotationCheckpointCompression])
-}
-
-// GetAnnotationCheckpointDirect returns true if the checkpoint is direct.
-func GetAnnotationCheckpointDirect(spec *specs.Spec) bool {
-	return specutils.AnnotationToBool(spec, annotationCheckpointDirect)
-}
 
 // SaveAsync starts a goroutine to save the kernel. Implements kernel.Saver.
 func (l *Loader) SaveAsync() (err error) {
@@ -181,7 +144,7 @@ func saveOptsFromSpec(spec *specs.Spec, fds []*fd.FD, useCheckpointGofer bool) (
 		}
 	}
 
-	comp, err := GetAnnotationCheckpointCompression(spec)
+	comp, err := sentryapi.GetAnnotationCheckpointCompression(spec)
 	if err != nil {
 		return nil, err
 	}
@@ -688,7 +651,7 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 		}
 	}
 
-	var s Savings
+	var s sentryapi.Savings
 	if err := r.calculateCPUSavings(&s); err != nil {
 		log.Warningf("Failed to calculate CPU savings: %v", err)
 	}
@@ -702,7 +665,7 @@ func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, time
 }
 
 // Calculate the CPU time saved for restore.
-func (r *restorer) calculateCPUSavings(s *Savings) error {
+func (r *restorer) calculateCPUSavings(s *sentryapi.Savings) error {
 	t, err := state.CPUTime()
 	if err != nil {
 		return fmt.Errorf("failed to get CPU time usage for restore, err: %w", err)
@@ -722,7 +685,7 @@ func (r *restorer) calculateCPUSavings(s *Savings) error {
 }
 
 // Calculate the walltime saved for restore.
-func (r *restorer) calculateWallTimeSavings(s *Savings) error {
+func (r *restorer) calculateWallTimeSavings(s *sentryapi.Savings) error {
 	savedWtStr, ok := r.metadata[state.GvisorWallTimeKey]
 	if !ok {
 		return fmt.Errorf("failed to retrieve walltime from the metadata")

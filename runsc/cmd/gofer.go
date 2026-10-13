@@ -29,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/cmd/sandboxsetup"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -191,11 +191,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
 	}
-	mountHints, err := boot.NewPodMountHints(spec)
+	mountHints, err := sentryapi.NewPodMountHints(spec)
 	if err != nil {
 		util.Fatalf("parsing mount hints: %v", err)
 	}
-	rootfsHint, err := boot.NewRootfsHint(spec)
+	rootfsHint, err := sentryapi.NewRootfsHint(spec)
 	if err != nil {
 		util.Fatalf("parsing rootfs hint: %v", err)
 	}
@@ -514,7 +514,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string, ruid i
 
 // lisafsNeededForDirectFSSuppression returns true if this gofer serves a mount
 // that suppresses directfs and therefore still needs LisaFS syscalls.
-func lisafsNeededForDirectFSSuppression(spec *specs.Spec, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint, mountConfs []specutils.GoferMountConf) bool {
+func lisafsNeededForDirectFSSuppression(spec *specs.Spec, mountHints *sentryapi.PodMountHints, rootfsHint *sentryapi.RootfsHint, mountConfs []specutils.GoferMountConf) bool {
 	if len(mountConfs) > 0 && mountConfs[0].ShouldUseLisafs() &&
 		rootfsHint != nil && rootfsHint.SuppressDirectFS {
 		return true

@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
 // Builder helps with building of trace session configuration.
@@ -37,7 +37,7 @@ type Builder struct {
 // WriteInitConfig writes the current configuration in a format compatible with
 // the flag --pod-init-config.
 func (b *Builder) WriteInitConfig(w io.Writer) error {
-	init := &boot.InitConfig{
+	init := &sentryapi.InitConfig{
 		TraceSession: seccheck.SessionConfig{
 			Name:   seccheck.DefaultSessionName,
 			Points: b.points,

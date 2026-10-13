@@ -23,7 +23,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -112,11 +112,11 @@ func decodeTraceConfig(path string) (*seccheck.SessionConfig, error) {
 	// If file cannot be decoded as a SessionConfig, try with InitConfig as
 	// convenience in case the caller wants to reuse a trace session from
 	// InitConfig file.
-	log.Debugf("Config file is not a seccheck.SessionConfig, try with boot.InitConfig instead: %v", err)
+	log.Debugf("Config file is not a seccheck.SessionConfig, try with sentryapi.InitConfig instead: %v", err)
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, err
 	}
-	initConfig := &boot.InitConfig{}
+	initConfig := &sentryapi.InitConfig{}
 	if err := decoder.Decode(initConfig); err != nil {
 		return nil, fmt.Errorf("invalid configuration file: %w", err)
 	}

@@ -26,7 +26,7 @@ import (
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -37,7 +37,7 @@ func init() {
 	runtime.LockOSThread()
 }
 
-func fdbasedLinkEqual(a, b boot.FDBasedLink) bool {
+func fdbasedLinkEqual(a, b sentryapi.FDBasedLink) bool {
 	if a.Name != b.Name {
 		return false
 	}
@@ -87,7 +87,7 @@ func fdbasedLinkEqual(a, b boot.FDBasedLink) bool {
 	return true
 }
 
-func fdbasedLinksEqual(a, b []boot.FDBasedLink) bool {
+func fdbasedLinksEqual(a, b []sentryapi.FDBasedLink) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -99,7 +99,7 @@ func fdbasedLinksEqual(a, b []boot.FDBasedLink) bool {
 	return true
 }
 
-func defaultRouteEqual(a, b boot.DefaultRoute) bool {
+func defaultRouteEqual(a, b sentryapi.DefaultRoute) bool {
 	if a.Name != b.Name {
 		return false
 	}
@@ -112,7 +112,7 @@ func defaultRouteEqual(a, b boot.DefaultRoute) bool {
 	return true
 }
 
-func loopbackLinksEqual(a, b []boot.LoopbackLink) bool {
+func loopbackLinksEqual(a, b []sentryapi.LoopbackLink) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -287,15 +287,15 @@ func setupLoopback(t *testing.T) {
 
 // defaultLoopbackLinks returns the expected loopback links for a standard
 // loopback interface with 127.0.0.1/8 and ::1/128.
-func defaultLoopbackLinks() []boot.LoopbackLink {
-	return []boot.LoopbackLink{
+func defaultLoopbackLinks() []sentryapi.LoopbackLink {
+	return []sentryapi.LoopbackLink{
 		{
 			Name: "lo",
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("127.0.0.1"), PrefixLen: 8},
 				{Address: net.ParseIP("::1"), PrefixLen: 128},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{127, 0, 0, 0},
@@ -330,16 +330,16 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
 
-	wantFDLinks := []boot.FDBasedLink{
+	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
 			MTU:         1500,
 			LinkAddress: link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -354,7 +354,7 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 					Gateway: net.ParseIP("10.0.0.2"),
 				},
 			},
-			Neighbors: []boot.Neighbor{
+			Neighbors: []sentryapi.Neighbor{
 				{IP: net.ParseIP("10.0.0.2"), HardwareAddr: mustParseMAC("00:11:22:33:44:55")},
 			},
 		},
@@ -364,9 +364,9 @@ func TestCollectLinksAndRoutes_SingleInterface(t *testing.T) {
 		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
 	}
 
-	wantGW := boot.DefaultRoute{
+	wantGW := sentryapi.DefaultRoute{
 		Name: "testveth0",
-		Route: boot.Route{
+		Route: sentryapi.Route{
 			Destination: net.IPNet{
 				IP:   net.IPv4zero,
 				Mask: net.IPMask(net.IPv4zero),
@@ -402,14 +402,14 @@ func TestCollectLinksAndRoutes_LoopbackOnly(t *testing.T) {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
 
-	wantLoopbackLinks := []boot.LoopbackLink{
+	wantLoopbackLinks := []sentryapi.LoopbackLink{
 		{
 			Name: "lo",
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("127.0.0.1"), PrefixLen: 8},
 				{Address: net.ParseIP("::1"), PrefixLen: 128},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{127, 0, 0, 0},
@@ -469,16 +469,16 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
 
-	wantFDLinks := []boot.FDBasedLink{
+	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
 			MTU:         1500,
 			LinkAddress: veth0Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -492,10 +492,10 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 			MTU:         1500,
 			LinkAddress: veth1Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("192.168.1.1"), PrefixLen: 24},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{192, 168, 1, 0},
@@ -509,9 +509,9 @@ func TestCollectLinksAndRoutes_MultipleInterfaces(t *testing.T) {
 		t.Errorf("FDBasedLinks mismatch:\ngot  %+v\nwant %+v", args.FDBasedLinks, wantFDLinks)
 	}
 
-	wantGW := boot.DefaultRoute{
+	wantGW := sentryapi.DefaultRoute{
 		Name: "testveth0",
-		Route: boot.Route{
+		Route: sentryapi.Route{
 			Destination: net.IPNet{
 				IP:   net.IPv4zero,
 				Mask: net.IPMask(net.IPv4zero),
@@ -560,16 +560,16 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
 
-	wantFDLinks := []boot.FDBasedLink{
+	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
 			MTU:         1500,
 			LinkAddress: veth0Link.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -588,13 +588,13 @@ func TestCollectLinksAndRoutes_IPv6Disabled(t *testing.T) {
 		t.Errorf("Defaultv6Gateway.Route should be empty, got %+v", args.Defaultv6Gateway.Route)
 	}
 
-	wantLoopbackLinks := []boot.LoopbackLink{
+	wantLoopbackLinks := []sentryapi.LoopbackLink{
 		{
 			Name: "lo",
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("127.0.0.1"), PrefixLen: 8},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{127, 0, 0, 0},
@@ -702,14 +702,14 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 		t.Fatalf("collectLinksAndRoutes failed: %v", err)
 	}
 
-	wantLoopbackLinks := []boot.LoopbackLink{
+	wantLoopbackLinks := []sentryapi.LoopbackLink{
 		{
 			Name: "lo",
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("127.0.0.1"), PrefixLen: 8},
 				{Address: net.IPv6loopback, PrefixLen: 128},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{127, 0, 0, 0},
@@ -736,16 +736,16 @@ func TestCollectLinksAndRoutes_LoopbackExtraRoutes(t *testing.T) {
 		t.Errorf("LoopbackLinks mismatch:\ngot  %+v\nwant %+v", args.LoopbackLinks, wantLoopbackLinks)
 	}
 
-	wantFDLinks := []boot.FDBasedLink{
+	wantFDLinks := []sentryapi.FDBasedLink{
 		{
 			Name:        "testveth0",
 			MTU:         1500,
 			LinkAddress: vethLink.Attrs().HardwareAddr,
 			QDisc:       config.QDiscNone,
-			Addresses: []boot.IPWithPrefix{
+			Addresses: []sentryapi.IPWithPrefix{
 				{Address: net.ParseIP("10.0.0.1"), PrefixLen: 24},
 			},
-			Routes: []boot.Route{
+			Routes: []sentryapi.Route{
 				{
 					Destination: net.IPNet{
 						IP:   net.IP{10, 0, 0, 0},
@@ -839,7 +839,7 @@ func TestDialExternalUDS(t *testing.T) {
 }
 
 func TestConfigureProxyLink(t *testing.T) {
-	link := boot.FDBasedLink{
+	link := sentryapi.FDBasedLink{
 		Name:              "eth0",
 		NumChannels:       4,
 		TXChecksumOffload: true,
@@ -893,7 +893,7 @@ func TestDialExternalUDSMissingPath(t *testing.T) {
 func TestPrimaryInterface(t *testing.T) {
 	testCases := []struct {
 		name    string
-		args    *boot.CreateLinksAndRoutesArgs
+		args    *sentryapi.CreateLinksAndRoutesArgs
 		want    string
 		wantErr bool
 	}{
@@ -904,72 +904,72 @@ func TestPrimaryInterface(t *testing.T) {
 		},
 		{
 			name: "v4 gateway in fdbased",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv4Gateway: boot.DefaultRoute{Name: "eth1"},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: sentryapi.DefaultRoute{Name: "eth1"},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
 			},
 			want: "eth1",
 		},
 		{
 			name: "v4 gateway not in fdbased rejects eth0 fallback",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv4Gateway: boot.DefaultRoute{Name: "other0"},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: sentryapi.DefaultRoute{Name: "other0"},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "v6 gateway in fdbased",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv6Gateway: boot.DefaultRoute{Name: "eth2"},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth1"}, {Name: "eth2"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv6Gateway: sentryapi.DefaultRoute{Name: "eth2"},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "eth1"}, {Name: "eth2"}},
 			},
 			want: "eth2",
 		},
 		{
 			name: "v6 gateway not in fdbased rejects single link fallback",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv6Gateway: boot.DefaultRoute{Name: "other0"},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "myif0"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv6Gateway: sentryapi.DefaultRoute{Name: "other0"},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "myif0"}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "v4 and v6 gateways match same fdbased link",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv4Gateway: boot.DefaultRoute{Name: "eth1"},
-				Defaultv6Gateway: boot.DefaultRoute{Name: "eth1"},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: sentryapi.DefaultRoute{Name: "eth1"},
+				Defaultv6Gateway: sentryapi.DefaultRoute{Name: "eth1"},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
 			},
 			want: "eth1",
 		},
 		{
 			name: "v4 and v6 gateways differ",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv4Gateway: boot.DefaultRoute{Name: "eth0"},
-				Defaultv6Gateway: boot.DefaultRoute{Name: "eth1"},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: sentryapi.DefaultRoute{Name: "eth0"},
+				Defaultv6Gateway: sentryapi.DefaultRoute{Name: "eth1"},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "no gateway with eth0 fallback",
-			args: &boot.CreateLinksAndRoutesArgs{
-				FDBasedLinks: []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				FDBasedLinks: []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
 			},
 			want: "eth0",
 		},
 		{
 			name: "single link in fdbased",
-			args: &boot.CreateLinksAndRoutesArgs{
-				FDBasedLinks: []boot.FDBasedLink{{Name: "tap0"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				FDBasedLinks: []sentryapi.FDBasedLink{{Name: "tap0"}},
 			},
 			want: "tap0",
 		},
 		{
 			name: "multiple links with no gateway and no eth0",
-			args: &boot.CreateLinksAndRoutesArgs{
-				FDBasedLinks: []boot.FDBasedLink{{Name: "tap0"}, {Name: "tap1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				FDBasedLinks: []sentryapi.FDBasedLink{{Name: "tap0"}, {Name: "tap1"}},
 			},
 			wantErr: true,
 		},
@@ -978,10 +978,10 @@ func TestPrimaryInterface(t *testing.T) {
 			// UDS. primaryInterface() must reject it rather than falling back or
 			// returning a name that has no corresponding FDBasedLink.
 			name: "v4 gateway matches an XDP link only",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv4Gateway: boot.DefaultRoute{Name: "xdp0"},
-				XDPLinks:         []boot.XDPLink{{Name: "xdp0"}},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "tap0"}, {Name: "tap1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: sentryapi.DefaultRoute{Name: "xdp0"},
+				XDPLinks:         []sentryapi.XDPLink{{Name: "xdp0"}},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "tap0"}, {Name: "tap1"}},
 			},
 			wantErr: true,
 		},
@@ -990,10 +990,10 @@ func TestPrimaryInterface(t *testing.T) {
 			// XDP link must fail rather than silently routing default traffic
 			// around the UDS proxy.
 			name: "v4 gateway matches an XDP link rejects eth0 fallback",
-			args: &boot.CreateLinksAndRoutesArgs{
-				Defaultv4Gateway: boot.DefaultRoute{Name: "xdp0"},
-				XDPLinks:         []boot.XDPLink{{Name: "xdp0"}},
-				FDBasedLinks:     []boot.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
+			args: &sentryapi.CreateLinksAndRoutesArgs{
+				Defaultv4Gateway: sentryapi.DefaultRoute{Name: "xdp0"},
+				XDPLinks:         []sentryapi.XDPLink{{Name: "xdp0"}},
+				FDBasedLinks:     []sentryapi.FDBasedLink{{Name: "eth0"}, {Name: "eth1"}},
 			},
 			wantErr: true,
 		},
