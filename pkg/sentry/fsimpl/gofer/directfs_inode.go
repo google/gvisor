@@ -757,7 +757,7 @@ func (i *directfsInode) bindAt(ctx context.Context, name string, creds *auth.Cre
 		return nil, err
 	}
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := i.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	childInode, boundSocketFD, err := i.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(i.childGID(creds)))
 	if err != nil {
 		return nil, err
 	}
