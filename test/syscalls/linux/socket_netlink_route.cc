@@ -1497,6 +1497,30 @@ TEST(NetlinkRouteTest, GetRouteUnsupportedFamily) {
   EXPECT_TRUE(refusalFound);
 }
 
+TEST(NetlinkRouteTest, GetRouteShortRequest) {
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtgenmsg rgm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST;
+  req.hdr.nlmsg_seq = kSeq;
+
+  req.rgm.rtgen_family = AF_UNSPEC;
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(EOPNOTSUPP, _));
+
+  req.rgm.rtgen_family = AF_INET;
+  EXPECT_THAT(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)),
+              PosixErrorIs(EINVAL, _));
+}
+
 // GetRouteRoot tests a RTM_GETROUTE + NLM_F_ROOT request.
 TEST(NetlinkRouteTest, GetRouteRoot) {
   FileDescriptor fd =
