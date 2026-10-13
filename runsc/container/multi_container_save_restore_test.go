@@ -159,27 +159,13 @@ func testMultiContainerCheckpointRestore(t *testing.T, conf *config.Config, comp
 		t.Fatalf("Failed to wait for output file: %v", err)
 	}
 
-	checkpointWaiter := make(chan error, 1)
-	go func() {
-		// WaitCheckpoint on the second container.
-		checkpointWaiter <- conts[1].WaitCheckpoint()
-	}()
-
 	// Checkpoint root container; save state into new file.
 	if err := conts[0].Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: compression}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 
-	// Wait for the checkpoint to complete. The initial sandbox not destroyed yet
-	// to check that no conflict with it occurs during restore.
-	select {
-	case waitErr := <-checkpointWaiter:
-		if waitErr != nil {
-			t.Errorf("error waiting for checkpoint to complete: %v", waitErr)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatalf("timed out waiting for checkpoint to complete")
-	}
+	// Checkpoint returns after saving. Keep the initial sandbox alive to check
+	// that it does not conflict with the restored containers.
 
 	lastNum, err := readOutputNum(outputPath, -1)
 	if err != nil {
@@ -676,11 +662,9 @@ func TestCheckpointRestoreAnnotation(t *testing.T) {
 	}
 	defer cleanup()
 
-	if err := conts[0].WaitCheckpoint(); err != nil {
-		t.Fatalf("error waiting for checkpoint: %v", err)
-	}
-
-	// Wait until the checkpoint read unblocks and writes to `out`.
+	// The proc fd was opened before the trigger, so its read waits for that
+	// checkpoint even if it has already completed. A new WaitCheckpoint RPC
+	// would instead wait for the next generation.
 	if err := waitForContent(out, "resume\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -1480,11 +1464,6 @@ func testMultiContainerChainedCheckpointRestore(t *testing.T, conf *config.Confi
 			t.Fatalf("iter %d: os.MkdirAll failed: %v", iter, err)
 		}
 
-		checkpointWaiter := make(chan error, 1)
-		go func() {
-			checkpointWaiter <- conts[1].WaitCheckpoint()
-		}()
-
 		// Checkpoint root container with SplitFSCheckpointPaths targeting both
 		// sub-containers' tmpfs mounts.
 		checkpointOpts := sandbox.CheckpointOpts{
@@ -1496,15 +1475,6 @@ func testMultiContainerChainedCheckpointRestore(t *testing.T, conf *config.Confi
 		}
 		if err := conts[0].Checkpoint(conf, checkpointDir, checkpointOpts); err != nil {
 			t.Fatalf("iter %d: error checkpointing container: %v", iter, err)
-		}
-
-		select {
-		case waitErr := <-checkpointWaiter:
-			if waitErr != nil {
-				t.Errorf("iter %d: error waiting for checkpoint to complete: %v", iter, waitErr)
-			}
-		case <-time.After(10 * time.Second):
-			t.Fatalf("iter %d: timed out waiting for checkpoint to complete", iter)
 		}
 
 		checkFSCheckpointFiles(t, checkpointDir, tc.wantPrefix)
