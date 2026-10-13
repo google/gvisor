@@ -533,7 +533,7 @@ func (q *Queue) msgOfType(mType int64, except bool) *Message {
 //
 // +checklocks:q.mu
 func (q *Queue) msgOfTypeLessThan(mType int64) (m *Message) {
-	min := mType
+	min := mType + 1
 	for msg := q.messages.Front(); msg != nil; msg = msg.Next() {
 		if msg.Type <= mType && msg.Type < min {
 			m = msg
