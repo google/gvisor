@@ -63,6 +63,7 @@ go_test(
     name = "crictl_test",
     size = "large",
     srcs = [
+        "crictl_emptydir_test.go",
         "crictl_main_test.go",
         "crictl_sandbox_test.go",
         "crictl_test.go",
@@ -87,6 +88,7 @@ go_test(
         "//runsc/flag",
         "//runsc/specutils",
         "@com_github_moby_sys_capability//:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
