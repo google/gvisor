@@ -425,7 +425,7 @@ steps:
       arch: "arm64"
       queue: "arm64"
   - <<: *common
-    <<: *source_test
+    <<: *source_test_continuous
     label: ":muscle: System call tests (ARM64 64K)"
     command: "make BAZEL_OPTIONS='--test_tag_filters=-allsave,runsc_systrap --define=pagesize=64k' syscall-tests"
     parallelism: 10
