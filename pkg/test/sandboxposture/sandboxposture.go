@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Package sandboxposture collects the externally-observable Linux security
-// posture of a running `runsc boot` (Sentry) process, and compares it against
-// expectations depending on the runsc configuration.
+// posture of a running Sentry (`gvisor_sentry boot`) process, and compares it
+// against expectations depending on the runsc configuration.
 package sandboxposture
 
 import (

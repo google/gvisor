@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -59,6 +60,7 @@ func TestFlagSetIdempotent(t *testing.T) {
 		new(cmd.Exec).Name(): true,
 	}
 	allCommands, _ := commands()
+	allCommands[new(sentrycmd.Boot)] = internalGroup
 	for cmd, group := range allCommands {
 		// Skip commands that are known to be non-idempotent.
 		if _, ok := nonIdempotentCommands[cmd.Name()]; ok {

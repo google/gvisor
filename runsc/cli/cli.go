@@ -346,7 +346,7 @@ func userLogEmitter(conf *config.Config, subcommand string) (log.Emitter, bool) 
 	}
 	// We need to manually scan for `--user-log-fd` since it is a flag of the
 	// `boot` subcommand. We know it is in `--user-log-fd=FD` format because
-	// we control how arguments to `runsc boot` are formatted.
+	// we control how arguments to the `boot` subcommand are formatted.
 	const userLogFDFlagPrefix = "--user-log-fd="
 	var userLog *os.File
 	for _, arg := range os.Args[1:] {
