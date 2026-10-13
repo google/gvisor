@@ -427,7 +427,7 @@ func startFSRestore(opts *fsRestoreOpts) (*fsRestore, error) {
 				return fmt.Errorf("unsupported filesystem checkpoint version: %d", manifest.Version)
 			}
 			log.Infof("Restoring from proto manifest (version %d) created by runsc version %q", manifest.Version, manifest.RunscVersion)
-			if manifest.PageSize != hostarch.PageSize {
+			if manifest.PageSize != uint64(hostarch.PageSize) {
 				return fmt.Errorf("filesystem checkpoint page size %d does not match current page size %d", manifest.PageSize, hostarch.PageSize)
 			}
 			if endian := hostarch.EndianString(); manifest.Endian != endian {
@@ -558,7 +558,7 @@ func (fsr *fsRestore) memoryFileLoadArgs(id checkpoint.ResourceID, cid string) (
 	if mmf.PagesMetadataStart > mmf.PagesMetadataEnd || mmf.PagesMetadataEnd > uint64(len(pagesMetadata)) {
 		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q has invalid pages metadata range [%d, %d) for file size %d", mmf.ResourceID, mmf.PagesMetadataStart, mmf.PagesMetadataEnd, len(pagesMetadata))) // +checklocksignore
 	}
-	if mmf.PagesStart%hostarch.PageSize != 0 {
+	if !hostarch.IsPageAligned(mmf.PagesStart) {
 		return nil, 0, nil, c.setError(fmt.Errorf("MemoryFile %q pages offset %d is not page-aligned (page size %d)", mmf.ResourceID, mmf.PagesStart, hostarch.PageSize)) // +checklocksignore
 	}
 	c.asyncLoads++ // +checklocksignore

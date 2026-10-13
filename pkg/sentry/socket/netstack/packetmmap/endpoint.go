@@ -118,7 +118,7 @@ func (m *Endpoint) Init(ctx context.Context, opts stack.PacketMMapOpts) error {
 		if opts.Req.TpBlockSize <= 0 {
 			return linuxerr.EINVAL
 		}
-		if opts.Req.TpBlockSize%hostarch.PageSize != 0 {
+		if opts.Req.TpBlockSize%uint32(hostarch.PageSize) != 0 {
 			return linuxerr.EINVAL
 		}
 		if opts.Req.TpFrameSize < m.headerLen+m.reserve {

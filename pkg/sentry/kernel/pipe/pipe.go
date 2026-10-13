@@ -27,18 +27,22 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const (
+// Pipe sizes that depend on the page size, which is only known at runtime on
+// some architectures.
+var (
 	// MinimumPipeSize is a hard limit of the minimum size of a pipe.
 	// It corresponds to fs/pipe.c:pipe_min_size.
-	MinimumPipeSize = hostarch.PageSize
-
-	// MaximumPipeSize is a hard limit on the maximum size of a pipe.
-	// It corresponds to fs/pipe.c:pipe_max_size.
-	MaximumPipeSize = 1048576
+	MinimumPipeSize = int64(hostarch.PageSize)
 
 	// DefaultPipeSize is the system-wide default size of a pipe in bytes.
 	// It corresponds to pipe_fs_i.h:PIPE_DEF_BUFFERS.
-	DefaultPipeSize = 16 * hostarch.PageSize
+	DefaultPipeSize = 16 * int64(hostarch.PageSize)
+)
+
+const (
+	// MaximumPipeSize is a hard limit on the maximum size of a pipe.
+	// It corresponds to fs/pipe.c:pipe_max_size.
+	MaximumPipeSize = 1048576
 
 	// atomicIOBytes is the maximum number of bytes that the pipe will
 	// guarantee atomic reads or writes atomically.
