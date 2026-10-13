@@ -666,10 +666,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 		} else {
 			if op.SemOp < 0 {
 				// Handle 'wait' operation.
-				if -op.SemOp > valueMax {
-					return nil, 0, linuxerr.ERANGE
-				}
-				if -op.SemOp > tmpVals[op.SemNum] {
+				if int32(tmpVals[op.SemNum])+int32(op.SemOp) < 0 {
 					// Not enough resources, must wait.
 					if op.SemFlg&linux.IPC_NOWAIT != 0 {
 						return nil, 0, linuxerr.ErrWouldBlock
