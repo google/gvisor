@@ -16,22 +16,11 @@ package icmp
 
 import (
 	"context"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
-
-// saveReceivedAt is invoked by stateify.
-func (p *icmpPacket) saveReceivedAt() int64 {
-	return p.receivedAt.UnixNano()
-}
-
-// loadReceivedAt is invoked by stateify.
-func (p *icmpPacket) loadReceivedAt(_ context.Context, nsec int64) {
-	p.receivedAt = time.Unix(0, nsec)
-}
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad(ctx context.Context) {

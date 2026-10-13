@@ -40,7 +40,7 @@ type udpPacket struct {
 	destinationAddress tcpip.FullAddress
 	packetInfo         tcpip.IPPacketInfo
 	pkt                *stack.PacketBuffer
-	receivedAt         time.Time `state:".(int64)"`
+	receivedAt         time.Time
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
 	tosOrTClass uint8
