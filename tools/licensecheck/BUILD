@@ -29,4 +29,9 @@ go_test(
         "//governance:licensing.yaml",
     ],
     embed = [":licensecheck"],
+    embedsrcs = [
+        "testdata/overflow-readme.txt",
+        "testdata/udiff-bsd.txt",
+        "testdata/udiff-mit.txt",
+    ],
 )
