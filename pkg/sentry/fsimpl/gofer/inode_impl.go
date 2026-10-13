@@ -108,9 +108,7 @@ func (i *inode) writeHandle() handle {
 	}
 }
 
-// Preconditions:
-//   - !d.isSynthetic().
-//   - fs.renameMu is locked.
+// Precondition: !d.isSynthetic().
 func (d *dentry) openHandle(ctx context.Context, read, write, trunc bool) (handle, error) {
 	flags := uint32(unix.O_RDONLY)
 	switch {
@@ -130,7 +128,7 @@ func (d *dentry) openHandle(ctx context.Context, read, write, trunc bool) (handl
 	case *lisafsInode:
 		return it.openHandle(ctx, flags)
 	case *directfsInode:
-		return it.openHandle(ctx, flags, d)
+		return it.openHandle(flags)
 	default:
 		panic("unknown inode implementation")
 	}
@@ -202,9 +200,7 @@ func (i *inode) updateMetadataLocked(ctx context.Context, h handle) error {
 	}
 }
 
-// Preconditions:
-//   - !d.isSynthetic().
-//   - fs.renameMu is locked.
+// Precondition: !d.isSynthetic().
 func (d *dentry) prepareSetStat(ctx context.Context, stat *linux.Statx) error {
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
@@ -217,13 +213,12 @@ func (d *dentry) prepareSetStat(ctx context.Context, stat *linux.Statx) error {
 	}
 }
 
-// Precondition: fs.renameMu is locked if d is a socket.
 func (d *dentry) chmod(ctx context.Context, mode uint16) error {
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
 		return chmod(ctx, it.controlFD, mode)
 	case *directfsInode:
-		return it.chmod(ctx, mode, d)
+		return it.chmod(mode)
 	default:
 		panic("unknown inode implementation")
 	}
@@ -232,13 +227,12 @@ func (d *dentry) chmod(ctx context.Context, mode uint16) error {
 // Preconditions:
 //   - !d.isSynthetic().
 //   - i.handleMu is locked.
-//   - fs.renameMu is locked.
 func (d *dentry) setStatLocked(ctx context.Context, stat *linux.Statx) (uint32, error, error) {
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
 		return it.controlFD.SetStat(ctx, stat)
 	case *directfsInode:
-		failureMask, failureErr := it.setStatLocked(ctx, stat, d)
+		failureMask, failureErr := it.setStatLocked(stat)
 		return failureMask, failureErr, nil
 	default:
 		panic("unknown inode implementation")
@@ -607,31 +601,14 @@ func (d *dentry) readHandleForDeleted(ctx context.Context) (handle, error) {
 	if d.inode.isReadHandleOk() {
 		return d.inode.readHandle(), nil
 	}
-	switch dt := d.inode.impl.(type) {
-	case *lisafsInode:
-		// ensureSharedHandle locks handleMu for write. Unlock it temporarily.
-		d.inode.handleMu.RUnlock()
-		err := d.ensureSharedHandle(ctx, true /* read */, false /* write */, false /* trunc */)
-		d.inode.handleMu.RLock()
-		if err != nil {
-			return handle{}, fmt.Errorf("failed to open read handle: %w", err)
-		}
-		return d.inode.readHandle(), nil
-	case *directfsInode:
-		// The sentry does not have access to any procfs mount which it could use
-		// to re-open dt.controlFD with a different mode (via /proc/self/fd/). The
-		// file is unlinked, so we can't use openat(parent.controlFD, name) either.
-		// dt.controlFD must be a read-only FD (see tryOpen() documentation). Just
-		// seek the control FD to 0 and return it. The control FD is not used for
-		// reading by the sentry, so this should be safe.
-		// TODO(b/431481259): Use dentry.ensureSharedHandle() here as well.
-		if _, err := unix.Seek(dt.controlFD, 0, unix.SEEK_SET); err != nil {
-			return handle{}, fmt.Errorf("failed to seek control FD to 0: %w", err)
-		}
-		return handle{fd: int32(dt.controlFD)}, nil
-	default:
-		panic("unknown inode implementation")
+	// ensureSharedHandle locks handleMu for write. Unlock it temporarily.
+	d.inode.handleMu.RUnlock()
+	err := d.ensureSharedHandle(ctx, true /* read */, false /* write */, false /* trunc */)
+	d.inode.handleMu.RLock()
+	if err != nil {
+		return handle{}, fmt.Errorf("failed to open read handle: %w", err)
 	}
+	return d.inode.readHandle(), nil
 }
 
 // doRevalidation calls into r.start's dentry implementation to perform

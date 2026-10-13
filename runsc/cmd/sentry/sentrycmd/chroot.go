@@ -61,8 +61,13 @@ func bindMountSysfsInChrootReadonly(chroot, src, dst string) error {
 		"", "/proc")
 }
 
+// procSelfFDBindMount is the path inside the sandbox chroot at which procfs'
+// self/fd directory is bind-mounted when directfs is enabled. See
+// setupMinimalProcfs.
+const procSelfFDBindMount = "/proc/fd"
+
 // setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
-func setupMinimalProcfs(chroot string, timer *timing.Timer) error {
+func setupMinimalProcfs(chroot string, directfs bool, timer *timing.Timer) error {
 	// We can't always directly mount procfs because it may be obstructed
 	// by submounts within it. See https://gvisor.dev/issue/10944.
 	// All we really need from procfs is /proc/self and a few kernel
@@ -126,6 +131,16 @@ func setupMinimalProcfs(chroot string, timer *timing.Timer) error {
 	if err := os.Symlink(procSubmountDir+"/cpuinfo", filepath.Join(procRoot, "cpuinfo")); err != nil {
 		return fmt.Errorf("error creating symlink %q -> %q: %w", filepath.Join(procRoot, "cpuinfo"), procSubmountDir+"/cpuinfo", err)
 	}
+	if directfs {
+		// Directfs requires procfs' self/fd directory. We take a FD on this
+		// bind mount that boot.go opens before /proc is unmounted.
+		// Bind-mounting just that directory keeps the rest of procfs
+		// unreachable from it: ".." resolves to the bind mount itself, which
+		// only that FD keeps alive.
+		if err := mountInChroot(chroot, filepath.Join(procRoot, procSubmountDir, "self/fd"), procSelfFDBindMount, "bind", unix.MS_BIND); err != nil {
+			return err
+		}
+	}
 	if err := os.Chmod(procRoot, 0o111); err != nil {
 		return fmt.Errorf("error chmodding %q: %v", procRoot, err)
 	}
@@ -160,7 +175,7 @@ func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) err
 	}
 	timer.Reached("chroot base mounted")
 
-	if err := setupMinimalProcfs(chroot, timer); err != nil {
+	if err := setupMinimalProcfs(chroot, conf.DirectFS, timer); err != nil {
 		return fmt.Errorf("error setting up minimal procfs in chroot %q: %v", chroot, err)
 	}
 	timer.Reached("chroot procfs set up")
