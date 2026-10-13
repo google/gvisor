@@ -973,38 +973,46 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 	// Skip this test if mkfs.erofs or busybox are not available.
 	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
-	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp() failed: %v", err)
-	}
-	defer os.RemoveAll(testDir)
+	for _, tc := range []struct{ name, options string }{
+		{name: "flat"},
+		{name: "chunk-blockmap", options: "--chunksize=8192 -E force-inode-blockmap"},
+		{name: "chunk-indexes", options: "--chunksize=8192 -E force-chunk-indexes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp() failed: %v", err)
+			}
+			defer os.RemoveAll(testDir)
 
-	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
-	if err != nil {
-		t.Fatalf("failed to create EROFS rootfs image: %v", err)
-	}
+			rootfsDir, rootfsImage, err := createRootfsEROFS(testDir, tc.options)
+			if err != nil {
+				t.Fatalf("failed to create EROFS rootfs image: %v", err)
+			}
 
-	// Skip overlay because test requires writing to host file.
-	for name, conf := range configs(t, true /* noOverlay */) {
-		t.Run(name, func(t *testing.T) {
-			testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, func(script string) *specs.Spec {
-				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
-				spec.Root = &specs.Root{
-					Path:     rootfsDir,
-					Readonly: false,
-				}
-				if spec.Annotations == nil {
-					spec.Annotations = make(map[string]string)
-				}
-				spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
-				spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
-				// EROFS does not support creating synthetic directories yet, so let's add
-				// a writeable and savable overlay for rootfs, which allows the sentry to
-				// create the mount point for the bind mount of the temporary directory shared
-				// between host and test container.
-				spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
-				return spec
-			})
+			// Skip overlay because test requires writing to host file.
+			for name, conf := range configs(t, true /* noOverlay */) {
+				t.Run(name, func(t *testing.T) {
+					testCheckpointRestore(t, conf, statefile.CompressionLevelDefault, func(script string) *specs.Spec {
+						spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
+						spec.Root = &specs.Root{
+							Path:     rootfsDir,
+							Readonly: false,
+						}
+						if spec.Annotations == nil {
+							spec.Annotations = make(map[string]string)
+						}
+						spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
+						spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
+						// EROFS does not support creating synthetic directories yet, so let's add
+						// a writeable and savable overlay for rootfs, which allows the sentry to
+						// create the mount point for the bind mount of the temporary directory shared
+						// between host and test container.
+						spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
+						return spec
+					})
+				})
+			}
 		})
 	}
 }

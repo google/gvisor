@@ -21,11 +21,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // afterLoad is called by stateify.
 func (fs *filesystem) afterLoad(ctx context.Context) {
+	fs.memoryFile = pgalloc.MemoryFileFromContext(ctx)
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
