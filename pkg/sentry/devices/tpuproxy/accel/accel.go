@@ -55,6 +55,14 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 	}
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
+	owner := dev.owner
+	if owner == nil {
+		t := kernel.TaskFromContext(ctx)
+		if t == nil {
+			return nil, linuxerr.ESRCH
+		}
+		owner = t.ThreadGroup()
+	}
 	name := fmt.Sprintf("accel%d", dev.minor)
 	hostFD, err := devClient.OpenAt(ctx, name, opts.Flags)
 	if err != nil {
@@ -67,14 +75,15 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 		device:   dev,
 		writable: writable,
 	}
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(hostFD)
+		return nil, err
+	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, auth.CredentialsFromContext(ctx), mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 		SpecialFile:       true,
 	}); err != nil {
-		unix.Close(hostFD)
-		return nil, err
-	}
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		fdnotifier.RemoveFD(int32(hostFD))
 		unix.Close(hostFD)
 		return nil, err
 	}
@@ -82,13 +91,7 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 	if writable {
 		dev.openWriteFDs++
 	}
-	if dev.owner == nil {
-		t := kernel.TaskFromContext(ctx)
-		if t == nil {
-			return nil, linuxerr.ESRCH
-		}
-		dev.owner = t.ThreadGroup()
-	}
+	dev.owner = owner
 	return &fd.vfsfd, nil
 }
 

@@ -142,9 +142,7 @@ func (fd *tpuFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	case linux.VFIO_GROUP_UNSET_CONTAINER:
 		return util.IOCTLInvoke[uint32, uintptr](fd.hostFD, linux.VFIO_GROUP_UNSET_CONTAINER, 0)
 	case linux.VFIO_GROUP_GET_DEVICE_FD:
-		ret, cleanup, err := fd.getPciDeviceFd(t, args[2].Pointer())
-		defer cleanup()
-		return ret, err
+		return fd.getPciDeviceFd(t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -166,31 +164,37 @@ func (fd *tpuFD) setContainer(ctx context.Context, t *kernel.Task, arg hostarch.
 	return util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFD)
 }
 
-// It will be the caller's responsibility to call the returned cleanup function.
-func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, func(), error) {
+func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
 	pciAddress, err := t.CopyInString(arg, hostarch.PageSize)
 	if err != nil {
-		return 0, func() {}, err
+		return 0, err
 	}
 	// Build a NUL-terminated slice of bytes containing the PCI address.
 	pciAddressBytes, err := unix.ByteSliceFromString(pciAddress)
 	if err != nil {
-		return 0, func() {}, err
+		return 0, err
 	}
 	// Pass the address of the PCI address' first byte which can be
 	// recognized by the IOCTL syscall.
 	hostFD, err := util.IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_GET_DEVICE_FD, &pciAddressBytes[0])
 	if err != nil {
-		return 0, func() {}, err
-	}
-	cleanup := func() {
-		unix.Close(int(hostFD))
+		return 0, err
 	}
 	pciDevFD := &pciDeviceFD{
 		hostFD:        int32(hostFD),
 		deviceAddress: pciAddress,
 		containerName: fd.containerName,
 		tpuproxy:      fd.device.tpuproxy,
+	}
+	// Initialize a mapping that is backed by a host FD.
+	pciDevFD.memmapFile.SetFD(int(hostFD))
+	// TODO: Letting pciDevFD.memmapFile's memory type default to
+	// MemoryTypeWriteBack is consistent with legacy behavior, but not clearly
+	// correct; drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap() uses
+	// pgprot_noncached(), which would correspond to our MemoryTypeUncached.
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(int(hostFD))
+		return 0, err
 	}
 	// See drivers/vfio/group.c:vfio_device_open_file(), the PCI device
 	// is accessed for both reads and writes.
@@ -200,24 +204,17 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 		UseDentryMetadata: true,
 		SpecialFile:       true,
 	}); err != nil {
-		return 0, cleanup, err
-	}
-	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
-		return 0, cleanup, err
+		fdnotifier.RemoveFD(int32(hostFD))
+		unix.Close(int(hostFD))
+		return 0, err
 	}
 	defer pciDevFD.vfsfd.DecRef(t)
 	newFD, err := t.NewFDFrom(0, &pciDevFD.vfsfd, kernel.FDFlags{})
 	if err != nil {
-		return 0, cleanup, err
+		return 0, err
 	}
-	// Initialize a mapping that is backed by a host FD.
-	pciDevFD.memmapFile.SetFD(int(hostFD))
-	// TODO: Letting pciDevFD.memmapFile's memory type default to
-	// MemoryTypeWriteBack is consistent with legacy behavior, but not clearly
-	// correct; drivers/vfio/pci/vfio_pci_core.c:vfio_pci_core_mmap() uses
-	// pgprot_noncached(), which would correspond to our MemoryTypeUncached.
 	pciDevFD.tpuproxy.trackFD(pciDevFD)
-	return uintptr(newFD), func() {}, nil
+	return uintptr(newFD), nil
 }
 
 // DevAddrSet tracks device address ranges that have been mapped.

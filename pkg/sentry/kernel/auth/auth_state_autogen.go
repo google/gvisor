@@ -27,6 +27,7 @@ func (c *Credentials) StateFields() []string {
 		"BoundingCaps",
 		"AmbientCaps",
 		"KeepCaps",
+		"NoSetUIDFixup",
 		"UserNamespace",
 	}
 }
@@ -49,7 +50,8 @@ func (c *Credentials) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &c.BoundingCaps)
 	stateSinkObject.Save(11, &c.AmbientCaps)
 	stateSinkObject.Save(12, &c.KeepCaps)
-	stateSinkObject.Save(13, &c.UserNamespace)
+	stateSinkObject.Save(13, &c.NoSetUIDFixup)
+	stateSinkObject.Save(14, &c.UserNamespace)
 }
 
 func (c *Credentials) afterLoad(context.Context) {}
@@ -69,7 +71,8 @@ func (c *Credentials) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(10, &c.BoundingCaps)
 	stateSourceObject.Load(11, &c.AmbientCaps)
 	stateSourceObject.Load(12, &c.KeepCaps)
-	stateSourceObject.Load(13, &c.UserNamespace)
+	stateSourceObject.Load(13, &c.NoSetUIDFixup)
+	stateSourceObject.Load(14, &c.UserNamespace)
 }
 
 func (i *IDMapEntry) StateTypeName() string {
