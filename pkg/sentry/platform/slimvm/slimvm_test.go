@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/pkg/sentry/platform/slimvm/testutil"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
@@ -48,7 +49,11 @@ const testSandboxID = "deadbeef"
 
 func slimvmTest(t testHarness, setup func(*SlimVM), fn func(*vCPU) bool) {
 	// Create the machine.
-	deviceFile, err := OpenDevice("")
+	desc, err := platformdesc.Lookup("slimvm")
+	if err != nil {
+		t.Fatalf("error looking up platform: %v", err)
+	}
+	deviceFile, err := desc.OpenDevice("")
 	if err != nil {
 		t.Fatalf("error opening device file: %v", err)
 	}

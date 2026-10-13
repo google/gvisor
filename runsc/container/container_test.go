@@ -47,7 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -478,7 +478,7 @@ var platforms = flag.String("test_platforms", os.Getenv("TEST_PLATFORMS"), "Plat
 func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 	var ps []string
 	if *platforms == "" {
-		ps = platform.List()
+		ps = platformdesc.List()
 	} else {
 		ps = strings.Split(*platforms, ",")
 	}

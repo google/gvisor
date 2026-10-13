@@ -514,17 +514,6 @@ func (AddressSpaceIOUnavailable) Error() string {
 	return "platform.AddressSpaceIO currently unavailable"
 }
 
-// Requirements is used to specify platform specific requirements.
-type Requirements struct {
-	// RequiresCapSysPtrace indicates that the sandbox has to be started with
-	// the CAP_SYS_PTRACE capability.
-	RequiresCapSysPtrace bool
-
-	// FrequentHostThreadWakeups indicates that the platform wakes sleeping
-	// host threads at a very high rate.
-	FrequentHostThreadWakeups bool
-}
-
 // SeccompInfo represents seccomp-bpf data for a given platform.
 type SeccompInfo interface {
 	// Variables returns a map from named variables to the value they should
@@ -646,14 +635,6 @@ type Constructor interface {
 	//
 	//	* opts - Platform customization bits.
 	New(opts Options) (Platform, error)
-
-	// OpenDevice opens the path to the device used by the platform.
-	// Passing in an empty string will use the default path for the device,
-	// e.g. "/dev/kvm" for the KVM platform.
-	OpenDevice(devicePath string) (*fd.FD, error)
-
-	// Requirements returns platform specific requirements.
-	Requirements() Requirements
 
 	// PrecompiledSeccompInfo returns a list of `SeccompInfo`s that is
 	// useful to precompile into the Sentry.

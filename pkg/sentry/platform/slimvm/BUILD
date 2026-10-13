@@ -93,6 +93,7 @@ go_test(
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/platform",
+        "//pkg/sentry/platform/platformdesc",
         "//pkg/sentry/platform/slimvm/testutil",
         "//pkg/sentry/time",
         "@org_golang_x_sys//unix:go_default_library",
