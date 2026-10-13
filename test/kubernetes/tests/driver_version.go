@@ -83,6 +83,9 @@ func RunDriverVersion(ctx context.Context, t *testing.T, k8sCtx k8sctx.Kubernete
 
 func getRunscDriverInfo(ctx context.Context, ns *testcluster.Namespace, cluster *testcluster.TestCluster, image string) (map[string]any, error) {
 	const runtimePath = "/home/containerd/usr/local/sbin/runsc"
+	// runsc runs "nvproxy" in the Sentry sidecar binary, which it looks up
+	// in the gvisor-bin directory next to itself.
+	const sidecarsPath = "/home/containerd/usr/local/sbin/gvisor-bin"
 	pod := ns.NewAlpinePod(fmt.Sprintf("hello-%d", time.Now().UnixNano()), image, []string{})
 	pod, err := cluster.ConfigurePodForRuntimeTestNodepool(ctx, pod)
 	if err != nil {
@@ -100,6 +103,14 @@ func getRunscDriverInfo(ctx context.Context, ns *testcluster.Namespace, cluster 
 				Type: new(v13.HostPathType),
 			},
 		},
+	}, v13.Volume{
+		Name: "gvisor-bin",
+		VolumeSource: v13.VolumeSource{
+			HostPath: &v13.HostPathVolumeSource{
+				Path: sidecarsPath,
+				Type: new(v13.HostPathType),
+			},
+		},
 	})
 
 	container := v13.Container{
@@ -110,6 +121,11 @@ func getRunscDriverInfo(ctx context.Context, ns *testcluster.Namespace, cluster 
 			{
 				Name:      "runsc",
 				MountPath: "runsc",
+				ReadOnly:  false,
+			},
+			{
+				Name:      "gvisor-bin",
+				MountPath: "gvisor-bin",
 				ReadOnly:  false,
 			},
 		},

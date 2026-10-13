@@ -100,6 +100,7 @@ deps_test(
     allowed = [
         "//runsc/cli",
         "//runsc/cli/sentrycli",
+        "//runsc/cmd/nvproxy",
         "//runsc/cmd/sandboxsetup",
         "//runsc/cmd/sentry/forwardcmd",
         "//runsc/cmd/sentry/sentrycmd",

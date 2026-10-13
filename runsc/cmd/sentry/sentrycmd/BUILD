@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "boot.go",
         "chroot.go",
+        "nvproxy.go",
         "syscalls.go",
     ],
     visibility = [

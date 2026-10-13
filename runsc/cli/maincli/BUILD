@@ -18,7 +18,6 @@ go_library(
         "//runsc/cli",
         "//runsc/cmd",
         "//runsc/cmd/alias",
-        "//runsc/cmd/nvproxy",
         "//runsc/cmd/profile",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",
