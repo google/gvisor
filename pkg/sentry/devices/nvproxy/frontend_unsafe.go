@@ -45,6 +45,15 @@ func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams
 	return n, nil
 }
 
+func rmGetEventDataInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS41_PARAMETERS, event *nvgpu.NvUnixEvent) (uintptr, error) {
+	defer runtime.KeepAlive(event) // since we convert to non-pointer-typed P64
+	origEvent := ioctlParams.PEvent
+	ioctlParams.PEvent = p64FromPtr(unsafe.Pointer(event))
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	ioctlParams.PEvent = origEvent
+	return n, err
+}
+
 func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *Params) (uintptr, error) {
 	defer runtime.KeepAlive(ctrlParams) // since we convert to non-pointer-typed P64
 	origParams := ioctlParams.Params
