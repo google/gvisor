@@ -47,6 +47,8 @@ build --build_tag_filters=-nogo
 # Select the ordinary syscall tests used by public CI.
 test:syscalls-amd64 --test_tag_filters=-allsave,-runsc_slimvm
 test:syscalls-arm64 --test_tag_filters=-allsave,runsc_ptrace,runsc_systrap
+build:syscalls-arm64-64k --test_tag_filters=-allsave,runsc_systrap
+build:syscalls-arm64-64k --//tools/bazeldefs:page_size=64k
 
 # Set flags for x86_64.
 build:x86_64 --crosstool_top=@crosstool//:toolchains
