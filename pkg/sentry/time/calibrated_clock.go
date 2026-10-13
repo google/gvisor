@@ -208,7 +208,7 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 		BaseCycles: newest.after,
 	}, parked)
 
-	return c.params, true
+	return c.params, c.ready
 }
 
 // GetTime returns the current time based on the clock calibration.

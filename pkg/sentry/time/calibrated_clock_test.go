@@ -107,6 +107,35 @@ func TestGetTimeOverflow(t *testing.T) {
 	}
 }
 
+func TestUpdateReportsCalibrationReset(t *testing.T) {
+	c := newTestCalibratedClock([]sample{
+		{before: 0, after: 1, ref: 0},
+		{before: 1_000_000_000, after: 1_000_000_001, ref: 1_000_000_000},
+		// This reference jump cannot be corrected within one update interval.
+		// updateParams must discard the calibration instead.
+		{before: 2_000_000_000, after: 2_000_000_001, ref: 4_000_000_000},
+	}, nil)
+
+	_, ready := c.Update(false)
+	if got, want := ready, false; got != want {
+		t.Fatalf("first Update ready = %t, want %t", got, want)
+	}
+	_, ready = c.Update(false)
+	if got, want := ready, true; got != want {
+		t.Fatalf("second Update ready = %t, want %t", got, want)
+	}
+	_, ready = c.Update(false)
+	c.mu.RLock()
+	clockReady := c.ready
+	c.mu.RUnlock()
+	if got, want := clockReady, false; got != want {
+		t.Fatalf("clock ready after rejected calibration = %t, want %t", got, want)
+	}
+	if got, want := ready, false; got != want {
+		t.Errorf("Update ready after rejected calibration = %t, want %t", got, want)
+	}
+}
+
 func TestErrorCorrection(t *testing.T) {
 	testCases := []struct {
 		name               string
