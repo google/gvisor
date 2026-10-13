@@ -95,20 +95,17 @@ the branch remains inert unless a security backport is required (see
 
 ### Sequence
 
-| Step           | Who                  | Result                           |
-| -------------- | -------------------- | -------------------------------- |
-| 1. Cut         | A maintainer         | `release/<yyyymmdd>` at one      |
-:                :                      : commit on master                 :
-| 2. Cherry-pick | A maintainer         | Cherry-picks from master, merged |
-: (optional)     :                      : to the branch by pull request    :
-| 3. Stage       | A maintainer, with a | Tag                              |
-:                : GitHub workflow      : `release-<yyyymmdd>.<N>-staging` :
-:                :                      : on the branch head               :
-| 4. Publish     | Buildkite            | Artifacts in                     |
-:                :                      : `gs\://gvisor/releases/`, then   :
-:                :                      : tag `release-<yyyymmdd>.<N>`     :
-| 5. Mirror      | GitHub workflow      | GitHub release with the          |
-:                :                      : artifacts and release notes      :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Step | Who | Result |
+| --- | --- | --- |
+| 1. Cut | A maintainer | `release/<yyyymmdd>` at one commit on master |
+| 2. Cherry-pick (optional) | A maintainer | Cherry-picks from master, merged to the branch by pull request |
+| 3. Stage | A maintainer, with a GitHub workflow | Tag `release-<yyyymmdd>.<N>-staging` on the branch head |
+| 4. Publish | Buildkite | Artifacts in `gs://gvisor/releases/`, then tag `release-<yyyymmdd>.<N>` |
+| 5. Mirror | GitHub workflow | GitHub release with the artifacts and release notes |
+
+<!-- mdformat on -->
 
 All cherry-picks go to the branch before step 3. After step 3, the branch does
 not change, except for a backport.
@@ -301,30 +298,18 @@ git push origin 'release-20260928.0^{commit}:refs/heads/release/20260928'
 
 ### Troubleshooting
 
-| Symptom            | Cause              | Action                             |
-| ------------------ | ------------------ | ---------------------------------- |
-| Cut: `release-X is | This date has a    | Wait for the next week. To fix the |
-: not older than     : release, or a      : existing release, use [Playbook    :
-: <date>`            : newer release      : C](#playbook-c-security-backport). :
-:                    : exists             :                                    :
-| "Workflow does not | The selected       | Use a branch that was cut from     |
-: exist or does not  : branch does not    : master after the workflows were    :
-: have a             : contain the        : added.                             :
-: workflow_dispatch  : workflow           :                                    :
-: trigger in this    :                    :                                    :
-: branch"            :                    :                                    :
-| Stage: `already    | There is no new    | Merge the cherry-pick pull request |
-: released as ...`   : commit since the   : first.                             :
-:                    : last release       :                                    :
-| No Buildkite build | The webhook did    | Examine the Buildkite webhook. As  |
-: after stage        : not start a build  : a fallback, do [B3](#b3-stage).    :
-:                    : for the tag        :                                    :
-| The Buildkite      | A build or upload  | Fix the problem. Then stage again  |
-: build failed       : error              : with the same version. This        :
-:                    :                    : replaces the staging tag.          :
-| Release Mirror     | The artifacts were | Run **Release Mirror** again with  |
-: failed             : late, or a network : the tag.                           :
-:                    : error occurred     :                                    :
+<!-- mdformat off(no multiline table support in Kramdown) -->
+
+| Symptom | Cause | Action |
+| --- | --- | --- |
+| Cut: `release-X is not older than <date>` | This date has a release, or a newer release exists | Wait for the next week. To fix the existing release, use [Playbook C](#playbook-c-security-backport). |
+| "Workflow does not exist or does not have a `workflow_dispatch` trigger in this branch" | The selected branch does not contain the workflow | Use a branch that was cut from master after the workflows were added. |
+| Stage: `already released as ...` | There is no new commit since the last release | Merge the cherry-pick pull request first. |
+| No Buildkite build after stage | The webhook did not start a build for the tag | Examine the Buildkite webhook. As a fallback, do [B3](#b3-stage). |
+| The Buildkite build failed | A build or upload error | Fix the problem. Then stage again with the same version. This replaces the staging tag. |
+| Release Mirror failed | The artifacts were late, or a network error occurred | Run **Release Mirror** again with the tag. |
+
+<!-- mdformat on -->
 
 ### Restrictions
 
