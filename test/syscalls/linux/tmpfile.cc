@@ -230,6 +230,31 @@ INSTANTIATE_TEST_SUITE_P(Locations, TmpfileTest,
                          ::testing::Values(Location::kTestTmpdir,
                                            Location::kTmpfsMount));
 
+// On overlay, the directory may exist only on the lower layer, in which case
+// it must be copied up before the file can be created on the upper layer.
+// Under the test runner's overlay configuration, any directory from the rootfs
+// that this test binary has not written to is such a directory.
+TEST(TmpfileOverlayTest, LowerLayerDirectory) {
+  constexpr char kDir[] = "/usr";
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(kDir)));
+  SKIP_IF(access(kDir, W_OK) != 0);
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kDir, O_TMPFILE | O_RDWR, 0600));
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+  EXPECT_EQ(st.st_nlink, 0u);
+
+  const std::string data = "lower";
+  ASSERT_THAT(pwrite(fd.get(), data.data(), data.size(), 0),
+              SyscallSucceedsWithValue(data.size()));
+  char buf[16] = {};
+  ASSERT_THAT(pread(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(data.size()));
+  EXPECT_EQ(std::string(buf, data.size()), data);
+}
+
 }  // namespace
 
 }  // namespace testing
