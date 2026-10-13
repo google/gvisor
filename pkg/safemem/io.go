@@ -146,6 +146,19 @@ func (r ToIOReader) Read(dst []byte) (int, error) {
 	return int(n), err
 }
 
+// ToIOWriter implements io.Writer for a (safemem.)Writer by repeatedly
+// invoking Writer.WriteFromBlocks until it returns an error or writes all of
+// src.
+type ToIOWriter struct {
+	Writer Writer
+}
+
+// Write implements io.Writer.Write.
+func (w ToIOWriter) Write(src []byte) (int, error) {
+	n, err := WriteFullFromBlocks(w.Writer.WriteFromBlocks, BlockSeqOf(BlockFromSafeSlice(src)))
+	return int(n), err
+}
+
 // FromIOReader implements Reader for an io.Reader by repeatedly invoking
 // io.Reader.Read until it returns an error or partial read. This is not
 // thread-safe.
