@@ -14,11 +14,7 @@
 
 package systrap
 
-import (
-	"gvisor.dev/gvisor/pkg/hostarch"
-)
-
-const syscallStubMessageOffset = hostarch.PageSize
+// syscallStubMessageOffset is defined in syscall_thread_{amd64,arm64}.go.
 
 // syscallSentryMessage is a shared message that can be changed only from the
 // Sentry and a stub process can only read it.

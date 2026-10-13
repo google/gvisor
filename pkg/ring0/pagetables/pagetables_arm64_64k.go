@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64 && pagesize_64k
+//go:build arm64
 
 package pagetables
 
-// Page table constants for 64K page size (3-level page tables).
+// Page table constants for the 64K translation granule (3-level page tables).
 //
 // With 64K pages, we use a 3-level page table structure:
 // - PGD (Page Global Directory)
@@ -32,22 +32,25 @@ package pagetables
 // [28:16] - PTE index (13 bits, 8192 entries)
 // [15:0]  - Page offset (16 bits, 64K page)
 const (
-	pteShift = 16
-	pmdShift = 29
-	pgdShift = 42
+	pteShift64K = 16
+	pmdShift64K = 29
+	pgdShift64K = 42
 
 	// Mask for 13-bit index (8192 entries)
-	pteMask = 0x1fff << pteShift
-	pmdMask = 0x1fff << pmdShift
+	pteMask64K = 0x1fff << pteShift64K
+	pmdMask64K = 0x1fff << pmdShift64K
 	// Top level only has 6 bits (64 entries) for 48-bit VA
-	pgdMask = 0x3f << pgdShift
+	pgdMask64K = 0x3f << pgdShift64K
 
-	pteSize = 1 << pteShift // 64K
-	pmdSize = 1 << pmdShift // 512M
-	pgdSize = 1 << pgdShift // 4T
+	pteSize64K = 1 << pteShift64K // 64K
+	pmdSize64K = 1 << pmdShift64K // 512M
+	pgdSize64K = 1 << pgdShift64K // 4T
 
-	entriesPerPage = 8192
+	entriesPerPage64K = 8192
 )
 
-// PTEs is a collection of entries.
-type PTEs [entriesPerPage]PTE
+// ptes64K is a page table page with the 64K translation granule.
+//
+// Page table pages are allocated and passed around (e.g. through Allocator)
+// as *PTEs; use PTEs.as64K to access all of their entries.
+type ptes64K [entriesPerPage64K]PTE
