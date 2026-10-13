@@ -146,6 +146,18 @@ func Register(vfsObj *vfs.VirtualFilesystem, opts *Options) (*DeviceInfo, error)
 		}
 		nvp.devInfo.HaveFabricIMEXManagement = true
 		nvp.devInfo.FabricIMEXManagementDevMinor = opts.HostSettings.FabricIMEXManagementDevMinor
+		if opts.HostSettings.HaveMNCCManagement {
+			if err := vfsObj.RegisterDevice(vfs.CharDevice, capsDevMajor, opts.HostSettings.MNCCManagementDevMinor, &openOnlyDevice{
+				nvp:     nvp,
+				relpath: fmt.Sprintf("nvidia-caps/nvidia-cap%d", opts.HostSettings.MNCCManagementDevMinor),
+			}, &vfs.RegisterDeviceOptions{
+				GroupName: "nvidia-caps",
+			}); err != nil {
+				return nil, err
+			}
+			nvp.devInfo.HaveMNCCManagement = true
+			nvp.devInfo.MNCCManagementDevMinor = opts.HostSettings.MNCCManagementDevMinor
+		}
 	}
 
 	if imexChannelCount := opts.HostSettings.IMEXChannelCount(); imexChannelCount != 0 {
@@ -183,6 +195,11 @@ type DeviceInfo struct {
 	// be non-zero and might not match the host's value.)
 	HaveFabricIMEXManagement     bool
 	FabricIMEXManagementDevMinor uint32
+
+	// If HaveMNCCManagement is true, MNCCManagementDevMinor is the mncc-mgmt
+	// capability's device minor number, which matches the value on the host.
+	HaveMNCCManagement     bool
+	MNCCManagementDevMinor uint32
 
 	// CapsIMEXChannelsDevMajor is nvidia-caps-imex-channels's device major
 	// number. If CapsIMEXChannelsDevMajor is 0, nvidia-caps-imex-channels is

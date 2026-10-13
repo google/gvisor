@@ -15,6 +15,7 @@
 package nvconf
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -34,6 +35,11 @@ type HostSettings struct {
 	// /proc/driver/nvidia/capabilities/fabric-imex-mgmt.
 	HaveFabricIMEXManagement     bool
 	FabricIMEXManagementDevMinor uint32
+
+	// If HaveMNCCManagement is true, MNCCManagementDevMinor is the device minor
+	// number advertised in /proc/driver/nvidia/capabilities/mncc-mgmt.
+	HaveMNCCManagement     bool
+	MNCCManagementDevMinor uint32
 }
 
 // HostSettingsOptions holds arguments to GetHostSettings.
@@ -59,7 +65,8 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read /proc/driver/nvidia/capabilities/fabric-imex-mgmt: %w", err)
 		}
-		m := regexp.MustCompile(`DeviceFileMinor: (\d+)`).FindSubmatch(fabricImexMgmt)
+		minorRe := regexp.MustCompile(`DeviceFileMinor: (\d+)`)
+		m := minorRe.FindSubmatch(fabricImexMgmt)
 		if m == nil {
 			return nil, fmt.Errorf("failed to find DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt")
 		}
@@ -69,6 +76,21 @@ func GetHostSettings(opts HostSettingsOptions) (*HostSettings, error) {
 		}
 		settings.HaveFabricIMEXManagement = true
 		settings.FabricIMEXManagementDevMinor = uint32(minor)
+
+		if mnccMgmt, err := os.ReadFile("/proc/driver/nvidia/capabilities/mncc-mgmt"); err == nil {
+			m := minorRe.FindSubmatch(mnccMgmt)
+			if m == nil {
+				return nil, fmt.Errorf("failed to find DeviceFileMinor in /proc/driver/nvidia/capabilities/mncc-mgmt")
+			}
+			mnccMinor, err := strconv.ParseUint(string(m[1]), 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse DeviceFileMinor %s: %w", string(m[1]), err)
+			}
+			settings.HaveMNCCManagement = true
+			settings.MNCCManagementDevMinor = uint32(mnccMinor)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("failed to read /proc/driver/nvidia/capabilities/mncc-mgmt: %w", err)
+		}
 	}
 
 	return settings, nil

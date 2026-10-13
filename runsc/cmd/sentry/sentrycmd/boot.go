@@ -230,6 +230,7 @@ type Boot struct {
 	// particular is uint32 and there is no flag.Uint32Var().
 	procDriverNvidiaParams             string
 	nvidiaFabricIMEXManagementDevMinor int64
+	nvidiaMNCCManagementDevMinor       int64
 
 	// uid and gid are the user and group IDs to switch to after setting up the
 	// user namespace.
@@ -320,6 +321,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver ABI version to use, or 'latest' for the newest supported one")
 	f.StringVar(&b.procDriverNvidiaParams, "nvidia-host-params", "", "value of /proc/driver/nvidia/params on the host")
 	f.Int64Var(&b.nvidiaFabricIMEXManagementDevMinor, "nvidia-fabric-imex-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/fabric-imex-mgmt on the host")
+	f.Int64Var(&b.nvidiaMNCCManagementDevMinor, "nvidia-mncc-mgmt-minor", -1, "DeviceFileMinor in /proc/driver/nvidia/capabilities/mncc-mgmt on the host")
 }
 
 // willReexec returns true if this boot process will re-execute itself to
@@ -457,6 +459,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				if nvhs.HaveFabricIMEXManagement {
 					b.nvidiaFabricIMEXManagementDevMinor = int64(nvhs.FabricIMEXManagementDevMinor)
 					argOverride["nvidia-fabric-imex-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.FabricIMEXManagementDevMinor), 10)
+				}
+				if nvhs.HaveMNCCManagement {
+					b.nvidiaMNCCManagementDevMinor = int64(nvhs.MNCCManagementDevMinor)
+					argOverride["nvidia-mncc-mgmt-minor"] = strconv.FormatUint(uint64(nvhs.MNCCManagementDevMinor), 10)
 				}
 			}
 		}
@@ -726,6 +732,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			ProcDriverNvidiaParams:       b.procDriverNvidiaParams,
 			HaveFabricIMEXManagement:     b.nvidiaFabricIMEXManagementDevMinor >= 0,
 			FabricIMEXManagementDevMinor: uint32(b.nvidiaFabricIMEXManagementDevMinor),
+			HaveMNCCManagement:           b.nvidiaMNCCManagementDevMinor >= 0,
+			MNCCManagementDevMinor:       uint32(b.nvidiaMNCCManagementDevMinor),
 		},
 		HostTHP:                  b.hostTHP,
 		SaveFDs:                  b.saveFDs.GetFDs(),
