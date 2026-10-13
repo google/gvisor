@@ -54,11 +54,6 @@ type Protocol struct{}
 
 var _ netlink.Protocol = (*Protocol)(nil)
 
-// FallbackNonHostRoutes controls whether route lookup falls back to non-host routes
-// and synthesized interface routes when no default route or longest prefix matches.
-// This is intended for MNCC sidecar usage only.
-var FallbackNonHostRoutes = false
-
 // NewProtocol creates a NETLINK_ROUTE netlink.Protocol.
 func NewProtocol(t *kernel.Task) (netlink.Protocol, *syserr.Error) {
 	return &Protocol{}, nil
@@ -406,21 +401,7 @@ func fillRoute(routes []inet.Route, family uint8, addr []byte) (inet.Route, *sys
 	if idx == -1 {
 		idx = idxDef
 	}
-	if FallbackNonHostRoutes && idx == -1 {
-		for i, route := range routes {
-			if route.Family == family && route.Scope != linux.RT_SCOPE_HOST {
-				idx = i
-				break
-			}
-		}
-		if idx == -1 && len(routes) > 0 {
-			idx = 0
-		}
-	}
 	if idx == -1 {
-		if FallbackNonHostRoutes {
-			return inet.Route{}, syserr.ErrHostUnreachable
-		}
 		return inet.Route{}, syserr.ErrNetworkUnreachable
 	}
 
@@ -519,37 +500,7 @@ func (p *Protocol) dumpRoutes(ctx context.Context, s *netlink.Socket, msg *nlmsg
 			return err
 		}
 		route, err := fillRoute(routeTables, family, dst)
-		if FallbackNonHostRoutes && err != nil {
-			for _, id := range stack.InterfaceIDs() {
-				iface := stack.Interfaces()[id]
-				if (iface.Flags & linux.IFF_LOOPBACK) == 0 {
-					for _, a := range stack.InterfaceAddrs()[id] {
-						if a.Family == family {
-							route = inet.Route{
-								Family:          family,
-								OutputInterface: id,
-								Scope:           linux.RT_SCOPE_UNIVERSE,
-								Type:            linux.RTN_UNICAST,
-								Protocol:        linux.RTPROT_BOOT,
-								Table:           linux.RT_TABLE_MAIN,
-								DstAddr:         dst,
-								DstLen:          uint8(len(dst) * 8),
-								Flags:           linux.RTM_F_CLONED,
-							}
-							err = nil
-							break
-						}
-					}
-					if err == nil {
-						break
-					}
-				}
-			}
-		}
 		if err != nil {
-			if FallbackNonHostRoutes {
-				return syserr.ErrHostUnreachable
-			}
 			return err
 		}
 		routeTables = append([]inet.Route{}, route)
