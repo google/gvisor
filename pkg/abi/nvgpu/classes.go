@@ -70,6 +70,7 @@ const (
 	NV50_P2P                         = 0x0000503b
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	NV50_MEMORY_VIRTUAL              = 0x000050a0
+	NV_MNCC_SESSION                  = 0x000077cc
 	GT200_DEBUGGER                   = 0x000083de
 	MPS_COMPUTE                      = 0x0000900e
 	FERMI_TWOD_A                     = 0x0000902d
@@ -378,6 +379,15 @@ type NV503B_ALLOC_PARAMETERS_V590 struct {
 type NV503C_ALLOC_PARAMETERS struct {
 	_     structs.HostLayout
 	Flags uint32
+}
+
+// NV77CC_ALLOC_PARAMETERS is the alloc params type for NV_MNCC_SESSION,
+// from src/common/sdk/nvidia/inc/class/cl77cc.h.
+//
+// +marshal
+type NV77CC_ALLOC_PARAMETERS struct {
+	_             structs.HostLayout
+	CapDescriptor uint64
 }
 
 // NV83DE_ALLOC_PARAMETERS is the alloc params type for GT200_DEBUGGER,

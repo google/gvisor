@@ -69,6 +69,7 @@ var _ marshal.Marshallable = (*NV503B_BAR1_P2P_DMA_INFO)(nil)
 var _ marshal.Marshallable = (*NV503B_FABRIC_P2P_DMA_INFO)(nil)
 var _ marshal.Marshallable = (*NV503C_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV503C_CTRL_REGISTER_VA_SPACE_PARAMS)(nil)
+var _ marshal.Marshallable = (*NV77CC_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV83DE_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV9072_ALLOCATION_PARAMETERS)(nil)
@@ -2347,6 +2348,88 @@ func (n *NV503C_ALLOC_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.A
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (n *NV503C_ALLOC_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NV77CC_ALLOC_PARAMETERS) SizeBytes() int {
+    return 8
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NV77CC_ALLOC_PARAMETERS) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint64(dst[:8], uint64(n.CapDescriptor))
+    dst = dst[8:]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NV77CC_ALLOC_PARAMETERS) UnmarshalBytes(src []byte) []byte {
+    n.CapDescriptor = uint64(hostarch.ByteOrder.Uint64(src[:8]))
+    src = src[8:]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NV77CC_ALLOC_PARAMETERS) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NV77CC_ALLOC_PARAMETERS) MarshalUnsafe(dst []byte) []byte {
+    size := n.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NV77CC_ALLOC_PARAMETERS) UnmarshalUnsafe(src []byte) []byte {
+    size := n.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NV77CC_ALLOC_PARAMETERS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NV77CC_ALLOC_PARAMETERS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NV77CC_ALLOC_PARAMETERS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NV77CC_ALLOC_PARAMETERS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NV77CC_ALLOC_PARAMETERS) WriteTo(writer io.Writer) (int64, error) {
     buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(n))), n.SizeBytes())
 
     length, err := writer.Write(buf)

@@ -180,6 +180,8 @@ func (d *DeviceInfo) StateFields() []string {
 		"CapsDevMajor",
 		"HaveFabricIMEXManagement",
 		"FabricIMEXManagementDevMinor",
+		"HaveMNCCManagement",
+		"MNCCManagementDevMinor",
 		"CapsIMEXChannelsDevMajor",
 		"UVMDevMajor",
 	}
@@ -193,8 +195,10 @@ func (d *DeviceInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.CapsDevMajor)
 	stateSinkObject.Save(1, &d.HaveFabricIMEXManagement)
 	stateSinkObject.Save(2, &d.FabricIMEXManagementDevMinor)
-	stateSinkObject.Save(3, &d.CapsIMEXChannelsDevMajor)
-	stateSinkObject.Save(4, &d.UVMDevMajor)
+	stateSinkObject.Save(3, &d.HaveMNCCManagement)
+	stateSinkObject.Save(4, &d.MNCCManagementDevMinor)
+	stateSinkObject.Save(5, &d.CapsIMEXChannelsDevMajor)
+	stateSinkObject.Save(6, &d.UVMDevMajor)
 }
 
 func (d *DeviceInfo) afterLoad(context.Context) {}
@@ -204,8 +208,10 @@ func (d *DeviceInfo) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(0, &d.CapsDevMajor)
 	stateSourceObject.Load(1, &d.HaveFabricIMEXManagement)
 	stateSourceObject.Load(2, &d.FabricIMEXManagementDevMinor)
-	stateSourceObject.Load(3, &d.CapsIMEXChannelsDevMajor)
-	stateSourceObject.Load(4, &d.UVMDevMajor)
+	stateSourceObject.Load(3, &d.HaveMNCCManagement)
+	stateSourceObject.Load(4, &d.MNCCManagementDevMinor)
+	stateSourceObject.Load(5, &d.CapsIMEXChannelsDevMajor)
+	stateSourceObject.Load(6, &d.UVMDevMajor)
 }
 
 func (nvp *nvproxy) StateTypeName() string {
