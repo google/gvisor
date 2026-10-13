@@ -44,3 +44,13 @@ type Symbolize struct {
 func (*Symbolize) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
 	return execSentry()
 }
+
+// Syscalls implements subcommands.Command for the "syscalls" help topic.
+type Syscalls struct {
+	forwardcmd.Syscalls
+}
+
+// Execute implements subcommands.Command.Execute.
+func (*Syscalls) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
+	return execSentry()
+}
