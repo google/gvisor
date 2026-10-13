@@ -179,7 +179,8 @@ const (
 	PR_CAP_AMBIENT_CLEAR_ALL = 4
 
 	// SECBIT_* flags are used to control securebits.
-	SECBIT_KEEP_CAPS = 1 << 4
+	SECBIT_NO_SETUID_FIXUP = 1 << 2
+	SECBIT_KEEP_CAPS       = 1 << 4
 )
 
 // From <asm/prctl.h>

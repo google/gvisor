@@ -169,39 +169,41 @@ func (t *Task) setKUIDsUnchecked(newR, newE, newS auth.KUID) {
 	oldR, oldE, oldS := creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID
 	creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID = newR, newE, newS
 
-	// "1. If one or more of the real, effective or saved set user IDs was
-	// previously 0, and as a result of the UID changes all of these IDs have a
-	// nonzero value, then all capabilities are cleared from the permitted and
-	// effective capability sets." - capabilities(7)
-	if (oldR == root || oldE == root || oldS == root) && (newR != root && newE != root && newS != root) {
-		creds.AmbientCaps = 0
-		// prctl(2): "PR_SET_KEEPCAP: Set the state of the calling thread's
-		// "keep capabilities" flag, which determines whether the thread's permitted
-		// capability set is cleared when a change is made to the
-		// thread's user IDs such that the thread's real UID, effective
-		// UID, and saved set-user-ID all become nonzero when at least
-		// one of them previously had the value 0.  By default, the
-		// permitted capability set is cleared when such a change is
-		// made; setting the "keep capabilities" flag prevents it from
-		// being cleared." (A thread's effective capability set is always
-		// cleared when such a credential change is made,
-		// regardless of the setting of the "keep capabilities" flag.)
-		if !creds.KeepCaps {
-			creds.PermittedCaps = 0
-			creds.EffectiveCaps = 0
+	if !creds.NoSetUIDFixup {
+		// "1. If one or more of the real, effective or saved set user IDs was
+		// previously 0, and as a result of the UID changes all of these IDs have a
+		// nonzero value, then all capabilities are cleared from the permitted and
+		// effective capability sets." - capabilities(7)
+		if (oldR == root || oldE == root || oldS == root) && (newR != root && newE != root && newS != root) {
+			creds.AmbientCaps = 0
+			// prctl(2): "PR_SET_KEEPCAP: Set the state of the calling thread's
+			// "keep capabilities" flag, which determines whether the thread's permitted
+			// capability set is cleared when a change is made to the
+			// thread's user IDs such that the thread's real UID, effective
+			// UID, and saved set-user-ID all become nonzero when at least
+			// one of them previously had the value 0.  By default, the
+			// permitted capability set is cleared when such a change is
+			// made; setting the "keep capabilities" flag prevents it from
+			// being cleared." (A thread's effective capability set is always
+			// cleared when such a credential change is made,
+			// regardless of the setting of the "keep capabilities" flag.)
+			if !creds.KeepCaps {
+				creds.PermittedCaps = 0
+				creds.EffectiveCaps = 0
+			}
 		}
-	}
-	// """
-	// 2. If the effective user ID is changed from 0 to nonzero, then all
-	// capabilities are cleared from the effective set.
-	//
-	// 3. If the effective user ID is changed from nonzero to 0, then the
-	// permitted set is copied to the effective set.
-	// """
-	if oldE == root && newE != root {
-		creds.EffectiveCaps = 0
-	} else if oldE != root && newE == root {
-		creds.EffectiveCaps = creds.PermittedCaps
+		// """
+		// 2. If the effective user ID is changed from 0 to nonzero, then all
+		// capabilities are cleared from the effective set.
+		//
+		// 3. If the effective user ID is changed from nonzero to 0, then the
+		// permitted set is copied to the effective set.
+		// """
+		if oldE == root && newE != root {
+			creds.EffectiveCaps = 0
+		} else if oldE != root && newE == root {
+			creds.EffectiveCaps = creds.PermittedCaps
+		}
 	}
 	// "4. If the filesystem user ID is changed from 0 to nonzero (see
 	// setfsuid(2)), then the following capabilities are cleared from the
@@ -438,14 +440,13 @@ func (t *Task) SetKeepCaps(k bool) {
 }
 
 // PrivilegedSecureBits is the set of securebits that are privileged.
-const PrivilegedSecureBits = linux.SECBIT_KEEP_CAPS
+const PrivilegedSecureBits = linux.SECBIT_KEEP_CAPS | linux.SECBIT_NO_SETUID_FIXUP
 
 // SetSecurebits sets the securebits flags of the task.
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) SetSecurebits(arg2 uint64) error {
-	// We only support SECBIT_KEEP_CAPS.
-	supported := uint64(linux.SECBIT_KEEP_CAPS)
+	supported := uint64(linux.SECBIT_KEEP_CAPS | linux.SECBIT_NO_SETUID_FIXUP)
 	if (arg2 & ^supported) != 0 {
 		return linuxerr.EPERM
 	}
@@ -455,6 +456,9 @@ func (t *Task) SetSecurebits(arg2 uint64) error {
 		var oldSec uint64
 		if creds.KeepCaps {
 			oldSec |= linux.SECBIT_KEEP_CAPS
+		}
+		if creds.NoSetUIDFixup {
+			oldSec |= linux.SECBIT_NO_SETUID_FIXUP
 		}
 
 		// Linux EPERMs if the value is unchanged for unprivileged callers.
@@ -468,7 +472,12 @@ func (t *Task) SetSecurebits(arg2 uint64) error {
 		}
 	}
 
-	t.SetKeepCaps((arg2 & linux.SECBIT_KEEP_CAPS) != 0)
+	t.mu.Lock()
+	creds := t.Credentials().Fork()
+	creds.KeepCaps = (arg2 & linux.SECBIT_KEEP_CAPS) != 0
+	creds.NoSetUIDFixup = (arg2 & linux.SECBIT_NO_SETUID_FIXUP) != 0
+	t.creds.Store(creds)
+	t.mu.Unlock()
 	return nil
 }
 

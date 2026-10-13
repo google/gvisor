@@ -101,6 +101,9 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		if creds.KeepCaps {
 			securebits |= linux.SECBIT_KEEP_CAPS
 		}
+		if creds.NoSetUIDFixup {
+			securebits |= linux.SECBIT_NO_SETUID_FIXUP
+		}
 		return securebits, nil, nil
 
 	case linux.PR_SET_SECUREBITS:
