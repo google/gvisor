@@ -27,6 +27,8 @@ import (
 )
 
 // Fd represents a mount object file descriptor.
+//
+// +stateify savable
 type Fd struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
