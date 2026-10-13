@@ -1041,15 +1041,24 @@ func tryPopulate(b safemem.Block) bool {
 	return tryPopulateMlock(b)
 }
 
-// Decommit uncommits the given pages, causing them to become zeroed.
+// Decommit uncommits the given pages, causing them to become zeroed. It
+// returns an error if pending checkpoint data cannot be loaded.
 //
 // Preconditions:
 //   - fr.Start and fr.End must be page-aligned.
 //   - fr.Length() > 0.
 //   - At least one reference must be held on all pages in fr.
-func (f *MemoryFile) Decommit(fr memmap.FileRange) {
+func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
+	}
+
+	// Checkpoint reads write directly into the backing memory. Wait before
+	// zeroing so a pending read cannot restore the discarded contents.
+	if amfl := f.asyncPageLoad.Load(); amfl != nil {
+		if err := amfl.awaitLoad(fr); err != nil {
+			return err
+		}
 	}
 
 	f.decommitOrManuallyZero(fr)
@@ -1071,6 +1080,7 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) {
 		ma.commitSeq = f.commitSeq
 		return true
 	})
+	return nil
 }
 
 func (f *MemoryFile) commitFile(fr memmap.FileRange) error {

@@ -1234,7 +1234,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 						// psegAR.Start is not hugepage-aligned.
 						if psegAR.End <= firstHugeEnd {
 							// All of psegAR falls within a single huge page.
-							mm.mf.Decommit(pseg.fileRangeOf(psegAR))
+							if err := mm.mf.Decommit(pseg.fileRangeOf(psegAR)); err != nil {
+								return err
+							}
 							pseg = pseg.NextSegment()
 							continue
 						}
@@ -1245,11 +1247,15 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 							// would make two separate calls to
 							// MemoryFile.Decommit() for the first and last
 							// huge pages respectively.
-							mm.mf.Decommit(pseg.fileRangeOf(psegAR))
+							if err := mm.mf.Decommit(pseg.fileRangeOf(psegAR)); err != nil {
+								return err
+							}
 							pseg = pseg.NextSegment()
 							continue
 						}
-						mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{psegAR.Start, firstHugeEnd}))
+						if err := mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{psegAR.Start, firstHugeEnd})); err != nil {
+							return err
+						}
 						psegAR.Start = firstHugeEnd
 					}
 					// Drop whole huge pages between psegAR.Start (which after the above
@@ -1271,7 +1277,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 					}
 					if lastWholeHugeEnd != psegAR.End {
 						// psegAR.End is not hugepage-aligned.
-						mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{lastWholeHugeEnd, psegAR.End}))
+						if err := mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{lastWholeHugeEnd, psegAR.End})); err != nil {
+							return err
+						}
 						pseg = pseg.NextSegment()
 					}
 					continue
