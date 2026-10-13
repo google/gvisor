@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
@@ -566,9 +567,10 @@ type RestoreOpts struct {
 	// 3. optional checkpoint pages file.
 	// 4. optional platform device file.
 	urpc.FilePayload
-	HavePagesFile  bool
-	HaveDeviceFile bool
-	Background     bool
+	HavePagesFile      bool
+	HaveDeviceFile     bool
+	Background         bool
+	BackgroundReadRate uint64
 
 	// If UseCheckpointGofer is true, the first file in FilePayload is a Unix
 	// domain socket connected to a URPC server implementing
@@ -634,6 +636,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 			pagesFile.Close()
 		}
 	}()
+	if o.BackgroundReadRate != 0 && (!o.HavePagesFile || !o.Background) {
+		return fmt.Errorf("background read throttling requires an uncompressed checkpoint and background restore")
+	}
 	timer.Reached("got restore readers")
 
 	cm.restorer = &restorer{
@@ -651,7 +656,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) (retErr error) 
 
 	if o.HavePagesFile {
 		// This immediately starts loading the main MemoryFile asynchronously.
-		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader")) // transfers ownership
+		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"), pgalloc.AsyncPagesFileLoadOpts{BackgroundBytesPerSecond: o.BackgroundReadRate}) // transfers ownership
 		pagesMetadata = nil
 		pagesFile = nil
 		timer.Reached("created async MF loader")

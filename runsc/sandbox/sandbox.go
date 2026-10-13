@@ -571,8 +571,9 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 
 	opt := boot.RestoreOpts{
-		Background:     background,
-		SplitFSRestore: s.FSRestore,
+		Background:         background,
+		BackgroundReadRate: conf.RestoreBackgroundReadRate,
+		SplitFSRestore:     s.FSRestore,
 	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
