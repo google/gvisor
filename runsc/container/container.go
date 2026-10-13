@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -40,7 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
-	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -217,10 +215,8 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 
 	if specutils.IsRootContainer(args.Spec) && args.FSRestoreImagePath == "" && args.CheckpointDirPath != "" {
-		defaultFSDir := filepath.Join(args.CheckpointDirPath, checkpointfiles.FSCheckpointDir)
-		manifestPath := filepath.Join(defaultFSDir, checkpointfiles.FSCheckpointManifestFileName)
-		if _, err := os.Stat(manifestPath); err == nil {
-			args.FSRestoreImagePath = defaultFSDir
+		if sandbox.HasFSCheckpointManifest(args.CheckpointDirPath) {
+			args.FSRestoreImagePath = args.CheckpointDirPath
 		}
 	}
 
