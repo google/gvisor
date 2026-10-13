@@ -101,6 +101,31 @@ func TestSACKScoreboardIsSACKED(t *testing.T) {
 }
 
 func TestSACKScoreboardIsRangeLost(t *testing.T) {
+	const largeMSS = 1 << 15
+	for _, test := range []struct {
+		name        string
+		mss         uint16
+		sackedBytes seqnum.Size
+		lost        bool
+	}{
+		{name: "below_byte_threshold", mss: smss, sackedBytes: 2*smss - 1},
+		{name: "at_byte_threshold", mss: smss, sackedBytes: 2 * smss},
+		{name: "above_byte_threshold", mss: smss, sackedBytes: 2*smss + 1, lost: true},
+		{name: "large_mss_below_threshold", mss: largeMSS, sackedBytes: 2*largeMSS - 1},
+		{name: "large_mss_at_threshold", mss: largeMSS, sackedBytes: 2 * largeMSS},
+		{name: "large_mss_above_threshold", mss: largeMSS, sackedBytes: 2*largeMSS + 1, lost: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := tcp.NewSACKScoreboard(test.mss, 0)
+			start := seqnum.Value(test.mss)
+			s.Insert(header.SACKBlock{Start: start, End: start.Add(test.sackedBytes)})
+			block := header.SACKBlock{Start: 0, End: 1}
+			if got, want := s.IsRangeLost(block), test.lost; got != want {
+				t.Errorf("IsRangeLost(%v) with %d bytes SACKed = %t, want %t", block, test.sackedBytes, got, want)
+			}
+		})
+	}
+
 	s := tcp.NewSACKScoreboard(10, 0)
 	s.Insert(header.SACKBlock{1, 25})
 	s.Insert(header.SACKBlock{25, 50})

@@ -220,7 +220,7 @@ func (s *SACKScoreboard) Copy() (sackBlocks []header.SACKBlock, maxSACKED seqnum
 // IsRangeLost implements the IsLost(SeqNum) operation defined in RFC 6675
 // section 4 but operates on a range of sequence numbers and returns true if
 // there are at least nDupAckThreshold SACK blocks greater than the range being
-// checked or if at least (nDupAckThreshold-1)*s.smss bytes have been SACKED
+// checked or if more than (nDupAckThreshold-1)*s.smss bytes have been SACKED
 // with sequence numbers greater than the block being checked.
 func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 	if s.Empty() {
@@ -262,7 +262,7 @@ func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 		}
 		nDupSACKBytes += sacked.Start.Size(sacked.End)
 		nDupSACK++
-		if nDupSACK >= nDupAckThreshold || nDupSACKBytes >= seqnum.Size((nDupAckThreshold-1)*s.smss) {
+		if nDupSACK >= nDupAckThreshold || nDupSACKBytes > (nDupAckThreshold-1)*seqnum.Size(s.smss) {
 			isLost = true
 			return false
 		}
@@ -271,14 +271,8 @@ func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 	return isLost
 }
 
-// IsLost implements the IsLost(SeqNum) operation defined in RFC3517 section
-// 4.
-//
-// This routine returns whether the given sequence number is considered to be
-// lost. The routine returns true when either nDupAckThreshold discontiguous
-// SACKed sequences have arrived above 'SeqNum' or (nDupAckThreshold * SMSS)
-// bytes with sequence numbers greater than 'SeqNum' have been SACKed.
-// Otherwise, the routine returns false.
+// IsLost implements the IsLost(SeqNum) operation defined in RFC 6675 section 4.
+// See IsRangeLost for the loss thresholds.
 func (s *SACKScoreboard) IsLost(seq seqnum.Value) bool {
 	return s.IsRangeLost(header.SACKBlock{seq, seq.Add(1)})
 }
