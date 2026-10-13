@@ -16,10 +16,9 @@
 // graph information for the state package. This package defines the wire
 // protocol.
 //
-// Note that these types are careful about how they implement the relevant
-// interfaces (either value receiver or pointer receiver), so that native-sized
-// types, such as integers and simple pointers, can fit inside the interface
-// object.
+// These types use value or pointer receivers to implement Object. Pointer
+// values fit directly in the interface; scalar values may require boxing when
+// returned through Object.
 //
 // This package also uses panic as control flow, so called should be careful to
 // wrap calls in appropriate handlers.
@@ -509,7 +508,7 @@ func loadMap(r *Reader) Map {
 func (m *Map) save(w *Writer) {
 	l := Uint(len(m.Keys))
 	if int(l) != len(m.Values) {
-		panic(fmt.Sprintf("mismatched keys (%d) and values (%d)", len(m.Keys), len(m.Values)))
+		panic(fmt.Sprintf("mismatched keys (%d) and values (%d)", len(m.Keys), len(m.Values))) // Escapes: error formatting.
 	}
 	l.save(w)
 	if l == 0 {
@@ -645,7 +644,7 @@ func saveTypeSpec(w *Writer, t TypeSpec) {
 		typeSpecNil.save(w)
 	default:
 		// This should not happen?
-		panic(fmt.Errorf("unknown type %T", t))
+		panic(fmt.Errorf("unknown type %T", t)) // Escapes: error formatting.
 	}
 }
 
@@ -855,7 +854,7 @@ const (
 
 // Save saves the given object.
 //
-// +checkescape all
+// +checkescape:hard
 //
 // N.B. This function will panic on error.
 func Save(w *Writer, obj Object) {
@@ -915,13 +914,13 @@ func Save(w *Writer, obj Object) {
 		typeComplex128.save(w)
 		x.save(w)
 	default:
-		panic(fmt.Errorf("unknown type: %#v", obj))
+		panic(fmt.Errorf("unknown type: %#v", obj)) // Escapes: error formatting.
 	}
 }
 
 // Load loads a new object.
 //
-// +checkescape all
+// +checkescape:hard
 //
 // N.B. This function will panic on error.
 func Load(r *Reader) Object {
@@ -929,13 +928,17 @@ func Load(r *Reader) Object {
 	case typeBool:
 		return loadBool(r)
 	case typeInt:
-		return loadInt(r)
+		value := loadInt(r)
+		return value // Escapes: boxing the decoded scalar.
 	case typeUint:
-		return loadUint(r)
+		value := loadUint(r)
+		return value // Escapes: boxing the decoded scalar.
 	case typeFloat32:
-		return loadFloat32(r)
+		value := loadFloat32(r)
+		return value // Escapes: boxing the decoded scalar.
 	case typeFloat64:
-		return loadFloat64(r)
+		value := loadFloat64(r)
+		return value // Escapes: boxing the decoded scalar.
 	case typeNil:
 		return loadNil(r)
 	case typeRef:
@@ -964,7 +967,7 @@ func Load(r *Reader) Object {
 		return ((*Type)(nil)).load(r) // Escapes.
 	default:
 		// This is not a valid stream?
-		panic(fmt.Errorf("unknown header: %d", hdr))
+		panic(fmt.Errorf("unknown header: %d", hdr)) // Escapes: error formatting.
 	}
 }
 

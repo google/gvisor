@@ -882,6 +882,8 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 					testReasons[r] = local
 				}
 			}
+		} else {
+			pass.Reportf(fdecl.Pos(), "malformed checkescape annotation: use %q or %q followed by comma-separated reasons", magic, magicParams)
 		}
 	}
 	if len(reasons) == 0 && found {
