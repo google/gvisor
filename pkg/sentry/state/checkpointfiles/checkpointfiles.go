@@ -16,6 +16,8 @@
 // checkpointed to multiple files in a directory rather than to an opaque FD.
 package checkpointfiles
 
+import "strings"
+
 // Files common to both full and filesystem checkpoints:
 const (
 	// PagesMetadataFileName is the file in an image-path directory containing
@@ -41,3 +43,16 @@ const (
 	FSCheckpointManifestFileName = "fscheckpoint.pb"
 	FSCheckpointMultiTarFileName = "multitar.img"
 )
+
+// PrefixFileName returns name prefixed with prefix if prefix ends with "/",
+// prefix + "_" + name if prefix is non-empty, or name unchanged if prefix is
+// empty.
+func PrefixFileName(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	if strings.HasSuffix(prefix, "/") {
+		return prefix + name
+	}
+	return prefix + "_" + name
+}
