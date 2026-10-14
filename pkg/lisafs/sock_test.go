@@ -16,6 +16,7 @@ package lisafs
 
 import (
 	"bytes"
+	"math"
 	"reflect"
 	"testing"
 
@@ -196,7 +197,7 @@ func TestSndRcvMessageNoPayload(t *testing.T) {
 }
 
 func checkMessageReceive(t *testing.T, comm *sockCommunicator, wantM MID, wantMsg marshal.Marshallable) {
-	gotM, payloadLen, err := comm.rcvMsg(0)
+	gotM, payloadLen, err := comm.rcvMsg(0, MaxMessageSize())
 	if err != nil {
 		t.Fatalf("readMessageFrom failed: %v", err)
 	}
@@ -213,5 +214,24 @@ func checkMessageReceive(t *testing.T, comm *sockCommunicator, wantM MID, wantMs
 		if !reflect.DeepEqual(wantMsg, gotMsg) {
 			t.Errorf("msg differs: want = %+v, got = %+v", wantMsg, gotMsg)
 		}
+	}
+}
+
+func TestRcvMsgPayloadTooLarge(t *testing.T) {
+	for _, payloadLen := range []uint32{math.MaxUint32, math.MaxUint32 - sockHeaderLen + 1, 0xF0000000, 1025} {
+		runSocketTest(t, func(comm *sockCommunicator) {
+			header := sockHeader{payloadLen: payloadLen, message: Mount}
+			header.MarshalUnsafe(comm.buf)
+			if err := writeTo(comm.sock, [][]byte{comm.buf[:sockHeaderLen]}, int(sockHeaderLen), nil); err != nil {
+				t.Errorf("writeTo socket failed: %v", err)
+			}
+		}, func(comm *sockCommunicator) {
+			if _, _, err := comm.rcvMsg(0, 1024); err == nil {
+				t.Errorf("rcvMsg with payloadLen %#x succeeded, want error", payloadLen)
+			}
+			if got := len(comm.buf); got != int(sockHeaderLen) {
+				t.Errorf("rcvMsg with payloadLen %#x resized buffer to %d bytes", payloadLen, got)
+			}
+		})
 	}
 }
