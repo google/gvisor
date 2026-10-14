@@ -61,6 +61,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
@@ -376,6 +377,11 @@ func (*Systrap) SupportsAddressSpaceIO() bool {
 
 // amxEnabled is true if applications may use AMX.
 var amxEnabled bool
+
+// SupportsAMX implements platform.Platform.SupportsAMX.
+func (*Systrap) SupportsAMX() bool {
+	return cpuid.HostAMXEnabled()
+}
 
 // MapUnit implements platform.Platform.MapUnit.
 func (*Systrap) MapUnit() uint64 {

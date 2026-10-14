@@ -528,3 +528,18 @@ func TestCheckHostCompatibleIgnoreVirtualization(t *testing.T) {
 		t.Errorf("checkCompatible succeeded when saved FeatureSet had non-ignored missing feature %v, want error", X86FeatureAVX)
 	}
 }
+
+func TestUnsetAMX(t *testing.T) {
+	guestFeatures := HostFeatureSet().UnsetAMX()
+
+	for _, f := range []Feature{X86FeatureAMX_TILE, X86FeatureAMX_INT8, X86FeatureAMX_BF16} {
+		if guestFeatures.HasFeature(f) {
+			t.Errorf("UnsetAMX failed: %v should be disabled", f)
+		}
+	}
+
+	out := guestFeatures.Query(In{Eax: uint32(xSaveInfo)})
+	if mask := uint64(out.Eax) & (XCR0AmxCfgMask | XCR0AmxDataMask); mask != 0 {
+		t.Errorf("UnsetAMX failed: CPUID.(EAX=0xd, ECX=0).EAX AMX bits should be 0, got %#x", mask)
+	}
+}

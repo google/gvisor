@@ -18,6 +18,8 @@
 package kernel
 
 import (
+	"errors"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -91,4 +93,47 @@ func (t *Task) RequestXcompPerm(mask uint64) error {
 // signal frames of a thread group granted the dynamic XSAVE features in perm.
 func (k *Kernel) signalStackTooSmall(alt linux.SignalStack, perm uint64) bool {
 	return perm&cpuid.XCR0AmxDataMask != 0 && alt.IsEnabled() && alt.Size < arch.AMXSignalFrameSize(k.featureSet)
+}
+
+// featureSetForPlatform returns k's feature set without AMX if k's platform
+// cannot save and restore AMX state.
+func (k *Kernel) featureSetForPlatform() cpuid.FeatureSet {
+	if k.Platform.SupportsAMX() {
+		return k.featureSet
+	}
+	return k.featureSet.UnsetAMX()
+}
+
+// hideUnsupportedAMX hides AMX from a restored application if k's platform
+// cannot save and restore AMX state. It returns an error if a thread group
+// was granted AMX, and so may be using it.
+func (k *Kernel) hideUnsupportedAMX() error {
+	if !k.featureSet.HasFeature(cpuid.X86FeatureAMX_TILE) || k.Platform.SupportsAMX() {
+		return nil
+	}
+	k.tasks.mu.RLock()
+	defer k.tasks.mu.RUnlock()
+	for tg := range k.tasks.Root.tgids {
+		if tg.xcompPerm.Load() != 0 {
+			return errors.New("checkpoint has a process that was granted AMX, but AMX isn't available")
+		}
+	}
+	k.featureSet = k.featureSet.UnsetAMX()
+	return nil
+}
+
+// syncRestoredFPStateSizes grows the FP state of the restored tasks of thread
+// groups that were granted AMX, which may have been saved without tile data.
+// The tasks can then take signals before they next run.
+func (k *Kernel) syncRestoredFPStateSizes() {
+	k.tasks.mu.RLock()
+	defer k.tasks.mu.RUnlock()
+	for tg := range k.tasks.Root.tgids {
+		if tg.xcompPerm.Load()&cpuid.XCR0AmxDataMask == 0 {
+			continue
+		}
+		for t := tg.tasks.Front(); t != nil; t = t.Next() {
+			t.Arch().FloatingPointData().EnableAMX()
+		}
+	}
 }

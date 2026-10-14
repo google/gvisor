@@ -17,7 +17,10 @@
 
 package kernel
 
-import "gvisor.dev/gvisor/pkg/abi/linux"
+import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
+)
 
 // syncFPStateSize is a no-op on arm64, which has no dynamic XSAVE features.
 func (t *Task) syncFPStateSize() bool {
@@ -35,3 +38,17 @@ func (t *Task) fpStateNeedsResize() bool {
 func (k *Kernel) signalStackTooSmall(alt linux.SignalStack, perm uint64) bool {
 	return false
 }
+
+// featureSetForPlatform returns k's feature set.
+func (k *Kernel) featureSetForPlatform() cpuid.FeatureSet {
+	return k.featureSet
+}
+
+// hideUnsupportedAMX is a no-op on arm64, which has no AMX.
+func (k *Kernel) hideUnsupportedAMX() error {
+	return nil
+}
+
+// syncRestoredFPStateSizes is a no-op on arm64, which has no dynamic XSAVE
+// features.
+func (k *Kernel) syncRestoredFPStateSizes() {}

@@ -163,3 +163,8 @@ func archInitialize() {
 	initCPUInfo()
 	initHWCap()
 }
+
+// HostAMXEnabled returns false on arm64, which has no AMX.
+func HostAMXEnabled() bool {
+	return false
+}

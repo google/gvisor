@@ -495,6 +495,18 @@ func amxExtendedStateSize(xcr0 uint64, xsaveSize, tileDataOffset, tileDataSize u
 	return 0
 }
 
+// HostAMXEnabled returns true if the host OS enabled AMX state in XCR0, the
+// host supports XGETBV with ECX=1, and AMX tile data is at the end of the XSAVE
+// area, which gVisor relies on.
+func HostAMXEnabled() bool {
+	fs := HostFeatureSet()
+	if !fs.UseXsave() || !fs.HasFeature(X86FeatureXGETBV1) {
+		return false
+	}
+	amx := XCR0AmxCfgMask | XCR0AmxDataMask
+	return xgetbv(0)&amx == amx && amxTileDataOffset+amxTileDataSize == xsaveSize
+}
+
 // AMXExtendedStateSize returns the number of bytes within the "extended state"
 // area that is used for AMX.
 func (fs FeatureSet) AMXExtendedStateSize() uint {
@@ -589,6 +601,24 @@ func (fs FeatureSet) UnsetFSGSBASE() FeatureSet {
 	// Disable FSGSBASE for guest processes. If userspace uses WRGSBASE without the Sentry's
 	// knowledge, it would corrupt the GS register used by Systrap for syscall patching.
 	X86FeatureFSGSBase.Unset(s)
+	sfs := s.ToFeatureSet()
+	sfs.hwCap = fs.hwCap
+	return sfs
+}
+
+// UnsetAMX unsets AMX, including its XCR0 bits and state component subleaves,
+// for platforms that cannot save and restore AMX state.
+func (fs FeatureSet) UnsetAMX() FeatureSet {
+	s := fs.ToStatic()
+	X86FeatureAMX_TILE.Unset(s)
+	X86FeatureAMX_INT8.Unset(s)
+	X86FeatureAMX_BF16.Unset(s)
+	in := In{Eax: uint32(xSaveInfo)}
+	out := s.Query(in)
+	out.Eax &^= uint32(XCR0AmxCfgMask | XCR0AmxDataMask)
+	s.Set(in, out)
+	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})
+	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent})
 	sfs := s.ToFeatureSet()
 	sfs.hwCap = fs.hwCap
 	return sfs

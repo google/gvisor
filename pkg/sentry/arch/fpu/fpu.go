@@ -37,5 +37,5 @@ type ErrLoadingState struct {
 
 // Error returns a sensible description of the restore error.
 func (e ErrLoadingState) Error() string {
-	return fmt.Sprintf("floating point state contains unsupported features; supported: %#x saved: %#x", e.supportedFeatures, e.savedFeatures)
+	return fmt.Sprintf("floating point state contains unsupported features (AMX is bits 17 and 18); supported: %#x saved: %#x", e.supportedFeatures, e.savedFeatures)
 }

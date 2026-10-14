@@ -465,6 +465,9 @@ func (s *State) AfterLoad() {
 	hostFeatureSet := cpuid.HostFeatureSet()
 	if hostFeatureSet.UseXsave() {
 		supportedBV = hostFeatureSet.ValidXCR0Mask() & SupportedXFeatureStates
+		if !cpuid.HostAMXEnabled() {
+			supportedBV &^= cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask
+		}
 	}
 
 	// What was in use?

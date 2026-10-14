@@ -1122,7 +1122,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	// Kernel load so that the explicit CPUID mismatch error has priority
 	// over floating point state restore errors that may occur on load on
 	// an incompatible machine.
-	if err := k.featureSet.CheckHostCompatible(); err != nil {
+	if err := k.featureSetForPlatform().CheckHostCompatible(); err != nil {
 		return err
 	}
 	timeline.Reached("CPUID checked")
@@ -1140,6 +1140,10 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	log.Infof("Kernel load stats: %s", stats.String())
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 	timeline.Reached("Kernel loaded")
+	if err := k.hideUnsupportedAMX(); err != nil {
+		return err
+	}
+	k.syncRestoredFPStateSizes()
 
 	if asyncMFLoader == nil {
 		mfStart := time.Now()
