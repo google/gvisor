@@ -21,7 +21,9 @@ import (
 	"go/types"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/tools/go/ssa"
@@ -71,6 +73,9 @@ type lockState struct {
 	// Its progress is not part of the facts compared at control-flow joins.
 	memoryIDs *atomic.Uint64
 
+	// valueIDs allocates deterministic identifiers for SSA values across forks.
+	valueIDs *valueIDAllocator
+
 	// loaded records evaluated values independently of subsequent stores.
 	loaded map[*ssa.UnOp]valueIdentity
 
@@ -82,6 +87,24 @@ type lockState struct {
 	refs *int32
 }
 
+// valueIDAllocator allocates deterministic unique numbers for SSA values.
+type valueIDAllocator struct {
+	mu   sync.Mutex
+	ids  map[ssa.Value]uint64
+	next uint64
+}
+
+func (a *valueIDAllocator) idFor(v ssa.Value) uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if id, ok := a.ids[v]; ok {
+		return id
+	}
+	a.next++
+	a.ids[v] = a.next
+	return a.next
+}
+
 // newLockState makes a new lockState.
 func newLockState() *lockState {
 	refs := int32(1) // Not shared.
@@ -91,6 +114,7 @@ func newLockState() *lockState {
 		bindings:      make(map[ssa.Value]ssa.Value),
 		stored:        make(map[string]valueIdentity),
 		memoryIDs:     new(atomic.Uint64),
+		valueIDs:      &valueIDAllocator{ids: make(map[ssa.Value]uint64)},
 		loaded:        make(map[*ssa.UnOp]valueIdentity),
 		defers:        make([]*ssa.Defer, 0),
 		refs:          &refs,
@@ -111,6 +135,7 @@ func (l *lockState) fork() *lockState {
 		stored:        l.stored,
 		unknownMemory: l.unknownMemory,
 		memoryIDs:     l.memoryIDs,
+		valueIDs:      l.valueIDs,
 		loaded:        l.loaded,
 		defers:        l.defers,
 		refs:          l.refs,
@@ -587,10 +612,12 @@ func (l *lockState) valueAndObject(v ssa.Value) (string, types.Object) {
 	}
 
 	// In the case of any other type (e.g. this may be an alloc, a return
-	// value, etc.), just return the literal pointer value to the Value.
-	// This will be unique within the ssa graph, and so if two values are
-	// equal, they are from the same type.
-	return fmt.Sprintf("{%T:%p}", v, v), nil
+	// value, etc.), return a deterministic identifier for the Value.
+	// This will be unique within the ssa graph, and deterministic across runs.
+	if l.valueIDs != nil {
+		return fmt.Sprintf("{%T:%d}", v, l.valueIDs.idFor(v)), nil
+	}
+	return fmt.Sprintf("{%T}", v), nil
 }
 
 // String returns the full lock state.
@@ -603,6 +630,7 @@ func (l *lockState) String() string {
 		// Include the exclusive status of each lock.
 		keys = append(keys, fmt.Sprintf("%s %s", k, exclusiveStr(info.exclusive)))
 	}
+	sort.Strings(keys)
 	return strings.Join(keys, ",")
 }
 
