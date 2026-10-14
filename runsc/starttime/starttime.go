@@ -19,6 +19,7 @@ package starttime
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,8 +36,8 @@ var (
 )
 
 // envStartTimeKey is the environment variable that holds the time the `runsc`
-// command started. This is used to track the actual start time across
-// re-execs of `runsc`.
+// command started. `runsc create` sets it to the spawn time of the sandbox
+// process, and it is preserved across re-execs of `runsc`.
 const envStartTimeKey = "RUNSC_START_TIME_NANOS"
 
 // Get returns the time the `runsc` command started on a best-effort basis.
@@ -86,15 +87,14 @@ func Timer(name string) *timing.Timer {
 	return timer
 }
 
-// AppendEnviron appends the RUNSC_START_TIME_NANOS environment variable to
-// the given environment, if it is not already present. Otherwise, it is
-// preserved.
-func AppendEnviron(env []string) []string {
+// PutEnviron returns a copy of env with the RUNSC_START_TIME_NANOS
+// environment variable set to t, overwriting any existing value. It is used by
+// `runsc create` to pass the exact spawn time to the sandbox process, and by
+// `runsc boot` to preserve its start time (Get()) across re-execs.
+func PutEnviron(env []string, t time.Time) []string {
 	const envVarPrefix = envStartTimeKey + "="
-	for _, e := range env {
-		if strings.HasPrefix(e, envVarPrefix) {
-			return env
-		}
-	}
-	return append(env, fmt.Sprintf("%s=%d", envStartTimeKey, Get().UnixNano()))
+	env = slices.DeleteFunc(slices.Clone(env), func(e string) bool {
+		return strings.HasPrefix(e, envVarPrefix)
+	})
+	return append(env, fmt.Sprintf("%s=%d", envStartTimeKey, t.UnixNano()))
 }

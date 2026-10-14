@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -12,4 +12,11 @@ go_library(
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = ["//pkg/timing"],
+)
+
+go_test(
+    name = "starttime_test",
+    size = "small",
+    srcs = ["starttime_test.go"],
+    embed = [":starttime"],
 )

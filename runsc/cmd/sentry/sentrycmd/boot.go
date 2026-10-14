@@ -17,6 +17,7 @@ package sentrycmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -195,6 +196,10 @@ type Boot struct {
 	// termination.
 	finalMetricsFD int
 
+	// bootTimesFD is a file descriptor to write the boot times of the sandbox
+	// to (see boot.Times) when the sandbox starts.
+	bootTimesFD int
+
 	// profilingMetricsFD is a file descriptor to write Sentry metrics data to.
 	profilingMetricsFD int
 
@@ -314,6 +319,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
 	f.IntVar(&b.finalMetricsFD, "final-metrics-log-fd", -1, "file descriptor to write metrics to upon sandbox termination.")
+	f.IntVar(&b.bootTimesFD, "boot-times-log-fd", -1, "file descriptor to write the boot times of the sandbox to, as JSON, when the sandbox starts.")
 	f.IntVar(&b.profilingMetricsFD, "profiling-metrics-fd", -1, "file descriptor to write sentry profiling metrics.")
 	f.BoolVar(&b.profilingMetricsLossy, "profiling-metrics-fd-lossy", false, "if true, treat the sentry profiling metrics FD as lossy and write a checksum to it.")
 
@@ -746,10 +752,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		NoRootContainer:          b.noRootContainer,
 		StartupTimer:             timer,
 	}
+	newStart := time.Now()
 	l, err := boot.New(bootArgs)
 	if err != nil {
 		util.Fatalf("creating loader: %v", err)
 	}
+	newDuration := time.Since(newStart)
 	timer.Reached("loader created")
 
 	// Fatalf exits the process and doesn't run defers.
@@ -806,9 +814,32 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
 	startSyncFile.Close()
 
+	bootBeforeWait := time.Since(starttime.Get())
+
 	// Wait for the start signal from runsc.
 	l.WaitForStartSignal()
 	timer.Reached("start signal received")
+
+	if b.bootTimesFD != -1 {
+		runStart := time.Now()
+		// Write boot times before Run signals completion of `runsc start`, so
+		// the log file is written before `runsc start` returns.
+		l.PostStartCallback = func() {
+			run := time.Since(runStart)
+			times := boot.Times{
+				Boot: bootBeforeWait + run,
+				New:  newDuration,
+				Run:  run,
+			}
+			bootTimesFile := os.NewFile(uintptr(b.bootTimesFD), "boot times file")
+			if err := json.NewEncoder(bootTimesFile).Encode(times); err != nil {
+				log.Warningf("Failed to write boot times: %v", err)
+			}
+			if err := bootTimesFile.Close(); err != nil {
+				log.Warningf("Failed to close boot times file: %v", err)
+			}
+		}
+	}
 
 	// Run the application and wait for it to finish.
 	if err := l.Run(); err != nil {

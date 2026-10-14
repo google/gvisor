@@ -45,7 +45,8 @@ func SetCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
+	// Carry the start time over to the re-exec'd process.
+	err := unix.Exec(binPath, args, starttime.PutEnviron(os.Environ(), starttime.Get()))
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
 
@@ -72,7 +73,8 @@ func CallSelfAsNobody(args []string) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
+	// Carry the start time over to the re-exec'd process.
+	err := unix.Exec(binPath, args, starttime.PutEnviron(os.Environ(), starttime.Get()))
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
 
