@@ -58,10 +58,8 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	}
 	systemSub := map[string]kernfs.Inode{
-		"cpu": cpuDir(ctx, fs, creds),
-	}
-	if fs.enableNUMATopology {
-		systemSub["node"] = fs.buildNUMATopology(ctx, creds, kernel.KernelFromContext(ctx).ApplicationCores())
+		"cpu":  cpuDir(ctx, fs, creds),
+		"node": fs.buildNUMATopology(ctx, creds, kernel.KernelFromContext(ctx).ApplicationCores()),
 	}
 	devicesSub := map[string]kernfs.Inode{
 		"system": fs.newDir(ctx, creds, defaultSysDirMode, systemSub),
