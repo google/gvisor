@@ -31,6 +31,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -236,6 +237,9 @@ type nvproxy struct {
 
 	clientsMu sync.RWMutex `state:"nosave"`
 	clients   map[nvgpu.Handle]*rootClient
+
+	// lastExportID is the last exportedObject.id assigned.
+	lastExportID atomicbitops.Uint64
 }
 
 func nvproxyFromVFS(vfsObj *vfs.VirtualFilesystem) *nvproxy {
