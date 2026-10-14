@@ -417,9 +417,8 @@ type execProcess struct {
 	pidnsPath string
 
 	// pidns is the PID namespace that pidnsPath refers to. It is set together
-	// with pidnsPath, before the container's process is created, and holds a
-	// reference that is released when this execProcess is removed from
-	// Loader.processes (or by Loader.Destroy).
+	// with pidnsPath and holds a reference that is released when this
+	// execProcess is removed from Loader.processes (or by Loader.Destroy).
 	//
 	// Containers joining a PID namespace look this up instead of deriving it
 	// from tg, which is nil until the container actually starts. Keeping the

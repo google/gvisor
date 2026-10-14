@@ -585,6 +585,10 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	// Rebuild `processes` map with containers' root process from the restored kernel.
+	specsByCID := make(map[string]*specs.Spec, len(l.containerIDs))
+	for name, cid := range l.containerIDs {
+		specsByCID[cid] = l.containerSpecs[name]
+	}
 	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
 		// Find all processes with no parent (root of execution), that were not started
 		// via a call to `exec`.
@@ -595,6 +599,7 @@ func (r *restorer) restore(l *Loader) error {
 				return fmt.Errorf("unable to find container root process with CID %q, processes: %v", cid, l.processes)
 			}
 			proc.tg = tg
+			l.restoreNamespacePathsLocked(proc, specsByCID[cid], cid == l.root.cid)
 		}
 	}
 
@@ -636,6 +641,21 @@ func (r *restorer) restore(l *Loader) error {
 	r.timer = nil
 
 	return nil
+}
+
+// restoreNamespacePathsLocked lets containers started after restore join the
+// namespaces of the restored container proc by path.
+//
+// +checklocks:l.mu
+func (l *Loader) restoreNamespacePathsLocked(proc *execProcess, spec *specs.Spec, isRoot bool) {
+	if ns, ok := specutils.GetNS(specs.PIDNamespace, spec); ok && !isRoot && proc.pidns == nil {
+		proc.pidnsPath = ns.Path
+		proc.pidns = proc.tg.PIDNamespace()
+		proc.pidns.IncRef()
+	}
+	if ns, ok := specutils.GetNS(specs.CgroupNamespace, spec); ok {
+		proc.cgroupnsPath = ns.Path
+	}
 }
 
 func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, timer *timing.Timer) {
