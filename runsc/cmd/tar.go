@@ -21,10 +21,12 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Tar implements subcommands.Command for the "tar" command.
@@ -102,6 +104,14 @@ func (r *RootfsUpper) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.file, "file", "", "output file path, if empty, output to stdout")
 }
 
+func openOutputTarFile(path string) (*os.File, error) {
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if !specutils.IsProcFDPath(path) {
+		flags |= unix.O_NOFOLLOW
+	}
+	return os.OpenFile(path, flags, 0644)
+}
+
 // Execute implements subcommands.Command.
 func (r *RootfsUpper) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
@@ -120,7 +130,7 @@ func (r *RootfsUpper) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 
 	out := os.Stdout
 	if r.file != "" {
-		out, err = os.OpenFile(r.file, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		out, err = openOutputTarFile(r.file)
 		if err != nil {
 			util.Fatalf("failed to open output file: %v", err)
 		}
