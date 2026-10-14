@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package size_test contains legacy benchmarks that measure memory usage
+// by observing host-wide /proc/meminfo deltas across container creation.
+//
+// Deprecated: For robust, container-isolated memory measurements using cgroup
+// working sets (matching `docker stats` without host noise), use
+// //test/benchmarks/base:usage_test instead.
 package size_test
 
 import (

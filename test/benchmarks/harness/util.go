@@ -17,6 +17,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -43,9 +44,14 @@ func WaitUntilContainerServing(ctx context.Context, machine Machine, container *
 	return err
 }
 
-// DropCaches drops caches on the provided machine. Requires root.
+// DropCaches drops caches on the provided machine. Requires root or privileged docker access.
 func DropCaches(machine Machine) error {
-	if out, err := machine.RunCommand("/bin/sh", "-c", "sync && sysctl vm.drop_caches=3"); err != nil {
+	if _, err := machine.RunCommand("/bin/sh", "-c", "sync && sysctl vm.drop_caches=3"); err == nil {
+		return nil
+	}
+	// Fall back to dropping caches via a privileged docker container if running without host root.
+	cmd := exec.Command("docker", "run", "--rm", "--privileged", "gvisor.dev/images/benchmarks/alpine:latest", "sh", "-c", "sync && echo 3 > /proc/sys/vm/drop_caches")
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to drop caches: %v logs: %s", err, out)
 	}
 	return nil

@@ -192,6 +192,7 @@ build_test(
         "//test/root:root_test",
         "//test/benchmarks/base:startup_test",
         "//test/benchmarks/base:size_test",
+        "//test/benchmarks/base:usage_test",
         "//test/benchmarks/base:sysbench_test",
         "//test/benchmarks/database:redis_test",
         "//test/benchmarks/fs:bazel_test",
