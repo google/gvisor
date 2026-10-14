@@ -345,6 +345,12 @@ func (i *fdInfoDirInode) DecRef(ctx context.Context) {
 	i.fdInfoDirInodeRefs.DecRef(func() { i.Destroy(ctx) })
 }
 
+// procFDInfoExtra is implemented by vfs.FileDescriptionImpls with lines to add
+// to /proc/[pid]/fdinfo/[fd], like Linux's file_operations.show_fdinfo.
+type procFDInfoExtra interface {
+	ProcFDInfoExtra(ctx context.Context) string
+}
+
 // fdInfoData implements vfs.DynamicBytesSource for /proc/[pid]/fdinfo/[fd].
 //
 // +stateify savable
@@ -381,6 +387,11 @@ func (d *fdInfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	flags := uint(file.StatusFlags()) | descriptorFlags.ToLinuxFileFlags()
 	mntID := file.Mount().ID
 	fmt.Fprintf(buf, "pos:\t%d\nflags:\t0%o\nmnt_id:\t%d\n", pos, flags, mntID)
+
+	// Linux requires ptrace access to read fdinfo at all.
+	if x, ok := file.Impl().(procFDInfoExtra); ok && kernel.ContextCanTrace(ctx, d.task, false) {
+		buf.WriteString(x.ProcFDInfoExtra(ctx))
+	}
 
 	if nspids, err := kernel.ObservedTIDsForPIDFD(file, d.task); err == nil {
 		fmt.Fprintf(buf, "Pid:\t%d\n", nspids[len(nspids)-1])
