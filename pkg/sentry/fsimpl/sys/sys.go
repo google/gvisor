@@ -61,9 +61,6 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
-	// EnableNUMATopology exposes one virtual NUMA node containing every
-	// application CPU.
-	EnableNUMATopology bool
 	// RDMASysfs, when non-nil, is the host sysfs snapshot from which the
 	// RDMA device topology (/sys/devices/pci..., /sys/class/infiniband*,
 	// /sys/class/net, /sys/class/pci_bus, /sys/bus/pci/devices) is constructed.
@@ -81,7 +78,6 @@ type filesystem struct {
 
 	devMinor            uint32
 	enableTPUProxyPaths bool
-	enableNUMATopology  bool
 	testSysfsPathPrefix string
 	root                *dir
 }
@@ -135,7 +131,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	devicesSub := map[string]kernfs.Inode{} // /sys/devices
 	systemSub := map[string]kernfs.Inode{   // /sys/devices/system
-		"cpu": cpuDir(ctx, fs, creds),
+		"cpu":  cpuDir(ctx, fs, creds),
+		"node": fs.buildNUMATopology(ctx, creds, k.ApplicationCores()),
 	}
 
 	productName := ""
@@ -212,10 +209,6 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for name, sub := range rdmaDirs.busPCIDrivers {
 				pciDrivers[name] = sub
 			}
-		}
-		fs.enableNUMATopology = idata.EnableNUMATopology
-		if fs.enableNUMATopology {
-			systemSub["node"] = fs.buildNUMATopology(ctx, creds, k.ApplicationCores())
 		}
 	}
 	if len(pciDevices) > 0 || len(pciDrivers) > 0 {

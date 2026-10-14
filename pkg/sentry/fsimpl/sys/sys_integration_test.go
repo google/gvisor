@@ -26,7 +26,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -104,7 +103,7 @@ func TestReadCPUFile(t *testing.T) {
 }
 
 func TestNUMATopology(t *testing.T) {
-	s := newTestSystemWithInternalData(t, &sys.InternalData{EnableNUMATopology: true})
+	s := newTestSystem(t, "" /*pciTestDir*/)
 	defer s.Destroy()
 
 	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("/devices/system/node")), map[string]testutil.DirentType{
@@ -152,7 +151,7 @@ func TestNUMATopologyCPUFormats(t *testing.T) {
 			previous := runtime.GOMAXPROCS(tc.cores)
 			defer runtime.GOMAXPROCS(previous)
 
-			s := newTestSystemWithInternalData(t, &sys.InternalData{EnableNUMATopology: true})
+			s := newTestSystem(t, "" /*pciTestDir*/)
 			defer s.Destroy()
 			for p, want := range map[string]string{
 				"/devices/system/node/node0/cpulist": tc.wantCPUList,
@@ -167,15 +166,6 @@ func TestNUMATopologyCPUFormats(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestNUMATopologyDisabled(t *testing.T) {
-	s := newTestSystemWithInternalData(t, &sys.InternalData{})
-	defer s.Destroy()
-
-	if _, err := s.VFS.StatAt(s.Ctx, s.Creds, s.PathOpAtRoot("/devices/system/node"), &vfs.StatOptions{Mask: linux.STATX_TYPE}); !linuxerr.Equals(linuxerr.ENOENT, err) {
-		t.Fatalf("StatAt(/devices/system/node) returned %v, want ENOENT", err)
 	}
 }
 
@@ -549,8 +539,7 @@ func readTestFile(s *testutil.System, p string) (string, error) {
 
 func TestRDMASysfs(t *testing.T) {
 	s := newTestSystemWithInternalData(t, &sys.InternalData{
-		EnableNUMATopology: true,
-		RDMASysfs:          newRDMATestSnapshot(),
+		RDMASysfs: newRDMATestSnapshot(),
 	})
 	defer s.Destroy()
 
