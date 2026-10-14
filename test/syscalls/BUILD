@@ -85,6 +85,13 @@ syscall_test(
     test = "//test/syscalls/linux:cgroup2_test",
 )
 
+# Transfers must run separately from tests that enter non-root memory cgroups:
+# memory charges survive task migration and cgroup removal and can pin controllers.
+syscall_test(
+    in_sandbox_cgroup = "v2",
+    test = "//test/syscalls/linux:cgroup2_transfer_test",
+)
+
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
