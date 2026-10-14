@@ -44,8 +44,8 @@
 //   indexes (see `startingStdioFD` in `//runsc/boot/loader.go`).
 //
 // You can see where this is going. We need a single-threaded program that
-// runs before `runsc boot` does that inflates its FD table to be large enough
-// so that `runsc boot` never hits the FD table expansion RCU grace period
+// runs before the Sentry does that inflates its FD table to be large enough
+// so that the Sentry never hits the FD table expansion RCU grace period
 // that the kernel would hit it with otherwise.
 // That's what this prewarmer program does.
 // It's written in C with very minimal dependencies and fitting in a single

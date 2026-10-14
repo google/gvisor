@@ -119,7 +119,7 @@ func (i *Install) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		if i.RequireSidecars.Applies() {
 			log.Fatalf("Cannot install sidecar binaries: %v", err)
 		}
-		log.Printf("WARNING: cannot install sidecar binaries; sidecar-dependent features (metric server, GCS checkpoints) may be unavailable: %v", err)
+		log.Printf("WARNING: cannot install sidecar binaries; sandboxes cannot start without the Sentry sidecar, and sidecar-dependent features (metric server, GCS checkpoints) may be unavailable: %v", err)
 	}
 
 	// Success.

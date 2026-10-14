@@ -93,7 +93,6 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.MetricServer):   metricGroup,
 
 		// Internal commands.
-		new(sentrycmd.Boot):   internalGroup,
 		new(cmd.Gofer):        internalGroup,
 		new(sentrycmd.Umount): internalGroup,
 	}
