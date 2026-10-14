@@ -135,6 +135,22 @@ func (f Feature) set(s ChangeableSet, on bool) {
 			out.Edx &^= f.bit()
 		}
 		s.Set(In{Eax: uint32(extendedFeatureInfo)}, out)
+	case 8:
+		if on {
+			// EAX in sub-leaf 0 reports the maximum supported sub-leaf.
+			in := In{Eax: uint32(extendedFeatureInfo)}
+			out := s.Query(in)
+			out.Eax = max(out.Eax, extendedFeatureInfoSub.ecx())
+			s.Set(in, out)
+		}
+		in := In{Eax: extendedFeatureInfoSub.eax(), Ecx: extendedFeatureInfoSub.ecx()}
+		out := s.Query(in)
+		if on {
+			out.Eax |= f.bit()
+		} else {
+			out.Eax &^= f.bit()
+		}
+		s.Set(in, out)
 	}
 }
 
@@ -181,6 +197,13 @@ func (f Feature) check(fs FeatureSet) bool {
 	case 7:
 		_, _, _, dx := fs.query(extendedFeatureInfo)
 		return (dx & f.bit()) != 0
+	case 8:
+		ax, _, _, _ := fs.query(extendedFeatureInfo)
+		if ax < extendedFeatureInfoSub.ecx() {
+			return false
+		}
+		ax, _, _, _ = fs.query(extendedFeatureInfoSub)
+		return (ax & f.bit()) != 0
 	default:
 		return false
 	}
@@ -437,6 +460,13 @@ const (
 	X86FeatureSPEC_CTRL_SSBD
 )
 
+// Block 8 constants are the extended feature bits in
+// CPUID.(EAX=07H,ECX=1):EAX.
+const (
+	X86FeatureAVX_VNNI    Feature = 8*32 + 4
+	X86FeatureAVX512_BF16 Feature = 8*32 + 5
+)
+
 // These are the extended floating point state features. They are used to
 // enumerate floating point features in XCR0, XSTATE_BV, etc.
 const (
@@ -643,6 +673,10 @@ var allFeatures = map[Feature]allFeatureInfo{
 	X86FeatureARCH_CAPABILITIES:   {"arch_capabilities", true},
 	X86FeatureCORE_CAPABILITIES:   {"core_capabilities", false},
 	X86FeatureSPEC_CTRL_SSBD:      {"spec_ctrl_ssbd", false},
+
+	// Block 8.
+	X86FeatureAVX_VNNI:    {"avx_vnni", true},
+	X86FeatureAVX512_BF16: {"avx512_bf16", true},
 }
 
 // linuxBlockOrder defines the order in which linux organizes the feature
@@ -650,7 +684,7 @@ var allFeatures = map[Feature]allFeatureInfo{
 // which doesn't match well here, so for the /proc/cpuinfo generation we simply
 // re-map the blocks to Linux's ordering and then go through the bits in each
 // block.
-var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4, 3, 7}
+var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4, 8, 3, 7}
 
 func archFlagOrder(fn func(Feature)) {
 	for _, b := range linuxBlockOrder {
