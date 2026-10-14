@@ -24,6 +24,7 @@ import (
 // Redis is for the client 'redis-benchmark'.
 type Redis struct {
 	Operation string
+	Pipeline  int
 }
 
 // MakeCmd returns a redis-benchmark client command.
@@ -31,7 +32,7 @@ func (r *Redis) MakeCmd(host string, port, requests int) []string {
 	// There is no -t PING_BULK for redis-benchmark, so adjust the command in that case.
 	// Note that "ping" will run both PING_INLINE and PING_BULK.
 	// runs redis-benchmark -t operation for 100K requests against server.
-	return []string{
+	cmd := []string{
 		"redis-benchmark",
 		"--csv",
 		"-t", r.Operation,
@@ -39,6 +40,10 @@ func (r *Redis) MakeCmd(host string, port, requests int) []string {
 		"-p", fmt.Sprintf("%d", port),
 		"-n", fmt.Sprintf("%d", requests),
 	}
+	if r.Pipeline > 0 {
+		cmd = append(cmd, "-P", fmt.Sprintf("%d", r.Pipeline))
+	}
+	return cmd
 }
 
 // Report parses output from redis-benchmark client and reports metrics.

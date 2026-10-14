@@ -121,6 +121,7 @@ func doBenchmarkRedis(b *testing.B, ops []string) {
 		b.Run(name, func(b *testing.B) {
 			redis := tools.Redis{
 				Operation: operation,
+				Pipeline:  16,
 			}
 
 			// Sometimes, the connection between the redis client and server can be
