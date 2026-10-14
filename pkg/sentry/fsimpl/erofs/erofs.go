@@ -748,6 +748,13 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	if ft := d.inode.fileType(); opts.FileExec && ft != linux.S_IFREG && ft != linux.S_IFLNK {
+		// Only regular files may be executed, and exec opens of special files
+		// fail with EACCES rather than the ENXIO below, as in Linux's
+		// fs/namei.c:may_open(). Symlinks are exempt so that they produce
+		// ELOOP, also per may_open().
+		return nil, linuxerr.EACCES
+	}
 
 	switch d.inode.fileType() {
 	case linux.S_IFREG:
