@@ -1162,15 +1162,20 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		donations.DonateAndClose("device-fd", deviceFile.ReleaseToFile("device file"))
 	}
 
+	// The Go runtime keeps its cgroup's CPU limit file open for the lifetime
+	// of the process to keep GOMAXPROCS in sync with the limit. The sentry
+	// sets GOMAXPROCS itself, so do not hold a host FD that it does not need.
+	godebug := []string{"containermaxprocs=0"}
 	// TODO(b/151157106): syscall tests fail by timeout if asyncpreemptoff
 	// isn't set.
 	if conf.Platform == "kvm" || conf.Platform == "slimvm" {
-		cmd.Env = append(cmd.Env, "GODEBUG=asyncpreemptoff=1")
+		godebug = append(godebug, "asyncpreemptoff=1")
 	}
-
 	if conf.Network == config.NetworkPlugin {
-		cmd.Env = append(cmd.Env, "GODEBUG=cgocheck=0")
+		godebug = append(godebug, "cgocheck=0")
 	}
+	// Go only reads the first GODEBUG variable in the environment.
+	cmd.Env = append(cmd.Env, "GODEBUG="+strings.Join(godebug, ","))
 
 	// nss is the set of namespaces to join or create before starting the sandbox
 	// process. Mount, IPC and UTS namespaces from the host are not used as they
