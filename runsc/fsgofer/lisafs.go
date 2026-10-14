@@ -336,13 +336,8 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			failureErr = unix.EOPNOTSUPP
 		case unix.S_IFSOCK:
 			// Sockets use O_PATH host FDs. However, fchmod(2) fails with EBADF for
-			// O_PATH FDs. Try to fchmodat(2) it from its parent.
-			parent, sockName, err := fd.getParentFD()
-			if err == nil {
-				err = unix.Fchmodat(parent, sockName, stat.Mode&^unix.S_IFMT, 0 /* flags */)
-				unix.Close(parent)
-			}
-			if err != nil {
+			// O_PATH FDs. Try to fchmodat(2) it from /proc/self/fd.
+			if err := unix.Fchmodat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), stat.Mode&^unix.S_IFMT, 0 /* flags */); err != nil {
 				log.Warningf("SetStat fchmod failed on socket %q, err: %v", fd.Node().FilePath(), err)
 				failureMask |= unix.STATX_MODE
 				failureErr = err
@@ -1060,7 +1055,7 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 	}
 	cu.Release()
 
-	socketControlFD := newControlFDLisa(sockFD, fd, name, linux.ModeSocket)
+	socketControlFD := newControlFDLisa(sockFileFD, fd, name, linux.ModeSocket)
 	boundSocketFD := &boundSocketFDLisa{
 		sock: os.NewFile(uintptr(sockFD), socketPath),
 	}

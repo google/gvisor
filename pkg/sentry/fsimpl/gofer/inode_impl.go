@@ -217,7 +217,8 @@ func (d *dentry) prepareSetStat(ctx context.Context, stat *linux.Statx) error {
 	}
 }
 
-// Precondition: fs.renameMu is locked if d is a socket.
+// Precondition: For directfs sockets, the inode's lisafs control FD has been
+// initialized (see directfsInode.prepareSetStat()).
 func (d *dentry) chmod(ctx context.Context, mode uint16) error {
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
