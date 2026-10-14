@@ -45,21 +45,25 @@ const (
 	stubStartVar       = "stub_start"
 	stubROMapLenVar    = "stub_ro_map_len"
 	stubSysmsgStartVar = "stub_sysmsg_start"
+	amxXfeatureVar     = "amx_xfeature"
 )
 
-// StubProcessVars returns the variables of the StubProcessName program.
-func StubProcessVars(stubStart, stubROMapLen uint64) precompiledseccomp.Values {
+// StubProcessVars returns the variables of the StubProcessName program. If
+// amx is true, stub threads may request AMX permission.
+func StubProcessVars(stubStart, stubROMapLen uint64, amx bool) precompiledseccomp.Values {
 	vars := precompiledseccomp.Values{}
 	vars.SetUint64(stubStartVar, stubStart)
 	vars.SetUint64(stubROMapLenVar, stubROMapLen)
+	setStubProcessArchVars(vars, amx)
 	return vars
 }
 
-// SysmsgThreadVars returns the variables of the SysmsgThreadName program.
-func SysmsgThreadVars(stubStart, stubSysmsgStart uint64) precompiledseccomp.Values {
+// SysmsgThreadVars returns the variables of the SysmsgThreadName program. If
+// amx is true, sysmsg threads may request AMX permission.
+func SysmsgThreadVars(stubStart, stubSysmsgStart uint64, amx bool) precompiledseccomp.Values {
 	vars := precompiledseccomp.Values{}
 	vars.SetUint64(stubSysmsgStartVar, stubSysmsgStart)
-	setSysmsgThreadArchVars(vars, stubStart)
+	setSysmsgThreadArchVars(vars, stubStart, amx)
 	return vars
 }
 
@@ -150,7 +154,7 @@ func StubProcess(vars precompiledseccomp.Values) *seccomp.Program {
 		Action: seccomp.Allow,
 	}}
 	return &seccomp.Program{
-		RuleSets: slices.Concat(rules, stubProcessArchRules()),
+		RuleSets: slices.Concat(rules, stubProcessArchRules(vars)),
 		Options: seccomp.ProgramOptions{
 			DefaultAction: seccomp.Trap,
 			BadArchAction: seccomp.Trap,
@@ -240,8 +244,8 @@ func PrecompiledPrograms() ([]precompiledseccomp.Program, error) {
 		vars precompiledseccomp.Values
 		fn   func(precompiledseccomp.Values) *seccomp.Program
 	}{
-		{StubProcessName, StubProcessVars(0, 0), StubProcess},
-		{SysmsgThreadName, SysmsgThreadVars(0, 0), SysmsgThread},
+		{StubProcessName, StubProcessVars(0, 0, false), StubProcess},
+		{SysmsgThreadName, SysmsgThreadVars(0, 0, false), SysmsgThread},
 		{SyscallThreadName, nil, SyscallThread},
 	} {
 		program, err := precompiledseccomp.Precompile(p.name, slices.Collect(maps.Keys(p.vars)), p.fn)

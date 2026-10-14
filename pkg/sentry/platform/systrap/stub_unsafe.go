@@ -55,7 +55,7 @@ func stubCall(addr, pid uintptr)
 func prepareSeccompRules(stubSysmsgStart,
 	stubSysmsgRules, stubSysmsgRulesLen,
 	stubSyscallRules, stubSyscallRulesLen uintptr) {
-	vars := stubfilter.SysmsgThreadVars(uint64(stubStart), uint64(stubSysmsgStart))
+	vars := stubfilter.SysmsgThreadVars(uint64(stubStart), uint64(stubSysmsgStart), amxEnabled)
 	instrs := renderStubFilter(stubfilter.SysmsgThreadName, vars)
 	copySeccompRulesToStub(instrs, stubSysmsgRules, stubSysmsgRulesLen)
 
@@ -244,7 +244,7 @@ func stubInit() {
 
 	// Allocate thread context region
 	stubContextRegion = mapLen
-	stubContextRegionLen = sysmsg.AllocatedSizeofThreadContextStruct * (maxGuestContexts + 1)
+	stubContextRegionLen = archState.ThreadContextSize() * (maxGuestContexts + 1)
 	mapLen, _ = hostarch.PageRoundUp(mapLen + stubContextRegionLen)
 
 	// Try a few times to avoid cases when new mappings are created.
@@ -318,9 +318,10 @@ func stubInit() {
 	// Initialize stub globals
 	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_deep_sleep_timeout) = deepSleepTimeout
 	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_context_region) = uint64(stubContextRegion)
+	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_thread_context_size) = uint64(archState.ThreadContextSize())
 	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_stub_start) = uint64(stubStart)
 	archState := (*sysmsg.ArchState)(unsafe.Pointer(&targetSlice[sysmsg.Sighandler_blob_offset____export_arch_state]))
-	archState.Init()
+	archState.Init(amxEnabled)
 	initStubArchGlobals(targetSlice)
 	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_context_queue_addr) = uint64(stubContextQueueRegion)
 	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_spinning_queue_addr) = uint64(stubSpinningThreadQueueAddr)

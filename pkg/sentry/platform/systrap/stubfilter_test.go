@@ -32,7 +32,8 @@ import (
 func TestStubFilterPrecompiled(t *testing.T) {
 	const stubROMapLen = 0x9000
 	rendered := map[string][]bpf.Instruction{}
-	for range 16 {
+	for i := range 16 {
+		amx := i%2 == 0
 		stubStart := rand.Uint64N(1<<47) &^ uint64(hostarch.PageMask)
 		stubSysmsgStart := stubStart + 0x5000
 		for _, test := range []struct {
@@ -40,8 +41,8 @@ func TestStubFilterPrecompiled(t *testing.T) {
 			vars precompiledseccomp.Values
 			fn   func(precompiledseccomp.Values) *seccomp.Program
 		}{
-			{stubfilter.StubProcessName, stubfilter.StubProcessVars(stubStart, stubROMapLen), stubfilter.StubProcess},
-			{stubfilter.SysmsgThreadName, stubfilter.SysmsgThreadVars(stubStart, stubSysmsgStart), stubfilter.SysmsgThread},
+			{stubfilter.StubProcessName, stubfilter.StubProcessVars(stubStart, stubROMapLen, amx), stubfilter.StubProcess},
+			{stubfilter.SysmsgThreadName, stubfilter.SysmsgThreadVars(stubStart, stubSysmsgStart, amx), stubfilter.SysmsgThread},
 			{stubfilter.SyscallThreadName, nil, stubfilter.SyscallThread},
 		} {
 			want, _, err := test.fn(test.vars).Build()

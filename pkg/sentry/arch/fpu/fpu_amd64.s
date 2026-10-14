@@ -22,7 +22,7 @@
 // FXSAVE/XSAVE area. (Intel SDM Vol. 1, Table 10-2 "Format of an FXSAVE Area")
 #define MXCSR_OFFSET	24
 
-#define XCR0_EAX 231 // +checkconst . SupportedXFeatureStates
+#define XCR0_EAX 231 // +checkconst . DefaultXFeatureStates
 #define XCR0_EDX 0
 
 // initX86FPState initializes floating point state.

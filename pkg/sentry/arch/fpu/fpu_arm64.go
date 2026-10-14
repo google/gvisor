@@ -63,3 +63,6 @@ func (s *State) Fork() State {
 func (s *State) BytePointer() *byte {
 	return &(*s)[0]
 }
+
+// ClearUnusedTileData is a no-op on arm64, which has no AMX.
+func (s State) ClearUnusedTileData() {}

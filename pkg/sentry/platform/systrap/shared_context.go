@@ -63,6 +63,8 @@ type sharedContext struct {
 	kicked         bool
 	// The task associated with the context fell asleep.
 	sleeping bool
+	// heldAMX is true if the context's FP state has held AMX tile data state.
+	heldAMX bool
 }
 
 // String returns the ID of this shared context.
@@ -112,6 +114,12 @@ func (sc *sharedContext) release() {
 	}
 	if !sc.sleeping {
 		sc.subprocess.decAwakeContexts()
+	}
+	if sc.heldAMX {
+		// Other contexts that use the slot only overwrite the part of it that
+		// doesn't hold tile data, and the slot is readable by the
+		// application.
+		clear(sc.shared.FPState(archState.MaxFPStateLen())[archState.FpLen():])
 	}
 	sc.subprocess.threadContextPool.Put(uint64(sc.contextID))
 	sc.subprocess.DecRef(sc.subprocess.release)

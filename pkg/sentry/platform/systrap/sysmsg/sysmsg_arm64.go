@@ -33,14 +33,16 @@ var SighandlerBlob []byte
 // ArchState defines variables specific to the architecture being
 // used.
 type ArchState struct {
-	fpLen uint32
+	fpLen             uint32
+	threadContextSize uint32
 }
 
 // Init initializes the arch specific state.
-func (s *ArchState) Init() {
+func (s *ArchState) Init(bool) {
 	fs := cpuid.HostFeatureSet()
 	fpLenUint, _ := fs.ExtendedStateSize()
 	s.fpLen = uint32(fpLenUint)
+	s.threadContextSize = threadContextSize(fpLenUint)
 }
 
 // FpLen returns the FP state length for ARM.
@@ -52,6 +54,7 @@ func (s *ArchState) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "sysmsg.ArchState{")
 	fmt.Fprintf(&b, " fpLen %d", s.fpLen)
+	fmt.Fprintf(&b, " threadContextSize %d", s.threadContextSize)
 	b.WriteString(" }")
 
 	return b.String()

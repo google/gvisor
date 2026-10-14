@@ -101,6 +101,7 @@ go_library(
         "//pkg/seccomp",
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/arch/fpu",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",

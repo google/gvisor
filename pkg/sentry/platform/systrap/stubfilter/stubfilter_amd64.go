@@ -24,11 +24,29 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
 
-func setSysmsgThreadArchVars(vars precompiledseccomp.Values, stubStart uint64) {
-	vars.SetUint64(stubStartVar, stubStart)
+// setAMXVar sets the XSAVE state component for which stub threads may request
+// permission. Without AMX, the rules allow only a request for a state
+// component that doesn't exist, which the host rejects.
+func setAMXVar(vars precompiledseccomp.Values, amx bool) {
+	// Larger than any XSAVE state component index.
+	const noXfeature = 64
+	xfeature := uint64(noXfeature)
+	if amx {
+		xfeature = linux.XFEATURE_XTILEDATA
+	}
+	vars.SetUint64(amxXfeatureVar, xfeature)
 }
 
-func stubProcessArchRules() []seccomp.RuleSet {
+func setStubProcessArchVars(vars precompiledseccomp.Values, amx bool) {
+	setAMXVar(vars, amx)
+}
+
+func setSysmsgThreadArchVars(vars precompiledseccomp.Values, stubStart uint64, amx bool) {
+	vars.SetUint64(stubStartVar, stubStart)
+	setAMXVar(vars, amx)
+}
+
+func stubProcessArchRules(vars precompiledseccomp.Values) []seccomp.RuleSet {
 	return []seccomp.RuleSet{
 		// Rules for trapping vsyscall access.
 		{
@@ -48,6 +66,7 @@ func stubProcessArchRules() []seccomp.RuleSet {
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
 					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_REQ_XCOMP_PERM), seccomp.EqualTo(vars.GetUint64(amxXfeatureVar))},
 				},
 			}),
 			Action: seccomp.Allow,
@@ -106,6 +125,16 @@ func sysmsgThreadArchRules(vars precompiledseccomp.Values) []seccomp.RuleSet {
 						seccomp.AnyValue{},
 						seccomp.AnyValue{},
 						seccomp.GreaterThan(stubStart), // rip
+					},
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.ARCH_REQ_XCOMP_PERM),
+						seccomp.EqualTo(vars.GetUint64(amxXfeatureVar)),
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						// Only the sysmsg code requests AMX permission.
+						seccomp.GreaterThan(vars.GetUint64(stubSysmsgStartVar)), // rip
 					},
 				},
 			}),

@@ -364,6 +364,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	if sp := globalPool.fetchAvailable(); sp != nil {
 		sp.subprocessRefs.InitRefs()
 		sp.usertrap = usertrap.New(disablePatching)
+		sp.resetAMXReady()
 		return sp, nil
 	}
 
@@ -536,6 +537,16 @@ func (s *subprocess) release() {
 		}
 		wstatus := unix.WaitStatus(0)
 		unix.Wait4(int(s.syscallThread.thread.tid), &wstatus, unix.WNOHANG, nil)
+	}
+}
+
+// resetAMXReady makes each sysmsg thread check its AMX permission again. The
+// previous address space may have changed AMXReady.
+func (s *subprocess) resetAMXReady() {
+	s.sysmsgThreadsMu.RLock()
+	defer s.sysmsgThreadsMu.RUnlock()
+	for _, t := range s.sysmsgThreads {
+		atomic.StoreUint32(&t.msg.AMXReady, 0)
 	}
 }
 
@@ -870,6 +881,9 @@ func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSysc
 	ctx := c.sharedContext.Load()
 	ctx.shared.Regs = regs.PtraceRegs
 	s.restoreArchSpecificState(ctx.shared, ac)
+	if fpStateLen(ac) > archState.FpLen() {
+		ctx.heldAMX = true
+	}
 
 	// Check for interrupts, and ensure that future interrupts signal the context.
 	if !c.interrupt.Enable() {
