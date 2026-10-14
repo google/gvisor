@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/test/runner/gtest"
+	"gvisor.dev/gvisor/test/runner/xmlreport"
 	"gvisor.dev/gvisor/test/trace/config"
 	"gvisor.dev/gvisor/test/uds"
 
@@ -97,9 +98,6 @@ const (
 	// hostPTYHostFD is the FD number on the host that is passed to the sandbox.
 	// FDs passed via ExtraFiles start at 3.
 	hostPTYHostFD = 3
-
-	// uniqueXMLSuffix is the suffix for individual per-testcase XML outputs.
-	uniqueXMLSuffix = ".unique.xml"
 )
 
 // getSetupContainerPath returns the path to the setup_container binary.
@@ -129,7 +127,7 @@ func removeShardAndXMLEnvVars(env []string, tc *gtest.TestCase) []string {
 		// so their individual C++ metadata and results are preserved. They will be collated later.
 		if origXML, ok := unix.Getenv("XML_OUTPUT_FILE"); ok && len(origXML) > 0 {
 			safeName := strings.ReplaceAll(tc.Name, "/", "_")
-			env = append(env, fmt.Sprintf("XML_OUTPUT_FILE=%s.%s%s", origXML, safeName, uniqueXMLSuffix))
+			env = append(env, fmt.Sprintf("XML_OUTPUT_FILE=%s.%s%s", origXML, safeName, xmlreport.UniqueSuffix))
 		}
 	}
 	return env
@@ -1251,7 +1249,7 @@ func main() {
 			tests = append(tests, testing.InternalTest{
 				Name: "FakeTestForNotOneSandbox_CollateXML",
 				F: func(t *testing.T) {
-					if err := collateXMLs(origXML); err != nil {
+					if err := xmlreport.Collate(origXML); err != nil {
 						t.Fatalf("Failed to collate XML files: %v", err)
 					}
 				},
@@ -1260,45 +1258,6 @@ func main() {
 	}
 
 	testing.Main(matchString, tests, nil, nil)
-}
-
-func collateXMLs(origXML string) error {
-	matches, err := filepath.Glob(origXML + ".*" + uniqueXMLSuffix)
-	if err != nil {
-		return fmt.Errorf("failed to glob individual XML files: %v", err)
-	}
-	if len(matches) == 0 {
-		return nil
-	}
-
-	f, err := os.Create(origXML)
-	if err != nil {
-		return fmt.Errorf("failed to create collated XML file %s: %v", origXML, err)
-	}
-	defer f.Close()
-	fmt.Fprintln(f, `<?xml version="1.0" encoding="UTF-8"?><testsuites name="AllTests"><testsuite name="Collated">`)
-
-	for _, m := range matches {
-		data, err := os.ReadFile(m)
-		if err != nil {
-			return fmt.Errorf("failed to read unique XML file %s: %v", m, err)
-		}
-		s := string(data)
-		start := strings.Index(s, "<testcase")
-		end := strings.LastIndex(s, "</testcase>")
-
-		if start >= 0 && end >= 0 {
-			fmt.Fprintln(f, s[start:end+len("</testcase>")])
-		} else if start >= 0 {
-			end = strings.Index(s[start:], "/>")
-			if end >= 0 {
-				fmt.Fprintln(f, s[start:start+end+2])
-			}
-		}
-	}
-
-	fmt.Fprintln(f, `</testsuite></testsuites>`)
-	return nil
 }
 
 func enableAllTraces(dir string) (string, error) {
