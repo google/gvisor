@@ -640,6 +640,7 @@ BENCHMARKS_OPTIONS   ?= -test.benchtime=30s
 BENCHMARKS_ARGS      ?= -test.v -test.bench=$(BENCHMARKS_FILTER) $(BENCHMARKS_OPTIONS)
 BENCHMARKS_PROFILE   ?=
 # Example: BENCHMARKS_PROFILE='-pprof-dir=/tmp/profile -pprof-cpu -pprof-heap -pprof-block -pprof-mutex'
+BENCHMARKS_RUNSC_FLAGS ?= --gvisor-gro=true --num-network-channels=4 --host-settings=adjust
 
 init-benchmark-table: ## Initializes a BigQuery table with the benchmark schema.
 	@$(call run,//tools/parsers:parser,init --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE))
@@ -689,7 +690,7 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	      continue; \
 	    fi; \
 	    export PLATFORM; \
-	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
+	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} $(BENCHMARKS_RUNSC_FLAGS)); \
 	    $(call run_benchmark,$${PLATFORM}); \
 	  done; \
 	else \
@@ -698,7 +699,7 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	      continue; \
 	    fi; \
 	    export PLATFORM; \
-	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
+	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} $(BENCHMARKS_RUNSC_FLAGS)); \
 	    $(call run_benchmark,$${PLATFORM}); \
 	  done; \
 	fi
