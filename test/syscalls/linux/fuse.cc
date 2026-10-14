@@ -414,6 +414,81 @@ TEST(FuseTest, AccessUnsupported) {
   EXPECT_THAT(access(file_path.c_str(), W_OK), SyscallSucceeds());
 }
 
+TEST(FuseTest, Fsync) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(IsRunningWithSaveRestore());
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount_opts =
+      absl::StrFormat("fd=%d,user_id=0,group_id=0,rootmode=40000", fd.get());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("fuse", mount_point.path(), "fuse", MS_NODEV | MS_NOSUID,
+            mount_opts, 0 /* umountflags */));
+  ASSERT_NO_FATAL_FAILURE(FuseInit(fd.get()));
+  const FileDescriptor stop_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+
+  // Replies to the n-th FSYNC or FSYNCDIR request. ENOSYS must stop further
+  // requests of that type; reply EIO to any that are sent anyway.
+  constexpr int kReplies[] = {EIO, 0, ENOSYS};
+  int fsync_requests = 0;
+  int fsyncdir_requests = 0;
+  ScopedThread fuse_server([&, server_fd = fd.release()] {
+    RunFuseServer(
+        server_fd, stop_fd.get(), [&](int fd, const fuse_in_header& in) {
+          if (in.opcode == FUSE_FSYNC || in.opcode == FUSE_FSYNCDIR) {
+            int& n =
+                in.opcode == FUSE_FSYNC ? fsync_requests : fsyncdir_requests;
+            const int error = n < 3 ? kReplies[n] : EIO;
+            ++n;
+            FuseRespond(fd, in.unique, nullptr, 0, -error);
+          } else if (in.opcode == FUSE_LOOKUP) {
+            fuse_entry_out out = {.nodeid = 2,
+                                  .generation = 1,
+                                  .entry_valid = 1,
+                                  .attr_valid = 1};
+            out.attr = {.ino = 2, .mode = S_IFREG | 0644, .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_GETATTR) {
+            fuse_attr_out out = {.attr_valid = 1};
+            out.attr = {
+                .ino = in.nodeid,
+                .mode = in.nodeid == 1 ? S_IFDIR | 0755U : S_IFREG | 0644U,
+                .nlink = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_OPEN || in.opcode == FUSE_OPENDIR) {
+            fuse_open_out out = {.fh = 1};
+            FuseRespond(fd, in.unique, &out, sizeof(out));
+          } else if (in.opcode == FUSE_FLUSH || in.opcode == FUSE_RELEASE ||
+                     in.opcode == FUSE_RELEASEDIR) {
+            FuseRespond(fd, in.unique);
+          } else {
+            FuseRespond(fd, in.unique, nullptr, 0, -ENOSYS);
+          }
+          return true;
+        });
+  });
+  Cleanup stop_server([&] {
+    const uint64_t stop = 1;
+    EXPECT_THAT(RetryEINTR(write)(stop_fd.get(), &stop, sizeof(stop)),
+                SyscallSucceedsWithValue(sizeof(stop)));
+  });
+
+  FileDescriptor file_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(mount_point.path(), "testfile"), O_RDWR));
+  FileDescriptor dir_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(mount_point.path(), O_RDONLY | O_DIRECTORY));
+  for (int sync_fd : {file_fd.get(), dir_fd.get()}) {
+    EXPECT_THAT(fsync(sync_fd), SyscallFailsWithErrno(EIO));
+    EXPECT_THAT(fsync(sync_fd), SyscallSucceeds());
+    EXPECT_THAT(fsync(sync_fd), SyscallSucceeds());
+    EXPECT_THAT(fsync(sync_fd), SyscallSucceeds());
+  }
+  file_fd.reset();
+  dir_fd.reset();
+}
+
 TEST(FuseTest, LookupUpdatesInode) {
   SKIP_IF(absl::NullSafeStringView(getenv("GVISOR_FUSE_TEST")) != "TRUE");
   const std::string kFileData = "May thy knife chip and shatter.\n";

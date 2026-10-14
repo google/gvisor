@@ -278,6 +278,11 @@ type connection struct {
 	// different inodes access this connection-wide capability concurrently.
 	noAccess atomicbitops.Bool
 
+	// noFsync and noFsyncdir record an ENOSYS reply to FUSE_FSYNC and
+	// FUSE_FSYNCDIR, after which fsync(2) succeeds without sending them.
+	noFsync    atomicbitops.Bool
+	noFsyncdir atomicbitops.Bool
+
 	// noOpen if FUSE server doesn't support open operation.
 	// This flag only influences performance, not correctness of the program.
 	noOpen bool
