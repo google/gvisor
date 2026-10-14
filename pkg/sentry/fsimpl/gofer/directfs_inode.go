@@ -327,6 +327,11 @@ func (i *directfsInode) ensureLisafsControlFD(ctx context.Context, d *dentry) er
 		log.Warningf("intermediate path component was a symlink? names = %v, inodes = %+v", names, inodes)
 		return unix.ELOOP
 	case lisafs.WalkSuccess:
+		// Verify that the walk found the same file
+		if stat := &inodes[last].Stat; inoKeyFromStatx(stat) != i.inoKey || uint32(stat.Mode)&unix.S_IFMT != i.inode.fileType() {
+			d.inode.fs.client.CloseFD(ctx, inodes[last].ControlFD, true /* flush */)
+			return unix.ESTALE
+		}
 		i.controlFDLisa = d.inode.fs.client.NewFD(inodes[last].ControlFD)
 		return nil
 	}
@@ -414,7 +419,8 @@ func (i *directfsInode) updateMetadataFromStatxLocked(stat *unix.Statx_t) {
 	}
 }
 
-// Precondition: fs.renameMu is locked if d is a socket.
+// Precondition: if d is a socket, then fs.renameMu is locked and
+// i.controlFDLisa has been initialized.
 func (i *directfsInode) chmod(ctx context.Context, mode uint16, d *dentry) error {
 	if i.isSymlink() {
 		// Linux does not support changing the mode of symlinks. See
@@ -426,14 +432,10 @@ func (i *directfsInode) chmod(ctx context.Context, mode uint16, d *dentry) error
 	}
 
 	// Sockets use O_PATH control FDs. However, fchmod(2) fails with EBADF for
-	// O_PATH FDs. Try to fchmodat(2) it from its parent.
-	if parent := d.parent.Load(); parent != nil {
-		return unix.Fchmodat(parent.inode.impl.(*directfsInode).controlFD, d.name, uint32(mode), 0 /* flags */)
-	}
-
-	// This is a mount point socket (no parent). Fallback to using lisafs.
-	if err := i.ensureLisafsControlFD(ctx, d); err != nil {
-		return err
+	// O_PATH FDs. Fallback to lisafs.
+	if !i.controlFDLisa.Ok() {
+		log.Warningf("lisafs control FD not available to chmod socket %q", genericDebugPathname(i.fs, d))
+		return unix.EIO
 	}
 	return chmod(ctx, i.controlFDLisa, mode)
 }
@@ -497,6 +499,13 @@ func (i *directfsInode) utimensat(ctx context.Context, stat *linux.Statx, d *den
 
 // Precondition: fs.renameMu is locked.
 func (i *directfsInode) prepareSetStat(ctx context.Context, stat *linux.Statx, d *dentry) error {
+	if stat.Mask&unix.STATX_MODE != 0 && i.isSocket() {
+		// chmod() on sockets requires a lisafs control FD. Acquire it here
+		// before taking i.handleMu.
+		if err := i.ensureLisafsControlFD(ctx, d); err != nil {
+			return err
+		}
+	}
 	if stat.Mask&unix.STATX_SIZE != 0 ||
 		(stat.Mask&(unix.STATX_ATIME|unix.STATX_MTIME) != 0 && i.isRegularFile()) {
 		// Need to ensure a writable FD is available. See setStatLocked() to
