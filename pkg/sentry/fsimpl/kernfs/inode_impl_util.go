@@ -602,6 +602,24 @@ func (o *OrderedChildren) removeLocked(name string) {
 	}
 }
 
+// RemoveStatic removes a child entry (including static entries) from o and
+// drops the reference owned by o if the entry was static.
+func (o *OrderedChildren) RemoveStatic(ctx context.Context, name string) error {
+	o.mu.Lock()
+	s, ok := o.set[name]
+	if !ok {
+		o.mu.Unlock()
+		return linuxerr.ENOENT
+	}
+	delete(o.set, name)
+	o.order.Remove(s)
+	o.mu.Unlock()
+	if s.static {
+		s.inode.DecRef(ctx)
+	}
+	return nil
+}
+
 // Precondition: caller must hold o.mu for reading or writing.
 func (o *OrderedChildren) checkExistingLocked(name string, child Inode) error {
 	s, ok := o.set[name]

@@ -190,6 +190,11 @@ func (fs *Filesystem) VFSFilesystem() *vfs.Filesystem {
 	return &fs.vfsfs
 }
 
+// RootDentry returns the root dentry of this filesystem.
+func (fs *Filesystem) RootDentry() *Dentry {
+	return fs.root
+}
+
 // NextIno allocates a new inode number on this filesystem.
 func (fs *Filesystem) NextIno() uint64 {
 	return fs.nextInoMinusOne.Add(1)
@@ -337,6 +342,24 @@ func (d *Dentry) Invalidate(ctx context.Context) {
 	}
 	delete(parent.children, d.name)
 	parent.dirMu.Unlock()
+
+	d.fs.invalidateRemovedChildLocked(ctx, d.fs.vfsfs.VirtualFilesystem(), child)
+}
+
+// InvalidateChild invalidates the cached child dentry with the given name and
+// all of its descendants, if present.
+func (d *Dentry) InvalidateChild(ctx context.Context, name string) {
+	d.fs.mu.RLock()
+	defer d.fs.processDeferredDecRefs(ctx)
+	defer d.fs.mu.RUnlock()
+	d.dirMu.Lock()
+	child, ok := d.children[name]
+	if !ok {
+		d.dirMu.Unlock()
+		return
+	}
+	delete(d.children, name)
+	d.dirMu.Unlock()
 
 	d.fs.invalidateRemovedChildLocked(ctx, d.fs.vfsfs.VirtualFilesystem(), child)
 }
