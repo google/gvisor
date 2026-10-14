@@ -6048,12 +6048,17 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 		return path
 	}
 	wantHookLog := func(want string) {
-		got, err := os.ReadFile(hookLog)
-		if err != nil {
-			t.Fatalf("error reading hook log: %v", err)
-		}
-		if string(got) != want {
-			t.Errorf("save/restore binary invocations: got %q, want %q", got, want)
+		if err := testutil.Poll(func() error {
+			got, err := os.ReadFile(hookLog)
+			if err != nil {
+				return err
+			}
+			if string(got) != want {
+				return fmt.Errorf("save/restore binary invocations: got %q, want %q", got, want)
+			}
+			return nil
+		}, 30*time.Second); err != nil {
+			t.Fatal(err)
 		}
 	}
 
@@ -6085,8 +6090,10 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 		if err := cont.Checkpoint(conf, lastImage, checkpointOpts); err != nil {
 			t.Fatalf("checkpoint %d failed: %v", i+1, err)
 		}
+		// Wait for the resume hook before starting another checkpoint so that
+		// the save and resume hooks cannot run concurrently.
+		wantHookLog(strings.Repeat("save\nresume\n", i+1))
 	}
-	wantHookLog("save\nresume\nsave\nresume\n")
 	cont.Destroy()
 
 	// Restore the last checkpoint and checkpoint it once more. The restored

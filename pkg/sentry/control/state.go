@@ -292,23 +292,22 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) (err error) {
 	}
 	defer saveOpts.Close()
 
-	return s.SaveWithOpts(saveOpts, &o.ExecOpts)
+	if err := s.SaveWithOpts(saveOpts, &o.ExecOpts); err != nil {
+		return err
+	}
+	if saveOpts.Resume {
+		return PostResume(s.Kernel, nil)
+	}
+	return nil
 }
 
-// SaveWithOpts saves the running system with the given options.
+// SaveWithOpts saves the running system with the given options. If
+// saveOpts.Resume is true, the caller must call PostResume afterwards.
 func (s *State) SaveWithOpts(saveOpts *state.SaveOpts, execOpts *SaveRestoreExecOpts) error {
 	if err := preSave(s.Kernel, saveOpts, execOpts); err != nil {
 		return err
 	}
-	if err := saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog); err != nil {
-		return err
-	}
-	if saveOpts.Resume {
-		if err := PostResume(s.Kernel, nil); err != nil {
-			return err
-		}
-	}
-	return nil
+	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
 }
 
 // preSave is called before saving the kernel.
