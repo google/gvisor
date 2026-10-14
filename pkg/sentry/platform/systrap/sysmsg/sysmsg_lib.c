@@ -97,10 +97,14 @@ static __inline__ void spinloop(void) { asm volatile("yield" : : : "memory"); }
 
 void* __export_context_region;
 
+// __export_thread_context_size is the size of each thread_context slot,
+// including its FP state.
+uint64_t __export_thread_context_size;
+
 static struct thread_context* thread_context_addr(uint32_t tcid) {
   return (struct thread_context*)(__export_context_region +
                                   tcid *
-                                      ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
+                                      __export_thread_context_size);
 }
 
 void memcpy(uint8_t* dest, uint8_t* src, size_t n) {
@@ -419,11 +423,12 @@ void verify_offsets() {
                offsetof(struct thread_context, fpstate_changed));
   BUILD_BUG_ON(offsetof_thread_context_ptregs !=
                offsetof(struct thread_context, ptregs));
+  BUILD_BUG_ON(offsetof_thread_context_xfeatures !=
+               offsetof(struct thread_context, xfeatures));
 
   BUILD_BUG_ON(kTHREAD_STATE_NONE != THREAD_STATE_NONE);
 
-  BUILD_BUG_ON(sizeof(struct thread_context) >
-               ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
+  BUILD_BUG_ON(sizeof(struct thread_context) != FPSTATE_OFFSET);
 
   // struct context_queue must stay byte-identical to the Go `contextQueue`.
   BUILD_BUG_ON(offsetof(struct context_queue, end) != 0 * CACHE_LINE_SIZE);

@@ -96,7 +96,7 @@
 #define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
 #define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
-#define XCR0_EAX 231 // +checkconst fpu SupportedXFeatureStates
+#define XCR0_EAX 231 // +checkconst fpu DefaultXFeatureStates
 #define XCR0_EDX 0
 
 // Saves a register set.

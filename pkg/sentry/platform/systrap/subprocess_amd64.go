@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -179,7 +180,19 @@ func enableCpuidFault() {
 	hostsyscall.RawSyscall(unix.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0)
 }
 
+// fpStateLen returns the number of bytes of ac's FP state to copy to and from
+// ThreadContext.FPState.
+func fpStateLen(ac *arch.Context64) int {
+	return len(ac.FloatingPointData().Slice())
+}
+
 func (s *subprocess) restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+	ctx.FPLen = uint32(fpStateLen(ac))
+	ctx.XFeatures = fpu.DefaultXFeatureStates
+	if int(ctx.FPLen) > archState.FpLen() {
+		ctx.XFeatures = fpu.SupportedXFeatureStates
+	}
+
 	// If syscall patching is disabled or the GS register is not 0, then we are in a context where
 	// the GS register is/can be used by the application. Thus, we need to set GsUsedByApp to 1 to
 	// restore the GS register to its original value in the signal handler.

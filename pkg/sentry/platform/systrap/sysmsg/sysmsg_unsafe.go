@@ -23,6 +23,19 @@ import (
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 )
 
+// The ThreadContext fields must end before its FP state.
+var _ [FPStateOffset - unsafe.Sizeof(ThreadContext{})]byte
+
+// FPState returns the first n bytes of c's FP state, which is where:
+//   - syshandler saves FPU state to using xsave/fxsave
+//   - sighandler copies FPU state to from ucontext->uc_mcontext.fpregs
+//
+// It must be 64-byte aligned for xsave. n must not exceed
+// ArchState.MaxFPStateLen.
+func (c *ThreadContext) FPState(n int) []byte {
+	return unsafe.Slice((*byte)(unsafe.Add(unsafe.Pointer(c), FPStateOffset)), n)
+}
+
 // SleepOnState makes the caller sleep on the ThreadContext.State futex.
 func (c *ThreadContext) SleepOnState(curState ContextState, timeout *unix.Timespec) syscall.Errno {
 	_, _, errno := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&c.State)),

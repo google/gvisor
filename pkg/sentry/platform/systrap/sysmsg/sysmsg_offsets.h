@@ -21,20 +21,6 @@
 #define FAULT_OPCODE 0x06
 
 // LINT.IfChange
-#define XCR0_EAX 0xe7UL
-#define XCR0_EDX 0
-#define XCR0_DISABLED_MASK (~XCR0_EAX)
-// LINT.ThenChange(../../../arch/fpu/fpu_amd64.go)
-
-// LINT.IfChange
-#define MAX_FPSTATE_LEN 3584
-// Note: To be explicit, 2^12 = 4096; if ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT
-//       is changed, make sure to change the code that relies on the bitshift.
-#define ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT 4096
-#define THREAD_CONTEXT_STRUCT_BITSHIFT 12
-// LINT.ThenChange(sysmsg.go)
-
-// LINT.IfChange
 
 // Define offsets in the struct sysmsg to use them in assembly files.
 // Each offset has to have BUILD_BUG_ON in sighandler.c.
@@ -47,9 +33,11 @@
 #define offsetof_sysmsg_state 0x2c
 #define offsetof_sysmsg_context 0x30
 
-#define offsetof_thread_context_fpstate 0x0
-#define offsetof_thread_context_fpstate_changed MAX_FPSTATE_LEN
-#define offsetof_thread_context_ptregs 0x8 + MAX_FPSTATE_LEN
+#define FPSTATE_OFFSET 0x400
+#define offsetof_thread_context_fpstate_changed 0x0
+#define offsetof_thread_context_xfeatures 0x8
+#define offsetof_thread_context_ptregs 0x10
+#define offsetof_thread_context_fpstate FPSTATE_OFFSET
 
 #define kTHREAD_STATE_NONE 0
 #define kTHREAD_STATE_INTERRUPT 3
