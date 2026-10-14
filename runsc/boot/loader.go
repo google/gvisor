@@ -895,6 +895,10 @@ func New(args Args) (*Loader, error) {
 	if args.Conf.Platform == "systrap" {
 		cpufs = cpufs.UnsetFSGSBASE()
 	}
+	// Only systrap saves and restores AMX state.
+	if args.Conf.Platform != "systrap" {
+		cpufs = cpufs.UnsetAMX()
+	}
 
 	maxFDLimit := kernel.MaxFdLimit
 	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
