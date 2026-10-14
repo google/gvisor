@@ -676,22 +676,28 @@ run_platform_benchmark = \
 	($(call header,BENCHMARK $(1)); \
 	set -euo pipefail; \
 	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
-	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; \
+	trap 'rm -rf "$$T"' EXIT; \
+	exit_code=0; \
+	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T || exit_code=$$?; \
 	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
-	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+	  upload_ret=0; \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)) || upload_ret=$$?; \
+	  if test "$$upload_ret" -ne 0 && test "$$exit_code" -eq 0; then \
+	    exit_code=$$upload_ret; \
+	  fi; \
 	fi; \
-	rm -rf $$T)
+	exit $$exit_code)
 
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.
-	@set -xe; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
+	@set -xe; exit_code=0; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
 	  for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
 	    if test "$${PLATFORM}" = "slimvm"; then \
 	      continue; \
 	    fi; \
 	    export PLATFORM; \
 	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
-	    $(call run_benchmark,$${PLATFORM}); \
+	    $(call run_benchmark,$${PLATFORM}) || exit_code=$$?; \
 	  done; \
 	else \
 	  for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
@@ -700,24 +706,27 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	    fi; \
 	    export PLATFORM; \
 	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
-	    $(call run_benchmark,$${PLATFORM}); \
+	    $(call run_benchmark,$${PLATFORM}) || exit_code=$$?; \
 	  done; \
-	fi
-	@set -xe; if test "$(BENCHMARKS_RUNC)" == true; then \
-	  $(call run_benchmark,runc); \
-	fi
+	fi; \
+	if test "$(BENCHMARKS_RUNC)" == true; then \
+	  $(call run_benchmark,runc) || exit_code=$$?; \
+	fi; \
+	exit $$exit_code
 .PHONY: benchmark-platforms
 
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms-nodocker: $(RUNTIME_BIN) ## Runs non-Docker benchmarks for all (selected) platforms.
 	@set -xe; \
+	exit_code=0; \
 	for PLATFORM in $$(if test -z "$(BENCHMARKS_PLATFORMS)"; then $(RUNTIME_BIN) help platforms; else echo $(BENCHMARKS_PLATFORMS); fi); do \
 	  if test "$${PLATFORM}" = "slimvm"; then \
 	    continue; \
 	  fi; \
 	  export PLATFORM; \
-	  $(call run_platform_benchmark,$${PLATFORM}); \
-	done
+	  $(call run_platform_benchmark,$${PLATFORM}) || exit_code=$$?; \
+	done; \
+	exit $$exit_code
 .PHONY: benchmark-platforms-nodocker
 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
