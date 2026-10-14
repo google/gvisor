@@ -808,9 +808,6 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	if opts.Flags&linux.O_TMPFILE != 0 {
-		return fs.openTmpfile(ctx, rp, &opts)
-	}
 	mayCreate := opts.Flags&linux.O_CREAT != 0
 	mustCreate := opts.Flags&(linux.O_CREAT|linux.O_EXCL) == (linux.O_CREAT | linux.O_EXCL)
 
@@ -898,6 +895,22 @@ afterTrailingSymlink:
 
 // Preconditions: filesystem.renameMu must be locked.
 func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) error {
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		// The unnamed file will be created on the upper layer in d by
+		// d.openTmpfile(), so d must be a writable directory that exists
+		// there; compare Linux's fs/namei.c:vfs_tmpfile().
+		if !d.isDir() {
+			return linuxerr.ENOTDIR
+		}
+		if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+			return err
+		}
+		if err := rp.Mount().CheckBeginWrite(); err != nil {
+			return err
+		}
+		defer rp.Mount().EndWrite()
+		return d.copyUpLocked(ctx)
+	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return err
@@ -943,6 +956,9 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 // Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite() and d is not a
 // special file, then d has been copied up.
 func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		return d.openTmpfile(ctx, rp, opts)
+	}
 	mnt := rp.Mount()
 
 	// Directory FDs open FDs from each layer when directory entries are read,
@@ -985,50 +1001,31 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 	return &fd.vfsfd, nil
 }
 
-// openTmpfile implements OpenAt for open(O_TMPFILE). The unnamed file is
-// created on the upper layer in the directory at rp; it only becomes visible
-// in the directory tree if it is later named by LinkAt.
-func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
-	var ds *[]*dentry
-	fs.renameMu.RLock()
-	unlocked := false
-	unlock := func() {
-		if !unlocked {
-			fs.renameMuRUnlockAndCheckDrop(ctx, &ds)
-			unlocked = true
-		}
-	}
-	defer unlock()
-	dir, err := fs.resolveLocked(ctx, rp, &ds)
-	if err != nil {
-		return nil, err
-	}
-	if !dir.isDir() {
-		return nil, linuxerr.ENOTDIR
-	}
+// openTmpfile implements open(O_TMPFILE) on the directory d. The unnamed file
+// is created on the upper layer in d; it only becomes visible in the
+// directory tree if it is later named by LinkAt.
+//
+// Preconditions: d.ensureOpenableLocked() succeeded, so d is a copied-up
+// directory.
+func (d *dentry) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fs := d.fs
 	creds := rp.Credentials()
-	if err := dir.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
-		return nil, err
-	}
 	mnt := rp.Mount()
 	if err := mnt.CheckBeginWrite(); err != nil {
 		return nil, err
 	}
 	defer mnt.EndWrite()
-	if err := dir.copyUpLocked(ctx); err != nil {
-		return nil, err
-	}
 	vfsObj := fs.vfsfs.VirtualFilesystem()
-	upperFD, err := vfsObj.OpenAt(ctx, dir.credsForCreate(creds, dir.isSGIDSet()), &vfs.PathOperation{
-		Root:  dir.upperVD,
-		Start: dir.upperVD,
+	upperFD, err := vfsObj.OpenAt(ctx, d.credsForCreate(creds, d.isSGIDSet()), &vfs.PathOperation{
+		Root:  d.upperVD,
+		Start: d.upperVD,
 	}, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	// Describe the new file as lookupLocked() would, except that it has no
-	// name in dir and is not inserted into dir.children.
+	// name in d and is not inserted into d.children.
 	upperVD := upperFD.VirtualDentry()
 	childPop := vfs.PathOperation{
 		Root:  upperVD,
@@ -1066,7 +1063,6 @@ func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, op
 	child.name = fmt.Sprintf("#%d", stat.Ino)
 	child.IncRef()
 	defer child.DecRef(ctx)
-	unlock()
 
 	layerFlags := upperFD.StatusFlags()
 	fd := &regularFileFD{

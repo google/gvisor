@@ -353,10 +353,6 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	if opts.Flags&linux.O_TMPFILE != 0 {
-		return fs.openTmpfile(ctx, rp, &opts)
-	}
-
 	// Handle O_CREAT and !O_CREAT separately, since in the latter case we
 	// don't need fs.mu for writing.
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -468,24 +464,11 @@ afterTrailingSymlink:
 	return child.open(ctx, rp, &opts, false)
 }
 
-// openTmpfile implements OpenAt for open(O_TMPFILE): it creates an unnamed
-// regular file in the directory at rp and returns a FileDescription for it,
-// as in Linux's fs/namei.c:vfs_tmpfile(). VFS.OpenAt() has already checked
-// that opts.Flags specifies O_DIRECTORY and a writable access mode.
-func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
-	fs.mu.RLock()
-	unlocked := false
-	unlock := func() {
-		if !unlocked {
-			fs.mu.RUnlock()
-			unlocked = true
-		}
-	}
-	defer unlock()
-	d, err := resolveLocked(ctx, rp)
-	if err != nil {
-		return nil, err
-	}
+// openTmpfile implements open(O_TMPFILE) on the directory d: it creates an
+// unnamed regular file in d and returns a FileDescription for it, as in
+// Linux's fs/namei.c:vfs_tmpfile(). VFS.OpenAt() has already checked that
+// opts.Flags specifies O_DIRECTORY and a writable access mode.
+func (d *dentry) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	parentDir, ok := d.inode.impl.(*directory)
 	if !ok {
 		return nil, linuxerr.ENOTDIR
@@ -498,6 +481,7 @@ func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, op
 		return nil, err
 	}
 	defer rp.Mount().EndWrite()
+	fs := d.inode.fs
 	childInode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
 	if err != nil {
 		return nil, err
@@ -509,7 +493,6 @@ func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, op
 	child := fs.newDentry(childInode)
 	child.name = fmt.Sprintf("#%d", childInode.ino)
 	defer child.DecRef(ctx)
-	unlock()
 	fd, err := child.open(ctx, rp, opts, true /* afterCreate */)
 	if err != nil {
 		return nil, err
@@ -521,6 +504,11 @@ func (fs *filesystem) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, op
 // Preconditions: The caller must hold no locks (since opening pipes may block
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
+	if !afterCreate && opts.Flags&linux.O_TMPFILE != 0 {
+		// d is the directory in which to create the unnamed file; afterCreate
+		// means d is that file.
+		return d.openTmpfile(ctx, rp, opts)
+	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if opts.FileExec {
 		_, isRegular := d.inode.impl.(*regularFile)

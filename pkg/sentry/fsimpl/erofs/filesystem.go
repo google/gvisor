@@ -241,17 +241,6 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	if opts.Flags&linux.O_TMPFILE != 0 {
-		// Resolve the path first, since the directory may be on another
-		// filesystem mounted below this one.
-		d, err := resolve(ctx, rp)
-		if err != nil {
-			return nil, err
-		}
-		d.DecRef(ctx)
-		return nil, linuxerr.EOPNOTSUPP
-	}
-
 	if opts.Flags&linux.O_CREAT == 0 {
 		d, err := resolve(ctx, rp)
 		if err != nil {

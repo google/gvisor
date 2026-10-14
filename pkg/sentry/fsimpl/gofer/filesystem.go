@@ -972,17 +972,6 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	}
 	defer unlock()
 
-	// Reject O_TMPFILE, which is not supported; supporting it correctly in the
-	// presence of other remote filesystem users requires remote filesystem
-	// support. Resolve the path first, since the directory may be on another
-	// filesystem mounted below this one.
-	if opts.Flags&linux.O_TMPFILE != 0 {
-		if _, err := fs.resolveLocked(ctx, rp, &ds); err != nil {
-			return nil, err
-		}
-		return nil, linuxerr.EOPNOTSUPP
-	}
-
 	start := rp.Start().Impl().(*dentry)
 	if rp.Done() {
 		// Reject attempts to open mount root directory with O_CREAT.
@@ -1099,6 +1088,13 @@ var logUnimplementedBlockDevOpenOnce sync.Once
 // Preconditions: The caller must hold no locks (since opening pipes may block
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	// Reject O_TMPFILE, which is not supported; supporting it correctly in the
+	// presence of other remote filesystem users requires remote filesystem
+	// support, and it isn't clear that there's any way to implement this in
+	// 9P.
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		return nil, linuxerr.EOPNOTSUPP
+	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 
 	if ft := d.inode.fileType(); opts.FileExec && ft != linux.S_IFREG && ft != linux.S_IFLNK {
