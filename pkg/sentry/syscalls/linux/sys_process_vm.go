@@ -51,18 +51,42 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	riovcnt := int(args[4].Int64())
 	flags := args[5].Int()
 
-	// Parse the flags.
-	switch {
-	case flags != 0 ||
-		liovcnt < 0 ||
-		riovcnt < 0 ||
-		liovcnt > linux.UIO_MAXIOV ||
-		riovcnt > linux.UIO_MAXIOV:
+	if flags != 0 {
 		return 0, nil, linuxerr.EINVAL
-	case liovcnt == 0 || riovcnt == 0:
+	}
+
+	// The staging below matches Linux's mm/process_vm_access.c:
+	// process_vm_rw() validates and imports the local iovecs and returns 0
+	// for an empty local transfer before examining the remote iovecs at all;
+	// process_vm_rw_core() then returns 0 for an empty remote transfer before
+	// looking up the target task.
+	if liovcnt < 0 || liovcnt > linux.UIO_MAXIOV {
+		return 0, nil, linuxerr.EINVAL
+	}
+	var localIovecs []hostarch.AddrRange
+	if liovcnt > 0 {
+		var err error
+		localIovecs, err = t.CopyInIovecsAsSlice(lvec, liovcnt)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+	if totalIovecLength(localIovecs) == 0 {
 		return 0, nil, nil
-	case lvec == 0 || rvec == 0:
-		return 0, nil, linuxerr.EFAULT
+	}
+	if riovcnt < 0 || riovcnt > linux.UIO_MAXIOV {
+		return 0, nil, linuxerr.EINVAL
+	}
+	var remoteIovecs []hostarch.AddrRange
+	if riovcnt > 0 {
+		var err error
+		remoteIovecs, err = t.CopyInIovecsAsSlice(rvec, riovcnt)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+	if totalIovecLength(remoteIovecs) == 0 {
+		return 0, nil, nil
 	}
 
 	// Local process is always the current task (t). Remote process is the
@@ -76,44 +100,28 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	// man 2 process_vm_read: "Permission to read from or write to another
 	// process is governed by a ptrace access mode
 	// PTRACE_MODE_ATTACH_REALCREDS check; see ptrace(2)."
-	if !t.CanTrace(remoteTask, true /* attach */) {
-		return 0, nil, linuxerr.EPERM
-	}
-
-	// Calculate MemoryManager, IOOpts, and iovecs for each of the local
-	// and remote operations.
-	localIovecs, err := t.CopyInIovecsAsSlice(lvec, liovcnt)
+	//
+	// The check must apply to the same MemoryManager we access, so that a
+	// concurrent execve of the remote task cannot substitute a new
+	// (e.g. non-dumpable) mm between the check and the access.
+	remoteMM, err := t.CanTraceAndGetMM(remoteTask, true /* attach */)
 	if err != nil {
+		if linuxerr.Equals(linuxerr.EACCES, err) {
+			// As in Linux's mm/process_vm_access.c:process_vm_rw_core(),
+			// mm_access()'s EACCES becomes EPERM.
+			err = linuxerr.EPERM
+		}
 		return 0, nil, err
 	}
+	defer remoteMM.DecUsers(t)
+
 	localOps := processVMOps{
 		mm:     t.MemoryManager(),
 		iovecs: localIovecs,
 	}
-	remoteIovecs, err := t.CopyInIovecsAsSlice(rvec, riovcnt)
-	if err != nil {
-		return 0, nil, err
-	}
 	remoteOps := processVMOps{
+		mm:     remoteMM,
 		iovecs: remoteIovecs,
-	}
-	if remoteTask == t {
-		// No need to take remoteTask.mu to fetch the memory manager.
-		remoteOps.mm = t.MemoryManager()
-	} else {
-		// Grab the remoteTask memory manager, and pin it by adding
-		// ourselves as a user.
-		remoteTask.WithMuLocked(func(*kernel.Task) {
-			remoteOps.mm = remoteTask.MemoryManager()
-		})
-		// Check remoteTask memory manager exists and
-		if remoteOps.mm == nil {
-			return 0, nil, linuxerr.ESRCH
-		}
-		if !remoteOps.mm.IncUsers() {
-			return 0, nil, linuxerr.EFAULT
-		}
-		defer remoteOps.mm.DecUsers(t)
 	}
 
 	// Finally time to copy some bytes. The order depends on whether we are
@@ -127,10 +135,22 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 		// Copy from local process to remote.
 		n, err = processVMCopyIovecs(t, localOps, remoteOps)
 	}
-	if n == 0 && err != nil {
+	// As in Linux's mm/process_vm_access.c:process_vm_rw_core(), a partial
+	// transfer returns the number of bytes copied, and an error is returned
+	// only if nothing was copied.
+	if err != nil && n == 0 {
 		return 0, nil, err
 	}
 	return uintptr(n), nil, nil
+}
+
+// totalIovecLength returns the total length of the given iovecs.
+func totalIovecLength(iovecs []hostarch.AddrRange) uint64 {
+	var total uint64
+	for _, iov := range iovecs {
+		total += uint64(iov.Length())
+	}
+	return total
 }
 
 // maxScratchBufferSize is the maximum size of a scratch buffer. It should be
