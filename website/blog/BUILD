@@ -202,6 +202,19 @@ doc(
     permalink = "/blog/2026/10/02/gvisor-cncf/",
 )
 
+doc(
+    name = "checkpoint_restore",
+    src = "2026-10-14-checkpoint-restore.md",
+    authors = [
+        "chjing",
+        "ayushranjan",
+        "jamieliu",
+        "shayonj",
+    ],
+    layout = "post",
+    permalink = "/blog/2026/10/14/checkpoint-restore/",
+)
+
 docs(
     name = "posts",
     deps = [

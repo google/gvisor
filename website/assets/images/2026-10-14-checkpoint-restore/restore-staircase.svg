@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-label="Restore time for a 2 GiB app. From a slow disk (cold page cache): 2018 style compressed, single file 8.36 s, 2024 uncompressed, split, parallel 8.04 s, 2024+ + restore --background 1.82 s. Image already in host page cache: 2018 style compressed, single file 1.08 s, 2024 uncompressed, split, parallel 0.47 s, 2024+ + restore --background 0.17 s" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>Restore time for a 2 GiB app. From a slow disk (cold page cache): 2018 style compressed, single file 8.36 s, 2024 uncompressed, split, parallel 8.04 s, 2024+ + restore --background 1.82 s. Image already in host page cache: 2018 style compressed, single file 1.08 s, 2024 uncompressed, split, parallel 0.47 s, 2024+ + restore --background 0.17 s</title>
+<rect width="960" height="540" rx="12" fill="#fcfcfb"/>
+<text x="40" y="40" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Time until a 2 GiB app runs again after restore</text>
+<text x="40" y="62" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >seconds, lower is better. Median of 32 interleaved runs.</text>
+<text x="40" y="106" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >From a slow disk (cold page cache)</text>
+<text x="40" y="134" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2018 style</text>
+<text x="40" y="152" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >compressed, single file</text>
+<rect x="330" y="122" width="500.0" height="30" rx="4" fill="#8a8984" />
+<text x="840.0" y="143" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >8.36 s</text>
+<text x="40" y="184" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024</text>
+<text x="40" y="202" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed, split, parallel</text>
+<rect x="330" y="172" width="480.7146151471407" height="30" rx="4" fill="#2a78d6" />
+<text x="820.7146151471406" y="193" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >8.04 s</text>
+<text x="40" y="234" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024+</text>
+<text x="40" y="252" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >+ restore --background</text>
+<rect x="330" y="222" width="108.60911512445477" height="30" rx="4" fill="#1baf7a" />
+<text x="448.6091151244548" y="243" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >1.82 s</text>
+<text x="330" y="270" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >4.6x faster</text>
+<text x="40" y="312" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Image already in host page cache</text>
+<text x="40" y="340" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2018 style</text>
+<text x="40" y="358" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >compressed, single file</text>
+<rect x="330" y="328" width="64.73191429674648" height="30" rx="4" fill="#8a8984" />
+<text x="404.7319142967465" y="349" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >1.08 s</text>
+<text x="40" y="390" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024</text>
+<text x="40" y="408" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed, split, parallel</text>
+<rect x="330" y="378" width="28.2707626121184" height="30" rx="4" fill="#2a78d6" />
+<text x="368.2707626121184" y="399" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >0.47 s</text>
+<text x="40" y="440" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024+</text>
+<text x="40" y="458" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal" >+ restore --background</text>
+<rect x="330" y="428" width="10.09036294950551" height="30" rx="4" fill="#1baf7a" />
+<text x="350.0903629495055" y="449" font-size="14" fill="#0b0b0b" text-anchor="start" font-weight="bold" >0.17 s</text>
+<text x="330" y="476" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >6.4x faster</text>
+<text x="40" y="522" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >With --background, memory keeps loading after the app starts; pages the app touches are loaded first.</text>
+</svg>

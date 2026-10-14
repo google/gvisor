@@ -37,7 +37,7 @@ authors:
     url: https://freedom.press/people/alex-p
   ayushranjan:
     name: Ayush Ranjan
-    email: ayushranjan@google.com
+    email: ayushr@modal.com
   bogomolov:
     name: Konstantin Bogomolov
     email: bogomolov@google.com
@@ -95,3 +95,10 @@ authors:
   shailend:
     name: Shailend Chand
     email: shailend@google.com
+  jamieliu:
+    name: Jamie Liu
+    email: jamieliu@google.com
+  shayonj:
+    name: Shayon Mukherjee
+    email: shayon@tines.com
+    url: https://github.com/shayonj
