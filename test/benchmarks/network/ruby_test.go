@@ -89,9 +89,10 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	// Start-up the Ruby server.
 	rubyApp := serverMachine.GetContainer(ctx, b)
 	if err := rubyApp.Spawn(ctx, dockerutil.RunOpts{
-		Image:   "benchmarks/ruby",
-		WorkDir: "/app",
-		Links:   []string{redis.MakeLink("redis")},
+		Image:      "benchmarks/ruby",
+		WorkDir:    "/app",
+		Links:      []string{redis.MakeLink("redis")},
+		CpusetCpus: harness.ServerCPUSet(),
 		Env: []string{
 			fmt.Sprintf("PORT=%d", port),
 			"WEB_CONCURRENCY=20",
@@ -116,8 +117,9 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	client := clientMachine.GetNativeContainer(ctx, b)
 	defer client.CleanUp(ctx)
 	out, err := client.Run(ctx, dockerutil.RunOpts{
-		Image: "benchmarks/hey",
-		Links: []string{rubyApp.MakeLink("ruby")},
+		Image:      "benchmarks/hey",
+		Links:      []string{rubyApp.MakeLink("ruby")},
+		CpusetCpus: harness.ClientCPUSet(),
 	}, heyCmd...)
 	if err != nil {
 		b.Fatalf("hey container failed: %v logs: %s", err, out)
