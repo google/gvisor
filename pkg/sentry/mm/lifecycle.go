@@ -165,6 +165,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		aioManager:        aioManager{contexts: make(map[uint64]*AIOContext)},
 		vdsoSigReturnAddr: mm.vdsoSigReturnAddr,
 	}
+	mm2.userns.Store(mm.userns.Load())
 
 	// Copy vmas.
 	dontforks := false

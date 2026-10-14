@@ -127,6 +127,15 @@ func (ns *UserNamespace) Root() *UserNamespace {
 	return ns
 }
 
+// PrivilegedOver returns the nearest ancestor of ns, or ns, that maps kuid and
+// kgid.
+func (ns *UserNamespace) PrivilegedOver(kuid KUID, kgid KGID) *UserNamespace {
+	for ns.parent != nil && !(ns.MapFromKUID(kuid).Ok() && ns.MapFromKGID(kgid).Ok()) {
+		ns = ns.parent
+	}
+	return ns
+}
+
 // Type implements vfs.Namespace.Type.
 func (ns *UserNamespace) Type() string {
 	return "user"

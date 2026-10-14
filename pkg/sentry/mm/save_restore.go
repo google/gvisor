@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
@@ -180,4 +181,14 @@ func (p *pma) loadFile(ctx goContext.Context, resourceID checkpoint.ResourceID) 
 		panic(fmt.Sprintf("can't restore pma because its MemoryFile's resource ID %q was not found in CtxMemoryFileMap", resourceID))
 	}
 	p.file = mf
+}
+
+// saveUserns is invoked by stateify.
+func (mm *MemoryManager) saveUserns() *auth.UserNamespace {
+	return mm.userns.Load()
+}
+
+// loadUserns is invoked by stateify.
+func (mm *MemoryManager) loadUserns(_ goContext.Context, userns *auth.UserNamespace) {
+	mm.userns.Store(userns)
 }

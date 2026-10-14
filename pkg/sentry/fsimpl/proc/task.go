@@ -305,12 +305,18 @@ func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {
 		return auth.RootKUID, auth.RootKGID
 	}
 	if m.Dumpability() != mm.UserDumpable {
+		// Use the namespace of the MM. After exec of an unreadable file, it can
+		// be an ancestor of the task namespace.
+		ns := m.UserNamespace()
+		if ns == nil {
+			ns = creds.UserNamespace
+		}
 		uid = auth.RootKUID
-		if kuid := creds.UserNamespace.MapToKUID(auth.RootUID); kuid.Ok() {
+		if kuid := ns.MapToKUID(auth.RootUID); kuid.Ok() {
 			uid = kuid
 		}
 		gid = auth.RootKGID
-		if kgid := creds.UserNamespace.MapToKGID(auth.RootGID); kgid.Ok() {
+		if kgid := ns.MapToKGID(auth.RootGID); kgid.Ok() {
 			gid = kgid
 		}
 	}

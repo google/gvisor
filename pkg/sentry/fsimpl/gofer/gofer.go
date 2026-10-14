@@ -1604,8 +1604,10 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	mode := linux.FileMode(d.inode.mode.RacyLoad())
 	kuid := auth.KUID(d.inode.uid.RacyLoad())
 	kgid := auth.KGID(d.inode.gid.RacyLoad())
-	if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, kuid, kgid); err != nil {
-		return err
+	if vfs.XattrRequiresInodePermission(name, ats) {
+		if err := vfs.GenericCheckPermissions(creds, ats, mode, nil, kuid, kgid); err != nil {
+			return err
+		}
 	}
 	return vfs.CheckXattrPermissions(creds, ats, mode, kuid, name)
 }

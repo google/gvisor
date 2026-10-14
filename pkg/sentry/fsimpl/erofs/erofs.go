@@ -745,7 +745,11 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
-	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
+	permAts, err := vfs.AccessTypesForOpenPermissionCheck(opts, linux.FileMode(d.inode.Mode()))
+	if err != nil {
+		return nil, err
+	}
+	if err := d.inode.checkPermissions(rp.Credentials(), permAts); err != nil {
 		return nil, err
 	}
 

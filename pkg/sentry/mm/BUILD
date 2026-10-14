@@ -149,6 +149,7 @@ go_library(
     ],
     imports = [
         "gvisor.dev/gvisor/pkg/sentry/checkpoint",
+        "gvisor.dev/gvisor/pkg/sentry/kernel/auth",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
