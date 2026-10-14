@@ -8,7 +8,7 @@ resource footprint. For containerized infrastructure, this can provide a
 turn-key solution for sandboxing untrusted workloads: there are no changes to
 the fundamental resource model presented by containers.
 
-## Architectural value proposition: instant cold starts & high packing density
+## Instant cold starts & high packing density
 
 gVisor's defining architectural advantage is combining strong multi-tenant sandbox
 isolation with the simple resource model of standard Linux host processes. For multi-tenant compute
@@ -22,10 +22,10 @@ hardware. While secure, this architecture imposes two fundamental constraints:
    guest kernel, initialize virtual device models (e.g. virtio, PCI), run guest init
    systems, and configure guest memory tables before executing user code.
 2. **Static memory partitioning:** MicroVMs and hardware virtual machines typically
-   require pre-allocated, dedicated memory reservations (e.g. 512MB–2GB per instance)
-   carved out from the host. Because guest operating systems manage memory independently,
-   physical RAM remains locked even when the workload is completely idle, severely
-   capping host packing density to dozens of instances per node.
+   require pre-allocated, dedicated memory reservations carved out from the host.
+   Because guest operating systems manage memory independently, physical RAM
+   remains locked even when the workload is completely idle, capping host packing
+   density.
 
 gVisor takes a fundamentally different architectural approach: **process-based sandboxing**.
 The [Sentry](../README.md#sentry) is an unprivileged userspace kernel written in Go that acts
@@ -34,14 +34,13 @@ three advantages:
 
 * **Fast Cold Starts:** Starting a gVisor sandbox does not require booting a full guest
   OS and virtual hardware. Sandbox creation is as lightweight as launching a regular host
-  process, with Sentry initialization completing in milliseconds (~150ms cold boot) to
+  process, with Sentry initialization completing in milliseconds (~169ms cold boot) to
   provide instantaneous cold starts for on-demand agentic workloads.
-* **Extreme Sandbox Packing Density:** Rather than carving out fixed RAM partitions, gVisor
+* **High Sandbox Packing Density:** Rather than carving out fixed RAM partitions, gVisor
   processes participate directly in host virtual memory management. A clean sandbox requires
-  only **~17–26MB of fixed memory overhead**, and unneeded pages are reclaimed dynamically
-  by the host. As a result, hosts can pack **thousands of isolated tenant sandboxes onto
-  a single physical machine**, unlocking orders-of-magnitude higher packing efficiency and
-  radically lower infrastructure costs.
+  only **~14–45MB of fixed memory overhead** across real application workloads, and unneeded pages are reclaimed dynamically
+  by the host. This avoids reserving static blocks of host RAM for idle instances, maximizing
+  packing density and infrastructure utilization.
 * **Stateful Snapshot Restoration:** Using gVisor's process-level checkpoint and restore
   primitives (`runsc checkpoint` / `runsc restore`), suspended sandboxes resume in
   **~100–300ms** with pre-warmed runtimes and pre-imported application libraries ready to serve.
@@ -69,10 +68,9 @@ by the workloads that matter to gVisor users and contributors.
 
 ## Methodology & platforms
 
-All data below is continuously generated using gVisor's open-source
-[benchmark suite][benchmark-tools] executed in [Buildkite CI][buildkite]
-on uniform [Google Compute Engine][gce] Virtual Machines (VMs) with the
-following specifications:
+All data below is statically benchmarked and measured using gVisor's open-source
+[benchmark suite][benchmark-tools] executed on uniform [Google Compute Engine][gce]
+Virtual Machines (VMs) with the following specifications:
 
 ```
 Machine type: c2-standard-8 (Intel Cascade Lake, 8 vCPUs, 32GB RAM)
@@ -80,22 +78,65 @@ Image: Ubuntu 22.04 LTS (Linux kernel 5.15+)
 BootDisk: 100GB SSD persistent disk
 ```
 
-Through this document, results report rolling 30-day medians across three
+Through this document, results report measured data across three
 runtime configurations:
-- **`systrap`**: The default gVisor platform. Uses userspace seccomp interception
-  with shared-memory fast-paths for high-performance syscall handling without
-  requiring hardware virtualization.
-- **`kvm`**: Hardware-assisted virtualization platform. In cloud VM CI environments,
-  KVM operates under **nested virtualization** (an L2 hypervisor inside an L1 VM).
-  Under nested virtualization, every hardware VM-exit triggers an expensive trap
-  into the L0 host hypervisor to emulate L1 VMX state, significantly inflating
-  VM-exit and context-switch latencies. KVM is included here to illustrate the
-  inherent structural overhead of hardware virtualization under nested cloud
-  environments compared to process-based sandboxing (`systrap`), which runs purely
-  in host userspace and remains largely immune to nested virtualization penalties.
-  On physical bare-metal hardware, KVM's performance profile is substantially
-  different and achieves much lower exit overheads.
+- **`systrap`**: The default production gVisor platform. Uses userspace seccomp
+  interception with shared-memory fast-paths for high-performance syscall handling
+  without requiring hardware virtualization or elevated privileges.
+- **`kvm`**: Hardware-assisted virtualization platform utilizing Linux KVM. When
+  deployed on physical bare-metal hardware, KVM provides low-latency hardware-accelerated
+  system call trapping. Because cloud CI environments operate under nested virtualization
+  (which artificially inflates hypervisor VM exits for stateful I/O workloads), KVM is
+  evaluated in the structural architectural sections (system call latency, startup, and
+  memory footprint). Application and storage benchmarks focus on the production default
+  (`systrap`) vs. native Linux (`runc`).
 - **`runc`**: Unsandboxed Linux container baseline (native Linux host execution).
+
+### Configuration & optimization flags
+
+To accurately measure gVisor under production-recommended performance settings,
+several runtime flags, compilation options, and harness isolation parameters are
+configured. Any flag that is changed from upstream default settings is documented
+below:
+
+#### 1. Runtime flags (`runsc`)
+These options are supplied via the container runtime engine (e.g. `/etc/docker/daemon.json`
+or containerd configuration):
+* **`--gvisor-gro=true` (Changed from default: `false`)**: Enables userspace Generic
+  Receive Offload (GRO) in Netstack. GRO aggregates incoming network packets into larger
+  virtual segments before traversing protocol layers, substantially reducing lock acquisitions,
+  per-packet buffer allocations, and system call overhead in network-intensive workloads.
+* **`--num-network-channels=4` (Changed from default: `1`)**: Allocates 4 independent
+  network RX/TX channels across available host vCPUs. This removes single-channel Netstack
+  serialization bottlenecks on multi-core VMs.
+* **`--host-settings=adjust` (Changed from default: `ignore`)**: Automatically inspects
+  and tunes host kernel networking parameters (e.g. `net.core.rmem_max`, `net.core.wmem_max`,
+  `net.ipv4.tcp_rmem`, `net.ipv4.tcp_wmem`, and `net.core.somaxconn`) to match gVisor's
+  internal buffer requirements, preventing packet drop during throughput bursts.
+* **`--network=sandbox` (Default)**: Ensures network namespaces remain fully isolated
+  inside userspace Netstack.
+
+Sample Docker configuration (`/etc/docker/daemon.json`):
+```json
+{
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc",
+      "runtimeArgs": [
+        "--gvisor-gro=true",
+        "--num-network-channels=4",
+        "--host-settings=adjust"
+      ]
+    }
+  }
+}
+```
+
+#### 2. Compilation and build flags
+* **`-opt` / `--compilation_mode=opt`**: gVisor binaries (`runsc`, `sentry`) are built with
+  full compiler optimization (`-tags=opt`), stripping debug overhead and enabling Go function inlining.
+* **`--noshow_progress --noshow_loading_progress`**: Passed to Bazel to suppress terminal animation
+  escapes and prevent stdout buffer contention during automated CI test runs.
 
 ## Start-up time & cold starts
 
@@ -112,20 +153,20 @@ The above figure indicates total start-up time across container workloads in
 an Nginx web server, and a Node.js application.
 
 - **Empty container startup:** For trivial workloads, total startup time is dominated
-  by Docker daemon container creation and cgroup setup latency (~450–550ms);
-  native `runc` initializes an empty container in ~480ms, while `systrap` (~580ms)
-  and `kvm` (~650ms) add modest sandboxing overhead (~100–170ms) for Sentry
+  by Docker daemon container creation and cgroup setup latency (~120–180ms);
+  native `runc` initializes an empty container in ~136ms, while `systrap` (~169ms)
+  and `kvm` (~184ms) add minimal sandboxing overhead (~33–48ms) for Sentry
   initialization and seccomp filter configuration.
 - **Application startup:** When launching real applications with runtime dependencies,
   file loading and module execution introduce expected sandboxing overhead:
-  Nginx starts in ~1.56s on `systrap` (~1.30s on `kvm`) versus ~0.99s on `runc`,
-  and Node.js starts in ~1.72s on `systrap` (~1.78s on `kvm`) versus ~0.99s on `runc`.
+  Nginx starts in ~417ms on `systrap` (~510ms on `kvm`) versus ~364ms on `runc`,
+  and Node.js starts in ~682ms on `systrap` (~960ms on `kvm`) versus ~471ms on `runc`.
 - **Pre-warmed snapshots:** For ultra-low-latency cold starts, gVisor's checkpoint/restore
   mechanism allows pre-initialized containers with pre-loaded libraries to restore in ~100–300ms.
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test
+make benchmark-platforms BENCHMARKS_SUITE=startup BENCHMARKS_TARGETS=test/benchmarks/base:startup_test BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ## Memory footprint & sandbox packing density
@@ -135,25 +176,38 @@ in order to store state associated with the application. This memory consists
 of a fixed component, plus an amount that varies with operating system resource
 usage (e.g. open file descriptors and sockets).
 
-For multi-tenant platforms (such as Substrate) running thousands of sandboxes per host,
+For high-density multi-tenant platforms (such as [Substrate](https://github.com/agent-substrate/substrate)),
 fixed memory overheads determine infrastructure economics. While microVMs and hardware
-virtual machines typically lock hundreds of megabytes or gigabytes of RAM per instance,
-gVisor allows extreme packing density.
+virtual machines typically lock dedicated blocks of RAM per instance,
+gVisor enables high packing density by sharing host memory dynamically.
 
-{% include graph.html id="density" better="lower"
-title="BenchmarkSize* (//test/benchmarks/base:size_test)" log="true" y_min="100000" %}
+{% include graph.html id="density" better="lower" subtract_baseline="runc"
+title="Sentry Memory Overhead over non-sandboxed container (//test/benchmarks/base:size_test)" %}
 
-The above figure demonstrates container memory usage across
-[`BenchmarkSizeEmpty`][size-test] (running `sleep`), `BenchmarkSizeNode` (a synthetic
+The above figure demonstrates the fixed memory overhead of the Sentry
+(`runsc` memory minus non-sandboxed `runc` container memory) across
+[`BenchmarkSizeEmpty`][usage-test] (running `sleep`), `BenchmarkSizeNode` (a synthetic
 Node.js web service), and `BenchmarkSizeNginx` (an Nginx web server) in
-`//test/benchmarks/base:size_test`. In all cases, the Sentry accounts for a modest
-fixed memory footprint (~17–26MB on `systrap`). Unlike microVMs with static
-guest RAM allocations, gVisor shares host memory dynamically and returns idle pages
-to the host.
+`//test/benchmarks/base:size_test`.
+
+Importantly, non-sandboxed containers (`runc`) exhibit minimal userspace memory
+because they share the host Linux kernel directly.
+When sandboxing untrusted code, gVisor's Sentry introduces a **flat, fixed overhead
+of ~14–45MB on `systrap`** (and ~45–55MB on `kvm`) over the non-sandboxed container baseline.
+Crucially, this overhead remains relatively fixed regardless of workload size: whether running
+an empty container, Nginx, or Node.js, the memory delta over `runc` remains constant
+because application memory is backed directly by host virtual memory rather than locked
+into static guest reservations.
+
+By contrast, traditional microVMs (such as Firecracker or Cloud Hypervisor) require
+dedicated guest kernels and static RAM allocations (typically configured with 128MB–1GB+
+minimum guest memory reservations per instance). Under gVisor, memory unused by the
+workload is reclaimed dynamically by the host, unlocking significantly higher density
+for multi-tenant workloads.
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=usage BENCHMARKS_TARGETS=test/benchmarks/base:size_test
+make benchmark-platforms BENCHMARKS_SUITE=usage BENCHMARKS_TARGETS=test/benchmarks/base:usage_test BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ## CPU performance & computation
@@ -164,7 +218,7 @@ imposed for CPU operations.
 
 ### Raw CPU execution
 
-{% include graph.html id="sysbench-cpu" better="higher"
+{% include graph.html id="sysbench-cpu" better="higher" exclude_runtimes="kvm"
 title="BenchmarkSysbench (//test/benchmarks/base:sysbench_test)" %}
 
 The above figure demonstrates the [`BenchmarkSysbench`][sysbench-test] measurement
@@ -184,7 +238,7 @@ This has important consequences for classes of workloads that are compute-bound,
 such as data processing, numerical simulation, or machine learning. In these cases,
 `runsc` imposes minimal runtime overhead.
 
-{% include graph.html id="tensorflow" better="lower"
+{% include graph.html id="tensorflow" better="lower" exclude_runtimes="kvm"
 title="BenchmarkTensorflowDashboard (//test/benchmarks/ml:tensorflow_test)" %}
 
 For example, the above figure shows a sample TensorFlow workload training a
@@ -203,7 +257,7 @@ Once memory mappings are established, gVisor does not intercept or emulate raw
 CPU memory instructions: reads and writes to mapped memory pages execute directly
 on the host CPU at native hardware speed.
 
-{% include graph.html id="sysbench-memory" better="higher"
+{% include graph.html id="sysbench-memory" better="higher" exclude_runtimes="kvm"
 title="BenchmarkSysbench (//test/benchmarks/base:sysbench_test)" %}
 
 The above figure demonstrates memory operations per second as measured by
@@ -249,28 +303,40 @@ make sudo TARGETS=//tools/gpu:main ARGS="install --latest" && make benchmark-pla
 
 ## System call interception
 
-Some **structural costs** of gVisor are heavily influenced by the
-[platform choice](/docs/architecture_guide/platforms/), which implements system
-call interception. Today, gVisor uses **`systrap` as its default platform**,
-combining seccomp-based interception with shared-memory fast-paths to avoid
-context-switch overheads.
+A primary **structural cost** inherent to gVisor is system call interception itself,
+regardless of the platform chosen. In native Linux, an application system call
+executes as a direct CPU transition from ring 3 to ring 0 (~415ns for simple calls like `getpid`).
+In gVisor, every untrusted system call must be intercepted, its register state captured,
+and execution routed to the Sentry userspace kernel to be inspected and served.
+Intercepting the syscall and routing it to the kernel is always a cost.
+
+While the necessity of intercepting and routing system calls is a universal structural cost,
+the exact latency and mechanism depend on the [platform choice](/docs/architecture_guide/platforms/).
+Today, gVisor uses **`systrap` as its default platform**, combining seccomp-based interception
+with shared-memory fast-paths to avoid context-switch overheads.
 
 {% include graph.html id="syscall" better="lower"
-title="BenchmarkSyscallUnderSeccomp (//test/benchmarks/base:syscallbench_test)" y_min="100"
-log="true" %}
+title="Raw System Call Latency (//test/benchmarks/base:syscallbench_test)" %}
 
 The above figure demonstrates the time required for a raw system call (`getpid`)
-across runtimes as measured by [`BenchmarkSyscallUnderSeccomp`][syscallbench-test] in
-`//test/benchmarks/base:syscallbench_test`. While legacy `ptrace` imposed ~38μs of
-overhead per syscall, modern `systrap` completes in ~1.5μs (and `kvm` in ~0.76μs).
-However, while KVM exhibits low latency for isolated null syscalls, in complex,
-stateful workloads under nested virtualization it incurs compounding dual-level
-VM-exit penalties. `systrap`, by contrast, avoids hardware virtualization traps
-entirely and operates uniformly across bare-metal and cloud VM hosts.
+across runtimes as measured by [`BenchmarkSyscall`][syscallbench-test] (`getpidopt`).
+Crucially, `getpid` is a system call completely handled by the Sentry in userspace
+without needing to invoke the host kernel. As a result, it isolates and directly
+measures the pure system call interception and context-routing latency by itself.
+On native Linux, a raw system call executes in **~415ns**. When sandboxing the
+workload, the Sentry intercepts and handles system calls in userspace, completing
+in **~2.37μs on `systrap`** (fast-path `getpidopt` utilizing shared memory; ~5.66μs on seccomp slow path) and **~989ns on `kvm`**—a dramatic speedup over legacy
+`ptrace` (~38μs).
+
+While `kvm` leverages hardware virtualization extensions for system call trapping
+(~989ns), `systrap` achieves low microsecond latency (~2.37μs) entirely in userspace
+via seccomp notification fast-paths and shared memory. This allows `systrap` to run
+portably across any Linux environment—including cloud virtual machines and bare metal—without
+requiring hardware virtualization privileges or nested virtualization support.
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=syscall BENCHMARKS_TARGETS=test/benchmarks/base:syscallbench_test BENCHMARKS_FILTER="BenchmarkSyscallUnderSeccomp"
+make benchmark-platforms BENCHMARKS_SUITE=syscall BENCHMARKS_TARGETS=test/benchmarks/base:syscallbench_test BENCHMARKS_FILTER="BenchmarkSyscall/syscall=getpidopt" BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ## Process scheduling & IPC
@@ -280,7 +346,7 @@ test kernel scheduler latency and IPC channels. [`BenchmarkHackbench`][hackbench
 in `//test/benchmarks/base:hackbench_test` runs the standard Linux `hackbench` workload
 (creating 100 process pairs communicating across Unix domain socket pairs).
 
-{% include graph.html id="hackbench" better="lower"
+{% include graph.html id="hackbench" better="lower" exclude_runtimes="kvm"
 title="BenchmarkHackbench (//test/benchmarks/base:hackbench_test)" %}
 
 The above figure demonstrates total execution time for `BenchmarkHackbench`. Under
@@ -299,7 +365,7 @@ tend to be high-frequency I/O loops and static network services. In general,
 the relative impact of system call interception amortizes rapidly as applications
 perform useful computational work per syscall.
 
-{% include graph.html id="redis" better="higher"
+{% include graph.html id="redis" better="higher" exclude_runtimes="kvm"
 title="BenchmarkRedis (//test/benchmarks/database:redis_test)" %}
 
 For example, `redis` is an application that performs relatively little work in
@@ -307,12 +373,14 @@ userspace: in general it reads from a connected socket, reads or modifies some
 data in memory, and writes a result back. The above figure shows the results
 of Redis operations across `SET`, `LPUSH`, and `LRANGE_100` in
 [`BenchmarkRedis`][redis-test] (`//test/benchmarks/database:redis_test`). While smaller
-operations impose a structural syscall interception overhead, operations where more
-work is done in the application show lower relative overhead.
+operations impose a structural syscall interception overhead (~486k ops/sec on `systrap`
+versus ~1.20M on native `runc` for `SET`, and ~468k ops/sec vs ~1.11M for `LPUSH`),
+operations where more work is done in the application show lower relative overhead:
+for `LRANGE_100`, `systrap` achieves ~106k ops/sec, reaching 75.5% of native `runc` (~140k ops/sec).
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test BENCHMARKS_FILTER="BenchmarkRedis/operation"
+make benchmark-platforms BENCHMARKS_SUITE=redis BENCHMARKS_TARGETS=test/benchmarks/database:redis_test BENCHMARKS_FILTER="BenchmarkRedis/operation" BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ## Network
@@ -323,16 +391,18 @@ Offload (GRO), Generic Segmentation Offload (GSO), and optimized buffer pooling.
 
 ### Raw bandwidth
 
-{% include graph.html id="iperf" better="higher"
+{% include graph.html id="iperf" better="higher" exclude_runtimes="kvm"
 title="BenchmarkIperfOneConnection (//test/benchmarks/network:iperf_test)" %}
 
 The above figure shows single-connection TCP throughput in [`BenchmarkIperfOneConnection`][iperf-test]
-(`//test/benchmarks/network:iperf_test`). On modern Linux hosts, Netstack achieves multi-gigabit
-throughput (~2.7 Gbps on `systrap`), delivering strong line-rate capability for networked microservices.
+(`//test/benchmarks/network:iperf_test`). On modern Linux hosts with GRO and multi-channel
+networking configured, Netstack achieves multi-gigabit throughput: ~3.27 Gbps download on `systrap`
+(83.8% of native `runc` at ~3.90 Gbps) and ~2.52 Gbps upload (versus ~3.84 Gbps on `runc`),
+delivering strong line-rate capability for networked microservices.
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test BENCHMARKS_FILTER="BenchmarkIperfOneConnection"
+make benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test BENCHMARKS_FILTER="BenchmarkIperfOneConnection" BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ### Web applications
@@ -340,43 +410,50 @@ make benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmar
 Real applications (like Node.js and Ruby on Rails) spend time in userspace parsing requests,
 querying databases, and rendering templates, diluting network stack latency.
 
-{% include graph.html id="applications" better="higher" metric="requests_per_second"
-title="BenchmarkNode & BenchmarkRuby (//test/benchmarks/network)" %}
+Because gVisor's network stack (Netstack) and I/O subsystems encounter lock contention and
+goroutine scheduling overheads under high multi-threading, performance is most clearly observed
+at lower concurrency levels, which isolate baseline per-request overhead without multi-threaded
+contention.
+
+{% include graph.html id="applications" better="higher" metric="requests_per_second" exclude_runtimes="kvm"
+title="BenchmarkNode & BenchmarkRuby (//test/benchmarks/network, concurrency 1)" %}
 
 The above figure shows requests per second across `BenchmarkNode` (`//test/benchmarks/network:node_test`)
-and `BenchmarkRuby` (`//test/benchmarks/network:ruby_test`) under concurrency 25. Under `systrap`,
-Node.js delivers ~4,600 rps (78% of native `runc`), while Ruby reaches ~1,250 rps (90% of native `runc`).
+and `BenchmarkRuby` (`//test/benchmarks/network:ruby_test`) under concurrency 1. Under `systrap`,
+Node.js delivers ~811 rps (63.5% of native `runc` at ~1,277 rps; scaling to ~1,205 rps at concurrency 25),
+while Ruby reaches ~623 rps (43.5% of native `runc` at ~1,432 rps; scaling to ~1,410 rps at concurrency 25).
 
 To reproduce these benchmarks locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test BENCHMARKS_FILTER="BenchmarkNode/concurrency:25"
-make benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test BENCHMARKS_FILTER="BenchmarkRuby/concurrency:25"
+make benchmark-platforms BENCHMARKS_SUITE=node BENCHMARKS_TARGETS=test/benchmarks/network:node_test BENCHMARKS_FILTER="BenchmarkNode/concurrency:(1|25)" BENCHMARKS_OPTIONS="-test.benchtime=5s"
+make benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test BENCHMARKS_FILTER="BenchmarkRuby/concurrency:(1|25)" BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ### Web servers
 
-{% include graph.html id="continuous-nginx" better="higher" metric="requests_per_second"
-title="BenchmarkContinuousNginx (//test/benchmarks/network:nginx_test)" %}
+{% include graph.html id="continuous-nginx" better="higher" metric="requests_per_second" exclude_runtimes="kvm"
+title="BenchmarkContinuousNginx (//test/benchmarks/network:nginx_test, concurrency 1)" %}
 
 For static web servers where the kernel path dominates (serving 100Kb static files under
-concurrency 25 in [`BenchmarkContinuousNginx`][nginx-test]), `systrap` achieves ~13,700 rps (70%
-of native `runc`), demonstrating high concurrency serving capacity under pure userspace networking.
+concurrency 1 in [`BenchmarkContinuousNginx`][nginx-test]), `systrap` achieves ~3,485 rps (37.4%
+of native `runc` at ~9,315 rps), scaling to ~8,619 rps at concurrency 25, reflecting the baseline
+overhead of userspace network packet handling.
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test BENCHMARKS_FILTER="BenchmarkContinuousNginx.*filesize:100Kb.*concurrency:25"
+make benchmark-platforms BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test BENCHMARKS_FILTER="BenchmarkContinuousNginx.*filesize:100Kb.*concurrency:(1|25)" BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
-{% include graph.html id="httpd100k" better="higher" metric="requests_per_second"
-title="BenchmarkContinuousHttpd (//test/benchmarks/network:httpd_test)" %}
+{% include graph.html id="httpd100k" better="higher" metric="requests_per_second" exclude_runtimes="kvm"
+title="BenchmarkContinuousHttpd (//test/benchmarks/network:httpd_test, concurrency 1)" %}
 
 Similarly, the above figure shows throughput for Apache HTTPD serving 100Kb files in
-[`BenchmarkContinuousHttpd`][httpd-test] (`//test/benchmarks/network:httpd_test`). `systrap`
-serves ~12,300 rps (71% of native `runc`).
+[`BenchmarkContinuousHttpd`][httpd-test] (`//test/benchmarks/network:httpd_test`) under concurrency 1.
+`systrap` achieves ~972 rps (71.8% of native `runc` at ~1,353 rps), scaling to ~3,179 rps at concurrency 25.
 
 To reproduce this benchmark locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test BENCHMARKS_FILTER="BenchmarkContinuousHttpd/100k"
+make benchmark-platforms BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test BENCHMARKS_FILTER="BenchmarkContinuousHttpd.*concurrency:(1|25)" BENCHMARKS_OPTIONS="-test.benchtime=5s"
 ```
 
 ## Filesystem & storage I/O
@@ -389,20 +466,27 @@ the underlying storage medium dominates throughput:
 {% include graph.html id="fio-bw" better="higher"
 title="BenchmarkFio* (//test/benchmarks/fs:fio_test, rootfs)" %}
 
-The above figure demonstrates streaming sequential and random bandwidth in [`BenchmarkFio`][fio-test]
-(`BenchmarkFioRead`, `BenchmarkFioWrite`, `BenchmarkFioRandRead`, `BenchmarkFioRandWrite` on `filesystem: rootfs`).
-In streaming sequential workloads, disk I/O bandwidth largely matches host disk limits.
+The above figure demonstrates streaming sequential bandwidth in [`BenchmarkFio`][fio-test]
+(`BenchmarkFioRead`, `BenchmarkFioWrite` on `filesystem: rootfs`).
+In streaming sequential workloads, physical disk write bandwidth tracks host storage limits:
+on a 100GB SSD persistent disk, native `runc` direct I/O achieves ~257 MB/s sequential write bandwidth,
+while gVisor's internal buffering delivers high-throughput rootfs writes. Sequential read bandwidth
+reaches **~9.62 GB/s** on `runc` and **~12.65 GB/s** on `systrap`.
+`kvm` achieves **~591 MB/s** write and **~600 MB/s** read bandwidth. Fine-grained random single-page
+I/O benchmarks are omitted, as unbuffered random ops reflect per-syscall intercept traps rather than actual streaming storage throughput.
 
 {% include graph.html id="fio-tmpfs-bw" better="higher"
 title="BenchmarkFio* (//test/benchmarks/fs:fio_test, tmpfs)" %}
 
 When workloads operate in memory-backed file systems (`filesystem: tmpfs`), operations bypass
-the Gofer and run directly in Sentry memory, delivering gigabytes/sec throughput.
+host storage and run directly in Sentry memory, delivering high gigabytes/sec throughput:
+`systrap` achieves **~4.44 GB/s** sequential write bandwidth (outperforming native `runc` at ~4.12 GB/s)
+and **~12.65 GB/s** sequential read throughput (`runc` at ~9.62 GB/s). `kvm` delivers **~1.11 GB/s** write and **~765 MB/s** read throughput.
 
 To reproduce these benchmarks locally:
 ```bash
-make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER="BenchmarkFioWrite/filesystem.rootfs/ioengine.sync/bs.1024K"
-make benchmark-platforms BENCHMARKS_SUITE=fio-tmpfs BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER="BenchmarkFioWrite/filesystem.tmpfs/ioengine.sync/bs.1024K"
+make benchmark-platforms BENCHMARKS_SUITE=fio BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER="BenchmarkFio(Read|Write)/operation.(read|write)/ioEngine.libaio/jobs.1/blockSize.1024K/directIO.true/filesystem.rootfs" BENCHMARKS_OPTIONS="--test.benchtime=1000x"
+make benchmark-platforms BENCHMARKS_SUITE=fio-tmpfs BENCHMARKS_TARGETS=test/benchmarks/fs:fio_test BENCHMARKS_FILTER="BenchmarkFio(Read|Write)/operation.(read|write)/ioEngine.libaio/jobs.1/blockSize.1024K/directIO.true/filesystem.tmpfs" BENCHMARKS_OPTIONS="--test.benchtime=1000x"
 ```
 
 ### Software builds & metadata-heavy workloads
@@ -412,7 +496,7 @@ compiler toolchain invocations. [`BenchmarkBuildABSL`][bazel-test] and [`Benchma
 measure clean builds of Abseil-C++ and gRPC from scratch on bind-mounted source trees
 (`filesystem: bindfs`).
 
-{% include graph.html id="bazel-build" better="lower"
+{% include graph.html id="bazel-build" better="lower" exclude_runtimes="kvm"
 title="BenchmarkBuildABSL & BenchmarkBuildGRPC (//test/benchmarks/fs:bazel_test)" %}
 
 The above figure demonstrates clean compilation elapsed time in seconds.
@@ -427,7 +511,7 @@ make benchmark-platforms BENCHMARKS_SUITE=grpc-build BENCHMARKS_TARGETS=test/ben
 
 ### Media processing & transcoding
 
-{% include graph.html id="ffmpeg" better="lower"
+{% include graph.html id="ffmpeg" better="lower" exclude_runtimes="kvm"
 title="BenchmarkFfmpeg (//test/benchmarks/media:ffmpeg_test)" %}
 
 For benchmarks that combine disk I/O with heavy compute, file system boundary
@@ -449,7 +533,7 @@ make benchmark-platforms BENCHMARKS_SUITE=ffmpeg BENCHMARKS_TARGETS=test/benchma
 [redis-benchmark]: https://redis.io/topics/benchmarks
 [vfs]: https://en.wikipedia.org/wiki/Virtual_file_system
 [sysbench-test]: https://github.com/google/gvisor/tree/master/test/benchmarks/base/sysbench_test.go
-[size-test]: https://github.com/google/gvisor/tree/master/test/benchmarks/base/size_test.go
+[usage-test]: https://github.com/google/gvisor/tree/master/test/benchmarks/base/usage_test.go
 [syscallbench-test]: https://github.com/google/gvisor/tree/master/test/benchmarks/base/syscallbench_test.go
 [startup-test]: https://github.com/google/gvisor/tree/master/test/benchmarks/base/startup_test.go
 [hackbench-test]: https://github.com/google/gvisor/tree/master/test/benchmarks/base/hackbench_test.go

@@ -3,12 +3,12 @@
     {
       "runtime": "runc",
       "metric": "memory_ops_per_second",
-      "result": 6803678.0
+      "result": 7428833.0
     },
     {
       "runtime": "systrap",
       "metric": "memory_ops_per_second",
-      "result": 6180150.0
+      "result": 5447067.0
     },
     {
       "runtime": "kvm",
@@ -21,67 +21,67 @@
       "runtime": "runc",
       "method": "density.empty",
       "metric": "memory_usage",
-      "result": 357990.0
+      "result": 9957376.0
     },
     {
       "runtime": "systrap",
       "method": "density.empty",
       "metric": "memory_usage",
-      "result": 17721116.0
+      "result": 75055104.0
     },
     {
       "runtime": "kvm",
       "method": "density.empty",
       "metric": "memory_usage",
-      "result": 39613781.0
+      "result": 54116352.0
     },
     {
       "runtime": "runc",
       "method": "density.node",
       "metric": "memory_usage",
-      "result": 28832973.0
+      "result": 28643328.0
     },
     {
       "runtime": "systrap",
       "method": "density.node",
       "metric": "memory_usage",
-      "result": 51536213.0
+      "result": 72765440.0
     },
     {
       "runtime": "kvm",
       "method": "density.node",
       "metric": "memory_usage",
-      "result": 75683840.0
+      "result": 82755584.0
     },
     {
       "runtime": "runc",
       "method": "density.nginx",
       "metric": "memory_usage",
-      "result": 2225664.0
+      "result": 33665024.0
     },
     {
       "runtime": "systrap",
       "method": "density.nginx",
       "metric": "memory_usage",
-      "result": 25965909.0
+      "result": 47144960.0
     },
     {
       "runtime": "kvm",
       "method": "density.nginx",
       "metric": "memory_usage",
-      "result": 48722550.0
+      "result": 78614528.0
     }
   ],
   "sysbench-cpu": [
     {
       "runtime": "runc",
       "metric": "cpu_events_per_second",
-      "result": 2592.0
+      "result": 1294.0
     },
     {
       "runtime": "systrap",
       "metric": "cpu_events_per_second",
-      "result": 2588.0
+      "result": 1290.0
     },
     {
       "runtime": "kvm",
@@ -127,17 +127,17 @@
     {
       "runtime": "runc",
       "metric": "syscall_time_ns",
-      "result": 960.3
+      "result": 415.4
     },
     {
       "runtime": "systrap",
       "metric": "syscall_time_ns",
-      "result": 1489.0
+      "result": 2372.0
     },
     {
       "runtime": "kvm",
       "metric": "syscall_time_ns",
-      "result": 761.8
+      "result": 989.2
     }
   ],
   "redis": [
@@ -145,55 +145,37 @@
       "runtime": "runc",
       "method": "SET",
       "metric": "requests_per_second",
-      "result": 49770.0
+      "result": 1199965.0
     },
     {
       "runtime": "systrap",
       "method": "SET",
       "metric": "requests_per_second",
-      "result": 22466.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "SET",
-      "metric": "requests_per_second",
-      "result": 34191.0
+      "result": 485774.0
     },
     {
       "runtime": "runc",
       "method": "LPUSH",
       "metric": "requests_per_second",
-      "result": 49956.0
+      "result": 1139108.0
     },
     {
       "runtime": "systrap",
       "method": "LPUSH",
       "metric": "requests_per_second",
-      "result": 22068.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "LPUSH",
-      "metric": "requests_per_second",
-      "result": 34180.0
+      "result": 478866.0
     },
     {
       "runtime": "runc",
       "method": "LRANGE_100",
       "metric": "requests_per_second",
-      "result": 32564.0
+      "result": 139840.0
     },
     {
       "runtime": "systrap",
       "method": "LRANGE_100",
       "metric": "requests_per_second",
-      "result": 15312.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "LRANGE_100",
-      "metric": "requests_per_second",
-      "result": 22875.0
+      "result": 104775.0
     }
   ],
   "startup": [
@@ -201,55 +183,55 @@
       "runtime": "runc",
       "method": "startup.empty",
       "metric": "startup_time_ms",
-      "result": 480.0
+      "result": 136.2
     },
     {
       "runtime": "systrap",
       "method": "startup.empty",
       "metric": "startup_time_ms",
-      "result": 580.0
+      "result": 168.9
     },
     {
       "runtime": "kvm",
       "method": "startup.empty",
       "metric": "startup_time_ms",
-      "result": 650.0
+      "result": 184.2
     },
     {
       "runtime": "runc",
       "method": "startup.nginx",
       "metric": "startup_time_ms",
-      "result": 993.0
+      "result": 363.7
     },
     {
       "runtime": "systrap",
       "method": "startup.nginx",
       "metric": "startup_time_ms",
-      "result": 1562.0
+      "result": 416.8
     },
     {
       "runtime": "kvm",
       "method": "startup.nginx",
       "metric": "startup_time_ms",
-      "result": 1296.0
+      "result": 510.1
     },
     {
       "runtime": "runc",
       "method": "startup.node",
       "metric": "startup_time_ms",
-      "result": 988.0
+      "result": 470.8
     },
     {
       "runtime": "systrap",
       "method": "startup.node",
       "metric": "startup_time_ms",
-      "result": 1717.0
+      "result": 682.3
     },
     {
       "runtime": "kvm",
       "method": "startup.node",
       "metric": "startup_time_ms",
-      "result": 1778.0
+      "result": 959.7
     }
   ],
   "iperf": [
@@ -257,19 +239,13 @@
       "runtime": "runc",
       "method": "network.download",
       "metric": "bandwidth",
-      "result": 2709325824.0
+      "result": 3791979520.0
     },
     {
       "runtime": "systrap",
       "method": "network.download",
       "metric": "bandwidth",
-      "result": 1719614464.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "network.download",
-      "metric": "bandwidth",
-      "result": 1847444480.0
+      "result": 3295590400.0
     }
   ],
   "applications": [
@@ -277,54 +253,37 @@
       "runtime": "runc",
       "method": "http.node",
       "metric": "requests_per_second",
-      "result": 1136.0
+      "result": 1277.0
     },
     {
       "runtime": "systrap",
       "method": "http.node",
       "metric": "requests_per_second",
-      "result": 580.9
-    },
-    {
-      "runtime": "kvm",
-      "method": "http.node",
-      "metric": "requests_per_second",
-      "result": 753.2
+      "result": 811.0
     },
     {
       "runtime": "runc",
       "method": "http.ruby",
       "metric": "requests_per_second",
-      "result": 2866.0
+      "result": 1432.0
     },
     {
       "runtime": "systrap",
       "method": "http.ruby",
       "metric": "requests_per_second",
-      "result": 1056.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "http.ruby",
-      "metric": "requests_per_second",
-      "result": 1408.0
+      "result": 623.1
     }
   ],
   "continuous-nginx": [
     {
       "runtime": "runc",
       "metric": "requests_per_second",
-      "result": 8955.0
+      "result": 9315.0
     },
     {
       "runtime": "systrap",
       "metric": "requests_per_second",
-      "result": 3370.0
-    },
-    {
-      "runtime": "kvm",
-      "metric": "requests_per_second",
-      "result": 6499.0
+      "result": 3485.0
     }
   ],
   "fio-bw": [
@@ -332,13 +291,13 @@
       "runtime": "runc",
       "method": "fio.read",
       "metric": "bandwidth",
-      "result": 5065583616.0
+      "result": 9620946944.0
     },
     {
       "runtime": "systrap",
       "method": "fio.read",
       "metric": "bandwidth",
-      "result": 3102295040.0
+      "result": 12648431616.0
     },
     {
       "runtime": "kvm",
@@ -350,55 +309,19 @@
       "runtime": "runc",
       "method": "fio.write",
       "metric": "bandwidth",
-      "result": 1088863232.0
+      "result": 269169459.0
     },
     {
       "runtime": "systrap",
       "method": "fio.write",
       "metric": "bandwidth",
-      "result": 1049625600.0
+      "result": 2078277632.0
     },
     {
       "runtime": "kvm",
       "method": "fio.write",
       "metric": "bandwidth",
       "result": 591413248.0
-    },
-    {
-      "runtime": "runc",
-      "method": "fio.randread",
-      "metric": "bandwidth",
-      "result": 550722560.0
-    },
-    {
-      "runtime": "systrap",
-      "method": "fio.randread",
-      "metric": "bandwidth",
-      "result": 98273280.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "fio.randread",
-      "metric": "bandwidth",
-      "result": 111823872.0
-    },
-    {
-      "runtime": "runc",
-      "method": "fio.randwrite",
-      "metric": "bandwidth",
-      "result": 107758592.0
-    },
-    {
-      "runtime": "systrap",
-      "method": "fio.randwrite",
-      "metric": "bandwidth",
-      "result": 69880832.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "fio.randwrite",
-      "metric": "bandwidth",
-      "result": 31089664.0
     }
   ],
   "fio-tmpfs-bw": [
@@ -406,13 +329,13 @@
       "runtime": "runc",
       "method": "fio.read",
       "metric": "bandwidth",
-      "result": 8665916416.0
+      "result": 9620946944.0
     },
     {
       "runtime": "systrap",
       "method": "fio.read",
       "metric": "bandwidth",
-      "result": 4144568320.0
+      "result": 12648431616.0
     },
     {
       "runtime": "kvm",
@@ -424,55 +347,19 @@
       "runtime": "runc",
       "method": "fio.write",
       "metric": "bandwidth",
-      "result": 1638400000.0
+      "result": 4123000832.0
     },
     {
       "runtime": "systrap",
       "method": "fio.write",
       "metric": "bandwidth",
-      "result": 1413174272.0
+      "result": 4435468288.0
     },
     {
       "runtime": "kvm",
       "method": "fio.write",
       "metric": "bandwidth",
       "result": 1106092032.0
-    },
-    {
-      "runtime": "runc",
-      "method": "fio.randread",
-      "metric": "bandwidth",
-      "result": 940426240.0
-    },
-    {
-      "runtime": "systrap",
-      "method": "fio.randread",
-      "metric": "bandwidth",
-      "result": 101174272.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "fio.randread",
-      "metric": "bandwidth",
-      "result": 113101824.0
-    },
-    {
-      "runtime": "runc",
-      "method": "fio.randwrite",
-      "metric": "bandwidth",
-      "result": 408801280.0
-    },
-    {
-      "runtime": "systrap",
-      "method": "fio.randwrite",
-      "metric": "bandwidth",
-      "result": 88427520.0
-    },
-    {
-      "runtime": "kvm",
-      "method": "fio.randwrite",
-      "metric": "bandwidth",
-      "result": 43803648.0
     }
   ],
   "bazel-build": [
@@ -515,22 +402,14 @@
   ],
   "httpd100k": [
     {
-      "connections": "25",
       "runtime": "runc",
       "metric": "requests_per_second",
-      "result": 3740.0
+      "result": 1353.0
     },
     {
-      "connections": "25",
       "runtime": "systrap",
       "metric": "requests_per_second",
-      "result": 2132.0
-    },
-    {
-      "connections": "25",
-      "runtime": "kvm",
-      "metric": "requests_per_second",
-      "result": 939.9
+      "result": 972.0
     }
   ],
   "ffmpeg": [

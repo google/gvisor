@@ -48,6 +48,20 @@ function render_{{ fn }}() {
       data.columns = orig_columns.filter(key => key != "method");
     }
 
+    // Filter by runtimes, if required.
+    if ("{{ include.runtimes }}" != "") {
+      var allowed = "{{ include.runtimes }}".split(/[\s,]+/);
+      orig_columns = data.columns;
+      data = data.filter(d => allowed.indexOf(d.runtime) !== -1);
+      data.columns = orig_columns;
+    }
+    if ("{{ include.exclude_runtimes }}" != "") {
+      var excluded = "{{ include.exclude_runtimes }}".split(/[\s,]+/);
+      orig_columns = data.columns;
+      data = data.filter(d => excluded.indexOf(d.runtime) === -1);
+      data.columns = orig_columns;
+    }
+
     // Enumerate runtimes.
     var runtimes = Array.from(new Set(data.map(d => d.runtime)));
     var metrics = Array.from(new Set(data.map(d => d.metric)));
@@ -95,6 +109,31 @@ function render_{{ fn }}() {
     data = new_data;
 
     // Slice based on the first key.
+    var chartId = "{{ include.id }}".toLowerCase();
+    var metricStr = (metric || "").toLowerCase();
+    var isMemory = (chartId === "density" || metricStr.indexOf("memory") !== -1);
+    var isIOPS = (metricStr.indexOf("iops") !== -1 || metricStr.indexOf("io_ops") !== -1 || metricStr.indexOf("ops_per_second") !== -1 || chartId.indexOf("iops") !== -1);
+    var isBandwidth = !isIOPS && (chartId === "iperf" || chartId.indexOf("fio") !== -1 || metricStr.indexOf("bandwidth") !== -1 || metricStr.indexOf("bytes_per_second") !== -1);
+    var isTimeNs = (chartId === "syscall" || metricStr.indexOf("syscall_time_ns") !== -1);
+    var isTimeMs = (chartId === "startup" || metricStr.indexOf("startup_time_ms") !== -1);
+    var isTimeSec = (metricStr.indexOf("sec") !== -1 || metricStr.indexOf("run_time") !== -1 || chartId === "tensorflow" || chartId === "ffmpeg" || chartId === "hackbench" || chartId === "bazel-build");
+    var subtractBaseline = "{{ include.subtract_baseline }}";
+
+    if (subtractBaseline) {
+        data.forEach(function(row) {
+            var baseVal = parseFloat(row[subtractBaseline]) || 0;
+            runtimes.forEach(function(rt) {
+                if (rt !== subtractBaseline && row[rt] != null) {
+                    row[rt] = Math.max(0, (parseFloat(row[rt]) || 0) - baseVal);
+                }
+            });
+            delete row[subtractBaseline];
+        });
+        runtimes = runtimes.filter(rt => rt !== subtractBaseline);
+        new_data.columns = new_data.columns.filter(c => c !== subtractBaseline);
+        data.columns = new_data.columns;
+    }
+
     var x0_key = "runtime";
     var x1_domain = runtimes;
     if (data.columns.length != runtimes.length) {
@@ -107,11 +146,9 @@ function render_{{ fn }}() {
     // Determine direction indicator: "Lower is better" or "Higher is better".
     var better = "{{ include.better }}";
     if (!better) {
-        var idStr = "{{ include.id }}".toLowerCase();
-        var metricStr = (metric || "").toLowerCase();
-        if (idStr === "density" || idStr === "startup" || idStr === "syscall" ||
-            idStr === "tensorflow" || idStr === "hackbench" || idStr === "ffmpeg" ||
-            idStr === "bazel-build" || metricStr.indexOf("latency") !== -1 ||
+        if (chartId === "density" || chartId === "startup" || chartId === "syscall" ||
+            chartId === "tensorflow" || chartId === "hackbench" || chartId === "ffmpeg" ||
+            chartId === "bazel-build" || metricStr.indexOf("latency") !== -1 ||
             metricStr.indexOf("time") !== -1 || metricStr.indexOf("usage") !== -1) {
             better = "lower";
         } else {
@@ -130,8 +167,12 @@ function render_{{ fn }}() {
     // Populate Metric Label
     var metricEl = document.getElementById("metric-label-{{ fn }}");
     if (metricEl) {
-        if (metric && metric !== "default") {
-            metricEl.innerHTML = '<span style="color:#2563eb;">⚡</span> ' + metric;
+        if (subtractBaseline) {
+            metricEl.innerHTML = '<span style="color:#2563eb;">⚡</span> Sentry overhead (vs ' + subtractBaseline + ')';
+            metricEl.style.display = "inline-flex";
+        } else if (metric && metric !== "default") {
+            var displayMetric = isIOPS ? "IOPS (ops/sec)" : metric;
+            metricEl.innerHTML = '<span style="color:#2563eb;">⚡</span> ' + displayMetric;
             metricEl.style.display = "inline-flex";
         } else {
             metricEl.style.display = "none";
@@ -307,7 +348,7 @@ function render_{{ fn }}() {
           .style("cursor", "pointer")
           .style("transition", "all 0.15s ease");
 
-    // Scientific notation formatter for value labels
+    // Human-readable formatting for value labels & axes
     var formatScientific = function(v) {
         if (v == null) return "";
         var num = parseFloat(v);
@@ -315,6 +356,70 @@ function render_{{ fn }}() {
         if (num === 0) return "0";
         var exp = num.toExponential(2);
         return exp.replace("e+", "e").replace("e-0", "e-");
+    };
+
+    var formatBytes = function(bytes) {
+        if (bytes == null) return "";
+        var b = parseFloat(bytes);
+        if (isNaN(b)) return "";
+        var absB = Math.abs(b);
+        var sign = b < 0 ? "-" : "";
+        if (absB < 1024) return b.toFixed(0) + " B";
+        if (absB < 1024 * 1024) return sign + (absB / 1024).toFixed(0) + " KB";
+        if (absB < 1024 * 1024 * 1024) return sign + (absB / (1024 * 1024)).toFixed(1) + " MB";
+        return sign + (absB / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    };
+
+    var formatHuman = function(v, withUnit) {
+        if (v == null) return "";
+        var num = parseFloat(v);
+        if (isNaN(num)) return "";
+        if (isMemory) {
+            return formatBytes(num);
+        }
+        if (isBandwidth) {
+            return formatBytes(num) + "/s";
+        }
+        if (isIOPS) {
+            if (num >= 1e6) {
+                return (num / 1e6).toFixed(num >= 1e7 ? 1 : 2) + (withUnit ? "M IOPS" : "M");
+            }
+            if (num >= 1e3) {
+                return (num / 1e3).toFixed(num >= 1e5 ? 0 : 1) + (withUnit ? "k IOPS" : "k");
+            }
+            return num.toFixed(0) + (withUnit ? " IOPS" : "");
+        }
+        if (isTimeNs) {
+            if (num >= 1000) {
+                var valStr = (num / 1000).toFixed(num >= 10000 ? 1 : 2);
+                return valStr + (withUnit ? " µs" : "µs");
+            }
+            return num.toFixed(0) + (withUnit ? " ns" : "ns");
+        }
+        if (isTimeMs) {
+            if (num >= 1000) {
+                var sStr = (num / 1000).toFixed(num >= 10000 ? 1 : 2);
+                return sStr + (withUnit ? " s" : "s");
+            }
+            return num.toFixed(0) + (withUnit ? " ms" : "ms");
+        }
+        if (isTimeSec) {
+            return num.toFixed(num < 10 ? 1 : 0) + (withUnit ? " s" : "s");
+        }
+        // General numeric / throughput / QPS / events
+        if (num >= 1e9) {
+            return (num / 1e9).toFixed(1) + "G";
+        }
+        if (num >= 1e6) {
+            return (num / 1e6).toFixed(num >= 1e7 ? 1 : 2) + "M";
+        }
+        if (num >= 1e3) {
+            return (num / 1e3).toFixed(num >= 1e4 ? 0 : 1) + "k";
+        }
+        if (num % 1 !== 0) {
+            return num.toFixed(1);
+        }
+        return num.toLocaleString();
     };
 
     var bw = x1.bandwidth();
@@ -341,7 +446,7 @@ function render_{{ fn }}() {
           .attr("font-size", bw < 22 ? "8px" : "9.5px")
           .attr("font-weight", "600")
           .attr("fill", "#475569")
-          .text(d => d.value != null && !isNaN(d.value) ? formatScientific(d.value) : "");
+          .text(d => d.value != null && !isNaN(d.value) ? formatHuman(d.value, true) : "");
 
     // X0 ticks and labels
     var x0_axis = g.append("g")
@@ -374,10 +479,26 @@ function render_{{ fn }}() {
             .attr("transform", "rotate(-30)");
     }
 
-    // Y ticks in scientific notation
+    // Y ticks: smart readable formatting for all charts
+    var yAxisGen = d3.axisLeft(y).ticks(5);
+    if ({{ include.log | default: "false" }}) {
+        // On log scale, avoid overlapping intermediate decade ticks
+        yAxisGen.ticks(5)
+            .tickFormat(function(d) {
+                var log10 = Math.log10(d);
+                if (Math.abs(log10 - Math.round(log10)) < 1e-4) {
+                    return formatHuman(d, false);
+                }
+                return "";
+            });
+    } else {
+        yAxisGen.tickFormat(function(d) {
+            return formatHuman(d, false);
+        });
+    }
     var y0_axis = g.append("g")
         .attr("class", "axis y-axis")
-        .call(d3.axisLeft(y).ticks(5, ".1e"));
+        .call(yAxisGen);
 
     y0_axis.select("path.domain").remove();
     y0_axis.selectAll(".tick line")
@@ -402,9 +523,25 @@ function render_{{ fn }}() {
             var rawVal = parseFloat(d.value);
             var runcRaw = parseFloat(d.row ? d.row["runc"] : null);
 
-            var valDisplay = !isNaN(rawVal) ? rawVal.toLocaleString() : "N/A";
-            var sciDisplay = !isNaN(rawVal) ? formatScientific(rawVal) : "";
-            var unitDisplay = metric && metric !== "default" ? " " + metric : "";
+            var valDisplay = !isNaN(rawVal) ? formatHuman(rawVal, true) : "N/A";
+            var rawExact = !isNaN(rawVal) ? rawVal.toLocaleString() : "";
+            var sciDisplay = "";
+            if (isMemory) {
+                sciDisplay = rawExact + " bytes";
+            } else if (isBandwidth) {
+                sciDisplay = rawExact + " B/s";
+            } else if (isIOPS) {
+                sciDisplay = rawExact + " IOPS";
+            } else if (isTimeNs) {
+                sciDisplay = rawExact + " ns";
+            } else if (isTimeMs) {
+                sciDisplay = rawExact + " ms";
+            } else if (isTimeSec) {
+                sciDisplay = rawExact + " s";
+            } else {
+                sciDisplay = formatScientific(rawVal);
+            }
+            var unitDisplay = (!isMemory && !isBandwidth && !isIOPS && !isTimeNs && !isTimeMs && !isTimeSec && metric && metric !== "default") ? " " + metric : "";
 
             var html = '';
             if (d.category) {
@@ -415,7 +552,17 @@ function render_{{ fn }}() {
                     '<span>' + valDisplay + unitDisplay + '</span> ' +
                     '<span class="tooltip-sci">(' + sciDisplay + ')</span></div>';
 
-            if (runtimeName !== "runc" && !isNaN(runcRaw) && runcRaw > 0 && !isNaN(rawVal)) {
+            if (subtractBaseline) {
+                html += '<div class="tooltip-delta delta-neutral">● Fixed Sentry overhead above non-sandboxed container (' + subtractBaseline + ')</div>';
+            } else if (isMemory) {
+                if (runtimeName === "runc") {
+                    html += '<div class="tooltip-delta delta-baseline">● Non-sandboxed container baseline (0 MB Sentry overhead)</div>';
+                } else if (!isNaN(runcRaw) && !isNaN(rawVal)) {
+                    var overhead = rawVal - runcRaw;
+                    var sign = overhead >= 0 ? "+" : "";
+                    html += '<div class="tooltip-delta delta-neutral">● ' + sign + formatBytes(overhead) + ' fixed Sentry overhead over non-sandboxed container</div>';
+                }
+            } else if (runtimeName !== "runc" && !isNaN(runcRaw) && runcRaw > 0 && !isNaN(rawVal)) {
                 var diff = ((rawVal - runcRaw) / runcRaw) * 100;
                 var ratio = rawVal / runcRaw;
                 if (isLower) {
