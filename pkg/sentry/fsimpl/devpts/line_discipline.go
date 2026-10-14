@@ -354,6 +354,11 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 // +checklocksexclude:l.masterWaiter.mu
 // +checklocksexclude:l.replicaWaiter.mu
 func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
+	// Writing nothing always copies 0 bytes, which below is
+	// indistinguishable from a full input queue and would block forever.
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
 	l.termiosMu.RLock()
 	n, notifyEcho, err := l.inQueue.write(ctx, src, l)
 	l.termiosMu.RUnlock()
