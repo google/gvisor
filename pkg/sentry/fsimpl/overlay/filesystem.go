@@ -275,26 +275,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 				topLookupLayer = lookupLayerLower
 			}
 
-			// Fetch POSIX ACLs.
-			acl, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.AccessACL)
-			if err != nil {
+			if err := child.initAttrs(ctx, childPop, &stat); err != nil {
 				lookupErr = err
 				return false
 			}
-			defaultACL, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.DefaultACL)
-			if err != nil {
-				lookupErr = err
-				return false
-			}
-
-			child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
-			child.accessACL.Store(acl)
-			child.defaultACL.Store(defaultACL)
-			child.uid = atomicbitops.FromUint32(stat.UID)
-			child.gid = atomicbitops.FromUint32(stat.GID)
-			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
-			child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
-			child.ino = atomicbitops.FromUint64(stat.Ino)
 		}
 
 		// For non-directory files, only the topmost layer that contains a file
@@ -359,6 +343,33 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	child.parent.Store(parent)
 	child.name = name
 	return child, topLookupLayer, nil
+}
+
+// initAttrs sets d's mode, POSIX ACLs, owner, and device and inode numbers
+// from stat and the file at pop, which is on the topmost layer on which d
+// exists.
+//
+// Preconditions: d is still being initialized, so no one else can observe
+// it.
+func (d *dentry) initAttrs(ctx context.Context, pop *vfs.PathOperation, stat *linux.Statx) error {
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	acl, err := vfsObj.GetPosixACLAt(ctx, d.fs.creds, pop, vfs.AccessACL)
+	if err != nil {
+		return err
+	}
+	defaultACL, err := vfsObj.GetPosixACLAt(ctx, d.fs.creds, pop, vfs.DefaultACL)
+	if err != nil {
+		return err
+	}
+	d.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+	d.accessACL.Store(acl)
+	d.defaultACL.Store(defaultACL)
+	d.uid = atomicbitops.FromUint32(stat.UID)
+	d.gid = atomicbitops.FromUint32(stat.GID)
+	d.devMajor = atomicbitops.FromUint32(stat.DevMajor)
+	d.devMinor = atomicbitops.FromUint32(stat.DevMinor)
+	d.ino = atomicbitops.FromUint64(stat.Ino)
+	return nil
 }
 
 // lookupLayerLocked is similar to lookupLocked, but only returns information
@@ -1026,43 +1037,32 @@ func (d *dentry) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *v
 
 	// Describe the new file as lookupLocked() would, except that it has no
 	// name in d and is not inserted into d.children.
+	child := fs.newDentry()
+	child.IncRef()
+	defer child.DecRef(ctx)
 	upperVD := upperFD.VirtualDentry()
 	childPop := vfs.PathOperation{
 		Root:  upperVD,
 		Start: upperVD,
 	}
-	stat, err := upperFD.Stat(ctx, vfs.StatOptions{
-		Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO,
-	})
+	const mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
+	stat, err := upperFD.Stat(ctx, vfs.StatOptions{Mask: mask})
 	if err != nil {
 		upperFD.DecRef(ctx)
 		return nil, err
 	}
-	acl, err := vfsObj.GetPosixACLAt(ctx, fs.creds, &childPop, vfs.AccessACL)
-	if err != nil {
+	if stat.Mask&mask != mask {
+		upperFD.DecRef(ctx)
+		return nil, linuxerr.EREMOTE
+	}
+	if err := child.initAttrs(ctx, &childPop, &stat); err != nil {
 		upperFD.DecRef(ctx)
 		return nil, err
 	}
-	defaultACL, err := vfsObj.GetPosixACLAt(ctx, fs.creds, &childPop, vfs.DefaultACL)
-	if err != nil {
-		upperFD.DecRef(ctx)
-		return nil, err
-	}
-	child := fs.newDentry()
 	upperVD.IncRef()
 	child.upperVD = upperVD
 	child.copiedUp = atomicbitops.FromUint32(1)
-	child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
-	child.accessACL.Store(acl)
-	child.defaultACL.Store(defaultACL)
-	child.uid = atomicbitops.FromUint32(stat.UID)
-	child.gid = atomicbitops.FromUint32(stat.GID)
-	child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
-	child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
-	child.ino = atomicbitops.FromUint64(stat.Ino)
 	child.name = fmt.Sprintf("#%d", stat.Ino)
-	child.IncRef()
-	defer child.DecRef(ctx)
 
 	layerFlags := upperFD.StatusFlags()
 	fd := &regularFileFD{
@@ -1076,6 +1076,7 @@ func (d *dentry) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *v
 		upperFD.DecRef(ctx)
 		return nil, err
 	}
+	fd.vfsfd.SetCreated()
 	return &fd.vfsfd, nil
 }
 

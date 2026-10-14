@@ -1153,9 +1153,12 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 			// dentry's dentry_operations to anon_ops, for which d_dname ==
 			// simple_dname. fs/d_path.c:simple_dname() defines the
 			// dentry's pathname to be its name, prefixed with "/" and
-			// suffixed with " (deleted)". (Linux's fs/dcache.c:d_tmpfile()
-			// dentries do have a parent, so their pathnames also include the
-			// directory; we omit it.)
+			// suffixed with " (deleted)".
+			//
+			// Files created by openTmpfile() differ from Linux here: Linux's
+			// fs/dcache.c:d_tmpfile() gives the dentry a parent, so its
+			// pathname also includes the directory's. We omit it, since the
+			// dentry is not in the tree.
 			b.PrependComponent("/" + name)
 			b.AppendString(" (deleted)")
 			return vfs.PrependPathSyntheticError{}
