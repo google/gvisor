@@ -163,3 +163,8 @@ func (fs FeatureSet) AllowedHWCap2() uint64 {
 func (fs FeatureSet) UnsetFSGSBASE() FeatureSet {
 	return fs
 }
+
+// UnsetAMX is a no-op on arm64.
+func (fs FeatureSet) UnsetAMX() FeatureSet {
+	return fs
+}

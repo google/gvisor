@@ -545,3 +545,21 @@ func (fs FeatureSet) UnsetFSGSBASE() FeatureSet {
 	sfs.hwCap = fs.hwCap
 	return sfs
 }
+
+// UnsetAMX unsets AMX, including its XCR0 bits and state component subleaves,
+// for platforms that cannot save and restore AMX state.
+func (fs FeatureSet) UnsetAMX() FeatureSet {
+	s := fs.ToStatic()
+	X86FeatureAMX_TILE.Unset(s)
+	X86FeatureAMX_INT8.Unset(s)
+	X86FeatureAMX_BF16.Unset(s)
+	in := In{Eax: uint32(xSaveInfo)}
+	out := s.Query(in)
+	out.Eax &^= uint32(XCR0AmxCfgMask | XCR0AmxDataMask)
+	s.Set(in, out)
+	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})
+	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent})
+	sfs := s.ToFeatureSet()
+	sfs.hwCap = fs.hwCap
+	return sfs
+}
