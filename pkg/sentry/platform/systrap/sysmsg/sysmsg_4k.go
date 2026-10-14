@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	// PerThreadMemSize is the size of a per-thread memory region (32KB).
-	PerThreadMemSize = 8 * hostarch.PageSize
+	// PerThreadMemSize is the size of a per-thread memory region (64KB). The
+	// signal stack must hold a host signal frame with AMX state.
+	PerThreadMemSize = 16 * hostarch.PageSize
 	// GuardSize is the size of an unmapped region before the signal stack (4KB).
 	GuardSize                   = hostarch.PageSize
 	PerThreadPrivateStackOffset = GuardSize
 	PerThreadPrivateStackSize   = 2 * hostarch.PageSize
-	// PerThreadSharedStackSize is the size of a per-thread stack region (16KB, includes stack + sysmsg).
-	PerThreadSharedStackSize   = 4 * hostarch.PageSize
+	// PerThreadSharedStackSize is the size of a per-thread stack region (48KB, includes stack + sysmsg).
+	PerThreadSharedStackSize   = 12 * hostarch.PageSize
 	PerThreadSharedStackOffset = 4 * hostarch.PageSize
 )

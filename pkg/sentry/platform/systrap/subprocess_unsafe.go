@@ -23,6 +23,7 @@ package systrap
 
 import (
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -56,7 +57,7 @@ func spinloop()
 // Precondition: cid must be a valid thread context ID that has a mapping for it
 // that exists in s.contexts.
 func (s *subprocess) getThreadContextFromID(cid uint64) *sysmsg.ThreadContext {
-	tcSlot := s.threadContextRegion + uintptr(cid)*sysmsg.AllocatedSizeofThreadContextStruct
+	tcSlot := s.threadContextRegion + uintptr(cid)*archState.ThreadContextSize()
 	return (*sysmsg.ThreadContext)(unsafe.Pointer(tcSlot))
 }
 
@@ -80,9 +81,11 @@ func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.Allo
 }
 
 func saveFPState(ctx *sharedContext, ac *arch.Context64) {
+	// FPLen is untrusted, but can only shorten the copy.
+	n := min(fpStateLen(ac), int(atomic.LoadUint32(&ctx.shared.FPLen)))
 	fpState := ac.FloatingPointData().BytePointer()
-	dst := unsafe.Slice(fpState, archState.FpLen())
-	src := ctx.shared.FPState[:]
+	dst := unsafe.Slice(fpState, n)
+	src := ctx.shared.FPState(archState.MaxFPStateLen())
 	copy(dst, src)
 }
 
@@ -96,8 +99,8 @@ func restoreFPState(ctx *sharedContext, c *platformContext, ac *arch.Context64) 
 	ctx.setFPStateChanged()
 
 	fpState := ac.FloatingPointData().BytePointer()
-	src := unsafe.Slice(fpState, archState.FpLen())
-	dst := ctx.shared.FPState[:]
+	src := unsafe.Slice(fpState, fpStateLen(ac))
+	dst := ctx.shared.FPState(archState.MaxFPStateLen())
 	copy(dst, src)
 }
 

@@ -67,18 +67,22 @@ const (
 	FXSAVE_AREA_SIZE = 512
 )
 
-// LINT.IfChange
 const (
 	// SupportedXFeatureStates contains all xfeatures supported right now.
 	//
-	// TODO(gvisor.dev/issues/9896): Implement AMX support.
 	// TODO(gvisor.dev/issues/10087): Implement PKRU support.
 	SupportedXFeatureStates = cpuid.XSAVEFeatureX87 |
 		cpuid.XSAVEFeatureSSE |
 		cpuid.XSAVEFeatureAVX |
 		cpuid.XSAVEFeatureAVX512op |
 		cpuid.XSAVEFeatureAVX512zmm0 |
-		cpuid.XSAVEFeatureAVX512zmm16
+		cpuid.XSAVEFeatureAVX512zmm16 |
+		cpuid.XCR0AmxCfgMask |
+		cpuid.XCR0AmxDataMask
+
+	// DefaultXFeatureStates contains the supported xfeatures other than AMX,
+	// which is only used after arch_prctl(ARCH_REQ_XCOMP_PERM).
+	DefaultXFeatureStates = SupportedXFeatureStates &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 
 	// ignoredXFeatureStates contains those xfeatures that may be
 	// present in a buffer but are safe to skip during restore.
@@ -89,8 +93,6 @@ const (
 		cpuid.XSAVEFeatureBNDCSR |
 		cpuid.XSAVEFeaturePKRU
 )
-
-// LINT.ThenChange(../../platform/systrap/sysmsg/sysmsg_offsets.h)
 
 // initX86FPState (defined in asm files) sets up initial state.
 func initX86FPState(data *byte, useXsave bool)

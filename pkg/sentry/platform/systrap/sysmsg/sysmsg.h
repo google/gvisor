@@ -27,12 +27,14 @@ struct arch_state {
   uint32_t xsave_mode;
   uint32_t fp_len;
   uint32_t fsgsbase;
+  uint32_t thread_context_size;
 };
 // LINT.ThenChange(sysmsg_amd64.go)
 #else
 // LINT.IfChange
 struct arch_state {
   uint32_t fp_len;
+  uint32_t thread_context_size;
 };
 // LINT.ThenChange(sysmsg_arm64.go)
 #endif
@@ -68,6 +70,7 @@ struct sysmsg {
   int32_t err_line;
   uint64_t debug;
   uint32_t thread_id;
+  uint32_t amx_ready;
 };
 
 enum context_state {
@@ -83,8 +86,8 @@ enum context_state {
 // thread_context contains the current context of the sysmsg thread.
 // See sysmsg.go:SysThreadContext
 struct thread_context {
-  uint8_t fpstate[MAX_FPSTATE_LEN];
   uint64_t fpstate_changed;
+  uint64_t xfeatures;
   struct user_regs_struct ptregs;
 
   // The fields above have offsets defined in sysmsg_offsets*.h
@@ -102,6 +105,12 @@ struct thread_context {
   uint64_t gs_used_by_app;
   uint64_t debug;
   uint64_t err;
+  uint32_t fp_len;
+
+  // Aligning to FPSTATE_OFFSET places fpstate at that offset, after the fields
+  // above. Its size is thread_context_size - FPSTATE_OFFSET; see
+  // sysmsg.go:FPStateOffset.
+  uint8_t fpstate[] __attribute__((aligned(FPSTATE_OFFSET)));
 };
 
 enum stub_error {
@@ -121,7 +130,7 @@ enum stub_error {
 #if PAGE_SIZE == 65536
 #define PER_THREAD_MEM_SIZE (5 * PAGE_SIZE)
 #else
-#define PER_THREAD_MEM_SIZE (8 * PAGE_SIZE)
+#define PER_THREAD_MEM_SIZE (16 * PAGE_SIZE)
 #endif
 
 #define GUARD_SIZE (PAGE_SIZE)

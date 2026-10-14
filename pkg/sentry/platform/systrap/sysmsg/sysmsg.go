@@ -166,6 +166,8 @@ type Msg struct {
 	Debug uint64
 	// ThreadID is the ID of the sysmsg thread.
 	ThreadID uint32
+	// AMXReady is set once the sysmsg thread can run contexts with AMX state.
+	AMXReady uint32
 }
 
 // ContextState defines the reason the context has exited back to the sentry,
@@ -212,18 +214,30 @@ const (
 	ContextStateInvalid
 )
 
-const (
-	// MaxFPStateLen is the largest possible FPState that we will save.
-	// Note: This value was chosen to be able to fit ThreadContext into one page.
-	MaxFPStateLen uint32 = 3584
+// FPStateOffset is the offset of a context's FP state from the start of its
+// ThreadContext. The FP state is placed after the ThreadContext fields so that
+// contexts that do not use large (AMX) FP state only touch the first page of
+// their slot. See ThreadContext.FPState.
+const FPStateOffset = 1024
 
-	// AllocatedSizeofThreadContextStruct defines how much memory to allocate for
-	// one instance of ThreadContext.
-	// We over allocate the memory for it because:
-	//   - The next instances needs to align to 64 bytes for purposes of xsave.
-	//   - It's nice to align it to the page boundary.
-	AllocatedSizeofThreadContextStruct uintptr = 4096
-)
+// threadContextSize returns the size of a ThreadContext slot whose FP state
+// holds fpLen bytes. Slots are 4096-byte aligned, which keeps FP state 64-byte
+// aligned for xsave.
+func threadContextSize(fpLen uint) uint32 {
+	const align = 4096
+	return uint32((FPStateOffset + fpLen + align - 1) &^ (align - 1))
+}
+
+// ThreadContextSize returns the size of a ThreadContext slot, including its FP
+// state.
+func (s *ArchState) ThreadContextSize() uintptr {
+	return uintptr(s.threadContextSize)
+}
+
+// MaxFPStateLen returns the size of a ThreadContext's FP state.
+func (s *ArchState) MaxFPStateLen() int {
+	return int(s.threadContextSize) - FPStateOffset
+}
 
 // ThreadContext contains the current context of the sysmsg thread. The struct
 // facilitates switching contexts by allowing the sentry to switch pointers to
@@ -239,15 +253,12 @@ const (
 type ThreadContext struct {
 	_ structs.HostLayout
 
-	// FPState is a region of memory where:
-	//   - syshandler saves FPU state to using xsave/fxsave
-	//   - sighandler copies FPU state to from ucontext->uc_mcontext.fpregs
-	// Note that xsave requires this region of memory to be 64 byte aligned;
-	// therefore allocations of ThreadContext must be too.
-	FPState [MaxFPStateLen]byte
 	// FPStateChanged is set to true when the stub thread needs to restore FPState
 	// because the sentry changed it.
 	FPStateChanged uint64
+	// XFeatures is the requested-feature bitmap that the stub passes to
+	// xsave/xrstor for FPState. It is only used on amd64.
+	XFeatures uint64
 	// Regs is the context's GP register set. The {sig|sys}handler will save and
 	// restore the user app's registers here.
 	Regs linux.PtraceRegs
@@ -292,6 +303,8 @@ type ThreadContext struct {
 	Debug uint64
 	// SigError is an error code that clarifies the nature of the signal.
 	SigError uint64
+	// FPLen is the number of FPState bytes in use.
+	FPLen uint32
 }
 
 // StubError are values that represent known stub-thread failure modes.
