@@ -75,6 +75,9 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 		if err != nil {
 			return nil, 0, err
 		}
+		if err := res.Error(); err != nil {
+			return nil, 0, err
+		}
 
 		// Not enough bytes in response,
 		// either we reached EOF,
