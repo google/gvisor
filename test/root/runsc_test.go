@@ -31,6 +31,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/sandboxposture"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -322,6 +323,7 @@ func sandboxPid(pid int) (int, error) {
 // except the small allowlist required for sandbox setup. We don't want to leak
 // env vars from the caller to the sandbox process.
 func TestSandboxProcessEnv(t *testing.T) {
+	conf := postureConfig(t)
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
@@ -342,6 +344,8 @@ func TestSandboxProcessEnv(t *testing.T) {
 	got = regexp.MustCompile("(^|\x00)RUNSC_START_TIME_NANOS=\\d+\x00").ReplaceAll(got, []byte("$1"))
 	got = regexp.MustCompile("(^|\x00)GVISOR_ENFORCE_RELEASE=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
 	got = regexp.MustCompile("(^|\x00)TMPDIR=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
+	godebug := regexp.QuoteMeta("GODEBUG=" + sandboxposture.GoDebug(conf.Platform))
+	got = regexp.MustCompile("(^|\x00)"+godebug+"\x00").ReplaceAll(got, []byte("$1"))
 	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
 		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
 	}
