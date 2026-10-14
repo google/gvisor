@@ -69,6 +69,8 @@ go_library(
         "physical_map_amd64.go",
         "physical_map_arm64.go",
         "seccomp_mmap_unsafe.go",
+        "vdso_stub_amd64.go",
+        "vdso_stub_arm64.go",
         "virtual_map.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -141,6 +143,21 @@ go_test(
         "//pkg/sentry/time",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+# The shadow [vdso] patcher is pure byte manipulation and needs no KVM, so its
+# tests are kept separate from kvm_test to run wherever the package builds.
+go_test(
+    name = "vdso_test",
+    srcs = [
+        "vdso_stub_amd64_test.go",
+        "vdso_stub_arm64_test.go",
+        "vdso_stub_test.go",
+    ],
+    embed = [":kvm"],
+    nogo = False,
+    pure = True,
+    tags = ["nogotsan"],
 )
 
 go_test(
