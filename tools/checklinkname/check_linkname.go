@@ -16,10 +16,13 @@
 package checklinkname
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -87,6 +90,85 @@ func (s *symbolMap) mergeOrResolve(pass *analysis.Pass, other symbolMap, merge b
 
 // ResolvedSymbols is a fact containing known symbols and their simplified type.
 type ResolvedSymbols symbolMap
+
+type wireSymbolEntry struct {
+	Symbol    string
+	Signature string
+}
+
+type wirePackageSymbols struct {
+	Package string
+	Symbols []wireSymbolEntry
+}
+
+func (s symbolMap) encode() ([]byte, error) {
+	pkgs := make([]string, 0, len(s))
+	for pkg := range s {
+		pkgs = append(pkgs, pkg)
+	}
+	sort.Strings(pkgs)
+	wire := make([]wirePackageSymbols, len(pkgs))
+	for i, pkg := range pkgs {
+		syms := s[pkg]
+		symNames := make([]string, 0, len(syms))
+		for sym := range syms {
+			symNames = append(symNames, sym)
+		}
+		sort.Strings(symNames)
+		entries := make([]wireSymbolEntry, len(symNames))
+		for j, sym := range symNames {
+			entries[j] = wireSymbolEntry{
+				Symbol:    sym,
+				Signature: syms[sym],
+			}
+		}
+		wire[i] = wirePackageSymbols{
+			Package: pkg,
+			Symbols: entries,
+		}
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(wire); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (s *symbolMap) decode(data []byte) error {
+	var wire []wirePackageSymbols
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&wire); err != nil {
+		return err
+	}
+	*s = make(symbolMap, len(wire))
+	for _, wp := range wire {
+		m := make(map[string]string, len(wp.Symbols))
+		for _, ws := range wp.Symbols {
+			m[ws.Symbol] = ws.Signature
+		}
+		(*s)[wp.Package] = m
+	}
+	return nil
+}
+
+// GobEncode implements gob.GobEncoder to serialize symbols in deterministic order.
+func (r *ResolvedSymbols) GobEncode() ([]byte, error) {
+	return (*symbolMap)(r).encode()
+}
+
+// GobDecode implements gob.GobDecoder to deserialize symbols from deterministic wire format.
+func (r *ResolvedSymbols) GobDecode(data []byte) error {
+	return (*symbolMap)(r).decode(data)
+}
+
+// GobEncode implements gob.GobEncoder to serialize symbols in deterministic order.
+func (u *UnresolvedLinknames) GobEncode() ([]byte, error) {
+	return (*symbolMap)(u).encode()
+}
+
+// GobDecode implements gob.GobDecoder to deserialize symbols from deterministic wire format.
+func (u *UnresolvedLinknames) GobDecode(data []byte) error {
+	return (*symbolMap)(u).decode(data)
+}
 
 // AFact implements analysis.Fact.AFact.
 func (*ResolvedSymbols) AFact() {}

@@ -21,12 +21,15 @@
 package checkconst
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -60,6 +63,95 @@ type Constants struct {
 
 // AFact implements analysis.Fact.AFact.
 func (*Constants) AFact() {}
+
+type wireMapEntryInt64 struct {
+	K string
+	V int64
+}
+
+type wireMapEntryString struct {
+	K string
+	V string
+}
+
+type wireConstants struct {
+	Alignments []wireMapEntryInt64
+	Offsets    []wireMapEntryInt64
+	Sizes      []wireMapEntryInt64
+	Values     []wireMapEntryString
+}
+
+func sortedInt64Entries(m map[string]int64) []wireMapEntryInt64 {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	entries := make([]wireMapEntryInt64, len(keys))
+	for i, k := range keys {
+		entries[i] = wireMapEntryInt64{K: k, V: m[k]}
+	}
+	return entries
+}
+
+func sortedStringEntries(m map[string]string) []wireMapEntryString {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	entries := make([]wireMapEntryString, len(keys))
+	for i, k := range keys {
+		entries[i] = wireMapEntryString{K: k, V: m[k]}
+	}
+	return entries
+}
+
+// GobEncode implements gob.GobEncoder to serialize maps deterministically in key order.
+func (c *Constants) GobEncode() ([]byte, error) {
+	wc := wireConstants{
+		Alignments: sortedInt64Entries(c.Alignments),
+		Offsets:    sortedInt64Entries(c.Offsets),
+		Sizes:      sortedInt64Entries(c.Sizes),
+		Values:     sortedStringEntries(c.Values),
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(wc); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements gob.GobDecoder to deserialize wireConstants back to maps.
+func (c *Constants) GobDecode(data []byte) error {
+	var wc wireConstants
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&wc); err != nil {
+		return err
+	}
+	c.Alignments = make(map[string]int64, len(wc.Alignments))
+	for _, e := range wc.Alignments {
+		c.Alignments[e.K] = e.V
+	}
+	c.Offsets = make(map[string]int64, len(wc.Offsets))
+	for _, e := range wc.Offsets {
+		c.Offsets[e.K] = e.V
+	}
+	c.Sizes = make(map[string]int64, len(wc.Sizes))
+	for _, e := range wc.Sizes {
+		c.Sizes[e.K] = e.V
+	}
+	c.Values = make(map[string]string, len(wc.Values))
+	for _, e := range wc.Values {
+		c.Values[e.K] = e.V
+	}
+	return nil
+}
 
 // walkObject walks a local object hierarchy.
 func (c *Constants) walkObject(pass *analysis.Pass, parents []string, obj types.Object) {

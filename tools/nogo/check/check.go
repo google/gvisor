@@ -33,6 +33,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 
@@ -541,13 +542,21 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 		errs      = make(map[*analysis.Analyzer]error)
 		findings  = make(FindingSet, 0)
 	)
+	sortedAnalyzers := make([]*analysis.Analyzer, 0, len(i.analyzers))
 	for a := range i.analyzers {
+		sortedAnalyzers = append(sortedAnalyzers, a)
+	}
+	sort.Slice(sortedAnalyzers, func(i, j int) bool {
+		return sortedAnalyzers[i].Name < sortedAnalyzers[j].Name
+	})
+	for _, a := range sortedAnalyzers {
 		wg := new(sync.WaitGroup)
 		wg.Add(1) // For analysis.
 		ready[a] = wg
 	}
 	limit := make(chan struct{}, 1)
-	for a, wg := range ready {
+	for _, a := range sortedAnalyzers {
+		wg := ready[a]
 		go func(a *analysis.Analyzer, wg *sync.WaitGroup) {
 			defer wg.Done()
 
@@ -810,7 +819,13 @@ func (i *importer) allFactsAndFindings() (FindingSet, *facts.Bundle) {
 		findings = make(FindingSet, 0)
 		allFacts = facts.NewBundle()
 	)
-	for path, entry := range i.cache {
+	paths := make([]string, 0, len(i.cache))
+	for path := range i.cache {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		entry := i.cache[path]
 		findings = append(findings, entry.findings...)
 		if entry.facts != nil {
 			allFacts.Add(path, entry.facts)
@@ -946,7 +961,12 @@ func Bundle(sources map[string][]string, roots []string) (FindingSet, facts.Seri
 		imports:   make(map[string]*types.Package),
 		analyzers: allAnalyzers,
 	}
+	pkgs := make([]string, 0, len(sources))
 	for pkg := range sources {
+		pkgs = append(pkgs, pkg)
+	}
+	sort.Strings(pkgs)
+	for _, pkg := range pkgs {
 		// Was there an error processing this package?
 		if _, err := i.importPackage(pkg, ""); err != nil {
 			return nil, nil, err

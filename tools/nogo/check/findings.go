@@ -70,6 +70,18 @@ func (fs FindingSet) Sort() {
 			return true
 		case fs[i].Message > fs[j].Message:
 			return false
+		case fs[i].Position.Offset < fs[j].Position.Offset:
+			return true
+		case fs[i].Position.Offset > fs[j].Position.Offset:
+			return false
+		case fs[i].GOARCH < fs[j].GOARCH:
+			return true
+		case fs[i].GOARCH > fs[j].GOARCH:
+			return false
+		case fs[i].GOOS < fs[j].GOOS:
+			return true
+		case fs[i].GOOS > fs[j].GOOS:
+			return false
 		default:
 			return false
 		}
