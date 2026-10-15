@@ -52,7 +52,7 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 			}
 			info.SetPID(int32(target.PIDNamespace().IDOfTask(t)))
 			info.SetUID(int32(t.Credentials().RealKUID.In(target.UserNamespace()).OrOverflow()))
-			if err := target.SendGroupSignal(info); !linuxerr.Equals(linuxerr.ESRCH, err) {
+			if err := target.SendGroupSignalFrom(t, info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 				return 0, nil, err
 			}
 		}
@@ -92,7 +92,7 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 			}
 			info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
 			info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
-			err := tg.SendSignal(info)
+			err := tg.SendSignalFrom(t, info)
 			if linuxerr.Equals(linuxerr.ESRCH, err) {
 				// ESRCH is ignored because it means the task
 				// exited while we were iterating.  This is a
@@ -137,7 +137,7 @@ func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 				info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
 				info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 				// See note above regarding ESRCH race above.
-				if err := tg.SendSignal(info); !linuxerr.Equals(linuxerr.ESRCH, err) {
+				if err := tg.SendSignalFrom(t, info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 					lastErr = err
 				}
 			}
@@ -176,7 +176,7 @@ func Tkill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	if !t.MayKill(target, sig) {
 		return 0, nil, linuxerr.EPERM
 	}
-	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
+	return 0, nil, target.SendSignalFrom(t, tkillSigInfo(t, target, sig))
 }
 
 // Tgkill implements linux syscall tgkill(2).
@@ -200,7 +200,7 @@ func Tgkill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	if !t.MayKill(target, sig) {
 		return 0, nil, linuxerr.EPERM
 	}
-	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
+	return 0, nil, target.SendSignalFrom(t, tkillSigInfo(t, target, sig))
 }
 
 // RtSigaction implements linux syscall rt_sigaction(2).
@@ -378,7 +378,7 @@ func RtSigqueueinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (
 			return 0, nil, linuxerr.EPERM
 		}
 
-		if err := target.SendGroupSignal(&info); !linuxerr.Equals(linuxerr.ESRCH, err) {
+		if err := target.SendGroupSignalFrom(t, &info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 			return 0, nil, err
 		}
 	}
@@ -420,7 +420,7 @@ func RtTgsigqueueinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments)
 	if !t.MayKill(target, sig) {
 		return 0, nil, linuxerr.EPERM
 	}
-	return 0, nil, target.SendSignal(&info)
+	return 0, nil, target.SendSignalFrom(t, &info)
 }
 
 // RtSigsuspend implements linux syscall rt_sigsuspend(2).

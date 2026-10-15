@@ -105,6 +105,10 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 		// task without executing the system call. ... The SECCOMP_RET_DATA
 		// portion of the return value will be passed as si_errno." -
 		// Documentation/prctl/seccomp_filter.txt
+		//
+		// The signal is forced, analogous to Linux's
+		// kernel/seccomp.c:seccomp_send_sigsys() => force_sig_seccomp().
+		t.forceSignal(linux.SIGSYS, false /* unconditional */)
 		t.SendSignal(seccompSiginfo(t, int32(result.Data()), sysno, ip))
 		// Match Linux's syscall_rollback(): the return register holds the
 		// syscall number on x86_64 and the first argument on arm64.

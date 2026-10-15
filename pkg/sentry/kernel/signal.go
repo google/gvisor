@@ -65,7 +65,7 @@ func (k *Kernel) sendExternalSignal(info *linux.SignalInfo, context string) {
 			log.Warningf("Dropping external signal %d: sandbox has no init process", info.Signo)
 			return
 		}
-		k.globalInit.SendSignal(info)
+		k.globalInit.SendForcedSignal(info)
 	}
 }
 
