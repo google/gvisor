@@ -195,6 +195,17 @@ TEST(SigaltstackTest, WalksOffBottom) {
   EXPECT_LT(badhandler_low_water_mark, prev_low_water_mark);
   EXPECT_GT(badhandler_low_water_mark, reinterpret_cast<char*>(stack.ss_sp));
 
+#if defined(__aarch64__)
+  // Unlike on x86, Linux on arm64 doesn't check that a nested signal frame fits
+  // on the signal stack (see get_sigframe() in arch/arm64/kernel/signal.c).
+  // Instead of forcing a SIGSEGV, it places the frame below the signal stack,
+  // and the next signal starts again at the top of the signal stack,
+  // overwriting live frames.
+  if (GvisorPlatform() == Platform::kNative) {
+    GTEST_SKIP() << "Linux on arm64 doesn't detect signal stack overflow";
+  }
+#endif  // defined(__aarch64__)
+
   // Calculate the stack growth for a fault, and set the recursive faults to
   // ensure that the signal handler stack required exceeds our marked stack area
   // by a minimal amount. It should remain in the valid stack_mem area so that
