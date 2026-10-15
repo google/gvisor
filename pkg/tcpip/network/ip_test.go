@@ -1125,7 +1125,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		mtu     = 0xffff
 		dataLen = 8
 	)
-	outerSrcAddr := tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa\x00\x00\x00"))
+	outerSrcAddr := testutil.MustParse6("a00::aa")
 
 	newUint16 := func(v uint16) *uint16 { return &v }
 
