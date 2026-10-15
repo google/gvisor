@@ -2891,11 +2891,11 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 }
 
 func TestMultiContainerEvent(t *testing.T) {
-	tests := []string{"enableCgroups", "enableCgroupsV2", "disableCgroups"}
+	tests := []string{"enableCgroups", "enableCgroupsV2", "enableCgroupsMixedMounts", "enableCgroupsV2MixedMounts", "disableCgroups"}
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
 			conf := testutil.TestConfig(t)
-			if name == "enableCgroupsV2" {
+			if name == "enableCgroupsV2" || name == "enableCgroupsV2MixedMounts" {
 				conf.InSandboxCgroup = config.InSandboxCgroupV2
 			}
 			rootDir, cleanup, err := testutil.SetupRootDir()
@@ -2915,14 +2915,18 @@ func TestMultiContainerEvent(t *testing.T) {
 			// /bin/true can legitimately report zero CPU usage.
 			quick := []string{"/bin/sh", "-c", "i=0; while [ \"$i\" -lt 50000 ]; do i=$((i+1)); done"}
 			podSpecs, ids := createSpecs(sleep, busy, quick)
-			if name == "enableCgroups" || name == "enableCgroupsV2" {
+			if name != "disableCgroups" {
 				mnt := specs.Mount{
 					Destination: "/sys/fs/cgroup",
 					Type:        "cgroup",
 					Options:     nil,
 				}
-				podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt)
-				podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt)
+				// Like the CRI pause container, containers may not mount
+				// cgroups.
+				if !strings.HasSuffix(name, "MixedMounts") {
+					podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt)
+					podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt)
+				}
 				podSpecs[2].Mounts = append(podSpecs[2].Mounts, mnt)
 			}
 			containers, cleanup, err := startContainers(conf, podSpecs, ids)
@@ -2980,15 +2984,15 @@ func TestMultiContainerEvent(t *testing.T) {
 					}
 				}
 
-				if name == "enableCgroupsV2" {
-					// In cgroup v2, cpu.stat accumulates CPU usage even after tasks exit.
-					if exited := ret.ContainerUsage[containers[2].ID]; exited == 0 {
-						t.Errorf("Exited container in cgroup v2 should report non-zero CPU usage, got: %d", exited)
+				if name == "disableCgroups" {
+					// Without cgroups, sentry accounting only counts live thread groups.
+					if exited, ok := ret.ContainerUsage[containers[2].ID]; ok {
+						t.Errorf("Exited container should not report CPU usage, got: %d", exited)
 					}
 				} else {
-					// Without cgroup v2, sentry accounting only counts live thread groups.
-					if exited := ret.ContainerUsage[containers[2].ID]; exited != 0 {
-						t.Errorf("Exited container should report 0 CPU usage, got: %d", exited)
+					// cpuacct.usage and cpu.stat accumulate CPU usage even after tasks exit.
+					if exited := ret.ContainerUsage[containers[2].ID]; exited == 0 {
+						t.Errorf("Exited container should report non-zero CPU usage, got: %d", exited)
 					}
 				}
 			}
