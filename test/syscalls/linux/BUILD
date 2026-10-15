@@ -4255,6 +4255,7 @@ cc_library(
         "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:posix_error",
+        "//test/util:rlimit_util",
         "//test/util:socket_util",
         "//test/util:test_util",
         "//test/util:thread_util",
