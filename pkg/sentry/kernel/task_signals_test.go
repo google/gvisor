@@ -441,3 +441,58 @@ func TestDumpGoroutinesSignal(t *testing.T) {
 		}
 	}
 }
+
+// TestFatalSignalPending tests that FatalSignalPending reports the pending
+// signals that Linux's complete_signal() converts into SIGKILL.
+func TestFatalSignalPending(t *testing.T) {
+	const handler = 0x1000
+	for _, tc := range []struct {
+		name    string
+		sig     linux.Signal
+		shared  bool // pending for the thread group rather than the task
+		handler uintptr
+		blocked bool
+		traced  bool
+		want    bool
+	}{
+		{name: "none", want: false},
+		{name: "SIGKILL", sig: linux.SIGKILL, want: true},
+		{name: "traced SIGKILL", sig: linux.SIGKILL, traced: true, want: true},
+		{name: "unhandled SIGTERM", sig: linux.SIGTERM, want: true},
+		{name: "shared unhandled SIGTERM", sig: linux.SIGTERM, shared: true, want: true},
+		{name: "handled SIGTERM", sig: linux.SIGTERM, handler: handler, want: false},
+		{name: "ignored SIGTERM", sig: linux.SIGTERM, handler: linux.SIG_IGN, want: false},
+		{name: "blocked SIGTERM", sig: linux.SIGTERM, blocked: true, want: false},
+		{name: "traced SIGTERM", sig: linux.SIGTERM, traced: true, want: false},
+		// Linux doesn't convert signals that dump core into SIGKILL, since the
+		// core dump happens on delivery.
+		{name: "unhandled SIGQUIT", sig: linux.SIGQUIT, want: false},
+		{name: "unhandled SIGCHLD", sig: linux.SIGCHLD, want: false},
+		{name: "SIGSTOP", sig: linux.SIGSTOP, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tg := &ThreadGroup{signalHandlers: NewSignalHandlers()}
+			task := &Task{}
+			task.tg = tg
+			if tc.sig != 0 {
+				tg.signalHandlers.mu.Lock()
+				tg.signalHandlers.actions[tc.sig] = linux.SigAction{Handler: uint64(tc.handler)}
+				tg.signalHandlers.mu.Unlock()
+				if tc.shared {
+					tg.pendingSignals.pendingSet.Store(uint64(linux.SignalSetOf(tc.sig)))
+				} else {
+					task.pendingSignals.pendingSet.Store(uint64(linux.SignalSetOf(tc.sig)))
+				}
+				if tc.blocked {
+					task.signalMask.Store(uint64(linux.SignalSetOf(tc.sig)))
+				}
+			}
+			if tc.traced {
+				task.ptraceTracer.Store(&Task{})
+			}
+			if got := task.FatalSignalPending(); got != tc.want {
+				t.Errorf("FatalSignalPending() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}

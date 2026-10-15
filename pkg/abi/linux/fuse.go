@@ -1240,6 +1240,21 @@ type FUSEAccessIn struct {
 	_ uint32
 }
 
+// FUSE_INT_REQ_BIT is set in the Unique field of a FUSE_INTERRUPT request (and
+// its reply) to distinguish it from ordinary requests, whose Unique values are
+// always even.
+const FUSE_INT_REQ_BIT FUSEOpID = 1
+
+// FUSEInterruptIn is the request sent by the kernel to the daemon to interrupt
+// a previously sent request.
+//
+// +marshal
+type FUSEInterruptIn struct {
+	_ structs.HostLayout
+	// Unique is the unique ID of the request to interrupt.
+	Unique FUSEOpID
+}
+
 // FUSEFallocateIn is the request sent by the kernel to the daemon to perform
 // a fallocate operation.
 //

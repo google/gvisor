@@ -157,6 +157,41 @@ func (t *Task) BlockOn(w waiter.Waitable, mask waiter.EventMask) bool {
 	return err == nil
 }
 
+// BlockKillable blocks t until an event is received from C, t has a fatal
+// signal pending (see FatalSignalPending), or t is required to enter a stop
+// (e.g. because the sandbox is being checkpointed). Unlike Block, other
+// interrupts, such as those resulting from the delivery of non-fatal signals,
+// do not end the block.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) BlockKillable(C <-chan struct{}) error {
+	consumed := false
+	for {
+		if t.interrupted() {
+			t.unsetInterrupted()
+			consumed = true
+		}
+		if t.StopRequested() || t.FatalSignalPending() {
+			t.interruptSelf()
+			return linuxerr.ErrInterrupted
+		}
+		if err := t.block(C, nil); err == nil {
+			if consumed {
+				t.interruptSelf()
+			}
+			return nil
+		}
+	}
+}
+
+// StopRequested returns true if t is required to enter a stop (e.g. because
+// the sandbox is being checkpointed).
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) StopRequested() bool {
+	return t.stopCount.Load() > 0
+}
+
 // block blocks a task on one of many events.
 // N.B. defer is too expensive to be used here.
 //
