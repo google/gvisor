@@ -161,6 +161,7 @@ func testBootPosture(t *testing.T, tc postureCase) {
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
 		GoDebug:              sandboxposture.GoDebug(conf.Platform),
+		Cgroup:               !conf.IgnoreCgroups,
 		ExtraFDClasses:       tc.extraFDClasses,
 		CgoEnabled:           config.CgoEnabled,
 		// We call container.New directly below, so we are the sandbox parent
