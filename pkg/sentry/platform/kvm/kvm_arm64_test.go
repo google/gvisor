@@ -41,6 +41,42 @@ func TestKernelTLS(t *testing.T) {
 	})
 }
 
+// TestKernelTopUserPageStack tests that the top user page
+// [UserspaceSize-PageSize, UserspaceSize) is mapped in the kernel page tables
+// and KVM memslots on ARM64.
+func TestKernelTopUserPageStack(t *testing.T) {
+	for _, page := range []uintptr{
+		ring0.UserspaceSize - 2*hostarch.PageSize,
+		ring0.UserspaceSize - hostarch.PageSize,
+	} {
+		addr, errno := hostsyscall.RawSyscall6(
+			unix.SYS_MMAP,
+			page,
+			hostarch.PageSize,
+			unix.PROT_READ|unix.PROT_WRITE,
+			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS|linux.MAP_FIXED_NOREPLACE,
+			0, 0)
+		if errno == unix.EEXIST {
+			// Already covered by [stack] (e.g. when ASLR is disabled).
+			continue
+		}
+		if errno != 0 {
+			t.Fatalf("mmap(%#x) failed: %v", page, errno)
+		}
+		defer hostsyscall.RawSyscall(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
+	}
+
+	bluepillTest(t, func(c *vCPU) {
+		const want = uint64(0xfeedfacecafebeef)
+		if got := testutil.TouchStackAt(ring0.UserspaceSize); got != want {
+			t.Fatalf("TouchStackAt(%#x) = %#x, want %#x", ring0.UserspaceSize, got, want)
+		}
+		if got := c.state.Load(); got != vCPUUser|vCPUGuest {
+			t.Fatalf("vCPU state after TouchStackAt = %v, want %v", got, vCPUUser|vCPUGuest)
+		}
+	})
+}
+
 // TestKernelNISV tests that Stage-2 faults without a valid instruction
 // syndrome (_KVM_EXIT_ARM_NISV, triggered by e.g. LDP accessing a page mapped
 // in Stage-1 but excluded from Stage-2 memslots such as [vvar]) inject an

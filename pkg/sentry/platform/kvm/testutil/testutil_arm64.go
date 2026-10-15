@@ -40,6 +40,11 @@ func pacLoop()
 // Stage-2).
 func LoadPair(addr uintptr) (uint64, uint64)
 
+// TouchStackAt temporarily pivots RSP to sp, writes a sentinel value to
+// -16(RSP) and reads it back (restoring the original value at -16(RSP)),
+// then restores RSP and returns the value read.
+func TouchStackAt(sp uintptr) uint64
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *arch.Registers, fn uintptr) {
 	regs.Pc = uint64(fn)

@@ -197,3 +197,18 @@ TEXT ·LoadPair(SB),NOSPLIT,$0-24
 	MOVD R1, ret+8(FP)
 	MOVD R2, ret1+16(FP)
 	RET
+
+// func TouchStackAt(sp uintptr) uint64
+TEXT ·TouchStackAt(SB),NOSPLIT,$0-16
+	NO_LOCAL_POINTERS
+	MOVD sp+0(FP), R0
+	MOVD RSP, R9
+	MOVD R0, RSP
+	MOVD -16(RSP), R3
+	MOVD $0xfeedfacecafebeef, R1
+	MOVD R1, -16(RSP)
+	MOVD -16(RSP), R2
+	MOVD R3, -16(RSP)
+	MOVD R9, RSP
+	MOVD R2, ret+8(FP)
+	RET
