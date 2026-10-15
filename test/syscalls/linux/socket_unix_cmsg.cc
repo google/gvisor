@@ -19,6 +19,7 @@
 #include <linux/capability.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -32,8 +33,10 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/rlimit_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -1775,6 +1778,51 @@ TEST_P(UnixSocketPairCmsgTest, ZeroLengthRecvReceivesFD) {
     EXPECT_EQ(received_data, sent_data);
     EXPECT_EQ(CMSG_FIRSTHDR(&recv_msg2), nullptr);
   }
+}
+
+// If the receiver has no free FDs, the passed FDs are released, no
+// SCM_RIGHTS message is returned and MSG_CTRUNC is set.
+TEST_P(UnixSocketPairCmsgTest, FDPassFDTableFull) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  char sent_data = 'a';
+  int fds[] = {wfd.get(), wfd.get()};
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), fds, 2, &sent_data, sizeof(sent_data)));
+  wfd.reset();
+
+  char received_data = 0;
+  struct iovec iov = {.iov_base = &received_data,
+                      .iov_len = sizeof(received_data)};
+  char control[CMSG_SPACE(2 * sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  {
+    // Every FD below the lowest free one is in use, so with that as the
+    // limit no new FD can be allocated.
+    FileDescriptor probe =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY));
+    const int limit = probe.get();
+    probe.reset();
+    Cleanup reset_limit = ASSERT_NO_ERRNO_AND_VALUE(
+        ScopedSetSoftRlimit(RLIMIT_NOFILE, limit));
+    ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+                SyscallSucceedsWithValue(sizeof(received_data)));
+  }
+  EXPECT_EQ(received_data, sent_data);
+  EXPECT_EQ(msg.msg_flags & MSG_CTRUNC, MSG_CTRUNC);
+  EXPECT_EQ(msg.msg_controllen, 0);
+
+  // Nothing holds the pipe's write end anymore.
+  char c;
+  EXPECT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(0));
 }
 
 }  // namespace
