@@ -503,7 +503,7 @@ func TestProgramBuilderMayModifyRegisterA(t *testing.T) {
 		stop := b.Record()
 		b.AddJump(Jmp|Ja, 0, 0, 0)
 		b.AddJump(Jmp|Jeq|K, 0, 0, 0)
-		b.AddStmt(Misc|Txa, 0)
+		b.AddStmt(Misc|Tax, 0)
 		b.AddStmt(Ret|K, 1337)
 		if got := stop().MayModifyRegisterA(); got != false {
 			t.Errorf("MayModifyRegisterA: got %v want %v", got, false)
@@ -512,7 +512,7 @@ func TestProgramBuilderMayModifyRegisterA(t *testing.T) {
 	for _, ins := range []Instruction{
 		Stmt(Ld|Abs|W, 0),
 		Stmt(Alu|Neg, 0),
-		Stmt(Misc|Tax, 0),
+		Stmt(Misc|Txa, 0),
 	} {
 		t.Run(fmt.Sprintf("modifies register A via %v", ins), func(t *testing.T) {
 			b := NewProgramBuilder()
