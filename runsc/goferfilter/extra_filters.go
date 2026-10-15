@@ -1,4 +1,4 @@
-// Copyright 2022 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build race
-// +build race
+//go:build !msan && !race
+// +build !msan,!race
 
-package config
+package goferfilter
 
 import (
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-func archInstrumentationFilters(f seccomp.SyscallRules) seccomp.SyscallRules {
-	f.Set(unix.SYS_OPEN, seccomp.MatchAll{})
-	// Used within glibc's malloc.
-	f.Set(unix.SYS_TIME, seccomp.MatchAll{})
-	return f
+// InstrumentationFilters returns additional filters for syscalls used by
+// Go instrumentation tools, e.g. -race, -msan.
+// Returns empty when disabled.
+func InstrumentationFilters() seccomp.SyscallRules {
+	return seccomp.NewSyscallRules()
 }
