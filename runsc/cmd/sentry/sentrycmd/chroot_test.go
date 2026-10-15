@@ -61,6 +61,7 @@ func TestTPUProxyV5(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		os.MkdirAll(path.Join(testDir, "sys", "kernel", "iommu_groups", fmt.Sprintf("%d", i)), 0755)
 		writeFile(t, path.Join(testDir, "dev", "vfio", fmt.Sprintf("%d", i)), "")
+		writeFile(t, path.Join(testDir, "dev", "vfio", "devices", fmt.Sprintf("vfio%d", i)), "")
 		pciPath := path.Join(testDir, "sys", "devices", "pci0000:00", fmt.Sprintf("0000:00:00.%d", i))
 		writeFile(t, path.Join(pciPath, "device"), "0x0062")
 		writeFile(t, path.Join(pciPath, "vendor"), "0x1ae0")
@@ -91,6 +92,7 @@ func TestTPUProxyV5NestedPCIDevice(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		os.MkdirAll(path.Join(testDir, "sys", "kernel", "iommu_groups", fmt.Sprintf("%d", i)), 0755)
 		writeFile(t, path.Join(testDir, "dev", "vfio", fmt.Sprintf("%d", i)), "")
+		writeFile(t, path.Join(testDir, "dev", "vfio", "devices", fmt.Sprintf("vfio%d", i)), "")
 		pciPath := path.Join(testDir, "sys", "devices", "pci0000:00", fmt.Sprintf("0000:00:00.%d", i))
 		writeFile(t, path.Join(pciPath, "device"), "0x0062")
 		writeFile(t, path.Join(pciPath, "vendor"), "0x1ae0")
