@@ -79,6 +79,48 @@ func nsPath(nst specs.LinuxNamespaceType) string {
 	// LINT.ThenChange(:KnownNamespaces)
 }
 
+// ErrHostNetworkPodUserNamespace is returned when the spec configures a pod
+// user namespace (typically from Kubernetes hostUsers: false) together with
+// host networking, which runsc does not support.
+var ErrHostNetworkPodUserNamespace = fmt.Errorf("pod user namespace is not supported with --network=host")
+
+// PrepareUserNamespaceForStart adjusts a user namespace from the OCI spec for
+// StartInNS. containerd CRI sets Path to the pod user namespace together with
+// UID/GID mappings, but a Go process cannot setns into a user namespace. When
+// mappings are present, create a new user namespace with those mappings instead.
+func PrepareUserNamespaceForStart(ns specs.LinuxNamespace, s *specs.Spec) specs.LinuxNamespace {
+	if ns.Type != specs.UserNamespace || ns.Path == "" {
+		return ns
+	}
+	if s == nil || s.Linux == nil {
+		return ns
+	}
+	if len(s.Linux.UIDMappings) == 0 && len(s.Linux.GIDMappings) == 0 {
+		return ns
+	}
+	log.Infof("Creating new user namespace with pod UID/GID mappings instead of joining %q", ns.Path)
+	return specs.LinuxNamespace{Type: specs.UserNamespace}
+}
+
+// ValidatePodUserNamespaceNetwork returns an error if the spec configures a pod
+// user namespace while runsc is using host networking.
+func ValidatePodUserNamespaceNetwork(networkHost bool, s *specs.Spec) error {
+	if !networkHost {
+		return nil
+	}
+	userns, ok := GetNS(specs.UserNamespace, s)
+	if !ok || userns.Path == "" {
+		return nil
+	}
+	if s.Linux == nil {
+		return nil
+	}
+	if len(s.Linux.UIDMappings) > 0 || len(s.Linux.GIDMappings) > 0 {
+		return ErrHostNetworkPodUserNamespace
+	}
+	return nil
+}
+
 // GetNS returns true and the namespace with the given type from the slice of
 // namespaces in the spec.  It returns false if the slice does not contain a
 // namespace with the type.
