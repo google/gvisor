@@ -16,7 +16,10 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +53,79 @@ func TestBinaryErrors(t *testing.T) {
 	}
 	if _, err := Load(t.Context(), &buf, &binaryFailure{}); !errors.Is(err, errBinary) {
 		t.Fatalf("Load = %v, want %v", err, errBinary)
+	}
+}
+
+// lazyType counts StateFields calls.
+type lazyType struct {
+	v int64
+}
+
+var lazyTypeFieldsCalls int
+
+func (*lazyType) StateTypeName() string { return "state.lazyType" }
+
+func (*lazyType) StateFields() []string {
+	lazyTypeFieldsCalls++
+	return []string{"v"}
+}
+
+func (l *lazyType) StateSave(s Sink) { s.Save(0, &l.v) }
+
+func (l *lazyType) StateLoad(_ context.Context, s Source) { s.Load(0, &l.v) }
+
+// duplicateFieldType is never registered: race builds would reject it at init.
+type duplicateFieldType struct {
+	v int64
+}
+
+func (*duplicateFieldType) StateTypeName() string { return "state.duplicateFieldType" }
+
+func (*duplicateFieldType) StateFields() []string { return []string{"v", "v"} }
+
+func (d *duplicateFieldType) StateSave(s Sink) { s.Save(0, &d.v) }
+
+func (d *duplicateFieldType) StateLoad(_ context.Context, s Source) { s.Load(0, &d.v) }
+
+// TestRegisterIsLazy checks that Register stays cheap in non-race builds,
+// since it runs in the init functions of every binary on every start.
+func TestRegisterIsLazy(t *testing.T) {
+	if raceEnabled {
+		t.Skip("race builds validate types eagerly")
+	}
+	Register((*lazyType)(nil))
+	if lazyTypeFieldsCalls != 0 {
+		t.Errorf("Register called StateFields %d times, want 0", lazyTypeFieldsCalls)
+	}
+	typ := reflect.TypeFor[lazyType]()
+	if _, ok := reverseTypeDatabase[typ]; ok {
+		t.Errorf("Register populated reverseTypeDatabase")
+	}
+	if got := globalTypeDatabase["state.lazyType"]; got != typ {
+		t.Errorf("globalTypeDatabase[%q] = %v, want %v", "state.lazyType", got, typ)
+	}
+
+	var buf bytes.Buffer
+	if _, err := Save(t.Context(), &buf, &lazyType{v: 42}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	var got lazyType
+	if _, err := Load(t.Context(), &buf, &got); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.v != 42 {
+		t.Errorf("Load: v = %d, want 42", got.v)
+	}
+}
+
+// TestLazyValidation checks that types skipped by Register are validated on use.
+func TestLazyValidation(t *testing.T) {
+	if raceEnabled {
+		t.Skip("race builds validate types eagerly")
+	}
+	var buf bytes.Buffer
+	_, err := Save(t.Context(), &buf, &duplicateFieldType{})
+	if err == nil || !strings.Contains(err.Error(), "duplicate field") {
+		t.Fatalf("Save = %v, want duplicate field error", err)
 	}
 }
