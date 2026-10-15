@@ -916,13 +916,18 @@ exitLoop:
 	return done, retErr
 }
 
+// hostWriteThreshold is the smallest contiguous write to a disk-backed
+// MemoryFile that is issued as a host write syscall rather than copied
+// through the internal mapping. Disk-backed pages are not pre-populated, so
+// copying faults them in one by one, while a single write syscall faults
+// them all at once. Below the threshold the syscall dominates: on platforms
+// where the sentry runs in guest mode (KVM) a host syscall costs a VM exit,
+// far more than a page fault, and rewrites of already-populated pages cost
+// nothing when copied.
+const hostWriteThreshold = 16 * hostarch.PageSize
+
 func (rw *regularFileReadWriter) writeToMF(fr memmap.FileRange, srcs safemem.BlockSeq) (uint64, error) {
-	if rw.file.inode.fs.mf.IsDiskBacked() {
-		// Disk-backed files are not prepopulated. The safemem.CopySeq() approach
-		// used below incurs a lot of page faults without page prepopulation, which
-		// causes a lot of context switching. Use write(2) host syscall instead,
-		// which makes one context switch and faults all the pages that are touched
-		// during the write.
+	if rw.file.inode.fs.mf.IsDiskBacked() && fr.Length() >= hostWriteThreshold {
 		fd, err := rw.file.inode.fs.mf.DataFD(fr)
 		if err != nil {
 			return 0, err
