@@ -183,6 +183,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
+	flagSet.String("cuda-checkpoint-path", "", "path to the cuda-checkpoint binary inside the container, which `runsc checkpoint` uses unless given its own. Applied per container.")
+	flagSet.Var(cudaCheckpointJobPtr(CUDACheckpointJobNone), "cuda-checkpoint-job", "with 'launch', a GPU container's command is wrapped in `cuda-checkpoint --launch-job` (--cuda-checkpoint-path) on driver R610+, so that its CUDA IPC state can be checkpointed, and `runsc checkpoint` runs cuda-checkpoint sequentially, as jobs require. Values: none|launch, default: none. Applied per container.")
 	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")
 	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")

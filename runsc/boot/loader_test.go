@@ -19,6 +19,8 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -34,12 +36,14 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
@@ -639,6 +643,209 @@ func TestCreateMountPoint(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCudaCheckpointJobEnabled covers what enables the cuda-checkpoint job:
+// --cuda-checkpoint-job=launch, --cuda-checkpoint-path, and driver R610 or
+// newer.
+func TestCudaCheckpointJobEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		path  string
+		job   config.CUDACheckpointJob
+		major int
+		want  bool
+	}{
+		{name: "cuda-checkpoint-path only", path: "/cc", major: 610},
+		{name: "launch", path: "/cc", job: config.CUDACheckpointJobLaunch, major: 610, want: true},
+		{name: "old driver", path: "/cc", job: config.CUDACheckpointJobLaunch, major: 580},
+		{name: "driver just below R610", path: "/cc", job: config.CUDACheckpointJobLaunch, major: 609},
+		{name: "newer driver", path: "/cc", job: config.CUDACheckpointJobLaunch, major: 615, want: true},
+		{name: "no cuda-checkpoint-path", job: config.CUDACheckpointJobLaunch, major: 610},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testConfig()
+			conf.CUDACheckpointPath = tc.path
+			conf.CUDACheckpointJob = tc.job
+			if got := cudaCheckpointJobEnabled(conf, tc.major); got != tc.want {
+				t.Errorf("cudaCheckpointJobEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestContainerFileExists covers the check that keeps a container whose image
+// lacks cuda-checkpoint out of a cuda-checkpoint job.
+func TestContainerFileExists(t *testing.T) {
+	spec := testSpec()
+	spec.Root = &specs.Root{Path: os.TempDir()}
+	spec.Mounts = append(spec.Mounts, specs.Mount{Destination: "/test", Type: "tmpfs"})
+	l, loaderCleanup, err := createLoader(testConfig(), spec)
+	if err != nil {
+		t.Fatalf("failed to create loader: %v", err)
+	}
+	defer l.Destroy()
+	defer loaderCleanup()
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	mntr := l.newContainerMounter(&l.root)
+	ctx := l.k.SupervisorContext()
+	creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
+	mns, err := mntr.mountAll(ctx, creds, l.root.spec, l.root.conf, &l.root.procArgs)
+	if err != nil {
+		t.Fatalf("mountAll: %v", err)
+	}
+	info := &containerInfo{procArgs: l.root.procArgs}
+	info.procArgs.MountNamespace = mns
+	if err := l.writeTestFile(info, "/test/bin/cuda-checkpoint", []byte("x"), 0755); err != nil {
+		t.Fatalf("writeTestFile: %v", err)
+	}
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/test/bin/cuda-checkpoint", true},
+		{"/test/bin/missing", false},
+		{"/test/bin", false},
+	} {
+		if got, err := l.containerFileExists(info, tc.path); got != tc.want {
+			t.Errorf("containerFileExists(%q) = %v (%v), want %v", tc.path, got, err, tc.want)
+		}
+	}
+}
+
+// TestSetupCudaCheckpointJob covers which containers are wrapped in a
+// cuda-checkpoint job with --cuda-checkpoint-job=launch: only those given GPU
+// access, only on driver R610 or
+// newer, and only if cuda-checkpoint is in the container; a GPU container
+// that cannot be wrapped is recorded, and checkpoints are refused while it
+// exists.
+func TestSetupCudaCheckpointJob(t *testing.T) {
+	spec := testSpec()
+	spec.Root = &specs.Root{Path: os.TempDir()}
+	spec.Mounts = append(spec.Mounts, specs.Mount{Destination: "/test", Type: "tmpfs"})
+	l, loaderCleanup, err := createLoader(testConfig(), spec)
+	if err != nil {
+		t.Fatalf("failed to create loader: %v", err)
+	}
+	defer l.Destroy()
+	defer loaderCleanup()
+
+	l.mu.Lock()
+	mntr := l.newContainerMounter(&l.root)
+	ctx := l.k.SupervisorContext()
+	creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
+	mns, err := mntr.mountAll(ctx, creds, l.root.spec, l.root.conf, &l.root.procArgs)
+	if err != nil {
+		l.mu.Unlock()
+		t.Fatalf("mountAll: %v", err)
+	}
+	base := &containerInfo{procArgs: l.root.procArgs}
+	base.procArgs.MountNamespace = mns
+	if err := l.writeTestFile(base, "/test/bin/cuda-checkpoint", []byte("x"), 0755); err != nil {
+		l.mu.Unlock()
+		t.Fatalf("writeTestFile: %v", err)
+	}
+	l.mu.Unlock()
+
+	gpu := &specs.Spec{Linux: &specs.Linux{Devices: []specs.LinuxDevice{{Path: "/dev/nvidiactl"}}}}
+	noGPU := &specs.Spec{Linux: &specs.Linux{}}
+	for _, tc := range []struct {
+		name     string
+		spec     *specs.Spec
+		nvproxy  bool
+		ckpt     string
+		major    int
+		wantWrap bool
+		wantSkip bool
+	}{
+		{name: "gpu", spec: gpu, ckpt: "/test/bin/cuda-checkpoint", major: 610, wantWrap: true},
+		{name: "newer driver", spec: gpu, ckpt: "/test/bin/cuda-checkpoint", major: 615, wantWrap: true},
+		{name: "old driver", spec: gpu, ckpt: "/test/bin/cuda-checkpoint", major: 580},
+		{name: "no gpu, nvproxy for the sandbox", spec: noGPU, nvproxy: true, ckpt: "/test/bin/cuda-checkpoint", major: 610},
+		{name: "cuda-checkpoint missing", spec: gpu, ckpt: "/test/bin/missing", major: 610, wantSkip: true},
+		{name: "cuda-checkpoint is a directory", spec: gpu, ckpt: "/test/bin", major: 610, wantSkip: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.k.NvidiaDriverVersion = nvconf.NewDriverVersion(tc.major, 0, 0)
+			conf := testConfig()
+			conf.NVProxy = tc.nvproxy
+			conf.CUDACheckpointPath = tc.ckpt
+			conf.CUDACheckpointJob = config.CUDACheckpointJobLaunch
+			info := &containerInfo{
+				containerName: tc.name,
+				spec:          tc.spec,
+				conf:          conf,
+				procArgs:      base.procArgs,
+			}
+			info.procArgs.Argv = []string{"/bin/app", "arg"}
+			info.procArgs.Filename = "/bin/app"
+			got := l.setupCudaCheckpointJob(info)
+			if got != tc.wantWrap {
+				t.Errorf("setupCudaCheckpointJob() = %v, want %v", got, tc.wantWrap)
+			}
+			wantArgv := []string{"/bin/app", "arg"}
+			if tc.wantWrap {
+				wantArgv = []string{tc.ckpt, "--launch-job", "/bin/app", "arg"}
+			}
+			if !reflect.DeepEqual(info.procArgs.Argv, wantArgv) {
+				t.Errorf("argv = %q, want %q", info.procArgs.Argv, wantArgv)
+			}
+			if _, skipped := l.cudaJobSkipped[tc.name]; skipped != tc.wantSkip {
+				t.Errorf("recorded as skipped = %v, want %v", skipped, tc.wantSkip)
+			}
+		})
+	}
+
+	err = l.cudaJobSkippedError()
+	if err == nil || !strings.Contains(err.Error(), `container "cuda-checkpoint missing"`) || !strings.Contains(err.Error(), `container "cuda-checkpoint is a directory"`) {
+		t.Errorf("cudaJobSkippedError() = %v, want both skipped containers named", err)
+	}
+}
+
+// writeTestFile creates (or truncates) dstPath in the container's filesystem,
+// creating parent directories as needed, and writes data to it with mode.
+func (l *Loader) writeTestFile(info *containerInfo, dstPath string, data []byte, mode linux.FileMode) error {
+	mntns := info.procArgs.MountNamespace
+	if mntns == nil {
+		return fmt.Errorf("container mount namespace is not set up yet")
+	}
+	ctx := info.procArgs.NewContext(l.k)
+	creds := auth.NewRootCredentials(l.k.RootUserNamespace())
+	root := mntns.Root(ctx)
+	defer root.DecRef(ctx)
+	vfsObj := root.Mount().Filesystem().VirtualFilesystem()
+	if dir := path.Dir(dstPath); dir != "/" && dir != "." {
+		if err := vfsObj.MkdirAllAt(ctx, dir, root, creds, &vfs.MkdirOptions{Mode: 0755}, true /* mustBeDir */); err != nil {
+			return fmt.Errorf("creating directory %q: %w", dir, err)
+		}
+	}
+	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse(dstPath),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_TRUNC,
+		Mode:  mode,
+	})
+	if err != nil {
+		return fmt.Errorf("opening %q: %w", dstPath, err)
+	}
+	defer fd.DecRef(ctx)
+	for written := 0; written < len(data); {
+		n, err := fd.Write(ctx, usermem.BytesIOSequence(data[written:]), vfs.WriteOptions{})
+		written += int(n)
+		if err != nil {
+			return fmt.Errorf("writing %q: %w", dstPath, err)
+		}
+		if n == 0 {
+			return fmt.Errorf("writing %q: short write", dstPath)
+		}
+	}
+	return nil
 }
 
 func TestMain(m *testing.M) {

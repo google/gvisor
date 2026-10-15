@@ -194,6 +194,7 @@ go_test(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/unet",
+        "//pkg/usermem",
         "//runsc/config",
         "//runsc/flag",
         "//runsc/fsgofer",
