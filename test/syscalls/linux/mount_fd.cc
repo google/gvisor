@@ -30,7 +30,9 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_cat.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
@@ -957,6 +959,142 @@ TEST(OpenTreeTest, OpenTreeCloneRecursiveOnDetached) {
   auto cleanup_tree = Cleanup([&]() { close(treefd); });
 
   EXPECT_THAT(faccessat(treefd, "sub/marker_sub", F_OK, 0), SyscallSucceeds());
+}
+
+// open_tree(2) and move_mount(2) on non-directories. Linux resolves both paths
+// without LOOKUP_DIRECTORY; do_move_mount() only requires that source and
+// target are both directories or both non-directories.
+
+TEST(OpenTreeTest, OpenTreeCloneFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "contents", 0644));
+
+  int treefd = open_tree(AT_FDCWD, file.path().c_str(),
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  struct stat st;
+  ASSERT_THAT(fstat(treefd, &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+}
+
+TEST(MoveMountTest, MoveMountClonedFileOntoFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "source", 0644));
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "target", 0644));
+
+  int treefd = open_tree(AT_FDCWD, src.path().c_str(),
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  ASSERT_THAT(move_mount(treefd, "", AT_FDCWD, dst.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  // An open mount fd keeps the attached mount busy.
+  cleanup_tree.Release()();
+  auto cleanup_umount = Cleanup([&]() { umount(dst.path().c_str()); });
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(dst.path())), "source");
+
+  // Writes through the bind mount reach the source file.
+  ASSERT_NO_ERRNO(SetContents(dst.path(), "written"));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(src.path())), "written");
+
+  cleanup_umount.Release();
+  ASSERT_THAT(umount(dst.path().c_str()), SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(dst.path())), "target");
+}
+
+// Clone the source through a /proc/self/fd magic link, which open_tree(2)
+// follows unless AT_SYMLINK_NOFOLLOW is set.
+TEST(MoveMountTest, MoveMountClonedProcFdFileOntoFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "source", 0644));
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "target", 0644));
+  auto const srcfd = ASSERT_NO_ERRNO_AND_VALUE(Open(src.path(), O_PATH));
+
+  int treefd =
+      open_tree(AT_FDCWD, absl::StrCat("/proc/self/fd/", srcfd.get()).c_str(),
+                OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  ASSERT_THAT(move_mount(treefd, "", AT_FDCWD, dst.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallSucceeds());
+  cleanup_tree.Release()();
+  auto cleanup_umount = Cleanup([&]() { umount(dst.path().c_str()); });
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(dst.path())), "source");
+}
+
+TEST(MoveMountTest, MoveMountAttachedFileOntoFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "source", 0644));
+  auto const mid = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "middle", 0644));
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "target", 0644));
+
+  ASSERT_THAT(
+      mount(src.path().c_str(), mid.path().c_str(), nullptr, MS_BIND, nullptr),
+      SyscallSucceeds());
+  auto cleanup_mid = Cleanup([&]() { umount(mid.path().c_str()); });
+
+  ASSERT_THAT(
+      move_mount(AT_FDCWD, mid.path().c_str(), AT_FDCWD, dst.path().c_str(), 0),
+      SyscallSucceeds());
+  cleanup_mid.Release();
+  auto cleanup_dst = Cleanup([&]() { umount(dst.path().c_str()); });
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(mid.path())), "middle");
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(dst.path())), "source");
+}
+
+TEST(MoveMountTest, MoveMountFileOntoDirFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "source", 0644));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  int treefd = open_tree(AT_FDCWD, src.path().c_str(),
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(move_mount(treefd, "", AT_FDCWD, dir.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MoveMountTest, MoveMountDirOntoFileFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "target", 0644));
+
+  int treefd = open_tree(AT_FDCWD, dir.path().c_str(),
+                         OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
+  ASSERT_THAT(treefd, SyscallSucceeds());
+  auto cleanup_tree = Cleanup([&]() { close(treefd); });
+
+  EXPECT_THAT(move_mount(treefd, "", AT_FDCWD, dst.path().c_str(),
+                         MOVE_MOUNT_F_EMPTY_PATH),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

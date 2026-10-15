@@ -347,7 +347,7 @@ func OpenTree(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 		// OPEN_TREE_CLONE: clone the mount tree into an anonymous mount ns
 
 		// Fetch the path's mount vd
-		fromVd, err := vfsObj.GetDentryAt(t, t.Credentials(), &from.pop, &vfs.GetDentryOptions{CheckSearchable: true})
+		fromVd, err := vfsObj.GetDentryAt(t, t.Credentials(), &from.pop, &vfs.GetDentryOptions{})
 		if err != nil {
 			return 0, nil, err
 		}
