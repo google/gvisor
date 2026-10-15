@@ -1067,3 +1067,81 @@ func TestSealedMapping(t *testing.T) {
 	defer mm2.DecUsers(ctx)
 	wantError(t, linuxerr.EPERM, "child MUnmap(sealed)", mm2.MUnmap(ctx, sealedAddr, hostarch.PageSize))
 }
+
+// memoryFileContext overrides the MemoryFile of a test context.
+type memoryFileContext struct {
+	context.Context
+	mf *pgalloc.MemoryFile
+}
+
+// Value implements context.Context.Value.
+func (c *memoryFileContext) Value(key any) any {
+	if key == pgalloc.CtxMemoryFile {
+		return c.mf
+	}
+	return c.Context.Value(key)
+}
+
+// TestRSSAfterPartialHugepageDecommit tests that pages that MADV_DONTNEED
+// decommits within a huge page are not reported as resident until they are
+// touched again, although their pma is kept.
+func TestRSSAfterPartialHugepageDecommit(t *testing.T) {
+	const memfileName = "mm-test-hugepages"
+	memfd, err := memutil.CreateMemFD(memfileName, 0)
+	if err != nil {
+		t.Fatalf("CreateMemFD got err %v want nil", err)
+	}
+	mf, err := pgalloc.NewMemoryFile(os.NewFile(uintptr(memfd), memfileName), pgalloc.MemoryFileOpts{
+		DisableMemoryAccounting: true,
+		ExpectHugepages:         true,
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryFile got err %v want nil", err)
+	}
+	defer mf.Destroy()
+	ctx := &memoryFileContext{contexttest.Context(t), mf}
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   2 * hostarch.HugePageSize,
+		Private:  true,
+		Perms:    hostarch.ReadWrite,
+		MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	huge, ok := addr.HugeRoundUp()
+	if !ok {
+		t.Fatalf("%#x.HugeRoundUp() overflowed", addr)
+	}
+	if huge+hostarch.HugePageSize > addr+2*hostarch.HugePageSize {
+		huge -= hostarch.HugePageSize
+		if huge < addr {
+			t.Fatalf("mapping at %#x contains no aligned huge page", addr)
+		}
+	}
+	if _, err := mm.CopyOut(ctx, huge, bytes.Repeat([]byte{'a'}, hostarch.HugePageSize), usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+	full := mm.ResidentSetSize()
+	if full < hostarch.HugePageSize {
+		t.Fatalf("RSS after touching a huge page is %d, want at least %d", full, hostarch.HugePageSize)
+	}
+
+	const decommitted = 16 * hostarch.PageSize
+	if err := mm.Decommit(huge+hostarch.PageSize, decommitted); err != nil {
+		t.Fatalf("Decommit got err %v want nil", err)
+	}
+	if got, want := mm.ResidentSetSize(), full-decommitted; got != want {
+		t.Errorf("RSS after decommitting %d bytes of a huge page is %d, want %d", decommitted, got, want)
+	}
+
+	if _, err := mm.CopyOut(ctx, huge+hostarch.PageSize, bytes.Repeat([]byte{'b'}, decommitted), usermem.IOOpts{}); err != nil {
+		t.Fatalf("CopyOut got err %v want nil", err)
+	}
+	if got := mm.ResidentSetSize(); got != full {
+		t.Errorf("RSS after touching the decommitted pages again is %d, want %d", got, full)
+	}
+}
