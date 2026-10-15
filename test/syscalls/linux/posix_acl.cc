@@ -188,6 +188,10 @@ class PosixACLTest : public ::testing::TestWithParam<Backend> {
   void MountOverlay(const ParamType param) {
     // Mounting an overlay requires CAP_SYS_ADMIN
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    // Linux overlayfs needs CAP_DAC_OVERRIDE. It creates its work
+    // directory with mode 0 and accesses it with the mounter's credentials.
+    SKIP_IF(GvisorPlatform() == Platform::kNative &&
+            !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE)));
 
     // gVisor doesn't accept /dev/shm as an overlayfs layer. We need
     // CAP_SYS_ADMIN for this case anyways, so just mount a separate tmpfs.

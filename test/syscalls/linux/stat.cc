@@ -1019,6 +1019,10 @@ class StatxMountRootTest : public ::testing::TestWithParam<MountRootBackend> {
   }
   void SetUpOverlay() {
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    // Linux overlayfs needs CAP_DAC_OVERRIDE. It creates its work
+    // directory with mode 0 and accesses it with the mounter's credentials.
+    SKIP_IF(GvisorPlatform() == Platform::kNative &&
+            !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_DAC_OVERRIDE)));
     // The layers get their own tmpfs: gVisor does not accept every filesystem
     // as an overlay layer.
     layers_ = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
