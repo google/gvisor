@@ -541,7 +541,44 @@ func WaitForHTTP(ip string, port int, timeout time.Duration) error {
 	return Poll(cb, timeout)
 }
 
-// Reaper reaps child processes.
+// ownedMu protects owned, the set of children started by StartCmd. Reapers
+// leave those children for exec.Cmd.Wait. StartCmd holds ownedMu across the
+// fork, so a Reaper never sees such a child before it is in owned.
+var (
+	ownedMu sync.Mutex
+	owned   = make(map[int]struct{})
+)
+
+// StartCmd starts cmd so that no Reaper reaps it. The caller must wait for
+// cmd with WaitCmd instead of cmd.Wait.
+func StartCmd(cmd *exec.Cmd) error {
+	ownedMu.Lock()
+	defer ownedMu.Unlock()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	owned[cmd.Process.Pid] = struct{}{}
+	return nil
+}
+
+// WaitCmd waits for a command started by StartCmd.
+func WaitCmd(cmd *exec.Cmd) error {
+	err := cmd.Wait()
+	ownedMu.Lock()
+	delete(owned, cmd.Process.Pid)
+	ownedMu.Unlock()
+	return err
+}
+
+// RunCmd is like cmd.Run, but a running Reaper does not race with it.
+func RunCmd(cmd *exec.Cmd) error {
+	if err := StartCmd(cmd); err != nil {
+		return err
+	}
+	return WaitCmd(cmd)
+}
+
+// Reaper reaps child processes, except those started by StartCmd.
 type Reaper struct {
 	// mu protects ch, which will be nil if the reaper is not running.
 	mu sync.Mutex
@@ -574,14 +611,53 @@ func (r *Reaper) Start() {
 				// Channel closed.
 				return
 			}
-			for {
-				cpid, _ := unix.Wait4(-1, nil, unix.WNOHANG, nil)
-				if cpid < 1 {
-					break
-				}
-			}
+			reapChildren()
 		}
 	}()
+}
+
+// reapChildren reaps every exited child that StartCmd did not start.
+func reapChildren() {
+	ownedMu.Lock()
+	defer ownedMu.Unlock()
+
+	if len(owned) == 0 {
+		for {
+			cpid, _ := unix.Wait4(-1, nil, unix.WNOHANG, nil)
+			if cpid < 1 {
+				return
+			}
+		}
+	}
+	// wait4(-1) could reap an owned child, so wait for the others one by one.
+	for _, pid := range childPIDs() {
+		if _, ok := owned[pid]; !ok {
+			unix.Wait4(pid, nil, unix.WNOHANG, nil)
+		}
+	}
+}
+
+// childPIDs returns the PIDs of this process's children. Each child is listed
+// under the thread that forked it, so all threads are read.
+func childPIDs() []int {
+	files, err := filepath.Glob("/proc/self/task/*/children")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			// The thread exited.
+			continue
+		}
+		for _, field := range strings.Fields(string(data)) {
+			if pid, err := strconv.Atoi(field); err == nil {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	return pids
 }
 
 // Stop stops reaping child processes.

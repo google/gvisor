@@ -151,6 +151,9 @@ type ExecArgs struct {
 	// PIDNamespace is the pid namespace for the process being executed.
 	PIDNamespace *kernel.PIDNamespace
 
+	// NewPIDNamespace starts the process as PID 1 of a child of PIDNamespace.
+	NewPIDNamespace bool
+
 	// InitialCgroupV2 is the cgroup2 node the process being executed starts
 	// in. If nil, it starts in the root cgroup.
 	InitialCgroupV2 kernel.Cgroup2
@@ -214,6 +217,13 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	pidns := args.PIDNamespace
 	if pidns == nil {
 		pidns = proc.Kernel.RootPIDNamespace()
+	}
+	if args.NewPIDNamespace {
+		// Like clone(CLONE_NEWPID), the new process becomes PID 1 of the child
+		// namespace. Its thread group takes its own reference on the namespace.
+		sctx := proc.Kernel.SupervisorContext()
+		pidns = pidns.NewChild(sctx, proc.Kernel, pidns.UserNamespace())
+		defer pidns.DecRef(sctx)
 	}
 	limitSet := args.Limits
 	if limitSet == nil {

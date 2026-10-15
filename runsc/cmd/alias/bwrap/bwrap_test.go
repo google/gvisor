@@ -464,6 +464,17 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "AsPID1",
+			args: []string{"--as-pid-1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				AsPID1: true,
+				Args:   []string{"bash"},
+			},
+		},
+		{
 			name: "ValidHostname",
 			args: []string{"--hostname", "test-host", "bash"},
 			wantCfg: &bwrapConfig{
@@ -518,6 +529,39 @@ func TestParseFlags(t *testing.T) {
 					{Type: sandbox.MountTypeProc, Destination: "/proc2"},
 				},
 			},
+		},
+		{
+			name: "Dev",
+			args: []string{"--dev", "/dev1/", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev1"},
+					{Type: sandbox.MountTypeDevpts, Destination: "/dev1/pts"},
+				},
+			},
+		},
+		{
+			name: "DeduplicatedDev",
+			args: []string{"--dev", "/dev1", "--dev", "/dev1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev1"},
+					{Type: sandbox.MountTypeDevpts, Destination: "/dev1/pts"},
+				},
+			},
+		},
+		{
+			name:        "MissingDevArg",
+			args:        []string{"--dev"},
+			errContains: "--dev takes 1 argument",
 		},
 		{
 			name: "CapDrop",
@@ -605,6 +649,35 @@ func TestParseFlags(t *testing.T) {
 				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo"}},
 				Args:   []string{"bash"},
 			},
+		},
+		{
+			name: "PermsDir",
+			args: []string{"--perms", "0700", "--dir", "/foo", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo", Mode: permsPtr(0700)}},
+				Args:   []string{"bash"},
+			},
+		},
+		{
+			// --dir becomes a tmpfs mount. Without --perms it carries no mode,
+			// leaving gVisor's tmpfs default of 01777 in place.
+			name: "DirDefaultPerms",
+			args: []string{"--dir", "/foo", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				Mounts: []sandbox.Mount{{Type: sandbox.MountTypeTmpfs, Destination: "/foo"}},
+				Args:   []string{"bash"},
+			},
+		},
+		{
+			name:        "MissingDirArg",
+			args:        []string{"--dir"},
+			errContains: "--dir takes 1 argument",
 		},
 		{
 			name:        "MissingPermsArg",

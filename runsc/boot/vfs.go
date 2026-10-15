@@ -1079,7 +1079,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
-	case devpts.Name, dev.Name, cgroup2fs.Name:
+	case devpts.Name, dev.Name, devtmpfs.Name, cgroup2fs.Name:
 		// Nothing to do.
 
 	case Nonefs:
