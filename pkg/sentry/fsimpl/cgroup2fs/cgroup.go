@@ -1251,7 +1251,7 @@ func (c *cgroup) setSubtreeControl(ctx context.Context, enable []kernel.Cgroup2C
 }
 
 // kill() handles writes to cgroup.kill.
-func (c *cgroup) kill() error {
+func (c *cgroup) kill(ctx context.Context) error {
 	// cgroup-v2.rst says: "Killing a cgroup tree will deal with concurrent forks appropriately and
 	// is protected against migrations."
 	c.fs.treeMu.Lock()
@@ -1282,8 +1282,9 @@ func (c *cgroup) kill() error {
 		return true
 	})
 
+	writer := kernel.TaskFromContext(ctx)
 	for _, t := range toKill {
-		t.SendSignal(kernel.SignalInfoPriv(linux.SIGKILL))
+		t.SendSignalFrom(writer, kernel.SignalInfoPriv(linux.SIGKILL))
 	}
 	return nil
 }
