@@ -27,6 +27,5 @@ func Main(sentry *gvisorbinaries.Binary) {
 	cli.Run(sentry, map[util.SubCommand]string{
 		new(sentrycmd.Boot):      "internal use only",
 		new(sentrycmd.Symbolize): "internal use only",
-		new(sentrycmd.Umount):    "internal use only",
 	}, nil)
 }

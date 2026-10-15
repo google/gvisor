@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/gvisorbinaries"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
 )
@@ -133,18 +134,23 @@ func SyncUsernsForRootless(fd int, uid uint32, gid uint32) {
 	}
 }
 
-// ExecProcUmounter executes a child process that umounts /proc when the
-// returned pipe is closed.
-func ExecProcUmounter() (*exec.Cmd, *os.File) {
+// ExecProcUmounter executes the gvisor-proc-umounter binary `umounter` as a
+// child process that umounts /proc when the returned pipe is written to.
+// `umounter` may be an O_PATH file, so that it can be executed after the host
+// filesystem is no longer reachable.
+func ExecProcUmounter(umounter *os.File) (*exec.Cmd, *os.File) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		util.Fatalf("error creating a pipe: %v", err)
 	}
 	defer r.Close()
 
-	cmd := exec.Command(specutils.ExePath)
-	cmd.Args = append(cmd.Args, "umount", "--sync-fd=3", "/proc")
-	cmd.ExtraFiles = append(cmd.ExtraFiles, r)
+	// The sync pipe gets FD 3 and `umounter` gets FD 4 in the child.
+	// LINT.IfChange
+	cmd := exec.Command("/proc/self/fd/4", "/proc")
+	cmd.ExtraFiles = []*os.File{r, umounter}
+	// LINT.ThenChange(../../procumounter/procumounter.c)
+	cmd.Args[0] = gvisorbinaries.ProcUmounter.Name
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
