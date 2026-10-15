@@ -118,15 +118,19 @@ namespace {
 using ::testing::Eq;
 using ::testing::HasSubstr;
 
+// Mounting cgroup2 requires CAP_SYS_ADMIN in the user namespace that owns the
+// cgroup namespace, which is normally the initial user namespace.
 bool Cgroup2Available() {
-  return TEST_CHECK_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN));
+  return TEST_CHECK_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+         TEST_CHECK_NO_ERRNO_AND_VALUE(InInitialUserNamespace());
 }
 
 class Cgroup2Test : public ::testing::Test {
  protected:
   void SetUp() override {
     if (!Cgroup2Available()) {
-      GTEST_SKIP() << "Cgroup v2 not available or ignored on gVisor";
+      GTEST_SKIP() << "Mounting cgroup2 requires CAP_SYS_ADMIN in the initial "
+                      "user namespace";
     }
   }
 

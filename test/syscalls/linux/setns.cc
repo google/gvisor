@@ -201,7 +201,21 @@ TEST(SetnsTest, ChangeMountNamespaceZeroFlags) {
 
   const FileDescriptor nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/mnt", O_RDONLY));
-  ASSERT_THAT(setns(nsfd.get(), 0), SyscallSucceedsWithValue(0));
+  // Joining a mount namespace also requires CAP_SYS_CHROOT, since it changes
+  // the root directory. See setns(2) for details.
+  const bool have_sys_chroot =
+      ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT));
+  // setns() fails with EINVAL if the caller shares its root and working
+  // directories with other threads, so call it in a single-threaded child.
+  const int fd = nsfd.get();
+  EXPECT_THAT(InForkedProcess([fd, have_sys_chroot] {
+                if (have_sys_chroot) {
+                  TEST_CHECK_SUCCESS(setns(fd, 0));
+                } else {
+                  TEST_CHECK_ERRNO(setns(fd, 0), EPERM);
+                }
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(SetnsTest, ChangeUserNamespace) {
