@@ -163,6 +163,17 @@ func TestWaitMinInt16(t *testing.T) {
 	executeOps(ctx, t, set, ops, true)
 }
 
+func TestWaitMinInt16NotWoken(t *testing.T) {
+	ctx := contexttest.Context(t)
+	set := &Set{obj: &ipc.Object{ID: 123}, sems: make([]sem, 1)}
+	ch := executeOps(ctx, t, set, []linux.Sembuf{{SemOp: -32768}}, true)
+
+	executeOps(ctx, t, set, []linux.Sembuf{{SemOp: 1}}, false)
+	if signalled(ch) {
+		t.Fatalf("ExecuteOps(ops) channel should not have been signalled")
+	}
+}
+
 func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r := NewRegistry(auth.NewRootUserNamespace())
