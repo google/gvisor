@@ -105,8 +105,8 @@ const (
 	jmpMask = 0xf0
 
 	// Miscellaneous instructions, stored in bits 3-7.
-	Tax      = 0x00 // A = X
-	Txa      = 0x80 // X = A
+	Tax      = 0x00 // X = A
+	Txa      = 0x80 // A = X
 	miscMask = 0xf8
 
 	// Masks for bits that should be zero.
@@ -272,7 +272,34 @@ func (ins Instruction) ModifiesRegisterA() bool {
 	case Alu:
 		return true
 	case Misc:
+		return ins.OpCode == Misc|Txa
+	default:
+		return false
+	}
+}
+
+// ModifiesRegisterX returns true iff this instruction modifies the value
+// of the "X" register.
+func (ins Instruction) ModifiesRegisterX() bool {
+	switch ins.OpCode & instructionClassMask {
+	case Ldx:
+		return true
+	case Misc:
 		return ins.OpCode == Misc|Tax
+	default:
+		return false
+	}
+}
+
+// MayChangeLoad returns true if executing this instruction may change the
+// value that `load`, an instruction of class Ld, loads into register A.
+func (ins Instruction) MayChangeLoad(load Instruction) bool {
+	switch load.OpCode & loadModeMask {
+	case Ind:
+		return ins.ModifiesRegisterX()
+	case Mem:
+		class := ins.OpCode & instructionClassMask
+		return (class == St || class == Stx) && ins.K == load.K
 	default:
 		return false
 	}
