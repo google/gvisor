@@ -5342,6 +5342,33 @@ std::vector<RuleWithExprTestParams> GetFibRuleTestParams() {
                   .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_ADDRTYPE)
                   .U32Attr(NFTA_FIB_FLAGS, NFTA_FIB_F_SADDR | NFTA_FIB_F_IIF),
           .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "ValidOIFWithPresent",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIF)
+                            .U32Attr(NFTA_FIB_FLAGS,
+                                     NFTA_FIB_F_SADDR | NFTA_FIB_F_PRESENT),
+          .expected_error_no = 0},
+      RuleWithExprTestParams{
+          .test_name = "OIFNAMEWithPresent",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_OIFNAME)
+                            .U32Attr(NFTA_FIB_FLAGS,
+                                     NFTA_FIB_F_SADDR | NFTA_FIB_F_PRESENT),
+          .expected_error_no = EINVAL},
+      RuleWithExprTestParams{
+          .test_name = "ADDRTYPEWithPresent",
+          .expr_name = "fib",
+          .expr_attrs = NlNestedAttr()
+                            .U32Attr(NFTA_FIB_DREG, NFT_REG_1)
+                            .U32Attr(NFTA_FIB_RESULT, NFT_FIB_RESULT_ADDRTYPE)
+                            .U32Attr(NFTA_FIB_FLAGS,
+                                     NFTA_FIB_F_SADDR | NFTA_FIB_F_PRESENT),
+          .expected_error_no = EINVAL},
   };
 }
 

@@ -747,7 +747,6 @@ func (t *fibTest) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) err
 				"fib", "saddr", ".", "iif", "oif", fmt.Sprintf("%d", targetIface.Index),
 				"fib", "saddr", ".", "iif", "oifname", targetIface.Name,
 				"fib", "saddr", ".", "iif", "oif", "exists",
-				"fib", "saddr", ".", "iif", "oifname", "exists",
 				"fib", "saddr", "type", "unicast",
 				"fib", "daddr", "type", "local",
 				"accept"},
