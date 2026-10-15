@@ -97,7 +97,7 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 	const timestampsMask = linux.STATX_ATIME | linux.STATX_MTIME
 	oldStat, err := vfsObj.StatAt(ctx, d.fs.creds, &oldpop, &vfs.StatOptions{
-		Mask: timestampsMask,
+		Mask: timestampsMask | linux.STATX_NLINK,
 	})
 	if err != nil {
 		return err
@@ -331,8 +331,10 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		return err
 	}
 
-	// Update the dentry's device and inode numbers (except for directories,
-	// for which these remain overlay-assigned).
+	// Directories keep their overlay-assigned device and inode numbers. So do
+	// other files, unless the lower file has other links, which copy-up
+	// breaks; then they take the upper layer's numbers, as Linux does without
+	// the "index" feature.
 	if ftype != linux.S_IFDIR {
 		upperStat, err := vfsObj.StatAt(ctx, d.fs.creds, &vfs.PathOperation{
 			Root:  d.upperVD,
@@ -348,9 +350,16 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			cleanupUndoCopyUp()
 			return linuxerr.EREMOTE
 		}
-		d.devMajor.Store(upperStat.DevMajor)
-		d.devMinor.Store(upperStat.DevMinor)
-		d.ino.Store(upperStat.Ino)
+		if oldStat.Mask&linux.STATX_NLINK != 0 && oldStat.Nlink == 1 {
+			d.fs.setCopiedUpID(upperStat.Ino, layerDevNoAndIno{
+				layerDevNumber: layerDevNumber{d.devMajor.Load(), d.devMinor.Load()},
+				ino:            d.ino.Load(),
+			})
+		} else {
+			d.devMajor.Store(upperStat.DevMajor)
+			d.devMinor.Store(upperStat.DevMinor)
+			d.ino.Store(upperStat.Ino)
+		}
 
 		// Lower level dentries for non-directories are no longer accessible from
 		// the overlayfs anymore after copyup. Ask filesystems to release their
