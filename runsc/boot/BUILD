@@ -172,6 +172,7 @@ go_test(
     size = "small",
     srcs = [
         "compat_test.go",
+        "controller_test.go",
         "fscheckpoint_test.go",
         "loader_test.go",
         "mount_hints_test.go",
@@ -192,8 +193,10 @@ go_test(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/vfs",
+        "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/unet",
+        "//pkg/urpc",
         "//runsc/config",
         "//runsc/flag",
         "//runsc/fsgofer",
