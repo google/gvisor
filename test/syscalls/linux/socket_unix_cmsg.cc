@@ -19,6 +19,7 @@
 #include <linux/capability.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -35,6 +36,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/rlimit_util.h"
 #include "test/util/socket_util.h"
@@ -1821,6 +1823,42 @@ TEST_P(UnixSocketPairCmsgTest, FDPassFDTableFull) {
   EXPECT_EQ(msg.msg_controllen, 0);
 
   // Nothing holds the pipe's write end anymore.
+  char c;
+  EXPECT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(0));
+}
+
+// A receive that fails with EFAULT doesn't leak the passed FDs.
+TEST_P(UnixSocketPairCmsgTest, FDPassRecvEFAULT) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  int pipe_fds[2];
+  ASSERT_THAT(pipe2(pipe_fds, O_NONBLOCK), SyscallSucceeds());
+  FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  char sent_data[] = {'a', 'b'};
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), wfd.get(),
+                                       sent_data, sizeof(sent_data)));
+  wfd.reset();
+
+  // Only the first byte of the destination is accessible.
+  Mapping inaccessible =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  char received_data = 0;
+  struct iovec iov[] = {
+      {.iov_base = &received_data, .iov_len = sizeof(received_data)},
+      {.iov_base = inaccessible.ptr(), .iov_len = 1},
+  };
+  char control[CMSG_SPACE(sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = iov;
+  msg.msg_iovlen = 2;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  EXPECT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallFailsWithErrno(EFAULT));
+
+  // Once the sockets are closed, nothing holds the pipe's write end.
+  sockets.reset();
   char c;
   EXPECT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(0));
 }
