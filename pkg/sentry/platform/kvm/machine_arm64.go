@@ -58,10 +58,23 @@ const (
 )
 
 func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
+	// Stop one page short so the end address (addr + length) of the last
+	// upper-half page (0xfffffffffffff000) does not overflow a 64-bit uint.
+	// Leaving the top page unmapped here is fine: it only ever holds the
+	// host thread stack (accessed via the lower half), whereas the upper
+	// half is only used for kernel entry code and Go heap structs.
+	const maxUpperOffset = ring0.UserspaceSize - hostarch.PageSize
 	applyPhysicalRegions(func(pr physicalRegion) bool {
+		if pr.virtual >= maxUpperOffset {
+			return true
+		}
+		length := pr.length
+		if pr.virtual+length > maxUpperOffset {
+			length = maxUpperOffset - pr.virtual
+		}
 		pageTable.Map(
 			hostarch.Addr(ring0.KernelStartAddress|pr.virtual),
-			pr.length,
+			length,
 			pagetables.MapOpts{AccessType: hostarch.AnyAccess, Global: true},
 			pr.physical)
 
