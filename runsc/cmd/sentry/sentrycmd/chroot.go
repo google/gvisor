@@ -195,6 +195,9 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		if devPath == vfioDevicePath {
 			continue
 		}
+		if st, err := os.Stat(devPath); err != nil || st.IsDir() {
+			continue
+		}
 		devNum := path.Base(devPath)
 		iommuGroupPath := path.Join("/sys/kernel/iommu_groups", devNum)
 		if err := bindMountSysfsInChrootReadonly(chroot, path.Join(hostRoot, iommuGroupPath), iommuGroupPath); err != nil {
