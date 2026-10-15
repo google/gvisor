@@ -15,7 +15,7 @@
 //go:build race
 // +build race
 
-package config
+package goferfilter
 
 import (
 	"golang.org/x/sys/unix"

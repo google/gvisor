@@ -167,6 +167,7 @@ areas:
       - /pkg/seccomp
       - /runsc/boot/filter
       - /runsc/fsgofer/filter
+      - /runsc/goferfilter
       - /test/secbench
       - /test/secfuzz
   - name: sentry

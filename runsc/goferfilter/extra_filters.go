@@ -15,15 +15,15 @@
 //go:build !msan && !race
 // +build !msan,!race
 
-package config
+package goferfilter
 
 import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// instrumentationFilters returns additional filters for syscalls used by
+// InstrumentationFilters returns additional filters for syscalls used by
 // Go instrumentation tools, e.g. -race, -msan.
 // Returns empty when disabled.
-func instrumentationFilters() seccomp.SyscallRules {
+func InstrumentationFilters() seccomp.SyscallRules {
 	return seccomp.NewSyscallRules()
 }
