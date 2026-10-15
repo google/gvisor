@@ -645,33 +645,86 @@ func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, direct b
 	return nil
 }
 
-func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {
-	stateFileName := path.Join(imagePath, checkpointfiles.StateFileName)
-	sf, err := os.Open(stateFileName)
+// openReadOnlyTree returns an FD for a detached, read-only copy of the mount
+// of dir, rooted at dir. Files opened through it refer to a read-only mount,
+// so they can not be opened for writing again, by anyone, through any path.
+// The copy stays alive as long as any file opened through it does.
+func openReadOnlyTree(dir string) (int, error) {
+	treeFD, err := unix.OpenTree(unix.AT_FDCWD, dir, unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC)
 	if err != nil {
-		return fmt.Errorf("opening state file %q failed: %w", stateFileName, err)
+		return -1, err
+	}
+	attr := unix.MountAttr{Attr_set: unix.MOUNT_ATTR_RDONLY}
+	if err := unix.MountSetattr(treeFD, "", unix.AT_EMPTY_PATH, &attr); err != nil {
+		unix.Close(treeFD)
+		return -1, err
+	}
+	return treeFD, nil
+}
+
+// openRestoreDir returns an FD for the checkpoint directory dir through which
+// the files handed to the sandbox for a restore are opened. The sandbox only
+// reads them and must not be able to modify them, which file permissions do
+// not guarantee since it may run as root with CAP_DAC_OVERRIDE. So this is a
+// detached, read-only copy of dir's mount (see openReadOnlyTree) when the
+// kernel and runsc's privileges allow it, and dir itself otherwise.
+func openRestoreDir(dir string) (int, error) {
+	dirFD, err := openReadOnlyTree(dir)
+	if err == nil {
+		return dirFD, nil
+	}
+	log.Warningf("Checkpoint files in %q are not protected from modification by the sandbox: %v", dir, err)
+	return unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+}
+
+// openCheckpointFile opens the checkpoint file name in dir, relative to dirFD,
+// an FD for dir. The path can not lead out of dir, so the file is on dirFD's
+// mount.
+func openCheckpointFile(dirFD int, dir, name string, flags int) (*os.File, error) {
+	how := unix.OpenHow{
+		Flags:   uint64(flags | unix.O_CLOEXEC),
+		Resolve: unix.RESOLVE_BENEATH,
+	}
+	if flags&unix.O_CREAT != 0 {
+		how.Mode = 0644
+	}
+	fd, err := unix.Openat2(dirFD, name, &how)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), filepath.Join(dir, name)), nil
+}
+
+func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, opt *boot.RestoreOpts) error {
+	dirFD, err := openRestoreDir(imagePath)
+	if err != nil {
+		return fmt.Errorf("opening checkpoint directory %q failed: %w", imagePath, err)
+	}
+	defer unix.Close(dirFD)
+
+	sf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.StateFileName, unix.O_RDONLY)
+	if err != nil {
+		return fmt.Errorf("opening state file %q failed: %w", path.Join(imagePath, checkpointfiles.StateFileName), err)
 	}
 	opt.FilePayload.Files = append(opt.FilePayload.Files, sf)
 
 	// If either the pages metadata file or pages file exist, both must exist,
 	// and we must pass them in.
-	pagesMetadataFileName := path.Join(imagePath, checkpointfiles.PagesMetadataFileName)
-	if pmf, err := os.Open(pagesMetadataFileName); err == nil {
+	if pmf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesMetadataFileName, unix.O_RDONLY); err == nil {
 		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf)
-		pagesFileName := path.Join(imagePath, checkpointfiles.PagesFileName)
-		pagesReadFlags := os.O_RDONLY
+		pagesReadFlags := unix.O_RDONLY
 		if direct {
 			// The contents are page-aligned, so it can be opened with O_DIRECT.
-			pagesReadFlags |= syscall.O_DIRECT
+			pagesReadFlags |= unix.O_DIRECT
 		}
-		pf, err := os.OpenFile(pagesFileName, pagesReadFlags, 0)
+		pf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, pagesReadFlags)
 		if err != nil {
-			return fmt.Errorf("opening pages file %q failed: %w", pagesFileName, err)
+			return fmt.Errorf("opening pages file %q failed: %w", path.Join(imagePath, checkpointfiles.PagesFileName), err)
 		}
 		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
 		opt.HavePagesFile = true
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("opening pages metadata file %q failed: %w", pagesMetadataFileName, err)
+	} else if !errors.Is(err, unix.ENOENT) {
+		return fmt.Errorf("opening pages metadata file %q failed: %w", path.Join(imagePath, checkpointfiles.PagesMetadataFileName), err)
 	} else {
 		log.Infof("Using single checkpoint file for sandbox %q", s.ID)
 	}
@@ -1885,7 +1938,7 @@ func setCheckpointOptsFilesForLocalCheckpoint(conf *config.Config, imagePath str
 		})
 		defer cleanLocalFiles.Clean()
 
-		fsFiles, err := openFSCheckpointLocalFiles(imagePath, bundles[0].Prefix, os.O_CREATE|os.O_EXCL|os.O_RDWR, opts.Direct)
+		fsFiles, err := createFSCheckpointLocalFiles(imagePath, bundles[0].Prefix, opts.Direct)
 		if err != nil {
 			return fmt.Errorf("creating fs checkpoint files: %w", err)
 		}
@@ -2031,7 +2084,7 @@ func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.
 		if len(prefixes) == 1 {
 			prefix = prefixes[0]
 		}
-		return openFSCheckpointLocalFiles(imagePath, prefix, os.O_RDONLY, direct)
+		return openFSRestoreBundleFiles(imagePath, prefix, direct)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("stat fs restore image path %q: %w", imagePath, err)
@@ -2039,7 +2092,18 @@ func openFSRestoreFilesForLocalCheckpoint(imagePath string, direct bool) ([]*os.
 	if strings.HasSuffix(imagePath, "/") {
 		return nil, fmt.Errorf("fs restore image directory %q does not exist: %w", imagePath, err)
 	}
-	return openFSCheckpointLocalFiles(filepath.Dir(imagePath), filepath.Base(imagePath), os.O_RDONLY, direct)
+	return openFSRestoreBundleFiles(filepath.Dir(imagePath), filepath.Base(imagePath), direct)
+}
+
+// openFSRestoreBundleFiles opens the files of the filesystem checkpoint with
+// the given prefix in imagePath for a restore, through openRestoreDir.
+func openFSRestoreBundleFiles(imagePath, prefix string, direct bool) ([]*os.File, error) {
+	dirFD, err := openRestoreDir(imagePath)
+	if err != nil {
+		return nil, fmt.Errorf("opening fs checkpoint directory %q failed: %w", imagePath, err)
+	}
+	defer unix.Close(dirFD)
+	return openFSCheckpointLocalFiles(dirFD, imagePath, prefix, unix.O_RDONLY, direct)
 }
 
 // FSSaveOpts holds options to FSSave.
@@ -2110,7 +2174,7 @@ func (s *Sandbox) setFSSaveArgs(conf *config.Config, imagePath string, direct bo
 }
 
 func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, prefix string, args *boot.FSSaveArgs) error {
-	files, err := openFSCheckpointLocalFiles(imagePath, prefix, os.O_CREATE|os.O_EXCL|os.O_RDWR, direct)
+	files, err := createFSCheckpointLocalFiles(imagePath, prefix, direct)
 	if err != nil {
 		return err
 	}
@@ -2118,13 +2182,32 @@ func setFSSaveArgsForLocalCheckpointFiles(conf *config.Config, imagePath string,
 	return nil
 }
 
-func openFSCheckpointLocalFiles(imagePath, prefix string, openFlags int, direct bool) ([]*os.File, error) {
+// createFSCheckpointLocalFiles creates the files of the filesystem checkpoint
+// with the given prefix in imagePath.
+func createFSCheckpointLocalFiles(imagePath, prefix string, direct bool) ([]*os.File, error) {
+	if strings.HasSuffix(prefix, "/") {
+		subDir := filepath.Join(imagePath, prefix)
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			return nil, fmt.Errorf("creating fs checkpoint directory %q: %w", subDir, err)
+		}
+	}
+	dirFD, err := unix.Open(imagePath, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("opening fs checkpoint directory %q failed: %w", imagePath, err)
+	}
+	defer unix.Close(dirFD)
+	return openFSCheckpointLocalFiles(dirFD, imagePath, prefix, unix.O_CREAT|unix.O_EXCL|unix.O_RDWR, direct)
+}
+
+// openFSCheckpointLocalFiles opens the files of the filesystem checkpoint
+// with the given prefix in imagePath, relative to dirFD, an FD for imagePath.
+func openFSCheckpointLocalFiles(dirFD int, imagePath, prefix string, openFlags int, direct bool) ([]*os.File, error) {
 	var files [4]*os.File
 	closeCleanup := cleanup.Make(func() {
 		for _, f := range files {
 			if f != nil {
 				_ = f.Close()
-				if openFlags&os.O_CREATE != 0 {
+				if openFlags&unix.O_CREAT != 0 {
 					_ = os.Remove(f.Name())
 				}
 			}
@@ -2157,40 +2240,33 @@ func openFSCheckpointLocalFiles(imagePath, prefix string, openFlags int, direct 
 		maybeODirect = unix.O_DIRECT
 	}
 
-	if openFlags&os.O_CREATE != 0 && strings.HasSuffix(prefix, "/") {
-		subDir := filepath.Join(imagePath, prefix)
-		if err := os.MkdirAll(subDir, 0755); err != nil {
-			return nil, fmt.Errorf("creating fs checkpoint directory %q: %w", subDir, err)
-		}
-	}
-
-	manifestFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.FSCheckpointManifestFileName))
-	manifestFile, err := os.OpenFile(manifestFilePath, openFlags, 0644)
+	manifestFileName := checkpointfiles.PrefixFileName(prefix, checkpointfiles.FSCheckpointManifestFileName)
+	manifestFile, err := openCheckpointFile(dirFD, imagePath, manifestFileName, openFlags)
 	if err != nil {
-		return nil, fmt.Errorf("opening manifest file %q: %w", manifestFilePath, err)
+		return nil, fmt.Errorf("opening manifest file %q: %w", filepath.Join(imagePath, manifestFileName), err)
 	}
 	files[0] = manifestFile
 
-	multiTarFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.FSCheckpointMultiTarFileName))
-	multiTarFile, err := os.OpenFile(multiTarFilePath, openFlags, 0644)
+	multiTarFileName := checkpointfiles.PrefixFileName(prefix, checkpointfiles.FSCheckpointMultiTarFileName)
+	multiTarFile, err := openCheckpointFile(dirFD, imagePath, multiTarFileName, openFlags)
 	if err != nil {
-		return nil, fmt.Errorf("opening multi-tar file %q: %w", multiTarFilePath, err)
+		return nil, fmt.Errorf("opening multi-tar file %q: %w", filepath.Join(imagePath, multiTarFileName), err)
 	}
 	files[1] = multiTarFile
 
-	pagesMetadataFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.PagesMetadataFileName))
-	pagesMetadataFile, err := os.OpenFile(pagesMetadataFilePath, openFlags, 0644)
+	pagesMetadataFileName := checkpointfiles.PrefixFileName(prefix, checkpointfiles.PagesMetadataFileName)
+	pagesMetadataFile, err := openCheckpointFile(dirFD, imagePath, pagesMetadataFileName, openFlags)
 	if err != nil {
-		return nil, fmt.Errorf("opening pages metadata file %q: %w", pagesMetadataFilePath, err)
+		return nil, fmt.Errorf("opening pages metadata file %q: %w", filepath.Join(imagePath, pagesMetadataFileName), err)
 	}
 	files[2] = pagesMetadataFile
 
-	pagesFilePath := filepath.Join(imagePath, checkpointfiles.PrefixFileName(prefix, checkpointfiles.PagesFileName))
-	pagesFileFD, err := unix.Open(pagesFilePath, openFlags|maybeODirect, 0644)
+	pagesFileName := checkpointfiles.PrefixFileName(prefix, checkpointfiles.PagesFileName)
+	pagesFile, err := openCheckpointFile(dirFD, imagePath, pagesFileName, openFlags|maybeODirect)
 	if err != nil {
-		return nil, fmt.Errorf("opening pages file %q: %w", pagesFilePath, err)
+		return nil, fmt.Errorf("opening pages file %q: %w", filepath.Join(imagePath, pagesFileName), err)
 	}
-	files[3] = os.NewFile(uintptr(pagesFileFD), pagesFilePath)
+	files[3] = pagesFile
 
 	closeCleanup.Release()
 	return files[:], nil
@@ -2367,7 +2443,7 @@ func (s *Sandbox) maybeConfigureSandboxProcessForWorkloadTriggerFSSave(conf *con
 		cmd.Args = append(cmd.Args, "-fs-save-checkpoint-gofer")
 		log.Infof("Enabling workload-trigger filesystem checkpoint saving to GCS via checkpoint gofer")
 	} else {
-		files, err := openFSCheckpointLocalFiles(path, bundles[0].Prefix, os.O_CREATE|os.O_EXCL|os.O_RDWR, boot.GetAnnotationFSCheckpointDirect(args.Spec))
+		files, err := createFSCheckpointLocalFiles(path, bundles[0].Prefix, boot.GetAnnotationFSCheckpointDirect(args.Spec))
 		if err != nil {
 			return fmt.Errorf("failed to create auto fs save files: %w", err)
 		}
