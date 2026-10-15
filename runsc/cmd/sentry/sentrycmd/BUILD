@@ -11,11 +11,9 @@ go_library(
         "boot.go",
         "chroot.go",
         "symbolize.go",
-        "umount_unsafe.go",
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/abi/tpu",
         "//pkg/coretag",
         "//pkg/coverage",

@@ -71,6 +71,7 @@ const (
 	gvisorSentryPluginStackName = "gvisor_sentry_plugin_stack"
 	prewarmerName               = "gvisor-sentry-prewarmer"
 	fdParkingName               = "runsc-fd-parking"
+	procUmounterName            = "gvisor-proc-umounter"
 )
 
 // binDirName is the name of the directory holding sidecar binaries.
@@ -216,10 +217,13 @@ var (
 	// FDParking is the C binary that holds ("parks") the pin ring (see
 	// `//pkg/pinring`) until the sandbox process has exited.
 	FDParking = Binary{Name: fdParkingName}
+	// ProcUmounter is the C binary that the gofer and the Sentry spawn to
+	// unmount /proc once they no longer need it.
+	ProcUmounter = Binary{Name: procUmounterName}
 )
 
 // All lists every sidecar present in a standard installation.
-var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry, &GvisorSentryPrewarmer, &FDParking}
+var All = []*Binary{&MetricServer, &CheckpointGofer, &GvisorSentry, &GvisorSentryPrewarmer, &FDParking, &ProcUmounter}
 
 // Options is the set of options used to execute a sidecar binary.
 type Options struct {

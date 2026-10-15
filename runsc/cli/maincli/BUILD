@@ -20,7 +20,6 @@ go_library(
         "//runsc/cmd/alias",
         "//runsc/cmd/nvproxy",
         "//runsc/cmd/profile",
-        "//runsc/cmd/sentry/sentrycmd",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",
         "@com_github_google_subcommands//:go_default_library",

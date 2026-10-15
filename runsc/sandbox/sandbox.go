@@ -1322,6 +1322,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) || rootlessEUID {
 			log.Infof("Sandbox will be started in minimal chroot")
 			cmd.Args = append(cmd.Args, "--setup-root")
+			if err := donateProcUmounter(conf, &donations); err != nil {
+				return err
+			}
 		} else {
 			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN")
 		}
@@ -1335,6 +1338,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			log.Infof("Sandbox will be started in new user namespace")
 			nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
 			cmd.Args = append(cmd.Args, "--setup-root")
+			if err := donateProcUmounter(conf, &donations); err != nil {
+				return err
+			}
 
 			const nobody = 65534
 			if rootlessEUID || conf.Rootless {
@@ -1541,6 +1547,25 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			log.Warningf("Cannot spawn sidecar %q: %v. This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
 		}
 	}
+	return nil
+}
+
+// donateProcUmounter donates the /proc unmounter sidecar binary to a sandbox
+// process that sets up its own root, which spawns it unless it runs rootless.
+func donateProcUmounter(conf *config.Config, donations *donation.Agency) error {
+	if conf.Rootless {
+		return nil
+	}
+	b := &gvisorbinaries.ProcUmounter
+	p, err := b.Path()
+	if err != nil {
+		return fmt.Errorf("sidecar %q not usable: %w", b.Name, err)
+	}
+	f, err := os.OpenFile(p, unix.O_PATH, 0)
+	if err != nil {
+		return fmt.Errorf("cannot open %q: %w", p, err)
+	}
+	donations.DonateAndClose("proc-umounter-fd", f)
 	return nil
 }
 
