@@ -18,6 +18,7 @@
 package systrap
 
 import (
+	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -64,18 +65,57 @@ func (t *thread) setTLS(tls *uint64) error {
 	return nil
 }
 
-// setEnabledPointerAuthKeys sets the enabled pointer authentication
-// address keys for the thread.
-func (t *thread) setEnabledPointerAuthKeys(keys uint64) error {
+// getPACKeys reads the pointer authentication state that keys has room for
+// from t.
+func (t *thread) getPACKeys(keys *pacKeys) error {
+	if keys.Address != nil {
+		if err := t.pacKeysRegset(unix.PTRACE_GETREGSET, linux.NT_ARM_PACA_KEYS, unsafe.Pointer(keys.Address), unsafe.Sizeof(*keys.Address)); err != nil {
+			return fmt.Errorf("PTRACE_GETREGSET(NT_ARM_PACA_KEYS): %w", err)
+		}
+	}
+	if keys.Generic != nil {
+		if err := t.pacKeysRegset(unix.PTRACE_GETREGSET, linux.NT_ARM_PACG_KEYS, unsafe.Pointer(keys.Generic), unsafe.Sizeof(*keys.Generic)); err != nil {
+			return fmt.Errorf("PTRACE_GETREGSET(NT_ARM_PACG_KEYS): %w", err)
+		}
+	}
+	if keys.Enabled != nil {
+		if err := t.pacKeysRegset(unix.PTRACE_GETREGSET, linux.NT_ARM_PAC_ENABLED_KEYS, unsafe.Pointer(keys.Enabled), unsafe.Sizeof(*keys.Enabled)); err != nil {
+			return fmt.Errorf("PTRACE_GETREGSET(NT_ARM_PAC_ENABLED_KEYS): %w", err)
+		}
+	}
+	return nil
+}
+
+// setPACKeys writes the pointer authentication state in keys to t.
+func (t *thread) setPACKeys(keys *pacKeys) error {
+	if keys.Address != nil {
+		if err := t.pacKeysRegset(unix.PTRACE_SETREGSET, linux.NT_ARM_PACA_KEYS, unsafe.Pointer(keys.Address), unsafe.Sizeof(*keys.Address)); err != nil {
+			return fmt.Errorf("PTRACE_SETREGSET(NT_ARM_PACA_KEYS): %w", err)
+		}
+	}
+	if keys.Generic != nil {
+		if err := t.pacKeysRegset(unix.PTRACE_SETREGSET, linux.NT_ARM_PACG_KEYS, unsafe.Pointer(keys.Generic), unsafe.Sizeof(*keys.Generic)); err != nil {
+			return fmt.Errorf("PTRACE_SETREGSET(NT_ARM_PACG_KEYS): %w", err)
+		}
+	}
+	if keys.Enabled != nil {
+		if err := t.pacKeysRegset(unix.PTRACE_SETREGSET, linux.NT_ARM_PAC_ENABLED_KEYS, unsafe.Pointer(keys.Enabled), unsafe.Sizeof(*keys.Enabled)); err != nil {
+			return fmt.Errorf("PTRACE_SETREGSET(NT_ARM_PAC_ENABLED_KEYS): %w", err)
+		}
+	}
+	return nil
+}
+
+func (t *thread) pacKeysRegset(op, note uintptr, data unsafe.Pointer, size uintptr) error {
 	iovec := unix.Iovec{
-		Base: (*byte)(unsafe.Pointer(&keys)),
-		Len:  uint64(unsafe.Sizeof(keys)),
+		Base: (*byte)(data),
+		Len:  uint64(size),
 	}
 	errno := hostsyscall.RawSyscallErrno6(
 		unix.SYS_PTRACE,
-		unix.PTRACE_SETREGSET,
+		op,
 		uintptr(t.tid),
-		linux.NT_ARM_PAC_ENABLED_KEYS,
+		note,
 		uintptr(unsafe.Pointer(&iovec)),
 		0, 0)
 	if errno != 0 {

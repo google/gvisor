@@ -15,20 +15,20 @@
 package systrap
 
 import (
-	"errors"
-
-	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // getCNTFRQ returns the frequency (in Hz) of the system counter read by
 // cputicks(), as reported by CNTFRQ_EL0.
 func getCNTFRQ() int64
+
+// getIDAA64ISAR1EL1 returns ID_AA64ISAR1_EL1.
+func getIDAA64ISAR1EL1() uint64
+
+// getIDAA64ISAR2EL1 returns ID_AA64ISAR2_EL1.
+func getIDAA64ISAR2EL1() uint64
 
 // typicalCNTFRQ is a fallback system counter frequency (24MHz, a common
 // reference-crystal value) used only if CNTFRQ_EL0 reads back as zero. The
@@ -55,31 +55,49 @@ func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Sp)
 }
 
-// pointerAuthWarnOnce is used to ensure a warning about disabling PAC failing is only printed
-// once to avoid console output spam.
-var pointerAuthWarnOnce sync.Once
-
-// disablePointerAuth disables all pointer authentication address keys for the
-// thread.
-func (t *thread) disablePointerAuth() error {
-	if !cpuid.HostFeatureSet().HasPointerAuth() {
-		// CPU doesn't support PAC; skip
-		return nil
+// hostPACSupport returns which pointer authentication keys the host supports.
+func hostPACSupport() hostPAC {
+	fs := cpuid.HostFeatureSet()
+	host := hostPAC{
+		address: fs.HasFeature(cpuid.ARM64FeaturePACA),
+		generic: fs.HasFeature(cpuid.ARM64FeaturePACG),
+		cpu: pacCPU{
+			Implementer:  fs.CPUImplementer(),
+			Architecture: fs.CPUArchitecture(),
+			Variant:      fs.CPUVariant(),
+			Part:         fs.CPUPartnum(),
+			Revision:     fs.CPURevision(),
+		},
 	}
-
-	err := t.setEnabledPointerAuthKeys(0)
-	if errors.Is(err, unix.EINVAL) {
-		// Somewhat annoyingly, Linux appears to have added PAC support in 5.0 yet added support
-		// for disabling it per-process in 5.13.
-		// So disabling PAC will only work on kernels >=5.13.
-		//
-		// We ignore EINVAL in case we are on such a kernel version.
-		pointerAuthWarnOnce.Do(func() {
-			log.Warningf("Unable to disable pointer authentication for application processes (is the host kernel 5.13 or greater?): %v", err)
-		})
-		return nil
+	if !fs.HasFeature(cpuid.ARM64FeatureCPUID) {
+		return host
 	}
-	return err
+	isar1 := getIDAA64ISAR1EL1()
+	host.addressAlgorithm = pacAlgorithmFromFields(
+		0,
+		(isar1>>4)&0xf, // ID_AA64ISAR1_EL1.APA
+		(isar1>>8)&0xf, // ID_AA64ISAR1_EL1.API
+	)
+	host.genericAlgorithm = pacAlgorithmFromFields(
+		0,
+		(isar1>>24)&0xf, // ID_AA64ISAR1_EL1.GPA
+		(isar1>>28)&0xf, // ID_AA64ISAR1_EL1.GPI
+	)
+	// ID_AA64ISAR2_EL1 was added to Linux's userspace MRS emulation after
+	// ID_AA64ISAR1_EL1. Older kernels can advertise QARMA5 or IMPDEF PAC but
+	// fault an EL0 read of ISAR2, so read it only when an advertised key class
+	// has no algorithm in ISAR1. Kernels that advertise QARMA3 support must
+	// provide ISAR2.
+	if (host.address && host.addressAlgorithm == "") || (host.generic && host.genericAlgorithm == "") {
+		isar2 := getIDAA64ISAR2EL1()
+		if host.addressAlgorithm == "" {
+			host.addressAlgorithm = pacAlgorithmFromFields((isar2>>12)&0xf, 0, 0) // ID_AA64ISAR2_EL1.APA3
+		}
+		if host.genericAlgorithm == "" {
+			host.genericAlgorithm = pacAlgorithmFromFields((isar2>>8)&0xf, 0, 0) // ID_AA64ISAR2_EL1.GPA3
+		}
+	}
+	return host
 }
 
 // configureSystrapAddressSpace overrides the default 48-bit address space

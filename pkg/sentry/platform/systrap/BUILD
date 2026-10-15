@@ -41,6 +41,7 @@ go_library(
         "lib_amd64.s",
         "lib_arm64.s",
         "metrics.go",
+        "pac.go",
         "shared_context.go",
         "shared_context_norace.go",
         "shared_context_race.go",
@@ -113,6 +114,7 @@ go_test(
     size = "small",
     srcs = [
         "context_queue_test.go",
+        "pac_test.go",
         "shared_context_test.go",
         "systrap_test.go",
     ],

@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -47,11 +48,6 @@ func (t *thread) setTLS(tls *uint64) error {
 	return nil
 }
 
-// disablePointerAuth has no effect on amd64.
-func (t *thread) disablePointerAuth() error {
-	return nil
-}
-
 // configureSystrapAddressSpace is a no-op on amd64.
 //
 // On ARM64, this function overrides the default 48-bit address space
@@ -59,3 +55,17 @@ func (t *thread) disablePointerAuth() error {
 // address space layout is fixed and does not require dynamic
 // configuration, so this is intentionally empty.
 func configureSystrapAddressSpace() {}
+
+// hostPACSupport returns no pointer authentication keys, which are
+// ARM64-only.
+func hostPACSupport() hostPAC {
+	return hostPAC{}
+}
+
+func (t *thread) getPACKeys(*pacKeys) error {
+	return unix.ENOTSUP
+}
+
+func (t *thread) setPACKeys(*pacKeys) error {
+	return unix.ENOTSUP
+}
