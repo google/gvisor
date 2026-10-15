@@ -123,6 +123,7 @@ func (i *Inode) StateFields() []string {
 		"idataOff",
 		"blocks",
 		"format",
+		"chunkFormat",
 		"mode",
 		"nid",
 		"size",
@@ -144,14 +145,15 @@ func (i *Inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.idataOff)
 	stateSinkObject.Save(3, &i.blocks)
 	stateSinkObject.Save(4, &i.format)
-	stateSinkObject.Save(5, &i.mode)
-	stateSinkObject.Save(6, &i.nid)
-	stateSinkObject.Save(7, &i.size)
-	stateSinkObject.Save(8, &i.mtime)
-	stateSinkObject.Save(9, &i.mtimeNsec)
-	stateSinkObject.Save(10, &i.uid)
-	stateSinkObject.Save(11, &i.gid)
-	stateSinkObject.Save(12, &i.nlink)
+	stateSinkObject.Save(5, &i.chunkFormat)
+	stateSinkObject.Save(6, &i.mode)
+	stateSinkObject.Save(7, &i.nid)
+	stateSinkObject.Save(8, &i.size)
+	stateSinkObject.Save(9, &i.mtime)
+	stateSinkObject.Save(10, &i.mtimeNsec)
+	stateSinkObject.Save(11, &i.uid)
+	stateSinkObject.Save(12, &i.gid)
+	stateSinkObject.Save(13, &i.nlink)
 }
 
 func (i *Inode) afterLoad(context.Context) {}
@@ -163,14 +165,15 @@ func (i *Inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.idataOff)
 	stateSourceObject.Load(3, &i.blocks)
 	stateSourceObject.Load(4, &i.format)
-	stateSourceObject.Load(5, &i.mode)
-	stateSourceObject.Load(6, &i.nid)
-	stateSourceObject.Load(7, &i.size)
-	stateSourceObject.Load(8, &i.mtime)
-	stateSourceObject.Load(9, &i.mtimeNsec)
-	stateSourceObject.Load(10, &i.uid)
-	stateSourceObject.Load(11, &i.gid)
-	stateSourceObject.Load(12, &i.nlink)
+	stateSourceObject.Load(5, &i.chunkFormat)
+	stateSourceObject.Load(6, &i.mode)
+	stateSourceObject.Load(7, &i.nid)
+	stateSourceObject.Load(8, &i.size)
+	stateSourceObject.Load(9, &i.mtime)
+	stateSourceObject.Load(10, &i.mtimeNsec)
+	stateSourceObject.Load(11, &i.uid)
+	stateSourceObject.Load(12, &i.gid)
+	stateSourceObject.Load(13, &i.nlink)
 }
 
 func init() {

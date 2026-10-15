@@ -129,6 +129,7 @@ func (fs *filesystem) StateFields() []string {
 		"root",
 		"image",
 		"mf",
+		"zeroPage",
 		"useReadForIO",
 		"inodeBuckets",
 		"cachedDentries",
@@ -150,12 +151,13 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fs.root)
 	stateSinkObject.Save(5, &fs.image)
 	stateSinkObject.Save(6, &fs.mf)
-	stateSinkObject.Save(7, &fs.useReadForIO)
-	stateSinkObject.Save(8, &fs.inodeBuckets)
-	stateSinkObject.Save(9, &fs.cachedDentries)
-	stateSinkObject.Save(10, &fs.cachedDentriesLen)
-	stateSinkObject.Save(11, &fs.maxCachedDentries)
-	stateSinkObject.Save(12, &fs.released)
+	stateSinkObject.Save(7, &fs.zeroPage)
+	stateSinkObject.Save(8, &fs.useReadForIO)
+	stateSinkObject.Save(9, &fs.inodeBuckets)
+	stateSinkObject.Save(10, &fs.cachedDentries)
+	stateSinkObject.Save(11, &fs.cachedDentriesLen)
+	stateSinkObject.Save(12, &fs.maxCachedDentries)
+	stateSinkObject.Save(13, &fs.released)
 }
 
 // +checklocksignore
@@ -167,12 +169,13 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(4, &fs.root)
 	stateSourceObject.Load(5, &fs.image)
 	stateSourceObject.Load(6, &fs.mf)
-	stateSourceObject.Load(7, &fs.useReadForIO)
-	stateSourceObject.Load(8, &fs.inodeBuckets)
-	stateSourceObject.Load(9, &fs.cachedDentries)
-	stateSourceObject.Load(10, &fs.cachedDentriesLen)
-	stateSourceObject.Load(11, &fs.maxCachedDentries)
-	stateSourceObject.Load(12, &fs.released)
+	stateSourceObject.Load(7, &fs.zeroPage)
+	stateSourceObject.Load(8, &fs.useReadForIO)
+	stateSourceObject.Load(9, &fs.inodeBuckets)
+	stateSourceObject.Load(10, &fs.cachedDentries)
+	stateSourceObject.Load(11, &fs.cachedDentriesLen)
+	stateSourceObject.Load(12, &fs.maxCachedDentries)
+	stateSourceObject.Load(13, &fs.released)
 	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 

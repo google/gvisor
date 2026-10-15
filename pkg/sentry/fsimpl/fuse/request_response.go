@@ -101,9 +101,30 @@ type Request struct {
 	// If we don't care its response.
 	// Manually set by the caller.
 	noReply bool
-	// sent is true once the request has been dequeued by conn.read() or
-	// written to the host FD.
-	sent bool
+	// If set, the request is sent to the server even if the calling task is
+	// killed before the request has been read by the server. Analogous to
+	// Linux's FR_FORCE.
+	force bool
+}
+
+// newInterruptRequest creates a FUSE_INTERRUPT request for the request with
+// the given unique ID. As in Linux, the request's credentials and node ID are
+// zero.
+func newInterruptRequest(unique linux.FUSEOpID) *Request {
+	in := linux.FUSEInterruptIn{Unique: unique}
+	hdr := linux.FUSEHeaderIn{
+		Len:    linux.SizeOfFUSEHeaderIn + uint32(in.SizeBytes()),
+		Opcode: linux.FUSE_INTERRUPT,
+		Unique: unique | linux.FUSE_INT_REQ_BIT,
+	}
+	buf := make([]byte, hdr.Len)
+	hdr.MarshalUnsafe(buf[:linux.SizeOfFUSEHeaderIn])
+	in.MarshalUnsafe(buf[linux.SizeOfFUSEHeaderIn:])
+	return &Request{
+		id:   hdr.Unique,
+		hdr:  &hdr,
+		data: buf,
+	}
 }
 
 // NewRequest creates a new request that can be sent to the FUSE server.
@@ -145,14 +166,27 @@ type futureResponse struct {
 	hdr    *linux.FUSEHeaderOut
 	data   []byte
 
+	// unique is the unique ID of the corresponding request.
+	unique linux.FUSEOpID
+
 	// If this request is async.
 	async bool
 
-	// abandoned is true if the waiting task was interrupted after the request
-	// was already sent to the FUSE server. The completion entry remains registered
-	// until the server replies so that the late reply is consumed and discarded
-	// cleanly instead of failing with EINVAL.
-	abandoned bool
+	// The following fields implement the interrupt semantics described in
+	// Linux's Documentation/filesystems/fuse.rst ("Interrupting filesystem
+	// operations"). They are protected by connection.mu.
+
+	// sent is true if the request has been transferred to the FUSE server.
+	sent bool
+
+	// interrupted is true if the task waiting on this request was
+	// interrupted by a signal. If the request has not yet been sent, a
+	// FUSE_INTERRUPT request is queued once it is.
+	interrupted bool
+
+	// intrReq is the FUSE_INTERRUPT request for this request, if one is
+	// queued in connection.interrupts and has not been read by the server.
+	intrReq *Request
 
 	// buf is a fixed-size buffer for response data. The host connection
 	// path slices data from this buffer to avoid a per-response allocation.
@@ -164,6 +198,7 @@ func newFutureResponse(req *Request) *futureResponse {
 	return &futureResponse{
 		opcode: req.hdr.Opcode,
 		ch:     make(chan struct{}),
+		unique: req.id,
 		async:  req.async,
 	}
 }

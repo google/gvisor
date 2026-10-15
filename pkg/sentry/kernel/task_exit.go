@@ -126,6 +126,37 @@ func (t *Task) killedLocked() bool {
 	return linux.SignalSet(t.pendingSignals.pendingSet.RacyLoad())&linux.SignalSetOf(linux.SIGKILL) != 0
 }
 
+// FatalSignalPending returns true if t has a SIGKILL pending, or an unblocked
+// pending signal whose delivery will terminate t's thread group. In Linux,
+// kernel/signal.c:complete_signal() converts the latter into SIGKILL when the
+// signal is sent, so FatalSignalPending is analogous to Linux's
+// fatal_signal_pending().
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) FatalSignalPending() bool {
+	if t.killed() {
+		return true
+	}
+	// As in Linux, signals other than SIGKILL are never fatal before delivery
+	// to a traced task, since the tracer may suppress them.
+	if t.ptraceTracer.Load() != nil {
+		return false
+	}
+	mask := linux.SignalSet(t.signalMask.Load())
+	if (linux.SignalSet(t.pendingSignals.pendingSet.Load())|linux.SignalSet(t.tg.pendingSignals.pendingSet.Load()))&^mask == 0 {
+		return false
+	}
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	pending := (linux.SignalSet(t.pendingSignals.pendingSet.RacyLoad()) | linux.SignalSet(t.tg.pendingSignals.pendingSet.RacyLoad())) &^ mask
+	for sig := linux.Signal(1); sig <= linux.SignalMaximum; sig++ {
+		if pending&linux.SignalSetOf(sig) != 0 && computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionTerm {
+			return true
+		}
+	}
+	return false
+}
+
 // PrepareExit indicates an exit with the given status.
 //
 // Preconditions: The caller must be running on the task goroutine.
