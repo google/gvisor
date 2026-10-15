@@ -23,6 +23,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -537,6 +538,47 @@ func TestExecError(t *testing.T) {
 	}
 	if want := `error finding executable "no_can_find" in PATH`; !strings.Contains(out, want) {
 		t.Fatalf("docker exec wrong error, got: %s, want: .*%s.*", out, want)
+	}
+}
+
+func TestExecCancellation(t *testing.T) {
+	ctx := t.Context()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	execCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Exec(execCtx, dockerutil.ExecOpts{}, "sh", "-c", "touch /tmp/exec-started && exec sleep 1000")
+		done <- err
+	}()
+
+	// Cancel only after the exec has started and is holding its output open.
+	startCtx, stopWaiting := context.WithTimeout(ctx, defaultWait)
+	defer stopWaiting()
+	if err := testutil.PollContext(startCtx, func() error {
+		_, err := d.Exec(startCtx, dockerutil.ExecOpts{}, "test", "-f", "/tmp/exec-started")
+		return err
+	}); err != nil {
+		t.Fatalf("waiting for exec to start: %v", err)
+	}
+	cancel()
+
+	waitCtx, stop := context.WithTimeout(ctx, defaultWait)
+	defer stop()
+	select {
+	case err := <-done:
+		if want := context.Canceled; !errors.Is(err, want) {
+			t.Fatalf("Exec error = %v, want %v", err, want)
+		}
+	case <-waitCtx.Done():
+		t.Fatalf("Exec did not return after cancellation: %v", waitCtx.Err())
 	}
 }
 
