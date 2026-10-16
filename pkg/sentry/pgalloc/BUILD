@@ -209,11 +209,15 @@ go_test(
     srcs = [
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
+        "decommit_restore_test.go",
     ],
     embed = [":pgalloc"],
     deps = [
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/safemem",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/state/stateio",
     ],
 )
 
