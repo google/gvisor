@@ -104,6 +104,13 @@ steps:
     command: make smoke-race-tests
     agents:
       queue: "default"
+
+  # Run the remaining tests only if the smoke tests pass, so that a change
+  # that does not build or start does not use the other agents (presubmits
+  # only).
+  - wait: ~
+    if: build.branch != "master"
+
   - <<: *common
     <<: *source_test
     label: ":speedboat: Compile runsc-plugin-stack (AMD64)"
