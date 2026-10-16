@@ -762,7 +762,11 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 	hasFSSave := saveOpts.FSSaveOpts != nil
 	defer func() {
 		// This closure is required to capture the final value of err.
-		l.k.OnCheckpointAttempt(err)
+		if err == nil && saveOpts.Resume {
+			go l.postResume()
+		} else {
+			l.k.OnCheckpointAttempt(err)
+		}
 		if hasFSSave {
 			l.k.SignalAllFSSaveWaiters(err)
 		}
@@ -800,6 +804,16 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *control.SaveRe
 		Watchdog: l.watchdog,
 	}
 	return state.SaveWithOpts(saveOpts, execOpts)
+}
+
+// postResume runs post-resume work and then completes the checkpoint attempt.
+func (l *Loader) postResume() {
+	err := control.PostResume(l.k, nil)
+	l.k.OnCheckpointAttempt(err)
+	if err != nil {
+		log.Warningf("Killing the sandbox after post resume work failed: %v", err)
+		l.k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
+	}
 }
 
 func procFiles(conf *config.Config) []string {

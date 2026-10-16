@@ -17,83 +17,38 @@ package coretag
 
 import (
 	"fmt"
-	"os"
-	"strconv"
+	"runtime"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// Enable core tagging. If this returns with no error, all threads in the
-// current thread group will be run in a core tagged thread. Only available on
-// linux kernel >= 5.14.
-func Enable() error {
-	// Set core tag on current thread group.
-	// prctl(PR_SCHED_CORE, PR_SCHED_CORE_CREATE, pid=0,
-	//       PR_SCHED_CORE_SCOPE_THREAD_GROUP, cookie=nullptr)
-	// pid=0 means current pid.
-	// cookie=nullptr is required for PR_SCHED_CORE_CREATE.
+// Enable core tagging and returns the created core tag. If this returns with
+// no error, all threads in the current thread group will be run in a core
+// tagged thread.
+func Enable() (uint64, error) {
+	// Pin the current goroutine to its OS thread so the thread cannot exit or
+	// migrate.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Get the exact OS Thread ID of that pinned thread. Do not use Getpid(), as
+	// the goroutine may be pinned to a worker thread rather than the main thread.
+	tid := unix.Gettid()
+
+	// Create the cookie on that single thread.
 	if _, _, errno := unix.Syscall6(unix.SYS_PRCTL, unix.PR_SCHED_CORE,
-		unix.PR_SCHED_CORE_CREATE, 0 /*pid*/, linux.PR_SCHED_CORE_SCOPE_THREAD_GROUP, 0, 0); errno != 0 {
-		return fmt.Errorf("failed to core tag sentry: %w", errno)
-	}
-	return nil
-}
-
-// GetAllCoreTags returns the core tag of all the threads in the thread group.
-// PID 0 means the current pid.
-func GetAllCoreTags(pid int) ([]uint64, error) {
-	// prctl(PR_SCHED_CORE_GET, PR_SCHED_CORE_SCOPE_THREAD_GROUP, ...) is not supported
-	// in linux. So instead we get all threads from /proc/<pid>/task and get all the
-	// core tags individually.
-	tagSet := make(map[uint64]struct{})
-	// Get current pid core tag.
-	tag, err := getCoreTag(pid)
-	if err != nil {
-		return nil, err
-	}
-	tagSet[tag] = struct{}{}
-
-	// Get core tags of tids.
-	tids, err := getTids(pid)
-	if err != nil {
-		return nil, err
-	}
-	for tid := range tids {
-		tag, err := getCoreTag(tid)
-		if err != nil {
-			return nil, err
-		}
-		tagSet[tag] = struct{}{}
+		unix.PR_SCHED_CORE_CREATE, uintptr(tid), linux.PR_SCHED_CORE_SCOPE_THREAD, 0, 0); errno != 0 {
+		return 0, fmt.Errorf("failed to create core tag on thread %d: %w", tid, errno)
 	}
 
-	// Return set of tags as a slice.
-	tags := make([]uint64, 0, len(tagSet))
-	for t := range tagSet {
-		tags = append(tags, t)
+	// Broadcast PR_SCHED_CORE_SHARE_FROM via AllThreadsSyscall6 referencing tid.
+	// This stops the world, halts Go thread creation, and forces every existing
+	// OS thread to pull the cookie from tid.
+	if _, _, errno := syscall.AllThreadsSyscall6(unix.SYS_PRCTL, unix.PR_SCHED_CORE,
+		unix.PR_SCHED_CORE_SHARE_FROM, uintptr(tid), linux.PR_SCHED_CORE_SCOPE_THREAD, 0, 0); errno != 0 {
+		return 0, fmt.Errorf("failed to share core tag from thread %d: %w", tid, errno)
 	}
-	return tags, nil
-}
-
-// getTids returns set of tids as reported by /proc/<pid>/task.
-// PID 0 means the current PID.
-func getTids(pid int) (map[int]struct{}, error) {
-	tids := make(map[int]struct{})
-	path := "/proc/self/task"
-	if pid != 0 {
-		path = fmt.Sprintf("/proc/%d/task", pid)
-	}
-	files, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-	for _, file := range files {
-		tid, err := strconv.Atoi(file.Name())
-		if err != nil {
-			return nil, err
-		}
-		tids[tid] = struct{}{}
-	}
-
-	return tids, nil
+	return getCoreTag(tid)
 }
