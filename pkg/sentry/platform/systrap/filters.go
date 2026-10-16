@@ -28,6 +28,10 @@ import (
 // encode the sysmsg thread priority.
 const sysmsgThreadPriorityVarName = "systrap_sysmsg_thread_priority"
 
+// selfPIDVarName is the seccomp filter variable name used to encode the
+// current process ID, which is only known at runtime.
+const selfPIDVarName = "systrap_self_pid"
+
 // systrapSeccomp implements platform.SeccompInfo.
 type systrapSeccomp struct{}
 
@@ -36,6 +40,7 @@ func (systrapSeccomp) Variables() precompiledseccomp.Values {
 	initSysmsgThreadPriority()
 	vars := precompiledseccomp.Values{}
 	vars.SetUint64(sysmsgThreadPriorityVarName, uint64(sysmsgThreadPriority))
+	vars.SetUint64(selfPIDVarName, uint64(os.Getpid()))
 	return vars
 }
 
@@ -96,7 +101,7 @@ func (systrapSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.Sys
 		},
 		unix.SYS_TGKILL: seccomp.MatchAll{},
 		unix.SYS_RT_TGSIGQUEUEINFO: seccomp.PerArg{
-			seccomp.EqualTo(os.Getpid()),
+			seccomp.EqualTo(vars.GetUint64(selfPIDVarName)),
 			seccomp.AnyValue{}, // tid
 			seccomp.EqualTo(unix.SIGKILL),
 		},

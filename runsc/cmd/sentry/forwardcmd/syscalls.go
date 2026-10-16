@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package forwardcmd implements commands that runsc runs in the Sentry
-// binary, because they report on code that is linked into it.
 package forwardcmd
 
 import (
