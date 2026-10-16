@@ -28,6 +28,7 @@ package raw
 import (
 	"fmt"
 	"io"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -438,7 +439,7 @@ func (*endpoint) Accept(*tcpip.FullAddress) (tcpip.Endpoint, *waiter.Queue, tcpi
 
 // Bind implements tcpip.Endpoint.Bind.
 func (e *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
-	return e.net.BindAndThen(addr, func(netProto tcpip.NetworkProtocolNumber, _ tcpip.Address) tcpip.Error {
+	return e.net.BindAndThen(addr, func(netProto tcpip.NetworkProtocolNumber, _ netip.Addr) tcpip.Error {
 		if !e.associated {
 			return nil
 		}
@@ -626,7 +627,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		case transport.DatagramEndpointStateConnected:
 			// If connected, only accept packets from the remote address we
 			// connected to.
-			if info.ID.RemoteAddress != srcAddr {
+			if info.ID.Remote.Addr() != srcAddr {
 				return false
 			}
 
@@ -640,7 +641,7 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 			}
 
 			// If bound to an address, only accept data for that address.
-			if info.BindAddr != (tcpip.Address{}) && info.BindAddr != dstAddr {
+			if info.BindAddr != (netip.Addr{}) && info.BindAddr != dstAddr {
 				return false
 			}
 		default:

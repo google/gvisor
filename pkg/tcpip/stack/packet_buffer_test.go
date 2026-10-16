@@ -16,10 +16,10 @@ package stack
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -766,8 +766,8 @@ func TestCalculateTransportChecksumUDPZero(t *testing.T) {
 	netHdr := header.IPv4(pk.NetworkHeader().Slice())
 	netHdr.Encode(&header.IPv4Fields{
 		Protocol: uint8(header.UDPProtocolNumber),
-		SrcAddr:  tcpip.AddrFrom4Slice([]byte{0, 0, 0, 0}),
-		DstAddr:  tcpip.AddrFrom4Slice([]byte{0, 0, 0, 0}),
+		SrcAddr:  netip.IPv4Unspecified(),
+		DstAddr:  netip.IPv4Unspecified(),
 	})
 
 	// Encode Transport Header (UDP)

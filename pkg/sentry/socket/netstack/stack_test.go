@@ -15,6 +15,7 @@
 package netstack_test
 
 import (
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -39,10 +40,7 @@ func TestRemoveRouteRemovesFirstMatchOnly(t *testing.T) {
 	s := &netstack.Stack{
 		Stack: stack.New(stack.Options{}),
 	}
-	dst := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFrom4([4]byte{10, 0, 0, 0}),
-		PrefixLen: 24,
-	}.Subnet()
+	dst := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 0, 0, 0}), 24)
 	s.Stack.AddRoute(tcpip.Route{Destination: dst, NIC: 1})
 	s.Stack.AddRoute(tcpip.Route{Destination: dst, NIC: 2})
 

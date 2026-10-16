@@ -17,10 +17,10 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
@@ -51,11 +51,11 @@ func TestMLD(t *testing.T) {
 		t.Errorf("got mld.MaximumResponseDelay() = %s, want = %s", got, want)
 	}
 
-	if got, want := mld.MulticastAddress(), tcpip.AddrFrom16([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
+	if got, want := mld.MulticastAddress(), netip.AddrFrom16([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
 		t.Errorf("got mld.MulticastAddress() = %s, want = %s", got, want)
 	}
 
-	multicastAddress := tcpip.AddrFrom16([16]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+	multicastAddress := netip.AddrFrom16([16]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
 	mld.SetMulticastAddress(multicastAddress)
 	if got := mld.MulticastAddress(); got != multicastAddress {
 		t.Errorf("got mld.MulticastAddress() = %s, want = %s", got, multicastAddress)
@@ -151,7 +151,7 @@ func TestMLDv2Query(t *testing.T) {
 		exponentialQQIC(1, 1),
 	}
 
-	sourceAddrs := []tcpip.Address{
+	sourceAddrs := []netip.Addr{
 		testutil.MustParse6("a00::a"),
 		testutil.MustParse6("b00::b"),
 		testutil.MustParse6("c00::c"),
@@ -226,7 +226,7 @@ func TestMLDv2Query(t *testing.T) {
 						if got := query.QuerierQueryInterval(); got != qqic.expectedInterval {
 							t.Errorf("got query.QuerierQueryInterval() = %s, want = %s", got, qqic.expectedInterval)
 						}
-						if got, want := query.MulticastAddress(), tcpip.AddrFrom16([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
+						if got, want := query.MulticastAddress(), netip.AddrFrom16([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
 							t.Errorf("got query.MulticastAddress() = %s, want = %s", got, want)
 						}
 
@@ -293,7 +293,7 @@ func TestMLDv2Report(t *testing.T) {
 					{
 						RecordType:       MLDv2ReportRecordModeIsInclude,
 						MulticastAddress: mcastAddr1,
-						Sources:          []tcpip.Address{srcAddr1},
+						Sources:          []netip.Addr{srcAddr1},
 					},
 				},
 			},
@@ -310,12 +310,12 @@ func TestMLDv2Report(t *testing.T) {
 					{
 						RecordType:       MLDv2ReportRecordModeIsExclude,
 						MulticastAddress: mcastAddr2,
-						Sources:          []tcpip.Address{srcAddr1, srcAddr2, srcAddr3},
+						Sources:          []netip.Addr{srcAddr1, srcAddr2, srcAddr3},
 					},
 					{
 						RecordType:       MLDv2ReportRecordChangeToIncludeMode,
 						MulticastAddress: mcastAddr3,
-						Sources:          []tcpip.Address{srcAddr1, srcAddr2},
+						Sources:          []netip.Addr{srcAddr1, srcAddr2},
 					},
 				},
 			},

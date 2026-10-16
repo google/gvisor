@@ -16,6 +16,7 @@ package stack
 import (
 	"fmt"
 	"io"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -530,7 +531,7 @@ func (pk *PacketBuffer) ConfigureNoopNAT(natType NATType) bool {
 // ConfigureNAT configures NAT for the packet.
 // Called if NAT rules are configured for this packet.
 // Returns whether NAT was configured or not.
-func (pk *PacketBuffer) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress tcpip.Address, natType NATType, changePort, changeAddress bool) bool {
+func (pk *PacketBuffer) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress netip.Addr, natType NATType, changePort, changeAddress bool) bool {
 	if !pk.IsConnTrackConfigured() {
 		return false
 	}
@@ -1000,7 +1001,7 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 }
 
 // UpdateHeaders updates the headers of the packet with the new port and address.
-func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPortOrIdent uint16, newAddr tcpip.Address) {
+func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPortOrIdent uint16, newAddr netip.Addr) {
 	switch t := t.(type) {
 	case header.ChecksummableTransport:
 		if updateSRCFields {
@@ -1018,7 +1019,7 @@ func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullCh
 		}
 
 		if updatePseudoHeader {
-			var oldAddr tcpip.Address
+			var oldAddr netip.Addr
 			if updateSRCFields {
 				oldAddr = n.SourceAddress()
 			} else {
@@ -1054,7 +1055,7 @@ func UpdateHeaders(n header.Network, t header.Transport, updateSRCFields, fullCh
 			panic(fmt.Sprintf("unexpected ICMPv6 type = %d", icmpType))
 		}
 
-		var oldAddr tcpip.Address
+		var oldAddr netip.Addr
 		if updateSRCFields {
 			oldAddr = n.SourceAddress()
 		} else {

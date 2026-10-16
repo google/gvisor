@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -131,12 +132,12 @@ func (b IGMP) SetChecksum(checksum uint16) {
 }
 
 // GroupAddress gets the Group Address field.
-func (b IGMP) GroupAddress() tcpip.Address {
-	return tcpip.AddrFrom4([4]byte(b[igmpGroupAddressOffset:][:IPv4AddressSize]))
+func (b IGMP) GroupAddress() netip.Addr {
+	return netip.AddrFrom4([4]byte(b[igmpGroupAddressOffset:][:IPv4AddressSize]))
 }
 
 // SetGroupAddress sets the Group Address field.
-func (b IGMP) SetGroupAddress(address tcpip.Address) {
+func (b IGMP) SetGroupAddress(address netip.Addr) {
 	addrBytes := address.As4()
 	if n := copy(b[igmpGroupAddressOffset:], addrBytes[:]); n != IPv4AddressSize {
 		panic(fmt.Sprintf("copied %d bytes, expected %d", n, IPv4AddressSize))

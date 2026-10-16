@@ -17,6 +17,7 @@ package ipv4
 import (
 	"fmt"
 	"math"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -228,7 +229,7 @@ func (*icmpv4FragmentationNeededSockError) Kind() stack.TransportErrorKind {
 	return stack.PacketTooBigTransportError
 }
 
-func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
+func (e *endpoint) checkLocalAddress(addr netip.Addr) bool {
 	if e.nic.Spoofing() {
 		return true
 	}
@@ -462,7 +463,7 @@ func (e *endpoint) sendICMPEchoReply(replyData *buffer.View, ipHdr header.IPv4, 
 	// or multicast address).
 	localAddr := ipHdr.DestinationAddress()
 	if localAddressBroadcast || header.IsV4MulticastAddress(localAddr) {
-		localAddr = tcpip.Address{}
+		localAddr = netip.Addr{}
 	}
 
 	r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, ipHdr.SourceAddress(), ProtocolNumber, false /* multicastLoop */)
@@ -667,7 +668,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// destination address of a packet we are forwarding.
 	localAddr := origIPHdrDst
 	if !deliveredLocally {
-		localAddr = tcpip.Address{}
+		localAddr = netip.Addr{}
 	}
 
 	// Even if we were able to receive a packet from some remote, we may not have

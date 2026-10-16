@@ -17,6 +17,7 @@ package ipv4
 import (
 	"fmt"
 	"math"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -136,7 +137,7 @@ func (igmp *igmpState) Enabled() bool {
 // SendReport implements ip.MulticastGroupProtocol.
 //
 // +checklocksread:igmp.ep.mu
-func (igmp *igmpState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) {
+func (igmp *igmpState) SendReport(groupAddress netip.Addr) (bool, tcpip.Error) {
 	igmpType := header.IGMPv2MembershipReport
 	switch igmp.mode {
 	case protocolModeV2OrV3:
@@ -151,7 +152,7 @@ func (igmp *igmpState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error
 // SendLeave implements ip.MulticastGroupProtocol.
 //
 // +checklocksread:igmp.ep.mu
-func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
+func (igmp *igmpState) SendLeave(groupAddress netip.Addr) tcpip.Error {
 	// As per RFC 2236 Section 6, Page 8: "If the interface state says the
 	// Querier is running IGMPv1, this action SHOULD be skipped. If the flag
 	// saying we were the last host to report is cleared, this action MAY be
@@ -168,7 +169,7 @@ func (igmp *igmpState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
 }
 
 // ShouldPerformProtocol implements ip.MulticastGroupProtocol.
-func (igmp *igmpState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
+func (igmp *igmpState) ShouldPerformProtocol(groupAddress netip.Addr) bool {
 	// As per RFC 2236 section 6 page 10,
 	//
 	//   The all-systems group (address 224.0.0.1) is handled as a special
@@ -185,7 +186,7 @@ type igmpv3ReportBuilder struct {
 }
 
 // AddRecord implements ip.MulticastGroupProtocolV2ReportBuilder.
-func (b *igmpv3ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress tcpip.Address) {
+func (b *igmpv3ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress netip.Addr) {
 	var recordType header.IGMPv3ReportRecordType
 	switch genericRecordType {
 	case ip.MulticastGroupProtocolV2ReportRecordModeIsInclude:
@@ -312,7 +313,7 @@ func (igmp *igmpState) restore() {
 }
 
 // +checklocks:igmp.ep.mu
-func (igmp *igmpState) isSourceIPValidLocked(src tcpip.Address, messageType header.IGMPType) bool {
+func (igmp *igmpState) isSourceIPValidLocked(src netip.Addr, messageType header.IGMPType) bool {
 	if messageType == header.IGMPMembershipQuery {
 		// RFC 2236 does not require the IGMP implementation to check the source IP
 		// for Membership Query messages.
@@ -449,7 +450,7 @@ func (igmp *igmpState) resetV1Present() {
 // handleMembershipQuery handles a membership query.
 //
 // +checklocks:igmp.ep.mu
-func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxRespTime time.Duration) {
+func (igmp *igmpState) handleMembershipQuery(groupAddress netip.Addr, maxRespTime time.Duration) {
 	// As per RFC 2236 Section 6, Page 10: If the maximum response time is zero
 	// then change the state to note that an IGMPv1 router is present and
 	// schedule the query received Job.
@@ -491,14 +492,14 @@ func (igmp *igmpState) handleMembershipQueryV3(igmpHdr header.IGMPv3Query) {
 // handleMembershipReport handles a membership report.
 //
 // +checklocks:igmp.ep.mu
-func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
+func (igmp *igmpState) handleMembershipReport(groupAddress netip.Addr) {
 	igmp.genericMulticastProtocol.HandleReportLocked(groupAddress)
 }
 
 // writePacket assembles and sends an IGMP packet.
 //
 // +checklocksread:igmp.ep.mu
-func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip.Address, igmpType header.IGMPType) (bool, tcpip.Error) {
+func (igmp *igmpState) writePacket(destAddress netip.Addr, groupAddress netip.Addr, igmpType header.IGMPType) (bool, tcpip.Error) {
 	igmpView := buffer.NewViewSize(header.IGMPReportMinimumSize)
 	igmpData := header.IGMP(igmpView.AsSlice())
 	igmpData.SetType(igmpType)
@@ -529,18 +530,18 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 }
 
 // +checklocksread:igmp.ep.mu
-func (igmp *igmpState) writePacketInner(buf *buffer.View, reportStat tcpip.MultiCounterStat, options header.IPv4OptionsSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
+func (igmp *igmpState) writePacketInner(buf *buffer.View, reportStat tcpip.MultiCounterStat, options header.IPv4OptionsSerializer, destAddress netip.Addr) (bool, tcpip.Error) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(igmp.ep.MaxHeaderLength()),
 		Payload:            buffer.MakeWithView(buf),
 	})
 	defer pkt.DecRef()
 
-	addressEndpoint := igmp.ep.acquireOutgoingPrimaryAddressRLocked(destAddress, tcpip.Address{} /* srcHint */, false /* allowExpired */)
+	addressEndpoint := igmp.ep.acquireOutgoingPrimaryAddressRLocked(destAddress, netip.Addr{} /* srcHint */, false /* allowExpired */)
 	if addressEndpoint == nil {
 		return false, nil
 	}
-	localAddr := addressEndpoint.AddressWithPrefix().Address
+	localAddr := addressEndpoint.AddressWithPrefix().Addr()
 	addressEndpoint.DecRef()
 	addressEndpoint = nil
 	if err := igmp.ep.addIPHeader(localAddr, destAddress, pkt, stack.NetworkHeaderParams{
@@ -568,14 +569,14 @@ func (igmp *igmpState) writePacketInner(buf *buffer.View, reportStat tcpip.Multi
 // *tcpip.ErrDuplicateAddress.
 //
 // +checklocks:igmp.ep.mu
-func (igmp *igmpState) joinGroup(groupAddress tcpip.Address) {
+func (igmp *igmpState) joinGroup(groupAddress netip.Addr) {
 	igmp.genericMulticastProtocol.JoinGroupLocked(groupAddress)
 }
 
 // isInGroup returns true if the specified group has been joined locally.
 //
 // +checklocksread:igmp.ep.mu
-func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
+func (igmp *igmpState) isInGroup(groupAddress netip.Addr) bool {
 	return igmp.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
 
@@ -584,7 +585,7 @@ func (igmp *igmpState) isInGroup(groupAddress tcpip.Address) bool {
 // if required.
 //
 // +checklocks:igmp.ep.mu
-func (igmp *igmpState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
+func (igmp *igmpState) leaveGroup(groupAddress netip.Addr) tcpip.Error {
 	// LeaveGroup returns false only if the group was not joined.
 	if igmp.genericMulticastProtocol.LeaveGroupLocked(groupAddress) {
 		return nil

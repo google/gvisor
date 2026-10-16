@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -46,7 +47,7 @@ type neighborCacheMu struct {
 	neighborCacheRWMutex `state:"nosave"`
 
 	// +checklocks:neighborCacheRWMutex
-	cache map[tcpip.Address]*neighborEntry
+	cache map[netip.Addr]*neighborEntry
 	// +checklocks:neighborCacheRWMutex
 	dynamic dynamicCacheEntry
 }
@@ -81,7 +82,7 @@ type neighborCache struct {
 // reset to state incomplete, and returned. If no matching entry exists and the
 // cache is not full, a new entry with state incomplete is allocated and
 // returned.
-func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address) *neighborEntry {
+func (n *neighborCache) getOrCreateEntry(remoteAddr netip.Addr) *neighborEntry {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -132,7 +133,7 @@ func (n *neighborCache) getOrCreateEntry(remoteAddr tcpip.Address) *neighborEntr
 // If specified, the local address must be an address local to the interface the
 // neighbor cache belongs to. The local address is the source address of a
 // packet prompting NUD/link address resolution.
-func (n *neighborCache) entry(remoteAddr, localAddr tcpip.Address, onResolve func(LinkResolutionResult)) (*neighborEntry, <-chan struct{}, tcpip.Error) {
+func (n *neighborCache) entry(remoteAddr, localAddr netip.Addr, onResolve func(LinkResolutionResult)) (*neighborEntry, <-chan struct{}, tcpip.Error) {
 	entry := n.getOrCreateEntry(remoteAddr)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -186,7 +187,7 @@ func (n *neighborCache) entries() []NeighborEntry {
 // static entry exists with the same address but different link address, it
 // will be updated with the new link address. If a static entry exists with the
 // same address and link address, nothing will happen.
-func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAddress) {
+func (n *neighborCache) addStaticEntry(addr netip.Addr, linkAddr tcpip.LinkAddress) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -222,7 +223,7 @@ func (n *neighborCache) addStaticEntry(addr tcpip.Address, linkAddr tcpip.LinkAd
 
 // removeEntry removes a dynamic or static entry by address from the neighbor
 // cache. Returns true if the entry was found and deleted.
-func (n *neighborCache) removeEntry(addr tcpip.Address) bool {
+func (n *neighborCache) removeEntry(addr netip.Addr) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -277,7 +278,7 @@ func (n *neighborCache) setConfig(config NUDConfigurations) {
 // handleProbe handles a neighbor probe as defined by RFC 4861 section 7.2.3.
 //
 // Validation of the probe is expected to be handled by the caller.
-func (n *neighborCache) handleProbe(remoteAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) {
+func (n *neighborCache) handleProbe(remoteAddr netip.Addr, remoteLinkAddr tcpip.LinkAddress) {
 	entry := n.getOrCreateEntry(remoteAddr)
 	entry.mu.Lock()
 	entry.handleProbeLocked(remoteLinkAddr)
@@ -288,7 +289,7 @@ func (n *neighborCache) handleProbe(remoteAddr tcpip.Address, remoteLinkAddr tcp
 // RFC 4861 section 7.2.5.
 //
 // Validation of the confirmation is expected to be handled by the caller.
-func (n *neighborCache) handleConfirmation(addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
+func (n *neighborCache) handleConfirmation(addr netip.Addr, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) {
 	n.mu.RLock()
 	entry, ok := n.mu.cache[addr]
 	n.mu.RUnlock()
@@ -311,6 +312,6 @@ func (n *neighborCache) init(nic *nic, r LinkAddressResolver) {
 		linkRes: r,
 	}
 	n.mu.Lock()
-	n.mu.cache = make(map[tcpip.Address]*neighborEntry, NeighborCacheSize)
+	n.mu.cache = make(map[netip.Addr]*neighborEntry, NeighborCacheSize)
 	n.mu.Unlock()
 }

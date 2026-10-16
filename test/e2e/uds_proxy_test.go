@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,7 +72,7 @@ type externalUDSProxyEnv struct {
 	container   *dockerutil.Container
 	proxyStack  *stack.Stack
 	containerIP net.IP
-	targetAddr  tcpip.Address
+	targetAddr  netip.Addr
 }
 
 // setupExternalUDSProxyEnv creates an external SOCK_SEQPACKET unix domain
@@ -209,7 +210,7 @@ func setupExternalUDSProxyEnv(ctx context.Context, t *testing.T) *externalUDSPro
 		container:   d,
 		proxyStack:  proxyStack,
 		containerIP: containerIP,
-		targetAddr:  tcpip.AddrFrom4([4]byte{198, 51, 100, 1}),
+		targetAddr:  netip.AddrFrom4([4]byte{198, 51, 100, 1}),
 	}
 }
 
@@ -371,7 +372,7 @@ func TestExternalUDSProxyInbound(t *testing.T) {
 		dialCtx,
 		env.proxyStack,
 		tcpip.FullAddress{NIC: externalUDSProxyNIC, Addr: env.targetAddr},
-		tcpip.FullAddress{NIC: externalUDSProxyNIC, Addr: tcpip.AddrFrom4(containerAddrBytes), Port: listenPort},
+		tcpip.FullAddress{NIC: externalUDSProxyNIC, Addr: netip.AddrFrom4(containerAddrBytes), Port: listenPort},
 		ipv4.ProtocolNumber,
 	)
 	if err != nil {

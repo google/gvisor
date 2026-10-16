@@ -19,6 +19,7 @@ package fragmentation
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -64,10 +65,10 @@ var (
 // +stateify savable
 type FragmentID struct {
 	// Source is the source address of the fragment.
-	Source tcpip.Address
+	Source netip.Addr
 
 	// Destination is the destination address of the fragment.
-	Destination tcpip.Address
+	Destination netip.Addr
 
 	// ID is the identification value of the fragment.
 	//

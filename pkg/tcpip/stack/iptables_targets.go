@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"math"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -198,7 +199,7 @@ type DNATTarget struct {
 	// The new destination address for packets.
 	//
 	// Immutable.
-	Addr tcpip.Address
+	Addr netip.Addr
 
 	// The new destination port for packets.
 	//
@@ -269,17 +270,17 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 
 	// Change the address to loopback (127.0.0.1 or ::1) in Output and to
 	// the primary address of the incoming interface in Prerouting.
-	var address tcpip.Address
+	var address netip.Addr
 	switch hook {
 	case Output:
 		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-			address = tcpip.AddrFrom4([4]byte{127, 0, 0, 1})
+			address = netip.AddrFrom4([4]byte{127, 0, 0, 1})
 		} else {
 			address = header.IPv6Loopback
 		}
 	case Prerouting:
 		// addressEP is expected to be set for the prerouting hook.
-		address = addressEP.MainAddress().Address
+		address = addressEP.MainAddress().Addr()
 	case Input, Forward, Postrouting:
 		log.BugTracebackOnce(fmt.Errorf("%s not supported for REDIRECT", hook))
 		return RuleDrop, 0
@@ -294,7 +295,7 @@ func (rt *RedirectTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, address
 //
 // +stateify savable
 type SNATTarget struct {
-	Addr tcpip.Address
+	Addr netip.Addr
 	Port uint16
 
 	// NetworkProtocol is the network protocol the target is used with. It
@@ -312,7 +313,7 @@ type SNATTarget struct {
 	ChangePort bool
 }
 
-func dnatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address, changePort, changeAddress bool) (RuleVerdict, int) {
+func dnatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address netip.Addr, changePort, changeAddress bool) (RuleVerdict, int) {
 	return natAction(pkt, hook, r, PortOrIdentRange{Start: port, Size: 1}, address, true /* dnat */, changePort, changeAddress)
 }
 
@@ -333,7 +334,7 @@ func targetPortRangeForTCPAndUDP(originalSrcPort uint16) PortOrIdentRange {
 	}
 }
 
-func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcpip.Address, changePort, changeAddress bool) (RuleVerdict, int) {
+func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address netip.Addr, changePort, changeAddress bool) (RuleVerdict, int) {
 	portsOrIdents := PortOrIdentRange{Start: port, Size: 1}
 
 	switch pkt.TransportProtocolNumber {
@@ -356,7 +357,7 @@ func snatAction(pkt *PacketBuffer, hook Hook, r *Route, port uint16, address tcp
 	return natAction(pkt, hook, r, portsOrIdents, address, false /* dnat */, changePort, changeAddress)
 }
 
-func natAction(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents PortOrIdentRange, address tcpip.Address, dnat, changePort, changeAddress bool) (RuleVerdict, int) {
+func natAction(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents PortOrIdentRange, address netip.Addr, dnat, changePort, changeAddress bool) (RuleVerdict, int) {
 	// Drop the packet if network and transport header are not set.
 	if len(pkt.NetworkHeader().Slice()) == 0 || len(pkt.TransportHeader().Slice()) == 0 {
 		return RuleDrop, 0
@@ -423,13 +424,13 @@ func (mt *MasqueradeTarget) Action(pkt *PacketBuffer, hook Hook, r *Route, addre
 	}
 
 	// addressEP is expected to be set for the postrouting hook.
-	ep := addressEP.AcquireOutgoingPrimaryAddress(pkt.Network().DestinationAddress(), tcpip.Address{} /* srcHint */, false /* allowExpired */)
+	ep := addressEP.AcquireOutgoingPrimaryAddress(pkt.Network().DestinationAddress(), netip.Addr{} /* srcHint */, false /* allowExpired */)
 	if ep == nil {
 		// No address exists that we can use as a source address.
 		return RuleDrop, 0
 	}
 
-	address := ep.AddressWithPrefix().Address
+	address := ep.AddressWithPrefix().Addr()
 	ep.DecRef()
 	if mt.Ports.Size != 0 {
 		return natAction(pkt, hook, r, mt.Ports, address, false /* dnat */, true /* changePort */, true /* changeAddress */)

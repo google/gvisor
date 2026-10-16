@@ -17,9 +17,11 @@ package route_test
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -46,10 +48,7 @@ func TestLocalPing(t *testing.T) {
 		// request/reply packets.
 		icmpDataOffset = 8
 	)
-	ipv4Loopback := tcpip.AddressWithPrefix{
-		Address:   testutil.MustParse4("127.0.0.1"),
-		PrefixLen: 8,
-	}
+	ipv4Loopback := netip.PrefixFrom(testutil.MustParse4("127.0.0.1"), 8)
 
 	channelEP := func() stack.LinkEndpoint { return channel.New(1, header.IPv6MinimumMTU, "") }
 	channelEPCheck := func(t *testing.T, e stack.LinkEndpoint) {
@@ -84,7 +83,7 @@ func TestLocalPing(t *testing.T) {
 		transProto         tcpip.TransportProtocolNumber
 		netProto           tcpip.NetworkProtocolNumber
 		linkEndpoint       func() stack.LinkEndpoint
-		localAddr          tcpip.AddressWithPrefix
+		localAddr          netip.Prefix
 		icmpBuf            func(*testing.T) []byte
 		expectedConnectErr tcpip.Error
 		checkLinkEndpoint  func(t *testing.T, e stack.LinkEndpoint)
@@ -103,7 +102,7 @@ func TestLocalPing(t *testing.T) {
 			transProto:        icmp.ProtocolNumber6,
 			netProto:          ipv6.ProtocolNumber,
 			linkEndpoint:      loopback.New,
-			localAddr:         header.IPv6Loopback.WithPrefix(),
+			localAddr:         tcpip.FullPrefix(header.IPv6Loopback),
 			icmpBuf:           ipv6ICMPBuf,
 			checkLinkEndpoint: func(*testing.T, stack.LinkEndpoint) {},
 		},
@@ -185,7 +184,7 @@ func TestLocalPing(t *testing.T) {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
 
-					if test.localAddr.Address.Len() != 0 {
+					if test.localAddr.Addr().IsValid() {
 						protocolAddr := tcpip.ProtocolAddress{
 							Protocol:          test.netProto,
 							AddressWithPrefix: test.localAddr,
@@ -204,7 +203,7 @@ func TestLocalPing(t *testing.T) {
 					}
 					defer ep.Close()
 
-					connAddr := tcpip.FullAddress{Addr: test.localAddr.Address}
+					connAddr := tcpip.FullAddress{Addr: test.localAddr.Addr()}
 					if err := ep.Connect(connAddr); err != test.expectedConnectErr {
 						t.Fatalf("got ep.Connect(%#v) = %s, want = %s", connAddr, err, test.expectedConnectErr)
 					}
@@ -236,8 +235,8 @@ func TestLocalPing(t *testing.T) {
 					if diff := cmp.Diff(w.Bytes()[icmpDataOffset:], payload[icmpDataOffset:]); diff != "" {
 						t.Errorf("received data mismatch (-want +got):\n%s", diff)
 					}
-					if rr.RemoteAddr.Addr != test.localAddr.Address {
-						t.Errorf("got addr.Addr = %s, want = %s", rr.RemoteAddr.Addr, test.localAddr.Address)
+					if rr.RemoteAddr.Addr != test.localAddr.Addr() {
+						t.Errorf("got addr.Addr = %s, want = %s", rr.RemoteAddr.Addr, test.localAddr.Addr())
 					}
 
 					test.checkLinkEndpoint(t, e)
@@ -343,7 +342,7 @@ func TestLocalUDP(t *testing.T) {
 					defer client.Close()
 
 					serverAddr := tcpip.FullAddress{
-						Addr: test.canBePrimaryAddr.AddressWithPrefix.Address,
+						Addr: test.canBePrimaryAddr.AddressWithPrefix.Addr(),
 						Port: 80,
 					}
 
@@ -379,13 +378,13 @@ func TestLocalUDP(t *testing.T) {
 							Count: readBuf.Len(),
 							Total: readBuf.Len(),
 							RemoteAddr: tcpip.FullAddress{
-								Addr: test.canBePrimaryAddr.AddressWithPrefix.Address,
+								Addr: test.canBePrimaryAddr.AddressWithPrefix.Addr(),
 							},
 						}, read, checker.IgnoreCmpPath(
 							"ControlMessages",
 							"RemoteAddr.NIC",
 							"RemoteAddr.Port",
-						)); diff != "" {
+						), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 							t.Errorf("server.Read: unexpected result (-want +got):\n%s", diff)
 						}
 						if diff := cmp.Diff(clientPayload, readBuf.Bytes()); diff != "" {
@@ -425,7 +424,7 @@ func TestLocalUDP(t *testing.T) {
 							"ControlMessages",
 							"RemoteAddr.NIC",
 							"RemoteAddr.Port",
-						)); diff != "" {
+						), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 							t.Errorf("client.Read: unexpected result (-want +got):\n%s", diff)
 						}
 						if diff := cmp.Diff(serverPayload, readBuf.Bytes()); diff != "" {

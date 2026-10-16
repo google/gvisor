@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"net/netip"
 )
 
 // ipv6FragmentOffset returns the fragment offset of the IPv6 packet
@@ -57,7 +58,7 @@ func ipv6FragmentOffset(pkt *stack.PacketBuffer, ipHdr header.IPv6) (uint16, boo
 }
 
 // buildResetPayloadV4 builds an IPv4 + TCP Reset packet in a buffer.
-func buildResetPayloadV4(ttl uint8, src, dst tcpip.Address, tcpHdr header.TCP, seq, ack uint32, flags header.TCPFlags) *buffer.View {
+func buildResetPayloadV4(ttl uint8, src, dst netip.Addr, tcpHdr header.TCP, seq, ack uint32, flags header.TCPFlags) *buffer.View {
 	totalHdrLen := header.IPv4MinimumSize + header.TCPMinimumSize
 	v := buffer.NewViewSize(totalHdrLen)
 	buf := v.AsSlice()
@@ -92,7 +93,7 @@ func buildResetPayloadV4(ttl uint8, src, dst tcpip.Address, tcpHdr header.TCP, s
 }
 
 // buildResetPayloadV6 builds an IPv6 + TCP Reset packet in a buffer.
-func buildResetPayloadV6(hopLimit uint8, src, dst tcpip.Address, tcpHdr header.TCP, seq, ack uint32, flags header.TCPFlags) *buffer.View {
+func buildResetPayloadV6(hopLimit uint8, src, dst netip.Addr, tcpHdr header.TCP, seq, ack uint32, flags header.TCPFlags) *buffer.View {
 	totalHdrLen := header.IPv6MinimumSize + header.TCPMinimumSize
 	v := buffer.NewViewSize(totalHdrLen)
 	buf := v.AsSlice()
@@ -129,7 +130,7 @@ func buildResetPayloadV6(hopLimit uint8, src, dst tcpip.Address, tcpHdr header.T
 //
 // Ref: net/ipv[4|6]/netfilter/nf_reject_ipv[4|6].c:nf_send_reset[6]()
 func RejectWithTCPReset(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolNumber, stk *stack.Stack, hook stack.Hook) tcpip.Error {
-	var src, dst tcpip.Address
+	var src, dst netip.Addr
 	var ttl uint8
 	isFragment := false
 
@@ -241,7 +242,7 @@ func RejectWithTCPReset(pkt *stack.PacketBuffer, netProto tcpip.NetworkProtocolN
 		// If the packet wasn't delivered locally, do not use the packet's destination
 		// address as the response's source address as we should not own the
 		// destination address.
-		localAddr = tcpip.Address{}
+		localAddr = netip.Addr{}
 	}
 
 	route, err := stk.FindRoute(0 /*nicID*/, localAddr, src, netProto, false /* multicastLoop */)

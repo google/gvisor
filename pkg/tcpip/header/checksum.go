@@ -19,6 +19,7 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -27,7 +28,7 @@ import (
 // PseudoHeaderChecksum calculates the pseudo-header checksum for the given
 // destination protocol and network address. Pseudo-headers are needed by
 // transport layers when calculating their own checksum.
-func PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, srcAddr tcpip.Address, dstAddr tcpip.Address, totalLen uint16) uint16 {
+func PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, srcAddr netip.Addr, dstAddr netip.Addr, totalLen uint16) uint16 {
 	xsum := checksum.Checksum(srcAddr.AsSlice(), 0)
 	xsum = checksum.Checksum(dstAddr.AsSlice(), xsum)
 
@@ -68,7 +69,7 @@ func checksumUpdate2ByteAlignedUint16(xsum, old, new uint16) uint16 {
 //
 // The addresses must have the same length and must contain an even number
 // of bytes. The address MUST begin at a 2-byte boundary in the original buffer.
-func checksumUpdate2ByteAlignedAddress(xsum uint16, old, new tcpip.Address) uint16 {
+func checksumUpdate2ByteAlignedAddress(xsum uint16, old, new netip.Addr) uint16 {
 	const uint16Bytes = 2
 
 	if old.BitLen() != new.BitLen() {
