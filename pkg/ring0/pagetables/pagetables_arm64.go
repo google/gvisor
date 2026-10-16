@@ -16,6 +16,10 @@
 
 package pagetables
 
+import (
+	"gvisor.dev/gvisor/pkg/hostarch"
+)
+
 // Address space layout constants shared by all ARM64 page sizes.
 const (
 	lowerTop    = 0x0001000000000000
@@ -24,6 +28,28 @@ const (
 	ttbrASIDOffset = 48
 	ttbrASIDMask   = 0xff
 )
+
+// The translation granule (and thus the page table layout) is selected at
+// runtime to match the host page size.
+var (
+	// granule64K is true if page tables use the 64K translation granule
+	// (3 levels) instead of the 4K one (4 levels). It matches
+	// hostarch.PageSize and only tests change it.
+	granule64K = hostarch.PageSize == pteSize64K
+
+	// pteSize is the size of the memory mapped by a last-level page table
+	// entry (i.e. the page size), which is also the size of a page table
+	// page.
+	pteSize uintptr = granulePageSize(granule64K)
+)
+
+// granulePageSize returns the page size for the given translation granule.
+func granulePageSize(is64K bool) uintptr {
+	if is64K {
+		return pteSize64K
+	}
+	return pteSize4K
+}
 
 // InitArch does some additional initialization related to the architecture.
 //

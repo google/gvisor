@@ -28,7 +28,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
@@ -52,14 +51,9 @@ import (
 // |------------|
 // |   sysmsg   |
 // *------------*
-const (
-	// MsgOffsetFromSharedStack is the offset of the Msg structure on
-	// the thread stack.
-	MsgOffsetFromSharedStack = PerThreadMemSize - hostarch.PageSize - PerThreadSharedStackOffset
-
-	// SpinningQueueMemSize is the size of a spinning queue memory region.
-	SpinningQueueMemSize = hostarch.PageSize
-)
+//
+// The sizes of these regions depend on the page size, see
+// sysmsg_layout_*.go.
 
 // StackAddrToMsg returns an address of a sysmsg structure.
 func StackAddrToMsg(sp uintptr) uintptr {
