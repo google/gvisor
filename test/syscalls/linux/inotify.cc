@@ -2504,6 +2504,34 @@ TEST(Inotify, OneShotFileDeleteSelfWatchRemovedByClose) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// IN_DELETE_SELF is sent only when the last link to a file is removed.
+TEST(Inotify, UnlinkHardLinkDoesNotSendDeleteSelf) {
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
+  TempPath link_path(root.path() + "/link");
+  ASSERT_THAT(link(file.path().c_str(), link_path.path().c_str()),
+              SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(inotify_fd.get(), link_path.path(), IN_DELETE_SELF));
+
+  file.reset();
+
+  std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({}));
+
+  link_path.reset();
+
+  events = ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
+  EXPECT_THAT(events, Are({
+                          Event(IN_DELETE_SELF, wd),
+                          Event(IN_IGNORED, wd),
+                      }));
+}
+
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when inotify instances and watch targets are concurrently being
 // destroyed.

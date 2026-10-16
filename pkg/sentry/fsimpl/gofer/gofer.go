@@ -1805,7 +1805,7 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			}
 		}
 		var ds *[]*dentry
-		if d.isDeleted() {
+		if d.isDeleted() && d.isLastLinkLocked() { // +checklocksforce: renameMu must be acquired at this point.
 			// HandleDeletion sends IN_DELETE_SELF, which removes one-shot
 			// watches and calls OnZeroWatches on their targets while fs.renameMu
 			// is locked for writing. Hand it a list so OnZeroWatches does not
@@ -2070,6 +2070,18 @@ func (d *dentry) isDeleted() bool {
 
 func (d *dentry) setDeleted() {
 	d.deleted.Store(1)
+}
+
+// isLastLinkLocked returns true if deleting d removes the last link to
+// d.inode, so that IN_DELETE_SELF should be sent to d.inode.watches.
+//
+// +checklocks:d.inode.fs.renameMu
+func (d *dentry) isLastLinkLocked() bool {
+	// Directories can't have hard links, and their nlink
+	// is not dropped to 0 by rmdir. If d is the last dentry holding d.inode, the
+	// inode and its watches are destroyed with d, so treat it as the last link
+	// even if nlink is stale.
+	return d.isDir() || d.inode.nlink.Load() == 0 || d.inode.refs.ReadRefs() == 1
 }
 
 func (d *dentry) listXattr(ctx context.Context, size uint64) ([]string, error) {
