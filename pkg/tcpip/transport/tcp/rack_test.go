@@ -21,11 +21,199 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const testClockResolution = 500 * time.Microsecond
+
+func TestMinimumRTTWindow(t *testing.T) {
+	type observation struct {
+		at           time.Duration
+		rtt, want    time.Duration
+		maybeDelayed bool
+	}
+	for _, test := range []struct {
+		name    string
+		samples []observation
+	}{
+		{
+			name: "expiration_boundary",
+			samples: []observation{
+				{rtt: 10, want: 10},
+				{at: minRTTWindow, rtt: 100, want: 10},
+				{at: minRTTWindow + 1, rtt: 100, want: 100},
+			},
+		},
+		{
+			name: "later_candidates_and_low_return",
+			samples: []observation{
+				{rtt: 10, want: 10},
+				{at: minRTTWindow/4 + 1, rtt: 20, want: 10},
+				{at: minRTTWindow/2 + 1, rtt: 30, want: 10},
+				{at: minRTTWindow + 1, rtt: 40, want: 20},
+				{at: minRTTWindow*5/4 + 2, rtt: 50, want: 30},
+				{at: minRTTWindow*3/2 + 2, rtt: 5, want: 5},
+			},
+		},
+		{
+			name: "equal_sample_refreshes",
+			samples: []observation{
+				{rtt: 10, want: 10},
+				{at: minRTTWindow, rtt: 10, want: 10, maybeDelayed: true},
+				{at: 2 * minRTTWindow, rtt: 100, want: 10},
+				{at: 2*minRTTWindow + 1, rtt: 100, want: 100},
+			},
+		},
+		{
+			name: "delayed_ACKs_do_not_expire_or_refresh",
+			samples: []observation{
+				{rtt: 10, want: 10},
+				{at: minRTTWindow, rtt: 100, want: 10, maybeDelayed: true},
+				{at: 2 * minRTTWindow, rtt: 100, want: 10, maybeDelayed: true},
+				{at: 2*minRTTWindow + 1, rtt: 100, want: 100},
+				{at: 2*minRTTWindow + 2, rtt: 5, want: 5, maybeDelayed: true},
+			},
+		},
+		{
+			name: "invalid_and_older_ingress",
+			samples: []observation{
+				{at: time.Second, rtt: 10, want: 10},
+				{rtt: 5, want: 10},
+				{at: 2 * minRTTWindow, rtt: -1, want: 10},
+				{at: 2 * time.Second, rtt: 5, want: 5},
+			},
+		},
+		{
+			name: "zero_does_not_seed_or_refresh",
+			samples: []observation{
+				{},
+				{at: time.Nanosecond, rtt: 10, want: 10},
+				{at: minRTTWindow, want: 10},
+				{at: minRTTWindow + 2, rtt: 20, want: 20},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var minimum rttMinimum
+			for _, sample := range test.samples {
+				minimum.update(sample.rtt, tcpip.MonotonicTime{}.Add(sample.at), sample.maybeDelayed)
+				if got, want := minimum.value(), sample.want; got != want {
+					t.Fatalf("minimum at %v after RTT %v (maybe delayed %t) = %v, want %v", sample.at, sample.rtt, sample.maybeDelayed, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestMinimumRTTSplitACK(t *testing.T) {
+	// A whole lone runt retains the old minimum because delayed ACK may
+	// inflate its RTT. A shortened prefix admits the new sample instead.
+	const (
+		payloadSize = 8
+		oldRTT      = 10 * time.Millisecond
+		newRTT      = 100 * time.Millisecond
+	)
+	for _, test := range []struct {
+		name      string
+		splitSize int
+		ackSize   seqnum.Size
+		want      time.Duration
+	}{
+		{name: "whole_original", splitSize: payloadSize, ackSize: payloadSize, want: oldRTT},
+		{name: "shortened_prefix", splitSize: payloadSize / 2, ackSize: payloadSize / 2, want: newRTT},
+		{name: "unchanged_remainder", splitSize: 0, ackSize: payloadSize, want: oldRTT},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			ctx := newRACKTestContext(clock, 0)
+			defer ctx.cleanup()
+			s := &ctx.snd
+			s.ep.mu.Lock()
+			defer s.ep.mu.Unlock()
+			s.ep.snd = s
+			s.ep.scoreboard = NewSACKScoreboard(2*payloadSize, 0)
+			s.ep.ops.SetSendBufferSize(s.ep.OnSetSendBufferSize(4096), false /* notify */)
+			s.ep.sndQueueInfo.sndQueueMu.Lock()
+			s.ep.sndQueueInfo.SndBufUsed = payloadSize
+			s.ep.sndQueueInfo.sndQueueMu.Unlock()
+			s.ep.keepalive.timer.init(clock, func() {})
+			defer s.ep.keepalive.timer.cleanup()
+			s.resendTimer.init(clock, func() {})
+			defer s.resendTimer.cleanup()
+			s.probeTimer.init(clock, func() {})
+			defer s.probeTimer.cleanup()
+			s.MaxPayloadSize = 2 * payloadSize
+			s.SndUna, s.SndNxt = 1, 1+payloadSize
+			s.RTTMeasureSeqNum = s.SndNxt
+			s.RTO = time.Second
+			s.Outstanding = 1
+			s.cc = s.initCongestionControl(ccReno)
+			s.minRTT.update(oldRTT, clock.NowMonotonic(), false)
+			clock.Advance(minRTTWindow + time.Second)
+
+			// Start with one original transmission. Split it before its
+			// first ACK, as recovery's NextSeg scan can do even without
+			// selecting the prefix for retransmission.
+			seg := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.MakeWithData(make([]byte, payloadSize)), 0)
+			seg.sequenceNumber = s.SndUna
+			seg.flags = header.TCPFlagAck
+			seg.xmitCount = 1
+			seg.xmitTime = clock.NowMonotonic()
+			s.writeList.PushBack(seg)
+			defer func() {
+				for seg := s.writeList.Front(); seg != nil; seg = s.writeList.Front() {
+					s.writeList.Remove(seg)
+					seg.DecRef()
+				}
+			}()
+			s.splitSeg(seg, test.splitSize)
+
+			clock.Advance(newRTT)
+			ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
+			defer ack.DecRef()
+			ack.ackNumber = s.SndUna.Add(test.ackSize)
+			s.handleRcvdSegment(ack)
+			if got, want := s.minRTT.value(), test.want; got != want {
+				t.Fatalf("minimum RTT after ACKing %d bytes of split at %d = %v, want %v", test.ackSize, test.splitSize, got, want)
+			}
+		})
+	}
+}
+
+func TestMinimumRTTSACKSequenceBoundary(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		end  seqnum.Value
+		want time.Duration
+	}{
+		{name: "wrap", end: 1, want: 10 * time.Millisecond},
+		{name: "outside_sent_range", end: 2, want: unknownRTT},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			ctx := newRACKTestContext(clock, 0)
+			defer ctx.cleanup()
+			ctx.snd.ep.mu.Lock()
+			defer ctx.snd.ep.mu.Unlock()
+			ctx.snd.SndUna, ctx.snd.SndNxt = ^seqnum.Value(0)-1, 1
+			ctx.snd.MaxPayloadSize = 1
+			ctx.addSegment(^seqnum.Value(0), clock.NowMonotonic())
+			ctx.addSegment(0, clock.NowMonotonic())
+			clock.Advance(10 * time.Millisecond)
+			ack := newOutgoingSegment(stack.TransportEndpointID{}, clock, buffer.Buffer{}, 0)
+			defer ack.DecRef()
+			ack.ackNumber = ctx.snd.SndUna
+			ack.parsedOptions.SACKBlocks = []header.SACKBlock{{Start: ^seqnum.Value(0), End: test.end}}
+			samples := ackRTTSamples{cumulative: unknownRTT, selective: unknownRTT, timestamp: unknownRTT}
+			ctx.snd.walkSACK(ack, &samples)
+			if got, want := samples.selective, test.want; got != want {
+				t.Fatalf("selective RTT = %v, want %v", got, want)
+			}
+		})
+	}
+}
 
 type quantizedClock struct {
 	*faketime.ManualClock
@@ -318,7 +506,7 @@ func TestRACKInitialDSACKWindow(t *testing.T) {
 			ctx.snd.rc.init(&ctx.snd, test.iss)
 			ctx.snd.SndUna = test.iss.Add(1)
 			ctx.snd.SndNxt = test.iss.Add(4)
-			ctx.snd.rc.minRTT = 100 * time.Millisecond
+			ctx.snd.minRTT.update(100*time.Millisecond, ctx.clock.NowMonotonic(), false)
 			ctx.snd.rtt.Lock()
 			ctx.snd.rtt.TCPRTTState.SRTT = 100 * time.Millisecond
 			ctx.snd.rtt.Unlock()

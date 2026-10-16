@@ -53,9 +53,6 @@ type rackControl struct {
 	// receiving an ACK and is reset during updating of reorder window.
 	exitedRecovery bool
 
-	// minRTT is the estimated minimum RTT of the connection.
-	minRTT time.Duration
-
 	// tlpRxtOut indicates whether there is an unacknowledged
 	// TLP retransmission.
 	tlpRxtOut bool
@@ -87,8 +84,8 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 	// delayed inside the stack before being processed (e.g. it sat in the
 	// endpoint's segment queue while the application held the endpoint lock
 	// during a Write that synchronously flushed a window). Using the processing
-	// time would inflate the RTT by that internal delay, corrupting RACK.RTT,
-	// RACK.minRTT and the reorder window, and causing spurious loss detection.
+	// time would inflate RACK.RTT by that internal delay, causing spurious
+	// loss detection.
 	// detectLoss already uses ackSeg.rcvdTime; this keeps update consistent.
 	rtt := ackSeg.rcvdTime.Sub(seg.xmitTime)
 
@@ -105,20 +102,17 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 				return
 			}
 		}
-		if rtt < rc.minRTT {
+		// ACK accounting updates the minimum once after walking deliveries,
+		// as in tcp_clean_rtx_queue:
+		// https://github.com/torvalds/linux/blob/ab185e0c4/net/ipv4/tcp_input.c
+		// This heuristic uses the previous ACK's minimum; the new minimum is
+		// used for the reordering window before loss detection.
+		if rtt < rc.snd.minRTT.value() {
 			return
 		}
 	}
 
 	rc.RTT = rtt
-
-	// The sender can either track a simple global minimum of all RTT
-	// measurements from the connection, or a windowed min-filtered value
-	// of recent RTT measurements. This implementation keeps track of the
-	// simple global minimum of all RTTs for the connection.
-	if rtt < rc.minRTT || rc.minRTT == 0 {
-		rc.minRTT = rtt
-	}
 
 	// Update rc.xmitTime and rc.endSequence to the transmit time and
 	// ending sequence number of the packet which has been acknowledged
@@ -361,7 +355,7 @@ func (rc *rackControl) updateRACKReorderWindow() {
 	snd.rtt.Lock()
 	srtt := snd.rtt.TCPRTTState.SRTT
 	snd.rtt.Unlock()
-	rc.ReoWnd = time.Duration((int64(rc.minRTT) / 4) * int64(rc.ReoWndIncr))
+	rc.ReoWnd = time.Duration((int64(snd.minRTT.value()) / 4) * int64(rc.ReoWndIncr))
 	if srtt < rc.ReoWnd {
 		rc.ReoWnd = srtt
 	}

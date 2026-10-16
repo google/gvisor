@@ -690,6 +690,7 @@ func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
 
 	if rtt > 0 {
 		h.ep.snd.updateRTO(rtt)
+		h.ep.snd.minRTT.update(rtt, rcvd, false)
 	}
 
 	h.ep.rcvQueueMu.Lock()
