@@ -142,6 +142,7 @@ go_test(
         "//pkg/buffer",
         "//pkg/refs",
         "//pkg/tcpip",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/transport/tcp",

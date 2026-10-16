@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -464,6 +465,126 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	}
 	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestRACKMinPTO checks that no tail loss probe is sent before the inflated PTO.
+// An ACK received before expiry cancels the probe without reducing cwnd.
+// If no ACK arrives, the sender retransmits the last segment at expiry.
+func TestRACKMinPTO(t *testing.T) {
+	for _, ackBeforePTO := range []bool{true, false} {
+		t.Run(fmt.Sprintf("ackBeforePTO=%t", ackBeforePTO), func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			c := context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				MTU:      uint32(mtu),
+				Clock:    clock,
+			})
+			defer c.Cleanup()
+			e2e.SetStackSACKPermitted(t, c, true)
+			recovery := tcpip.TCPRecovery(tcpip.TCPRACKLossDetection)
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &recovery); err != nil {
+				t.Fatalf("SetTransportProtocolOption(TCPRecovery): %s", err)
+			}
+
+			// Use a nonzero SYN timestamp. Timestamp-based RTT sampling ignores
+			// ACKs with a zero echoed timestamp.
+			clock.Advance(time.Second)
+			c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: true, TS: true, TSVal: 100}, 0 /* delay */)
+
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+
+			// Send 3 packets and read them out at the peer.
+			const numPackets = 3
+			data := make([]byte, numPackets*maxPayload)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			var r bytes.Reader
+			r.Reset(data)
+			if n, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+				t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+			}
+			for i := 0; i < numPackets; i++ {
+				c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+			}
+
+			// Acknowledge the first packet to initialize SRTT. The manual clock
+			// has not advanced, so the zero RTT sample is clamped to MinSRTT (1ms).
+			// Two segments remain outstanding, giving a PTO of 2*1ms + 2ms = 4ms.
+			c.SendAck(seq, maxPayload)
+			c.Stack().Pause()
+			c.Stack().Resume()
+			var info tcpip.TCPInfoOption
+			if err := c.EP.GetSockOpt(&info); err != nil {
+				t.Fatalf("GetSockOpt failed: %v", err)
+			}
+			if got, want := info.RTT, time.Millisecond; got != want {
+				t.Fatalf("got SRTT = %v, want %v (MinSRTT)", got, want)
+			}
+
+			// Advance past 2*SRTT (2ms) but not past the inflated PTO (4ms). No probe
+			// may fire while the tail ACK is merely delayed.
+			clock.Advance(3 * time.Millisecond)
+			c.Stack().Pause()
+			c.Stack().Resume()
+			if p := c.GetPacketNonBlocking(); p != nil {
+				p.Release()
+				t.Fatalf("sender emitted a tail loss probe for an ACK delayed within the minimum PTO")
+			}
+
+			if !ackBeforePTO {
+				// The tail really is missing. At exactly 4ms the last segment must be
+				// retransmitted, rather than suppressing probes altogether.
+				clock.Advance(time.Millisecond)
+				c.ReceiveAndCheckPacketWithOptions(data, (numPackets-1)*maxPayload, maxPayload, e2e.TSOptionSize)
+				if got := c.Stack().Stats().TCP.Retransmits.Value(); got != 1 {
+					t.Errorf("retransmits at PTO = %d, want 1", got)
+				}
+				return
+			}
+			initialCwnd := info.SndCwnd
+
+			// The delayed ACK arrives within the inflated PTO and cumulatively
+			// acknowledges everything, disarming the probe timer.
+			c.SendAck(seq, numPackets*maxPayload)
+			c.Stack().Pause()
+			c.Stack().Resume()
+
+			// Advancing past the original probe time must not produce a probe or any
+			// other packet.
+			clock.Advance(5 * time.Millisecond)
+			c.Stack().Pause()
+			c.Stack().Resume()
+			if p := c.GetPacketNonBlocking(); p != nil {
+				p.Release()
+				t.Fatalf("sender emitted a packet after the delayed ACK arrived within the minimum PTO")
+			}
+
+			if err := c.EP.GetSockOpt(&info); err != nil {
+				t.Fatalf("GetSockOpt: %s", err)
+			}
+			if info.SndCwnd < initialCwnd {
+				t.Errorf("cwnd fell from %d to %d after delayed ACK", initialCwnd, info.SndCwnd)
+			}
+
+			// No probe, retransmit or recovery may have occurred.
+			tcpStats := c.Stack().Stats().TCP
+			for _, s := range []struct {
+				stat *tcpip.StatCounter
+				name string
+			}{
+				{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit"},
+				{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery"},
+				{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery"},
+				{tcpStats.Retransmits, "stats.TCP.Retransmits"},
+				{tcpStats.Timeouts, "stats.TCP.Timeouts"},
+			} {
+				if got := s.stat.Value(); got != 0 {
+					t.Errorf("got %s = %d, want 0", s.name, got)
+				}
+			}
+		})
 	}
 }
 
