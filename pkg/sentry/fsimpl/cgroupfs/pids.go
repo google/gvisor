@@ -311,7 +311,7 @@ func (d *pidsMaxData) Write(ctx context.Context, _ *vfs.FileDescription, src use
 //
 // +checklocksexclude:d.c.mu
 func (d *pidsMaxData) WriteBackground(ctx context.Context, src usermem.IOSequence) (int64, error) {
-	buf := copyScratchBufferFromContext(ctx, hostarch.PageSize)
+	buf := copyScratchBufferFromContext(ctx, int(hostarch.PageSize))
 	ncpy, err := src.CopyIn(ctx, buf)
 	if err != nil {
 		return 0, err

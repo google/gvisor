@@ -75,7 +75,7 @@ func (cxDriver) PrepareCreateDMA(t *kernel.Task, uhwIn []byte) (*rdmaproxy.Pinne
 	}
 
 	if prefix.DBAddr != 0 {
-		mp, sentryVA, err := rdmaproxy.MirrorAppPages(t, prefix.DBAddr, hostarch.PageSize)
+		mp, sentryVA, err := rdmaproxy.MirrorAppPages(t, prefix.DBAddr, uint64(hostarch.PageSize))
 		if err != nil {
 			return nil, err
 		}

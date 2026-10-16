@@ -217,13 +217,13 @@ func TestMountOptions(t *testing.T) {
 		{
 			name:       "default size",
 			opts:       "",
-			wantBlocks: (totalHostMem / 2) / hostarch.PageSize,
+			wantBlocks: (totalHostMem / 2) >> hostarch.PageShift,
 			wantErr:    false,
 		},
 		{
 			name:       "size 1M",
 			opts:       "size=1M",
-			wantBlocks: (1024 * 1024) / hostarch.PageSize,
+			wantBlocks: (1024 * 1024) >> hostarch.PageShift,
 			wantErr:    false,
 		},
 		{
@@ -241,7 +241,7 @@ func TestMountOptions(t *testing.T) {
 		{
 			name:       "nr_blocks 10, size 1M (size wins if last)",
 			opts:       "nr_blocks=10,size=1M",
-			wantBlocks: (1024 * 1024) / hostarch.PageSize,
+			wantBlocks: (1024 * 1024) >> hostarch.PageShift,
 			wantErr:    false,
 		},
 		{

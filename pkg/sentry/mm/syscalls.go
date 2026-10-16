@@ -37,7 +37,7 @@ import (
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr hostarch.Addr, at hostarch.AccessType, sp hostarch.Addr) error {
 	addr = hostarch.UntaggedUserAddr(addr)
-	ar, ok := addr.RoundDown().ToRange(hostarch.PageSize)
+	ar, ok := addr.RoundDown().ToRange(uint64(hostarch.PageSize))
 	if !ok {
 		return linuxerr.EFAULT
 	}
@@ -161,7 +161,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 		// Get pmas and map as requested.
 		mm.populateVMAAndUnlock(ctx, vseg, ar, opts.PlatformEffect)
 
-	case opts.Mappable == nil && length <= hostarch.HugePageSize:
+	case opts.Mappable == nil && length <= hostarch.Addr(hostarch.HugePageSize):
 		// NOTE(b/63077076, b/63360184): Get pmas and map eagerly in the hope
 		// that doing so will save on future page faults. We only do this for
 		// anonymous mappings, since otherwise the cost of
@@ -1228,7 +1228,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 				psegAR := pseg.Range().Intersect(vsegAR)
 				if !psegAR.IsHugePageAligned() {
 					firstHugeStart := psegAR.Start.HugeRoundDown()
-					firstHugeEnd := firstHugeStart + hostarch.HugePageSize
+					firstHugeEnd := firstHugeStart + hostarch.Addr(hostarch.HugePageSize)
 					lastWholeHugeEnd := psegAR.End.HugeRoundDown()
 					if firstHugeStart != psegAR.Start {
 						// psegAR.Start is not hugepage-aligned.
