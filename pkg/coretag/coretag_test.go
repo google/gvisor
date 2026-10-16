@@ -15,12 +15,72 @@
 package coretag
 
 import (
+	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/hostos"
 )
+
+// getAllCoreTags returns the core tag of all the threads in the thread group.
+// PID 0 means the current pid.
+func getAllCoreTags(pid int) ([]uint64, error) {
+	// prctl(PR_SCHED_CORE_GET, PR_SCHED_CORE_SCOPE_THREAD_GROUP, ...) is not supported
+	// in linux. So instead we get all threads from /proc/<pid>/task and get all the
+	// core tags individually.
+	tagSet := make(map[uint64]struct{})
+	// Get current pid core tag.
+	tag, err := getCoreTag(pid)
+	if err != nil {
+		return nil, err
+	}
+	tagSet[tag] = struct{}{}
+
+	// Get core tags of tids.
+	tids, err := getTids(pid)
+	if err != nil {
+		return nil, err
+	}
+	for tid := range tids {
+		tag, err := getCoreTag(tid)
+		if err != nil {
+			return nil, err
+		}
+		tagSet[tag] = struct{}{}
+	}
+
+	// Return set of tags as a slice.
+	tags := make([]uint64, 0, len(tagSet))
+	for t := range tagSet {
+		tags = append(tags, t)
+	}
+	return tags, nil
+}
+
+// getTids returns set of tids as reported by /proc/<pid>/task.
+// PID 0 means the current PID.
+func getTids(pid int) (map[int]struct{}, error) {
+	tids := make(map[int]struct{})
+	path := "/proc/self/task"
+	if pid != 0 {
+		path = fmt.Sprintf("/proc/%d/task", pid)
+	}
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		tid, err := strconv.Atoi(file.Name())
+		if err != nil {
+			return nil, err
+		}
+		tids[tid] = struct{}{}
+	}
+
+	return tids, nil
+}
 
 func TestEnable(t *testing.T) {
 	version, err := hostos.KernelVersion()
@@ -33,21 +93,25 @@ func TestEnable(t *testing.T) {
 		t.Skipf("Running on Linux kernel: %s < 5.14. Core tagging not available. Skipping test.", version)
 		return
 	}
-	if err := Enable(); err != nil {
+	tag, err := Enable()
+	if err != nil {
 		t.Fatalf("Enable() got error %v, wanted nil", err)
+	}
+	if tag == 0 {
+		t.Fatalf("Enable() got tag 0, wanted != 0")
 	}
 
 	pid := os.Getpid()
-	coreTags, err := GetAllCoreTags(pid)
+	coreTags, err := getAllCoreTags(pid)
 	if err != nil {
-		t.Fatalf("GetAllCoreTags() got error %v, wanted nil", err)
+		t.Fatalf("getAllCoreTags() got error %v, wanted nil", err)
 	}
-	if len(coreTags) != 1 {
-		t.Fatalf("Got coreTags %v, wanted len(coreTags)=1", coreTags)
+	if len(coreTags) != 1 || coreTags[0] != tag {
+		t.Fatalf("Got coreTags %v, wanted [%d]", coreTags, tag)
 	}
-	coreTagsSelf, err := GetAllCoreTags(0)
+	coreTagsSelf, err := getAllCoreTags(0)
 	if err != nil {
-		t.Fatalf("GetAllCoreTags(0) got error %v, wanted nil", err)
+		t.Fatalf("getAllCoreTags(0) got error %v, wanted nil", err)
 	}
 	if !reflect.DeepEqual(coreTags, coreTagsSelf) {
 		t.Fatalf("Got different coreTags for PID %d vs self: %v vs %v", pid, coreTags, coreTagsSelf)
