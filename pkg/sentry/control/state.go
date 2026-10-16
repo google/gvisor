@@ -343,15 +343,16 @@ func PostResume(k *kernel.Kernel, timeline *timing.Timeline) error {
 		// We can not invoke the save/restore binary on such a kernel.
 		return nil
 	}
+	// Undo preSave in reverse order.
+	if err := postResumeCuda(k, timeline); err != nil {
+		return err
+	}
+
 	if err := SaveRestoreExec(k, SaveRestoreExecResume); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
 
-	if err := postResumeTPU(k); err != nil {
-		return err
-	}
-
-	return postResumeCuda(k, timeline)
+	return postResumeTPU(k)
 }
 
 // PostRestore is called after restoring the kernel.
@@ -369,15 +370,16 @@ func PostRestore(k *kernel.Kernel, timeline *timing.Timeline) error {
 		// We can not invoke cuda-checkpoint on such a kernel.
 		return nil
 	}
+	// Undo preSave in reverse order.
+	if err := postRestoreCuda(k, timeline); err != nil {
+		return err
+	}
+
 	if err := SaveRestoreExec(k, SaveRestoreExecRestore); err != nil {
 		return fmt.Errorf("failed to wait for save/restore binary: %w", err)
 	}
 
-	if err := postRestoreTPU(k); err != nil {
-		return err
-	}
-
-	return postRestoreCuda(k, timeline)
+	return postRestoreTPU(k)
 }
 
 // SaveRestoreExec creates a new process that executes the save/restore
