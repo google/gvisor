@@ -547,7 +547,7 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch
 	case linux.SOL_NETLINK:
 		switch name {
 		case linux.NETLINK_LIST_MEMBERSHIPS:
-			return primitive.AllocateUint64(s.groups.Load()), nil
+			return &memberships{Uint64: primitive.Uint64(s.groups.Load())}, nil
 
 		case linux.NETLINK_BROADCAST_ERROR,
 			linux.NETLINK_CAP_ACK,
@@ -561,6 +561,22 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch
 	}
 	// TODO(b/68878065): other sockopts are not supported.
 	return nil, syserr.ErrProtocolNotAvailable
+}
+
+// memberships copies NETLINK_LIST_MEMBERSHIPS results in whole uint32 words,
+// as Linux netlink_getsockopt does, while reporting the full bitmap size.
+type memberships struct {
+	primitive.Uint64
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes, including nil receivers.
+func (*memberships) SizeBytes() int {
+	return (*primitive.Uint64)(nil).SizeBytes()
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (m *memberships) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+	return m.Uint64.CopyOutN(cc, addr, limit/sizeOfInt32*sizeOfInt32)
 }
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
