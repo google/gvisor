@@ -10,13 +10,11 @@ go_library(
     srcs = [
         "boot.go",
         "chroot.go",
-        "symbolize.go",
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/tpu",
         "//pkg/coretag",
-        "//pkg/coverage",
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/hostarch",
