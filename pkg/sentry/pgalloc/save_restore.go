@@ -1310,6 +1310,10 @@ type AsyncPagesFileLoad struct {
 	// priority is protected by mu.
 	priority ringdeque.Deque[aplFileRange]
 
+	// If throttled is true, a read of pages without waiters starts only when
+	// no other read is in flight.
+	throttled atomicbitops.Bool
+
 	// lfStatus communicates MemoryFile.LoadFrom() state to the async page
 	// loader goroutine.
 	lfStatus syncevent.Waiter
@@ -1493,9 +1497,16 @@ func (op *aplOp) off() int64 {
 	return int64(op.end - op.total)
 }
 
+// AsyncPagesFileLoadOpts contains options to StartAsyncPagesFileLoad.
+type AsyncPagesFileLoadOpts struct {
+	// If Throttled is true, reads of pages without waiters are throttled
+	// until AsyncPagesFileLoad.Unthrottle() is called.
+	Throttled bool
+}
+
 // StartAsyncPagesFileLoad constructs asynchronous loading state for the pages
 // file ar. It takes ownership of ar, even if it returns a non-nil error.
-func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), timeline *timing.Timeline) (*AsyncPagesFileLoad, error) {
+func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), timeline *timing.Timeline, opts AsyncPagesFileLoadOpts) (*AsyncPagesFileLoad, error) {
 	maxReadBytes := hostarch.PageRoundDown(ar.MaxReadBytes())
 	if maxReadBytes <= 0 {
 		ar.Close()
@@ -1509,6 +1520,7 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 		doneCallback:     doneCallback,
 		ar:               ar,
 		maxReadBytes:     maxReadBytes,
+		throttled:        atomicbitops.FromBool(opts.Throttled),
 		qavail:           maxParallel,
 		opsBusy:          bitmap.New(uint32(maxParallel)),
 		ops:              make([]aplOp, maxParallel),
@@ -1527,6 +1539,14 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 	apfl.lfStatus.Init()
 	go apfl.main()
 	return apfl, nil
+}
+
+// Unthrottle allows apfl to read pages without waiters at full parallelism.
+// It is idempotent.
+func (apfl *AsyncPagesFileLoad) Unthrottle() {
+	if apfl.throttled.Swap(false) {
+		apfl.lfStatus.Notify(aplLFPending)
+	}
 }
 
 // MemoryFilesDone must be called after calling LoadFrom() for all MemoryFiles
@@ -1918,7 +1938,8 @@ func (apfl *AsyncPagesFileLoad) main() {
 		}
 		apfl.mu.Unlock()
 		// Fill remaining queue with reads for pages with no waiters.
-		if apfl.canEnqueue() {
+		throttled := apfl.throttled.Load()
+		if apfl.canEnqueue() && (!throttled || (apfl.qavail == maxParallel && apfl.curOp == nil)) {
 			apfl.amflsMu.Lock()
 			// Unawaited loads from earlier MemoryFiles are prioritized over
 			// unawaited loads from later MemoryFiles. Callers of
@@ -1946,18 +1967,25 @@ func (apfl *AsyncPagesFileLoad) main() {
 					// We need to take page references during reading to
 					// prevent pages from becoming waste due to concurrent
 					// dropping of the last reference.
-					n := apfl.enqueueRange(amfl, ulFR, ul.off, true /* tempRef */)
+					var n uint64
+					if throttled && apfl.curOp != nil {
+						// Only extend the single throttled read.
+						n = apfl.combine(amfl, ulFR, ul.off, true /* tempRef */)
+					} else {
+						n = apfl.enqueueRange(amfl, ulFR, ul.off, true /* tempRef */)
+					}
 					if n == 0 {
 						apfl.mu.Unlock()
 						amfl.f.mu.Unlock()
 						break amflsLoop
 					}
+					partial := n < ulFR.Length()
 					ulFR.End = ulFR.Start + n
 					ulseg = amfl.unloaded.SplitAfter(ulseg, ulFR.End)
 					ulseg.ValuePtr().started = true
 					amfl.minUnstarted = ulFR.End
 					amfl.f.incRefLocked(ulFR)
-					if !apfl.canEnqueue() {
+					if (throttled && partial) || !apfl.canEnqueue() {
 						apfl.mu.Unlock()
 						amfl.f.mu.Unlock()
 						break amflsLoop
