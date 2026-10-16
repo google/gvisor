@@ -24,6 +24,9 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cstdint>
+
+#include "absl/strings/string_view.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/test_util.h"
@@ -135,6 +138,17 @@ inline PosixError DropPermittedCapability(int cap) {
 
 PosixErrorOr<bool> CanCreateUserNamespace();
 PosixErrorOr<bool> InInitialUserNamespace();
+
+// Returns true if id is mapped in the caller's user namespace. id_map_path is
+// /proc/self/uid_map or /proc/self/gid_map.
+PosixErrorOr<bool> IsIDMapped(absl::string_view id_map_path, uint32_t id);
+
+// Returns the ID that root in the caller's user namespace appears as: 0 if it
+// is mapped, or the overflow ID otherwise. id_map_path is /proc/self/uid_map or
+// /proc/self/gid_map, and overflow_id_path is the matching
+// /proc/sys/kernel/overflowuid or /proc/sys/kernel/overflowgid.
+PosixErrorOr<uint32_t> RootIDOrOverflow(absl::string_view id_map_path,
+                                        absl::string_view overflow_id_path);
 
 class AutoCapability {
  public:

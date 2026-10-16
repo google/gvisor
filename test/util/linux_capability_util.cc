@@ -25,13 +25,16 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "absl/strings/ascii.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "test/util/fs_util.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
@@ -138,6 +141,41 @@ PosixErrorOr<bool> InInitialUserNamespace() {
   std::vector<std::string> id_map_parts =
       absl::StrSplit(id_map, ' ', absl::SkipEmpty());
   return id_map_parts == std::vector<std::string>({"0", "0", "4294967295"});
+}
+
+PosixErrorOr<bool> IsIDMapped(absl::string_view id_map_path, uint32_t id) {
+  ASSIGN_OR_RETURN_ERRNO(std::string id_map, GetContents(id_map_path));
+  for (absl::string_view line :
+       absl::StrSplit(id_map, '\n', absl::SkipEmpty())) {
+    std::vector<absl::string_view> fields =
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
+    uint32_t first, count;
+    if (fields.size() != 3 || !absl::SimpleAtoi(fields[0], &first) ||
+        !absl::SimpleAtoi(fields[2], &count)) {
+      return PosixError(
+          EINVAL, absl::StrCat("invalid line in ", id_map_path, ": ", line));
+    }
+    if (id >= first && id - first < count) {
+      return true;
+    }
+  }
+  return false;
+}
+
+PosixErrorOr<uint32_t> RootIDOrOverflow(absl::string_view id_map_path,
+                                        absl::string_view overflow_id_path) {
+  ASSIGN_OR_RETURN_ERRNO(bool mapped, IsIDMapped(id_map_path, 0));
+  if (mapped) {
+    return 0;
+  }
+  ASSIGN_OR_RETURN_ERRNO(std::string overflow_id,
+                         GetContents(overflow_id_path));
+  uint32_t id;
+  if (!absl::SimpleAtoi(overflow_id, &id)) {
+    return PosixError(
+        EINVAL, absl::StrCat("invalid ", overflow_id_path, ": ", overflow_id));
+  }
+  return id;
 }
 
 }  // namespace testing

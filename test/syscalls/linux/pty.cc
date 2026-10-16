@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <ctime>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -459,12 +460,15 @@ TEST(BasicPtyTest, Getdents) {
 TEST(BasicPtyTest, NewInstance) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
+  // On Linux, the ptmx device of a new devpts instance has mode 0000 by
+  // default, so opening it would require CAP_DAC_OVERRIDE.
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("devpts_test", dir.path(), "devpts", 0, "newinstance", 0));
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "devpts_test", dir.path(), "devpts", 0, "newinstance,ptmxmode=0666", 0));
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  auto const mount2 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("devpts_test2", dir.path(), "devpts", 0, "newinstance", 0));
+  auto const mount2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("devpts_test2", dir2.path(), "devpts", 0,
+                                      "newinstance,ptmxmode=0666", 0));
 
   // Opening PTYs with O_TRUNC shouldn't cause an error, but calls to
   // (f)truncate should.
@@ -478,50 +482,75 @@ TEST(BasicPtyTest, NewInstance) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(spath.c_str(), O_RDWR | O_NOCTTY));
 }
 
-TEST(BasicPtyTest, SetMode) {
+struct SetModeTestCase {
+  const char* name;
+  // Appended to the devpts mount options.
+  const char* options;
+  // The expected mode and owner of a new replica. std::nullopt means the
+  // caller's effective uid or gid.
+  mode_t mode;
+  std::optional<uid_t> uid;
+  std::optional<gid_t> gid;
+};
+
+class SetModeTest : public ::testing::TestWithParam<SetModeTestCase> {};
+
+TEST_P(SetModeTest, SetMode) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
-  const struct {
-    const char* options;
-    mode_t mode;
-    uid_t uid;
-    gid_t gid;
-  } cases[] = {
-      {"", 0600, geteuid(), getegid()},
-      {",mode=0622", 0622, geteuid(), getegid()},
-      {",uid=123", 0600, 123, getegid()},
-      {",mode=0620,gid=5", 0620, geteuid(), 5},
-  };
-  for (const auto& test : cases) {
-    SCOPED_TRACE(test.options);
-    auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-    auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-        Mount("devpts_test", dir.path(), "devpts", 0,
-              absl::StrCat("newinstance,ptmxmode=0620", test.options), 0));
-    FileDescriptor fd =
-        ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+  const SetModeTestCase& test = GetParam();
+  const uid_t uid = test.uid.value_or(geteuid());
+  const gid_t gid = test.gid.value_or(getegid());
+  // The uid and gid options fail with EINVAL if the ID isn't mapped in the
+  // caller's user namespace.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsIDMapped("/proc/self/uid_map", uid)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsIDMapped("/proc/self/gid_map", gid)));
 
-    struct stat st;
-    ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
-    EXPECT_EQ(st.st_mode, 0755 | S_IFDIR);
-    EXPECT_EQ(st.st_uid, 0);
-    EXPECT_EQ(st.st_gid, 0);
-    ASSERT_THAT(fstatat(fd.get(), "ptmx", &st, 0), SyscallSucceeds());
-    EXPECT_EQ(st.st_mode, 0620 | S_IFCHR);
-    EXPECT_EQ(st.st_uid, geteuid());
-    EXPECT_EQ(st.st_gid, getegid());
+  // The root directory is owned by root in the caller's user namespace. See
+  // fs/devpts/inode.c:devpts_fill_super() and fs/inode.c:inode_init_always().
+  const uid_t root_uid = ASSERT_NO_ERRNO_AND_VALUE(
+      RootIDOrOverflow("/proc/self/uid_map", "/proc/sys/kernel/overflowuid"));
+  const gid_t root_gid = ASSERT_NO_ERRNO_AND_VALUE(
+      RootIDOrOverflow("/proc/self/gid_map", "/proc/sys/kernel/overflowgid"));
 
-    FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
-        Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_NOCTTY));
-    int index = -1;
-    ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &index), SyscallSucceeds());
-    ASSERT_THAT(fstatat(fd.get(), std::to_string(index).c_str(), &st, 0),
-                SyscallSucceeds());
-    EXPECT_EQ(st.st_mode, test.mode | S_IFCHR);
-    EXPECT_EQ(st.st_uid, test.uid);
-    EXPECT_EQ(st.st_gid, test.gid);
-  }
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("devpts_test", dir.path(), "devpts", 0,
+            absl::StrCat("newinstance,ptmxmode=0620", test.options), 0));
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0755 | S_IFDIR);
+  EXPECT_EQ(st.st_uid, root_uid);
+  EXPECT_EQ(st.st_gid, root_gid);
+  ASSERT_THAT(fstatat(fd.get(), "ptmx", &st, 0), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0620 | S_IFCHR);
+  EXPECT_EQ(st.st_uid, geteuid());
+  EXPECT_EQ(st.st_gid, getegid());
+
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_NOCTTY));
+  int index = -1;
+  ASSERT_THAT(ioctl(master.get(), TIOCGPTN, &index), SyscallSucceeds());
+  ASSERT_THAT(fstatat(fd.get(), std::to_string(index).c_str(), &st, 0),
+              SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, test.mode | S_IFCHR);
+  EXPECT_EQ(st.st_uid, uid);
+  EXPECT_EQ(st.st_gid, gid);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    , SetModeTest,
+    ::testing::Values(
+        SetModeTestCase{"Default", "", 0600, std::nullopt, std::nullopt},
+        SetModeTestCase{"Mode", ",mode=0622", 0622, std::nullopt, std::nullopt},
+        SetModeTestCase{"Uid", ",uid=123", 0600, 123, std::nullopt},
+        SetModeTestCase{"Gid", ",mode=0620,gid=5", 0620, std::nullopt, 5}),
+    [](const ::testing::TestParamInfo<SetModeTestCase>& info) {
+      return info.param.name;
+    });
 
 TEST(BasicPtyTest, OpenDevTTY) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
