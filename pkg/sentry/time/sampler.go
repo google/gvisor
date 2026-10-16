@@ -71,7 +71,7 @@ type tscCycleClock struct{}
 
 // Cycles implements cycleClock.Cycles.
 func (tscCycleClock) Cycles() TSCValue {
-	return Rdtsc()
+	return TSC()
 }
 
 // sample contains a sample from the reference clock, with TSC values from
@@ -225,17 +225,17 @@ type syscallTSCReferenceClocks struct {
 }
 
 // Sample implements sampler.Sample.
-func (syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
+func (sc syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
 	var s sample
 
-	s.before = Rdtsc()
+	s.before = sc.Cycles()
 
 	// Don't call clockGettime to avoid a call which may call morestack.
 	var ts unix.Timespec
 
 	vdsoClockGettime(c, &ts)
 
-	s.after = Rdtsc()
+	s.after = sc.Cycles()
 	s.ref = ReferenceNS(ts.Nano())
 
 	return s, nil

@@ -19,6 +19,7 @@ package kvm
 
 import (
 	"encoding/binary"
+	"fmt"
 	"testing"
 	"unsafe"
 
@@ -157,4 +158,21 @@ func TestApplicationPAC(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// disallowedVDSOExit returns a description of the last guest exit of c and
+// whether it indicates that a vDSO time call did not run entirely in guest
+// mode: a system call that reads the time.
+//
+// A guest kernel system call saves the system call number in Regs[8].
+// Exceptions at EL1 do not record their vector in the CPU state, so unlike on
+// amd64 they cannot be told apart from system calls here.
+func disallowedVDSOExit(c *vCPU) (string, bool) {
+	regs := c.CPU.Registers()
+	switch sysno := regs.Regs[8]; sysno {
+	case unix.SYS_CLOCK_GETTIME, unix.SYS_GETTIMEOFDAY:
+		return fmt.Sprintf("time system call %d at pc %#x", sysno, regs.Pc), true
+	default:
+		return fmt.Sprintf("system call %d (or exception) at pc %#x", sysno, regs.Pc), false
+	}
 }

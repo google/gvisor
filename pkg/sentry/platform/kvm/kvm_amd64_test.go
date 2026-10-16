@@ -18,8 +18,10 @@
 package kvm
 
 import (
+	"fmt"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -131,4 +133,23 @@ func TestKernelCPUID(t *testing.T) {
 			t.Fatalf("Nested virtualization is enabled")
 		}
 	})
+}
+
+// disallowedVDSOExit returns a description of the last guest exit of c and
+// whether it indicates that a vDSO time call did not run entirely in guest
+// mode: an exception, or a system call that reads the time.
+//
+// A guest kernel system call sets the vector to ^0 and saves the system call
+// number in Orig_rax; an exception saves its vector instead.
+func disallowedVDSOExit(c *vCPU) (string, bool) {
+	regs := c.CPU.Registers()
+	if vector := c.CPU.Vector(); vector != ^uintptr(0) {
+		return fmt.Sprintf("exception %d at rip %#x, fault address %#x", vector, regs.Rip, c.CPU.FaultAddr()), true
+	}
+	switch sysno := regs.Orig_rax; sysno {
+	case unix.SYS_CLOCK_GETTIME, unix.SYS_GETTIMEOFDAY, unix.SYS_TIME:
+		return fmt.Sprintf("time system call %d at rip %#x", sysno, regs.Rip), true
+	default:
+		return fmt.Sprintf("system call %d at rip %#x", sysno, regs.Rip), false
+	}
 }
