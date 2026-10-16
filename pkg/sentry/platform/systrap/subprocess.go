@@ -271,8 +271,8 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		// (Hopefully nobody tgkilled it with a signal <
 		// SIGSTOP before the SIGSTOP was delivered, in which
 		// case that signal would be delivered before SIGSTOP.)
-		if sig := t.wait(stopped); sig != unix.SIGSTOP {
-			handlePtraceSyscallRequestError(req, "error waiting for new clone: expected SIGSTOP, got %v", sig)
+		if sig, err := t.wait(stopped); err != nil || sig != unix.SIGSTOP {
+			handlePtraceSyscallRequestError(req, "error waiting for new clone: expected SIGSTOP, got %v (err: %v)", sig, err)
 			return
 		}
 
@@ -578,13 +578,14 @@ func (t *thread) attach() error {
 	// stopped from the SIGSTOP queued by CLONE_PTRACE (see inner loop of
 	// newSubprocess), so we always expect to see signal-delivery-stop with
 	// SIGSTOP.
-	if sig := t.wait(stopped); sig != unix.SIGSTOP {
+	if sig, err := t.wait(stopped); err != nil {
+		return fmt.Errorf("wait failed: %w", err)
+	} else if sig != unix.SIGSTOP {
 		return fmt.Errorf("wait failed: expected SIGSTOP, got %v", sig)
 	}
 
 	// Initialize options.
-	t.init()
-	return nil
+	return t.init()
 }
 
 func (t *thread) grabInitRegs() {
@@ -667,7 +668,7 @@ func (t *thread) dumpRegs(message string) {
 	log.Infof("%s", message)
 }
 
-func (t *thread) unexpectedStubExit() {
+func (t *thread) unexpectedStubExit() error {
 	msg, err := t.getEventMessage()
 	status := unix.WaitStatus(msg)
 	if status.Signaled() && status.Signal() == unix.SIGKILL {
@@ -677,17 +678,16 @@ func (t *thread) unexpectedStubExit() {
 		log.Warningf("The ptrace stub process %v has been killed by SIGKILL.", t.tgid)
 		err := sighandling.KillItself()
 		if err != nil {
-			t.dumpAndPanic(fmt.Sprintf(
-				"failed to kill the process %d:%d: %v", t.tgid, t.tid, err))
+			return fmt.Errorf("failed to kill the process %d:%d: %w", t.tgid, t.tid, err)
 		}
 	}
-	t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
+	return fmt.Errorf("wait failed: the process %d:%d exited: %x (err %v): %w", t.tgid, t.tid, msg, err, errDeadSubprocess)
 }
 
 // wait waits for a stop event.
 //
 // Precondition: outcome is a valid waitOutcome.
-func (t *thread) wait(outcome waitOutcome) unix.Signal {
+func (t *thread) wait(outcome waitOutcome) (unix.Signal, error) {
 	var status unix.WaitStatus
 
 	for {
@@ -696,15 +696,15 @@ func (t *thread) wait(outcome waitOutcome) unix.Signal {
 			// Wait was interrupted; wait again.
 			continue
 		} else if err != nil {
-			panic(fmt.Sprintf("ptrace wait failed: %v", err))
+			return 0, fmt.Errorf("ptrace wait failed: %w", err)
 		}
 		if int(r) != int(t.tid) {
-			panic(fmt.Sprintf("ptrace wait returned %v, expected %v", r, t.tid))
+			return 0, fmt.Errorf("ptrace wait returned %v, expected %v", r, t.tid)
 		}
 		switch outcome {
 		case stopped:
 			if !status.Stopped() {
-				t.dumpAndPanic(fmt.Sprintf("ptrace status unexpected: got %v, wanted stopped", status))
+				return 0, fmt.Errorf("ptrace status unexpected: got %v, wanted stopped (%w)", status, errDeadSubprocess)
 			}
 			stopSig := status.StopSignal()
 			if stopSig == 0 {
@@ -712,18 +712,18 @@ func (t *thread) wait(outcome waitOutcome) unix.Signal {
 			}
 			if stopSig == unix.SIGTRAP {
 				if status.TrapCause() == unix.PTRACE_EVENT_EXIT {
-					t.unexpectedStubExit()
+					return 0, t.unexpectedStubExit()
 				}
 				// Re-encode the trap cause the way it's expected.
-				return stopSig | unix.Signal(status.TrapCause()<<8)
+				return stopSig | unix.Signal(status.TrapCause()<<8), nil
 			}
 			// Not a trap signal.
-			return stopSig
+			return stopSig, nil
 		case killed:
 			if !status.Exited() && !status.Signaled() {
-				t.dumpAndPanic(fmt.Sprintf("ptrace status unexpected: got %v, wanted exited", status))
+				return 0, fmt.Errorf("ptrace status unexpected: got %v, wanted exited", status)
 			}
-			return unix.Signal(status.ExitStatus())
+			return unix.Signal(status.ExitStatus()), nil
 		default:
 			// Should not happen.
 			t.dumpAndPanic(fmt.Sprintf("unknown outcome: %v", outcome))
@@ -748,7 +748,7 @@ func (t *thread) destroy() {
 }
 
 // init initializes trace options.
-func (t *thread) init() {
+func (t *thread) init() error {
 	// Set the TRACESYSGOOD option to differentiate real SIGTRAP.
 	// set PTRACE_O_EXITKILL to ensure that the unexpected exit of the
 	// sentry will immediately kill the associated stubs.
@@ -760,8 +760,9 @@ func (t *thread) init() {
 		unix.PTRACE_O_TRACESYSGOOD|unix.PTRACE_O_TRACEEXIT|unix.PTRACE_O_EXITKILL,
 		0, 0)
 	if errno != 0 {
-		panic(fmt.Sprintf("ptrace set options failed: %v", errno))
+		return fmt.Errorf("ptrace set options failed: %w", errno)
 	}
+	return nil
 }
 
 // syscall executes a system call cycle in the traced context.
@@ -772,7 +773,7 @@ func (t *thread) init() {
 func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 	// Set registers.
 	if err := t.setRegs(regs); err != nil {
-		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
+		return 0, fmt.Errorf("ptrace set regs failed: %w", err)
 	}
 
 	for {
@@ -780,10 +781,13 @@ func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 		// trap instruction which is right after the syscall
 		// instruction.
 		if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(t.tid), 0); errno != 0 {
-			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
+			return 0, fmt.Errorf("ptrace syscall-enter failed: %w", errno)
 		}
 
-		sig := t.wait(stopped)
+		sig, err := t.wait(stopped)
+		if err != nil {
+			return 0, err
+		}
 		if sig == unix.SIGTRAP {
 			// Reached syscall-enter-stop.
 			break
@@ -798,7 +802,7 @@ func (t *thread) syscall(regs *arch.Registers) (uintptr, error) {
 
 	// Grab registers.
 	if err := t.getRegs(regs); err != nil {
-		panic(fmt.Sprintf("ptrace get regs failed: %v", err))
+		return 0, fmt.Errorf("ptrace get regs failed: %w", err)
 	}
 	return syscallReturnValue(regs)
 }
@@ -1148,7 +1152,10 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(p.tid), 0); errno != 0 {
 		panic(fmt.Sprintf("ptrace cont failed: %v", errno))
 	}
-	sig := p.wait(stopped)
+	sig, err := p.wait(stopped)
+	if err != nil {
+		panic(fmt.Sprintf("error waiting for new clone: %v", err))
+	}
 	if sig != unix.SIGSTOP {
 		panic(fmt.Sprintf("error waiting for new clone: expected SIGSTOP, got %v", sig))
 	}

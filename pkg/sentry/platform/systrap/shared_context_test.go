@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -194,6 +195,34 @@ func TestReleaseDeadSubprocessDecRefs(t *testing.T) {
 	})
 	if !released {
 		t.Fatalf("expected subprocess to be released")
+	}
+}
+
+func TestThreadWaitStoppedWhenSignaled(t *testing.T) {
+	sc := newTestSharedContext(t)
+	child := sc.subprocess.syscallThread.thread
+	child.kill()
+
+	_, err := child.wait(stopped)
+	if !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("wait(stopped) got error %v, want %v", err, errDeadSubprocess)
+	}
+}
+
+func TestThreadWaitECHILD(t *testing.T) {
+	missing := &thread{tgid: 1 << 30, tid: 1 << 30}
+	_, err := missing.wait(stopped)
+	if !errors.Is(err, unix.ECHILD) {
+		t.Fatalf("wait(stopped) got error %v, want %v", err, unix.ECHILD)
+	}
+}
+
+func TestThreadSyscallDeadThread(t *testing.T) {
+	missing := &thread{tgid: 1 << 30, tid: 1 << 30}
+	var regs arch.Registers
+	_, err := missing.syscall(&regs)
+	if !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("syscall got error %v, want %v", err, unix.ESRCH)
 	}
 }
 

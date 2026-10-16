@@ -45,12 +45,13 @@ func (t *syscallThread) maskAllSignalsAttached() {
 }
 
 // unmaskAllSignals unblocks all signals.
-func (t *syscallThread) unmaskAllSignalsAttached() {
+func (t *syscallThread) unmaskAllSignalsAttached() error {
 	p := t.thread
 	mask := uint64(0)
 	if errno := hostsyscall.RawSyscallErrno6(unix.SYS_PTRACE, linux.PTRACE_SETSIGMASK, uintptr(p.tid), 8, uintptr(unsafe.Pointer(&mask)), 0, 0); errno != 0 {
-		panic(fmt.Sprintf("unable to setmask: %v", errno))
+		return fmt.Errorf("unable to setmask: %w", errno)
 	}
+	return nil
 }
 
 func futexWakeUint32(addr *uint32) error {
