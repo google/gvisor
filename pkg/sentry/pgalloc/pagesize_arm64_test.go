@@ -12,22 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build pagesize_64k
+//go:build arm64
 
-package sysmsg
+package pgalloc
 
 import (
+	"testing"
+
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-const (
-	// PerThreadMemSize is the size of a per-thread memory region (320KB).
-	PerThreadMemSize = 5 * hostarch.PageSize
-	// GuardSize is the size of an unmapped region before the signal stack (64KB).
-	GuardSize                   = hostarch.PageSize
-	PerThreadPrivateStackOffset = GuardSize
-	PerThreadPrivateStackSize   = 1 * hostarch.PageSize // 64KB (sufficient for syshandler private stack)
-	// PerThreadSharedStackSize is the size of a per-thread stack region (128KB, includes stack + sysmsg).
-	PerThreadSharedStackSize   = 2 * hostarch.PageSize
-	PerThreadSharedStackOffset = 3 * hostarch.PageSize
-)
+// usePageShiftForTest sets the page size to 1<<shift for the test; see
+// hostarch.SetPageShiftForTesting.
+func usePageShiftForTest(t *testing.T, shift uint) {
+	t.Helper()
+	t.Cleanup(hostarch.SetPageShiftForTesting(shift))
+}
+
+// use4KPagesForTest sets the page size to 4K for the duration of the test.
+func use4KPagesForTest(t *testing.T) {
+	t.Helper()
+	usePageShiftForTest(t, 12)
+}
+
+// use64KPagesForTest sets the page size to 64K for the duration of the test.
+func use64KPagesForTest(t *testing.T) {
+	t.Helper()
+	usePageShiftForTest(t, 16)
+}

@@ -392,21 +392,21 @@ func newDiskBackedFileFD(ctx context.Context, tb testing.TB) (*vfs.FileDescripti
 func TestDiskBackedWriteHostFault(t *testing.T) {
 	// The write is smaller than hostWriteThreshold, so it is copied through
 	// the internal mappings of the MemoryFile.
-	const size = 2 * hostarch.PageSize
+	size := 2 * int(hostarch.PageSize)
 	for _, okPages := range []int{0, 1} {
 		t.Run(fmt.Sprintf("SIGBUS after %d pages", okPages), func(t *testing.T) {
 			ctx := contexttest.Context(t)
 			fd, mf := newDiskBackedFileFD(ctx, t)
 
 			// Allocate the file data.
-			if n, err := fd.PWrite(ctx, usermem.BytesIOSequence(make([]byte, size)), 0, vfs.WriteOptions{}); err != nil || n != size {
+			if n, err := fd.PWrite(ctx, usermem.BytesIOSequence(make([]byte, size)), 0, vfs.WriteOptions{}); err != nil || n != int64(size) {
 				t.Fatalf("fd.PWrite: got (%d, %v), want (%d, nil)", n, err, size)
 			}
 			rf := fd.Impl().(*regularFileFD).inode().impl.(*regularFile)
 			rf.dataMu.RLock()
 			fr := rf.data.FirstSegment().FileRange()
 			rf.dataMu.RUnlock()
-			if fr.Length() != size {
+			if fr.Length() != uint64(size) {
 				t.Fatalf("got file data in MemoryFile range %v, want one range of %d bytes", fr, size)
 			}
 
@@ -414,7 +414,7 @@ func TestDiskBackedWriteHostFault(t *testing.T) {
 			// end of the file is touched. Truncate the backing file so that
 			// only the first okPages pages of the file data are before its
 			// end.
-			if err := mf.File().Truncate(int64(fr.Start) + int64(okPages*hostarch.PageSize)); err != nil {
+			if err := mf.File().Truncate(int64(fr.Start) + int64(okPages)*int64(hostarch.PageSize)); err != nil {
 				t.Fatalf("Truncate failed: %v", err)
 			}
 
@@ -423,13 +423,13 @@ func TestDiskBackedWriteHostFault(t *testing.T) {
 			for i := range data {
 				data[i] = byte(i%255 + 1)
 			}
-			if n, err := fd.PWrite(ctx, usermem.BytesIOSequence(data), 0, vfs.WriteOptions{}); err != nil || n != size {
+			if n, err := fd.PWrite(ctx, usermem.BytesIOSequence(data), 0, vfs.WriteOptions{}); err != nil || n != int64(size) {
 				t.Fatalf("fd.PWrite: got (%d, %v), want (%d, nil)", n, err, size)
 			}
 
 			// Read the file data.
 			got := make([]byte, size)
-			if n, err := fd.PRead(ctx, usermem.BytesIOSequence(got), 0, vfs.ReadOptions{}); err != nil || n != size {
+			if n, err := fd.PRead(ctx, usermem.BytesIOSequence(got), 0, vfs.ReadOptions{}); err != nil || n != int64(size) {
 				t.Fatalf("fd.PRead: got (%d, %v), want (%d, nil)", n, err, size)
 			}
 			if !bytes.Equal(got, data) {
