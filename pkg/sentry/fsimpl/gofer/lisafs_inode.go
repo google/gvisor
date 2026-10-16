@@ -617,6 +617,14 @@ func (i *lisafsInode) statfs(ctx context.Context) (linux.Statfs, error) {
 }
 
 func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions, d *dentry) error {
+	if inode.Stat.Mask&linux.STATX_TYPE == 0 {
+		i.fs.client.CloseFD(ctx, inode.ControlFD, false /* flush */)
+		return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file type validation failed: file type not available", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID)}
+	}
+	if got, want := uint32(inode.Stat.Mode&linux.FileTypeMask), i.inode.fileType(); got != want {
+		i.fs.client.CloseFD(ctx, inode.ControlFD, false /* flush */)
+		return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file type validation failed: file type changed from %#o to %#o", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, want, got)}
+	}
 	i.controlFD = i.fs.client.NewFD(inode.ControlFD)
 
 	// Gofers do not preserve inoKey across checkpoint/restore, so:
@@ -664,7 +672,7 @@ func (i *lisafsInode) restoreInode(ctx context.Context, inode *lisafs.Inode, opt
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q in mount %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
+			return vfs.ErrCorruption{Err: fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q in mount %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)}
 		}
 	}
 

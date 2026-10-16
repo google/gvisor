@@ -906,7 +906,11 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 	var stat unix.Statx_t
 	if err := unix.Statx(controlFD, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &stat); err != nil {
 		_ = unix.Close(controlFD)
-		return fmt.Errorf("failed to stat %q in mount %q: %w", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
+		return vfs.ErrCorruption{Err: fmt.Errorf("failed to stat %q in mount %q: %w", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)}
+	}
+	if got, want := uint32(stat.Mode)&unix.S_IFMT, i.inode.fileType(); got != want {
+		_ = unix.Close(controlFD)
+		return vfs.ErrCorruption{Err: fmt.Errorf("gofer.dentry(%q in mount %q).restoreFile: file type validation failed: file type changed from %#o to %#o", genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, want, got)}
 	}
 	i.controlFD = controlFD
 	// We do not preserve inoKey across checkpoint/restore, so:
@@ -948,7 +952,7 @@ func (i *directfsInode) restoreFile(ctx context.Context, controlFD int, opts *vf
 
 	if rw, ok := i.fs.savedDentryRW[d]; ok {
 		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q in mount %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)
+			return vfs.ErrCorruption{Err: fmt.Errorf("failed to restore file handles (read=%t, write=%t) for %q in mount %q: %w", rw.read, rw.write, genericDebugPathname(i.fs, d), i.fs.iopts.UniqueID, err)}
 		}
 	}
 
