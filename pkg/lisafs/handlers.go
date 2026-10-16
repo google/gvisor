@@ -753,10 +753,11 @@ func PReadHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32, 
 	// buffer. The rest of the response message is manually marshalled.
 	var resp PReadResp
 	respMetaSize := uint32(resp.NumBytes.SizeBytes())
-	respPayloadLen := respMetaSize + req.Count
-	if respPayloadLen > c.maxMessageSize {
+	// Compute in uint64 so that a large req.Count can not wrap around.
+	if uint64(respMetaSize)+uint64(req.Count) > uint64(c.maxMessageSize) {
 		return 0, unix.ENOBUFS
 	}
+	respPayloadLen := respMetaSize + req.Count
 	payloadBuf := comm.PayloadBuf(respPayloadLen)
 	var n uint64
 	if err := fd.controlFD.safelyRead(func() error {
