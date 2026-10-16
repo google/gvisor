@@ -2201,9 +2201,6 @@ cc_binary(
     name = "poll_test",
     testonly = 1,
     srcs = ["poll.cc"],
-    copts = [
-        "-Wno-unknown-warning-option",
-    ],
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
@@ -4980,9 +4977,6 @@ cc_binary(
     name = "uidgid_test",
     testonly = 1,
     srcs = ["uidgid.cc"],
-    copts = [
-        "-Wno-unknown-warning-option",
-    ],
     linkstatic = 1,
     malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
