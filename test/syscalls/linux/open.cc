@@ -417,6 +417,127 @@ TEST_F(OpenTest, DirectoryDirectFails) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// Returns false if the filesystem containing dir does not support O_DIRECT.
+PosixErrorOr<bool> SupportsDirectIO(const std::string& dir) {
+  ASSIGN_OR_RETURN_ERRNO(TempPath file, TempPath::CreateFileIn(dir));
+  auto fd = Open(file.path(), O_RDONLY | O_DIRECT);
+  if (fd.ok()) {
+    return true;
+  }
+  if (fd.error().errno_value() == EINVAL) {
+    return false;
+  }
+  return fd.error();
+}
+
+// O_DIRECT I/O must be aligned to the filesystem's logical block size, which
+// is at most the page size.
+constexpr size_t kDirectIOAlign = 4096;
+
+TEST_F(OpenTest, DirectReadWrite) {
+  SKIP_IF(
+      !ASSERT_NO_ERRNO_AND_VALUE(SupportsDirectIO(GetAbsoluteTestTmpdir())));
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileIn(GetAbsoluteTestTmpdir()));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR | O_DIRECT));
+
+  alignas(kDirectIOAlign) char buf[kDirectIOAlign];
+  memset(buf, 'a', sizeof(buf));
+  ASSERT_THAT(pwrite(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  MaybeSave();
+
+  memset(buf, 0, sizeof(buf));
+  ASSERT_THAT(pread(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  const std::string want(sizeof(buf), 'a');
+  EXPECT_EQ(std::string(buf, sizeof(buf)), want);
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(file.path())), want);
+}
+
+TEST_F(OpenTest, CreateDirect) {
+  SKIP_IF(
+      !ASSERT_NO_ERRNO_AND_VALUE(SupportsDirectIO(GetAbsoluteTestTmpdir())));
+
+  const std::string path = NewTempAbsPathInDir(GetAbsoluteTestTmpdir());
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(path, O_CREAT | O_EXCL | O_WRONLY | O_DIRECT, 0644));
+  const auto cleanup = Cleanup([&] { unlink(path.c_str()); });
+
+  alignas(kDirectIOAlign) char buf[kDirectIOAlign];
+  memset(buf, 'a', sizeof(buf));
+  ASSERT_THAT(pwrite(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(path)),
+            std::string(sizeof(buf), 'a'));
+}
+
+TEST_F(OpenTest, DirectUnalignedFails) {
+  SKIP_IF(
+      !ASSERT_NO_ERRNO_AND_VALUE(SupportsDirectIO(GetAbsoluteTestTmpdir())));
+  // tmpfs and gVisor's overlay (whose upper layer is tmpfs) accept O_DIRECT
+  // without enforcing its alignment requirements. So does gVisor's FUSE.
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+  SKIP_IF(absl::NullSafeStringView(getenv("GVISOR_FUSE_TEST")) == "TRUE");
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), std::string(2 * kDirectIOAlign, 'a'),
+      TempPath::kDefaultFileMode));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR | O_DIRECT));
+  MaybeSave();
+
+  alignas(kDirectIOAlign) char buf[2 * kDirectIOAlign];
+  // Misaligned buffer.
+  EXPECT_THAT(pread(fd.get(), buf + 1, kDirectIOAlign, 0),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(pwrite(fd.get(), buf + 1, kDirectIOAlign, 0),
+              SyscallFailsWithErrno(EINVAL));
+  // Misaligned offset.
+  EXPECT_THAT(pread(fd.get(), buf, kDirectIOAlign, 1),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(pwrite(fd.get(), buf, kDirectIOAlign, 1),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// O_DIRECT can be cleared and set again with fcntl(F_SETFL), as dd(1) does to
+// write a final partial block.
+TEST_F(OpenTest, DirectToggledViaFcntl) {
+  SKIP_IF(
+      !ASSERT_NO_ERRNO_AND_VALUE(SupportsDirectIO(GetAbsoluteTestTmpdir())));
+  // gVisor's FUSE does not allow setting O_DIRECT with fcntl(F_SETFL).
+  SKIP_IF(absl::NullSafeStringView(getenv("GVISOR_FUSE_TEST")) == "TRUE");
+
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileIn(GetAbsoluteTestTmpdir()));
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR | O_DIRECT));
+  int flags;
+  ASSERT_THAT(flags = fcntl(fd.get(), F_GETFL), SyscallSucceeds());
+
+  alignas(kDirectIOAlign) char buf[kDirectIOAlign];
+  memset(buf, 'a', sizeof(buf));
+  ASSERT_THAT(pwrite(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Without O_DIRECT, unaligned I/O succeeds and observes the direct write.
+  ASSERT_THAT(fcntl(fd.get(), F_SETFL, flags & ~O_DIRECT), SyscallSucceeds());
+  ASSERT_THAT(pwrite(fd.get(), "b", 1, 1), SyscallSucceedsWithValue(1));
+  char c;
+  ASSERT_THAT(pread(fd.get(), &c, 1, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, 'a');
+
+  // With O_DIRECT set again, direct reads observe the buffered write.
+  ASSERT_THAT(fcntl(fd.get(), F_SETFL, flags), SyscallSucceeds());
+  ASSERT_THAT(pread(fd.get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_EQ(buf[0], 'a');
+  EXPECT_EQ(buf[1], 'b');
+}
+
 TEST_F(OpenTest, FileNotDirectory) {
   // Create a file and try to open it with O_DIRECTORY.
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
