@@ -447,6 +447,10 @@ type Config struct {
 	// performed during restore.
 	RestoreSpecValidation RestoreSpecValidationPolicy `flag:"restore-spec-validation"`
 
+	// RestoreBackgroundReadRate limits checkpoint reads without waiters in
+	// bytes/second. Zero preserves unlimited prefetch.
+	RestoreBackgroundReadRate uint64 `flag:"restore-background-read-rate"`
+
 	// GVisorMarkerFile enables the /proc/gvisor/kernel_is_gvisor marker file.
 	GVisorMarkerFile bool `flag:"gvisor-marker-file"`
 

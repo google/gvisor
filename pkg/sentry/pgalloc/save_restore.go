@@ -1274,6 +1274,10 @@ type AsyncPagesFileLoad struct {
 	// ar is the pages file. ar is immutable.
 	ar stateio.AsyncReader
 
+	// backgroundRate and backgroundChunk bound speculative reads. Immutable.
+	backgroundRate  uint64
+	backgroundChunk uint64
+
 	// maxReadBytes is hostarch.PageRoundDown(ar.MaxReadBytes()), cached to
 	// avoid interface method calls and recomputation. maxReadBytes is
 	// immutable.
@@ -1302,6 +1306,8 @@ type AsyncPagesFileLoad struct {
 const (
 	aplLFPending syncevent.Set = 1 << iota
 	aplLFDone
+	aplLFRequest
+	aplLFRateReady
 )
 
 type aplFileRange struct {
@@ -1412,9 +1418,19 @@ func (op *aplOp) off() int64 {
 	return int64(op.end - op.total)
 }
 
+// AsyncPagesFileLoadOpts controls speculative checkpoint reads.
+type AsyncPagesFileLoadOpts struct {
+	// BackgroundBytesPerSecond limits reads without waiters. Zero is unlimited.
+	// Awaited reads bypass this limit. Limited prefetch has at most one read
+	// in flight, with a page-aligned batch of at most 64 KiB.
+	BackgroundBytesPerSecond uint64
+}
+
 // StartAsyncPagesFileLoad constructs asynchronous loading state for the pages
 // file ar. It takes ownership of ar, even if it returns a non-nil error.
-func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), timeline *timing.Timeline) (*AsyncPagesFileLoad, error) {
+// opts controls background prefetch; reads requested by awaitLoad bypass
+// background throttling.
+func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), timeline *timing.Timeline, opts AsyncPagesFileLoadOpts) (*AsyncPagesFileLoad, error) {
 	maxReadBytes := hostarch.PageRoundDown(ar.MaxReadBytes())
 	if maxReadBytes <= 0 {
 		ar.Close()
@@ -1427,10 +1443,15 @@ func StartAsyncPagesFileLoad(ar stateio.AsyncReader, doneCallback func(error), t
 		timeline:         timeline.Fork("async page loading"),
 		doneCallback:     doneCallback,
 		ar:               ar,
+		backgroundRate:   opts.BackgroundBytesPerSecond,
 		maxReadBytes:     maxReadBytes,
 		qavail:           maxParallel,
 		opsBusy:          bitmap.New(uint32(maxParallel)),
 		ops:              make([]aplOp, maxParallel),
+	}
+	if apfl.backgroundRate != 0 {
+		// Target about 10ms per read, with at least one page per batch.
+		apfl.backgroundChunk = min(maxReadBytes, uint64(64<<10), max(uint64(hostarch.PageSize), hostarch.PageRoundDown(apfl.backgroundRate/100)))
 	}
 	// Mark ops in opsBusy that don't actually exist as permanently busy.
 	for i, n := maxParallel, apfl.opsBusy.Size(); i < n; i++ {
@@ -1529,6 +1550,9 @@ func (amfl *asyncMemoryFileLoad) awaitLoad(fr memmap.FileRange) error {
 	}
 	apfl.mu.Unlock()
 	if pending {
+		// With speculative reads disabled the loader may be asleep with no
+		// I/O in flight. Wake it when an accessed range needs to be read.
+		apfl.lfStatus.Notify(aplLFRequest)
 		if logAwaitedLoads {
 			log.Infof("MemoryFile(%p): awaitLoad goid %d start: %v (%d bytes)", amfl.f, goid.Get(), fr, fr.Length())
 		}
@@ -1570,6 +1594,15 @@ func (apfl *AsyncPagesFileLoad) enqueueCurOp() {
 	if logAwaitedLoads && !op.tempRef {
 		log.Infof("MemoryFile(%p): awaited opid %d start, read %d bytes: %v", op.amfl.f, apfl.curOpID, op.total, op.frs)
 	}
+}
+
+// backgroundDelay returns the pacing delay for a bounded speculative read.
+//
+// Preconditions:
+// - apfl.backgroundRate != 0.
+// - bytes <= 64 KiB.
+func (apfl *AsyncPagesFileLoad) backgroundDelay(bytes uint64) time.Duration {
+	return time.Duration(math.Ceil(float64(bytes) * float64(time.Second) / float64(apfl.backgroundRate)))
 }
 
 // Preconditions:
@@ -1787,6 +1820,12 @@ func (apfl *AsyncPagesFileLoad) main() {
 		}()
 	}
 
+	memoryFilesDone := false
+	var backgroundNext time.Time
+	if apfl.backgroundRate != 0 {
+		// Start without burst credit, including before the first prefetch.
+		backgroundNext = time.Now().Add(apfl.backgroundDelay(apfl.backgroundChunk))
+	}
 	for {
 		// Enqueue as many reads as possible.
 		if !apfl.canEnqueue() {
@@ -1837,7 +1876,7 @@ func (apfl *AsyncPagesFileLoad) main() {
 		}
 		apfl.mu.Unlock()
 		// Fill remaining queue with reads for pages with no waiters.
-		if apfl.canEnqueue() {
+		if apfl.canEnqueue() && (apfl.backgroundRate == 0 || (apfl.qavail == maxParallel && apfl.curOp == nil && !time.Now().Before(backgroundNext))) {
 			apfl.amflsMu.Lock()
 			// Unawaited loads from earlier MemoryFiles are prioritized over
 			// unawaited loads from later MemoryFiles. Callers of
@@ -1862,6 +1901,16 @@ func (apfl *AsyncPagesFileLoad) main() {
 						ulseg = ulseg.NextSegment()
 						continue
 					}
+					if apfl.backgroundRate != 0 {
+						// Pause speculation while applications wait. Also bound the
+						// read that can already be in flight when a waiter arrives.
+						if apfl.numWaiters != 0 {
+							apfl.mu.Unlock()
+							amfl.f.mu.Unlock()
+							break amflsLoop
+						}
+						ulFR.End = min(ulFR.End, ulFR.Start+apfl.backgroundChunk)
+					}
 					// We need to take page references during reading to
 					// prevent pages from becoming waste due to concurrent
 					// dropping of the last reference.
@@ -1876,6 +1925,15 @@ func (apfl *AsyncPagesFileLoad) main() {
 					ulseg.ValuePtr().started = true
 					amfl.minUnstarted = ulFR.End
 					amfl.f.incRefLocked(ulFR)
+					if apfl.backgroundRate != 0 {
+						// Do not accumulate burst credit during idle or awaited I/O.
+						// Batches are bounded by 64 KiB.
+						delay := apfl.backgroundDelay(n)
+						backgroundNext = time.Now().Add(delay)
+						apfl.mu.Unlock()
+						amfl.f.mu.Unlock()
+						break amflsLoop
+					}
 					if !apfl.canEnqueue() {
 						apfl.mu.Unlock()
 						amfl.f.mu.Unlock()
@@ -1894,23 +1952,54 @@ func (apfl *AsyncPagesFileLoad) main() {
 		}
 
 		if apfl.qavail == maxParallel {
-			// We are out of work to do.
-			ev := apfl.lfStatus.Wait()
-			if ev&aplLFPending != 0 {
-				// We may have raced with MemoryFile.LoadFrom() inserting into
-				// asyncMemoryFileLoad.unloaded.
-				apfl.lfStatus.Ack(aplLFPending)
-				continue
+			// No reads are in flight. With throttling enabled, cold
+			// pages may remain even while the reader is idle.
+			apfl.amflsMu.Lock()
+			apfl.mu.Lock()
+			for amfl := apfl.amfls.Front(); amfl != nil; {
+				next := amfl.Next()
+				if amfl.lfDone && amfl.unloaded.IsEmpty() {
+					amfl.minUnloaded.Store(math.MaxUint64)
+					apfl.amfls.Remove(amfl)
+					amfl.f.asyncPageLoad.Store(nil)
+					amfl.timeline.End()
+					if amfl.doneCallback != nil {
+						amfl.doneCallback(nil)
+						amfl.doneCallback = nil
+					}
+				}
+				amfl = next
 			}
-			if ev&aplLFDone != 0 {
-				// Successfully completed all loading for all MemoryFiles.
+			complete := memoryFilesDone && apfl.amfls.Empty()
+			if complete {
 				durTotal := time.Duration(gohacks.Nanotime() - timeStart)
-				apfl.mu.Lock()
 				log.Infof("Async page loading completed in %s (%d bytes, %.3f MB/s); %d waiters waited %v~%v for %d bytes", durTotal.Round(time.Millisecond), apfl.bytesLoaded, float64(apfl.bytesLoaded)*1e-6/durTotal.Seconds(), apfl.totalWaiters, apfl.durWaitedOne.Round(time.Millisecond), apfl.durWaitedTotal.Round(time.Millisecond), apfl.bytesWaited)
-				apfl.mu.Unlock()
+			}
+			apfl.mu.Unlock()
+			apfl.amflsMu.Unlock()
+			if complete {
 				return
 			}
-			panic(fmt.Sprintf("unknown events in lfStatus: %#x", ev))
+
+			// Notifications are level-triggered; acknowledge metadata and
+			// request events so an idle loader sleeps instead of spins.
+			// A timer wakes throttled prefetch; foreground requests use
+			// aplLFRequest and interrupt this wait immediately.
+			var rateTimer *time.Timer
+			if delay := time.Until(backgroundNext); apfl.backgroundRate != 0 && delay > 0 {
+				rateTimer = time.AfterFunc(delay, func() {
+					apfl.lfStatus.Notify(aplLFRateReady)
+				})
+			}
+			ev := apfl.lfStatus.Wait()
+			if rateTimer != nil {
+				rateTimer.Stop()
+			}
+			if ev&aplLFDone != 0 {
+				memoryFilesDone = true
+			}
+			apfl.lfStatus.Ack(ev)
+			continue
 		}
 
 		// Wait for any number of reads to complete.
@@ -2038,6 +2127,9 @@ func (amfl *asyncMemoryFileLoad) cancelWasteLoad(fr memmap.FileRange) {
 			panic(fmt.Sprintf("pages %v becoming waste with %d async load waiters", ulseg.Range(), n))
 		}
 	})
+	// A cold MemoryFile can become empty without a read completion. Wake the
+	// loader so it drops the file and eventually closes the checkpoint reader.
+	amfl.pf.lfStatus.Notify(aplLFPending)
 }
 
 type aplUnloadedSetFunctions struct{}
