@@ -6,6 +6,8 @@
 # If a commit does not apply cleanly, the workflow stops and the cherry-pick
 # must be done by hand.
 #
+# The pull request is opened as gvisor-bot (the GVISOR_BOT_TOKEN secret).
+#
 # Do not use this workflow for an embargoed fix: the branch and the pull
 # request are public.
 name: "Cherry-pick to Release Branch"
@@ -29,9 +31,19 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
+      # Fail before anything is pushed.
+      - name: Check the gvisor-bot token
+        env:
+          GVISOR_BOT_TOKEN: ${{ secrets.GVISOR_BOT_TOKEN }}
+        run: |
+          set +x
+          if [[ -z "${GVISOR_BOT_TOKEN}" ]]; then
+            echo "::error::The GVISOR_BOT_TOKEN secret is not set; it is needed to open the pull request as gvisor-bot."
+            exit 1
+          fi
+
       - name: Checkout
         # Do not set ref: github.sha is the release branch head when the run
         # was created, and the pull request is computed against it.
@@ -112,7 +124,7 @@ jobs:
 
       - name: Open the pull request
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GVISOR_BOT_TOKEN }}
           GH_REPO: ${{ github.repository }}
           BASE: ${{ github.ref_name }}
           HEAD_BRANCH: ${{ steps.pick.outputs.head }}
