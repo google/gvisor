@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
 
@@ -45,7 +46,11 @@ type testHarness interface {
 
 func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 	// Create the machine.
-	deviceFile, err := OpenDevice("")
+	desc, err := platformdesc.Lookup("kvm")
+	if err != nil {
+		t.Fatalf("error looking up platform: %v", err)
+	}
+	deviceFile, err := desc.OpenDevice("")
 	if err != nil {
 		t.Fatalf("error opening device file: %v", err)
 	}

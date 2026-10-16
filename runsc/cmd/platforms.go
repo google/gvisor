@@ -20,7 +20,7 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -47,7 +47,7 @@ func (*Platforms) SetFlags(f *flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
 func (*Platforms) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	for _, p := range platform.List() {
+	for _, p := range platformdesc.List() {
 		fmt.Fprintf(os.Stdout, "%s\n", p)
 	}
 	return subcommands.ExitSuccess

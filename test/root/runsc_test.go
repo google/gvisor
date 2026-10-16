@@ -106,7 +106,7 @@ func TestCreateFailureRemovesCgroup(t *testing.T) {
 			}
 		})
 	}
-	if want := fmt.Sprintf("error opening KVM device file (%s): %v", conf.PlatformDevicePath, unix.ENOENT); err == nil || !strings.Contains(err.Error(), want) {
+	if want := fmt.Sprintf("error opening %s: %v", conf.PlatformDevicePath, unix.ENOENT); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("container creation: got %v, want %q", err, want)
 	}
 	if _, err := os.Stat(child.MakePath("memory")); !os.IsNotExist(err) {
