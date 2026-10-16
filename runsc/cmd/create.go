@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -30,6 +31,24 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+type imagePaths []string
+
+// String implements flag.Value.String.
+func (p *imagePaths) String() string {
+	return strings.Join(*p, ",")
+}
+
+// Get implements flag.Value.Get.
+func (p *imagePaths) Get() any {
+	return p
+}
+
+// Set implements flag.Value.Set. Set(String()) should be idempotent.
+func (p *imagePaths) Set(value string) error {
+	*p = append(*p, strings.Split(value, ",")...)
+	return nil
+}
 
 // Create implements subcommands.Command for the "create" command.
 type Create struct {
@@ -58,11 +77,14 @@ type Create struct {
 	// consumed by developers.
 	userLog string
 
-	// fsRestoreImagePath is the path to the filesystem checkpoint to restore.
+	// fsRestoreImagePaths is the list of paths to the filesystem checkpoints to
+	// restore. Combining bundles from different checkpoints is only supported on
+	// fresh container creation (create/run); during restore, all bundles must
+	// come from the same checkpoint as the sentry state image.
 	// fsRestoreDirect is true if files making up the filesystem checkpoint should
 	// be opened with O_DIRECT.
-	fsRestoreImagePath string
-	fsRestoreDirect    bool
+	fsRestoreImagePaths imagePaths
+	fsRestoreDirect     bool
 
 	// noRootContainer creates a sandbox with no root container: the spec holds
 	// sandbox-wide settings only and containers are added afterwards.
@@ -94,7 +116,7 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.StringVar(&c.pidFile, "pid-file", "", "filename that the container pid will be written to")
 	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
-	f.StringVar(&c.fsRestoreImagePath, "fs-restore-image-path", "", "path to filesystem checkpoint to restore")
+	f.Var(&c.fsRestoreImagePaths, "fs-restore-image-path", "path to filesystem checkpoint (<dir> or <dir>/<prefix>) to restore (can be repeated; combining bundles from different checkpoints is only supported for create/run, not restore)")
 	f.BoolVar(&c.fsRestoreDirect, "fs-restore-direct", false, "open files in fs-restore-image-path with O_DIRECT")
 	f.BoolVar(&c.noRootContainer, "no-root-container", false, "create a sandbox with no root container; the bundle spec describes only the sandbox and containers are added later as subcontainers")
 }
@@ -172,16 +194,16 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcom
 	// container unless the metadata specifies that it should be run in an
 	// existing container.
 	contArgs := container.Args{
-		ID:                 id,
-		Spec:               spec,
-		BundleDir:          c.bundleDir,
-		ConsoleSocket:      c.consoleSocket,
-		PIDFile:            c.pidFile,
-		UserLog:            c.userLog,
-		PassFiles:          files,
-		FSRestoreImagePath: c.fsRestoreImagePath,
-		FSRestoreDirect:    c.fsRestoreDirect,
-		NoRootContainer:    c.noRootContainer,
+		ID:                  id,
+		Spec:                spec,
+		BundleDir:           c.bundleDir,
+		ConsoleSocket:       c.consoleSocket,
+		PIDFile:             c.pidFile,
+		UserLog:             c.userLog,
+		PassFiles:           files,
+		FSRestoreImagePaths: []string(c.fsRestoreImagePaths),
+		FSRestoreDirect:     c.fsRestoreDirect,
+		NoRootContainer:     c.noRootContainer,
 	}
 	if _, err := container.New(conf, contArgs); err != nil {
 		return util.Errorf("creating container: %v", err)

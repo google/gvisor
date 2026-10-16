@@ -25,6 +25,7 @@ func TestParseBundles(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		in      []string
+		defPfx  string
 		wantErr bool
 		want    []Bundle
 	}{
@@ -92,9 +93,13 @@ func TestParseBundles(t *testing.T) {
 			}},
 		},
 		{
-			name:    "multiple bundles rejected",
-			in:      []string{"rootfs=/", "fs=/data"},
-			wantErr: true,
+			name: "grouped bundles preserving prefix order",
+			in:   []string{"rootfs=/", "dur1=c1:/data", "dur1=/logs", "extra=/extra"},
+			want: []Bundle{
+				{Prefix: "rootfs", Paths: []checkpoint.ResourceID{{Path: "/"}}},
+				{Prefix: "dur1", Paths: []checkpoint.ResourceID{{ContainerName: "c1", Path: "/data"}, {Path: "/logs"}}},
+				{Prefix: "extra", Paths: []checkpoint.ResourceID{{Path: "/extra"}}},
+			},
 		},
 		{
 			name:    "comma separated rejected",
@@ -112,18 +117,39 @@ func TestParseBundles(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "duplicate paths across bundles",
+			in:      []string{"rootfs=/", "fs=/"},
+			wantErr: true,
+		},
+		{
 			name:    "empty prefix",
 			in:      []string{"=/data"},
 			wantErr: true,
 		},
 		{
-			name:    "invalid prefix with slash",
-			in:      []string{"sub/dir=/data"},
+			name:    "invalid leading slash prefix",
+			in:      []string{"/sub=/data"},
 			wantErr: true,
 		},
 		{
-			name:    "invalid nested directory prefix",
-			in:      []string{"sub/dir/=/data"},
+			name: "cleaned double slash prefix",
+			in:   []string{"sub//dir=/data"},
+			want: []Bundle{{
+				Prefix: "sub/dir",
+				Paths:  []checkpoint.ResourceID{{Path: "/data"}},
+			}},
+		},
+		{
+			name: "cleaned dot and dot dot prefix",
+			in:   []string{"./sub/../dir/=/data", "x/../dir/=/logs"},
+			want: []Bundle{{
+				Prefix: "dir/",
+				Paths:  []checkpoint.ResourceID{{Path: "/data"}, {Path: "/logs"}},
+			}},
+		},
+		{
+			name:    "conflicting cleaned prefix",
+			in:      []string{"x/../fs=/", "fs/=/data"},
 			wantErr: true,
 		},
 		{
@@ -139,6 +165,21 @@ func TestParseBundles(t *testing.T) {
 		{
 			name:    "invalid dot dot directory prefix",
 			in:      []string{"../=/data"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid escaping dot dot prefix",
+			in:      []string{"sub/../../dir=/data"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid dot file prefix",
+			in:      []string{".=/data"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid nested dot dot to root prefix",
+			in:      []string{"sub/..=/data"},
 			wantErr: true,
 		},
 		{
@@ -181,15 +222,63 @@ func TestParseBundles(t *testing.T) {
 			in:      []string{"/data/../sub"},
 			wantErr: true,
 		},
+		{
+			name:    "conflicting file and directory prefix",
+			in:      []string{"foo=/", "foo/=/data"},
+			wantErr: true,
+		},
+		{
+			name:    "conflicting nested prefixes",
+			in:      []string{"a/b=/", "a/b/c=/data"},
+			wantErr: true,
+		},
+		{
+			name: "non-conflicting sibling nested prefixes",
+			in:   []string{"bundles/rootfs/=/", "bundles/fs=/data"},
+			want: []Bundle{
+				{Prefix: "bundles/rootfs/", Paths: []checkpoint.ResourceID{{Path: "/"}}},
+				{Prefix: "bundles/fs", Paths: []checkpoint.ResourceID{{Path: "/data"}}},
+			},
+		},
+		{
+			name:   "merges unprefixed and explicit default prefix",
+			in:     []string{"rootfs=/", "fs=/data", "/extra"},
+			defPfx: "fs",
+			want: []Bundle{
+				{Prefix: "rootfs", Paths: []checkpoint.ResourceID{{Path: "/"}}},
+				{Prefix: "fs", Paths: []checkpoint.ResourceID{{Path: "/data"}, {Path: "/extra"}}},
+			},
+		},
+		{
+			name:    "rejects unprefixed conflicting with directory default prefix",
+			in:      []string{"/", "fs/=/data"},
+			defPfx:  "fs",
+			wantErr: true,
+		},
+		{
+			name:    "unprefixed bundle conflicts with prefixed bundle",
+			in:      []string{"/", "fs=/data"},
+			wantErr: true,
+		},
+		{
+			name:    "prefixed bundle conflicts with later unprefixed bundle",
+			in:      []string{"sub/fs=/data", "/"},
+			wantErr: true,
+		},
+		{
+			name:    "unprefixed bundle conflicts with directory prefix",
+			in:      []string{"/", "sub/=/data"},
+			wantErr: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			bundles, err := ParseBundles(tc.in)
+			bundles, err := ParseBundlesWithDefaultPrefix(tc.in, tc.defPfx)
 			if (err != nil) != tc.wantErr {
-				t.Fatalf("ParseBundles(%q) error = %v, wantErr %v", tc.in, err, tc.wantErr)
+				t.Fatalf("ParseBundlesWithDefaultPrefix(%q, %q) error = %v, wantErr %v", tc.in, tc.defPfx, err, tc.wantErr)
 			}
 			if err == nil {
 				if diff := cmp.Diff(tc.want, bundles); diff != "" {
-					t.Errorf("ParseBundles(%q) diff (-want +got):\n%s", tc.in, diff)
+					t.Errorf("ParseBundlesWithDefaultPrefix(%q, %q) diff (-want +got):\n%s", tc.in, tc.defPfx, diff)
 				}
 			}
 		})

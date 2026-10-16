@@ -1588,7 +1588,7 @@ func TestSplitFSCheckpointRestoreOnlyFS(t *testing.T) {
 				bundleDirFresh := setupBundle(t, conf, specFresh)
 
 				contFresh := startContainer(t, conf, specFresh, bundleDirFresh, func(args *Args) {
-					args.FSRestoreImagePath = onlyFSDir
+					args.FSRestoreImagePaths = []string{onlyFSDir}
 				})
 				if err := contFresh.WaitFSRestore(); err != nil {
 					t.Fatalf("error waiting for filesystem restore: %v", err)
@@ -1605,7 +1605,7 @@ func TestSplitFSCheckpointRestoreOnlyFS(t *testing.T) {
 				sentryOnlyDir := copyCheckpointFiles(t, checkpointDir, "sentry-only-dir", sentryCheckpointFiles)
 
 				contRestore := newContainer(t, conf, spec, bundleDir, func(args *Args) {
-					args.FSRestoreImagePath = onlyFSDir
+					args.FSRestoreImagePaths = []string{onlyFSDir}
 				})
 				if err := contRestore.Restore(conf, sentryOnlyDir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 					t.Fatalf("error restoring container with isolated fs checkpoint: %v", err)
@@ -1618,7 +1618,7 @@ func TestSplitFSCheckpointRestoreOnlyFS(t *testing.T) {
 				sentryOnlyDir := copyCheckpointFiles(t, checkpointDir, "sentry-only-dir-explicit", sentryCheckpointFiles)
 
 				contRestore := newContainer(t, conf, spec, bundleDir, func(args *Args) {
-					args.FSRestoreImagePath = filepath.Join(onlyFSDir, tc.wantPrefix)
+					args.FSRestoreImagePaths = []string{filepath.Join(onlyFSDir, tc.wantPrefix)}
 				})
 				if err := contRestore.Restore(conf, sentryOnlyDir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
 					t.Fatalf("error restoring container with explicit <dir>/<prefix> fs checkpoint: %v", err)
@@ -1755,4 +1755,119 @@ func TestCheckpointRestoreTUN(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMultiBundleSplitFSCheckpointRestore tests saving and restoring multiple
+// independent filesystem checkpoint bundles (e.g. rootfs=/ and fs=/dur-data),
+// including combining bundles from different checkpoints on fresh container
+// start.
+func TestMultiBundleSplitFSCheckpointRestore(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint not supported")
+	}
+
+	const (
+		rootfsPrefix = "rootfs/"
+		fsPrefix     = "bundles/fs"
+		durMount     = "/dur-data"
+		rootFile     = "/rootfs_marker"
+	)
+
+	conf := overlayTestConfig(t)
+	fsSaveDir := makeTempDir(t, "multi-bundle-fssave")
+	checkpointDir := makeTempDir(t, "multi-bundle-checkpoint")
+
+	tmpfsSourceDir := makeTempDir(t, "dur-source")
+	durFile := filepath.Join(durMount, "dur_marker")
+
+	script := fmt.Sprintf("echo root_val_1 > %q; echo dur_val_1 > %q; while true; do sleep 1; done", rootFile, durFile)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+	spec.Root.Readonly = false
+	addTmpfsMount(spec, "dur-mount", tmpfsSourceDir, durMount)
+	bundleDir := setupBundle(t, conf, spec)
+
+	cont := startContainer(t, conf, spec, bundleDir, nil)
+	waitForGuestFiles(t, conf, cont, rootFile, durFile)
+
+	bundleSpecs := []string{
+		rootfsPrefix + "=/",
+		fsPrefix + "=" + durMount,
+	}
+
+	// Save an initial multi-bundle filesystem checkpoint while keeping the
+	// container running.
+	if err := cont.FSSave(conf, fsSaveDir, sandbox.FSSaveOpts{Paths: bundleSpecs}); err != nil {
+		t.Fatalf("error saving filesystem checkpoint: %v", err)
+	}
+	checkFSCheckpointFiles(t, fsSaveDir, rootfsPrefix)
+	checkFSCheckpointFiles(t, fsSaveDir, fsPrefix)
+
+	// Mutate both filesystems before taking a full split checkpoint so the two
+	// checkpoints have distinct states.
+	mutateScript := fmt.Sprintf("echo root_val_2 > %q && echo dur_val_2 > %q", rootFile, durFile)
+	if ws, err := execute(conf, cont, "/bin/bash", "-c", mutateScript); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("failed to mutate files before second checkpoint: ws=%v, err=%v", ws, err)
+	}
+
+	// Checkpoint with two bundles: rootfs and fs.
+	if err := cont.Checkpoint(conf, checkpointDir, sandbox.CheckpointOpts{SplitFSCheckpointPaths: bundleSpecs}); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	checkFSCheckpointFiles(t, checkpointDir, rootfsPrefix)
+	checkFSCheckpointFiles(t, checkpointDir, fsPrefix)
+
+	rootfsDir := copyCheckpointFiles(t, checkpointDir, "isolated-rootfs", prefixedFSCheckpointFiles(rootfsPrefix))
+	durDir := copyCheckpointFiles(t, checkpointDir, "isolated-fs", append(prefixedFSCheckpointFiles(fsPrefix), sentryCheckpointFiles...))
+
+	for _, rtc := range []struct {
+		name          string
+		restoreDir    string
+		fsRestorePath []string
+		mutateArgs    func(*Args)
+	}{
+		{
+			name:       "AutoDiscoverBothBundles",
+			restoreDir: checkpointDir,
+			mutateArgs: func(args *Args) { args.CheckpointDirPath = checkpointDir },
+		},
+		{
+			name:          "IsolatedPrefixPathsRestore",
+			restoreDir:    durDir,
+			fsRestorePath: []string{filepath.Join(rootfsDir, rootfsPrefix), filepath.Join(durDir, fsPrefix)},
+		},
+	} {
+		t.Run(rtc.name, func(t *testing.T) {
+			contRestore := newContainer(t, conf, spec, bundleDir, func(args *Args) {
+				args.FSRestoreImagePaths = rtc.fsRestorePath
+				if rtc.mutateArgs != nil {
+					rtc.mutateArgs(args)
+				}
+			})
+			if err := contRestore.Restore(conf, rtc.restoreDir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+				t.Fatalf("error restoring container: %v", err)
+			}
+			checkGuestFile(t, conf, contRestore, rootFile, "root_val_2")
+			checkGuestFile(t, conf, contRestore, durFile, "dur_val_2")
+		})
+	}
+
+	t.Run("StartFreshCombiningBundlesFromDifferentCheckpoints", func(t *testing.T) {
+		specFresh := testutil.NewSpecWithArgs("sleep", "100")
+		specFresh.Root.Readonly = false
+		addTmpfsMount(specFresh, "dur-mount", tmpfsSourceDir, durMount)
+		bundleDirFresh := setupBundle(t, conf, specFresh)
+
+		contFresh := startContainer(t, conf, specFresh, bundleDirFresh, func(args *Args) {
+			args.FSRestoreImagePaths = []string{
+				filepath.Join(fsSaveDir, rootfsPrefix),
+				filepath.Join(checkpointDir, fsPrefix),
+			}
+		})
+		if err := contFresh.WaitFSRestore(); err != nil {
+			t.Fatalf("error waiting for filesystem restore: %v", err)
+		}
+
+		checkGuestFile(t, conf, contFresh, rootFile, "root_val_1")
+		checkGuestFile(t, conf, contFresh, durFile, "dur_val_2")
+	})
 }

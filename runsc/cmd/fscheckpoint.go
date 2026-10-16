@@ -39,29 +39,38 @@ type FSCheckpoint struct {
 	paths        pathVar
 }
 
-type pathVar []string
+// pathVar is a repeatable flag of [<prefix>=][<container>:]<path> filesystem
+// checkpoint targets.
+type pathVar struct {
+	targets []string
+
+	// defaultPrefix is the bundle prefix of targets without an explicit
+	// "<prefix>=". It must match the default prefix used by the command when
+	// saving, so that targets are validated as the command will group them.
+	defaultPrefix string
+}
 
 func (p *pathVar) String() string {
 	if p == nil {
 		return ""
 	}
-	return strings.Join(*p, ", ")
+	return strings.Join(p.targets, ", ")
 }
 
 func (p *pathVar) Set(value string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("empty path: %q", value)
 	}
-	combined := append(append([]string(nil), *p...), value)
-	if _, err := fscheckpoint.ParseBundles(combined); err != nil {
+	combined := append(append([]string(nil), p.targets...), value)
+	if _, err := fscheckpoint.ParseBundlesWithDefaultPrefix(combined, p.defaultPrefix); err != nil {
 		return err
 	}
-	*p = combined
+	p.targets = combined
 	return nil
 }
 
 func (p *pathVar) Get() any {
-	return []string(*p)
+	return p.targets
 }
 
 // Name implements subcommands.Command.Name.
@@ -120,7 +129,7 @@ func (c *FSCheckpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) 
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
-	paths := []string(c.paths)
+	paths := c.paths.targets
 	if len(paths) == 0 {
 		paths = []string{"/"}
 	}

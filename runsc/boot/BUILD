@@ -183,6 +183,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/control/server",
         "//pkg/cpuid",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/lisafs",
         "//pkg/log",

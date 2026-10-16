@@ -532,7 +532,7 @@ func TestFSCheckpointCommand(t *testing.T) {
 			defer cleanupRootsNew()
 			restoreConts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, restoreIDs, func(i int, contArgs *Args) {
 				if i == 0 {
-					contArgs.FSRestoreImagePath = imagePath
+					contArgs.FSRestoreImagePaths = []string{imagePath}
 				}
 			})
 			if err != nil {
@@ -959,7 +959,7 @@ func TestFSCheckpointAnnotation(t *testing.T) {
 			defer cleanupRootsNew()
 			conts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, ids, func(i int, contArgs *Args) {
 				if i == 0 {
-					contArgs.FSRestoreImagePath = imagePath
+					contArgs.FSRestoreImagePaths = []string{imagePath}
 				}
 			})
 			if err != nil {
@@ -1141,7 +1141,7 @@ func TestFSCheckpointSharedVolume(t *testing.T) {
 
 	restoreConts, cleanupContsNew, err := startContainersWithArgs(conf, restoreSpecs, restoreIDs, func(i int, contArgs *Args) {
 		if i == 0 {
-			contArgs.FSRestoreImagePath = imagePath
+			contArgs.FSRestoreImagePaths = []string{imagePath}
 		}
 	})
 	if err != nil {

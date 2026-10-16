@@ -143,17 +143,17 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	defer cu.Clean()
 
 	runArgs := container.Args{
-		ID:                 id,
-		Spec:               nil,
-		BundleDir:          bundleDir,
-		ConsoleSocket:      r.consoleSocket,
-		PIDFile:            r.pidFile,
-		UserLog:            r.userLog,
-		Attached:           !r.detach,
-		FSRestoreImagePath: r.fsRestoreImagePath,
-		FSRestoreDirect:    r.fsRestoreDirect || r.direct,
-		CheckpointDirPath:  r.imagePath,
-		NoRootContainer:    r.noRootContainer,
+		ID:                  id,
+		Spec:                nil,
+		BundleDir:           bundleDir,
+		ConsoleSocket:       r.consoleSocket,
+		PIDFile:             r.pidFile,
+		UserLog:             r.userLog,
+		Attached:            !r.detach,
+		FSRestoreImagePaths: []string(r.fsRestoreImagePaths),
+		FSRestoreDirect:     r.fsRestoreDirect || r.direct,
+		CheckpointDirPath:   r.imagePath,
+		NoRootContainer:     r.noRootContainer,
 	}
 
 	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)

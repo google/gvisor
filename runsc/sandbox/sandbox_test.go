@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -343,5 +344,89 @@ func TestOpenReadOnlyTree(t *testing.T) {
 	// The directory itself is unaffected.
 	if err := os.WriteFile(filepath.Join(dir, name), []byte("y"), 0666); err != nil {
 		t.Errorf("writing through the original path failed: %v", err)
+	}
+}
+
+func TestOpenFSRestoreFilesForLocalCheckpointErrors(t *testing.T) {
+	dir := t.TempDir()
+	files, err := createFSCheckpointLocalFiles(dir, "rootfs", false)
+	if err != nil {
+		t.Fatalf("createFSCheckpointLocalFiles(%q, \"rootfs\") failed: %v", dir, err)
+	}
+	for _, f := range files {
+		_ = f.Close()
+	}
+
+	for _, tc := range []struct {
+		name    string
+		paths   []string
+		wantErr string
+	}{
+		{name: "duplicate explicit prefix path", paths: []string{filepath.Join(dir, "rootfs"), filepath.Join(dir, "rootfs")}, wantErr: "duplicate filesystem checkpoint bundle"},
+		{name: "duplicate mixing directory and explicit prefix", paths: []string{dir, filepath.Join(dir, "rootfs")}, wantErr: "duplicate filesystem checkpoint bundle"},
+		{name: "non-existent directory with trailing slash", paths: []string{filepath.Join(dir, "missing") + "/"}, wantErr: "does not exist"},
+		{name: "empty directory", paths: []string{t.TempDir(), dir}, wantErr: "opening manifest file"},
+		{name: "only empty strings", paths: []string{"", ""}, wantErr: "empty --fs-restore-image-path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := openFSRestoreFilesForLocalCheckpoint(tc.paths, false); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("openFSRestoreFilesForLocalCheckpoint(%q) error = %v, want substring %q", tc.paths, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestDiscoverFSCheckpointPrefixesFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	files, err := createFSCheckpointLocalFiles(dir, "fs", false)
+	if err != nil {
+		t.Fatalf("createFSCheckpointLocalFiles(%q, \"fs\") failed: %v", dir, err)
+	}
+	for _, f := range files {
+		_ = f.Close()
+	}
+	link := filepath.Join(t.TempDir(), "latest")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatalf("os.Symlink(%q, %q) failed: %v", dir, link, err)
+	}
+
+	got, err := discoverFSCheckpointPrefixes(link)
+	if err != nil {
+		t.Fatalf("discoverFSCheckpointPrefixes(%q) failed: %v", link, err)
+	}
+	if want := []string{"fs"}; !slices.Equal(got, want) {
+		t.Errorf("discoverFSCheckpointPrefixes(%q) = %q, want %q", link, got, want)
+	}
+}
+
+func TestIsGCSRestorePath(t *testing.T) {
+	gcsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(gcsDir, checkpointGCSOptsFileName), []byte("{}"), 0644); err != nil {
+		t.Fatalf("os.WriteFile failed: %v", err)
+	}
+	localDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(localDir, "bundles"), 0755); err != nil {
+		t.Fatalf("os.Mkdir failed: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name         string
+		path         string
+		wantGCS      bool
+		wantPrefixed bool
+	}{
+		{name: "gcs directory", path: gcsDir, wantGCS: true},
+		{name: "gcs prefix", path: filepath.Join(gcsDir, "fs"), wantGCS: true, wantPrefixed: true},
+		{name: "gcs nested prefix", path: filepath.Join(gcsDir, "bundles", "fs"), wantGCS: true, wantPrefixed: true},
+		{name: "gcs nested directory prefix", path: filepath.Join(gcsDir, "a", "b") + "/", wantGCS: true, wantPrefixed: true},
+		{name: "local directory", path: localDir},
+		{name: "local nested prefix", path: filepath.Join(localDir, "bundles", "fs"), wantPrefixed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotGCS, gotPrefixed := isGCSRestorePath(tc.path)
+			if gotGCS != tc.wantGCS || gotPrefixed != tc.wantPrefixed {
+				t.Errorf("isGCSRestorePath(%q) = (%t, %t), want (%t, %t)", tc.path, gotGCS, gotPrefixed, tc.wantGCS, tc.wantPrefixed)
+			}
+		})
 	}
 }

@@ -44,6 +44,7 @@ package fscheckpoint
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -51,8 +52,8 @@ import (
 	fspb "gvisor.dev/gvisor/pkg/sentry/fscheckpoint/fscheckpoint_proto_go_proto"
 )
 
-// AllTmpfsPath is a sentinel value for the Path option of a filesystem
-// checkpoint save (kernel.FSSaveOpts.Path) indicating that all tmpfs
+// AllTmpfsPath is a sentinel value for the Paths option of a filesystem
+// checkpoint save (kernel.FSSaveBundle.Paths) indicating that all tmpfs
 // filesystems with a ResourceID should be checkpointed, rather than only the
 // tmpfs filesystems mounted at a specific path.
 const AllTmpfsPath = "all-tmpfs"
@@ -70,8 +71,23 @@ type Bundle struct {
 }
 
 // ParseBundles parses [<prefix>=][<container>:]<path> checkpoint targets,
-// checks that no two targets overlap, and groups them into bundles by prefix.
+// checks that no two targets or prefixes conflict, and groups them into
+// bundles by prefix.
 func ParseBundles(vals []string) ([]Bundle, error) {
+	return ParseBundlesWithDefaultPrefix(vals, "")
+}
+
+// ParseBundlesWithDefaultPrefix parses [<prefix>=][<container>:]<path>
+// checkpoint targets using defaultPrefix for targets without an explicit
+// "<prefix>=" prefix, checks that no two targets or prefixes conflict, and
+// groups them into bundles by prefix.
+func ParseBundlesWithDefaultPrefix(vals []string, defaultPrefix string) ([]Bundle, error) {
+	if defaultPrefix != "" {
+		defaultPrefix = cleanPrefix(defaultPrefix)
+		if !validPrefix(defaultPrefix) {
+			return nil, fmt.Errorf("invalid default prefix %q", defaultPrefix)
+		}
+	}
 	var allPaths []checkpoint.ResourceID
 	var bundles []Bundle
 	prefixIdx := make(map[string]int)
@@ -83,10 +99,10 @@ func ParseBundles(vals []string) ([]Bundle, error) {
 		if strings.Contains(part, ",") {
 			return nil, fmt.Errorf("path %q must not contain commas; specify multiple values instead", val)
 		}
-		var prefix string
+		prefix := defaultPrefix
 		rest := part
 		if pfx, r, hasPrefix := strings.Cut(part, "="); hasPrefix {
-			prefix = strings.TrimSpace(pfx)
+			prefix = cleanPrefix(strings.TrimSpace(pfx))
 			rest = strings.TrimSpace(r)
 			if !validPrefix(prefix) {
 				return nil, fmt.Errorf("invalid prefix %q in paths: %q", prefix, val)
@@ -114,14 +130,34 @@ func ParseBundles(vals []string) ([]Bundle, error) {
 		if idx, ok := prefixIdx[prefix]; ok {
 			bundles[idx].Paths = append(bundles[idx].Paths, rid)
 		} else {
-			if len(bundles) > 0 {
-				return nil, fmt.Errorf("multiple filesystem checkpoint bundles (%q and %q) are not supported", bundles[0].Prefix, prefix)
+			for _, b := range bundles {
+				if prefixesConflict(b.Prefix, prefix) {
+					return nil, fmt.Errorf("conflicting bundle prefixes %q and %q", b.Prefix, prefix)
+				}
 			}
 			prefixIdx[prefix] = len(bundles)
 			bundles = append(bundles, Bundle{Prefix: prefix, Paths: []checkpoint.ResourceID{rid}})
 		}
 	}
 	return bundles, nil
+}
+
+// HasPrefixes reports whether bundles require prefixed checkpoint files
+// (either multiple bundles or a single bundle with a non-empty prefix).
+func HasPrefixes(bundles []Bundle) bool {
+	return len(bundles) > 1 || (len(bundles) == 1 && bundles[0].Prefix != "")
+}
+
+func prefixesConflict(a, b string) bool {
+	if a == b {
+		return false
+	}
+	if a == "" || b == "" {
+		return true
+	}
+	a = strings.TrimSuffix(a, "/")
+	b = strings.TrimSuffix(b, "/")
+	return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
 func targetsOverlap(a, b checkpoint.ResourceID) bool {
@@ -131,17 +167,41 @@ func targetsOverlap(a, b checkpoint.ResourceID) bool {
 	return a.Path == b.Path || a.Path == AllTmpfsPath || b.Path == AllTmpfsPath
 }
 
-// validPrefix reports whether p is a valid bundle prefix: a file name without
-// "/", ":", whitespace or control characters, optionally followed by "/" to
-// select a subdirectory.
+// cleanPrefix normalizes a bundle prefix with filepath.Clean while preserving
+// a trailing "/" (which selects a subdirectory) and a leading "/" (which
+// validPrefix rejects).
+func cleanPrefix(p string) string {
+	if p == "" || strings.HasPrefix(p, "/") {
+		return p
+	}
+	cleaned := filepath.Clean(p)
+	if strings.HasSuffix(p, "/") {
+		return cleaned + "/"
+	}
+	return cleaned
+}
+
+// validPrefix reports whether a cleaned prefix p is a valid bundle prefix: one
+// or more "/" separated path segments without ":", whitespace or control
+// characters, optionally followed by "/" to select a subdirectory. After
+// cleanPrefix, remaining "." or ".." segments indicate a prefix that resolves
+// to the checkpoint directory itself or escapes it, so they are rejected.
 func validPrefix(p string) bool {
-	name := strings.TrimSuffix(p, "/")
-	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/:") {
+	trimmed := strings.TrimSuffix(p, "/")
+	if trimmed == "" {
 		return false
 	}
-	return strings.IndexFunc(name, func(r rune) bool {
-		return unicode.IsSpace(r) || unicode.IsControl(r)
-	}) == -1
+	for _, seg := range strings.Split(trimmed, "/") {
+		if seg == "" || seg == "." || seg == ".." || strings.Contains(seg, ":") {
+			return false
+		}
+		if strings.IndexFunc(seg, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r)
+		}) != -1 {
+			return false
+		}
+	}
+	return true
 }
 
 // Manifest is the type of the JSON object stored in the manifest file.

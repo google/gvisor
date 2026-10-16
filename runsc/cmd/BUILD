@@ -63,6 +63,7 @@ go_library(
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/platform/platformdesc",
+        "//pkg/sentry/state/checkpointfiles",
         "//pkg/state/pretty",
         "//pkg/state/statefile",
         "//pkg/unet",
