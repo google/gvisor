@@ -21,14 +21,15 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
-func (cm *containerManager) readControlFile(file control.CgroupControlFile) (string, error) {
-	var out control.CgroupsResults
-	args := control.CgroupsReadArgs{
-		Args: []control.CgroupsReadArg{
+func (cm *containerManager) readControlFile(file controlapi.CgroupControlFile) (string, error) {
+	var out controlapi.CgroupsResults
+	args := controlapi.CgroupsReadArgs{
+		Args: []controlapi.CgroupsReadArg{
 			{
 				File: file,
 			},
@@ -44,7 +45,7 @@ func (cm *containerManager) readControlFile(file control.CgroupControlFile) (str
 	return out.Results[0].Unpack()
 }
 
-func (cm *containerManager) getUsageFromCgroups(file control.CgroupControlFile) (uint64, error) {
+func (cm *containerManager) getUsageFromCgroups(file controlapi.CgroupControlFile) (uint64, error) {
 	val, err := cm.readControlFile(file)
 	if err != nil {
 		return 0, err
@@ -80,7 +81,7 @@ func (cm *containerManager) Event(cid *string, out *sentryapi.EventOut) error {
 	}
 
 	// Memory usage.
-	memFile := control.CgroupControlFile{
+	memFile := controlapi.CgroupControlFile{
 		Controller: "memory",
 		Path:       "/" + *cid,
 		Name:       "memory.usage_in_bytes",
@@ -142,7 +143,7 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 		if isV2 {
 			id = cid
 		}
-		file := control.CgroupControlFile{
+		file := controlapi.CgroupControlFile{
 			Controller: "cpuacct",
 			Path:       "/" + id,
 			Name:       "cpuacct.usage",

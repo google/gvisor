@@ -20,7 +20,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/log",
         "//pkg/prometheus",
-        "//pkg/sentry/control",
+        "//pkg/sentry/control/controlapi",
         "//pkg/state",
         "//pkg/sync",
         "//runsc/config",

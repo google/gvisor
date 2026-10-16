@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/control/api"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -37,15 +38,6 @@ import (
 // Fs includes fs-related functions.
 type Fs struct {
 	Kernel *kernel.Kernel
-}
-
-// TarRootfsUpperLayerOpts contains options for the TarRootfsUpperLayer RPC.
-type TarRootfsUpperLayerOpts struct {
-	// ContainerID identifies which container's rootfs upper layer should be
-	// serialized.
-	ContainerID string
-	// FilePayload contains the destination for output.
-	urpc.FilePayload
 }
 
 // Returns a referenced mount namespace for the given container ID,
@@ -65,7 +57,7 @@ func (f *Fs) mountNamespaceForContainer(containerID string) (*vfs.MountNamespace
 
 // TarRootfsUpperLayer is a RPC stub which serializes the rootfs upper layer to
 // a tar file. When the rootfs is not an overlayfs, it returns an error.
-func (f *Fs) TarRootfsUpperLayer(o *TarRootfsUpperLayerOpts, _ *struct{}) error {
+func (f *Fs) TarRootfsUpperLayer(o *controlapi.TarRootfsUpperLayerOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) != 1 {
 		return ErrInvalidFiles
 	}

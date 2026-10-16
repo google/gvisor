@@ -9,6 +9,7 @@ internet/test-dns-ipv4.js,,Broken test (Flaky because it relies on external netw
 internet/test-inspector-help-page.js,,Broken test
 internet/test-net-autoselectfamily-events-failure.js,,Broken test
 internet/test-snapshot-dns-resolve.js,,Broken test (Flaky because it relies on external network)
+internet/test-tls-add-ca-cert.js,,Broken test
 pseudo-tty/test-stdout-read.js,b/162801321,
 parallel/test-child-process-set-blocking.js,,Broken test
 pummel/test-child-process-spawn-loop.js,,Broken test

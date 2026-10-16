@@ -18,52 +18,10 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 )
-
-// LoggingArgs are the arguments to use for changing the logging
-// level and strace list.
-type LoggingArgs struct {
-	// SetLevel is a flag used to indicate that we should update
-	// the logging level. We should be able to change the strace
-	// list without affecting the logging level and vice versa.
-	SetLevel bool
-
-	// Level is the log level that will be set if SetLevel is true.
-	Level log.Level
-
-	// SetLogPackets indicates that we should update the log packets flag.
-	SetLogPackets bool
-
-	// LogPackets is the actual value to set for LogPackets.
-	// SetLogPackets must be enabled to indicate that we're changing
-	// the value.
-	LogPackets bool
-
-	// SetStrace is a flag used to indicate that strace related
-	// arguments were passed in.
-	SetStrace bool
-
-	// EnableStrace is a flag from the CLI that specifies whether to
-	// enable strace at all. If this flag is false then a completely
-	// pristine copy of the syscall table will be swapped in. This
-	// approach is used to remain consistent with an empty strace
-	// allowlist meaning trace all system calls.
-	EnableStrace bool
-
-	// Strace is the allowlist of syscalls to trace to log. If this
-	// and StraceEventAllowlist are empty trace all system calls.
-	StraceAllowlist []string
-
-	// SetEventStrace is a flag used to indicate that event strace
-	// related arguments were passed in.
-	SetEventStrace bool
-
-	// StraceEventAllowlist is the allowlist of syscalls to trace
-	// to event log.
-	StraceEventAllowlist []string
-}
 
 // Logging provides functions related to logging.
 type Logging struct{}
@@ -74,7 +32,7 @@ type Logging struct{}
 // Additionally, it may look odd that this is the only method
 // attached to an empty struct but this is also part of how
 // URPC dispatches.
-func (l *Logging) Change(args *LoggingArgs, code *int) error {
+func (l *Logging) Change(args *controlapi.LoggingArgs, code *int) error {
 	if args.SetLevel {
 		// Logging uses an atomic for the level so this is thread safe.
 		log.SetLevel(args.Level)
@@ -104,7 +62,7 @@ func (l *Logging) Change(args *LoggingArgs, code *int) error {
 	return nil
 }
 
-func (l *Logging) configureStrace(args *LoggingArgs) error {
+func (l *Logging) configureStrace(args *controlapi.LoggingArgs) error {
 	if args.EnableStrace {
 		// Install the allowlist specified.
 		if len(args.StraceAllowlist) > 0 {
@@ -123,7 +81,7 @@ func (l *Logging) configureStrace(args *LoggingArgs) error {
 	return nil
 }
 
-func (l *Logging) configureEventStrace(args *LoggingArgs) error {
+func (l *Logging) configureEventStrace(args *controlapi.LoggingArgs) error {
 	if len(args.StraceEventAllowlist) > 0 {
 		if err := strace.Enable(args.StraceEventAllowlist, strace.SinkTypeEvent); err != nil {
 			return err

@@ -59,7 +59,7 @@ go_library(
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/prometheus",
-        "//pkg/sentry/control",
+        "//pkg/sentry/control/controlapi",
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/platform/platformdesc",
@@ -124,7 +124,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",
-        "//pkg/sentry/control",
+        "//pkg/sentry/control/controlapi",
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/test/sandboxposture",
