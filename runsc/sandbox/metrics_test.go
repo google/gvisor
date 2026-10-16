@@ -24,7 +24,7 @@ import (
 	controlserver "gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
 // containerManager supplies distinct savings pairs to concurrent exports.
@@ -40,7 +40,7 @@ type containerManager struct {
 	requests atomic.Int64
 }
 
-func (cm *containerManager) GetSavings(_ *struct{}, savings *boot.Savings) error {
+func (cm *containerManager) GetSavings(_ *struct{}, savings *sentryapi.Savings) error {
 	n := time.Duration(cm.requests.Add(1))
 	cm.entered <- struct{}{}
 	if n == 1 && cm.lateZero != nil {

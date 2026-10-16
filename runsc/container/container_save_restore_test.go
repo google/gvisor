@@ -36,7 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/sandbox"
 )
@@ -1001,14 +1001,14 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 						if spec.Annotations == nil {
 							spec.Annotations = make(map[string]string)
 						}
-						spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
-						spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
+						spec.Annotations[sentryapi.RootfsPrefix+"type"] = erofs.Name
+						spec.Annotations[sentryapi.RootfsPrefix+"source"] = rootfsImage
 						// EROFS does not support creating synthetic directories
 						// yet, so let's add a writeable and savable overlay for
 						// rootfs, which allows the sentry to create the mount
 						// point for the bind mount of the temporary directory
 						// shared between host and test container.
-						spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
+						spec.Annotations[sentryapi.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
 						return spec
 					})
 				})

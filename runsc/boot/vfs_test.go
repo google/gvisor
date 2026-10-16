@@ -20,6 +20,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -33,61 +34,61 @@ func TestGetMountAccessType(t *testing.T) {
 		{
 			name: "container=exclusive",
 			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "container",
+				sentryapi.MountPrefix + "mount1.source": source,
+				sentryapi.MountPrefix + "mount1.type":   "bind",
+				sentryapi.MountPrefix + "mount1.share":  "container",
 			},
 			want: config.FileAccessExclusive,
 		},
 		{
 			name: "pod=shared",
 			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "pod",
+				sentryapi.MountPrefix + "mount1.source": source,
+				sentryapi.MountPrefix + "mount1.type":   "bind",
+				sentryapi.MountPrefix + "mount1.share":  "pod",
 			},
 			want: config.FileAccessShared,
 		},
 		{
 			name: "share=shared",
 			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "shared",
+				sentryapi.MountPrefix + "mount1.source": source,
+				sentryapi.MountPrefix + "mount1.type":   "bind",
+				sentryapi.MountPrefix + "mount1.share":  "shared",
 			},
 			want: config.FileAccessShared,
 		},
 		{
 			name: "default=shared",
 			annotations: map[string]string{
-				MountPrefix + "mount1.source": source + "mismatch",
-				MountPrefix + "mount1.type":   "bind",
-				MountPrefix + "mount1.share":  "container",
+				sentryapi.MountPrefix + "mount1.source": source + "mismatch",
+				sentryapi.MountPrefix + "mount1.type":   "bind",
+				sentryapi.MountPrefix + "mount1.share":  "container",
 			},
 			want: config.FileAccessShared,
 		},
 		{
 			name: "tmpfs+container=exclusive",
 			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "tmpfs",
-				MountPrefix + "mount1.share":  "container",
+				sentryapi.MountPrefix + "mount1.source": source,
+				sentryapi.MountPrefix + "mount1.type":   "tmpfs",
+				sentryapi.MountPrefix + "mount1.share":  "container",
 			},
 			want: config.FileAccessExclusive,
 		},
 		{
 			name: "tmpfs+pod=exclusive",
 			annotations: map[string]string{
-				MountPrefix + "mount1.source": source,
-				MountPrefix + "mount1.type":   "tmpfs",
-				MountPrefix + "mount1.share":  "pod",
+				sentryapi.MountPrefix + "mount1.source": source,
+				sentryapi.MountPrefix + "mount1.type":   "tmpfs",
+				sentryapi.MountPrefix + "mount1.share":  "pod",
 			},
 			want: config.FileAccessExclusive,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
 			spec := &specs.Spec{Annotations: tst.annotations}
-			podHints, err := NewPodMountHints(spec)
+			podHints, err := sentryapi.NewPodMountHints(spec)
 			if err != nil {
 				t.Fatalf("newPodMountHints failed: %v", err)
 			}

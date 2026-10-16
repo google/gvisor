@@ -23,7 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
 func TestConfigFile(t *testing.T) {
@@ -48,7 +48,7 @@ func TestConfigFile(t *testing.T) {
 		},
 		{
 			name: "InitConfig",
-			json: boot.InitConfig{TraceSession: testCfg},
+			json: sentryapi.InitConfig{TraceSession: testCfg},
 			want: testCfg,
 		},
 	} {

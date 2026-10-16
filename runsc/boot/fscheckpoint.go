@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -41,61 +39,21 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/version"
 )
 
 const (
-	annotationFSCheckpointPrefix = "dev.gvisor.internal.fscheckpoint."
-
 	// annotationFSCheckpointEnable indicates whether files under /proc/gvisor
 	// should be present in the container to allow the workload to trigger a
 	// filesystem checkpoint.
-	annotationFSCheckpointEnable = annotationFSCheckpointPrefix + "enable"
-
-	// annotationFSCheckpointPath is the path to the directory where the
-	// filesystem checkpoint files will be created. When present, it allows for
-	// the workload running inside to trigger a filesystem checkpoint without
-	// having to use the runsc CLI.
-	annotationFSCheckpointPath = annotationFSCheckpointPrefix + "path"
+	annotationFSCheckpointEnable = sentryapi.AnnotationFSCheckpointPrefix + "enable"
 
 	// annotationFSCheckpointResume indicates whether the sandbox should
 	// continue running after filesystem checkpoint saving triggered via
 	// /proc/gvisor. Optional, defaults to false.
-	annotationFSCheckpointResume = annotationFSCheckpointPrefix + "resume"
-
-	// annotationFSCheckpointDirect indicates whether filesystem checkpoint
-	// I/Os triggered via /proc/gvisor should use O_DIRECT. Optional, defaults
-	// to false.
-	annotationFSCheckpointDirect = annotationFSCheckpointPrefix + "direct"
-
-	// annotationFSCheckpointPaths is a comma-separated list of paths inside the
-	// containers to save. Optional.
-	annotationFSCheckpointPaths = annotationFSCheckpointPrefix + "paths"
+	annotationFSCheckpointResume = sentryapi.AnnotationFSCheckpointPrefix + "resume"
 )
-
-// GetAnnotationFSCheckpointPath returns the filesystem checkpoint path
-// specified in the container annotation. Return empty string if no annotation
-// is specified.
-func GetAnnotationFSCheckpointPath(spec *specs.Spec) string {
-	return spec.Annotations[annotationFSCheckpointPath]
-}
-
-// GetAnnotationFSCheckpointDirect returns true if filesystem checkpoint I/O
-// controlled by the containing annotation should use O_DIRECT.
-func GetAnnotationFSCheckpointDirect(spec *specs.Spec) bool {
-	return specutils.AnnotationToBool(spec, annotationFSCheckpointDirect)
-}
-
-// GetAnnotationFSCheckpointPaths returns the filesystem checkpoint target paths
-// specified in the container annotation.
-func GetAnnotationFSCheckpointPaths(spec *specs.Spec) []string {
-	annot := spec.Annotations[annotationFSCheckpointPaths]
-	if annot == "" {
-		return nil
-	}
-	return strings.Split(annot, ",")
-}
 
 // FSSave implements kernel.Saver.FSSave.
 //
@@ -110,13 +68,13 @@ func (l *Loader) FSSave() error {
 	if len(fsSaveFDs) == 0 {
 		return linuxerr.ENXIO
 	}
-	bundles, err := fscheckpoint.ParseBundles(GetAnnotationFSCheckpointPaths(l.root.spec))
+	bundles, err := fscheckpoint.ParseBundles(sentryapi.GetAnnotationFSCheckpointPaths(l.root.spec))
 	if err != nil {
-		err = fmt.Errorf("parsing %s annotation: %w", annotationFSCheckpointPaths, err)
+		err = fmt.Errorf("parsing %s annotation: %w", sentryapi.AnnotationFSCheckpointPaths, err)
 		l.k.SignalAllFSSaveWaiters(err)
 		return err
 	}
-	args := FSSaveArgs{
+	args := sentryapi.FSSaveArgs{
 		Paths: bundles,
 	}
 	args.FilePayload.Files = fd.ReleaseToFiles(fsSaveFDs, "fs-checkpoint")
@@ -130,7 +88,7 @@ func (l *Loader) FSSave() error {
 	return l.k.FSSave(context.Background(), &opts)
 }
 
-func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
+func convertToKernelFSSaveOpts(args *sentryapi.FSSaveArgs) (kernel.FSSaveOpts, error) {
 	bundles := args.Paths
 	if len(bundles) == 0 {
 		bundles = []fscheckpoint.Bundle{{}}
@@ -147,14 +105,14 @@ func convertToKernelFSSaveOpts(args *FSSaveArgs) (kernel.FSSaveOpts, error) {
 	return opts, nil
 }
 
-func setKernelFSSaveOptsFiles(args *FSSaveArgs, prefix string, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFiles(args *sentryapi.FSSaveArgs, prefix string, opts *kernel.FSSaveOpts) error {
 	if args.UseCheckpointGofer {
 		return setKernelFSSaveOptsFilesForCheckpointGofer(args, prefix, opts)
 	}
 	return setKernelFSSaveOptsFilesForLocalCheckpoint(args, opts)
 }
 
-func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFilesForLocalCheckpoint(args *sentryapi.FSSaveArgs, opts *kernel.FSSaveOpts) error {
 	if len(args.FilePayload.Files) != 4 {
 		return fmt.Errorf("got %d files, want 4", len(args.FilePayload.Files))
 	}
@@ -187,7 +145,7 @@ func setKernelFSSaveOptsFilesForLocalCheckpoint(args *FSSaveArgs, opts *kernel.F
 	return nil
 }
 
-func setKernelFSSaveOptsFilesForCheckpointGofer(args *FSSaveArgs, prefix string, opts *kernel.FSSaveOpts) error {
+func setKernelFSSaveOptsFilesForCheckpointGofer(args *sentryapi.FSSaveArgs, prefix string, opts *kernel.FSSaveOpts) error {
 	// TODO(b/541219576): Support prefixed filesystem checkpoint with checkpoint gofer.
 	if prefix != "" {
 		return fmt.Errorf("prefixed filesystem checkpoint is not supported with checkpoint gofer")
