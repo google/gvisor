@@ -74,7 +74,7 @@ func BenchmarkIperfOneConnection(b *testing.B) {
 			defer metricsviz.FromNamedContainerLogs(ctx, b, server, "server")
 			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
-			defer metricsviz.FromNamedContainerLogs(ctx, b, server, "client")
+			defer metricsviz.FromNamedContainerLogs(ctx, b, client, "client")
 
 			// iperf server listens on port 5001 by default.
 			port := 5001
