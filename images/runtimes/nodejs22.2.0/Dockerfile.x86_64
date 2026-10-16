@@ -26,6 +26,12 @@ RUN make -j $(nproc) test-build
 RUN out/Release/node --check test/common/index.js \
   && out/Release/node --check test/parallel/test-http-outgoing-end-cork.js
 
+# Select the certificate for www.nodejs.org in the CA interaction test.
+COPY tls-servername.patch /tmp/tls-servername.patch
+RUN patch -p1 --no-backup-if-mismatch < /tmp/tls-servername.patch \
+  && out/Release/node --check test/internet/test-tls-add-ca-cert.js \
+  && rm -f /tmp/tls-servername.patch
+
 # Including dumb-init emulates the Linux "init" process, preventing the failure
 # of tests involving worker processes.
 ENTRYPOINT ["/usr/bin/dumb-init"]
