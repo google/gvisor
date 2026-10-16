@@ -446,18 +446,31 @@ func setupTestRootDir(t *testing.T, conf *config.Config) string {
 	return rootDir
 }
 
-// startNoRootContainerSandbox boots a sandbox with no root container,
-// registering its teardown with t.Cleanup.
-func startNoRootContainerSandbox(t *testing.T, conf *config.Config, sbID string) *Container {
-	t.Helper()
-
-	sbSpec := &specs.Spec{
+// noRootContainerSandboxSpec returns the spec of a sandbox with no root
+// container.
+func noRootContainerSandboxSpec() *specs.Spec {
+	return &specs.Spec{
 		Version: specs.Version,
 		Annotations: map[string]string{
 			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
 		},
 	}
-	return startNoRootContainerSandboxWithSpec(t, conf, sbID, sbSpec)
+}
+
+// noRootContainerSubSpec returns the spec of a container running args in
+// sandbox sbID.
+func noRootContainerSubSpec(sbID string, args ...string) *specs.Spec {
+	spec := testutil.NewSpecWithArgs(args...)
+	spec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeContainer
+	spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = sbID
+	return spec
+}
+
+// startNoRootContainerSandbox boots a sandbox with no root container,
+// registering its teardown with t.Cleanup.
+func startNoRootContainerSandbox(t *testing.T, conf *config.Config, sbID string) *Container {
+	t.Helper()
+	return startNoRootContainerSandboxWithSpec(t, conf, sbID, noRootContainerSandboxSpec())
 }
 
 // startNoRootContainerSandboxWithSpec is startNoRootContainerSandbox with a
@@ -502,9 +515,7 @@ func startNoRootContainerSub(t *testing.T, conf *config.Config, sbID string, pid
 func startNoRootContainerSubWithArgs(t *testing.T, conf *config.Config, sbID string, pidnsPath *string, args ...string) *Container {
 	t.Helper()
 
-	spec := testutil.NewSpecWithArgs(args...)
-	spec.Annotations[specutils.ContainerdContainerTypeAnnotation] = specutils.ContainerdContainerTypeContainer
-	spec.Annotations[specutils.ContainerdSandboxIDAnnotation] = sbID
+	spec := noRootContainerSubSpec(sbID, args...)
 	if pidnsPath != nil {
 		spec.Linux = &specs.Linux{
 			Namespaces: []specs.LinuxNamespace{
@@ -512,6 +523,13 @@ func startNoRootContainerSubWithArgs(t *testing.T, conf *config.Config, sbID str
 			},
 		}
 	}
+	return startNoRootContainerSubWithSpec(t, conf, spec)
+}
+
+// startNoRootContainerSubWithSpec creates and starts a container from spec.
+func startNoRootContainerSubWithSpec(t *testing.T, conf *config.Config, spec *specs.Spec) *Container {
+	t.Helper()
+
 	bundle, cleanupBundle, err := testutil.SetupBundleDir(spec)
 	if err != nil {
 		t.Fatalf("error setting up container bundle: %v", err)
