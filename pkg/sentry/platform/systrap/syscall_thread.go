@@ -194,8 +194,7 @@ func (t *syscallThread) attach() error {
 	}
 	// We need to unblock signals, because the TRAP signal is used to run
 	// syscalls via ptrace.
-	t.unmaskAllSignalsAttached()
-	return nil
+	return t.unmaskAllSignalsAttached()
 }
 
 const maxErrno = 4095

@@ -152,49 +152,50 @@ func (cr *codeRemoval) MarkRemoved(index int) {
 
 // Apply returns the set of instructions after removing marked indexes,
 // along with a boolean representing whether any instruction was removed.
+// Jumps are adjusted so that they keep pointing to the same instruction.
+// Jumps that pointed to a removed instruction will point to the first
+// non-removed instruction that followed it.
 func (cr *codeRemoval) Apply() ([]Instruction, bool) {
 	if len(cr.toRemove) == 0 {
 		return cr.insns, false
 	}
-	sort.Ints(cr.toRemove)
-	for i := len(cr.toRemove) - 1; i >= 0; i-- {
-		pc := cr.toRemove[i]
-		cr.insns = append(cr.insns[:pc], cr.insns[pc+1:]...)
-		decrementJumps(cr.insns, pc)
+	removed := make([]bool, len(cr.insns))
+	for _, pc := range cr.toRemove {
+		removed[pc] = true
 	}
-	return cr.insns, true
-}
-
-// decrementJumps decrements all jumps within `insns` that are jumping to an
-// instruction with index larger than `target`, the index of an
-// instruction that just got removed (i.e. `target` now points to the
-// instruction that was directly following the removed instruction).
-// Jumps that targeted `target` itself will not be affected, i.e. they will
-// point to the instruction that directly followed the removed instruction.
-// `insns` is modified in-place.
-func decrementJumps(insns []Instruction, target int) {
-	for pc := 0; pc < target; pc++ {
-		ins := insns[pc]
-		if !ins.IsJump() {
+	// newPC maps each instruction index in the original program to the
+	// number of non-removed instructions before it. This is the index of
+	// that instruction in the new program, or, for removed instructions,
+	// the index of the first non-removed instruction that followed it.
+	newPC := make([]int, len(cr.insns))
+	numKept := 0
+	for pc := range cr.insns {
+		newPC[pc] = numKept
+		if !removed[pc] {
+			numKept++
+		}
+	}
+	// Compact the instructions in-place. This is safe because
+	// `newPC[pc] <= pc`, so we never overwrite instructions we haven't
+	// read yet.
+	newInsns := cr.insns[:0]
+	for pc, ins := range cr.insns {
+		if removed[pc] {
 			continue
 		}
-		if ins.IsUnconditionalJump() {
-			// Unconditional jump, check K:
-			if pc+int(ins.K)+1 > target {
-				ins.K--
-			}
-		} else {
-			// Conditional jump, check true target:
-			if pc+int(ins.JumpIfTrue)+1 > target {
-				ins.JumpIfTrue--
-			}
-			// ... And check false target:
-			if pc+int(ins.JumpIfFalse)+1 > target {
-				ins.JumpIfFalse--
-			}
+		newOffset := func(offset int) int {
+			return newPC[pc+offset+1] - newPC[pc] - 1
 		}
-		insns[pc] = ins
+		if ins.IsUnconditionalJump() {
+			ins.K = uint32(newOffset(int(ins.K)))
+		} else if ins.IsConditionalJump() {
+			ins.JumpIfTrue = uint8(newOffset(int(ins.JumpIfTrue)))
+			ins.JumpIfFalse = uint8(newOffset(int(ins.JumpIfFalse)))
+		}
+		newInsns = append(newInsns, ins)
 	}
+	cr.insns = newInsns
+	return cr.insns, true
 }
 
 // removeZeroInstructionJumps removes unconditional jumps that jump zero
@@ -347,11 +348,10 @@ func removeRedundantLoads(insns []Instruction) ([]Instruction, bool) {
 	return removal.Apply()
 }
 
-// jumpRewriteOperation rewrites a jump target.
-type jumpRewriteOperation struct {
-	pc        int      // Rewrite instruction at this offset.
-	jumpType  JumpType // Rewrite this type of jump.
-	rewriteTo int      // Rewrite the jump offset to this value.
+// jumpSource identifies one of the possible targets of a jump instruction.
+type jumpSource struct {
+	pc       int      // Offset of the jump instruction.
+	jumpType JumpType // Which of the jump instruction's targets this is.
 }
 
 // rewriteAllJumpsToReturn rewrites *all* jump instructions that go to
@@ -367,9 +367,9 @@ type jumpRewriteOperation struct {
 // This function is used in `optimizeJumpsToSmallestSetOfReturns`.
 // As a sanity check, it verifies that `fromPC` and `toPC` are functionally
 // identical return instruction, and panics otherwise.
-// `rewriteOps` is a buffer of jump rewrite operations meant to be
-// efficiently reusable across calls to this function.
-func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, rewriteOps []jumpRewriteOperation) bool {
+// `jumpsTo` maps instruction offsets to the jumps that go to them. It is
+// updated to reflect the rewrite.
+func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, jumpsTo [][]jumpSource) bool {
 	fromIns, toIns := insns[fromPC], insns[toPC]
 	if !fromIns.IsReturn() {
 		panic(fmt.Sprintf("attempted to rewrite jumps from {pc=%d: %v} which is not a return instruction", fromPC, fromIns))
@@ -380,69 +380,40 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, rewriteOps [
 	if !fromIns.Equal(toIns) {
 		panic(fmt.Sprintf("attempted to rewrite jump target to a different return instruction: from={pc=%d: %v}, to={pc=%d: %v}", fromPC, fromIns, toPC, toIns))
 	}
-	// Scan once, and populate `rewriteOps` as a list of rewrite operations
-	// that should be run if the rewrite is feasible.
-	rewriteOps = rewriteOps[:0]
-	for pc := 0; pc < fromPC; pc++ {
-		ins := insns[pc]
-		// Note: `neededOffset` may be negative, in case where we are rewriting
-		// the jump target to go to an earlier instruction, and we are dealing
-		// with the instructions that come after that.
-		// This isn't necessarily a dealbreaker, we just need to make sure that
-		// `ins` is either not a jump statement, or it is a jump statement that
-		// doesn't go to `fromPC` (otherwise, only then would it need to jump
-		// backwards).
-		neededOffset := toPC - pc - 1
-		if ins.IsConditionalJump() {
-			if jumpTrueTarget := pc + int(ins.JumpIfTrue) + 1; jumpTrueTarget == fromPC {
-				if neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
-					return false
-				}
-				rewriteOps = append(rewriteOps, jumpRewriteOperation{
-					pc:        pc,
-					jumpType:  JumpTrue,
-					rewriteTo: neededOffset,
-				})
-			}
-			if jumpFalseTarget := pc + int(ins.JumpIfFalse) + 1; jumpFalseTarget == fromPC {
-				if neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
-					return false
-				}
-				rewriteOps = append(rewriteOps, jumpRewriteOperation{
-					pc:        pc,
-					jumpType:  JumpFalse,
-					rewriteTo: neededOffset,
-				})
-			}
-		} else if ins.IsUnconditionalJump() {
-			if jumpTarget := pc + int(ins.K) + 1; jumpTarget == fromPC {
-				if neededOffset < 0 || neededOffset > maxUnconditionalJumpOffset {
-					return false
-				}
-				rewriteOps = append(rewriteOps, jumpRewriteOperation{
-					pc:        pc,
-					jumpType:  JumpDirect,
-					rewriteTo: neededOffset,
-				})
-			}
-		}
-	}
-	if len(rewriteOps) == 0 {
+	jumps := jumpsTo[fromPC]
+	if len(jumps) == 0 {
 		return false // No jump statements to rewrite.
 	}
-	// Rewrite is feasible, so do it.
-	for _, op := range rewriteOps {
-		ins := insns[op.pc]
-		switch op.jumpType {
-		case JumpTrue:
-			ins.JumpIfTrue = uint8(op.rewriteTo)
-		case JumpFalse:
-			ins.JumpIfFalse = uint8(op.rewriteTo)
-		case JumpDirect:
-			ins.K = uint32(op.rewriteTo)
+	// Check that the rewrite is feasible for all jumps first.
+	for _, jump := range jumps {
+		// Note: `neededOffset` may be negative, in case where we are rewriting
+		// the jump target to go to an earlier instruction. Jumps can only go
+		// forward, so this is a dealbreaker.
+		neededOffset := toPC - jump.pc - 1
+		maxOffset := maxConditionalJumpOffset
+		if jump.jumpType == JumpDirect {
+			maxOffset = maxUnconditionalJumpOffset
 		}
-		insns[op.pc] = ins
+		if neededOffset < 0 || neededOffset > maxOffset {
+			return false
+		}
 	}
+	// Rewrite is feasible, so do it.
+	for _, jump := range jumps {
+		neededOffset := toPC - jump.pc - 1
+		ins := insns[jump.pc]
+		switch jump.jumpType {
+		case JumpTrue:
+			ins.JumpIfTrue = uint8(neededOffset)
+		case JumpFalse:
+			ins.JumpIfFalse = uint8(neededOffset)
+		case JumpDirect:
+			ins.K = uint32(neededOffset)
+		}
+		insns[jump.pc] = ins
+	}
+	jumpsTo[toPC] = append(jumpsTo[toPC], jumps...)
+	jumpsTo[fromPC] = nil
 	return true
 }
 
@@ -550,6 +521,17 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 	const retRegisterA = 0xaaaaaaaaaaaaaaaa
 	retValueToPC := make(map[uint64][]int)
 
+	// jumpsTo maps offsets (pc) of return instructions to the jumps that go
+	// to them.
+	jumpsTo := make([][]jumpSource, numInstructions)
+	for pc, ins := range insns {
+		for _, offset := range ins.JumpOffsets() {
+			if target := pc + int(offset.Offset) + 1; insns[target].IsReturn() {
+				jumpsTo[target] = append(jumpsTo[target], jumpSource{pc: pc, jumpType: offset.Type})
+			}
+		}
+	}
+
 	for pc, ins := range insns {
 		if !ins.IsReturn() {
 			continue // Not a conditional jump instruction.
@@ -563,36 +545,20 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 		default:
 			panic(fmt.Sprintf("unknown return value in instruction at pc=%d: %v", pc, ins))
 		}
-		popularity := 0
+		// Note that the optimizeSameTargetConditionalJumps should make it
+		// such that it's not possible for there to be a conditional jump
+		// with identical "true" and "false" targets, so this should not
+		// count such jumps twice.
+		popularity := len(jumpsTo[pc])
 		canBeFallenThrough := false
-		for pc2 := 0; pc2 < pc; pc2++ {
-			ins2 := insns[pc2]
-			switch ins2.OpCode & instructionClassMask {
-			case Ret:
-				// Do nothing.
-			case Jmp:
-				if ins2.IsConditionalJump() {
-					// Note that the optimizeSameTargetConditionalJumps should make it
-					// such that it's not possible for there to be a conditional jump
-					// with identical "true" and "false" targets, so this should not
-					// result in adding 2 to `popularity`.
-					if jumpTrueTarget := pc2 + int(ins2.JumpIfTrue) + 1; jumpTrueTarget == pc {
-						popularity++
-					}
-					if jumpFalseTarget := pc2 + int(ins2.JumpIfFalse) + 1; jumpFalseTarget == pc {
-						popularity++
-					}
-				} else {
-					if jumpTarget := pc2 + int(ins2.K) + 1; jumpTarget == pc {
-						popularity++
-					}
-				}
+		if pc > 0 {
+			switch insns[pc-1].OpCode & instructionClassMask {
+			case Ret, Jmp:
+				// Does not flow through to `pc`.
 			default:
-				if pc2 == pc-1 {
-					// This return instruction can be fallen through to.
-					popularity += numInstructions
-					canBeFallenThrough = true
-				}
+				// This return instruction can be fallen through to.
+				popularity += numInstructions
+				canBeFallenThrough = true
 			}
 		}
 		retValueToPC[retValue] = append(retValueToPC[retValue], pc)
@@ -600,7 +566,6 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 		retCanBeFallenThrough[pc] = canBeFallenThrough
 	}
 
-	rewriteOps := make([]jumpRewriteOperation, 0, len(insns))
 	for _, pcs := range retValueToPC {
 		sort.Slice(pcs, func(i, j int) bool {
 			// Sort `pcs` in order of ascending popularity.
@@ -620,7 +585,7 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 				popularPC := pcs[j]
 				// Check if we can rewrite all instructions that jump to `unpopularPC`
 				// to instead jump to `popularPC`.
-				if rewriteAllJumpsToReturn(insns, unpopularPC, popularPC, rewriteOps) {
+				if rewriteAllJumpsToReturn(insns, unpopularPC, popularPC, jumpsTo) {
 					changed = true
 					break
 				}

@@ -846,10 +846,13 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 	}
 
 	mfsToSaveActual := mfsToSave
-	var matchCtx *fsCheckpointMatchContext
+	var matchCtxs []*fsCheckpointMatchContext
 	if fsOpts != nil {
-		matchCtx = k.newFSCheckpointMatchContext(ctx, fsOpts.Paths)
-		mfsToSaveActual = filterMFsToSave(mfsToSave, matchCtx)
+		matchCtxs = make([]*fsCheckpointMatchContext, len(fsOpts.Bundles))
+		for i := range fsOpts.Bundles {
+			matchCtxs[i] = k.newFSCheckpointMatchContext(ctx, fsOpts.Bundles[i].Paths)
+		}
+		mfsToSaveActual = filterMFsToSave(mfsToSave, matchCtxs)
 	}
 
 	parallelMFSave := pagesMetadata != nil
@@ -905,8 +908,10 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 
 	if fsOpts != nil {
 		fsSaveStart := time.Now()
-		if err := k.fsSaveLocked(ctx, fsOpts, mfsToSave, matchCtx); err != nil {
-			return fmt.Errorf("failed to save split filesystem: %w", err)
+		for i := range fsOpts.Bundles {
+			if err := k.fsSaveLocked(ctx, &fsOpts.Bundles[i], fsOpts.RunscVersion, mfsToSave, matchCtxs[i]); err != nil {
+				return fmt.Errorf("failed to save split filesystem bundle %d: %w", i, err)
+			}
 		}
 		log.Infof("Split filesystem save took [%s].", time.Since(fsSaveStart))
 		fsCleanup.Release()
@@ -2685,11 +2690,18 @@ func (k *Kernel) ContainerName(cid string) string {
 	return k.containerNames[cid]
 }
 
-func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
+func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtxs []*fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
 	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	for id, mf := range mfsToSave {
-		_, isTmpfs := matchCtx.tmpfsResourceIDs[id]
-		if !matchesPaths(id, matchCtx.pathsMap, isTmpfs) {
+		matched := false
+		for _, matchCtx := range matchCtxs {
+			_, isTmpfs := matchCtx.tmpfsResourceIDs[id]
+			if matchesPaths(id, matchCtx.pathsMap, isTmpfs) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			mfsToSaveActual[id] = mf
 		}
 	}

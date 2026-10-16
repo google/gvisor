@@ -37,19 +37,26 @@ import (
 
 // FSSaveOpts holds options to Kernel.FSSave.
 type FSSaveOpts struct {
-	// These correspond to files specified by the fscheckpoint package, and are
-	// all required.
-	ManifestFile      io.WriteCloser
-	MultiTarFile      io.WriteCloser
-	PagesMetadataFile io.WriteCloser
-	PagesFile         stateio.AsyncWriter
-
 	// RunscVersion is the runsc binary version.
 	RunscVersion string
 
 	// If ExitAfterSaving is true, all processes exit with status 0 before
 	// FSSave returns, whether or not it returns a non-nil error.
 	ExitAfterSaving bool
+
+	// Bundles are the filesystem checkpoint bundles to save, each to its own
+	// set of files.
+	Bundles []FSSaveBundle
+}
+
+// FSSaveBundle holds options for saving one filesystem checkpoint bundle.
+type FSSaveBundle struct {
+	// These correspond to files specified by the fscheckpoint package, and are
+	// all required.
+	ManifestFile      io.WriteCloser
+	MultiTarFile      io.WriteCloser
+	PagesMetadataFile io.WriteCloser
+	PagesFile         stateio.AsyncWriter
 
 	// Paths is the list of paths inside the containers to save.
 	// If empty, defaults to a single path "/" for all containers.
@@ -62,21 +69,30 @@ func (opts *FSSaveOpts) Close() error {
 		return nil
 	}
 	var err error
-	if opts.ManifestFile != nil {
-		err = errors.Join(err, opts.ManifestFile.Close())
-		opts.ManifestFile = nil
+	for i := range opts.Bundles {
+		err = errors.Join(err, opts.Bundles[i].Close())
 	}
-	if opts.MultiTarFile != nil {
-		err = errors.Join(err, opts.MultiTarFile.Close())
-		opts.MultiTarFile = nil
+	return err
+}
+
+// Close closes all files in bundle and sets their references to nil.
+func (bundle *FSSaveBundle) Close() error {
+	var err error
+	if bundle.ManifestFile != nil {
+		err = errors.Join(err, bundle.ManifestFile.Close())
+		bundle.ManifestFile = nil
 	}
-	if opts.PagesMetadataFile != nil {
-		err = errors.Join(err, opts.PagesMetadataFile.Close())
-		opts.PagesMetadataFile = nil
+	if bundle.MultiTarFile != nil {
+		err = errors.Join(err, bundle.MultiTarFile.Close())
+		bundle.MultiTarFile = nil
 	}
-	if opts.PagesFile != nil {
-		err = errors.Join(err, opts.PagesFile.Close())
-		opts.PagesFile = nil
+	if bundle.PagesMetadataFile != nil {
+		err = errors.Join(err, bundle.PagesMetadataFile.Close())
+		bundle.PagesMetadataFile = nil
+	}
+	if bundle.PagesFile != nil {
+		err = errors.Join(err, bundle.PagesFile.Close())
+		bundle.PagesFile = nil
 	}
 	return err
 }
@@ -105,7 +121,12 @@ func (k *Kernel) FSSave(ctx context.Context, opts *FSSaveOpts) (err error) {
 		defer k.Kill(linux.WaitStatusExit(0)) // consistent with sentry/state.SaveOpts.Save
 	}
 	return k.quiescePausedAnd(ctx, func() error {
-		return k.fsSaveLocked(ctx, opts, nil /* mfsToSave */, nil /* matchCtx */)
+		for i := range opts.Bundles {
+			if err := k.fsSaveLocked(ctx, &opts.Bundles[i], opts.RunscVersion, nil /* mfsToSave */, nil /* matchCtx */); err != nil {
+				return fmt.Errorf("bundle %d: %w", i, err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -143,12 +164,12 @@ func (k *Kernel) newFSCheckpointMatchContext(ctx context.Context, paths []checkp
 	}
 }
 
-// fsSaveLocked collects a filesystem checkpoint.
+// fsSaveLocked collects a filesystem checkpoint of bundle.
 //
 // Preconditions: The kernel must be paused and quiesced.
-func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) error {
+func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVersion string, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtx *fsCheckpointMatchContext) error {
 	if matchCtx == nil {
-		matchCtx = k.newFSCheckpointMatchContext(ctx, opts.Paths)
+		matchCtx = k.newFSCheckpointMatchContext(ctx, bundle.Paths)
 	}
 	pathsMap := matchCtx.pathsMap
 	tmpfsResourceIDs := matchCtx.tmpfsResourceIDs
@@ -165,11 +186,11 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave m
 		asyncPageSaveErr error
 	)
 	asyncPageSaveWg.Add(1)
-	apfs, err := pgalloc.StartAsyncPagesFileSave(opts.PagesFile /* transfers ownership */, func(err error) {
+	apfs, err := pgalloc.StartAsyncPagesFileSave(bundle.PagesFile /* transfers ownership */, func(err error) {
 		asyncPageSaveErr = err
 		asyncPageSaveWg.Done()
 	})
-	opts.PagesFile = nil
+	bundle.PagesFile = nil
 	if err != nil {
 		return fmt.Errorf("failed to start async page saving: %w", err)
 	}
@@ -184,7 +205,7 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave m
 
 	manifest := &fspb.Manifest{
 		Version:      1,
-		RunscVersion: opts.RunscVersion,
+		RunscVersion: runscVersion,
 		PageSize:     hostarch.PageSize,
 		Endian:       hostarch.EndianString(),
 	}
@@ -193,8 +214,8 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave m
 		mf *pgalloc.MemoryFile
 	}
 	resourceIDs := make(map[checkpoint.ResourceID]tmpfsAndPrivateMemoryFile)
-	multiTarWriter := &countingWriter{w: opts.MultiTarFile}
-	pagesMetadataWriter := &countingWriter{w: opts.PagesMetadataFile}
+	multiTarWriter := &countingWriter{w: bundle.MultiTarFile}
+	pagesMetadataWriter := &countingWriter{w: bundle.PagesMetadataFile}
 	prevTarOffset := uint64(0)
 	prevPagesMetadataOffset := uint64(0)
 	prevPagesOffset := uint64(0)
@@ -303,23 +324,23 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave m
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
-	if _, err := opts.ManifestFile.Write(manifestBytes); err != nil {
+	if _, err := bundle.ManifestFile.Write(manifestBytes); err != nil {
 		return fmt.Errorf("failed to write manifest: %w", err)
 	}
 	// Close other writers while MemoryFile saving is in progress to
 	// overlap their latencies.
-	err = opts.ManifestFile.Close()
-	opts.ManifestFile = nil
+	err = bundle.ManifestFile.Close()
+	bundle.ManifestFile = nil
 	if err != nil {
 		return fmt.Errorf("failed to close manifest file: %w", err)
 	}
-	err = opts.MultiTarFile.Close()
-	opts.MultiTarFile = nil
+	err = bundle.MultiTarFile.Close()
+	bundle.MultiTarFile = nil
 	if err != nil {
 		return fmt.Errorf("failed to close multi-tar file: %w", err)
 	}
-	err = opts.PagesMetadataFile.Close()
-	opts.PagesMetadataFile = nil
+	err = bundle.PagesMetadataFile.Close()
+	bundle.PagesMetadataFile = nil
 	if err != nil {
 		return fmt.Errorf("failed to close pages metadata file: %w", err)
 	}

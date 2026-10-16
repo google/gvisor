@@ -194,7 +194,10 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 		}
 
 		// Wait for the syscall-enter stop.
-		sig := t.wait(stopped)
+		sig, err := t.wait(stopped)
+		if err != nil {
+			t.dumpAndPanic(fmt.Sprintf("wait failed: %v", err))
+		}
 		if sig == unix.SIGSTOP {
 			// SIGSTOP was delivered to another thread in the same thread
 			// group, which initiated another group stop. Just ignore it.

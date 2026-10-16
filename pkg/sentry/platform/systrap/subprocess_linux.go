@@ -204,7 +204,9 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 			tgid: int32(pid),
 			tid:  int32(pid),
 		}
-		if sig := t.wait(stopped); sig != unix.SIGSTOP {
+		if sig, err := t.wait(stopped); err != nil {
+			return nil, fmt.Errorf("wait failed: %w", err)
+		} else if sig != unix.SIGSTOP {
 			return nil, fmt.Errorf("wait failed: expected SIGSTOP, got %v", sig)
 		}
 		if err := t.attach(); err != nil {

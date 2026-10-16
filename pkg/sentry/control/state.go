@@ -100,11 +100,9 @@ func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.
 		wantFiles += 2
 	}
 	fsFilesStart := wantFiles
-	if len(o.SplitFSCheckpointPaths) > 0 {
-		// A filesystem checkpoint always comprises exactly 4 files:
-		// manifest, multi-tar archive, pages metadata, and pages file.
-		wantFiles += 4
-	}
+	// Each filesystem checkpoint bundle comprises 4 files:
+	// manifest, multi-tar archive, pages metadata, and pages file.
+	wantFiles += 4 * len(o.SplitFSCheckpointPaths)
 	if gotFiles := len(o.Files); gotFiles != wantFiles {
 		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
 	}
@@ -138,28 +136,33 @@ func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.
 	if len(o.SplitFSCheckpointPaths) > 0 {
 		saveOpts.FSSaveOpts = &kernel.FSSaveOpts{
 			RunscVersion: o.RunscVersion,
-			Paths:        o.SplitFSCheckpointPaths[0].Paths,
+			Bundles:      make([]kernel.FSSaveBundle, len(o.SplitFSCheckpointPaths)),
 		}
-		manifestFile, err := o.ReleaseFD(fsFilesStart)
-		if err != nil {
-			return err
+		for i := range o.SplitFSCheckpointPaths {
+			offset := fsFilesStart + 4*i
+			bundle := &saveOpts.FSSaveOpts.Bundles[i]
+			bundle.Paths = o.SplitFSCheckpointPaths[i].Paths
+			manifestFile, err := o.ReleaseFD(offset)
+			if err != nil {
+				return err
+			}
+			bundle.ManifestFile = stateio.NewBufioWriteCloser(manifestFile)
+			multiTarFile, err := o.ReleaseFD(offset + 1)
+			if err != nil {
+				return err
+			}
+			bundle.MultiTarFile = stateio.NewBufioWriteCloser(multiTarFile)
+			pagesMetadataFile, err := o.ReleaseFD(offset + 2)
+			if err != nil {
+				return err
+			}
+			bundle.PagesMetadataFile = stateio.NewBufioWriteCloser(pagesMetadataFile)
+			pagesFileFD, err := unix.Dup(int(o.Files[offset+3].Fd()))
+			if err != nil {
+				return err
+			}
+			bundle.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
 		}
-		saveOpts.FSSaveOpts.ManifestFile = stateio.NewBufioWriteCloser(manifestFile)
-		multiTarFile, err := o.ReleaseFD(fsFilesStart + 1)
-		if err != nil {
-			return err
-		}
-		saveOpts.FSSaveOpts.MultiTarFile = stateio.NewBufioWriteCloser(multiTarFile)
-		pagesMetadataFile, err := o.ReleaseFD(fsFilesStart + 2)
-		if err != nil {
-			return err
-		}
-		saveOpts.FSSaveOpts.PagesMetadataFile = stateio.NewBufioWriteCloser(pagesMetadataFile)
-		pagesFileFD, err := unix.Dup(int(o.Files[fsFilesStart+3].Fd()))
-		if err != nil {
-			return err
-		}
-		saveOpts.FSSaveOpts.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
 	}
 	return nil
 }

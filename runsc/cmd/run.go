@@ -142,18 +142,18 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 	}()
 
 	runArgs := container.Args{
-		ID:                 id,
-		Spec:               spec,
-		BundleDir:          r.bundleDir,
-		ConsoleSocket:      r.consoleSocket,
-		PIDFile:            r.pidFile,
-		UserLog:            r.userLog,
-		Attached:           !r.detach,
-		PassFiles:          fdMap,
-		ExecFile:           execFile,
-		FSRestoreImagePath: r.fsRestoreImagePath,
-		FSRestoreDirect:    r.fsRestoreDirect,
-		NoRootContainer:    r.noRootContainer,
+		ID:                  id,
+		Spec:                spec,
+		BundleDir:           r.bundleDir,
+		ConsoleSocket:       r.consoleSocket,
+		PIDFile:             r.pidFile,
+		UserLog:             r.userLog,
+		Attached:            !r.detach,
+		PassFiles:           fdMap,
+		ExecFile:            execFile,
+		FSRestoreImagePaths: []string(r.fsRestoreImagePaths),
+		FSRestoreDirect:     r.fsRestoreDirect,
+		NoRootContainer:     r.noRootContainer,
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {

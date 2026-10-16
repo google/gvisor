@@ -44,8 +44,10 @@ type SaveOpts struct {
 
 	// FilePayload contains the following:
 	// 1. checkpoint state file.
-	// 2. optional checkpoint pages metadata file.
-	// 3. optional checkpoint pages file.
+	// 2. optional checkpoint pages metadata file (if HavePagesFile is true).
+	// 3. optional checkpoint pages file (if HavePagesFile is true).
+	// 4. 4 files (manifest, multi-tar, pages metadata, pages) per bundle in
+	//    SplitFSCheckpointPaths, in bundle order.
 	urpc.FilePayload
 
 	// Resume indicates if the sandbox process should continue running
