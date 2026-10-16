@@ -196,7 +196,7 @@ func MaxMessageSize() uint32 {
 	// created with MaxMessageSize() + flipcall header size + channel header
 	// size, HugePageSize is allocated and can be backed by a single huge page
 	// if supported by the underlying memfd.
-	return uint32(hostarch.HugePageSize - os.Getpagesize())
+	return uint32(int(hostarch.HugePageSize) - os.Getpagesize())
 }
 
 // UID represents a user ID.

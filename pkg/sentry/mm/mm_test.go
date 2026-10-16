@@ -35,17 +35,30 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// Typed versions of hostarch.PageSize, which is not a constant on all
+// architectures.
+var (
+	pageSize     = uint64(hostarch.PageSize)
+	pageSizeAddr = hostarch.Addr(hostarch.PageSize)
+	pageSizeInt  = int(hostarch.PageSize)
+)
+
 func testMemoryManagerWithMmapDirection(ctx context.Context, t *testing.T, mmapDirection arch.MmapDirection) *MemoryManager {
 	p := platform.FromContext(ctx)
 	mm, err := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx))
 	if err != nil {
 		t.Fatalf("failed to create MemoryManager: %s", err)
 	}
+	minAddr, ok := p.MinUserAddress().RoundUp()
+	if !ok {
+		t.Fatalf("MinUserAddress %#x overflows when rounded up", p.MinUserAddress())
+	}
+	maxAddr := p.MaxUserAddress().RoundDown()
 	mm.layout = arch.MmapLayout{
-		MinAddr:          p.MinUserAddress(),
-		MaxAddr:          p.MaxUserAddress(),
-		BottomUpBase:     p.MinUserAddress(),
-		TopDownBase:      p.MaxUserAddress(),
+		MinAddr:          minAddr,
+		MaxAddr:          maxAddr,
+		BottomUpBase:     minAddr,
+		TopDownBase:      maxAddr,
 		DefaultDirection: mmapDirection,
 	}
 	return mm
@@ -68,7 +81,7 @@ func TestUsageASUpdates(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:  2 * hostarch.PageSize,
+		Length:  2 * pageSize,
 		Private: true,
 	})
 	if err != nil {
@@ -79,7 +92,7 @@ func TestUsageASUpdates(t *testing.T) {
 		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", got, realUsage)
 	}
 
-	mm.MUnmap(ctx, addr, hostarch.PageSize)
+	mm.MUnmap(ctx, addr, pageSize)
 	realUsage = mm.realUsageAS()
 	if got := mm.VirtualMemorySize(); got != realUsage {
 		t.Fatalf("usageAS believes %v bytes are mapped; %v bytes are actually mapped", got, realUsage)
@@ -106,7 +119,7 @@ func TestDataASUpdates(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   3 * hostarch.PageSize,
+		Length:   3 * pageSize,
 		Private:  true,
 		Perms:    hostarch.Write,
 		MaxPerms: hostarch.AnyAccess,
@@ -122,19 +135,19 @@ func TestDataASUpdates(t *testing.T) {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
-	mm.MUnmap(ctx, addr, hostarch.PageSize)
+	mm.MUnmap(ctx, addr, pageSize)
 	realDataAS = mm.realDataAS()
 	if got := mm.VirtualDataSize(); got != realDataAS {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
-	mm.MProtect(addr+hostarch.PageSize, hostarch.PageSize, hostarch.Read, false)
+	mm.MProtect(addr+pageSizeAddr, pageSize, hostarch.Read, false)
 	realDataAS = mm.realDataAS()
 	if got := mm.VirtualDataSize(); got != realDataAS {
 		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", got, realDataAS)
 	}
 
-	mm.MRemap(ctx, addr+2*hostarch.PageSize, hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{
+	mm.MRemap(ctx, addr+2*pageSizeAddr, pageSize, 2*pageSize, MRemapOpts{
 		Move: MRemapMayMove,
 	})
 	realDataAS = mm.realDataAS()
@@ -153,7 +166,7 @@ func TestBrkDataLimitUpdates(t *testing.T) {
 
 	// Try to extend the brk by one page and expect doing so to fail.
 	oldBrk, _ := mm.Brk(ctx, 0)
-	if newBrk, _ := mm.Brk(ctx, oldBrk+hostarch.PageSize); newBrk != oldBrk {
+	if newBrk, _ := mm.Brk(ctx, oldBrk+pageSizeAddr); newBrk != oldBrk {
 		t.Errorf("brk() increased data segment above RLIMIT_DATA (old brk = %#x, new brk = %#x", oldBrk, newBrk)
 	}
 }
@@ -165,7 +178,7 @@ func TestIOAfterUnmap(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   hostarch.PageSize,
+		Length:   pageSize,
 		Private:  true,
 		Perms:    hostarch.Read,
 		MaxPerms: hostarch.AnyAccess,
@@ -184,7 +197,7 @@ func TestIOAfterUnmap(t *testing.T) {
 		t.Errorf("CopyIn got %d want 1", n)
 	}
 
-	err = mm.MUnmap(ctx, addr, hostarch.PageSize)
+	err = mm.MUnmap(ctx, addr, pageSize)
 	if err != nil {
 		t.Fatalf("MUnmap got err %v want nil", err)
 	}
@@ -205,7 +218,7 @@ func TestIOAfterMProtect(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   hostarch.PageSize,
+		Length:   pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -224,7 +237,7 @@ func TestIOAfterMProtect(t *testing.T) {
 		t.Errorf("CopyOut got %d want 1", n)
 	}
 
-	err = mm.MProtect(addr, hostarch.PageSize, hostarch.Read, false)
+	err = mm.MProtect(addr, pageSize, hostarch.Read, false)
 	if err != nil {
 		t.Errorf("MProtect got err %v want nil", err)
 	}
@@ -382,7 +395,7 @@ func TestPinnedPagesCopiedOnFork(t *testing.T) {
 	// both the pinned page and the copy-on-write pages surrounding it.
 	const npages = 3
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   npages * hostarch.PageSize,
+		Length:   npages * pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -390,14 +403,14 @@ func TestPinnedPagesCopiedOnFork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	preFork := bytes.Repeat([]byte{'A'}, npages*hostarch.PageSize)
+	preFork := bytes.Repeat([]byte{'A'}, npages*pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
 
 	pinAR := hostarch.AddrRange{
-		Start: addr + hostarch.PageSize,
-		End:   addr + 2*hostarch.PageSize,
+		Start: addr + pageSizeAddr,
+		End:   addr + 2*pageSizeAddr,
 	}
 	prs, err := mm.Pin(ctx, pinAR, hostarch.ReadWrite, false /* ignorePermissions */)
 	if err != nil {
@@ -417,7 +430,7 @@ func TestPinnedPagesCopiedOnFork(t *testing.T) {
 		// The parent's writes to the pinned page must be visible through the
 		// pinned range, i.e. the parent must not have been moved to a new
 		// copy of the page by copy-on-write.
-		postFork := bytes.Repeat([]byte{'B' + byte(i)}, npages*hostarch.PageSize)
+		postFork := bytes.Repeat([]byte{'B' + byte(i)}, npages*pageSizeInt)
 		if _, err := mm.CopyOut(ctx, addr, postFork, usermem.IOOpts{}); err != nil {
 			t.Fatalf("CopyOut got err %v want nil", err)
 		}
@@ -435,7 +448,7 @@ func TestPinnedPagesCopiedOnFork(t *testing.T) {
 		}
 
 		// The child's writes must not be visible through the pinned range.
-		if _, err := mm2.CopyOut(ctx, addr, bytes.Repeat([]byte{'z'}, npages*hostarch.PageSize), usermem.IOOpts{}); err != nil {
+		if _, err := mm2.CopyOut(ctx, addr, bytes.Repeat([]byte{'z'}, npages*pageSizeInt), usermem.IOOpts{}); err != nil {
 			t.Fatalf("CopyOut got err %v want nil", err)
 		}
 		if got, want := readPinnedRange(t, prs[0]), postFork[:hostarch.PageSize]; !bytes.Equal(got, want) {
@@ -455,7 +468,7 @@ func TestPinUnsharesCopyOnWritePages(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   hostarch.PageSize,
+		Length:   pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -463,7 +476,7 @@ func TestPinUnsharesCopyOnWritePages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	preFork := bytes.Repeat([]byte{'A'}, hostarch.PageSize)
+	preFork := bytes.Repeat([]byte{'A'}, pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
@@ -476,7 +489,7 @@ func TestPinUnsharesCopyOnWritePages(t *testing.T) {
 	defer mm2.DecUsers(ctx)
 	ar := hostarch.AddrRange{
 		Start: addr,
-		End:   addr + hostarch.PageSize,
+		End:   addr + pageSizeAddr,
 	}
 	prs, err := mm.Pin(ctx, ar, hostarch.Read, false /* ignorePermissions */)
 	if err != nil {
@@ -486,7 +499,7 @@ func TestPinUnsharesCopyOnWritePages(t *testing.T) {
 
 	// The parent's writes must be visible through the pinned range, and must
 	// not be visible to the child.
-	postFork := bytes.Repeat([]byte{'B'}, hostarch.PageSize)
+	postFork := bytes.Repeat([]byte{'B'}, pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, postFork, usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
@@ -510,7 +523,7 @@ func TestUnpinnedPagesCopyOnWriteAfterFork(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   hostarch.PageSize,
+		Length:   pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -518,13 +531,13 @@ func TestUnpinnedPagesCopyOnWriteAfterFork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	if _, err := mm.CopyOut(ctx, addr, bytes.Repeat([]byte{'A'}, hostarch.PageSize), usermem.IOOpts{}); err != nil {
+	if _, err := mm.CopyOut(ctx, addr, bytes.Repeat([]byte{'A'}, pageSizeInt), usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
 
 	ar := hostarch.AddrRange{
 		Start: addr,
-		End:   addr + hostarch.PageSize,
+		End:   addr + pageSizeAddr,
 	}
 	prs, err := mm.Pin(ctx, ar, hostarch.ReadWrite, false /* ignorePermissions */)
 	if err != nil {
@@ -559,7 +572,7 @@ func TestMRemapMappableOffsetOverflow(t *testing.T) {
 	defer mm.DecUsers(ctx)
 
 	mf := pgalloc.MemoryFileFromContext(ctx)
-	fr, err := mf.Allocate(3*hostarch.PageSize, pgalloc.AllocOpts{})
+	fr, err := mf.Allocate(3*pageSize, pgalloc.AllocOpts{})
 	if err != nil {
 		t.Fatalf("failed to allocate memory file range: %v", err)
 	}
@@ -569,10 +582,10 @@ func TestMRemapMappableOffsetOverflow(t *testing.T) {
 	// Map a page at a high offset (2^64 - 2*PageSize).
 	// This mapping itself is valid because offset + length (2^64 - PageSize) does not overflow.
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:          hostarch.PageSize,
+		Length:          pageSize,
 		MappingIdentity: mappable,
 		Mappable:        mappable,
-		Offset:          ^uint64(0) - 2*hostarch.PageSize + 1,
+		Offset:          ^uint64(0) - 2*pageSize + 1,
 		Private:         true,
 		MaxPerms:        hostarch.AnyAccess,
 	})
@@ -582,13 +595,13 @@ func TestMRemapMappableOffsetOverflow(t *testing.T) {
 
 	// 1. A shrink should succeed, even if offset+newSize overflows.
 	// We remap with oldSize = 3*PageSize, newSize = 2*PageSize.
-	if _, err := mm.MRemap(ctx, addr, 3*hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{}); err != nil {
+	if _, err := mm.MRemap(ctx, addr, 3*pageSize, 2*pageSize, MRemapOpts{}); err != nil {
 		t.Errorf("MRemap shrink got err %v want nil", err)
 	}
 
 	// 2. A grow should fail if offset+newSize overflows.
 	// We remap with oldSize = PageSize, newSize = 3*PageSize.
-	if _, err := mm.MRemap(ctx, addr, hostarch.PageSize, 3*hostarch.PageSize, MRemapOpts{}); !linuxerr.Equals(linuxerr.EINVAL, err) {
+	if _, err := mm.MRemap(ctx, addr, pageSize, 3*pageSize, MRemapOpts{}); !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("MRemap grow got err %v want EINVAL", err)
 	}
 }
@@ -605,7 +618,7 @@ func pmaAt(t *testing.T, mm *MemoryManager, addr hostarch.Addr) (uint64, bool) {
 	}
 	fr := pseg.fileRangeOf(hostarch.AddrRange{
 		Start: addr,
-		End:   addr + hostarch.PageSize,
+		End:   addr + pageSizeAddr,
 	})
 	return fr.Start, pseg.ValuePtr().needCOW
 }
@@ -622,7 +635,7 @@ func TestForkSkipsDontForkMappings(t *testing.T) {
 	// that Fork must split a pma so it can skip the MADV_DONTFORK mapping.
 	const npages = 2
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   npages * hostarch.PageSize,
+		Length:   npages * pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -630,12 +643,12 @@ func TestForkSkipsDontForkMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	preFork := bytes.Repeat([]byte{'A'}, npages*hostarch.PageSize)
+	preFork := bytes.Repeat([]byte{'A'}, npages*pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
-	dontForkAddr := addr + hostarch.PageSize
-	if err := mm.SetDontFork(dontForkAddr, hostarch.PageSize, true); err != nil {
+	dontForkAddr := addr + pageSizeAddr
+	if err := mm.SetDontFork(dontForkAddr, pageSize, true); err != nil {
 		t.Fatalf("SetDontFork got err %v want nil", err)
 	}
 
@@ -700,7 +713,7 @@ func testMemoryManagerWithExhaustibleMemory(ctx context.Context, t *testing.T) (
 		})
 		// Since mf can no longer grow, this terminates once all of its free
 		// pages are allocated. The allocated pages are never committed.
-		for length := uint64(1 << 30); length >= hostarch.PageSize; length /= 2 {
+		for length := uint64(1 << 30); length >= pageSize; length /= 2 {
 			for {
 				fr, err := mf.Allocate(length, pgalloc.AllocOpts{})
 				if err != nil {
@@ -747,7 +760,7 @@ func TestForkCopyFailure(t *testing.T) {
 			// memory before exhaustMemory.
 			const npages = 2
 			opts := memmap.MMapOpts{
-				Length:   hostarch.PageSize,
+				Length:   pageSize,
 				Private:  true,
 				Perms:    hostarch.ReadWrite,
 				MaxPerms: hostarch.AnyAccess,
@@ -757,8 +770,8 @@ func TestForkCopyFailure(t *testing.T) {
 				t.Fatalf("MMap got err %v want nil", err)
 			}
 			copyAR := hostarch.AddrRange{
-				Start: addr + hostarch.PageSize,
-				End:   addr + npages*hostarch.PageSize,
+				Start: addr + pageSizeAddr,
+				End:   addr + npages*pageSizeAddr,
 			}
 			opts.Addr = copyAR.Start
 			opts.Fixed = true
@@ -773,7 +786,7 @@ func TestForkCopyFailure(t *testing.T) {
 				}
 				t.Cleanup(func() { Unpin(prs) })
 			}
-			preFork := bytes.Repeat([]byte{'A'}, npages*hostarch.PageSize)
+			preFork := bytes.Repeat([]byte{'A'}, npages*pageSizeInt)
 			if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
 				t.Fatalf("CopyOut got err %v want nil", err)
 			}
@@ -781,14 +794,14 @@ func TestForkCopyFailure(t *testing.T) {
 			// Also map a MappingIdentity, on which Fork takes a reference for
 			// the child.
 			mf := pgalloc.MemoryFileFromContext(ctx)
-			fr, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{})
+			fr, err := mf.Allocate(pageSize, pgalloc.AllocOpts{})
 			if err != nil {
 				t.Fatalf("Allocate got err %v want nil", err)
 			}
 			mappable := NewSpecialMappable("test_mappable", mf, fr)
 			defer mappable.DecRef(ctx)
 			if _, err := mm.MMap(ctx, memmap.MMapOpts{
-				Length:          hostarch.PageSize,
+				Length:          pageSize,
 				MappingIdentity: mappable,
 				Mappable:        mappable,
 				Private:         true,
@@ -809,7 +822,7 @@ func TestForkCopyFailure(t *testing.T) {
 				t.Errorf("MappingIdentity has %d references after failed fork, want %d", got, wantRefs)
 			}
 			off, _ := pmaAt(t, mm, addr)
-			if !mm.mf.HasUniqueRef(memmap.FileRange{Start: off, End: off + hostarch.PageSize}) {
+			if !mm.mf.HasUniqueRef(memmap.FileRange{Start: off, End: off + pageSize}) {
 				t.Errorf("parent's copy-on-write page is still shared after failed fork")
 			}
 
@@ -842,7 +855,7 @@ func TestEagerForkCopy(t *testing.T) {
 	// written by the sentry with IgnorePermissions.
 	const npages = 2
 	addr, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:        npages * hostarch.PageSize,
+		Length:        npages * pageSize,
 		Private:       true,
 		Perms:         hostarch.ReadExecute,
 		MaxPerms:      hostarch.AnyAccess,
@@ -852,7 +865,7 @@ func TestEagerForkCopy(t *testing.T) {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
 	ignorePerms := usermem.IOOpts{IgnorePermissions: true}
-	preFork := bytes.Repeat([]byte{'A'}, npages*hostarch.PageSize)
+	preFork := bytes.Repeat([]byte{'A'}, npages*pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, preFork, ignorePerms); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
@@ -880,7 +893,7 @@ func TestEagerForkCopy(t *testing.T) {
 		}
 
 		// The parent's writes must not break COW.
-		postFork := bytes.Repeat([]byte{'B' + byte(i)}, npages*hostarch.PageSize)
+		postFork := bytes.Repeat([]byte{'B' + byte(i)}, npages*pageSizeInt)
 		if _, err := mm.CopyOut(ctx, addr, postFork, ignorePerms); err != nil {
 			t.Fatalf("CopyOut got err %v want nil", err)
 		}
@@ -912,7 +925,7 @@ func TestEagerForkCopyAdjacentMappings(t *testing.T) {
 	// identical options, so that only EagerForkCopy distinguishes them.
 	const npages = 4
 	opts := memmap.MMapOpts{
-		Length:   npages * hostarch.PageSize,
+		Length:   npages * pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -922,8 +935,8 @@ func TestEagerForkCopyAdjacentMappings(t *testing.T) {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
 	eagerAR := hostarch.AddrRange{
-		Start: addr + hostarch.PageSize,
-		End:   addr + (npages-1)*hostarch.PageSize,
+		Start: addr + pageSizeAddr,
+		End:   addr + (npages-1)*pageSizeAddr,
 	}
 	opts.Length = uint64(eagerAR.Length())
 	opts.Addr = eagerAR.Start
@@ -933,7 +946,7 @@ func TestEagerForkCopyAdjacentMappings(t *testing.T) {
 	if _, err := mm.MMap(ctx, opts); err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	preFork := bytes.Repeat([]byte{'A'}, npages*hostarch.PageSize)
+	preFork := bytes.Repeat([]byte{'A'}, npages*pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, preFork, usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
@@ -947,7 +960,7 @@ func TestEagerForkCopyAdjacentMappings(t *testing.T) {
 	// Only the parent's pages outside of the EagerForkCopy mapping should
 	// have been made copy-on-write.
 	for i := 0; i < npages; i++ {
-		pageAddr := addr + hostarch.Addr(i*hostarch.PageSize)
+		pageAddr := addr + hostarch.Addr(i)*pageSizeAddr
 		wantCOW := !eagerAR.Contains(pageAddr)
 		if _, needCOW := pmaAt(t, mm, pageAddr); needCOW != wantCOW {
 			t.Errorf("parent pma for page %d: got needCOW %t want %t", i, needCOW, wantCOW)
@@ -956,7 +969,7 @@ func TestEagerForkCopyAdjacentMappings(t *testing.T) {
 
 	// The child must see the pre-fork contents of all pages, and not the
 	// parent's post-fork writes.
-	postFork := bytes.Repeat([]byte{'B'}, npages*hostarch.PageSize)
+	postFork := bytes.Repeat([]byte{'B'}, npages*pageSizeInt)
 	if _, err := mm.CopyOut(ctx, addr, postFork, usermem.IOOpts{}); err != nil {
 		t.Fatalf("CopyOut got err %v want nil", err)
 	}
@@ -989,7 +1002,7 @@ func TestSealedMapping(t *testing.T) {
 	// Map three unsealed pages, then replace the middle page with a sealed
 	// mapping.
 	base, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   3 * hostarch.PageSize,
+		Length:   3 * pageSize,
 		Private:  true,
 		Perms:    hostarch.ReadWrite,
 		MaxPerms: hostarch.AnyAccess,
@@ -997,9 +1010,9 @@ func TestSealedMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
-	sealedAddr := base + hostarch.PageSize
+	sealedAddr := base + pageSizeAddr
 	if _, err := mm.MMap(ctx, memmap.MMapOpts{
-		Length:   hostarch.PageSize,
+		Length:   pageSize,
 		Addr:     sealedAddr,
 		Fixed:    true,
 		Unmap:    true,
@@ -1010,22 +1023,22 @@ func TestSealedMapping(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("MMap(Sealed) got err %v want nil", err)
 	}
-	const all = 3 * hostarch.PageSize
+	all := 3 * pageSize
 
-	wantError(t, linuxerr.EPERM, "MUnmap(sealed)", mm.MUnmap(ctx, sealedAddr, hostarch.PageSize))
+	wantError(t, linuxerr.EPERM, "MUnmap(sealed)", mm.MUnmap(ctx, sealedAddr, pageSize))
 	wantError(t, linuxerr.EPERM, "MUnmap(all)", mm.MUnmap(ctx, base, all))
-	wantError(t, linuxerr.EPERM, "MProtect(sealed)", mm.MProtect(sealedAddr, hostarch.PageSize, hostarch.ReadWrite, false))
+	wantError(t, linuxerr.EPERM, "MProtect(sealed)", mm.MProtect(sealedAddr, pageSize, hostarch.ReadWrite, false))
 	wantError(t, linuxerr.EPERM, "MProtect(all)", mm.MProtect(base, all, hostarch.Read, false))
-	wantError(t, linuxerr.EPERM, "Decommit(sealed)", mm.Decommit(sealedAddr, hostarch.PageSize))
+	wantError(t, linuxerr.EPERM, "Decommit(sealed)", mm.Decommit(sealedAddr, pageSize))
 	wantError(t, linuxerr.EPERM, "SetDontFork(all)", mm.SetDontFork(base, all, true))
-	_, err = mm.MRemap(ctx, sealedAddr, hostarch.PageSize, 2*hostarch.PageSize, MRemapOpts{Move: MRemapMayMove})
+	_, err = mm.MRemap(ctx, sealedAddr, pageSize, 2*pageSize, MRemapOpts{Move: MRemapMayMove})
 	wantError(t, linuxerr.EPERM, "MRemap(grow sealed)", err)
-	_, err = mm.MRemap(ctx, sealedAddr, 0, hostarch.PageSize, MRemapOpts{Move: MRemapMayMove})
+	_, err = mm.MRemap(ctx, sealedAddr, 0, pageSize, MRemapOpts{Move: MRemapMayMove})
 	wantError(t, linuxerr.EPERM, "MRemap(copy sealed)", err)
-	_, err = mm.MRemap(ctx, base, hostarch.PageSize, hostarch.PageSize, MRemapOpts{Move: MRemapMustMove, NewAddr: sealedAddr})
+	_, err = mm.MRemap(ctx, base, pageSize, pageSize, MRemapOpts{Move: MRemapMustMove, NewAddr: sealedAddr})
 	wantError(t, linuxerr.EPERM, "MRemap(move onto sealed)", err)
 	_, err = mm.MMap(ctx, memmap.MMapOpts{
-		Length:   hostarch.PageSize,
+		Length:   pageSize,
 		Addr:     sealedAddr,
 		Fixed:    true,
 		Unmap:    true,
@@ -1037,7 +1050,7 @@ func TestSealedMapping(t *testing.T) {
 
 	// None of the above should have modified the unsealed neighbors.
 	b := []byte{'x'}
-	for _, addr := range []hostarch.Addr{base, base + 2*hostarch.PageSize} {
+	for _, addr := range []hostarch.Addr{base, base + 2*pageSizeAddr} {
 		if _, err := mm.CopyOut(ctx, addr, b, usermem.IOOpts{}); err != nil {
 			t.Errorf("CopyOut(%#x) got err %v want nil", addr, err)
 		}
@@ -1051,11 +1064,11 @@ func TestSealedMapping(t *testing.T) {
 
 	// madvise operations are refused on sealed vmas, even ones that
 	// would be no-ops.
-	wantError(t, linuxerr.EPERM, "SetDontFork(sealed, false)", mm.SetDontFork(sealedAddr, hostarch.PageSize, false))
-	wantError(t, linuxerr.EPERM, "SetVMAAnonName(sealed)", mm.SetVMAAnonName(sealedAddr, hostarch.PageSize, "x", false))
+	wantError(t, linuxerr.EPERM, "SetDontFork(sealed, false)", mm.SetDontFork(sealedAddr, pageSize, false))
+	wantError(t, linuxerr.EPERM, "SetVMAAnonName(sealed)", mm.SetVMAAnonName(sealedAddr, pageSize, "x", false))
 
 	// Operations that don't touch the sealed vma still work.
-	if err := mm.MUnmap(ctx, base, hostarch.PageSize); err != nil {
+	if err := mm.MUnmap(ctx, base, pageSize); err != nil {
 		t.Errorf("MUnmap(unsealed neighbor) got err %v want nil", err)
 	}
 
@@ -1065,5 +1078,5 @@ func TestSealedMapping(t *testing.T) {
 		t.Fatalf("Fork got err %v want nil", err)
 	}
 	defer mm2.DecUsers(ctx)
-	wantError(t, linuxerr.EPERM, "child MUnmap(sealed)", mm2.MUnmap(ctx, sealedAddr, hostarch.PageSize))
+	wantError(t, linuxerr.EPERM, "child MUnmap(sealed)", mm2.MUnmap(ctx, sealedAddr, pageSize))
 }

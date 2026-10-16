@@ -198,11 +198,11 @@ func GetMetadata(ctx context.Context, mm *mm.MemoryManager, buf *bytes.Buffer, t
 		// https://elixir.bootlin.com/linux/v4.20/source/fs/proc/base.c#L208
 		// we'll return one page total between argv and envp because of the
 		// above page restrictions.
-		if buf.Len() >= hostarch.PageSize {
+		if buf.Len() >= int(hostarch.PageSize) {
 			// Returned at least one page already, nothing else to add.
 			return nil
 		}
-		remaining := hostarch.PageSize - buf.Len()
+		remaining := int(hostarch.PageSize) - buf.Len()
 		if int(arEnvv.Length()) > remaining {
 			end, ok := arEnvv.Start.AddLength(uint64(remaining))
 			if !ok {
@@ -372,7 +372,7 @@ func (d *idMapData) Write(ctx context.Context, _ *vfs.FileDescription, src userm
 	// the system page size, and the write must be performed at the start of
 	// the file ..." - user_namespaces(7)
 	srclen := src.NumBytes()
-	if srclen >= hostarch.PageSize || offset != 0 {
+	if srclen >= int64(hostarch.PageSize) || offset != 0 {
 		return 0, linuxerr.EINVAL
 	}
 	b := make([]byte, srclen)
@@ -446,7 +446,7 @@ func (d *setgroupsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 // Write implements vfs.WritableDynamicBytesSource.Write.
 func (d *setgroupsData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	srclen := src.NumBytes()
-	if srclen >= hostarch.PageSize || offset != 0 {
+	if srclen >= int64(hostarch.PageSize) || offset != 0 {
 		return 0, linuxerr.EINVAL
 	}
 	b := make([]byte, srclen)
@@ -886,7 +886,7 @@ func (s *taskStatData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		vss = mm.VirtualMemorySize()
 		rss = mm.ResidentSetSize()
 	}
-	fmt.Fprintf(buf, "%d %d ", vss, rss/hostarch.PageSize)
+	fmt.Fprintf(buf, "%d %d ", vss, rss>>hostarch.PageShift)
 
 	// rsslim.
 	fmt.Fprintf(buf, "%d ", s.task.ThreadGroup().Limits().Get(limits.Rss).Cur)
@@ -927,7 +927,7 @@ func (s *statmData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		vss = mm.VirtualMemorySize()
 		rss = mm.ResidentSetSize()
 	}
-	fmt.Fprintf(buf, "%d %d 0 0 0 0 0\n", vss/hostarch.PageSize, rss/hostarch.PageSize)
+	fmt.Fprintf(buf, "%d %d 0 0 0 0 0\n", vss>>hostarch.PageShift, rss>>hostarch.PageShift)
 	return nil
 }
 
@@ -1169,7 +1169,7 @@ func (o *oomScoreAdj) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	}
 
 	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(hostarch.PageSize - 1)
+	src = src.TakeFirst(int(hostarch.PageSize) - 1)
 
 	str, err := usermem.CopyStringIn(ctx, src.IO, src.Addrs.Head().Start, int(src.Addrs.Head().Length()), src.Opts)
 	if err != nil && err != linuxerr.ENAMETOOLONG {
@@ -1792,7 +1792,7 @@ func (c *coredumpFilterData) Write(ctx context.Context, _ *vfs.FileDescription, 
 	}
 
 	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(hostarch.PageSize - 1)
+	src = src.TakeFirst(int(hostarch.PageSize) - 1)
 
 	str, err := usermem.CopyStringIn(ctx, src.IO, src.Addrs.Head().Start, int(src.Addrs.Head().Length()), src.Opts)
 	if err != nil && err != linuxerr.ENAMETOOLONG {

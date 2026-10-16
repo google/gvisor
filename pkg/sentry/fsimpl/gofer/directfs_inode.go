@@ -162,7 +162,7 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 					mode:      atomicbitops.FromUint32(uint32(stat.Mode)),
 					uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
 					gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
-					blockSize: atomicbitops.FromUint32(hostarch.PageSize),
+					blockSize: atomicbitops.FromUint32(uint32(hostarch.PageSize)),
 					readFD:    atomicbitops.FromInt32(-1),
 					writeFD:   atomicbitops.FromInt32(-1),
 					mmapFD:    atomicbitops.FromInt32(-1),

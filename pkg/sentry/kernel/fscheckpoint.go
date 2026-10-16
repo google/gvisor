@@ -185,7 +185,7 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, opts *FSSaveOpts, mfsToSave m
 	manifest := &fspb.Manifest{
 		Version:      1,
 		RunscVersion: opts.RunscVersion,
-		PageSize:     hostarch.PageSize,
+		PageSize:     uint64(hostarch.PageSize),
 		Endian:       hostarch.EndianString(),
 	}
 	type tmpfsAndPrivateMemoryFile struct {

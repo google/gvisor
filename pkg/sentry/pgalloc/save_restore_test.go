@@ -59,7 +59,7 @@ func newSaveTestMemoryFile(t *testing.T, diskBacked bool) *MemoryFile {
 
 func allocateSaveTestPages(t *testing.T, f *MemoryFile) memmap.FileRange {
 	t.Helper()
-	fr, err := f.Allocate(16*hostarch.PageSize, AllocOpts{Mode: AllocateUncommitted})
+	fr, err := f.Allocate(16*uint64(hostarch.PageSize), AllocOpts{Mode: AllocateUncommitted})
 	if err != nil {
 		t.Fatalf("Allocate: %v", err)
 	}
@@ -71,7 +71,7 @@ func pwritePage(t *testing.T, f *MemoryFile, fr memmap.FileRange, page int, b by
 	t.Helper()
 	buf := make([]byte, hostarch.PageSize)
 	buf[17] = b
-	if _, err := unix.Pwrite(f.FD(), buf, int64(fr.Start)+int64(page*hostarch.PageSize)); err != nil {
+	if _, err := unix.Pwrite(f.FD(), buf, int64(fr.Start)+int64(page*int(hostarch.PageSize))); err != nil {
 		t.Fatalf("Pwrite page %d: %v", page, err)
 	}
 }
@@ -83,7 +83,7 @@ func TestHostFileDataSeeker(t *testing.T) {
 	pwritePage(t, f, fr, 3, 1)
 	pwritePage(t, f, fr, 9, 1)
 	pwritePage(t, f, fr, 12, 0)
-	page := func(n uint64) uint64 { return fr.Start + n*hostarch.PageSize }
+	page := func(n uint64) uint64 { return fr.Start + n*uint64(hostarch.PageSize) }
 	d := f.newHostFileDataSeeker()
 	for _, call := range []struct {
 		off  uint64
@@ -110,9 +110,9 @@ func TestSaveToPreservesContents(t *testing.T) {
 		exclude       bool
 		wantCommitted uint64
 	}{
-		{name: "memfd", wantCommitted: 2 * hostarch.PageSize},
-		{name: "memfd excluding committed zero pages", exclude: true, wantCommitted: hostarch.PageSize},
-		{name: "disk-backed", diskBacked: true, wantCommitted: 2 * hostarch.PageSize},
+		{name: "memfd", wantCommitted: 2 * uint64(hostarch.PageSize)},
+		{name: "memfd excluding committed zero pages", exclude: true, wantCommitted: uint64(hostarch.PageSize)},
+		{name: "disk-backed", diskBacked: true, wantCommitted: 2 * uint64(hostarch.PageSize)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSaveTestMemoryFile(t, tc.diskBacked)
