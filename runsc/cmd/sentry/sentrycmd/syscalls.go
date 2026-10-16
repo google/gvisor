@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+package sentrycmd
 
 import (
 	"context"
@@ -27,16 +27,14 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/runsc/cmd/sentry/forwardcmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Syscalls implements subcommands.Command for the "syscalls" command.
 type Syscalls struct {
-	format   string
-	os       string
-	arch     string
-	filename string
+	forwardcmd.Syscalls
 }
 
 // CompatibilityInfo is a map of system and architecture to compatibility doc.
@@ -62,12 +60,6 @@ type SyscallDoc struct {
 type outputFunc func(io.Writer, CompatibilityInfo) error
 
 var (
-	// The string name to use for printing compatibility for all OSes.
-	osAll = "all"
-
-	// The string name to use for printing compatibility for all architectures.
-	archAll = "all"
-
 	// A map of OS name to map of architecture name to syscall table.
 	syscallTableMap = make(map[string]map[string]*kernel.SyscallTable)
 
@@ -79,34 +71,11 @@ var (
 	}
 )
 
-// Name implements subcommands.Command.Name.
-func (*Syscalls) Name() string {
-	return "syscalls"
-}
-
-// Synopsis implements subcommands.Command.Synopsis.
-func (*Syscalls) Synopsis() string {
-	return "Print compatibility information for syscalls."
-}
-
-// Usage implements subcommands.Command.Usage.
-func (*Syscalls) Usage() string {
-	return "syscalls [options] - Print compatibility information for syscalls.\n"
-}
-
-// SetFlags implements subcommands.Command.SetFlags.
-func (s *Syscalls) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&s.format, "format", "table", "Output format (table, csv, json).")
-	f.StringVar(&s.os, "os", osAll, "The OS (e.g. linux)")
-	f.StringVar(&s.arch, "arch", archAll, "The CPU architecture (e.g. amd64).")
-	f.StringVar(&s.filename, "filename", "", "Output filename (otherwise stdout).")
-}
-
 // Execute implements subcommands.Command.Execute.
 func (s *Syscalls) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
-	out, ok := outputMap[s.format]
+	out, ok := outputMap[s.Format]
 	if !ok {
-		util.Fatalf("Unsupported output format %q", s.format)
+		util.Fatalf("Unsupported output format %q", s.Format)
 	}
 
 	// Build map of all supported architectures.
@@ -121,16 +90,16 @@ func (s *Syscalls) Execute(context.Context, *flag.FlagSet, ...any) subcommands.E
 	}
 
 	// Build a map of the architectures we want to output.
-	info, err := getCompatibilityInfo(s.os, s.arch)
+	info, err := getCompatibilityInfo(s.OS, s.Arch)
 	if err != nil {
 		util.Fatalf("%v", err)
 	}
 
 	w := os.Stdout // Default.
-	if s.filename != "" {
-		w, err = os.OpenFile(s.filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if s.Filename != "" {
+		w, err = os.OpenFile(s.Filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 		if err != nil {
-			util.Fatalf("Error opening %q: %v", s.filename, err)
+			util.Fatalf("Error opening %q: %v", s.Filename, err)
 		}
 	}
 	if err := out(w, info); err != nil {
@@ -145,7 +114,7 @@ func (s *Syscalls) Execute(context.Context, *flag.FlagSet, ...any) subcommands.E
 // specifies that all supported OSes or architectures should be included.
 func getCompatibilityInfo(osName string, archName string) (CompatibilityInfo, error) {
 	info := CompatibilityInfo(make(map[string]map[string]ArchInfo))
-	if osName == osAll {
+	if osName == forwardcmd.OSAll {
 		// Special processing for the 'all' OS name.
 		for osName := range syscallTableMap {
 			info[osName] = make(map[string]ArchInfo)
@@ -169,7 +138,7 @@ func getCompatibilityInfo(osName string, archName string) (CompatibilityInfo, er
 // architecture name. Supports the special architecture name 'all' to specify
 // that all supported architectures for the OS should be included.
 func addToCompatibilityInfo(info CompatibilityInfo, osName string, archName string) error {
-	if archName == archAll {
+	if archName == forwardcmd.ArchAll {
 		// Special processing for the 'all' architecture name.
 		for archName := range syscallTableMap[osName] {
 			archInfo, err := getArchInfo(osName, archName)

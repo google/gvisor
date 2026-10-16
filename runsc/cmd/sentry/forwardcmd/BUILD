@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "forwardcmd.go",
         "symbolize.go",
+        "syscalls.go",
     ],
     visibility = ["//runsc:__subpackages__"],
     deps = [

@@ -16,6 +16,7 @@
 package sentrycli
 
 import (
+	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/runsc/cli"
 	"gvisor.dev/gvisor/runsc/cmd/sentry/forwardcmd"
 	"gvisor.dev/gvisor/runsc/cmd/sentry/sentrycmd"
@@ -28,5 +29,7 @@ func Main(sentry *gvisorbinaries.Binary) {
 	cli.Run(sentry, map[util.SubCommand]string{
 		new(sentrycmd.Boot):       "internal use only",
 		new(forwardcmd.Symbolize): "internal use only",
-	}, nil)
+	}, []subcommands.Command{
+		new(sentrycmd.Syscalls),
+	})
 }
