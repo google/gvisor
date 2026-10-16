@@ -284,8 +284,12 @@ TEST_P(GetSockOptRequiresCapNetAdminTest, Validate) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(kind.domain, kind.type, kind.protocol));
+  // Linux fails with ENOENT if the kernel lacks the queried table or target.
+  // Skip natively in that case.
   absl::StatusOr<SockOptArgs> args_or_status =
       params.generate_sockopt_args(sock.get());
+  SKIP_IF(absl::IsNotFound(args_or_status.status()) &&
+          GvisorPlatform() == Platform::kNative);
   ASSERT_EQ(args_or_status.status(), absl::OkStatus());
   SockOptArgs& getsockopt_args = *args_or_status;
 
@@ -297,10 +301,11 @@ TEST_P(GetSockOptRequiresCapNetAdminTest, Validate) {
               getsockopt_args.optlen);
 
   // Validate that the socket creator can successfully getsockopt.
-  ASSERT_THAT(
-      getsockopt(getsockopt_args.sock, SOL_IPV6, getsockopt_args.optname,
-                 getsockopt_args.optval.get(), &getsockopt_args.optlen),
-      SyscallSucceeds());
+  int ret = getsockopt(getsockopt_args.sock, SOL_IPV6, getsockopt_args.optname,
+                       getsockopt_args.optval.get(), &getsockopt_args.optlen);
+  SKIP_IF(ret == -1 && errno == ENOENT &&
+          GvisorPlatform() == Platform::kNative);
+  ASSERT_THAT(ret, SyscallSucceeds());
 
   // Validate that another process from a different user namespace cannot
   // getsockopt and fails with EPERM.
@@ -348,7 +353,7 @@ INSTANTIATE_TEST_SUITE_P(
                          kNatTablename);
                 if (getsockopt(sock, SOL_IPV6, IP6T_SO_GET_INFO, &get_info,
                                &get_info_optlen) != 0) {
-                  return absl::InternalError(strerror(errno));
+                  return absl::ErrnoToStatus(errno, "IP6T_SO_GET_INFO");
                 }
                 socklen_t get_entries_optlen =
                     sizeof(ipt_get_entries) + get_info.size;
