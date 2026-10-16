@@ -57,7 +57,7 @@ func (tcpMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (tcpMarshaler) unmarshal(_ IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (tcpMarshaler) unmarshal(_ IDMapper, _ *stack.Stack, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTTCP {
 		return nil, fmt.Errorf("buf has insufficient size for TCP match: %d", len(buf))
 	}

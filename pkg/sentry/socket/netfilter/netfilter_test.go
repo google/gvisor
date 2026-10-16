@@ -523,9 +523,9 @@ func TestModifyEntriesTableOrder(t *testing.T) {
 			var targets map[int][]byte
 			var err *syserr.Error
 			if test.ipv6 {
-				_, targets, err = modifyEntries6(nil /* mapper */, marshalEntries6(test.rules), &replace, &table)
+				_, targets, err = modifyEntries6(nil /* mapper */, nil /* stk */, marshalEntries6(test.rules), &replace, &table)
 			} else {
-				_, targets, err = modifyEntries4(nil /* mapper */, marshalEntries4(test.rules), &replace, &table)
+				_, targets, err = modifyEntries4(nil /* mapper */, nil /* stk */, marshalEntries4(test.rules), &replace, &table)
 			}
 			if err == nil {
 				err = parseTargets(stk, table.Rules, targets, test.ipv6, test.tableName)
@@ -544,7 +544,7 @@ func TestModifyEntriesShortTarget(t *testing.T) {
 	}
 	replace := linux.IPTReplace{NumEntries: 1}
 	var table stack.Table
-	if _, _, err := modifyEntries4(nil /* mapper */, append(marshal.Marshal(&entry), make([]byte, 8)...), &replace, &table); err != syserr.ErrInvalidArgument {
+	if _, _, err := modifyEntries4(nil /* mapper */, nil /* stk */, append(marshal.Marshal(&entry), make([]byte, 8)...), &replace, &table); err != syserr.ErrInvalidArgument {
 		t.Fatalf("modifyEntries4 expected %v, got %v", syserr.ErrInvalidArgument, err)
 	}
 }
