@@ -180,12 +180,12 @@ func (fd *vfioFD) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.
 	if !ok {
 		return 0, linuxerr.EFAULT
 	}
-	if !ar.IsPageAligned() || (dmaMap.Size/hostarch.PageSize) == 0 {
+	if !ar.IsPageAligned() || (dmaMap.Size>>hostarch.PageShift) == 0 {
 		return 0, linuxerr.EINVAL
 	}
 	// See comments at pkg/sentry/devices/accel/gasket.go, line 57-60.
 	devAddr := dmaMap.IOVa
-	devAddr &^= (hostarch.PageSize - 1)
+	devAddr = hostarch.PageRoundDown(devAddr)
 
 	devar := DevAddrRange{
 		devAddr,

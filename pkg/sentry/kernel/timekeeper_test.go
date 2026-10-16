@@ -73,7 +73,7 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 func stateTestClocklessTimekeeper(tb testing.TB) (*Timekeeper, *VDSOParamPage) {
 	ctx := contexttest.Context(tb)
 	mf := pgalloc.MemoryFileFromContext(ctx)
-	fr, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
+	fr, err := mf.Allocate(uint64(hostarch.PageSize), pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		tb.Fatalf("failed to allocate memory: %v", err)
 	}

@@ -209,9 +209,9 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 		}
 		if !e.Mapped {
 			// Every page of a hole is backed by the same zero page.
-			for end := min(e.Off+e.Length, required.End); off < end; off += hostarch.PageSize {
+			for end := min(e.Off+e.Length, required.End); off < end; off += uint64(hostarch.PageSize) {
 				ts = append(ts, memmap.Translation{
-					Source: memmap.MappableRange{Start: off, End: off + hostarch.PageSize},
+					Source: memmap.MappableRange{Start: off, End: off + uint64(hostarch.PageSize)},
 					File:   i.fs.memoryFile,
 					Offset: i.fs.zeroPage.Start,
 					Perms:  hostarch.ReadExecute,

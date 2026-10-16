@@ -165,7 +165,7 @@ func (fd *tpuFD) setContainer(ctx context.Context, t *kernel.Task, arg hostarch.
 }
 
 func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
-	pciAddress, err := t.CopyInString(arg, hostarch.PageSize)
+	pciAddress, err := t.CopyInString(arg, int(hostarch.PageSize))
 	if err != nil {
 		return 0, err
 	}
