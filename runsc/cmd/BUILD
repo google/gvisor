@@ -71,6 +71,7 @@ go_library(
         "//pkg/urpc",
         "//runsc/boot/sentryapi",
         "//runsc/cmd/metricserver/metricservercmd",
+        "//runsc/cmd/nvproxy",
         "//runsc/cmd/sandboxsetup",
         "//runsc/cmd/sentry/forwardcmd",
         "//runsc/cmd/util",

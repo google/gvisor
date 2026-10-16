@@ -16,7 +16,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
-        "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/config",
         "//runsc/flag",
         "@com_github_google_subcommands//:go_default_library",

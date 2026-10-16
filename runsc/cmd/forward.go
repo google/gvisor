@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/sentry/forwardcmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -33,6 +34,16 @@ func execSentry() subcommands.ExitStatus {
 	err := sentry.Exec(gvisorbinaries.Options{Argv: os.Args, Envv: os.Environ()})
 	// Unreachable unless `sentry.Exec` fails.
 	return util.Errorf("Failed to run %q in sidecar %q: %v", strings.Join(flag.CommandLine.Args(), " "), sentry.Name, err)
+}
+
+// Nvproxy implements subcommands.Command for the "nvproxy" command.
+type Nvproxy struct {
+	nvproxy.Nvproxy
+}
+
+// Execute implements subcommands.Command.Execute.
+func (*Nvproxy) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
+	return execSentry()
 }
 
 // Symbolize implements subcommands.Command for the "symbolize" command.

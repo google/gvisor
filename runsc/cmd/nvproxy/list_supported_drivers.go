@@ -18,14 +18,17 @@ package nvproxy
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // listSupportedDrivers implements subcommands.Command for the "nvproxy list-supported-drivers" command.
-type listSupportedDrivers struct{}
+type listSupportedDrivers struct {
+	supportedDrivers func() []nvconf.DriverVersion
+}
 
 // Name implements subcommands.Command.
 func (*listSupportedDrivers) Name() string {
@@ -46,13 +49,17 @@ func (*listSupportedDrivers) Usage() string {
 func (*listSupportedDrivers) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
-func (*listSupportedDrivers) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+func (l *listSupportedDrivers) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
 
-	for _, d := range nvproxy.SupportedDrivers() {
+	if l.supportedDrivers == nil {
+		fmt.Fprintln(os.Stderr, "nvproxy is not linked into this binary")
+		return subcommands.ExitFailure
+	}
+	for _, d := range l.supportedDrivers() {
 		fmt.Println(d)
 	}
 

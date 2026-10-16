@@ -415,7 +415,7 @@ Alternatively you can view the
 or download it and run:
 
 ```
-$ make run TARGETS=runsc:runsc ARGS="nvproxy list-supported-drivers"
+$ bazel build //:release && bazel-bin/release/runsc nvproxy list-supported-drivers
 ```
 
 ### So, if you don't protect against all the things, why even?
