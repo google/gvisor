@@ -351,3 +351,114 @@ func TestFilterCapabilities(t *testing.T) {
 		})
 	}
 }
+
+// TestRmControlOpaqueDispatchClassification validates the bit-mask
+// classification used by rmControl() to identify GSP-legacy and
+// NV2081_BINAPI control commands. These are the two paths that forward
+// up to 1 MB of opaque bytes to the host NVIDIA driver and now emit an
+// audit warning before delegating to rmControlSimple
+// (https://github.com/google/gvisor/pull/12921).
+//
+// The test does not invoke rmControl() directly because that requires
+// a full kernel.Task and a real /dev/nvidiactl ioctl path; instead it
+// exercises the predicate math that decides which dispatch branch a
+// given ioctl Cmd takes. This protects the boundary between the typed
+// command dispatch (controlCmd map) and the opaque-passthrough path
+// against accidental regressions.
+func TestRmControlOpaqueDispatchClassification(t *testing.T) {
+	// Constants act as a self-documenting baseline: if upstream
+	// NVIDIA renumbers either, this test fails loudly.
+	if got, want := uint32(nvgpu.RM_GSS_LEGACY_MASK), uint32(0x00008000); got != want {
+		t.Errorf("nvgpu.RM_GSS_LEGACY_MASK = %#x, want %#x", got, want)
+	}
+	if got, want := uint32(nvgpu.NV2081_BINAPI), uint32(0x00002081); got != want {
+		t.Errorf("nvgpu.NV2081_BINAPI = %#x, want %#x", got, want)
+	}
+
+	cases := []struct {
+		name       string
+		cmd        uint32
+		wantGSP    bool
+		wantBINAPI bool
+	}{
+		{
+			name:    "RM_GSS_LEGACY_MASK bit set with high cmd bits",
+			cmd:     0x80000000 | uint32(nvgpu.RM_GSS_LEGACY_MASK),
+			wantGSP: true,
+		},
+		{
+			name:    "lone GSS_LEGACY bit",
+			cmd:     uint32(nvgpu.RM_GSS_LEGACY_MASK),
+			wantGSP: true,
+		},
+		{
+			name:       "NV2081_BINAPI class, subcommand 0x0001",
+			cmd:        (uint32(nvgpu.NV2081_BINAPI) << 16) | 0x0001,
+			wantBINAPI: true,
+		},
+		{
+			name:       "NV2081_BINAPI class, subcommand 0x00ff",
+			cmd:        (uint32(nvgpu.NV2081_BINAPI) << 16) | 0x00ff,
+			wantBINAPI: true,
+		},
+		{
+			// Both predicates match. rmControl() tests the legacy mask
+			// first, so this is a GSP-legacy control, not a binapi one.
+			name:       "NV2081_BINAPI class with legacy bit set",
+			cmd:        (uint32(nvgpu.NV2081_BINAPI) << 16) | 0xffff,
+			wantGSP:    true,
+			wantBINAPI: true,
+		},
+		{
+			name: "NV0080 typed-handler control NV0080_CTRL_GR -- must NOT classify as opaque",
+			cmd:  0x00800180,
+		},
+		{
+			name: "NV2080 typed-handler subdevice control -- must NOT classify as opaque",
+			cmd:  0x20800301,
+		},
+		{
+			name: "zero cmd is not opaque",
+			cmd:  0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotGSP := tc.cmd&uint32(nvgpu.RM_GSS_LEGACY_MASK) != 0
+			gotBINAPI := (tc.cmd>>16)&0xffff == uint32(nvgpu.NV2081_BINAPI)
+
+			if gotGSP != tc.wantGSP {
+				t.Errorf("cmd=%#x: GSP_LEGACY classification = %v, want %v",
+					tc.cmd, gotGSP, tc.wantGSP)
+			}
+			if gotBINAPI != tc.wantBINAPI {
+				t.Errorf("cmd=%#x: NV2081_BINAPI classification = %v, want %v",
+					tc.cmd, gotBINAPI, tc.wantBINAPI)
+			}
+
+			// The predicates are not mutually exclusive: the low half of a
+			// class NV2081_BINAPI command can have RM_GSS_LEGACY_MASK set.
+			// rmControl() tests the legacy mask first and returns, so such a
+			// command takes the GSP path. Assert the branch rmControl() would
+			// actually take instead of treating the overlap as an error.
+			wantPath := "typed"
+			switch {
+			case tc.wantGSP:
+				wantPath = "gsp_legacy"
+			case tc.wantBINAPI:
+				wantPath = "nv2081_binapi"
+			}
+			gotPath := "typed"
+			switch {
+			case gotGSP:
+				gotPath = "gsp_legacy"
+			case gotBINAPI:
+				gotPath = "nv2081_binapi"
+			}
+			if gotPath != wantPath {
+				t.Errorf("cmd=%#x: dispatch path = %s, want %s", tc.cmd, gotPath, wantPath)
+			}
+		})
+	}
+}
