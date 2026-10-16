@@ -49,6 +49,11 @@ func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []st
 	defer server.CleanUp(ctx)
 	defer metricsviz.FromContainerLogs(ctx, b, server)
 
+	// Set CPU affinity if not already explicitly configured.
+	if serverOpts.CpusetCpus == "" {
+		serverOpts.CpusetCpus = harness.ServerCPUSet()
+	}
+
 	// Start the server.
 	if err := server.Spawn(ctx, serverOpts, serverCmd...); err != nil {
 		b.Fatalf("failed to start server: %v", err)
@@ -60,8 +65,9 @@ func runStaticServer(b *testing.B, serverOpts dockerutil.RunOpts, serverCmd []st
 	// Run the client.
 	b.ResetTimer()
 	out, err := client.Run(ctx, dockerutil.RunOpts{
-		Image: "benchmarks/hey",
-		Links: []string{server.MakeLink("server")},
+		Image:      "benchmarks/hey",
+		Links:      []string{server.MakeLink("server")},
+		CpusetCpus: harness.ClientCPUSet(),
 	}, hey.MakeCmd("server", port)...)
 	if err != nil {
 		b.Fatalf("run failed with: %v", err)

@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 )
@@ -54,4 +55,24 @@ func SetFixedBenchmarks() {
 // GetMachine returns this run's implementation of machine.
 func GetMachine() (Machine, error) {
 	return &localMachine{}, nil
+}
+
+// ClientCPUSet returns the CPU affinity string for benchmark client containers.
+func ClientCPUSet() string {
+	if n := runtime.NumCPU(); n >= 8 {
+		return fmt.Sprintf("0-%d", n/2-1)
+	} else if n >= 4 {
+		return "0-1"
+	}
+	return ""
+}
+
+// ServerCPUSet returns the CPU affinity string for benchmark server containers.
+func ServerCPUSet() string {
+	if n := runtime.NumCPU(); n >= 8 {
+		return fmt.Sprintf("%d-%d", n/2, n-1)
+	} else if n >= 4 {
+		return "2-3"
+	}
+	return ""
 }

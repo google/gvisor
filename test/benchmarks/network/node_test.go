@@ -95,9 +95,10 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	// Start-up the Node server.
 	nodeApp := serverMachine.GetContainer(ctx, b)
 	if err := nodeApp.Spawn(ctx, dockerutil.RunOpts{
-		Image:   "benchmarks/node",
-		WorkDir: "/usr/src/app",
-		Links:   []string{redis.MakeLink("redis")},
+		Image:      "benchmarks/node",
+		WorkDir:    "/usr/src/app",
+		Links:      []string{redis.MakeLink("redis")},
+		CpusetCpus: harness.ServerCPUSet(),
 	}, "node", "index.js", redisIP.String()); err != nil {
 		b.Fatalf("failed to spawn node instance: %v", err)
 	}
@@ -112,8 +113,9 @@ func runNode(b *testing.B, hey *tools.Hey) {
 	b.ResetTimer()
 	client := clientMachine.GetNativeContainer(ctx, b)
 	out, err := client.Run(ctx, dockerutil.RunOpts{
-		Image: "benchmarks/hey",
-		Links: []string{nodeApp.MakeLink("node")},
+		Image:      "benchmarks/hey",
+		Links:      []string{nodeApp.MakeLink("node")},
+		CpusetCpus: harness.ClientCPUSet(),
 	}, heyCmd...)
 	if err != nil {
 		b.Fatalf("hey container failed: %v logs: %s", err, out)
