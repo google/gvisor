@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -30,6 +31,8 @@ import (
 	"time"
 
 	compute "google.golang.org/api/compute/v1"
+
+	"gvisor.dev/gvisor/pkg/cleanup"
 )
 
 const (
@@ -48,13 +51,19 @@ const (
 	// httpShutdownTimeout and stackShutdownTimeout split Cloud Run's 10
 	// second shutdown period between draining requests and deregistering the
 	// stack.
-	httpShutdownTimeout  = 1 * time.Second
-	stackShutdownTimeout = 8 * time.Second
+	httpShutdownTimeout  = 3 * time.Second
+	stackShutdownTimeout = 6 * time.Second
+
+	failedJobCancelTimeout = 5 * time.Second
 )
 
 type server struct {
 	// stack is safe for concurrent use.
 	stack *BuildkiteStack
+	// tc is safe for concurrent use.
+	tc *TimeoutController
+	// rc is safe for concurrent use.
+	rc *RateLimitController
 
 	// pool is safe for concurrent use.
 	pool *JobPool
@@ -105,11 +114,25 @@ func newServer(ctx context.Context) *server {
 		log.Fatalf("Failed to create Buildkite stack: %v", err)
 	}
 
+	// Create the instance timeout controller
+	tc, err := NewTimeoutController(ctx, computeSvc, cfg.project)
+	if err != nil {
+		log.Fatalf("Failed to create instance timeout controller: %v", err)
+	}
+
+	// Create the rate limiting controller
+	rc, err := NewRateLimitController(ctx, cfg.project, cfg.rateLimitCollection, rateLimits)
+	if err != nil {
+		log.Fatalf("Failed to create rate limiting controller: %v", err)
+	}
+
 	return &server{
 		cfg:        cfg,
 		audience:   audience,
 		computeSvc: computeSvc,
 		stack:      stack,
+		tc:         tc,
+		rc:         rc,
 		pool:       NewJobPool(reservedJobsPerBuild, cfg.queues, cfg.trustedAuthors),
 	}
 }
@@ -137,40 +160,89 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 	// Get info about the agent
 	agent, err := id.getAgent(r.Context(), s.computeSvc)
 	if err != nil {
-		log.Printf("Failed to get agent info for instance %v: %v", id, err)
+		log.Printf("Failed to get agent info for %v: %v", id, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	// Try to pick a job for the agent
-	jobUUID, jat, agent, err := s.pool.assignJob(r.Context(), s.computeSvc, agent)
-	if err != nil {
-		log.Printf("Failed to get job for instance %v: %v", id, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	if jobUUID == nil || jat == nil {
+	jobAssignment, pinAgent := s.pool.assignJob(s.computeSvc, agent)
+	if jobAssignment == nil {
 		// No job currently available for this agent
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	// TODO: this is also the place to do job rate-limit accounting
+	// Common error handling logic for all the below steps
+	bkExitStatus := exitStatusInfraError
+	bkExitDetail := "Error provisioning infrastructure"
+	bkFailJobCleanup := cleanup.Make(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), failedJobCancelTimeout)
+		defer cancel()
+		err := s.stack.FailJob(ctx, jobAssignment.jobUUID, bkExitStatus, bkExitDetail)
+		if err != nil {
+			log.Printf("Warning: failed to fail job %v in Buildkite: %v", jobAssignment.jobUUID, err)
+		}
+	})
+	defer bkFailJobCleanup.Clean()
 
-	// Assign the job to the agent
-	log.Printf("Assigning job %v to %v", *jobUUID, agent)
-	w.Header().Set("Content-Type", "application/json")
-	response := AgentRequestJobResponse{
-		JobUUID:             string(*jobUUID),
-		JobAcquisitionToken: jat.token,
+	if !s.pool.trusted(jobAssignment.metadata) {
+		// Account for a job for this author.
+		author := jobAssignment.metadata.author
+		success, interval, quota, err := s.rc.AccountForJob(r.Context(), jobAssignment.metadata.author)
+		if err != nil {
+			log.Printf("Failed to account for job for author %v: %v", author, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		if !success {
+			// Author is rate-limited!
+			w.WriteHeader(http.StatusNoContent)
+			bkExitStatus = exitStatusRateLimited
+			bkExitDetail = fmt.Sprintf("Author with GitHub ID %v has exceeded %v day quota of %v jobs", author, interval, quota)
+			return
+		}
 	}
-	err = json.NewEncoder(w).Encode(response)
+
+	// Ideally, if any of the below steps fail, we would undo the per-author job
+	// accounting we just did, since the job didn't run successfully.
+	//
+	// Unfortunately, we can't because once the timeout is reset, the author gets
+	// access to another jobTimeout worth of compute time regardless of the failure.
+	//
+	// So we account for a job even when the below steps fail. Oh well.
+
+	// Before assigning the job: register a job timeout to kill the agent if it's
+	// not done.
+	err = s.tc.RegisterTimeout(r.Context(), id)
 	if err != nil {
-		log.Printf("Failed to assign job %v to %v: %v", *jobUUID, agent, err)
+		log.Printf("Failed to register timeout for %v: %v", id, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	// If all the above succeeds, pin the agent
+	agent, err = pinAgent(r.Context())
+	if err != nil {
+		log.Printf("Failed to pin %v: %v", id, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Assign the job to the agent
+	log.Printf("Assigning job %v to %v", jobAssignment.jobUUID, agent)
+	w.Header().Set("Content-Type", "application/json")
+	response := AgentRequestJobResponse{
+		JobUUID:             string(jobAssignment.jobUUID),
+		JobAcquisitionToken: jobAssignment.jat.token,
+	}
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Printf("Failed to assign job %v to %v: %v", jobAssignment.jobUUID, agent, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	bkFailJobCleanup.Release()
 }
 
 func (s *server) runClearCacheTicker() {

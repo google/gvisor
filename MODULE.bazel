@@ -296,6 +296,7 @@ use_repo(
     "com_google_cloud_go_bigquery",
     "com_google_cloud_go_compute_metadata",
     "com_google_cloud_go_container",
+    "com_google_cloud_go_firestore",
     "com_google_cloud_go_iam",
     "com_google_cloud_go_storage",
     "in_gopkg_evanphx_json_patch_v4",
