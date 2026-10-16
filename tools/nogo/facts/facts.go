@@ -16,6 +16,7 @@
 package facts
 
 import (
+	"archive/zip"
 	"encoding/gob"
 	"fmt"
 	"go/types"
@@ -23,7 +24,6 @@ import (
 	"reflect"
 	"sort"
 
-	"archive/zip"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/objectpath"
 	"gvisor.dev/gvisor/tools/checkconst"
