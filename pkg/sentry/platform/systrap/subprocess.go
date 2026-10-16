@@ -247,6 +247,15 @@ func handlePtraceSyscallRequestError(req any, format string, values ...any) {
 func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	s.syscallThreadMu.Lock()
 	defer s.syscallThreadMu.Unlock()
+	if s.dead.Load() {
+		switch req := req.(type) {
+		case requestThread:
+			req.thread <- nil
+		case requestStub:
+			req.done <- nil
+		}
+		return
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := s.syscallThread.attach(); err != nil {
@@ -1141,6 +1150,12 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	if p == nil {
 		return fmt.Errorf("createSysmsgThread: failed to get clone")
 	}
+	success := false
+	defer func() {
+		if !success {
+			s.sysmsgStackPool.Put(p.sysmsgStackID)
+		}
+	}()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1150,14 +1165,14 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 
 	// Skip SIGSTOP.
 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(p.tid), 0); errno != 0 {
-		panic(fmt.Sprintf("ptrace cont failed: %v", errno))
+		return fmt.Errorf("ptrace cont failed: %w", errno)
 	}
 	sig, err := p.wait(stopped)
 	if err != nil {
-		panic(fmt.Sprintf("error waiting for new clone: %v", err))
+		return fmt.Errorf("error waiting for new clone: %w", err)
 	}
 	if sig != unix.SIGSTOP {
-		panic(fmt.Sprintf("error waiting for new clone: expected SIGSTOP, got %v", sig))
+		return fmt.Errorf("error waiting for new clone: expected SIGSTOP, got %v", sig)
 	}
 
 	// Allocate a new stack for the BPF process.
@@ -1167,9 +1182,13 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	}
 	fr, err := s.memoryFile.Allocate(uint64(sysmsg.PerThreadSharedStackSize), opts)
 	if err != nil {
-		// TODO(b/144063246): Need to fail the clone system call.
-		panic(fmt.Sprintf("failed to allocate a new stack: %v", err))
+		return fmt.Errorf("failed to allocate a new stack: %w", err)
 	}
+	defer func() {
+		if !success {
+			s.memoryFile.DecRef(fr)
+		}
+	}()
 	sysThread := &sysmsgThread{
 		thread:     p,
 		subproc:    s,
@@ -1188,8 +1207,13 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 		unix.MAP_SHARED|unix.MAP_FILE,
 		uintptr(s.memoryFile.FD()), uintptr(fr.Start))
 	if errno != 0 {
-		panic(fmt.Sprintf("mmap failed: %v", errno))
+		return fmt.Errorf("mmap failed: %w", errno)
 	}
+	defer func() {
+		if !success {
+			hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, sentryStackAddr, sysmsg.PerThreadSharedStackSize, 0)
+		}
+	}()
 
 	// Before installing the stub syscall filters, we need to call a few
 	// system calls (e.g. sigaltstack, sigaction) which have in-memory
@@ -1199,24 +1223,24 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	sysmsgStackAddr := sysThread.sysmsgPerThreadMemAddr() + sysmsg.PerThreadSharedStackOffset
 	err = sysThread.mapStack(sysmsgStackAddr, true)
 	if err != nil {
-		panic(fmt.Sprintf("mmap failed: %v", err))
+		return fmt.Errorf("mmap failed: %w", err)
 	}
 
-	sysThread.init(sentryStackAddr, sysmsgStackAddr)
+	if err := sysThread.init(sentryStackAddr, sysmsgStackAddr); err != nil {
+		return err
+	}
 
 	// Map the stack into the BPF process.
 	err = sysThread.mapStack(sysmsgStackAddr, false)
 	if err != nil {
-		s.memoryFile.DecRef(fr)
-		panic(fmt.Sprintf("mmap failed: %v", err))
+		return fmt.Errorf("mmap failed: %w", err)
 	}
 
 	// Map the stack into the BPF process.
 	privateStackAddr := sysThread.sysmsgPerThreadMemAddr() + sysmsg.PerThreadPrivateStackOffset
 	err = sysThread.mapPrivateStack(privateStackAddr, sysmsg.PerThreadPrivateStackSize)
 	if err != nil {
-		s.memoryFile.DecRef(fr)
-		panic(fmt.Sprintf("mmap failed: %v", err))
+		return fmt.Errorf("mmap failed: %w", err)
 	}
 
 	sysThread.setMsg(sysmsg.StackAddrToMsg(sentryStackAddr))
@@ -1240,7 +1264,7 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 		arch.SyscallArgument{Value: uintptr(0)},
 		arch.SyscallArgument{Value: uintptr(0)})
 	if err != nil {
-		panic(fmt.Sprintf("prctl(PR_SET_NO_NEW_PRIVS) failed: %v", err))
+		return fmt.Errorf("prctl(PR_SET_NO_NEW_PRIVS) failed: %w", err)
 	}
 
 	_, err = p.syscallIgnoreInterrupt(&p.initRegs, seccomp.SYS_SECCOMP,
@@ -1248,7 +1272,7 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 		arch.SyscallArgument{Value: uintptr(0)},
 		arch.SyscallArgument{Value: stubSysmsgRules})
 	if err != nil {
-		panic(fmt.Sprintf("seccomp failed: %v", err))
+		return fmt.Errorf("seccomp failed: %w", err)
 	}
 
 	// Prepare to start the BPF process.
@@ -1256,15 +1280,15 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 	s.resetSysemuRegs(tregs)
 	setArchSpecificRegs(sysThread, tregs)
 	if err := p.setRegs(tregs); err != nil {
-		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
+		return fmt.Errorf("ptrace set regs failed: %w", err)
 	}
 	// Send a fake event to stop the BPF process so that it enters the sighandler.
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
-		panic(fmt.Sprintf("tkill failed: %v", e))
+		return fmt.Errorf("tkill failed: %w", e)
 	}
 	// Skip SIGSTOP.
 	if e := hostsyscall.RawSyscallErrno(unix.SYS_TGKILL, uintptr(p.tgid), uintptr(p.tid), uintptr(unix.SIGCONT)); e != 0 {
-		panic(fmt.Sprintf("tkill failed: %v", e))
+		return fmt.Errorf("tkill failed: %w", e)
 	}
 	s.sysmsgThreadsMu.Lock()
 	s.sysmsgThreads[threadID] = sysThread
@@ -1272,9 +1296,13 @@ func (s *subprocess) createSysmsgThreadLocked() error {
 
 	// Resume the BPF process.
 	if errno := hostsyscall.RawSyscallErrno(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(p.tid), 0); errno != 0 {
-		panic(fmt.Sprintf("can't detach new clone: %v", errno))
+		s.sysmsgThreadsMu.Lock()
+		delete(s.sysmsgThreads, threadID)
+		s.sysmsgThreadsMu.Unlock()
+		return fmt.Errorf("can't detach new clone: %w", errno)
 	}
 
+	success = true
 	return nil
 }
 
