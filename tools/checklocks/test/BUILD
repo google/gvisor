@@ -14,6 +14,7 @@ go_library(
         "atomics.go",
         "basics.go",
         "branches.go",
+        "callbacks.go",
         "closures.go",
         "cyclic.go",
         "declarations.go",
