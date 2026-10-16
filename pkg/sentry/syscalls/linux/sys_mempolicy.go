@@ -42,7 +42,7 @@ func copyInNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32) (uint64,
 	// because of what appears to be a bug: mm/mempolicy.c:get_nodes() uses
 	// maxnode-1, not maxnode, as the number of bits.
 	bits := maxnode - 1
-	if bits > hostarch.PageSize*8 { // also handles overflow from maxnode == 0
+	if bits > uint32(hostarch.PageSize)*8 { // also handles overflow from maxnode == 0
 		return 0, linuxerr.EINVAL
 	}
 	if bits == 0 {
@@ -73,7 +73,7 @@ func copyOutNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32, val uin
 	// mm/mempolicy.c:copy_nodes_to_user() also uses maxnode-1 as the number of
 	// bits.
 	bits := maxnode - 1
-	if bits > hostarch.PageSize*8 { // also handles overflow from maxnode == 0
+	if bits > uint32(hostarch.PageSize)*8 { // also handles overflow from maxnode == 0
 		return linuxerr.EINVAL
 	}
 	if bits == 0 {

@@ -44,7 +44,7 @@ const testFileNid = 127
 func newTestImage(features uint32, file erofs.InodeCompact) []byte {
 	const rootNid = 96
 	data := make([]byte, 10*hostarch.PageSize)
-	sb := erofs.SuperBlock{Magic: erofs.SuperBlockMagicV1, BlockSizeBits: hostarch.PageShift, RootNid: rootNid, Blocks: 10, FeatureIncompat: features}
+	sb := erofs.SuperBlock{Magic: erofs.SuperBlockMagicV1, BlockSizeBits: uint8(hostarch.PageShift), RootNid: rootNid, Blocks: 10, FeatureIncompat: features}
 	sb.MarshalUnsafe(data[erofs.SuperBlockOffset:])
 	rootOff := rootNid << erofs.InodeSlotBits
 	root := erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatInline << erofs.InodeDataLayoutBit, Mode: linux.S_IFDIR | 0755, Size: 16, Nlink: 2}
@@ -95,10 +95,10 @@ func openTestFile(t *testing.T, image []byte) *regularFileFD {
 }
 
 func TestReadSpansInlineTail(t *testing.T) {
-	const size = hostarch.PageSize + 904
+	size := int64(hostarch.PageSize) + 904
 	for _, useRead := range []bool{false, true} {
 		t.Run(fmt.Sprintf("read=%t", useRead), func(t *testing.T) {
-			data := newTestImage(0, erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatInline << erofs.InodeDataLayoutBit, Size: size, RawBlockAddr: 4})
+			data := newTestImage(0, erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatInline << erofs.InodeDataLayoutBit, Size: uint32(size), RawBlockAddr: 4})
 			want := make([]byte, size)
 			for i := range want {
 				want[i] = byte(i % 251)
@@ -120,11 +120,11 @@ func TestReadSpansInlineTail(t *testing.T) {
 }
 
 func TestTranslateBeyondEOF(t *testing.T) {
-	file := erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatPlain << erofs.InodeDataLayoutBit, Size: hostarch.PageSize + 17, RawBlockAddr: 4}
+	file := erofs.InodeCompact{Format: erofs.InodeDataLayoutFlatPlain << erofs.InodeDataLayoutBit, Size: uint32(hostarch.PageSize) + 17, RawBlockAddr: 4}
 	fd := openTestFile(t, newTestImage(0, file))
 	ctx := contexttest.Context(t)
 	end := uint64(2 * hostarch.PageSize)
-	r := memmap.MappableRange{Start: end - hostarch.PageSize, End: end + hostarch.PageSize}
+	r := memmap.MappableRange{Start: end - uint64(hostarch.PageSize), End: end + uint64(hostarch.PageSize)}
 	ts, err := fd.inode().Translate(ctx, r, r, hostarch.Read)
 	if err := memmap.CheckTranslateResult(r, r, hostarch.Read, ts, err); err != nil {
 		t.Fatal(err)
@@ -135,11 +135,9 @@ func TestTranslateBeyondEOF(t *testing.T) {
 }
 
 func TestChunkReadAndMMap(t *testing.T) {
-	const (
-		page  = hostarch.PageSize
-		chunk = 2 * page
-		size  = 3*chunk + 17
-	)
+	page := int(hostarch.PageSize)
+	chunk := 2 * page
+	size := 3*chunk + 17
 	for _, indexes := range []bool{false, true} {
 		for _, useRead := range []bool{false, true} {
 			t.Run(fmt.Sprintf("indexes=%t/read=%t", indexes, useRead), func(t *testing.T) {
@@ -149,7 +147,7 @@ func TestChunkReadAndMMap(t *testing.T) {
 					format |= erofs.ChunkFormatIndexes
 					unit = erofs.ChunkIndexSize
 				}
-				data := newTestImage(erofs.FeatureIncompatChunkedFile, erofs.InodeCompact{Format: erofs.InodeDataLayoutChunkBased << erofs.InodeDataLayoutBit, Size: size, RawBlockAddr: format})
+				data := newTestImage(erofs.FeatureIncompatChunkedFile, erofs.InodeCompact{Format: erofs.InodeDataLayoutChunkBased << erofs.InodeDataLayoutBit, Size: uint32(size), RawBlockAddr: format})
 				off := testFileNid<<erofs.InodeSlotBits + erofs.InodeCompactSize
 				for _, block := range []uint32{4, 6, erofs.NullAddr, 4} {
 					binary.LittleEndian.PutUint32(data[off+unit-4:], block)
@@ -182,7 +180,7 @@ func TestChunkReadAndMMap(t *testing.T) {
 				if err := memmap.CheckTranslateResult(required, required, hostarch.Read, ts, err); err != nil {
 					t.Fatal(err)
 				}
-				if ts[0].Source.End != 2*chunk {
+				if ts[0].Source.End != uint64(2*chunk) {
 					t.Errorf("contiguous chunks translated separately: %+v", ts[0])
 				}
 				got := make([]byte, end)
@@ -203,8 +201,8 @@ func TestChunkReadAndMMap(t *testing.T) {
 				if !bytes.Equal(got[size:], data[4*page+size-3*chunk:5*page]) {
 					t.Fatal("mmap padding differs from the backing block")
 				}
-				for off := uint64(0); off < end; off += page {
-					r := memmap.MappableRange{Start: off, End: off + page}
+				for off := uint64(0); off < end; off += uint64(page) {
+					r := memmap.MappableRange{Start: off, End: off + uint64(page)}
 					ts, err := fd.inode().Translate(ctx, r, required, hostarch.Read)
 					if err := memmap.CheckTranslateResult(r, required, hostarch.Read, ts, err); err != nil {
 						t.Fatal(err)

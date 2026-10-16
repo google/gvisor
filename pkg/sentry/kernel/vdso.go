@@ -93,9 +93,10 @@ func (v *VDSOParamPage) afterLoad(ctx context.Context) {
 // NewVDSOParamPage returns a VDSOParamPage.
 //
 // Preconditions:
-//   - fr is a single page allocated from mf. VDSOParamPage does not take
-//     ownership of fr; it must remain allocated for the lifetime of the
-//     VDSOParamPage.
+//   - fr is the range, within a page allocated from mf, at which the VDSO
+//     reads its parameters (see loader.VDSO.ParamsFileRange). VDSOParamPage
+//     does not take ownership of fr; it must remain allocated for the
+//     lifetime of the VDSOParamPage.
 //   - VDSOParamPage must be the only writer to fr.
 //   - mf.MapInternal(fr) must return a single safemem.Block.
 func NewVDSOParamPage(mf *pgalloc.MemoryFile, fr memmap.FileRange) *VDSOParamPage {

@@ -50,7 +50,7 @@ func GenericParseMountOptions(str string) map[string]string {
 func GenericStatFS(fsMagic uint64) linux.Statfs {
 	return linux.Statfs{
 		Type:       fsMagic,
-		BlockSize:  hostarch.PageSize,
+		BlockSize:  int64(hostarch.PageSize),
 		NameLength: linux.NAME_MAX,
 	}
 }

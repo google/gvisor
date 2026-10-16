@@ -40,7 +40,7 @@ var (
 	ExecMaxTotalSize = 2 * 1024 * 1024
 
 	// ExecMaxElemSize is the maximum length of a single argv or envv entry.
-	ExecMaxElemSize = 32 * hostarch.PageSize
+	ExecMaxElemSize = 32 * int(hostarch.PageSize)
 )
 
 // Getppid implements linux syscall getppid(2).
@@ -683,7 +683,7 @@ func copyInSchedAttr(t *kernel.Task, addr hostarch.Addr) (linux.SchedAttr, error
 	if size == 0 {
 		size = linux.SCHED_ATTR_SIZE_VER0
 	}
-	if size < linux.SCHED_ATTR_SIZE_VER0 || size > hostarch.PageSize {
+	if size < linux.SCHED_ATTR_SIZE_VER0 || size > uint32(hostarch.PageSize) {
 		return linux.SchedAttr{}, linuxerr.E2BIG
 	}
 
@@ -725,7 +725,7 @@ func SchedGetattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (ui
 	if flags != 0 || tid < 0 || schedAttrAddr == 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
-	if schedAttrSize < linux.SCHED_ATTR_SIZE_VER0 || schedAttrSize > hostarch.PageSize {
+	if schedAttrSize < linux.SCHED_ATTR_SIZE_VER0 || schedAttrSize > uint32(hostarch.PageSize) {
 		return 0, nil, linuxerr.EINVAL
 	}
 

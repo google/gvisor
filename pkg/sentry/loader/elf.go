@@ -38,13 +38,13 @@ import (
 const (
 	// elfMagic identifies an ELF file.
 	elfMagic = "\x7fELF"
-
-	// maxTotalPhdrSize is the maximum combined size of all program
-	// headers.  Linux limits this to one page.
-	maxTotalPhdrSize = hostarch.PageSize
 )
 
 var (
+	// maxTotalPhdrSize is the maximum combined size of all program
+	// headers.  Linux limits this to one page.
+	maxTotalPhdrSize = int(hostarch.PageSize)
+
 	// header64Size is the size of elf.Header64.
 	header64Size = (*linux.ElfHeader64)(nil).SizeBytes()
 
