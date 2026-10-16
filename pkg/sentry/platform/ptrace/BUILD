@@ -35,6 +35,7 @@ go_library(
         "//pkg/log",
         "//pkg/safecopy",
         "//pkg/seccomp",
+        "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/hostmm",

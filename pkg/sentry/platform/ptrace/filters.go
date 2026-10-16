@@ -19,24 +19,51 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
+// selfPIDVarName is the seccomp filter variable name used to encode the
+// current process ID, which is only known at runtime.
+const selfPIDVarName = "ptrace_self_pid"
+
+// ptraceSeccomp implements platform.SeccompInfo.
+type ptraceSeccomp struct{}
+
+// Variables implements `platform.SeccompInfo.Variables`.
+func (ptraceSeccomp) Variables() precompiledseccomp.Values {
+	vars := precompiledseccomp.Values{}
+	vars.SetUint64(selfPIDVarName, uint64(os.Getpid()))
+	return vars
+}
+
+// ConfigKey implements `platform.SeccompInfo.ConfigKey`.
+func (ptraceSeccomp) ConfigKey() string {
+	return "ptrace"
+}
+
+// SyscallFilters implements `platform.SeccompInfo.SyscallFilters`.
+func (ptraceSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_PTRACE: seccomp.MatchAll{},
+		unix.SYS_RT_TGSIGQUEUEINFO: seccomp.PerArg{
+			seccomp.EqualTo(vars.GetUint64(selfPIDVarName)),
+			seccomp.AnyValue{}, // tid
+			seccomp.EqualTo(unix.SIGKILL),
+		},
+		unix.SYS_TGKILL: seccomp.MatchAll{},
+		unix.SYS_WAIT4:  seccomp.MatchAll{},
+	})
+}
+
+// HottestSyscalls implements `platform.SeccompInfo.HottestSyscalls`.
+func (ptraceSeccomp) HottestSyscalls() []uintptr {
+	return nil
+}
+
 // SeccompInfo returns seccomp information for the ptrace platform.
 func (*PTrace) SeccompInfo() platform.SeccompInfo {
-	return platform.StaticSeccompInfo{
-		PlatformName: "ptrace",
-		Filters: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-			unix.SYS_PTRACE: seccomp.MatchAll{},
-			unix.SYS_RT_TGSIGQUEUEINFO: seccomp.PerArg{
-				seccomp.EqualTo(os.Getpid()),
-				seccomp.AnyValue{}, // tid
-				seccomp.EqualTo(unix.SIGKILL),
-			},
-			unix.SYS_TGKILL: seccomp.MatchAll{},
-			unix.SYS_WAIT4:  seccomp.MatchAll{},
-		}),
-	}
+	return ptraceSeccomp{}
 }
 
 // PrecompiledSeccompInfo implements
