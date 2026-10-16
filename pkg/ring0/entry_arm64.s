@@ -109,9 +109,10 @@
 // not available for calls.
 //
 
-// ERET returns using the ELR and SPSR for the current exception level.
-#define ERET() \
-  WORD $0xd69f03e0; \
+// EXCEPTION_RETURN returns using the ELR and SPSR for the current exception
+// level.
+#define EXCEPTION_RETURN() \
+  ERET; \
   DSB $7; \
   ISB $15;
 
@@ -181,22 +182,22 @@
   MOVD 8(RSV_REG), RSV_REG_APP; \
   MOVD RSV_REG_APP, FPCR; \
   ADD $16, RSV_REG, RSV_REG; \
-  WORD $0xad400640; \ // ldp q0, q1, [x18]
-  WORD $0xad410e42; \
-  WORD $0xad421644; \
-  WORD $0xad431e46; \
-  WORD $0xad442648; \
-  WORD $0xad452e4a; \
-  WORD $0xad46364c; \
-  WORD $0xad473e4e; \
-  WORD $0xad484650; \
-  WORD $0xad494e52; \
-  WORD $0xad4a5654; \
-  WORD $0xad4b5e56; \
-  WORD $0xad4c6658; \
-  WORD $0xad4d6e5a; \
-  WORD $0xad4e765c; \
-  WORD $0xad4f7e5e;
+  FLDPQ 0(RSV_REG), (F0, F1); \
+  FLDPQ 32(RSV_REG), (F2, F3); \
+  FLDPQ 64(RSV_REG), (F4, F5); \
+  FLDPQ 96(RSV_REG), (F6, F7); \
+  FLDPQ 128(RSV_REG), (F8, F9); \
+  FLDPQ 160(RSV_REG), (F10, F11); \
+  FLDPQ 192(RSV_REG), (F12, F13); \
+  FLDPQ 224(RSV_REG), (F14, F15); \
+  FLDPQ 256(RSV_REG), (F16, F17); \
+  FLDPQ 288(RSV_REG), (F18, F19); \
+  FLDPQ 320(RSV_REG), (F20, F21); \
+  FLDPQ 352(RSV_REG), (F22, F23); \
+  FLDPQ 384(RSV_REG), (F24, F25); \
+  FLDPQ 416(RSV_REG), (F26, F27); \
+  FLDPQ 448(RSV_REG), (F28, F29); \
+  FLDPQ 480(RSV_REG), (F30, F31);
 
 #define ESR_ELx_EC_UNKNOWN	(0x00)
 #define ESR_ELx_EC_WFx		(0x01)
@@ -334,7 +335,7 @@
 	LOAD_KERNEL_ADDRESS(CPU_SELF(from), RSV_REG); \
 	MOVD $CPU_STACK_TOP(RSV_REG), RSV_REG; \
 	MOVD RSV_REG, RSP; \
-	WORD $0xd538d092;   //MRS   TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG;
 
 // SWITCH_TO_APP_PAGETABLE sets a new pagetable for a container application.
 #define SWITCH_TO_APP_PAGETABLE() \
@@ -380,7 +381,7 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 #define KERNEL_ENTRY_FROM_EL0 \
 	SUB $16, RSP, RSP; \		// step1, save r18, r19 into kernel temporary stack.
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
-	WORD $0xd538d092; \    // MRS   TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG; \
 	MOVD CPU_APP_ADDR(RSV_REG), RSV_REG_APP; \ // step2, load app context pointer.
 	REGISTERS_SAVE(RSV_REG_APP, 0); \          // step3, save app context.
 	MOVD RSV_REG_APP, R20; \
@@ -389,29 +390,29 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 	STP (RSV_REG, RSV_REG_APP), PTRACE_R18(R20); \
 	MRS TPIDR_EL0, R3; \
 	MOVD R3, PTRACE_TLS(R20); \
-	WORD $0xd5384003; \      //  MRS SPSR_EL1, R3
+	MRS SPSR_EL1, R3; \
 	MOVD R3, PTRACE_PSTATE(R20); \
 	MRS ELR_EL1, R3; \
 	MOVD R3, PTRACE_PC(R20); \
-	WORD $0xd5384103; \      //  MRS SP_EL0, R3
+	MRS SP_EL0, R3; \
 	MOVD R3, PTRACE_SP(R20);
 
 // KERNEL_ENTRY_FROM_EL1 is the entry code of the vcpu from el1 to el1.
 //
-// Match KERNEL_ENTRY_FROM_EL0: r18 must be saved as well because EL1 exceptions
-// can also interrupt the host vdso executing in guest mode, and the vdso C code
-// that may freely use r18 as a temporary.
+// r18 must be saved because EL1 exceptions can interrupt host VDSO C code,
+// which may use r18. Because this runs on the interrupted Go stack where
+// -8(RSP) holds the caller's frame pointer, stash r18 in SP_EL0 (unused at
+// EL1h) rather than writing below RSP.
 #define KERNEL_ENTRY_FROM_EL1 \
-	SUB $16, RSP, RSP; \		// save r18, r19 into the stack.
-	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
-	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
+	MSR RSV_REG, SP_EL0; \
+	MRS TPIDR_EL1, RSV_REG; \
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// save sentry context (except r18, r19).
-	LDP 16*0(RSP), (R4, R5); \	// load the original r18, r19.
-	ADD $16, RSP, RSP; \
-	STP (R4, R5), CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18, r19.
+	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG); \	// save the original r19.
+	MRS SP_EL0, R4; \
+	MOVD R4, CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18.
 	MRS TPIDR_EL0, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_TLS(RSV_REG); \
-	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
+	MRS SPSR_EL1, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_PSTATE(RSV_REG); \
 	MRS ELR_EL1, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_PC(RSV_REG); \
@@ -421,8 +422,8 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 
 // EXCEPTION_EL0 is a common el0 exception handler function.
 #define EXCEPTION_EL0(vector) \
-	WORD $0xd538d092; \	//MRS   TPIDR_EL1, R18
-	WORD $0xd538601a; \	//MRS   FAR_EL1, R26
+	MRS TPIDR_EL1, RSV_REG; \
+	MRS FAR_EL1, R26; \
 	MOVD R26, CPU_FAULT_ADDR(RSV_REG); \
 	MOVD $1, R3; \
 	MOVD R3, CPU_ERROR_TYPE(RSV_REG); \	// Set error type to user.
@@ -457,7 +458,7 @@ TEXT ·storeAppASID(SB),NOSPLIT,$0-8
 // Halt halts execution.
 TEXT ·Halt(SB),NOSPLIT,$0
 	// Disable fpsimd.
-	WORD $0xd5381041 // MRS CPACR_EL1, R1
+	MRS CPACR_EL1, R1
 	MOVD R1, CPU_LAZY_VFP(RSV_REG)
 	DSB $15
 
@@ -483,7 +484,7 @@ TEXT ·HaltAndResume(SB),NOSPLIT,$0
 
 // HaltEl1SvcAndResume calls Hooks.KernelSyscall and resume.
 TEXT ·HaltEl1SvcAndResume(SB),NOSPLIT,$0
-	WORD $0xd538d092            // MRS TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG
 	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
 	MOVD R3, 8(RSP)             // First argument (vCPU).
 	CALL ·kernelSyscall(SB)     // Call the trampoline.
@@ -491,7 +492,7 @@ TEXT ·HaltEl1SvcAndResume(SB),NOSPLIT,$0
 
 // HaltEl1ExceptionAndResume calls Hooks.KernelException and resume.
 TEXT ·HaltEl1ExceptionAndResume(SB),NOSPLIT,$0
-	WORD $0xd538d092            // MRS TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG
 	MOVD vector+0(FP), R3
 	MOVD R3, 16(RSP)            // Second argument (vector).
 	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
@@ -517,7 +518,7 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 	MRS TPIDR_EL0, R3
 	MOVD R3, CPU_REGISTERS+PTRACE_TLS(RSV_REG)
 
-	WORD $0xd5384003    //    MRS SPSR_EL1, R3
+	MRS SPSR_EL1, R3
 	MOVD R3, CPU_REGISTERS+PTRACE_PSTATE(RSV_REG)
 	MOVD R30, CPU_REGISTERS+PTRACE_PC(RSV_REG)
 	MOVD RSP, R3
@@ -534,18 +535,18 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 	// Step4, prepare the environment for container application.
 	// set sp_el0.
 	MOVD PTRACE_SP(RSV_REG_APP), R1
-	WORD $0xd5184101        //MSR R1, SP_EL0
+	MSR R1, SP_EL0
 	// set pc.
 	MOVD PTRACE_PC(RSV_REG_APP), R1
 	MSR R1, ELR_EL1
 	// set pstate.
 	MOVD PTRACE_PSTATE(RSV_REG_APP), R1
-	WORD $0xd5184001  //MSR R1, SPSR_EL1
+	MSR R1, SPSR_EL1
 
 	// need use kernel space address to execute below code, since
 	// after SWITCH_TO_APP_PAGETABLE the ASID is changed to app's
 	// ASID.
-	WORD $0x10000061		// ADR R1, do_exit_to_el0
+	ADR do_exit_to_el0, R1
 	ORR $0xffff000000000000, R1, R1
 	JMP (R1)
 
@@ -562,7 +563,7 @@ do_exit_to_el0:
 	STP (RSV_REG, RSV_REG_APP), 16*0(RSP)
 	STP (R0, R1), 16*1(RSP)
 
-	WORD $0xd538d092    //MRS   TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG
 
 	SWITCH_TO_APP_PAGETABLE()
 
@@ -570,14 +571,14 @@ do_exit_to_el0:
 	LDP 16*0(RSP), (RSV_REG, RSV_REG_APP)
 	ADD $STACK_FRAME_SIZE, RSP, RSP
 
-	ERET()
+	EXCEPTION_RETURN()
 
 // kernelExitToEl1 is the entrypoint for sentry in guest_el1.
 // Prepare the vcpu environment for sentry.
 TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
-	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG
 	MOVD CPU_REGISTERS+PTRACE_PSTATE(RSV_REG), R1
-	WORD $0xd5184001  //MSR R1, SPSR_EL1
+	MSR R1, SPSR_EL1
 
 	MOVD CPU_REGISTERS+PTRACE_PC(RSV_REG), R1
 	MSR R1, ELR_EL1
@@ -596,7 +597,7 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
 	MOVD CPU_REGISTERS+PTRACE_R18(RSV_REG), RSV_REG
 
-	ERET()
+	EXCEPTION_RETURN()
 
 TEXT ·start(SB),NOSPLIT,$0
 	DSB $7          // dsb(nsh)
@@ -677,7 +678,7 @@ el1_sve_acc:
 	REGISTERS_LOAD(RSV_REG, CPU_REGISTERS)
 	MOVD CPU_REGISTERS+PTRACE_R19(RSV_REG), RSV_REG_APP
 
-	ERET()	// return to el1.
+	EXCEPTION_RETURN()	// return to el1.
 
 el1_invalid:
 	EXCEPTION_EL1(El1SyncInv)
@@ -726,7 +727,7 @@ TEXT ·El0_sync(SB),NOSPLIT,$0
 	B   el0_invalid
 
 el0_svc:
-	WORD $0xd538d092     //MRS   TPIDR_EL1, R18
+	MRS TPIDR_EL1, RSV_REG
 
 	MOVD $0, CPU_ERROR_CODE(RSV_REG) // Clear error code.
 
@@ -755,7 +756,7 @@ el0_sve_acc:
 	MOVD PTRACE_R18(RSV_REG_APP), RSV_REG
 	MOVD PTRACE_R19(RSV_REG_APP), RSV_REG_APP
 
-	ERET()  // return to el0.
+	EXCEPTION_RETURN()  // return to el0.
 el0_fpsimd_exc:
 	EXCEPTION_EL0(El0SyncFpsimdExc)
 el0_sp_pc:
@@ -779,7 +780,7 @@ TEXT ·El0_fiq(SB),NOSPLIT,$0
 
 TEXT ·El0_error(SB),NOSPLIT,$0
 	KERNEL_ENTRY_FROM_EL0
-	WORD $0xd5385219        // MRS ESR_EL1, R25
+	MRS ESR_EL1, R25
 	AND $ESR_ELx_SERR_MASK, R25, R24
 	CMP $ESR_ELx_SERR_NMI, R24
 	BEQ el0_nmi
