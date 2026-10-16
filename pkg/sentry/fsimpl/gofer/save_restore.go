@@ -422,7 +422,7 @@ func (d *dentry) restoreDeletedDirectory(ctx context.Context, opts *vfs.Complete
 		_, err = parent.mkdir(ctx, d.name, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()), false /* createDentry */)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to re-create deleted directory %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return wrapRestoreError(err, fmt.Errorf("failed to re-create deleted directory %q: %w", genericDebugPathname(d.inode.fs, d), err))
 	}
 	// Restore the directory.
 	if err := d.restoreFile(ctx, opts); err != nil {
@@ -453,7 +453,7 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 		_, h, err = parent.openCreate(ctx, d.name, linux.O_WRONLY, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()), false /* createDentry */)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to re-create deleted file %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return wrapRestoreError(err, fmt.Errorf("failed to re-create deleted file %q: %w", genericDebugPathname(d.inode.fs, d), err))
 	}
 	defer h.close(ctx)
 	// In case of errors, clean up the recreated file.
@@ -490,7 +490,7 @@ func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	d := fd.dentry()
 	h, err := d.openHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
 	if err != nil {
-		return fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return wrapRestoreError(err, fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err))
 	}
 	fd.handle = h
 	fd.mmapFile.SetFD(int(h.fd))
