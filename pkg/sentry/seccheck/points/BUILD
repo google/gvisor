@@ -15,4 +15,7 @@ proto_library(
         "sentry.proto",
         "syscall.proto",
     ],
+    visibility = [
+        "//:sandbox",
+    ],
 )
