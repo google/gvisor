@@ -36,8 +36,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -1159,9 +1157,9 @@ func createGoferConf(overlayMedium config.OverlayMedium, overlaySize string, mou
 	switch mountType {
 	case boot.Bind:
 		lower = specutils.Lisafs
-	case tmpfs.Name:
+	case "tmpfs":
 		lower = specutils.NoneLower
-	case erofs.Name:
+	case "erofs":
 		lower = specutils.Erofs
 	default:
 		return specutils.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", mountType)
@@ -1217,10 +1215,10 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *boot.Pod
 		if !specutils.HasMountConfig(c.Spec.Mounts[i]) {
 			continue
 		}
-		// Determine mount type: Bind for gofer mounts, erofs.Name for EROFS mounts
+		// Determine mount type: Bind for gofer mounts, "erofs" for EROFS mounts
 		mountType := boot.Bind
 		if specutils.IsErofsMount(c.Spec.Mounts[i]) {
-			mountType = erofs.Name
+			mountType = "erofs"
 		}
 
 		overlayMedium := ovlConf.SubMountOverlayMedium()
