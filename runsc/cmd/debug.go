@@ -28,7 +28,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -172,7 +172,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Infof("     *** Stack dump ***\n%s", stacks)
 	}
 	if d.strace != "" || len(d.logLevel) != 0 || len(d.logPackets) != 0 {
-		args := control.LoggingArgs{}
+		args := controlapi.LoggingArgs{}
 		switch strings.ToLower(d.strace) {
 		case "":
 			// strace not set, nothing to do here.
@@ -233,7 +233,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		if err != nil {
 			util.Fatalf("getting processes for container: %v", err)
 		}
-		o, err := control.ProcessListToJSON(pList)
+		o, err := controlapi.ProcessListToJSON(pList)
 		if err != nil {
 			util.Fatalf("generating JSON: %v", err)
 		}

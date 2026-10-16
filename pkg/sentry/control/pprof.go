@@ -21,26 +21,9 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/urpc"
-)
-
-const (
-	// DefaultBlockProfileRate is the default profiling rate for block
-	// profiles.
-	//
-	// The default here is 10%, which will record a stacktrace 10% of the
-	// time when blocking occurs. Since these events should not be super
-	// frequent, we expect this to achieve a reasonable balance between
-	// collecting the data we need and imposing a high performance cost
-	// (e.g. skewing even the CPU profile).
-	DefaultBlockProfileRate = 10
-
-	// DefaultMutexProfileRate is the default profiling rate for mutex
-	// profiles. Like the block rate above, we use a default rate of 10%
-	// for the same reasons.
-	DefaultMutexProfileRate = 10
 )
 
 // Profile includes profile-related RPC stubs. It provides a way to
@@ -80,17 +63,8 @@ func (p *Profile) Stop() {
 	close(p.done)
 }
 
-// CPUProfileOpts contains options specifically for CPU profiles.
-type CPUProfileOpts struct {
-	// FilePayload is the destination for the profiling output.
-	urpc.FilePayload
-
-	// Duration is the duration of the profile.
-	Duration time.Duration `json:"duration"`
-}
-
 // CPU is an RPC stub which collects a CPU profile.
-func (p *Profile) CPU(o *CPUProfileOpts, _ *struct{}) error {
+func (p *Profile) CPU(o *controlapi.CPUProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return nil // Allowed.
 	}
@@ -116,19 +90,8 @@ func (p *Profile) CPU(o *CPUProfileOpts, _ *struct{}) error {
 	return nil
 }
 
-// HeapProfileOpts contains options specifically for heap profiles.
-type HeapProfileOpts struct {
-	// FilePayload is the destination for the profiling output.
-	urpc.FilePayload
-
-	// Delay is the sleep time, similar to Duration. This may
-	// not affect the data collected however, as the heap will
-	// continue only the memory associated with the last alloc.
-	Delay time.Duration `json:"delay"`
-}
-
 // Heap generates a heap profile.
-func (p *Profile) Heap(o *HeapProfileOpts, _ *struct{}) error {
+func (p *Profile) Heap(o *controlapi.HeapProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return nil // Allowed.
 	}
@@ -149,14 +112,8 @@ func (p *Profile) Heap(o *HeapProfileOpts, _ *struct{}) error {
 	return pprof.WriteHeapProfile(output)
 }
 
-// GoroutineProfileOpts contains options specifically for goroutine profiles.
-type GoroutineProfileOpts struct {
-	// FilePayload is the destination for the profiling output.
-	urpc.FilePayload
-}
-
 // Goroutine dumps out the stack trace for all running goroutines.
-func (p *Profile) Goroutine(o *GoroutineProfileOpts, _ *struct{}) error {
+func (p *Profile) Goroutine(o *controlapi.GoroutineProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return nil // Allowed.
 	}
@@ -167,20 +124,8 @@ func (p *Profile) Goroutine(o *GoroutineProfileOpts, _ *struct{}) error {
 	return pprof.Lookup("goroutine").WriteTo(output, 2)
 }
 
-// BlockProfileOpts contains options specifically for block profiles.
-type BlockProfileOpts struct {
-	// FilePayload is the destination for the profiling output.
-	urpc.FilePayload
-
-	// Duration is the duration of the profile.
-	Duration time.Duration `json:"duration"`
-
-	// Rate is the block profile rate.
-	Rate int `json:"rate"`
-}
-
 // Block dumps a blocking profile.
-func (p *Profile) Block(o *BlockProfileOpts, _ *struct{}) error {
+func (p *Profile) Block(o *controlapi.BlockProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return nil // Allowed.
 	}
@@ -193,7 +138,7 @@ func (p *Profile) Block(o *BlockProfileOpts, _ *struct{}) error {
 
 	// Always set the rate. We then wait to collect a profile at this rate,
 	// and disable when we're done.
-	rate := DefaultBlockProfileRate
+	rate := controlapi.DefaultBlockProfileRate
 	if o.Rate != 0 {
 		rate = o.Rate
 	}
@@ -209,20 +154,8 @@ func (p *Profile) Block(o *BlockProfileOpts, _ *struct{}) error {
 	return pprof.Lookup("block").WriteTo(output, 0)
 }
 
-// MutexProfileOpts contains options specifically for mutex profiles.
-type MutexProfileOpts struct {
-	// FilePayload is the destination for the profiling output.
-	urpc.FilePayload
-
-	// Duration is the duration of the profile.
-	Duration time.Duration `json:"duration"`
-
-	// Fraction is the mutex profile fraction.
-	Fraction int `json:"fraction"`
-}
-
 // Mutex dumps a mutex profile.
-func (p *Profile) Mutex(o *MutexProfileOpts, _ *struct{}) error {
+func (p *Profile) Mutex(o *controlapi.MutexProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return nil // Allowed.
 	}
@@ -234,7 +167,7 @@ func (p *Profile) Mutex(o *MutexProfileOpts, _ *struct{}) error {
 	defer p.mutexMu.Unlock()
 
 	// Always set the fraction.
-	fraction := DefaultMutexProfileRate
+	fraction := controlapi.DefaultMutexProfileRate
 	if o.Fraction != 0 {
 		fraction = o.Fraction
 	}
@@ -250,17 +183,8 @@ func (p *Profile) Mutex(o *MutexProfileOpts, _ *struct{}) error {
 	return pprof.Lookup("mutex").WriteTo(output, 0)
 }
 
-// TraceProfileOpts contains options specifically for traces.
-type TraceProfileOpts struct {
-	// FilePayload is the destination for the profiling output.
-	urpc.FilePayload
-
-	// Duration is the duration of the profile.
-	Duration time.Duration `json:"duration"`
-}
-
 // Trace is an RPC stub which starts collection of an execution trace.
-func (p *Profile) Trace(o *TraceProfileOpts, _ *struct{}) error {
+func (p *Profile) Trace(o *controlapi.TraceProfileOpts, _ *struct{}) error {
 	if len(o.FilePayload.Files) < 1 {
 		return nil // Allowed.
 	}
