@@ -415,7 +415,7 @@ def _nogo_test_impl(ctx):
         # already filtered out everything that should not be included. The
         # runner will always run all tests, and then exit if any have failed.
         runner_content.append("echo -n %s..." % arch)
-        runner_content.append("%s filter -test -text %s" % (ctx.files._nogo[0].short_path, findings.short_path))
+        runner_content.append("%s filter -test -text %s" % (ctx.files._nogo_target[0].short_path, findings.short_path))
         runner_content.append("rc_%s=$?" % arch)
         runner_footer.append("if [[ $rc_%s -ne 0 ]]; then exit $rc_%s; fi" % (arch, arch))
         all_findings.append(findings)
@@ -426,7 +426,7 @@ def _nogo_test_impl(ctx):
         # The runner just executes the filter again, on the
         # newly generated filtered findings. We still need
         # the filter tool as part of our runfiles, however.
-        runfiles = ctx.runfiles(files = ctx.files._nogo + all_findings),
+        runfiles = ctx.runfiles(files = ctx.files._nogo_target + all_findings),
         executable = runner,
     ), OutputGroupInfo(
         # Propagate the filtered filters, for consumption by
@@ -455,6 +455,10 @@ nogo_test = rule(
         "_nogo": attr.label(
             default = "//tools/nogo:nogo_tool",
             cfg = "exec",
+        ),
+        "_nogo_target": attr.label(
+            default = "//tools/nogo:nogo",
+            cfg = "target",
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
