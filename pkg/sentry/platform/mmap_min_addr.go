@@ -57,4 +57,10 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("couldn't parse %s from %s: %v", string(b), systemMMapMinAddrSource, err))
 	}
+	if rounded, ok := hostarch.Addr(systemMMapMinAddr).RoundUp(); ok {
+		systemMMapMinAddr = uint64(rounded)
+	}
+	if systemMMapMinAddr < uint64(hostarch.PageSize) {
+		systemMMapMinAddr = uint64(hostarch.PageSize)
+	}
 }

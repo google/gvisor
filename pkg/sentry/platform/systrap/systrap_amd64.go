@@ -22,6 +22,12 @@ func stackPointer(r *arch.Registers) uintptr {
 	return uintptr(r.Rsp)
 }
 
+// initStubArchGlobals initializes arch-specific global variables of the stub
+// code, which has been copied to stubSysmsg.
+//
+// On amd64, the per-thread memory layout of the stub is fixed at build time.
+func initStubArchGlobals(stubSysmsg []byte) {}
+
 // nominalTSCFreq is the assumed frequency in Hz of the x86 TSC read by
 // cputicks(). The TSC is invariant (it ticks at a fixed reference rate
 // independent of the core clock), but its exact frequency is not cheaply
