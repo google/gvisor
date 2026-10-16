@@ -726,7 +726,7 @@ func ParseInt32Vec(ctx context.Context, src usermem.IOSequence, buf []int32) (in
 		return 0, nil
 	}
 	// Limit input size so as not to impact performance if input size is large.
-	src = src.TakeFirst(hostarch.PageSize - 1)
+	src = src.TakeFirst(int(hostarch.PageSize) - 1)
 
 	return usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, buf, src.Opts)
 }

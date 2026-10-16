@@ -84,7 +84,7 @@ func (s *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) uint
 	gap := s.LowerBoundGap(required.Start)
 	for gap.Ok() && gap.Start() < required.End {
 		gr := gap.Range().Intersect(optional)
-		numPages += gr.Length() / hostarch.PageSize
+		numPages += gr.Length() >> hostarch.PageShift
 		gap = gap.NextGap()
 	}
 	return numPages
@@ -177,7 +177,7 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 		// Store anything we managed to read into the cache.
 		if done := fr.Length(); done != 0 {
 			gr.End = gr.Start + done
-			pagesAlloced += gr.Length() / hostarch.PageSize
+			pagesAlloced += gr.Length() >> hostarch.PageShift
 			gap = s.Insert(gap, gr, fr.Start).NextGap()
 		}
 
@@ -204,7 +204,7 @@ func (s *FileRangeSet) DropAll(mf *pgalloc.MemoryFile) uint64 {
 	var pagesFreed uint64
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		mf.DecRef(seg.FileRange())
-		pagesFreed += seg.Range().Length() / hostarch.PageSize
+		pagesFreed += seg.Range().Length() >> hostarch.PageShift
 	}
 	s.RemoveAll()
 	return pagesFreed
@@ -223,7 +223,7 @@ func (s *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) uint64 {
 		seg := s.LowerBoundSegmentSplitBefore(pgend)
 		for seg.Ok() {
 			mf.DecRef(seg.FileRange())
-			pagesFreed += seg.Range().Length() / hostarch.PageSize
+			pagesFreed += seg.Range().Length() >> hostarch.PageShift
 			seg = s.Remove(seg).NextSegment()
 		}
 

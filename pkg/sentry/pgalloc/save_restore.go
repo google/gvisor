@@ -288,7 +288,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		// (1) All of decommitPendingFR lies within a single huge page.
 		// (2) decommitPendingFR.End is hugepage-aligned iff
 		// decommitPendingFR.Length() == 0.
-		end := off + hostarch.PageSize
+		end := off + uint64(hostarch.PageSize)
 		if decommitPendingFR.End == off {
 			// Merge with the existing range. By invariants, the page {off,
 			// end} must be within the same huge page as the rest of
@@ -397,25 +397,26 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		}
 		f.forEachChunk(fr, func(chunk *chunkInfo, chunkFR memmap.FileRange) bool {
 			bs := chunk.sliceAt(chunkFR)
-			for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
-				pg := bs[pgoff : pgoff+hostarch.PageSize]
+			pageSize := int(hostarch.PageSize)
+			for pgoff := 0; pgoff < len(bs); pgoff += pageSize {
+				pg := bs[pgoff : pgoff+pageSize]
 				off := chunkFR.Start + uint64(pgoff)
 				isZeroed := bytes.Equal(pg, zeroPage)
 				if isZeroed {
 					if !wasCommitted {
-						alreadyUncommittedBytes += hostarch.PageSize
+						alreadyUncommittedBytes += uint64(hostarch.PageSize)
 						decommitAddPage(off)
 					} else {
-						newUncommittedBytes += hostarch.PageSize
+						newUncommittedBytes += uint64(hostarch.PageSize)
 					}
 				} else {
 					if !wasCommitted {
-						newCommittedBytes += hostarch.PageSize
+						newCommittedBytes += uint64(hostarch.PageSize)
 					} else {
-						alreadyCommittedBytes += hostarch.PageSize
+						alreadyCommittedBytes += uint64(hostarch.PageSize)
 					}
 				}
-				maseg = updateAddRange(maseg, memmap.FileRange{off, off + hostarch.PageSize}, wasCommitted, !isZeroed)
+				maseg = updateAddRange(maseg, memmap.FileRange{Start: off, End: off + uint64(hostarch.PageSize)}, wasCommitted, !isZeroed)
 			}
 			// f.UpdateUsage() may be called concurrently with f.SaveTo();
 			// occasionally unlock f.mu to ensure that the former can promptly

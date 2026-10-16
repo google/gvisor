@@ -64,20 +64,32 @@ type MmapCachedFile struct {
 	mappings map[uint64]mapping `state:"nosave"`
 }
 
-const (
-	// TODO: In addition to compounding the repeated remapping problem
-	// described in MmapCachedFile.DecRef, this small chunk size may contribute
-	// to host VMA exhaustion. Consider increasing chunkShift. (But note that
-	// larger values of chunkShift increase the speed with which applications
-	// can consume sentry's address space, since only one byte per chunk needs
-	// to be touched to cause the whole chunk to be mapped.)
-	chunkShift = hostarch.HugePageShift
-	chunkSize  = 1 << chunkShift
-	chunkMask  = chunkSize - 1
-)
+// chunkShift returns the binary log of the chunk size, which is the huge page
+// size. It is not a constant since the huge page size is only known at runtime
+// on some architectures.
+//
+// TODO: In addition to compounding the repeated remapping problem
+// described in MmapCachedFile.DecRef, this small chunk size may contribute
+// to host VMA exhaustion. Consider increasing chunkShift. (But note that
+// larger values of chunkShift increase the speed with which applications
+// can consume sentry's address space, since only one byte per chunk needs
+// to be touched to cause the whole chunk to be mapped.)
+func chunkShift() uint {
+	return hostarch.HugePageShift
+}
+
+// chunkSize returns the size of a chunk.
+func chunkSize() uint64 {
+	return 1 << chunkShift()
+}
+
+// chunkMask returns chunkSize() - 1.
+func chunkMask() uint64 {
+	return chunkSize() - 1
+}
 
 func pagesInChunk(fr memmap.FileRange, chunkStart uint64) int64 {
-	return int64(fr.Intersect(memmap.FileRange{chunkStart, chunkStart + chunkSize}).Length() / hostarch.PageSize)
+	return int64(fr.Intersect(memmap.FileRange{Start: chunkStart, End: chunkStart + chunkSize()}).Length() >> hostarch.PageShift)
 }
 
 // +stateify savable
@@ -149,7 +161,7 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 	if f.refs == nil {
 		f.refs = make(map[uint64]int64)
 	}
-	chunkStart := fr.Start &^ chunkMask
+	chunkStart := fr.Start &^ chunkMask()
 	for {
 		refs := f.refs[chunkStart]
 		pgs := pagesInChunk(fr, chunkStart)
@@ -158,7 +170,7 @@ func (f *MmapCachedFile) incRefUnaccounted(fr memmap.FileRange) {
 			panic(fmt.Sprintf("fsutil.MmapCachedFile.IncRef(%v): adding %d page references to chunk %#x, which has %d page references", fr, pgs, chunkStart, refs))
 		}
 		f.refs[chunkStart] = refs + pgs
-		chunkStart += chunkSize
+		chunkStart += chunkSize()
 		if chunkStart >= fr.End || chunkStart == 0 {
 			break
 		}
@@ -189,7 +201,7 @@ func (f *MmapCachedFile) RemoveMapping(ar hostarch.AddrRange, offset uint64) {
 //
 // +checklocks:f.refsMu
 func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
-	chunkStart := fr.Start &^ chunkMask
+	chunkStart := fr.Start &^ chunkMask()
 	for {
 		refs := f.refs[chunkStart]
 		pgs := pagesInChunk(fr, chunkStart)
@@ -211,7 +223,7 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
 		case refs < pgs:
 			panic(fmt.Sprintf("fsutil.MmapCachedFile.DecRef(%v): removing %d page references from chunk %#x, which has %d page references", fr, pgs, chunkStart, refs))
 		}
-		chunkStart += chunkSize
+		chunkStart += chunkSize()
 		if chunkStart >= fr.End || chunkStart == 0 {
 			break
 		}
@@ -226,7 +238,7 @@ func (f *MmapCachedFile) decRefUnaccounted(fr memmap.FileRange) {
 //
 // +checklocks:f.mapsMu
 func (f *MmapCachedFile) unmapAndRemove(chunkStart uint64, m mapping) {
-	if _, _, errno := unix.Syscall(unix.SYS_MUNMAP, m.addr, chunkSize, 0); errno != 0 {
+	if _, _, errno := unix.Syscall(unix.SYS_MUNMAP, m.addr, uintptr(chunkSize()), 0); errno != 0 {
 		// This leaks address space and is unexpected, but is otherwise
 		// harmless, so complain but don't panic.
 		log.Warningf("fsutil.MmapCachedFile: failed to unmap mapping %#x for chunk %#x: %v", m.addr, chunkStart, errno)
@@ -236,7 +248,7 @@ func (f *MmapCachedFile) unmapAndRemove(chunkStart uint64, m mapping) {
 
 // MapInternal implements memmap.File.MapInternal.
 func (f *MmapCachedFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)
+	chunks := ((fr.End + chunkMask()) >> chunkShift()) - (fr.Start >> chunkShift())
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
 	if chunks == 1 {
@@ -264,7 +276,7 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 	if write {
 		prot |= unix.PROT_WRITE
 	}
-	chunkStart := fr.Start &^ chunkMask
+	chunkStart := fr.Start &^ chunkMask()
 	if f.mappings == nil {
 		f.mappings = make(map[uint64]mapping)
 	}
@@ -274,7 +286,7 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 			addr, _, errno := unix.Syscall6(
 				unix.SYS_MMAP,
 				0,
-				chunkSize,
+				uintptr(chunkSize()),
 				uintptr(prot),
 				unix.MAP_SHARED,
 				uintptr(fd),
@@ -288,7 +300,7 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 			addr, _, errno := unix.Syscall6(
 				unix.SYS_MMAP,
 				m.addr,
-				chunkSize,
+				uintptr(chunkSize()),
 				uintptr(prot),
 				unix.MAP_SHARED|unix.MAP_FIXED,
 				uintptr(fd),
@@ -303,12 +315,12 @@ func (f *MmapCachedFile) forEachMappingBlockLocked(fr memmap.FileRange, write bo
 		if chunkStart < fr.Start {
 			startOff = fr.Start - chunkStart
 		}
-		endOff := uint64(chunkSize)
-		if chunkStart+chunkSize > fr.End {
+		endOff := chunkSize()
+		if chunkStart+chunkSize() > fr.End {
 			endOff = fr.End - chunkStart
 		}
-		fn(unsafeBlockFromMapping(m.addr, chunkSize).TakeFirst64(endOff).DropFirst64(startOff))
-		chunkStart += chunkSize
+		fn(unsafeBlockFromMapping(m.addr, int(chunkSize())).TakeFirst64(endOff).DropFirst64(startOff))
+		chunkStart += chunkSize()
 		if chunkStart >= fr.End || chunkStart == 0 {
 			break
 		}
@@ -340,7 +352,7 @@ func (f *MmapCachedFile) RegenerateMappings() error {
 		_, _, errno := unix.Syscall6(
 			unix.SYS_MMAP,
 			m.addr,
-			chunkSize,
+			uintptr(chunkSize()),
 			uintptr(prot),
 			unix.MAP_SHARED|unix.MAP_FIXED,
 			uintptr(fd),
