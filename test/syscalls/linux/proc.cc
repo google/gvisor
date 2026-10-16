@@ -4089,49 +4089,6 @@ TEST(ProcFilesystems, OverflowID) {
   EXPECT_EQ(overflowUid, defaultOverflowID);
 }
 
-TEST(ProcSysKernelKeysMax, Exists) {
-  auto maxkeys =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/keys/maxkeys"));
-  int32_t mk;
-  ASSERT_TRUE(absl::SimpleAtoi(maxkeys, &mk));
-  EXPECT_EQ(mk, 200);
-}
-
-// Returns true if the caller can write to /proc/sys/kernel/keys/maxkeys. On
-// Linux, sysctl file permissions ignore capabilities and only allow the global
-// root user to write to this file (see test_perm() in fs/proc/proc_sysctl.c).
-PosixErrorOr<bool> CanSetMaxKeys() {
-  ASSIGN_OR_RETURN_ERRNO(bool have_sys_admin, HaveCapability(CAP_SYS_ADMIN));
-  ASSIGN_OR_RETURN_ERRNO(bool in_init_userns, InInitialUserNamespace());
-  return have_sys_admin && in_init_userns && geteuid() == 0;
-}
-
-TEST(ProcSysKernelKeysMax, InvalidMaxKeysValue) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetMaxKeys()));
-  ASSERT_THAT(SetContents("/proc/sys/kernel/keys/maxkeys", "-1"),
-              PosixErrorIs(EINVAL));
-  auto maxkeys =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/keys/maxkeys"));
-  int32_t mk;
-  ASSERT_TRUE(absl::SimpleAtoi(maxkeys, &mk));
-  EXPECT_EQ(mk, 200);
-}
-
-TEST(ProcSysKernelKeysMax, SetMaxKeys) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetMaxKeys()));
-  const std::string old_maxkeys =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/keys/maxkeys"));
-  ASSERT_NO_ERRNO(SetContents("/proc/sys/kernel/keys/maxkeys", "100"));
-  const auto restore_maxkeys = Cleanup([old_maxkeys] {
-    EXPECT_NO_ERRNO(SetContents("/proc/sys/kernel/keys/maxkeys", old_maxkeys));
-  });
-  auto maxkeys =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/keys/maxkeys"));
-  int32_t mk;
-  ASSERT_TRUE(absl::SimpleAtoi(maxkeys, &mk));
-  EXPECT_EQ(mk, 100);
-}
-
 TEST(ProcSysKernel, RandomizeVaSpace) {
   std::string val = ASSERT_NO_ERRNO_AND_VALUE(
       GetContents("/proc/sys/kernel/randomize_va_space"));

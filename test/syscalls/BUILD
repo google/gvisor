@@ -639,6 +639,13 @@ syscall_test(
     test = "//test/syscalls/linux:proc_isolated_test",
 )
 
+# Linux's key quota is host-wide. Keep its readers and writers together and
+# prevent other local tests from overlapping this unsharded test target.
+syscall_test(
+    tags = ["exclusive-if-local"],
+    test = "//test/syscalls/linux:proc_keys_test",
+)
+
 syscall_test(
     add_hostinet = True,
     test = "//test/syscalls/linux:proc_net_test",
