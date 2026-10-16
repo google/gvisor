@@ -33,8 +33,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
-// The syscall message consists of sentry and stub messages.
-const syscallThreadMessageSize = hostarch.PageSize * 2
+// syscallThreadMessageSize returns the size of the syscall message, which
+// consists of sentry and stub messages (one page each).
+func syscallThreadMessageSize() uintptr {
+	return hostarch.PageSize * 2
+}
 
 // syscallThread implements the process of calling syscalls in a stub process.
 //
@@ -87,7 +90,7 @@ func (t *syscallThread) init(seccompNotify bool) error {
 		Kind: usage.System,
 		Dir:  pgalloc.TopDown,
 	}
-	fr, err := t.subproc.memoryFile.Allocate(syscallThreadMessageSize, opts)
+	fr, err := t.subproc.memoryFile.Allocate(uint64(syscallThreadMessageSize()), opts)
 	if err != nil {
 		return err
 	}
@@ -111,7 +114,7 @@ func (t *syscallThread) init(seccompNotify bool) error {
 	sentryAddr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
 		0,
-		syscallThreadMessageSize,
+		syscallThreadMessageSize(),
 		unix.PROT_WRITE|unix.PROT_READ,
 		unix.MAP_SHARED|unix.MAP_FILE,
 		uintptr(t.subproc.memoryFile.FD()), uintptr(fr.Start))
@@ -130,7 +133,7 @@ func (t *syscallThread) destroy() {
 		errno := hostsyscall.RawSyscallErrno(
 			unix.SYS_MUNMAP,
 			t.sentryAddr,
-			syscallThreadMessageSize,
+			syscallThreadMessageSize(),
 			0)
 		if errno != 0 {
 			panic(fmt.Sprintf("mumap failed: %v", errno))
@@ -139,7 +142,7 @@ func (t *syscallThread) destroy() {
 	if t.stubAddr != 0 {
 		_, err := t.thread.syscallIgnoreInterrupt(&t.thread.initRegs, unix.SYS_MUNMAP,
 			arch.SyscallArgument{Value: t.stubAddr},
-			arch.SyscallArgument{Value: uintptr(syscallThreadMessageSize)})
+			arch.SyscallArgument{Value: syscallThreadMessageSize()})
 		if err != nil {
 			panic(fmt.Sprintf("munmap failed: %v", err))
 		}
@@ -183,7 +186,7 @@ func (t *syscallThread) mapMessageIntoStub() error {
 		arch.SyscallArgument{Value: uintptr(unix.PROT_READ | unix.PROT_WRITE)},
 		arch.SyscallArgument{Value: unix.MAP_SHARED | unix.MAP_FILE | unix.MAP_FIXED},
 		arch.SyscallArgument{Value: uintptr(t.subproc.memoryFile.FD())},
-		arch.SyscallArgument{Value: uintptr(t.stackRange.Start + hostarch.PageSize)})
+		arch.SyscallArgument{Value: uintptr(t.stackRange.Start + uint64(hostarch.PageSize))})
 	return err
 }
 

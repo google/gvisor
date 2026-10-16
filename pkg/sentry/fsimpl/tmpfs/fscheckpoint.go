@@ -141,7 +141,7 @@ func (cb *fsckptTarReaderCallbacks) regularFileRead(ctx context.Context, hdr *ta
 	defer rf.dataMu.Unlock()
 	n := uint64(0)
 	for _, seg := range segs {
-		n += (seg.End - seg.Start) / hostarch.PageSize
+		n += (seg.End - seg.Start) >> hostarch.PageShift
 	}
 	if !cb.fs.accountPages(n) {
 		return fmt.Errorf("restored filesystem would exceed size limit of %d pages", cb.fs.maxSizeInPages)

@@ -29,6 +29,9 @@ var (
 	pt              *PageTables
 )
 
+// use4KPagesForTest is a no-op on amd64, which only supports 4K pages.
+func use4KPagesForTest(*testing.T) {}
+
 func getLargeAddressesEnabled() bool {
 	featureSet := cpuid.HostFeatureSet()
 	return featureSet.HasFeature(cpuid.X86FeatureLA57)

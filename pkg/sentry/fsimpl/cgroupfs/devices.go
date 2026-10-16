@@ -276,10 +276,10 @@ func (c *devicesController) generate(ctx context.Context, buf *bytes.Buffer) err
 func (c *devicesController) write(ctx context.Context, src usermem.IOSequence, offset int64, allow bool) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if src.NumBytes() > hostarch.PageSize {
+	if src.NumBytes() > int64(hostarch.PageSize) {
 		return 0, linuxerr.EINVAL
 	}
-	buf := copyScratchBufferFromContext(ctx, hostarch.PageSize)
+	buf := copyScratchBufferFromContext(ctx, int(hostarch.PageSize))
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
 		return 0, err

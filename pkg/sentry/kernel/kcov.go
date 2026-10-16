@@ -143,7 +143,7 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 
 	// To simplify all the logic around mapping, we require that the length of the
 	// shared region is a multiple of the system page size.
-	if (8*size)&(hostarch.PageSize-1) != 0 {
+	if !hostarch.IsPageAligned(8 * size) {
 		return linuxerr.EINVAL
 	}
 

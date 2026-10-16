@@ -35,17 +35,23 @@ const Host = ARM64
 // --- 39-bit VA (3-level page tables, 512 GB) ---
 const (
 	maxAddr64VA39                hostarch.Addr = 1 << 39
-	maxMmapRand64VA39            hostarch.Addr = (1 << 24) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MAX=24
-	minMmapRand64VA39            hostarch.Addr = (1 << 18) * hostarch.PageSize // ARCH_MMAP_RND_BITS_MIN=18
-	preferredTopDownAllocMinVA39 hostarch.Addr = 0x5800000000                  // ~352 GB, ~68.8%
-	preferredAllocationGapVA39   hostarch.Addr = 16 << 30                      // 16 GB
+	preferredTopDownAllocMinVA39 hostarch.Addr = 0x5800000000 // ~352 GB, ~68.8%
+	preferredAllocationGapVA39   hostarch.Addr = 16 << 30     // 16 GB
 	preferredPIELoadAddrVA39     hostarch.Addr = maxAddr64VA39 / 3 * 2
+)
+
+// The mmap randomization ranges are expressed in pages, as in Linux. They are
+// variables since the page size is only known at runtime.
+var (
+	maxMmapRand64VA39 = hostarch.Addr((1 << 24) * hostarch.PageSize) // ARCH_MMAP_RND_BITS_MAX=24
+	minMmapRand64VA39 = hostarch.Addr((1 << 18) * hostarch.PageSize) // ARCH_MMAP_RND_BITS_MIN=18
+	maxMmapRand64VA48 = hostarch.Addr((1 << 28) * hostarch.PageSize) // CONFIG_ARCH_MMAP_RND_BITS=28
+	maxMmapRand64VA52 = hostarch.Addr((1 << 28) * hostarch.PageSize) // same as 48-bit
 )
 
 // --- 48-bit VA (4-level page tables, 256 TB) ---
 const (
 	maxAddr64VA48                hostarch.Addr = 1 << 48
-	maxMmapRand64VA48            hostarch.Addr = (1 << 28) * hostarch.PageSize // CONFIG_ARCH_MMAP_RND_BITS=28
 	minMmapRand64VA48            hostarch.Addr = 1 << 30
 	preferredTopDownAllocMinVA48 hostarch.Addr = 0xfc8000000000
 	preferredAllocationGapVA48   hostarch.Addr = 128 << 30 // 128 GB
@@ -68,19 +74,18 @@ const (
 //     same process can mix 48-bit and 52-bit mmap calls.
 const (
 	maxAddr64VA52                hostarch.Addr = 1 << 52
-	maxMmapRand64VA52            hostarch.Addr = (1 << 28) * hostarch.PageSize // same as 48-bit
 	minMmapRand64VA52            hostarch.Addr = 1 << 30
 	preferredTopDownAllocMinVA52 hostarch.Addr = 0x7e80000000000 // ~2024 TB
 	preferredAllocationGapVA52   hostarch.Addr = 128 << 30
 	preferredPIELoadAddrVA52     hostarch.Addr = maxAddr64VA48 / 3 * 2
 )
 
-// --- VA-width independent constants ---
-const (
+// --- VA-width independent values ---
+var (
 	// maxStackRand64 is the maximum randomization to apply to the stack.
 	// It is defined by arch/arm64/mm/mmap.c:(STACK_RND_MASK << PAGE_SHIFT) in Linux.
 	// Fixed across all VA widths on ARM64.
-	maxStackRand64 hostarch.Addr = 0x3ffff << hostarch.PageShift
+	maxStackRand64 = hostarch.Addr(0x3ffff) << hostarch.PageShift
 )
 
 var (

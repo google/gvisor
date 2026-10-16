@@ -102,7 +102,7 @@ func (cc *cpusetCpus) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +checklocksexclude:cc.cs.mu
 func (cc *cpusetCpus) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
-	if src.NumBytes() > hostarch.PageSize {
+	if src.NumBytes() > int64(hostarch.PageSize) {
 		return 0, linuxerr.EINVAL
 	}
 
@@ -156,7 +156,7 @@ func (cm *cpusetMems) Generate(ctx context.Context, buf *bytes.Buffer) error {
 //
 // +checklocksexclude:cm.cs.mu
 func (cm *cpusetMems) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
-	if src.NumBytes() > hostarch.PageSize {
+	if src.NumBytes() > int64(hostarch.PageSize) {
 		return 0, linuxerr.EINVAL
 	}
 

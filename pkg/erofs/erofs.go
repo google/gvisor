@@ -306,7 +306,7 @@ func (i *Image) initSuperBlock() error {
 		return fmt.Errorf("unsupported incompatible features detected: 0x%x", featureIncompat)
 	}
 
-	if i.BlockSize()%hostarch.PageSize != 0 {
+	if i.BlockSize()%uint32(hostarch.PageSize) != 0 {
 		return fmt.Errorf("unsupported block size: 0x%x", i.BlockSize())
 	}
 
@@ -1040,8 +1040,8 @@ func (i *Inode) Readlink() (string, error) {
 	} else {
 		// This matches Linux's behaviour in fs/namei.c:page_get_link() and
 		// include/linux/namei.h:nd_terminate_link().
-		if size > hostarch.PageSize-1 {
-			size = hostarch.PageSize - 1
+		if maxSize := uint64(hostarch.PageSize) - 1; size > maxSize {
+			size = maxSize
 		}
 	}
 	target, err := i.image.BytesAt(off, size)

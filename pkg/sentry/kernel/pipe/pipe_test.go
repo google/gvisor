@@ -74,7 +74,7 @@ func TestPipeReadBlock(t *testing.T) {
 
 func TestPipeWriteBlock(t *testing.T) {
 	const atomicIOBytes = 2
-	const capacity = MinimumPipeSize
+	capacity := MinimumPipeSize
 
 	runTest(t, capacity, func(ctx context.Context, r *vfs.FileDescription, w *vfs.FileDescription) {
 		msg := make([]byte, capacity+1)

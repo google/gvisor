@@ -273,7 +273,7 @@ func Mincore(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	if mapped != uint64(la) {
 		return 0, nil, linuxerr.ENOMEM
 	}
-	resident := bytes.Repeat([]byte{1}, int(mapped/hostarch.PageSize))
+	resident := bytes.Repeat([]byte{1}, int(mapped>>hostarch.PageShift))
 	_, err := t.CopyOutBytes(vec, resident)
 	return 0, nil, err
 }
