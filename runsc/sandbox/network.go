@@ -30,7 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -85,7 +85,7 @@ const defaultPrimaryInterfaceName = "eth0"
 
 // hasFDBasedLink reports whether args.FDBasedLinks contains a link with the
 // given interface name.
-func hasFDBasedLink(args *boot.CreateLinksAndRoutesArgs, name string) bool {
+func hasFDBasedLink(args *sentryapi.CreateLinksAndRoutesArgs, name string) bool {
 	for _, l := range args.FDBasedLinks {
 		if l.Name == name {
 			return true
@@ -100,7 +100,7 @@ func hasFDBasedLink(args *boot.CreateLinksAndRoutesArgs, name string) bool {
 // IPv6 default gateways point to different interfaces, an error is returned
 // rather than falling back so default traffic cannot silently bypass the UDS
 // link.
-func primaryInterface(args *boot.CreateLinksAndRoutesArgs) (string, error) {
+func primaryInterface(args *sentryapi.CreateLinksAndRoutesArgs) (string, error) {
 	if args == nil {
 		return "", errors.New("network link arguments are nil")
 	}
@@ -191,7 +191,7 @@ func dialExternalUDS(path string) (*os.File, error) {
 }
 
 // configureProxyLink configures link to operate over an external UDS proxy FD.
-func configureProxyLink(link *boot.FDBasedLink) {
+func configureProxyLink(link *sentryapi.FDBasedLink) {
 	link.IsProxy = true
 	if link.NumChannels != 1 {
 		log.Warningf("Ignoring --num-network-channels=%d for interface %q: a network UDS link always uses a single channel", link.NumChannels, link.Name)
@@ -208,10 +208,10 @@ func configureProxyLink(link *boot.FDBasedLink) {
 }
 
 func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client, isRestore bool) error {
-	link := boot.DefaultLoopbackLink
+	link := sentryapi.DefaultLoopbackLink
 	link.GVisorGRO = conf.GVisorGRO
-	if err := conn.Call(boot.ContMgrSetNetworkArgs, &boot.CreateLinksAndRoutesArgs{
-		LoopbackLinks: []boot.LoopbackLink{link},
+	if err := conn.Call(sentryapi.ContMgrSetNetworkArgs, &sentryapi.CreateLinksAndRoutesArgs{
+		LoopbackLinks: []sentryapi.LoopbackLink{link},
 		IsRestore:     isRestore,
 		LogPackets:    conf.LogPackets,
 	}, nil); err != nil {
@@ -258,7 +258,7 @@ func addrBitLength(ip net.IP) int {
 }
 
 // removeLinkAddresses removes IP addresses from the host NIC for a link.
-func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
+func removeLinkAddresses(linkName string, addresses []sentryapi.IPWithPrefix) error {
 	ifaceLink, err := netlink.LinkByName(linkName)
 	if err != nil {
 		return fmt.Errorf("getting link for interface %q: %w", linkName, err)
@@ -286,13 +286,13 @@ func removeLinkAddresses(linkName string, addresses []boot.IPWithPrefix) error {
 // namespace and scrapes their configuration (addresses, routes, neighbors).
 // It returns the args to create them in the sandbox. This function has no
 // side effects on the interfaces themselves.
-func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLinksAndRoutesArgs, error) {
+func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (sentryapi.CreateLinksAndRoutesArgs, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("querying interfaces: %w", err)
+		return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("querying interfaces: %w", err)
 	}
 
-	args := boot.CreateLinksAndRoutesArgs{
+	args := sentryapi.CreateLinksAndRoutesArgs{
 		PauseExternalNetworking: conf.PauseExternalNetworking,
 		AllowConnectedOnSave:    conf.AllowConnectedOnSave,
 	}
@@ -305,14 +305,14 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 
 		allAddrs, err := iface.Addrs()
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching interface addresses for %q: %w", iface.Name, err)
 		}
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
 			link, err := loopbackLink(conf, iface, allAddrs, disableIPv6)
 			if err != nil {
-				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
+				return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, link)
 			continue
@@ -322,7 +322,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		for _, ifaddr := range allAddrs {
 			ipNet, ok := ifaddr.(*net.IPNet)
 			if !ok {
-				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("address is not IPNet: %+v", ifaddr)
+				return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("address is not IPNet: %+v", ifaddr)
 			}
 			// Do not add IPv6 addresses when IPv6 is disabled.
 			if disableIPv6 && ipNet.IP.To4() == nil {
@@ -338,17 +338,17 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		// Collect data from the ARP table.
 		dump, err := netlink.NeighList(iface.Index, 0)
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("fetching ARP table for %q: %w", iface.Name, err)
 		}
 
-		var neighbors []boot.Neighbor
+		var neighbors []sentryapi.Neighbor
 		for _, n := range dump {
 			// There are only two "good" states NUD_PERMANENT and NUD_REACHABLE,
 			// but NUD_REACHABLE is fully dynamic and will be re-probed anyway.
 			if n.State == netlink.NUD_PERMANENT {
 				log.Debugf("Copying a static ARP entry: %+v %+v", n.IP, n.HardwareAddr)
 				// No flags are copied because Stack.AddStaticNeighbor does not support flags right now.
-				neighbors = append(neighbors, boot.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
+				neighbors = append(neighbors, sentryapi.Neighbor{IP: n.IP, HardwareAddr: n.HardwareAddr})
 			}
 		}
 
@@ -356,11 +356,11 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		// will remove the routes as well.
 		routes, defv4, defv6, err := routesForIface(iface, disableIPv6)
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
 		}
 		if defv4 != nil {
 			if !args.Defaultv4Gateway.Route.Empty() {
-				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
+				return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
 			}
 			args.Defaultv4Gateway.Route = *defv4
 			args.Defaultv4Gateway.Name = iface.Name
@@ -368,7 +368,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 
 		if defv6 != nil {
 			if !args.Defaultv6Gateway.Route.Empty() {
-				return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+				return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
 			}
 			args.Defaultv6Gateway.Route = *defv6
 			args.Defaultv6Gateway.Name = iface.Name
@@ -377,19 +377,19 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 		// Get the link for the interface.
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
-			return boot.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
+			return sentryapi.CreateLinksAndRoutesArgs{}, fmt.Errorf("getting link for interface %q: %w", iface.Name, err)
 		}
 		linkAddress := ifaceLink.Attrs().HardwareAddr
 
 		// Collect the addresses for the interface.
-		var addresses []boot.IPWithPrefix
+		var addresses []sentryapi.IPWithPrefix
 		for _, addr := range ipAddrs {
 			prefix, _ := addr.Mask.Size()
-			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
+			addresses = append(addresses, sentryapi.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
 		}
 
 		if conf.XDP.Mode == config.XDPModeNS {
-			args.XDPLinks = append(args.XDPLinks, boot.XDPLink{
+			args.XDPLinks = append(args.XDPLinks, sentryapi.XDPLink{
 				Name:              iface.Name,
 				InterfaceIndex:    iface.Index,
 				Routes:            routes,
@@ -405,7 +405,7 @@ func collectLinksAndRoutes(conf *config.Config, disableIPv6 bool) (boot.CreateLi
 				GVisorGRO:         conf.GVisorGRO,
 			})
 		} else {
-			link := boot.FDBasedLink{
+			link := sentryapi.FDBasedLink{
 				Name:                 iface.Name,
 				MTU:                  iface.MTU,
 				Routes:               routes,
@@ -563,7 +563,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 	args.IsRestore = isRestore
 	log.Debugf("Setting up network, config: %+v", args)
-	if err := conn.Call(boot.ContMgrSetNetworkArgs, &args, nil); err != nil {
+	if err := conn.Call(sentryapi.ContMgrSetNetworkArgs, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
 
@@ -584,14 +584,14 @@ func initPluginStack(conn *urpc.Client, pid int, conf *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("plugin stack PreInit failed: %v", err)
 	}
-	var args boot.InitPluginStackArgs
+	var args sentryapi.InitPluginStackArgs
 	args.InitStr = initStr
 	for _, fd := range fds {
 		args.FilePayload.Files = append(args.FilePayload.Files, os.NewFile(uintptr(fd), ""))
 	}
 
 	log.Debugf("Initializing plugin network stack, config: %+v", args)
-	if err := conn.Call(boot.NetworkInitPluginStack, &args, nil); err != nil {
+	if err := conn.Call(sentryapi.NetworkInitPluginStack, &args, nil); err != nil {
 		return fmt.Errorf("error initializing plugin netstack: %v", err)
 	}
 
@@ -693,22 +693,22 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 // interface. It synthesizes subnet routes from the interface addresses and
 // also collects any additional routes configured on the loopback interface
 // (e.g. routes added by podman-network-create --route).
-func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (boot.LoopbackLink, error) {
-	link := boot.LoopbackLink{
+func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, disableIPv6 bool) (sentryapi.LoopbackLink, error) {
+	link := sentryapi.LoopbackLink{
 		Name:      iface.Name,
 		GVisorGRO: conf.GVisorGRO,
 	}
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
 		if !ok {
-			return boot.LoopbackLink{}, fmt.Errorf("address is not IPNet: %+v", addr)
+			return sentryapi.LoopbackLink{}, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
 
 		if disableIPv6 && ipNet.IP.To4() == nil {
 			continue
 		}
 		prefix, _ := ipNet.Mask.Size()
-		link.Addresses = append(link.Addresses, boot.IPWithPrefix{
+		link.Addresses = append(link.Addresses, sentryapi.IPWithPrefix{
 			Address:   ipNet.IP,
 			PrefixLen: prefix,
 		})
@@ -719,7 +719,7 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 		// main routing table.
 		dst := *ipNet
 		dst.IP = dst.IP.Mask(dst.Mask)
-		link.Routes = append(link.Routes, boot.Route{
+		link.Routes = append(link.Routes, sentryapi.Route{
 			Destination: dst,
 		})
 	}
@@ -730,7 +730,7 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 	// address-derived routes above which live in the local table.
 	routes, _, _, err := routesForIface(iface, disableIPv6)
 	if err != nil {
-		return boot.LoopbackLink{}, fmt.Errorf("getting routes for loopback %q: %w", iface.Name, err)
+		return sentryapi.LoopbackLink{}, fmt.Errorf("getting routes for loopback %q: %w", iface.Name, err)
 	}
 	link.Routes = append(link.Routes, routes...)
 
@@ -739,7 +739,7 @@ func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr, di
 
 // routesForIface iterates over all routes for the given interface and converts
 // them to boot.Routes. It also returns the a default v4/v6 route if found.
-func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.Route, *boot.Route, error) {
+func routesForIface(iface net.Interface, disableIPv6 bool) ([]sentryapi.Route, *sentryapi.Route, *sentryapi.Route, error) {
 	link, err := netlink.LinkByIndex(iface.Index)
 	if err != nil {
 		return nil, nil, nil, err
@@ -749,8 +749,8 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 		return nil, nil, nil, fmt.Errorf("getting routes from %q: %v", iface.Name, err)
 	}
 
-	var defv4, defv6 *boot.Route
-	var routes []boot.Route
+	var defv4, defv6 *sentryapi.Route
+	var routes []sentryapi.Route
 	for _, r := range rs {
 		mtu := uint32(r.MTU)
 
@@ -765,7 +765,7 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 				if defv4 != nil {
 					return nil, nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, defv4, r)
 				}
-				defv4 = &boot.Route{
+				defv4 = &sentryapi.Route{
 					Destination: net.IPNet{
 						IP:   net.IPv4zero,
 						Mask: net.IPMask(net.IPv4zero),
@@ -779,7 +779,7 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 				}
 
 				if !disableIPv6 {
-					defv6 = &boot.Route{
+					defv6 = &sentryapi.Route{
 						Destination: net.IPNet{
 							IP:   net.IPv6zero,
 							Mask: net.IPMask(net.IPv6zero),
@@ -799,7 +799,7 @@ func routesForIface(iface net.Interface, disableIPv6 bool) ([]boot.Route, *boot.
 			continue
 		}
 		dst.IP = dst.IP.Mask(dst.Mask)
-		routes = append(routes, boot.Route{
+		routes = append(routes, sentryapi.Route{
 			Destination: dst,
 			Gateway:     r.Gw,
 			MTU:         mtu,
@@ -819,7 +819,7 @@ func removeAddress(source netlink.Link, ipAndMask string) error {
 	return netlink.AddrDel(source, addr)
 }
 
-func pcapAndNAT(args *boot.CreateLinksAndRoutesArgs, conf *config.Config) error {
+func pcapAndNAT(args *sentryapi.CreateLinksAndRoutesArgs, conf *config.Config) error {
 	// Possibly enable packet logging.
 	args.LogPackets = conf.LogPackets
 

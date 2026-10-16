@@ -19,11 +19,11 @@ import (
 	"strconv"
 	"strings"
 
-	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
 // FDMappings can be used with flags that appear multiple times.
-type FDMappings []boot.FDMapping
+type FDMappings []sentryapi.FDMapping
 
 // String implements flag.Value.
 func (i *FDMappings) String() string {
@@ -40,7 +40,7 @@ func (i *FDMappings) Get() any {
 }
 
 // GetArray returns an array of mappings.
-func (i *FDMappings) GetArray() []boot.FDMapping {
+func (i *FDMappings) GetArray() []sentryapi.FDMapping {
 	return *i
 }
 
@@ -58,7 +58,7 @@ func (i *FDMappings) Set(s string) error {
 			if err != nil {
 				return fmt.Errorf("invalid flag value: must be an integer or a mapping of format M:N")
 			}
-			*i = append(*i, boot.FDMapping{
+			*i = append(*i, sentryapi.FDMapping{
 				Host:  fd,
 				Guest: fd,
 			})
@@ -81,7 +81,7 @@ func (i *FDMappings) Set(s string) error {
 			return fmt.Errorf("flag guest value must be >= 0: %d", fdGuest)
 		}
 
-		*i = append(*i, boot.FDMapping{
+		*i = append(*i, sentryapi.FDMapping{
 			Host:  fdHost,
 			Guest: fdGuest,
 		})

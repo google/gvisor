@@ -20,7 +20,6 @@ import (
 	"net"
 	"os"
 	"runtime"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -39,33 +38,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 )
-
-// DefaultLoopbackLink contains IP addresses and routes of "127.0.0.1/8" and
-// "::1/8" on "lo" interface.
-var DefaultLoopbackLink = LoopbackLink{
-	Name: "lo",
-	Addresses: []IPWithPrefix{
-		{Address: net.IP("\x7f\x00\x00\x01"), PrefixLen: 8},
-		{Address: net.IPv6loopback, PrefixLen: 128},
-	},
-	Routes: []Route{
-		{
-			Destination: net.IPNet{
-				IP:   net.IPv4(0x7f, 0, 0, 0),
-				Mask: net.IPv4Mask(0xff, 0, 0, 0),
-			},
-		},
-		{
-			Destination: net.IPNet{
-				IP:   net.IPv6loopback,
-				Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
-			},
-		},
-	},
-}
 
 // Network exposes methods that can be used to configure a network stack.
 type Network struct {
@@ -77,169 +52,7 @@ type Network struct {
 	PluginStack plugin.PluginStack
 }
 
-// Route represents a route in the network stack.
-type Route struct {
-	Destination net.IPNet
-	Gateway     net.IP
-	MTU         uint32
-}
-
-// DefaultRoute represents a catch all route to the default gateway.
-type DefaultRoute struct {
-	Route Route
-	Name  string
-}
-
-// Neighbor represents an ARP/NDP neighbor entry to be added to the stack.
-type Neighbor struct {
-	IP           net.IP
-	HardwareAddr net.HardwareAddr
-}
-
-// FDBasedLink configures an fd-based link.
-type FDBasedLink struct {
-	Name              string
-	InterfaceIndex    int
-	MTU               int
-	Addresses         []IPWithPrefix
-	Routes            []Route
-	GSOMaxSize        uint32
-	GVisorGSOEnabled  bool
-	GVisorGRO         bool
-	TXChecksumOffload bool
-	RXChecksumOffload bool
-	LinkAddress       net.HardwareAddr
-	QDisc             config.QueueingDiscipline
-	TBFRate           uint64
-	TBFBurst          uint32
-	Neighbors         []Neighbor
-
-	// NumChannels controls how many underlying FDs are to be used to
-	// create this endpoint.
-	NumChannels int
-
-	// ProcessorsPerChannel controls how many goroutines are used to handle
-	// packets on each channel.
-	ProcessorsPerChannel int
-
-	// IsPacket indicates whether each FD in this link is a packet socket.
-	IsPacket []bool
-
-	// PreConfigured indicates that getsockname and setsockopt(PACKET_FANOUT)
-	// have already been performed on the host FDs.
-	PreConfigured bool
-
-	// IsProxy indicates that this link is backed by a SOCK_SEQPACKET Unix domain
-	// socket connected to an external network proxy rather than by AF_PACKET
-	// sockets on a host device. Such a link carries bare IP packets with no
-	// Ethernet header and has no L2 neighbor table.
-	IsProxy bool
-}
-
-// BindOpt indicates whether the sentry or runsc process is responsible for
-// binding the AF_XDP socket.
-type BindOpt int
-
-const (
-	// BindSentry indicates the sentry process must call bind.
-	BindSentry BindOpt = iota
-
-	// BindRunsc indicates the runsc process must call bind.
-	BindRunsc
-)
-
-// XDPLink configures an XDP link.
-type XDPLink struct {
-	Name              string
-	InterfaceIndex    int
-	MTU               int
-	Addresses         []IPWithPrefix
-	Routes            []Route
-	TXChecksumOffload bool
-	RXChecksumOffload bool
-	LinkAddress       net.HardwareAddr
-	QDisc             config.QueueingDiscipline
-	TBFRate           uint64
-	TBFBurst          uint32
-	Neighbors         []Neighbor
-	GVisorGRO         bool
-	Bind              BindOpt
-
-	// NumChannels controls how many underlying FDs are to be used to
-	// create this endpoint.
-	NumChannels int
-}
-
-// LoopbackLink configures a loopback link.
-type LoopbackLink struct {
-	Name      string
-	Addresses []IPWithPrefix
-	Routes    []Route
-	GVisorGRO bool
-}
-
-// CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
-type CreateLinksAndRoutesArgs struct {
-	// FilePayload contains the fds associated with the FDBasedLinks. The
-	// number of fd's should match the sum of the NumChannels field of the
-	// FDBasedLink entries below.
-	urpc.FilePayload
-
-	LoopbackLinks []LoopbackLink
-	FDBasedLinks  []FDBasedLink
-	XDPLinks      []XDPLink
-
-	Defaultv4Gateway DefaultRoute
-	Defaultv6Gateway DefaultRoute
-
-	// PCAP indicates that FilePayload also contains a PCAP log file.
-	PCAP bool
-
-	// LogPackets indicates that packets should be logged.
-	LogPackets bool
-
-	// NATBlob indicates whether FilePayload also contains an iptables NAT
-	// ruleset.
-	NATBlob bool
-
-	// PauseExternalNetworking indicates whether external networking should be
-	// disabled initially.
-	PauseExternalNetworking bool
-
-	// AllowConnectedOnSave indicates whether connections should be allowed to
-	// remain connected during save.
-	AllowConnectedOnSave bool
-
-	// IsRestore indicates whether this is part of a restore flow.
-	IsRestore bool
-}
-
-// InitPluginStackArgs are arguments to InitPluginStack.
-type InitPluginStackArgs struct {
-	urpc.FilePayload
-
-	InitStr string
-}
-
-// IPWithPrefix is an address with its subnet prefix length.
-type IPWithPrefix struct {
-	// Address is a network address.
-	Address net.IP
-
-	// PrefixLen is the subnet prefix length.
-	PrefixLen int
-}
-
-func (ip IPWithPrefix) String() string {
-	return fmt.Sprintf("%s/%d", ip.Address, ip.PrefixLen)
-}
-
-// Empty returns true if route hasn't been set.
-func (r *Route) Empty() bool {
-	return r.Destination.IP == nil && r.Destination.Mask == nil && r.Gateway == nil
-}
-
-func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
+func toTcpipRoute(r *sentryapi.Route, id tcpip.NICID) (tcpip.Route, error) {
 	subnet, err := tcpip.NewSubnet(ipToAddress(r.Destination.IP), ipMaskToAddressMask(r.Destination.Mask))
 	if err != nil {
 		return tcpip.Route{}, err
@@ -254,7 +67,7 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
 
 // InitPluginStack initializes plugin network stack.
 // It will invoke Init() that is registered by current plugin stack.
-func (n *Network) InitPluginStack(args *InitPluginStackArgs, _ *struct{}) error {
+func (n *Network) InitPluginStack(args *sentryapi.InitPluginStackArgs, _ *struct{}) error {
 	pluginStack := n.PluginStack
 	if pluginStack == nil {
 		return fmt.Errorf("plugin stack is not registered")
@@ -279,7 +92,7 @@ func (n *Network) InitPluginStack(args *InitPluginStackArgs, _ *struct{}) error 
 
 // CreateLinksAndRoutes creates links and routes in a network stack.  It should
 // only be called once.
-func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
+func (n *Network) CreateLinksAndRoutes(args *sentryapi.CreateLinksAndRoutesArgs, _ *struct{}) error {
 	if len(args.FDBasedLinks) > 0 && len(args.XDPLinks) > 0 {
 		return fmt.Errorf("received both fdbased and XDP links, but only one can be used at a time")
 	}
@@ -292,9 +105,9 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		// responsible for binding, but when runsc binds we only expect
 		// the AF_XDP socket itself.
 		switch v := link.Bind; v {
-		case BindSentry:
+		case sentryapi.BindSentry:
 			wantFDs += 4
-		case BindRunsc:
+		case sentryapi.BindRunsc:
 			wantFDs++
 		default:
 			return fmt.Errorf("unknown bind value: %d", v)
@@ -337,7 +150,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 		// Collect the routes from this link.
 		for _, r := range link.Routes {
-			route, err := r.toTcpipRoute(nicID)
+			route, err := toTcpipRoute(&r, nicID)
 			if err != nil {
 				return err
 			}
@@ -439,7 +252,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 			// Collect the routes from this link.
 			for _, r := range link.Routes {
-				route, err := r.toTcpipRoute(nicID)
+				route, err := toTcpipRoute(&r, nicID)
 				if err != nil {
 					return err
 				}
@@ -473,7 +286,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		// process sends several other FDs in order to keep them open
 		// and alive. These are for BPF programs and maps that, if
 		// closed, will break the dispatcher.
-		if link.Bind == BindSentry {
+		if link.Bind == sentryapi.BindSentry {
 			for _, fdName := range []string{"program-fd", "sockmap-fd", "link-fd"} {
 				oldFD := args.FilePayload.Files[fdOffset].Fd()
 				if _, err := unix.Dup(int(oldFD)); err != nil {
@@ -491,7 +304,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			TXChecksumOffload: link.TXChecksumOffload,
 			RXChecksumOffload: link.RXChecksumOffload,
 			InterfaceIndex:    link.InterfaceIndex,
-			Bind:              link.Bind == BindSentry,
+			Bind:              link.Bind == sentryapi.BindSentry,
 			GRO:               link.GVisorGRO,
 		})
 		if err != nil {
@@ -540,7 +353,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 		// Collect the routes from this link.
 		for _, r := range link.Routes {
-			route, err := r.toTcpipRoute(nicID)
+			route, err := toTcpipRoute(&r, nicID)
 			if err != nil {
 				return err
 			}
@@ -558,7 +371,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		if !ok {
 			return fmt.Errorf("invalid interface name %q for default route", args.Defaultv4Gateway.Name)
 		}
-		route, err := args.Defaultv4Gateway.Route.toTcpipRoute(nicID)
+		route, err := toTcpipRoute(&args.Defaultv4Gateway.Route, nicID)
 		if err != nil {
 			return err
 		}
@@ -570,7 +383,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		if !ok {
 			return fmt.Errorf("invalid interface name %q for default route", args.Defaultv6Gateway.Name)
 		}
-		route, err := args.Defaultv6Gateway.Route.toTcpipRoute(nicID)
+		route, err := toTcpipRoute(&args.Defaultv6Gateway.Route, nicID)
 		if err != nil {
 			return err
 		}
@@ -603,7 +416,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 // createNICWithAddrs creates a NIC in the network stack and adds the given
 // addresses.
-func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts stack.NICOptions, addrs []IPWithPrefix) error {
+func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts stack.NICOptions, addrs []sentryapi.IPWithPrefix) error {
 	if err := n.Stack.CreateNICWithOptions(id, ep, opts); err != nil {
 		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
