@@ -21,6 +21,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/amdgpu",
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/log",

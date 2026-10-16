@@ -14,6 +14,7 @@ go_library(
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/tpu",
+        "//pkg/amdgpu",
         "//pkg/coretag",
         "//pkg/cpuid",
         "//pkg/fd",
@@ -23,6 +24,7 @@ go_library(
         "//pkg/prometheus",
         "//pkg/rdma",
         "//pkg/ring0",
+        "//pkg/sentry/devices/amdgpuproxy",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/hostmm",

@@ -183,6 +183,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
+	flagSet.Var(AMDGPUProxyDisabled.Ptr(), "amdgpuproxy", "EXPERIMENTAL: AMD GPU support: disabled (default) or compute. compute requires --platform=kvm and exposes only /dev/kfd and the /dev/dri/renderD* devices in the OCI spec.")
 	flagSet.Bool("nvproxy", false, "LEGACY: enable support for Nvidia GPUs. GPU support gets automatically enabled if Nvidia devices are present in the OCI spec.")
 	flagSet.Bool("nvproxy-docker", false, "LEGACY: Injects nvidia-container-runtime-hook as a prestart hook. Try to use nvidia-container-runtime or `docker run --gpus` instead. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.String("nvproxy-driver-version", "", "NVIDIA driver ABI version to use. If empty, autodetect installed driver version. The special value 'latest' may also be used to use the latest ABI.")

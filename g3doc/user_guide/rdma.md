@@ -20,8 +20,9 @@ sandbox as on the host.
 RDMA support is enabled with the `--rdmaproxy` flag and applies to containers
 whose OCI spec lists one or more `/dev/infiniband/uverbs*` devices.
 
-When combined with GPUs (see [GPU Support](gpu.md)), gVisor supports GPUDirect
-RDMA, allowing the NIC to transfer data directly to and from GPU memory.
+When combined with GPUs (see [NVIDIA GPU Support](gpu.md)), gVisor supports
+GPUDirect RDMA, allowing the NIC to transfer data directly to and from GPU
+memory.
 
 ## Limitations
 
