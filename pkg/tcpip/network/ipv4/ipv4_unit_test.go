@@ -123,6 +123,8 @@ func TestRecalculateChecksum(t *testing.T) {
 				ipHeader := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
 				ipHeader.Encode(&header.IPv4Fields{
 					Protocol:    uint8(header.UDPProtocolNumber),
+					SrcAddr:     r.LocalAddress(),
+					DstAddr:     r.RemoteAddress(),
 					TOS:         0,
 					TotalLength: uint16(header.IPv4MinimumSize + header.UDPMinimumSize + len(payload)),
 				})
@@ -150,6 +152,8 @@ func TestRecalculateChecksum(t *testing.T) {
 				ipHeader := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
 				ipHeader.Encode(&header.IPv4Fields{
 					Protocol:    uint8(header.UDPProtocolNumber),
+					SrcAddr:     r.LocalAddress(),
+					DstAddr:     r.RemoteAddress(),
 					TOS:         0,
 					TotalLength: uint16(header.IPv4MinimumSize + header.UDPMinimumSize + len(payload)),
 				})
@@ -179,6 +183,8 @@ func TestRecalculateChecksum(t *testing.T) {
 				ipHeader := header.IPv4(pkt.NetworkHeader().Push(header.IPv4MinimumSize))
 				ipHeader.Encode(&header.IPv4Fields{
 					Protocol:    uint8(header.TCPProtocolNumber),
+					SrcAddr:     r.LocalAddress(),
+					DstAddr:     r.RemoteAddress(),
 					TOS:         0,
 					TotalLength: uint16(header.IPv4MinimumSize + header.TCPMinimumSize + len(payload)),
 				})
@@ -262,7 +268,7 @@ func TestRecalculateChecksum(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pkt := test.pkt
 			defer pkt.DecRef()
-			err := recalculateChecksum(pkt, r)
+			err := recalculateChecksum(pkt)
 			if test.wantErr {
 				if err == nil {
 					t.Errorf("recalculateChecksum succeeded, wanted error")
