@@ -209,11 +209,14 @@ go_test(
     srcs = [
         "pgalloc_64k_test.go",
         "pgalloc_test.go",
+        "save_restore_test.go",
     ],
     embed = [":pgalloc"],
     deps = [
         "//pkg/hostarch",
+        "//pkg/memutil",
         "//pkg/sentry/memmap",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
