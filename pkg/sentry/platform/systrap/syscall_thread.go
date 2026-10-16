@@ -89,6 +89,7 @@ func (t *syscallThread) init(seccompNotify bool) error {
 	}
 	fr, err := t.subproc.memoryFile.Allocate(syscallThreadMessageSize, opts)
 	if err != nil {
+		t.subproc.sysmsgStackPool.Put(t.thread.sysmsgStackID)
 		return err
 	}
 
@@ -141,7 +142,7 @@ func (t *syscallThread) destroy() {
 			arch.SyscallArgument{Value: t.stubAddr},
 			arch.SyscallArgument{Value: uintptr(syscallThreadMessageSize)})
 		if err != nil {
-			panic(fmt.Sprintf("munmap failed: %v", err))
+			t.thread.Warningf("munmap failed: %v", err)
 		}
 	}
 	t.subproc.memoryFile.DecRef(t.stackRange)
@@ -247,6 +248,16 @@ func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (ui
 	return uintptr(stubMsg.ret), nil
 }
 
+// kill marks subproc dead, wakes sleeping contexts, and kills the syscall
+// thread without acquiring aliveMu (avoiding self-deadlock when called from
+// s.syscall, which already holds s.aliveMu.RLock()).
+func (t *syscallThread) kill() {
+	if t.subproc != nil && t.subproc.dead.CompareAndSwap(false, true) {
+		t.subproc.wakeAllContexts()
+	}
+	t.thread.kill()
+}
+
 func (t *syscallThread) notifySeccompThread() error {
 	for {
 		errno := t.kickSeccompNotify()
@@ -261,7 +272,7 @@ func (t *syscallThread) notifySeccompThread() error {
 				return fmt.Errorf("failed resynchronizing seccomp notify: %w", err)
 			}
 		default:
-			t.thread.kill()
+			t.kill()
 			return fmt.Errorf("failed sending request to syscall thread: %w", errno)
 		}
 	}

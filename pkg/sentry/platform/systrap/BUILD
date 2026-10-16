@@ -120,6 +120,8 @@ go_test(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/hostarch",
+        "//pkg/hostsyscall",
+        "//pkg/pool",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/memmap",

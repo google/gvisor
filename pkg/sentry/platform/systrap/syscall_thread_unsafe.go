@@ -117,7 +117,7 @@ func (t *syscallThread) waitForSeccompNotify() error {
 		if (errno == unix.EINTR || errno == unix.ENOENT) && t.subproc.alive() {
 			continue
 		}
-		t.thread.kill()
+		t.kill()
 		return fmt.Errorf("failed getting response from syscall thread : %w", errno)
 	}
 	return nil
