@@ -21,13 +21,17 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Nvproxy implements subcommands.Command for the "nvproxy" command.
-type Nvproxy struct{}
+type Nvproxy struct {
+	// SupportedDrivers returns the driver versions that nvproxy supports.
+	// Only the Sentry binaries, which link nvproxy, set it.
+	SupportedDrivers func() []nvconf.DriverVersion
+}
 
 // Name implements subcommands.Command.
 func (*Nvproxy) Name() string {
@@ -40,11 +44,11 @@ func (*Nvproxy) Synopsis() string {
 }
 
 // Usage implements subcommands.Command.
-func (*Nvproxy) Usage() string {
+func (n *Nvproxy) Usage() string {
 	buf := bytes.Buffer{}
 	buf.WriteString("Usage: nvproxy <flags> <subcommand> <subcommand args>\n\n")
 
-	cdr := createCommander(&flag.FlagSet{})
+	cdr := n.createCommander(&flag.FlagSet{})
 	cdr.VisitGroups(func(grp *subcommands.CommandGroup) {
 		cdr.ExplainGroup(&buf, grp)
 	})
@@ -62,15 +66,14 @@ func (*Nvproxy) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs.Spe
 }
 
 // Execute implements subcommands.Command.Execute.
-func (*Nvproxy) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	nvproxy.Init()
-	return createCommander(f).Execute(ctx, args...)
+func (n *Nvproxy) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	return n.createCommander(f).Execute(ctx, args...)
 }
 
-func createCommander(f *flag.FlagSet) *subcommands.Commander {
+func (n *Nvproxy) createCommander(f *flag.FlagSet) *subcommands.Commander {
 	cdr := subcommands.NewCommander(f, "nvproxy")
 	cdr.Register(cdr.HelpCommand(), "")
 	cdr.Register(cdr.FlagsCommand(), "")
-	cdr.Register(new(listSupportedDrivers), "")
+	cdr.Register(&listSupportedDrivers{supportedDrivers: n.SupportedDrivers}, "")
 	return cdr
 }
