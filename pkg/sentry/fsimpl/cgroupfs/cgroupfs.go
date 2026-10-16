@@ -428,8 +428,8 @@ func (fs *filesystem) prepareInitialCgroup(ctx context.Context, vfsObj *vfs.Virt
 
 	ownerCreds := auth.CredentialsFromContext(ctx).Fork()
 	if idata.InitialCgroup.SetOwner {
-		ownerCreds.EffectiveKUID = idata.InitialCgroup.UID
-		ownerCreds.EffectiveKGID = idata.InitialCgroup.GID
+		ownerCreds.FilesystemKUID = idata.InitialCgroup.UID
+		ownerCreds.FilesystemKGID = idata.InitialCgroup.GID
 	}
 	mode := defaultDirMode
 	if idata.InitialCgroup.SetMode {

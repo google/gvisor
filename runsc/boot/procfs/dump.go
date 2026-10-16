@@ -44,9 +44,10 @@ type FDInfo struct {
 
 // UIDGID contains information for /proc/[pid]/status/{uid,gid}.
 type UIDGID struct {
-	Real      uint32 `json:"real"`
-	Effective uint32 `json:"effective"`
-	Saved     uint32 `json:"saved"`
+	Real       uint32 `json:"real"`
+	Effective  uint32 `json:"effective"`
+	Saved      uint32 `json:"saved"`
+	Filesystem uint32 `json:"filesystem"`
 }
 
 // Status contains information for /proc/[pid]/status.
@@ -249,14 +250,16 @@ func getStatus(t *kernel.Task, mm *mm.MemoryManager, pid kernel.ThreadID, pidns 
 		PID:  int32(pid),
 		PPID: int32(ppid),
 		UID: UIDGID{
-			Real:      uint32(creds.RealKUID.In(uns).OrOverflow()),
-			Effective: uint32(creds.EffectiveKUID.In(uns).OrOverflow()),
-			Saved:     uint32(creds.SavedKUID.In(uns).OrOverflow()),
+			Real:       uint32(creds.RealKUID.In(uns).OrOverflow()),
+			Effective:  uint32(creds.EffectiveKUID.In(uns).OrOverflow()),
+			Saved:      uint32(creds.SavedKUID.In(uns).OrOverflow()),
+			Filesystem: uint32(creds.FilesystemKUID.In(uns).OrOverflow()),
 		},
 		GID: UIDGID{
-			Real:      uint32(creds.RealKGID.In(uns).OrOverflow()),
-			Effective: uint32(creds.EffectiveKGID.In(uns).OrOverflow()),
-			Saved:     uint32(creds.SavedKGID.In(uns).OrOverflow()),
+			Real:       uint32(creds.RealKGID.In(uns).OrOverflow()),
+			Effective:  uint32(creds.EffectiveKGID.In(uns).OrOverflow()),
+			Saved:      uint32(creds.SavedKGID.In(uns).OrOverflow()),
+			Filesystem: uint32(creds.FilesystemKGID.In(uns).OrOverflow()),
 		},
 		VMSize: mm.VirtualMemorySize() >> 10,
 		VMRSS:  mm.ResidentSetSize() >> 10,

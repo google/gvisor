@@ -191,7 +191,7 @@ type InodeAttrs struct {
 
 // Init initializes this InodeAttrs.
 func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, mode linux.FileMode) {
-	a.InitWithIDs(ctx, creds.EffectiveKUID, creds.EffectiveKGID, devMajor, devMinor, ino, mode)
+	a.InitWithIDs(ctx, creds.FilesystemKUID, creds.FilesystemKGID, devMajor, devMinor, ino, mode)
 }
 
 // InitWithIDs initializes this InodeAttrs.

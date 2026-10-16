@@ -138,6 +138,18 @@ func Setresgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	return 0, nil, t.SetRESGID(rgid, egid, sgid)
 }
 
+// Setfsuid implements the Linux syscall setfsuid.
+func Setfsuid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fsuid := auth.UID(args[0].Int())
+	return uintptr(t.SetFSUID(fsuid)), nil, nil
+}
+
+// Setfsgid implements the Linux syscall setfsgid.
+func Setfsgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fsgid := auth.GID(args[0].Int())
+	return uintptr(t.SetFSGID(fsgid)), nil, nil
+}
+
 // Getgroups implements the Linux syscall getgroups.
 func Getgroups(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	size := int(args[0].Int())

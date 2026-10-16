@@ -473,7 +473,7 @@ func (i *lisafsInode) newChildDentry(ctx context.Context, childIno *lisafs.Inode
 
 func (i *lisafsInode) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
 	if _, ok := opts.Endpoint.(transport.HostBoundEndpoint); !ok {
-		childInode, err := i.controlFD.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+		childInode, err := i.controlFD.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID), opts.DevMinor, opts.DevMajor)
 		if err != nil {
 			return nil, err
 		}
@@ -482,7 +482,7 @@ func (i *lisafsInode) mknod(ctx context.Context, name string, creds *auth.Creden
 
 	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID))
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +526,7 @@ func (i *lisafsInode) mkdir(ctx context.Context, name string, mode linux.FileMod
 }
 
 func (i *lisafsInode) symlink(ctx context.Context, name, target string, creds *auth.Credentials) (*dentry, error) {
-	symlinkInode, err := i.controlFD.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	symlinkInode, err := i.controlFD.SymlinkAt(ctx, name, target, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID))
 	if err != nil {
 		return nil, err
 	}

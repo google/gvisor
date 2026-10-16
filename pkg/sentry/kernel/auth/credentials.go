@@ -33,9 +33,12 @@ type Credentials struct {
 	EffectiveKGID KGID
 	SavedKGID     KGID
 
-	// Filesystem user/group IDs are not implemented. "... setfsuid() is
-	// nowadays unneeded and should be avoided in new applications (likewise
-	// for setfsgid(2))." - setfsuid(2)
+	// Filesystem user/group IDs in the root user namespace, used for
+	// filesystem permission checks and as the owner of new files. They follow
+	// the effective IDs except when changed by setfsuid(2)/setfsgid(2).
+	// Analogous to Linux's struct cred::fsuid/fsgid. Never NoID.
+	FilesystemKUID KUID
+	FilesystemKGID KGID
 
 	// Supplementary groups used by set/getgroups.
 	//
@@ -73,13 +76,15 @@ func NewAnonymousCredentials() *Credentials {
 	// hierarchy, the returned credentials do not have any capabilities in any
 	// other namespace.
 	return &Credentials{
-		RealKUID:      NobodyKUID,
-		EffectiveKUID: NobodyKUID,
-		SavedKUID:     NobodyKUID,
-		RealKGID:      NobodyKGID,
-		EffectiveKGID: NobodyKGID,
-		SavedKGID:     NobodyKGID,
-		UserNamespace: NewRootUserNamespace(),
+		RealKUID:       NobodyKUID,
+		EffectiveKUID:  NobodyKUID,
+		SavedKUID:      NobodyKUID,
+		FilesystemKUID: NobodyKUID,
+		RealKGID:       NobodyKGID,
+		EffectiveKGID:  NobodyKGID,
+		SavedKGID:      NobodyKGID,
+		FilesystemKGID: NobodyKGID,
+		UserNamespace:  NewRootUserNamespace(),
 	}
 }
 
@@ -90,16 +95,18 @@ func NewRootCredentials(ns *UserNamespace) *Credentials {
 	// inheritable capability set to be initially empty (the capabilities test
 	// checks for this property).
 	return &Credentials{
-		RealKUID:      RootKUID,
-		EffectiveKUID: RootKUID,
-		SavedKUID:     RootKUID,
-		RealKGID:      RootKGID,
-		EffectiveKGID: RootKGID,
-		SavedKGID:     RootKGID,
-		PermittedCaps: AllCapabilities,
-		EffectiveCaps: AllCapabilities,
-		BoundingCaps:  AllCapabilities,
-		UserNamespace: ns,
+		RealKUID:       RootKUID,
+		EffectiveKUID:  RootKUID,
+		SavedKUID:      RootKUID,
+		FilesystemKUID: RootKUID,
+		RealKGID:       RootKGID,
+		EffectiveKGID:  RootKGID,
+		SavedKGID:      RootKGID,
+		FilesystemKGID: RootKGID,
+		PermittedCaps:  AllCapabilities,
+		EffectiveCaps:  AllCapabilities,
+		BoundingCaps:   AllCapabilities,
+		UserNamespace:  ns,
 	}
 }
 
@@ -114,12 +121,14 @@ func NewUserCredentials(kuid KUID, kgid KGID, extraKGIDs []KGID, capabilities *T
 	creds.RealKUID = uid
 	creds.EffectiveKUID = uid
 	creds.SavedKUID = uid
+	creds.FilesystemKUID = uid
 
 	// Set GID.
 	gid := kgid
 	creds.RealKGID = gid
 	creds.EffectiveKGID = gid
 	creds.SavedKGID = gid
+	creds.FilesystemKGID = gid
 
 	// Set additional GIDs.
 	creds.ExtraKGIDs = append(creds.ExtraKGIDs, extraKGIDs...)
@@ -182,7 +191,7 @@ func (c *Credentials) ForkIntoUserNamespace(ns *UserNamespace) *Credentials {
 // InGroup returns true if c is in group kgid. Compare Linux's
 // kernel/groups.c:in_group_p().
 func (c *Credentials) InGroup(kgid KGID) bool {
-	if c.EffectiveKGID == kgid {
+	if c.FilesystemKGID == kgid {
 		return true
 	}
 	for _, extraKGID := range c.ExtraKGIDs {
