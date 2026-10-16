@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/go-github/v84/github"
@@ -27,6 +28,13 @@ const (
 	githubOwner = "google"
 	githubRepo  = "gvisor"
 )
+
+type authorID uint64
+
+func parseAuthorID(s string) (authorID, error) {
+	v, err := strconv.ParseUint(s, 10, 64)
+	return authorID(v), err
+}
 
 // githubClient is a GitHub API client.
 //
@@ -41,17 +49,19 @@ func newGitHubClient(token []byte) *githubClient {
 	return &githubClient{client: github.NewClient(httpClient).WithAuthToken(string(token))}
 }
 
-// prAuthor returns the GitHub login of the account that opened the given pull
+// prAuthor returns the GitHub user ID of the account that opened the given pull
 // request.
-func (g *githubClient) prAuthor(ctx context.Context, prNumber int) (string, error) {
+//
+// On success, the returned ID is guaranteed to be non-zero.
+func (g *githubClient) prAuthor(ctx context.Context, prNumber int) (authorID, error) {
 	ctx = context.WithValue(ctx, github.SleepUntilPrimaryRateLimitResetWhenRateLimited, true)
 	pr, _, err := g.client.PullRequests.Get(ctx, githubOwner, githubRepo, prNumber)
 	if err != nil {
-		return "", fmt.Errorf("failed to get pull request %d: %w", prNumber, err)
+		return 0, fmt.Errorf("failed to get pull request %d: %w", prNumber, err)
 	}
-	author := pr.GetUser().GetLogin()
-	if author == "" {
-		return "", fmt.Errorf("pull request %d has no author", prNumber)
+	id := pr.GetUser().GetID()
+	if id <= 0 {
+		return 0, fmt.Errorf("pull request %d has no or invalid author", prNumber)
 	}
-	return author, nil
+	return authorID(id), nil
 }

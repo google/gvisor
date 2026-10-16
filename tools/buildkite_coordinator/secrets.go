@@ -26,7 +26,7 @@ import (
 
 const (
 	secretAttempts   = 5
-	secretRetryDelay = 5 * time.Second
+	secretRetryDelay = 10 * time.Second
 )
 
 // accessSecret returns the payload of the given secret.
