@@ -67,26 +67,21 @@ func (c *Container) Exec(ctx context.Context, opts ExecOpts, args ...string) (st
 	if err != nil {
 		return "", err
 	}
-	done := make(chan struct{})
-	var (
-		out    string
-		outErr error
-	)
-	// Read logs from another go-routine to be sure that it doesn't block on
-	// writing into standard file descriptors.
-	go func() {
-		out, outErr = p.Logs()
-		close(done)
-	}()
+	defer p.conn.Close()
+	stop := context.AfterFunc(ctx, p.conn.Close)
+	defer stop()
 
+	// Drain output before inspecting the exit status to avoid polling while
+	// the process is running. WaitExitStatus handles early stream closure.
+	// Cancellation closes the connection because the hijacked stream does not
+	// observe the request context.
+	out, outErr := p.Logs()
 	if exitStatus, err := p.WaitExitStatus(ctx); err != nil {
 		return "", err
 	} else if exitStatus != 0 {
-		<-done
 		return out, &ExecError{exitStatus}
 	}
 
-	<-done
 	return out, outErr
 }
 
