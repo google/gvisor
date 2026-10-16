@@ -34,7 +34,7 @@ const (
 func NewPagesFileFDReader(fd int32, maxReadBytes uint64, maxParallel int) *FDReader {
 	// Provision one range per page of maxReadBytes, since this is the maximum
 	// number of ranges that async page loading will use.
-	return NewFDReader(fd, maxReadBytes, int(maxReadBytes/hostarch.PageSize), maxParallel)
+	return NewFDReader(fd, maxReadBytes, int(maxReadBytes>>hostarch.PageShift), maxParallel)
 }
 
 // NewPagesFileFDReaderDefault returns a FDReader that reads a pages file from
@@ -53,7 +53,7 @@ func NewPagesFileFDReaderDefault(fd int32) *FDReader {
 func NewPagesFileFDWriter(fd int32, maxWriteBytes uint64, maxParallel int) *FDWriter {
 	// Provision one range per page of maxWriteBytes, since this is the maximum
 	// number of ranges that async page saving will use.
-	return NewFDWriter(fd, maxWriteBytes, int(maxWriteBytes/hostarch.PageSize), maxParallel)
+	return NewFDWriter(fd, maxWriteBytes, int(maxWriteBytes>>hostarch.PageShift), maxParallel)
 }
 
 // NewPagesFileFDWriterDefault returns a FDWriter that writes to the given host

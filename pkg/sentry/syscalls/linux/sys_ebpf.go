@@ -362,7 +362,7 @@ func Bpf(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *k
 // If cmd is invalid or unsupported, the nil BPFAttr is returned (along with no error).
 func copyInBPFAttr(t *kernel.Task, cmd int32, addr hostarch.Addr, size int) (linux.BPFAttr, error) {
 	// Invalid size. Negative size here would indicate overflow
-	if size < 0 || size > hostarch.PageSize {
+	if size < 0 || size > int(hostarch.PageSize) {
 		return nil, linuxerr.E2BIG
 	}
 
