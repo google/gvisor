@@ -16,7 +16,10 @@ package boot
 
 import (
 	"math"
+	"strconv"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func TestTSCOffsetFromSnapshot(t *testing.T) {
@@ -102,6 +105,39 @@ func TestTSCOffsetFromSnapshot(t *testing.T) {
 			}
 			if ok && got != tc.want {
 				t.Errorf("tscOffsetFromSnapshot() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckPageSizeMetadata(t *testing.T) {
+	pageSize := strconv.FormatUint(uint64(hostarch.PageSize), 10)
+	otherPageSize := "65536"
+	if pageSize == otherPageSize {
+		otherPageSize = "4096"
+	}
+	for _, test := range []struct {
+		name     string
+		metadata map[string]string
+		wantErr  bool
+	}{
+		{
+			name:     "missing",
+			metadata: map[string]string{},
+		},
+		{
+			name:     "same",
+			metadata: map[string]string{PageSizeKey: pageSize},
+		},
+		{
+			name:     "different",
+			metadata: map[string]string{PageSizeKey: otherPageSize},
+			wantErr:  true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := checkPageSizeMetadata(test.metadata); (err != nil) != test.wantErr {
+				t.Errorf("checkPageSizeMetadata(%v) = %v, want error: %t", test.metadata, err, test.wantErr)
 			}
 		})
 	}

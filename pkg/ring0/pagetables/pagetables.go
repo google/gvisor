@@ -308,7 +308,7 @@ func (*lookupVisitor) requiresSplit() bool { return false }
 //
 //go:nosplit
 func (p *PageTables) Lookup(addr hostarch.Addr, findFirst bool) (virtual hostarch.Addr, physical, size uintptr, opts MapOpts) {
-	mask := uintptr(hostarch.PageSize - 1)
+	mask := uintptr(pteSize - 1)
 	addr &^= hostarch.Addr(mask)
 	w := lookupWalker{
 		pageTables: p,

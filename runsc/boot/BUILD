@@ -190,6 +190,7 @@ go_test(
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/fspath",
+        "//pkg/hostarch",
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/seccomp",

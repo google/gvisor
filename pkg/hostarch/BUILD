@@ -23,9 +23,11 @@ go_test(
     srcs = [
         "addr_range_seq_test.go",
         "addr_test.go",
+        "hostarch_arm64_test.go",
         "hostarch_test.go",
     ],
     embed = [":hostarch"],
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
 
 go_library(
@@ -38,8 +40,6 @@ go_library(
         "addr_unsafe.go",
         "hostarch.go",
         "hostarch_arm64.go",
-        "hostarch_arm64_4k.go",
-        "hostarch_arm64_64k.go",
         "hostarch_x86.go",
         "memory_type.go",
         "sizes_util.go",

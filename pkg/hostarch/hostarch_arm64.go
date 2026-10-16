@@ -16,18 +16,38 @@
 
 package hostarch
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+	"math/bits"
 
+	"golang.org/x/sys/unix"
+)
+
+// arm64 supports 4K, 16K and 64K translation granules, and Linux can be
+// configured to use any of them as its base page size. gVisor supports 4K and
+// 64K page size hosts with a single binary: rather than being fixed at build
+// time, the page size is a property of the host that is determined once,
+// during package initialization, from the page size reported by the kernel
+// (AT_PAGESZ).
+//
+// Consequently, PageShift, PageSize, PageMask, HugePageShift, HugePageSize and
+// HugePageMask are variables on arm64 (and constants on other architectures).
+// They are never modified after initialization and must be treated as
+// constants. Code that needs a compile-time constant (e.g. to size an array)
+// must use MinPageSize or MaxPageSize instead.
 const (
-	// PageSize is the system page size.
-	// arm64 support 4K/16K/64K page size,
-	// which can be get by unix.Getpagesize().
-	// Currently, only 4K page size is supported by default,
-	// or 64K pages by using the pagesize_64k build tag.
-	PageSize = 1 << PageShift
+	// MinPageShift is the binary log of the smallest supported page size.
+	MinPageShift = 12
 
-	// HugePageSize is the system huge page size.
-	HugePageSize = 1 << HugePageShift
+	// MinPageSize is the smallest supported page size.
+	MinPageSize = 1 << MinPageShift
+
+	// MaxPageShift is the binary log of the largest supported page size.
+	MaxPageShift = 16
+
+	// MaxPageSize is the largest supported page size.
+	MaxPageSize = 1 << MaxPageShift
 
 	// JumboPageSize is the 1GB jumbo page size.
 	JumboPageSize = 1 << JumboPageShift
@@ -41,6 +61,85 @@ const (
 	// CacheLineShift is the binary log of the cache line size.
 	CacheLineShift = 6
 )
+
+var (
+	// PageShift is the binary log of the system page size.
+	PageShift = hostPageShift()
+
+	// PageSize is the system page size.
+	PageSize = uintptr(1) << PageShift
+
+	// PageMask is PageSize - 1.
+	PageMask = PageSize - 1
+
+	// HugePageShift is the binary log of the system huge page size: the size
+	// mapped by a single entry in the last-level page table directory (PMD),
+	// i.e. PageShift + (PageShift - 3). This is 21 (2MB huge pages) for 4K
+	// pages and 29 (512MB huge pages) for 64K pages.
+	HugePageShift = hugePageShift(PageShift)
+
+	// HugePageSize is the system huge page size.
+	HugePageSize = uintptr(1) << HugePageShift
+
+	// HugePageMask is HugePageSize - 1.
+	HugePageMask = HugePageSize - 1
+)
+
+// hugePageShift returns the binary log of the huge page size for the given
+// page size.
+func hugePageShift(pageShift uint) uint {
+	return 2*pageShift - 3
+}
+
+// setPageShift sets PageShift and all values derived from it.
+func setPageShift(shift uint) {
+	PageShift = shift
+	PageSize = uintptr(1) << PageShift
+	PageMask = PageSize - 1
+	HugePageShift = hugePageShift(PageShift)
+	HugePageSize = uintptr(1) << HugePageShift
+	HugePageMask = HugePageSize - 1
+}
+
+// SetPageShiftForTesting sets PageShift (and the values derived from it) to
+// shift, and returns a function that restores their previous values. shift
+// must be the binary log of a supported page size.
+//
+// This allows testing code paths that are specific to page sizes other than
+// the host's, but only in code that doesn't interact with the host using the
+// page size (e.g. when mapping memory with a page size smaller than the
+// host's), and that doesn't depend on state derived from the page size during
+// initialization. It must only be used by tests.
+func SetPageShiftForTesting(shift uint) (restore func()) {
+	if !IsSupportedPageSize(1 << shift) {
+		panic(fmt.Sprintf("unsupported page shift %d", shift))
+	}
+	oldShift := PageShift
+	setPageShift(shift)
+	return func() {
+		setPageShift(oldShift)
+	}
+}
+
+// hostPageShift returns the binary log of the host page size.
+//
+// It must not panic: hostarch is imported by tools that may run on hosts
+// whose page size gVisor doesn't support. Such hosts are rejected when a
+// sandbox is started, see IsSupportedPageSize.
+func hostPageShift() uint {
+	size := unix.Getpagesize()
+	if size < MinPageSize || size > MaxPageSize || size&(size-1) != 0 {
+		println("WARNING: unexpected host page size", size, "- assuming", MinPageSize)
+		return MinPageShift
+	}
+	return uint(bits.TrailingZeros(uint(size)))
+}
+
+// IsSupportedPageSize returns true if gVisor supports running on hosts with
+// the given page size.
+func IsSupportedPageSize(size int) bool {
+	return size == 1<<12 || size == 1<<16
+}
 
 var (
 	// ByteOrder is the native byte order (little endian).

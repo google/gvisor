@@ -141,7 +141,7 @@ func (img *vdsoImage) inExecutableSegment(off, size int) bool {
 			maxLoadEnd = p.Off + p.Memsz
 		}
 	}
-	const pageMask = hostarch.PageSize - 1
+	pageMask := int(hostarch.PageMask)
 	for _, p := range img.f.Progs {
 		if p.Type != elf.PT_LOAD || (p.Flags&elf.PF_X) == 0 {
 			continue
