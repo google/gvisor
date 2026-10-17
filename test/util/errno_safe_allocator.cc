@@ -17,14 +17,26 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#include <new>
+
 namespace {
 void* errno_safe_malloc(size_t size) {
   int original_errno = errno;
-  void* result = malloc(size);
-  if (result != nullptr) {
-    errno = original_errno;
+  // A successful zero-size allocation must still return a non-null pointer.
+  if (size == 0) {
+    size = 1;
   }
-  return result;
+  while (true) {
+    if (void* result = malloc(size); result != nullptr) {
+      errno = original_errno;
+      return result;
+    }
+    std::new_handler handler = std::get_new_handler();
+    if (handler == nullptr) {
+      throw std::bad_alloc();
+    }
+    handler();
+  }
 }
 
 void errno_safe_free(void* p) {
@@ -36,5 +48,5 @@ void errno_safe_free(void* p) {
 
 void* operator new(size_t size) { return errno_safe_malloc(size); }
 void* operator new[](size_t size) { return errno_safe_malloc(size); }
-void operator delete(void* p) { errno_safe_free(p); }
-void operator delete[](void* p) { errno_safe_free(p); }
+void operator delete(void* p) noexcept { errno_safe_free(p); }
+void operator delete[](void* p) noexcept { errno_safe_free(p); }
