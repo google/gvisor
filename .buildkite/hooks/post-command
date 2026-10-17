@@ -28,10 +28,11 @@ make -s testlogs 2>/dev/null | grep // | sort | uniq | (
       echo " * [${target}](artifact://${log#/}) (${BUILDKITE_LABEL})" | \
         buildkite-agent annotate --style error --context failures --append
 
-      # Upload any boot log files found in the test's directory (e.g. undeclared outputs).
+      # Upload boot and gofer logs found in the test's directory (e.g. undeclared outputs).
       log_dir=$(dirname "${log}")
-      find "${log_dir}" -iname "*.boot.txt" -print 2>/dev/null | while read -r boot_log; do
-        buildkite-agent artifact upload "${boot_log}"
+      find "${log_dir}" \( -iname "*.boot.txt" -o -iname "*.gofer.txt" \) \
+        -print 2>/dev/null | while read -r debug_log; do
+        buildkite-agent artifact upload "${debug_log}"
       done
 
       # List the first 5 specific failing go tests as sub-bullets.
