@@ -77,6 +77,115 @@ func TestClone(t *testing.T) {
 	clone.Release()
 }
 
+func TestExternalViewCopyOnWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		modify func(*View) error
+		want   string
+	}{
+		{
+			name: "WriteAt",
+			modify: func(v *View) error {
+				_, err := v.WriteAt([]byte("X"), 1)
+				return err
+			},
+			want: "aXcd",
+		},
+		{
+			name: "Write",
+			modify: func(v *View) error {
+				v.Reset()
+				_, err := v.Write([]byte("XY"))
+				return err
+			},
+			want: "XY",
+		},
+		{
+			name: "ReadFrom",
+			modify: func(v *View) error {
+				v.Reset()
+				_, err := v.ReadFrom(bytes.NewBufferString("XY"))
+				return err
+			},
+			want: "XY",
+		},
+		{
+			name: "Grow",
+			modify: func(v *View) error {
+				_, err := v.Write([]byte("e"))
+				return err
+			},
+			want: "abcde",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := &externalTestStorage{data: []byte("abcd"), ready: true}
+			original := NewViewWithExternalStorage(storage)
+			owned := MakeWithView(original)
+			defer owned.Release()
+			clone := original.Clone()
+			defer clone.Release()
+			if got := original.BasePtr(); got != &storage.data[0] {
+				t.Fatalf("BasePtr = %p, want %p", got, &storage.data[0])
+			}
+			if err := tc.modify(clone); err != nil {
+				t.Fatal(err)
+			}
+			if got := string(original.AsSlice()); got != "abcd" {
+				t.Fatalf("original bytes = %q, want abcd", got)
+			}
+			if got := string(clone.AsSlice()); got != tc.want {
+				t.Fatalf("clone bytes = %q, want %q", got, tc.want)
+			}
+			if storage.releases != 0 {
+				t.Fatalf("storage released during COW: %d", storage.releases)
+			}
+			owned.Release()
+			if storage.releases != 1 {
+				t.Fatalf("storage releases = %d, want 1", storage.releases)
+			}
+			if got := string(clone.AsSlice()); got != tc.want {
+				t.Fatalf("clone after external release = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExternalViewSharedLifetime(t *testing.T) {
+	storage := &externalTestStorage{data: bytes.Repeat([]byte("x"), MaxChunkSize), ready: true}
+	v := NewViewWithExternalStorage(storage)
+	clone := v.Clone()
+	v.Release()
+	if storage.releases != 0 {
+		t.Fatalf("storage released while clone still exists: %d", storage.releases)
+	}
+	if got := clone.Size(); got != MaxChunkSize {
+		t.Fatalf("clone size = %d, want %d", got, MaxChunkSize)
+	}
+	clone.Release()
+	if storage.releases != 1 {
+		t.Fatalf("storage releases = %d, want 1", storage.releases)
+	}
+}
+
+func TestExternalViewInvalidLength(t *testing.T) {
+	for _, size := range []int{0, MaxChunkSize + 1} {
+		func() {
+			storage := &externalTestStorage{data: make([]byte, size), ready: true}
+			defer func() {
+				if recover() == nil {
+					t.Errorf("external storage length %d did not panic", size)
+				}
+				if storage.releases != 0 {
+					t.Errorf("invalid storage length %d transferred ownership", size)
+				}
+				storage.Release()
+			}()
+			NewViewWithExternalStorage(storage).Release()
+		}()
+	}
+}
+
 func TestWrite(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

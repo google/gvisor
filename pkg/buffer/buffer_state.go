@@ -18,12 +18,44 @@ import (
 	"context"
 )
 
+// savedView keeps heap data compact while preserving external chunk ownership
+// and sharing. It stores either live heap bytes in data or an externally backed
+// View in external, never both.
+//
+// +stateify savable
+type savedView struct {
+	data     []byte
+	external *View
+}
+
 // saveData is invoked by stateify.
-func (b *Buffer) saveData() []byte {
-	return b.Flatten()
+func (b *Buffer) saveData() []savedView {
+	var views []savedView
+	for v := b.data.Front(); v != nil; v = v.Next() {
+		if v.chunk.external != nil {
+			// Save the owned View itself, without adding a chunk reference.
+			// Its storage implementation owns saving the external bytes.
+			views = append(views, savedView{external: v})
+		} else {
+			// A subslice would retain unused capacity and heap chunk aliases.
+			// Keep only the live bytes, as the flattened representation did.
+			views = append(views, savedView{data: v.ToSlice()})
+		}
+	}
+	return views
 }
 
 // loadData is invoked by stateify.
-func (b *Buffer) loadData(_ context.Context, data []byte) {
-	*b = MakeWithData(data)
+func (b *Buffer) loadData(_ context.Context, views []savedView) {
+	*b = Buffer{}
+	for _, saved := range views {
+		v := saved.external
+		if v == nil {
+			v = NewViewWithData(saved.data)
+		}
+		// Restore list ownership without acquiring another chunk reference or
+		// accessing external bytes that may not have been restored yet. Append
+		// could copy data or release an empty View, so only rebuild the links.
+		b.appendOwned(v)
+	}
 }
