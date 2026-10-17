@@ -100,6 +100,18 @@ type Task struct {
 	// haveSyscallReturn is exclusive to the task goroutine.
 	haveSyscallReturn bool
 
+	// bypassSeccompRestartSyscall causes the next restart_syscall to skip
+	// seccomp filtering. It is armed by Kernel.SaveTo, while the kernel is
+	// paused, for a task checkpointed with ERESTART_RESTARTBLOCK pending (see
+	// armSeccompRestartSyscallBypass), and is saved with the task. It is
+	// cleared when consumed, when a signal handler is delivered, or when the
+	// task begins an internal stop.
+	//
+	// bypassSeccompRestartSyscall is exclusive to the task goroutine, except
+	// that armSeccompRestartSyscallBypass writes it while the kernel is
+	// paused.
+	bypassSeccompRestartSyscall bool
+
 	// interruptChan is notified whenever the task goroutine is interrupted
 	// (usually by a pending signal). interruptChan is effectively a condition
 	// variable that can be used in select statements.

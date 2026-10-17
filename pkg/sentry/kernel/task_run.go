@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -131,6 +132,36 @@ func (t *Task) doStop() {
 	}
 }
 
+// armSeccompRestartSyscallBypass arms a one-shot seccomp bypass for the
+// restart_syscall that resuming t will execute, if t is quiesced for a
+// checkpoint with ERESTART_RESTARTBLOCK pending. A checkpoint has no Linux
+// analogue and the guest did not issue that syscall, so a filter that omits
+// restart_syscall must not kill the thread. The bypass is saved with t, so it
+// survives further checkpoints until t consumes or abandons it.
+//
+// Preconditions:
+//   - The kernel is paused.
+//   - The signal mutex must be locked.
+//   - t is not in an internal stop (t.stop == nil), which Linux would filter.
+func (t *Task) armSeccompRestartSyscallBypass() {
+	if !t.haveSyscallReturn || t.seccomp.Load() == nil {
+		return
+	}
+	if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok && sre == linuxerr.ERESTART_RESTARTBLOCK {
+		t.bypassSeccompRestartSyscall = true
+	}
+}
+
+// consumeSeccompRestartSyscallBypass returns true if the syscall about to be
+// filtered is the restart_syscall that resumes a syscall interrupted by a
+// checkpoint, which the guest did not issue. Any other syscall clears the
+// bypass, so later restart_syscalls are filtered as on Linux.
+func (t *Task) consumeSeccompRestartSyscallBypass(sysno uintptr) bool {
+	bypass := t.bypassSeccompRestartSyscall
+	t.bypassSeccompRestartSyscall = false
+	return bypass && sysno == arch.RestartSyscallNr
+}
+
 // The runApp state checks for interrupts before executing untrusted
 // application code.
 //
@@ -173,11 +204,12 @@ func (app *runApp) execute(t *Task) taskRunState {
 			return (*runExit)(nil)
 		}
 
-		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
-			if sre == linuxerr.ERESTART_RESTARTBLOCK {
-				t.Debugf("Restarting syscall %d with restart block: not interrupted by handled signal", t.Arch().SyscallNo())
-				t.Arch().RestartSyscallWithRestartBlock()
-			} else {
+		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok && sre == linuxerr.ERESTART_RESTARTBLOCK {
+			t.Debugf("Restarting syscall %d with restart block: not interrupted by handled signal", t.Arch().SyscallNo())
+			t.Arch().RestartSyscallWithRestartBlock()
+		} else {
+			t.bypassSeccompRestartSyscall = false
+			if ok {
 				t.Debugf("Restarting syscall %d: not interrupted by handled signal", t.Arch().SyscallNo())
 				t.Arch().RestartSyscall()
 			}
