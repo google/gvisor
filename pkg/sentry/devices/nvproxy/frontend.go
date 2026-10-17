@@ -131,6 +131,9 @@ type frontendFD struct {
 	// clients are handles of clients owned by this frontendFD. clients is
 	// protected by dev.nvp.clientsMu.
 	clients map[*rootClient]struct{}
+
+	// exported is protected by dev.nvp.fdsMu.
+	exported exportedObject
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -997,6 +1000,12 @@ func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETER
 }
 
 func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	return ctrlHasFrontendFDThen[Params, PtrParams](fi, ioctlParams, nil)
+}
+
+// ctrlHasFrontendFDThen is ctrlHasFrontendFD, but calls then, if not nil,
+// with the params' frontendFD and the result of a successful control.
+func ctrlHasFrontendFDThen[Params any, PtrParams hasFrontendFDPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, then func(*frontendFD, PtrParams)) (uintptr, error) {
 	var ctrlParamsValue Params
 	ctrlParams := PtrParams(&ctrlParamsValue)
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
@@ -1022,6 +1031,9 @@ func ctrlHasFrontendFD[Params any, PtrParams hasFrontendFDPtr[Params]](fi *front
 	ctrlParams.SetFrontendFD(origFD)
 	if err != nil {
 		return n, err
+	}
+	if then != nil && ioctlParams.Status == nvgpu.NV_OK {
+		then(ctlFile, ctrlParams)
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
