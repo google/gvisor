@@ -98,6 +98,31 @@ func createEchoServer(path string, protocol int) (cleanup func(), err error) {
 	return cleanup, nil
 }
 
+// echoGroupGID is the group of the echo-group sockets. Any group the test
+// processes do not hold works.
+const echoGroupGID = 65533
+
+// createGroupEchoServer creates an echo server that only its group may connect
+// to. As root the group is echoGroupGID, otherwise it stays the one this
+// process was created with.
+func createGroupEchoServer(path string, protocol int) (cleanup func(), err error) {
+	cleanup, err = createEchoServer(path, protocol)
+	if err != nil {
+		return nil, err
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(path, -1, echoGroupGID); err != nil {
+			log.Warningf("Failed to set echo(%d) socket group: %v", protocol, err)
+		}
+	}
+	// Tests that need the group restriction skip without it, which happens on a
+	// filesystem that refuses to chmod a socket.
+	if err := os.Chmod(path, 0660); err != nil {
+		log.Warningf("Failed to set echo(%d) socket mode: %v", protocol, err)
+	}
+	return cleanup, nil
+}
+
 // createEchoClient connects to the given socket and turns into an echo client.
 func createEchoClient(path string, protocol int) (cleanup func(), err error) {
 	usePacket := protocol == unix.SOCK_SEQPACKET
@@ -300,6 +325,11 @@ func createSocketTree(baseDir string, specs []socketCreatorSpec) (string, func()
 	})
 	defer cu.Clean()
 
+	// Let unprivileged test processes reach the sockets.
+	if err := os.Chmod(dir, 0755); err != nil {
+		return "", nil, fmt.Errorf("error setting mode of %q: %v", dir, err)
+	}
+
 	for _, proto := range specs {
 		protoDir := filepath.Join(dir, proto.name)
 		if err := os.Mkdir(protoDir, 0755); err != nil {
@@ -324,6 +354,7 @@ func createSocketTree(baseDir string, specs []socketCreatorSpec) (string, func()
 //
 // These are created at locations:
 //   - /stream/echo
+//   - /stream/echo-group
 //   - /stream/nonlistening
 //   - /seqpacket/echo
 //   - /seqpacket/nonlistening
@@ -335,6 +366,7 @@ func CreateBoundUDSTree(baseDir string) (string, func(), error) {
 			name:     "stream",
 			sockets: map[string]socketCreator{
 				"echo":         createEchoServer,
+				"echo-group":   createGroupEchoServer,
 				"nonlistening": createNonListeningSocket,
 			},
 		},
