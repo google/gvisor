@@ -515,7 +515,6 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
-    netstack_sr = True,
     test = "//test/syscalls/linux:network_namespace_test",
 )
 
@@ -539,7 +538,6 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
-    netstack_sr = True,
     test = "//test/syscalls/linux:packet_socket_dgram_test",
 )
 
@@ -916,20 +914,17 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
-    netstack_sr = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_external_networking_test",
 )
 
 syscall_test(
     # TODO(b/446206378): TestJoinLeaveMulticast fails with add_hostinet.
-    netstack_sr = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_external_networking_test",
 )
 
 syscall_test(
     size = "large",
     add_hostinet = True,
-    netstack_sr = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
@@ -1010,7 +1005,6 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
-    netstack_sr = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_loopback_netlink_test",
 )
 
@@ -1031,7 +1025,6 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
-    netstack_sr = True,
     test = "//test/syscalls/linux:socket_ip_unbound_netlink_test",
 )
 
@@ -1153,7 +1146,6 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    netstack_sr = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_unix_stream_test",
 )
@@ -1304,14 +1296,12 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
-    netstack_sr = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:udp_socket_test",
 )
 
 syscall_test(
     add_hostinet = True,
-    netstack_sr = True,
     test = "//test/syscalls/linux:udp_raw_socket_test",
 )
 
