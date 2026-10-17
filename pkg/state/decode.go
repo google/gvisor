@@ -101,27 +101,6 @@ func (ods *objectDecodeState) addCallback(ic internalCallback) {
 	ods.callbacks = append(ods.callbacks, ic)
 }
 
-// findCycleFor returns when the given object is found in the blocking set.
-func (ods *objectDecodeState) findCycleFor(target *objectDecodeState) []*objectDecodeState {
-	for _, ic := range ods.callbacks {
-		other := ic.source()
-		if other != nil && other == target {
-			return []*objectDecodeState{target}
-		} else if childList := other.findCycleFor(target); childList != nil {
-			return append(childList, other)
-		}
-	}
-
-	// This should not occur.
-	Failf("no deadlock found?")
-	panic("unreachable")
-}
-
-// findCycle finds a dependency cycle.
-func (ods *objectDecodeState) findCycle() []*objectDecodeState {
-	return append(ods.findCycleFor(ods), ods)
-}
-
 // source implements internalCallback.source.
 func (ods *objectDecodeState) source() *objectDecodeState {
 	return ods
@@ -613,6 +592,37 @@ func (ds *decodeState) decodeObject(ods *objectDecodeState, obj reflect.Value, e
 	}
 }
 
+// findCycle finds a dependency cycle after all unblocked objects have completed.
+// Every remaining object has a blocker that is also incomplete. Following one
+// blocker per object must reach a cycle, even if the starting object is only
+// waiting on that cycle. No recursion is needed to construct the error report.
+//
+// Preconditions:
+//   - ds.pending is nonempty.
+//   - All unblocked objects have completed.
+func (ds *decodeState) findCycle() []*objectDecodeState {
+	blockers := make(map[*objectDecodeState]*objectDecodeState)
+	for elem := ds.pending.Front(); elem != nil; elem = elem.Next() {
+		for _, callback := range elem.ods.callbacks {
+			// User callbacks do not represent blocking dependencies.
+			if waiter := callback.source(); waiter != nil {
+				blockers[waiter] = elem.ods
+			}
+		}
+	}
+	visited := make(map[*objectDecodeState]int)
+	var path []*objectDecodeState
+	for obj := ds.pending.Front().ods; obj != nil; obj = blockers[obj] {
+		if start, ok := visited[obj]; ok {
+			return append(path[start:], obj)
+		}
+		visited[obj] = len(path)
+		path = append(path, obj)
+	}
+	Failf("incomplete object has no blocking dependency")
+	panic("unreachable")
+}
+
 // Load deserializes the object graph rooted at obj.
 //
 // This function may panic and should be run in safely().
@@ -716,9 +726,9 @@ func (ds *decodeState) Load(obj reflect.Value) {
 
 	// Check if we have any remaining dependency cycles. If there are any
 	// objects left in the pending list, then it must be due to a cycle.
-	if elem := ds.pending.Front(); elem != nil {
+	if ds.pending.Front() != nil {
 		// This must be the result of a dependency cycle.
-		cycle := elem.ods.findCycle()
+		cycle := ds.findCycle()
 		var buf bytes.Buffer
 		buf.WriteString("dependency cycle: {")
 		for i, cycleOS := range cycle {
