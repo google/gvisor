@@ -431,6 +431,31 @@ TEST_F(OpenTest, SymlinkDirectory) {
   ASSERT_NO_ERRNO(Open(link, O_RDONLY | O_DIRECTORY));
 }
 
+TEST_F(OpenTest, SymlinkDirectoryNoFollow) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string link = NewTempAbsPath();
+  ASSERT_THAT(symlink(dir.path().c_str(), link.c_str()), SyscallSucceeds());
+  ASSERT_THAT(open(link.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW),
+              SyscallFailsWithErrno(ENOTDIR));
+  ASSERT_THAT(open(link.c_str(), O_RDONLY | O_NOFOLLOW),
+              SyscallFailsWithErrno(ELOOP));
+  ASSERT_NO_ERRNO(Open(dir.path(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW));
+}
+
+TEST_F(OpenTest, SymlinkDirectoryTrailingSlashNoFollow) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string link = NewTempAbsPath();
+  ASSERT_THAT(symlink(dir.path().c_str(), link.c_str()), SyscallSucceeds());
+  struct stat dir_stat;
+  ASSERT_THAT(stat(dir.path().c_str(), &dir_stat), SyscallSucceeds());
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(link + "/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW));
+  struct stat fd_stat;
+  ASSERT_THAT(fstat(fd.get(), &fd_stat), SyscallSucceeds());
+  EXPECT_EQ(fd_stat.st_ino, dir_stat.st_ino);
+  ASSERT_NO_ERRNO(Open(link + "/", O_RDONLY | O_NOFOLLOW));
+}
+
 TEST_F(OpenTest, Null) {
   char c = '\0';
   ASSERT_THAT(open(&c, O_RDONLY), SyscallFailsWithErrno(ENOENT));
