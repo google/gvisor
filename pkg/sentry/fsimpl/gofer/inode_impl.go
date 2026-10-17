@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
@@ -553,7 +554,7 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 		inode, err := controlFD.Walk(ctx, d.name)
 		if err != nil {
 			if !d.isDir() || !d.forMountpoint {
-				return fmt.Errorf("failed to walk %q of type %#o in mount %q: %w", genericDebugPathname(it.fs, d), linux.FileMode(it.inode.fileType()), it.fs.iopts.UniqueID, err)
+				return wrapRestoreError(err, fmt.Errorf("failed to walk %q of type %#o in mount %q: %w", genericDebugPathname(it.fs, d), linux.FileMode(it.inode.fileType()), it.fs.iopts.UniqueID, err))
 			}
 
 			// Recreate directories that were created during volume mounting, since
@@ -579,7 +580,7 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 		})
 		if err != nil {
 			if !d.isDir() || !d.forMountpoint {
-				return fmt.Errorf("failed to walk %q of type %#o in mount %q: %w", genericDebugPathname(it.fs, d), linux.FileMode(it.inode.fileType()), it.fs.iopts.UniqueID, err)
+				return wrapRestoreError(err, fmt.Errorf("failed to walk %q of type %#o in mount %q: %w", genericDebugPathname(it.fs, d), linux.FileMode(it.inode.fileType()), it.fs.iopts.UniqueID, err))
 			}
 
 			// Recreate directories that were created during volume mounting, since
@@ -601,6 +602,17 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 	default:
 		panic("unknown inode implementation")
 	}
+}
+
+func wrapRestoreError(err, wrapped error) error {
+	if linuxerr.Equals(linuxerr.ENOENT, err) ||
+		linuxerr.Equals(linuxerr.EACCES, err) ||
+		linuxerr.Equals(linuxerr.ENOTDIR, err) ||
+		linuxerr.Equals(linuxerr.EISDIR, err) ||
+		linuxerr.Equals(linuxerr.ESTALE, err) {
+		return vfs.ErrCorruption{Err: wrapped}
+	}
+	return wrapped
 }
 
 // Precondition: d.handleMu is read locked.
