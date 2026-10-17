@@ -17,6 +17,7 @@ package tun
 import (
 	goContext "context"
 	"fmt"
+	"io"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
@@ -215,10 +216,11 @@ func (d *Device) MTU() (uint32, error) {
 	return endpoint.MTU(), nil
 }
 
-// Write injects one inbound packet into the network interface.
+// Write injects one inbound packet into the network interface. It may trim
+// headers from data; the caller retains ownership of the buffer.
 //
 // +checklocksexclude:d.mu
-func (d *Device) Write(data *buffer.View) (int64, error) {
+func (d *Device) Write(data *buffer.Buffer) (int64, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
 	flags := d.flags
@@ -230,34 +232,29 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 		return 0, linuxerr.EIO
 	}
 
-	dataLen := int64(data.Size())
+	dataLen := data.Size()
+	reader := io.NewSectionReader(data, 0, dataLen)
 
 	// Packet information.
 	var pktInfoHdr PacketInfoHeader
 	if !flags.NoPacketInfo {
-		if dataLen < PacketInfoHeaderSize {
+		var hdr [PacketInfoHeaderSize]byte
+		if _, err := io.ReadFull(reader, hdr[:]); err != nil {
 			// Ignore bad packet.
 			return dataLen, nil
 		}
-		pktInfoHdrView := data.Clone()
-		defer pktInfoHdrView.Release()
-		pktInfoHdrView.CapLength(PacketInfoHeaderSize)
-		pktInfoHdr = PacketInfoHeader(pktInfoHdrView.AsSlice())
-		data.TrimFront(PacketInfoHeaderSize)
+		pktInfoHdr = PacketInfoHeader(hdr[:])
 	}
 
 	// Ethernet header (TAP only).
 	var ethHdr header.Ethernet
 	if flags.TAP {
-		if data.Size() < header.EthernetMinimumSize {
+		var hdr [header.EthernetMinimumSize]byte
+		if _, err := io.ReadFull(reader, hdr[:]); err != nil {
 			// Ignore bad packet.
 			return dataLen, nil
 		}
-		ethHdrView := data.Clone()
-		defer ethHdrView.Release()
-		ethHdrView.CapLength(header.EthernetMinimumSize)
-		ethHdr = header.Ethernet(ethHdrView.AsSlice())
-		data.TrimFront(header.EthernetMinimumSize)
+		ethHdr = header.Ethernet(hdr[:])
 	}
 
 	// Try to determine network protocol number, default zero.
@@ -270,11 +267,12 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 	case flags.TUN:
 		// TUN interface with IFF_NO_PI enabled, thus
 		// we need to determine protocol from version field
-		if data.Size() == 0 {
+		var first [1]byte
+		if _, err := io.ReadFull(reader, first[:]); err != nil {
 			// Ignore bad packet.
 			return dataLen, nil
 		}
-		version := data.AsSlice()[0] >> 4
+		version := first[0] >> 4
 		switch version {
 		case 4:
 			protocol = header.IPv4ProtocolNumber
@@ -283,9 +281,10 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 		}
 	}
 
+	data.TrimFront(int64(len(pktInfoHdr) + len(ethHdr)))
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: len(ethHdr),
-		Payload:            buffer.MakeWithView(data.Clone()),
+		Payload:            data.Clone(),
 	})
 	defer pkt.DecRef()
 	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
@@ -293,21 +292,22 @@ func (d *Device) Write(data *buffer.View) (int64, error) {
 	return dataLen, nil
 }
 
-// Read reads one outgoing packet from the network interface.
+// Read reads one outgoing packet from the network interface. The caller owns
+// the returned buffer.
 //
 // +checklocksexclude:d.mu
-func (d *Device) Read() (*buffer.View, error) {
+func (d *Device) Read() (buffer.Buffer, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
 	noPacketInfo := d.flags.NoPacketInfo
 	d.mu.RUnlock()
 	if endpoint == nil {
-		return nil, linuxerr.EBADFD
+		return buffer.Buffer{}, linuxerr.EBADFD
 	}
 
 	pkt := endpoint.Read()
 	if pkt == nil {
-		return nil, linuxerr.ErrWouldBlock
+		return buffer.Buffer{}, linuxerr.ErrWouldBlock
 	}
 	v := encodePkt(pkt, noPacketInfo)
 	pkt.DecRef()
@@ -315,25 +315,20 @@ func (d *Device) Read() (*buffer.View, error) {
 }
 
 // encodePkt encodes packet for fd side.
-func encodePkt(pkt *stack.PacketBuffer, noPacketInfo bool) *buffer.View {
-	var view *buffer.View
+func encodePkt(pkt *stack.PacketBuffer, noPacketInfo bool) buffer.Buffer {
+	data := pkt.ToBuffer()
 
 	// Packet information.
 	if !noPacketInfo {
-		view = buffer.NewView(PacketInfoHeaderSize + pkt.Size())
-		view.Grow(PacketInfoHeaderSize)
+		view := buffer.NewViewSize(PacketInfoHeaderSize)
 		hdr := PacketInfoHeader(view.AsSlice())
 		hdr.Encode(&PacketInfoFields{
 			Protocol: pkt.NetworkProtocolNumber,
 		})
-		pktView := pkt.ToView()
-		view.Write(pktView.AsSlice())
-		pktView.Release()
-	} else {
-		view = pkt.ToView()
+		data.Prepend(view)
 	}
 
-	return view
+	return data
 }
 
 // Name returns the name of the attached network interface. Empty string if
