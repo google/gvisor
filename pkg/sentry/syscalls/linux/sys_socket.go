@@ -77,6 +77,9 @@ const flagsOffset = 48
 
 const sizeOfInt32 = 4
 
+// sizeOfGID is the size of a gid_t.
+const sizeOfGID = 4
+
 // messageHeader64Len is the length of a MessageHeader64 struct.
 var messageHeader64Len = uint64((*MessageHeader64)(nil).SizeBytes())
 
@@ -475,6 +478,10 @@ func GetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 		return 0, nil, linuxerr.EINVAL
 	}
 
+	if level == linux.SOL_SOCKET && name == linux.SO_PEERGROUPS {
+		return 0, nil, getSockOptPeerGroups(t, s, optValAddr, optLenAddr, int(optLen))
+	}
+
 	// Call syscall implementation then copy both value and value len out.
 	v, e := getSockOpt(t, s, int(level), int(name), optValAddr, int(optLen))
 	if e != nil {
@@ -493,6 +500,44 @@ func GetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 	}
 
 	return 0, nil, nil
+}
+
+// peerGroupsGetter is implemented by sockets that support SO_PEERGROUPS.
+type peerGroupsGetter interface {
+	// GetPeerGroups returns the supplementary groups of the socket's peer,
+	// as captured when the connection was established.
+	GetPeerGroups(t *kernel.Task) ([]auth.GID, *syserr.Error)
+}
+
+// getSockOptPeerGroups implements getsockopt(SOL_SOCKET, SO_PEERGROUPS).
+//
+// It is handled here rather than in getSockOpt because, when the buffer is too
+// small, Linux writes the required length to optlen and fails with ERANGE.
+func getSockOptPeerGroups(t *kernel.Task, s socket.Socket, optValAddr, optLenAddr hostarch.Addr, optLen int) error {
+	pg, ok := s.(peerGroupsGetter)
+	if !ok {
+		// Only unix sockets have peer credentials; Linux returns ENODATA
+		// for every other socket.
+		return linuxerr.ENODATA
+	}
+	gids, e := pg.GetPeerGroups(t)
+	if e != nil {
+		return e.ToError()
+	}
+	size := len(gids) * sizeOfGID
+	if optLen < size {
+		if _, err := primitive.CopyInt32Out(t, optLenAddr, int32(size)); err != nil {
+			return err
+		}
+		return linuxerr.ERANGE
+	}
+	if len(gids) > 0 {
+		if _, err := auth.CopyGIDSliceOut(t, optValAddr, gids); err != nil {
+			return err
+		}
+	}
+	_, err := primitive.CopyInt32Out(t, optLenAddr, int32(size))
+	return err
 }
 
 // getSockOpt tries to handle common socket options, or dispatches to a specific

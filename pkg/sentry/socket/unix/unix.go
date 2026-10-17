@@ -547,6 +547,21 @@ func (s *Socket) GetPeerCreds(t *kernel.Task) (marshal.Marshallable, *syserr.Err
 	}, nil
 }
 
+// GetPeerGroups returns the supplementary groups of the peer of the socket
+// backed by a transport.Endpoint, for SO_PEERGROUPS.
+func (s *Socket) GetPeerGroups(t *kernel.Task) ([]auth.GID, *syserr.Error) {
+	pCreds := s.ep.PeerCreds()
+	if pCreds == nil {
+		// Unlike SO_PEERCRED, Linux fails with ENODATA if there is no peer.
+		return nil, syserr.ErrNoDataAvailable
+	}
+	scmCreds, ok := pCreds.(control.SCMCredentials)
+	if !ok {
+		return nil, syserr.ErrInvalidEndpointState
+	}
+	return scmCreds.Groups(t), nil
+}
+
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
 // a transport.Endpoint.
 func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
