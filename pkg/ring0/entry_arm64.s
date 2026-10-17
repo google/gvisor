@@ -398,17 +398,17 @@ TEXT ·FPSIMDEnableTrap(SB),NOSPLIT,$0
 
 // KERNEL_ENTRY_FROM_EL1 is the entry code of the vcpu from el1 to el1.
 //
-// Match KERNEL_ENTRY_FROM_EL0: r18 must be saved as well because EL1 exceptions
-// can also interrupt the host vdso executing in guest mode, and the vdso C code
-// that may freely use r18 as a temporary.
+// r18 must be saved because EL1 exceptions can interrupt host VDSO C code,
+// which may use r18. Because this runs on the interrupted Go stack where
+// -8(RSP) holds the caller's frame pointer, stash r18 in SP_EL0 (unused at
+// EL1h) rather than writing below RSP.
 #define KERNEL_ENTRY_FROM_EL1 \
-	SUB $16, RSP, RSP; \		// save r18, r19 into the stack.
-	STP (RSV_REG, RSV_REG_APP), 16*0(RSP); \
+	MSR RSV_REG, SP_EL0; \
 	WORD $0xd538d092; \   //MRS   TPIDR_EL1, R18
 	REGISTERS_SAVE(RSV_REG, CPU_REGISTERS); \	// save sentry context (except r18, r19).
-	LDP 16*0(RSP), (R4, R5); \	// load the original r18, r19.
-	ADD $16, RSP, RSP; \
-	STP (R4, R5), CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18, r19.
+	MOVD RSV_REG_APP, CPU_REGISTERS+PTRACE_R19(RSV_REG); \	// save the original r19.
+	MRS SP_EL0, R4; \
+	MOVD R4, CPU_REGISTERS+PTRACE_R18(RSV_REG); \	// save the original r18.
 	MRS TPIDR_EL0, R4; \
 	MOVD R4, CPU_REGISTERS+PTRACE_TLS(RSV_REG); \
 	WORD $0xd5384004; \    //    MRS SPSR_EL1, R4
