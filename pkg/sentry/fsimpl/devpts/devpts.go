@@ -271,7 +271,13 @@ type rootInode struct {
 	// +checklocks:mu
 	replicas map[uint32]*replicaInode
 
-	// nextIdx is the next pty index to use.
+	// allocated counts master and replica file descriptions, including replica
+	// opens in progress. A removed replica node may still have live descriptors.
+	//
+	// +checklocks:mu
+	allocated map[uint32]uint64
+
+	// nextIdx is a lower bound for the lowest unused pty index.
 	//
 	// +checklocks:mu
 	nextIdx uint32
@@ -285,11 +291,21 @@ var _ kernfs.Inode = (*rootInode)(nil)
 func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credentials) (*Terminal, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.nextIdx == math.MaxUint32 {
-		return nil, linuxerr.ENOMEM
+	if i.allocated == nil {
+		i.allocated = make(map[uint32]uint64)
+	}
+	for {
+		if i.nextIdx == math.MaxUint32 {
+			return nil, linuxerr.ENOMEM
+		}
+		if _, used := i.allocated[i.nextIdx]; !used {
+			break
+		}
+		i.nextIdx++
 	}
 	idx := i.nextIdx
 	i.nextIdx++
+	i.allocated[idx] = 1 // The master file description.
 
 	// Sanity check that replica with idx does not exist.
 	if _, ok := i.replicas[idx]; ok {
@@ -338,13 +354,39 @@ func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
 
 	// Sanity check that replica with idx exists.
 	ri, ok := i.replicas[t.n]
-	if !ok {
-		panic(fmt.Sprintf("pty with index %d does not exist", t.n))
+	if !ok || ri.t != t {
+		panic(fmt.Sprintf("pty index %d no longer belongs to terminal", t.n))
 	}
 
 	// Drop the ref on replica inode taken during rootInode.allocateTerminal.
 	ri.DecRef(ctx)
 	delete(i.replicas, t.n)
+	i.releaseTerminalRefLocked(t.n)
+}
+
+// releaseTerminalRef drops a replica file description or a failed open reservation.
+//
+// +checklocksexclude:i.mu
+func (i *rootInode) releaseTerminalRef(index uint32) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.releaseTerminalRefLocked(index)
+}
+
+// +checklocks:i.mu
+func (i *rootInode) releaseTerminalRefLocked(index uint32) {
+	refs := i.allocated[index]
+	if refs == 0 {
+		panic(fmt.Sprintf("unallocated pty index %d released", index))
+	}
+	if refs > 1 {
+		i.allocated[index] = refs - 1
+		return
+	}
+	delete(i.allocated, index)
+	if index < i.nextIdx {
+		i.nextIdx = index
+	}
 }
 
 // Open implements kernfs.Inode.Open.
