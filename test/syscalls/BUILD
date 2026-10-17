@@ -465,6 +465,9 @@ syscall_test(
 
 syscall_test(
     timeout = "eternal",  # YES_I_REALLY_NEED_AN_ETERNAL_TEST
+    # This fixed page-table leak workload makes millions of calls and does not
+    # consume their trace output. Keep debug logs without per-syscall tracing.
+    args = ["--strace=false"],
     save = False,  # save tests incorrectly shorten timeout to "long"
     test = "//test/syscalls/linux:mmap_eternal_test",
 )
