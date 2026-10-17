@@ -51,5 +51,6 @@ go_test(
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/config",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
