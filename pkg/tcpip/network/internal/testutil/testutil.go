@@ -18,6 +18,7 @@ package testutil
 
 import (
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -203,7 +204,7 @@ func CheckMLDv2Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 ui
 //
 // Note that observed records are removed from expectedRecords. No error is
 // logged if the report does not have all the records expected.
-func ValidateIGMPv3ReportWithRecords(t *testing.T, v *buffer.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordType) {
+func ValidateIGMPv3ReportWithRecords(t *testing.T, v *buffer.View, srcAddr netip.Addr, expectedRecords map[netip.Addr]header.IGMPv3ReportRecordType) {
 	t.Helper()
 
 	checker.IPv4(t, v,
@@ -216,27 +217,27 @@ func ValidateIGMPv3ReportWithRecords(t *testing.T, v *buffer.View, srcAddr tcpip
 }
 
 // ValidateIGMPv3Report validates an IGMPv3 report.
-func ValidateIGMPv3Report(t *testing.T, v *buffer.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+func ValidateIGMPv3Report(t *testing.T, v *buffer.View, srcAddr netip.Addr, addrs []netip.Addr, recordType header.IGMPv3ReportRecordType) {
 	t.Helper()
 
-	records := make(map[tcpip.Address]header.IGMPv3ReportRecordType)
+	records := make(map[netip.Addr]header.IGMPv3ReportRecordType)
 	for _, addr := range addrs {
 		records[addr] = recordType
 	}
 
 	ValidateIGMPv3ReportWithRecords(t, v, srcAddr, records)
 
-	if diff := cmp.Diff(map[tcpip.Address]header.IGMPv3ReportRecordType{}, records); diff != "" {
+	if diff := cmp.Diff(map[netip.Addr]header.IGMPv3ReportRecordType{}, records); diff != "" {
 		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // ValidateIGMPv3RecordsAcrossReports validates IGMPv3 records across one or
 // more reports.
-func ValidateIGMPv3RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+func ValidateIGMPv3RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAddr netip.Addr, addrs []netip.Addr, recordType header.IGMPv3ReportRecordType) {
 	t.Helper()
 
-	expectedRecords := make(map[tcpip.Address]header.IGMPv3ReportRecordType)
+	expectedRecords := make(map[netip.Addr]header.IGMPv3ReportRecordType)
 	for _, addr := range addrs {
 		expectedRecords[addr] = recordType
 	}
@@ -252,17 +253,17 @@ func ValidateIGMPv3RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAd
 		p.DecRef()
 	}
 
-	if diff := cmp.Diff(map[tcpip.Address]header.IGMPv3ReportRecordType{}, expectedRecords); diff != "" {
+	if diff := cmp.Diff(map[netip.Addr]header.IGMPv3ReportRecordType{}, expectedRecords); diff != "" {
 		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // ValidMultipleIGMPv2ReportLeaves validates the reception of multiple IGMPv2
 // report/leave messages.
-func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, leave bool) {
+func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr netip.Addr, addrs []netip.Addr, leave bool) {
 	t.Helper()
 
-	expectedGroups := make(map[tcpip.Address]struct{})
+	expectedGroups := make(map[netip.Addr]struct{})
 	for _, addr := range addrs {
 		expectedGroups[addr] = struct{}{}
 	}
@@ -292,7 +293,7 @@ func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr 
 		p.DecRef()
 	}
 
-	if diff := cmp.Diff(map[tcpip.Address]struct{}{}, expectedGroups); diff != "" {
+	if diff := cmp.Diff(map[netip.Addr]struct{}{}, expectedGroups); diff != "" {
 		t.Errorf("post-validation groups map mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -301,7 +302,7 @@ func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr 
 //
 // Note that observed records are removed from expectedRecords. No error is
 // logged if the report does not have all the records expected.
-func ValidateMLDv2ReportWithRecords(t *testing.T, v *buffer.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.MLDv2ReportRecordType) {
+func ValidateMLDv2ReportWithRecords(t *testing.T, v *buffer.View, srcAddr netip.Addr, expectedRecords map[netip.Addr]header.MLDv2ReportRecordType) {
 	t.Helper()
 
 	checker.IPv6WithExtHdr(t, v,
@@ -316,27 +317,27 @@ func ValidateMLDv2ReportWithRecords(t *testing.T, v *buffer.View, srcAddr tcpip.
 }
 
 // ValidateMLDv2Report validates an MLDv2 report.
-func ValidateMLDv2Report(t *testing.T, v *buffer.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+func ValidateMLDv2Report(t *testing.T, v *buffer.View, srcAddr netip.Addr, addrs []netip.Addr, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
 
-	records := make(map[tcpip.Address]header.MLDv2ReportRecordType)
+	records := make(map[netip.Addr]header.MLDv2ReportRecordType)
 	for _, addr := range addrs {
 		records[addr] = recordType
 	}
 
 	ValidateMLDv2ReportWithRecords(t, v, srcAddr, records)
 
-	if diff := cmp.Diff(map[tcpip.Address]header.MLDv2ReportRecordType{}, records); diff != "" {
+	if diff := cmp.Diff(map[netip.Addr]header.MLDv2ReportRecordType{}, records); diff != "" {
 		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // ValidateMLDv2RecordsAcrossReports validates MLDv2 records across one or more
 // reports.
-func ValidateMLDv2RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+func ValidateMLDv2RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAddr netip.Addr, addrs []netip.Addr, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
 
-	expectedRecords := make(map[tcpip.Address]header.MLDv2ReportRecordType)
+	expectedRecords := make(map[netip.Addr]header.MLDv2ReportRecordType)
 	for _, addr := range addrs {
 		expectedRecords[addr] = recordType
 	}
@@ -352,17 +353,17 @@ func ValidateMLDv2RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAdd
 		p.DecRef()
 	}
 
-	if diff := cmp.Diff(map[tcpip.Address]header.MLDv2ReportRecordType{}, expectedRecords); diff != "" {
+	if diff := cmp.Diff(map[netip.Addr]header.MLDv2ReportRecordType{}, expectedRecords); diff != "" {
 		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // ValidMultipleMLDv1ReportLeaves validates the reception of multiple MLDv1
 // report/leave messages.
-func ValidMultipleMLDv1ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, leave bool) {
+func ValidMultipleMLDv1ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr netip.Addr, addrs []netip.Addr, leave bool) {
 	t.Helper()
 
-	expectedGroups := make(map[tcpip.Address]struct{})
+	expectedGroups := make(map[netip.Addr]struct{})
 	for _, addr := range addrs {
 		expectedGroups[addr] = struct{}{}
 	}
@@ -393,7 +394,7 @@ func ValidMultipleMLDv1ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr t
 		p.DecRef()
 	}
 
-	if diff := cmp.Diff(map[tcpip.Address]struct{}{}, expectedGroups); diff != "" {
+	if diff := cmp.Diff(map[netip.Addr]struct{}{}, expectedGroups); diff != "" {
 		t.Errorf("post-validation groups map mismatch (-want +got):\n%s", diff)
 	}
 }

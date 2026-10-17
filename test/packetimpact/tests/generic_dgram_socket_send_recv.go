@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -52,9 +53,9 @@ func expectedEthLayer(t *testing.T, dut testbench.DUT, socketFD int32, sendTo ne
 		}
 		if sendTo.IsMulticast() {
 			if sendTo4 := sendTo.To4(); sendTo4 != nil {
-				return header.EthernetAddressFromMulticastIPv4Address(tcpip.AddrFrom4Slice(sendTo4))
+				return header.EthernetAddressFromMulticastIPv4Address(netip.AddrFrom4([4]byte(sendTo4)))
 			}
-			return header.EthernetAddressFromMulticastIPv6Address(tcpip.AddrFrom16Slice(sendTo.To16()))
+			return header.EthernetAddressFromMulticastIPv6Address(netip.AddrFrom16([16]byte(sendTo.To16())))
 		}
 		return ""
 	}()

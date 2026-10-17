@@ -17,6 +17,7 @@ package tcp_test
 import (
 	"bytes"
 	"context"
+	"net/netip"
 	"reflect"
 	"testing"
 	"time"
@@ -557,14 +558,8 @@ func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
 	defer c.Cleanup()
 
 	const preservedNICID = 10
-	preservedIPv4Addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFrom4([4]byte{10, 0, 1, 1}),
-		PrefixLen: 24,
-	}
-	preservedIPv6Addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFrom16([16]byte{0xfd, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
-		PrefixLen: 64,
-	}
+	preservedIPv4Addr := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 0, 1, 1}), 24)
+	preservedIPv6Addr := netip.PrefixFrom(netip.AddrFrom16([16]byte{0xfd, 15: 1}), 64)
 	preservedEP := channel.New(1000, e2e.DefaultMTU, "")
 	defer preservedEP.Close()
 	if err := c.Stack().CreateNICWithOptions(preservedNICID, preservedEP, stack.NICOptions{Kind: "tun"}); err != nil {
@@ -631,10 +626,10 @@ func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
 	restoredStack.ReplaceConfig(tempStack)
 	restoredStack.Restore()
 
-	if got := restoredStack.CheckLocalAddress(preservedNICID, header.IPv4ProtocolNumber, preservedIPv4Addr.Address); got != preservedNICID {
+	if got := restoredStack.CheckLocalAddress(preservedNICID, header.IPv4ProtocolNumber, preservedIPv4Addr.Addr()); got != preservedNICID {
 		t.Fatalf("restoredStack.CheckLocalAddress(IPv4) = %d, want %d", got, preservedNICID)
 	}
-	if got := restoredStack.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Address); got != preservedNICID {
+	if got := restoredStack.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Addr()); got != preservedNICID {
 		t.Fatalf("restoredStack.CheckLocalAddress(IPv6) = %d, want %d", got, preservedNICID)
 	}
 
@@ -658,10 +653,10 @@ func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
 	}
 	restoredStack2.Restore()
 
-	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv4ProtocolNumber, preservedIPv4Addr.Address); got != preservedNICID {
+	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv4ProtocolNumber, preservedIPv4Addr.Addr()); got != preservedNICID {
 		t.Fatalf("restoredStack2.CheckLocalAddress(IPv4) = %d, want %d", got, preservedNICID)
 	}
-	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Address); got != preservedNICID {
+	if got := restoredStack2.CheckLocalAddress(preservedNICID, header.IPv6ProtocolNumber, preservedIPv6Addr.Addr()); got != preservedNICID {
 		t.Fatalf("restoredStack2.CheckLocalAddress(IPv6) = %d, want %d", got, preservedNICID)
 	}
 }

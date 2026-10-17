@@ -16,6 +16,7 @@ package state
 
 import (
 	"encoding"
+	"net/netip"
 	"reflect"
 	"slices"
 	"time"
@@ -412,4 +413,7 @@ func register(typ reflect.Type, info wire.Type) {
 
 func init() {
 	registerBinary((*time.Time)(nil))
+	registerBinary((*netip.Addr)(nil))
+	registerBinary((*netip.Prefix)(nil))
+	registerBinary((*netip.AddrPort)(nil))
 }

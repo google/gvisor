@@ -16,6 +16,7 @@ package ipv6_test
 
 import (
 	"math/rand"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
@@ -61,7 +62,7 @@ func checkVersion(t *testing.T, s *stack.Stack, nicID tcpip.NICID, v1 bool) {
 	mldEP.SetMLDVersion(ipv6.MLDVersion1)
 }
 
-func validateMLDPacket(t *testing.T, v *buffer.View, localAddress, remoteAddress tcpip.Address, mldType header.ICMPv6Type, groupAddress tcpip.Address) {
+func validateMLDPacket(t *testing.T, v *buffer.View, localAddress, remoteAddress netip.Addr, mldType header.ICMPv6Type, groupAddress netip.Addr) {
 	t.Helper()
 
 	defer v.Release()
@@ -79,11 +80,11 @@ func validateMLDPacket(t *testing.T, v *buffer.View, localAddress, remoteAddress
 	)
 }
 
-func validateMLDv2ReportPacket(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address, recordType header.MLDv2ReportRecordType) {
+func validateMLDv2ReportPacket(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
 
 	defer v.Release()
-	iptestutil.ValidateMLDv2Report(t, v, localAddress, []tcpip.Address{groupAddress}, recordType)
+	iptestutil.ValidateMLDv2Report(t, v, localAddress, []netip.Addr{groupAddress}, recordType)
 }
 
 type mldTestContext struct {
@@ -112,12 +113,12 @@ func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
 	tests := []struct {
 		name            string
 		v1Compatibility bool
-		validate        func(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address, leave bool)
+		validate        func(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr, leave bool)
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			validate: func(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address, leave bool) {
+			validate: func(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr, leave bool) {
 				t.Helper()
 
 				remoteAddress := groupAddress
@@ -133,7 +134,7 @@ func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			validate: func(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address, leave bool) {
+			validate: func(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr, leave bool) {
 				t.Helper()
 
 				recordType := header.MLDv2ReportRecordChangeToExcludeMode
@@ -165,7 +166,7 @@ func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
 			// solicited-node group.
 			protocolAddr := tcpip.ProtocolAddress{
 				Protocol:          ipv6.ProtocolNumber,
-				AddressWithPrefix: linkLocalAddr.WithPrefix(),
+				AddressWithPrefix: tcpip.FullPrefix(linkLocalAddr),
 			}
 			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -219,7 +220,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		validate        func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address, leave bool)
+		validate        func(t *testing.T, e *channel.Endpoint, localAddress netip.Addr, groupAddresses []netip.Addr, leave bool)
 		checkStats      func(*testing.T, *stack.Stack, uint64, uint64, uint64)
 	}{
 		{
@@ -231,7 +232,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			validate: func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address, leave bool) {
+			validate: func(t *testing.T, e *channel.Endpoint, localAddress netip.Addr, groupAddresses []netip.Addr, leave bool) {
 				t.Helper()
 
 				recordType := header.MLDv2ReportRecordChangeToExcludeMode
@@ -278,7 +279,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 						e.Close()
 					}()
 
-					resolveDAD := func(addr, snmc tcpip.Address) {
+					resolveDAD := func(addr, snmc netip.Addr) {
 						t.Helper()
 						clock.Advance(dadResolutionTime)
 						if p := e.Read(); p == nil {
@@ -311,7 +312,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
-					subTest.validate(t, e, header.IPv6Any, []tcpip.Address{globalMulticastAddr}, false /* leave */)
+					subTest.validate(t, e, header.IPv6Any, []netip.Addr{globalMulticastAddr}, false /* leave */)
 					clock.Advance(time.Hour)
 					if p := e.Read(); p != nil {
 						t.Errorf("got unexpected packet = %#v", p)
@@ -331,14 +332,14 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					properties := stack.AddressProperties{PEB: stack.FirstPrimaryEndpoint}
 					globalProtocolAddr := tcpip.ProtocolAddress{
 						Protocol:          ipv6.ProtocolNumber,
-						AddressWithPrefix: globalAddr.WithPrefix(),
+						AddressWithPrefix: tcpip.FullPrefix(globalAddr),
 					}
 					if err := s.AddProtocolAddress(nicID, globalProtocolAddr, properties); err != nil {
 						t.Fatalf("AddProtocolAddress(%d, %+v, %+v): %s", nicID, globalProtocolAddr, properties, err)
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
-					subTest.validate(t, e, header.IPv6Any, []tcpip.Address{globalAddrSNMC}, false /* leave */)
+					subTest.validate(t, e, header.IPv6Any, []netip.Addr{globalAddrSNMC}, false /* leave */)
 					if dadResolutionTime != 0 {
 						// Reports should not be sent when the address resolves.
 						resolveDAD(globalAddr, globalAddrSNMC)
@@ -352,7 +353,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					if !subTest.v1Compatibility {
 						doneCounter++
 						subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
-						subTest.validate(t, e, header.IPv6Any, []tcpip.Address{globalAddrSNMC}, true /* leave */)
+						subTest.validate(t, e, header.IPv6Any, []netip.Addr{globalAddrSNMC}, true /* leave */)
 					}
 					subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
 					if p := e.Read(); p != nil {
@@ -367,14 +368,14 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					// address and globalMulticastAddr.
 					linkLocalProtocolAddr := tcpip.ProtocolAddress{
 						Protocol:          ipv6.ProtocolNumber,
-						AddressWithPrefix: linkLocalAddr.WithPrefix(),
+						AddressWithPrefix: tcpip.FullPrefix(linkLocalAddr),
 					}
 					if err := s.AddProtocolAddress(nicID, linkLocalProtocolAddr, stack.AddressProperties{}); err != nil {
 						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, linkLocalProtocolAddr, err)
 					}
 					if dadResolutionTime != 0 {
 						reportCounter++
-						subTest.validate(t, e, header.IPv6Any, []tcpip.Address{linkLocalAddrSNMC}, false /* leave */)
+						subTest.validate(t, e, header.IPv6Any, []netip.Addr{linkLocalAddrSNMC}, false /* leave */)
 						resolveDAD(linkLocalAddr, linkLocalAddrSNMC)
 					}
 
@@ -398,7 +399,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 							t,
 							e,
 							linkLocalAddr,
-							[]tcpip.Address{globalMulticastAddr, linkLocalAddrSNMC},
+							[]netip.Addr{globalMulticastAddr, linkLocalAddrSNMC},
 							false, /* leave */
 						)
 
@@ -419,7 +420,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 
 // createAndInjectMLDPacket creates and injects an MLD packet with the
 // specified fields.
-func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, hopLimit uint8, srcAddress, groupAddress tcpip.Address, withRouterAlertOption bool, routerAlertValue header.IPv6RouterAlertValue) {
+func createAndInjectMLDPacket(e *channel.Endpoint, mldType header.ICMPv6Type, hopLimit uint8, srcAddress, groupAddress netip.Addr, withRouterAlertOption bool, routerAlertValue header.IPv6RouterAlertValue) {
 	var extensionHeaders header.IPv6ExtHdrSerializer
 	if withRouterAlertOption {
 		extensionHeaders = header.IPv6ExtHdrSerializer{
@@ -468,7 +469,7 @@ func TestMLDPacketValidation(t *testing.T) {
 	tests := []struct {
 		name                     string
 		messageType              header.ICMPv6Type
-		srcAddr                  tcpip.Address
+		srcAddr                  netip.Addr
 		includeRouterAlertOption bool
 		routerAlertValue         header.IPv6RouterAlertValue
 		hopLimit                 uint8
@@ -662,12 +663,12 @@ func TestMLDSkipProtocol(t *testing.T) {
 	subTests := []struct {
 		name            string
 		v1Compatibility bool
-		validate        func(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address)
+		validate        func(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr)
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			validate: func(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address) {
+			validate: func(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr) {
 				t.Helper()
 				validateMLDPacket(t, v, localAddress, groupAddress, header.ICMPv6MulticastListenerReport, groupAddress)
 			},
@@ -675,7 +676,7 @@ func TestMLDSkipProtocol(t *testing.T) {
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			validate: func(t *testing.T, v *buffer.View, localAddress tcpip.Address, groupAddress tcpip.Address) {
+			validate: func(t *testing.T, v *buffer.View, localAddress netip.Addr, groupAddress netip.Addr) {
 				t.Helper()
 				validateMLDv2ReportPacket(t, v, localAddress, groupAddress, header.MLDv2ReportRecordChangeToExcludeMode)
 			},
@@ -701,7 +702,7 @@ func TestMLDSkipProtocol(t *testing.T) {
 
 					protocolAddr := tcpip.ProtocolAddress{
 						Protocol:          ipv6.ProtocolNumber,
-						AddressWithPrefix: linkLocalAddr.WithPrefix(),
+						AddressWithPrefix: tcpip.FullPrefix(linkLocalAddr),
 					}
 					if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -713,7 +714,10 @@ func TestMLDSkipProtocol(t *testing.T) {
 						p.DecRef()
 					}
 
-					testGroup := tcpip.AddrFromSlice([]byte(test.group))
+					testGroup, ok := netip.AddrFromSlice([]byte(test.group))
+					if !ok {
+						t.Fatalf("invalid group address length: %d", len(test.group))
+					}
 					if err := s.JoinGroup(ipv6.ProtocolNumber, nicID, testGroup); err != nil {
 						t.Fatalf("s.JoinGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, testGroup, err)
 					}
@@ -771,7 +775,7 @@ func TestGetSetMLDVersion(t *testing.T) {
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv6.ProtocolNumber,
-		AddressWithPrefix: linkLocalAddr.WithPrefix(),
+		AddressWithPrefix: tcpip.FullPrefix(linkLocalAddr),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)

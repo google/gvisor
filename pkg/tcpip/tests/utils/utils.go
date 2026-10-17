@@ -16,6 +16,7 @@
 package utils
 
 import (
+	"net/netip"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -60,61 +61,39 @@ const (
 
 // Common IP addresses used by tests.
 var (
-	Ipv4Addr = tcpip.AddressWithPrefix{
-		Address:   testutil.MustParse4("192.168.1.58"),
-		PrefixLen: 24,
-	}
-	Ipv4Subnet      = Ipv4Addr.Subnet()
-	Ipv4SubnetBcast = Ipv4Subnet.Broadcast()
+	Ipv4Addr = netip.PrefixFrom(testutil.MustParse4("192.168.1.58"), 24)
 
-	Ipv6Addr = tcpip.AddressWithPrefix{
-		Address:   testutil.MustParse6("200a::1"),
-		PrefixLen: 64,
-	}
-	Ipv6Subnet      = Ipv6Addr.Subnet()
-	Ipv6SubnetBcast = Ipv6Subnet.Broadcast()
+	Ipv4Subnet      = Ipv4Addr.Masked()
+	Ipv4SubnetBcast = header.IPv4SubnetBroadcast(Ipv4Subnet)
+
+	Ipv6Addr = netip.PrefixFrom(testutil.MustParse6("200a::1"), 64)
+
+	Ipv6Subnet      = Ipv6Addr.Masked()
+	Ipv6SubnetBcast = testutil.MustParse6("200a::ffff:ffff:ffff:ffff")
 
 	Ipv4Addr1 = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("192.168.0.1"),
-			PrefixLen: 24,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("192.168.0.1"), 24),
 	}
 	Ipv4Addr2 = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("192.168.0.2"),
-			PrefixLen: 8,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("192.168.0.2"), 8),
 	}
 	Ipv4Addr3 = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("192.168.0.3"),
-			PrefixLen: 8,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("192.168.0.3"), 8),
 	}
 	Ipv6Addr1 = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("a::1"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("a::1"), 64),
 	}
 	Ipv6Addr2 = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("a::2"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("a::2"), 64),
 	}
 	Ipv6Addr3 = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("a::3"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("a::3"), 64),
 	}
 
 	// Remote addrs.
@@ -131,60 +110,36 @@ const (
 // Common IP addresses used for testing.
 var (
 	Host1IPv4Addr = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("192.168.0.2"),
-			PrefixLen: 24,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("192.168.0.2"), 24),
 	}
 	RouterNIC1IPv4Addr = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("192.168.0.1"),
-			PrefixLen: 24,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("192.168.0.1"), 24),
 	}
 	RouterNIC2IPv4Addr = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("10.0.0.3"),
-			PrefixLen: 8,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("10.0.0.3"), 8),
 	}
 	Host2IPv4Addr = tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse4("10.0.0.2"),
-			PrefixLen: 8,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse4("10.0.0.2"), 8),
 	}
 	Host1IPv6Addr = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("a::2"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("a::2"), 64),
 	}
 	RouterNIC1IPv6Addr = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("a::1"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("a::1"), 64),
 	}
 	RouterNIC2IPv6Addr = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("b::1"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("b::1"), 64),
 	}
 	Host2IPv6Addr = tcpip.ProtocolAddress{
-		Protocol: ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   testutil.MustParse6("b::2"),
-			PrefixLen: 64,
-		},
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(testutil.MustParse6("b::2"), 64),
 	}
 )
 
@@ -260,19 +215,19 @@ func SetupRouterStack(t *testing.T, s *stack.Stack, ep1, ep2 stack.LinkEndpoint)
 
 	s.SetRouteTable([]tcpip.Route{
 		{
-			Destination: RouterNIC1IPv4Addr.AddressWithPrefix.Subnet(),
+			Destination: RouterNIC1IPv4Addr.AddressWithPrefix.Masked(),
 			NIC:         RouterNICID1,
 		},
 		{
-			Destination: RouterNIC1IPv6Addr.AddressWithPrefix.Subnet(),
+			Destination: RouterNIC1IPv6Addr.AddressWithPrefix.Masked(),
 			NIC:         RouterNICID1,
 		},
 		{
-			Destination: RouterNIC2IPv4Addr.AddressWithPrefix.Subnet(),
+			Destination: RouterNIC2IPv4Addr.AddressWithPrefix.Masked(),
 			NIC:         RouterNICID2,
 		},
 		{
-			Destination: RouterNIC2IPv6Addr.AddressWithPrefix.Subnet(),
+			Destination: RouterNIC2IPv6Addr.AddressWithPrefix.Masked(),
 			NIC:         RouterNICID2,
 		},
 	})
@@ -315,48 +270,48 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 
 	host1Stack.SetRouteTable([]tcpip.Route{
 		{
-			Destination: Host1IPv4Addr.AddressWithPrefix.Subnet(),
+			Destination: Host1IPv4Addr.AddressWithPrefix.Masked(),
 			NIC:         Host1NICID,
 		},
 		{
-			Destination: Host1IPv6Addr.AddressWithPrefix.Subnet(),
+			Destination: Host1IPv6Addr.AddressWithPrefix.Masked(),
 			NIC:         Host1NICID,
 		},
 		{
-			Destination: Host2IPv4Addr.AddressWithPrefix.Subnet(),
-			Gateway:     RouterNIC1IPv4Addr.AddressWithPrefix.Address,
+			Destination: Host2IPv4Addr.AddressWithPrefix.Masked(),
+			Gateway:     RouterNIC1IPv4Addr.AddressWithPrefix.Addr(),
 			NIC:         Host1NICID,
 		},
 		{
-			Destination: Host2IPv6Addr.AddressWithPrefix.Subnet(),
-			Gateway:     RouterNIC1IPv6Addr.AddressWithPrefix.Address,
+			Destination: Host2IPv6Addr.AddressWithPrefix.Masked(),
+			Gateway:     RouterNIC1IPv6Addr.AddressWithPrefix.Addr(),
 			NIC:         Host1NICID,
 		},
 	})
 	host2Stack.SetRouteTable([]tcpip.Route{
 		{
-			Destination: Host2IPv4Addr.AddressWithPrefix.Subnet(),
+			Destination: Host2IPv4Addr.AddressWithPrefix.Masked(),
 			NIC:         Host2NICID,
 		},
 		{
-			Destination: Host2IPv6Addr.AddressWithPrefix.Subnet(),
+			Destination: Host2IPv6Addr.AddressWithPrefix.Masked(),
 			NIC:         Host2NICID,
 		},
 		{
-			Destination: Host1IPv4Addr.AddressWithPrefix.Subnet(),
-			Gateway:     RouterNIC2IPv4Addr.AddressWithPrefix.Address,
+			Destination: Host1IPv4Addr.AddressWithPrefix.Masked(),
+			Gateway:     RouterNIC2IPv4Addr.AddressWithPrefix.Addr(),
 			NIC:         Host2NICID,
 		},
 		{
-			Destination: Host1IPv6Addr.AddressWithPrefix.Subnet(),
-			Gateway:     RouterNIC2IPv6Addr.AddressWithPrefix.Address,
+			Destination: Host1IPv6Addr.AddressWithPrefix.Masked(),
+			Gateway:     RouterNIC2IPv6Addr.AddressWithPrefix.Addr(),
 			NIC:         Host2NICID,
 		},
 	})
 }
 
 // ICMPv4Echo returns an ICMPv4 echo packet.
-func ICMPv4Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv4Type) []byte {
+func ICMPv4Echo(src, dst netip.Addr, ttl uint8, ty header.ICMPv4Type) []byte {
 	totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
 	hdr := prependable.New(totalLen)
 	pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
@@ -378,7 +333,7 @@ func ICMPv4Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv4Type) []byte 
 
 // RxICMPv4EchoRequest constructs and injects an ICMPv4 echo request packet on
 // the provided endpoint.
-func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst netip.Addr, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4Echo)),
 	})
@@ -388,7 +343,7 @@ func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 
 // RxICMPv4EchoReply constructs and injects an ICMPv4 echo reply packet on
 // the provided endpoint.
-func RxICMPv4EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+func RxICMPv4EchoReply(e *channel.Endpoint, src, dst netip.Addr, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4EchoReply)),
 	})
@@ -397,7 +352,7 @@ func RxICMPv4EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 }
 
 // ICMPv6Echo returns an ICMPv6 echo packet.
-func ICMPv6Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv6Type) []byte {
+func ICMPv6Echo(src, dst netip.Addr, ttl uint8, ty header.ICMPv6Type) []byte {
 	totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
 	hdr := prependable.New(totalLen)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
@@ -422,7 +377,7 @@ func ICMPv6Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv6Type) []byte 
 
 // RxICMPv6EchoRequest constructs and injects an ICMPv6 echo request packet on
 // the provided endpoint.
-func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst netip.Addr, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoRequest)),
 	})
@@ -432,7 +387,7 @@ func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 
 // RxICMPv6EchoReply constructs and injects an ICMPv6 echo reply packet on
 // the provided endpoint.
-func RxICMPv6EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
+func RxICMPv6EchoReply(e *channel.Endpoint, src, dst netip.Addr, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoReply)),
 	})

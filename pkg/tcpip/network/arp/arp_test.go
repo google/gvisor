@@ -16,6 +16,7 @@ package arp_test
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"testing"
 
@@ -157,7 +158,7 @@ func makeTestContext(t *testing.T, eventDepth int, packetDepth int) testContext 
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: stackAddr.WithPrefix(),
+		AddressWithPrefix: tcpip.FullPrefix(stackAddr),
 	}
 	if err := tc.s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -256,9 +257,9 @@ func TestDirectReply(t *testing.T) {
 func TestDirectRequest(t *testing.T) {
 	tests := []struct {
 		name           string
-		senderAddr     tcpip.Address
+		senderAddr     netip.Addr
 		senderLinkAddr tcpip.LinkAddress
-		targetAddr     tcpip.Address
+		targetAddr     netip.Addr
 		isValid        bool
 	}{
 		{
@@ -353,13 +354,13 @@ func TestDirectRequest(t *testing.T) {
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
 				t.Errorf("got HardwareAddressSender() = %s, want = %s", got, want)
 			}
-			if got, want := tcpip.AddrFromSlice(rep.ProtocolAddressSender()), tcpip.AddrFromSlice(h.ProtocolAddressTarget()); got != want {
+			if got, want := netip.AddrFrom4([4]byte(rep.ProtocolAddressSender())), netip.AddrFrom4([4]byte(h.ProtocolAddressTarget())); got != want {
 				t.Errorf("got ProtocolAddressSender() = %s, want = %s", got, want)
 			}
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress(h.HardwareAddressSender()); got != want {
 				t.Errorf("got HardwareAddressTarget() = %s, want = %s", got, want)
 			}
-			if got, want := tcpip.AddrFromSlice(rep.ProtocolAddressTarget()), tcpip.AddrFromSlice(h.ProtocolAddressSender()); got != want {
+			if got, want := netip.AddrFrom4([4]byte(rep.ProtocolAddressTarget())), netip.AddrFrom4([4]byte(h.ProtocolAddressSender())); got != want {
 				t.Errorf("got ProtocolAddressTarget() = %s, want = %s", got, want)
 			}
 
@@ -374,7 +375,7 @@ func TestDirectRequest(t *testing.T) {
 						State:    stack.Stale,
 					},
 				}
-				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt"), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 					t.Errorf("got invalid event (-want +got):\n%s", diff)
 				}
 			} else {
@@ -386,11 +387,11 @@ func TestDirectRequest(t *testing.T) {
 				t.Fatalf("c.s.Neighbors(%d, %d): %s", nicID, ipv4.ProtocolNumber, err)
 			}
 
-			neighborByAddr := make(map[tcpip.Address]stack.NeighborEntry)
+			neighborByAddr := make(map[netip.Addr]stack.NeighborEntry)
 			for _, n := range neighbors {
 				if existing, ok := neighborByAddr[n.Addr]; ok {
-					if diff := cmp.Diff(existing, n); diff != "" {
-						t.Fatalf("duplicate neighbor entry found (-existing +got):\n%s", diff)
+					if existing != n {
+						t.Fatalf("duplicate neighbor entries: existing=%+v, new=%+v", existing, n)
 					}
 					t.Fatalf("exact neighbor entry duplicate found for addr=%s", n.Addr)
 				}
@@ -472,7 +473,7 @@ func TestReplyPacketType(t *testing.T) {
 						State:    stack.Stale,
 					},
 				}
-				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt"), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 					t.Errorf("got invalid event (-want +got):\n%s", diff)
 				}
 			} else {
@@ -505,7 +506,7 @@ func TestReplyPacketType(t *testing.T) {
 						State:    stack.Reachable,
 					},
 				}
-				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt"), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 					t.Errorf("got invalid event (-want +got):\n%s", diff)
 				}
 			}
@@ -533,16 +534,16 @@ func (t *testLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip
 func TestLinkAddressRequest(t *testing.T) {
 	const nicID = 1
 
-	testAddr := tcpip.AddrFrom4Slice([]byte{1, 2, 3, 4})
+	testAddr := netip.AddrFrom4([4]byte{1, 2, 3, 4})
 
 	tests := []struct {
 		name                                            string
-		nicAddr                                         tcpip.Address
-		localAddr                                       tcpip.Address
+		nicAddr                                         netip.Addr
+		localAddr                                       netip.Addr
 		remoteLinkAddr                                  tcpip.LinkAddress
 		linkErr                                         tcpip.Error
 		expectedErr                                     tcpip.Error
-		expectedLocalAddr                               tcpip.Address
+		expectedLocalAddr                               netip.Addr
 		expectedRemoteLinkAddr                          tcpip.LinkAddress
 		expectedRequestsSent                            uint64
 		expectedRequestBadLocalAddressErrors            uint64
@@ -576,7 +577,7 @@ func TestLinkAddressRequest(t *testing.T) {
 		{
 			name:                                 "Unicast with unspecified source",
 			nicAddr:                              stackAddr,
-			localAddr:                            tcpip.Address{},
+			localAddr:                            netip.Addr{},
 			remoteLinkAddr:                       remoteLinkAddr,
 			expectedLocalAddr:                    stackAddr,
 			expectedRemoteLinkAddr:               remoteLinkAddr,
@@ -588,7 +589,7 @@ func TestLinkAddressRequest(t *testing.T) {
 		{
 			name:                                 "Multicast with unspecified source",
 			nicAddr:                              stackAddr,
-			localAddr:                            tcpip.Address{},
+			localAddr:                            netip.Addr{},
 			remoteLinkAddr:                       "",
 			expectedLocalAddr:                    stackAddr,
 			expectedRemoteLinkAddr:               header.EthernetBroadcastAddress,
@@ -621,8 +622,8 @@ func TestLinkAddressRequest(t *testing.T) {
 		},
 		{
 			name:                                 "Unicast with no local address available",
-			nicAddr:                              tcpip.Address{},
-			localAddr:                            tcpip.Address{},
+			nicAddr:                              netip.Addr{},
+			localAddr:                            netip.Addr{},
 			remoteLinkAddr:                       remoteLinkAddr,
 			expectedErr:                          &tcpip.ErrNetworkUnreachable{},
 			expectedRequestsSent:                 0,
@@ -632,8 +633,8 @@ func TestLinkAddressRequest(t *testing.T) {
 		},
 		{
 			name:                                 "Multicast with no local address available",
-			nicAddr:                              tcpip.Address{},
-			localAddr:                            tcpip.Address{},
+			nicAddr:                              netip.Addr{},
+			localAddr:                            netip.Addr{},
 			remoteLinkAddr:                       "",
 			expectedErr:                          &tcpip.ErrNetworkUnreachable{},
 			expectedRequestsSent:                 0,
@@ -679,10 +680,10 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Fatalf("expected %T to implement stack.LinkAddressResolver", ep)
 			}
 
-			if test.nicAddr.Len() != 0 {
+			if test.nicAddr.IsValid() {
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol:          ipv4.ProtocolNumber,
-					AddressWithPrefix: test.nicAddr.WithPrefix(),
+					AddressWithPrefix: tcpip.FullPrefix(test.nicAddr),
 				}
 				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -732,13 +733,13 @@ func TestLinkAddressRequest(t *testing.T) {
 			if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, stackLinkAddr)
 			}
-			if got := tcpip.AddrFromSlice(rep.ProtocolAddressSender()); got != test.expectedLocalAddr {
+			if got := netip.AddrFrom4([4]byte(rep.ProtocolAddressSender())); got != test.expectedLocalAddr {
 				t.Errorf("got ProtocolAddressSender = %s, want = %s", got, test.expectedLocalAddr)
 			}
 			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"); got != want {
 				t.Errorf("got HardwareAddressTarget = %s, want = %s", got, want)
 			}
-			if got := tcpip.AddrFromSlice(rep.ProtocolAddressTarget()); got != remoteAddr {
+			if got := netip.AddrFrom4([4]byte(rep.ProtocolAddressTarget())); got != remoteAddr {
 				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, remoteAddr)
 			}
 		})
@@ -793,13 +794,13 @@ func TestDADARPRequestPacket(t *testing.T) {
 	if got := tcpip.LinkAddress(req.HardwareAddressSender()); got != stackLinkAddr {
 		t.Errorf("got req.HardwareAddressSender() = %s, want = %s", got, stackLinkAddr)
 	}
-	if got := tcpip.AddrFromSlice(req.ProtocolAddressSender()); got != header.IPv4Any {
+	if got := netip.AddrFrom4([4]byte(req.ProtocolAddressSender())); got != header.IPv4Any {
 		t.Errorf("got req.ProtocolAddressSender() = %s, want = %s", got, header.IPv4Any)
 	}
 	if got, want := tcpip.LinkAddress(req.HardwareAddressTarget()), tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"); got != want {
 		t.Errorf("got req.HardwareAddressTarget() = %s, want = %s", got, want)
 	}
-	if got := tcpip.AddrFromSlice(req.ProtocolAddressTarget()); got != remoteAddr {
+	if got := netip.AddrFrom4([4]byte(req.ProtocolAddressTarget())); got != remoteAddr {
 		t.Errorf("got req.ProtocolAddressTarget() = %s, want = %s", got, remoteAddr)
 	}
 }

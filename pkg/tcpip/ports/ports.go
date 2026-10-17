@@ -18,6 +18,7 @@ package ports
 
 import (
 	"math"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -30,7 +31,7 @@ const (
 )
 
 var (
-	anyIPAddress = tcpip.Address{}
+	anyIPAddress = netip.Addr{}
 )
 
 // Reservation describes a port reservation.
@@ -42,11 +43,9 @@ type Reservation struct {
 	// Transport is the transport protocol to which the reservation applies.
 	Transport tcpip.TransportProtocolNumber
 
-	// Addr is the address of the local endpoint.
-	Addr tcpip.Address
-
-	// Port is the local port number.
-	Port uint16
+	// Local is the local address and port. An invalid address with a nonzero
+	// port represents a wildcard binding.
+	Local netip.AddrPort
 
 	// Flags describe features of the reservation.
 	Flags Flags
@@ -54,15 +53,8 @@ type Reservation struct {
 	// BindToDevice is the NIC to which the reservation applies.
 	BindToDevice tcpip.NICID
 
-	// Dest is the destination address.
-	Dest tcpip.FullAddress
-}
-
-func (rs Reservation) dst() destination {
-	return destination{
-		rs.Dest.Addr,
-		rs.Dest.Port,
-	}
+	// Dest is the destination address and port.
+	Dest netip.AddrPort
 }
 
 // +stateify savable
@@ -72,18 +64,12 @@ type portDescriptor struct {
 	port      uint16
 }
 
-// +stateify savable
-type destination struct {
-	addr tcpip.Address
-	port uint16
-}
-
 // destToCounter maps each destination to the FlagCounter that represents
 // endpoints to that destination.
 //
 // destToCounter is never empty. When it has no elements, it is removed from
 // the map that references it.
-type destToCounter map[destination]FlagCounter
+type destToCounter map[netip.AddrPort]FlagCounter
 
 // intersectionFlags calculates the intersection of flag bit values which affect
 // the specified destination.
@@ -98,13 +84,13 @@ func (dc destToCounter) intersectionFlags(res Reservation) (BitFlags, int) {
 	var count int
 
 	for dest, counter := range dc {
-		if dest == res.dst() {
+		if dest == res.Dest {
 			intersection &= counter.SharedFlags()
 			count++
 			continue
 		}
 		// Wildcard destinations affect all destinations for TupleOnly.
-		if dest.addr == anyIPAddress || res.Dest.Addr == anyIPAddress {
+		if dest.Addr() == anyIPAddress || res.Dest.Addr() == anyIPAddress {
 			// Only bitwise and the TupleOnlyFlag.
 			intersection &= (^TupleOnlyFlag) | counter.SharedFlags()
 			count++
@@ -181,13 +167,13 @@ func (dd deviceToDest) isAvailable(res Reservation, portSpecified bool) bool {
 }
 
 // addrToDevice maps IP addresses to NICs that have port reservations.
-type addrToDevice map[tcpip.Address]deviceToDest
+type addrToDevice map[netip.Addr]deviceToDest
 
 // isAvailable checks whether an IP address is available to bind to. If the
 // address is the "any" address, check all other addresses. Otherwise, just
 // check against the "any" address and the provided address.
 func (ad addrToDevice) isAvailable(res Reservation, portSpecified bool) bool {
-	if res.Addr == anyIPAddress {
+	if res.Local.Addr() == anyIPAddress {
 		// If binding to the "any" address then check that there are no
 		// conflicts with all addresses.
 		for _, devices := range ad {
@@ -206,7 +192,7 @@ func (ad addrToDevice) isAvailable(res Reservation, portSpecified bool) bool {
 	}
 
 	// Check that this is no conflict with the provided address.
-	if devices, ok := ad[res.Addr]; ok {
+	if devices, ok := ad[res.Local.Addr()]; ok {
 		if !devices.isAvailable(res, portSpecified) {
 			return false
 		}
@@ -315,12 +301,12 @@ func (pm *PortManager) ReservePort(rng rand.RNG, res Reservation, testPort PortT
 
 	// If a port is specified, just try to reserve it for all network
 	// protocols.
-	if res.Port != 0 {
+	if res.Local.Port() != 0 {
 		if !pm.reserveSpecificPortLocked(res, true /* portSpecified */) {
 			return 0, &tcpip.ErrPortInUse{}
 		}
 		if testPort != nil {
-			ok, err := testPort(res.Port)
+			ok, err := testPort(res.Local.Port())
 			if err != nil {
 				pm.releasePortLocked(res)
 				return 0, err
@@ -330,14 +316,14 @@ func (pm *PortManager) ReservePort(rng rand.RNG, res Reservation, testPort PortT
 				return 0, &tcpip.ErrPortInUse{}
 			}
 		}
-		return res.Port, nil
+		return res.Local.Port(), nil
 	}
 
 	// A port wasn't specified, so try to find one. PickEphemeralPort calls
 	// this callback synchronously with pm.mu still held, but checklocks
 	// analyzes passed callbacks without the caller's lock state.
 	return pm.PickEphemeralPort(rng, func(p uint16) (bool, tcpip.Error) {
-		res.Port = p
+		res.Local = netip.AddrPortFrom(res.Local.Addr(), p)
 		if !pm.reserveSpecificPortLocked(res, false /* portSpecified */) { // +checklocksignore
 			return false, nil
 		}
@@ -363,7 +349,7 @@ func (pm *PortManager) ReservePort(rng rand.RNG, res Reservation, testPort PortT
 func (pm *PortManager) reserveSpecificPortLocked(res Reservation, portSpecified bool) bool {
 	// Make sure the port is available.
 	for _, network := range res.Networks {
-		desc := portDescriptor{network, res.Transport, res.Port}
+		desc := portDescriptor{network, res.Transport, res.Local.Port()}
 		if addrs, ok := pm.allocatedPorts[desc]; ok {
 			if !addrs.isAvailable(res, portSpecified) {
 				return false
@@ -373,18 +359,18 @@ func (pm *PortManager) reserveSpecificPortLocked(res Reservation, portSpecified 
 
 	// Reserve port on all network protocols.
 	flagBits := res.Flags.Bits()
-	dst := res.dst()
+	dst := res.Dest
 	for _, network := range res.Networks {
-		desc := portDescriptor{network, res.Transport, res.Port}
+		desc := portDescriptor{network, res.Transport, res.Local.Port()}
 		addrToDev, ok := pm.allocatedPorts[desc]
 		if !ok {
 			addrToDev = make(addrToDevice)
 			pm.allocatedPorts[desc] = addrToDev
 		}
-		devToDest, ok := addrToDev[res.Addr]
+		devToDest, ok := addrToDev[res.Local.Addr()]
 		if !ok {
 			devToDest = make(deviceToDest)
-			addrToDev[res.Addr] = devToDest
+			addrToDev[res.Local.Addr()] = devToDest
 		}
 		destToCntr := devToDest[res.BindToDevice]
 		if destToCntr == nil {
@@ -404,7 +390,7 @@ func (pm *PortManager) reserveSpecificPortLocked(res Reservation, portSpecified 
 // +checklocksexclude:pm.mu
 func (pm *PortManager) ReserveTuple(res Reservation) bool {
 	flagBits := res.Flags.Bits()
-	dst := res.dst()
+	dst := res.Dest
 
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -415,16 +401,16 @@ func (pm *PortManager) ReserveTuple(res Reservation) bool {
 
 	// Reserve port on all network protocols.
 	for _, network := range res.Networks {
-		desc := portDescriptor{network, res.Transport, res.Port}
+		desc := portDescriptor{network, res.Transport, res.Local.Port()}
 		addrToDev, ok := pm.allocatedPorts[desc]
 		if !ok {
 			addrToDev = make(addrToDevice)
 			pm.allocatedPorts[desc] = addrToDev
 		}
-		devToDest, ok := addrToDev[res.Addr]
+		devToDest, ok := addrToDev[res.Local.Addr()]
 		if !ok {
 			devToDest = make(deviceToDest)
-			addrToDev[res.Addr] = devToDest
+			addrToDev[res.Local.Addr()] = devToDest
 		}
 		destToCntr := devToDest[res.BindToDevice]
 		if destToCntr == nil {
@@ -467,14 +453,14 @@ func (pm *PortManager) ReleasePort(res Reservation) {
 //
 // +checklocks:pm.mu
 func (pm *PortManager) releasePortLocked(res Reservation) {
-	dst := res.dst()
+	dst := res.Dest
 	for _, network := range res.Networks {
-		desc := portDescriptor{network, res.Transport, res.Port}
+		desc := portDescriptor{network, res.Transport, res.Local.Port()}
 		addrToDev, ok := pm.allocatedPorts[desc]
 		if !ok {
 			continue
 		}
-		devToDest, ok := addrToDev[res.Addr]
+		devToDest, ok := addrToDev[res.Local.Addr()]
 		if !ok {
 			continue
 		}
@@ -499,7 +485,7 @@ func (pm *PortManager) releasePortLocked(res Reservation) {
 		if len(devToDest) > 0 {
 			continue
 		}
-		delete(addrToDev, res.Addr)
+		delete(addrToDev, res.Local.Addr())
 		if len(addrToDev) > 0 {
 			continue
 		}

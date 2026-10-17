@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/netip"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -59,7 +60,7 @@ func NewNetstackConn(stack *stack.Stack, port uint16) (proxyConn, error) {
 	defer n.wq.EventUnregister(&waitEntry)
 
 	tcpErr = n.ep.Connect(tcpip.FullAddress{
-		Addr: tcpip.AddrFrom4([4]byte{0x7f, 0x00, 0x00, 0x01}), // 127.0.0.1
+		Addr: netip.AddrFrom4([4]byte{0x7f, 0x00, 0x00, 0x01}), // 127.0.0.1
 		Port: n.port,
 	})
 	if _, ok := tcpErr.(*tcpip.ErrConnectStarted); ok {

@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"net/netip"
 )
 
 // InjectableEndpoint is an injectable multi endpoint. The endpoint has
@@ -29,7 +30,7 @@ import (
 //
 // +stateify savable
 type InjectableEndpoint struct {
-	routes map[tcpip.Address]stack.InjectableLinkEndpoint
+	routes map[netip.Addr]stack.InjectableLinkEndpoint
 
 	mu endpointRWMutex `state:"nosave"`
 	// +checklocks:mu
@@ -134,7 +135,7 @@ func (m *InjectableEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcp
 
 // InjectOutbound writes outbound packets to the appropriate
 // LinkInjectableEndpoint based on the dest address.
-func (m *InjectableEndpoint) InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip.Error {
+func (m *InjectableEndpoint) InjectOutbound(dest netip.Addr, packet *buffer.View) tcpip.Error {
 	endpoint, ok := m.routes[dest]
 	if !ok {
 		return &tcpip.ErrHostUnreachable{}
@@ -167,7 +168,7 @@ func (*InjectableEndpoint) Close() {}
 func (*InjectableEndpoint) SetOnCloseAction(func()) {}
 
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
-func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint) *InjectableEndpoint {
+func NewInjectableEndpoint(routes map[netip.Addr]stack.InjectableLinkEndpoint) *InjectableEndpoint {
 	return &InjectableEndpoint{
 		routes: routes,
 	}

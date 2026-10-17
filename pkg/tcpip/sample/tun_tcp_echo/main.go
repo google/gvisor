@@ -26,9 +26,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -123,13 +123,13 @@ func main() {
 		log.Fatalf("Bad IP address: %v", addrName)
 	}
 
-	var addrWithPrefix tcpip.AddressWithPrefix
+	var addrWithPrefix netip.Prefix
 	var proto tcpip.NetworkProtocolNumber
 	if parsedAddr.To4() != nil {
-		addrWithPrefix = tcpip.AddrFromSlice(parsedAddr.To4()).WithPrefix()
+		addrWithPrefix = tcpip.FullPrefix(netip.AddrFrom4([4]byte(parsedAddr.To4())))
 		proto = ipv4.ProtocolNumber
 	} else if parsedAddr.To16() != nil {
-		addrWithPrefix = tcpip.AddrFromSlice(parsedAddr.To16()).WithPrefix()
+		addrWithPrefix = tcpip.FullPrefix(netip.AddrFrom16([16]byte(parsedAddr.To16())))
 		proto = ipv6.ProtocolNumber
 	} else {
 		log.Fatalf("Unknown IP type: %v", addrName)
@@ -183,10 +183,7 @@ func main() {
 		log.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
-	subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte(strings.Repeat("\x00", addrWithPrefix.Address.Len()))), tcpip.MaskFrom(strings.Repeat("\x00", addrWithPrefix.Address.Len())))
-	if err != nil {
-		log.Fatal(err)
-	}
+	subnet := netip.PrefixFrom(addrWithPrefix.Addr(), 0).Masked()
 
 	// Add default route.
 	s.SetRouteTable([]tcpip.Route{

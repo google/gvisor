@@ -21,6 +21,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net/netip"
 	"os"
 	"sync"
 	"testing"
@@ -2024,43 +2025,35 @@ func TestShutdownWrite(t *testing.T) {
 func TestOutgoingSubnetBroadcast(t *testing.T) {
 	const nicID1 = 1
 
-	ipv4Addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\xc0\xa8\x01\x3a")),
-		PrefixLen: 24,
-	}
-	ipv4Subnet := ipv4Addr.Subnet()
-	ipv4SubnetBcast := ipv4Subnet.Broadcast()
+	ipv4Addr := netip.PrefixFrom(netip.AddrFrom4([4]byte{192, 168, 1, 58}), 24)
+
+	ipv4Subnet := ipv4Addr.Masked()
+	ipv4SubnetBcast := header.IPv4SubnetBroadcast(ipv4Subnet)
 	ipv4Gateway := testutil.MustParse4("192.168.1.1")
-	ipv4AddrPrefix31 := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\xc0\xa8\x01\x3a")),
-		PrefixLen: 31,
-	}
-	ipv4Subnet31 := ipv4AddrPrefix31.Subnet()
-	ipv4Subnet31Bcast := ipv4Subnet31.Broadcast()
-	ipv4AddrPrefix32 := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\xc0\xa8\x01\x3a")),
-		PrefixLen: 32,
-	}
-	ipv4Subnet32 := ipv4AddrPrefix32.Subnet()
-	ipv4Subnet32Bcast := ipv4Subnet32.Broadcast()
-	ipv6Addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\x20\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")),
-		PrefixLen: 64,
-	}
-	ipv6Subnet := ipv6Addr.Subnet()
-	ipv6SubnetBcast := ipv6Subnet.Broadcast()
-	remNetAddr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\x64\x0a\x7b\x18")),
-		PrefixLen: 24,
-	}
-	remNetSubnet := remNetAddr.Subnet()
-	remNetSubnetBcast := remNetSubnet.Broadcast()
+	ipv4AddrPrefix31 := netip.PrefixFrom(netip.AddrFrom4([4]byte{192, 168, 1, 58}), 31)
+
+	ipv4Subnet31 := ipv4AddrPrefix31.Masked()
+	ipv4Subnet31Bcast := header.IPv4SubnetBroadcast(ipv4Subnet31)
+	ipv4AddrPrefix32 := netip.PrefixFrom(netip.AddrFrom4([4]byte{192, 168, 1, 58}), 32)
+
+	ipv4Subnet32 := ipv4AddrPrefix32.Masked()
+	ipv4Subnet32Bcast := header.IPv4SubnetBroadcast(ipv4Subnet32)
+	ipv6Addr := netip.PrefixFrom(
+		netip.MustParseAddr("200a::1"),
+		64)
+
+	ipv6Subnet := ipv6Addr.Masked()
+	ipv6SubnetBcast := netip.MustParseAddr("200a::ffff:ffff:ffff:ffff")
+	remNetAddr := netip.PrefixFrom(netip.AddrFrom4([4]byte{100, 10, 123, 24}), 24)
+
+	remNetSubnet := remNetAddr.Masked()
+	remNetSubnetBcast := header.IPv4SubnetBroadcast(remNetSubnet)
 
 	tests := []struct {
 		name                 string
 		nicAddr              tcpip.ProtocolAddress
 		routes               []tcpip.Route
-		remoteAddr           tcpip.Address
+		remoteAddr           netip.Addr
 		requiresBroadcastOpt bool
 	}{
 		{
@@ -2164,7 +2157,7 @@ func TestOutgoingSubnetBroadcast(t *testing.T) {
 			s.SetRouteTable(test.routes)
 
 			var netProto tcpip.NetworkProtocolNumber
-			switch l := test.remoteAddr.Len(); l {
+			switch l := test.remoteAddr.BitLen() / 8; l {
 			case header.IPv4AddressSize:
 				netProto = header.IPv4ProtocolNumber
 			case header.IPv6AddressSize:

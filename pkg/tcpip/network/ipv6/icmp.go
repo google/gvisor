@@ -16,6 +16,7 @@ package ipv6
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -148,7 +149,7 @@ func (*icmpv6PacketTooBigSockError) Kind() stack.TransportErrorKind {
 	return stack.PacketTooBigTransportError
 }
 
-func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
+func (e *endpoint) checkLocalAddress(addr netip.Addr) bool {
 	if e.nic.Spoofing() {
 		return true
 	}
@@ -871,14 +872,14 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 	}
 }
 
-func (e *endpoint) sendICMPEchoReply(replyPayload buffer.Buffer, replyHeader []byte, srcAddr, dstAddr tcpip.Address, ipHdr header.IPv6) {
+func (e *endpoint) sendICMPEchoReply(replyPayload buffer.Buffer, replyHeader []byte, srcAddr, dstAddr netip.Addr, ipHdr header.IPv6) {
 	sent := e.stats.icmp.packetsSent
 
 	// As per RFC 4291 section 2.7, multicast addresses must not be used as
 	// source addresses in IPv6 packets.
 	localAddr := dstAddr
 	if header.IsV6MulticastAddress(dstAddr) {
-		localAddr = tcpip.Address{}
+		localAddr = netip.Addr{}
 	}
 
 	r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, srcAddr, ProtocolNumber, false /* multicastLoop */)
@@ -933,21 +934,21 @@ func (*endpoint) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
-func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
+func (e *endpoint) LinkAddressRequest(targetAddr, localAddr netip.Addr, remoteLinkAddr tcpip.LinkAddress) tcpip.Error {
 	remoteAddr := targetAddr
 	if len(remoteLinkAddr) == 0 {
 		remoteAddr = header.SolicitedNodeAddr(targetAddr)
 		remoteLinkAddr = header.EthernetAddressFromMulticastIPv6Address(remoteAddr)
 	}
 
-	if localAddr.BitLen() == 0 {
+	if !localAddr.IsValid() {
 		// Find an address that we can use as our source address.
-		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, tcpip.Address{} /* srcHint */, false /* allowExpired */)
+		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, netip.Addr{} /* srcHint */, false /* allowExpired */)
 		if addressEndpoint == nil {
 			return &tcpip.ErrNetworkUnreachable{}
 		}
 
-		localAddr = addressEndpoint.AddressWithPrefix().Address
+		localAddr = addressEndpoint.AddressWithPrefix().Addr()
 		addressEndpoint.DecRef()
 	} else if !e.checkLocalAddress(localAddr) {
 		// The provided local address is not assigned to us.
@@ -960,7 +961,7 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.
-func (*endpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+func (*endpoint) ResolveStaticAddress(addr netip.Addr) (tcpip.LinkAddress, bool) {
 	if header.IsV6MulticastAddress(addr) {
 		return header.EthernetAddressFromMulticastIPv6Address(addr), true
 	}
@@ -1123,7 +1124,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer, deliv
 	// packets", as per RFC 4291 section 2.7.
 	localAddr := origIPHdrDst
 	if !deliveredLocally || isOrigDstMulticast {
-		localAddr = tcpip.Address{}
+		localAddr = netip.Addr{}
 	}
 	// Even if we were able to receive a packet from some remote, we may not have
 	// a route to it - the remote may be blocked via routing rules. We must always

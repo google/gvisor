@@ -16,9 +16,9 @@ package stack
 
 import (
 	"math/rand"
+	"net/netip"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -41,7 +41,59 @@ var (
 	dstAddr    = testutil.MustParse6("c::3")
 )
 
-func v6PacketBufferWithSrcAddr(srcAddr tcpip.Address) *PacketBuffer {
+func TestFilterAddress(t *testing.T) {
+	v4 := netip.MustParseAddr("192.0.2.1")
+	v4Mask := netip.MustParseAddr("255.255.255.0")
+	v4Network := netip.MustParseAddr("192.0.2.0")
+	v6 := netip.MustParseAddr("2001:db8::1")
+	v6Mask := netip.MustParseAddr("ffff:ffff:ffff:ffff::")
+	v6Network := netip.MustParseAddr("2001:db8::")
+	for _, test := range []struct {
+		name                   string
+		addr, mask, filterAddr netip.Addr
+		matches                bool
+	}{
+		{"IPv4 match", v4, v4Mask, v4Network, true},
+		{"IPv4 mismatch", v4, v4Mask, netip.MustParseAddr("198.51.100.0"), false},
+		{"IPv6 match", v6, v6Mask, v6Network, true},
+		{"IPv4 wildcard", v4, netip.Addr{}, netip.Addr{}, true},
+		{"IPv6 wildcard", v6, netip.Addr{}, netip.Addr{}, true},
+		{"invalid address", netip.Addr{}, v4Mask, v4Network, false},
+		{"invalid mask", v4, netip.Addr{}, v4Network, false},
+		{"invalid filter", v4, v4Mask, netip.Addr{}, false},
+		{"all invalid", netip.Addr{}, netip.Addr{}, netip.Addr{}, false},
+		{"wrong address family", netip.IPv4Unspecified(), netip.IPv6Unspecified(), netip.IPv6Unspecified(), false},
+		{"wrong mask family", netip.IPv6Unspecified(), netip.IPv4Unspecified(), netip.IPv6Unspecified(), false},
+		{"wrong filter family", netip.IPv6Unspecified(), netip.IPv6Unspecified(), netip.IPv4Unspecified(), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, invert := range []bool{false, true} {
+				if got, want := filterAddress(test.addr, test.mask, test.filterAddr, invert), test.matches != invert; got != want {
+					t.Errorf("filterAddress(%v, %v, %v, %t) = %t, want %t", test.addr, test.mask, test.filterAddr, invert, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestIsSpecified(t *testing.T) {
+	for _, test := range []struct {
+		addr netip.Addr
+		want bool
+	}{
+		{netip.Addr{}, false},
+		{netip.IPv4Unspecified(), false},
+		{netip.IPv6Unspecified(), false},
+		{netip.MustParseAddr("192.0.2.1"), true},
+		{netip.IPv6Loopback(), true},
+	} {
+		if got, want := isSpecified(test.addr), test.want; got != want {
+			t.Errorf("isSpecified(%v) = %t, want %t", test.addr, got, want)
+		}
+	}
+}
+
+func v6PacketBufferWithSrcAddr(srcAddr netip.Addr) *PacketBuffer {
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
 	})

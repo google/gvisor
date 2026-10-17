@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"runtime"
 	"strings"
 	"time"
@@ -199,7 +200,7 @@ func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, 
 	return stack.UnknownDestinationPacketHandled
 }
 
-func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
+func (p *protocol) tsOffset(src, dst netip.Addr) tcp.TSOffset {
 	// Initialize a random tsOffset that will be added to the recentTS
 	// every time the timestamp is sent when the Timestamp option is enabled.
 	//

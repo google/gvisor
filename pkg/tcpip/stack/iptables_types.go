@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -201,11 +202,11 @@ type IPHeaderFilter struct {
 	CheckProtocol bool
 
 	// Dst matches the destination IP address.
-	Dst tcpip.Address
+	Dst netip.Addr
 
 	// DstMask masks bits of the destination IP address when comparing with
 	// Dst.
-	DstMask tcpip.Address
+	DstMask netip.Addr
 
 	// DstInvert inverts the meaning of the destination IP check, i.e. when
 	// true the filter will match packets that fail the destination
@@ -213,10 +214,10 @@ type IPHeaderFilter struct {
 	DstInvert bool
 
 	// Src matches the source IP address.
-	Src tcpip.Address
+	Src netip.Addr
 
 	// SrcMask masks bits of the source IP address when comparing with Src.
-	SrcMask tcpip.Address
+	SrcMask netip.Addr
 
 	// SrcInvert inverts the meaning of the source IP check, i.e. when true the
 	// filter will match packets that fail the source comparison.
@@ -250,20 +251,20 @@ type IPHeaderFilter struct {
 // EmptyFilter4 returns an initialized IPv4 header filter.
 func EmptyFilter4() IPHeaderFilter {
 	return IPHeaderFilter{
-		Dst:     tcpip.AddrFrom4([4]byte{}),
-		DstMask: tcpip.AddrFrom4([4]byte{}),
-		Src:     tcpip.AddrFrom4([4]byte{}),
-		SrcMask: tcpip.AddrFrom4([4]byte{}),
+		Dst:     netip.AddrFrom4([4]byte{}),
+		DstMask: netip.AddrFrom4([4]byte{}),
+		Src:     netip.AddrFrom4([4]byte{}),
+		SrcMask: netip.AddrFrom4([4]byte{}),
 	}
 }
 
 // EmptyFilter6 returns an initialized IPv6 header filter.
 func EmptyFilter6() IPHeaderFilter {
 	return IPHeaderFilter{
-		Dst:     tcpip.AddrFrom16([16]byte{}),
-		DstMask: tcpip.AddrFrom16([16]byte{}),
-		Src:     tcpip.AddrFrom16([16]byte{}),
-		SrcMask: tcpip.AddrFrom16([16]byte{}),
+		Dst:     netip.AddrFrom16([16]byte{}),
+		DstMask: netip.AddrFrom16([16]byte{}),
+		Src:     netip.AddrFrom16([16]byte{}),
+		SrcMask: netip.AddrFrom16([16]byte{}),
 	}
 }
 
@@ -275,8 +276,8 @@ func (fl IPHeaderFilter) match(pkt *PacketBuffer, hook Hook, inNicName, outNicNa
 	// Extract header fields.
 	var (
 		transProto tcpip.TransportProtocolNumber
-		dstAddr    tcpip.Address
-		srcAddr    tcpip.Address
+		dstAddr    netip.Addr
+		srcAddr    netip.Addr
 	)
 	switch proto := pkt.NetworkProtocolNumber; proto {
 	case header.IPv4ProtocolNumber:
@@ -358,18 +359,23 @@ func (fl IPHeaderFilter) NetworkProtocol() tcpip.NetworkProtocolNumber {
 }
 
 // filterAddress returns whether addr matches the filter.
-func filterAddress(addr, mask, filterAddr tcpip.Address, invert bool) bool {
-	matches := true
+func filterAddress(addr, mask, filterAddr netip.Addr, invert bool) bool {
+	// Rules may omit their IPHeaderFilter to match any address.
+	if !mask.IsValid() && !filterAddr.IsValid() {
+		return addr.IsValid() != invert
+	}
 	addrBytes := addr.AsSlice()
 	maskBytes := mask.AsSlice()
 	filterBytes := filterAddr.AsSlice()
-	for i := range filterAddr.AsSlice() {
-		if addrBytes[i]&maskBytes[i] != filterBytes[i] {
-			matches = false
-			break
+	if len(addrBytes) == 0 || len(addrBytes) != len(maskBytes) || len(addrBytes) != len(filterBytes) {
+		return invert
+	}
+	for i, b := range filterBytes {
+		if addrBytes[i]&maskBytes[i] != b {
+			return invert
 		}
 	}
-	return matches != invert
+	return !invert
 }
 
 // A Matcher is the interface for matching packets.

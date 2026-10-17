@@ -15,10 +15,10 @@
 package header_test
 
 import (
+	"net/netip"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 )
@@ -209,7 +209,7 @@ func TestIsV4LinkLocalUnicastAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV4LinkLocalUnicastAddress(tcpip.AddrFromSlice([]byte(test.addr))); got != test.expected {
+			if got := header.IsV4LinkLocalUnicastAddress(netip.AddrFrom4([4]byte([]byte(test.addr)))); got != test.expected {
 				t.Errorf("got header.IsV4LinkLocalUnicastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
 			}
 		})
@@ -246,8 +246,42 @@ func TestIsV4LinkLocalMulticastAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV4LinkLocalMulticastAddress(tcpip.AddrFrom4Slice([]byte(test.addr))); got != test.expected {
+			if got := header.IsV4LinkLocalMulticastAddress(netip.AddrFrom4([4]byte([]byte(test.addr)))); got != test.expected {
 				t.Errorf("got header.IsV4LinkLocalMulticastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestIPv4SubnetBroadcast(t *testing.T) {
+	for _, test := range []struct {
+		prefix    string
+		last      string
+		broadcast bool
+	}{
+		{"0.0.0.0/0", "255.255.255.255", true},
+		{"192.0.2.129/24", "192.0.2.255", true},
+		{"192.0.2.129/25", "192.0.2.255", true},
+		{"192.0.2.128/30", "192.0.2.131", true},
+		{"192.0.2.128/31", "192.0.2.129", false},
+		{"192.0.2.128/32", "192.0.2.128", false},
+	} {
+		t.Run(test.prefix, func(t *testing.T) {
+			prefix := netip.MustParsePrefix(test.prefix)
+			last := netip.MustParseAddr(test.last)
+			if got := header.IPv4SubnetBroadcast(prefix); got != last {
+				t.Errorf("IPv4SubnetBroadcast(%s) = %s, want %s", prefix, got, last)
+			}
+			if got := header.IsIPv4SubnetBroadcast(prefix, last); got != test.broadcast {
+				t.Errorf("IsIPv4SubnetBroadcast(%s, %s) = %t, want %t", prefix, last, got, test.broadcast)
+			}
+			for _, addr := range []netip.Addr{prefix.Addr(), last.Next(), netip.AddrFrom16(last.As16()), {}} {
+				if addr == last {
+					continue
+				}
+				if header.IsIPv4SubnetBroadcast(prefix, addr) {
+					t.Errorf("IsIPv4SubnetBroadcast(%s, %s) = true, want false", prefix, addr)
+				}
 			}
 		})
 	}

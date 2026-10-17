@@ -16,6 +16,7 @@ package header
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"net/netip"
 )
 
 const (
@@ -75,28 +76,28 @@ type ChecksummableTransport interface {
 	// If fullChecksum is true, the receiver's checksum field is assumed to hold a
 	// fully calculated checksum. Otherwise, it is assumed to hold a partially
 	// calculated checksum which only reflects the pseudo header.
-	UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address, fullChecksum bool)
+	UpdateChecksumPseudoHeaderAddress(old, new netip.Addr, fullChecksum bool)
 }
 
 // Network offers generic methods to query and/or update the fields of the
 // header of a network protocol buffer.
 type Network interface {
 	// SourceAddress returns the value of the "source address" field.
-	SourceAddress() tcpip.Address
+	SourceAddress() netip.Addr
 
 	// DestinationAddress returns the value of the "destination address"
 	// field.
-	DestinationAddress() tcpip.Address
+	DestinationAddress() netip.Addr
 
 	// Checksum returns the value of the "checksum" field.
 	Checksum() uint16
 
 	// SetSourceAddress sets the value of the "source address" field.
-	SetSourceAddress(tcpip.Address)
+	SetSourceAddress(netip.Addr)
 
 	// SetDestinationAddress sets the value of the "destination address"
 	// field.
-	SetDestinationAddress(tcpip.Address)
+	SetDestinationAddress(netip.Addr)
 
 	// SetChecksum sets the value of the "checksum" field.
 	SetChecksum(uint16)
@@ -122,9 +123,9 @@ type ChecksummableNetwork interface {
 
 	// SetSourceAddressAndChecksum sets the source address and updates the
 	// checksum to reflect the new address.
-	SetSourceAddressWithChecksumUpdate(tcpip.Address)
+	SetSourceAddressWithChecksumUpdate(netip.Addr)
 
 	// SetDestinationAddressAndChecksum sets the destination address and
 	// updates the checksum to reflect the new address.
-	SetDestinationAddressWithChecksumUpdate(tcpip.Address)
+	SetDestinationAddressWithChecksumUpdate(netip.Addr)
 }

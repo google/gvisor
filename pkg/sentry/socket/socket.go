@@ -18,8 +18,8 @@
 package socket
 
 import (
-	"bytes"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -463,7 +463,7 @@ func Htons(v uint16) uint16 {
 // isLinkLocal determines if the given IPv6 address is link-local. This is the
 // case when it has the fe80::/10 prefix. This check is used to determine when
 // the NICID is relevant for a given IPv6 address.
-func isLinkLocal(addr tcpip.Address) bool {
+func isLinkLocal(addr netip.Addr) bool {
 	addrBytes := addr.AsSlice()
 	return len(addrBytes) >= 2 && addrBytes[0] == 0xfe && addrBytes[1]&0xc0 == 0x80
 }
@@ -511,11 +511,12 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 
 // BytesToIPAddress converts an IPv4 or IPv6 address from the user to the
 // netstack representation taking any addresses into account.
-func BytesToIPAddress(addr []byte) tcpip.Address {
-	if bytes.Equal(addr, make([]byte, 4)) || bytes.Equal(addr, make([]byte, 16)) {
-		return tcpip.Address{}
+func BytesToIPAddress(addr []byte) netip.Addr {
+	address, ok := netip.AddrFromSlice(addr)
+	if !ok || address.IsUnspecified() {
+		return netip.Addr{}
 	}
-	return tcpip.AddrFromSlice(addr)
+	return address
 }
 
 // AddressAndFamily reads an sockaddr struct from the given address and

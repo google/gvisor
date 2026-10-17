@@ -18,9 +18,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"time"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 var (
@@ -30,7 +29,7 @@ var (
 	//
 	//   Version 3 Reports are sent with an IP destination address of
 	//   224.0.0.22, to which all IGMPv3-capable multicast routers listen.
-	IGMPv3RoutersAddress = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x16})
+	IGMPv3RoutersAddress = netip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x16})
 )
 
 const (
@@ -117,8 +116,8 @@ func IGMPv3MaximumResponseDelay(codeRaw uint8) time.Duration {
 }
 
 // GroupAddress returns the group address.
-func (i IGMPv3Query) GroupAddress() tcpip.Address {
-	return tcpip.AddrFrom4([4]byte(i[igmpv3QueryGroupAddressOffset:][:IPv4AddressSize]))
+func (i IGMPv3Query) GroupAddress() netip.Addr {
+	return netip.AddrFrom4([4]byte(i[igmpv3QueryGroupAddressOffset:][:IPv4AddressSize]))
 }
 
 // QuerierRobustnessVariable returns the querier's robustness variable.
@@ -219,8 +218,8 @@ const (
 //	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 type IGMPv3ReportGroupAddressRecordSerializer struct {
 	RecordType   IGMPv3ReportRecordType
-	GroupAddress tcpip.Address
-	Sources      []tcpip.Address
+	GroupAddress netip.Addr
+	Sources      []netip.Addr
 }
 
 // Length returns the number of bytes this serializer would occupy.
@@ -228,7 +227,7 @@ func (s *IGMPv3ReportGroupAddressRecordSerializer) Length() int {
 	return igmpv3ReportGroupAddressRecordSourcesOffset + len(s.Sources)*IPv4AddressSize
 }
 
-func copyIPv4Address(dst []byte, src tcpip.Address) {
+func copyIPv4Address(dst []byte, src netip.Addr) {
 	srcBytes := src.As4()
 	if n := copy(dst, srcBytes[:]); n != IPv4AddressSize {
 		panic(fmt.Sprintf("got copy(...) = %d, want = %d", n, IPv4AddressSize))
@@ -389,8 +388,8 @@ func (r IGMPv3ReportGroupAddressRecord) numberOfSources() uint16 {
 }
 
 // GroupAddress returns the multicast address this record targets.
-func (r IGMPv3ReportGroupAddressRecord) GroupAddress() tcpip.Address {
-	return tcpip.AddrFrom4([4]byte(r[igmpv3ReportGroupAddressRecordGroupAddressOffset:][:IPv4AddressSize]))
+func (r IGMPv3ReportGroupAddressRecord) GroupAddress() netip.Addr {
+	return netip.AddrFrom4([4]byte(r[igmpv3ReportGroupAddressRecordGroupAddressOffset:][:IPv4AddressSize]))
 }
 
 // Sources returns an iterator over source addresses in the query.

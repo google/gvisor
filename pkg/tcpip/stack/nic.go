@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 	"reflect"
 	"sort"
 
@@ -451,7 +452,7 @@ func (n *nic) Spoofing() bool {
 
 // primaryAddress returns an address that can be used to communicate with
 // remoteAddr.
-func (n *nic) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr, srcHint tcpip.Address) AssignableAddressEndpoint {
+func (n *nic) primaryEndpoint(protocol tcpip.NetworkProtocolNumber, remoteAddr, srcHint netip.Addr) AssignableAddressEndpoint {
 	ep := n.getNetworkEndpoint(protocol)
 	if ep == nil {
 		return nil
@@ -477,11 +478,11 @@ const (
 	promiscuous
 )
 
-func (n *nic) getAddress(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) AssignableAddressEndpoint {
+func (n *nic) getAddress(protocol tcpip.NetworkProtocolNumber, dst netip.Addr) AssignableAddressEndpoint {
 	return n.getAddressOrCreateTemp(protocol, dst, CanBePrimaryEndpoint, promiscuous)
 }
 
-func (n *nic) hasAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+func (n *nic) hasAddress(protocol tcpip.NetworkProtocolNumber, addr netip.Addr) bool {
 	ep := n.getAddressOrCreateTempInner(protocol, addr, false, NeverPrimaryEndpoint)
 	if ep != nil {
 		ep.DecRef()
@@ -492,7 +493,7 @@ func (n *nic) hasAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Addres
 }
 
 // findEndpoint finds the endpoint, if any, with the given address.
-func (n *nic) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior) AssignableAddressEndpoint {
+func (n *nic) findEndpoint(protocol tcpip.NetworkProtocolNumber, address netip.Addr, peb PrimaryEndpointBehavior) AssignableAddressEndpoint {
 	return n.getAddressOrCreateTemp(protocol, address, peb, spoofing)
 }
 
@@ -505,7 +506,7 @@ func (n *nic) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 //
 // If the address is the IPv4 broadcast address for an endpoint's network, that
 // endpoint will be returned.
-func (n *nic) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior, tempRef getAddressBehaviour) AssignableAddressEndpoint {
+func (n *nic) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address netip.Addr, peb PrimaryEndpointBehavior, tempRef getAddressBehaviour) AssignableAddressEndpoint {
 	var spoofingOrPromiscuous bool
 	switch tempRef {
 	case spoofing:
@@ -518,7 +519,7 @@ func (n *nic) getAddressOrCreateTemp(protocol tcpip.NetworkProtocolNumber, addre
 
 // getAddressOrCreateTempInner is like getAddressEpOrCreateTemp except a boolean
 // is passed to indicate whether or not we should generate temporary endpoints.
-func (n *nic) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, createTemp bool, peb PrimaryEndpointBehavior) AssignableAddressEndpoint {
+func (n *nic) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, address netip.Addr, createTemp bool, peb PrimaryEndpointBehavior) AssignableAddressEndpoint {
 	ep := n.getNetworkEndpoint(protocol)
 	if ep == nil {
 		return nil
@@ -597,22 +598,22 @@ func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
 }
 
 // PrimaryAddress implements NetworkInterface.
-func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, tcpip.Error) {
+func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (netip.Prefix, tcpip.Error) {
 	ep := n.getNetworkEndpoint(proto)
 	if ep == nil {
-		return tcpip.AddressWithPrefix{}, &tcpip.ErrUnknownProtocol{}
+		return netip.Prefix{}, &tcpip.ErrUnknownProtocol{}
 	}
 
 	addressableEndpoint, ok := ep.(AddressableEndpoint)
 	if !ok {
-		return tcpip.AddressWithPrefix{}, &tcpip.ErrNotSupported{}
+		return netip.Prefix{}, &tcpip.ErrNotSupported{}
 	}
 
 	return addressableEndpoint.MainAddress(), nil
 }
 
 // removeAddress removes an address from n.
-func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
+func (n *nic) removeAddress(addr netip.Addr) tcpip.Error {
 	for _, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
 		if !ok {
@@ -630,7 +631,7 @@ func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
 	return &tcpip.ErrBadLocalAddress{}
 }
 
-func (n *nic) setAddressLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error {
+func (n *nic) setAddressLifetimes(addr netip.Addr, lifetimes AddressLifetimes) tcpip.Error {
 	for _, ep := range n.networkEndpoints {
 		ep, ok := ep.(AddressableEndpoint)
 		if !ok {
@@ -648,7 +649,7 @@ func (n *nic) setAddressLifetimes(addr tcpip.Address, lifetimes AddressLifetimes
 	return &tcpip.ErrBadLocalAddress{}
 }
 
-func (n *nic) getLinkAddress(addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) tcpip.Error {
+func (n *nic) getLinkAddress(addr, localAddr netip.Addr, protocol tcpip.NetworkProtocolNumber, onResolve func(LinkResolutionResult)) tcpip.Error {
 	linkRes, ok := n.linkAddrResolvers[protocol]
 	if !ok {
 		return &tcpip.ErrNotSupported{}
@@ -671,7 +672,7 @@ func (n *nic) neighbors(protocol tcpip.NetworkProtocolNumber) ([]NeighborEntry, 
 	return nil, &tcpip.ErrNotSupported{}
 }
 
-func (n *nic) addStaticNeighbor(addr tcpip.Address, protocol tcpip.NetworkProtocolNumber, linkAddress tcpip.LinkAddress) tcpip.Error {
+func (n *nic) addStaticNeighbor(addr netip.Addr, protocol tcpip.NetworkProtocolNumber, linkAddress tcpip.LinkAddress) tcpip.Error {
 	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
 		linkRes.neigh.addStaticEntry(addr, linkAddress)
 		return nil
@@ -680,7 +681,7 @@ func (n *nic) addStaticNeighbor(addr tcpip.Address, protocol tcpip.NetworkProtoc
 	return &tcpip.ErrNotSupported{}
 }
 
-func (n *nic) removeNeighbor(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
+func (n *nic) removeNeighbor(protocol tcpip.NetworkProtocolNumber, addr netip.Addr) tcpip.Error {
 	if linkRes, ok := n.linkAddrResolvers[protocol]; ok {
 		if !linkRes.neigh.removeEntry(addr) {
 			return &tcpip.ErrBadAddress{}
@@ -702,7 +703,7 @@ func (n *nic) clearNeighbors(protocol tcpip.NetworkProtocolNumber) tcpip.Error {
 
 // joinGroup adds a new endpoint for the given multicast address, if none
 // exists yet. Otherwise it just increments its count.
-func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
+func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr netip.Addr) tcpip.Error {
 	// TODO(b/143102137): When implementing MLD, make sure MLD packets are
 	// not sent unless a valid link-local address is available for use on n
 	// as an MLD packet's source address must be a link-local address as
@@ -723,7 +724,7 @@ func (n *nic) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 
 // leaveGroup decrements the count for the given multicast address, and when it
 // reaches zero removes the endpoint for this address.
-func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
+func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr netip.Addr) tcpip.Error {
 	ep := n.getNetworkEndpoint(protocol)
 	if ep == nil {
 		return &tcpip.ErrNotSupported{}
@@ -738,7 +739,7 @@ func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Addres
 }
 
 // isInGroup returns true if n has joined the multicast group addr.
-func (n *nic) isInGroup(addr tcpip.Address) bool {
+func (n *nic) isInGroup(addr netip.Addr) bool {
 	for _, ep := range n.networkEndpoints {
 		gep, ok := ep.(GroupAddressableEndpoint)
 		if !ok {
@@ -879,12 +880,7 @@ func (n *nic) deliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 	}
 
 	src, dst := netProto.ParseAddresses(pkt.NetworkHeader().Slice())
-	id := TransportEndpointID{
-		LocalPort:     dstPort,
-		LocalAddress:  dst,
-		RemotePort:    srcPort,
-		RemoteAddress: src,
-	}
+	id := TransportEndpointID{Local: netip.AddrPortFrom(dst, dstPort), Remote: netip.AddrPortFrom(src, srcPort)}
 	if n.stack.demux.deliverPacket(protocol, pkt, id) {
 		return TransportPacketHandled, false
 	}
@@ -913,7 +909,7 @@ func (n *nic) deliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt
 }
 
 // DeliverTransportError implements TransportDispatcher.
-func (n *nic) DeliverTransportError(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr TransportError, pkt *PacketBuffer) {
+func (n *nic) DeliverTransportError(local, remote netip.Addr, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr TransportError, pkt *PacketBuffer) {
 	state, ok := n.stack.transportProtocols[trans]
 	if !ok {
 		return
@@ -934,7 +930,7 @@ func (n *nic) DeliverTransportError(local, remote tcpip.Address, net tcpip.Netwo
 		return
 	}
 
-	id := TransportEndpointID{srcPort, local, dstPort, remote}
+	id := TransportEndpointID{Local: netip.AddrPortFrom(local, srcPort), Remote: netip.AddrPortFrom(remote, dstPort)}
 	if n.stack.demux.deliverError(n, net, trans, transErr, pkt, id) {
 		return
 	}
@@ -1018,7 +1014,7 @@ func (n *nic) isValidForOutgoing(ep AssignableAddressEndpoint) bool {
 }
 
 // HandleNeighborProbe implements NetworkInterface.
-func (n *nic) HandleNeighborProbe(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, linkAddr tcpip.LinkAddress) tcpip.Error {
+func (n *nic) HandleNeighborProbe(protocol tcpip.NetworkProtocolNumber, addr netip.Addr, linkAddr tcpip.LinkAddress) tcpip.Error {
 	if l, ok := n.linkAddrResolvers[protocol]; ok {
 		l.neigh.handleProbe(addr, linkAddr)
 		return nil
@@ -1028,7 +1024,7 @@ func (n *nic) HandleNeighborProbe(protocol tcpip.NetworkProtocolNumber, addr tcp
 }
 
 // HandleNeighborConfirmation implements NetworkInterface.
-func (n *nic) HandleNeighborConfirmation(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) tcpip.Error {
+func (n *nic) HandleNeighborConfirmation(protocol tcpip.NetworkProtocolNumber, addr netip.Addr, linkAddr tcpip.LinkAddress, flags ReachabilityConfirmationFlags) tcpip.Error {
 	if l, ok := n.linkAddrResolvers[protocol]; ok {
 		l.neigh.handleConfirmation(addr, linkAddr, flags)
 		return nil
@@ -1038,7 +1034,7 @@ func (n *nic) HandleNeighborConfirmation(protocol tcpip.NetworkProtocolNumber, a
 }
 
 // CheckLocalAddress implements NetworkInterface.
-func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr netip.Addr) bool {
 	if n.Spoofing() {
 		return true
 	}
@@ -1051,7 +1047,7 @@ func (n *nic) CheckLocalAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip
 	return false
 }
 
-func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
+func (n *nic) checkDuplicateAddress(protocol tcpip.NetworkProtocolNumber, addr netip.Addr, h DADCompletionHandler) (DADCheckAddressDisposition, tcpip.Error) {
 	d, ok := n.duplicateAddressDetectors[protocol]
 	if !ok {
 		return 0, &tcpip.ErrNotSupported{}

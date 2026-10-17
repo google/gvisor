@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"reflect"
 	"strconv"
 	"time"
@@ -808,8 +809,8 @@ func (s *sock) checkFamily(family uint16, exact bool) bool {
 //
 // TODO(gvisor.dev/issue/1556): remove this function.
 func (s *sock) mapFamily(addr tcpip.FullAddress, family uint16) tcpip.FullAddress {
-	if addr.Addr.BitLen() == 0 && s.family == linux.AF_INET6 && family == linux.AF_INET {
-		addr.Addr = tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00})
+	if !addr.Addr.IsValid() && s.family == linux.AF_INET6 && family == linux.AF_INET {
+		addr.Addr = netip.AddrFrom16(netip.IPv4Unspecified().As16())
 	}
 	return addr
 }
@@ -889,12 +890,11 @@ func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 		}
 		a.UnmarshalBytes(sockaddr)
 
+		var hardwareAddr [16]byte
+		copy(hardwareAddr[:], a.HardwareAddr[:header.EthernetAddressSize])
 		addr = tcpip.FullAddress{
-			NIC: tcpip.NICID(a.InterfaceIndex),
-			Addr: tcpip.AddrFrom16Slice(append(
-				a.HardwareAddr[:header.EthernetAddressSize],
-				[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...,
-			)),
+			NIC:  tcpip.NICID(a.InterfaceIndex),
+			Addr: netip.AddrFrom16(hardwareAddr),
 			Port: socket.Ntohs(a.Protocol),
 		}
 	} else {
@@ -2476,7 +2476,7 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.AddMembershipOption{
 			NIC:           tcpip.NICID(req.InterfaceIndex),
-			MulticastAddr: tcpip.AddrFrom16(req.MulticastAddr),
+			MulticastAddr: netip.AddrFrom16(req.MulticastAddr),
 		}))
 
 	case linux.IPV6_DROP_MEMBERSHIP:
@@ -2487,7 +2487,7 @@ func (s *sock) setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVa
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(&tcpip.RemoveMembershipOption{
 			NIC:           tcpip.NICID(req.InterfaceIndex),
-			MulticastAddr: tcpip.AddrFrom16(req.MulticastAddr),
+			MulticastAddr: netip.AddrFrom16(req.MulticastAddr),
 		}))
 
 	case linux.IPV6_MULTICAST_IF:
@@ -2752,8 +2752,8 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 			NIC: tcpip.NICID(req.InterfaceIndex),
 			// TODO(igudger): Change AddMembership to use the standard
 			// any address representation.
-			InterfaceAddr: tcpip.AddrFrom4(req.InterfaceAddr),
-			MulticastAddr: tcpip.AddrFrom4(req.MulticastAddr),
+			InterfaceAddr: netip.AddrFrom4(req.InterfaceAddr),
+			MulticastAddr: netip.AddrFrom4(req.MulticastAddr),
 		}))
 
 	case linux.IP_DROP_MEMBERSHIP:
@@ -2766,8 +2766,8 @@ func (s *sock) setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal 
 			NIC: tcpip.NICID(req.InterfaceIndex),
 			// TODO(igudger): Change DropMembership to use the standard
 			// any address representation.
-			InterfaceAddr: tcpip.AddrFrom4(req.InterfaceAddr),
-			MulticastAddr: tcpip.AddrFrom4(req.MulticastAddr),
+			InterfaceAddr: netip.AddrFrom4(req.InterfaceAddr),
+			MulticastAddr: netip.AddrFrom4(req.MulticastAddr),
 		}))
 
 	case linux.IP_MULTICAST_IF:
