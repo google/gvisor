@@ -23,6 +23,9 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/pool"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
@@ -54,6 +57,7 @@ func newTestSharedContext(t *testing.T) *sharedContext {
 			threadID: {thread: child},
 		},
 	}
+	s.syscallThread.subproc = s
 	shared := &sysmsg.ThreadContext{}
 	shared.Init(threadID)
 	atomic.StoreUint64(&shared.AckedTime, 1)
@@ -223,6 +227,81 @@ func TestThreadSyscallDeadThread(t *testing.T) {
 	_, err := missing.syscall(&regs)
 	if !errors.Is(err, unix.ESRCH) {
 		t.Fatalf("syscall got error %v, want %v", err, unix.ESRCH)
+	}
+}
+
+func TestSysmsgThreadInitDeadThread(t *testing.T) {
+	addr, errno := hostsyscall.RawSyscall6(
+		unix.SYS_MMAP,
+		0,
+		hostarch.PageSize,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
+		0, 0)
+	if errno != 0 {
+		t.Fatalf("mmap failed: %v", errno)
+	}
+	defer hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, addr, hostarch.PageSize, 0)
+
+	st := &sysmsgThread{
+		thread: &thread{tgid: 1 << 30, tid: 1 << 30},
+	}
+	if err := st.init(addr, addr); !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("sysmsgThread.init got error %v, want %v", err, unix.ESRCH)
+	}
+}
+
+func TestCreateSysmsgThreadDeadClone(t *testing.T) {
+	s := &subprocess{
+		requests:        make(chan any, 1),
+		sysmsgStackPool: pool.Pool{Start: 0, Limit: 1},
+	}
+	id, ok := s.sysmsgStackPool.Get()
+	if !ok {
+		t.Fatalf("failed to allocate stack ID")
+	}
+	go func() {
+		req := (<-s.requests).(requestThread)
+		req.thread <- &thread{
+			tgid:          1 << 30,
+			tid:           1 << 30,
+			sysmsgStackID: id,
+		}
+	}()
+
+	if err := s.createSysmsgThread(); err == nil {
+		t.Fatalf("createSysmsgThread succeeded, want error")
+	}
+	if _, ok := s.sysmsgStackPool.Get(); !ok {
+		t.Fatalf("expected sysmsgStackID to be returned to pool on failure")
+	}
+}
+
+func TestSyscallThreadKillMarksSubprocessDead(t *testing.T) {
+	sc := newTestSharedContext(t)
+	s := sc.subprocess
+
+	s.syscallThread.kill()
+	if !s.dead.Load() {
+		t.Fatalf("expected subprocess to be marked dead after syscallThread.kill()")
+	}
+	if err := s.createSysmsgThread(); !errors.Is(err, errDeadSubprocess) {
+		t.Fatalf("createSysmsgThread got error %v, want %v", err, errDeadSubprocess)
+	}
+	req := requestThread{thread: make(chan *thread, 1)}
+	s.handlePtraceSyscallRequest(req)
+	if got := <-req.thread; got != nil {
+		t.Fatalf("handlePtraceSyscallRequest got %v, want nil when subprocess is dead", got)
+	}
+}
+
+func TestInitSyscallThreadPoolExhausted(t *testing.T) {
+	s := &subprocess{
+		sysmsgStackPool: pool.Pool{Start: 0, Limit: 0},
+	}
+	p := &thread{tgid: 1 << 30, tid: 1 << 30}
+	if err := s.initSyscallThread(p, false); err == nil {
+		t.Fatalf("initSyscallThread succeeded when pool was exhausted, want error")
 	}
 }
 
