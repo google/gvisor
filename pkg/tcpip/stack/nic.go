@@ -333,20 +333,22 @@ func (n *nic) remove(closeLinkEndpoint bool) (func(), tcpip.Error) {
 	// We must not hold n.enableDisableMu here.
 	n.linkResQueue.cancel()
 
-	var deferAct func()
 	// Prevent packets from going down to the link before shutting the link down.
 	n.qDisc.Close()
 	n.NetworkLinkEndpoint.Attach(nil)
+	ep := n.NetworkLinkEndpoint
 	if closeLinkEndpoint {
-		ep := n.NetworkLinkEndpoint
 		ep.SetOnCloseAction(nil)
-		// The link endpoint has to be closed without holding a
-		// netstack lock, because it can trigger other netstack
-		// operations.
-		deferAct = ep.Close
 	}
 
-	return deferAct, nil
+	return func() {
+		// Resolution callbacks and link endpoint teardown may re-enter the
+		// stack, so wait for them only after the stack lock is released.
+		n.linkResQueue.wait()
+		if closeLinkEndpoint {
+			ep.Close()
+		}
+	}, nil
 }
 
 // setPromiscuousMode enables or disables promiscuous mode.
