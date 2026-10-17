@@ -114,6 +114,16 @@ func uvmIoctlFilters(enabledCaps nvconf.DriverCaps) []seccomp.SyscallRule {
 		{seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_VALIDATE_VA_RANGE), compUtil},
 		{seccomp.EqualTo(nvgpu.UVM_CREATE_EXTERNAL_RANGE), compUtil},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_INIT_EVENT_TRACKER), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_SET_NOTIFICATION_THRESHOLD), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_EVENT_QUEUE_ENABLE_EVENTS), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_EVENT_QUEUE_DISABLE_EVENTS), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_ENABLE_COUNTERS), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_DISABLE_COUNTERS), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_GET_PROCESSOR_UUID_TABLE), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_FLUSH_EVENTS), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_INIT_EVENT_TRACKER_V2), nvconf.CapProfiling},
+		{seccomp.EqualTo(nvgpu.UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_V2), nvconf.CapProfiling},
 	} {
 		if uvmIoctl.caps&enabledCaps != 0 {
 			ioctlRules = append(ioctlRules, seccomp.PerArg{

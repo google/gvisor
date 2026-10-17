@@ -35,6 +35,7 @@ type Runner struct {
 
 	nonUVMIoctls []nvproxy.IoctlName
 	uvmIoctls    []nvproxy.IoctlName
+	uvmConstants []string
 }
 
 // NewRunner creates a new Runner around a given parser file and a temporary working directory.
@@ -93,6 +94,11 @@ func (r *Runner) CreateInputFile(info *nvproxy.DriverABIInfo) error {
 	}
 	for _, info := range info.UvmInfos {
 		handleIoctlInfo(info, true)
+	}
+	r.uvmConstants = make([]string, 0, len(info.UvmConstants))
+	for name := range info.UvmConstants {
+		r.uvmConstants = append(r.uvmConstants, name)
+		inputJSON.Constants = append(inputJSON.Constants, "GVISOR_"+name)
 	}
 
 	f, err := os.CreateTemp(r.dir, "input_*.json")
@@ -176,7 +182,7 @@ func (r *Runner) ParseDriver(version nvconf.DriverVersion) (*OutputJSON, error) 
 		return nil, fmt.Errorf("failed to clone git repo: %w", err)
 	}
 
-	config, err := CreateIncludeFiles(dir, *source, r.nonUVMIoctls, r.uvmIoctls)
+	config, err := CreateIncludeFiles(dir, *source, r.nonUVMIoctls, r.uvmIoctls, r.uvmConstants)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create include files: %w", err)
 	}
