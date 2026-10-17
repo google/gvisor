@@ -15,6 +15,7 @@
 package check
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/gob"
 	"errors"
@@ -26,7 +27,6 @@ import (
 	"strings"
 	"testing"
 
-	"archive/zip"
 	"golang.org/x/tools/go/analysis"
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )

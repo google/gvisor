@@ -19,9 +19,9 @@
 # CI runs with the unit tests. Deep Go analysis is owned by gVisor nogo.
 #
 # Usage:
-#   tools/lint.sh                     # run every check
-#   tools/lint.sh gofmt clang-format  # run only the named checks
-#   tools/lint.sh --fix               # rewrite files in place where a check can
+#   tools/lint.sh                        # run every check
+#   tools/lint.sh goimports clang-format  # run only the named checks
+#   tools/lint.sh --fix                  # rewrite files in place where a check can
 #
 # Environment:
 #   LINT_CACHE_DIR   where to cache downloaded linters
@@ -42,10 +42,10 @@ fi
 readonly CACHE_DIR
 
 # Every check, in run order, named as tools/lint.sh accepts it.
-declare -ra ALL_CHECKS=(gofmt clang-format cpplint buildifier spelling)
+declare -ra ALL_CHECKS=(goimports clang-format cpplint buildifier spelling)
 # Only the formatters can rewrite a file; the rest have no safe autofix.
-declare -ra FIXABLE_CHECKS=(gofmt clang-format buildifier)
-# These may need Bazel, so they run only when named.
+declare -ra FIXABLE_CHECKS=(goimports clang-format buildifier)
+# These additional checks run only when named.
 declare -ra OPTIONAL_CHECKS=(actions clang-tidy)
 declare -ra KNOWN_CHECKS=("${ALL_CHECKS[@]}" "${OPTIONAL_CHECKS[@]}")
 
@@ -53,7 +53,6 @@ declare -r CODESPELL_VERSION="2.3.0"
 declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
 declare -r CLANG_TIDY_VERSION="22.1.8"
-declare -r GOFMT_MINIMUM_GO_VERSION="1.27"
 # Keep in sync with images/default/Dockerfile.
 declare -r BUILDIFIER_VERSION="8.5.1"
 
@@ -178,64 +177,8 @@ install_clang_tidy() {
   echo "${bin}"
 }
 
-version_at_least() {
-  local -r have_major="${1%%.*}" want_major="${2%%.*}"
-  local -r have_rest="${1#*.}" want_rest="${2#*.}"
-  local -r have_minor="${have_rest%%.*}" want_minor="${want_rest%%.*}"
-  if (( have_major != want_major )); then
-    if (( have_major > want_major )); then
-      return 0
-    fi
-    return 1
-  fi
-  if (( have_minor >= want_minor )); then
-    return 0
-  fi
-  return 1
-}
-
-go_toolchain() {
-  local version
-  version="$(awk '$1 == "toolchain" { sub(/^go/, "", $2); print $2; exit }' \
-      "${REPO_DIR}/go.mod")"
-  if [[ -z "${version}" ]]; then
-    version="$(awk '$1 == "go" { print $2; exit }' "${REPO_DIR}/go.mod")"
-  fi
-  if [[ -z "${version}" ]]; then
-    echo "lint: no go or toolchain directive in ${REPO_DIR}/go.mod" >&2
-    return 1
-  fi
-  if ! version_at_least "${version}" "${GOFMT_MINIMUM_GO_VERSION}"; then
-    version="${GOFMT_MINIMUM_GO_VERSION}"
-  fi
-  if [[ "${version}" =~ ^[0-9]+\.[0-9]+$ ]]; then
-    version="${version}.0"
-  fi
-  echo "go${version}"
-}
-
-install_gofmt() {
-  if ! command -v go >/dev/null 2>&1; then
-    echo "lint: go not found; install Go or put go on PATH" >&2
-    return 1
-  fi
-  local toolchain
-  toolchain="$(go_toolchain)" || return 1
-  local goroot
-  if ! goroot="$(GOTOOLCHAIN="${toolchain}" go env GOROOT)"; then
-    echo "lint: failed to resolve Go toolchain ${toolchain}" >&2
-    return 1
-  fi
-  local -r bin="${goroot}/bin/gofmt"
-  if [[ ! -x "${bin}" ]]; then
-    echo "lint: no gofmt in Go toolchain ${toolchain}" >&2
-    return 1
-  fi
-  echo "${bin}"
-}
-
 # Only tracked files, to skip bazel-* symlinks and other build output.
-go_files() { git ls-files -z -- '*.go'; }
+go_files() { git ls-files -z -- '*.go' "$@"; }
 doc_files() { git ls-files -z -- '*.md' '*.html'; }
 cc_files() { git ls-files -z -- '*.c' '*.cc' '*.h'; }
 bazel_files() {
@@ -254,20 +197,26 @@ report() {
   fi
 }
 
-check_gofmt() {
-  local gofmt
-  gofmt="$(install_gofmt)" || return 1
+# Formatting-only mode does not add or remove imports: generated packages may
+# not exist until Bazel builds them.
+check_goimports() {
+  local -ra goimports=(
+    bazel run --run_in_cwd @org_golang_x_tools//cmd/goimports -- -format-only
+  )
+  # Golden outputs exercise the generator's handling of import declarations;
+  # reformatting them would change the behavior those tests expect.
+  local -r golden_outputs=':(exclude)tools/go_generics/tests/*/output.go'
   if [[ "${FIX}" -eq 1 ]]; then
-    go_files | xargs -0 "${gofmt}" -w -l
-    return 0
+    go_files "${golden_outputs}" | xargs -0 "${goimports[@]}" -w -l
+    return $?
   fi
-  local unformatted
-  unformatted="$(go_files | xargs -0 "${gofmt}" -l)"
-  if [[ -n "${unformatted}" ]]; then
-    # -d shows what would change; -l alone only names the files.
-    echo "${unformatted}" | xargs -d '\n' "${gofmt}" -d
-    echo
-    echo "Run \`make lint-fix\` to reformat these files." >&2
+  local output
+  if ! output="$(go_files "${golden_outputs}" | xargs -0 "${goimports[@]}" -d)"; then
+    return 1
+  fi
+  if [[ -n "${output}" ]]; then
+    printf '%s\n' "${output}"
+    echo 'Run `make lint-fix` to reformat these files.' >&2
     return 1
   fi
 }
@@ -461,7 +410,7 @@ main() {
   local check
   for check in "${checks[@]}"; do
     case "${check}" in
-      gofmt)        run_check gofmt check_gofmt "gofmt" ;;
+      goimports)    run_check goimports check_goimports "goimports" ;;
       clang-format) run_check clang-format check_clang_format "clang-format" ;;
       cpplint)      run_check cpplint check_cpplint "cpplint" ;;
       clang-tidy)   run_check clang-tidy check_clang_tidy "clang-tidy" ;;
