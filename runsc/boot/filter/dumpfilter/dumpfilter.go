@@ -71,9 +71,10 @@ func main() {
 		nvCaps = flagCaps
 	}
 	opt := config.Options{
-		Platform:    (&systrap.Systrap{}).SeccompInfo(),
-		NVProxy:     *nvproxyCaps != "",
-		NVProxyCaps: nvCaps,
+		Platform:       (&systrap.Systrap{}).SeccompInfo(),
+		NVProxy:        *nvproxyCaps != "",
+		NVProxyCaps:    nvCaps,
+		VendorSyscalls: config.HostVendorSyscalls(),
 	}
 	rules, denyRules := config.Rules(opt)
 

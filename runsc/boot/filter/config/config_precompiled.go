@@ -132,6 +132,19 @@ func optionsToPrecompile() ([]Options, error) {
 			rdmaProxyNo.RDMAProxy = false
 			return []Options{rdmaProxyYes, rdmaProxyNo}, nil
 		},
+
+		// Expand the sets of vendor syscalls that may be available.
+		func(opt Options) ([]Options, error) {
+			noVendorSyscalls := opt
+			noVendorSyscalls.VendorSyscalls = nil
+			opts := []Options{noVendorSyscalls}
+			for _, names := range vendorSyscallSetsToPrecompile {
+				optCopy := opt
+				optCopy.VendorSyscalls = precompiledseccomp.PrecompileSyscallNumbers(names...)
+				opts = append(opts, optCopy)
+			}
+			return opts, nil
+		},
 	} {
 		var newOpts []Options
 		for _, opt := range opts {

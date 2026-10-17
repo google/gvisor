@@ -41,5 +41,8 @@ go_test(
     size = "small",
     srcs = ["config_test.go"],
     embed = [":config"],
-    deps = ["//pkg/seccomp"],
+    deps = [
+        "//pkg/seccomp",
+        "//pkg/seccomp/precompiledseccomp",
+    ],
 )

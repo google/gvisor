@@ -53,6 +53,7 @@ go_test(
     embed = [":config"],
     deps = [
         "//pkg/seccomp",
+        "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/systrap",

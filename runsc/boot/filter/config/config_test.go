@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
@@ -90,7 +91,8 @@ func TestOptionsConfigKey(t *testing.T) {
 	type mutateFn func(opt *Options)
 
 	defaultOpt := Options{
-		Platform: (&systrap.Systrap{}).SeccompInfo(),
+		Platform:       (&systrap.Systrap{}).SeccompInfo(),
+		VendorSyscalls: precompiledseccomp.VarSyscallNumbers{"test": 1000},
 	}
 
 	// Map of `Options` struct field names mapped to a function to mutate them.
@@ -115,6 +117,13 @@ func TestOptionsConfigKey(t *testing.T) {
 		"RDMAProxy":             func(opt *Options) { opt.RDMAProxy = !opt.RDMAProxy },
 		"CgoEnabled":            func(opt *Options) { opt.CgoEnabled = !opt.CgoEnabled },
 		"PluginNetwork":         func(opt *Options) { opt.PluginNetwork = !opt.PluginNetwork },
+		"VendorSyscalls": func(opt *Options) {
+			if len(opt.VendorSyscalls) == 0 {
+				opt.VendorSyscalls = precompiledseccomp.VarSyscallNumbers{"test": 1000}
+			} else {
+				opt.VendorSyscalls = nil
+			}
+		},
 	}
 
 	// Map of `Options` struct field names mapped to a function to mutate them.
@@ -123,6 +132,13 @@ func TestOptionsConfigKey(t *testing.T) {
 	// change the value of `Options.Key`.
 	var varsFields = map[string]mutateFn{
 		"ControllerFD": func(opt *Options) { opt.ControllerFD++ },
+		"VendorSyscalls": func(opt *Options) {
+			sn := make(precompiledseccomp.VarSyscallNumbers, len(opt.VendorSyscalls))
+			for name, sysno := range opt.VendorSyscalls {
+				sn[name] = sysno + 1
+			}
+			opt.VendorSyscalls = sn
+		},
 	}
 
 	t.Run("fields are exhaustive", func(t *testing.T) {

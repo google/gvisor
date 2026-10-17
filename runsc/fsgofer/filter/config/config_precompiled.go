@@ -78,6 +78,19 @@ func optionsToPrecompile() []Options {
 			noLisafs.LisafsNeeded = false
 			return []Options{lisafs, noLisafs}
 		},
+
+		// Expand the sets of vendor syscalls that may be available.
+		func(opt Options) []Options {
+			noVendorSyscalls := opt
+			noVendorSyscalls.VendorSyscalls = nil
+			opts := []Options{noVendorSyscalls}
+			for _, names := range vendorSyscallSetsToPrecompile {
+				optCopy := opt
+				optCopy.VendorSyscalls = precompiledseccomp.PrecompileSyscallNumbers(names...)
+				opts = append(opts, optCopy)
+			}
+			return opts
+		},
 	} {
 		var newOpts []Options
 		for _, opt := range opts {

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
 
 // TestOptionsConfigKey verifies the behavior of `Options.ConfigKey`.
@@ -47,6 +48,13 @@ func TestOptionsConfigKey(t *testing.T) {
 				}
 			} else {
 				opt.ExtraRules = nil
+			}
+		},
+		"VendorSyscalls": func(opt *Options) {
+			if len(opt.VendorSyscalls) == 0 {
+				opt.VendorSyscalls = precompiledseccomp.VarSyscallNumbers{"test": 1000}
+			} else {
+				opt.VendorSyscalls = nil
 			}
 		},
 	}

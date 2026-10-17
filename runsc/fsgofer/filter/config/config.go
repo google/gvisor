@@ -38,7 +38,22 @@ type Options struct {
 	DirectFS         bool
 	LisafsNeeded     bool
 	CgoEnabled       bool
+	VendorSyscalls   precompiledseccomp.VarSyscallNumbers
 	ExtraRules       []seccomp.SyscallRules
+}
+
+// vendorSyscalls is the set of vendor-specific syscalls that the gofer may
+// use if the host supports them.
+var vendorSyscalls []precompiledseccomp.VarSyscall
+
+// vendorSyscallSetsToPrecompile lists the sets of `vendorSyscalls` (by name)
+// that may be available in practice.
+var vendorSyscallSetsToPrecompile [][]string
+
+// HostVendorSyscalls returns the vendor-specific syscalls that may be used on
+// the current host.
+func HostVendorSyscalls() precompiledseccomp.VarSyscallNumbers {
+	return precompiledseccomp.HostSupportedVariableSyscallNumbers(vendorSyscalls)
 }
 
 // isInstrumentationEnabled returns whether there are any
@@ -63,6 +78,7 @@ func (opt Options) ConfigKey() string {
 	fmt.Fprintf(&sb, "LisafsNeeded=%t ", opt.LisafsNeeded)
 	fmt.Fprintf(&sb, "Instrumentation=%t ", isInstrumentationEnabled())
 	fmt.Fprintf(&sb, "CgoEnabled=%t ", opt.CgoEnabled)
+	fmt.Fprintf(&sb, "VendorSyscalls=%q ", opt.VendorSyscalls.Key())
 	// Extra rules come from registered extensions, whose filters are not
 	// known at precompile time. Cannot precompile.
 	fmt.Fprintf(&sb, "ExtraRules=%t ", len(opt.ExtraRules) > 0)
@@ -90,6 +106,7 @@ func Warnings(opt Options) []string {
 func (opt Options) Vars() precompiledseccomp.Values {
 	vars := precompiledseccomp.Values{}
 	vars.SetUint64(selfPIDVarName, uint64(os.Getpid()))
+	opt.VendorSyscalls.SetVars(vars)
 	return vars
 }
 
@@ -103,6 +120,7 @@ func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, seccomp.SyscallRules) {
 	s := allowedSyscalls.Copy()
 	s.Merge(selfPIDFilters(vars.GetUint64(selfPIDVarName)))
+	s.Merge(precompiledseccomp.VarSyscallRules(vendorSyscalls, opt.VendorSyscalls, vars))
 	if opt.ProfileEnabled {
 		s.Merge(profileFilters)
 	}
