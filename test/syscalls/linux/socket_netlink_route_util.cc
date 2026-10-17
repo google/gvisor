@@ -426,6 +426,46 @@ PosixError DelUnicastRoute(int interface, int family, int prefixlen,
                             NetlinkModification::kDelete);
 }
 
+PosixError ReplaceUnicastRouteViaGateway(int interface, int family,
+                                         int prefixlen, const void* dst,
+                                         const void* gw, int addrlen) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg route;
+    char attrbuf[512];
+  };
+
+  struct request req = {};
+  PosixError err =
+      PopulateRouteNlmsghdr(NetlinkModification::kReplace, &req.hdr);
+  if (!err.ok()) {
+    return err;
+  }
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.route));
+  req.hdr.nlmsg_seq = kSeq;
+  req.route.rtm_dst_len = prefixlen;
+  req.route.rtm_family = family;
+  req.route.rtm_type = RTN_UNICAST;
+  req.route.rtm_flags = RTNH_F_ONLINK;
+
+  auto add = [&](uint16_t type, const void* data, int len) {
+    struct rtattr* rta = reinterpret_cast<struct rtattr*>(
+        reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+    rta->rta_type = type;
+    rta->rta_len = RTA_LENGTH(len);
+    req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(len);
+    memcpy(RTA_DATA(rta), data, len);
+  };
+  add(RTA_OIF, &interface, sizeof(interface));
+  add(RTA_PRIORITY, &kMetric, sizeof(kMetric));
+  add(RTA_DST, dst, addrlen);
+  add(RTA_GATEWAY, gw, addrlen);
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
 PosixError AddExclusiveLookupInTableRule(int family, int table, int priority,
                                          int prefixlen, const void* dst,
                                          int dstlen) {

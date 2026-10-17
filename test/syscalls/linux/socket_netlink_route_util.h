@@ -86,6 +86,13 @@ PosixError AddUnicastRoute(int interface, int family, int prefixlen,
 PosixError DelUnicastRoute(int interface, int family, int prefixlen,
                            const void* dst, int dstlen);
 
+// ReplaceUnicastRouteViaGateway replaces the route to the given dst subnet via
+// the given interface with one through the on-link gateway gw, using the same
+// metric as AddUnicastRoute.
+PosixError ReplaceUnicastRouteViaGateway(int interface, int family,
+                                         int prefixlen, const void* dst,
+                                         const void* gw, int addrlen);
+
 // AddExclusiveLookupInTableRule adds a PBR rule that performs a route lookup
 // against the given table, for all packets destined to the given subnet.
 PosixError AddExclusiveLookupInTableRule(int family, int table, int priority,
