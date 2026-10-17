@@ -638,6 +638,35 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 	return backoff.Retry(op, b)
 }
 
+// IsProcessRunning returns true if pid identifies a running process, rather than
+// a zombie. Nonpositive PIDs and processes that no longer exist return false.
+func IsProcessRunning(pid int) (bool, error) {
+	if pid <= 0 {
+		return false, nil
+	}
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		if err == unix.ESRCH || err == unix.EINVAL {
+			return false, nil
+		}
+		return false, fmt.Errorf("pidfd_open(%d): %w", pid, err)
+	}
+	defer unix.Close(pidfd)
+
+	pfds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(pfds, 0)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("polling pidfd for process %d: %w", pid, err)
+		}
+		// A pidfd becomes readable (POLLIN) when the process exits (including when it is a zombie).
+		return n == 0, nil
+	}
+}
+
 // WaitForNonChildExit waits for the given process to exit, up to `timeout`.
 // As the name implies, `pid` must not be a child of the current process.
 // Returns immediately if the process does not exist.
