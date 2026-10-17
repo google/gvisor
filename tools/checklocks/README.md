@@ -265,6 +265,12 @@ func foo(ts *testStruct) {
 }
 ```
 
+Closure callbacks passed to recognized synchronous helpers in the
+standard-library `slices` package are checked with the lock state at the call
+site. Their lock changes are not propagated to the caller because a helper may
+invoke a callback zero or multiple times. Closures passed to other functions
+are still treated as escaped.
+
 Since x cannot be annotated, this may require use of the force annotation used
 below. However, if anonymous functions and closures require annotations, there
 may be an opportunity to split them into named functions for improved analysis
