@@ -162,6 +162,14 @@ func (f *MemoryFile) importMetadataProto(pb *pgallocpb.MemoryFileMetadataProto) 
 	for _, s := range pb.UnwasteHuge {
 		f.unwasteHuge.InsertRange(memmap.FileRange{Start: s.Start, End: s.End}, unwasteInfo{})
 	}
+	if !f.opts.DisableMemoryAccounting {
+		for s := f.memAcct.FirstSegment(); s.Ok(); s = s.NextSegment() {
+			ma := s.ValuePtr()
+			if !ma.wasteOrReleasing && ma.memCgID != 0 {
+				usage.MemoryAccounting.IncAllocated(s.Range().Length(), ma.memCgID)
+			}
+		}
+	}
 	return nil
 }
 

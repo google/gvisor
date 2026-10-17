@@ -91,6 +91,30 @@ type memoryStats struct {
 	Tmpfs     atomicbitops.Uint64
 	Mapped    atomicbitops.Uint64
 	Ramdiskfs atomicbitops.Uint64
+	// Allocated tracks live MemoryFile bytes charged to a cgroup.
+	Allocated atomicbitops.Uint64
+	// Peak tracks the high-water mark of total cgroup memory usage in bytes.
+	Peak atomicbitops.Uint64
+}
+
+// committedPerCgLocked returns the committed memory usage for a cgroup,
+// excluding System memory (which on per-cgroup stats holds deallocated waste
+// pages awaiting asynchronous release).
+//
+// Preconditions: the owning MemoryLocked.mu is held.
+func (ms *memoryStats) committedPerCgLocked() uint64 {
+	return ms.Anonymous.RacyLoad() + ms.PageCache.RacyLoad() + ms.Mapped.RacyLoad() + ms.Tmpfs.RacyLoad() + ms.Ramdiskfs.RacyLoad()
+}
+
+// updatePeakLocked updates Peak if the current committed total or allocated+mapped
+// bytes exceed the recorded high-water mark.
+//
+// Preconditions: must be called with MemoryLocked.mu held.
+func (ms *memoryStats) updatePeakLocked() {
+	cur := max(ms.committedPerCgLocked(), ms.Allocated.RacyLoad()+ms.Mapped.RacyLoad())
+	if cur > ms.Peak.RacyLoad() {
+		ms.Peak.Store(cur)
+	}
 }
 
 // incLocked adds a usage of 'val' bytes from memory category 'kind'.
@@ -303,13 +327,18 @@ func Init() error {
 var MemoryAccounting *MemoryLocked
 
 // +checklocks:m.mu
-func (m *MemoryLocked) incLockedPerCg(val uint64, kind MemoryKind, memCgID uint32) {
+func (m *MemoryLocked) loadOrCreateMemoryStats(memCgID uint32) *memoryStats {
 	if _, ok := m.MemCgIDToMemStats[memCgID]; !ok {
 		m.MemCgIDToMemStats[memCgID] = &memoryStats{}
 	}
+	return m.MemCgIDToMemStats[memCgID]
+}
 
-	ms := m.MemCgIDToMemStats[memCgID]
+// +checklocks:m.mu
+func (m *MemoryLocked) incLockedPerCg(val uint64, kind MemoryKind, memCgID uint32) {
+	ms := m.loadOrCreateMemoryStats(memCgID)
 	ms.incLocked(val, kind)
+	ms.updatePeakLocked()
 }
 
 // Inc adds an additional usage of 'val' bytes to memory category 'kind' for a
@@ -446,6 +475,56 @@ func (m *MemoryLocked) CopyPerCg(memCgID uint32) (MemoryStats, uint64) {
 		return MemoryStats{}, 0
 	}
 	return ms.copyLocked(), ms.totalLocked()
+}
+
+// IncAllocated records an allocation of val bytes in MemoryFile charged to memCgID
+// and updates the per-cgroup peak memory high-water mark.
+//
+// +checklocksexclude:m.mu
+func (m *MemoryLocked) IncAllocated(val uint64, memCgID uint32) {
+	if memCgID == 0 || val == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms := m.loadOrCreateMemoryStats(memCgID)
+	ms.Allocated.Add(val)
+	ms.updatePeakLocked()
+}
+
+// DecAllocated records a deallocation of val bytes in MemoryFile previously
+// charged to memCgID.
+//
+// +checklocksexclude:m.mu
+func (m *MemoryLocked) DecAllocated(val uint64, memCgID uint32) {
+	if memCgID == 0 || val == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms, ok := m.MemCgIDToMemStats[memCgID]
+	if !ok {
+		return
+	}
+	cur := ms.Allocated.RacyLoad()
+	if val >= cur {
+		ms.Allocated.Store(0)
+	} else {
+		ms.Allocated.Store(cur - val)
+	}
+}
+
+// PeakPerCg returns the peak memory usage in bytes recorded for memCgID.
+//
+// +checklocksexclude:m.mu
+func (m *MemoryLocked) PeakPerCg(memCgID uint32) uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ms, ok := m.MemCgIDToMemStats[memCgID]
+	if !ok {
+		return 0
+	}
+	return max(ms.Peak.RacyLoad(), ms.committedPerCgLocked(), ms.Allocated.RacyLoad()+ms.Mapped.RacyLoad())
 }
 
 // These options control how much total memory the is reported to the

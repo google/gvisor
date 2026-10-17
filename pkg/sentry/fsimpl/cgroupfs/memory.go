@@ -84,6 +84,7 @@ func (c *memoryController) Clone() controller {
 func (c *memoryController) AddControlFiles(ctx context.Context, creds *auth.Credentials, cg *cgroupInode, contents map[string]kernfs.Inode) {
 	c.memCg = &memoryCgroup{cg}
 	contents["memory.usage_in_bytes"] = c.fs.newControllerFile(ctx, creds, &memoryUsageInBytesData{memCg: &memoryCgroup{cg}}, true)
+	contents["memory.max_usage_in_bytes"] = c.fs.newControllerFile(ctx, creds, &memoryMaxUsageInBytesData{memCg: &memoryCgroup{cg}}, true)
 	contents["memory.limit_in_bytes"] = c.fs.newStubControllerFile(ctx, creds, &c.limitBytes, true)
 	contents["memory.soft_limit_in_bytes"] = c.fs.newStubControllerFile(ctx, creds, &c.softLimitBytes, true)
 	contents["memory.move_charge_at_immigrate"] = c.fs.newStubControllerFile(ctx, creds, &c.moveChargeAtImmigrate, true)
@@ -156,5 +157,23 @@ func (d *memoryUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer
 	d.memCg.collectMemCgIDs(memCgIDs)
 	totalBytes := getUsage(k, memCgIDs)
 	fmt.Fprintf(buf, "%d\n", totalBytes)
+	return nil
+}
+
+// +stateify savable
+type memoryMaxUsageInBytesData struct {
+	memCg *memoryCgroup
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *memoryMaxUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	memCgIDs := make(map[uint32]struct{})
+	d.memCg.collectMemCgIDs(memCgIDs)
+
+	var maxUsage uint64
+	for id := range memCgIDs {
+		maxUsage += usage.MemoryAccounting.PeakPerCg(id)
+	}
+	fmt.Fprintf(buf, "%d\n", maxUsage)
 	return nil
 }

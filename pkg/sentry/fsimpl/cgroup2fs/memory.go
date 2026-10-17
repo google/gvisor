@@ -80,6 +80,7 @@ func (m *memory) interfaceFiles() []interfaceFile {
 	return []interfaceFile{
 		{name: "memory.events", source: &memoryEvents{m: m}, perm: 0444},
 		{name: "memory.current", source: &memoryCurrent{m: m}, perm: 0444},
+		{name: "memory.peak", source: &memoryPeak{m: m}, perm: 0444},
 		{name: "memory.max", source: &memoryMax{m: m}, perm: 0644},
 		{name: "memory.high", source: &memoryHigh{m: m}, perm: 0644},
 	}
@@ -87,7 +88,7 @@ func (m *memory) interfaceFiles() []interfaceFile {
 
 // interfaceFileNames implements controller.interfaceFileNames.
 func (m *memory) interfaceFileNames() []string {
-	return []string{"memory.events", "memory.current", "memory.max", "memory.high"}
+	return []string{"memory.events", "memory.current", "memory.peak", "memory.max", "memory.high"}
 }
 
 // +stateify savable
@@ -141,6 +142,31 @@ func (mc *memoryCurrent) Generate(ctx context.Context, buf *bytes.Buffer) error 
 
 	totalBytes := getUsage(k, memCgIDs)
 	fmt.Fprintf(buf, "%d\n", totalBytes)
+	return nil
+}
+
+// getPeak returns the peak memory usage across all cgroup IDs in memCgIDs.
+func getPeak(memCgIDs map[uint32]struct{}) uint64 {
+	var peak uint64
+	for id := range memCgIDs {
+		peak += usage.MemoryAccounting.PeakPerCg(id)
+	}
+	return peak
+}
+
+// +stateify savable
+type memoryPeak struct {
+	m *memory
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (mp *memoryPeak) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	memCgIDs := make(map[uint32]struct{})
+	mp.m.c.fs.treeMu.RLock()
+	collectMemCgIDs(mp.m.c, memCgIDs)
+	mp.m.c.fs.treeMu.RUnlock()
+
+	fmt.Fprintf(buf, "%d\n", getPeak(memCgIDs))
 	return nil
 }
 

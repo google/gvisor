@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 const (
@@ -583,5 +584,64 @@ func TestFindAllocatable(t *testing.T) {
 				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
 			}
 		})
+	}
+}
+
+var nextPeakTestCgID uint32 = 99990
+
+func TestPeakMemoryPerCg(t *testing.T) {
+	if err := usage.Init(); err != nil {
+		t.Fatalf("usage.Init(): %v", err)
+	}
+	nextPeakTestCgID++
+	testCgID := nextPeakTestCgID
+
+	if got := usage.MemoryAccounting.PeakPerCg(testCgID); got != 0 {
+		t.Fatalf("initial PeakPerCg(%d) = %d, want 0", testCgID, got)
+	}
+
+	f := &MemoryFile{
+		opts: MemoryFileOpts{
+			DisableMemoryAccounting: false,
+		},
+	}
+	f.initFields()
+
+	// Allocate 2 chunks.
+	fr1, err := f.Allocate(2*chunkSize, AllocOpts{Kind: usage.Anonymous, MemCgID: testCgID})
+	if err != nil {
+		t.Fatalf("f.Allocate(2*chunkSize): %v", err)
+	}
+	const wantPeak = 2 * chunkSize
+	if got := usage.MemoryAccounting.PeakPerCg(testCgID); got != wantPeak {
+		t.Errorf("PeakPerCg(%d) = %d, want %d", testCgID, got, uint64(wantPeak))
+	}
+
+	// DecRef 1 chunk and allocate 1 chunk; peak must stay at 2*chunkSize.
+	firstChunk := memmap.FileRange{Start: fr1.Start, End: fr1.Start + chunkSize}
+	f.DecRef(firstChunk)
+	fr2, err := f.Allocate(chunkSize, AllocOpts{Kind: usage.Anonymous, MemCgID: testCgID})
+	if err != nil {
+		t.Fatalf("f.Allocate(chunkSize): %v", err)
+	}
+	if got := usage.MemoryAccounting.PeakPerCg(testCgID); got != wantPeak {
+		t.Errorf("PeakPerCg(%d) after DecRef + re-allocate = %d, want %d", testCgID, got, uint64(wantPeak))
+	}
+
+	// Deallocated waste in System must not combine with live Anonymous memory
+	// to inflate the high-water mark beyond 2*chunkSize.
+	usage.MemoryAccounting.Inc(chunkSize, usage.System, testCgID)
+	defer usage.MemoryAccounting.Dec(chunkSize, usage.System, testCgID)
+	usage.MemoryAccounting.Inc(2*chunkSize, usage.Anonymous, testCgID)
+	defer usage.MemoryAccounting.Dec(2*chunkSize, usage.Anonymous, testCgID)
+	if got := usage.MemoryAccounting.PeakPerCg(testCgID); got != wantPeak {
+		t.Errorf("PeakPerCg(%d) with System waste = %d, want %d", testCgID, got, uint64(wantPeak))
+	}
+
+	// DecRef remaining allocations; peak must be retained.
+	f.DecRef(memmap.FileRange{Start: fr1.Start + chunkSize, End: fr1.End})
+	f.DecRef(fr2)
+	if got := usage.MemoryAccounting.PeakPerCg(testCgID); got != wantPeak {
+		t.Errorf("PeakPerCg(%d) after deallocations = %d, want %d", testCgID, got, uint64(wantPeak))
 	}
 }

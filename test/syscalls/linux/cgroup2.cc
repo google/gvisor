@@ -2852,8 +2852,8 @@ TEST_F(Cgroup2Test, MemoryFilesNotOnRoot) {
   SKIP_IF(!absl::StrContains(available, "memory"));
 
   // Absent on the root cgroup.
-  for (const char* name :
-       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+  for (const char* name : {"memory.current", "memory.peak", "memory.max",
+                           "memory.high", "memory.events"}) {
     EXPECT_THAT(Exists(root().Relpath(name)), IsPosixErrorOkAndHolds(false))
         << name << " should not exist on the root cgroup";
   }
@@ -2863,6 +2863,10 @@ TEST_F(Cgroup2Test, MemoryFilesNotOnRoot) {
        {"memory.current", "memory.max", "memory.high", "memory.events"}) {
     EXPECT_THAT(Exists(c().Relpath(name)), IsPosixErrorOkAndHolds(true))
         << name << " should exist on a non-root cgroup";
+  }
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(Exists(c().Relpath("memory.peak")),
+                IsPosixErrorOkAndHolds(true));
   }
 }
 
@@ -4347,6 +4351,35 @@ TEST_F(Cgroup2Test, PopulatedAccountsForDescendantsWhenMidLevelDrains) {
   EXPECT_TRUE(WIFEXITED(status));
   ASSERT_EQ(waitpid(t2, &status, 0), t2);
   EXPECT_TRUE(WIFEXITED(status));
+}
+
+TEST_F(Cgroup2Test, MemoryPeak) {
+  DisableSave ds;  // Avoid S/R memory overhead.
+  SKIP_IF(!IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(Exists(c().Relpath("memory.peak"))));
+  ASSERT_NO_ERRNO(c().Enter(getpid()));
+
+  const int64_t peak_before =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.peak"));
+
+  constexpr int64_t kMemSize = 10 * 1024 * 1024;         // 10 MB
+  constexpr int64_t kMemFloorSlack = 2 * 1024 * 1024;    // 2 MB
+  constexpr int64_t kMemCeilingSlack = 5 * 1024 * 1024;  // 5 MB
+  void* mem = mmap(nullptr, kMemSize, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(mem, MAP_FAILED);
+  memset(mem, 1, kMemSize);
+
+  const int64_t peak_during =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.peak"));
+  EXPECT_GE(peak_during, peak_before + kMemSize - kMemFloorSlack);
+  EXPECT_LE(peak_during, peak_before + kMemSize + kMemCeilingSlack);
+
+  ASSERT_THAT(munmap(mem, kMemSize), SyscallSucceeds());
+
+  const int64_t peak_after =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadIntegerControlFile("memory.peak"));
+  EXPECT_GE(peak_after, peak_during);
 }
 
 }  // namespace
