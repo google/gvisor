@@ -49,16 +49,12 @@ import (
 
 // MarkSavable marks f as savable.
 func (f *MemoryFile) MarkSavable() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.savable = true
+	f.savable.Store(true)
 }
 
 // IsSavable returns true if f is savable.
 func (f *MemoryFile) IsSavable() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.savable
+	return f.savable.Load()
 }
 
 // ResourceID returns the resource ID for f.
