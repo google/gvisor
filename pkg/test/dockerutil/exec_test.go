@@ -16,9 +16,12 @@ package dockerutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -66,5 +69,19 @@ func TestWaitExitStatusBeforeStart(t *testing.T) {
 				t.Fatalf("WaitExitStatus() = %d, %v; want %d, nil", got, err, tc.exitCode)
 			}
 		})
+	}
+}
+
+func TestCopyFilesError(t *testing.T) {
+	c := Container{Name: "copy-input-error", logger: t}
+	t.Cleanup(func() {
+		for _, cleanup := range c.cleanups {
+			cleanup()
+		}
+	})
+	source := filepath.Join(t.TempDir(), "missing")
+	var opts RunOpts
+	if err := c.CopyFiles(&opts, "/inputs", source); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("CopyFiles(%q): got %v, want %v", source, err, fs.ErrNotExist)
 	}
 }

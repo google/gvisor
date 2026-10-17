@@ -52,7 +52,9 @@ func Setup(t *testing.T, timeout time.Duration, opts dockerutil.RunOpts, runner 
 		}
 	})
 
-	d.CopyFiles(&opts, "/runner", runner)
+	if err := d.CopyFiles(&opts, "/runner", runner); err != nil {
+		t.Fatalf("copy test runner: %v", err)
+	}
 	if err := d.Spawn(ctx, opts, args...); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
