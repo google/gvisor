@@ -383,3 +383,88 @@ func TestCheckPolicy(t *testing.T) {
 		t.Errorf("CheckPolicy returned %d problems, want 5: %v", len(problems), problems)
 	}
 }
+
+func TestLicenseSourceIdentity(t *testing.T) {
+	const artifact = "https://github.com/example/builder/releases/download/v1/tool.tar.gz"
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	const source = "https://raw.githubusercontent.com/example/upstream/" + commit + "/COPYING"
+	const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	for _, test := range []struct {
+		name     string
+		url      string
+		hash     string
+		source   string
+		goModule bool
+		wantErr  bool
+	}{
+		{name: "pinned", url: artifact, hash: hash, source: source},
+		{name: "automatic", url: artifact, hash: hash},
+		{name: "changed artifact", url: artifact + "?changed", hash: hash, source: source, wantErr: true},
+		{name: "changed digest", url: artifact, hash: strings.Repeat("a", 64), source: source, wantErr: true},
+		{name: "unpinned artifact", url: artifact, source: source, wantErr: true},
+		{name: "mutable notice", url: artifact, hash: hash, source: strings.ReplaceAll(source, commit, "main"), wantErr: true},
+		{name: "notice traversal", url: artifact, hash: hash, source: strings.ReplaceAll(source, "/COPYING", "/../main/COPYING"), wantErr: true},
+		{name: "encoded traversal", url: artifact, hash: hash, source: strings.ReplaceAll(source, "/COPYING", "/%2e%2e/main/COPYING"), wantErr: true},
+		{name: "go module", url: artifact, hash: hash, source: source, goModule: true, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := dep{name: "tool", kind: kindArchive, url: test.url, sha256: test.hash}
+			if test.goModule {
+				d.kind = kindGoModule
+			}
+			e := Entry{Version: artifact, SHA256: hash, LicenseSource: test.source}
+			got, err := licenseSourceCommit(d, e)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("licenseSourceCommit = %q, %v; want error %t", got, err, test.wantErr)
+			}
+			if !test.wantErr && test.source != "" && got != commit {
+				t.Fatalf("licenseSourceCommit = %q, want %q", got, commit)
+			}
+		})
+	}
+}
+
+func TestVerifyLicenseSource(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	d := dep{name: "tool", kind: kindArchive, url: "https://example.com/tool.tar.gz", sha256: strings.Repeat("a", 64)}
+	e := Entry{Dependency: d.name, Version: d.url, SHA256: d.sha256, Retrieved: "2026-10-17", Commit: commit, License: Licenses{gpl2}, LicenseSource: "https://raw.githubusercontent.com/example/upstream/" + commit + "/COPYING"}
+	if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 0 {
+		t.Fatalf("verifyProblems = %v, want a valid explicit notice", problems)
+	}
+	e.Commit = strings.Repeat("b", 40)
+	if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 1 || !strings.Contains(problems[0], "license_source commit") {
+		t.Fatalf("verifyProblems = %v, want mismatched notice commit", problems)
+	}
+}
+
+func TestQemuUserRepoRefs(t *testing.T) {
+	// A public hub maps indirect repos that the root module cannot import by
+	// apparent name. Firmware and system tools are outside this user-mode audit.
+	mapping := map[string]string{
+		"qemu_user_prebuilt_linux_amd64_aarch64": "rules_qemu++qemu+arm",
+		"qemu_user_prebuilt_linux_arm64_x86_64":  "rules_qemu++qemu+x86",
+		"qemu_user_toolchains":                   "rules_qemu++qemu+hub",
+		"qemu_system_data_prebuilt_linux_amd64":  "rules_qemu++qemu+firmware",
+		"qemu_img_prebuilt_linux_amd64":          "rules_qemu++qemu+img",
+	}
+	got, err := qemuUserRepoRefs(mapping)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []repoRef{
+		{"@@rules_qemu++qemu+arm", "qemu_user_prebuilt_linux_amd64_aarch64"},
+		{"@@rules_qemu++qemu+x86", "qemu_user_prebuilt_linux_arm64_x86_64"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("qemuUserRepoRefs() = %v, want %v", got, want)
+	}
+	for _, invalid := range []map[string]string{
+		{},
+		{"qemu_user_toolchains": "rules_qemu++qemu+hub"},
+		{"qemu_user_prebuilt_linux_amd64_aarch64": ""},
+	} {
+		if _, err := qemuUserRepoRefs(invalid); err == nil {
+			t.Errorf("qemuUserRepoRefs(%v) succeeded, want missing archive identity error", invalid)
+		}
+	}
+}
