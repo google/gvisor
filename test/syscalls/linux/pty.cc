@@ -1801,6 +1801,26 @@ TEST_F(PtyTest, ReplicaWriteNothingNonCanonical) {
   ExpectFinished(master_);
 }
 
+// Test that writing nothing to the PTY master's input queue does not block or
+// return an error.
+TEST_F(PtyTest, MasterWriteNothingCanonical) {
+  constexpr char kInput[] = "";
+  EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
+              SyscallSucceedsWithValue(strlen(kInput)));
+
+  ExpectFinished(replica_);
+}
+
+TEST_F(PtyTest, MasterWriteNothingNonCanonical) {
+  DisableCanonical();
+
+  constexpr char kInput[] = "";
+  EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
+              SyscallSucceedsWithValue(strlen(kInput)));
+
+  ExpectFinished(replica_);
+}
+
 TEST_F(PtyTest, SimpleEcho) {
   constexpr char kInput[] = "Mr. Eko";
   EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
