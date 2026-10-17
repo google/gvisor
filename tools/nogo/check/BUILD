@@ -20,9 +20,9 @@ go_library(
         "//tools/checkaligned",
         "//tools/checkconst",
         "//tools/checkescape",
+        "//tools/checkimports",
         "//tools/checklinkname",
         "//tools/checklocks",
-        "//tools/checkunsafe",
         "//tools/nogo/facts",
         "//tools/nogo/flags",
         "@co_honnef_go_tools//analysis/lint:go_default_library",
@@ -67,6 +67,7 @@ go_test(
     srcs = ["check_test.go"],
     embed = [":check"],
     deps = [
+        "//pkg/zip",
         "//tools/nogo/flags",
         "@org_golang_x_tools//go/analysis:go_default_library",
     ],

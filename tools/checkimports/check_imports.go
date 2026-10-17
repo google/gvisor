@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package checkunsafe allows unsafe imports only in files named appropriately.
-package checkunsafe
+// Package checkimports enforces restrictions on package imports.
+package checkimports
 
 import (
-	"fmt"
 	"path"
 	"strconv"
 	"strings"
@@ -26,30 +25,29 @@ import (
 
 // Analyzer defines the entrypoint.
 var Analyzer = &analysis.Analyzer{
-	Name: "checkunsafe",
-	Doc:  "allows unsafe use only in specified files",
+	Name: "checkimports",
+	Doc:  "enforces restrictions on package imports",
 	Run:  run,
 }
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		for _, imp := range f.Imports {
-			// Is this an unsafe import?
 			pkg, err := strconv.Unquote(imp.Path.Value)
-			if err != nil || pkg != "unsafe" {
+			if err != nil {
 				continue
 			}
-
-			// Extract the filename.
-			filename := pass.Fset.File(imp.Pos()).Name()
-
-			// Allow files named _unsafe.go or _test.go to opt out.
-			if strings.HasSuffix(filename, "_unsafe.go") || strings.HasSuffix(filename, "_test.go") {
-				continue
+			switch pkg {
+			case "unsafe":
+				filename := pass.Fset.File(imp.Pos()).Name()
+				if !strings.HasSuffix(filename, "_unsafe.go") && !strings.HasSuffix(filename, "_test.go") {
+					pass.Reportf(imp.Pos(), "package unsafe imported by %s; must end with _unsafe.go", path.Base(filename))
+				}
+			case "archive/zip":
+				if pass.Pkg.Path() != "gvisor.dev/gvisor/pkg/zip" {
+					pass.Reportf(imp.Pos(), "import gvisor.dev/gvisor/pkg/zip instead of archive/zip")
+				}
 			}
-
-			// Throw the error.
-			pass.Reportf(imp.Pos(), "%s", fmt.Sprintf("package unsafe imported by %s; must end with _unsafe.go", path.Base(filename)))
 		}
 	}
 	return nil, nil
