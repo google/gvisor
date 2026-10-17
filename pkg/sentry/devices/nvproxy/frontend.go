@@ -318,6 +318,31 @@ func frontendIoctlSimpleNoStatus[Params any, PtrParams marshalPtr[Params]](fi *f
 	return n, nil
 }
 
+func rmGetEventData(fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.NVOS41_PARAMETERS
+	if fi.ioctlParamsSize != nvgpu.SizeofNVOS41Parameters {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	var event nvgpu.NvUnixEvent
+	n, err := rmGetEventDataInvoke(fi, &ioctlParams, &event)
+	if err != nil {
+		return n, err
+	}
+	if ioctlParams.Status == nvgpu.NV_OK {
+		if _, err := event.CopyOut(fi.t, addrFromP64(ioctlParams.PEvent)); err != nil {
+			return n, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+		}
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 // frontendIoctlBytes is like frontendIoctlSimple, but for "simple" ioctls that
 // don't have a fixed-size parameter type (like NvU32 array). So these can be
 // directly copied into byte buffers and proxied to the host.
