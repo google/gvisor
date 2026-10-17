@@ -15,7 +15,10 @@
 package systrap
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -23,6 +26,7 @@ import (
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/pool"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -101,6 +105,166 @@ func newSystrapTest(t *testing.T) (*Systrap, platform.AddressSpace, *platformCon
 	ac := arch.New(arch.Host)
 	ac.SetIP(uintptr(userCodeAddr))
 	return s, as, pctx, ac
+}
+
+func TestUVMOperationsRejectInvalidDevice(t *testing.T) {
+	var stub *subprocess
+	t.Cleanup(func() {
+		if stub != nil && stub.alive() {
+			t.Error("UVM-bound address space remained available for recycling")
+		}
+	})
+	_, as, _, _ := newSystrapTest(t)
+	stub = as.(*subprocess)
+	initializer := as.(platform.UVMAddressSpace)
+	if _, err := initializer.UVMInitialize(-1, 0); !errors.Is(err, unix.EBADF) {
+		t.Fatalf("UVMInitialize(-1) returned %v, want EBADF", err)
+	}
+	if _, err := initializer.UVMPopulatePageable(-1, 0, hostarch.PageSize, 0); !errors.Is(err, unix.EBADF) {
+		t.Fatalf("UVMPopulatePageable(-1) returned %v, want EBADF", err)
+	}
+	if _, err := initializer.UVMSetPreferredLocation(-1, 0, hostarch.PageSize, [16]byte{}, -1); !errors.Is(err, unix.EBADF) {
+		t.Fatalf("UVMSetPreferredLocation(-1) returned %v, want EBADF", err)
+	}
+	f, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatalf("opening /dev/null: %v", err)
+	}
+	defer f.Close()
+	if _, err := initializer.UVMInitialize(int32(f.Fd()), 0); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMInitialize(/dev/null) returned %v, want ENOTTY", err)
+	}
+	if _, err := initializer.UVMPopulatePageable(int32(f.Fd()), 0, hostarch.PageSize, 0); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMPopulatePageable(/dev/null) returned %v, want ENOTTY", err)
+	}
+	if _, err := initializer.UVMSetPreferredLocation(int32(f.Fd()), 0, hostarch.PageSize, [16]byte{}, -1); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMSetPreferredLocation(/dev/null) returned %v, want ENOTTY", err)
+	}
+	if !as.(*subprocess).uvmInitialized.Load() {
+		t.Error("address space may be recycled after a UVM initialization attempt")
+	}
+}
+
+func TestUVMRejectsAddressSpaceAfterThreadCreationFailure(t *testing.T) {
+	_, as, _, _ := newSystrapTest(t)
+	stub := as.(*subprocess)
+	stub.markSysmsgThreadCreationFailed()
+	// This test marks a healthy mm without leaving any failed clone or stack
+	// mapping behind, so it can safely return to the pool during cleanup.
+	t.Cleanup(func() {
+		stub.syscallThreadMu.Lock()
+		stub.uvmUnsafe = false
+		stub.syscallThreadMu.Unlock()
+	})
+	f, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatalf("opening /dev/null: %v", err)
+	}
+	defer f.Close()
+	if _, err := stub.UVMInitialize(int32(f.Fd()), 0); !errors.Is(err, unix.EIO) {
+		t.Fatalf("UVMInitialize after failed thread creation returned %v, want EIO", err)
+	}
+	if stub.uvmInitialized.Load() {
+		t.Error("unsafe address space was bound to UVM")
+	}
+}
+
+func TestUVMThreadCreationFailureDoesNotRecycleStack(t *testing.T) {
+	for _, missingClone := range []bool{false, true} {
+		t.Run(fmt.Sprintf("missingClone=%t", missingClone), func(t *testing.T) {
+			s := &subprocess{
+				requests:        make(chan any, 1),
+				sysmsgStackPool: pool.Pool{Start: 0, Limit: 1},
+			}
+			id, ok := s.sysmsgStackPool.Get()
+			if !ok {
+				t.Fatal("failed to allocate stack ID")
+			}
+			s.uvmInitialized.Store(true)
+			go func() {
+				req := (<-s.requests).(requestThread)
+				if missingClone {
+					req.thread <- nil
+					return
+				}
+				req.thread <- &thread{tgid: 1 << 30, tid: 1 << 30, sysmsgStackID: id}
+			}()
+			defer func() {
+				if msg, ok := recover().(string); !ok || !strings.Contains(msg, "UVM address space") {
+					t.Errorf("failed thread creation did not fail closed: %v", msg)
+				}
+				if _, ok := s.sysmsgStackPool.Get(); ok {
+					t.Error("failed UVM clone's stack ID was recycled")
+				}
+			}()
+			if err := s.createSysmsgThread(); err != nil {
+				t.Errorf("failed thread creation returned %v instead of failing closed", err)
+			}
+		})
+	}
+}
+
+func TestUVMAddressSpaceCleanup(t *testing.T) {
+	s, _, _, _ := newSystrapTest(t)
+	f, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatalf("opening /dev/null: %v", err)
+	}
+	defer f.Close()
+	for i := 0; i < 8; i++ {
+		as, err := s.NewAddressSpace(platform.AddressSpaceOptions{})
+		if err != nil {
+			t.Fatalf("iteration %d: NewAddressSpace: %v", i, err)
+		}
+		stub := as.(*subprocess)
+		tids := []int{int(stub.syscallThread.thread.tid)}
+		for _, p := range stub.sysmsgThreads {
+			tids = append(tids, int(p.thread.tid))
+		}
+		if _, err := stub.UVMInitialize(int32(f.Fd()), 0); !errors.Is(err, unix.ENOTTY) {
+			t.Fatalf("iteration %d: UVMInitialize(/dev/null): %v", i, err)
+		}
+		as.Release()
+		if !stub.dead.Load() || stub.contextQueue != nil || stub.threadContextRegion != 0 || stub.syscallThread.sentryAddr != 0 || len(stub.sysmsgThreads) != 0 {
+			t.Fatalf("iteration %d: released address space retains shared mappings", i)
+		}
+		if stub.contextQueueRange.Length() != 0 || stub.threadContextRange.Length() != 0 || stub.syscallThread.stackRange.Length() != 0 {
+			t.Fatalf("iteration %d: released address space retains memory-file allocations", i)
+		}
+		select {
+		case <-stub.requestsDone:
+		default:
+			t.Fatalf("iteration %d: request goroutine remains running", i)
+		}
+		for _, tid := range tids {
+			var status unix.WaitStatus
+			if _, err := unix.Wait4(tid, &status, unix.WALL|unix.WNOHANG, nil); err != unix.ECHILD {
+				t.Fatalf("iteration %d: thread %d was not reaped: %v", i, tid, err)
+			}
+		}
+	}
+}
+
+func TestUVMAddressSpaceUnexpectedDeath(t *testing.T) {
+	for name, operation := range map[string]func(*subprocess){
+		"kill":    (*subprocess).kill,
+		"release": (*subprocess).Release,
+		"unmap":   func(s *subprocess) { s.Unmap(0, hostarch.PageSize) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := &subprocess{}
+			s.uvmInitialized.Store(true)
+			if name != "kill" {
+				s.dead.Store(true)
+			}
+			defer func() {
+				if msg, ok := recover().(string); !ok || !strings.Contains(msg, "UVM address space") {
+					t.Errorf("unexpected death did not fail closed: %v", msg)
+				}
+			}()
+			operation(s)
+		})
+	}
 }
 
 // TestSwitchThreadIDVisibility runs a real Systrap instance and verifies

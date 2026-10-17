@@ -417,6 +417,18 @@ type AddressSpaceOptions struct {
 	DisableSyscallPatching bool
 }
 
+// UVMAddressSpace is optionally implemented by AddressSpaces that can execute
+// UVM operations in the application's host mm_struct. The caller must hold a
+// reference to hostFD, which must refer to the application's UVM device.
+//
+// The returned status and error may be controlled by application code and must
+// only be reported back to the application, never used as trusted Sentry state.
+type UVMAddressSpace interface {
+	UVMInitialize(hostFD int32, flags uint64) (status uint32, err error)
+	UVMPopulatePageable(hostFD int32, base, length uint64, flags uint32) (status uint32, err error)
+	UVMSetPreferredLocation(hostFD int32, base, length uint64, location [16]byte, cpuNumaNode int32) (status uint32, err error)
+}
+
 // AddressSpaceIO supports IO through the memory mappings installed in an
 // AddressSpace.
 //
