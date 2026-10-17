@@ -29,6 +29,8 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safecopy"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/stubfilter"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -45,7 +47,7 @@ func addrOfInitStubProcess() uintptr
 // stubCall calls the stub at the given address with the given pid.
 func stubCall(addr, pid uintptr)
 
-// prepareSeccompRules compiles stub process seccomp filters and fill
+// prepareSeccompRules renders stub process seccomp filters and fill
 // the sock_fprog structure. So the stub process will only need to call
 // seccomp system call to apply these filters.
 //
@@ -53,11 +55,26 @@ func stubCall(addr, pid uintptr)
 func prepareSeccompRules(stubSysmsgStart,
 	stubSysmsgRules, stubSysmsgRulesLen,
 	stubSyscallRules, stubSyscallRulesLen uintptr) {
-	instrs := sysmsgThreadRules(stubSysmsgStart)
+	vars := stubfilter.SysmsgThreadVars(uint64(stubStart), uint64(stubSysmsgStart))
+	instrs := renderStubFilter(stubfilter.SysmsgThreadName, vars)
 	copySeccompRulesToStub(instrs, stubSysmsgRules, stubSysmsgRulesLen)
 
-	instrs = sysmsgSyscallNotifyRules()
+	instrs = renderStubFilter(stubfilter.SyscallThreadName, nil)
 	copySeccompRulesToStub(instrs, stubSyscallRules, stubSyscallRulesLen)
+}
+
+// renderStubFilter renders the precompiled stubfilter program with the given
+// name.
+func renderStubFilter(name string, vars precompiledseccomp.Values) []bpf.Instruction {
+	program, ok := GetPrecompiled(name)
+	if !ok {
+		panic(fmt.Sprintf("precompiled seccomp program %q not found", name))
+	}
+	instrs, err := program.RenderInstructions(vars)
+	if err != nil {
+		panic(fmt.Sprintf("cannot render precompiled seccomp program %q: %v", name, err))
+	}
+	return instrs
 }
 
 func copySeccompRulesToStub(instrs []bpf.Instruction, stubAddr, size uintptr) {

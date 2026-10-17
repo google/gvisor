@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
-	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
@@ -178,35 +177,6 @@ func maybePatchSignalInfo(regs *arch.Registers, signalInfo *linux.SignalInfo) bo
 //go:norace
 func enableCpuidFault() {
 	hostsyscall.RawSyscall(unix.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0)
-}
-
-// appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
-// Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
-	return append(rules, []seccomp.RuleSet{
-		// Rules for trapping vsyscall access.
-		{
-			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-				unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
-				unix.SYS_TIME:         seccomp.MatchAll{},
-				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
-			}),
-			Action:   seccomp.Trap,
-			Vsyscall: true,
-		},
-		{
-			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-				unix.SYS_ARCH_PRCTL: seccomp.Or{
-					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
-					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_FS)},
-					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
-					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
-					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
-				},
-			}),
-			Action: seccomp.Allow,
-		},
-	}...)
 }
 
 func (s *subprocess) restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
