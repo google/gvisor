@@ -42,11 +42,13 @@ executable can be used:
 exec /path/to/runsc --nvproxy <other runsc flags> "$@"
 ```
 
-NOTE: gVisor currently only supports
+NOTE: When using the `nvidia-container-runtime` shim above, gVisor only
+supports its
 [legacy mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#legacy-mode).
-The alternative,
-[csv mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#csv-mode),
-is not yet supported.
+The shim's
+[csv mode](https://github.com/NVIDIA/nvidia-container-toolkit/tree/main/cmd/nvidia-container-runtime#csv-mode)
+is not supported. This does not apply when using [CDI](#cdi), which bypasses
+the shim entirely.
 
 NOTE: The `nvidia-container-runtime` shim is a *legacy* GPU injection path. In
 environments where the higher-level container runtime understands the
@@ -54,8 +56,8 @@ environments where the higher-level container runtime understands the
 can be advertised via CDI specs and `runsc` can be invoked directly, without the
 `nvidia-container-runtime` shim or its `prestart` hook. See the [CDI](#cdi)
 section below. The `nvidia-container-toolkit` package is still required on the
-host because CDI specs reference its `nvidia-ctk` hook binaries, but the runtime
-*shim* is not.
+host because CDI specs reference its `nvidia-cdi-hook` and `nvidia-ctk` hook
+binaries, but the runtime *shim* is not.
 
 ### CDI
 
@@ -69,12 +71,52 @@ CDI-aware container runtimes (containerd ≥ 1.7, CRI-O, recent Docker) merge
 those specs into the OCI spec before invoking the low-level runtime.
 
 `runsc` is fully CDI-compatible. In particular, it honors the `createContainer`
-hooks emitted by NVIDIA's CDI specs, which is what allows the `nvidia-ctk hook`
-invocations (symlink creation for client libraries, `update-ldcache`, etc.) to
-run correctly inside the sandbox. Both
-[NVIDIA's `k8s-device-plugin`](#nvidia-k8s-device-plugin) operating in
-`DEVICE_LIST_STRATEGY=cdi-cri` mode and statically-generated CDI specs (via
-`nvidia-ctk cdi generate`) are supported.
+hooks emitted by NVIDIA's CDI specs. These hooks invoke either
+`nvidia-cdi-hook <command>` or the legacy `nvidia-ctk hook <command>` form
+(symlink creation for client libraries, `update-ldcache`, etc.).
+
+#### CDI spec sources
+
+CDI specs may be published in two ways:
+
+*   **Static specs** (e.g. `/etc/cdi/` or `/var/run/cdi/nvidia.yaml`) generated
+    on the host via `nvidia-ctk cdi generate`.
+*   **Dynamic specs** written by
+    [NVIDIA's `k8s-device-plugin`](#nvidia-k8s-device-plugin) when operating in
+    `DEVICE_LIST_STRATEGY=cdi-cri` mode (typically
+    `/var/run/cdi/k8s.device-plugin.nvidia.com-gpu.json`).
+
+Both are supported. Many Kubernetes deployments enable CDI in containerd (or
+CRI-O) and rely on the device plugin as the sole CDI spec generator; the host
+only needs `nvidia-ctk runtime configure --enable-cdi` to turn on CDI in the
+container runtime config, not a separate `nvidia-ctk cdi generate` step.
+
+#### Hook path and gVisor-specific plugin settings
+
+The `disable-device-node-modification` hook is a no-op under nvproxy: gVisor
+already exposes `/proc/driver/nvidia/params` with `ModifyDeviceFiles=0`.
+`runsc` skips this hook when the hook path is `nvidia-cdi-hook`. Some
+k8s-device-plugin versions emit the `nvidia-ctk hook` form by default; set
+`NVIDIA_CDI_HOOK_PATH=/usr/bin/nvidia-cdi-hook` on the device plugin so
+generated CDI specs use `nvidia-cdi-hook` instead.
+
+When running GPU containers under gVisor, also set
+`CDI_FEATURE_FLAGS=disable-ipc-discoverer` on the device plugin. This omits the
+`nvidia-persistenced` Unix socket bind mount from the CDI spec; gVisor's gofer
+cannot bind-mount that socket and container creation fails if it is present.
+
+Example device plugin environment (see also
+[`nvidia-k8s-device-plugin` helm `cdi` values](https://github.com/NVIDIA/k8s-device-plugin)):
+
+```
+NVIDIA_CDI_HOOK_PATH=/usr/bin/nvidia-cdi-hook
+CDI_FEATURE_FLAGS=disable-ipc-discoverer
+```
+
+All four `createContainer` hooks emitted by the k8s-device-plugin (`create-symlinks`,
+`enable-cuda-compat`, `update-ldcache`, and `disable-device-node-modification`)
+work with `runsc` `release-20260601.0` and later when using the
+`nvidia-cdi-hook` path above.
 
 When using CDI, the `nvidia-container-runtime` shim is not required. `runsc` is
 invoked directly as the low-level runtime, and the higher-level runtime applies
@@ -101,7 +143,14 @@ Done
 `nvproxy` is fully compatible with
 [NVIDIA's `k8s-device-plugin`](https://github.com/NVIDIA/k8s-device-plugin),
 including when it is configured to advertise GPUs via the
-[Container Device Interface (CDI)](#cdi).
+[Container Device Interface (CDI)](#cdi) in `DEVICE_LIST_STRATEGY=cdi-cri` mode.
+
+For gVisor workloads, configure the plugin to emit `nvidia-cdi-hook` hooks and to
+omit the `nvidia-persistenced` socket mount; see [Hook path and gVisor-specific
+plugin settings](#hook-path-and-gvisor-specific-plugin-settings) under
+[CDI](#cdi). Mount the host driver root into the plugin pod when generating CDI
+specs (e.g. `NVIDIA_DRIVER_ROOT=/` or a read-only host path bind mount) so
+library symlinks in the spec match the node driver version.
 
 ### GKE Device Plugin
 
