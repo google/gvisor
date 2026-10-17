@@ -134,7 +134,7 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 		}
 	}
 	if opt.CgoEnabled {
-		s.Merge(cgoFilters)
+		s.Merge(cgoFilters())
 	}
 	s.Merge(instrumentationFilters())
 	// When DirectFS is not enabled, filters for LisaFS are installed.
