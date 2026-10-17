@@ -302,7 +302,8 @@ void runFchdir() {
     err(1, "mkdir");
   }
   int fd = open(pathname, O_DIRECTORY | O_RDONLY);
-  int res = fchdir(fd);
+  // fchdir only takes an FD. Tracing must ignore the unused argument register.
+  int res = syscall(SYS_fchdir, fd, "ignored-fchdir-argument");
   if (res != 0) {
     err(1, "fchdir");
   }
