@@ -141,12 +141,6 @@ func (kcov *Kcov) InitTrace(size uint64) error {
 		return linuxerr.EBUSY
 	}
 
-	// To simplify all the logic around mapping, we require that the length of the
-	// shared region is a multiple of the system page size.
-	if !hostarch.IsPageAligned(8 * size) {
-		return linuxerr.EINVAL
-	}
-
 	// We need space for at least two uint64s to hold current position and a
 	// single PC.
 	if size < 2 || size > kcovAreaSizeMax {
@@ -260,6 +254,13 @@ func (kcov *Kcov) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) erro
 	defer kcov.mu.Unlock()
 
 	if kcov.mode != linux.KCOV_MODE_INIT {
+		return linuxerr.EINVAL
+	}
+
+	// Linux accepts unaligned sizes in KCOV_INIT_TRACE, but requires mmap's
+	// page-rounded length to match the entire buffer, starting at offset zero.
+	length, ok := hostarch.PageRoundUp(opts.Length)
+	if !ok || opts.Offset != 0 || length != kcov.size*8 {
 		return linuxerr.EINVAL
 	}
 
