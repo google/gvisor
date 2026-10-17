@@ -841,7 +841,8 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (sent bool) {
 	// We abuse the flags field to determine if we have already
 	// assigned a sequence number to this segment.
-	if !s.isAssignedSequenceNumber(seg) {
+	newData := !s.isAssignedSequenceNumber(seg)
+	if newData {
 		// Merge segments if allowed.
 		if seg.payloadSize() != 0 {
 			available := int(s.SndNxt.Size(end))
@@ -869,27 +870,28 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				s.writeList.Remove(nSeg)
 				nSeg.DecRef()
 			}
-			if !nextTooBig && seg.payloadSize() < available {
-				// Segment is not full.
-				if s.Outstanding > 0 && s.ep.ops.GetDelayOption() {
-					// Nagle's algorithm. From Wikipedia:
-					//   Nagle's algorithm works by
-					//   combining a number of small
-					//   outgoing messages and sending them
-					//   all at once. Specifically, as long
-					//   as there is a sent packet for which
-					//   the sender has received no
-					//   acknowledgment, the sender should
-					//   keep buffering its output until it
-					//   has a full packet's worth of
-					//   output, thus allowing output to be
-					//   sent all at once.
-					return false
-				}
-				// With TCP_CORK, hold back until minimum of the available
-				// send space and MSS.
-				if s.ep.ops.GetCorkOption() {
-					if seg.payloadSize() < s.MaxPayloadSize {
+			if !nextTooBig {
+				nagle := s.Outstanding > 0 && s.ep.ops.GetDelayOption()
+				cork := s.ep.ops.GetCorkOption()
+				if nagle || cork {
+					// GSO can send several segments at once. Send its full-MSS
+					// prefix while retaining the partial segment for coalescing.
+					// The receive window can also cut the send budget mid-segment.
+					// https://www.rfc-editor.org/rfc/rfc9293.html#section-3.7.4
+					full := min(seg.payloadSize(), available) / s.MaxPayloadSize * s.MaxPayloadSize
+					switch {
+					case full != 0:
+						limit = min(limit, full)
+						if cork {
+							s.startCork = false
+							s.corkTimer.disable()
+						}
+					case seg.payloadSize() < available:
+						// Preserve the exception for a short segment that fills
+						// the available window, and Nagle's precedence over CORK.
+						if nagle {
+							return false
+						}
 						if !s.startCork {
 							s.startCork = true
 							// Enable the timer for
@@ -899,17 +901,13 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 						}
 						return false
 					}
-					// Disable the TCP_CORK timer.
-					s.startCork = false
-					s.corkTimer.disable()
 				}
 			}
 		}
 
-		// Assign flags. We don't do it above so that we can merge
-		// additional data if Nagle holds the segment.
+		// Window calculations need the prospective sequence number. Leave
+		// flags unset until those checks pass so deferred data can still merge.
 		seg.sequenceNumber = s.SndNxt
-		seg.flags = header.TCPFlagAck | header.TCPFlagPsh
 	}
 
 	var segEnd seqnum.Value
@@ -966,11 +964,8 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			}
 		}
 
-		// The segment size limit is computed as a function of sender
-		// congestion window and MSS. When sender congestion window is >
-		// 1, this limit can be larger than MSS. Ensure that the
-		// currently available send space is not greater than minimum of
-		// this limit and MSS.
+		// Cap the available send space by the congestion/GSO budget and any
+		// whole-segment limit imposed above by Nagle or CORK.
 		if available > limit {
 			available = limit
 		}
@@ -982,10 +977,18 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			available = s.MaxPayloadSize
 		}
 
+		if newData {
+			seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+		}
 		if seg.payloadSize() > available {
 			// A negative value causes splitSeg to panic anyways, so just panic
 			// earlier to get more information about the cause.
 			s.splitSeg(seg, available)
+			if newData {
+				// splitSeg also serves retransmission. Only a fresh remainder
+				// is unsent and must recheck Nagle/CORK on its next visit.
+				seg.Next().flags = 0
+			}
 		}
 
 		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))

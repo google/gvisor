@@ -3846,59 +3846,218 @@ func TestMSSNotDelayed(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			const maxPayload = 100
-			c := context.New(t, e2e.DefaultMTU)
-			defer c.Cleanup()
+		for _, gso := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/gso=%t", test.name, gso), func(t *testing.T) {
+				const maxPayload = 100
+				// Keep retransmission timers stopped so a probe cannot satisfy the
+				// assertion that full segments are sent without waiting for ACKs.
+				c := context.NewWithOpts(t, context.Options{
+					EnableV4: true,
+					MTU:      e2e.DefaultMTU,
+					Clock:    faketime.NewManualClock(),
+				})
+				defer c.Cleanup()
+				c.SetGSOEnabled(gso)
 
-			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
-				header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
-			})
+				c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+					header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+				})
 
-			test.fn(c.EP)
+				seq := c.IRS.Add(1)
+				iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+				allData := [][]byte{{0}, make([]byte, maxPayload), make([]byte, maxPayload)}
+				for i, data := range allData {
+					if i == 1 {
+						// Leave the initial small packet unacknowledged before enabling
+						// the option; CORK would otherwise retain that packet too.
+						test.fn(c.EP)
+					}
+					var r bytes.Reader
+					r.Reset(data)
+					if got, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+						t.Fatalf("Write #%d failed: %s", i+1, err)
+					} else if want := int64(len(data)); got != want {
+						t.Fatalf("Write #%d = %d, want %d", i+1, got, want)
+					}
 
-			allData := [][]byte{{0}, make([]byte, maxPayload), make([]byte, maxPayload)}
-			for i, data := range allData {
-				var r bytes.Reader
-				r.Reset(data)
-				if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-					t.Fatalf("Write #%d failed: %s", i+1, err)
+					// Read each write before issuing the next, preventing GSO from
+					// coalescing them into a larger packet that bypasses the check.
+					packet := c.GetPacket()
+					defer packet.Release()
+					checker.IPv4(t, packet,
+						checker.PayloadLen(len(data)+header.TCPMinimumSize),
+						checker.TCP(
+							checker.DstPort(context.TestPort),
+							checker.TCPSeqNum(uint32(seq)),
+							checker.TCPAckNum(uint32(iss)),
+							checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
+						),
+					)
+
+					if got, want := packet.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize:], data; !bytes.Equal(got, want) {
+						t.Fatalf("got packet #%d's data = %v, want = %v", i+1, got, want)
+					}
+
+					seq = seq.Add(seqnum.Size(len(data)))
 				}
-			}
 
-			seq := c.IRS.Add(1)
-			iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-			for i, data := range allData {
-				// Check that data is received.
-				packet := c.GetPacket()
-				defer packet.Release()
-				checker.IPv4(t, packet,
-					checker.PayloadLen(len(data)+header.TCPMinimumSize),
-					checker.TCP(
-						checker.DstPort(context.TestPort),
-						checker.TCPSeqNum(uint32(seq)),
-						checker.TCPAckNum(uint32(iss)),
-						checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
-					),
-				)
-
-				if got, want := packet.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize:], data; !bytes.Equal(got, want) {
-					t.Fatalf("got packet #%d's data = %v, want = %v", i+1, got, want)
-				}
-
-				seq = seq.Add(seqnum.Size(len(data)))
-			}
-
-			// Acknowledge the data.
-			c.SendPacket(nil, &context.Headers{
-				SrcPort: context.TestPort,
-				DstPort: c.Port,
-				Flags:   header.TCPFlagAck,
-				SeqNum:  iss,
-				AckNum:  seq,
-				RcvWnd:  30000,
+				// Acknowledge the data.
+				c.SendPacket(nil, &context.Headers{
+					SrcPort: context.TestPort,
+					DstPort: c.Port,
+					Flags:   header.TCPFlagAck,
+					SeqNum:  iss,
+					AckNum:  seq,
+					RcvWnd:  30000,
+				})
 			})
-		})
+		}
+	}
+}
+
+func TestPartialSegmentDelayed(t *testing.T) {
+	const maxPayload = 100
+	type sendCounts struct {
+		first       int
+		afterWindow int
+	}
+	for _, option := range []string{"nodelay", "nagle", "cork"} {
+		for _, gso := range []bool{false, true} {
+			for _, test := range []struct {
+				name           string
+				window         seqnum.Size
+				dataSize       int
+				queuedPrefix   int
+				openWindow     bool
+				wantHeld       sendCounts
+				wantNoDelay    sendCounts
+				wantNoDelayGSO sendCounts
+			}{
+				{
+					name: "full-and-partial", window: 30000, dataSize: 201,
+					wantHeld:       sendCounts{first: 200},
+					wantNoDelay:    sendCounts{first: 201},
+					wantNoDelayGSO: sendCounts{first: 201},
+				},
+				{
+					name: "window-budget", window: 151, dataSize: 201, openWindow: true,
+					wantHeld:       sendCounts{first: 100, afterWindow: 100},
+					wantNoDelay:    sendCounts{first: 100, afterWindow: 101},
+					wantNoDelayGSO: sendCounts{first: 150, afterWindow: 51},
+				},
+				{
+					name: "window-filled-short", window: 51, dataSize: 50,
+					wantHeld:       sendCounts{first: 50},
+					wantNoDelay:    sendCounts{first: 50},
+					wantNoDelayGSO: sendCounts{first: 50},
+				},
+				{
+					name: "next-write-too-big", window: 201, dataSize: 250, queuedPrefix: 50, openWindow: true,
+					wantHeld: sendCounts{first: 100, afterWindow: 100},
+				},
+			} {
+				if option == "nodelay" && test.queuedPrefix != 0 {
+					// This case needs a held write before queuing the next one.
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/gso=%t/%s", option, gso, test.name), func(t *testing.T) {
+					want := test.wantHeld
+					if option == "nodelay" {
+						want = test.wantNoDelay
+						if gso {
+							want = test.wantNoDelayGSO
+						}
+					}
+					c := context.NewWithOpts(t, context.Options{
+						EnableV4: true,
+						MTU:      e2e.DefaultMTU,
+						// No timer may send or retransmit data for these assertions.
+						Clock: faketime.NewManualClock(),
+					})
+					defer c.Cleanup()
+					c.SetGSOEnabled(gso)
+					c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, test.window, -1 /* epRcvBuf */, []byte{
+						header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+					})
+					data := make([]byte, test.dataSize+1)
+					for i := range data {
+						data[i] = byte(i)
+					}
+					received := 0
+					iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+					write := func(data []byte) {
+						t.Helper()
+						if got, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil {
+							t.Fatalf("Write failed: %s", err)
+						} else if want := int64(len(data)); got != want {
+							t.Fatalf("Write = %d, want %d", got, want)
+						}
+					}
+					receive := func(size int) {
+						t.Helper()
+						for size != 0 {
+							packetSize := size
+							if !gso {
+								packetSize = min(packetSize, maxPayload)
+							}
+							c.ReceiveAndCheckPacket(data, received, packetSize)
+							received += packetSize
+							size -= packetSize
+						}
+					}
+					noPacket := func() {
+						t.Helper()
+						// Write sends synchronously. Each ACK path below first
+						// receives a positive data prefix; acquiring the endpoint
+						// lock then waits for that observed send loop to finish.
+						ep := c.EP.(*tcp.Endpoint)
+						ep.LockUser()
+						defer ep.UnlockUser()
+						if packet := c.GetPacketNonBlocking(); packet != nil {
+							defer packet.Release()
+							t.Fatalf("unexpected packet: %x", packet.AsSlice())
+						}
+					}
+
+					// Leave one small packet outstanding before enabling either
+					// hold policy. CORK would otherwise retain this write too.
+					write(data[:1])
+					receive(1)
+					c.EP.SocketOptions().SetDelayOption(option == "nagle")
+					c.EP.SocketOptions().SetCorkOption(option == "cork")
+					payload := data[1:]
+					if test.queuedPrefix != 0 {
+						write(payload[:test.queuedPrefix])
+						noPacket()
+						write(payload[test.queuedPrefix:])
+						// Preserve the existing whole-write exception: do not split
+						// the following write to fill this short segment.
+						receive(test.queuedPrefix)
+					} else {
+						write(payload)
+					}
+					receive(want.first)
+					noPacket()
+					if test.openWindow {
+						// Reopen the window without acknowledging the full segments.
+						// The deferred tail must still obey Nagle/CORK on this visit.
+						c.SendAck(iss, 1)
+						receive(want.afterWindow)
+						noPacket()
+					}
+					if received != len(data) {
+						if option == "cork" {
+							c.EP.SocketOptions().SetCorkOption(false)
+						} else {
+							c.SendAck(iss, received)
+						}
+						receive(len(data) - received)
+						noPacket()
+					}
+					c.SendAck(iss, received)
+				})
+			}
+		}
 	}
 }
 
