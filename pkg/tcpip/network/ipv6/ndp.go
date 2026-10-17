@@ -2018,6 +2018,25 @@ func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 	ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.InsecureRNG().Int63n(int64(MaxDesyncFactor)))
 }
 
+// +checklocksread:ndp.ep.mu.RWMutex
+func (ndp *ndpState) savedAddressRefs() map[stack.AddressEndpoint]int {
+	if len(ndp.slaacPrefixes) == 0 {
+		return nil
+	}
+	refs := make(map[stack.AddressEndpoint]int)
+	for _, state := range ndp.slaacPrefixes {
+		if state.stableAddr.addressEndpoint != nil {
+			refs[state.stableAddr.addressEndpoint]++
+		}
+		for _, tempState := range state.tempAddrs {
+			if tempState.addressEndpoint != nil {
+				refs[tempState.addressEndpoint]++
+			}
+		}
+	}
+	return refs
+}
+
 // +checklocks:ndp.ep.mu.RWMutex
 func (ndp *ndpState) restore() {
 	ndp.dad.Restore(&ndp.ep.mu, ndp.ep.protocol.stack.SecureRNG().Reader)

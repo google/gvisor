@@ -16,6 +16,9 @@
 package veth
 
 import (
+	"context"
+
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -25,6 +28,7 @@ import (
 const DefaultBacklogSize = 1000
 
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
+var _ stack.PausableLinkEndpoint = (*Endpoint)(nil)
 var _ stack.GSOEndpoint = (*Endpoint)(nil)
 
 // +stateify savable
@@ -34,12 +38,109 @@ type veth struct {
 	// +checklocks:mu
 	closed bool
 
+	// +checklocks:mu
+	paused bool `state:"nosave"`
+
+	backlogQueueSize uint32
+
+	// +checklocks:mu
+	savedBacklog []vethPacket
+
 	backlogQueue chan vethPacket `state:"nosave"`
+	stopCh       chan struct{}   `state:"nosave"`
+	wg           sync.WaitGroup  `state:"nosave"`
 
 	// +checklocks:mu
 	mtu uint32
 
 	endpoints [2]Endpoint
+}
+
+func (v *veth) worker(ch chan vethPacket, stopCh chan struct{}) {
+	defer v.wg.Done()
+	for {
+		select {
+		case <-stopCh:
+			return
+		default:
+		}
+		select {
+		case <-stopCh:
+			return
+		case t := <-ch:
+			t.e.InjectInbound(t.protocol, t.pkt)
+			t.pkt.DecRef()
+		}
+	}
+}
+
+// +checklocks:v.mu
+func (v *veth) drainBacklogLocked() {
+	for {
+		select {
+		case pkt := <-v.backlogQueue:
+			v.savedBacklog = append(v.savedBacklog, pkt)
+		default:
+			return
+		}
+	}
+}
+
+// +checklocks:v.mu
+func (v *veth) clearSavedBacklogLocked() {
+	for _, pkt := range v.savedBacklog {
+		pkt.pkt.DecRef()
+	}
+	v.savedBacklog = nil
+}
+
+// +checklocks:v.mu
+func (v *veth) restoreBacklogLocked() {
+	v.drainBacklogLocked()
+	for _, pkt := range v.savedBacklog {
+		select {
+		case v.backlogQueue <- pkt:
+		default:
+			pkt.pkt.DecRef()
+		}
+	}
+	v.savedBacklog = nil
+}
+
+// +checklocksexclude:v.mu
+func (v *veth) pause() {
+	v.mu.Lock()
+	if v.closed {
+		v.mu.Unlock()
+		return
+	}
+	if !v.paused {
+		v.paused = true
+		close(v.stopCh)
+	}
+	v.mu.Unlock()
+
+	v.wg.Wait()
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.closed {
+		v.drainBacklogLocked()
+	}
+}
+
+// +checklocksexclude:v.mu
+func (v *veth) resume() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.closed || !v.paused {
+		return
+	}
+	v.paused = false
+	v.stopCh = make(chan struct{})
+	v.restoreBacklogLocked()
+	v.wg.Add(1)
+	go v.worker(v.backlogQueue, v.stopCh)
 }
 
 // close shuts down both endpoints, invoking close callbacks after unlocking.
@@ -52,6 +153,9 @@ func (v *veth) close() {
 	v.mu.Lock()
 	closed := v.closed
 	v.closed = true
+	if !closed && !v.paused {
+		close(v.stopCh)
+	}
 	v.mu.Unlock()
 	if closed {
 		return
@@ -67,7 +171,28 @@ func (v *veth) close() {
 			action()
 		}
 	}
-	close(v.backlogQueue)
+
+	v.wg.Wait()
+
+	v.mu.Lock()
+	v.drainBacklogLocked()
+	v.clearSavedBacklogLocked()
+	v.mu.Unlock()
+}
+
+// afterLoad is invoked by stateify.
+//
+// +checklocksexclude:v.mu
+func (v *veth) afterLoad(context.Context) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.backlogQueue = make(chan vethPacket, v.backlogQueueSize)
+	if v.closed {
+		v.clearSavedBacklogLocked()
+		return
+	}
+	v.restoreBacklogLocked()
+	v.paused = true
 }
 
 // +stateify savable
@@ -98,9 +223,11 @@ type Endpoint struct {
 
 // NewPair creates a new veth pair.
 func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
-	veth := veth{
-		backlogQueue: make(chan vethPacket, backlogQueueSize),
-		mtu:          mtu,
+	v := &veth{
+		backlogQueueSize: backlogQueueSize,
+		backlogQueue:     make(chan vethPacket, backlogQueueSize),
+		stopCh:           make(chan struct{}),
+		mtu:              mtu,
 		endpoints: [2]Endpoint{
 			{
 				linkAddr: tcpip.GetRandMacAddr(),
@@ -110,19 +237,14 @@ func NewPair(mtu, backlogQueueSize uint32) (*Endpoint, *Endpoint) {
 			},
 		},
 	}
-	a := &veth.endpoints[0]
-	b := &veth.endpoints[1]
+	a := &v.endpoints[0]
+	b := &v.endpoints[1]
 	a.peer = b
 	b.peer = a
-	a.veth = &veth
-	b.veth = &veth
-	go func() {
-		for t := range veth.backlogQueue {
-			t.e.InjectInbound(t.protocol, t.pkt)
-			t.pkt.DecRef()
-		}
-
-	}()
+	a.veth = v
+	b.veth = v
+	v.wg.Add(1)
+	go v.worker(v.backlogQueue, v.stopCh)
 	return a, b
 }
 
@@ -267,7 +389,19 @@ func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 }
 
 // Wait implements stack.LinkEndpoint.Wait.
-func (*Endpoint) Wait() {}
+func (e *Endpoint) Wait() {
+	e.veth.wg.Wait()
+}
+
+// Pause implements stack.PausableLinkEndpoint.Pause.
+func (e *Endpoint) Pause() {
+	e.veth.pause()
+}
+
+// Resume implements stack.PausableLinkEndpoint.Resume.
+func (e *Endpoint) Resume() {
+	e.veth.resume()
+}
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
 func (*Endpoint) ARPHardwareType() header.ARPHardwareType {

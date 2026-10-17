@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
@@ -61,5 +61,17 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "inet_test",
+    size = "small",
+    srcs = ["namespace_test.go"],
+    embed = [":inet"],
+    deps = [
+        "//pkg/context",
+        "//pkg/sentry/kernel/auth",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

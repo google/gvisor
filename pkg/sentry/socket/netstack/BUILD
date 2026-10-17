@@ -68,6 +68,7 @@ go_library(
         "//pkg/tcpip/link/veth",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/nftables",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport",
         "//pkg/tcpip/transport/tcp",

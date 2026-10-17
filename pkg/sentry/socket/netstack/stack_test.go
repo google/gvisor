@@ -161,3 +161,39 @@ func TestRouteTableDumpOrder(t *testing.T) {
 		t.Errorf("GetRouteTable()[0] prefix = %d, want 128", got)
 	}
 }
+
+func TestRestoreNICsAndEndpointsInitializesLinuxIPTables(t *testing.T) {
+	s := netstack.NewStack(stack.New(stack.Options{}), 1)
+	defer s.Destroy()
+
+	// Simulate post-checkpoint-load state where stack.Stack.tables is nil
+	// (because tables is state:"nosave" and ConfigureNetwork/ReplaceConfig
+	// is not invoked on restored child network namespaces).
+	s.Stack.SetIPTables(nil)
+	s.RestoreNICsAndEndpoints()
+
+	tables := s.Stack.IPTables()
+	if tables == nil {
+		t.Fatal("expected non-nil IPTables after RestoreNICsAndEndpoints")
+	}
+	visited := 0
+	tables.VisitTargets(func(tgt stack.Target) stack.Target {
+		visited++
+		switch tgt.(type) {
+		case *stack.AcceptTarget, *stack.DropTarget, *stack.ErrorTarget, *stack.UserChainTarget, *stack.ReturnTarget, *stack.RedirectTarget, *stack.CTTarget:
+			t.Errorf("target %T is a raw stack.Target instead of a netfilter-wrapped target", tgt)
+		}
+		return tgt
+	})
+	if visited == 0 {
+		t.Fatal("expected default iptables rules to contain targets")
+	}
+
+	src := netstack.NewStack(stack.New(stack.Options{}), 1)
+	defer src.Destroy()
+	src.Stack.SetNFTablesConfigured(true)
+	s.ReplaceConfig(src)
+	if !s.Stack.IsNFTablesConfigured() {
+		t.Fatal("expected ReplaceConfig to copy NFTablesConfigured=true")
+	}
+}
