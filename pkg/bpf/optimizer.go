@@ -363,12 +363,13 @@ type jumpSource struct {
 // return true), or no jump instructions will be rewritten, and this
 // function will return false.
 // This function also returns false in the vacuous case (i.e. there are
-// no jump instructions that go to `fromPC` in the first place).
+// no jump instructions that go to `fromPC` in the first place, or
+// `fromPC == toPC`).
 // This function is used in `optimizeJumpsToSmallestSetOfReturns`.
 // As a sanity check, it verifies that `fromPC` and `toPC` are functionally
 // identical return instruction, and panics otherwise.
-// `jumpsTo` maps instruction offsets to the jumps that go to them. It is
-// updated to reflect the rewrite.
+// `jumpsTo` maps instruction offsets to the conditional jumps that go to
+// them. It is updated to reflect the rewrite.
 func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, jumpsTo [][]jumpSource) bool {
 	fromIns, toIns := insns[fromPC], insns[toPC]
 	if !fromIns.IsReturn() {
@@ -380,6 +381,10 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, jumpsTo [][]
 	if !fromIns.Equal(toIns) {
 		panic(fmt.Sprintf("attempted to rewrite jump target to a different return instruction: from={pc=%d: %v}, to={pc=%d: %v}", fromPC, fromIns, toPC, toIns))
 	}
+	if fromPC == toPC {
+		// Nothing to rewrite.
+		return false
+	}
 	jumps := jumpsTo[fromPC]
 	if len(jumps) == 0 {
 		return false // No jump statements to rewrite.
@@ -389,12 +394,7 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, jumpsTo [][]
 		// Note: `neededOffset` may be negative, in case where we are rewriting
 		// the jump target to go to an earlier instruction. Jumps can only go
 		// forward, so this is a dealbreaker.
-		neededOffset := toPC - jump.pc - 1
-		maxOffset := maxConditionalJumpOffset
-		if jump.jumpType == JumpDirect {
-			maxOffset = maxUnconditionalJumpOffset
-		}
-		if neededOffset < 0 || neededOffset > maxOffset {
+		if neededOffset := toPC - jump.pc - 1; neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
 			return false
 		}
 	}
@@ -407,8 +407,6 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, jumpsTo [][]
 			ins.JumpIfTrue = uint8(neededOffset)
 		case JumpFalse:
 			ins.JumpIfFalse = uint8(neededOffset)
-		case JumpDirect:
-			ins.K = uint32(neededOffset)
 		}
 		insns[jump.pc] = ins
 	}
@@ -425,6 +423,9 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, jumpsTo [][]
 // the `removeDeadCode` optimizer, which should come earlier in the
 // optimizer list to ensure this optimizer only runs on instructions with
 // no dead code in them.
+// The `optimizeJumpsToReturn` optimizer must also come earlier in the
+// optimizer list, as this optimizer assumes that no unconditional jump
+// goes to a return instruction (and panics otherwise).
 // Within binary search trees, this allows deduplicating return statements
 // across multiple conditions and makes them much shorter. In turn, this
 // allows pruning these redundant return instructions as
@@ -521,12 +522,15 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 	const retRegisterA = 0xaaaaaaaaaaaaaaaa
 	retValueToPC := make(map[uint64][]int)
 
-	// jumpsTo maps offsets (pc) of return instructions to the jumps that go
-	// to them.
+	// jumpsTo maps offsets (pc) of return instructions to the conditional
+	// jumps that go to them.
 	jumpsTo := make([][]jumpSource, numInstructions)
 	for pc, ins := range insns {
 		for _, offset := range ins.JumpOffsets() {
 			if target := pc + int(offset.Offset) + 1; insns[target].IsReturn() {
+				if offset.Type == JumpDirect {
+					panic(fmt.Sprintf("unconditional jump {pc=%d: %v} to return instruction {pc=%d: %v} should have been replaced by optimizeJumpsToReturn", pc, ins, target, insns[target]))
+				}
 				jumpsTo[target] = append(jumpsTo[target], jumpSource{pc: pc, jumpType: offset.Type})
 			}
 		}
