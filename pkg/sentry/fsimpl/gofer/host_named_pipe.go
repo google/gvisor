@@ -104,7 +104,7 @@ func sleepBetweenNamedPipeOpenChecks(ctx context.Context) error {
 	var q waiter.NeverReady
 	left, ok := ctx.BlockWithTimeoutOn(&q, waiter.EventIn, 100*time.Millisecond)
 	if !ok && left != 0 {
-		return linuxerr.ErrInterrupted
+		return linuxerr.ERESTARTSYS
 	}
 	return nil
 }
