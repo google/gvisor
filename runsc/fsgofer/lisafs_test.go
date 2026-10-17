@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/lisafs/testsuite"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 )
 
@@ -38,7 +39,7 @@ type tester struct{}
 
 // NewConnImpl implements testsuite.Tester.NewServer.
 func (tester) NewConnImpl(t *testing.T) lisafs.ConnectionImpl {
-	return fsgofer.NewConnectionImpl(&fsgofer.Config{})
+	return fsgofer.NewConnectionImpl(&fsgofer.Config{HostUDS: config.HostUDSAll})
 }
 
 // LinkSupported implements testsuite.Tester.LinkSupported.
@@ -53,9 +54,7 @@ func (tester) SetUserGroupIDSupported() bool {
 
 // BindSupported implements testsuite.Tester.BindSupported.
 func (tester) BindSupported() bool {
-	// In some test environments, the mount path is really large and bind(2)
-	// fails with EINVAL if the path length >= 108.
-	return false
+	return true
 }
 
 func TestFSGofer(t *testing.T) {
