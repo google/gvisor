@@ -38,7 +38,7 @@ func (p *sysmsgThread) setMsg(addr uintptr) {
 	p.msg = (*sysmsg.Msg)(unsafe.Pointer(addr))
 }
 
-func (p *sysmsgThread) init(sentryAddr, guestAddr uintptr) {
+func (p *sysmsgThread) init(sentryAddr, guestAddr uintptr) error {
 	t := p.thread
 	// Set the sysmsg signal stack.
 	//
@@ -57,8 +57,9 @@ func (p *sysmsgThread) init(sentryAddr, guestAddr uintptr) {
 		arch.SyscallArgument{Value: 0},
 	)
 	if err != nil {
-		panic(fmt.Sprintf("sigaltstack: %v", err))
+		return fmt.Errorf("sigaltstack: %w", err)
 	}
+	return nil
 }
 
 // sysmsgSigactions installs signal handles for signals which can be triggered
