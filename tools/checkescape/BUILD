@@ -23,4 +23,5 @@ go_test(
     name = "checkescape_test",
     srcs = ["checkescape_test.go"],
     embed = [":checkescape"],
+    deps = ["@org_golang_x_tools//go/analysis:go_default_library"],
 )

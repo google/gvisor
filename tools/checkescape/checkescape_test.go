@@ -15,9 +15,53 @@
 package checkescape
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/analysis"
 )
+
+func TestAnnotationSyntax(t *testing.T) {
+	for _, test := range []struct {
+		annotation  string
+		reasons     []EscapeReason
+		local       bool
+		diagnostics int
+	}{
+		{annotation: "// +checkescape", reasons: hardReasons, local: true},
+		{annotation: "// +checkescape:all", reasons: allReasons},
+		{annotation: "// +checkescape:hard", reasons: hardReasons},
+		{annotation: "// +checkescape:local,hard", reasons: hardReasons, local: true},
+		{annotation: "// +checkescape all", diagnostics: 1},
+		{annotation: "// +checkescape :all", diagnostics: 1},
+		{annotation: "// +checkescape=all", diagnostics: 1},
+	} {
+		t.Run(test.annotation, func(t *testing.T) {
+			file, err := parser.ParseFile(token.NewFileSet(), "test.go", "package p\n"+test.annotation+"\nfunc f() {}", parser.ParseComments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var diagnostics []analysis.Diagnostic
+			pass := &analysis.Pass{Report: func(d analysis.Diagnostic) {
+				diagnostics = append(diagnostics, d)
+			}}
+			reasons, local, _ := findReasons(pass, file.Decls[0].(*ast.FuncDecl))
+			if got, want := reasons, test.reasons; !slices.Equal(got, want) {
+				t.Errorf("reasons = %v, want %v", got, want)
+			}
+			if got, want := local, test.local; got != want {
+				t.Errorf("local = %t, want %t", got, want)
+			}
+			if got, want := len(diagnostics), test.diagnostics; got != want {
+				t.Errorf("diagnostics = %v (count %d), want count %d", diagnostics, got, want)
+			}
+		})
+	}
+}
 
 // Entry-point contracts must not suppress calls to an interior offset or an
 // unfamiliar operand, and relocation parsing must preserve package names.
