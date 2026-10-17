@@ -43,6 +43,7 @@ type Endpoint struct {
 var _ stack.GSOEndpoint = (*Endpoint)(nil)
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 var _ stack.NetworkDispatcher = (*Endpoint)(nil)
+var _ stack.PausableLinkEndpoint = (*Endpoint)(nil)
 
 // Init initializes a nested.Endpoint that uses embedder as the dispatcher for
 // child on Attach.
@@ -191,4 +192,18 @@ func (e *Endpoint) SetOnCloseAction(action func()) {
 // Child returns the child endpoint.
 func (e *Endpoint) Child() stack.LinkEndpoint {
 	return e.child
+}
+
+// Pause implements stack.PausableLinkEndpoint.
+func (e *Endpoint) Pause() {
+	if p, ok := e.child.(stack.PausableLinkEndpoint); ok {
+		p.Pause()
+	}
+}
+
+// Resume implements stack.PausableLinkEndpoint.
+func (e *Endpoint) Resume() {
+	if p, ok := e.child.(stack.PausableLinkEndpoint); ok {
+		p.Resume()
+	}
 }

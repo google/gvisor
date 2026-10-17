@@ -1105,12 +1105,7 @@ func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if !ok {
 		return nil
 	}
-	if eps.Stack.IPTables() == nil {
-		eps.Stack.SetIPTables(netfilter.DefaultLinuxTables(eps.Stack.Clock(), eps.Stack.InsecureRNG()))
-	}
-	if nftables.IsNFTablesEnabled() && eps.Stack.NFTables() == nil {
-		eps.Stack.SetNFTables(nftables.NewNFTables(eps.Stack, eps.Stack.Clock(), eps.Stack.SecureRNG()))
-	}
+	eps.InitDefaultTables()
 	n := &Network{
 		Stack:  eps.Stack,
 		Kernel: l.k,
@@ -2285,8 +2280,7 @@ func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack,
 	return s, nil
 }
 
-// sandboxNetstackCreator implements inet.NetworkStackCreator and
-// inet.RestoreNetworkStackCreator.
+// sandboxNetstackCreator implements inet.NetworkStackCreator.
 //
 // +stateify savable
 type sandboxNetstackCreator struct {
@@ -2295,8 +2289,6 @@ type sandboxNetstackCreator struct {
 	allowLiveTCPMigration    bool
 	uid                      uniqueid.Provider
 }
-
-var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
 
 // CreateStack implements inet.NetworkStackCreator.CreateStack.
 //
@@ -2309,24 +2301,6 @@ var _ inet.RestoreNetworkStackCreator = (*sandboxNetstackCreator)(nil)
 // TODO(gvisor.dev/issue/15559): Support SIOCSIFFLAGS. Until then, applications
 // that bring the loopback interface up with ioctl(2), such as nsjail, fail.
 func (c *sandboxNetstackCreator) CreateStack() (inet.Stack, error) {
-	return c.createStack(false /* loopbackUp */)
-}
-
-// CreateStackForRestore implements
-// inet.RestoreNetworkStackCreator.CreateStackForRestore.
-//
-// TODO(gvisor.dev/issue/4595): Restore non-root network namespaces from their
-// saved state. Until then, the loopback interface of a restored namespace is
-// UP and has the default loopback addresses, which is the state that
-// applications usually leave it in.
-func (c *sandboxNetstackCreator) CreateStackForRestore() (inet.Stack, error) {
-	return c.createStack(true /* loopbackUp */)
-}
-
-// createStack creates a network stack with a loopback interface. If loopbackUp
-// is true, the loopback interface is UP and has the default loopback
-// addresses. Otherwise, it is DOWN and has no addresses.
-func (c *sandboxNetstackCreator) createStack(loopbackUp bool) (inet.Stack, error) {
 	s, err := c.newEmptySandboxNetworkStack()
 	if err != nil {
 		return nil, err
@@ -2343,14 +2317,11 @@ func (c *sandboxNetstackCreator) createStack(loopbackUp bool) (inet.Stack, error
 	opts := stack.NICOptions{
 		Name:               link.Name,
 		DeliverLinkPackets: true,
-		Disabled:           !loopbackUp,
-	}
-	var addrs []sentryapi.IPWithPrefix
-	if loopbackUp {
-		addrs = link.Addresses
+		Disabled:           true,
+		Preserve:           true,
 	}
 
-	if err := n.createNICWithAddrs(nicID, linkEP, opts, addrs); err != nil {
+	if err := n.createNICWithAddrs(nicID, linkEP, opts, nil /* addrs */); err != nil {
 		return nil, err
 	}
 

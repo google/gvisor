@@ -182,7 +182,7 @@ func attachOrCreateNIC(ctx context.Context, s *stack.Stack, name, prefix string,
 		// ether_setup for TAP.
 		err := s.CreateNICWithOptions(id, packetsocket.New(endpoint), stack.NICOptions{
 			Name:      endpoint.name,
-			Kind:      "tun",
+			Kind:      stack.NICKindTun,
 			Multicast: true,
 			MinMTU:    header.IPv4MinimumMTU,
 			// Linux drivers/net/tun.c:tun_net_initialize sets max_mtu to

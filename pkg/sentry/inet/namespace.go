@@ -15,12 +15,14 @@
 package inet
 
 import (
-	goContext "context"
+	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // Namespace represents a network namespace. See network_namespaces(7).
@@ -34,13 +36,25 @@ type Namespace struct {
 
 	// creator allows kernel to create new network stack for network namespaces.
 	// If nil, no networking will function if network is namespaced.
-	//
-	// At afterLoad(), creator will be used to create network stack. Stateify
-	// needs to wait for this field to be loaded before calling afterLoad().
-	creator NetworkStackCreator `state:"wait"`
+	creator NetworkStackCreator
 
 	// isRoot indicates whether this is the root network namespace.
 	isRoot bool
+
+	// root is the root network namespace. Only set for non-root namespaces.
+	root *Namespace
+
+	// childrenMu protects children. Only used on the root network namespace.
+	childrenMu sync.Mutex `state:"nosave"`
+
+	// children tracks active non-root network namespaces in creation order.
+	// +checklocks:childrenMu
+	children []*Namespace
+
+	// destroying tracks asynchronous Stack teardowns started by Destroy on
+	// child namespaces so PauseStacks can wait for them to finish before
+	// saving. Only used on the root network namespace.
+	destroying sync.WaitGroup `state:"nosave"`
 
 	userNS *auth.UserNamespace
 
@@ -84,21 +98,63 @@ func (n *Namespace) GetInode() *nsfs.Inode {
 	return n.inode
 }
 
-// NewNamespace creates a new network namespace from the root.
-func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
+// NewNamespace creates a new child network namespace from parent (which may be
+// the root namespace or an existing child namespace) and registers it with the
+// root network namespace.
+func NewNamespace(parent *Namespace, userNS *auth.UserNamespace) *Namespace {
+	root := parent
+	if !root.isRoot {
+		root = parent.root
+	}
 	n := &Namespace{
-		creator:           root.creator,
+		root:              root,
+		creator:           parent.creator,
 		userNS:            userNS,
 		netlinkMcastTable: NewNetlinkMcastTable(),
 	}
-	n.init(false /* restore */)
+	n.abstractSockets.init()
+	if n.creator != nil {
+		var err error
+		n.stack, err = n.creator.CreateStack()
+		if err != nil {
+			panic(err)
+		}
+		if eventPublishingStack, ok := n.stack.(InterfaceEventPublisher); ok {
+			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
+		}
+	}
+	if root != nil {
+		root.childrenMu.Lock()
+		root.children = append(root.children, n)
+		root.childrenMu.Unlock()
+	}
 	return n
+}
+
+// AsyncDestroyer is optionally implemented by Stack implementations whose
+// Destroy method completes asynchronously in the background.
+type AsyncDestroyer interface {
+	// DestroyAsync initiates stack destruction and invokes done once all
+	// background teardown work has completed.
+	DestroyAsync(done func())
 }
 
 // Destroy implements nsfs.Namespace.Destroy.
 func (n *Namespace) Destroy(ctx context.Context) {
+	if n.root != nil {
+		n.root.childrenMu.Lock()
+		n.root.children = slices.DeleteFunc(n.root.children, func(c *Namespace) bool {
+			return c == n
+		})
+		n.root.childrenMu.Unlock()
+	}
 	if s := n.Stack(); s != nil {
-		s.Destroy()
+		if ad, ok := s.(AsyncDestroyer); ok && n.root != nil {
+			n.root.destroying.Add(1)
+			ad.DestroyAsync(n.root.destroying.Done)
+		} else {
+			s.Destroy()
+		}
 	}
 }
 
@@ -146,35 +202,70 @@ func (n *Namespace) ResetStack() {
 	n.stack = nil
 }
 
-// init creates the network stack of a non-root network namespace. restore is
-// true if n is a restored network namespace.
-func (n *Namespace) init(restore bool) {
-	// Root network namespace will have stack assigned later.
-	if n.isRoot {
-		return
+func (n *Namespace) allStacks() []Stack {
+	if !n.isRoot {
+		panic("multi-stack operations can only be called on root network namespace")
 	}
-	if n.creator != nil {
-		var err error
-		if rc, ok := n.creator.(RestoreNetworkStackCreator); ok && restore {
-			n.stack, err = rc.CreateStackForRestore()
-		} else {
-			n.stack, err = n.creator.CreateStack()
-		}
-		if err != nil {
-			panic(err)
-		}
-		if eventPublishingStack, ok := n.stack.(InterfaceEventPublisher); ok {
-			eventPublishingStack.AddInterfaceEventSubscriber(n.netlinkMcastTable)
+	n.childrenMu.Lock()
+	defer n.childrenMu.Unlock()
+	stacks := make([]Stack, 0, 1+len(n.children))
+	if n.stack != nil {
+		stacks = append(stacks, n.stack)
+	}
+	for _, child := range n.children {
+		if s := child.Stack(); s != nil {
+			stacks = append(stacks, s)
 		}
 	}
-	if !restore {
-		n.abstractSockets.init()
+	return stacks
+}
+
+// SetRemoveConfStacks sets removeConf on the root network namespace stack and
+// all descendant network namespace stacks. n must be the root network
+// namespace.
+//
+// Note that routes in child network namespaces egress via veth or loopback
+// NICs (which advertise CapabilitySaveRestore), so connected TCP endpoints in
+// child namespaces—including outbound connections routed via root NAT to
+// external peers—are preserved rather than aborted on save.
+func (n *Namespace) SetRemoveConfStacks(removeConf bool) {
+	for _, s := range n.allStacks() {
+		s.SetRemoveConf(removeConf)
 	}
 }
 
-// afterLoad is invoked by stateify.
-func (n *Namespace) afterLoad(goContext.Context) {
-	n.init(true /* restore */)
+// PauseStacks pauses the root network namespace stack and all descendant
+// network namespace stacks. n must be the root network namespace.
+func (n *Namespace) PauseStacks() {
+	if !n.isRoot {
+		panic("multi-stack operations can only be called on root network namespace")
+	}
+	n.destroying.Wait()
+	for _, s := range n.allStacks() {
+		s.Pause()
+	}
+}
+
+// ResumeStacks resumes the root network namespace stack and all descendant
+// network namespace stacks. n must be the root network namespace.
+func (n *Namespace) ResumeStacks() {
+	for _, s := range n.allStacks() {
+		s.Resume()
+	}
+}
+
+// RestoreStacks restores the root network namespace stack and all descendant
+// network namespace stacks after checkpoint load. n must be the root network
+// namespace.
+func (n *Namespace) RestoreStacks() {
+	stacks := n.allStacks()
+	for _, s := range stacks {
+		s.RestoreNICsAndEndpoints()
+	}
+	tcpip.AsyncLoading.Wait()
+	for _, s := range stacks {
+		s.RestoreBackgroundWorkers()
+	}
 }
 
 // AbstractSockets returns AbstractSocketNamespace.
@@ -198,18 +289,4 @@ func (n *Namespace) HasCapability(ctx context.Context, cp linux.Capability) bool
 type NetworkStackCreator interface {
 	// CreateStack creates a new network stack for a network namespace.
 	CreateStack() (Stack, error)
-}
-
-// RestoreNetworkStackCreator is an optional interface of a
-// NetworkStackCreator. If the creator of a restored network namespace
-// implements it, the namespace gets its network stack from
-// CreateStackForRestore. If not, the namespace gets its network stack from
-// CreateStack.
-//
-// TODO(gvisor.dev/issue/4595): Remove this when a restored network namespace
-// gets its saved network stack.
-type RestoreNetworkStackCreator interface {
-	// CreateStackForRestore creates the network stack of a restored network
-	// namespace.
-	CreateStackForRestore() (Stack, error)
 }

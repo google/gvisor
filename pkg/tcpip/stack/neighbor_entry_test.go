@@ -211,7 +211,6 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 	nic := nic{
 		NetworkLinkEndpoint: nil, // entryTestLinkResolver doesn't use this.
 
-		id: entryTestNICID,
 		stack: &Stack{
 			clock:       clock,
 			nudDisp:     &disp,
@@ -220,6 +219,7 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 		},
 		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}
+	nic.setID(entryTestNICID)
 	netEP := (&testIPv6Protocol{}).NewEndpoint(&nic, nil)
 	nic.networkEndpoints = map[tcpip.NetworkProtocolNumber]NetworkEndpoint{
 		header.IPv6ProtocolNumber: netEP,

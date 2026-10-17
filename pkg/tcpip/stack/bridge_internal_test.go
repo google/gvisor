@@ -17,6 +17,7 @@ package stack
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -30,12 +31,12 @@ func TestBridgeShouldLearnLocked(t *testing.T) {
 		portAddr  = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x02")
 	)
 	b := NewBridgeEndpoint(1500)
-	port := &bridgePort{bridge: b, nic: &nic{id: 1}}
-	removed := &bridgePort{bridge: b, nic: &nic{id: 2}}
+	port := &bridgePort{bridge: b, nic: &nic{id: atomicbitops.FromInt32(1)}}
+	removed := &bridgePort{bridge: b, nic: &nic{id: atomicbitops.FromInt32(2)}}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.ports[port.nic.id] = port
+	b.ports[port.nic.ID()] = port
 
 	if !b.shouldLearnLocked(port, remote) {
 		t.Errorf("shouldLearnLocked(port, %s) = false, want true", remote)

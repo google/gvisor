@@ -23,7 +23,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -109,7 +111,8 @@ type Stack struct {
 	// nicIDGen is used to generate NIC IDs.
 	nicIDGen atomicbitops.Int32 `state:"nosave"`
 
-	// preservedNICs and preservedRoutes hold virtual NICs (such as tun/tap) and
+	// preservedNICs and preservedRoutes hold virtual NICs (such as tun/tap,
+	// veth, and bridge, plus loopback in non-root network namespaces) and
 	// their routes across save and restore.
 	// +checklocks:mu
 	preservedNICs map[tcpip.NICID]*nic
@@ -146,7 +149,7 @@ type Stack struct {
 
 	// nftablesConfigured indicates whether NFTables is configured with at
 	// least one rule on a chain at a network hook.
-	nftablesConfigured atomicbitops.Bool
+	nftablesConfigured atomicbitops.Bool `state:"nosave"`
 
 	// restoredEndpoints is a list of endpoints that need to be restored if the
 	// stack is being restored.
@@ -523,9 +526,13 @@ func (s *Stack) nextNICIDLocked() tcpip.NICID {
 			panic("NICID overflow")
 		}
 		id := tcpip.NICID(next)
-		if _, ok := s.preservedNICs[id]; !ok {
-			return id
+		if _, ok := s.nics[id]; ok {
+			continue
 		}
+		if _, ok := s.preservedNICs[id]; ok {
+			continue
+		}
+		return id
 	}
 }
 
@@ -1087,6 +1094,60 @@ type NICOptions struct {
 	// value leaves the corresponding bound unrestricted.
 	MinMTU uint32
 	MaxMTU uint32
+
+	// Preserve indicates whether the NIC should be preserved across save and
+	// restore even when its Kind is not a preserved virtual link kind (for
+	// example, a child network namespace's loopback NIC).
+	Preserve bool
+}
+
+// NIC link kind constants for virtual devices created inside a sandbox.
+const (
+	NICKindBridge = "bridge"
+	NICKindTun    = "tun"
+	NICKindVeth   = "veth"
+)
+
+func isPreservedNICKind(kind string) bool {
+	return kind == NICKindTun || kind == NICKindVeth || kind == NICKindBridge
+}
+
+func (n *nic) isPreserved() bool {
+	n.stack.mu.RLock()
+	defer n.stack.mu.RUnlock()
+	return n.stack.preservedNICs[n.ID()] == n
+}
+
+// IsNICPreserved reports whether id is a NIC preserved across save and restore.
+func (s *Stack) IsNICPreserved(id tcpip.NICID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.preservedNICs[id]
+	return ok
+}
+
+// +checklocksread:s.mu
+func (s *Stack) hasNICNameLocked(name string, excludeID tcpip.NICID) bool {
+	if name == "" {
+		return false
+	}
+	for id, n := range s.nics {
+		if id != excludeID && n.Name() == name {
+			return true
+		}
+	}
+	for id, n := range s.preservedNICs {
+		if id != excludeID && n.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Stack) hasNICName(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hasNICNameLocked(name, 0)
 }
 
 // GetNICByID return a network device associated with the specified ID.
@@ -1122,17 +1183,8 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	}
 
 	// Make sure name is unique, unless unnamed.
-	if opts.Name != "" {
-		for _, n := range s.nics {
-			if n.Name() == opts.Name {
-				return &tcpip.ErrDuplicateNICID{}
-			}
-		}
-		for _, n := range s.preservedNICs {
-			if n.Name() == opts.Name {
-				return &tcpip.ErrDuplicateNICID{}
-			}
-		}
+	if s.hasNICNameLocked(opts.Name, 0) {
+		return &tcpip.ErrDuplicateNICID{}
 	}
 
 	n := newNIC(s, id, ep, opts)
@@ -1147,7 +1199,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 	s.nics[id] = n
-	if n.kind == "tun" {
+	if opts.Preserve || isPreservedNICKind(n.kind) {
 		s.preservedNICs[id] = n
 	}
 	if n.IsLoopback() {
@@ -1156,7 +1208,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	ep.SetOnCloseAction(func() {
 		s.RemoveNIC(id)
 	})
-	if !opts.Disabled {
+	if !opts.Disabled && (n.IsLoopback() || !s.externalNetworkingDisabled) {
 		return n.enable()
 	}
 
@@ -1283,7 +1335,7 @@ func (s *Stack) GetNICCoordinatorID(id tcpip.NICID) (tcpip.NICID, bool) {
 	defer s.mu.RUnlock()
 	if nic, ok := s.nics[id]; ok {
 		if nic.Primary != nil {
-			return nic.Primary.id, true
+			return nic.Primary.ID(), true
 		}
 	}
 	return 0, false
@@ -1341,6 +1393,9 @@ func (s *Stack) SetNICName(id tcpip.NICID, name string) tcpip.Error {
 	nic, ok := s.nics[id]
 	if !ok {
 		return &tcpip.ErrUnknownNICID{}
+	}
+	if s.hasNICNameLocked(name, id) {
+		return &tcpip.ErrDuplicateNICID{}
 	}
 	nic.name = name
 	return nil
@@ -1468,7 +1523,7 @@ func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	}
 
 	if nic.Primary != nil {
-		info.Primary = nic.Primary.id
+		info.Primary = nic.Primary.ID()
 	}
 
 	return &info
@@ -1985,10 +2040,10 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 		// not bother with the address.
 		// https://github.com/torvalds/linux/blob/15205c2829ca2cbb5ece5ceaafe1171a8470e62b/net/ipv4/igmp.c#L1829-L1837
 		if protocol == header.IPv4ProtocolNumber {
-			return nic.id
+			return nic.ID()
 		}
 		if nic.CheckLocalAddress(protocol, addr) {
-			return nic.id
+			return nic.ID()
 		}
 		return 0
 	}
@@ -1996,7 +2051,7 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	// Go through all the NICs.
 	for _, nic := range s.nics {
 		if nic.CheckLocalAddress(protocol, addr) {
-			return nic.id
+			return nic.ID()
 		}
 	}
 
@@ -2267,21 +2322,30 @@ func (s *Stack) Wait() {
 	}
 
 	deferActs := make([]func(), 0)
+	linkEPs := make([]NetworkLinkEndpoint, 0)
 
 	s.mu.Lock()
 	for id, n := range s.nics {
 		// Remove NIC to ensure that qDisc goroutines are correctly
 		// terminated on stack teardown.
 		act, _ := s.removeNICLocked(id, true /* closeLinkEndpoint */)
-		n.NetworkLinkEndpoint.Wait()
+		linkEPs = append(linkEPs, n.NetworkLinkEndpoint)
 		if act != nil {
 			deferActs = append(deferActs, act)
 		}
 	}
 	s.mu.Unlock()
 
+	// Close link endpoints and wait for their workers outside s.mu:
+	// removeNICLocked defers closing endpoints into deferActs, and
+	// LinkEndpoint.Wait (such as veth.Endpoint.Wait) blocks until background
+	// workers exit after close, while inbound packet delivery on those workers
+	// may acquire s.mu.
 	for _, act := range deferActs {
 		act()
+	}
+	for _, ep := range linkEPs {
+		ep.Wait()
 	}
 }
 
@@ -2291,18 +2355,36 @@ func (s *Stack) Destroy() {
 	s.Wait()
 }
 
-// Pause pauses any protocol level background workers.
+func (s *Stack) pausableLinkEndpoints() []PausableLinkEndpoint {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var eps []PausableLinkEndpoint
+	for _, n := range s.nics {
+		if p, ok := n.NetworkLinkEndpoint.(PausableLinkEndpoint); ok {
+			eps = append(eps, p)
+		}
+	}
+	return eps
+}
+
+// Pause pauses any protocol and link-layer background workers.
 func (s *Stack) Pause() {
 	for _, p := range s.transportProtocols {
 		p.proto.Pause()
 	}
+	for _, ep := range s.pausableLinkEndpoints() {
+		ep.Pause()
+	}
 }
 
-func (s *Stack) getNICs() map[tcpip.NICID]*nic {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *Stack) takeNICs() map[tcpip.NICID]*nic {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	nics := s.nics
+	nics := maps.Clone(s.nics)
+	clear(s.nics)
+	clear(s.preservedNICs)
+	s.loopbackNIC = nil
 	return nics
 }
 
@@ -2321,39 +2403,223 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 	if st == nil {
 		panic("stack.Stack cannot be nil when replacing config")
 	}
+	if s == st {
+		return
+	}
 
-	// Update route table.
-	s.SetRouteTable(st.GetRouteTable())
-
-	nics := st.getNICs()
+	st.mu.RLock()
+	extNetDisabled := st.externalNetworkingDisabled
+	st.mu.RUnlock()
+	routes := slices.Clone(st.GetRouteTable())
+	st.SetRouteTable(nil)
+	nics := st.takeNICs()
+	tables := st.IPTables()
+	nfTables := st.NFTables()
+	nfTablesConfigured := st.IsNFTablesConfigured()
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.externalNetworkingDisabled = s.externalNetworkingDisabled || extNetDisabled
+	// Update iptables and nftables, rebinding clocks and stack references to s.
+	if tables != nil {
+		tables.rebindClock(s.clock, s.insecureRNG)
+	}
+	s.tables = tables
+	if nfTables != nil {
+		nfTables.RebindStack(s)
+		s.SetNFTables(nfTables)
+		s.SetNFTablesConfigured(nfTablesConfigured)
+	} else {
+		s.SetNFTablesConfigured(false)
+	}
 
-	// Update iptables and nftables.
-	s.tables = st.IPTables()
-	s.SetNFTables(st.NFTables())
-	for id, nic := range nics {
+	// Advance nicIDGen past all existing, preserved, and incoming NIC IDs so
+	// remapped colliding NICs receive fresh IDs that cannot alias another
+	// incoming NIC's ID or route.
+	maxID := s.nicIDGen.Load()
+	for id := range s.nics {
+		if int32(id) > maxID {
+			maxID = int32(id)
+		}
+	}
+	for id := range s.preservedNICs {
+		if int32(id) > maxID {
+			maxID = int32(id)
+		}
+	}
+	for id := range nics {
+		if int32(id) > maxID {
+			maxID = int32(id)
+		}
+	}
+	s.nicIDGen.Store(maxID)
+
+	type staticNeighbor struct {
+		proto    tcpip.NetworkProtocolNumber
+		addr     tcpip.Address
+		linkAddr tcpip.LinkAddress
+	}
+	for _, id := range slices.Sorted(maps.Keys(nics)) {
+		nic := nics[id]
+		newID := id
+		_, inCurrent := s.nics[id]
+		_, inPreserved := s.preservedNICs[id]
+		if inCurrent || inPreserved {
+			newID = s.nextNICIDLocked()
+			for i := range routes {
+				if routes[i].NIC == id {
+					routes[i].NIC = newID
+				}
+			}
+		}
+		if nic.name != "" && s.hasNICNameLocked(nic.name, 0) {
+			baseName := nic.name
+			for suffix := 0; ; suffix++ {
+				candidate := fmt.Sprintf("%s_%d", baseName, suffix)
+				if !s.hasNICNameLocked(candidate, 0) {
+					nic.name = candidate
+					break
+				}
+			}
+		}
+
+		// Snapshot per-NIC configuration, disable and close st's old network
+		// endpoints, and rebuild fresh endpoints bound to s's protocols,
+		// clocks, stats, and NDP/DAD configurations.
+		var staticNeighbors []staticNeighbor
+		for proto, linkRes := range nic.linkAddrResolvers {
+			for _, entry := range linkRes.neigh.entries() {
+				if entry.State == Static {
+					staticNeighbors = append(staticNeighbors, staticNeighbor{
+						proto:    proto,
+						addr:     entry.Addr,
+						linkAddr: entry.LinkAddr,
+					})
+				}
+			}
+		}
+		forwarding := make(map[tcpip.NetworkProtocolNumber]bool, len(nic.networkEndpoints))
+		multicastForwarding := make(map[tcpip.NetworkProtocolNumber]bool, len(nic.networkEndpoints))
+		for proto := range nic.networkEndpoints {
+			if fwd, err := nic.forwarding(proto); err == nil && fwd {
+				forwarding[proto] = true
+			}
+			if mfwd, err := nic.multicastForwarding(proto); err == nil && mfwd {
+				multicastForwarding[proto] = true
+			}
+		}
+		nic.enableDisableMu.RLock()
+		disabledProtos := slices.Clone(nic.disabledNetworkProtocols)
+		nic.enableDisableMu.RUnlock()
+
+		nic.disable()
+		permAddrs := nic.allPermanentAddresses()
+		for _, ep := range nic.networkEndpoints {
+			ep.Close()
+		}
+		nic.linkResQueue.cancel()
+
+		nic.setID(newID)
+		nic.stack = s
+		nic.stats.init(&nic.stats.local, &s.stats.NICs)
+		nic.enableDisableMu.Lock()
+		nic.disabledNetworkProtocols = nil
+		nic.enableDisableMu.Unlock()
+		nic.initNetworkEndpoints()
+
+		for proto := range s.networkProtocols {
+			_, defaultFwd := s.defaultForwardingEnabled[proto]
+			if forwarding[proto] || defaultFwd {
+				if _, err := nic.setForwarding(proto, true); err != nil {
+					panic(fmt.Sprintf("nic(%d).setForwarding(%d, true): %s", newID, proto, err))
+				}
+			}
+			if multicastForwarding[proto] {
+				switch _, err := nic.setMulticastForwarding(proto, true); err.(type) {
+				case nil, *tcpip.ErrNotSupported:
+				default:
+					panic(fmt.Sprintf("nic(%d).setMulticastForwarding(%d, true): %s", newID, proto, err))
+				}
+			}
+		}
+		for _, proto := range disabledProtos {
+			if _, ok := nic.networkEndpoints[proto]; ok {
+				if err := nic.setNetworkProtocolEnabled(proto, false); err != nil {
+					panic(fmt.Sprintf("nic(%d).setNetworkProtocolEnabled(%d, false): %s", newID, proto, err))
+				}
+			}
+		}
+		for proto := range s.defaultDisabledNetworkProtocols {
+			if _, ok := nic.networkEndpoints[proto]; ok {
+				if err := nic.setNetworkProtocolEnabled(proto, false); err != nil {
+					panic(fmt.Sprintf("nic(%d).setNetworkProtocolEnabled(%d, false): %s", newID, proto, err))
+				}
+			}
+		}
+
+		nic.NetworkLinkEndpoint.SetOnCloseAction(func() {
+			s.RemoveNIC(newID)
+		})
+		s.nics[newID] = nic
+		if nic.preserve || isPreservedNICKind(nic.kind) {
+			s.preservedNICs[newID] = nic
+		}
+		if nic.IsLoopback() {
+			s.loopbackNIC = nic
+		}
+		if !nic.adminDown.Load() && (nic.IsLoopback() || !s.externalNetworkingDisabled) {
+			if err := nic.enable(); err != nil {
+				panic(fmt.Sprintf("nic(%d).enable(): %s", newID, err))
+			}
+		}
+		for _, pa := range permAddrs {
+			if _, ok := nic.networkEndpoints[pa.Protocol]; !ok {
+				continue
+			}
+			switch err := nic.addAddress(pa, AddressProperties{}); err.(type) {
+			case nil, *tcpip.ErrDuplicateAddress:
+			default:
+				panic(fmt.Sprintf("nic(%d).addAddress(%+v): %s", newID, pa, err))
+			}
+		}
+		for _, sn := range staticNeighbors {
+			_ = nic.addStaticNeighbor(sn.addr, sn.proto, sn.linkAddr)
+		}
+	}
+	s.mu.Unlock()
+
+	// Update route table after remapping any colliding NIC IDs.
+	s.SetRouteTable(routes)
+}
+
+// RestoreNICsAndEndpoints restores preserved NICs, routes, and transport
+// endpoints after a checkpoint load, without waiting for asynchronous endpoint
+// loading or starting protocol and link-layer background workers.
+func (s *Stack) RestoreNICsAndEndpoints() {
+	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
+	// s.mu while restoring the endpoints.
+	s.mu.Lock()
+	if s.tables == nil {
+		s.tables = DefaultTables(s.clock, s.insecureRNG)
+	}
+	maxID := s.nicIDGen.Load()
+	for id := range s.nics {
+		if int32(id) > maxID {
+			maxID = int32(id)
+		}
+	}
+	for id := range s.preservedNICs {
+		if int32(id) > maxID {
+			maxID = int32(id)
+		}
+	}
+	s.nicIDGen.Store(maxID)
+	for _, id := range slices.Sorted(maps.Keys(s.preservedNICs)) {
+		nic := s.preservedNICs[id]
 		nic.stack = s
 		s.nics[id] = nic
 		if nic.IsLoopback() {
 			s.loopbackNIC = nic
-		} else if s.externalNetworkingDisabled {
-			nic.disable()
 		}
-		_ = s.nextNICIDLocked()
-	}
-}
-
-// Restore restarts the stack after a restore. This must be called after the
-// entire system has been restored.
-func (s *Stack) Restore() {
-	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
-	// s.mu while restoring the endpoints.
-	s.mu.Lock()
-	for id, nic := range s.preservedNICs {
-		nic.stack = s
-		s.nics[id] = nic
 		nic.NetworkLinkEndpoint.SetOnCloseAction(func() {
 			s.RemoveNIC(id)
 		})
@@ -2364,6 +2630,9 @@ func (s *Stack) Restore() {
 			if r, ok := ep.(RestorableNetworkEndpoint); ok {
 				r.Restore()
 			}
+		}
+		if s.externalNetworkingDisabled && !nic.IsLoopback() {
+			nic.disable()
 		}
 	}
 	preservedRoutes := s.preservedRoutes
@@ -2404,15 +2673,38 @@ func (s *Stack) Restore() {
 	for _, e := range eps {
 		e.Restore(s)
 	}
+}
 
-	// Make sure all the endpoints are loaded correctly before resuming the
-	// protocol level background workers.
-	tcpip.AsyncLoading.Wait()
-
-	// Now restore any protocol level background workers.
+// RestoreBackgroundWorkers restores protocol and link-layer background workers
+// after asynchronous endpoint loading has completed.
+func (s *Stack) RestoreBackgroundWorkers() {
 	for _, p := range s.transportProtocols {
 		p.proto.Restore()
 	}
+	for _, ep := range s.pausableLinkEndpoints() {
+		ep.Resume()
+	}
+}
+
+// Restore restarts a single stack after a restore. This must be called after
+// the entire system has been restored.
+//
+// Calling Restore sequentially across multiple stacks will deadlock on
+// tcpip.AsyncLoading.Wait() when restored stacks have listening or connecting
+// TCP endpoints waiting for connected endpoints on later stacks to finish
+// RestoreNICsAndEndpoints. Multi-stack callers must instead run two-phase
+// restore: call RestoreNICsAndEndpoints on every stack, call
+// tcpip.AsyncLoading.Wait(), and then call RestoreBackgroundWorkers on every
+// stack.
+func (s *Stack) Restore() {
+	s.RestoreNICsAndEndpoints()
+
+	// Make sure all the endpoints are loaded correctly before resuming the
+	// protocol and link-layer background workers.
+	tcpip.AsyncLoading.Wait()
+
+	// Now restore any protocol and link-layer background workers.
+	s.RestoreBackgroundWorkers()
 }
 
 // Resume resumes the stack after a save.
@@ -2435,9 +2727,12 @@ func (s *Stack) Resume() {
 	for _, e := range eps {
 		e.Resume()
 	}
-	// Now resume any protocol level background workers.
+	// Now resume any protocol and link-layer background workers.
 	for _, p := range s.transportProtocols {
 		p.proto.Resume()
+	}
+	for _, ep := range s.pausableLinkEndpoints() {
+		ep.Resume()
 	}
 }
 
@@ -2845,24 +3140,79 @@ func (s *Stack) PacketEndpointWriteSupported() bool {
 
 // SetNICStack moves the network device to the specified network namespace.
 func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Error) {
-	s.mu.Lock()
+	return s.SetNICStackWithName(id, peer, "")
+}
+
+// SetNICStackWithName moves the network device to peer, optionally renaming it
+// to name if name is non-empty. Like Linux's dev_change_net_namespace, the
+// moved device starts administratively down in peer.
+func (s *Stack) SetNICStackWithName(id tcpip.NICID, peer *Stack, name string) (tcpip.NICID, tcpip.Error) {
+	if s == peer {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		nic, ok := s.nics[id]
+		if !ok {
+			return 0, &tcpip.ErrUnknownNICID{}
+		}
+		if name != "" && name != nic.Name() {
+			if s.hasNICNameLocked(name, id) {
+				return 0, &tcpip.ErrDuplicateNICID{}
+			}
+			nic.name = name
+		}
+		return id, nil
+	}
+
+	s.mu.RLock()
 	nic, ok := s.nics[id]
+	if !ok {
+		s.mu.RUnlock()
+		return 0, &tcpip.ErrUnknownNICID{}
+	}
+	targetName := name
+	if targetName == "" {
+		targetName = nic.Name()
+	}
+	s.mu.RUnlock()
+
+	if peer.hasNICName(targetName) {
+		return 0, &tcpip.ErrDuplicateNICID{}
+	}
+
+	s.mu.Lock()
+	nic, ok = s.nics[id]
 	if !ok {
 		s.mu.Unlock()
 		return 0, &tcpip.ErrUnknownNICID{}
 	}
-	if s == peer {
+	if name == "" && nic.Name() != targetName {
+		targetName = nic.Name()
 		s.mu.Unlock()
-		return id, nil
+		if peer.hasNICName(targetName) {
+			return 0, &tcpip.ErrDuplicateNICID{}
+		}
+		s.mu.Lock()
+		nic, ok = s.nics[id]
+		if !ok {
+			s.mu.Unlock()
+			return 0, &tcpip.ErrUnknownNICID{}
+		}
 	}
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
+	// QDisc is omitted because removeNICLocked closes nic.qDisc.
 	opts := NICOptions{
-		Name:      nic.Name(),
-		Kind:      nic.kind,
-		Multicast: nic.multicast,
-		MinMTU:    nic.minMTU,
-		MaxMTU:    nic.maxMTU,
+		Name:                             targetName,
+		Context:                          nic.context,
+		Disabled:                         true,
+		DeliverLinkPackets:               nic.deliverLinkPackets,
+		EnableExperimentIPOption:         nic.experimentIPOptionEnabled,
+		AllowExternalIPv4LoopbackTraffic: nic.allowExternalIPv4LoopbackTraffic,
+		Kind:                             nic.kind,
+		Multicast:                        nic.multicast,
+		MinMTU:                           nic.minMTU,
+		MaxMTU:                           nic.maxMTU,
+		Preserve:                         nic.preserve,
 	}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)

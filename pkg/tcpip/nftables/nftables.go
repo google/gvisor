@@ -68,6 +68,20 @@ func (nf *NFTables) CheckEgress(pkt *stack.PacketBuffer, route *stack.Route, out
 	return nf.checkHook(pkt, route, outNICID, af, stack.NFEgress)
 }
 
+// RebindStack rebinds nf and any initialized conntrack reaper to s.
+func (nf *NFTables) RebindStack(s *stack.Stack) {
+	if nf.connTrackReaper != nil {
+		nf.connTrackReaper.Stop()
+		nf.connTrackReaper = nil
+	}
+	nf.stack = s
+	nf.clock = s.Clock()
+	nf.rng = s.SecureRNG()
+	if nf.connTrack != nil {
+		nf.connTrackReaper = nf.connTrack.RebindClock(nf.clock, &nf.rng)
+	}
+}
+
 // checkHook returns true if the packet should continue traversing the stack or false
 // if the packet should be dropped.
 // If NFTables is not enabled, the packet is always allowed to continue traversing the stack.

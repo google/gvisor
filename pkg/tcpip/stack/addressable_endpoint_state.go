@@ -711,11 +711,18 @@ func (a *AddressableEndpointState) PermanentAddresses() []tcpip.AddressWithPrefi
 	defer a.mu.RUnlock()
 
 	var addrs []tcpip.AddressWithPrefix
-	for _, ep := range a.endpoints {
+	seen := make(map[*addressState]struct{}, len(a.primary))
+	for _, ep := range a.primary {
 		if !ep.GetKind().IsPermanent() {
 			continue
 		}
-
+		seen[ep] = struct{}{}
+		addrs = append(addrs, ep.AddressWithPrefix())
+	}
+	for _, ep := range a.endpoints {
+		if _, ok := seen[ep]; ok || !ep.GetKind().IsPermanent() {
+			continue
+		}
 		addrs = append(addrs, ep.AddressWithPrefix())
 	}
 
@@ -760,6 +767,27 @@ func (a *AddressableEndpointState) Cleanup() {
 		case nil, *tcpip.ErrBadLocalAddress:
 		default:
 			panic(fmt.Sprintf("unexpected error from removePermanentEndpointLocked(%s): %s", ep.addr, err))
+		}
+	}
+}
+
+// Restore drops references on saved addresses that were held by unsaved
+// objects (such as Route.localAddressEndpoint) at save time, before restored
+// transport endpoints re-acquire routes.
+func (a *AddressableEndpointState) Restore() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for _, addrState := range a.endpoints {
+		var wantRefs int64
+		addrState.mu.RLock()
+		if addrState.kind.IsPermanent() {
+			wantRefs = 1
+		}
+		addrState.mu.RUnlock()
+
+		for gotRefs := addrState.refs.ReadRefs(); gotRefs > wantRefs; gotRefs-- {
+			a.decAddressRefLocked(addrState)
 		}
 	}
 }

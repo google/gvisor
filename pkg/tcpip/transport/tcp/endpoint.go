@@ -2620,6 +2620,13 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 			}
 		}
 		e.segmentQueue.mu.Unlock()
+		e.snd.gso = e.gso.Type != stack.GSONone
+		if e.snd.gso {
+			// initGSO leaves e.gso.MSS at 0, and updateMaxPayloadSize only updates
+			// e.gso.MSS when the route MTU changes, so seed e.gso.MSS from the
+			// saved MaxPayloadSize first.
+			e.gso.MSS = uint16(e.snd.MaxPayloadSize)
+		}
 		e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
 		e.setEndpointState(StateEstablished)
 		// Set the new auto tuned send buffer size after entering
@@ -3383,6 +3390,8 @@ func (e *Endpoint) initGSO() {
 			Type:      stack.GSOGvisor,
 			NeedsCsum: false,
 		}
+	} else {
+		e.gso = stack.GSO{}
 	}
 }
 

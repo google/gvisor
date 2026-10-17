@@ -710,6 +710,23 @@ func (it *IPTables) startReaper(interval time.Duration) {
 	})
 }
 
+func (it *IPTables) rebindClock(clock tcpip.Clock, rng *rand.Rand) {
+	if it == nil {
+		return
+	}
+	it.mu.Lock()
+	defer it.mu.Unlock()
+	if it.reaper != nil {
+		it.reaper.Stop()
+		it.reaper = nil
+	}
+	it.connections.clock = clock
+	it.connections.rng = rng
+	if it.modified {
+		it.startReaper(reaperDelay)
+	}
+}
+
 // maxJumps is the maximum allowed depth of recursion when jumping between
 // chains in iptables. This prevents stack overflows from jump loops or deep
 // recursion. Linux kernel uses XT_JUMP_STACK_MAX = 16.

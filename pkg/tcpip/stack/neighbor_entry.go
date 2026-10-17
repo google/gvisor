@@ -207,7 +207,7 @@ func (e *neighborEntry) notifyCompletionLocked(err tcpip.Error) {
 // +checklocks:e.mu.neighborEntryRWMutex
 func (e *neighborEntry) dispatchAddEventLocked() {
 	if nudDisp := e.cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborAdded(e.cache.nic.id, e.mu.neigh)
+		nudDisp.OnNeighborAdded(e.cache.nic.ID(), e.mu.neigh)
 	}
 }
 
@@ -217,7 +217,7 @@ func (e *neighborEntry) dispatchAddEventLocked() {
 // +checklocks:e.mu.neighborEntryRWMutex
 func (e *neighborEntry) dispatchChangeEventLocked() {
 	if nudDisp := e.cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborChanged(e.cache.nic.id, e.mu.neigh)
+		nudDisp.OnNeighborChanged(e.cache.nic.ID(), e.mu.neigh)
 	}
 }
 
@@ -227,7 +227,7 @@ func (e *neighborEntry) dispatchChangeEventLocked() {
 // +checklocks:e.mu.neighborEntryRWMutex
 func (e *neighborEntry) dispatchRemoveEventLocked() {
 	if nudDisp := e.cache.nic.stack.nudDisp; nudDisp != nil {
-		nudDisp.OnNeighborRemoved(e.cache.nic.id, e.mu.neigh)
+		nudDisp.OnNeighborRemoved(e.cache.nic.ID(), e.mu.neigh)
 	}
 }
 

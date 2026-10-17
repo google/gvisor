@@ -44,6 +44,8 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -388,9 +390,6 @@ class BridgeLocalDeliveryTest : public ::testing::Test {
     }
   }
 
-  // Don't do cooperative save/restore because netstack state is not restored.
-  // TODO(gvisor.dev/issue/4595): enable cooperative save tests.
-  const DisableSave ds_;
   FileDescriptor netns_;
   FileDescriptor sender_;
   FileDescriptor udp_;
@@ -470,6 +469,249 @@ TEST_F(BridgeLocalDeliveryTest, PortAddressChangeIsTracked) {
   ASSERT_NO_FATAL_FAILURE(Deliver(port_b_mac_, &delivered, &forwarded));
   EXPECT_FALSE(delivered) << "old other-port address";
   EXPECT_TRUE(forwarded) << "old other-port address";
+}
+
+// BridgeSaveRestoreTest records the calling thread's original network
+// namespace in SetUp and restores it in TearDown so child-namespace tests do
+// not leak namespace state.
+class BridgeSaveRestoreTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    SKIP_IF(IsRunningWithHostinet());
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+    orig_netns_ =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  }
+
+  void TearDown() override {
+    if (orig_netns_.get() >= 0) {
+      EXPECT_THAT(setns(orig_netns_.get(), CLONE_NEWNET), SyscallSucceeds());
+    }
+  }
+
+ private:
+  FileDescriptor orig_netns_;
+};
+
+TEST_F(BridgeSaveRestoreTest, BridgeVethChildNetnsTCPAndUDPAcrossSave) {
+  // Create an outer ephemeral network namespace holding br0 and one end of the
+  // veth pair, and an inner child network namespace holding the peer veth.
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+  FileDescriptor outer_netns =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  FileDescriptor outer_nl =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  Link outer_lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(outer_lo.index, IFF_UP, IFF_UP));
+
+  PosixError err = NewLink(outer_nl, kSeq + 100, "bridge", "br0", nullptr);
+  SKIP_IF(!IsRunningOnGvisor() && err.errno_value() == EOPNOTSUPP);
+  ASSERT_NO_ERRNO(err);
+  ASSERT_NO_ERRNO(NewLink(outer_nl, kSeq + 101, "veth", "veth_br", "veth_c"));
+
+  const int br_idx = if_nametoindex("br0");
+  ASSERT_NE(br_idx, 0);
+  const int veth_br_idx = if_nametoindex("veth_br");
+  ASSERT_NE(veth_br_idx, 0);
+  const int veth_c_idx = if_nametoindex("veth_c");
+  ASSERT_NE(veth_c_idx, 0);
+
+  ASSERT_NO_ERRNO(SetLinkAttr(outer_nl, kSeq + 102, veth_br_idx, IFLA_MASTER,
+                              &br_idx, sizeof(br_idx)));
+  ASSERT_NO_ERRNO(LinkChangeFlags(br_idx, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(veth_br_idx, IFF_UP, IFF_UP));
+
+  struct in_addr br_ip = {};
+  ASSERT_EQ(inet_pton(AF_INET, "10.200.0.1", &br_ip), 1);
+  ASSERT_NO_ERRNO(
+      LinkAddLocalAddr(outer_nl, br_idx, AF_INET, 24, &br_ip, sizeof(br_ip)));
+
+  // Create the inner child namespace and move veth_c into it while renaming it
+  // to eth0 in a single RTM_NEWLINK request.
+  ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+  FileDescriptor inner_netns =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+  FileDescriptor inner_nl =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  {
+    LinkRequest move_req = {};
+    move_req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(move_req.ifm));
+    move_req.hdr.nlmsg_type = RTM_NEWLINK;
+    move_req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    move_req.hdr.nlmsg_seq = kSeq + 103;
+    move_req.ifm.ifi_index = veth_c_idx;
+    int nsfd = inner_netns.get();
+    AddAttr(&move_req, IFLA_NET_NS_FD, &nsfd, sizeof(nsfd));
+    AddAttr(&move_req, IFLA_IFNAME, "eth0", strlen("eth0"));
+    ASSERT_NO_ERRNO(NetlinkRequestAckOrError(outer_nl, kSeq + 103, &move_req,
+                                             move_req.hdr.nlmsg_len));
+  }
+
+  // Like Linux dev_change_net_namespace, moving a link across namespaces
+  // leaves it administratively DOWN in the destination namespace.
+  std::vector<Link> inner_links =
+      ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(inner_nl));
+  int eth0_idx = 0;
+  for (const Link& link : inner_links) {
+    if (link.name == "eth0") {
+      eth0_idx = link.index;
+      EXPECT_EQ(link.flags & IFF_UP, 0u);
+    }
+  }
+  ASSERT_NE(eth0_idx, 0);
+
+  Link inner_lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+  ASSERT_NO_ERRNO(LinkChangeFlags(inner_lo.index, IFF_UP, IFF_UP));
+  ASSERT_NO_ERRNO(LinkChangeFlags(eth0_idx, IFF_UP, IFF_UP));
+
+  struct in_addr inner_ip = {};
+  ASSERT_EQ(inet_pton(AF_INET, "10.200.0.2", &inner_ip), 1);
+  ASSERT_NO_ERRNO(LinkAddLocalAddr(inner_nl, eth0_idx, AF_INET, 24, &inner_ip,
+                                   sizeof(inner_ip)));
+
+  // Wait for bridge forwarding readiness using UDP sockets across namespaces.
+  FileDescriptor inner_udp =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  struct sockaddr_in inner_udp_addr = {};
+  inner_udp_addr.sin_family = AF_INET;
+  inner_udp_addr.sin_addr = inner_ip;
+  ASSERT_THAT(bind(inner_udp.get(), AsSockAddr(&inner_udp_addr),
+                   sizeof(inner_udp_addr)),
+              SyscallSucceeds());
+  socklen_t addrlen = sizeof(inner_udp_addr);
+  ASSERT_THAT(
+      getsockname(inner_udp.get(), AsSockAddr(&inner_udp_addr), &addrlen),
+      SyscallSucceeds());
+
+  // Bind a listening TCP socket in inner_netns before switching back to
+  // outer_netns.
+  FileDescriptor inner_listen =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  struct sockaddr_in inner_tcp_addr = {};
+  inner_tcp_addr.sin_family = AF_INET;
+  inner_tcp_addr.sin_addr = inner_ip;
+  ASSERT_THAT(bind(inner_listen.get(), AsSockAddr(&inner_tcp_addr),
+                   sizeof(inner_tcp_addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(inner_listen.get(), 4), SyscallSucceeds());
+  addrlen = sizeof(inner_tcp_addr);
+  ASSERT_THAT(
+      getsockname(inner_listen.get(), AsSockAddr(&inner_tcp_addr), &addrlen),
+      SyscallSucceeds());
+
+  ASSERT_THAT(setns(outer_netns.get(), CLONE_NEWNET), SyscallSucceeds());
+  FileDescriptor outer_udp =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  const absl::Time ready_deadline = absl::Now() + absl::Seconds(10);
+  bool bridge_ready = false;
+  while (!bridge_ready && absl::Now() < ready_deadline) {
+    const char probe[] = "ready";
+    ASSERT_THAT(sendto(outer_udp.get(), probe, sizeof(probe), 0,
+                       AsSockAddr(&inner_udp_addr), sizeof(inner_udp_addr)),
+                SyscallSucceedsWithValue(sizeof(probe)));
+    struct pollfd pfd = {.fd = inner_udp.get(), .events = POLLIN};
+    if (RetryEINTR(poll)(&pfd, 1, 100) == 1) {
+      char buf[16] = {};
+      ASSERT_THAT(recv(inner_udp.get(), buf, sizeof(buf), 0),
+                  SyscallSucceedsWithValue(sizeof(probe)));
+      bridge_ready = true;
+    }
+  }
+  ASSERT_TRUE(bridge_ready) << "bridge -> veth -> child netns did not forward";
+
+  // Bind a listening TCP socket on br0 in outer_netns and connect a pre-save
+  // TCP stream across br0 <-> eth0.
+  FileDescriptor outer_listen =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  struct sockaddr_in outer_tcp_addr = {};
+  outer_tcp_addr.sin_family = AF_INET;
+  outer_tcp_addr.sin_addr = br_ip;
+  ASSERT_THAT(bind(outer_listen.get(), AsSockAddr(&outer_tcp_addr),
+                   sizeof(outer_tcp_addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(outer_listen.get(), 4), SyscallSucceeds());
+  addrlen = sizeof(outer_tcp_addr);
+  ASSERT_THAT(
+      getsockname(outer_listen.get(), AsSockAddr(&outer_tcp_addr), &addrlen),
+      SyscallSucceeds());
+
+  FileDescriptor outer_client =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  ASSERT_THAT(
+      RetryEINTR(connect)(outer_client.get(), AsSockAddr(&inner_tcp_addr),
+                          sizeof(inner_tcp_addr)),
+      SyscallSucceeds());
+  FileDescriptor inner_accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(inner_listen.get(), nullptr, nullptr));
+
+  constexpr std::string_view kPreMsg = "pre-save-bridge-veth";
+  ASSERT_THAT(WriteFd(outer_client.get(), kPreMsg.data(), kPreMsg.size()),
+              SyscallSucceedsWithValue(kPreMsg.size()));
+  std::string recv_buf(kPreMsg.size(), '\0');
+  ASSERT_THAT(ReadFd(inner_accepted.get(), recv_buf.data(), recv_buf.size()),
+              SyscallSucceedsWithValue(recv_buf.size()));
+  EXPECT_EQ(recv_buf, kPreMsg);
+
+  MaybeSave();
+
+  // Verify UDP datagram delivery across br0 <-> eth0 on pre-save UDP sockets
+  // after checkpoint/restore.
+  constexpr std::string_view kPostUdpMsg = "post-save-udp";
+  ASSERT_THAT(sendto(outer_udp.get(), kPostUdpMsg.data(), kPostUdpMsg.size(), 0,
+                     AsSockAddr(&inner_udp_addr), sizeof(inner_udp_addr)),
+              SyscallSucceedsWithValue(kPostUdpMsg.size()));
+  std::string udp_recv(kPostUdpMsg.size(), '\0');
+  ASSERT_THAT(recv(inner_udp.get(), udp_recv.data(), udp_recv.size(), 0),
+              SyscallSucceedsWithValue(udp_recv.size()));
+  EXPECT_EQ(udp_recv, kPostUdpMsg);
+
+  // Verify >MTU (8 KiB) bidirectional TCP transfer on the pre-save connection
+  // after checkpoint/restore (exercising veth GSOGvisor MSS preservation and
+  // preserved bridge FDB + ARP state).
+  const std::string large_payload(8192, 'Z');
+  ASSERT_THAT(
+      WriteFd(inner_accepted.get(), large_payload.data(), large_payload.size()),
+      SyscallSucceedsWithValue(large_payload.size()));
+  std::string large_recv(large_payload.size(), '\0');
+  ASSERT_THAT(ReadFd(outer_client.get(), large_recv.data(), large_recv.size()),
+              SyscallSucceedsWithValue(large_recv.size()));
+  EXPECT_EQ(large_recv, large_payload);
+
+  const std::string reverse_payload(8192, 'Y');
+  ASSERT_THAT(WriteFd(outer_client.get(), reverse_payload.data(),
+                      reverse_payload.size()),
+              SyscallSucceedsWithValue(reverse_payload.size()));
+  large_recv.assign(reverse_payload.size(), '\0');
+  ASSERT_THAT(
+      ReadFd(inner_accepted.get(), large_recv.data(), large_recv.size()),
+      SyscallSucceedsWithValue(large_recv.size()));
+  EXPECT_EQ(large_recv, reverse_payload);
+
+  // Verify post-save accept() on pre-save listening socket and post-save veth
+  // creation in the restored child namespace.
+  ASSERT_THAT(setns(inner_netns.get(), CLONE_NEWNET), SyscallSucceeds());
+  FileDescriptor post_client =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  ASSERT_THAT(
+      RetryEINTR(connect)(post_client.get(), AsSockAddr(&outer_tcp_addr),
+                          sizeof(outer_tcp_addr)),
+      SyscallSucceeds());
+  FileDescriptor outer_accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(outer_listen.get(), nullptr, nullptr));
+  constexpr std::string_view kPostMsg = "post-save-new-conn";
+  ASSERT_THAT(WriteFd(post_client.get(), kPostMsg.data(), kPostMsg.size()),
+              SyscallSucceedsWithValue(kPostMsg.size()));
+  recv_buf.assign(kPostMsg.size(), '\0');
+  ASSERT_THAT(ReadFd(outer_accepted.get(), recv_buf.data(), recv_buf.size()),
+              SyscallSucceedsWithValue(recv_buf.size()));
+  EXPECT_EQ(recv_buf, kPostMsg);
+
+  ASSERT_NO_ERRNO(
+      NewLink(inner_nl, kSeq + 104, "veth", "veth_post0", "veth_post1"));
+  EXPECT_NE(if_nametoindex("veth_post0"), 0);
 }
 
 }  // namespace

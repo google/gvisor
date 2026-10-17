@@ -30,6 +30,7 @@ import (
 
 var _ stack.NetworkDispatcher = (*Endpoint)(nil)
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
+var _ stack.PausableLinkEndpoint = (*Endpoint)(nil)
 
 // Endpoint is a waitable link-layer endpoint.
 //
@@ -191,4 +192,18 @@ func (e *Endpoint) SetOnCloseAction(action func()) {
 // Close implements stack.LinkEndpoint.
 func (e *Endpoint) Close() {
 	e.lower.Close()
+}
+
+// Pause implements stack.PausableLinkEndpoint.
+func (e *Endpoint) Pause() {
+	if p, ok := e.lower.(stack.PausableLinkEndpoint); ok {
+		p.Pause()
+	}
+}
+
+// Resume implements stack.PausableLinkEndpoint.
+func (e *Endpoint) Resume() {
+	if p, ok := e.lower.(stack.PausableLinkEndpoint); ok {
+		p.Resume()
+	}
 }

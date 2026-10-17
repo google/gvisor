@@ -2028,9 +2028,15 @@ func (ndp *ndpState) restore() {
 		state.invalidationJob.Restore(&ndp.ep.mu, ndp.onLinkPrefixInvalidationFunc(prefix))
 	}
 	for prefix, state := range ndp.slaacPrefixes {
+		if ep := state.stableAddr.addressEndpoint; ep != nil && !ep.TryIncRef() {
+			panic(fmt.Sprintf("failed to increment reference count for SLAAC address %s", ep.AddressWithPrefix()))
+		}
 		state.deprecationJob.Restore(&ndp.ep.mu, ndp.slaacPrefixDeprecationFunc(prefix))
 		state.invalidationJob.Restore(&ndp.ep.mu, ndp.slaacPrefixInvalidationFunc(prefix))
 		for _, tempState := range state.tempAddrs {
+			if !tempState.addressEndpoint.TryIncRef() {
+				panic(fmt.Sprintf("failed to increment reference count for temporary SLAAC address %s", tempState.addressEndpoint.AddressWithPrefix()))
+			}
 			generatedAddr := tempState.addressEndpoint.AddressWithPrefix()
 			tempState.deprecationJob.Restore(&ndp.ep.mu, ndp.tempSLAACAddrDeprecationFunc(prefix, generatedAddr))
 			tempState.invalidationJob.Restore(&ndp.ep.mu, ndp.tempSLAACAddrInvalidationFunc(prefix, generatedAddr))
