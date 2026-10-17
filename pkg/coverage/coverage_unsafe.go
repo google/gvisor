@@ -57,16 +57,6 @@ var (
 	reportOutputMu sync.Mutex
 )
 
-// blockBitLength is the number of bits used to represent coverage block index
-// in a synthetic PC (the rest are used to represent the file index). Even
-// though a PC has 64 bits, we only use the lower 32 bits because some users
-// (e.g., syzkaller) may truncate that address to a 32-bit value.
-//
-// As of this writing, there are ~1200 files that can be instrumented and at
-// most ~1200 blocks per file, so 16 bits is more than enough to represent every
-// file and every block.
-const blockBitLength = 16
-
 // Available returns whether any coverage data is available.
 func Available() bool {
 	InitCoverageData()
