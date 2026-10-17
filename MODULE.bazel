@@ -12,6 +12,8 @@ bazel_dep(name = "yq.bzl", version = "0.4.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_shell", version = "0.8.0")
+bazel_dep(name = "rules_foreign_cc", version = "0.16.0")
+bazel_dep(name = "libbacktrace", version = "1.0.0-20250926-7939218.bcr.2")
 bazel_dep(name = "grpc", version = "1.84.0", repo_name = "com_github_grpc_grpc")
 
 # gRPC's older minimum imports a removed Google APIs extension repository.
@@ -87,12 +89,52 @@ use_repo(llvm_zlib, "llvm_zlib")
 ### Repo rules
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
-
-new_local_repository(
+http_archive(
     name = "libpluginstack",
-    build_file = "external/tools/plugin-stack/plugin-stack.BUILD",
-    path = "external/tools/plugin-stack",
+    build_file = "//external/tools/plugin-stack:plugin-stack.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "//external/tools/plugin-stack:tldk-build.patch",
+        "//external/tools/plugin-stack:tldk-musl.patch",
+    ],
+    sha256 = "00bc2824cbc3024c4e5514ebac7ecab6598dd60e444af9dfeece079bc5b96980",
+    strip_prefix = "tldk-cec8ff773c2ee609a1fcbc389aecb4dbb4e3bb88",
+    urls = ["https://github.com/alipay/tldk/archive/cec8ff773c2ee609a1fcbc389aecb4dbb4e3bb88.tar.gz"],
+)
+
+http_archive(
+    name = "plugin_dpdk",
+    build_file = "//external/tools/plugin-stack:dpdk.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "@libpluginstack//:dpdk/dpdk-v18.11_patches/0001-ip_frag-fix-IPv6-when-MTU-sizes-not-aligned-to-8.patch",
+        "@libpluginstack//:dpdk/dpdk-v18.11_patches/0002-net-virtio-fix-build.patch",
+        "@libpluginstack//:dpdk/dpdk-v18.11_patches/0003-PATCH-mk-disable-warning-for-packed-member-pointer.patch",
+        "@libpluginstack//:dpdk/dpdk-v18.11_patches/0004-TLDK-v2-compatible-with-tldk-working-as-plugin-stack.patch",
+        "@libpluginstack//:dpdk/dpdk-v18.11_patches/0005-vfio-fix-use-after-free-with-multiprocess.patch",
+        "//external/tools/plugin-stack:dpdk-build.patch",
+        "//external/tools/plugin-stack:dpdk-musl.patch",
+        "//external/tools/plugin-stack:dpdk-backtrace.patch",
+    ],
+    sha256 = "0026a9bc67f37f07969101bdf72fd5921169b4744f765118e5db57cace645bee",
+    strip_prefix = "dpdk-18.11",
+    urls = ["https://github.com/DPDK/dpdk/archive/refs/tags/v18.11.tar.gz"],
+)
+
+# musl does not provide the BSD queue macros used by DPDK and TLDK.
+http_file(
+    name = "plugin_bsd_queue",
+    downloaded_file_path = "queue.h",
+    sha256 = "c13407edd0e33be73cae72514cb234f8612e1c0e54401c9448daffd3a240158b",
+    urls = ["https://raw.githubusercontent.com/alpinelinux/aports/988f183cc9d6699930c3e18ccf4a9e36010afb56/main/libc-dev/sys-queue.h"],
+)
+
+# Build Make with the execution toolchain rather than using a worker's tools.
+foreign_cc_tools = use_extension("@rules_foreign_cc//foreign_cc:extensions.bzl", "tools")
+foreign_cc_tools.explicit()
+foreign_cc_tools.make(
+    mode = "source",
+    version = "4.4.1",
 )
 
 http_file(
