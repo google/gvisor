@@ -7,7 +7,10 @@ package(
 
 go_library(
     name = "licensecheck",
-    srcs = ["licensecheck.go"],
+    srcs = [
+        "licensecheck.go",
+        "wheels.go",
+    ],
     importpath = "gvisor.dev/gvisor/tools/licensecheck",
     marshal = False,
     stateify = False,
@@ -23,7 +26,10 @@ go_library(
 go_test(
     name = "licensecheck_test",
     size = "small",
-    srcs = ["licensecheck_test.go"],
+    srcs = [
+        "licensecheck_test.go",
+        "wheels_test.go",
+    ],
     data = [
         "dependencies.yaml",
         "//governance:licensing.yaml",
