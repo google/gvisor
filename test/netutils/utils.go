@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -36,25 +37,25 @@ func ListenUDP(ctx context.Context, port int, ipv6 bool) error {
 
 // ListenUDPFrom listens on a UDP port and returns the sender's UDP address if
 // the first read from that port is successful.
-func ListenUDPFrom(ctx context.Context, port int, ipv6 bool) (*net.UDPAddr, error) {
+func ListenUDPFrom(ctx context.Context, port int, ipv6 bool) (netip.AddrPort, error) {
 	localAddr := net.UDPAddr{
 		Port: port,
 	}
 	conn, err := net.ListenUDP(UDPNetwork(ipv6), &localAddr)
 	if err != nil {
-		return nil, err
+		return netip.AddrPort{}, err
 	}
 	defer conn.Close()
 
 	type result struct {
-		remoteAddr *net.UDPAddr
+		remoteAddr netip.AddrPort
 		err        error
 	}
 
 	// The read must be able to finish after cancellation stops the receiver.
 	ch := make(chan result, 1)
 	go func() {
-		_, remoteAddr, err := conn.ReadFromUDP([]byte{0})
+		_, remoteAddr, err := conn.ReadFromUDPAddrPort([]byte{0})
 		ch <- result{remoteAddr, err}
 	}()
 
@@ -62,7 +63,7 @@ func ListenUDPFrom(ctx context.Context, port int, ipv6 bool) (*net.UDPAddr, erro
 	case res := <-ch:
 		return res.remoteAddr, res.err
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timed out reading from %s: %w", &localAddr, ctx.Err())
+		return netip.AddrPort{}, fmt.Errorf("timed out reading from %s: %w", &localAddr, ctx.Err())
 	}
 }
 
@@ -105,7 +106,7 @@ func ListenTCP(ctx context.Context, port int, ipv6 bool) error {
 
 // ListenTCPFrom listens for connections on a TCP port, and returns the remote
 // TCP address if a connection is established.
-func ListenTCPFrom(ctx context.Context, port int, ipv6 bool) (net.Addr, error) {
+func ListenTCPFrom(ctx context.Context, port int, ipv6 bool) (netip.AddrPort, error) {
 	localAddr := net.TCPAddr{
 		Port: port,
 	}
@@ -113,12 +114,12 @@ func ListenTCPFrom(ctx context.Context, port int, ipv6 bool) (net.Addr, error) {
 	// Starts listening on port.
 	lConn, err := net.ListenTCP(TCPNetwork(ipv6), &localAddr)
 	if err != nil {
-		return nil, err
+		return netip.AddrPort{}, err
 	}
 	defer lConn.Close()
 
 	type result struct {
-		remoteAddr net.Addr
+		remoteAddr netip.AddrPort
 		err        error
 	}
 
@@ -127,9 +128,9 @@ func ListenTCPFrom(ctx context.Context, port int, ipv6 bool) (net.Addr, error) {
 	ch := make(chan result, 1)
 	go func() {
 		conn, err := lConn.AcceptTCP()
-		var remoteAddr net.Addr
+		var remoteAddr netip.AddrPort
 		if err == nil {
-			remoteAddr = conn.RemoteAddr()
+			remoteAddr = conn.RemoteAddr().(*net.TCPAddr).AddrPort()
 			conn.Close()
 		}
 		ch <- result{remoteAddr, err}
@@ -139,7 +140,7 @@ func ListenTCPFrom(ctx context.Context, port int, ipv6 bool) (net.Addr, error) {
 	case res := <-ch:
 		return res.remoteAddr, res.err
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timed out waiting for a connection at %s: %w", &localAddr, ctx.Err())
+		return netip.AddrPort{}, fmt.Errorf("timed out waiting for a connection at %s: %w", &localAddr, ctx.Err())
 	}
 }
 
