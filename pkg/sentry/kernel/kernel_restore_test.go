@@ -23,6 +23,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/state/stateio"
 )
 
@@ -33,7 +34,7 @@ func TestAsyncMFLoaderStartupError(t *testing.T) {
 		// A sub-page read limit fails before metadata or mainMF is loaded.
 		pages := stateio.NewIOReader(bytes.NewReader(nil), 1, 1, 1)
 		metadata := io.NopCloser(bytes.NewReader(nil))
-		loader := NewAsyncMFLoader(metadata, pages, nil, nil)
+		loader := NewAsyncMFLoader(metadata, pages, nil, nil, pgalloc.AsyncPagesFileLoadOpts{Throttled: true})
 
 		startErr := loader.WaitMainMFStart()
 		if startErr == nil {
@@ -45,6 +46,8 @@ func TestAsyncMFLoaderStartupError(t *testing.T) {
 		if err := loader.Wait(); err != startErr {
 			t.Errorf("Wait() = %v, want %v", err, startErr)
 		}
+		// Unthrottle has no effect if page loading failed to start.
+		loader.Unthrottle()
 	})
 }
 
