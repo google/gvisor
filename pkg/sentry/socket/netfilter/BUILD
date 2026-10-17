@@ -9,6 +9,7 @@ go_library(
     name = "netfilter",
     srcs = [
         "comment_matcher.go",
+        "conntrack_matcher.go",
         "ct_target.go",
         "dnat.go",
         "extensions.go",
