@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -28,11 +29,20 @@ import (
 // In other words, it is doing `replay original | save new`, then checking if
 // `original == new`.
 func TestBasic(t *testing.T) {
-	dir, err := os.MkdirTemp(testutil.TmpDir(), "tracereplay")
+	const testdata = "tools/tracereplay/testdata/client-0001"
+	in, err := testutil.FindFile(testdata)
 	if err != nil {
+		t.Fatalf("FindFile(%q): %v", testdata, err)
+	}
+
+	// An absolute socket path here exceeds Linux's 108-byte Unix socket limit,
+	// as can Bazel's TEST_TMPDIR. Keep the pathname relative to this directory.
+	dir := filepath.Join(t.TempDir(), strings.Repeat("x", 128))
+	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := filepath.Join(dir, "tracereplay.sock")
+	t.Chdir(dir)
+	const endpoint = "tracereplay.sock"
 
 	// Start a new save server to store the replayed file. This tests that save
 	// communicates with clients correctly and generates a valid file.
@@ -45,14 +55,7 @@ func TestBasic(t *testing.T) {
 
 	// Then replay the re-generated file. This tests that replay can connect to
 	// a server and process the generated file.
-	r := Replay{}
-	r.Endpoint = endpoint
-
-	const testdata = "tools/tracereplay/testdata/client-0001"
-	r.In, err = testutil.FindFile(testdata)
-	if err != nil {
-		t.Fatalf("FindFile(%q): %v", testdata, err)
-	}
+	r := Replay{Endpoint: endpoint, In: in}
 
 	if err := r.Execute(); err != nil {
 		t.Fatal(err)
