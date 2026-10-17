@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" width="960" height="430" role="img" aria-label="Restore time for a 2 GiB workload: 2018 style 8.82 seconds, 2024 7.89 seconds, 2024+ 1.71 seconds, 2024+, warm cache 0.15 seconds" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>Restore time for a 2 GiB workload: 2018 style 8.82 seconds, 2024 7.89 seconds, 2024+ 1.71 seconds, 2024+, warm cache 0.15 seconds</title>
+<rect width="960" height="430" rx="12" fill="#fcfcfb"/>
+<text x="40" y="40" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="bold" >Time until a 2 GiB app runs again after restore</text>
+<text x="40" y="62" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >seconds, lower is better. Median of 3 runs, cold disk cache unless noted.</text>
+<text x="40" y="110" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2018 style</text>
+<text x="40" y="130" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >compressed, single file</text>
+<rect x="330" y="96" width="500.0" height="36" rx="4" fill="#8a8984" />
+<text x="840.0" y="120" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >8.82 s</text>
+<text x="40" y="180" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024</text>
+<text x="40" y="200" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >uncompressed, split, parallel</text>
+<rect x="330" y="166" width="447.0943184883063" height="36" rx="4" fill="#2a78d6" />
+<text x="787.0943184883063" y="190" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >7.89 s</text>
+<text x="40" y="250" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024+</text>
+<text x="40" y="270" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >+ restore --background</text>
+<rect x="330" y="236" width="96.72384370847337" height="36" rx="4" fill="#2a78d6" />
+<text x="436.7238437084734" y="260" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >1.71 s</text>
+<text x="40" y="320" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >2024+, warm cache</text>
+<text x="40" y="340" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >+ image already in page cache</text>
+<rect x="330" y="306" width="8.27511244213381" height="36" rx="4" fill="#2a78d6" />
+<text x="348.27511244213383" y="330" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="bold" >0.15 s</text>
+<text x="40" y="388" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >8.8 s to 0.15 s: about 60x faster. Same machine, same runsc binary, only flags changed.</text>
+<text x="40" y="408" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal" >With --background, memory keeps loading after the app starts; pages the app touches are loaded first.</text>
+</svg>

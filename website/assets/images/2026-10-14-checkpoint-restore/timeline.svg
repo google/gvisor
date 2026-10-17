@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img" aria-label="Timeline: 2018 First version: one compressed file; 2023 No compression: optional, community patch; 2024 Split snapshot: parallel load, O_DIRECT; 2024 Pods, zero pages: multi-container, smaller; 2024 Background load: app runs during load; 2025 Earlier, faster: early loads, 12x decoder; 2026 GCS, filesystems: GCS gofer, fs snapshots; 2026 Devices: GPU, TPU, integrity checks" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<title>Timeline: 2018 First version: one compressed file; 2023 No compression: optional, community patch; 2024 Split snapshot: parallel load, O_DIRECT; 2024 Pods, zero pages: multi-container, smaller; 2024 Background load: app runs during load; 2025 Earlier, faster: early loads, 12x decoder; 2026 GCS, filesystems: GCS gofer, fs snapshots; 2026 Devices: GPU, TPU, integrity checks</title>
+<rect width="960" height="300" rx="12" fill="#fcfcfb"/>
+<text x="480" y="34" font-size="18" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Checkpoint/restore milestones, 2018–2026</text>
+<line x1="60" y1="150" x2="900" y2="150" stroke="#52514e" stroke-width="3" stroke-dasharray="2 6" stroke-linecap="round"/>
+<line x1="100.0" y1="150" x2="100.0" y2="108" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="100.0" cy="150" r="10" fill="#8a8984" stroke="#fcfcfb" stroke-width="3"/>
+<text x="100.0" y="62" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2018</text>
+<text x="100.0" y="80" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >First version</text>
+<text x="100.0" y="98" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >one compressed file</text>
+<line x1="208.57142857142856" y1="150" x2="208.57142857142856" y2="184" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="208.57142857142856" cy="150" r="10" fill="#eb6834" stroke="#fcfcfb" stroke-width="3"/>
+<text x="208.57142857142856" y="192" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2023</text>
+<text x="208.57142857142856" y="210" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >No compression</text>
+<text x="208.57142857142856" y="228" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >optional, community patch</text>
+<line x1="317.1428571428571" y1="150" x2="317.1428571428571" y2="108" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="317.1428571428571" cy="150" r="10" fill="#2a78d6" stroke="#fcfcfb" stroke-width="3"/>
+<text x="317.1428571428571" y="62" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2024</text>
+<text x="317.1428571428571" y="80" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Split snapshot</text>
+<text x="317.1428571428571" y="98" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >parallel load, O_DIRECT</text>
+<line x1="425.7142857142857" y1="150" x2="425.7142857142857" y2="184" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="425.7142857142857" cy="150" r="10" fill="#1baf7a" stroke="#fcfcfb" stroke-width="3"/>
+<text x="425.7142857142857" y="192" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2024</text>
+<text x="425.7142857142857" y="210" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Pods, zero pages</text>
+<text x="425.7142857142857" y="228" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >multi-container, smaller</text>
+<line x1="534.2857142857142" y1="150" x2="534.2857142857142" y2="108" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="534.2857142857142" cy="150" r="10" fill="#008300" stroke="#fcfcfb" stroke-width="3"/>
+<text x="534.2857142857142" y="62" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2024</text>
+<text x="534.2857142857142" y="80" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Background load</text>
+<text x="534.2857142857142" y="98" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >app runs during load</text>
+<line x1="642.8571428571429" y1="150" x2="642.8571428571429" y2="184" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="642.8571428571429" cy="150" r="10" fill="#6250d6" stroke="#fcfcfb" stroke-width="3"/>
+<text x="642.8571428571429" y="192" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2025</text>
+<text x="642.8571428571429" y="210" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Earlier, faster</text>
+<text x="642.8571428571429" y="228" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >early loads, 12x decoder</text>
+<line x1="751.4285714285714" y1="150" x2="751.4285714285714" y2="108" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="751.4285714285714" cy="150" r="10" fill="#eda100" stroke="#fcfcfb" stroke-width="3"/>
+<text x="751.4285714285714" y="62" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2026</text>
+<text x="751.4285714285714" y="80" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >GCS, filesystems</text>
+<text x="751.4285714285714" y="98" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >GCS gofer, fs snapshots</text>
+<line x1="860.0" y1="150" x2="860.0" y2="184" stroke="#e4e3df" stroke-width="2"/>
+<circle cx="860.0" cy="150" r="10" fill="#e34948" stroke="#fcfcfb" stroke-width="3"/>
+<text x="860.0" y="192" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal" >2026</text>
+<text x="860.0" y="210" font-size="14" fill="#0b0b0b" text-anchor="middle" font-weight="bold" >Devices</text>
+<text x="860.0" y="228" font-size="12" fill="#52514e" text-anchor="middle" font-weight="normal" >GPU, TPU, integrity checks</text>
+</svg>
