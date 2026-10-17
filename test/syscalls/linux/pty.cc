@@ -40,6 +40,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -270,6 +271,353 @@ void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
   size_t n = ASSERT_NO_ERRNO_AND_VALUE(
       PollAndReadFd(fd.get(), buf, expected, kTimeout));
   EXPECT_EQ(expected, n);
+}
+
+TEST(BasicPtyTest, LockedTermiosInitiallyEmpty) {
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  const kernel_termios empty = {};
+  for (int fd : {master.get(), replica.get()}) {
+    kernel_termios locked = {};
+    ASSERT_THAT(ioctl(fd, TIOCGLCKTRMIOS, &locked), SyscallSucceeds());
+    EXPECT_EQ(locked, empty);
+  }
+}
+
+TEST(BasicPtyTest, LockedTermiosSharedAndEnforced) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios before = {};
+  ASSERT_THAT(ioctl(replica.get(), TCGETS, &before), SyscallSucceeds());
+  kernel_termios locked = {};
+  locked.c_lflag = ECHO;
+  locked.c_cc[VINTR] = 1;
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+  kernel_termios from_replica = {};
+  ASSERT_THAT(ioctl(replica.get(), TIOCGLCKTRMIOS, &from_replica),
+              SyscallSucceeds());
+  EXPECT_EQ(from_replica, locked);
+
+  kernel_termios next = before;
+  next.c_lflag ^= ECHO | ICANON;
+  next.c_cc[VINTR] ^= 0x40;
+  next.c_cc[VQUIT] ^= 0x40;
+  ASSERT_THAT(ioctl(replica.get(), TCSETS, &next), SyscallSucceeds());
+  kernel_termios after = {};
+  ASSERT_THAT(ioctl(master.get(), TCGETS, &after), SyscallSucceeds());
+  EXPECT_EQ(after.c_lflag & ECHO, before.c_lflag & ECHO);
+  EXPECT_EQ(after.c_lflag & ICANON, next.c_lflag & ICANON);
+  EXPECT_EQ(after.c_cc[VINTR], before.c_cc[VINTR]);
+  EXPECT_EQ(after.c_cc[VQUIT], next.c_cc[VQUIT]);
+
+  FileDescriptor other =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  kernel_termios independent = {};
+  ASSERT_THAT(ioctl(other.get(), TIOCGLCKTRMIOS, &independent),
+              SyscallSucceeds());
+  const kernel_termios empty = {};
+  EXPECT_EQ(independent, empty);
+}
+
+TEST(BasicPtyTest, LockedTermiosPermissionBeforePointer) {
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  AutoCapability no_admin(CAP_SYS_ADMIN, false);
+  AutoCapability no_checkpoint_restore(CAP_CHECKPOINT_RESTORE, false);
+  for (int fd : {master.get(), replica.get()}) {
+    EXPECT_THAT(ioctl(fd, TIOCSLCKTRMIOS, reinterpret_cast<void*>(1)),
+                SyscallFailsWithErrno(EPERM));
+  }
+}
+
+TEST(BasicPtyTest, LockedTermiosRawMasksAndBadPointersAreAtomic) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios raw = {};
+  raw.c_iflag = raw.c_oflag = raw.c_cflag = raw.c_lflag = 0xffffffffu;
+  raw.c_line = 0xff;
+  for (cc_t& c : raw.c_cc) {
+    c = 0xfe;
+  }
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &raw), SyscallSucceeds());
+  MaybeSave();
+  for (int fd : {master.get(), replica.get()}) {
+    EXPECT_THAT(ioctl(fd, TIOCGLCKTRMIOS, reinterpret_cast<void*>(1)),
+                SyscallFailsWithErrno(EFAULT));
+    EXPECT_THAT(ioctl(fd, TIOCSLCKTRMIOS, reinterpret_cast<void*>(1)),
+                SyscallFailsWithErrno(EFAULT));
+    kernel_termios actual = {};
+    ASSERT_THAT(ioctl(fd, TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+    EXPECT_EQ(actual, raw);
+  }
+  const kernel_termios empty = {};
+  ASSERT_THAT(ioctl(replica.get(), TIOCSLCKTRMIOS, &empty), SyscallSucceeds());
+  kernel_termios actual = {};
+  ASSERT_THAT(ioctl(master.get(), TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+  EXPECT_EQ(actual, empty);
+}
+
+TEST(BasicPtyTest, LockedTermiosUnprivilegedSetterPreservesMasks) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios locked = {};
+  locked.c_lflag = ECHO;
+  locked.c_cc[VINTR] = 0x80;
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+  const CapSet original = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+  const Cleanup restore([&] { EXPECT_NO_ERRNO(SetCapabilitySets(original)); });
+  CapSet unprivileged = original;
+  unprivileged.effective = 0;
+  ASSERT_NO_ERRNO(SetCapabilitySets(unprivileged));
+  const kernel_termios empty = {};
+  for (int fd : {master.get(), replica.get()}) {
+    EXPECT_THAT(ioctl(fd, TIOCSLCKTRMIOS, &empty),
+                SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(ioctl(fd, TIOCSLCKTRMIOS, reinterpret_cast<void*>(1)),
+                SyscallFailsWithErrno(EPERM));
+    kernel_termios actual = {};
+    ASSERT_THAT(ioctl(fd, TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+    EXPECT_EQ(actual, locked);
+  }
+}
+
+class LockedTermiosCapabilityTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(LockedTermiosCapabilityTest, EachCapabilityAloneAuthorizesSetter) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  const CapSet original = ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets());
+  const uint64_t selected = uint64_t{1} << GetParam();
+  SKIP_IF((original.permitted & selected) == 0);
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  const Cleanup restore([&] { EXPECT_NO_ERRNO(SetCapabilitySets(original)); });
+  CapSet single = original;
+  single.effective = selected;
+  ASSERT_NO_ERRNO(SetCapabilitySets(single));
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetCapabilitySets()).effective, selected);
+  kernel_termios locked = {};
+  locked.c_lflag = ICANON;
+  locked.c_cc[VEOF] = 0x80;
+  for (int fd : {master.get(), replica.get()}) {
+    ASSERT_THAT(ioctl(fd, TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+    MaybeSave();
+    EXPECT_THAT(ioctl(fd, TIOCSLCKTRMIOS, reinterpret_cast<void*>(1)),
+                SyscallFailsWithErrno(EFAULT));
+    kernel_termios actual = {};
+    ASSERT_THAT(ioctl(master.get(), TIOCGLCKTRMIOS, &actual),
+                SyscallSucceeds());
+    EXPECT_EQ(actual, locked);
+    ASSERT_THAT(ioctl(replica.get(), TIOCGLCKTRMIOS, &actual),
+                SyscallSucceeds());
+    EXPECT_EQ(actual, locked);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(LockedTermiosCapabilities, LockedTermiosCapabilityTest,
+                         ::testing::Values(CAP_SYS_ADMIN,
+                                           CAP_CHECKPOINT_RESTORE));
+
+TEST(BasicPtyTest, LockedTermiosChildUserNamespaceCannotSet) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios locked = {};
+  locked.c_lflag = ECHO;
+  locked.c_cc[VINTR] = 0x80;
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+  EXPECT_EQ(
+      ASSERT_NO_ERRNO_AND_VALUE(InForkedProcess([&] {
+        TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+        __user_cap_header_struct header = {_LINUX_CAPABILITY_VERSION_3, 0};
+        __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3] = {};
+        TEST_PCHECK(syscall(__NR_capget, &header, caps) == 0);
+        for (int cap : {CAP_SYS_ADMIN, CAP_CHECKPOINT_RESTORE}) {
+          TEST_CHECK((caps[CAP_TO_INDEX(cap)].effective & CAP_TO_MASK(cap)) !=
+                     0);
+        }
+        const kernel_termios empty = {};
+        for (int fd : {master.get(), replica.get()}) {
+          errno = 0;
+          TEST_CHECK(ioctl(fd, TIOCSLCKTRMIOS, &empty) == -1);
+          TEST_CHECK(errno == EPERM);
+          errno = 0;
+          TEST_CHECK(ioctl(fd, TIOCSLCKTRMIOS, reinterpret_cast<void*>(1)) ==
+                     -1);
+          TEST_CHECK(errno == EPERM);
+          kernel_termios actual = {};
+          TEST_PCHECK(ioctl(fd, TIOCGLCKTRMIOS, &actual) == 0);
+          TEST_CHECK(memcmp(&actual, &locked, sizeof(actual)) == 0);
+        }
+      })),
+      0);
+  kernel_termios actual = {};
+  ASSERT_THAT(ioctl(master.get(), TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+  EXPECT_EQ(actual, locked);
+}
+
+using LockedTermiosSetterParam = std::tuple<unsigned long, bool>;
+
+class LockedTermiosSetterTest
+    : public ::testing::TestWithParam<LockedTermiosSetterParam> {};
+
+TEST_P(LockedTermiosSetterTest, MasksAcrossBothEndpoints) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  const unsigned long command = std::get<0>(GetParam());
+  const int fd = std::get<1>(GetParam()) ? master.get() : replica.get();
+  kernel_termios locked = {};
+  locked.c_iflag = IGNBRK | IGNCR;
+  locked.c_oflag = OPOST;
+  locked.c_cflag = CLOCAL;
+  locked.c_lflag = ECHO | ICANON;
+  locked.c_line = 2;
+  for (int index : {VINTR, VMIN, VLNEXT}) {
+    locked.c_cc[index] = 0x80;
+  }
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+  kernel_termios before = {};
+  ASSERT_THAT(ioctl(fd, TCGETS, &before), SyscallSucceeds());
+  kernel_termios2 request = {};
+  ASSERT_THAT(ioctl(fd, TCGETS2, &request), SyscallSucceeds());
+  request.c_iflag ^= locked.c_iflag | IXOFF;
+  request.c_oflag ^= locked.c_oflag | ONLCR;
+  request.c_cflag ^= locked.c_cflag | HUPCL;
+  request.c_lflag ^= locked.c_lflag | ECHONL;
+  request.c_line ^= 1;
+  for (int index : {VINTR, VMIN, VLNEXT, VEOF}) {
+    request.c_cc[index] ^= 0xff;
+  }
+  kernel_termios legacy_request = {};
+  memcpy(&legacy_request, &request, sizeof(legacy_request));
+  const void* argument = command > 0xffff ? static_cast<void*>(&request)
+                                          : static_cast<void*>(&legacy_request);
+  MaybeSave();
+  ASSERT_THAT(ioctl(fd, command, argument), SyscallSucceeds());
+  kernel_termios after = {};
+  ASSERT_THAT(ioctl(fd, TCGETS, &after), SyscallSucceeds());
+  EXPECT_EQ(after.c_iflag & locked.c_iflag, before.c_iflag & locked.c_iflag);
+  EXPECT_EQ(after.c_oflag & locked.c_oflag, before.c_oflag & locked.c_oflag);
+  EXPECT_EQ(after.c_cflag & locked.c_cflag, before.c_cflag & locked.c_cflag);
+  EXPECT_EQ(after.c_lflag & locked.c_lflag, before.c_lflag & locked.c_lflag);
+  EXPECT_EQ(after.c_iflag & IXOFF, request.c_iflag & IXOFF);
+  EXPECT_EQ(after.c_oflag & ONLCR, request.c_oflag & ONLCR);
+  EXPECT_EQ(after.c_cflag & HUPCL, request.c_cflag & HUPCL);
+  EXPECT_EQ(after.c_lflag & ECHONL, request.c_lflag & ECHONL);
+  EXPECT_EQ(after.c_line, before.c_line);
+  for (int index : {VINTR, VMIN, VLNEXT}) {
+    EXPECT_EQ(after.c_cc[index], before.c_cc[index]);
+  }
+  EXPECT_EQ(after.c_cc[VEOF], request.c_cc[VEOF]);
+  for (int endpoint : {master.get(), replica.get()}) {
+    kernel_termios actual = {};
+    ASSERT_THAT(ioctl(endpoint, TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+    EXPECT_EQ(actual, locked);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    LockedTermiosSetters, LockedTermiosSetterTest,
+    ::testing::Combine(::testing::Values(static_cast<unsigned long>(TCSETS),
+                                         static_cast<unsigned long>(TCSETSW),
+                                         static_cast<unsigned long>(TCSETSF),
+                                         static_cast<unsigned long>(TCSETS2),
+                                         static_cast<unsigned long>(TCSETSW2),
+                                         static_cast<unsigned long>(TCSETSF2)),
+                       ::testing::Values(false, true)));
+
+TEST(BasicPtyTest, LockedTermiosCanonicalQueueAndFlush) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios request = {};
+  ASSERT_THAT(ioctl(replica.get(), TCGETS, &request), SyscallSucceeds());
+  request.c_lflag |= ICANON | ECHO;
+  ASSERT_THAT(ioctl(replica.get(), TCSETS, &request), SyscallSucceeds());
+  kernel_termios locked = {};
+  locked.c_lflag = ICANON;
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &locked), SyscallSucceeds());
+  ASSERT_THAT(WriteFd(master.get(), "discard-this", 12),
+              SyscallSucceedsWithValue(12));
+  char echoed[12] = {};
+  // Receipt of the echo proves that input processing reached the half-line.
+  ExpectReadable(master, sizeof(echoed), echoed);
+  ASSERT_EQ(memcmp(echoed, "discard-this", sizeof(echoed)), 0);
+  request.c_lflag &= ~ICANON;
+  ASSERT_THAT(ioctl(replica.get(), TCSETS, &request), SyscallSucceeds());
+  char byte;
+  EXPECT_THAT(ReadFd(replica.get(), &byte, 1), SyscallFailsWithErrno(EAGAIN));
+  MaybeSave();
+  ASSERT_THAT(ioctl(master.get(), TCSETSF, &request), SyscallSucceeds());
+  ASSERT_THAT(WriteFd(master.get(), "next\n", 5), SyscallSucceedsWithValue(5));
+  char line[5] = {};
+  ExpectReadable(replica, sizeof(line), line);
+  EXPECT_EQ(memcmp(line, "next\n", sizeof(line)), 0);
+  char newline_echo[6] = {};
+  ExpectReadable(master, sizeof(newline_echo), newline_echo);
+  EXPECT_EQ(memcmp(newline_echo, "next\r\n", sizeof(newline_echo)), 0);
+  ASSERT_THAT(WriteFd(master.get(), "partial", 7), SyscallSucceedsWithValue(7));
+  char half_line_echo[7] = {};
+  ExpectReadable(master, sizeof(half_line_echo), half_line_echo);
+  ASSERT_EQ(memcmp(half_line_echo, "partial", sizeof(half_line_echo)), 0);
+  EXPECT_THAT(ReadFd(replica.get(), &byte, 1), SyscallFailsWithErrno(EAGAIN));
+  const kernel_termios empty = {};
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &empty), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica.get(), TCSETS, &request), SyscallSucceeds());
+  char raw[7] = {};
+  ExpectReadable(replica, sizeof(raw), raw);
+  EXPECT_EQ(memcmp(raw, "partial", sizeof(raw)), 0);
+}
+
+TEST(BasicPtyTest, LockedTermiosReplaceAndClearMasks) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(InInitialUserNamespace()));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)) &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHECKPOINT_RESTORE)));
+  FileDescriptor master =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(kMasterPath, O_RDWR | O_NOCTTY));
+  FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master));
+  kernel_termios first = {};
+  first.c_lflag = ECHO;
+  first.c_cc[VINTR] = 0x80;
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &first), SyscallSucceeds());
+  MaybeSave();
+  kernel_termios second = {};
+  second.c_iflag = IGNCR;
+  second.c_cc[VEOF] = 1;
+  ASSERT_THAT(ioctl(replica.get(), TIOCSLCKTRMIOS, &second), SyscallSucceeds());
+  MaybeSave();
+  kernel_termios actual = {};
+  ASSERT_THAT(ioctl(master.get(), TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+  EXPECT_EQ(actual, second);
+  const kernel_termios empty = {};
+  ASSERT_THAT(ioctl(master.get(), TIOCSLCKTRMIOS, &empty), SyscallSucceeds());
+  ASSERT_THAT(ioctl(replica.get(), TIOCGLCKTRMIOS, &actual), SyscallSucceeds());
+  EXPECT_EQ(actual, empty);
 }
 
 TEST(BasicPtyTest, OpenMasterReplica) {
