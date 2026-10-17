@@ -15,8 +15,11 @@
 package tests
 
 import (
+	"bytes"
 	"math/rand"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func TestEmptyStruct(t *testing.T) {
@@ -74,6 +77,7 @@ func TestEmbeddedPointers(t *testing.T) {
 	oa := outerArray{[2]inner{{magic()}, {magic()}}}
 	osl := outerSlice{oa.inner[:]}
 	ofv := outerFieldValue{innerFieldValue{magic()}}
+	one := [1]inner{{magic()}}
 
 	runTestCases(t, false, "embedded-pointers", []any{
 		system{&ofs, &ofs.inner},
@@ -96,7 +100,50 @@ func TestEmbeddedPointers(t *testing.T) {
 		system{&osl, &oa},
 		system{&ofv, &ofv.inner},
 		system{&ofv.inner, &ofv},
+		system{&one, &one[0]},
+		system{&one[0], &one},
 	})
+}
+
+func TestZeroSizedFieldPointers(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		child func(*zeroSizedFields) any
+	}{
+		{"leading", func(p *zeroSizedFields) any { return &p.leading }},
+		{"duplicate", func(p *zeroSizedFields) any { return &p.duplicate }},
+		{"other_type", func(p *zeroSizedFields) any { return &p.other }},
+		{"nested", func(p *zeroSizedFields) any { return &p.nested.child }},
+		{"array_element", func(p *zeroSizedFields) any { return &p.array[1] }},
+	} {
+		for _, order := range []string{"child_first", "parent_first"} {
+			t.Run(test.name+"/"+order, func(t *testing.T) {
+				parent := &zeroSizedFields{value: 23}
+				graph := system{v1: test.child(parent), v2: parent}
+				if order == "parent_first" {
+					graph.v1, graph.v2 = graph.v2, graph.v1
+				}
+				var encoded bytes.Buffer
+				if _, err := state.Save(t.Context(), &encoded, &graph); err != nil {
+					t.Fatal(err)
+				}
+				var loaded system
+				if _, err := state.Load(t.Context(), &encoded, &loaded); err != nil {
+					t.Fatal(err)
+				}
+				if order == "parent_first" {
+					loaded.v1, loaded.v2 = loaded.v2, loaded.v1
+				}
+				restoredParent := loaded.v2.(*zeroSizedFields)
+				if got, want := loaded.v1, test.child(restoredParent); got != want {
+					t.Errorf("interior pointer = %p, want %p", got, want)
+				}
+				if got, want := restoredParent.value, int64(23); got != want {
+					t.Errorf("parent value = %d, want %d", got, want)
+				}
+			})
+		}
+	}
 }
 
 func TestMultiNameFields(t *testing.T) {

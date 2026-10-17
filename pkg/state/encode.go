@@ -142,38 +142,7 @@ type encodeState struct {
 //
 // Precondition: parent and child must occupy the same memory.
 func isSameSizeParent(parent reflect.Value, childType reflect.Type) bool {
-	switch parent.Kind() {
-	case reflect.Struct:
-		for i := 0; i < parent.NumField(); i++ {
-			field := parent.Field(i)
-			if field.Type() == childType {
-				return true
-			}
-			// Recurse through any intermediate types.
-			if isSameSizeParent(field, childType) {
-				return true
-			}
-			// Does it make sense to keep going if the first field
-			// doesn't match? Yes, because there might be an
-			// arbitrary number of zero-sized fields before we get
-			// a match, and childType itself can be zero-sized.
-		}
-		return false
-	case reflect.Array:
-		// The only case where an array with more than one elements can
-		// return true is if childType is zero-sized. In such cases,
-		// it's ambiguous which element contains the match since a
-		// zero-sized child object fully fits in any of the zero-sized
-		// elements in an array... However since all elements are of
-		// the same type, we only need to check one element.
-		//
-		// For non-zero-sized childTypes, parent.Len() must be 1, but a
-		// combination of the precondition and an implicit comparison
-		// between the array element size and childType ensures this.
-		return parent.Len() > 0 && isSameSizeParent(parent.Index(0), childType)
-	default:
-		return false
-	}
+	return findTraversal(parent.Type(), childType, 0, nil)
 }
 
 // nextID returns the next valid ID.
@@ -252,10 +221,8 @@ func (es *encodeState) resolve(obj reflect.Value, ref *wire.Ref) {
 			// address map.  We add this to the dedicated
 			// zeroValues.
 			//
-			// Note that zero-sized objects must be *true*
-			// zero-sized objects. They cannot be part of some
-			// larger object. In that case, they are assigned a
-			// 1-byte address at the end of the object.
+			// Interior zero-sized fields with other addresses are
+			// represented by a one-byte range in the address map below.
 			oes, ok := es.zeroValues[typ]
 			if !ok {
 				oes = &objectEncodeState{
@@ -398,49 +365,56 @@ func (es *encodeState) resolve(obj reflect.Value, ref *wire.Ref) {
 // Precondition: The target object must lie completely within the range defined
 // by [rootAddr, rootAddr + sizeof(rootType)].
 func traverse(rootType, targetType reflect.Type, rootAddr, targetAddr uintptr) []wire.Dot {
-	// Recursion base case: the types actually match.
-	if targetType == rootType && targetAddr == rootAddr {
-		return nil
+	var dots []wire.Dot
+	if findTraversal(rootType, targetType, targetAddr-rootAddr, &dots) {
+		return dots
 	}
+	Failf("traverse failed for root type %v @%x and target type %v @%x", rootType, rootAddr, targetType, targetAddr)
+	panic("unreachable")
+}
 
+// findTraversal searches for targetType at offset within rootType. If dots is
+// non-nil, it appends the matching path in reverse order. Containment checks
+// can omit dots without allocating a path that would immediately be discarded.
+func findTraversal(rootType, targetType reflect.Type, offset uintptr, dots *[]wire.Dot) bool {
+	if offset > rootType.Size() || targetType.Size() > rootType.Size()-offset {
+		return false
+	}
+	if targetType == rootType && offset == 0 {
+		return true
+	}
 	switch rootType.Kind() {
 	case reflect.Struct:
-		offset := targetAddr - rootAddr
 		for i := rootType.NumField(); i > 0; i-- {
 			field := rootType.Field(i - 1)
-			// The first field from the end with an offset that is
-			// smaller than or equal to our address offset is where
-			// the target is located. Traverse from there.
-			if field.Offset <= offset {
-				dots := traverse(field.Type, targetType, rootAddr+field.Offset, targetAddr)
-				fieldName := wire.FieldName(field.Name)
-				return append(dots, &fieldName)
+			// Zero-sized fields can share an offset with other fields. An
+			// address match alone does not identify the target's type.
+			if field.Offset <= offset && findTraversal(field.Type, targetType, offset-field.Offset, dots) {
+				if dots != nil {
+					fieldName := wire.FieldName(field.Name)
+					*dots = append(*dots, &fieldName)
+				}
+				return true
 			}
 		}
-		// Should never happen; the target should be reachable.
-		Failf("no field in root type %v contains target type %v", rootType, targetType)
-
 	case reflect.Array:
-		// Since arrays have homogeneous types, all elements have the
-		// same size and we can compute where the target lives. This
-		// does not matter for the purpose of typing, but matters for
-		// the purpose of computing the address of the given index.
-		elemSize := int(rootType.Elem().Size())
-		n := int(targetAddr-rootAddr) / elemSize // Relies on integer division rounding down.
-		if rootType.Len() < n {
-			Failf("traversal target of type %v @%x is beyond the end of the array type %v @%x with %v elements",
-				targetType, targetAddr, rootType, rootAddr, rootType.Len())
+		if rootType.Len() == 0 {
+			return false
 		}
-		dots := traverse(rootType.Elem(), targetType, rootAddr+uintptr(n*elemSize), targetAddr)
-		return append(dots, wire.Index(n))
-
-	default:
-		// For any other type, there's no possibility of aliasing so if
-		// the types didn't match earlier then we have an address
-		// collision which shouldn't be possible at this point.
-		Failf("traverse failed for root type %v and target type %v", rootType, targetType)
+		index := uintptr(0)
+		if size := rootType.Elem().Size(); size != 0 {
+			index, offset = offset/size, offset%size
+		}
+		// Zero-sized elements all share an address; any matching element
+		// represents the same pointer. Use element zero without division.
+		if index < uintptr(rootType.Len()) && findTraversal(rootType.Elem(), targetType, offset, dots) {
+			if dots != nil {
+				*dots = append(*dots, wire.Index(index))
+			}
+			return true
+		}
 	}
-	panic("unreachable")
+	return false
 }
 
 // mapScalarSlot allocates reusable iterator storage for values that encodeObject
