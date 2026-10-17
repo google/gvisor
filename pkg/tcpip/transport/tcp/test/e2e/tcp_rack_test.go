@@ -255,51 +255,70 @@ func TestRACKTLPRecovery(t *testing.T) {
 // case of a tail loss. This simulates a situation where either the TLP or its
 // ACK is lost. The sender should retransmit when RTO fires.
 func TestRACKTLPFallbackRTO(t *testing.T) {
-	c := context.New(t, uint32(mtu))
-	defer c.Cleanup()
+	for _, algorithm := range []string{"reno", "cubic"} {
+		t.Run(algorithm, func(t *testing.T) {
+			c := context.New(t, uint32(mtu))
+			defer c.Cleanup()
 
-	// Send 8 packets.
-	numPackets := 8
-	data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, true /* enableRACK */)
-
-	// Packets [6-8] are lost. Send cumulative ACK for [1-5].
-	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	bytesRead := 5 * maxPayload
-	c.SendAck(seq, bytesRead)
-
-	// PTO should fire and send #8 packet as a TLP.
-	c.ReceiveAndCheckPacketWithOptions(data, 7*maxPayload, maxPayload, e2e.TSOptionSize)
-
-	// Either the TLP or the ACK the receiver sent with SACK blocks was lost.
-
-	// Confirm that RTO fires and retransmits packet #6.
-	c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, e2e.TSOptionSize)
-
-	metricPollFn := func() error {
-		tcpStats := c.Stack().Stats().TCP
-		stats := []struct {
-			stat *tcpip.StatCounter
-			name string
-			want uint64
-		}{
-			// No fast retransmits happened.
-			{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 0},
-			// No SACK recovery happened.
-			{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 0},
-			// TLP was unsuccessful.
-			{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery", 0},
-			// RTO should have fired.
-			{tcpStats.Timeouts, "stats.TCP.Timeouts", 1},
-		}
-		for _, s := range stats {
-			if got, want := s.stat.Value(), s.want; got != want {
-				return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+			cc := tcpip.CongestionControlOption(algorithm)
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+				t.Fatalf("SetTransportProtocolOption(%s): %s", algorithm, err)
 			}
-		}
-		return nil
-	}
-	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
-		t.Error(err)
+
+			// Send 8 packets.
+			numPackets := 8
+			data := e2e.SendAndReceiveWithSACK(t, c, maxPayload, numPackets, true /* enableRACK */)
+
+			// Packets [6-8] are lost. Send cumulative ACK for [1-5].
+			seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+			bytesRead := 5 * maxPayload
+			c.SendAck(seq, bytesRead)
+
+			// PTO should fire and send #8 packet as a TLP.
+			c.ReceiveAndCheckPacketWithOptions(data, 7*maxPayload, maxPayload, e2e.TSOptionSize)
+
+			// Either the TLP or the ACK the receiver sent with SACK blocks was lost.
+
+			// Confirm that RTO fires and retransmits packet #6.
+			c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, e2e.TSOptionSize)
+
+			metricPollFn := func() error {
+				tcpStats := c.Stack().Stats().TCP
+				stats := []struct {
+					stat *tcpip.StatCounter
+					name string
+					want uint64
+				}{
+					// No fast retransmits happened.
+					{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit", 0},
+					// No SACK recovery happened.
+					{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery", 0},
+					// TLP was unsuccessful.
+					{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery", 0},
+					// RTO should have fired.
+					{tcpStats.Timeouts, "stats.TCP.Timeouts", 1},
+				}
+				for _, s := range stats {
+					if got, want := s.stat.Value(), s.want; got != want {
+						return fmt.Errorf("got %s.Value() = %d, want = %d", s.name, got, want)
+					}
+				}
+				return nil
+			}
+			if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+				t.Error(err)
+			}
+
+			// ACK the retransmission and drain the rest of the original flight.
+			// Reaching the RTO alone would not detect a sender stuck in recovery.
+			bytesRead += maxPayload
+			c.SendAck(seq, bytesRead)
+			for bytesRead < len(data) {
+				c.ReceiveAndCheckPacketWithOptions(data, bytesRead, maxPayload, e2e.TSOptionSize)
+				bytesRead += maxPayload
+			}
+			c.SendAck(seq, bytesRead)
+		})
 	}
 }
 

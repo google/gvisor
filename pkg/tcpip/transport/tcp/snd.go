@@ -528,6 +528,11 @@ func (s *sender) resendSegment() {
 		s.FastRecovery.HighRxt = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())) - 1
 		s.FastRecovery.RescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())) - 1
 		s.sendSegment(seg)
+		// An RTO can rewind writeNext to this segment. It has now been
+		// retransmitted, so sendData must not immediately send it again.
+		if s.writeNext == seg {
+			s.updateWriteNext(seg.Next())
+		}
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
 		s.ep.stats.SendErrors.FastRetransmit.Increment()
 
