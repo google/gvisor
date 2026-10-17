@@ -55,9 +55,9 @@ import (
 	"gvisor.dev/gvisor/tools/checkaligned"
 	"gvisor.dev/gvisor/tools/checkconst"
 	"gvisor.dev/gvisor/tools/checkescape"
+	"gvisor.dev/gvisor/tools/checkimports"
 	"gvisor.dev/gvisor/tools/checklinkname"
 	"gvisor.dev/gvisor/tools/checklocks"
-	"gvisor.dev/gvisor/tools/checkunsafe"
 )
 
 // binaryAnalyzer is a special class of analyzer which supports an additional
@@ -175,7 +175,7 @@ func init() {
 	register(allAnalyzers, &plainAnalyzer{unusedresult.Analyzer})
 	register(allAnalyzers, checkescape.Analyzer)
 	register(allAnalyzers, &plainAnalyzer{checkconst.Analyzer})
-	register(allAnalyzers, &plainAnalyzer{checkunsafe.Analyzer})
+	register(allAnalyzers, &plainAnalyzer{checkimports.Analyzer})
 	register(allAnalyzers, &plainAnalyzer{checklinkname.Analyzer})
 	register(allAnalyzers, &plainAnalyzer{checklocks.Analyzer})
 	register(allAnalyzers, &plainAnalyzer{checkaligned.Analyzer})
