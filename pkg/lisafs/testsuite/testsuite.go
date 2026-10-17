@@ -19,6 +19,7 @@ package testsuite
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -80,6 +81,7 @@ var localFSTests = map[string]TestFunc{
 	"Mknod":           testMknod,
 	"UDS":             testUDS,
 	"Getdents":        testGetdents,
+	"GetdentsLarge":   testGetdentsLarge,
 }
 
 // RunTest runs the passed test function as a subtest.
@@ -709,5 +711,59 @@ func testGetdents(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 		if uint32(dirent.DevMajor) != stat.DevMajor {
 			t.Errorf("dirent dev major of %s is incorrect: want %d, got %d", dirent.Name, stat.DevMajor, dirent.DevMajor)
 		}
+	}
+}
+
+// testGetdentsLarge checks that getdents with an unbounded count on a large
+// directory fails cleanly, while a bounded count returns all dirents across
+// multiple calls.
+func testGetdentsLarge(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {
+	tempDir, _ := mkdir(ctx, t, root, "tempDir")
+	defer closeFD(ctx, t, tempDir)
+	defer unlinkFile(ctx, t, root, "tempDir", true /* isDir */)
+
+	// Create enough files with long names that all their dirents do not fit
+	// in a single message.
+	n := 8000
+	names := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("%0250d", i)
+		newFile, _ := mknod(ctx, t, tempDir, name)
+		closeFD(ctx, t, newFile)
+		names[name] = struct{}{}
+	}
+	defer func() {
+		for name := range names {
+			unlinkFile(ctx, t, tempDir, name, false /* isDir */)
+		}
+	}()
+
+	openDirFile, dirHostFD := openFile(ctx, t, tempDir, unix.O_RDONLY, false /* isReg */)
+	unix.Close(dirHostFD)
+	defer closeFD(ctx, t, openDirFile)
+
+	if _, err := openDirFile.Getdents64(ctx, math.MinInt32); err == nil {
+		t.Errorf("getdents with unbounded count succeeded, want error")
+	}
+
+	got := 0
+	count := int32(-64 * 1024)
+	for i := 0; i < n+2; i++ {
+		gotDirents, err := openDirFile.Getdents64(ctx, count)
+		if err != nil {
+			t.Fatalf("getdents failed: %v", err)
+		}
+		if len(gotDirents) == 0 {
+			break
+		}
+		count = 64 * 1024
+		for _, dirent := range gotDirents {
+			if _, ok := names[string(dirent.Name)]; ok {
+				got++
+			}
+		}
+	}
+	if got != n {
+		t.Errorf("got incorrect number of dirents: wanted %d, got %d", n, got)
 	}
 }
