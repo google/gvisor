@@ -62,6 +62,29 @@ while to run.)
 $ bazel test //test/syscalls/...
 ```
 
+## Linux kernels used by CI
+
+Our [CI pipeline][syscall-jobs] runs syscall tests on AMD64 and ARM64 workers,
+release-candidate Linux kernels on both architectures, and ARM64 kernels with 64
+KiB pages. Release-candidate workers track the latest
+[Ubuntu mainline kernel builds][mainline-kernels].
+
+The [Bazel configurations][syscall-filters] select native Linux and gVisor tests
+on AMD64, ptrace and systrap tests on ARM64, and systrap tests in the ARM64 64
+KiB lane. Release-candidate and 64 KiB jobs run on `master`; use a recent
+[master pipeline run][master-runs] when checking those configurations.
+
+Worker provisioning is managed separately from this repository, and kernel
+versions change as worker images are updated. When investigating a
+kernel-dependent failure, use the job's Environment and Timeline tabs to
+identify its worker, and record that worker's kernel release (`uname -r`) with
+the test result.
+
+[syscall-jobs]: https://github.com/google/gvisor/blob/783e129aa/.buildkite/pipeline.yaml#L409-L453
+[syscall-filters]: https://github.com/google/gvisor/blob/783e129aa/.bazelrc#L48-L51
+[mainline-kernels]: https://kernel.ubuntu.com/mainline/
+[master-runs]: https://buildkite.com/gvisor/pipeline?branch=master
+
 ## Writing new tests
 
 Whenever we add support for a new syscall, or add support for a new argument or
