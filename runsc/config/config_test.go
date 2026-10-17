@@ -453,6 +453,14 @@ func TestValidationFail(t *testing.T) {
 			},
 			error: "names platform \"kvm\" more than once",
 		},
+		{
+			name: "platform_device_path:auto-single-path",
+			flags: map[string]string{
+				"platform":             PlatformAuto,
+				"platform_device_path": "/dev/kvm2",
+			},
+			error: "--platform=auto accepts only --platform_device_path={platform}={path}",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -497,6 +505,26 @@ func TestPlatformDeviceFor(t *testing.T) {
 				t.Errorf("PlatformDeviceFor(%q) with --platform_device_path=%q = %q, want %q", tc.platform, tc.flag, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPlatformAutoAcceptsDevicePairs(t *testing.T) {
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	for name, val := range map[string]string{
+		"platform":             PlatformAuto,
+		"platform_device_path": "kvm=/dev/kvm2",
+	} {
+		if err := testFlags.Lookup(name).Value.Set(val); err != nil {
+			t.Fatalf("%s=%q: %v", name, val, err)
+		}
+	}
+	c, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatalf("NewFromFlags() failed: %v", err)
+	}
+	if got, want := c.PlatformDeviceFor("kvm"), "/dev/kvm2"; got != want {
+		t.Errorf("PlatformDeviceFor(%q) = %q, want %q", "kvm", got, want)
 	}
 }
 

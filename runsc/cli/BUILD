@@ -20,6 +20,7 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sync",
+        "//runsc/autoplatform",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",
