@@ -24,8 +24,10 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/test/e2e"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
@@ -961,45 +963,246 @@ func TestRACKWithDuplicateACK(t *testing.T) {
 	}
 }
 
-// TestRACKUpdateSackedOut tests the sacked out field is updated when a SACK
-// is received.
+// TestRACKUpdateSackedOut checks selective ACK credit across cumulative ACKs,
+// recovery, retransmission timeout, and GSO queue fragmentation.
 func TestRACKUpdateSackedOut(t *testing.T) {
-	probeDone := make(chan struct{})
-	ackNum := 0
-	probe := func(state *tcp.TCPEndpointState) {
-		// Validate that the endpoint Sender.SackedOut is what we expect.
-		if state.Sender.SackedOut != 2 && ackNum == 0 {
-			t.Fatalf("SackedOut got updated to wrong value got: %v want: 2", state.Sender.SackedOut)
-		}
-
-		if !state.Sender.FastRecovery.Active && state.Sender.SackedOut != 0 && ackNum == 1 {
-			t.Fatalf("SackedOut got updated to wrong value got: %v want: 0", state.Sender.SackedOut)
-		}
-
-		if ackNum > 0 {
-			close(probeDone)
-		}
-		ackNum++
-	}
-
-	c := context.NewWithProbe(t, uint32(mtu), probe)
-	defer c.Cleanup()
-
-	e2e.SendAndReceiveWithSACK(t, c, maxPayload, 8 /* numPackets */, true /* enableRACK */)
-
-	// ACK for [3-5] packets.
+	data := make([]byte, 5*maxPayload)
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-	start := c.IRS.Add(seqnum.Size(1 + 3*maxPayload))
-	bytesRead := 2 * maxPayload
-	end := start.Add(seqnum.Size(bytesRead))
-	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{start, end}})
+	newContext := func(t *testing.T, recovery tcpip.TCPRecovery, gso stack.SupportedGSO) (*context.Context, *faketime.ManualClock, func() *tcp.TCPEndpointState) {
+		t.Helper()
+		clock := faketime.NewManualClock()
+		// Keep transmission times distinct from unset RACK timestamps.
+		clock.Advance(time.Second)
+		states := make(chan *tcp.TCPEndpointState, 16)
+		c := context.NewWithOpts(t, context.Options{
+			EnableV4: true,
+			MTU:      uint32(mtu),
+			Clock:    clock,
+			GSO:      gso,
+			Probe:    func(state *tcp.TCPEndpointState) { states <- state },
+		})
+		t.Cleanup(c.Cleanup)
+		e2e.SetStackSACKPermitted(t, c, true)
+		e2e.SetStackTCPRecovery(t, c, int(recovery))
+		e2e.CreateConnectedWithSACKAndTS(c)
+		n, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{})
+		if err != nil {
+			t.Fatalf("Write: %s", err)
+		}
+		if got, want := n, int64(len(data)); got != want {
+			t.Fatalf("Write = %d, want %d", got, want)
+		}
+		for offset := 0; offset < len(data); offset += maxPayload {
+			c.ReceiveAndCheckPacketWithOptions(data, offset, maxPayload, e2e.TSOptionSize)
+		}
+		snapshot := func() *tcp.TCPEndpointState {
+			c.Stack().Pause()
+			c.Stack().Resume()
+			return <-states
+		}
+		// Acknowledge packet 1 before reporting the gap at packet 2. This
+		// advances past the initial recovery boundary and supplies an RTT.
+		clock.Advance(100 * time.Millisecond)
+		c.SendAck(seq, maxPayload)
+		if got, want := snapshot().Sender.SackedOut, 0; got != want {
+			t.Fatalf("SackedOut after first ACK = %d, want %d", got, want)
+		}
+		return c, clock, snapshot
+	}
+	checkCredit := func(t *testing.T, phase string, state *tcp.TCPEndpointState, expected int) {
+		t.Helper()
+		if got, want := state.Sender.SackedOut, expected; got != want {
+			t.Errorf("SackedOut after %s = %d, want %d", phase, got, want)
+		}
+	}
+	// Packet checkers stop on any prior test failure. Each scenario finishes
+	// its packet reads before comparing the captured states.
+	t.Run("two_sacks", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GSONotSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(maxPayload)}})
+		one := snapshot()
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(2 * maxPayload)}})
+		two := snapshot()
+		c.SendAck(seq, 3*maxPayload)
+		partial := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
 
-	bytesRead += 3 * maxPayload
-	c.SendAck(seq, bytesRead)
+		checkCredit(t, "first SACK", one, 1)
+		checkCredit(t, "second SACK", two, 2)
+		checkCredit(t, "partial cumulative ACK", partial, 1)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+		if got, want := two.Sender.FastRecovery.Active, false; got != want {
+			t.Errorf("FastRecovery.Active after two SACKs = %t, want %t", got, want)
+		}
+		if got, want := partial.Sender.Outstanding, 2; got != want {
+			t.Errorf("Outstanding after partial cumulative ACK = %d, want %d", got, want)
+		}
+	})
+	t.Run("without_rack", func(t *testing.T) {
+		c, _, snapshot := newContext(t, 0, stack.GSONotSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(maxPayload)}})
+		one := snapshot()
+		// Three full packets beyond the gap exceed the RFC 6675 byte
+		// threshold, without needing a third duplicate ACK.
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(3 * maxPayload)}})
+		recovered := snapshot()
+		c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+		c.SendAck(seq, len(data))
+		complete := snapshot()
 
-	// Wait for the probe function to finish processing the ACK before the
-	// test completes.
-	<-probeDone
+		checkCredit(t, "first SACK without RACK", one, 1)
+		checkCredit(t, "recovery without RACK", recovered, 3)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+		if got, want := one.Sender.FastRecovery.Active, false; got != want {
+			t.Errorf("FastRecovery.Active after first SACK = %t, want %t", got, want)
+		}
+		if got, want := recovered.Sender.FastRecovery.Active, true; got != want {
+			t.Errorf("FastRecovery.Active after three packets are SACKed = %t, want %t", got, want)
+		}
+	})
+	t.Run("recovery", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GSONotSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		var recovered *tcp.TCPEndpointState
+		for count := 1; count <= 3; count++ {
+			c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(seqnum.Size(count * maxPayload))}})
+			recovered = snapshot()
+		}
+		c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "recovery entry", recovered, 3)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+		if got, want := recovered.Sender.FastRecovery.Active, true; got != want {
+			t.Errorf("FastRecovery.Active after three SACKs = %t, want %t", got, want)
+		}
+		if got, want := complete.Sender.FastRecovery.Active, false; got != want {
+			t.Errorf("FastRecovery.Active after full ACK = %t, want %t", got, want)
+		}
+	})
+	t.Run("timeout", func(t *testing.T) {
+		c, clock, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GSONotSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		var recovered *tcp.TCPEndpointState
+		for count := 1; count <= 3; count++ {
+			c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(seqnum.Size(count * maxPayload))}})
+			recovered = snapshot()
+		}
+		c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+		var info tcpip.TCPInfoOption
+		if err := c.EP.GetSockOpt(&info); err != nil {
+			t.Fatalf("GetSockOpt(TCPInfoOption): %s", err)
+		}
+		clock.Advance(info.RTO)
+		c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+		c.SendAck(seq, maxPayload)
+		timedOut := snapshot()
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(3 * maxPayload)}})
+		resacked := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "recovery entry", recovered, 3)
+		checkCredit(t, "RTO", timedOut, 0)
+		checkCredit(t, "SACK after RTO", resacked, 3)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+		// The duplicate ACK used to observe the reset can start another
+		// recovery. The timeout event and retransmission establish the RTO.
+		if got, want := c.Stack().Stats().TCP.Timeouts.Value(), uint64(1); got != want {
+			t.Errorf("RTO events = %d, want %d", got, want)
+		}
+	})
+	t.Run("disjoint_sacks", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GSONotSupported)
+		third, fifth := c.IRS.Add(1+2*maxPayload), c.IRS.Add(1+4*maxPayload)
+		// The highest/newest block comes first; both ranges need credit.
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{
+			{Start: fifth, End: fifth.Add(maxPayload)},
+			{Start: third, End: third.Add(maxPayload)},
+		})
+		sacked := snapshot()
+		c.SendAck(seq, 3*maxPayload)
+		partial := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "disjoint SACKs", sacked, 2)
+		checkCredit(t, "partial cumulative ACK", partial, 1)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+		if got, want := partial.Sender.Outstanding, 2; got != want {
+			t.Errorf("Outstanding after partial cumulative ACK = %d, want %d", got, want)
+		}
+	})
+	t.Run("overlapping_sacks_across_acks", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GVisorGSOSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		// Each ACK reports only part of packet 3. Together they cover the
+		// whole packet, so the retained merged range earns one credit.
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(6)}})
+		first := snapshot()
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start.Add(4), End: start.Add(maxPayload)}})
+		merged := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "partial packet SACK", first, 0)
+		checkCredit(t, "merged partial SACKs", merged, 1)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+	})
+	t.Run("overlapping_sacks_one_ack", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GVisorGSOSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{
+			{Start: start, End: start.Add(6)},
+			{Start: start.Add(4), End: start.Add(maxPayload)},
+		})
+		merged := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "merged SACKs in one ACK", merged, 1)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+	})
+	t.Run("overlapping_sacks_with_cumulative_ack", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GVisorGSOSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(6)}})
+		first := snapshot()
+		// Merge the rest of packet 3 while cumulatively acknowledging its
+		// first half. The remaining half keeps one current-MSS credit.
+		c.SendAckWithSACK(seq, 2*maxPayload+5, []header.SACKBlock{{Start: start.Add(6), End: start.Add(maxPayload)}})
+		trimmed := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "partial packet SACK", first, 0)
+		checkCredit(t, "merged range after simultaneous cumulative ACK", trimmed, 1)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+	})
+	t.Run("gso_partial_ack", func(t *testing.T) {
+		c, _, snapshot := newContext(t, tcpip.TCPRACKLossDetection, stack.GVisorGSOSupported)
+		start := c.IRS.Add(1 + 2*maxPayload)
+		// Software GSO sends ordinary packets from an aggregate write-list
+		// entry. One SACK covers two packets within it. The cumulative
+		// ACK then cuts the credited entry in half.
+		c.SendAckWithSACK(seq, maxPayload, []header.SACKBlock{{Start: start, End: start.Add(2 * maxPayload)}})
+		sacked := snapshot()
+		c.SendAck(seq, 3*maxPayload)
+		partial := snapshot()
+		c.SendAck(seq, len(data))
+		complete := snapshot()
+
+		checkCredit(t, "GSO SACK", sacked, 2)
+		checkCredit(t, "partial GSO cumulative ACK", partial, 1)
+		checkCredit(t, "full cumulative ACK", complete, 0)
+		if got, want := partial.Sender.Outstanding, 2; got != want {
+			t.Errorf("Outstanding after partial GSO cumulative ACK = %d, want %d", got, want)
+		}
+	})
 }
 
 // TestRACKWithWindowFull tests that RACK honors the receive window size.

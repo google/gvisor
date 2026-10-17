@@ -145,25 +145,32 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 	}
 }
 
-// IsSACKED returns true if the a given range of sequence numbers denoted by r
-// are already covered by SACK information in the scoreboard.
+// IsSACKED reports whether r is covered by SACK information in the scoreboard.
 func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
+	_, found := s.sackedBlock(r)
+	return found
+}
+
+// sackedBlock returns the retained merged range covering r, if one exists.
+func (s *SACKScoreboard) sackedBlock(r header.SACKBlock) (header.SACKBlock, bool) {
 	if s.Empty() {
-		return false
+		return header.SACKBlock{}, false
 	}
 
+	var block header.SACKBlock
 	found := false
 	s.ranges.DescendLessOrEqual(r, func(sacked header.SACKBlock) bool {
 		if sacked.End.LessThan(r.Start) {
 			return false
 		}
 		if sacked.Contains(r) {
+			block = sacked
 			found = true
 			return false
 		}
 		return true
 	})
-	return found
+	return block, found
 }
 
 // String returns human-readable state of the scoreboard structure.
