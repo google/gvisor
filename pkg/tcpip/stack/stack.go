@@ -1306,7 +1306,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 // precondition: s.mu is held.
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
-		Up:          true, // Netstack interfaces are always up.
+		Up:          nic.Enabled(),
 		Running:     nic.Enabled(),
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
@@ -1375,10 +1375,12 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 
 // NICStateFlags holds information about the state of an NIC.
 type NICStateFlags struct {
-	// Up indicates whether the interface is running.
+	// Up indicates whether the interface is administratively enabled
+	// (EnableNIC/DisableNIC).
 	Up bool
 
-	// Running indicates whether resources are allocated.
+	// Running indicates whether the interface is enabled and its link is
+	// operational.
 	Running bool
 
 	// Promiscuous indicates whether the interface is in promiscuous mode.
@@ -1488,6 +1490,11 @@ func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address
 //
 // +checklocksread:s.mu
 func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) *Route {
+	// Addresses of a disabled NIC are not local.
+	if !localAddressNIC.Enabled() {
+		return nil
+	}
+
 	localAddressEndpoint := localAddressNIC.getAddressOrCreateTempInner(netProto, localAddr, false /* createTemp */, NeverPrimaryEndpoint)
 	if localAddressEndpoint == nil {
 		return nil
@@ -1503,7 +1510,7 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 	// NICs.
 	if outgoingNIC == nil {
 		for _, nic := range s.nics {
-			if nic.hasAddress(netProto, remoteAddr) {
+			if nic.Enabled() && nic.hasAddress(netProto, remoteAddr) {
 				outgoingNIC = nic
 				break
 			}
@@ -1569,10 +1576,10 @@ func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, 
 	}
 
 	if localAddressNICID == 0 {
-		if s.loopbackNIC != nil {
+		if s.loopbackNIC != nil && s.loopbackNIC.Enabled() {
 			// Send all packets directed to local ip addresses through the loopback device.
 			for _, nic := range s.nics {
-				if !nic.hasAddress(netProto, remoteAddr) {
+				if !nic.Enabled() || !nic.hasAddress(netProto, remoteAddr) {
 					continue
 				}
 				if isSubnetBroadcastOnNIC(nic, netProto, remoteAddr) {
