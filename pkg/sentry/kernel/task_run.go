@@ -297,11 +297,17 @@ func (app *runApp) execute(t *Task) taskRunState {
 				}
 			}
 
-			// Fixup SIGSEGV err code if necessary; MProtect is capable of unmapping
-			// address ranges from the user process, in which case the initial
-			// signal may very well have appeared as SEGV_MAPERR, but we know better.
-			if sig == linux.SIGSEGV && err == linuxerr.EPERM {
-				info.Code = 2 // SEGV_ACCERR
+			// The platform's code describes the host or hardware fault, not our
+			// vmas (KVM reports every write or instruction fetch as SEGV_ACCERR).
+			// Derive it from the vma lookup like Linux's do_user_addr_fault():
+			// bad_area_nosemaphore() or bad_area_access_error().
+			if sig == linux.SIGSEGV {
+				switch err {
+				case linuxerr.EPERM:
+					info.Code = linux.SEGV_ACCERR
+				case linuxerr.EFAULT:
+					info.Code = linux.SEGV_MAPERR
+				}
 			}
 
 			if sig == linux.SIGSEGV && t.tg.sigsegvLockCount.Load() != 0 {
