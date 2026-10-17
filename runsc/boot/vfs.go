@@ -1054,7 +1054,12 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
-	case devpts.Name, dev.Name, cgroup2fs.Name:
+	case devpts.Name:
+		// /dev/ptmx is a symlink to pts/ptmx, so make ptmx usable by everyone, as
+		// container runtimes do. Linux and devpts default ptmxmode to 0000.
+		data = []string{"ptmxmode=0666"}
+
+	case dev.Name, cgroup2fs.Name:
 		// Nothing to do.
 
 	case sentryapi.Nonefs:

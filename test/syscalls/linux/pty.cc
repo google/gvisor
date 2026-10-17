@@ -552,6 +552,32 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+// Without the ptmxmode option, ptmx has mode 0000. See
+// fs/devpts/inode.c:DEVPTS_DEFAULT_PTMX_MODE.
+TEST(BasicPtyTest, DefaultPtmxMode) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("devpts_test", dir.path(), "devpts", 0, "newinstance", 0));
+
+  struct stat st;
+  ASSERT_THAT(stat(JoinPath(dir.path(), "ptmx").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0000 | S_IFCHR);
+}
+
+// In the sandbox, /dev/ptmx is a symlink to pts/ptmx, so /dev/pts must be
+// mounted with ptmxmode=0666 for unprivileged users to allocate ptys.
+TEST(BasicPtyTest, DevPtmxMode) {
+  // On Linux, /dev/ptmx is set up by the host or the container runtime.
+  SKIP_IF(!IsRunningOnGvisor());
+
+  struct stat st;
+  ASSERT_THAT(stat("/dev/ptmx", &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0666 | S_IFCHR);
+}
+
 TEST(BasicPtyTest, OpenDevTTY) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
