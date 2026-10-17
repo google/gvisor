@@ -551,6 +551,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 			if ioErr != nil {
 				return ioErr
 			}
+			bytesSaved += maFR.Length()
 		}
 		durPages := time.Duration(gohacks.Nanotime() - timePagesStart)
 		log.Infof("MemoryFile(%p): saved pages in %s (%d bytes, %.3f MB/s)", f, durPages, bytesSaved, float64(bytesSaved)*1e-6/durPages.Seconds())
