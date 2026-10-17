@@ -96,7 +96,12 @@ func lookupTypeInfo(typ reflect.Type) (wire.Type, bool) {
 		// unregistered embedded types and anonymous empty structs.
 		return wire.Type{}, false
 	}
-	return wire.Type{Name: t.StateTypeName(), Fields: t.StateFields()}, true
+	// Non-race builds do not record ordinary types in reverseTypeDatabase at
+	// registration time (see Register), so validate them here, once per type
+	// per save or restore.
+	info := wire.Type{Name: t.StateTypeName(), Fields: t.StateFields()}
+	validateTypeInfo(info)
+	return info, true
 }
 
 // Lookup looks up or registers the given object.
@@ -336,37 +341,40 @@ func loadBinary(value binaryObject, name string, s Source) {
 // reconstruct concrete types held in interfaces without a preceding Save.
 func Register(t Type) {
 	name := t.StateTypeName()
-	fields := t.StateFields()
 	typ := reflect.TypeOf(t)
-	if raceEnabled {
-		// Register must always be called on pointers.
-		if typ.Kind() != reflect.Ptr {
-			Failf("Register must be called on pointers")
-		}
+	if !raceEnabled {
+		// Register runs in the init functions of every binary that links
+		// stateified packages, on every process start. It needs to be
+		// very cheap. Race builds verify integrity.
+		globalTypeDatabase[name] = typ.Elem()
+		return
+	}
+	fields := t.StateFields()
+	// Register must always be called on pointers.
+	if typ.Kind() != reflect.Ptr {
+		Failf("Register must be called on pointers")
 	}
 	typ = typ.Elem()
-	if raceEnabled {
-		if typ.Kind() == reflect.Struct {
-			// All registered structs must implement SaverLoader. We allow
-			// the registration is non-struct types with just the Type
-			// interface, but we need to call StateSave/StateLoad methods
-			// on aggregate types.
-			if _, ok := t.(SaverLoader); !ok {
-				Failf("struct %T does not implement SaverLoader", t)
-			}
-		} else {
-			// Non-structs must not have any fields. We don't support
-			// calling StateSave/StateLoad methods on any non-struct types.
-			// If custom behavior is required, these types should be
-			// wrapped in a structure of some kind.
-			if len(fields) != 0 {
-				Failf("non-struct %T has non-zero fields %v", t, fields)
-			}
-			// We don't allow non-structs to implement StateSave/StateLoad
-			// methods, because they won't be called and it's confusing.
-			if _, ok := t.(SaverLoader); ok {
-				Failf("non-struct %T implements SaverLoader", t)
-			}
+	if typ.Kind() == reflect.Struct {
+		// All registered structs must implement SaverLoader. We allow
+		// the registration is non-struct types with just the Type
+		// interface, but we need to call StateSave/StateLoad methods
+		// on aggregate types.
+		if _, ok := t.(SaverLoader); !ok {
+			Failf("struct %T does not implement SaverLoader", t)
+		}
+	} else {
+		// Non-structs must not have any fields. We don't support
+		// calling StateSave/StateLoad methods on any non-struct types.
+		// If custom behavior is required, these types should be
+		// wrapped in a structure of some kind.
+		if len(fields) != 0 {
+			Failf("non-struct %T has non-zero fields %v", t, fields)
+		}
+		// We don't allow non-structs to implement StateSave/StateLoad
+		// methods, because they won't be called and it's confusing.
+		if _, ok := t.(SaverLoader); ok {
+			Failf("non-struct %T implements SaverLoader", t)
 		}
 	}
 	register(typ, wire.Type{Name: name, Fields: fields})
@@ -384,17 +392,7 @@ func registerBinary(value binaryObject) {
 
 // register publishes metadata in the existing type databases.
 func register(typ reflect.Type, info wire.Type) {
-	if info.Name == "" {
-		Failf("type has empty name")
-	}
-	for i, field := range info.Fields {
-		if field == "" {
-			Failf("field has empty name for type %q", info.Name)
-		}
-		if slices.Contains(info.Fields[:i], field) {
-			Failf("duplicate field %q for type %s", field, info.Name)
-		}
-	}
+	validateTypeInfo(info)
 	if raceEnabled {
 		if _, ok := primitiveTypeDatabase[info.Name]; ok {
 			Failf("conflicting primitiveTypeDatabase entry for %v: used by primitive", typ)
@@ -408,6 +406,22 @@ func register(typ reflect.Type, info wire.Type) {
 	}
 	globalTypeDatabase[info.Name] = typ
 	reverseTypeDatabase[typ] = info
+}
+
+// validateTypeInfo checks that a type has a name and unique, non-empty field
+// names.
+func validateTypeInfo(info wire.Type) {
+	if info.Name == "" {
+		Failf("type has empty name")
+	}
+	for i, field := range info.Fields {
+		if field == "" {
+			Failf("field has empty name for type %q", info.Name)
+		}
+		if slices.Contains(info.Fields[:i], field) {
+			Failf("duplicate field %q for type %s", field, info.Name)
+		}
+	}
 }
 
 func init() {
