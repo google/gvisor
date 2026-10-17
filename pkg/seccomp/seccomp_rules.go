@@ -885,15 +885,8 @@ func (sr SyscallRules) String() string {
 	if len(sr.rules) == 0 {
 		return "(no rules)"
 	}
-	sysnums := make([]uintptr, 0, len(sr.rules))
-	for sysno := range sr.rules {
-		sysnums = append(sysnums, sysno)
-	}
-	sort.Slice(sysnums, func(i, j int) bool {
-		return sysnums[i] < sysnums[j]
-	})
 	var sb strings.Builder
-	for _, sysno := range sysnums {
+	for _, sysno := range sr.Sysnos() {
 		fmt.Fprintf(&sb, "syscall %d: %v\n", sysno, sr.rules[sysno])
 	}
 	return strings.TrimSpace(sb.String())
@@ -902,6 +895,19 @@ func (sr SyscallRules) String() string {
 // Size returns the number of syscall numbers for which a rule is defined.
 func (sr SyscallRules) Size() int {
 	return len(sr.rules)
+}
+
+// Sysnos returns the syscall numbers for which a rule is defined, in
+// ascending order.
+func (sr SyscallRules) Sysnos() []uintptr {
+	sysnos := make([]uintptr, 0, len(sr.rules))
+	for sysno := range sr.rules {
+		sysnos = append(sysnos, sysno)
+	}
+	sort.Slice(sysnos, func(i, j int) bool {
+		return sysnos[i] < sysnos[j]
+	})
+	return sysnos
 }
 
 // Get returns the rule defined for the given syscall number.

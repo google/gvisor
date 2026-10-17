@@ -18,10 +18,12 @@
 package filter
 
 import (
+	"errors"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/runsc/fsgofer/filter/config"
 )
 
@@ -34,6 +36,12 @@ const debugFilter = false
 // Options is a re-export of the config Options type under this package.
 type Options = config.Options
 
+// HostVendorSyscalls returns the vendor-specific syscalls that may be used on
+// the current host.
+func HostVendorSyscalls() precompiledseccomp.VarSyscallNumbers {
+	return config.HostVendorSyscalls()
+}
+
 // Install installs seccomp filters.
 func Install(opt Options) error {
 	for _, warning := range config.Warnings(opt) {
@@ -45,16 +53,19 @@ func Install(opt Options) error {
 		vars := opt.Vars()
 		log.Debugf("Loaded precompiled seccomp instructions for options %v, using variables: %v", key, vars)
 		insns, err := precompiled.RenderInstructions(vars)
-		if err != nil {
+		if err == nil {
+			return seccomp.SetFilter(insns)
+		}
+		if !errors.Is(err, precompiledseccomp.ErrSyscallVarsNotRenderable) {
 			return fmt.Errorf("cannot render precompiled program for options %v / vars %v: %w", key, vars, err)
 		}
-		return seccomp.SetFilter(insns)
+		log.Warningf("Cannot use precompiled program for config options %v (%v), building seccomp program from scratch. This slows down gofer startup.", key, err)
 	}
 	var seccompOpts seccomp.ProgramOptions
 	if debugFilter {
 		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
 		seccompOpts.DefaultAction = seccomp.Trap
-	} else {
+	} else if !usePrecompiled {
 		log.Warningf("No precompiled program found for config options %v, building seccomp program from scratch. This slows down gofer startup.", key)
 		if log.IsLogging(log.Debug) {
 			precompiledKeys := ListPrecompiled()

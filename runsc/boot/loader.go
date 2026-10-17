@@ -1313,6 +1313,7 @@ func (l *Loader) installSeccompFilters() error {
 			ControllerFD:          uint32(l.ctrl.srv.FD()),
 			CgoEnabled:            config.CgoEnabled,
 			PluginNetwork:         l.root.conf.Network == config.NetworkPlugin,
+			VendorSyscalls:        filter.HostVendorSyscalls(),
 		}
 		if err := filter.Install(opts, l.startupTimer); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)

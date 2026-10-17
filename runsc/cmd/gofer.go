@@ -368,6 +368,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		DirectFS:         conf.DirectFS,
 		LisafsNeeded:     lisafsNeeded,
 		CgoEnabled:       config.CgoEnabled,
+		VendorSyscalls:   filter.HostVendorSyscalls(),
 	}
 	for _, e := range extension.Registered() {
 		opts.ExtraRules = append(opts.ExtraRules, e.SeccompRules())
