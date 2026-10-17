@@ -91,6 +91,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
+        "//pkg/sentry/platform",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/sync/locking",

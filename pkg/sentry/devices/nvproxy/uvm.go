@@ -16,9 +16,11 @@ package nvproxy
 
 import (
 	"fmt"
+	"runtime"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -28,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -81,6 +84,8 @@ type uvmFD struct {
 	containerName string
 	hostFD        int32
 	memmapFile    uvmFDMemmapFile
+	// Application-bound UVM cannot be restored against a different host mm.
+	applicationMMInitialized atomicbitops.Bool
 
 	queue waiter.Queue
 }
@@ -192,6 +197,22 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
+	if runtime.GOARCH == "arm64" {
+		if initializer, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace); ok {
+			// Coherent Grace GPUs require ATS. Bind UVM to the application's
+			// host mm, rather than disabling mm tracking or binding the Sentry.
+			// Mark the attempt before invoking the application: its returned
+			// status is untrusted and must not decide checkpoint eligibility.
+			ui.fd.applicationMMInitialized.Store(true)
+			status, err := initializer.UVMInitialize(ui.fd.hostFD, ioctlParams.Flags)
+			if err != nil {
+				return 0, err
+			}
+			ioctlParams.RMStatus = status
+			_, err = ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
+			return 0, err
+		}
+	}
 	origFlags := ioctlParams.Flags
 	// This is necessary to share the host UVM FD between sentry and
 	// application processes.
@@ -235,6 +256,68 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 		return n, err
 	}
 	return n, nil
+}
+
+func uvmPopulatePageable(ui *uvmIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.UVM_POPULATE_PAGEABLE_PARAMS
+	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	initializer, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace)
+	if runtime.GOARCH != "arm64" || !ok {
+		return 0, linuxerr.EOPNOTSUPP
+	}
+	// Nonzero flags are reserved for NVIDIA's built-in tests or internal use.
+	if ioctlParams.Flags != 0 {
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	ar, valid := hostarch.Addr(ioctlParams.Base).ToRange(ioctlParams.Length)
+	if !valid || ar.Length() == 0 || !ar.IsPageAligned() {
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+	}
+	// UVM can only populate VMAs already installed in the host mm. Resolve
+	// gVisor's lazy mappings and software COW first, inheriting each VMA's
+	// permissions just as the NVIDIA driver does on native Linux.
+	mm := ui.t.MemoryManager()
+	for addr := ar.Start; addr < ar.End; addr += hostarch.PageSize {
+		err := mm.HandleUserFault(ui.ctx, addr, hostarch.Write, 0)
+		if linuxerr.Equals(linuxerr.EPERM, err) || linuxerr.Equals(linuxerr.EACCES, err) || linuxerr.Equals(linuxerr.EFAULT, err) {
+			err = mm.HandleUserFault(ui.ctx, addr, hostarch.Read, 0)
+		}
+		if err != nil {
+			if linuxerr.Equals(linuxerr.EPERM, err) || linuxerr.Equals(linuxerr.EACCES, err) || linuxerr.Equals(linuxerr.EFAULT, err) {
+				return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+			}
+			return 0, err
+		}
+	}
+	status, err := initializer.UVMPopulatePageable(ui.fd.hostFD, ioctlParams.Base, ioctlParams.Length, ioctlParams.Flags)
+	if err != nil {
+		return 0, err
+	}
+	ioctlParams.RMStatus = status
+	_, err = ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
+	return 0, err
+}
+
+func uvmSetPreferredLocationV550(ui *uvmIoctlState) (uintptr, error) {
+	as, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace)
+	if runtime.GOARCH != "arm64" || !ok {
+		return uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550](ui)
+	}
+	var params nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550
+	if _, err := params.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	// NVIDIA requires the calling mm to match UVM's saved mm when applying
+	// preferred-location policy to ATS memory, including pinned allocations.
+	status, err := as.UVMSetPreferredLocation(ui.fd.hostFD, params.RequestedBase, params.Length, params.PreferredLocation, params.PreferredCPUNumaNode)
+	if err != nil {
+		return 0, err
+	}
+	params.RMStatus = status
+	_, err = params.CopyOut(ui.t, ui.ioctlParamsAddr)
+	return 0, err
 }
 
 func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](ui *uvmIoctlState) (uintptr, error) {

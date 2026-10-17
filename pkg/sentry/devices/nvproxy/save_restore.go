@@ -322,7 +322,9 @@ func (fd *frontendFD) afterLoad(ctx goContext.Context) {
 
 // beforeSave is invoked by stateify.
 func (fd *uvmFD) beforeSave() {
-	// no-op
+	if fd.applicationMMInitialized.Load() {
+		panic("nvproxy: checkpointing UVM bound to an application host mm is unsupported")
+	}
 }
 
 // afterLoad is invoked by stateify.
