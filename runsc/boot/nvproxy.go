@@ -99,7 +99,27 @@ func (r *restorer) prepareNvproxyRestoreContextLocked(ctx context.Context, l *Lo
 			}
 		}
 	}
-	return ctx, nil
+	modes := make(map[string]bool)
+	for contName, spec := range l.containerSpecs {
+		if !specutils.NVProxyEnabled(spec, l.root.conf) {
+			continue
+		}
+		devClient := l.k.GetDevGoferClient(contName)
+		minors := make(map[uint32]*devutil.GoferClient)
+		if _, err := collectContainerNvidiaRegularDevices(ctx, spec, l.root.conf, devClient, minors); err != nil {
+			return ctx, err
+		}
+		caps, err := specutils.NVProxyDriverCapsAllowed(l.root.conf)
+		if err != nil {
+			return ctx, err
+		}
+		mode, err := nvproxy.UseApplicationMMUVM(ctx, devClient, slices.Sorted(maps.Keys(minors)), caps)
+		if err != nil {
+			return ctx, err
+		}
+		modes[contName] = mode
+	}
+	return context.WithValue(ctx, nvproxy.CtxContainerUVMModes, modes), nil
 }
 
 func getNvproxyDeviceRemapIDs(ctx context.Context, k *kernel.Kernel, specs map[string]*specs.Spec, conf *config.Config) ([]nvproxy.DeviceRemapID, error) {

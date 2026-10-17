@@ -76,6 +76,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/abi/nvgpu",
         "//pkg/atomicbitops",
         "//pkg/bpf",
         "//pkg/context",
@@ -121,7 +122,6 @@ go_test(
         "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/hostsyscall",
-        "//pkg/pool",
         "//pkg/safemem",
         "//pkg/sentry/arch",
         "//pkg/sentry/memmap",

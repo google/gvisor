@@ -50,6 +50,8 @@ const syscallThreadMessageSize = hostarch.PageSize * 2
 //   - If a system call never fails (e.g munmap).
 //   - If a system call has to return only one know value or if it fails,
 //     it doesn't not reveal any data (e.g. mmap).
+//   - If all results are untrusted values returned only to application code
+//     (e.g. UVM_INITIALIZE's status).
 type syscallThread struct {
 	// subproc is a link to the subprocess which is used to call native
 	// system calls and track when a sysmsg thread has to be recreated.
@@ -127,16 +129,6 @@ func (t *syscallThread) init(seccompNotify bool) error {
 }
 
 func (t *syscallThread) destroy() {
-	if t.sentryAddr != 0 {
-		errno := hostsyscall.RawSyscallErrno(
-			unix.SYS_MUNMAP,
-			t.sentryAddr,
-			syscallThreadMessageSize,
-			0)
-		if errno != 0 {
-			panic(fmt.Sprintf("mumap failed: %v", errno))
-		}
-	}
 	if t.stubAddr != 0 {
 		_, err := t.thread.syscallIgnoreInterrupt(&t.thread.initRegs, unix.SYS_MUNMAP,
 			arch.SyscallArgument{Value: t.stubAddr},
@@ -145,7 +137,20 @@ func (t *syscallThread) destroy() {
 			t.thread.Warningf("munmap failed: %v", err)
 		}
 	}
+	t.destroySentryMapping()
+}
+
+// destroySentryMapping releases the Sentry's syscall message after the stub's
+// mapping has been removed. It makes no syscalls in the stub process.
+func (t *syscallThread) destroySentryMapping() {
+	if t.sentryAddr != 0 {
+		if errno := hostsyscall.RawSyscallErrno(unix.SYS_MUNMAP, t.sentryAddr, syscallThreadMessageSize, 0); errno != 0 {
+			panic(fmt.Sprintf("munmap failed: %v", errno))
+		}
+		t.sentryAddr = 0
+	}
 	t.subproc.memoryFile.DecRef(t.stackRange)
+	t.stackRange = memmap.FileRange{}
 	t.subproc.sysmsgStackPool.Put(t.thread.sysmsgStackID)
 }
 

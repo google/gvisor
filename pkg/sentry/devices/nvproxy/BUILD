@@ -61,6 +61,7 @@ go_library(
         "seccomp_filters.go",
         "uvm.go",
         "uvm_mmap.go",
+        "uvm_mode.go",
         "uvm_tools.go",
         "uvm_unsafe.go",
         "version.go",
@@ -92,6 +93,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
+        "//pkg/sentry/platform",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/sync/locking",
@@ -103,7 +105,10 @@ go_library(
 
 go_test(
     name = "nvproxy_test",
-    srcs = ["nvproxy_test.go"],
+    srcs = [
+        "nvproxy_test.go",
+        "uvm_mode_test.go",
+    ],
     embed = [":nvproxy"],
     deps = [
         "//pkg/abi/nvgpu",

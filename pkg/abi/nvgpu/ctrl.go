@@ -794,6 +794,31 @@ const (
 	NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS = 0x20801702
 )
 
+// Chip identifiers from src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080mc.h.
+const (
+	NV2080_CTRL_MC_ARCH_INFO_ARCHITECTURE_GH100       = 0x180
+	NV2080_CTRL_MC_ARCH_INFO_ARCHITECTURE_GB100       = 0x1a0
+	NV2080_CTRL_MC_ARCH_INFO_ARCHITECTURE_GR100       = 0x1c0
+	NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GH100_SOC = 0x1
+	NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GB100     = 0x0
+	NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GB110     = 0x3
+	NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GR100     = 0x0
+)
+
+// NV2080_CTRL_MC_GET_ARCH_INFO_PARAMS is the params type for
+// NV2080_CTRL_CMD_MC_GET_ARCH_INFO, from
+// src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080mc.h.
+//
+// +marshal
+type NV2080_CTRL_MC_GET_ARCH_INFO_PARAMS struct {
+	_              structs.HostLayout
+	Architecture   uint32
+	Implementation uint32
+	Revision       uint32
+	SubRevision    uint8
+	_              [3]byte
+}
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080nvlink.h:
 const (
 	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS           = 0x20803001

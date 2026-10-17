@@ -46,6 +46,63 @@ func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
 	return nil
 }
 
+// EnsureAddressSpaceMappings ensures that ar is mapped into the application's
+// AddressSpace, resolving copy-on-write for writable mappings. Each VMA in ar
+// must permit reading or writing. Read-only VMAs remain read-only.
+//
+// checkMappable must accept each VMA's Mappable (including nil for private
+// anonymous memory). It is called with mm.mappingMu locked for reading, and must
+// not retain its argument or acquire locks preceding mm.mappingMu. This allows
+// callers to exclude device mappings whose host VMAs must not be replaced.
+//
+// The entire range is checked before changing PMAs or AddressSpace mappings.
+// Errors obtaining backing memory or installing mappings may leave part of an
+// otherwise valid range populated. This method does not pin memory or eagerly
+// commit host pages.
+//
+// +checklocksexclude:mm.mappingMu
+// +checklocksexclude:mm.activeMu
+func (mm *MemoryManager) EnsureAddressSpaceMappings(ctx context.Context, ar hostarch.AddrRange, checkMappable func(memmap.Mappable) bool) error {
+	if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() || !mm.applicationAddrRange().IsSupersetOf(ar) {
+		return linuxerr.EFAULT
+	}
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+
+	vfirst, _, err := mm.getVMAsLocked(ctx, ar, hostarch.AccessType{}, false /* ignorePermissions */)
+	if err != nil {
+		return err
+	}
+	for vseg := vfirst; vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
+		vma := vseg.ValuePtr()
+		if !vma.realPerms.Read && !vma.realPerms.Write {
+			return linuxerr.EACCES
+		}
+		if !checkMappable(vma.mappable) {
+			return linuxerr.EFAULT
+		}
+	}
+
+	mm.activeMu.Lock()
+	for vseg := vfirst; vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
+		at := hostarch.Read
+		if vseg.ValuePtr().effectivePerms.Write {
+			at = hostarch.Write
+		}
+		if _, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), at, false /* callerIndirectCommit */, false /* forPin */); err != nil {
+			mm.activeMu.Unlock()
+			return err
+		}
+	}
+	mm.activeMu.DowngradeLock()
+	defer mm.activeMu.RUnlock()
+
+	// Limit mapping to ar: remapping an adjacent device VMA can destroy state
+	// maintained by its driver. Mapping whole PMAs, rather than faulting one
+	// page at a time, also avoids per-page host mmap calls for resident memory.
+	return mm.mapASLocked(ctx, mm.pmas.LowerBoundSegment(ar.Start), ar, memmap.PlatformEffectPopulate)
+}
+
 // mapASLocked maps addresses in ar into mm.as.
 //
 // Preconditions:

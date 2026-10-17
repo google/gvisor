@@ -262,11 +262,11 @@ func TestCreateSysmsgThreadDeadClone(t *testing.T) {
 	}
 	go func() {
 		req := (<-s.requests).(requestThread)
-		req.thread <- &thread{
+		req.thread <- threadCreationResult{thread: &thread{
 			tgid:          1 << 30,
 			tid:           1 << 30,
 			sysmsgStackID: id,
-		}
+		}}
 	}()
 
 	if err := s.createSysmsgThread(); err == nil {
@@ -288,10 +288,10 @@ func TestSyscallThreadKillMarksSubprocessDead(t *testing.T) {
 	if err := s.createSysmsgThread(); !errors.Is(err, errDeadSubprocess) {
 		t.Fatalf("createSysmsgThread got error %v, want %v", err, errDeadSubprocess)
 	}
-	req := requestThread{thread: make(chan *thread, 1)}
+	req := requestThread{thread: make(chan threadCreationResult, 1)}
 	s.handlePtraceSyscallRequest(req)
-	if got := <-req.thread; got != nil {
-		t.Fatalf("handlePtraceSyscallRequest got %v, want nil when subprocess is dead", got)
+	if got := <-req.thread; got.thread != nil || !errors.Is(got.err, errDeadSubprocess) {
+		t.Fatalf("handlePtraceSyscallRequest got %+v, want no thread and errDeadSubprocess", got)
 	}
 }
 
@@ -310,4 +310,25 @@ func TestStuckSubprocessHelper(t *testing.T) {
 		return
 	}
 	select {}
+}
+
+// An ambiguous request failure can leave a child behind. It must not take the
+// recoverable path used for a clone known to have been rejected.
+func TestUVMThreadCreationAmbiguousFailure(t *testing.T) {
+	_, err := (&thread{tgid: 1 << 30, tid: 1 << 30}).clone()
+	if !errors.Is(err, unix.ESRCH) {
+		t.Fatalf("clone of nonexistent thread: got %v, want ESRCH", err)
+	}
+	s := &subprocess{requests: make(chan any, 1)}
+	s.uvmInitialized.Store(true)
+	go func() {
+		req := (<-s.requests).(requestThread)
+		req.thread <- threadCreationResult{err: err}
+	}()
+	defer func() {
+		if p := recover(); p != "cannot recover from failed thread creation in a UVM address space" {
+			t.Errorf("unexpected panic for ambiguous thread creation failure: %v", p)
+		}
+	}()
+	s.createSysmsgThread()
 }
