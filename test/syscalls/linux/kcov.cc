@@ -77,9 +77,11 @@ TEST(KcovTest, Kcov) {
 
   uint64_t num_pcs = *(uint64_t*)(area);
   EXPECT_GT(num_pcs, 0);
+  ASSERT_LT(num_pcs, kSize);
   for (uint64_t i = 1; i <= num_pcs; i++) {
-    // Verify that PCs are in the standard kernel range.
-    EXPECT_GT(area[i], 0xffffffff7fffffffL);
+    // Linux PCs depend on the kernel's virtual address layout; gVisor instead
+    // exposes synthetic coverage IDs. Neither has a fixed x86 address range.
+    EXPECT_NE(area[i], 0);
   }
 
   ASSERT_THAT(ioctl(fd, KCOV_DISABLE, 0), SyscallSucceeds());
