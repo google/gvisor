@@ -90,6 +90,11 @@ type segment struct {
 
 	// lost indicates if the segment is marked as lost by RACK.
 	lost bool
+
+	// dataDropped indicates that the segment's payload was dropped by
+	// segmentQueue.enqueue because the receive buffer was full. The segment
+	// is only acknowledged.
+	dataDropped bool
 }
 
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
