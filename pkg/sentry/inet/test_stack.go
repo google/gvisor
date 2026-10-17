@@ -185,6 +185,15 @@ func (s *TestStack) Pause() {}
 // Restore implements Stack.
 func (s *TestStack) Restore() {}
 
+// RestoreNICsAndEndpoints implements Stack.
+func (s *TestStack) RestoreNICsAndEndpoints() {}
+
+// StartTransportProtocols implements Stack.
+func (s *TestStack) StartTransportProtocols() {}
+
+// SetPreserveAllNICs implements Stack.
+func (s *TestStack) SetPreserveAllNICs(bool) {}
+
 // ResetConfig implements Stack.
 func (s *TestStack) ResetConfig() {
 	s.InterfacesMap = make(map[int32]Interface)

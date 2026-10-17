@@ -192,3 +192,17 @@ func (e *Endpoint) SetOnCloseAction(action func()) {
 func (e *Endpoint) Child() stack.LinkEndpoint {
 	return e.child
 }
+
+// Pause implements stack.PausableLinkEndpoint.
+func (e *Endpoint) Pause() {
+	if p, ok := e.child.(stack.PausableLinkEndpoint); ok {
+		p.Pause()
+	}
+}
+
+// Resume implements stack.PausableLinkEndpoint.
+func (e *Endpoint) Resume() {
+	if p, ok := e.child.(stack.PausableLinkEndpoint); ok {
+		p.Resume()
+	}
+}

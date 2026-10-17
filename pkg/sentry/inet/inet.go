@@ -106,6 +106,18 @@ type Stack interface {
 	// Restore restarts the network stack after restore.
 	Restore()
 
+	// RestoreNICsAndEndpoints restores preserved NICs, routes, and transport
+	// endpoints on the stack before waiting for asynchronous endpoint loading.
+	RestoreNICsAndEndpoints()
+
+	// StartTransportProtocols starts protocol and link-layer background workers
+	// after asynchronous endpoint loading has completed.
+	StartTransportProtocols()
+
+	// SetPreserveAllNICs sets whether all NICs in the stack should be preserved
+	// across save and restore.
+	SetPreserveAllNICs(bool)
+
 	// ResetConfig resets the stack's NICs and configuration.
 	ResetConfig()
 

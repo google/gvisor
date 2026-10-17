@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -35,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/veth"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/nftables"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
@@ -1184,9 +1186,43 @@ func (s *Stack) Pause() {
 	s.Stack.Pause()
 }
 
+func (s *Stack) ensureLinuxTables() {
+	if s.Stack.IPTables() == nil {
+		s.Stack.SetIPTables(netfilter.DefaultLinuxTables(s.Stack.Clock(), s.Stack.InsecureRNG()))
+	}
+	if s.Stack.NFTables() == nil {
+		if nftables.IsNFTablesEnabled() {
+			s.Stack.SetNFTables(nftables.NewNFTables(s.Stack, s.Stack.Clock(), s.Stack.SecureRNG()))
+		} else {
+			s.Stack.SetNFTablesConfigured(false)
+		}
+	}
+}
+
 // Restore implements inet.Stack.Restore.
 func (s *Stack) Restore() {
+	s.ensureLinuxTables()
 	s.Stack.Restore()
+}
+
+// RestoreNICsAndEndpoints restores preserved NICs, routes, and transport
+// endpoints on the stack without waiting for asynchronous endpoint loading or
+// starting transport protocol background workers.
+func (s *Stack) RestoreNICsAndEndpoints() {
+	s.ensureLinuxTables()
+	s.Stack.RestoreNICsAndEndpoints()
+}
+
+// StartTransportProtocols starts protocol-level background workers after
+// asynchronous endpoint loading has completed.
+func (s *Stack) StartTransportProtocols() {
+	s.Stack.StartTransportProtocols()
+}
+
+// SetPreserveAllNICs sets whether all NICs in the stack should be preserved
+// across save and restore.
+func (s *Stack) SetPreserveAllNICs(preserve bool) {
+	s.Stack.SetPreserveAllNICs(preserve)
 }
 
 // ResetConfig implements inet.Stack.ResetConfig.
