@@ -26,8 +26,8 @@ import (
 	"strings"
 	"testing"
 
-	"archive/zip"
 	"golang.org/x/tools/go/analysis"
+	"gvisor.dev/gvisor/pkg/zip"
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
