@@ -10,7 +10,11 @@ go_library(
     srcs = ["checkescape.go"],
     importpath = "gvisor.dev/gvisor/tools/checkescape",
     nogo = False,
-    visibility = ["//tools/nogo:__subpackages__"],
+    visibility = [
+        "//:__pkg__",
+        "//tools/checkescape/cmd:__subpackages__",
+        "//tools/nogo:__subpackages__",
+    ],
     deps = [
         "//tools/nogo/flags",
         "@org_golang_x_tools//go/analysis:go_default_library",
