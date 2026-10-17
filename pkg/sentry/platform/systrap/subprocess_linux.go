@@ -22,11 +22,11 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/stubfilter"
 )
 
 const syscallEvent unix.Signal = 0x80
@@ -42,7 +42,7 @@ func createStub() (*thread, error) {
 	// transitively) will be killed as well. It's simply not possible to
 	// safely handle a single stub getting killed: the exact state of
 	// execution is unknown and not recoverable.
-	t, err := attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), seccomp.Trap)
+	t, err := attachedThread(unix.CLONE_FILES | uintptr(unix.SIGCHLD))
 	if err != nil {
 		return nil, err
 	}
@@ -59,111 +59,9 @@ func createStub() (*thread, error) {
 // attachedThread returns a new attached thread.
 //
 // Precondition: the runtime OS thread must be locked.
-func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error) {
-	// Create a BPF program that allows only the system calls needed by the
-	// stub and all its children. This is used to create child stubs
-	// (below), so we must include the ability to fork, but otherwise lock
-	// down available calls only to what is needed.
-	var rules []seccomp.RuleSet
-	if defaultAction != seccomp.Allow {
-		ruleSet := seccomp.RuleSet{
-			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-				unix.SYS_CLONE: seccomp.Or{
-					// Allow creation of new subprocesses (used by the master).
-					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.CLONE_PARENT | unix.SIGCHLD)},
-					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGCHLD)},
-					// Allow creation of new sysmsg thread.
-					seccomp.PerArg{seccomp.EqualTo(
-						unix.CLONE_FILES |
-							unix.CLONE_FS |
-							unix.CLONE_VM |
-							unix.CLONE_PTRACE |
-							linux.SIGKILL)},
-				},
-
-				// For the initial process creation.
-				unix.SYS_WAIT4: seccomp.MatchAll{},
-				unix.SYS_EXIT:  seccomp.MatchAll{},
-
-				// For the stub prctl dance (all).
-				unix.SYS_PRCTL: seccomp.Or{
-					seccomp.PerArg{seccomp.EqualTo(unix.PR_SET_PDEATHSIG), seccomp.EqualTo(unix.SIGKILL)},
-					seccomp.PerArg{seccomp.EqualTo(linux.PR_SET_NO_NEW_PRIVS), seccomp.EqualTo(1)},
-					seccomp.PerArg{
-						seccomp.EqualTo(unix.PR_SET_SYSCALL_USER_DISPATCH),
-						seccomp.EqualTo(unix.PR_SYS_DISPATCH_ON),
-						seccomp.EqualTo(stubStart),
-						seccomp.EqualTo(stubROMapEnd - stubStart),
-					},
-				},
-				unix.SYS_GETPPID: seccomp.MatchAll{},
-
-				// For the stub to stop itself (all).
-				unix.SYS_GETPID: seccomp.MatchAll{},
-				unix.SYS_KILL: seccomp.PerArg{
-					seccomp.AnyValue{},
-					seccomp.EqualTo(unix.SIGSTOP),
-				},
-
-				// Injected to support the address space operations.
-				unix.SYS_MMAP:   seccomp.MatchAll{},
-				unix.SYS_MUNMAP: seccomp.MatchAll{},
-
-				// For sysmsg threads. Look at sysmsg/sighandler.c for more details.
-				unix.SYS_RT_SIGRETURN: seccomp.MatchAll{},
-				unix.SYS_SCHED_YIELD:  seccomp.MatchAll{},
-				unix.SYS_FUTEX: seccomp.Or{
-					seccomp.PerArg{
-						seccomp.AnyValue{},
-						seccomp.EqualTo(linux.FUTEX_WAIT),
-						seccomp.AnyValue{},
-						seccomp.AnyValue{},
-					},
-					seccomp.PerArg{
-						seccomp.AnyValue{},
-						seccomp.EqualTo(linux.FUTEX_WAKE),
-						seccomp.AnyValue{},
-						seccomp.AnyValue{},
-					},
-				},
-				unix.SYS_SIGALTSTACK: seccomp.MatchAll{},
-				unix.SYS_TKILL: seccomp.PerArg{
-					seccomp.AnyValue{},
-					seccomp.EqualTo(unix.SIGSTOP),
-				},
-				unix.SYS_GETTID:     seccomp.MatchAll{},
-				unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
-				seccomp.SYS_SECCOMP: seccomp.Or{
-					seccomp.PerArg{
-						seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER),
-						seccomp.EqualTo(0),
-						seccomp.AnyValue{},
-					},
-					seccomp.PerArg{
-						seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER),
-						seccomp.EqualTo(linux.SECCOMP_FILTER_FLAG_NEW_LISTENER),
-						seccomp.AnyValue{},
-					},
-				},
-			}),
-			Action: seccomp.Allow,
-		}
-		rules = append(rules, ruleSet)
-		rules = appendArchSeccompRules(rules)
-	}
-	program := &seccomp.Program{
-		RuleSets: rules,
-		Options: seccomp.ProgramOptions{
-			DefaultAction: defaultAction,
-			BadArchAction: defaultAction,
-		},
-	}
-	instrs, _, err := program.Build()
-	if err != nil {
-		return nil, err
-	}
-
-	return forkStub(flags, instrs)
+func attachedThread(flags uintptr) (*thread, error) {
+	vars := stubfilter.StubProcessVars(uint64(stubStart), uint64(stubROMapEnd-stubStart))
+	return forkStub(flags, renderStubFilter(stubfilter.StubProcessName, vars))
 }
 
 // In the child, this function must not acquire any locks, because they might
@@ -246,7 +144,7 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 	}
 
 	// Set an aggressive BPF filter for the stub and all it's children. See
-	// the description of the BPF program built above.
+	// stubfilter.StubProcess.
 	if errno := seccomp.SetFilterInChild(instrs); errno != 0 {
 		hostsyscall.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
