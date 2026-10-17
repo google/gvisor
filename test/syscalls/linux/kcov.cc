@@ -20,8 +20,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 
 #include "gmock/gmock.h"
@@ -45,7 +47,8 @@ namespace {
 // collect_coverage_data --instrumentation_filter=//pkg/... <test>.
 
 constexpr char kcovPath[] = "/sys/kernel/debug/kcov";
-constexpr int kSize = 4096;
+// KCOV mmap requires a whole number of pages, including on 64 KiB-page hosts.
+const size_t kSize = std::max<size_t>(4096, kPageSize / sizeof(uint64_t));
 constexpr int KCOV_INIT_TRACE = 0x80086301;
 constexpr int KCOV_ENABLE = 0x6364;
 constexpr int KCOV_DISABLE = 0x6365;
@@ -146,6 +149,11 @@ TEST(KcovTest, MultipleThreads) {
   std::atomic<bool> t1_enabled(false), t1_disabled(false), t2_failed(false),
       t2_exited(false);
   auto t1 = ScopedThread([&] {
+    // Fatal assertions return from this worker; its peer must still wake up.
+    auto unblock_t2 = Cleanup([&] {
+      t1_enabled = true;
+      t1_disabled = true;
+    });
     ASSERT_THAT(ioctl(fd, KCOV_INIT_TRACE, kSize), SyscallSucceeds());
     uint64_t* area = KcovMmap(fd);
     ASSERT_TRUE(area != MAP_FAILED);
@@ -168,6 +176,7 @@ TEST(KcovTest, MultipleThreads) {
   });
 
   auto t2 = ScopedThread([&] {
+    auto unblock_t1 = Cleanup([&] { t2_failed = true; });
     // Wait for t1 to enable kcov, and make sure that enabling kcov again fails.
     while (!t1_enabled) {
       sched_yield();
