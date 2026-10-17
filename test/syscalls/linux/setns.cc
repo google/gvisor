@@ -16,10 +16,12 @@
 #include <limits.h>
 #include <linux/capability.h>
 #include <linux/limits.h>
+#include <linux/nsfs.h>
 #include <linux/prctl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -44,6 +46,46 @@
 namespace gvisor {
 namespace testing {
 namespace {
+
+struct NamespaceType {
+  const char* path;
+  int clone_flag;
+};
+
+class NamespaceIoctlTest : public ::testing::TestWithParam<NamespaceType> {};
+
+TEST_P(NamespaceIoctlTest, GetNamespaceType) {
+  const auto& param = GetParam();
+  SCOPED_TRACE(param.path);
+  // Cgroup namespaces are not exposed in all gVisor configurations.
+  if (param.clone_flag == CLONE_NEWCGROUP) {
+    SKIP_IF(access(param.path, F_OK) < 0 && errno == ENOENT);
+  }
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(param.path, O_RDONLY));
+  EXPECT_THAT(ioctl(nsfd.get(), NS_GET_NSTYPE, 0),
+              SyscallSucceedsWithValue(param.clone_flag));
+  // The result is returned directly; the argument is not an output pointer.
+  EXPECT_THAT(ioctl(nsfd.get(), NS_GET_NSTYPE, -1UL),
+              SyscallSucceedsWithValue(param.clone_flag));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    NamespaceTypes, NamespaceIoctlTest,
+    ::testing::Values(NamespaceType{"/proc/self/ns/cgroup", CLONE_NEWCGROUP},
+                      NamespaceType{"/proc/self/ns/ipc", CLONE_NEWIPC},
+                      NamespaceType{"/proc/self/ns/mnt", CLONE_NEWNS},
+                      NamespaceType{"/proc/self/ns/net", CLONE_NEWNET},
+                      NamespaceType{"/proc/self/ns/pid", CLONE_NEWPID},
+                      NamespaceType{"/proc/self/ns/user", CLONE_NEWUSER},
+                      NamespaceType{"/proc/self/ns/uts", CLONE_NEWUTS}));
+
+TEST(NamespaceIoctl, UnknownRequest) {
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/ns/user", O_RDONLY));
+  EXPECT_THAT(ioctl(nsfd.get(), _IO(0xb7, 0xff), 0),
+              SyscallFailsWithErrno(ENOTTY));
+}
 
 struct UserNamespaceChild {
   FileDescriptor nsfd;

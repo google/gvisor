@@ -30,10 +30,12 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/refs",
+        "//pkg/sentry/arch",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/ktime",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/usermem",
     ],
 )
