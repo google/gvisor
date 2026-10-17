@@ -456,7 +456,7 @@ type Endpoint struct {
 	// address).
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
 
-	// recentTSTime is the unix time when we last updated
+	// recentTSTime is the monotonic time when we last updated
 	// TCPEndpointStateInner.RecentTS.
 	recentTSTime tcpip.MonotonicTime
 
@@ -3226,10 +3226,25 @@ func (e *Endpoint) rcvWndScaleForHandshake() int {
 	return FindWndScale(seqnum.Size(e.maxReceiveBufferSize()))
 }
 
+// timestampTooOld reports whether tsVal precedes a valid TS.Recent.
+// RFC 7323 section 5.5 expires TS.Recent after 24 days so an idle
+// connection can resume after the peer's timestamp clock wraps.
+func (e *Endpoint) timestampTooOld(tsVal uint32) bool {
+	return seqnum.Value(tsVal).LessThan(seqnum.Value(e.recentTimestamp())) &&
+		e.stack.Clock().NowMonotonic().Sub(e.recentTSTime) < 24*24*time.Hour
+}
+
+// rejectTimestamp implements the PAWS check in RFC 7323 section 5.3.
+// Resets are exempt: their timestamps must not prevent connection teardown.
+func (e *Endpoint) rejectTimestamp(s *segment) bool {
+	return e.SendTSOk && s.parsedOptions.TS && !s.flags.Contains(header.TCPFlagRst) &&
+		e.timestampTooOld(s.parsedOptions.TSVal)
+}
+
 // updateRecentTimestamp updates the recent timestamp using the algorithm
-// described in https://tools.ietf.org/html/rfc7323#section-4.3
+// described in https://www.rfc-editor.org/rfc/rfc7323.html#section-4.3.
 func (e *Endpoint) updateRecentTimestamp(tsVal uint32, maxSentAck seqnum.Value, segSeq seqnum.Value) {
-	if e.SendTSOk && seqnum.Value(e.recentTimestamp()).LessThan(seqnum.Value(tsVal)) && segSeq.LessThanEq(maxSentAck) {
+	if e.SendTSOk && segSeq.LessThanEq(maxSentAck) && !e.timestampTooOld(tsVal) {
 		e.setRecentTimestamp(tsVal)
 	}
 }
