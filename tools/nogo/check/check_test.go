@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"go/token"
 	"go/types"
 	"io"
@@ -28,6 +29,8 @@ import (
 
 	"archive/zip"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/gcexportdata"
+	"gvisor.dev/gvisor/tools/nogo/facts"
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
@@ -126,5 +129,98 @@ func TestDeclaredFactsErrors(t *testing.T) {
 				t.Errorf("checkPackage() error = %v, want package path %q", err, dep.Path())
 			}
 		})
+	}
+}
+
+func TestDeprecatedImportedMethods(t *testing.T) {
+	for _, exported := range []bool{false, true} {
+		for _, indirect := range []bool{false, true} {
+			t.Run(fmt.Sprintf("exported=%t/indirect=%t", exported, indirect), func(t *testing.T) {
+				analyzers := make(map[*analysis.Analyzer]analyzer)
+				for a, runner := range allAnalyzers {
+					if a.Name == "SA1019" {
+						register(analyzers, runner)
+					}
+				}
+				if len(analyzers) == 0 {
+					t.Fatal("SA1019 is not registered")
+				}
+				i := &importer{
+					fset:      token.NewFileSet(),
+					sources:   make(map[string][]string),
+					cache:     make(map[string]*importerEntry),
+					imports:   make(map[string]*types.Package),
+					analyzers: analyzers,
+				}
+				writePackage := func(path, source string) []string {
+					t.Helper()
+					filename := filepath.Join(t.TempDir(), "source.go")
+					if err := os.WriteFile(filename, []byte(source), 0600); err != nil {
+						t.Fatal(err)
+					}
+					i.sources[path] = []string{filename}
+					return i.sources[path]
+				}
+				const depPath = "example.com/dep"
+				writePackage(depPath, `package dep
+
+type Value struct{}
+
+// Deprecated: use New instead.
+func (Value) Old() {}
+func (Value) New() {}
+`)
+				if exported {
+					pkg, err := i.importPackage(depPath, "")
+					if err != nil {
+						t.Fatal(err)
+					}
+					// Facts originate from source, but consumers normally use the
+					// compiled type information. Method identities must agree.
+					var typeData, factData bytes.Buffer
+					if err := gcexportdata.Write(&typeData, i.fset, pkg); err != nil {
+						t.Fatal(err)
+					}
+					if err := i.fastFacts(pkg).Serialize(&factData); err != nil {
+						t.Fatal(err)
+					}
+					i.imports = make(map[string]*types.Package)
+					pkg, err = gcexportdata.Read(&typeData, i.fset, i.imports, depPath)
+					if err != nil {
+						t.Fatal(err)
+					}
+					decoded := facts.NewPackage()
+					if err := decoded.ReadFrom(pkg, &factData); err != nil {
+						t.Fatal(err)
+					}
+					i.mu.Lock()
+					i.cache[depPath] = &importerEntry{pkg: pkg, facts: decoded}
+					i.mu.Unlock()
+				}
+				importPath, value := depPath, "dep.Value{}"
+				if indirect {
+					importPath, value = "example.com/bridge", "bridge.Value()"
+					writePackage(importPath, `package bridge
+import "example.com/dep"
+func Value() dep.Value { return dep.Value{} }
+`)
+				}
+				source := fmt.Sprintf(`package consumer
+import %q
+func use() {
+    value := %s
+    value.Old()
+    value.New()
+}
+`, importPath, value)
+				_, findings, _, err := i.checkPackage("example.com/consumer", writePackage("example.com/consumer", source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(findings) != 1 || findings[0].Category != "SA1019" || findings[0].Position.Line != 5 || !strings.Contains(findings[0].Message, "Old is deprecated") {
+					t.Fatalf("findings = %v, want exactly the deprecated Old method on line 5", findings)
+				}
+			})
+		}
 	}
 }

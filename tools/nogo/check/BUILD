@@ -67,7 +67,9 @@ go_test(
     srcs = ["check_test.go"],
     embed = [":check"],
     deps = [
+        "//tools/nogo/facts",
         "//tools/nogo/flags",
         "@org_golang_x_tools//go/analysis:go_default_library",
+        "@org_golang_x_tools//go/gcexportdata:go_default_library",
     ],
 )
