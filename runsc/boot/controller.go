@@ -148,6 +148,9 @@ type containerManager struct {
 }
 
 // StartRoot will start the root container process.
+//
+// +checklocksexclude:cm.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:cm.l.fsRestore.apfl.mu
 func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.StartRoot, cid: %s", *cid)
 	cm.l.mu.Lock()
@@ -160,7 +163,11 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	return cm.onStart()
 }
 
-// onStart notifies that sandbox is ready to start and wait for the result.
+// onStart tells Loader.Run to start the sandbox and waits for its result.
+// Loader.Run may acquire the filesystem-restore loader's locks.
+//
+// +checklocksexclude:cm.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:cm.l.fsRestore.apfl.mu
 func (cm *containerManager) onStart() error {
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
@@ -194,6 +201,9 @@ func (cm *containerManager) CreateSubcontainer(args *sentryapi.CreateArgs, _ *st
 }
 
 // StartSubcontainer runs a created container within a sandbox.
+//
+// +checklocksexclude:cm.l.fsRestore.apfl.amflsMu
+// +checklocksexclude:cm.l.fsRestore.apfl.mu
 func (cm *containerManager) StartSubcontainer(args *sentryapi.StartArgs, _ *struct{}) error {
 	// Validate arguments.
 	if args == nil {

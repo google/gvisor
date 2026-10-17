@@ -213,9 +213,13 @@ go_test(
     ],
     embed = [":pgalloc"],
     deps = [
+        "//pkg/context",
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/usage",
+        "//pkg/state",
+        "//pkg/state/wire",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
