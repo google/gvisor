@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"archive/zip"
+	"gvisor.dev/gvisor/pkg/zip"
 )
 
 // Verbatim notices from the modules that exposed incomplete discovery:
