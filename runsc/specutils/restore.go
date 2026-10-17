@@ -460,13 +460,17 @@ func validateSpecForContainer(oSpec, nSpec *specs.Spec, cName string) error {
 	}
 	oldLinux.Namespaces, newLinux.Namespaces = nil, nil
 
-	// Hostname, Domainname, Environment variables and CgroupsPath are
-	// allowed to change during restore. Hooks contain callbacks for
+	// Hostname, Domainname, Environment variables, OOMScoreAdj and
+	// CgroupsPath are allowed to change during restore. OOMScoreAdj only
+	// affects host OOM-kill ordering of the sandbox and gofer processes, and
+	// may be derived from the host (e.g. Kubernetes computes it from node
+	// memory capacity for Burstable pods). Hooks contain callbacks for
 	// lifecycle of the container such as prestart and teardown, and can
 	// change. Do not validate these fields.
 	oldSpec.Hostname, newSpec.Hostname = "", ""
 	oldSpec.Domainname, newSpec.Domainname = "", ""
 	oldProcess.Env, newProcess.Env = nil, nil
+	oldProcess.OOMScoreAdj, newProcess.OOMScoreAdj = nil, nil
 	oldLinux.CgroupsPath, newLinux.CgroupsPath = "", ""
 	oldSpec.Hooks, newSpec.Hooks = nil, nil
 
