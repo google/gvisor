@@ -128,7 +128,9 @@ func (ts *TaskSet) ForEachThreadGroup(f func(tg *ThreadGroup, tgLeader *Task)) {
 
 // forEachThreadGroupLocked applies f to each thread group in ts.
 //
-// Preconditions: ts.mu must be locked (for reading or writing).
+// f runs with ts.mu held and must not release or reacquire it.
+//
+// +checklocksread:ts.mu
 func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup, tgLeader *Task)) {
 	for tg := range ts.Root.tgids {
 		f(tg, tg.leader)

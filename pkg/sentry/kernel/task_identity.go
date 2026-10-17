@@ -222,7 +222,7 @@ func (t *Task) setKUIDsUnchecked(newR, newE, newS auth.KUID) {
 		t.MemoryManager().SetDumpability(mm.NotDumpable)
 
 		// Not documented, but compare Linux's kernel/cred.c:commit_creds().
-		t.parentDeathSignal = 0
+		t.SetParentDeathSignal(0)
 	}
 	t.creds.Store(creds)
 }
@@ -336,7 +336,7 @@ func (t *Task) setKGIDsUnchecked(newR, newE, newS auth.KGID) {
 
 		// Not documented, but compare Linux's
 		// kernel/cred.c:commit_creds().
-		t.parentDeathSignal = 0
+		t.SetParentDeathSignal(0)
 	}
 	t.creds.Store(creds)
 }

@@ -208,7 +208,7 @@ func TestSendSignalToInit(t *testing.T) {
 				task.tg.signalHandlers.mu.Unlock()
 			}
 			if tc.blocked {
-				task.signalMask.Store(uint64(linux.SignalSetOf(tc.sig)))
+				task.SetSignalMask(linux.SignalSetOf(tc.sig))
 			}
 			info := &linux.SignalInfo{Signo: int32(tc.sig), Code: tc.code}
 			if tc.code == linux.SI_USER {
@@ -217,6 +217,7 @@ func TestSendSignalToInit(t *testing.T) {
 			timer := &IntervalTimer{}
 			task.tg.signalHandlers.mu.Lock()
 			err := task.sendSignalTimerLocked(info, false /* group */, tc.forced, timer)
+			exiting := task.tg.exiting
 			task.tg.signalHandlers.mu.Unlock()
 			if err != nil {
 				t.Fatalf("sendSignalTimerLocked: %v", err)
@@ -232,7 +233,7 @@ func TestSendSignalToInit(t *testing.T) {
 			if timer.overrunCur != wantOverrun {
 				t.Errorf("timer.overrunCur = %d, want %d", timer.overrunCur, wantOverrun)
 			}
-			if tc.sig == linux.SIGKILL && !tc.wantQueued && task.tg.exiting {
+			if tc.sig == linux.SIGKILL && !tc.wantQueued && exiting {
 				t.Errorf("discarded SIGKILL marked the thread group as exiting")
 			}
 		})
@@ -308,7 +309,7 @@ func TestForceSignalOnInit(t *testing.T) {
 				task.tg.signalHandlers.mu.Unlock()
 			}
 			if tc.blocked {
-				task.signalMask.Store(uint64(linux.SignalSetOf(linux.SIGSEGV)))
+				task.SetSignalMask(linux.SignalSetOf(linux.SIGSEGV))
 			}
 			task.tg.signalHandlers.mu.Lock()
 			task.forceSignalLocked(linux.SIGSEGV, tc.unconditional)
