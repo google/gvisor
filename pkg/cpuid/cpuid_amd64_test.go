@@ -277,6 +277,38 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+func TestNormalizeHidesAMX(t *testing.T) {
+	amx := []Feature{X86FeatureAMX_BF16, X86FeatureAMX_TILE, X86FeatureAMX_INT8}
+	s := make(Static)
+	for _, f := range append([]Feature{X86FeatureXSAVE}, amx...) {
+		s.Add(f)
+	}
+	xsave := In{Eax: uint32(xSaveInfo)}
+	s.Set(xsave, Out{Eax: uint32(XSAVEFeatureAVX | XCR0AmxCfgMask | XCR0AmxDataMask)})
+	avx := In{Eax: uint32(xSaveInfo), Ecx: 2}
+	s.Set(avx, Out{Eax: 256, Ebx: 576})
+	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}, Out{Eax: 64, Ebx: 2752})
+	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}, Out{Eax: 8192, Ebx: 2816})
+
+	fs := s.ToFeatureSet()
+	for _, f := range amx {
+		if fs.HasFeature(f) {
+			t.Errorf("%v is advertised", f)
+		}
+	}
+	if got, want := fs.Query(xsave).Eax, uint32(XSAVEFeatureAVX); got != want {
+		t.Errorf("XCR0 bits: got %#x, want %#x", got, want)
+	}
+	if got, want := fs.Query(avx), (Out{Eax: 256, Ebx: 576}); got != want {
+		t.Errorf("AVX subleaf: got %+v, want %+v", got, want)
+	}
+	for _, i := range []uint32{amxTileCfgComponent, amxTileDataComponent} {
+		if got := fs.Query(In{Eax: uint32(xSaveInfo), Ecx: i}); got != (Out{}) {
+			t.Errorf("AMX subleaf %d: got %+v, want zero", i, got)
+		}
+	}
+}
+
 func TestUnsetFSGSBASE(t *testing.T) {
 	hostFeatures := HostFeatureSet()
 	guestFeatures := hostFeatures.UnsetFSGSBASE()
