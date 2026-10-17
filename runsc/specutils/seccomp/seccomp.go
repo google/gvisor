@@ -45,6 +45,12 @@ var (
 	logAction   = seccomp.Log
 )
 
+// Offsets into struct seccomp_data.
+const (
+	seccompDataOffsetNR   = 0
+	seccompDataOffsetArch = 4
+)
+
 // BuildProgram generates a bpf program based on the given OCI seccomp
 // config.
 func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
@@ -68,6 +74,8 @@ func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
 	if err != nil {
 		return bpf.Program{}, fmt.Errorf("building seccomp program: %w", err)
 	}
+	// The program uses relative jumps, so prepending the stub is safe.
+	instrs = append(enosysStub(s), instrs...)
 
 	program, err := bpf.Compile(instrs, true /* optimize */)
 	if err != nil {
@@ -75,6 +83,37 @@ func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
 	}
 
 	return program, nil
+}
+
+// enosysStub returns instructions that return ENOSYS for syscalls newer than
+// all syscalls in s, like runc does. This lets the application fall back to
+// an older syscall, for example from clone3 to clone.
+func enosysStub(s *specs.LinuxSeccomp) []bpf.Instruction {
+	switch s.DefaultAction {
+	case specs.ActAllow, specs.ActLog, specs.ActTrace:
+		return nil
+	}
+	if s.DefaultErrnoRet != nil && *s.DefaultErrnoRet == uint(unix.ENOSYS) {
+		return nil
+	}
+	var maxNo uint32
+	for _, syscall := range s.Syscalls {
+		for _, name := range syscall.Names {
+			if no, err := lookupSyscallNo(nativeArchAuditNo, name); err == nil && no > maxNo {
+				maxNo = no
+			}
+		}
+	}
+	if maxNo == 0 {
+		return nil
+	}
+	return []bpf.Instruction{
+		bpf.Stmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArch),
+		bpf.Jump(bpf.Jmp|bpf.Jeq|bpf.K, nativeArchAuditNo, 0, 3),
+		bpf.Stmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetNR),
+		bpf.Jump(bpf.Jmp|bpf.Jgt|bpf.K, maxNo, 0, 1),
+		bpf.Stmt(bpf.Ret|bpf.K, uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS)))),
+	}
 }
 
 // lookupSyscallNo gets the syscall number for the syscall with the given name

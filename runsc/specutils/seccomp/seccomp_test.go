@@ -164,6 +164,125 @@ var (
 			expected: uint32(linux.SECCOMP_RET_LOG),
 		},
 		{
+			name: "enosys_above_max",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"openat",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "clone3", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			name: "enosys_unknown_syscall",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"openat",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input: seccomp.DataAsBPFInput(
+				&linux.SeccompData{Nr: 1000, Arch: nativeArchAuditNo},
+				make([]byte, (&linux.SeccompData{}).SizeBytes()),
+			),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			name: "enosys_kill",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActKill,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"openat",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input: seccomp.DataAsBPFInput(
+				&linux.SeccompData{Nr: 1000, Arch: nativeArchAuditNo},
+				make([]byte, (&linux.SeccompData{}).SizeBytes()),
+			),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.ENOSYS))),
+		},
+		{
+			name: "no_enosys_below_max",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"openat",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input:    testInput(nativeArchAuditNo, "getcwd", nil),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
+		},
+		{
+			name: "no_enosys_default_allow",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"openat",
+						},
+						Action: specs.ActErrno,
+					},
+				},
+			},
+			input: seccomp.DataAsBPFInput(
+				&linux.SeccompData{Nr: 1000, Arch: nativeArchAuditNo},
+				make([]byte, (&linux.SeccompData{}).SizeBytes()),
+			),
+			expected: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+		{
+			name: "no_enosys_no_syscalls",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+			},
+			input: seccomp.DataAsBPFInput(
+				&linux.SeccompData{Nr: 1000, Arch: nativeArchAuditNo},
+				make([]byte, (&linux.SeccompData{}).SizeBytes()),
+			),
+			expected: uint32(linux.SECCOMP_RET_ERRNO.WithReturnCode(uint16(unix.EPERM))),
+		},
+		{
+			name: "enosys_deny_arch",
+			config: specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
+				Syscalls: []specs.LinuxSyscall{
+					{
+						Names: []string{
+							"openat",
+						},
+						Action: specs.ActAllow,
+					},
+				},
+			},
+			input: seccomp.DataAsBPFInput(
+				&linux.SeccompData{Nr: 1000, Arch: 0x40000003},
+				make([]byte, (&linux.SeccompData{}).SizeBytes()),
+			),
+			expected: uint32(linux.SECCOMP_RET_KILL_THREAD),
+		},
+		{
 			name: "no_match_name_allow",
 			config: specs.LinuxSeccomp{
 				DefaultAction: specs.ActAllow,
