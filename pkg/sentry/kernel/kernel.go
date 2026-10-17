@@ -890,10 +890,10 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 		// Pause the network stack.
 		netstackPauseStart := time.Now()
 		// Stack.removeConf should be true when resume=false and vice versa.
-		k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
+		k.rootNetworkNamespace.SetRemoveConfStacks(!resume)
 		log.Infof("Pausing root network namespace")
-		k.rootNetworkNamespace.Stack().Pause()
-		defer k.rootNetworkNamespace.Stack().Resume()
+		k.rootNetworkNamespace.PauseStacks()
+		defer k.rootNetworkNamespace.ResumeStacks()
 		log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
 	}
 
@@ -1127,7 +1127,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 		if err := networkArgs.ConfigureNetwork(s); err != nil {
 			return fmt.Errorf("configuring network: %w", err)
 		}
-		s.Restore()
+		k.rootNetworkNamespace.RestoreStacks()
 		timeline.Reached("Network stack restored")
 	}
 
