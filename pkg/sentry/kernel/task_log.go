@@ -31,7 +31,8 @@ const (
 	maxStackDebugBytes = 1024
 	// maxCodeDebugBytes is the maximum number of user code bytes that may be
 	// printed by debugDumpCode.
-	maxCodeDebugBytes = 128
+	maxCodeDebugBytes  = 128
+	maxFrameChainDepth = 32
 )
 
 // Infof logs an formatted info message by calling log.Infof.
@@ -66,6 +67,7 @@ func (t *Task) IsLogging(level log.Level) bool {
 func (t *Task) DebugDumpState() {
 	t.debugDumpRegisters()
 	t.debugDumpStack()
+	t.debugDumpFrameChain()
 	t.debugDumpCode()
 	if mm := t.MemoryManager(); mm != nil {
 		t.Debugf("Mappings:\n%s", mm)
@@ -132,6 +134,42 @@ func (t *Task) debugDumpStack() {
 			break
 		}
 	}
+}
+
+// debugDumpFrameChain logs return addresses from the user frame-pointer chain.
+// Code built without frame pointers may not have a usable chain.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) debugDumpFrameChain() {
+	if !t.IsLogging(log.Debug) {
+		return
+	}
+	mm := t.MemoryManager()
+	fp := t.Arch().FramePointer()
+	if mm == nil || fp == 0 {
+		return
+	}
+	t.Debugf("Frame chain:")
+	for i := 0; i < maxFrameChainDepth; i++ {
+		if fp%8 != 0 {
+			t.Debugf("\tstopped at unaligned fp=%x", fp)
+			return
+		}
+		var frame [16]byte
+		if _, err := mm.CopyIn(t, hostarch.Addr(fp), frame[:], usermem.IOOpts{
+			IgnorePermissions: true,
+		}); err != nil {
+			t.Debugf("\terror reading frame at fp=%x: %v", fp, err)
+			return
+		}
+		t.Debugf("\t#%2d fp=%016x ret=%016x", i, fp, hostarch.ByteOrder.Uint64(frame[8:]))
+		next := uintptr(hostarch.ByteOrder.Uint64(frame[:8]))
+		if next <= fp {
+			return
+		}
+		fp = next
+	}
+	t.Debugf("\t... truncated after %d frames", maxFrameChainDepth)
 }
 
 // debugDumpCode logs user code contents at log level debug.
