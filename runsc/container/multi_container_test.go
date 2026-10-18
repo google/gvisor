@@ -3031,6 +3031,21 @@ func TestMultiContainerEvent(t *testing.T) {
 					t.Errorf("Container.Event() should have failed, cid: %q, state: %v", cont.ID, cont.Status)
 				}
 			}
+
+			// Destroyed containers stay registered in the sandbox, and with
+			// cgroup v2 their cgroup is removed.
+			ret, err := containers[0].Event()
+			if err != nil {
+				t.Fatalf("Container.Event(%q): %v", containers[0].ID, err)
+			}
+			if destroyed, ok := ret.ContainerUsage[containers[1].ID]; ok {
+				t.Errorf("Destroyed container should not report CPU usage, got: %d", destroyed)
+			}
+			if name != "disableCgroups" {
+				if exited := ret.ContainerUsage[containers[2].ID]; exited == 0 {
+					t.Errorf("Exited container should report non-zero CPU usage after another container is destroyed, got: %d", exited)
+				}
+			}
 		})
 	}
 }

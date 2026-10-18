@@ -210,7 +210,20 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 	defer cm.l.mu.Unlock()
 
 	isV2 := cm.l.k.Cgroup2FS().EverMounted()
-	for _, cid := range cm.l.containerIDs {
+	for name, cid := range cm.l.containerIDs {
+		// Destroyed containers stay in containerIDs, and with cgroup v2 their
+		// cgroup is removed.
+		if _, ok := cm.l.processes[execID{cid: cid}]; !ok {
+			continue
+		}
+		// Containers that do not mount cgroups, e.g. the CRI pause container,
+		// have no cgroup. Use sentry accounting for them.
+		if !specHasCgroupMount(cm.l.containerSpecs[name]) {
+			if u, ok := sentryUsage[cid]; ok {
+				usage[cid] = u
+			}
+			continue
+		}
 		file := control.CgroupControlFile{
 			Controller: "cpuacct",
 			Path:       "/" + cid,
@@ -222,14 +235,7 @@ func (cm *containerManager) getCPUUsageFromCgroups() (map[string]uint64, error) 
 		}
 		valStr, err := cm.readControlFile(file)
 		if err != nil {
-			// Use sentry accounting for containers whose cgroup cannot be
-			// read, e.g. the CRI pause container, which does not mount
-			// cgroups. Exited containers have no sentry usage.
-			log.Debugf("could not get container %q cpu usage from cgroups, using sentry accounting, error: %v", cid, err)
-			if u, ok := sentryUsage[cid]; ok {
-				usage[cid] = u
-			}
-			continue
+			return nil, err
 		}
 		var cpuUsage uint64
 		if isV2 {
