@@ -1380,6 +1380,9 @@ syscall_test(
 )
 
 syscall_test(
+    # Per-syscall tracing dominates the million deliberately invalid close calls.
+    # Keep debug logs without formatting a trace for every call.
+    args = ["--strace=false"],
     test = "//test/syscalls/linux:processes_test",
 )
 
