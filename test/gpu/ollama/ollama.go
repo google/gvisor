@@ -54,9 +54,7 @@ type Ollama struct {
 	// A caller may set this to make forcefully unloading a model quicker.
 	cheapModels []*Model
 
-	// HasGPU is set depending on whether the LLM has GPU access.
-	// ollama supports running both on CPU and GPU, and detects this
-	// by spawning nvidia-smi.
+	// HasGPU reports whether the server detected a CUDA GPU.
 	HasGPU bool
 }
 
@@ -105,7 +103,7 @@ func New(ctx context.Context, server llmutil.Server, logger testutil.Logger) (*O
 	switch {
 	case strings.Contains(logs, "library=cpu"):
 		llm.HasGPU = false
-	case strings.Contains(logs, "library=cuda"):
+	case strings.Contains(logs, "library=CUDA"):
 		llm.HasGPU = true
 	default:
 		return nil, fmt.Errorf("cannot determine whether ollama is using GPU from logs:\n%s", logs)
