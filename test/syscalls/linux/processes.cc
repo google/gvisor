@@ -91,9 +91,14 @@ int testSetPGIDOfZombie(void* arg) {
   pid_t cpid;
   TEST_PCHECK(ReadFd(p[0], &cpid, sizeof(cpid)) == sizeof(cpid));
 
-  // Wait when both child processes will die.
+  // Wait for both pipe writers to close.
   int c;
   TEST_PCHECK(ReadFd(p[0], &c, sizeof(c)) == 0);
+
+  // Pipe EOF can precede reparenting the second child. Wait for the first child
+  // to exit, but leave its zombie available for setpgid below.
+  siginfo_t info;
+  TEST_PCHECK(RetryEINTR(waitid)(P_PID, pid, &info, WEXITED | WNOWAIT) == 0);
 
   // Wait the second child process to collect its zombie.
   int status;
