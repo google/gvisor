@@ -193,6 +193,22 @@ TEST(RlimitTest, SetRlimitRtPrio) {
   EXPECT_EQ(rl.rlim_max, 10);
 }
 
+TEST(RlimitTest, SetRlimitMsgqueue) {
+  struct rlimit rl = {};
+  ASSERT_THAT(getrlimit(RLIMIT_MSGQUEUE, &rl), SyscallSucceeds());
+  EXPECT_THAT(setrlimit(RLIMIT_MSGQUEUE, &rl), SyscallSucceeds());
+
+  if (rl.rlim_cur > 0) {
+    rl.rlim_cur--;
+  }
+  EXPECT_THAT(setrlimit(RLIMIT_MSGQUEUE, &rl), SyscallSucceeds());
+
+  struct rlimit got = {};
+  EXPECT_THAT(getrlimit(RLIMIT_MSGQUEUE, &got), SyscallSucceeds());
+  EXPECT_EQ(got.rlim_cur, rl.rlim_cur);
+  EXPECT_EQ(got.rlim_max, rl.rlim_max);
+}
+
 TEST(RlimitTest, ParseProcPidLimits) {
   auto proc_self_limits =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/limits"));
