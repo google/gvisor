@@ -57,10 +57,21 @@ def _matches_prefix(label, prefix):
     workspace, pkg = _parse_prefix(prefix)
     return _workspace_of(label) == workspace and label.package.startswith(pkg)
 
+def _canonical_go_proto_name(name):
+    if name.startswith("_") and name.endswith("_go_proto"):
+        return name[1:]
+    if name.endswith("_go_stubby"):
+        return name[:-len("_go_stubby")] + "_go_proto"
+    return name
+
 def _is_allowed(target, ctx):
+    canonical_name = _canonical_go_proto_name(target.name)
+
     # Check the allowlist. It takes precedence over denied prefixes.
     for allowed in ctx.attr.allowed:
         if target == allowed.label:
+            return True
+        if canonical_name != target.name and _workspace_of(target) == _workspace_of(allowed.label) and target.package == allowed.label.package and canonical_name == allowed.label.name:
             return True
 
     # Check for denied prefixes.
