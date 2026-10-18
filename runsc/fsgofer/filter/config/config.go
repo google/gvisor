@@ -24,6 +24,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
+	"gvisor.dev/gvisor/runsc/goferfilter"
 )
 
 // selfPIDVarName is the variable name for the current process ID used in
@@ -59,7 +60,7 @@ func HostVendorSyscalls() precompiledseccomp.VarSyscallNumbers {
 // isInstrumentationEnabled returns whether there are any
 // instrumentation-specific filters enabled.
 func isInstrumentationEnabled() bool {
-	return instrumentationFilters().Size() > 0
+	return goferfilter.InstrumentationFilters().Size() > 0
 }
 
 // ConfigKey returns a unique string representing this set of options.
@@ -122,7 +123,7 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 	s.Merge(selfPIDFilters(vars.GetUint64(selfPIDVarName)))
 	s.Merge(precompiledseccomp.VarSyscallRules(vendorSyscalls, opt.VendorSyscalls, vars))
 	if opt.ProfileEnabled {
-		s.Merge(profileFilters)
+		s.Merge(goferfilter.ProfileFilters)
 	}
 	if opt.UDSOpenEnabled || opt.UDSCreateEnabled {
 		s.Merge(udsCommonSyscalls)
@@ -134,9 +135,9 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 		}
 	}
 	if opt.CgoEnabled {
-		s.Merge(cgoFilters)
+		s.Merge(goferfilter.CgoFilters)
 	}
-	s.Merge(instrumentationFilters())
+	s.Merge(goferfilter.InstrumentationFilters())
 	// When DirectFS is not enabled, filters for LisaFS are installed.
 	// Also needed when needing to serve a mount that disallows DirectFS.
 	if !opt.DirectFS || opt.LisafsNeeded {
