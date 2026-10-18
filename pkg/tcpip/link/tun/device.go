@@ -15,7 +15,6 @@
 package tun
 
 import (
-	goContext "context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -171,8 +170,6 @@ func attachOrCreateNIC(ctx context.Context, s *stack.Stack, name, prefix string,
 		id := s.NextNICID()
 		endpoint := &tunEndpoint{
 			Endpoint: channel.New(defaultDevOutQueueLen, defaultDevMtu, ""),
-			stack:    s,
-			nicID:    id,
 			name:     name,
 			isTap:    prefix == "tap",
 		}
@@ -181,7 +178,7 @@ func attachOrCreateNIC(ctx context.Context, s *stack.Stack, name, prefix string,
 		if endpoint.name == "" {
 			endpoint.name = fmt.Sprintf("%s%d", prefix, id)
 		}
-		err := s.CreateNICWithOptions(endpoint.nicID, packetsocket.New(endpoint), stack.NICOptions{
+		err := s.CreateNICWithOptions(id, packetsocket.New(endpoint), stack.NICOptions{
 			Name:   endpoint.name,
 			Kind:   "tun",
 			MinMTU: header.IPv4MinimumMTU,
@@ -395,8 +392,6 @@ type tunEndpoint struct {
 	tunEndpointRefs
 	*channel.Endpoint
 
-	stack *stack.Stack
-	nicID tcpip.NICID
 	name  string
 	isTap bool
 
@@ -454,19 +449,6 @@ func (e *tunEndpoint) SetOnCloseAction(action func()) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.onCloseAction = action
-}
-
-// afterLoad is invoked by stateify.
-//
-// +checklocksexclude:e.mu
-func (e *tunEndpoint) afterLoad(goContext.Context) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if !e.closed {
-		e.onCloseAction = func() {
-			e.stack.RemoveNIC(e.nicID)
-		}
-	}
 }
 
 // DecRef decrements refcount of e, removing NIC if it reaches 0.
