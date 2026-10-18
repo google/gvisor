@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	goContext "context"
 	"fmt"
 	"io"
 	"sync"
@@ -40,11 +41,13 @@ const kcovAreaSizeMax = 10 * 1024 * 1024
 //
 // To give the illusion that the data is always up to date, we update the shared
 // memory every time before we return to userspace.
+//
+// +stateify savable
 type Kcov struct {
 	// mf stores application memory. It is immutable after creation.
-	mf *pgalloc.MemoryFile
+	mf *pgalloc.MemoryFile `state:"nosave"`
 
-	mu sync.RWMutex
+	mu sync.RWMutex `state:"nosave"`
 
 	// mode is the current kcov mode.
 	//
@@ -77,6 +80,11 @@ type Kcov struct {
 
 	// +checklocks:mu
 	mappable *mm.SpecialMappable
+}
+
+// afterLoad is invoked by stateify.
+func (kcov *Kcov) afterLoad(ctx goContext.Context) {
+	kcov.mf = pgalloc.MemoryFileFromContext(ctx)
 }
 
 // NewKcov creates and returns a Kcov instance.

@@ -435,6 +435,7 @@ go_test(
     size = "small",
     srcs = [
         "fd_table_test.go",
+        "kcov_test.go",
         "kernel_restore_test.go",
         "pending_signals_test.go",
         "table_test.go",
@@ -464,6 +465,7 @@ go_test(
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/tcpip",
         "@org_golang_google_protobuf//proto:go_default_library",
