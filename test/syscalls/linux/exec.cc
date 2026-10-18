@@ -787,20 +787,35 @@ TEST(ExecveatTest, SymlinkNoFollowAndEmptyPath) {
 }
 
 TEST(ExecveatTest, SymlinkNoFollowIgnoreSymlinkAncestor) {
+  // System executables may themselves be symlinks. Use a regular file so only
+  // the ancestor is a symlink.
+  TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(RunfilePath(kBasicWorkload)));
+  TempPath executable = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(parent.path(), contents, 0755));
   TempPath parent_link = ASSERT_NO_ERRNO_AND_VALUE(
-      TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), "/bin"));
-  std::string path_with_symlink = JoinPath(parent_link.path(), "echo");
+      TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), parent.path()));
+  std::string path_with_symlink =
+      JoinPath(parent_link.path(), Basename(executable.path()));
 
   CheckExecveat(AT_FDCWD, path_with_symlink, {path_with_symlink}, {},
-                AT_SYMLINK_NOFOLLOW, ArgEnvExitStatus(0, 0), "");
+                AT_SYMLINK_NOFOLLOW, ArgEnvExitStatus(0, 0),
+                absl::StrCat(path_with_symlink, "\n"));
 }
 
 TEST(ExecveatTest, SymlinkNoFollowWithNormalFile) {
+  TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::string contents =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents(RunfilePath(kBasicWorkload)));
+  TempPath executable = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(parent.path(), contents, 0755));
   const FileDescriptor dirfd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open("/bin", O_DIRECTORY));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent.path(), O_DIRECTORY));
+  std::string name(Basename(executable.path()));
 
-  CheckExecveat(dirfd.get(), "echo", {"echo"}, {}, AT_SYMLINK_NOFOLLOW,
-                ArgEnvExitStatus(0, 0), "");
+  CheckExecveat(dirfd.get(), name, {name}, {}, AT_SYMLINK_NOFOLLOW,
+                ArgEnvExitStatus(0, 0), absl::StrCat(name, "\n"));
 }
 
 TEST(ExecveatTest, BasicWithCloexecFD) {
