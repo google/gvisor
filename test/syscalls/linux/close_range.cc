@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <climits>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -221,8 +222,11 @@ TEST_F(CloseRangeTest, CloexecFlagTest) {
   int num_files_in_range = 10;
   unsigned int flags = CLOSE_RANGE_CLOEXEC;
 
-  // CLOEXEC is only available on >=5.11 kernels.
-  SKIP_IF(close_range(1, 0, flags) < 0 && errno == EINVAL);
+  // Probe a valid range without open descriptors: an invalid range also returns
+  // EINVAL on kernels that support CLOEXEC (Linux >=5.11).
+  SKIP_IF(!IsRunningOnGvisor() &&
+          close_range(UINT_MAX, UINT_MAX, CLOSE_RANGE_CLOEXEC) < 0 &&
+          errno == EINVAL);
 
   CreateFiles(num_files_in_range);
   OpenFilesRdwr();
@@ -326,8 +330,11 @@ TEST_F(CloseRangeTest, CloexecAndUnshareFlagTest) {
   int num_files_in_range = 10;
   unsigned int flags = CLOSE_RANGE_CLOEXEC | CLOSE_RANGE_UNSHARE;
 
-  // CLOEXEC is only available on >=5.11 kernels.
-  SKIP_IF(close_range(1, 0, flags) < 0 && errno == EINVAL);
+  // Probe a valid range without open descriptors: an invalid range also returns
+  // EINVAL on kernels that support CLOEXEC (Linux >=5.11).
+  SKIP_IF(!IsRunningOnGvisor() &&
+          close_range(UINT_MAX, UINT_MAX, CLOSE_RANGE_CLOEXEC) < 0 &&
+          errno == EINVAL);
 
   CreateFiles(num_files_in_range);
   OpenFilesRdwr();
