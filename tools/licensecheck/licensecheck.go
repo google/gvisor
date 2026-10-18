@@ -775,6 +775,7 @@ var githubURLRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`^https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/`),
 	regexp.MustCompile(`^https://github\.com/([^/]+)/([^/]+)/archive/refs/tags/(.+?)\.(?:tar\.gz|tar\.xz|tar\.bz2|zip)$`),
 	regexp.MustCompile(`^https://github\.com/([^/]+)/([^/]+)/archive/(.+?)\.(?:tar\.gz|tar\.xz|tar\.bz2|zip)$`),
+	regexp.MustCompile(`^https://codeload\.github\.com/([^/]+)/([^/]+)/(?:tar\.gz|zip)/(.+)$`),
 	regexp.MustCompile(`^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/`),
 }
 

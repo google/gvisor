@@ -39,6 +39,36 @@ var (
 	udiffMIT string
 )
 
+func TestParseGitHubCodeloadURL(t *testing.T) {
+	for _, test := range []struct {
+		url  string
+		want [3]string
+	}{
+		{
+			url:  "https://codeload.github.com/torvalds/linux/tar.gz/fd73f4a6659897191fa0d40695fe370925dd3780",
+			want: [3]string{"torvalds", "linux", "fd73f4a6659897191fa0d40695fe370925dd3780"},
+		},
+		{
+			url:  "https://codeload.github.com/example/project/tar.gz/refs/heads/release/v1",
+			want: [3]string{"example", "project", "refs/heads/release/v1"},
+		},
+		{
+			url:  "https://codeload.github.com/example/project/zip/refs/tags/v1.0",
+			want: [3]string{"example", "project", "refs/tags/v1.0"},
+		},
+	} {
+		t.Run(test.url, func(t *testing.T) {
+			owner, repo, ref, err := parseGitHubURL(test.url)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := [3]string{owner, repo, ref}; got != test.want {
+				t.Errorf("parseGitHubURL = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestModuleLicenses(t *testing.T) {
 	const prefix = "example.com/module@v1.0.0/"
 	for _, test := range []struct {
