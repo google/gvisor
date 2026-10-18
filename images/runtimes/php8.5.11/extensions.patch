@@ -1,0 +1,32 @@
+# Explicit PHPT selection bypasses PHP's extension-directory filtering.
+# Declare the optional extensions so the harness can load them or report
+# missing prerequisites without changing the test bodies.
+#
+# Upstream bcmath prerequisite correction, absent from PHP 8.5.11:
+# https://github.com/php/php-src/commit/3855c7c14
+#
+# The PostgreSQL test declares pdo, but its constants belong to pdo_pgsql:
+# https://github.com/php/php-src/blob/678778973/ext/pdo_pgsql/pdo_pgsql.c#L181-L189
+
+diff --git a/ext/bcmath/tests/GHSA-x692-q9x7-8c3f.phpt b/ext/bcmath/tests/GHSA-x692-q9x7-8c3f.phpt
+--- a/ext/bcmath/tests/GHSA-x692-q9x7-8c3f.phpt
++++ b/ext/bcmath/tests/GHSA-x692-q9x7-8c3f.phpt
+@@ -1,5 +1,7 @@
+ --TEST--
+ GHSA-x692-q9x7-8c3f: bccomp() out-of-bounds write
++--EXTENSIONS--
++bcmath
+ --CREDITS--
+ Recep Asan (recepasan)
+ --FILE--
+diff --git a/ext/pdo_pgsql/tests/transations_deprecations.phpt b/ext/pdo_pgsql/tests/transations_deprecations.phpt
+--- a/ext/pdo_pgsql/tests/transations_deprecations.phpt
++++ b/ext/pdo_pgsql/tests/transations_deprecations.phpt
+@@ -2,6 +2,7 @@
+ Test PDO::PGSQL_TRANSACTION* constants.
+ --EXTENSIONS--
+ pdo
++pdo_pgsql
+ --SKIPIF--
+ <?php
+ if (substr(PHP_OS, 0, 3) == 'WIN') {
