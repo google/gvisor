@@ -3049,6 +3049,11 @@ func TestUIDMap(t *testing.T) {
 			testFile := path.Join(testDir, "testfile")
 
 			spec := testutil.NewSpecWithArgs("touch", "/tmp/testfile")
+			// This test supplies its own writable /tmp. Remove the helper's
+			// temporary-directory bind, which /tmp would hide when TmpDir is below it.
+			spec.Mounts = slices.DeleteFunc(spec.Mounts, func(m specs.Mount) bool {
+				return m.Destination == testutil.TmpDir()
+			})
 			uid := os.Getuid()
 			gid := os.Getgid()
 			spec.Linux = &specs.Linux{
