@@ -91,6 +91,23 @@ type machine struct {
 
 	// useCPUNums indicates whether to enable the use vCPU numbers as CPU numbers.
 	useCPUNums bool
+
+	// tscOffset is the offset to apply to the guest TSC.
+	tscOffset uint64
+
+	// shadowVDSO is a binary-patched copy of the host [vdso] mapped at vdsoVirt
+	// in the guest page tables when tscOffset != 0.
+	shadowVDSO []byte
+
+	// vdsoVirt is the host virtual address of [vdso].
+	vdsoVirt uintptr
+
+	// tscOffsetHostVA and tscOffsetGuestVA are the pages returned by
+	// time.EnableGuestAliasedOffset when tscOffset != 0, or zero otherwise.
+	// The guest page tables map tscOffsetHostVA to the physical page backing
+	// tscOffsetGuestVA.
+	tscOffsetHostVA  uintptr
+	tscOffsetGuestVA uintptr
 }
 
 const (
@@ -281,6 +298,7 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		fd:               vm,
 		applicationCores: config.ApplicationCores,
 		useCPUNums:       config.UseCPUNums,
+		tscOffset:        config.TSCOffset,
 	}
 	m.available.L = &m.mu
 
@@ -309,6 +327,23 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	hasTSCControl, errno := hostsyscall.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_TSC_CONTROL)
 	m.tscControl = errno == 0 && hasTSCControl == 1
 	log.Debugf("TSC scaling support: %t.", m.tscControl)
+
+	// Destroy cannot be used on the error paths below: the machine is not
+	// registered in machinePool yet, so release what was acquired directly.
+	if err := m.initShadowVDSO(); err != nil {
+		unix.Close(m.fd)
+		return nil, err
+	}
+	if m.tscOffset != 0 {
+		hostVA, guestVA, err := ktime.EnableGuestAliasedOffset()
+		if err != nil {
+			m.destroyShadowVDSO()
+			unix.Close(m.fd)
+			return nil, err
+		}
+		m.tscOffsetHostVA = hostVA
+		m.tscOffsetGuestVA = guestVA
+	}
 
 	// Create the upper shared pagetables and kernel(sentry) pagetables.
 	m.upperSharedPageTables = pagetables.New(newAllocator())
@@ -363,7 +398,11 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	// ensure successful vCPU entry.
 	mapRegion := func(vr virtualRegion, flags uint32) {
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
-			physical, length, ok := translateToPhysical(virtual)
+			translateVirt := virtual
+			if vr.filename == "[vdso]" && len(m.shadowVDSO) > 0 {
+				translateVirt = m.shadowVDSOVirt() + (virtual - vr.virtual)
+			}
+			physical, length, ok := translateToPhysical(translateVirt)
 			if !ok {
 				// This must be an invalid region that was
 				// knocked out by creation of the physical map.
@@ -409,6 +448,10 @@ func newMachine(vm int, config *Config) (*machine, error) {
 		mapRegion(vr, 0)
 		return false
 	})
+	if len(m.shadowVDSO) > 0 {
+		m.protectShadowVDSO()
+	}
+	m.mapTSCOffsetAlias()
 	if mapEntireAddressSpace {
 		for _, r := range physicalRegions {
 			m.mapPhysical(r.physical, r.length)
@@ -475,6 +518,25 @@ func (m *machine) mapPhysical(physical, length uintptr) {
 	}
 }
 
+// mapTSCOffsetAlias maps tscOffsetHostVA to the physical page backing
+// tscOffsetGuestVA in the guest page tables, so that the TSC offset word reads
+// as zero in guest mode. See time.EnableGuestAliasedOffset.
+func (m *machine) mapTSCOffsetAlias() {
+	if m.tscOffsetHostVA == 0 {
+		return
+	}
+	physical, length, ok := translateToPhysical(m.tscOffsetGuestVA)
+	if !ok || length < hostarch.PageSize {
+		panic(fmt.Sprintf("impossible translation: tscOffsetGuestVA %x", m.tscOffsetGuestVA))
+	}
+	m.kernel.PageTables.Map(
+		hostarch.Addr(m.tscOffsetHostVA),
+		hostarch.PageSize,
+		pagetables.MapOpts{AccessType: hostarch.Read},
+		physical)
+	m.mapPhysical(physical, hostarch.PageSize)
+}
+
 // Destroy frees associated resources.
 //
 // Destroy should only be called once all active users of the machine are gone.
@@ -509,6 +571,7 @@ func (m *machine) Destroy() {
 
 	machinePool[m.machinePoolIndex].Store(nil)
 	seccompMmapSync()
+	m.destroyShadowVDSO()
 
 	// vCPUs are gone: teardown machine state.
 	if err := unix.Close(m.fd); err != nil {
@@ -805,7 +868,7 @@ func (c *vCPU) setSystemTimeLegacy() error {
 		// Try to set the TSC to an estimate of where it will be
 		// on the host during a "fast" system call iteration.
 		start := uint64(ktime.Rdtsc())
-		if err := c.setTSC(start + (minimum / 2)); err != nil {
+		if err := c.setTSC(start + (minimum / 2) + c.machine.tscOffset); err != nil {
 			return err
 		}
 		// See if this is our new minimum call time. Note that this
