@@ -515,6 +515,11 @@ const (
 	NV0080_CTRL_CMD_NVJPG_GET_CAPS_V2 = 0x801f02
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0090.h:
+const (
+	NV0090_CTRL_CMD_SET_LG_SECTOR_PROMOTION = 0x90010b
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl00da.h:
 const (
 	NV_SEMAPHORE_SURFACE_CTRL_CMD_BIND_CHANNEL   = 0xda0002

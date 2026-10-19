@@ -98,16 +98,24 @@ func (s Static) afterLoad(context.Context) {
 	s.normalize()
 }
 
-// normalize normalizes FPU sizes.
+// normalize normalizes extended state information.
 func (s Static) normalize() {
-	// Override local FPU sizes, which must be fixed.
+	// AMX is not supported, so hide it from applications.
+	// TODO(gvisor.dev/issues/9896): Implement AMX support.
+	for _, f := range []Feature{X86FeatureAMX_BF16, X86FeatureAMX_TILE, X86FeatureAMX_INT8} {
+		s.Remove(f)
+	}
 	fs := FeatureSet{s, hwCap{}}
 	if fs.HasFeature(X86FeatureXSAVE) {
 		in := In{Eax: uint32(xSaveInfo)}
 		out := s[in]
+		// Override local FPU sizes, which must be fixed.
 		out.Ecx = max(out.Ecx, maxXsaveSize)
 		out.Ebx = max(out.Ebx, xsaveSize)
+		out.Eax &^= uint32(XCR0AmxCfgMask | XCR0AmxDataMask)
 		s[in] = out
+		delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})
+		delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent})
 	}
 }
 
