@@ -131,7 +131,16 @@ func kvmProbe(deferRelease bool) {
 	}
 	fds := make([]int32, numVMs)
 	for i := range fds {
-		vm, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(kvmFD), kvmCreateVM, 0)
+		var (
+			vm    uintptr
+			errno unix.Errno
+		)
+		for {
+			vm, _, errno = unix.Syscall(unix.SYS_IOCTL, uintptr(kvmFD), kvmCreateVM, 0)
+			if errno != unix.EINTR {
+				break
+			}
+		}
 		if errno == unix.EPERM || errno == unix.EACCES {
 			fmt.Printf("SKIP: cannot create a KVM VM: %v\n", errno)
 			return
