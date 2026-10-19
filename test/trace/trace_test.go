@@ -697,11 +697,26 @@ func checkSyscallChdir(msg test.Message) error {
 	if err := checkContextData(p.ContextData); err != nil {
 		return err
 	}
-	if p.Fd < 3 && p.Fd != unix.AT_FDCWD { // Constant used for all file-related syscalls.
-		return fmt.Errorf("invalid FD: %d", p.Fd)
-	}
-	if want := "trace_test.abc"; !strings.Contains(p.Pathname, want) {
-		return fmt.Errorf("wrong Pathname, got: %q, want: %q", p.Pathname, want)
+	switch p.Sysno {
+	case unix.SYS_CHDIR:
+		if p.Fd != unix.AT_FDCWD {
+			return fmt.Errorf("invalid FD: %d", p.Fd)
+		}
+		if want := "trace_test.abc"; !strings.Contains(p.Pathname, want) {
+			return fmt.Errorf("wrong Pathname, got: %q, want: %q", p.Pathname, want)
+		}
+	case unix.SYS_FCHDIR:
+		if p.Fd < 3 {
+			return fmt.Errorf("invalid FD: %d", p.Fd)
+		}
+		if p.Pathname != "" {
+			return fmt.Errorf("unexpected Pathname: %q", p.Pathname)
+		}
+		if want := "/trace_test.abc"; !strings.HasSuffix(p.FdPath, want) {
+			return fmt.Errorf("wrong FdPath, got: %q, want suffix: %q", p.FdPath, want)
+		}
+	default:
+		return fmt.Errorf("invalid syscall number: %d", p.Sysno)
 	}
 
 	return nil
