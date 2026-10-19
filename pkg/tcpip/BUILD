@@ -137,5 +137,9 @@ go_test(
     name = "tcpip_x_test",
     size = "small",
     srcs = ["timer_test.go"],
-    deps = [":tcpip"],
+    deps = [
+        ":tcpip",
+        "//pkg/state",
+        "//pkg/tcpip/faketime",
+    ],
 )

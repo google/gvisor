@@ -15,13 +15,58 @@
 package tcpip_test
 
 import (
+	"bytes"
+	"context"
 	"math"
 	"sync"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
+
+func TestJobRestoreSchedulingState(t *testing.T) {
+	for _, name := range []string{"unscheduled", "cancelled", "rescheduled in callback"} {
+		t.Run(name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			var mu sync.Mutex
+			var job *tcpip.Job
+			job = tcpip.NewJob(clock, &mu, func() { job.Schedule(2 * time.Second) })
+			switch name {
+			case "cancelled":
+				job.Schedule(time.Second)
+				mu.Lock()
+				job.Cancel()
+				mu.Unlock()
+			case "rescheduled in callback":
+				job.Schedule(time.Second)
+				clock.Advance(time.Second)
+			}
+			// Save both roots so the test can advance the restored clock without
+			// retaining any live timer from the original graph.
+			original := [2]any{job, clock}
+			var buf bytes.Buffer
+			if _, err := state.Save(context.Background(), &buf, &original); err != nil {
+				t.Fatalf("Save: %s", err)
+			}
+			var restored [2]any
+			if _, err := state.Load(context.Background(), &buf, &restored); err != nil {
+				t.Fatalf("Load: %s", err)
+			}
+			var restoredMu sync.Mutex
+			fired := false
+			restoredMu.Lock()
+			restored[0].(*tcpip.Job).Restore(&restoredMu, func() { fired = true })
+			restoredMu.Unlock()
+			restored[1].(*faketime.ManualClock).Advance(2 * time.Second)
+			if want := name == "rescheduled in callback"; fired != want {
+				t.Errorf("restored callback fired = %t, want %t", fired, want)
+			}
+		})
+	}
+}
 
 func TestMonotonicTimeBefore(t *testing.T) {
 	var mt tcpip.MonotonicTime
