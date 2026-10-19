@@ -15,6 +15,7 @@
 package bwrap
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -214,6 +215,80 @@ func TestSandboxOptions(t *testing.T) {
 			)
 			if diff != "" {
 				t.Errorf("Specification mismatch (-got +want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSandboxOptionsSudoIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		env     map[string]string
+		wantUID uint32
+		wantGID uint32
+		wantErr error
+	}{
+		{
+			name:    "unset",
+			wantUID: uint32(os.Getuid()),
+			wantGID: uint32(os.Getgid()),
+		},
+		{
+			name:    "sudo_user",
+			env:     map[string]string{"SUDO_UID": "4242", "SUDO_GID": "4343"},
+			wantUID: 4242,
+			wantGID: 4343,
+		},
+		{
+			name:    "plus_and_leading_zeros",
+			env:     map[string]string{"SUDO_UID": "+0001", "SUDO_GID": "+0002"},
+			wantUID: 1,
+			wantGID: 2,
+		},
+		{
+			name:    "largest_valid_id",
+			env:     map[string]string{"SUDO_UID": "4294967294", "SUDO_GID": "4294967294"},
+			wantUID: 4294967294,
+			wantGID: 4294967294,
+		},
+		{name: "empty_uid", env: map[string]string{"SUDO_UID": ""}, wantErr: strconv.ErrSyntax},
+		{name: "empty_gid", env: map[string]string{"SUDO_GID": ""}, wantErr: strconv.ErrSyntax},
+		{name: "negative_uid", env: map[string]string{"SUDO_UID": "-1"}, wantErr: strconv.ErrRange},
+		{name: "negative_gid", env: map[string]string{"SUDO_GID": "-1"}, wantErr: strconv.ErrRange},
+		{name: "oversized_uid", env: map[string]string{"SUDO_UID": "4294967296"}, wantErr: strconv.ErrRange},
+		{name: "oversized_gid", env: map[string]string{"SUDO_GID": "4294967296"}, wantErr: strconv.ErrRange},
+		{name: "reserved_uid", env: map[string]string{"SUDO_UID": "4294967295"}, wantErr: strconv.ErrRange},
+		{name: "reserved_gid", env: map[string]string{"SUDO_GID": "4294967295"}, wantErr: strconv.ErrRange},
+		{name: "malformed_uid", env: map[string]string{"SUDO_UID": "not-an-id"}, wantErr: strconv.ErrSyntax},
+		{name: "malformed_gid", env: map[string]string{"SUDO_GID": "not-an-id"}, wantErr: strconv.ErrSyntax},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{"SUDO_UID", "SUDO_GID"} {
+				value, ok := tc.env[key]
+				t.Setenv(key, value)
+				if !ok {
+					if err := os.Unsetenv(key); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			cfg := bwrapConfig{UnshareUser: true, runscConfig: &config.Config{}}
+			opts, err := cfg.sandboxOptions()
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("sandboxOptions() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr != nil {
+				return
+			}
+			spec, err := sandbox.DebugSpec(opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := spec.Linux.UIDMappings, wantIDMappings(0, tc.wantUID); !cmp.Equal(got, want) {
+				t.Errorf("UID mappings = %v, want %v", got, want)
+			}
+			if got, want := spec.Linux.GIDMappings, wantIDMappings(0, tc.wantGID); !cmp.Equal(got, want) {
+				t.Errorf("GID mappings = %v, want %v", got, want)
 			}
 		})
 	}
