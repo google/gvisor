@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/ethtool.h>
 #include <linux/if.h>
 #include <linux/if_addr.h>
@@ -21,6 +23,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
 #include <netinet/in.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
@@ -32,8 +35,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -228,6 +233,115 @@ TEST(NetdeviceTest, EthtoolGetTSInfo) {
     return;
   }
   ASSERT_THAT(ioctl(sock.get(), SIOCETHTOOL, &ifr), SyscallSucceeds());
+}
+
+// NetdeviceSetTest runs each test in a new network namespace, so that the
+// "set" requests do not change the interfaces that other tests use.
+class NetdeviceSetTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // hostinet sends netdevice ioctls to the host and does not support the
+    // "set" requests.
+    SKIP_IF(IsRunningWithHostinet());
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+    SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+    saved_netns_ =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+    sock_ = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  }
+
+  void TearDown() override {
+    sock_.reset();
+    if (saved_netns_.get() >= 0) {
+      ASSERT_THAT(setns(saved_netns_.get(), CLONE_NEWNET), SyscallSucceeds());
+    }
+  }
+
+  // Sends SIOCSIFFLAGS with flags for the named interface.
+  int SetFlags(const char* name, int16_t flags) {
+    struct ifreq ifr = {};
+    snprintf(ifr.ifr_name, IFNAMSIZ, "%s", name);
+    ifr.ifr_flags = flags;
+    return ioctl(sock_.get(), SIOCSIFFLAGS, &ifr);
+  }
+
+  // Returns the SIOCGIFFLAGS flags of the named interface.
+  PosixErrorOr<int16_t> GetFlags(const char* name) {
+    struct ifreq ifr = {};
+    snprintf(ifr.ifr_name, IFNAMSIZ, "%s", name);
+    RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(sock_.get(), SIOCGIFFLAGS, &ifr));
+    return ifr.ifr_flags;
+  }
+
+  // Netstack state is not saved and restored.
+  const DisableSave ds_;
+  FileDescriptor saved_netns_;
+  FileDescriptor sock_;
+};
+
+TEST_F(NetdeviceSetTest, SetFlagsUp) {
+  // slirp4netns sends IFF_UP | IFF_RUNNING. Linux ignores IFF_RUNNING in the
+  // request.
+  ASSERT_THAT(SetFlags("lo", IFF_UP | IFF_RUNNING), SyscallSucceeds());
+
+  const int16_t flags = ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo"));
+  EXPECT_EQ(flags & (IFF_UP | IFF_RUNNING), IFF_UP | IFF_RUNNING);
+}
+
+TEST_F(NetdeviceSetTest, SetFlagsWriteBack) {
+  ASSERT_THAT(SetFlags("lo", IFF_UP), SyscallSucceeds());
+  const int16_t before = ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo"));
+
+  ASSERT_THAT(SetFlags("lo", before), SyscallSucceeds());
+
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo")), before);
+}
+
+TEST_F(NetdeviceSetTest, SetFlagsNoDevice) {
+  EXPECT_THAT(SetFlags("nosuchdev0", IFF_UP), SyscallFailsWithErrno(ENODEV));
+}
+
+TEST_F(NetdeviceSetTest, SetFlagsNoCap) {
+  AutoCapability cap(CAP_NET_ADMIN, false);
+
+  EXPECT_THAT(SetFlags("lo", IFF_UP), SyscallFailsWithErrno(EPERM));
+  // Linux checks the capability before it looks up the device.
+  EXPECT_THAT(SetFlags("nosuchdev0", IFF_UP), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_F(NetdeviceSetTest, SetFlagsDown) {
+  ASSERT_THAT(SetFlags("lo", IFF_UP), SyscallSucceeds());
+  const int16_t up = ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo"));
+
+  ASSERT_THAT(SetFlags("lo", up & ~IFF_UP), SyscallSucceeds());
+
+  const int16_t flags = ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo"));
+  if (IsRunningOnGvisor()) {
+    // Netstack interfaces are always up. gVisor accepts and ignores a request
+    // to set an interface down, as it does for RTM_NEWLINK.
+    EXPECT_EQ(flags & IFF_UP, IFF_UP);
+  } else {
+    EXPECT_EQ(flags & IFF_UP, 0);
+  }
+}
+
+TEST_F(NetdeviceSetTest, SetFlagsPromisc) {
+  ASSERT_THAT(SetFlags("lo", IFF_UP), SyscallSucceeds());
+  const int16_t before = ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo"));
+  ASSERT_EQ(before & IFF_PROMISC, 0);
+
+  if (IsRunningOnGvisor()) {
+    // gVisor does not support changes to flags other than IFF_UP.
+    EXPECT_THAT(SetFlags("lo", before | IFF_PROMISC),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo")), before);
+    return;
+  }
+  ASSERT_THAT(SetFlags("lo", before | IFF_PROMISC), SyscallSucceeds());
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetFlags("lo")) & IFF_PROMISC,
+            IFF_PROMISC);
 }
 
 }  // namespace

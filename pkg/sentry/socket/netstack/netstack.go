@@ -3494,6 +3494,20 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 	}
 
 	switch arg := int(args[1].Int()); arg {
+	case linux.SIOCSIFFLAGS:
+		var ifr linux.IFReq
+		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		// Linux checks CAP_NET_ADMIN before it looks up the device.
+		if !t.NetworkNamespace().HasCapability(ctx, linux.CAP_NET_ADMIN) {
+			return 0, linuxerr.EPERM
+		}
+		if err := setInterfaceFlags(inet.StackFromContext(ctx), &ifr); err != nil {
+			return 0, err.ToError()
+		}
+		return 0, nil
+
 	case linux.SIOCGIFFLAGS,
 		linux.SIOCGIFADDR,
 		linux.SIOCGIFBRDADDR,
@@ -3771,6 +3785,38 @@ func interfaceStatusFlags(stack inet.Stack, name string) (uint32, *syserr.Error)
 		}
 	}
 	return 0, syserr.ErrNoDevice
+}
+
+// ifreqSettableFlags are the SIOCSIFFLAGS bits that Linux copies from the
+// request. Linux ignores the other bits (IFF_UP is handled separately, and
+// the IFF_VOLATILE bits such as IFF_RUNNING and IFF_LOOPBACK are owned by the
+// kernel). See net/core/dev.c:__dev_change_flags().
+const ifreqSettableFlags = linux.IFF_DEBUG | linux.IFF_NOTRAILERS |
+	linux.IFF_NOARP | linux.IFF_PROMISC | linux.IFF_ALLMULTI |
+	linux.IFF_MULTICAST | linux.IFF_PORTSEL | linux.IFF_AUTOMEDIA |
+	linux.IFF_DYNAMIC
+
+// setInterfaceFlags implements SIOCSIFFLAGS. The caller must check
+// CAP_NET_ADMIN.
+func setInterfaceFlags(stk inet.Stack, ifr *linux.IFReq) *syserr.Error {
+	if stk == nil {
+		return syserr.ErrNoDevice
+	}
+	cur, err := interfaceStatusFlags(stk, ifr.Name())
+	if err != nil {
+		return err
+	}
+	// ifr_flags is a short.
+	req := uint32(hostarch.ByteOrder.Uint16(ifr.Data[:2]))
+
+	// Netstack interfaces are always up, so IFF_UP is accepted and ignored,
+	// as in the RTM_NEWLINK handler. Changes to the other settable flags are
+	// not supported. Requests that only repeat the current flags (for
+	// example, a read-modify-write of IFF_UP) succeed.
+	if (req^cur)&ifreqSettableFlags != 0 {
+		return syserr.ErrInvalidArgument
+	}
+	return nil
 }
 
 func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
