@@ -153,6 +153,19 @@ func (fd *specialFileFD) OnClose(ctx context.Context) error {
 	if !fd.vfsfd.IsWritable() {
 		return nil
 	}
+	if fd.isRegularFile {
+		// Regular files on remote filesystems (e.g. NFS, FUSE) get per-FD
+		// handles (disable_file_handle_sharing) so that close(2) reaches the
+		// host, but the host FD is closed by Release, which discards the
+		// result. Flush it here so that close(2) reports deferred write
+		// errors.
+		fd.releaseMu.RLock()
+		err := flushHostFD(ctx, fd.handle.fd)
+		fd.releaseMu.RUnlock()
+		if err != nil {
+			return err
+		}
+	}
 	return flush(ctx, fd.handle.fdLisa)
 }
 
