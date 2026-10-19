@@ -76,6 +76,7 @@ func (m *machine) initArchState() error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -299,7 +300,7 @@ func (c *vCPU) setSystemTime() error {
 		upperThreshold := (((minimum << 3) + minimum) >> 3)
 		if iter >= minIterations && (current <= upperThreshold || minimum < 50) {
 			// Try to set the TSC
-			if err := c.setTSC(end + (minimum / 2)); err != nil {
+			if err := c.setTSC(end + (minimum / 2) + c.machine.tscOffset); err != nil {
 				return err
 			}
 			return nil

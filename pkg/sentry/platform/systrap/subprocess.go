@@ -247,6 +247,15 @@ func handlePtraceSyscallRequestError(req any, format string, values ...any) {
 func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	s.syscallThreadMu.Lock()
 	defer s.syscallThreadMu.Unlock()
+	if s.dead.Load() {
+		switch req := req.(type) {
+		case requestThread:
+			req.thread <- nil
+		case requestStub:
+			req.done <- nil
+		}
+		return
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := s.syscallThread.attach(); err != nil {
