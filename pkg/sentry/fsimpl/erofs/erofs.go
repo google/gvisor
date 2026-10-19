@@ -191,7 +191,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 	cu.Add(func() { fs.vfsfs.DecRef(ctx) })
 
-	fs.zeroPage, err = fs.memoryFile.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.PageCache, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
+	fs.zeroPage, err = fs.memoryFile.Allocate(uint64(hostarch.PageSize), pgalloc.AllocOpts{Kind: usage.PageCache, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
 	if err != nil {
 		return nil, nil, err
 	}

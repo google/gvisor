@@ -86,7 +86,7 @@ retry:
 
 // IncRef implements memmap.File.IncRef.
 func (r *MmapFileRefs) IncRef(fr memmap.FileRange, memCgID uint32) {
-	n := int64(fr.Length() / hostarch.PageSize)
+	n := int64(fr.Length() >> hostarch.PageShift)
 retry:
 	refs := r.refs.Load()
 	if refs == math.MinInt64 {
@@ -102,7 +102,7 @@ retry:
 
 // DecRef implements memmap.File.DecRef.
 func (r *MmapFileRefs) DecRef(fr memmap.FileRange) {
-	n := int64(fr.Length() / hostarch.PageSize)
+	n := int64(fr.Length() >> hostarch.PageShift)
 retry:
 	refs := r.refs.Load()
 	if realRefs := refs & math.MaxInt64; realRefs < n {

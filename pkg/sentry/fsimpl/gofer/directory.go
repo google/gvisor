@@ -133,7 +133,7 @@ func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 			mode:       atomicbitops.FromUint32(uint32(opts.mode)),
 			uid:        atomicbitops.FromUint32(uint32(opts.kuid)),
 			gid:        atomicbitops.FromUint32(uint32(opts.kgid)),
-			blockSize:  atomicbitops.FromUint32(hostarch.PageSize), // arbitrary
+			blockSize:  atomicbitops.FromUint32(uint32(hostarch.PageSize)), // arbitrary
 			atime:      atomicbitops.FromInt64(now),
 			mtime:      atomicbitops.FromInt64(now),
 			ctime:      atomicbitops.FromInt64(now),
