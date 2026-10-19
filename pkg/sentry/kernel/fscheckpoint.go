@@ -206,7 +206,7 @@ func (k *Kernel) fsSaveLocked(ctx context.Context, bundle *FSSaveBundle, runscVe
 	manifest := &fspb.Manifest{
 		Version:      1,
 		RunscVersion: runscVersion,
-		PageSize:     hostarch.PageSize,
+		PageSize:     uint64(hostarch.PageSize),
 		Endian:       hostarch.EndianString(),
 	}
 	type tmpfsAndPrivateMemoryFile struct {

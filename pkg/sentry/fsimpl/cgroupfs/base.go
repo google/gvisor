@@ -534,7 +534,7 @@ func parseInt64FromString(ctx context.Context, src usermem.IOSequence) (val, len
 func copyScratchBufferFromContext(ctx context.Context, size int) []byte {
 	t := kernel.TaskFromContext(ctx)
 	if t != nil {
-		return t.CopyScratchBuffer(hostarch.PageSize)
+		return t.CopyScratchBuffer(int(hostarch.PageSize))
 	}
 	// Not on task context.
 	return make([]byte, hostarch.PageSize)

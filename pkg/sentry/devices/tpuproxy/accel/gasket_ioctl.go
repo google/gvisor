@@ -50,7 +50,7 @@ func gasketMapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, fd 
 		return 0, linuxerr.EFAULT
 	}
 
-	if !ar.IsPageAligned() || (userIoctlParams.Size/hostarch.PageSize) == 0 {
+	if !ar.IsPageAligned() || (userIoctlParams.Size>>hostarch.PageShift) == 0 {
 		return 0, linuxerr.EINVAL
 	}
 
@@ -59,7 +59,7 @@ func gasketMapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, fd 
 	// address although it will be implicitly rounded down to a page
 	// boundary. We do it explicitly because it simplifies tracking
 	// of allocated ranges in 'devAddrSet'.
-	devAddr &^= (hostarch.PageSize - 1)
+	devAddr = hostarch.PageRoundDown(devAddr)
 
 	// Make sure that the device address range can be mapped.
 	devar := DevAddrRange{
@@ -140,7 +140,7 @@ func gasketUnmapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, f
 	}
 
 	devAddr := userIoctlParams.DeviceAddress
-	devAddr &^= (hostarch.PageSize - 1)
+	devAddr = hostarch.PageRoundDown(devAddr)
 	devar := DevAddrRange{
 		devAddr,
 		devAddr + userIoctlParams.Size,

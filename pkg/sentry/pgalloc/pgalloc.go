@@ -45,7 +45,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-const pagesPerHugePage = hostarch.HugePageSize / hostarch.PageSize
+// pagesPerHugePage returns the number of small pages in a huge page.
+func pagesPerHugePage() uint64 {
+	return uint64(hostarch.HugePageSize >> hostarch.PageShift)
+}
 
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
 // users.
@@ -705,7 +708,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 			} else if needHugeTouch {
 				// We only need to touch a single byte in each huge page.
 				f.forEachMappingSlice(fr, func(bs []byte) {
-					for i := 0; i < len(bs); i += hostarch.HugePageSize {
+					for i := 0; i < len(bs); i += int(hostarch.HugePageSize) {
 						bs[i] = 0
 					}
 				})
@@ -965,7 +968,7 @@ func tryPopulateMadv(b safemem.Block) bool {
 	// Only call madvise(MADV_POPULATE_WRITE) if >=2 pages are being populated.
 	// 1 syscall overhead >= 1 page fault overhead. This is because syscalls are
 	// susceptible to additional overheads like seccomp-bpf filters and auditing.
-	if b.Len() <= hostarch.PageSize {
+	if b.Len() <= int(hostarch.PageSize) {
 		return true
 	}
 	_, _, errno := unix.Syscall(unix.SYS_MADVISE, b.Addr(), uintptr(b.Len()), unix.MADV_POPULATE_WRITE)
@@ -1048,7 +1051,7 @@ func tryPopulate(b safemem.Block) bool {
 //   - fr.Length() > 0.
 //   - At least one reference must be held on all pages in fr.
 func (f *MemoryFile) Decommit(fr memmap.FileRange) {
-	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
+	if !fr.WellFormed() || fr.Length() == 0 || !hostarch.IsPageAligned(fr.Start) || !hostarch.IsPageAligned(fr.End) {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
@@ -1348,14 +1351,14 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 
 	firstHugeStart := hostarch.HugePageRoundDown(fr.Start)
 	lastHugeStart := hostarch.HugePageRoundDown(fr.End - 1)
-	firstHugeEnd := firstHugeStart + hostarch.HugePageSize
-	lastHugeEnd := lastHugeStart + hostarch.HugePageSize
+	firstHugeEnd := firstHugeStart + uint64(hostarch.HugePageSize)
+	lastHugeEnd := lastHugeStart + uint64(hostarch.HugePageSize)
 	if firstHugeStart == lastHugeStart {
 		// All of fr falls within a single huge page.
 		oldSubrel := f.subreleased[firstHugeStart]
-		incSubrel := fr.Length() / hostarch.PageSize
+		incSubrel := fr.Length() >> hostarch.PageShift
 		newSubrel := oldSubrel + incSubrel
-		if newSubrel == pagesPerHugePage {
+		if newSubrel == pagesPerHugePage() {
 			// Free this huge page.
 			//
 			// When a small page within a hugepage-backed allocation is
@@ -1399,9 +1402,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 		freeFR.Start = firstHugeStart
 	} else {
 		oldSubrel := f.subreleased[firstHugeStart]
-		incSubrel := (firstHugeEnd - fr.Start) / hostarch.PageSize
+		incSubrel := (firstHugeEnd - fr.Start) >> hostarch.PageShift
 		newSubrel := oldSubrel + incSubrel
-		if newSubrel == pagesPerHugePage {
+		if newSubrel == pagesPerHugePage() {
 			if oldSubrel != 0 {
 				delete(f.subreleased, firstHugeStart)
 			}
@@ -1417,9 +1420,9 @@ func (f *MemoryFile) releaseLocked(fr memmap.FileRange, huge bool) {
 		freeFR.End = lastHugeEnd
 	} else {
 		oldSubrel := f.subreleased[lastHugeStart]
-		incSubrel := (fr.End - lastHugeStart) / hostarch.PageSize
+		incSubrel := (fr.End - lastHugeStart) >> hostarch.PageShift
 		newSubrel := oldSubrel + incSubrel
-		if newSubrel == pagesPerHugePage {
+		if newSubrel == pagesPerHugePage() {
 			if oldSubrel != 0 {
 				delete(f.subreleased, lastHugeStart)
 			}
@@ -1691,7 +1694,7 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 
 			// Ensure that we have sufficient buffer for the call (one byte per
 			// page). The length of s must be page-aligned.
-			bufLen := len(s) / hostarch.PageSize
+			bufLen := len(s) >> hostarch.PageShift
 			if len(buf) < bufLen {
 				buf = make([]byte, bufLen)
 			}
@@ -1732,8 +1735,8 @@ func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
 					}
 				}
 				commitFR := memmap.FileRange{
-					Start: chunkFR.Start + uint64(i*hostarch.PageSize),
-					End:   chunkFR.Start + uint64(j*hostarch.PageSize),
+					Start: chunkFR.Start + uint64(i)<<hostarch.PageShift,
+					End:   chunkFR.Start + uint64(j)<<hostarch.PageShift,
 				}
 				// Advance maseg to commitFR.Start.
 				for maseg.Ok() && maseg.End() <= commitFR.Start {

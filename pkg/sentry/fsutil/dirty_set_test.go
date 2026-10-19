@@ -23,13 +23,16 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
+// pageSize is hostarch.PageSize, which is not a constant on all architectures.
+var pageSize = uint64(hostarch.PageSize)
+
 func TestDirtySet(t *testing.T) {
 	var set DirtySet
-	set.MarkDirty(memmap.MappableRange{0, 2 * hostarch.PageSize})
-	set.KeepDirty(memmap.MappableRange{hostarch.PageSize, 2 * hostarch.PageSize})
-	set.MarkClean(memmap.MappableRange{0, 2 * hostarch.PageSize})
+	set.MarkDirty(memmap.MappableRange{Start: 0, End: 2 * pageSize})
+	set.KeepDirty(memmap.MappableRange{Start: pageSize, End: 2 * pageSize})
+	set.MarkClean(memmap.MappableRange{Start: 0, End: 2 * pageSize})
 	want := []DirtyFlatSegment{
-		{hostarch.PageSize, 2 * hostarch.PageSize, DirtyInfo{Keep: true}},
+		{pageSize, 2 * pageSize, DirtyInfo{Keep: true}},
 	}
 	if got := set.ExportSlice(); !slices.Equal(got, want) {
 		t.Errorf("set:\n\tgot %v,\n\twant %v", got, want)
@@ -43,34 +46,34 @@ func TestDirtySetAccounting(t *testing.T) {
 	var set DirtySet
 
 	// Mark 2 pages dirty - should increment dirty counter
-	set.MarkDirty(memmap.MappableRange{0, 2 * hostarch.PageSize})
+	set.MarkDirty(memmap.MappableRange{Start: 0, End: 2 * pageSize})
 	dirty, _ := usage.DirtyMemoryAccounting.Copy()
-	expectedDirty := initialDirty + 2*hostarch.PageSize
+	expectedDirty := initialDirty + 2*pageSize
 	if dirty != expectedDirty {
 		t.Errorf("after MarkDirty: dirty = %d, want %d", dirty, expectedDirty)
 	}
 
 	// Mark overlapping range dirty - should not double-count
-	set.MarkDirty(memmap.MappableRange{0, hostarch.PageSize})
+	set.MarkDirty(memmap.MappableRange{Start: 0, End: pageSize})
 	dirty, _ = usage.DirtyMemoryAccounting.Copy()
 	if dirty != expectedDirty {
 		t.Errorf("after overlapping MarkDirty: dirty = %d, want %d", dirty, expectedDirty)
 	}
 
 	// Mark 1 more page dirty
-	set.MarkDirty(memmap.MappableRange{2 * hostarch.PageSize, 3 * hostarch.PageSize})
+	set.MarkDirty(memmap.MappableRange{Start: 2 * pageSize, End: 3 * pageSize})
 	dirty, _ = usage.DirtyMemoryAccounting.Copy()
-	expectedDirty += hostarch.PageSize
+	expectedDirty += pageSize
 	if dirty != expectedDirty {
 		t.Errorf("after extending MarkDirty: dirty = %d, want %d", dirty, expectedDirty)
 	}
 
 	// MarkClean should decrement (but not for Keep segments)
-	set.KeepDirty(memmap.MappableRange{hostarch.PageSize, 2 * hostarch.PageSize})
-	set.MarkClean(memmap.MappableRange{0, 3 * hostarch.PageSize})
+	set.KeepDirty(memmap.MappableRange{Start: pageSize, End: 2 * pageSize})
+	set.MarkClean(memmap.MappableRange{Start: 0, End: 3 * pageSize})
 	dirty, _ = usage.DirtyMemoryAccounting.Copy()
 	// Only the Keep segment remains, so we lost 2 pages (0-1 and 2-3)
-	expectedDirty -= 2 * hostarch.PageSize
+	expectedDirty -= 2 * pageSize
 	if dirty != expectedDirty {
 		t.Errorf("after MarkClean: dirty = %d, want %d", dirty, expectedDirty)
 	}
@@ -78,7 +81,7 @@ func TestDirtySetAccounting(t *testing.T) {
 	// RemoveAllAndAccount should remove remaining
 	set.RemoveAllAndAccount()
 	dirty, _ = usage.DirtyMemoryAccounting.Copy()
-	expectedDirty -= hostarch.PageSize
+	expectedDirty -= pageSize
 	if dirty != expectedDirty {
 		t.Errorf("after RemoveAllAndAccount: dirty = %d, want %d", dirty, expectedDirty)
 	}

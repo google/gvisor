@@ -332,7 +332,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					// hugepage-backed, the caller won't commit every allocated
 					// page since hugeMaskAR is ar expanded to huge alignment,
 					// unless only one page in optAR falls into the huge page.
-					if callerIndirectCommit && (huge || allocAR.Length() == hostarch.PageSize) {
+					if callerIndirectCommit && (huge || allocAR.Length() == hostarch.Addr(hostarch.PageSize)) {
 						allocOpts.Mode = pgalloc.AllocateCallerIndirectCommit
 					}
 					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), allocOpts)
@@ -452,10 +452,10 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						// being able to do much. So only copy up to one page
 						// before and after the pages required.
 						stackMaskAR := ar
-						if newStart := stackMaskAR.Start - hostarch.PageSize; newStart < stackMaskAR.Start {
+						if newStart := stackMaskAR.Start - hostarch.Addr(hostarch.PageSize); newStart < stackMaskAR.Start {
 							stackMaskAR.Start = newStart
 						}
-						if newEnd := stackMaskAR.End + hostarch.PageSize; newEnd > stackMaskAR.End {
+						if newEnd := stackMaskAR.End + hostarch.Addr(hostarch.PageSize); newEnd > stackMaskAR.End {
 							stackMaskAR.End = newEnd
 						}
 						copyAR = pseg.Range().Intersect(stackMaskAR)

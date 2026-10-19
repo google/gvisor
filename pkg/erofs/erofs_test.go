@@ -116,9 +116,8 @@ func TestInlineInodeStraddlingBlockBoundary(t *testing.T) {
 // the corresponding entry of blocks.
 func chunkImage(t *testing.T, format uint16, extended bool, size uint64, blocks []uint32) *Image {
 	t.Helper()
-	const page = hostarch.PageSize
-	data := make([]byte, 16*page)
-	sb := SuperBlock{Magic: SuperBlockMagicV1, BlockSizeBits: hostarch.PageShift, RootNid: 127, Blocks: 16, FeatureIncompat: FeatureIncompatChunkedFile}
+	data := make([]byte, 16*hostarch.PageSize)
+	sb := SuperBlock{Magic: SuperBlockMagicV1, BlockSizeBits: uint8(hostarch.PageShift), RootNid: 127, Blocks: 16, FeatureIncompat: FeatureIncompatChunkedFile}
 	sb.MarshalUnsafe(data[SuperBlockOffset:])
 	off := int(sb.RootNid) << InodeSlotBits
 	if extended {
@@ -165,8 +164,8 @@ func TestMapChunks(t *testing.T) {
 			for _, bits := range []uint16{0, 1, 2} {
 				name := fmt.Sprintf("indexes=%t/extended=%t/bits=%d", indexes != 0, extended, bits)
 				t.Run(name, func(t *testing.T) {
-					const page = hostarch.PageSize
-					chunk := uint64(page) << bits
+					page := uint64(hostarch.PageSize)
+					chunk := page << bits
 					blocksPerChunk := uint32(1) << bits
 					size := 5*chunk + 17
 					image := chunkImage(t, indexes|bits, extended, size, []uint32{4, 4 + blocksPerChunk, NullAddr, NullAddr, 12, 4})
@@ -219,12 +218,12 @@ func TestInvalidChunks(t *testing.T) {
 		inodeErr error
 		mapErr   error
 	}{
-		{name: "48-bit addresses", format: 0x40, size: hostarch.PageSize, inodeErr: linuxerr.ENOTSUP},
+		{name: "48-bit addresses", format: 0x40, size: uint64(hostarch.PageSize), inodeErr: linuxerr.ENOTSUP},
 		{name: "oversized file", size: math.MaxUint64, inodeErr: linuxerr.EUCLEAN},
 		{name: "truncated map", size: math.MaxInt64, off: math.MaxInt64 - 1, mapErr: linuxerr.EUCLEAN},
-		{name: "past image", size: hostarch.PageSize, blocks: []uint32{16}, mapErr: linuxerr.EUCLEAN},
-		{name: "truncated data", format: 1, size: 2 * hostarch.PageSize, blocks: []uint32{15}, mapErr: linuxerr.EUCLEAN},
-		{name: "large chunk", format: 31, size: hostarch.PageSize, blocks: []uint32{4}},
+		{name: "past image", size: uint64(hostarch.PageSize), blocks: []uint32{16}, mapErr: linuxerr.EUCLEAN},
+		{name: "truncated data", format: 1, size: 2 * uint64(hostarch.PageSize), blocks: []uint32{15}, mapErr: linuxerr.EUCLEAN},
+		{name: "large chunk", format: 31, size: uint64(hostarch.PageSize), blocks: []uint32{4}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			image := chunkImage(t, tc.format, true, tc.size, tc.blocks)
