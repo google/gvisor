@@ -358,9 +358,10 @@ func FixConfig(conf *config.Config, spec *specs.Spec) error {
 			}
 		}
 	}
-	// Override does not validate the config. Validate once after all
-	// annotations have been applied: annotations are iterated in random map
-	// order, so interdependent flags (e.g. qdisc=tbf and qdisc-tbf-rate) may
+	// ApplyBundles and Override do not validate the config. Validate once after
+	// all annotations have been applied: individual flag annotations may resolve
+	// conflicts introduced by bundles, and annotations are iterated in random
+	// map order, so interdependent flags (e.g. qdisc=tbf and qdisc-tbf-rate) may
 	// be applied in an order that is only valid once complete.
 	return conf.Validate()
 }

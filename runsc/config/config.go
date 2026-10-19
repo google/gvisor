@@ -553,8 +553,8 @@ func (c *Config) PlatformDeviceFor(platform string) string {
 
 // Validate checks that the Config is in a consistent state, e.g. that no
 // interdependent or mutually-exclusive flag values conflict. Note that
-// Config.Override does not validate, so callers must call Validate once they
-// are done overriding.
+// Config.Override and Config.ApplyBundles do not validate, so callers must call
+// Validate once they are done overriding.
 func (c *Config) Validate() error {
 	if _, err := parsePlatformDevicePaths(c.PlatformDevicePath); err != nil {
 		return err
