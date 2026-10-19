@@ -15,12 +15,15 @@
 package bridge_test
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -461,6 +464,209 @@ func TestBridgeDispatchOnlyForLocalOrMulticast(t *testing.T) {
 			ch1.Close()
 			ch2.Close()
 		})
+	}
+}
+
+func TestBridgeFDBSaveRestore(t *testing.T) {
+	const (
+		channelLinkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x03")
+		vethLinkAddr1   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+		vethLinkAddr2   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x07")
+		bridgeLinkAddr  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x09")
+
+		netProto = 55
+		nicID    = 4
+		vethID1  = 7
+		vethID2  = 8
+		bridgeID = 9
+	)
+
+	veth1, veth2 := veth.NewPair(1500, veth.DefaultBacklogSize)
+	veth1.SetLinkAddress(vethLinkAddr1)
+	veth2.SetLinkAddress(vethLinkAddr2)
+	ch := channel.New(1, header.EthernetMinimumSize, channelLinkAddr)
+	bridgeEndpoint := stack.NewBridgeEndpoint(1500)
+	bridgeEndpoint.SetLinkAddress(bridgeLinkAddr)
+
+	s := stack.New(stack.Options{})
+	secondStack := stack.New(stack.Options{})
+	secondStack.SetPreserveAllNICs(true)
+
+	if err := s.CreateNICWithOptions(bridgeID, bridgeEndpoint, stack.NICOptions{Name: "br0", Kind: "bridge"}); err != nil {
+		t.Fatalf("s.CreateNICWithOptions(%d, _): %s", bridgeID, err)
+	}
+	if err := s.CreateNICWithOptions(nicID, ethernet.New(ch), stack.NICOptions{Name: "ch0", Kind: "veth"}); err != nil {
+		t.Fatalf("s.CreateNICWithOptions(%d, _): %s", nicID, err)
+	}
+	if err := s.SetNICCoordinator(nicID, bridgeID); err != nil {
+		t.Fatalf("s.SetNICCoordinator(%d, %d): %s", nicID, bridgeID, err)
+	}
+	if err := s.CreateNICWithOptions(vethID1, ethernet.New(veth1), stack.NICOptions{Name: "veth1", Kind: "veth"}); err != nil {
+		t.Fatalf("s.CreateNICWithOptions(%d, _): %s", vethID1, err)
+	}
+	if err := s.SetNICCoordinator(vethID1, bridgeID); err != nil {
+		t.Fatalf("s.SetNICCoordinator(%d, %d): %s", vethID1, bridgeID, err)
+	}
+	if err := secondStack.CreateNICWithOptions(vethID2, ethernet.New(veth2), stack.NICOptions{Name: "veth2", Kind: "veth"}); err != nil {
+		t.Fatalf("secondStack.CreateNICWithOptions(%d, _): %s", vethID2, err)
+	}
+
+	n := &testNotification{ch: make(chan bool, 1)}
+	notifyHandle := ch.AddNotify(n)
+	if err := secondStack.WritePacketToRemote(vethID2, channelLinkAddr, netProto, buffer.Buffer{}); err != nil {
+		t.Fatalf("secondStack.WritePacketToRemote(%d, %s, _): %s", vethID2, channelLinkAddr, err)
+	}
+	<-n.ch
+	ch.RemoveNotify(notifyHandle)
+	pkt := ch.Read()
+	if pkt == nil {
+		t.Fatal("expected to read a packet before save")
+	}
+	pkt.DecRef()
+
+	// Also learn channelLinkAddr on port nicID so post-restore forwarding is unicast.
+	learn := makeEthernetFrame(channelLinkAddr, vethLinkAddr2)
+	ch.InjectInbound(header.IPv4ProtocolNumber, learn)
+	learn.DecRef()
+
+	if got := bridgeEndpoint.FindFDBEntry(vethLinkAddr2).PortLinkAddress(); got != vethLinkAddr1 {
+		t.Fatalf("bridgeEndpoint.FindFDBEntry(%s) = %s, want %s", vethLinkAddr2, got, vethLinkAddr1)
+	}
+
+	s.SetRemoveConf(false)
+	s.Pause()
+	secondStack.Pause()
+	saved := [2]*stack.Stack{s, secondStack}
+	var buf bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf, &saved); err != nil {
+		t.Fatalf("state.Save failed: %v", err)
+	}
+
+	s.Destroy()
+	secondStack.Destroy()
+	veth1.Close()
+	ch.Close()
+
+	var loaded [2]*stack.Stack
+	if _, err := state.Load(context.Background(), bytes.NewReader(buf.Bytes()), &loaded); err != nil {
+		t.Fatalf("state.Load failed: %v", err)
+	}
+	restoredRoot, restoredChild := loaded[0], loaded[1]
+	defer func() {
+		if ep := restoredRoot.GetLinkEndpointByName("veth1"); ep != nil {
+			ep.Close()
+		}
+		if ep := restoredRoot.GetLinkEndpointByName("ch0"); ep != nil {
+			ep.Close()
+		}
+		restoredRoot.Destroy()
+		restoredChild.Destroy()
+	}()
+
+	restoredRoot.ResetConfig()
+	restoredRoot.Restore()
+	restoredChild.Restore()
+
+	restoredBridge, ok := restoredRoot.GetLinkEndpointByName("br0").(*stack.BridgeEndpoint)
+	if !ok || restoredBridge == nil {
+		t.Fatalf("expected restored bridge endpoint 'br0', got %T", restoredRoot.GetLinkEndpointByName("br0"))
+	}
+	if got := restoredBridge.FindFDBEntry(vethLinkAddr2).PortLinkAddress(); got != vethLinkAddr1 {
+		t.Fatalf("restoredBridge.FindFDBEntry(%s) = %s, want %s", vethLinkAddr2, got, vethLinkAddr1)
+	}
+
+	restoredChEth, ok := restoredRoot.GetLinkEndpointByName("ch0").(*ethernet.Endpoint)
+	if !ok {
+		t.Fatalf("expected *ethernet.Endpoint for 'ch0', got %T", restoredRoot.GetLinkEndpointByName("ch0"))
+	}
+	restoredCh, ok := restoredChEth.Child().(*channel.Endpoint)
+	if !ok {
+		t.Fatalf("expected *channel.Endpoint child for 'ch0', got %T", restoredChEth.Child())
+	}
+
+	n2 := &testNotification{ch: make(chan bool, 1)}
+	restoredCh.AddNotify(n2)
+	if err := restoredChild.WritePacketToRemote(vethID2, channelLinkAddr, netProto, buffer.Buffer{}); err != nil {
+		t.Fatalf("restoredChild.WritePacketToRemote(%d, %s, _): %s", vethID2, channelLinkAddr, err)
+	}
+	select {
+	case <-n2.ch:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for packet across restored veth and bridge")
+	}
+	restoredPkt := restoredCh.Read()
+	if restoredPkt == nil {
+		t.Fatal("expected to read a packet after restore")
+	}
+	restoredPkt.DecRef()
+}
+
+func TestSaveRestoreMonotonicNICIDAndReplaceConfigCollision(t *testing.T) {
+	s := stack.New(stack.Options{})
+	s.SetPreserveAllNICs(true)
+
+	// Allocate NIC IDs 1, 2, 3 and delete NIC 3 before save so the highest
+	// active NIC ID is 2 while the monotonic watermark is 3.
+	ch1 := channel.New(1, header.EthernetMinimumSize, "\x02\x02\x03\x04\x05\x01")
+	ch2 := channel.New(1, header.EthernetMinimumSize, "\x02\x02\x03\x04\x05\x02")
+	ch3 := channel.New(1, header.EthernetMinimumSize, "\x02\x02\x03\x04\x05\x03")
+	for i, ch := range []*channel.Endpoint{ch1, ch2, ch3} {
+		id := s.NextNICID()
+		if want := tcpip.NICID(i + 1); id != want {
+			t.Fatalf("NextNICID() = %d, want %d", id, want)
+		}
+		if err := s.CreateNICWithOptions(id, ethernet.New(ch), stack.NICOptions{
+			Name: "eth" + string(rune('0'+i)),
+			Kind: stack.NICKindVeth,
+		}); err != nil {
+			t.Fatalf("CreateNICWithOptions(%d): %s", id, err)
+		}
+	}
+	if err := s.RemoveNIC(3); err != nil {
+		t.Fatalf("RemoveNIC(3): %s", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf, s); err != nil {
+		t.Fatalf("state.Save failed: %v", err)
+	}
+	s.Destroy()
+
+	var restored stack.Stack
+	if _, err := state.Load(context.Background(), bytes.NewReader(buf.Bytes()), &restored); err != nil {
+		t.Fatalf("state.Load failed: %v", err)
+	}
+	defer restored.Destroy()
+
+	// Build a replacement config stack whose NIC ID 1 collides with preserved NIC 1.
+	replacement := stack.New(stack.Options{})
+	extCh := channel.New(1, header.EthernetMinimumSize, "\x02\x02\x03\x04\x05\x09")
+	extID := replacement.NextNICID() // 1
+	if err := replacement.CreateNICWithOptions(extID, ethernet.New(extCh), stack.NICOptions{Name: "ext0"}); err != nil {
+		t.Fatalf("replacement.CreateNICWithOptions(%d): %s", extID, err)
+	}
+	extSubnet := tcpip.AddressWithPrefix{Address: tcpip.AddrFrom4([4]byte{192, 168, 1, 0}), PrefixLen: 24}.Subnet()
+	replacement.SetRouteTable([]tcpip.Route{{Destination: extSubnet, NIC: extID}})
+
+	restored.ReplaceConfig(replacement)
+	restored.Restore()
+
+	// Preserved NIC 1 ("eth0") must still be at ID 1, while colliding "ext0"
+	// was remapped to ID 4 (> savedNICIDGen=3) and its route updated to NIC 4.
+	info1, ok := restored.SingleNICInfo(1)
+	if !ok || info1.Name != "eth0" {
+		t.Fatalf("SingleNICInfo(1) = (%+v, %v), want preserved 'eth0'", info1, ok)
+	}
+	info4, ok := restored.SingleNICInfo(4)
+	if !ok || info4.Name != "ext0" {
+		t.Fatalf("SingleNICInfo(4) = (%+v, %v), want remapped 'ext0'", info4, ok)
+	}
+	routes := restored.GetRouteTable()
+	if len(routes) != 1 || routes[0].NIC != 4 {
+		t.Fatalf("GetRouteTable() = %+v, want route on remapped NIC 4", routes)
+	}
+	if next := restored.NextNICID(); next != 5 {
+		t.Fatalf("NextNICID() after restore = %d, want 5", next)
 	}
 }
 

@@ -429,6 +429,17 @@ func (*Stack) Restore() {
 	restoreListeners()
 }
 
+// RestoreNICsAndEndpoints implements inet.Stack.RestoreNICsAndEndpoints.
+func (*Stack) RestoreNICsAndEndpoints() {
+	restoreListeners()
+}
+
+// StartTransportProtocols implements inet.Stack.StartTransportProtocols.
+func (*Stack) StartTransportProtocols() {}
+
+// SetPreserveAllNICs implements inet.Stack.SetPreserveAllNICs.
+func (*Stack) SetPreserveAllNICs(bool) {}
+
 // ResetConfig implements inet.Stack.ResetConfig. It takes ownership of
 // the freshly configured stack's host state, including its proc net files.
 func (s *Stack) ResetConfig() {

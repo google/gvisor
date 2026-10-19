@@ -665,3 +665,74 @@ func TestSaveAfterRestoreWithReplaceConfig(t *testing.T) {
 		t.Fatalf("restoredStack2.CheckLocalAddress(IPv6) = %d, want %d", got, preservedNICID)
 	}
 }
+
+func TestTCPMigrationWithGVisorGSO(t *testing.T) {
+	c := testcontext.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	c.Stack().SetAllowLiveTCPMigration(true)
+	c.Stack().SetRemoveConf(true)
+
+	c.CreateConnected(testcontext.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */)
+
+	var buf bytes.Buffer
+	if _, err := state.Save(context.Background(), &buf, c.Stack()); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	restoredStack := stack.New(stack.Options{
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+	})
+	restoredStack.SetAllowLiveTCPMigration(true)
+	defer restoredStack.Destroy()
+
+	if _, err := state.Load(context.Background(), bytes.NewReader(buf.Bytes()), restoredStack); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	ep := channel.New(1000, e2e.DefaultMTU, "")
+	ep.SupportedGSOKind = stack.GVisorGSOSupported
+	defer ep.Close()
+	if err := restoredStack.CreateNIC(1, ep); err != nil {
+		t.Fatalf("CreateNIC failed: %v", err)
+	}
+	if err := restoredStack.AddProtocolAddress(1, tcpip.ProtocolAddress{
+		Protocol:          header.IPv4ProtocolNumber,
+		AddressWithPrefix: testcontext.StackAddrWithPrefix,
+	}, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress failed: %v", err)
+	}
+	restoredStack.SetRouteTable([]tcpip.Route{
+		{
+			Destination: header.IPv4EmptySubnet,
+			NIC:         1,
+		},
+	})
+
+	stackType := reflect.TypeOf(restoredStack).Elem()
+	sf, ok := stackType.FieldByName("restoredEndpoints")
+	if !ok {
+		t.Fatalf("Field restoredEndpoints not found")
+	}
+	restoredEndpoints := *(*[]stack.RestoredEndpoint)(unsafe.Pointer(uintptr(unsafe.Pointer(restoredStack)) + sf.Offset))
+	if len(restoredEndpoints) != 1 {
+		t.Fatalf("Expected 1 restored endpoint, got %d", len(restoredEndpoints))
+	}
+	restoredEP, ok := restoredEndpoints[0].(tcpip.Endpoint)
+	if !ok {
+		t.Fatalf("Restored endpoint does not implement tcpip.Endpoint")
+	}
+
+	restoredStack.Restore()
+
+	payload := bytes.Repeat([]byte{'a'}, 2*int(e2e.DefaultMTU))
+	var r bytes.Reader
+	r.Reset(payload)
+	if _, err := restoredEP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("restoredEP.Write failed: %v", err)
+	}
+	if got := ep.Drain(); got < 2 {
+		t.Fatalf("expected GSO batch write to produce at least 2 segments, got %d", got)
+	}
+}

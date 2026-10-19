@@ -32,6 +32,8 @@ type bridgePort struct {
 type BridgeFDBKey tcpip.LinkAddress
 
 // BridgeFDBEntry consists of all metadata for a FDB record.
+//
+// +stateify savable
 type BridgeFDBEntry struct {
 	port *bridgePort
 }
