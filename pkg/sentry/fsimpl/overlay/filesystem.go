@@ -557,7 +557,7 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	}
 	// Ensure that the parent directory is copied-up so that we can create the
 	// new file in the upper layer.
-	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, ct == createSyntheticMountpoint); err != nil {
+	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, ct == createSyntheticMountpoint, false /* skipData */); err != nil {
 		return err
 	}
 
@@ -934,6 +934,9 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 		return err
 	}
 	defer rp.Mount().EndWrite()
+	if opts.Flags&linux.O_TRUNC != 0 {
+		return d.copyUpForTruncateLocked(ctx)
+	}
 	return d.copyUpLocked(ctx)
 }
 
