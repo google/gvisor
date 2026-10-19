@@ -17,6 +17,7 @@ package cgroupfs
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -442,6 +443,9 @@ func (d *cgroupProcsData) Write(ctx context.Context, fd *vfs.FileDescription, sr
 	if err != nil {
 		return n, err
 	}
+	if tgid < 0 || tgid > math.MaxInt32 {
+		return 0, linuxerr.EINVAL
+	}
 
 	t := kernel.TaskFromContext(ctx)
 	currPidns := t.ThreadGroup().PIDNamespace()
@@ -489,6 +493,9 @@ func (d *tasksData) Write(ctx context.Context, fd *vfs.FileDescription, src user
 	tid, n, err := parseInt64FromString(ctx, src)
 	if err != nil {
 		return n, err
+	}
+	if tid < 0 || tid > math.MaxInt32 {
+		return 0, linuxerr.EINVAL
 	}
 
 	t := kernel.TaskFromContext(ctx)
