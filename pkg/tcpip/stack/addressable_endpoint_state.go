@@ -45,6 +45,11 @@ type AddressableEndpointState struct {
 	endpoints map[tcpip.Address]*addressState `state:"wait"`
 	// +checklocks:mu
 	primary []*addressState
+	// subnets holds the endpoints whose prefix is shorter than the address, the
+	// only ones the matcher in AcquireAssignedAddressOrMatching can match.
+	//
+	// +checklocks:mu
+	subnets []*addressState
 }
 
 // AddressableEndpointStateOptions contains options used to configure an
@@ -137,7 +142,7 @@ func (a *AddressableEndpointState) releaseAddressState(addrState *addressState) 
 }
 
 // releaseAddressStateLocked removes addrState from a's address state
-// (primary and endpoints list).
+// (primary, subnets and endpoints list).
 //
 // +checklocks:a.mu
 func (a *AddressableEndpointState) releaseAddressStateLocked(addrState *addressState) {
@@ -146,6 +151,14 @@ func (a *AddressableEndpointState) releaseAddressStateLocked(addrState *addressS
 		if s == addrState {
 			a.primary = append(a.primary[:i], a.primary[i+1:]...)
 			oldPrimary[len(oldPrimary)-1] = nil
+			break
+		}
+	}
+	oldSubnets := a.subnets
+	for i, s := range a.subnets {
+		if s == addrState {
+			a.subnets = append(a.subnets[:i], a.subnets[i+1:]...)
+			oldSubnets[len(oldSubnets)-1] = nil
 			break
 		}
 	}
@@ -273,6 +286,9 @@ func (a *AddressableEndpointState) addAndAcquireAddressLocked(addr tcpip.Address
 		}
 		addrState.refs.InitRefs()
 		a.endpoints[addr.Address] = addrState
+		if addr.PrefixLen < addr.Address.BitLen() {
+			a.subnets = append(a.subnets, addrState)
+		}
 		// We never promote an address to temporary - it can only be added as such.
 		// If we are actually adding a permanent address, it is promoted below.
 		addrState.kind = Temporary
@@ -535,8 +551,9 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(remoteAddr, srcH
 // considered assigned to the addressable endpoint.
 //
 // If the address is an exact match with an existing address, that address is
-// returned. Otherwise, if f is provided, f is called with each address and
-// the address that f returns true for is returned.
+// returned. Otherwise, if f is provided, f is called with each address whose
+// prefix is shorter than the address (any other can only be an exact match)
+// and the address that f returns true for is returned.
 //
 // If there is no matching address, a temporary address will be returned if
 // allowTemp is true.
@@ -562,7 +579,7 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 		}
 
 		if f != nil {
-			for _, addrState := range a.endpoints {
+			for _, addrState := range a.subnets {
 				if addrState.IsAssigned(allowTemp) && f(addrState) {
 					if !readOnly && !addrState.TryIncRef() {
 						continue
