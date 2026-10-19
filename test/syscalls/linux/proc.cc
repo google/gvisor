@@ -2025,6 +2025,24 @@ TEST(ProcPidStatusTest, HasBasicFields) {
   });
 }
 
+TEST(ProcPidStatusTest, InvalidCloseDoesNotGrowFDTable) {
+  // Restoring a checkpoint may change the FD table's capacity.
+  const DisableSave disable_save;
+  const std::string before_str =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/status"));
+  const auto before = ASSERT_NO_ERRNO_AND_VALUE(ParseProcStatus(before_str));
+  const auto fd_size = before.find("FDSize");
+  ASSERT_NE(fd_size, before.end());
+
+  EXPECT_THAT(close(INT_MAX), SyscallFailsWithErrno(EBADF));
+
+  const std::string after_str =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/status"));
+  EXPECT_THAT(
+      ParseProcStatus(after_str),
+      IsPosixErrorOkAndHolds(Contains(Pair("FDSize", fd_size->second))));
+}
+
 TEST(ProcPidStatusTest, NoNewPrivs) {
   // no_new_privs is per-thread and cannot be cleared once set, so exercise it
   // on a scratch thread to avoid contaminating the main thread.
