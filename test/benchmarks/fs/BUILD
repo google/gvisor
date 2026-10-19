@@ -23,7 +23,6 @@ benchmark_test(
 benchmark_test(
     name = "fio_test",
     srcs = ["fio_test.go"],
-    data = ["//test/runner/fuse"],
     use_for_pgo = False,
     visibility = ["//:sandbox"],
     deps = [
