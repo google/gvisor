@@ -234,3 +234,150 @@ func TestSRTTNotInflatedByProcessingDelayNoTS(t *testing.T) {
 			got.srtt, trueRTT+processHold/2)
 	}
 }
+
+// TestSRTTAfterTailLossProbe checks Karn's rule at the packet boundary: an ACK
+// after retransmission supplies an RTT sample only when its timestamp identifies
+// the transmission. A subsequent ACK of new data must still supply a sample.
+func TestSRTTAfterTailLossProbe(t *testing.T) {
+	// Starting at 10ms, the PTO is 220ms and the ACK arrives 50ms later.
+	// Echoing the original or retransmission samples 270ms or 50ms, giving
+	// SRTT=(7*10+sample)/8: 42.5ms or 15ms (RFC 6298, section 2.3).
+	// Without timestamps, SRTT stays 10ms. The next 40ms sample gives
+	// 42.1875ms, 18.125ms, or 13.75ms, respectively.
+	for _, test := range []struct {
+		name         string
+		timestamps   bool
+		echoOriginal bool
+		wantSRTT     time.Duration
+		wantNextSRTT time.Duration
+	}{
+		{name: "no_timestamp", wantSRTT: 10 * time.Millisecond, wantNextSRTT: 13750 * time.Microsecond},
+		{name: "original_timestamp", timestamps: true, echoOriginal: true, wantSRTT: 42500 * time.Microsecond, wantNextSRTT: 42187500 * time.Nanosecond},
+		{name: "retransmit_timestamp", timestamps: true, wantSRTT: 15 * time.Millisecond, wantNextSRTT: 18125 * time.Microsecond},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := faketime.NewManualClock()
+			clock.Advance(time.Second)
+			states := make(chan tcp.TCPSenderState, 16)
+			c := context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				MTU:      mtu,
+				Clock:    clock,
+				Probe: func(state *tcp.TCPEndpointState) {
+					select {
+					case states <- state.Sender:
+					default:
+					}
+				},
+			})
+			defer c.Cleanup()
+			e2e.SetStackSACKPermitted(t, c, true)
+			e2e.SetStackTCPRecovery(t, c, int(tcpip.TCPRACKLossDetection))
+			var peer *context.RawEndpoint
+			if test.timestamps {
+				peer = e2e.CreateConnectedWithSACKAndTS(c)
+			} else {
+				peer = e2e.CreateConnectedWithSACKPermittedOption(c)
+			}
+
+			data := bytes.Repeat([]byte{0xab}, maxPayload)
+			readPacket := func(offset int) uint32 {
+				t.Helper()
+				pkt := c.GetPacket()
+				defer pkt.Release()
+				tcp := header.TCP(header.IPv4(pkt.AsSlice()).Payload())
+				if got, want := seqnum.Value(tcp.SequenceNumber()), c.IRS.Add(1+seqnum.Size(offset)); got != want {
+					t.Fatalf("packet sequence = %v, want %v", got, want)
+				}
+				if got, want := tcp.Payload(), data; !bytes.Equal(got, want) {
+					t.Fatalf("packet payload = %x, want %x", got, want)
+				}
+				if got, want := tcp.ParsedOptions().TS, test.timestamps; got != want {
+					t.Fatalf("packet timestamp option = %t, want %t", got, want)
+				}
+				return tcp.ParsedOptions().TSVal
+			}
+			sent := 0
+			send := func() uint32 {
+				t.Helper()
+				if n, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil || n != int64(len(data)) {
+					t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, len(data))
+				}
+				stamp := readPacket(sent)
+				sent += len(data)
+				return stamp
+			}
+			ack := func(echo uint32) tcp.TCPSenderState {
+				t.Helper()
+				want := c.IRS.Add(1 + seqnum.Size(sent))
+				if test.timestamps {
+					peer.AckNum = want
+					peer.Flags = header.TCPFlagAck
+					peer.RecentTS = echo
+					peer.SendPacketWithTS(nil, peer.TSVal+1)
+				} else {
+					c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), sent)
+				}
+				// Drain this ACK at the current virtual time before inspecting
+				// the copied sender state or advancing the clock again.
+				c.Stack().Pause()
+				c.Stack().Resume()
+				var last tcp.TCPSenderState
+				for len(states) != 0 {
+					last = <-states
+				}
+				if got := last.SndUna; got != want {
+					t.Fatalf("ACK SndUna = %v, want %v", got, want)
+				}
+				return last
+			}
+
+			stamp := send()
+			clock.Advance(10 * time.Millisecond)
+			before := ack(stamp)
+			if got, want := before.RTTState.SRTT, 10*time.Millisecond; got != want {
+				t.Fatalf("initial SRTT = %v, want %v", got, want)
+			}
+			original := send()
+			// One outstanding packet adds the 200ms delayed-ACK allowance
+			// to twice SRTT. This PTO precedes the test's three-second RTO.
+			pto := 2*before.RTTState.SRTT + 200*time.Millisecond
+			if pto >= before.RTO {
+				t.Fatalf("PTO %v is not before RTO %v", pto, before.RTO)
+			}
+			clock.Advance(pto)
+			retransmit := readPacket(sent - len(data))
+			if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
+				t.Fatalf("retransmissions = %d, want %d", got, want)
+			}
+			if test.timestamps {
+				if got, want := retransmit-original, uint32(pto/time.Millisecond); got != want {
+					t.Fatalf("retransmission timestamp advance = %d, want %d", got, want)
+				}
+			}
+			stamp = retransmit
+			if test.echoOriginal {
+				stamp = original
+			}
+			clock.Advance(50 * time.Millisecond)
+			after := ack(stamp)
+			if got, want := after.RTTState.SRTT, test.wantSRTT; got != want {
+				t.Fatalf("SRTT after PTO ACK = %v, want %v", got, want)
+			}
+			if !test.timestamps {
+				if got, want := after.RTTState, before.RTTState; got != want {
+					t.Errorf("RTT state after ambiguous ACK = %+v, want %+v", got, want)
+				}
+				if got, want := after.RTO, before.RTO; got != want {
+					t.Errorf("RTO after ambiguous ACK = %v, want %v", got, want)
+				}
+			}
+			stamp = send()
+			clock.Advance(40 * time.Millisecond)
+			next := ack(stamp)
+			if got, want := next.RTTState.SRTT, test.wantNextSRTT; got != want {
+				t.Fatalf("SRTT after new-data ACK = %v, want %v", got, want)
+			}
+		})
+	}
+}
