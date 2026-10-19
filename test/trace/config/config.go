@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -53,7 +54,8 @@ func (b *Builder) WriteInitConfig(w io.Writer) error {
 // fields.
 func (b *Builder) LoadAllPoints(runscPath string) error {
 	cmd := exec.Command(runscPath, "trace", "metadata")
-	out, err := cmd.CombinedOutput()
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
 	if err != nil {
 		return err
 	}
