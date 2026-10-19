@@ -17,11 +17,14 @@ package metricsviz_cli_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +33,26 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/metricsviz"
 )
+
+func TestTimestampOffset(t *testing.T) {
+	for _, tc := range []struct {
+		offset  uint64
+		wantErr error
+	}{
+		{offset: 0},
+		{offset: math.MaxInt64},
+		{offset: math.MaxInt64 + 1, wantErr: strconv.ErrRange},
+		{offset: math.MaxUint64, wantErr: strconv.ErrRange},
+	} {
+		t.Run(strconv.FormatUint(tc.offset, 10), func(t *testing.T) {
+			logs := fmt.Sprintf("%s/counter\t{}\n%s1\n%s\t/counter\n%d\t1\n",
+				metric.MetricsMetaIndicator, metric.MetricsStartTimeIndicator, metric.TimeColumn, tc.offset)
+			if _, err := metricsviz.Parse(logs, false); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Parse() error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
 
 func TestMetricsvizCLI(t *testing.T) {
 	ctx := context.Background()
