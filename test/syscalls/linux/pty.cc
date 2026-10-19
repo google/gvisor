@@ -288,7 +288,7 @@ TEST(BasicPtyTest, OpenSetsControllingTTY) {
   struct sigaction old_sa;
   ASSERT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
   auto cleanup = Cleanup([old_sa] {
-    EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
+    EXPECT_THAT(sigaction(SIGHUP, &old_sa, nullptr), SyscallSucceeds());
   });
 
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
@@ -364,7 +364,7 @@ TEST(BasicPtyTest, TIOCGPTPEERSetsControllingTTY) {
   struct sigaction old_sa;
   ASSERT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
   auto cleanup = Cleanup([old_sa] {
-    EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
+    EXPECT_THAT(sigaction(SIGHUP, &old_sa, nullptr), SyscallSucceeds());
   });
 
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
@@ -479,7 +479,7 @@ TEST(BasicPtyTest, NewInstance) {
   ASSERT_THAT(open(spath2.c_str(), O_RDWR), SyscallFailsWithErrno(ENOENT));
   std::string spath = absl::StrCat(dir.path(), "/", n);
   FileDescriptor replica =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(spath.c_str(), O_RDWR | O_NOCTTY));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(spath, O_RDWR | O_NOCTTY));
 }
 
 struct SetModeTestCase {
@@ -759,21 +759,21 @@ TEST_F(PtyTest, ReplicaCloseNotify) {
   // Ensure that there are no readable events.
   FD_ZERO(&read_set);
   FD_SET(master_.get(), &read_set);
-  EXPECT_THAT(select(max_fd, &read_set, NULL, NULL, &tv),
+  EXPECT_THAT(select(max_fd, &read_set, nullptr, nullptr, &tv),
               SyscallSucceedsWithValue(0));
 
   // Close the second replica and no readable event should occur.
   replica2_.reset();
   FD_ZERO(&read_set);
   FD_SET(master_.get(), &read_set);
-  EXPECT_THAT(select(max_fd, &read_set, NULL, NULL, &tv),
+  EXPECT_THAT(select(max_fd, &read_set, nullptr, nullptr, &tv),
               SyscallSucceedsWithValue(0));
 
   // Close the last remaining replica and a readable event should occur.
   replica_.reset();
   FD_ZERO(&read_set);
   FD_SET(master_.get(), &read_set);
-  EXPECT_THAT(select(max_fd, &read_set, NULL, NULL, &tv),
+  EXPECT_THAT(select(max_fd, &read_set, nullptr, nullptr, &tv),
               SyscallSucceedsWithValue(1));
   EXPECT_TRUE(FD_ISSET(master_.get(), &read_set));
 
@@ -1801,6 +1801,26 @@ TEST_F(PtyTest, ReplicaWriteNothingNonCanonical) {
   ExpectFinished(master_);
 }
 
+// Test that writing nothing to the PTY master's input queue does not block or
+// return an error.
+TEST_F(PtyTest, MasterWriteNothingCanonical) {
+  constexpr char kInput[] = "";
+  EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
+              SyscallSucceedsWithValue(strlen(kInput)));
+
+  ExpectFinished(replica_);
+}
+
+TEST_F(PtyTest, MasterWriteNothingNonCanonical) {
+  DisableCanonical();
+
+  constexpr char kInput[] = "";
+  EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
+              SyscallSucceedsWithValue(strlen(kInput)));
+
+  ExpectFinished(replica_);
+}
+
 TEST_F(PtyTest, SimpleEcho) {
   constexpr char kInput[] = "Mr. Eko";
   EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
@@ -1952,7 +1972,7 @@ TEST_F(JobControlTest, ReleaseTTY) {
   struct sigaction old_sa;
   EXPECT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
   EXPECT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallSucceeds());
-  EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
+  EXPECT_THAT(sigaction(SIGHUP, &old_sa, nullptr), SyscallSucceeds());
 }
 
 TEST_F(JobControlTest, ReleaseUnsetTTY) {
@@ -2032,15 +2052,15 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   sigemptyset(&sa.sa_mask);
   sigaddset(&sa.sa_mask, SIGHUP);
   sigaddset(&sa.sa_mask, SIGCONT);
-  sigprocmask(SIG_BLOCK, &sa.sa_mask, NULL);
+  sigprocmask(SIG_BLOCK, &sa.sa_mask, nullptr);
 
   pid_t same_pgrp_child = fork();
   if (!same_pgrp_child) {
     // The child will wait for SIGHUP and SIGCONT, then return 0. It begins with
     // SIGHUP and SIGCONT blocked. We install signal handlers for those signals,
     // then use sigsuspend to wait for those specific signals.
-    TEST_PCHECK(!sigaction(SIGHUP, &sa, NULL));
-    TEST_PCHECK(!sigaction(SIGCONT, &sa, NULL));
+    TEST_PCHECK(!sigaction(SIGHUP, &sa, nullptr));
+    TEST_PCHECK(!sigaction(SIGCONT, &sa, nullptr));
     sigset_t mask;
     sigfillset(&mask);
     sigdelset(&mask, SIGHUP);
@@ -2052,7 +2072,7 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   }
 
   // We don't want to block these anymore.
-  sigprocmask(SIG_UNBLOCK, &sa.sa_mask, NULL);
+  sigprocmask(SIG_UNBLOCK, &sa.sa_mask, nullptr);
 
   // This child will return non-zero if either SIGHUP or SIGCONT are received.
   pid_t diff_pgrp_child = fork();
@@ -2077,7 +2097,7 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   // processes in this process group.
   EXPECT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallSucceeds());
 
-  EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
+  EXPECT_THAT(sigaction(SIGHUP, &old_sa, nullptr), SyscallSucceeds());
 
   // The child in the same process group will get signaled.
   int wstatus;
@@ -2114,7 +2134,7 @@ TEST_F(JobControlTest, ControllingProcessPersistsAfterChildExists) {
   sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sigaddset(&sa.sa_mask, SIGINT);
-  ASSERT_THAT(sigaction(SIGINT, &sa, NULL), SyscallSucceeds());
+  ASSERT_THAT(sigaction(SIGINT, &sa, nullptr), SyscallSucceeds());
 
   // Send ^C.
   constexpr char kInput = ControlCharacter('C');
@@ -2141,7 +2161,7 @@ TEST_F(JobControlTest, ControllingProcessPersistsAfterChildExists) {
 
   // Release the controlling terminal and restore the old SIGHUP handler.
   EXPECT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallSucceeds());
-  EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
+  EXPECT_THAT(sigaction(SIGHUP, &old_sa, nullptr), SyscallSucceeds());
 }
 
 TEST_F(JobControlTest, GetForegroundProcessGroup) {
@@ -2307,7 +2327,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroup) {
     sa.sa_handler = SIG_IGN;
     sa.sa_flags = 0;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGTTOU, &sa, NULL);
+    sigaction(SIGTTOU, &sa, nullptr);
 
     // Set ourself as the foreground process group.
     TEST_PCHECK(!tcsetpgrp(replica_.get(), getpgid(0)));
@@ -2384,7 +2404,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUIgnored) {
       sa.sa_handler = SIG_IGN;
       sa.sa_flags = 0;
       sigemptyset(&sa.sa_mask);
-      sigaction(SIGTTOU, &sa, NULL);
+      sigaction(SIGTTOU, &sa, nullptr);
       // Assign a different pgid to the child so it will result as
       // a background process.
       TEST_PCHECK(!setpgid(grandchild, getpid()));
@@ -2416,7 +2436,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBlocked) {
       // checking for "blocked == [SIGTTOU]" (see issue 7941 for
       // context).
       sigaddset(&signal_set, SIGTTIN);
-      sigprocmask(SIG_BLOCK, &signal_set, NULL);
+      sigprocmask(SIG_BLOCK, &signal_set, nullptr);
       // Assign a different pgid to the child so it will result as
       // a background process.
       TEST_PCHECK(!setpgid(grandchild, getpid()));
@@ -2425,7 +2445,7 @@ TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBlocked) {
       // signaled. That would happen if `tcsetpgrp` enqueued the
       // signal through the mask -- we would not yet have received it,
       // because of the mask.
-      sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
+      sigprocmask(SIG_UNBLOCK, &signal_set, nullptr);
       _exit(0);
     }
     int wstatus;
