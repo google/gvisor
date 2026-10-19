@@ -397,6 +397,13 @@ func (fs FeatureSet) Intel() bool {
 	return fs.VendorID() == genuineIntel
 }
 
+// AMX state component numbers, which are both the XCR0 bits that enable
+// them and the leaf 0xD subleaves that describe them.
+const (
+	amxTileCfgComponent  = 17
+	amxTileDataComponent = 18
+)
+
 // Leaf 0 of xsaveinfo function returns the size for currently
 // enabled xsave features in ebx, the maximum size if all valid
 // features are saved with xsave in ecx, and valid XCR0 bits in
@@ -407,8 +414,8 @@ func (fs FeatureSet) Intel() bool {
 var (
 	xsaveSize       = native(In{Eax: uint32(xSaveInfo)}).Ebx
 	maxXsaveSize    = native(In{Eax: uint32(xSaveInfo)}).Ecx
-	amxTileCfgSize  = native(In{Eax: uint32(xSaveInfo), Ecx: 17}).Eax
-	amxTileDataSize = native(In{Eax: uint32(xSaveInfo), Ecx: 18}).Eax
+	amxTileCfgSize  = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}).Eax
+	amxTileDataSize = native(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}).Eax
 )
 
 const (
@@ -417,11 +424,11 @@ const (
 	//
 	// See Intel® 64 and IA-32 Architectures Software Developer’s Manual Vol.1
 	// section 13.3 for details.
-	XCR0AmxCfgMask = uint64(1 << 17)
+	XCR0AmxCfgMask = uint64(1 << amxTileCfgComponent)
 
 	// XCR0AmxDataMask is the bits that enable xsave to operate on
 	// AMX TILEDATA.
-	XCR0AmxDataMask = uint64(1 << 18)
+	XCR0AmxDataMask = uint64(1 << amxTileDataComponent)
 )
 
 // ExtendedStateSize returns the number of bytes needed to save the "extended
