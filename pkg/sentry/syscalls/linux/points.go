@@ -512,8 +512,7 @@ func PointChdir(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextDat
 // PointFchdir calls pointChdirHelper to convert fchdir(2) syscall to proto.
 func PointFchdir(t *kernel.Task, fields seccheck.FieldSet, cxtData *pb.ContextData, info kernel.SyscallInfo) (proto.Message, pb.MessageType) {
 	fd := int64(info.Args[0].Int())
-	path := info.Args[1].Pointer()
-	return pointChdirHelper(t, fields, cxtData, info, fd, path)
+	return pointChdirHelper(t, fields, cxtData, info, fd, 0)
 }
 
 // pointSetidHelper converts setuid(2) and setgid(2) syscall to proto.
