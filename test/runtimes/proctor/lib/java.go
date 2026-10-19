@@ -28,6 +28,10 @@ var javaExclDirs = regexp.MustCompile(`(^(sun\/security)|(java\/util\/stream)|(j
 // Location of java tests.
 const javaTestDir = "/root/jdk/test/jdk"
 
+// Discovery and execution must apply the same declared-timeout limit. Otherwise
+// jtreg lists tests that it will silently exclude from an execution batch.
+const javaTimeLimit = "-tl:200"
+
 // javaRunner implements TestRunner for Java.
 type javaRunner struct{}
 
@@ -40,6 +44,7 @@ func (javaRunner) ListTests() ([]string, error) {
 		"-ignore:quiet",
 		"-a",
 		"-listtests",
+		javaTimeLimit,
 		":jdk_core",
 		":jdk_svc",
 		":jdk_sound",
@@ -69,7 +74,7 @@ func (javaRunner) TestCmds(tests []string) []*exec.Cmd {
 			"-noreport",           // Do not generate /root/JTreport/html/report.html.
 			"-timeoutFactor:5",    // Extend the default timeout (2 min) of all tests by this factor.
 			"-verbose:all",        // Verbose output.
-			"-tl:200",             // Do not run tests which specify a timeout longer than 200s.
+			javaTimeLimit,         // Exclude tests with a declared timeout of zero or over 200s.
 		},
 		tests...,
 	)
