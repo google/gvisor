@@ -467,6 +467,53 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	}
 }
 
+// TestRACKTLPNotLaterThanRTO tests that the probe timeout is capped at the RTO
+// when no RTO timer is armed, as when a single segment is sent on an idle
+// connection (RFC 8985 section 7.2). Uncapped, the PTO for a lone segment is
+// 2*SRTT plus the worst-case delayed ACK timeout, later than the RTO.
+func TestRACKTLPNotLaterThanRTO(t *testing.T) {
+	c := context.New(t, uint32(mtu))
+	defer c.Cleanup()
+
+	const minRTO = 50 * time.Millisecond
+	minRTOOpt := tcpip.TCPMinRTOOption(minRTO)
+	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &minRTOOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, minRTOOpt, minRTOOpt, err)
+	}
+	e2e.SetStackSACKPermitted(t, c, true)
+	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: c.SACKEnabled(), TS: true}, 0 /* delay */)
+
+	data := make([]byte, 2*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	write := func(b []byte) {
+		var r bytes.Reader
+		r.Reset(b)
+		if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+			t.Fatalf("Write failed: %s", err)
+		}
+	}
+
+	// Send one segment and acknowledge it, leaving the connection idle.
+	write(data[:maxPayload])
+	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, e2e.TSOptionSize)
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+	c.SendAck(seq, maxPayload)
+
+	// Send a second segment, which is lost.
+	write(data[maxPayload:])
+	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+	sent := time.Now()
+
+	// The TLP should retransmit it after about the RTO (the minimum RTO here,
+	// as the RTT is tiny), well before the worst-case delayed ACK timeout.
+	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
+	if elapsed, limit := time.Since(sent), 200*time.Millisecond; elapsed >= limit {
+		t.Errorf("TLP sent %s after the segment, want less than %s (RTO %s)", elapsed, limit, minRTO)
+	}
+}
+
 // TestRACKDetectDSACK tests that RACK detects DSACK with duplicate segments.
 // See: https://tools.ietf.org/html/rfc2883#section-4.1.1.
 func TestRACKDetectDSACK(t *testing.T) {

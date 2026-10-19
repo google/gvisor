@@ -193,6 +193,11 @@ func (s *sender) schedulePTO() {
 			pto = s.resendTimer.target.Sub(now)
 		}
 		s.resendTimer.disable()
+	} else if pto > s.RTO {
+		// The PTO must not be later than an RTO would fire (RFC 8985
+		// section 7.2). With no RTO timer armed, as after a segment is sent
+		// on an idle connection, that is one RTO from now.
+		pto = s.RTO
 	}
 
 	s.probeTimer.enable(pto)
