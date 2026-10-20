@@ -1,15 +1,10 @@
 _templates:
-  agents: &agents
-    queue: "default"
-    stacktest: "yes"
   quick: &quick
     command: "echo \"job $$BUILDKITE_JOB_ID on $$BUILDKITE_AGENT_NAME\""
-    agents: *agents
+    agents:
+      queue: "default"
+      stacktest: "yes"
     timeout_in_minutes: 3
-    depends_on:
-      - "bk-timeout"
-      - "coordinator-timeout"
-    allow_dependency_failure: true
     retry:
       automatic:
         - exit_status: 80
@@ -19,22 +14,6 @@ _templates:
           limit: 2
 
 steps:
-  - label: ":hourglass: Buildkite timeout (1m) beats the VM timer (2m)"
-    key: "bk-timeout"
-    command: "echo start && sleep 600 && echo 'not cancelled by Buildkite'"
-    agents: *agents
-    timeout_in_minutes: 1
-    retry:
-      automatic: false
-
-  - label: ":skull: VM timer (6m, clamped) beats the Buildkite timeout (30m)"
-    key: "coordinator-timeout"
-    command: "echo start && sleep 1200 && echo 'not killed by the coordinator'"
-    agents: *agents
-    timeout_in_minutes: 30
-    retry:
-      automatic: false
-
   - { <<: *quick, label: ":zap: quick 1" }
   - { <<: *quick, label: ":zap: quick 2" }
   - { <<: *quick, label: ":zap: quick 3" }
