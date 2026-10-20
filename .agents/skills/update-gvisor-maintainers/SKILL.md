@@ -64,20 +64,19 @@ membership in the main maintainer table.
 
 Most of these are a one-line `status:` edit on an existing entry:
 
--   Goes on hiatus: `status: HIATUS_SINCE:<today>`.
--   Comes back from hiatus: `status: ACTIVE`. Drop the date; `ACTIVE` never
-    carries one.
--   Steps down, or hits 12 months of inactivity: `status:
-    EMERITUS_SINCE:<date>`.
--   Comes back from emeritus: `status: ACTIVE`, but only through the normal
-    nomination process. See "Becoming a maintainer" in `GOVERNANCE.md`.
+- Goes on hiatus: `status: HIATUS_SINCE:<today>`.
+- Comes back from hiatus: `status: ACTIVE`. Drop the date; `ACTIVE` never
+  carries one.
+- Steps down, or hits 12 months of inactivity: `status: EMERITUS_SINCE:<date>`.
+- Comes back from emeritus: `status: ACTIVE`, but only through the normal
+  nomination process. See "Becoming a maintainer" in `GOVERNANCE.md`.
 
 The two that are not:
 
--   New maintainer: insert the entry in `started` order, not at the end of the
-    file.
--   Changed employer: update `affiliation`, and move the old one to
-    `past_affiliation` with the date it ended as `until`.
+- New maintainer: insert the entry in `started` order, not at the end of the
+  file.
+- Changed employer: update `affiliation`, and move the old one to
+  `past_affiliation` with the date it ended as `until`.
 
 Dates are real calendar dates, so go look up today's date rather than guessing
 at one. If the user gave you a date, use theirs.
@@ -87,7 +86,7 @@ After any change, regenerate.
 ## Regenerate
 
 ```bash
-bazel run //:governance-regen
+make governance-regen
 ```
 
 This regenerates both files in place.
@@ -95,7 +94,7 @@ This regenerates both files in place.
 Then:
 
 ```bash
-bazel test //:governance-check
+make governance-check
 ```
 
 This fails if the source data changed and you forgot to regenerate, or if
