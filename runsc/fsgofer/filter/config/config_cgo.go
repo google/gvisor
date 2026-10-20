@@ -19,31 +19,33 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-var cgoFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-	unix.SYS_MMAP: seccomp.Or{
-		seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.EqualTo(unix.PROT_NONE),
-			seccomp.EqualTo(
-				unix.MAP_PRIVATE |
-					unix.MAP_ANONYMOUS |
-					unix.MAP_NORESERVE),
+func cgoFilters() seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_MMAP: seccomp.Or{
+			seccomp.PerArg{
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+				seccomp.EqualTo(unix.PROT_NONE),
+				seccomp.EqualTo(
+					unix.MAP_PRIVATE |
+						unix.MAP_ANONYMOUS |
+						unix.MAP_NORESERVE),
+			},
+			seccomp.PerArg{
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+				seccomp.EqualTo(
+					unix.MAP_PRIVATE |
+						unix.MAP_ANONYMOUS |
+						unix.MAP_STACK),
+			},
 		},
-		seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.EqualTo(
-				unix.MAP_PRIVATE |
-					unix.MAP_ANONYMOUS |
-					unix.MAP_STACK),
-		},
-	},
-	// TODO(eperot): remove this syscall seccomp rule
-	unix.SYS_SET_ROBUST_LIST: seccomp.MatchAll{},
-	// TODO(eperot): remove this syscall seccomp rule
-	unix.SYS_CLONE3: seccomp.MatchAll{},
-	// TODO(eperot): remove this syscall seccomp rule
-	unix.SYS_RSEQ: seccomp.MatchAll{},
-})
+		// TODO(eperot): remove this syscall seccomp rule
+		unix.SYS_SET_ROBUST_LIST: seccomp.MatchAll{},
+		// TODO(eperot): remove this syscall seccomp rule
+		unix.SYS_CLONE3: seccomp.MatchAll{},
+		// TODO(eperot): remove this syscall seccomp rule
+		unix.SYS_RSEQ: seccomp.MatchAll{},
+	})
+}
