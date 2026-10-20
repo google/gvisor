@@ -424,10 +424,6 @@ func TestFSCheckpointCommand(t *testing.T) {
 			}
 
 			// Save a filesystem checkpoint and kill the sandbox.
-			waitFSCheckpointErrC := make(chan error, 1)
-			go func() {
-				waitFSCheckpointErrC <- conts[0].WaitFSCheckpoint()
-			}()
 			imagePath, err := os.MkdirTemp(testutil.TmpDir(), "fscheckpoint-image")
 			if err != nil {
 				t.Fatalf("Error creating temp dir: %v", err)
@@ -453,21 +449,14 @@ func TestFSCheckpointCommand(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("Error saving filesystem checkpoint: %v", err)
 			}
-			select {
-			case err := <-waitFSCheckpointErrC:
-				if err != nil {
-					// Container.WaitFSCheckpoint, like Container.WaitCheckpoint, is
-					// inherently racy. Both wait for the "next" checkpoint to be
-					// saved. If FSSave completes before WaitFSCheckpoint starts
-					// waiting, then WaitFSCheckpoint will miss the FSSave and return
-					// an error when the sandbox exits. There is no way to know when
-					// WaitFSCheckpoint has started waiting, so there is no way to be
-					// completely safe from this race. To avoid causing test flakes,
-					// log the error but don't fail the test.
-					t.Logf("Error waiting for FS checkpoint: %v", err)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatalf("Timed out waiting for WaitFSCheckpoint")
+			// ExitAfterSaving stops the whole sandbox. Only the root container can
+			// report its exit status after the control server has shut down.
+			ws, err := conts[0].Wait()
+			if err != nil {
+				t.Fatalf("Error waiting for checkpointed sandbox: %v", err)
+			}
+			if got, want := ws, unix.WaitStatus(0); got != want {
+				t.Fatalf("Wait() = %v, want %v", got, want)
 			}
 
 			if tc.modifyManifest != nil {
@@ -910,11 +899,10 @@ func TestFSCheckpointAnnotation(t *testing.T) {
 				t.Fatalf("Error saving filesystem checkpoint from container 1, ws: %v, err: %v", ws, err)
 			}
 
-			// Kill containers.
-			for i, c := range conts {
-				if err := c.SignalContainer(unix.SIGKILL, false); err != nil {
-					t.Fatalf("Error killing container %d: %v", i, err)
-				}
+			// The annotation resumes execution after saving. Destroy the whole
+			// sandbox instead of signaling sub-containers after the root exits.
+			if err := conts[0].Destroy(); err != nil {
+				t.Fatalf("Error destroying checkpointed sandbox: %v", err)
 			}
 
 			// Start containers which sleep, restoring from the filesystem checkpoint.
@@ -1108,10 +1096,14 @@ func TestFSCheckpointSharedVolume(t *testing.T) {
 		t.Fatalf("Error saving filesystem checkpoint: %v", err)
 	}
 
-	for i, c := range conts {
-		if err := c.SignalContainer(unix.SIGKILL, false); err != nil && !strings.Contains(err.Error(), "no such process") {
-			t.Fatalf("Error killing container %d: %v", i, err)
-		}
+	// ExitAfterSaving stops the whole sandbox. Only the root container can
+	// report its exit status after the control server has shut down.
+	ws, err := conts[0].Wait()
+	if err != nil {
+		t.Fatalf("Error waiting for checkpointed sandbox: %v", err)
+	}
+	if got, want := ws, unix.WaitStatus(0); got != want {
+		t.Fatalf("Wait() = %v, want %v", got, want)
 	}
 
 	restoreSpecs, restoreIDs := createSpecs(testAppSleepArgv, testAppSleepArgv)
