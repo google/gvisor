@@ -354,6 +354,12 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *source_test
+    label: ":building_construction: Gazelle BUILD file check"
+    command: make gazelle-check
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *source_test
     label: ":scales: Dependency license check"
     command: make license-check
     agents:

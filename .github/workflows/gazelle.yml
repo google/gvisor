@@ -29,6 +29,6 @@ jobs:
     # The runner's bazel is bazelisk, which honors .bazelversion.
     - run: |
         if ! bazel run //:gazelle_check; then
-          echo "::error::BUILD files are out of date. Run 'bazel run //:gazelle_fix' and commit the result."
+          echo "::error::BUILD files are out of date. Run 'make gazelle-fix' and commit the result."
           exit 1
         fi
