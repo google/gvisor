@@ -46,4 +46,20 @@ var (
 	ErrFaultRestart = fmt.Errorf("need to restart stub thread")
 	// ErrFaultSyscall indicates that the current fault has to be handled as a system call.
 	ErrFaultSyscall = fmt.Errorf("need to handle as syscall")
+	// ErrSyncCoreUnsupported indicates that UnpatchSyscalls did not modify
+	// any code because CoreSyncer.PrepareSyncCore failed.
+	ErrSyncCoreUnsupported = fmt.Errorf("unable to synchronize threads with modified code")
 )
+
+// CoreSyncer makes threads that run application code discard instruction
+// bytes that they fetched before UnpatchSyscalls modified the code.
+type CoreSyncer interface {
+	// PrepareSyncCore is called before any code is modified, and may block.
+	// If it fails, no code is modified.
+	PrepareSyncCore() error
+
+	// SyncCore returns once every thread that runs code in the address space
+	// has executed a core serializing instruction, or will before it next runs
+	// application code.
+	SyncCore() error
+}
