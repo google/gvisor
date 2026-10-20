@@ -393,6 +393,10 @@ type ProgramOptions struct {
 	// and its BPF bytecode.
 	SkipOptimizations bool
 
+	// RuleCache, if non-nil, memoizes optimized syscall rules across Build
+	// calls. Useful when compiling many programs that share rules.
+	RuleCache *OptimizedRuleCache
+
 	// HotSyscalls is the set of syscall numbers that are the hottest,
 	// where "hotness" refers to frequency (regardless of the amount of
 	// computation that the kernel will do handling them, and regardless of
@@ -669,7 +673,7 @@ func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, ti
 		optimizeStart := time.Now()
 		for _, ruleActions := range allSyscallRuleActions {
 			for i, ra := range ruleActions {
-				ra.rule = optimizeSyscallRule(ra.rule)
+				ra.rule = OptimizeSyscalls(ra.rule, options.RuleCache)
 				ruleActions[i] = ra
 			}
 		}

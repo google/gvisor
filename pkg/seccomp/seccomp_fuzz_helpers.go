@@ -54,7 +54,7 @@ func (sr SyscallRules) UsefulTestCases() []linux.SeccompData {
 					valueMatchersReprMap = make(map[string]struct{})
 					valueMatchersRepr[argNum] = valueMatchersReprMap
 				}
-				repr := arg.Repr()
+				repr := vmRepr(arg)
 				if _, seen := valueMatchersReprMap[repr]; seen {
 					continue
 				}

@@ -117,7 +117,7 @@ def target_emulator():
         ),
         cmd = select_arch(
             amd64 = "$(execpath //tools/bazeldefs:qemu_x86_64)",
-            arm64 = "$(execpath //tools/bazeldefs:qemu_aarch64)",
+            arm64 = "$(execpath //tools/bazeldefs:qemu_aarch64) -cpu neoverse-n1",
             riscv64 = "$(execpath //tools/bazeldefs:qemu_riscv64)",
             default = "",
         ),
