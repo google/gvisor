@@ -134,11 +134,6 @@ func (d *cpusData) WriteBackground(ctx context.Context, src usermem.IOSequence) 
 		return 0, linuxerr.EINVAL
 	}
 
-	if got, want := b.Maximum(), d.c.maxCpus; got > want {
-		log.Warningf("cgroupfs cpuset controller: Attempted to specify cpuset.cpus beyond highest available cpu: got %d, want %d", got, want)
-		return 0, linuxerr.EINVAL
-	}
-
 	d.c.mu.Lock()
 	defer d.c.mu.Unlock()
 	d.c.cpus = b
@@ -185,11 +180,6 @@ func (d *memsData) WriteBackground(ctx context.Context, src usermem.IOSequence) 
 	b, err := bitmap.ParseList(string(buf), d.c.maxMems)
 	if err != nil {
 		log.Warningf("cgroupfs cpuset controller: Failed to parse bitmap: %v", err)
-		return 0, linuxerr.EINVAL
-	}
-
-	if got, want := b.Maximum(), d.c.maxMems; got > want {
-		log.Warningf("cgroupfs cpuset controller: Attempted to specify cpuset.mems beyond highest available node: got %d, want %d", got, want)
 		return 0, linuxerr.EINVAL
 	}
 

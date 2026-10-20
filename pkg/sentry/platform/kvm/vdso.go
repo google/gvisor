@@ -126,12 +126,20 @@ func (img *vdsoImage) altInstrTargets() (map[int]bool, error) {
 }
 
 // inExecutableSegment returns true if [off, off+size) lies within the pages
-// covered by an executable PT_LOAD segment. The [vdso] mapping covers whole
-// pages, so the padding between the end of the segment and the end of its
-// last page is mapped and executable as well.
+// covered by an executable PT_LOAD segment. The kernel maps the entire [vdso]
+// image (including any non-allocatable sections, the section header table, and
+// page padding after the last PT_LOAD segment) as a single executable VMA, so
+// the last PT_LOAD segment's executable mapping extends to the end of the
+// image.
 func (img *vdsoImage) inExecutableSegment(off, size int) bool {
 	if off < 0 || size < 0 || off+size > len(img.data) {
 		return false
+	}
+	var maxLoadEnd uint64
+	for _, p := range img.f.Progs {
+		if p.Type == elf.PT_LOAD && p.Off+p.Memsz > maxLoadEnd {
+			maxLoadEnd = p.Off + p.Memsz
+		}
 	}
 	const pageMask = hostarch.PageSize - 1
 	for _, p := range img.f.Progs {
@@ -140,7 +148,7 @@ func (img *vdsoImage) inExecutableSegment(off, size int) bool {
 		}
 		segStart := int(p.Off) &^ pageMask
 		segEnd := (int(p.Off+p.Memsz) + pageMask) &^ pageMask
-		if segEnd > len(img.data) {
+		if p.Off+p.Memsz == maxLoadEnd || segEnd > len(img.data) {
 			segEnd = len(img.data)
 		}
 		if off >= segStart && off+size <= segEnd {
@@ -148,6 +156,20 @@ func (img *vdsoImage) inExecutableSegment(off, size int) bool {
 		}
 	}
 	return false
+}
+
+// programHeaderEnd returns the end offset of the ELF header and program header
+// table.
+func (img *vdsoImage) programHeaderEnd() int {
+	// parseVDSO guarantees a little-endian ELF64 header.
+	ehsize := int(binary.LittleEndian.Uint16(img.data[52:54]))
+	phoff := int(binary.LittleEndian.Uint64(img.data[32:40]))
+	phentsize := int(binary.LittleEndian.Uint16(img.data[54:56]))
+	phnum := int(binary.LittleEndian.Uint16(img.data[56:58]))
+	if phEnd := phoff + phentsize*phnum; phEnd > ehsize {
+		return phEnd
+	}
+	return ehsize
 }
 
 // sectionHeaderEnd returns the end offset of the section header table.
@@ -167,14 +189,21 @@ func (img *vdsoImage) sectionHeaderEnd() int {
 //     adjacent. Their size does not depend on how the image happened to be
 //     padded, so they are the most reliable choice.
 //  2. The zero-filled tail of the mapping, past every section and past the
-//     section header table. Its size depends on the image size modulo the
-//     page size, so it may not be available on every host kernel build.
+//     section header table.
+//  3. The non-allocatable tail at the end of the mapping, past the ELF and
+//     program headers and every live SHF_ALLOC section (overwriting only
+//     non-SHF_ALLOC metadata such as .shstrtab or the section header table,
+//     which are never read at runtime).
 //
-// Either must lie within an executable PT_LOAD segment.
+// The chosen region must lie within the executable mapping.
 func (img *vdsoImage) findStubOffset(totalStubsLen int) (int, error) {
 	type span struct{ start, end int }
 	var dead []span
 	liveEnd := img.sectionHeaderEnd()
+	allocEnd := img.programHeaderEnd()
+	if allocEnd > liveEnd {
+		liveEnd = allocEnd
+	}
 	for _, s := range img.f.Sections {
 		if s.Type == elf.SHT_NULL || s.Type == elf.SHT_NOBITS || s.Size == 0 {
 			continue
@@ -185,8 +214,13 @@ func (img *vdsoImage) findStubOffset(totalStubsLen int) (int, error) {
 		}
 		if vdsoDeadSections[s.Name] {
 			dead = append(dead, span{start, end})
-		} else if end > liveEnd {
-			liveEnd = end
+		} else {
+			if end > liveEnd {
+				liveEnd = end
+			}
+			if s.Flags&elf.SHF_ALLOC != 0 && end > allocEnd {
+				allocEnd = end
+			}
 		}
 	}
 
@@ -211,6 +245,9 @@ func (img *vdsoImage) findStubOffset(totalStubsLen int) (int, error) {
 
 	cand := (len(img.data) - totalStubsLen) &^ 7
 	if cand >= liveEnd && img.inExecutableSegment(cand, totalStubsLen) && isAllZero(img.data[cand:cand+totalStubsLen]) {
+		return cand, nil
+	}
+	if cand >= allocEnd && img.inExecutableSegment(cand, totalStubsLen) {
 		return cand, nil
 	}
 

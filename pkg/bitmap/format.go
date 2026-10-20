@@ -106,13 +106,13 @@ func parseToken(token string) (start, end uint32, err error) {
 // of indices, and ranges of set bits may be abbreviated. Examples: "0,2,4",
 // "0,3-7,10", "0-10". Input after the first newline or null byte is discarded.
 //
-// sizeHint sets the initial size of the bitmap, which may prevent reallocation
-// when growing the bitmap during parsing. Ideally sizeHint should be at least
-// as large as the bitmap represented by input, but this is not required.
+// bitLimit is the exclusive upper bound on set bit indices. Indices and range
+// endpoints at or above bitLimit are rejected before any bits in that token are
+// added. An empty input is valid even when bitLimit is zero.
 //
 // Inverse of FormatList.
-func ParseList(input string, sizeHint uint32) (*Bitmap, error) {
-	b := New(sizeHint)
+func ParseList(input string, bitLimit uint32) (*Bitmap, error) {
+	b := New(bitLimit)
 
 	if termIdx := strings.IndexAny(input, "\n\000"); termIdx != -1 {
 		input = input[:termIdx]
@@ -128,6 +128,9 @@ func ParseList(input string, sizeHint uint32) (*Bitmap, error) {
 		start, end, err := parseToken(strings.TrimSpace(t))
 		if err != nil {
 			return nil, err
+		}
+		if end >= bitLimit {
+			return nil, fmt.Errorf("bit %d is outside bitmap limit %d", end, bitLimit)
 		}
 		for i := start; i <= end; i++ {
 			b.Add(i)
