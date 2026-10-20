@@ -17,6 +17,7 @@ package fsbench
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -151,12 +152,8 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 			}
 
 			if variant.fsType == harness.FuseFS {
-				_, err := container.ExecProcess(ctx, dockerutil.ExecOpts{
-					Privileged: true,
-				}, "/fusebin/fuse", "--dir="+prefix, "--debug=false")
-				if err != nil {
-					b.Fatalf("starting fuse server failed with: %v", err)
-				}
+				// Stop monitoring FUSE before metrics collection stops the container.
+				defer startFUSE(ctx, b, container, prefix)()
 			}
 
 			cpCmd := fmt.Sprintf("cp -r %s %s/.", bm.WorkDir, prefix)
@@ -206,4 +203,41 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 			}
 		})
 	}
+}
+
+func startFUSE(ctx context.Context, b *testing.B, container *dockerutil.Container, dir string) func() {
+	b.Helper()
+	const readyFile = "/tmp/gvisor-fuse-ready"
+	ctx, cancel := context.WithCancel(ctx)
+	exited := make(chan error, 1)
+	go func() {
+		out, err := container.Exec(ctx, dockerutil.ExecOpts{Privileged: true},
+			"/fusebin/fuse", "--dir="+dir, "--debug=false", "--ready-file="+readyFile)
+		if err == nil {
+			err = errors.New("unexpected successful exit")
+		}
+		exited <- fmt.Errorf("FUSE server exited: %w; output: %s", err, out)
+		close(exited)
+		cancel()
+	}()
+	cu := cleanup.Make(func() {
+		cancel()
+		if err := <-exited; err != nil && !errors.Is(err, context.Canceled) {
+			b.Error(err)
+		}
+	})
+	defer cu.Clean()
+
+	// A late mount can hide files copied into the original tmpfs. Wait for the
+	// server's mount-ready signal before populating the benchmark filesystem.
+	if _, err := container.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c",
+		"until [ -e "+readyFile+" ]; do sleep 0.01; done"); err != nil {
+		select {
+		case err := <-exited:
+			b.Fatal(err)
+		default:
+			b.Fatalf("waiting for FUSE mount: %v", err)
+		}
+	}
+	return cu.Release()
 }
