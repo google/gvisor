@@ -593,9 +593,7 @@ TEST(ShmTest, RmidOwnershipPermissionDenied) {
 
   // In the same dropped-privilege thread (now the owner), IPC_RMID
   // should succeed.
-  ScopedThread([&] {
-    drop_privs([&] { EXPECT_NO_ERRNO(shm.Rmid()); });
-  });
+  ScopedThread([&] { drop_privs([&] { EXPECT_NO_ERRNO(shm.Rmid()); }); });
 }
 
 }  // namespace
