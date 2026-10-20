@@ -549,6 +549,13 @@ type dentry struct {
 	// because inode resources are released when all references are dropped.
 	// dentry therefore forwards reference counting directly to inode.
 	inode *inode
+
+	// unnamedRefs is non-nil if this dentry was created by open(O_TMPFILE).
+	// Such a dentry is never inserted into its parent's childList, so the
+	// dentry tree does not keep it alive; instead it counts its own
+	// references, and when they drop to zero it releases the reference it
+	// holds on parent.inode, as Linux's dentry_kill() does. Immutable.
+	unnamedRefs *atomicbitops.Int64
 }
 
 // WriteCount implements vfs.WriteCounter.WriteCount.
@@ -567,16 +574,28 @@ func (fs *filesystem) newDentry(inode *inode) *dentry {
 // IncRef implements vfs.DentryImpl.IncRef.
 func (d *dentry) IncRef() {
 	d.inode.incRef()
+	if d.unnamedRefs != nil {
+		d.unnamedRefs.Add(1)
+	}
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
 func (d *dentry) TryIncRef() bool {
-	return d.inode.tryIncRef()
+	if !d.inode.tryIncRef() {
+		return false
+	}
+	if d.unnamedRefs != nil {
+		d.unnamedRefs.Add(1)
+	}
+	return true
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
 func (d *dentry) DecRef(ctx context.Context) {
 	d.inode.decRef(ctx)
+	if d.unnamedRefs != nil && d.unnamedRefs.Add(-1) == 0 {
+		d.parent.Load().inode.decRef(ctx)
+	}
 }
 
 // InotifyWithParent implements vfs.DentryImpl.InotifyWithParent.
