@@ -181,6 +181,23 @@ func TestTasksEmpty(t *testing.T) {
 	s.AssertDirentOffsets(collector, tasksStaticFilesNextOffs)
 }
 
+func TestSyntheticMountpointCreation(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	for _, name := range []string{"/proc/mountpoint", "/proc/mountpoint/nested"} {
+		pop := s.PathOpAtRoot(name)
+		if err := s.VFS.MkdirAt(s.Ctx, s.Creds, pop, &vfs.MkdirOptions{Mode: 0755, ForSyntheticMountpoint: true}); err != nil {
+			t.Fatalf("MkdirAt(%q, ForSyntheticMountpoint): %v", name, err)
+		}
+		d := s.GetDentryOrDie(pop)
+		d.DecRef(s.Ctx)
+	}
+	if err := s.VFS.MkdirAt(s.Ctx, s.Creds, s.PathOpAtRoot("/proc/ordinary"), &vfs.MkdirOptions{Mode: 0755}); !linuxerr.Equals(linuxerr.ENOENT, err) {
+		t.Errorf("MkdirAt(/proc/ordinary): got %v, want ENOENT", err)
+	}
+}
+
 // TestManyProcMounts tests that many procfs instances can exist concurrently.
 // Regression test for the case where each instance permanently consumed one of
 // the ~149 available dynamic character device major numbers for

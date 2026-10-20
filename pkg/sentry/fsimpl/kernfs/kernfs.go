@@ -130,6 +130,11 @@ type Filesystem struct {
 	// defaults to 0 and kernfs does not cache any dentries. This is immutable.
 	MaxCachedDentries uint64
 
+	// NoNegativeDentries preserves lookup errors during creation, including for
+	// names longer than NAME_MAX, as in Linux's fs/proc/generic.c:proc_lookup_de().
+	// Synthetic mountpoint creation is exempt. This is immutable.
+	NoNegativeDentries bool
+
 	// root is the root dentry of this filesystem. Note that root may be nil for
 	// filesystems on a disconnected mount without a root (e.g. pipefs, sockfs,
 	// hostfs). Filesystem holds an extra reference on root to prevent it from
