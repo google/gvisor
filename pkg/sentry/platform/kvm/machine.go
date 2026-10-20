@@ -95,6 +95,10 @@ type machine struct {
 	// tscOffset is the offset to apply to the guest TSC.
 	tscOffset uint64
 
+	// tscFrequency is the frequency in Hz at which the host TSC advances,
+	// or zero if it could not be determined.
+	tscFrequency uint64
+
 	// shadowVDSO is a binary-patched copy of the host [vdso] mapped at vdsoVirt
 	// in the guest page tables when tscOffset != 0.
 	shadowVDSO []byte

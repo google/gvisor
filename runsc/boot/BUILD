@@ -24,6 +24,7 @@ go_library(
         "procfs_dump.go",
         "restore.go",
         "restore_impl.go",
+        "restore_tsc.go",
         "seccheck.go",
         "seccomp.go",
         "strace.go",

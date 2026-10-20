@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "state.go",
         "state_metadata.go",
+        "state_tsc.go",
         "state_unsafe.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -18,6 +19,7 @@ go_library(
         "//pkg/context",
         "//pkg/log",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/platform",
         "//pkg/sentry/state/stateio",
         "//pkg/sentry/time",
         "//pkg/sentry/watchdog",

@@ -802,6 +802,7 @@ func isWarning(line string) bool {
 	case strings.Contains(line, "is not permitted, dropping it."):
 	case strings.Contains(line, "sndPrepopulatedMsg failed"):
 	case strings.Contains(line, "TSC snapshot unavailable"):
+	case strings.Contains(line, "No TSC snapshot is available, unable to save TSC"):
 	case strings.Contains(line, "copy up failed to copy up contents"):
 	case strings.Contains(line, "populate failed for"):
 	case strings.Contains(line, "ASAN is enabled: syscall filters less restrictive"):

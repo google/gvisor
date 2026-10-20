@@ -49,6 +49,11 @@ func (c *mockClocks) MonotonicRawEnabled() bool {
 	return c.monotonicRawEnabled
 }
 
+// TSCSnapshot implements sentrytime.Clocks.TSCSnapshot. It reports no snapshot.
+func (*mockClocks) TSCSnapshot() (sentrytime.TSCSnapshot, bool) {
+	return sentrytime.TSCSnapshot{}, false
+}
+
 // GetTime implements sentrytime.Clocks.GetTime.
 func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 	c.mu.Lock()

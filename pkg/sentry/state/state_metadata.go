@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
 // The save metadata keys for timestamp.
@@ -31,10 +32,7 @@ const (
 )
 
 // addSaveMetadata supplements the save metadata.
-//
-// TODO(b/493253787): Populate the gvisor_tsc_snapshot_{cycle,frequency,
-// realtime_nsec} metadata as well. The cycle must be in the guest TSC domain.
-func addSaveMetadata(m map[string]string) {
+func addSaveMetadata(m map[string]string, k *kernel.Kernel) {
 	t, err := CPUTime()
 	if err != nil {
 		log.Warningf("Error getting cpu time: %v", err)
@@ -49,4 +47,6 @@ func addSaveMetadata(m map[string]string) {
 	m[cpuUsage] = t.String()
 
 	m[metadataTimestamp] = fmt.Sprintf("%v", time.Now())
+
+	addTSCSaveMetadata(m, k)
 }
