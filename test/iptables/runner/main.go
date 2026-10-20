@@ -55,8 +55,7 @@ func main() {
 		log.Fatalf("Failed running test %q: %v", *name, err)
 	}
 
-	// Emit the final line.
-	log.Printf("%s", iptables.TerminalStatement)
+	log.Print("Finished!")
 }
 
 // getIP listens for a connection from the local process and returns the source

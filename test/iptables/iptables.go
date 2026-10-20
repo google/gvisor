@@ -26,9 +26,6 @@ import (
 // address of the local process.
 const IPExchangePort = 2349
 
-// TerminalStatement is the last statement in the test runner.
-const TerminalStatement = "Finished!"
-
 // TestTimeout is the timeout used for all tests.
 const TestTimeout = 10 * time.Second
 
