@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	allowedOpenFlags     = unix.O_ACCMODE | unix.O_TRUNC
+	allowedOpenFlags     = unix.O_ACCMODE | unix.O_TRUNC | unix.O_DIRECT
 	setStatSupportedMask = unix.STATX_MODE | unix.STATX_UID | unix.STATX_GID | unix.STATX_SIZE | unix.STATX_ATIME | unix.STATX_MTIME
 	// unixDirentMaxSize is the maximum size of unix.Dirent for amd64.
 	unixDirentMaxSize = 280
