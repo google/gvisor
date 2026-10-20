@@ -295,6 +295,16 @@ func TestSyscallThreadKillMarksSubprocessDead(t *testing.T) {
 	}
 }
 
+func TestInitSyscallThreadPoolExhausted(t *testing.T) {
+	s := &subprocess{
+		sysmsgStackPool: pool.Pool{Start: 0, Limit: 0},
+	}
+	p := &thread{tgid: 1 << 30, tid: 1 << 30}
+	if err := s.initSyscallThread(p, false); err == nil {
+		t.Fatalf("initSyscallThread succeeded when pool was exhausted, want error")
+	}
+}
+
 func TestStuckSubprocessHelper(t *testing.T) {
 	if os.Getenv("GVISOR_STUCK_SUBPROCESS_HELPER") == "" {
 		return
