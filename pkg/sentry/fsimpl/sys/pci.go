@@ -25,8 +25,10 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fsutil"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -38,13 +40,15 @@ const (
 )
 
 var (
-	// pciBusRegex matches PCI bus addresses.
-	pciBusRegex = regex.MustCompile(`pci0000:[[:xdigit:]]{2}`)
-	// Matches PCI device addresses.
-	pciDeviceRegex = regex.MustCompile(`0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2}`)
-	// Matches the directories for the main bus (i.e. pci000:00),
-	// individual devices (e.g. 00:00:04.0), accel (TPU v4), and vfio (TPU v5)
-	sysDevicesDirRegex = regex.MustCompile(`pci0000:[[:xdigit:]]{2}|accel|vfio|vfio-dev|(0000:([[:xdigit:]]{2}|[[:xdigit:]]{4}):[[:xdigit:]]{2}\.[[:xdigit:]]{1,2})`)
+	// pciBusRegex matches PCI root bus directories (e.g. pci0000:00 or
+	// pci0007:00).
+	pciBusRegex = regex.MustCompile(tpu.PCIBusRegexPattern)
+	// Matches PCI device addresses in domain:bus:device.function form (e.g.
+	// 0000:00:04.0 or 0007:01:00.0).
+	pciDeviceRegex = regex.MustCompile(tpu.PCIDeviceRegexPattern)
+	// Matches the directories for the root buses (e.g. pci0000:00),
+	// individual devices (e.g. 0000:00:04.0), accel (TPU v4), and vfio (TPU v5)
+	sysDevicesDirRegex = regex.MustCompile(fmt.Sprintf("%s|accel|vfio|vfio-dev|(%s)", tpu.PCIBusRegexPattern, tpu.PCIDeviceRegexPattern))
 	// Files allowlisted for host passthrough. These files are read-only.
 	sysDevicesFiles = map[string]any{
 		"vendor": nil, "device": nil, "subsystem_vendor": nil, "subsystem_device": nil,
@@ -62,46 +66,50 @@ var (
 )
 
 // pciAddress represents a PCI device address. It has the address format
-// 0000:00:04.0.
+// DDDD:BB:DD.F, e.g. 0000:00:04.0.
 type pciAddress struct {
+	domain   uint16
 	bus      uint8
 	device   uint8
 	function uint8
 }
 
-// pciAddressFromString parses a PCI device address string into a pciAddress
-// struct. It assumes the address is on the host's main bus (i.e. 0000:*).
+// pciAddressFromString parses a PCI device address string of the form
+// DDDD:BB:DD.F into a pciAddress struct.
 func pciAddressFromString(pciAddressString string) (pciAddress, error) {
-	pciAddressString = strings.TrimPrefix(pciAddressString, "0000:")
-	parts := strings.SplitN(pciAddressString, ":", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(pciAddressString, ":", 3)
+	if len(parts) != 3 {
 		return pciAddress{}, fmt.Errorf("invalid PCI address: %s", pciAddressString)
 	}
-	bus, err := strconv.ParseUint(parts[0], 16, 8)
+	domain, err := strconv.ParseUint(parts[0], 16, 16)
 	if err != nil {
-		return pciAddress{}, fmt.Errorf("invalid PCI bus: %s", parts[0])
+		return pciAddress{}, fmt.Errorf("invalid PCI domain: %s", parts[0])
 	}
-	subparts := strings.SplitN(parts[1], ".", 2)
+	bus, err := strconv.ParseUint(parts[1], 16, 8)
+	if err != nil {
+		return pciAddress{}, fmt.Errorf("invalid PCI bus: %s", parts[1])
+	}
+	subparts := strings.SplitN(parts[2], ".", 2)
 	if len(subparts) != 2 {
-		return pciAddress{}, fmt.Errorf("invalid PCI device address: %s", parts[1])
+		return pciAddress{}, fmt.Errorf("invalid PCI device address: %s", parts[2])
 	}
 	device, err := strconv.ParseUint(subparts[0], 16, 8)
 	if err != nil {
-		return pciAddress{}, fmt.Errorf("invalid PCI device number: %s", parts[1])
+		return pciAddress{}, fmt.Errorf("invalid PCI device number: %s", subparts[0])
 	}
 	fn, err := strconv.ParseUint(subparts[1], 16, 8)
 	if err != nil {
-		return pciAddress{}, fmt.Errorf("invalid PCI function number: %s", parts[2])
+		return pciAddress{}, fmt.Errorf("invalid PCI function number: %s", subparts[1])
 	}
-	return pciAddress{bus: uint8(bus), device: uint8(device), function: uint8(fn)}, nil
+	return pciAddress{domain: uint16(domain), bus: uint8(bus), device: uint8(device), function: uint8(fn)}, nil
 }
 
 func (a pciAddress) String() string {
-	return fmt.Sprintf("0000:%02x:%02x.%d", a.bus, a.device, a.function)
+	return fmt.Sprintf("%04x:%02x:%02x.%d", a.domain, a.bus, a.device, a.function)
 }
 
 func (a pciAddress) Empty() bool {
-	return a.bus == 0 && a.device == 0 && a.function == 0
+	return a.domain == 0 && a.bus == 0 && a.device == 0 && a.function == 0
 }
 
 type pciAddressSet []pciAddress
@@ -111,6 +119,9 @@ func (s pciAddressSet) Len() int {
 }
 
 func (s pciAddressSet) Less(i, j int) bool {
+	if s[i].domain != s[j].domain {
+		return s[i].domain < s[j].domain
+	}
 	if s[i].bus != s[j].bus {
 		return s[i].bus < s[j].bus
 	}
@@ -252,7 +263,14 @@ func pciDeviceIOMMUGroups(iommuGroupsPath string, pciInfos map[string]*pciDevice
 			if err != nil {
 				return err
 			}
-			pciInfos[pciDeviceName].iommuGroup = groupNum
+			// IOMMU groups may contain devices that were not discovered by
+			// walkPCIDeviceTopology, e.g. platform (non-PCI) devices.
+			info, ok := pciInfos[pciDeviceName]
+			if !ok {
+				log.Infof("Skipping IOMMU group %d device %q: not a known PCI device", groupNum, pciDeviceName)
+				continue
+			}
+			info.iommuGroup = groupNum
 		}
 	}
 	return nil
@@ -350,21 +368,35 @@ func (fs *filesystem) mirrorSysDevicesDir(ctx context.Context, creds *auth.Crede
 				if err != nil {
 					return nil, err
 				}
+				pciInfo, ok := pciInfos[pciDeviceName]
+				if !ok {
+					log.Infof("Skipping symlink %q: device %q is not a known PCI device", dentPath, pciDeviceName)
+					continue
+				}
 				// Remove the bus prefix.
-				pciPath := pciBusRegex.ReplaceAllString(pciInfos[pciDeviceName].path, "")
+				pciPath := pciBusRegex.ReplaceAllString(pciInfo.path, "")
 				// Both the device and PCI address entries are links to the original PCI
 				// device directory that's at the same place earlier in the dir tree.
 				linkContent = path.Join("../../../", pciPath)
 			case dent == "physfn" || strings.Contains(dent, "virtfn"):
 				pciDirName := path.Base(path.Dir(dir))
+				pciInfo, ok := pciInfos[pciDirName]
+				if !ok {
+					log.Infof("Skipping symlink %q: device %q is not a known PCI device", dentPath, pciDirName)
+					continue
+				}
 				if dent == "physfn" {
-					linkContent = path.Join("../", pciInfos[pciDirName].physfn.String())
+					linkContent = path.Join("../", pciInfo.physfn.String())
 				} else if strings.Contains(dent, "virtfn") {
 					num, err := findIntInString(dent)
 					if err != nil {
 						return nil, err
 					}
-					linkContent = path.Join("../", pciInfos[pciDirName].virtfn[num].String())
+					if num >= len(pciInfo.virtfn) {
+						log.Infof("Skipping symlink %q: device %q has %d known virtual functions", dentPath, pciDirName, len(pciInfo.virtfn))
+						continue
+					}
+					linkContent = path.Join("../", pciInfo.virtfn[num].String())
 				}
 			case dent == "iommu_group":
 				pciDeviceName, err := pciDeviceName(dir)
@@ -378,7 +410,7 @@ func (fs *filesystem) mirrorSysDevicesDir(ctx context.Context, creds *auth.Crede
 				// A PCI device path looks something like pci0000:00/0000:00:04.0. To
 				// get to the /sys directory, we need to go up as many directories as
 				// are in the pciPath plus one more for the "devices" directory.
-				pciPathComponents := strings.Split(pciInfos[pciDeviceName].path, "/")
+				pciPathComponents := strings.Split(pciInfo.path, "/")
 				upDirs := strings.Repeat("../", len(pciPathComponents)+1)
 				linkContent = fmt.Sprintf("%skernel/iommu_groups/%d", upDirs, pciInfo.iommuGroup)
 			default:
