@@ -28,7 +28,7 @@ func getCoreTag(tid int) (uint64, error) {
 	if _, _, errno := unix.Syscall6(unix.SYS_PRCTL, unix.PR_SCHED_CORE,
 		unix.PR_SCHED_CORE_GET, uintptr(tid), linux.PR_SCHED_CORE_SCOPE_THREAD,
 		uintptr(unsafe.Pointer(&cookie)), 0); errno != 0 {
-		return 0, fmt.Errorf("prctl(PR_SCHED_CORE, PR_SCHED_CORE_GET, %d, PR_SCHED_CORE_SCOPE_THREAD) (errno=%d)", tid, errno)
+		return 0, fmt.Errorf("prctl(PR_SCHED_CORE, PR_SCHED_CORE_GET, %d, PR_SCHED_CORE_SCOPE_THREAD): %w", tid, errno)
 	}
 	return cookie, nil
 }

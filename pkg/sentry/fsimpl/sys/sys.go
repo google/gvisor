@@ -381,7 +381,12 @@ func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credent
 			subs[dent] = fs.newHostFile(ctx, creds, defaultSysMode, absPath)
 		case unix.S_IFLNK:
 			if pciDeviceRegex.MatchString(dent) {
-				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/%s", pciInfos[dent].path))
+				info, ok := pciInfos[dent]
+				if !ok {
+					log.Infof("Skipping IOMMU group link %q: not a known PCI device", absPath)
+					continue
+				}
+				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/%s", info.path))
 			}
 		}
 	}
