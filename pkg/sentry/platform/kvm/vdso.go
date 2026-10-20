@@ -28,8 +28,8 @@ import (
 type vdsoImage struct {
 	f *elf.File
 
-	// data is the raw image. Its length is that of the [vdso] mapping, which
-	// is the image size rounded up to a page.
+	// data is a copy of the complete readable, executable [vdso] mapping.
+	// The mapping can extend beyond the pages covered by its PT_LOAD segments.
 	data []byte
 
 	// textStart and textEnd delimit the .text section in data.
@@ -63,6 +63,8 @@ var vdsoDeadSections = map[string]bool{
 // virtual offsets, so that offsets into vdsoBytes can be used directly to
 // compute PC-relative displacements, and .text lies within an executable
 // PT_LOAD segment.
+//
+// vdsoBytes must contain the complete readable, executable [vdso] mapping.
 func parseVDSO(vdsoBytes []byte) (*vdsoImage, error) {
 	f, err := elf.NewFile(bytes.NewReader(vdsoBytes))
 	if err != nil {
@@ -170,7 +172,9 @@ func (img *vdsoImage) sectionHeaderEnd() int {
 //     section header table. Its size depends on the image size modulo the
 //     page size, so it may not be available on every host kernel build.
 //
-// Either must lie within an executable PT_LOAD segment.
+// Dead sections must lie within an executable PT_LOAD segment. The zero tail
+// need only lie within data: the entire original mapping is executable, and
+// the guest maps the complete shadow at that mapping's addresses.
 func (img *vdsoImage) findStubOffset(totalStubsLen int) (int, error) {
 	type span struct{ start, end int }
 	var dead []span
@@ -210,7 +214,7 @@ func (img *vdsoImage) findStubOffset(totalStubsLen int) (int, error) {
 	}
 
 	cand := (len(img.data) - totalStubsLen) &^ 7
-	if cand >= liveEnd && img.inExecutableSegment(cand, totalStubsLen) && isAllZero(img.data[cand:cand+totalStubsLen]) {
+	if cand >= liveEnd && isAllZero(img.data[cand:cand+totalStubsLen]) {
 		return cand, nil
 	}
 

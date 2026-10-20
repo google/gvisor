@@ -156,6 +156,9 @@ func hostVDSO(t *testing.T) []byte {
 		if vr.filename != "[vdso]" {
 			return false
 		}
+		if !vr.accessType.Read || !vr.accessType.Execute {
+			t.Fatalf("[vdso] mapping is not readable and executable: %v", vr.accessType)
+		}
 		vdso = append([]byte(nil), sliceFromAddr(vr.virtual, vr.length)...)
 		return true
 	}); err != nil {
@@ -177,6 +180,65 @@ func TestParseVDSOErrors(t *testing.T) {
 		binary.LittleEndian.PutUint64(buf[80:88], 0x1000) // p_vaddr
 		if _, err := parseVDSO(buf); err == nil {
 			t.Errorf("expected error when p_offset != p_vaddr, got nil")
+		}
+	})
+}
+
+func TestFindVDSOStubOffsetMappedTail(t *testing.T) {
+	const imageSize = 2 * testVDSOSize
+	const totalStubsLen = 248
+	const wantStubOffset = (imageSize - totalStubsLen) &^ 7
+	makeImage := func() []byte {
+		buf := makeTestVDSOELF(183 /* EM_AARCH64 */, testPFRX, 0, nil)
+		buf = append(buf, make([]byte, testVDSOSize)...)
+		// As on the captured ARM64 host, the executable PT_LOAD ends in
+		// page one, but section headers occupy the second mapped page.
+		copy(buf[testVDSOSize:], buf[testVDSOShdrOff:testVDSOShdrEnd])
+		clear(buf[testVDSOShdrOff:testVDSOShdrEnd])
+		binary.LittleEndian.PutUint64(buf[40:48], testVDSOSize)
+		return buf
+	}
+	parse := func(t *testing.T, buf []byte) *vdsoImage {
+		t.Helper()
+		img, err := parseVDSO(buf)
+		if err != nil {
+			t.Fatalf("parseVDSO failed: %v", err)
+		}
+		return img
+	}
+
+	t.Run("ZeroTail", func(t *testing.T) {
+		off, err := parse(t, makeImage()).findStubOffset(totalStubsLen)
+		if err != nil || off != wantStubOffset {
+			t.Fatalf("findStubOffset = (%#x, %v), want (%#x, nil)", off, err, wantStubOffset)
+		}
+	})
+	t.Run("NonzeroTail", func(t *testing.T) {
+		buf := makeImage()
+		buf[wantStubOffset] = 1
+		if off, err := parse(t, buf).findStubOffset(totalStubsLen); err == nil {
+			t.Fatalf("findStubOffset = %#x, want an error for nonzero tail", off)
+		}
+	})
+	t.Run("SectionHeaderOverlap", func(t *testing.T) {
+		buf := makeImage()
+		// Additional SHT_NULL entries occupy the otherwise-zero tail.
+		binary.LittleEndian.PutUint16(buf[60:62], testVDSOSize/64)
+		if off, err := parse(t, buf).findStubOffset(totalStubsLen); err == nil {
+			t.Fatalf("findStubOffset = %#x, want an error for overlapping section headers", off)
+		}
+	})
+	t.Run("LiveSectionOverlap", func(t *testing.T) {
+		buf := makeImage()
+		// Turn the empty .altinstructions entry into an unnamed live
+		// section occupying the zero tail.
+		header := buf[testVDSOSize+3*64:]
+		binary.LittleEndian.PutUint32(header[0:4], 0)
+		binary.LittleEndian.PutUint64(header[16:24], wantStubOffset)
+		binary.LittleEndian.PutUint64(header[24:32], wantStubOffset)
+		binary.LittleEndian.PutUint64(header[32:40], totalStubsLen)
+		if off, err := parse(t, buf).findStubOffset(totalStubsLen); err == nil {
+			t.Fatalf("findStubOffset = %#x, want an error for overlapping live section", off)
 		}
 	})
 }

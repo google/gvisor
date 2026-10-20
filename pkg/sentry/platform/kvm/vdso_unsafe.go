@@ -73,6 +73,9 @@ func (m *machine) initShadowVDSO() error {
 		log.Infof("[vdso] is not mapped into the KVM guest; not creating a shadow [vdso] for the guest TSC offset")
 		return nil
 	}
+	if !vdsoRegion.accessType.Read || !vdsoRegion.accessType.Execute {
+		return fmt.Errorf("[vdso] mapping is not readable and executable: %v", vdsoRegion.accessType)
+	}
 
 	addr, errno := hostsyscall.RawSyscall6(
 		unix.SYS_MMAP,
