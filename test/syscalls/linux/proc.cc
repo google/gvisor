@@ -53,7 +53,6 @@
 #include <ostream>
 #include <regex>  // NOLINT
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -77,7 +76,6 @@
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/epoll_util.h"
 #include "test/util/eventfd_util.h"
@@ -102,7 +100,6 @@
 // way to get it tested on both gVisor, PTrace and Linux.
 
 using ::testing::AllOf;
-using ::testing::AnyOf;
 using ::testing::ContainerEq;
 using ::testing::Contains;
 using ::testing::ContainsRegex;
@@ -1032,7 +1029,7 @@ TEST(ProcSelfMaps, Basic) {
   std::vector<std::string> stacks;
   // Make sure there's a stack in there.
   for (const auto& str : strings) {
-    if (str.find("[stack]") != std::string::npos) {
+    if (absl::StrContains(str, "[stack]")) {
       stacks.push_back(str);
     }
   }
@@ -2023,6 +2020,24 @@ TEST(ProcPidStatusTest, HasBasicFields) {
             Pair("Groups", StartsWith(absl::StrJoin(supplementary_gids, " "))),
         }));
   });
+}
+
+TEST(ProcPidStatusTest, InvalidCloseDoesNotGrowFDTable) {
+  // Restoring a checkpoint may change the FD table's capacity.
+  const DisableSave disable_save;
+  const std::string before_str =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/status"));
+  const auto before = ASSERT_NO_ERRNO_AND_VALUE(ParseProcStatus(before_str));
+  const auto fd_size = before.find("FDSize");
+  ASSERT_NE(fd_size, before.end());
+
+  EXPECT_THAT(close(INT_MAX), SyscallFailsWithErrno(EBADF));
+
+  const std::string after_str =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/status"));
+  EXPECT_THAT(
+      ParseProcStatus(after_str),
+      IsPosixErrorOkAndHolds(Contains(Pair("FDSize", fd_size->second))));
 }
 
 TEST(ProcPidStatusTest, NoNewPrivs) {
@@ -4129,6 +4144,7 @@ TEST(ProcSysFsFileNr, TracksOpenFiles) {
   EXPECT_EQ(before[1], 0);
 
   std::vector<FileDescriptor> fds;
+  fds.reserve(kNumFiles);
   for (int i = 0; i < kNumFiles; i++) {
     fds.push_back(ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY)));
   }

@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	"math"
 	"runtime"
 	"testing"
 
@@ -190,6 +191,49 @@ func TestFDTable(t *testing.T) {
 			t.Fatalf("r.Remove(1) for a removed FD: got success, want failure")
 		}
 	})
+}
+
+func TestFDTableRemoveDoesNotGrow(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		openFD   int32 // -1 leaves the table empty.
+		removeFD int32
+	}{
+		{"empty", -1, 0},
+		{"empty_large_fd", -1, math.MaxInt32},
+		{"missing_bucket", fdsPerBucket, 0},
+		{"missing_entry", fdsPerBucket, fdsPerBucket + 1},
+		{"past_table", fdsPerBucket, 2 * fdsPerBucket},
+		{"large_fd", fdsPerBucket, math.MaxInt32},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runTest(t, func(ctx context.Context, fdTable *FDTable, file *vfs.FileDescription, _ *limits.LimitSet) {
+				defer fdTable.DecRef(ctx)
+				if test.openFD >= 0 {
+					if _, err := fdTable.NewFDAt(ctx, test.openFD, file, FDFlags{}); err != nil {
+						t.Fatalf("NewFDAt(%d): %v", test.openFD, err)
+					}
+				}
+
+				maxFDs := fdTable.CurrentMaxFDs()
+				// get reports whether the entry is backed by an allocated bucket.
+				_, _, hadBucket := fdTable.get(test.removeFD)
+				if removed := fdTable.Remove(ctx, test.removeFD); removed != nil {
+					removed.DecRef(ctx)
+					t.Fatalf("Remove(%d) returned a file for an absent FD", test.removeFD)
+				}
+				if got := fdTable.CurrentMaxFDs(); got != maxFDs {
+					t.Errorf("Remove(%d) grew table capacity from %d to %d", test.removeFD, maxFDs, got)
+				}
+				if _, _, hasBucket := fdTable.get(test.removeFD); hasBucket != hadBucket {
+					t.Errorf("Remove(%d) allocated a bucket", test.removeFD)
+				}
+				if test.openFD >= 0 && !fdTable.Exists(test.openFD) {
+					t.Errorf("Remove(%d) removed unrelated FD %d", test.removeFD, test.openFD)
+				}
+			})
+		})
+	}
 }
 
 func TestDescriptorFlags(t *testing.T) {
