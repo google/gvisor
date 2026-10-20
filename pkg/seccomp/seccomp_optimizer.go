@@ -15,8 +15,8 @@
 package seccomp
 
 import (
-	"fmt"
 	"strings"
+	"sync"
 )
 
 // ruleOptimizerFunc is a function type that can optimize a SyscallRule.
@@ -142,14 +142,7 @@ func convertUselessPerArgToMatchAll(rule SyscallRule) (SyscallRule, bool) {
 // This string can be used to identify the behavior of this `PerArg` rule.
 func (pa PerArg) signature() string {
 	var sb strings.Builder
-	for _, valueMatcher := range pa {
-		repr := valueMatcher.Repr()
-		if strings.ContainsRune(repr, ';') {
-			panic(fmt.Sprintf("ValueMatcher %v (type %T) returned representation %q containing illegal character ';'", valueMatcher, valueMatcher, repr))
-		}
-		sb.WriteString(repr)
-		sb.WriteRune(';')
-	}
+	pa.Repr(&sb)
 	return sb.String()
 }
 
@@ -242,12 +235,12 @@ func simplifyHalfValueMatchers(rule SyscallRule) (SyscallRule, bool) {
 		if !isSplitMatcher {
 			continue
 		}
-		if newHigh := simplifyHalfValueMatcher(sm.highMatcher); newHigh.Repr() != sm.highMatcher.Repr() {
+		if newHigh := simplifyHalfValueMatcher(sm.highMatcher); hvmRepr(newHigh) != hvmRepr(sm.highMatcher) {
 			sm.highMatcher = newHigh
 			perArg[i] = sm
 			changed = true
 		}
-		if newLow := simplifyHalfValueMatcher(sm.lowMatcher); newLow.Repr() != sm.lowMatcher.Repr() {
+		if newLow := simplifyHalfValueMatcher(sm.lowMatcher); hvmRepr(newLow) != hvmRepr(sm.lowMatcher) {
 			sm.lowMatcher = newLow
 			perArg[i] = sm
 			changed = true
@@ -288,8 +281,8 @@ type invalidValueMatcher struct {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (invalidValueMatcher) Repr() string {
-	return "invalidValueMatcher"
+func (invalidValueMatcher) Repr(sb *strings.Builder) {
+	sb.WriteString("invalidValueMatcher")
 }
 
 // invalidHalfValueMatcher is a stand-in `HalfValueMatcher` with a unique
@@ -301,8 +294,8 @@ type invalidHalfValueMatcher struct {
 }
 
 // Repr implements `HalfValueMatcher.Repr`.
-func (invalidHalfValueMatcher) Repr() string {
-	return "invalidHalfValueMatcher"
+func (invalidHalfValueMatcher) Repr(sb *strings.Builder) {
+	sb.WriteString("invalidHalfValueMatcher")
 }
 
 // sameStringSet returns whether the given string sets are equal.
@@ -583,6 +576,7 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 			allExtractable := true
 			allArgNumMatchersAreAnyValue := true
 			allOtherMatchersAreAnyValue := true
+			var sb strings.Builder
 			for _, subRule := range orRule {
 				ed, extractable := extractFn(subRule.(PerArg))
 				if allExtractable = allExtractable && extractable; !allExtractable {
@@ -590,7 +584,9 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 				}
 				allArgNumMatchersAreAnyValue = allArgNumMatchersAreAnyValue && ed.extractedMatcherIsAnyValue
 				allOtherMatchersAreAnyValue = allOtherMatchersAreAnyValue && ed.otherMatchersAreAllAnyValue
-				repr := ed.extractedMatcher.Repr()
+				ed.extractedMatcher.Repr(&sb)
+				repr := sb.String()
+				sb.Reset()
 				allOtherMatchersSigs[ed.otherMatchersSig] = struct{}{}
 				if _, reprSeen := argExprToOtherMatchersSigs[repr]; !reprSeen {
 					argExprToOtherMatchersSigs[repr] = make(map[string]struct{}, len(orRule))
@@ -744,4 +740,36 @@ func optimizeSyscallRule(rule SyscallRule) SyscallRule {
 			extractRepeatedMatchers,
 		},
 	}).optimize(rule)
+}
+
+// OptimizeSyscalls losslessly optimizes a `SyscallRule`.
+// If `cache` is not nil, it will be used to memoize optimization results.
+func OptimizeSyscalls(rule SyscallRule, c *OptimizedRuleCache) SyscallRule {
+	if c == nil {
+		return optimizeSyscallRule(rule)
+	}
+	var sb strings.Builder
+	rule.Repr(&sb)
+	key := sb.String()
+	c.mu.Lock()
+	cached, cacheHit := c.rules[key]
+	c.mu.Unlock()
+	if cacheHit {
+		return cached.Copy()
+	}
+	optimized := optimizeSyscallRule(rule)
+	c.mu.Lock()
+	if c.rules == nil {
+		c.rules = make(map[string]SyscallRule)
+	}
+	c.rules[key] = optimized.Copy()
+	c.mu.Unlock()
+	return optimized
+}
+
+// OptimizedRuleCache memoizes optimizeSyscallRule by the structure of the
+// un-optimized rule.
+type OptimizedRuleCache struct {
+	mu    sync.Mutex
+	rules map[string]SyscallRule
 }

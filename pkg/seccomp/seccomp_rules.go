@@ -55,11 +55,11 @@ type ValueMatcher interface {
 	// the symbolic name of the value being matched against.
 	String() string
 
-	// Repr returns a string that will be used for asserting equality between
-	// two `ValueMatcher` instances. It must therefore be unique to the
-	// `ValueMatcher` implementation and to its parameters.
-	// It must not contain the character ";".
-	Repr() string
+	// Repr writes a string that will be used for asserting equality between
+	// two `ValueMatcher` instances to `sb`.
+	// It must therefore be unique to the `ValueMatcher` implementation
+	// and to its parameters. It must not contain the character ";".
+	Repr(sb *strings.Builder)
 
 	// Render should add rules to the given program that verify the value
 	// loadable from `value` matches this rule or not.
@@ -72,6 +72,13 @@ type ValueMatcher interface {
 	InterestingValues() []uint64
 }
 
+// vmRepr returns the `Repr` of `vm` as a string.
+func vmRepr(vm ValueMatcher) string {
+	var sb strings.Builder
+	vm.Repr(&sb)
+	return sb.String()
+}
+
 // halfValueMatcher verifies a 32-bit value.
 type halfValueMatcher interface {
 	// String returns a human-friendly representation of the check being done
@@ -80,11 +87,11 @@ type halfValueMatcher interface {
 	// e.g. "x.low == 0xffff".
 	String() string
 
-	// Repr returns a string that will be used for asserting equality between
-	// two `halfValueMatcher` instances. It must therefore be unique to the
-	// `halfValueMatcher` implementation and to its parameters.
+	// Repr writes a string that will be used for asserting equality between
+	// two `halfValueMatcher` instances to `sb`. It must therefore be unique to
+	// the `halfValueMatcher` implementation and to its parameters.
 	// It must not contain the character ";".
-	Repr() string
+	Repr(sb *strings.Builder)
 
 	// HalfRender should add rules to the given program that verify the value
 	// loaded into the "A" register matches this 32-bit value or not.
@@ -97,6 +104,13 @@ type halfValueMatcher interface {
 	InterestingValues() []uint32
 }
 
+// hvmRepr returns the `Repr` of `hvm` as a string.
+func hvmRepr(hvm halfValueMatcher) string {
+	var sb strings.Builder
+	hvm.Repr(&sb)
+	return sb.String()
+}
+
 // halfAnyValue implements `halfValueMatcher` and matches any value.
 type halfAnyValue struct{}
 
@@ -106,8 +120,8 @@ func (halfAnyValue) String() string {
 }
 
 // Repr implements `halfValueMatcher.Repr`.
-func (halfAnyValue) Repr() string {
-	return "halfAnyValue"
+func (halfAnyValue) Repr(sb *strings.Builder) {
+	sb.WriteString("halfAnyValue")
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -127,8 +141,8 @@ func (heq halfEqualTo) String() string {
 }
 
 // Repr implements `halfValueMatcher.Repr`.
-func (heq halfEqualTo) Repr() string {
-	return fmt.Sprintf("halfEq(%#x)", uint32(heq))
+func (heq halfEqualTo) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "halfEq(%#x)", uint32(heq))
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -147,8 +161,8 @@ func (hns halfNotSet) String() string {
 }
 
 // Repr implements `halfValueMatcher.Repr`.
-func (hns halfNotSet) Repr() string {
-	return fmt.Sprintf("halfNotSet(%#x)", uint32(hns))
+func (hns halfNotSet) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "halfNotSet(%#x)", uint32(hns))
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -173,8 +187,8 @@ func (hmeq halfMaskedEqual) String() string {
 }
 
 // Repr implements `halfValueMatcher.Repr`.
-func (hmeq halfMaskedEqual) Repr() string {
-	return fmt.Sprintf("halfMaskedEqual(%#x, %#x)", hmeq.mask, hmeq.value)
+func (hmeq halfMaskedEqual) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "halfMaskedEqual(%#x, %#x)", hmeq.mask, hmeq.value)
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -190,7 +204,7 @@ func (hmeq halfMaskedEqual) HalfRender(program *syscallProgram, labelSet *labelS
 // rules. Rather, it acts as an intermediate representation for the rules that
 // can be expressed as an AND of two 32-bit values.
 type splitMatcher struct {
-	// repr is the `Repr()` of the original `ValueMatcher` (pre-split).
+	// repr is the `Repr` of the original `ValueMatcher` (pre-split).
 	repr string
 	// highMatcher is the half-value matcher to verify the high 32 bits.
 	highMatcher halfValueMatcher
@@ -218,22 +232,32 @@ func (sm splitMatcher) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (sm splitMatcher) Repr() string {
+func (sm splitMatcher) Repr(sb *strings.Builder) {
 	if sm.repr == "" {
 		_, highIsAnyValue := sm.highMatcher.(halfAnyValue)
 		_, lowIsAnyValue := sm.lowMatcher.(halfAnyValue)
 		if highIsAnyValue && lowIsAnyValue {
-			return "split(*)"
+			sb.WriteString("split(*)")
+			return
 		}
 		if highIsAnyValue {
-			return fmt.Sprintf("low=%s", sm.lowMatcher.Repr())
+			sb.WriteString("low=")
+			sm.lowMatcher.Repr(sb)
+			return
 		}
 		if lowIsAnyValue {
-			return fmt.Sprintf("high=%s", sm.highMatcher.Repr())
+			sb.WriteString("high=")
+			sm.highMatcher.Repr(sb)
+			return
 		}
-		return fmt.Sprintf("(high=%s && low=%s)", sm.highMatcher.Repr(), sm.lowMatcher.Repr())
+		sb.WriteString("(high=")
+		sm.highMatcher.Repr(sb)
+		sb.WriteString(" && low=")
+		sm.lowMatcher.Repr(sb)
+		sb.WriteByte(')')
+		return
 	}
-	return sm.repr
+	sb.WriteString(sm.repr)
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -322,8 +346,8 @@ func (AnyValue) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (av AnyValue) Repr() string {
-	return av.String()
+func (av AnyValue) Repr(sb *strings.Builder) {
+	sb.WriteString(av.String())
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -344,8 +368,12 @@ func (eq EqualTo) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (eq EqualTo) Repr() string {
-	return eq.String()
+func (eq EqualTo) Repr(sb *strings.Builder) {
+	if eq == 0 {
+		sb.WriteString("== 0")
+		return
+	}
+	fmt.Fprintf(sb, "== %#x", uintptr(eq))
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -356,7 +384,7 @@ func (eq EqualTo) Render(program *syscallProgram, labelSet *labelSet, value matc
 // split implements `splittableValueMatcher.split`.
 func (eq EqualTo) split() splitMatcher {
 	return splitMatcher{
-		repr:        eq.Repr(),
+		repr:        vmRepr(eq),
 		highMatcher: halfEqualTo(high32Bits(uintptr(eq))),
 		lowMatcher:  halfEqualTo(low32Bits(uintptr(eq))),
 	}
@@ -371,8 +399,8 @@ func (ne NotEqual) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (ne NotEqual) Repr() string {
-	return ne.String()
+func (ne NotEqual) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "!= %#x", uintptr(ne))
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -394,8 +422,8 @@ func (gt GreaterThan) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (gt GreaterThan) Repr() string {
-	return gt.String()
+func (gt GreaterThan) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "> %#x", uintptr(gt))
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -423,8 +451,8 @@ func (ge GreaterThanOrEqual) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (ge GreaterThanOrEqual) Repr() string {
-	return ge.String()
+func (ge GreaterThanOrEqual) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, ">= %#x", uintptr(ge))
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -453,8 +481,8 @@ func (lt LessThan) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (lt LessThan) Repr() string {
-	return lt.String()
+func (lt LessThan) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "< %#x", uintptr(lt))
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -483,8 +511,8 @@ func (le LessThanOrEqual) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (le LessThanOrEqual) Repr() string {
-	return le.String()
+func (le LessThanOrEqual) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "<= %#x", uintptr(le))
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -513,8 +541,8 @@ func (NonNegativeFD) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (NonNegativeFD) Repr() string {
-	return "NonNegativeFD"
+func (NonNegativeFD) Repr(sb *strings.Builder) {
+	sb.WriteString("NonNegativeFD")
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -525,7 +553,7 @@ func (nnfd NonNegativeFD) Render(program *syscallProgram, labelSet *labelSet, va
 // split implements `splittableValueMatcher.split`.
 func (nnfd NonNegativeFD) split() splitMatcher {
 	return splitMatcher{
-		repr: nnfd.Repr(),
+		repr: vmRepr(nnfd),
 		// FDs are 32 bits, so the high 32 bits must all be zero.
 		// Negative int32 has the MSB (31st bit) set.
 		// So the low 32bits of the FD value must not have the 31st bit set.
@@ -547,8 +575,8 @@ func (me maskedEqual) String() string {
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (me maskedEqual) Repr() string {
-	return me.String()
+func (me maskedEqual) Repr(sb *strings.Builder) {
+	fmt.Fprintf(sb, "& %#x == %#x", me.mask, me.value)
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -559,7 +587,7 @@ func (me maskedEqual) Render(program *syscallProgram, labelSet *labelSet, value 
 // split implements `splittableValueMatcher.Split`.
 func (me maskedEqual) split() splitMatcher {
 	return splitMatcher{
-		repr:        me.Repr(),
+		repr:        vmRepr(me),
 		highMatcher: halfMaskedEqual{high32Bits(me.mask), high32Bits(me.value)},
 		lowMatcher:  halfMaskedEqual{low32Bits(me.mask), low32Bits(me.value)},
 	}
@@ -603,6 +631,10 @@ type SyscallRule interface {
 
 	// String returns a human-readable string representing what the rule does.
 	String() string
+
+	// Repr writes a unique string representing what the rule does to `sb`.
+	// Usable as a cache key.
+	Repr(sb *strings.Builder)
 }
 
 // MatchAll implements `SyscallRule` and matches everything.
@@ -623,6 +655,11 @@ func (MatchAll) Recurse(func(SyscallRule) SyscallRule) {}
 
 // String implements `SyscallRule.String`.
 func (MatchAll) String() string { return "true" }
+
+// Repr implements `SyscallRule.Repr`.
+func (MatchAll) Repr(sb *strings.Builder) {
+	sb.WriteString("MatchAll")
+}
 
 // Or expresses an "OR" (a disjunction) over a set of `SyscallRule`s.
 // An `Or` may not be empty.
@@ -682,6 +719,17 @@ func (or Or) String() string {
 	}
 }
 
+// Repr implements `SyscallRule.Repr`.
+func (or Or) Repr(sb *strings.Builder) {
+	sb.WriteString("Or{")
+	for _, rule := range or {
+		sb.WriteByte('(')
+		rule.Repr(sb)
+		sb.WriteByte(')')
+	}
+	sb.WriteByte('}')
+}
+
 // And expresses an "AND" (a conjunction) over a set of `SyscallRule`s.
 // An `And` may not be empty.
 type And []SyscallRule
@@ -738,6 +786,17 @@ func (and And) String() string {
 		sb.WriteRune(')')
 		return sb.String()
 	}
+}
+
+// Repr implements `SyscallRule.Repr`.
+func (and And) Repr(sb *strings.Builder) {
+	sb.WriteString("And{")
+	for _, rule := range and {
+		sb.WriteByte('(')
+		rule.Repr(sb)
+		sb.WriteByte(')')
+	}
+	sb.WriteByte('}')
 }
 
 // PerArg implements SyscallRule and verifies the syscall arguments and RIP.
@@ -843,6 +902,24 @@ func (pa PerArg) String() string {
 		return sb.String()
 	}
 	return "(" + sb.String() + ")"
+}
+
+// Repr implements `SyscallRule.Repr`.
+func (pa PerArg) Repr(sb *strings.Builder) {
+	sb.WriteByte('P')
+	for _, vm := range pa {
+		if vm == nil {
+			sb.WriteString("(nil);")
+			continue
+		}
+		sb.WriteByte('(')
+		beforeLen := sb.Len()
+		vm.Repr(sb)
+		if strings.IndexByte(sb.String()[beforeLen:], ';') != -1 {
+			panic(fmt.Sprintf("ValueMatcher %v (type %T) returned representation %q containing illegal character ';'", vm, vm, sb.String()[beforeLen:]))
+		}
+		sb.WriteString(");")
+	}
 }
 
 // SyscallRules maps syscall numbers to their corresponding rules.
