@@ -767,6 +767,11 @@ func (d *dentry) OnZeroWatches(ctx context.Context) {
 }
 
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		// Linux's fs/namei.c:do_tmpfile() calls mnt_want_write() before
+		// vfs_tmpfile(), and erofs is always read-only.
+		return nil, linuxerr.EROFS
+	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.inode.checkPermissions(rp.Credentials(), ats); err != nil {
 		return nil, err

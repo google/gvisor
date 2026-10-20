@@ -170,6 +170,18 @@ func (d *Dentry) IsDead() bool {
 	return d.dead
 }
 
+// MarkDeleted marks d as deleted, as CommitDeleteDentry would, without any
+// mount bookkeeping. It is intended for files that are created already
+// unlinked, as by open(O_TMPFILE).
+//
+// Preconditions: d has never been reachable by path resolution, so it cannot
+// be a mount point.
+func (d *Dentry) MarkDeleted() {
+	d.mu.Lock()
+	d.dead = true
+	d.mu.Unlock()
+}
+
 // IsEvictable returns true if d is evictable from filesystem dentry cache.
 func (d *Dentry) IsEvictable() bool {
 	d.mu.Lock()
