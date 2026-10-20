@@ -207,3 +207,6 @@ var (
 var (
 	FUSE_DEV_IOC_CLONE = IOR(229, 0, 4)
 )
+
+// NS_GET_NSTYPE is the namespace type query from uapi/linux/nsfs.h.
+const NS_GET_NSTYPE = 0xb703

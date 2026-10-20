@@ -22,9 +22,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // +stateify savable
@@ -163,6 +165,33 @@ type namespaceFD struct {
 
 	vfsfd vfs.FileDescription
 	inode *Inode
+}
+
+// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
+func (fd *namespaceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	if args[1].Uint() != linux.NS_GET_NSTYPE {
+		return fd.FileDescriptionDefaultImpl.Ioctl(ctx, uio, sysno, args)
+	}
+
+	// NS_GET_NSTYPE returns the corresponding clone flag, ignoring args[2].
+	switch fd.inode.namespace.Type() {
+	case "cgroup":
+		return linux.CLONE_NEWCGROUP, nil
+	case "ipc":
+		return linux.CLONE_NEWIPC, nil
+	case "mnt":
+		return linux.CLONE_NEWNS, nil
+	case "net":
+		return linux.CLONE_NEWNET, nil
+	case "pid":
+		return linux.CLONE_NEWPID, nil
+	case "user":
+		return linux.CLONE_NEWUSER, nil
+	case "uts":
+		return linux.CLONE_NEWUTS, nil
+	default:
+		return 0, linuxerr.ENOTTY
+	}
 }
 
 // Stat implements vfs.FileDescriptionImpl.Stat.
