@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/sandbox"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // TestSignalUnkillablePolicyRestore verifies that the SignalUnkillablePolicy
@@ -1760,12 +1761,20 @@ func TestCheckpointRestoreTUN(t *testing.T) {
 // TestMultiBundleSplitFSCheckpointRestore tests saving and restoring multiple
 // independent filesystem checkpoint bundles (e.g. rootfs=/ and fs=/dur-data),
 // including combining bundles from different checkpoints on fresh container
-// start.
+// start. The workload runs either in the root container of its sandbox or in a
+// subcontainer of a sandbox with no root container.
 func TestMultiBundleSplitFSCheckpointRestore(t *testing.T) {
 	if !testutil.IsCheckpointSupported() {
 		t.Skip("Checkpoint not supported")
 	}
+	for _, noRootContainer := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noRootContainer=%t", noRootContainer), func(t *testing.T) {
+			testMultiBundleSplitFSCheckpointRestore(t, noRootContainer)
+		})
+	}
+}
 
+func testMultiBundleSplitFSCheckpointRestore(t *testing.T, noRootContainer bool) {
 	const (
 		rootfsPrefix = "rootfs/"
 		fsPrefix     = "bundles/fs"
@@ -1774,20 +1783,23 @@ func TestMultiBundleSplitFSCheckpointRestore(t *testing.T) {
 	)
 
 	conf := overlayTestConfig(t)
+	setupTestRootDir(t, conf)
 	fsSaveDir := makeTempDir(t, "multi-bundle-fssave")
 	checkpointDir := makeTempDir(t, "multi-bundle-checkpoint")
 
 	tmpfsSourceDir := makeTempDir(t, "dur-source")
 	durFile := filepath.Join(durMount, "dur_marker")
+	env := splitFSTestEnv{
+		conf:            conf,
+		noRootContainer: noRootContainer,
+		mountSource:     tmpfsSourceDir,
+		mountDest:       durMount,
+	}
 
 	script := fmt.Sprintf("echo root_val_1 > %q; echo dur_val_1 > %q; while true; do sleep 1; done", rootFile, durFile)
-	spec := testutil.NewSpecWithArgs("bash", "-c", script)
-	spec.Root.Readonly = false
-	addTmpfsMount(spec, "dur-mount", tmpfsSourceDir, durMount)
-	bundleDir := setupBundle(t, conf, spec)
-
-	cont := startContainer(t, conf, spec, bundleDir, nil)
-	waitForGuestFiles(t, conf, cont, rootFile, durFile)
+	appArgs := []string{"bash", "-c", script}
+	sb, app := env.start(t, nil /* mutateArgs */, appArgs...)
+	waitForGuestFiles(t, conf, app, rootFile, durFile)
 
 	bundleSpecs := []string{
 		rootfsPrefix + "=/",
@@ -1796,7 +1808,7 @@ func TestMultiBundleSplitFSCheckpointRestore(t *testing.T) {
 
 	// Save an initial multi-bundle filesystem checkpoint while keeping the
 	// container running.
-	if err := cont.FSSave(conf, fsSaveDir, sandbox.FSSaveOpts{Paths: bundleSpecs}); err != nil {
+	if err := sb.FSSave(conf, fsSaveDir, sandbox.FSSaveOpts{Paths: bundleSpecs}); err != nil {
 		t.Fatalf("error saving filesystem checkpoint: %v", err)
 	}
 	checkFSCheckpointFiles(t, fsSaveDir, rootfsPrefix)
@@ -1805,14 +1817,12 @@ func TestMultiBundleSplitFSCheckpointRestore(t *testing.T) {
 	// Mutate both filesystems before taking a full split checkpoint so the two
 	// checkpoints have distinct states.
 	mutateScript := fmt.Sprintf("echo root_val_2 > %q && echo dur_val_2 > %q", rootFile, durFile)
-	if ws, err := execute(conf, cont, "/bin/bash", "-c", mutateScript); err != nil || ws.ExitStatus() != 0 {
+	if ws, err := execute(conf, app, "/bin/bash", "-c", mutateScript); err != nil || ws.ExitStatus() != 0 {
 		t.Fatalf("failed to mutate files before second checkpoint: ws=%v, err=%v", ws, err)
 	}
 
 	// Checkpoint with two bundles: rootfs and fs.
-	if err := cont.Checkpoint(conf, checkpointDir, sandbox.CheckpointOpts{SplitFSCheckpointPaths: bundleSpecs}); err != nil {
-		t.Fatalf("error checkpointing container: %v", err)
-	}
+	env.checkpoint(t, sb, checkpointDir, sandbox.CheckpointOpts{SplitFSCheckpointPaths: bundleSpecs})
 	checkFSCheckpointFiles(t, checkpointDir, rootfsPrefix)
 	checkFSCheckpointFiles(t, checkpointDir, fsPrefix)
 
@@ -1837,37 +1847,118 @@ func TestMultiBundleSplitFSCheckpointRestore(t *testing.T) {
 		},
 	} {
 		t.Run(rtc.name, func(t *testing.T) {
-			contRestore := newContainer(t, conf, spec, bundleDir, func(args *Args) {
+			_, appRestore := env.restore(t, rtc.restoreDir, func(args *Args) {
 				args.FSRestoreImagePaths = rtc.fsRestorePath
 				if rtc.mutateArgs != nil {
 					rtc.mutateArgs(args)
 				}
-			})
-			if err := contRestore.Restore(conf, rtc.restoreDir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
-				t.Fatalf("error restoring container: %v", err)
-			}
-			checkGuestFile(t, conf, contRestore, rootFile, "root_val_2")
-			checkGuestFile(t, conf, contRestore, durFile, "dur_val_2")
+			}, appArgs...)
+			checkGuestFile(t, conf, appRestore, rootFile, "root_val_2")
+			checkGuestFile(t, conf, appRestore, durFile, "dur_val_2")
 		})
 	}
 
 	t.Run("StartFreshCombiningBundlesFromDifferentCheckpoints", func(t *testing.T) {
-		specFresh := testutil.NewSpecWithArgs("sleep", "100")
-		specFresh.Root.Readonly = false
-		addTmpfsMount(specFresh, "dur-mount", tmpfsSourceDir, durMount)
-		bundleDirFresh := setupBundle(t, conf, specFresh)
-
-		contFresh := startContainer(t, conf, specFresh, bundleDirFresh, func(args *Args) {
+		_, appFresh := env.start(t, func(args *Args) {
 			args.FSRestoreImagePaths = []string{
 				filepath.Join(fsSaveDir, rootfsPrefix),
 				filepath.Join(checkpointDir, fsPrefix),
 			}
-		})
-		if err := contFresh.WaitFSRestore(); err != nil {
+		}, "sleep", "100")
+		if err := appFresh.WaitFSRestore(); err != nil {
 			t.Fatalf("error waiting for filesystem restore: %v", err)
 		}
 
-		checkGuestFile(t, conf, contFresh, rootFile, "root_val_1")
-		checkGuestFile(t, conf, contFresh, durFile, "dur_val_2")
+		checkGuestFile(t, conf, appFresh, rootFile, "root_val_1")
+		checkGuestFile(t, conf, appFresh, durFile, "dur_val_2")
 	})
+}
+
+// splitFSTestEnv starts, checkpoints and restores the sandboxes of a split
+// filesystem checkpoint test.
+type splitFSTestEnv struct {
+	conf            *config.Config
+	noRootContainer bool
+	mountSource     string
+	mountDest       string
+}
+
+func (e *splitFSTestEnv) newSpecs(sbID string, args ...string) (sbSpec, appSpec *specs.Spec) {
+	if !e.noRootContainer {
+		spec := testutil.NewSpecWithArgs(args...)
+		spec.Root.Readonly = false
+		addTmpfsMount(spec, "dur-mount", e.mountSource, e.mountDest)
+		return spec, spec
+	}
+	sbSpec = noRootContainerSandboxSpec()
+	appSpec = noRootContainerSubSpec(sbID, args...)
+	appSpec.Annotations[specutils.ContainerdContainerNameAnnotation] = "app"
+	appSpec.Root.Readonly = false
+	addTmpfsMountToContainer(sbSpec, appSpec, "dur-mount", e.mountSource, e.mountDest)
+	return sbSpec, appSpec
+}
+
+func (e *splitFSTestEnv) sandboxArgs(sbID string, mutateArgs func(*Args)) func(*Args) {
+	return func(args *Args) {
+		args.ID = sbID
+		args.NoRootContainer = e.noRootContainer
+		if mutateArgs != nil {
+			mutateArgs(args)
+		}
+	}
+}
+
+func (e *splitFSTestEnv) start(t *testing.T, mutateArgs func(*Args), args ...string) (sb, app *Container) {
+	t.Helper()
+	sbID := testutil.RandomContainerID()
+	sbSpec, appSpec := e.newSpecs(sbID, args...)
+	sb = startContainer(t, e.conf, sbSpec, newBundleDir(t, sbSpec), e.sandboxArgs(sbID, mutateArgs))
+	if !e.noRootContainer {
+		return sb, sb
+	}
+	return sb, startContainer(t, e.conf, appSpec, newBundleDir(t, appSpec), nil /* mutateArgs */)
+}
+
+func (e *splitFSTestEnv) restore(t *testing.T, imagePath string, mutateArgs func(*Args), args ...string) (sb, app *Container) {
+	t.Helper()
+	restoreOne := func(spec *specs.Spec, mutateArgs func(*Args)) *Container {
+		t.Helper()
+		c := newContainer(t, e.conf, spec, newBundleDir(t, spec), mutateArgs)
+		if err := c.Restore(e.conf, imagePath, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+			t.Fatalf("error restoring container: %v", err)
+		}
+		return c
+	}
+	sbID := testutil.RandomContainerID()
+	sbSpec, appSpec := e.newSpecs(sbID, args...)
+	sb = restoreOne(sbSpec, e.sandboxArgs(sbID, mutateArgs))
+	if !e.noRootContainer {
+		return sb, sb
+	}
+	app = restoreOne(appSpec, nil /* mutateArgs */)
+	if err := sb.WaitRestore(); err != nil {
+		t.Fatalf("error waiting for restore: %v", err)
+	}
+	return sb, app
+}
+
+func (e *splitFSTestEnv) checkpoint(t *testing.T, sb *Container, imagePath string, opts sandbox.CheckpointOpts) {
+	t.Helper()
+	if e.noRootContainer {
+		checkpointNoRootContainer(t, e.conf, sb, imagePath, opts)
+		return
+	}
+	if err := sb.Checkpoint(e.conf, imagePath, opts); err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+}
+
+func newBundleDir(t *testing.T, spec *specs.Spec) string {
+	t.Helper()
+	bundleDir, cleanupBundle, err := testutil.SetupBundleDir(spec)
+	if err != nil {
+		t.Fatalf("error setting up bundle: %v", err)
+	}
+	t.Cleanup(cleanupBundle)
+	return bundleDir
 }
