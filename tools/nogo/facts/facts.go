@@ -23,9 +23,9 @@ import (
 	"reflect"
 	"sort"
 
-	"archive/zip"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/objectpath"
+	"gvisor.dev/gvisor/pkg/zip"
 	"gvisor.dev/gvisor/tools/checkconst"
 )
 
