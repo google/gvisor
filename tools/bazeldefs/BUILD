@@ -1,10 +1,13 @@
-load("//tools:defs.bzl", "bzl_library", "string_flag", "target_emulators")
+load("//tools:defs.bzl", "bpf_toolchains", "bzl_library", "string_flag", "target_emulators")
 
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )
+
+# BPF uses the downloaded compiler and its matching resource directory.
+bpf_toolchains(name = "bpf_clang")
 
 bzl_library(
     name = "platforms_bzl",
@@ -22,6 +25,10 @@ bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:private"],
+    deps = [
+        "@bazel_skylib//rules/directory:providers",
+        "@rules_cc//cc/common",
+    ],
 )
 
 bzl_library(
