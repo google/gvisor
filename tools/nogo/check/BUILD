@@ -16,7 +16,6 @@ go_library(
     importpath = "gvisor.dev/gvisor/tools/nogo/check",
     visibility = ["//tools/nogo:__subpackages__"],
     deps = [
-        "//pkg/zip",
         "//runsc/flag",
         "//tools/checkaligned",
         "//tools/checkconst",

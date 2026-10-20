@@ -209,6 +209,14 @@ governance-check: ## Checks that the files derived from governance data are in s
 	@$(call test,//:governance-check)
 .PHONY: governance-check
 
+gazelle-check: ## Checks that the BUILD files of the packages in tools/gazelle.bzl match gazelle output.
+	@$(call wrapper,$(BAZEL) run $(BASE_OPTIONS) $(BAZEL_OPTIONS) //:gazelle_check)
+.PHONY: gazelle-check
+
+gazelle-fix: ## Rewrites the BUILD files of the packages in tools/gazelle.bzl to match gazelle output.
+	@$(call wrapper,$(BAZEL) run $(BASE_OPTIONS) $(BAZEL_OPTIONS) //:gazelle_fix)
+.PHONY: gazelle-fix
+
 license-check: ## Checks that tools/licensecheck/dependencies.yaml has an entry for every dependency.
 	@$(call run,//tools/licensecheck/main:licensecheck,--mode=verify)
 .PHONY: license-check

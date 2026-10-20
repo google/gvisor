@@ -32,9 +32,9 @@ declare tmp_dir
 tmp_dir=$(mktemp -d)
 readonly tmp_dir
 finish() {
-  cd "${orig_dir}"          # Leave tmp_dir.
-  rm -rf "${tmp_dir}"       # Remove all contents.
-  git checkout -f "${head}" # Restore commit.
+  cd "${orig_dir}"            # Leave tmp_dir.
+  rm -rf "${tmp_dir}" || true # Remove all contents.
+  git checkout -f "${head}"   # Restore commit.
 }
 trap finish EXIT
 
@@ -74,6 +74,8 @@ cd "${repo_new}"
 # Setup the repository and checkout the branch.
 git config user.email "gvisor-bot@google.com"
 git config user.name "gVisor bot"
+git config gc.auto 0
+git config maintenance.auto false
 git fetch origin "${go_branch}"
 git checkout -b go "${go_branch}"
 
