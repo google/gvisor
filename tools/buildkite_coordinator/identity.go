@@ -16,13 +16,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"path"
+	"strconv"
 	"time"
 
 	gax "github.com/googleapis/gax-go/v2"
 	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/idtoken"
 )
 
@@ -89,17 +93,24 @@ const (
 func (id *instanceIdentity) metadata(ctx context.Context, svc *compute.Service) (map[string]string, error) {
 	inst, err := svc.Instances.Get(id.projectID, id.zone, id.instanceID).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance %s: %w", id.instanceID, err)
+		return nil, fmt.Errorf("failed to get %v: %w", id, err)
 	}
-	md := make(map[string]string)
-	if inst.Metadata != nil {
-		for _, item := range inst.Metadata.Items {
-			if item.Value != nil {
-				md[item.Key] = *item.Value
-			}
+	return parseMetadata(inst.Metadata), nil
+}
+
+// parseMetadata parses an instance's metadata into a map[string]string.
+// metadata may be nil.
+func parseMetadata(metadata *compute.Metadata) map[string]string {
+	ret := make(map[string]string)
+	if metadata == nil {
+		return ret
+	}
+	for _, item := range metadata.Items {
+		if item.Value != nil {
+			ret[item.Key] = *item.Value
 		}
 	}
-	return md, nil
+	return ret
 }
 
 func (id *instanceIdentity) queue(ctx context.Context, svc *compute.Service) (string, error) {
@@ -125,12 +136,12 @@ func (id *instanceIdentity) setMetadata(ctx context.Context, svc *compute.Servic
 	err := gax.Invoke(ctx, func(ctx context.Context, _ gax.CallSettings) error {
 		attempts++
 		if attempts > setMetadataAttempts {
-			return fmt.Errorf("failed to set metadata %q on instance %v after %d attempts", key, id, attempts)
+			return fmt.Errorf("failed to set metadata %q on %v after %d attempts", key, id, attempts)
 		}
 
 		inst, err := svc.Instances.Get(id.projectID, id.zone, id.instanceID).Context(ctx).Do()
 		if err != nil {
-			return fmt.Errorf("failed to get instance %v: %w", id, err)
+			return fmt.Errorf("failed to get %v: %w", id, err)
 		}
 		metadata := inst.Metadata
 		if metadata == nil {
@@ -144,7 +155,7 @@ func (id *instanceIdentity) setMetadata(ctx context.Context, svc *compute.Servic
 			}
 		}
 		if found && !replace {
-			return fmt.Errorf("metadata key %v already present in metadata for instance %v", key, id)
+			return fmt.Errorf("metadata key %v already present in metadata for %v", key, id)
 		}
 		if !found {
 			metadata.Items = append(metadata.Items, &compute.MetadataItems{Key: key, Value: &value})
@@ -153,7 +164,7 @@ func (id *instanceIdentity) setMetadata(ctx context.Context, svc *compute.Servic
 		if err == nil {
 			return nil
 		}
-		log.Printf("Failed to set metadata %q on instance %s (attempt %d/%d): %v", key, id.instanceID, attempts, setMetadataAttempts, err)
+		log.Printf("Failed to set metadata %q on %v (attempt %d/%d): %v", key, id, attempts, setMetadataAttempts, err)
 		return err
 	}, gax.WithRetry(func() gax.Retryer {
 		return gax.OnHTTPCodes(gax.Backoff{
@@ -171,11 +182,11 @@ func (id *instanceIdentity) setMetadata(ctx context.Context, svc *compute.Servic
 		var err error
 		op, err = svc.ZoneOperations.Wait(id.projectID, id.zone, op.Name).Context(ctx).Do()
 		if err != nil {
-			return fmt.Errorf("failed to wait for metadata update on instance %s: %w", id.instanceID, err)
+			return fmt.Errorf("failed to wait for metadata update on %v: %w", id, err)
 		}
 	}
 	if op.Error != nil && len(op.Error.Errors) > 0 {
-		return fmt.Errorf("metadata update on instance %s failed: %s", id.instanceID, op.Error.Errors[0].Message)
+		return fmt.Errorf("metadata update on %v failed: %s", id, op.Error.Errors[0].Message)
 	}
 	return nil
 }
@@ -200,6 +211,118 @@ func (id *instanceIdentity) getAgent(ctx context.Context, svc *compute.Service) 
 	default:
 		return &untrustedAgent{instanceIdentity: *id, agentMetadata: agentMetadata, buildUUID: BuildUUID(pin)}, nil
 	}
+}
+
+// setExpiryTime records when the instance's current job times out.
+func (id *instanceIdentity) setExpiryTime(ctx context.Context, svc *compute.Service, expiry time.Time) error {
+	return id.setMetadata(ctx, svc, expiryMetadataKey, expiry.UTC().Format(time.RFC3339), true /* replace */)
+}
+
+// forceDelete deletes the instance without a graceful shutdown, and waits for
+// the deletion to finish.
+func (id *instanceIdentity) forceDelete(ctx context.Context, svc *compute.Service) error {
+	op, err := svc.Instances.Delete(id.projectID, id.zone, id.instanceID).Context(ctx).
+		Do(googleapi.QueryParameter("noGracefulShutdown", "true"))
+	if err != nil {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && gerr.Code == http.StatusNotFound {
+			// Instance already doesn't exist, which is fine.
+			return nil
+		}
+		return fmt.Errorf("failed to delete %v: %w", id, err)
+	}
+
+	// Delete is asynchronous; wait for it to succeed
+	for op.Status != "DONE" {
+		op, err = svc.ZoneOperations.Wait(id.projectID, id.zone, op.Name).Context(ctx).Do()
+		if err != nil {
+			return fmt.Errorf("failed to wait for deletion of %v: %w", id, err)
+		}
+	}
+	if op.Error != nil && len(op.Error.Errors) > 0 {
+		return fmt.Errorf("deletion of %v failed: %s", id, op.Error.Errors[0].Message)
+	}
+	return nil
+}
+
+// listAllInstances returns every instance in the project that runs as the
+// given service account.
+func listAllInstances(ctx context.Context, svc *compute.Service, project, serviceAccount string) ([]instanceIdentity, error) {
+	var ids []instanceIdentity
+	err := svc.Instances.AggregatedList(project).Context(ctx).Pages(ctx, func(page *compute.InstanceAggregatedList) error {
+		for _, scoped := range page.Items {
+			for _, inst := range scoped.Instances {
+				id := newInstanceIdentity(project, inst)
+				if id.email != serviceAccount {
+					continue
+				}
+
+				ids = append(ids, id)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instances in project %s: %w", project, err)
+	}
+	return ids, nil
+}
+
+func getInstanceExpiryBulk(ctx context.Context, svc *compute.Service, ids []instanceIdentity) (map[instanceIdentity]time.Time, error) {
+	projects := make(map[string]struct{})
+	idToIdentity := make(map[string]instanceIdentity)
+	for _, id := range ids {
+		projects[id.projectID] = struct{}{}
+		idToIdentity[id.instanceID] = id
+	}
+
+	expiries := make(map[instanceIdentity]time.Time)
+	for project := range projects {
+		err := svc.Instances.AggregatedList(project).Context(ctx).Pages(ctx, func(page *compute.InstanceAggregatedList) error {
+			for _, scoped := range page.Items {
+				for _, inst := range scoped.Instances {
+					id, ok := idToIdentity[strconv.FormatUint(inst.Id, 10)]
+					if !ok {
+						// This instance wasn't specified.
+						continue
+					}
+					value, ok := parseMetadata(inst.Metadata)[expiryMetadataKey]
+					if !ok {
+						// Instance has no expiry metadata entry. Skip.
+						continue
+					}
+
+					// Parse and return the expiry time
+					expiry, err := time.Parse(time.RFC3339, value)
+					if err != nil {
+						log.Printf("Warning: %v has invalid expiry time (%s) %q", id, expiryMetadataKey, value)
+						continue
+					}
+					expiries[id] = expiry
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list instances in project %s: %w", project, err)
+		}
+	}
+	return expiries, nil
+}
+
+// newInstanceIdentity returns the identity of an instance from the Compute
+// Engine API.
+func newInstanceIdentity(project string, inst *compute.Instance) instanceIdentity {
+	id := instanceIdentity{
+		projectID:    project,
+		zone:         path.Base(inst.Zone),
+		instanceID:   strconv.FormatUint(inst.Id, 10),
+		instanceName: inst.Name,
+	}
+	if len(inst.ServiceAccounts) > 0 {
+		id.email = inst.ServiceAccounts[0].Email
+	}
+	return id
 }
 
 type agent interface {
@@ -235,7 +358,7 @@ func (a unassignedAgent) String() string {
 }
 
 func (a unassignedAgent) pinToBuild(ctx context.Context, svc *compute.Service, buildUUID BuildUUID) (untrustedAgent, error) {
-	if err := a.setMetadata(ctx, svc, pinMetadataKey, string(buildUUID), false); err != nil {
+	if err := a.setMetadata(ctx, svc, pinMetadataKey, string(buildUUID), false /* replace */); err != nil {
 		return untrustedAgent{}, err
 	}
 	return untrustedAgent{
@@ -246,7 +369,7 @@ func (a unassignedAgent) pinToBuild(ctx context.Context, svc *compute.Service, b
 }
 
 func (a unassignedAgent) pinTrusted(ctx context.Context, svc *compute.Service) (trustedAgent, error) {
-	if err := a.setMetadata(ctx, svc, pinMetadataKey, pinTrustedValue, false); err != nil {
+	if err := a.setMetadata(ctx, svc, pinMetadataKey, pinTrustedValue, false /* replace */); err != nil {
 		return trustedAgent{}, err
 	}
 	return trustedAgent(a), nil
