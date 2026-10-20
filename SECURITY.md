@@ -15,6 +15,10 @@ In general, we only assign CVEs for issues that meet all of the criteria:
     control the sandbox configuration**.
 -   The issue must be **gVisor-specific** (i.e. the same issue would not occur
     in a non-gVisor sandbox).
+-   The issue must occur in **supported, non-experimental features** in their
+    default or supported configurations. Experimental features (e.g. features
+    that require experimental flags or are documented as experimental) are out
+    of scope for CVEs.
 
 Since gVisor is a container security platform, its main security focus is on
 preventing a user workload from "getting out of the box", relative to issues
@@ -151,6 +155,8 @@ least-privileged to most-privileged:
     sandbox on the host.
     -   `RuntimeFlags` implies `SandboxSpec`, as runtime flags can affect
         gVisor's security measures and the finalized per-sandbox configuration.
+    -   This includes enabling experimental features or non-default runtime
+        flags.
 *   `HostRoot`: Control over **host**. Attacker has full control over the host
     that sandboxes run on.
     -   `HostRoot` implies `RuntimeFlags`, since root can change the runtime
@@ -160,7 +166,7 @@ least-privileged to most-privileged:
 
 The following table lists the types of issues that qualify for CVEs, provided
 that they are gVisor-specific (i.e. the same issue does not occur in a
-non-gVisor sandbox):
+non-gVisor sandbox) and affect supported, non-experimental features:
 
 **CVE?**       | `Remote` | `SandboxUser` | `SandboxRoot` | `SandboxImage` | `SandboxSpec` | `RuntimeFlags` | `HostRoot`
 -------------- | -------- | ------------- | ------------- | -------------- | ------------- | -------------- | ----------
