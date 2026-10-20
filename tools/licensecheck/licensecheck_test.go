@@ -16,10 +16,13 @@ package licensecheck
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -38,6 +41,151 @@ var (
 	//go:embed testdata/udiff-mit.txt
 	udiffMIT string
 )
+
+func TestFetchPreservesManualArtifact(t *testing.T) {
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte("release artifact")))
+	for _, audit := range []struct {
+		name     string
+		licenses Licenses
+		manual   bool
+	}{
+		{"local reference", Licenses{"LicenseRef-CodeQL", "MIT"}, false},
+		{"standard terms", Licenses{"Apache-2.0", "BSD-3-Clause"}, true},
+	} {
+		t.Run(audit.name, func(t *testing.T) {
+			p := Paths{YAML: filepath.Join(t.TempDir(), "dependencies.yaml")}
+			original := Entry{
+				Dependency: "bundle", Version: "https://example.com/bundle-v1.tar.gz",
+				Retrieved: "2026-10-02", SHA256: hash,
+				License: audit.licenses, ManuallyAudited: audit.manual,
+			}
+			automatic := original
+			automatic.Dependency = "automatic"
+			automatic.License = Licenses{"BSD-3-Clause"}
+			automatic.ManuallyAudited = false
+			if err := writeEntries(p.YAML, []Entry{original, automatic}); err != nil {
+				t.Fatal(err)
+			}
+			deps := []dep{
+				{name: original.Dependency, kind: kindArchive, url: original.Version, sha256: hash},
+				{name: automatic.Dependency, kind: kindArchive, url: automatic.Version, sha256: hash},
+			}
+			// Successful discovery of the repository's MIT notice must not
+			// overwrite the artifact's complete manually audited terms.
+			retrieve := func(d dep) (*fetched, error) {
+				licenses, err := classify(udiffMIT)
+				return &fetched{sha256: d.sha256, license: licenses}, err
+			}
+			if err := fetch(p, deps, retrieve); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := readEntries(p.YAML)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := len(entries), 2; got != want {
+				t.Fatalf("catalog has %d entries, want %d", got, want)
+			}
+			if got, want := entries[0], original; !reflect.DeepEqual(got, want) {
+				t.Errorf("manual entry = %+v, want unchanged %+v", got, want)
+			}
+			if got, want := entries[1].License, (Licenses{"MIT"}); !slices.Equal(got, want) {
+				t.Errorf("automatic licenses = %v, want %v", got, want)
+			}
+			// Recognizing or retaining terms does not approve their use.
+			policy := &Policy{AllowedLicenses: []License{"MIT"}}
+			want := []string{fmt.Sprintf("bundle uses disallowed licenses %v and has no exception in the policy", original.License)}
+			if got := CheckPolicy(entries, policy); !slices.Equal(got, want) {
+				t.Errorf("CheckPolicy = %v, want %v", got, want)
+			}
+			policy.Exceptions = []Exception{{Dependency: "bundle", License: original.License, ExceptionRationale: "reviewed artifact terms"}}
+			if got, want := CheckPolicy(entries, policy), []string(nil); !slices.Equal(got, want) {
+				t.Errorf("CheckPolicy with scoped exception = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestFetchRejectsInvalidManualAudit(t *testing.T) {
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte("release artifact v1")))
+	changedHash := fmt.Sprintf("%x", sha256.Sum256([]byte("release artifact v2")))
+	const url = "https://example.com/bundle-v1.tar.gz"
+	for _, test := range []struct {
+		name, url, hash string
+		licenses        Licenses
+		manual          bool
+		duplicate       bool
+		wantErr         string
+	}{
+		{
+			name: "changed URL", url: "https://example.com/bundle-v2.tar.gz", hash: hash,
+			licenses: Licenses{"LicenseRef-CodeQL"},
+			wantErr:  `re-audit the license of bundle: bundle was audited at "` + url + `", but is now "https://example.com/bundle-v2.tar.gz"`,
+		},
+		{
+			name: "changed bytes", url: url, hash: changedHash,
+			licenses: Licenses{"LicenseRef-CodeQL"},
+			wantErr:  fmt.Sprintf("re-audit the license of bundle: bundle was audited with sha256 %q, but is now pinned to %q", hash, changedHash),
+		},
+		{
+			name: "removed pin", url: url,
+			licenses: Licenses{"Apache-2.0", "BSD-3-Clause"}, manual: true,
+			wantErr: "re-audit the license of bundle: bundle has manually audited terms without an artifact checksum pin",
+		},
+		{
+			name: "empty local identifier", url: url, hash: hash,
+			licenses: Licenses{"LicenseRef-"},
+			wantErr:  `re-audit the license of bundle: bundle has unknown license "LicenseRef-"`,
+		},
+		{
+			name: "invalid local identifier", url: url, hash: hash,
+			licenses: Licenses{"LicenseRef-Code_QL"},
+			wantErr:  `re-audit the license of bundle: bundle has unknown license "LicenseRef-Code_QL"`,
+		},
+		{
+			name: "duplicate entry", url: url, hash: hash,
+			licenses:  Licenses{"LicenseRef-CodeQL"},
+			duplicate: true,
+			wantErr:   "duplicate entry for bundle in %s",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := Paths{YAML: filepath.Join(t.TempDir(), "dependencies.yaml")}
+			original := Entry{
+				Dependency: "bundle", Version: url, Retrieved: "2026-10-02",
+				SHA256: hash, License: test.licenses, ManuallyAudited: test.manual,
+			}
+			entries := []Entry{original}
+			wantErr := test.wantErr
+			if test.duplicate {
+				entries = append(entries, original)
+				wantErr = fmt.Sprintf(wantErr, p.YAML)
+			}
+			if err := writeEntries(p.YAML, entries); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(p.YAML)
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps := []dep{{name: "bundle", kind: kindArchive, url: test.url, sha256: test.hash}}
+			err = fetch(p, deps, func(d dep) (*fetched, error) {
+				t.Error("retrieved a notice before rejecting the invalid manual audit")
+				return nil, fmt.Errorf("unexpected notice retrieval for %s", d.name)
+			})
+			if err == nil || err.Error() != wantErr {
+				t.Fatalf("fetch = %v, want %q", err, wantErr)
+			}
+			after, err := os.ReadFile(p.YAML)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Error("fetch rewrote the invalid catalog")
+			}
+		})
+	}
+}
 
 func TestModuleLicenses(t *testing.T) {
 	const prefix = "example.com/module@v1.0.0/"

@@ -25,7 +25,8 @@
 //
 // Entries whose license cannot be fetched automatically (e.g.
 // @google_root_pem) are maintained by hand: Fetch preserves an existing entry
-// whenever fetching fails.
+// whenever fetching fails. Explicitly audited entries also retain their terms
+// when automatic discovery would succeed, until their artifact pin changes.
 package licensecheck
 
 import (
@@ -70,11 +71,25 @@ type Entry struct {
 	Commit     string   `yaml:"commit"`
 	SHA256     string   `yaml:"sha256"`
 	License    Licenses `yaml:"license"`
+
+	// ManuallyAudited preserves reviewed terms that automatic discovery misses.
+	ManuallyAudited bool `yaml:"manually_audited,omitempty"`
 }
 
-// License is an SPDX license identifier (https://spdx.org/licenses/), one of
-// knownLicenses.
+func (e Entry) manuallyAudited() bool {
+	return e.ManuallyAudited || slices.ContainsFunc(e.License, func(l License) bool {
+		return strings.HasPrefix(string(l), "LicenseRef-")
+	})
+}
+
+// License is one of the SPDX identifiers in knownLicenses, or a local
+// LicenseRef identifying manually audited terms.
 type License string
+
+// Local references identify reviewed terms, not automatic text matches or
+// permission to use those terms.
+// https://spdx.github.io/spdx-spec/v2.3/SPDX-license-expressions/#d1-overview
+var licenseRefRE = regexp.MustCompile(`^LicenseRef-[A-Za-z0-9.-]+$`)
 
 const (
 	apache2     License = "Apache-2.0"
@@ -201,6 +216,8 @@ const (
 # Check completeness with ARGS=--mode=verify.
 # Entries whose license cannot be fetched automatically are maintained by hand and preserved
 # by --mode=fetch, so you can hand-edit the file for these.
+# Entries marked manually_audited or containing LicenseRef identifiers require
+# re-audit when their artifact pin changes.
 `
 	dateFormat   = "2006-01-02"
 	fetchWorkers = 8
@@ -212,13 +229,24 @@ func Fetch(p Paths) error {
 	if err != nil {
 		return err
 	}
+	return fetch(p, deps, fetchLicense)
+}
+
+func fetch(p Paths, deps []dep, retrieve func(dep) (*fetched, error)) error {
 	old, err := readEntries(p.YAML)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	oldByName := make(map[string]Entry)
 	for _, e := range old {
+		if _, ok := oldByName[e.Dependency]; ok {
+			return fmt.Errorf("duplicate entry for %s in %s", e.Dependency, p.YAML)
+		}
 		oldByName[e.Dependency] = e
+	}
+	manual, err := pinnedManualEntries(deps, oldByName)
+	if err != nil {
+		return err
 	}
 
 	type result struct {
@@ -229,12 +257,15 @@ func Fetch(p Paths) error {
 	sem := make(chan struct{}, fetchWorkers)
 	var wg sync.WaitGroup
 	for i, d := range deps {
+		if _, ok := manual[d.name]; ok {
+			continue
+		}
 		wg.Add(1)
 		go func(i int, d dep) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			f, err := fetchLicense(d)
+			f, err := retrieve(d)
 			results[i] = result{f, err}
 		}(i, d)
 	}
@@ -244,6 +275,11 @@ func Fetch(p Paths) error {
 	var entries []Entry
 	var failed []string
 	for i, d := range deps {
+		if e, ok := manual[d.name]; ok {
+			fmt.Fprintf(os.Stderr, "%-60s %s (kept manually audited artifact)\n", d.name, e.License)
+			entries = append(entries, e)
+			continue
+		}
 		r := results[i]
 		if r.err != nil {
 			if e, ok := oldByName[d.name]; ok && len(e.License) > 0 {
@@ -285,6 +321,26 @@ func Fetch(p Paths) error {
 		return fmt.Errorf("cannot fetch licenses for %s; add entries to %s by hand", strings.Join(failed, ", "), p.YAML)
 	}
 	return nil
+}
+
+// pinnedManualEntries prevents a repository's license from replacing audited
+// artifact terms. For example, github/codeql-action is MIT, but its CodeQL CLI
+// bundles have separate terms. A changed pin requires a new audit even when
+// repository classification would succeed.
+// https://github.com/github/codeql-cli-binaries/blob/778dd2254/LICENSE.md
+func pinnedManualEntries(deps []dep, byName map[string]Entry) (map[string]Entry, error) {
+	manual := make(map[string]Entry)
+	for _, d := range deps {
+		e := byName[d.name]
+		if !e.manuallyAudited() {
+			continue
+		}
+		if problems := verifyProblems([]dep{d}, []Entry{e}); len(problems) != 0 {
+			return nil, fmt.Errorf("re-audit the license of %s: %s", d.name, strings.Join(problems, "; "))
+		}
+		manual[d.name] = e
+	}
+	return manual, nil
 }
 
 // Verify checks that the YAML file has a well-formed, up-to-date entry for
@@ -343,8 +399,11 @@ func verifyProblems(deps []dep, entries []Entry) []string {
 			if d.sha256 != "" && e.SHA256 != d.sha256 {
 				problems = append(problems, fmt.Sprintf("%s was audited with sha256 %q, but is now pinned to %q", d.name, e.SHA256, d.sha256))
 			}
+			if e.manuallyAudited() && d.sha256 == "" {
+				problems = append(problems, fmt.Sprintf("%s has manually audited terms without an artifact checksum pin", d.name))
+			}
 			for i, license := range e.License {
-				if !knownLicenses[license] {
+				if !knownLicenses[license] && !licenseRefRE.MatchString(string(license)) {
 					problems = append(problems, fmt.Sprintf("%s has unknown license %q", d.name, license))
 				}
 				if i > 0 && e.License[i-1] >= license {
