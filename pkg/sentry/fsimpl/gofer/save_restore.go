@@ -255,6 +255,11 @@ func (fd *specialFileFD) afterLoad(goContext.Context) {
 	fd.handle.fd = -1
 }
 
+// afterLoad is invoked by stateify.
+func (fd *regularFileFD) afterLoad(goContext.Context) {
+	fd.directHandle = noHandle
+}
+
 // saveParent is called by stateify.
 func (d *dentry) saveParent() *dentry {
 	return d.parent.Load()
@@ -319,6 +324,16 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 				if err := fd.completeRestore(ctx); err != nil {
 					return err
 				}
+			}
+		}
+	}
+
+	// Re-open direct handles for regularFileFDs. restoreDeletedRegularFile()
+	// re-opened those of deleted files.
+	for fd := range fs.directFDs {
+		if !fd.dentry().isDeleted() {
+			if err := fd.restoreDirectHandle(ctx); err != nil {
+				return err
 			}
 		}
 	}
@@ -479,6 +494,14 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 	if err := d.restoreFile(ctx, &recreateOpts); err != nil {
 		return fmt.Errorf("failed to restore deleted regular file: %w", err)
 	}
+	// Re-open direct handles while the file is linked at d.name.
+	for fd := range d.inode.fs.directFDs {
+		if fd.dentry() == d {
+			if err := fd.restoreDirectHandle(ctx); err != nil {
+				return err
+			}
+		}
+	}
 	// We will delete the file later.
 	unlinkCU.Release()
 	filesToDelete[d] = d.name
@@ -486,9 +509,23 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 	return nil
 }
 
+// Preconditions: The file is linked at fd.dentry().name.
+func (fd *regularFileFD) restoreDirectHandle(ctx context.Context) error {
+	d := fd.dentry()
+	h, err := d.openDirectHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable())
+	if err != nil {
+		return fmt.Errorf("failed to open direct handle for regularFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err)
+	}
+	fd.directHandle = h
+	if h.fd < 0 {
+		delete(d.inode.fs.directFDs, fd)
+	}
+	return nil
+}
+
 func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	d := fd.dentry()
-	h, err := d.openHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
+	h, err := d.openHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */, false /* direct */)
 	if err != nil {
 		return fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err)
 	}
