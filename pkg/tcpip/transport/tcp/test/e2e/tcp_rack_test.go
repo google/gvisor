@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -472,7 +473,26 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 // connection (RFC 8985 section 7.2). Uncapped, the PTO for a lone segment is
 // 2*SRTT plus the worst-case delayed ACK timeout, later than the RTO.
 func TestRACKTLPNotLaterThanRTO(t *testing.T) {
-	c := context.New(t, uint32(mtu))
+	clock := faketime.NewManualClock()
+	type sample struct {
+		sndUna seqnum.Value
+		rto    time.Duration
+	}
+	samples := make(chan sample, 256)
+	probe := func(state *tcp.TCPEndpointState) {
+		// Non-blocking: never stall the stack's processing goroutine.
+		select {
+		case samples <- sample{state.Sender.SndUna, state.Sender.RTO}:
+		default:
+		}
+	}
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		EnableV6: true,
+		MTU:      mtu,
+		Clock:    clock,
+		Probe:    probe,
+	})
 	defer c.Cleanup()
 
 	const minRTO = 50 * time.Millisecond
@@ -495,23 +515,35 @@ func TestRACKTLPNotLaterThanRTO(t *testing.T) {
 		}
 	}
 
-	// Send one segment and acknowledge it, leaving the connection idle.
+	// Send one segment and acknowledge it after an RTT, leaving the
+	// connection idle.
 	write(data[:maxPayload])
 	c.ReceiveAndCheckPacketWithOptions(data, 0, maxPayload, e2e.TSOptionSize)
+	clock.Advance(10 * time.Millisecond)
 	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	c.SendAck(seq, maxPayload)
+
+	// SendAck only queues the ACK: wait until the endpoint has processed it,
+	// or the next segment would be sent with the RTO timer still armed.
+	var rto time.Duration
+	for acked := c.IRS.Add(1 + maxPayload); rto == 0; {
+		select {
+		case s := <-samples:
+			if s.sndUna == acked {
+				rto = s.rto
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for the ACK to be processed")
+		}
+	}
 
 	// Send a second segment, which is lost.
 	write(data[maxPayload:])
 	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
-	sent := time.Now()
 
-	// The TLP should retransmit it after about the RTO (the minimum RTO here,
-	// as the RTT is tiny), well before the worst-case delayed ACK timeout.
+	// The TLP must retransmit it no later than the RTO would.
+	clock.Advance(rto)
 	c.ReceiveAndCheckPacketWithOptions(data, maxPayload, maxPayload, e2e.TSOptionSize)
-	if elapsed, limit := time.Since(sent), 200*time.Millisecond; elapsed >= limit {
-		t.Errorf("TLP sent %s after the segment, want less than %s (RTO %s)", elapsed, limit, minRTO)
-	}
 }
 
 // TestRACKDetectDSACK tests that RACK detects DSACK with duplicate segments.
