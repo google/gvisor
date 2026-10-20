@@ -88,6 +88,7 @@ func (f *FDTable) CurrentMaxFDs() int {
 
 // set sets the file description referred to by fd to file. If file is non-nil,
 // f takes a reference on it. If file is nil, the file entry at fd is cleared.
+// Clearing an entry does not allocate table storage.
 // If set replaces an existing file description that is different from `file`,
 // it returns it with the FDTable's reference transferred to the caller, which
 // must call f.drop on the returned file after unlocking f.mu.
@@ -99,6 +100,9 @@ func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.F
 	bucketN := fd >> fdsPerBucketShift
 	// Grow the table as required.
 	if length := len(*slicePtr); int(bucketN) >= length {
+		if file == nil {
+			return nil
+		}
 		newLen := int(bucketN) + 1
 		if newLen < 2*length {
 			// Ensure the table at least doubles in size without going over the limit.
@@ -116,6 +120,9 @@ func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.F
 
 	bucket := slice[bucketN].Load()
 	if bucket == nil {
+		if file == nil {
+			return nil
+		}
 		bucket = &descriptorBucket{}
 		slice[bucketN].Store(bucket)
 	}
