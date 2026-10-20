@@ -1,10 +1,10 @@
 _templates:
   quick: &quick
-    command: "echo \"job $$BUILDKITE_JOB_ID on $$BUILDKITE_AGENT_NAME\""
+    command: "echo \"job $$BUILDKITE_JOB_ID on $$BUILDKITE_AGENT_NAME\" && sleep 15"
     agents:
       queue: "default"
       stacktest: "yes"
-    timeout_in_minutes: 3
+    timeout_in_minutes: 4
     retry:
       automatic:
         - exit_status: 80
@@ -14,11 +14,53 @@ _templates:
           limit: 2
 
 steps:
-  - { <<: *quick, label: ":zap: quick 1" }
-  - { <<: *quick, label: ":zap: quick 2" }
-  - { <<: *quick, label: ":zap: quick 3" }
-  - { <<: *quick, label: ":zap: quick 4" }
-  - { <<: *quick, label: ":zap: quick 5" }
-  - { <<: *quick, label: ":zap: quick 6" }
-  - { <<: *quick, label: ":zap: quick 7" }
+  - label: ":skull: long job: VM timer (6m) across a coordinator restart"
+    command: "echo start && sleep 1200 && echo 'not killed by the coordinator'"
+    agents:
+      queue: "default"
+      stacktest: "yes"
+    timeout_in_minutes: 30
+    retry:
+      automatic: false
+
+  - { <<: *quick, label: ":zap: quick 01" }
+  - { <<: *quick, label: ":zap: quick 02" }
+  - { <<: *quick, label: ":zap: quick 03" }
+  - { <<: *quick, label: ":zap: quick 04" }
+  - { <<: *quick, label: ":zap: quick 05" }
+  - { <<: *quick, label: ":zap: quick 06" }
+  - { <<: *quick, label: ":zap: quick 07" }
+  - { <<: *quick, label: ":zap: quick 08" }
+  - { <<: *quick, label: ":zap: quick 09" }
+  - { <<: *quick, label: ":zap: quick 10" }
+  - { <<: *quick, label: ":zap: quick 11" }
+  - { <<: *quick, label: ":zap: quick 12" }
+  - { <<: *quick, label: ":zap: quick 13" }
+  - { <<: *quick, label: ":zap: quick 14" }
+  - { <<: *quick, label: ":zap: quick 15" }
+  - { <<: *quick, label: ":zap: quick 16" }
+  - { <<: *quick, label: ":zap: quick 17" }
+  - { <<: *quick, label: ":zap: quick 18" }
+  - { <<: *quick, label: ":zap: quick 19" }
+  - { <<: *quick, label: ":zap: quick 20" }
+  - { <<: *quick, label: ":zap: quick 21" }
+  - { <<: *quick, label: ":zap: quick 22" }
+  - { <<: *quick, label: ":zap: quick 23" }
+  - { <<: *quick, label: ":zap: quick 24" }
+  - { <<: *quick, label: ":zap: quick 25" }
+  - { <<: *quick, label: ":zap: quick 26" }
+  - { <<: *quick, label: ":zap: quick 27" }
+  - { <<: *quick, label: ":zap: quick 28" }
+  - { <<: *quick, label: ":zap: quick 29" }
+  - { <<: *quick, label: ":zap: quick 30" }
+  - { <<: *quick, label: ":zap: quick 31" }
+  - { <<: *quick, label: ":zap: quick 32" }
+  - { <<: *quick, label: ":zap: quick 33" }
+  - { <<: *quick, label: ":zap: quick 34" }
+  - { <<: *quick, label: ":zap: quick 35" }
+  - { <<: *quick, label: ":zap: quick 36" }
+  - { <<: *quick, label: ":zap: quick 37" }
+  - { <<: *quick, label: ":zap: quick 38" }
+  - { <<: *quick, label: ":zap: quick 39" }
+  - { <<: *quick, label: ":zap: quick 40" }
 
