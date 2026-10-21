@@ -280,6 +280,7 @@ analyzers:
   SA4023: # Impossible condition.
     internal:
       exclude:
+        - runsc/boot/loader.go     # Intersect in native_arm64.go always returns error on arm64.
         - runsc/sandbox/network.go # Stubs in no_xdp.go always return error when built without XDP.
   ST1019: # Multiple imports of the same package.
     generated:

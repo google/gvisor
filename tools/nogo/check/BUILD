@@ -68,7 +68,9 @@ go_test(
     embed = [":check"],
     deps = [
         "//pkg/zip",
+        "//tools/nogo/facts",
         "//tools/nogo/flags",
         "@org_golang_x_tools//go/analysis:go_default_library",
+        "@org_golang_x_tools//go/gcexportdata:go_default_library",
     ],
 )
