@@ -571,3 +571,38 @@ func TestIsGCSRestorePath(t *testing.T) {
 		})
 	}
 }
+
+func TestSentryGODEBUG(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		conf config.Config
+		want []string
+	}{
+		{
+			name: "default",
+			conf: config.Config{Platform: "systrap"},
+			want: []string{"containermaxprocs=0", "memprofilerate=0"},
+		},
+		{
+			name: "profile",
+			conf: config.Config{Platform: "systrap", ProfileEnable: true},
+			want: []string{"containermaxprocs=0"},
+		},
+		{
+			name: "kvm",
+			conf: config.Config{Platform: "kvm"},
+			want: []string{"containermaxprocs=0", "asyncpreemptoff=1", "memprofilerate=0"},
+		},
+		{
+			name: "plugin network with profile",
+			conf: config.Config{Platform: "systrap", Network: config.NetworkPlugin, ProfileEnable: true},
+			want: []string{"containermaxprocs=0", "cgocheck=0"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sentryGODEBUG(&tc.conf); !slices.Equal(got, tc.want) {
+				t.Errorf("sentryGODEBUG() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
