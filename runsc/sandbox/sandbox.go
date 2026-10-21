@@ -1472,21 +1472,36 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	cmd.Args = append(cmd.Args, "--total-host-memory", strconv.FormatUint(totalSysMem, 10))
 
+	cpuCgroup := s.CgroupJSON.Cgroup
+	if cpuCgroup == nil && conf.IgnoreCgroups {
+		// An external supervisor may limit the inherited cgroup even when
+		// runsc does not manage it.
+		cpuCgroup, err = cgroup.LoadFromPid(os.Getpid())
+		if err != nil {
+			log.Warningf("Cannot discover inherited CPU limits: %v", err)
+		}
+	}
+	if cpuCgroup != nil {
+		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(cpuCgroup, conf.CPUNumFromQuota)
+		if err != nil {
+			if s.CgroupJSON.Cgroup != nil {
+				return err
+			}
+			log.Warningf("Cannot read inherited CPU limits: %v", err)
+		} else {
+			cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
+			cmd.Env = append(cmd.Env, "GOMAXPROCS="+strconv.Itoa(cpuNum))
+			if cpuQuota > 0 {
+				cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
+			}
+			if cpuPeriod > 0 {
+				cmd.Args = append(cmd.Args, "--cpu-period", strconv.FormatInt(cpuPeriod, 10))
+			}
+		}
+	}
+
 	mem := totalSysMem
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, conf.CPUNumFromQuota)
-		if err != nil {
-			return err
-		}
-		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
-		cmd.Env = append(cmd.Env, "GOMAXPROCS="+strconv.Itoa(cpuNum))
-		if cpuQuota > 0 {
-			cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
-		}
-		if cpuPeriod > 0 {
-			cmd.Args = append(cmd.Args, "--cpu-period", strconv.FormatInt(cpuPeriod, 10))
-		}
-
 		memLimit, err := s.CgroupJSON.Cgroup.MemoryLimit()
 		if err != nil {
 			return fmt.Errorf("getting memory limit from cgroups: %v", err)
