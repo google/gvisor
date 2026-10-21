@@ -113,6 +113,7 @@ func TestCompilationErrors(t *testing.T) {
 }
 
 func TestExecErrors(t *testing.T) {
+	var reused ExecutionMetrics
 	for _, test := range []struct {
 		// desc is the test's description.
 		desc string
@@ -158,6 +159,16 @@ func TestExecErrors(t *testing.T) {
 			if err != test.expectedErr {
 				t.Fatalf("expected execution error %q, got (%v, %v)", test.expectedErr, execution, err)
 			}
+			for _, input := range []Input{make(Input, 8), inp} {
+				fresh, wantErr := InstrumentedExec[NativeEndian](p, input)
+				reused.ReturnValue = 123
+				if gotErr := InstrumentedExecWithMetrics[NativeEndian](p, input, &reused); gotErr != wantErr {
+					t.Fatalf("reused execution error: got %v, want %v", gotErr, wantErr)
+				}
+				if !reflect.DeepEqual(reused, fresh) {
+					t.Fatalf("reused metrics after error: got %s, want %s", reused.String(), fresh.String())
+				}
+			}
 			ret, err := Exec[NativeEndian](p, inp)
 			if err != test.expectedErr {
 				t.Fatalf("expected execution error %q, got (%d, %v)", test.expectedErr, ret, err)
@@ -174,6 +185,7 @@ func TestExecErrors(t *testing.T) {
 }
 
 func TestValidInstructions(t *testing.T) {
+	var reused ExecutionMetrics
 	want := func(ex ExecutionMetrics) func(insns []Instruction, input []byte) ExecutionMetrics {
 		return func(insns []Instruction, input []byte) ExecutionMetrics {
 			return ex
@@ -914,6 +926,15 @@ func TestValidInstructions(t *testing.T) {
 			if !reflect.DeepEqual(execution, want) {
 				t.Fatalf("expected %s, got %s", want.String(), execution.String())
 			}
+			for _, input := range []Input{make(Input, len(test.input)+8), test.input, {}, test.input} {
+				fresh, wantErr := InstrumentedExec[NativeEndian](p, input)
+				if gotErr := InstrumentedExecWithMetrics[NativeEndian](p, input, &reused); gotErr != wantErr {
+					t.Fatalf("reused execution error: got %v, want %v", gotErr, wantErr)
+				}
+				if !reflect.DeepEqual(reused, fresh) {
+					t.Fatalf("reused metrics: got %s, want %s", reused.String(), fresh.String())
+				}
+			}
 			retFast, err := Exec[NativeEndian](p, test.input)
 			if err != nil {
 				t.Fatalf("unexpected execution error during fast execution: %v", err)
@@ -1107,16 +1128,28 @@ func BenchmarkInterpreter(b *testing.B) {
 	}
 }
 
+// BenchmarkInstrumentedInterpreter compares fresh and reused execution metrics.
 func BenchmarkInstrumentedInterpreter(b *testing.B) {
 	p, err := Compile(sampleFilter, true)
 	if err != nil {
 		b.Fatalf("Unexpected compilation error: %v", err)
 	}
 	data := dataAsInput(&linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e})
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := InstrumentedExec[NativeEndian](p, data); err != nil {
-			b.Fatalf("Unexpected execution error: %v", err)
+	b.Run("fresh", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := InstrumentedExec[NativeEndian](p, data); err != nil {
+				b.Fatalf("Unexpected execution error: %v", err)
+			}
 		}
-	}
+	})
+	b.Run("reused", func(b *testing.B) {
+		var metrics ExecutionMetrics
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if err := InstrumentedExecWithMetrics[NativeEndian](p, data, &metrics); err != nil {
+				b.Fatalf("Unexpected execution error: %v", err)
+			}
+		}
+	})
 }
