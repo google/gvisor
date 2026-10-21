@@ -142,9 +142,11 @@ go_test(
     embed = [":gofer"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/lisafs",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/ktime",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/vfs",
     ],
 )
