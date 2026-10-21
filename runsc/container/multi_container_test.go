@@ -3911,6 +3911,12 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 		numFields := oldUsageV.NumField()
 		for i := 0; i < numFields; i++ {
 			name := oldUsageV.Type().Field(i).Name
+			if name == "Unknown" {
+				// In a full accounting, Unknown is usage that no scan for
+				// committed pages has seen yet, which depends on scan
+				// timing rather than on leaks.
+				continue
+			}
 			oldVal := oldUsageV.Field(i).Interface().(uint64)
 			newVal := newUsageV.Field(i).Interface().(uint64)
 			if newVal <= oldVal {
