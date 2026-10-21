@@ -147,6 +147,70 @@ func TestSpecInvalid(t *testing.T) {
 			error: "",
 		},
 		{
+			name: "valid with no uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.PIDNamespace},
+					},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "valid with new uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace},
+					},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "host uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace, Path: "/proc/1/ns/uts"},
+					},
+				},
+			},
+			error: "joining UTS namespace",
+		},
+		{
+			name: "subcontainer with sandbox uts namespace",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Annotations: map[string]string{
+					ContainerdContainerTypeAnnotation: ContainerdContainerTypeContainer,
+					ContainerdSandboxIDAnnotation:     "sandbox-123",
+				},
+				Linux: &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{Type: specs.UTSNamespace, Path: "/proc/1234/ns/uts"},
+					},
+				},
+			},
+			error: "",
+		},
+		{
 			name: "no root",
 			spec: specs.Spec{
 				Process: &specs.Process{
