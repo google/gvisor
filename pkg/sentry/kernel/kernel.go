@@ -2761,6 +2761,19 @@ func (k *Kernel) SpecEnviron(cid string) []string {
 	return slices.Clone(k.containerEnvs[cid])
 }
 
+// SpecEnvironByName returns the environment variables for the container with
+// the given name.
+func (k *Kernel) SpecEnvironByName(containerName string) []string {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	for cid, name := range k.containerNames {
+		if name == containerName {
+			return slices.Clone(k.containerEnvs[cid])
+		}
+	}
+	return nil
+}
+
 func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtxs []*fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {
 	mfsToSaveActual := make(map[checkpoint.ResourceID]*pgalloc.MemoryFile)
 	for id, mf := range mfsToSave {

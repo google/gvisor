@@ -222,6 +222,27 @@ func TestManyProcMounts(t *testing.T) {
 	}
 }
 
+func TestSpecEnvironPermissions(t *testing.T) {
+	s := setupWithData(t, &InternalData{ContainerUID: 343, ContainerGID: 2401})
+	defer s.Destroy()
+
+	const path = "/proc/gvisor/spec_environ"
+	opts := &vfs.OpenOptions{Flags: linux.O_RDONLY}
+	owner := auth.NewUserCredentials(343, 2401, nil, nil, s.Creds.UserNamespace)
+	for _, creds := range []*auth.Credentials{s.Creds, owner} {
+		fd, err := s.VFS.OpenAt(s.Ctx, creds, s.PathOpAtRoot(path), opts)
+		if err != nil {
+			t.Fatalf("OpenAt(%q) as UID %d: %v", path, creds.EffectiveKUID, err)
+		}
+		fd.DecRef(s.Ctx)
+	}
+
+	other := auth.NewUserCredentials(344, 2401, nil, nil, s.Creds.UserNamespace)
+	if _, err := s.VFS.OpenAt(s.Ctx, other, s.PathOpAtRoot(path), opts); !linuxerr.Equals(linuxerr.EACCES, err) {
+		t.Errorf("OpenAt(%q) as UID 344 got error %v, want EACCES", path, err)
+	}
+}
+
 func TestTasksWithOverrideProc(t *testing.T) {
 	s := setupWithData(t, &InternalData{
 		Cgroups: map[string]string{
