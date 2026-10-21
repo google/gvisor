@@ -323,7 +323,7 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-func TestNormalizeHidesAMX(t *testing.T) {
+func TestUnsetAMXStatic(t *testing.T) {
 	amx := []Feature{X86FeatureAMX_BF16, X86FeatureAMX_TILE, X86FeatureAMX_INT8}
 	s := make(Static)
 	for _, f := range append([]Feature{X86FeatureXSAVE}, amx...) {
@@ -336,7 +336,10 @@ func TestNormalizeHidesAMX(t *testing.T) {
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}, Out{Eax: 64, Ebx: 2752})
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}, Out{Eax: 8192, Ebx: 2816})
 
-	fs := s.ToFeatureSet()
+	if fs := s.ToFeatureSet(); !fs.HasFeature(X86FeatureAMX_TILE) {
+		t.Errorf("ToFeatureSet hid %v", X86FeatureAMX_TILE)
+	}
+	fs := s.ToFeatureSet().UnsetAMX()
 	for _, f := range amx {
 		if fs.HasFeature(f) {
 			t.Errorf("%v is advertised", f)
