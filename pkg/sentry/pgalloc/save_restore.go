@@ -1435,6 +1435,11 @@ type aplUnloadedInfo struct {
 	// started is true if a read has been enqueued for these pages.
 	started bool
 
+	// If decommitOnLoad is true, these pages were decommitted by
+	// MemoryFile.Decommit() while started or awaited, and must be decommitted
+	// again when their read completes.
+	decommitOnLoad bool
+
 	// waiters queues goroutines waiting for these pages to be loaded.
 	waiters []*aplWaiter
 }
@@ -2040,6 +2045,11 @@ func (apfl *AsyncPagesFileLoad) main() {
 					if !ul.started {
 						panic(fmt.Sprintf("MemoryFile(%p): completion of %v includes pages %v that were never started", amfl.f, fr, ulseg.Range()))
 					}
+					if ul.decommitOnLoad {
+						// Discard the data that was just loaded, before
+						// waiters can observe it.
+						amfl.f.decommitOrManuallyZero(ulseg.Range())
+					}
 					for _, w := range ul.waiters {
 						haveWaiters = true
 						w.pending -= ullen
@@ -2111,6 +2121,63 @@ func (amfl *asyncMemoryFileLoad) cancelWasteLoad(fr memmap.FileRange) {
 	})
 }
 
+// cancelLoadForDecommit is called by MemoryFile.Decommit(fr) before fr is
+// decommitted. Reads of pages in fr that complete after the decommit would
+// overwrite the zeroed pages with stale data, so cancelLoadForDecommit cancels
+// loading of unloaded pages in fr that are not yet being read (they are zero
+// after the decommit, so there is nothing to load), and arranges for the
+// remaining unloaded pages in fr to be decommitted again when their reads
+// complete. Since accesses to unloaded pages wait for their reads to complete,
+// they observe zeroed pages either way, but Decommit() doesn't need to wait
+// for reads to complete.
+//
+// Preconditions:
+// - fr must be page-aligned.
+// - At least one reference must be held on all pages in fr.
+// - amfl.pf.amflsMu, amfl.f.mu, and amfl.pf.mu must be unlocked.
+func (amfl *asyncMemoryFileLoad) cancelLoadForDecommit(fr memmap.FileRange) error {
+	// Lockless fast path:
+	if fr.End <= amfl.minUnloaded.Load() {
+		return nil
+	}
+
+	apfl := amfl.pf
+	apfl.amflsMu.Lock()
+	apfl.mu.Lock()
+	if apfl.err() != nil {
+		// Unloaded pages in fr will never be loaded. Leave them unloaded so
+		// that awaitLoad() returns the error, consistently with other
+		// accesses to them.
+		apfl.mu.Unlock()
+		apfl.amflsMu.Unlock()
+		return amfl.awaitLoad(fr)
+	}
+	cancelled := false
+	ulseg := amfl.unloaded.LowerBoundSegment(fr.Start)
+	for ulseg.Ok() && ulseg.Start() < fr.End {
+		ulseg = amfl.unloaded.Isolate(ulseg, fr)
+		ul := ulseg.ValuePtr()
+		if ul.started || len(ul.waiters) != 0 {
+			// These pages are being read, or will be read soon since they
+			// have waiters.
+			ul.decommitOnLoad = true
+			ulseg = ulseg.NextSegment()
+			continue
+		}
+		ulseg = amfl.unloaded.Remove(ulseg).NextSegment()
+		cancelled = true
+	}
+	// If this emptied amfl.unloaded, no read completion may follow to finish
+	// amfl. (If we didn't cancel anything, amfl.unloaded was empty already and
+	// amfl may already be finished.)
+	if cancelled && amfl.lfDone && amfl.unloaded.IsEmpty() {
+		amfl.finishLocked()
+	}
+	apfl.mu.Unlock()
+	apfl.amflsMu.Unlock()
+	return nil
+}
+
 // finishLocked marks async page loading for amfl as complete.
 //
 // Preconditions:
@@ -2146,7 +2213,7 @@ func (aplUnloadedSetFunctions) Merge(fr1 memmap.FileRange, ul1 aplUnloadedInfo, 
 	if ul1.off+fr1.Length() != ul2.off {
 		return aplUnloadedInfo{}, false
 	}
-	if ul1.started || ul2.started || len(ul1.waiters) != 0 || len(ul2.waiters) != 0 {
+	if ul1.started || ul2.started || len(ul1.waiters) != 0 || len(ul2.waiters) != 0 || ul1.decommitOnLoad || ul2.decommitOnLoad {
 		// Merging would be counterproductive, since we expect that these
 		// segments will shortly be removed (separately) based on AIO
 		// completions, which would just necessitate splitting again.
@@ -2157,8 +2224,9 @@ func (aplUnloadedSetFunctions) Merge(fr1 memmap.FileRange, ul1 aplUnloadedInfo, 
 
 func (aplUnloadedSetFunctions) Split(fr memmap.FileRange, ul aplUnloadedInfo, splitAt uint64) (aplUnloadedInfo, aplUnloadedInfo) {
 	ul2 := aplUnloadedInfo{
-		off:     ul.off + (splitAt - fr.Start),
-		started: ul.started,
+		off:            ul.off + (splitAt - fr.Start),
+		started:        ul.started,
+		decommitOnLoad: ul.decommitOnLoad,
 		// Setting cap(ul2.waiters) == len(ul2.waiters) makes ul2
 		// "copy-on-append", saving an allocation if ul2 is never appended-to.
 		// This is safe since existing elements in ul.waiters will never be
