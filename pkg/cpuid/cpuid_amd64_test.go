@@ -386,3 +386,35 @@ func TestUnsetAMX(t *testing.T) {
 		t.Errorf("UnsetAMX failed: CPUID.(EAX=0xd, ECX=0).EAX AMX bits should be 0, got %#x", mask)
 	}
 }
+
+func TestIntersectAMX(t *testing.T) {
+	hostFeatures := HostFeatureSet()
+	allowed := make(map[Feature]struct{})
+	for f := range allFeatures {
+		if hostFeatures.HasFeature(f) {
+			allowed[f] = struct{}{}
+		}
+	}
+
+	fs, err := hostFeatures.Intersect(allowed)
+	if err != nil {
+		t.Fatalf("Intersect failed: %v", err)
+	}
+	if got, want := fs.ValidXCR0Mask(), hostFeatures.ValidXCR0Mask(); got != want {
+		t.Errorf("Intersect with all host features: ValidXCR0Mask got %#x, want %#x", got, want)
+	}
+
+	delete(allowed, X86FeatureAMX_TILE)
+	fs, err = hostFeatures.Intersect(allowed)
+	if err != nil {
+		t.Fatalf("Intersect failed: %v", err)
+	}
+	if mask := fs.ValidXCR0Mask() & (XCR0AmxCfgMask | XCR0AmxDataMask); mask != 0 {
+		t.Errorf("Intersect without amx_tile: ValidXCR0Mask AMX bits should be 0, got %#x", mask)
+	}
+	for _, f := range []Feature{X86FeatureAMX_INT8, X86FeatureAMX_BF16} {
+		if fs.HasFeature(f) {
+			t.Errorf("Intersect without amx_tile: %v should be disabled", f)
+		}
+	}
+}

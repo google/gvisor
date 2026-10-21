@@ -188,6 +188,10 @@ func (fs FeatureSet) Intersect(allowedFeatures map[Feature]struct{}) (FeatureSet
 			}
 		}
 	}
+	// The other AMX features, and AMX state, are unusable without AMX-TILE.
+	if _, ok := allowedFeatures[X86FeatureAMX_TILE]; !ok {
+		unsetAMX(hs)
+	}
 
 	return hs.ToFeatureSet(), nil
 }
