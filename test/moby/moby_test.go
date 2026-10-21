@@ -26,6 +26,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/test/moby/mobyutil"
 	"gvisor.dev/gvisor/test/runtimes/runner/lib"
 )
 
@@ -54,34 +55,8 @@ var excludedTests = map[string]bool{
 	"integration/network/network_test/TestCreateDeletePredefinedNetworks": true,
 }
 
-func dockerInGvisorCapabilities() []string {
-	return []string{
-		"audit_write",
-		"chown",
-		"dac_override",
-		"fowner",
-		"fsetid",
-		"kill",
-		"mknod",
-		"net_admin",
-		"net_bind_service",
-		"net_raw",
-		"setfcap",
-		"setgid",
-		"setpcap",
-		"setuid",
-		"sys_admin",
-		"sys_chroot",
-		"sys_ptrace",
-	}
-}
-
 func TestMain(m *testing.M) {
 	flag.Parse()
-	if dockerutil.Runtime() == "" {
-		slog.Warn("no runtime specified, defaulting to runsc")
-		dockerutil.SetRuntime("runsc")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	isGVisor, err := dockerutil.IsGVisorRuntime(ctx)
 	cancel()
@@ -93,7 +68,7 @@ func TestMain(m *testing.M) {
 		Runner: "test/moby/runner",
 		// Docker in Docker requires privileged mode.
 		Privileged:        !isGVisor,
-		CapAdd:            dockerInGvisorCapabilities(),
+		CapAdd:            mobyutil.DockerInGvisorCapabilities(),
 		PerTestTimeout:    5 * time.Minute,
 		RunsPerTest:       1,
 		FlakyIsError:      true,
