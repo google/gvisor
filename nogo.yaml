@@ -235,6 +235,11 @@ analyzers:
         # External libraries may not have binaries (e.g. stdlib testdata, etc.),
         # so these cases can be safely ignored.
         - "no such file or directory"
+  checkimports:
+    generated:
+      suppress:
+        # protoc-gen-go emits unsafe descriptor access in .pb.go files.
+        - '^package unsafe imported by [^/]+\.pb\.go; must end with _unsafe\.go$'
   checklinkname:
     external: # Enabled.
       suppress:
