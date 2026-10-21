@@ -21,9 +21,12 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -323,5 +326,131 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := statAfterTruncateUp.Ctime.ToNsec(); got <= statAfterTruncateDown.Ctime.ToNsec() {
 		t.Errorf("fd.Stat got Ctime %v, want > %v", got, stat.Ctime)
+	}
+}
+
+func newSizedRegularFile(ctx context.Context, t *testing.T, size uint64) (*vfs.FileDescription, *regularFile, func()) {
+	t.Helper()
+	fd, cleanup, err := newFileFD(ctx, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setSize(ctx, t, fd, size)
+	return fd, fd.Impl().(*regularFileFD).inode().impl.(*regularFile), cleanup
+}
+
+func setSize(ctx context.Context, t *testing.T, fd *vfs.FileDescription, size uint64) {
+	t.Helper()
+	if err := fd.SetStat(ctx, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: size,
+		},
+	}); err != nil {
+		t.Fatalf("fd.SetStat failed: %v", err)
+	}
+}
+
+// translateEnd returns the end of the translations that rf.Translate() returns
+// for a one-page fault at off in a mapping of the whole file.
+func translateEnd(ctx context.Context, t *testing.T, rf *regularFile, off, size uint64) uint64 {
+	t.Helper()
+	return translateEndIn(ctx, t, rf, off, memmap.MappableRange{0, size})
+}
+
+// translateEndIn is translateEnd for a fault in a mapping of optional.
+func translateEndIn(ctx context.Context, t *testing.T, rf *regularFile, off uint64, optional memmap.MappableRange) uint64 {
+	t.Helper()
+	required := memmap.MappableRange{off, off + hostarch.PageSize}
+	ts, err := rf.Translate(ctx, required, optional, hostarch.Write)
+	if err != nil {
+		t.Fatalf("Translate(%v) failed: %v", required, err)
+	}
+	return ts[len(ts)-1].Source.End
+}
+
+func TestTranslateFillsSequentialFaults(t *testing.T) {
+	ctx := contexttest.Context(t)
+	const size = 8 << 20
+	_, rf, cleanup := newSizedRegularFile(ctx, t, size)
+	defer cleanup()
+
+	for _, test := range []struct {
+		name    string
+		off     uint64
+		wantEnd uint64
+	}{
+		{"first fault", 64 << 10, 128 << 10},
+		{"sequential fault", 128 << 10, 192 << 10},
+		{"sequential fault", 192 << 10, 320 << 10},
+		{"sequential fault", 320 << 10, 576 << 10},
+		{"sequential fault", 576 << 10, 1088 << 10},
+		{"sequential fault up to 2 MiB boundary", 1088 << 10, 2 << 20},
+		{"sequential fault at 2 MiB", 2 << 20, 4032 << 10},
+		{"sequential fault up to 4 MiB boundary", 4032 << 10, 4 << 20},
+		{"sequential fault at 4 MiB", 4 << 20, 6 << 20},
+		{"non-sequential fault", 7 << 20, 7<<20 + 64<<10},
+	} {
+		if got := translateEnd(ctx, t, rf, test.off, size); got != test.wantEnd {
+			t.Errorf("%s at %#x: translated up to %#x, want %#x", test.name, test.off, got, test.wantEnd)
+		}
+	}
+}
+
+func TestTranslateAfterWriteDoesNotFillSequentially(t *testing.T) {
+	ctx := contexttest.Context(t)
+	const size = 4 << 20
+	fd, rf, cleanup := newSizedRegularFile(ctx, t, size)
+	defer cleanup()
+	if _, err := fd.PWrite(ctx, usermem.BytesIOSequence([]byte{1}), 0, vfs.WriteOptions{}); err != nil {
+		t.Fatalf("fd.PWrite failed: %v", err)
+	}
+	if got, want := translateEnd(ctx, t, rf, hostarch.PageSize, size), uint64(hostarch.PageSize+64<<10); got != want {
+		t.Errorf("fault after write translated up to %#x, want %#x", got, want)
+	}
+}
+
+func TestTranslateAfterTruncateDoesNotFillSequentially(t *testing.T) {
+	ctx := contexttest.Context(t)
+	const size = 8 << 20
+	fd, rf, cleanup := newSizedRegularFile(ctx, t, size)
+	defer cleanup()
+	for off := uint64(0); off < 2<<20; {
+		off = translateEnd(ctx, t, rf, off, size)
+	}
+	setSize(ctx, t, fd, 0)
+	setSize(ctx, t, fd, size)
+	if got, want := translateEnd(ctx, t, rf, 2<<20, size), uint64(2<<20+64<<10); got != want {
+		t.Errorf("fault after truncate translated up to %#x, want %#x", got, want)
+	}
+}
+
+func TestTranslateAfterPartialFillDoesNotFillSequentially(t *testing.T) {
+	ctx := contexttest.Context(t)
+	const size = 4 << 20
+	fd, rf, cleanup := newSizedRegularFile(ctx, t, size)
+	defer cleanup()
+	if _, err := fd.PWrite(ctx, usermem.BytesIOSequence([]byte{1}), hostarch.PageSize, vfs.WriteOptions{}); err != nil {
+		t.Fatalf("fd.PWrite failed: %v", err)
+	}
+	translateEnd(ctx, t, rf, 0, size)
+	if got, want := translateEnd(ctx, t, rf, 64<<10, size), uint64(128<<10); got != want {
+		t.Errorf("fault after partial fill translated up to %#x, want %#x", got, want)
+	}
+}
+
+func TestTranslateAfterSeparateFaultsDoesNotFillSequentially(t *testing.T) {
+	ctx := contexttest.Context(t)
+	const size = 4 << 20
+	_, rf, cleanup := newSizedRegularFile(ctx, t, size)
+	defer cleanup()
+	// Fault in consecutive pages through separate one-page mappings.
+	const pages = 10
+	for i := uint64(0); i < pages; i++ {
+		off := i * hostarch.PageSize
+		translateEndIn(ctx, t, rf, off, memmap.MappableRange{off, off + hostarch.PageSize})
+	}
+	if got, want := translateEnd(ctx, t, rf, pages*hostarch.PageSize, size), uint64(pages*hostarch.PageSize+64<<10); got != want {
+		t.Errorf("fault after separate faults translated up to %#x, want %#x", got, want)
 	}
 }
