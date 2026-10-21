@@ -127,6 +127,10 @@ type TSCAdjustablePlatform interface {
 	// TSCOffset returns the offset the platform applies to the guest TSC,
 	// as a two's-complement value in host TSC cycles.
 	TSCOffset() uint64
+
+	// TSCFrequency returns the frequency in Hz at which the host TSC
+	// advances, and whether the platform was able to determine it.
+	TSCFrequency() (uint64, bool)
 }
 
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and

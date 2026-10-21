@@ -473,6 +473,19 @@ func (t *Timekeeper) Resume(params *VDSOParamPage) {
 	t.startAfterFuncSchedulerLocked()
 }
 
+// TSCSnapshot returns the clock source's realtime base point in the guest TSC
+// domain, and whether it is valid.
+//
+// It reports the clock source's existing calibration rather than sampling
+// anew, so it is safe to call from contexts where a fresh reference clock read
+// would be unreliable, such as during save.
+func (t *Timekeeper) TSCSnapshot() (sentrytime.TSCSnapshot, bool) {
+	if t.clocks == nil {
+		return sentrytime.TSCSnapshot{}, false
+	}
+	return t.clocks.TSCSnapshot()
+}
+
 // GetTime returns the current time in nanoseconds.
 func (t *Timekeeper) GetTime(c sentrytime.ClockID) (int64, error) {
 	if t.clocks == nil {

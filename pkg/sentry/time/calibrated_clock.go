@@ -245,6 +245,15 @@ func (c *CalibratedClock) GetTime() (int64, error) {
 	return v, nil
 }
 
+// Params returns the current timekeeping parameters, and whether the clock is
+// calibrated. The parameters are in whatever cycle domain c.ref samples, which
+// for the real TSC clock includes any guest TSC offset.
+func (c *CalibratedClock) Params() (Parameters, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.params, c.ready
+}
+
 // CalibratedClocks contains calibrated monotonic and realtime clocks.
 //
 // TODO(mpratt): We know that Linux runs the monotonic and realtime clocks at
@@ -316,4 +325,20 @@ func (c *CalibratedClocks) GetTime(id ClockID) (int64, error) {
 	default:
 		return 0, linuxerr.EINVAL
 	}
+}
+
+// TSCSnapshot implements Clocks.TSCSnapshot.
+func (c *CalibratedClocks) TSCSnapshot() (TSCSnapshot, bool) {
+	p, ok := c.realtime.Params()
+	if !ok {
+		return TSCSnapshot{}, false
+	}
+
+	// p.BaseCycles comes from tscCycleClock, which reports the guest TSC,
+	// so it is already in the snapshot's domain.
+	return TSCSnapshot{
+		Cycle:        uint64(p.BaseCycles),
+		RealtimeNsec: uint64(p.BaseRef),
+		Frequency:    p.Frequency,
+	}, true
 }

@@ -29,6 +29,25 @@ type UpdateResult struct {
 	MonotonicRawOk bool
 }
 
+// TSCSnapshot is a correspondence between a guest TSC value and the realtime
+// clock, plus the TSC frequency needed to extrapolate between them.
+//
+// It is captured at save time and consumed on restore to re-derive the guest
+// TSC offset required to keep time moving forward across a migration.
+type TSCSnapshot struct {
+	// Cycle is a TSC value in the guest TSC domain, i.e. the value the
+	// application observes, including any guest TSC offset applied by the
+	// platform. This keeps the application TSC continuous across repeated
+	// save/restore cycles.
+	Cycle uint64
+
+	// RealtimeNsec is CLOCK_REALTIME, in nanoseconds, at Cycle.
+	RealtimeNsec uint64
+
+	// Frequency is the TSC frequency in Hz.
+	Frequency uint64
+}
+
 // Clocks represents a clock source that contains both a monotonic and realtime
 // clock.
 type Clocks interface {
@@ -52,4 +71,8 @@ type Clocks interface {
 	//
 	// It must return the same value for the lifetime of the Clocks.
 	MonotonicRawEnabled() bool
+
+	// TSCSnapshot returns the realtime clock's current base point, expressed
+	// in the guest TSC domain, and whether it is valid.
+	TSCSnapshot() (TSCSnapshot, bool)
 }

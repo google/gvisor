@@ -20,6 +20,13 @@ package time
 // getCNTFRQ get ARM counter-timer frequency
 func getCNTFRQ() TSCValue
 
+// CNTFRQ returns the frequency in Hz of the system counter, as reported by
+// CNTFRQ_EL0. This is the rate at which CNTVCT_EL0, the counter read by
+// Rdtsc, advances.
+func CNTFRQ() uint64 {
+	return uint64(getCNTFRQ())
+}
+
 // getDefaultArchOverheadCycles get default OverheadCycles based on
 // ARM counter-timer frequency. Usually ARM counter-timer frequency
 // is range from 1-50Mhz which is much less than that on x86, so we

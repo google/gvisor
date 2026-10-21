@@ -212,7 +212,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 
 	id, ok := s.sysmsgStackPool.Get()
 	if !ok {
-		panic("unable to allocate a sysmsg stub thread")
+		return fmt.Errorf("unable to allocate a sysmsg stub thread")
 	}
 
 	ptraceThread.sysmsgStackID = id
@@ -222,7 +222,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool)
 	}
 
 	if err := t.init(seccompNotify); err != nil {
-		panic("failed to create a syscall thread")
+		return fmt.Errorf("failed to create a syscall thread: %w", err)
 	}
 	s.syscallThread = &t
 

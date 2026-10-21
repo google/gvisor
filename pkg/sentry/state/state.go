@@ -158,7 +158,7 @@ func (opts *SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wa
 	if wt != 0 {
 		opts.Metadata[GvisorWallTimeKey] = wt.String()
 	}
-	addSaveMetadata(opts.Metadata)
+	addSaveMetadata(opts.Metadata, k)
 
 	// Open the statefile.
 	wc, err := statefile.NewWriter(opts.Destination, opts.Key, opts.Metadata) // transfers ownership of opts.Destination to wc if err == nil
