@@ -102,3 +102,58 @@ func TestAddressDispatcherExpiredToAssigned(t *testing.T) {
 		t.Fatalf("expect to observe address added: %s", err)
 	}
 }
+
+// TestAddressableEndpointStateDisabled tests address acquisition while the
+// network endpoint is disabled.
+func TestAddressableEndpointStateDisabled(t *testing.T) {
+	addr := tcpip.AddressWithPrefix{
+		Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
+		PrefixLen: 32,
+	}
+
+	for _, tc := range []struct {
+		name                string
+		hiddenWhileDisabled bool
+	}{
+		{
+			name: "acquiresPermanentAddrWhenVisible",
+		},
+		{
+			name:                "hidesPermanentAddrWhenHidden",
+			hiddenWhileDisabled: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var networkEp fakeNetworkEndpoint
+			var s stack.AddressableEndpointState
+			s.Init(&networkEp, stack.AddressableEndpointStateOptions{
+				HiddenWhileDisabled: tc.hiddenWhileDisabled,
+			})
+			defer s.Cleanup()
+
+			// Temporary addresses should never be created on a disabled endpoint.
+			if got := s.AcquireAssignedAddress(addr.Address, true /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */); got != nil {
+				t.Errorf("s.AcquireAssignedAddress(%s, true, ...) = %v while disabled, want = nil", addr.Address, got)
+			}
+
+			ep, err := s.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{PEB: stack.CanBePrimaryEndpoint})
+			if err != nil {
+				t.Fatalf("s.AddAndAcquirePermanentAddress(%s, ...): %s", addr, err)
+			}
+			ep.DecRef()
+
+			wantAddress := !tc.hiddenWhileDisabled
+			if got := s.AcquireAssignedAddress(addr.Address, tc.hiddenWhileDisabled /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */); (got != nil) != wantAddress {
+				t.Errorf("s.AcquireAssignedAddress(%s, %t, ...) = %v while disabled, wantAddress=%t", addr.Address, tc.hiddenWhileDisabled, got, wantAddress)
+			}
+
+			got := s.AcquireOutgoingPrimaryAddress(addr.Address, tcpip.Address{} /* srcHint */, true /* allowExpired */)
+			if got != nil {
+				got.DecRef()
+			}
+			if (got != nil) != wantAddress {
+				t.Errorf("s.AcquireOutgoingPrimaryAddress(%s, '', true) = %v while disabled, wantAddress=%t", addr.Address, got, wantAddress)
+			}
+		})
+	}
+}

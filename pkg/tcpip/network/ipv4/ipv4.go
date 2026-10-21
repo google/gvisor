@@ -1030,6 +1030,11 @@ func (e *endpoint) handleLocalPacket(pkt *stack.PacketBuffer, canSkipRXChecksum 
 	stats := e.stats.ip
 	stats.PacketsReceived.Increment()
 
+	if !e.isEnabled() {
+		stats.DisabledPacketsReceived.Increment()
+		return
+	}
+
 	pkt = pkt.CloneToInbound()
 	defer pkt.DecRef()
 	pkt.RXChecksumValidated = canSkipRXChecksum
