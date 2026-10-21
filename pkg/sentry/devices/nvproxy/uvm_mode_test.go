@@ -51,18 +51,18 @@ func TestApplicationMMUVMDriverVersion(t *testing.T) {
 	gh100SOC := nvconf.GPUArchInfo{Architecture: 0x180, Implementation: 1}
 	for _, gpu := range []struct {
 		name     string
-		arches   []nvconf.GPUArchInfo
+		arches   map[uint32]nvconf.GPUArchInfo
 		requires bool
 	}{
 		{"no GPUs", nil, false},
-		{"GH100 discrete", []nvconf.GPUArchInfo{gh100}, false},
-		{"GH100 SOC", []nvconf.GPUArchInfo{gh100SOC}, true},
-		{"GB100", []nvconf.GPUArchInfo{{Architecture: 0x1a0, Implementation: 0}}, true},
-		{"GB110", []nvconf.GPUArchInfo{{Architecture: 0x1a0, Implementation: 3}}, true},
-		{"GB202", []nvconf.GPUArchInfo{{Architecture: 0x1b0, Implementation: 2}}, false},
-		{"GR100", []nvconf.GPUArchInfo{{Architecture: 0x1c0, Implementation: 0}}, true},
-		{"discrete then SOC", []nvconf.GPUArchInfo{gh100, gh100SOC}, true},
-		{"SOC then discrete", []nvconf.GPUArchInfo{gh100SOC, gh100}, true},
+		{"GH100 discrete", map[uint32]nvconf.GPUArchInfo{0: gh100}, false},
+		{"GH100 SOC", map[uint32]nvconf.GPUArchInfo{0: gh100SOC}, true},
+		{"GB100", map[uint32]nvconf.GPUArchInfo{0: {Architecture: 0x1a0, Implementation: 0}}, true},
+		{"GB110", map[uint32]nvconf.GPUArchInfo{0: {Architecture: 0x1a0, Implementation: 3}}, true},
+		{"GB202", map[uint32]nvconf.GPUArchInfo{0: {Architecture: 0x1b0, Implementation: 2}}, false},
+		{"GR100", map[uint32]nvconf.GPUArchInfo{0: {Architecture: 0x1c0, Implementation: 0}}, true},
+		{"discrete then SOC", map[uint32]nvconf.GPUArchInfo{0: gh100, 1: gh100SOC}, true},
+		{"SOC then discrete", map[uint32]nvconf.GPUArchInfo{0: gh100SOC, 1: gh100}, true},
 	} {
 		for _, driver := range []struct {
 			version   nvconf.DriverVersion

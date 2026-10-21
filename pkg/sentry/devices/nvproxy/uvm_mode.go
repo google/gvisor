@@ -58,7 +58,7 @@ func UseApplicationMMUVM(ctx context.Context, devClient *devutil.GoferClient, mi
 	return applicationMMUVMForGPUs(arches, driverVersion)
 }
 
-func applicationMMUVMForGPUs(arches []nvconf.GPUArchInfo, driverVersion nvconf.DriverVersion) (bool, error) {
+func applicationMMUVMForGPUs(arches map[uint32]nvconf.GPUArchInfo, driverVersion nvconf.DriverVersion) (bool, error) {
 	for _, arch := range arches {
 		if !gpuRequiresApplicationMMUVM(arch) {
 			continue
