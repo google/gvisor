@@ -1677,6 +1677,66 @@ func (gid *GID) WriteTo(writer io.Writer) (int64, error) {
     return int64(length), err
 }
 
+// CopyGIDSliceIn copies in a slice of GID objects from the task's memory.
+func CopyGIDSliceIn(cc marshal.CopyContext, addr hostarch.Addr, dst []GID) (int, error) {
+    count := len(dst)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*GID)(nil).SizeBytes()
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(unsafe.SliceData(dst)))), size * count)
+
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that dst
+    // must live until the use above.
+    runtime.KeepAlive(dst) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyGIDSliceOut copies a slice of GID objects to the task's memory.
+func CopyGIDSliceOut(cc marshal.CopyContext, addr hostarch.Addr, src []GID) (int, error) {
+    count := len(src)
+    if count == 0 {
+        return 0, nil
+    }
+    size := (*GID)(nil).SizeBytes()
+
+    buf := unsafe.Slice((*byte)(gohacks.Noescape(unsafe.Pointer(unsafe.SliceData(src)))), size * count)
+
+    length, err := cc.CopyOutBytes(addr, buf) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that src
+    // must live until the use above.
+    runtime.KeepAlive(src) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// MarshalUnsafeGIDSlice is like GID.MarshalUnsafe, but for a []GID.
+func MarshalUnsafeGIDSlice(src []GID, dst []byte) []byte {
+    count := len(src)
+    if count == 0 {
+        return dst
+    }
+    size := (*GID)(nil).SizeBytes()
+
+    buf := dst[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))
+    return dst[size*count:]
+}
+
+// UnmarshalUnsafeGIDSlice is like GID.UnmarshalUnsafe, but for a []GID.
+func UnmarshalUnsafeGIDSlice(dst []GID, src []byte) []byte {
+    count := len(dst)
+    if count == 0 {
+        return src
+    }
+    size := (*GID)(nil).SizeBytes()
+
+    buf := src[:size*count]
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))
+    return src[size*count:]
+}
+
 // SizeBytes implements marshal.Marshallable.SizeBytes.
 func (g *Getdents64Req) SizeBytes() int {
     return 8 +
