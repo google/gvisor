@@ -180,7 +180,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	// Get a list of all tests in the image.
 	list, err := d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, containerProctor, "--runtime", lang, "--list")
 	if err != nil {
-		return nil, fmt.Errorf("docker exec failed: %v", err)
+		return nil, fmt.Errorf("docker exec failed: %w\n%s", err, list)
 	}
 	close(done)
 
