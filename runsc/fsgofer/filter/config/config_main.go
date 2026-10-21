@@ -237,9 +237,10 @@ var udsCommonSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule
 })
 
 var udsOpenSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-	unix.SYS_CONNECT:  seccomp.MatchAll{},
-	unix.SYS_SETREUID: seccomp.MatchAll{},
-	unix.SYS_SETREGID: seccomp.MatchAll{},
+	unix.SYS_CONNECT:   seccomp.MatchAll{},
+	unix.SYS_SETREUID:  seccomp.MatchAll{},
+	unix.SYS_SETREGID:  seccomp.MatchAll{},
+	unix.SYS_SETGROUPS: seccomp.MatchAll{},
 })
 
 var udsCreateSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{

@@ -13,9 +13,14 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <grp.h>
+#include <linux/capability.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include <cstring>
 #include <string>
@@ -23,8 +28,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
@@ -44,6 +53,11 @@ struct ProtocolSocket {
   int protocol;
   std::string name;
 };
+
+// An unprivileged identity with no group of its own on the sockets, so that
+// only a supplementary group can grant access.
+constexpr uid_t kUnprivilegedUid = 65534;
+constexpr gid_t kUnprivilegedGid = 65534;
 
 // Parameter is (socket root dir, ProtocolSocket).
 using GoferStreamSeqpacketTest =
@@ -158,6 +172,59 @@ INSTANTIATE_TEST_SUITE_P(Dgram, GoferDgramTest,
                          // Test access via standard path and attach point.
                          ::testing::Values("TEST_UDS_TREE",
                                            "TEST_UDS_ATTACH_TREE"));
+
+// Connect to a socket that only its group may reach, holding that group as a
+// supplementary group, as a user in the docker group does for docker.sock.
+TEST(GoferStreamTest, ConnectWithSupplementaryGroup) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+
+  char* val = getenv("TEST_UDS_TREE");
+  ASSERT_NE(val, nullptr);
+  std::string socket_path = JoinPath(val, "stream", "echo-group");
+
+  struct stat st;
+  ASSERT_THAT(stat(socket_path.c_str(), &st), SyscallSucceeds());
+  const gid_t group = st.st_gid;
+  // Only the socket's group may reach it, and that group is one this test does
+  // not hold as its gid.
+  SKIP_IF((st.st_mode & 0777) != 0660 || group == kUnprivilegedGid);
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  memcpy(addr.sun_path, socket_path.c_str(), socket_path.length());
+
+  // With the socket's group as a supplementary group, connect succeeds.
+  EXPECT_THAT(
+      InForkedProcess([&] {
+        TEST_PCHECK(setgroups(1, &group) == 0);
+        TEST_PCHECK(setresgid(kUnprivilegedGid, kUnprivilegedGid,
+                              kUnprivilegedGid) == 0);
+        TEST_PCHECK(setresuid(kUnprivilegedUid, kUnprivilegedUid,
+                              kUnprivilegedUid) == 0);
+        int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+        TEST_PCHECK(sock >= 0);
+        TEST_PCHECK(connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
+                            sizeof(addr)) == 0);
+      }),
+      IsPosixErrorOkAndHolds(0));
+
+  // Without it, connect fails.
+  EXPECT_THAT(InForkedProcess([&] {
+                TEST_PCHECK(setgroups(0, nullptr) == 0);
+                TEST_PCHECK(setresgid(kUnprivilegedGid, kUnprivilegedGid,
+                                      kUnprivilegedGid) == 0);
+                TEST_PCHECK(setresuid(kUnprivilegedUid, kUnprivilegedUid,
+                                      kUnprivilegedUid) == 0);
+                int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+                TEST_PCHECK(sock >= 0);
+                TEST_CHECK_ERRNO(
+                    connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
+                            sizeof(addr)),
+                    EACCES);
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
 
 }  // namespace
 
