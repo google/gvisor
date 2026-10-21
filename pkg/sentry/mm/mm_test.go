@@ -1119,7 +1119,7 @@ func TestEnsureAddressSpaceMappingsResidentRange(t *testing.T) {
 	// Populate, repopulate resident memory, then request less than a whole PMA.
 	for _, ar := range []hostarch.AddrRange{{addr, addr + length}, {addr, addr + length}, {addr + hostarch.PageSize, addr + 2*hostarch.PageSize}} {
 		as.maps = nil
-		if err := mm.EnsureAddressSpaceMappings(ctx, ar, func(memmap.Mappable) bool { return true }); err != nil {
+		if err := mm.EnsureAddressSpaceMappings(ctx, ar); err != nil {
 			t.Fatal(err)
 		}
 		if len(as.maps) != 1 || as.maps[0] != (recordedMapping{ar, hostarch.ReadWrite}) || as.unmaps != 0 {
@@ -1175,7 +1175,7 @@ func TestEnsureAddressSpaceMappingsBacking(t *testing.T) {
 			}
 			as := &mappingRecorder{AddressSpace: mm.as}
 			mm.as = as
-			if err := mm.EnsureAddressSpaceMappings(ctx, hostarch.AddrRange{addr, addr + hostarch.Addr(opts.Length)}, func(memmap.Mappable) bool { return true }); err != nil {
+			if err := mm.EnsureAddressSpaceMappings(ctx, hostarch.AddrRange{addr, addr + hostarch.Addr(opts.Length)}); err != nil {
 				t.Fatal(err)
 			}
 			if len(as.maps) != 2 {
@@ -1269,8 +1269,7 @@ func TestEnsureAddressSpaceMappingsPreflight(t *testing.T) {
 			}
 			as := &mappingRecorder{AddressSpace: mm.as}
 			mm.as = as
-			check := func(m memmap.Mappable) bool { return m != excluded }
-			if err := mm.EnsureAddressSpaceMappings(ctx, hostarch.AddrRange{addr, addr + 3*hostarch.PageSize}, check); !linuxerr.Equals(wantErr, err) {
+			if err := mm.EnsureAddressSpaceMappings(ctx, hostarch.AddrRange{addr, addr + 3*hostarch.PageSize}); !linuxerr.Equals(wantErr, err) {
 				t.Fatalf("EnsureAddressSpaceMappings got %v, want %v", err, wantErr)
 			}
 			mm.activeMu.RLock()
@@ -1279,6 +1278,83 @@ func TestEnsureAddressSpaceMappingsPreflight(t *testing.T) {
 			after, cow := pmaAt(t, mm, resident)
 			if lazyPMA || after != before || !cow || len(as.maps) != 0 || as.unmaps != 0 {
 				t.Errorf("invalid range mutated memory: lazy PMA %t, offset %#x -> %#x, COW %t, maps %+v, unmaps %d", lazyPMA, before, after, cow, as.maps, as.unmaps)
+			}
+		})
+	}
+}
+
+// Host-device VMAs must remain identifiable after VMA transformations. Use
+// ordinary backing with the same mmap options as GenericProxyDeviceConfigureMMap
+// so these regressions don't require NVIDIA, RDMA, or TPU hardware.
+func TestEnsureAddressSpaceMappingsHostDevice(t *testing.T) {
+	for _, kind := range []string{"partial", "split", "fork", "grow", "move", "merge-before", "merge-after", "ordinary-file"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManager(ctx, t)
+			defer mm.DecUsers(ctx)
+			mf := pgalloc.MemoryFileFromContext(ctx)
+			fr, err := mf.Allocate(4*pageSize, pgalloc.AllocOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := NewSpecialMappable("host-device", mf, fr)
+			defer m.DecRef(ctx)
+			opts := memmap.MMapOpts{
+				Length: 2 * pageSize, Mappable: m, MappingIdentity: m,
+				Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+				PlatformEffect:        memmap.PlatformEffectPopulate,
+				RequirePlatformEffect: kind != "ordinary-file",
+			}
+			addr, err := mm.MMap(ctx, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Request only one page of the original multi-page mapping.
+			ar := hostarch.AddrRange{addr, addr + pageSizeAddr}
+			switch kind {
+			case "split":
+				err = mm.MProtect(addr+pageSizeAddr, pageSize, hostarch.Read, false)
+				ar = hostarch.AddrRange{addr + pageSizeAddr, addr + 2*pageSizeAddr}
+			case "fork":
+				mm, err = mm.Fork(ctx)
+				if err == nil {
+					defer mm.DecUsers(ctx)
+				}
+			case "grow":
+				_, err = mm.MRemap(ctx, addr, 2*pageSize, 3*pageSize, MRemapOpts{Move: MRemapNoMove})
+				ar = hostarch.AddrRange{addr + 2*pageSizeAddr, addr + 3*pageSizeAddr}
+			case "move":
+				newAddr := addr + 4*pageSizeAddr
+				_, err = mm.MRemap(ctx, addr, 2*pageSize, 2*pageSize, MRemapOpts{Move: MRemapMustMove, NewAddr: newAddr})
+				ar = hostarch.AddrRange{newAddr, newAddr + pageSizeAddr}
+			case "merge-before", "merge-after":
+				// Replacing one page with otherwise identical, mergeable
+				// ordinary file memory must not erase the other page's flag.
+				opts.Length = pageSize
+				opts.Addr = addr
+				opts.Fixed, opts.Unmap = true, true
+				opts.RequirePlatformEffect = false
+				if kind == "merge-after" {
+					opts.Addr += pageSizeAddr
+					opts.Offset = pageSize
+				}
+				_, err = mm.MMap(ctx, opts)
+				ar = hostarch.AddrRange{addr, addr + 2*pageSizeAddr}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			as := &mappingRecorder{AddressSpace: mm.as}
+			mm.as = as
+			err = mm.EnsureAddressSpaceMappings(ctx, ar)
+			if kind == "ordinary-file" {
+				if err != nil || len(as.maps) != 1 || as.unmaps != 0 {
+					t.Fatalf("ordinary file: err %v, maps %+v, unmaps %d", err, as.maps, as.unmaps)
+				}
+				return
+			}
+			if !linuxerr.Equals(linuxerr.EFAULT, err) || len(as.maps) != 0 || as.unmaps != 0 {
+				t.Errorf("host device: err %v, maps %+v, unmaps %d; want EFAULT without host mapping changes", err, as.maps, as.unmaps)
 			}
 		})
 	}

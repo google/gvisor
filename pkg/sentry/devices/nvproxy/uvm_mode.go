@@ -29,7 +29,8 @@ import (
 // UseApplicationMMUVM selects the UVM mode for the GPUs exposed to a container.
 // Call it during device setup, before any application UVM FDs are opened. The
 // driver queries use temporary host FDs, independent of application RM clients.
-func UseApplicationMMUVM(ctx context.Context, devClient *devutil.GoferClient, minors []uint32, caps nvconf.DriverCaps) (bool, error) {
+// driverVersion is the NVIDIA driver ABI version configured for the sandbox.
+func UseApplicationMMUVM(ctx context.Context, devClient *devutil.GoferClient, minors []uint32, caps nvconf.DriverCaps, driverVersion nvconf.DriverVersion) (bool, error) {
 	if runtime.GOARCH != "arm64" || len(minors) == 0 || caps&compUtil == 0 {
 		return false, nil
 	}
@@ -54,10 +55,23 @@ func UseApplicationMMUVM(ctx context.Context, devClient *devutil.GoferClient, mi
 	if err != nil {
 		return false, fmt.Errorf("nvproxy: query GPU architectures for UVM mode selection: %w", err)
 	}
+	return applicationMMUVMForGPUs(arches, driverVersion)
+}
+
+func applicationMMUVMForGPUs(arches []nvconf.GPUArchInfo, driverVersion nvconf.DriverVersion) (bool, error) {
 	for _, arch := range arches {
-		if gpuRequiresApplicationMMUVM(arch) {
-			return true, nil
+		if !gpuRequiresApplicationMMUVM(arch) {
+			continue
 		}
+		// Only the V550 preferred-location handler translates application
+		// addresses. nvproxy cannot use application-mm UVM with older driver
+		// ABIs, and falling back to the legacy mode would disable the mm
+		// association required for ATS on these GPUs.
+		minDriverVersion := nvconf.NewDriverVersion(550, 40, 7)
+		if !driverVersion.Equals(minDriverVersion) && !driverVersion.IsGreaterThan(minDriverVersion) {
+			return false, fmt.Errorf("nvproxy: GPU requiring application-mm UVM needs NVIDIA driver %v or later, got %v", minDriverVersion, driverVersion)
+		}
+		return true, nil
 	}
 	return false, nil
 }

@@ -1834,7 +1834,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 		if err != nil {
 			return err
 		}
-		applicationMM, err := nvproxy.UseApplicationMMUVM(ctx, devClient, nvidiaMinors, caps)
+		applicationMM, err := nvproxy.UseApplicationMMUVM(ctx, devClient, nvidiaMinors, caps, kernel.KernelFromContext(ctx).NvidiaDriverVersion)
 		if err != nil {
 			return err
 		}

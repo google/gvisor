@@ -395,8 +395,11 @@ type MMapOpts struct {
 	// If RequirePlatformEffect is false, PlatformEffect is best-effort;
 	// failure to create mappings in the platform.AddressSpace are silently
 	// ignored. If RequirePlatformEffect is true, failure to create mappings in
-	// the platform.AddressSpace cause MMap() to fail. (If PlatformEffect is
-	// PlatformEffectDefault, RequirePlatformEffect is ignored.)
+	// the platform.AddressSpace cause MMap() to fail. (During MMap, if
+	// PlatformEffect is PlatformEffectDefault, RequirePlatformEffect is
+	// ignored.) This requirement is retained by the MemoryManager to
+	// conservatively reject later population that could replace host-device
+	// mappings with driver-specific mmap semantics.
 	RequirePlatformEffect bool
 
 	// SentryOwnedContent indicates the sentry exclusively controls the

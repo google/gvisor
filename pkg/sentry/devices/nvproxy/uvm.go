@@ -312,12 +312,10 @@ func uvmPopulatePageable(ui *uvmIoctlState) (uintptr, error) {
 	// UVM can only populate VMAs already installed in the host mm. Resolve
 	// lazy mappings and software COW once per range, inheriting VMA permissions.
 	// Reject driver-owned mappings before changing any host mappings: replacing
-	// a managed UVM VMA invokes its close callback and discards the allocation.
+	// a managed UVM VMA discards the allocation, and even a failed replacement
+	// of an RDMA mapping can leave a gap in the host mm.
 	mm := ui.t.MemoryManager()
-	if err := mm.EnsureAddressSpaceMappings(ui.ctx, ar, func(m memmap.Mappable) bool {
-		_, device := m.(NvidiaDeviceFD)
-		return !device
-	}); err != nil {
+	if err := mm.EnsureAddressSpaceMappings(ui.ctx, ar); err != nil {
 		if linuxerr.Equals(linuxerr.EPERM, err) || linuxerr.Equals(linuxerr.EACCES, err) || linuxerr.Equals(linuxerr.EFAULT, err) {
 			return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
 		}

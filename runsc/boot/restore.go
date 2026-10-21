@@ -524,7 +524,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	cleanMnts.Release()
 
-	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
+	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l, oldNvidiaDriverVersion)
 	if err != nil {
 		return err
 	}

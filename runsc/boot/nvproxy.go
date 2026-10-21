@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/dev"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -76,7 +77,7 @@ func (l *Loader) setNvproxyDeviceRemapMetadata(saveOpts *state.SaveOpts) error {
 }
 
 // +checklocks:l.mu
-func (r *restorer) prepareNvproxyRestoreContextLocked(ctx context.Context, l *Loader) (context.Context, error) {
+func (r *restorer) prepareNvproxyRestoreContextLocked(ctx context.Context, l *Loader, driverVersion nvconf.DriverVersion) (context.Context, error) {
 	if idsJSON, ok := r.metadata[nvproxyDeviceRemapIDsKey]; ok {
 		var oldIDs []nvproxy.DeviceRemapID
 		if err := json.Unmarshal([]byte(idsJSON), &oldIDs); err != nil {
@@ -113,7 +114,7 @@ func (r *restorer) prepareNvproxyRestoreContextLocked(ctx context.Context, l *Lo
 		if err != nil {
 			return ctx, err
 		}
-		mode, err := nvproxy.UseApplicationMMUVM(ctx, devClient, slices.Sorted(maps.Keys(minors)), caps)
+		mode, err := nvproxy.UseApplicationMMUVM(ctx, devClient, slices.Sorted(maps.Keys(minors)), caps, driverVersion)
 		if err != nil {
 			return ctx, err
 		}

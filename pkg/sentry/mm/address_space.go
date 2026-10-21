@@ -50,10 +50,9 @@ func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
 // AddressSpace, resolving copy-on-write for writable mappings. Each VMA in ar
 // must permit reading or writing. Read-only VMAs remain read-only.
 //
-// checkMappable must accept each VMA's Mappable (including nil for private
-// anonymous memory). It is called with mm.mappingMu locked for reading, and must
-// not retain its argument or acquire locks preceding mm.mappingMu. This allows
-// callers to exclude device mappings whose host VMAs must not be replaced.
+// VMAs created with memmap.MMapOpts.RequirePlatformEffect are rejected. These
+// include host-device mappings whose host VMAs must not be replaced, even if
+// the replacement mmap fails.
 //
 // The entire range is checked before changing PMAs or AddressSpace mappings.
 // Errors obtaining backing memory or installing mappings may leave part of an
@@ -62,7 +61,7 @@ func (mm *MemoryManager) UserModifiedGS(ctx context.Context) error {
 //
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
-func (mm *MemoryManager) EnsureAddressSpaceMappings(ctx context.Context, ar hostarch.AddrRange, checkMappable func(memmap.Mappable) bool) error {
+func (mm *MemoryManager) EnsureAddressSpaceMappings(ctx context.Context, ar hostarch.AddrRange) error {
 	if !ar.WellFormed() || ar.Length() == 0 || !ar.IsPageAligned() || !mm.applicationAddrRange().IsSupersetOf(ar) {
 		return linuxerr.EFAULT
 	}
@@ -78,7 +77,7 @@ func (mm *MemoryManager) EnsureAddressSpaceMappings(ctx context.Context, ar host
 		if !vma.realPerms.Read && !vma.realPerms.Write {
 			return linuxerr.EACCES
 		}
-		if !checkMappable(vma.mappable) {
+		if vma.requirePlatformEffect {
 			return linuxerr.EFAULT
 		}
 	}
