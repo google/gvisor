@@ -77,8 +77,8 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRan
 	return memmap.FileRange{frstart, frstart + mr.Length()}
 }
 
-// PagesToFill returns the number of pages that that Fill() will allocate
-// for the given required and optional parameters.
+// PagesToFill returns an upper bound on the number of pages that Fill() will
+// allocate for the given required and optional parameters.
 func (s *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) uint64 {
 	var numPages uint64
 	gap := s.LowerBoundGap(required.Start)
@@ -163,13 +163,25 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 			}
 		}
 
-		// We can only pass opts.Huge if the allocation is hugepage-aligned.
-		// TODO: If opts.Huge is true and gap spans at least one aligned
-		// hugepage, but either start or end are not hugepage-aligned, consider
-		// allocating small pages on either end and huge pages in the middle.
+		// We can only pass opts.Huge if the allocation is hugepage-aligned. If
+		// gr spans at least one aligned hugepage but either end is unaligned,
+		// allocate small pages up to the first hugepage boundary, then huge
+		// pages up to the last one; later iterations handle the rest.
 		wantHuge := opts.Huge
 		if !hostarch.IsHugePageAligned(gr.Start) || !hostarch.IsHugePageAligned(gr.End) {
 			opts.Huge = false
+			if wantHuge {
+				hugeStart, ok := hostarch.HugePageRoundUp(gr.Start)
+				hugeEnd := hostarch.HugePageRoundDown(gr.End)
+				if ok && hugeStart < hugeEnd {
+					if gr.Start < hugeStart {
+						gr.End = hugeStart
+					} else {
+						gr.End = hugeEnd
+						opts.Huge = true
+					}
+				}
+			}
 		}
 		fr, err := mf.Allocate(gr.Length(), opts)
 		opts.Huge = wantHuge
