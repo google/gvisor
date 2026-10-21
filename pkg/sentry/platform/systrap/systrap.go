@@ -301,6 +301,7 @@ func New(opts platform.Options) (*Systrap, error) {
 
 	if maxSysmsgThreads == 0 {
 		// CPUID information has been initialized at this point.
+		amxEnabled = cpuid.HostAMXEnabled()
 		archState.Init(amxEnabled)
 		// Base GOMAXPROCS has been set at this point.
 		maxSysmsgThreads = gomaxprocs.Base()
@@ -375,12 +376,13 @@ func (*Systrap) SupportsAddressSpaceIO() bool {
 	return false
 }
 
-// amxEnabled is true if applications may use AMX.
+// amxEnabled is true if applications may use AMX. It is set by the first call
+// to New.
 var amxEnabled bool
 
 // SupportsAMX implements platform.Platform.SupportsAMX.
 func (*Systrap) SupportsAMX() bool {
-	return cpuid.HostAMXEnabled()
+	return amxEnabled
 }
 
 // MapUnit implements platform.Platform.MapUnit.

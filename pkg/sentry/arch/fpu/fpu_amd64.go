@@ -209,10 +209,10 @@ var (
 func InitHostState() {
 	initHostStateOnce.Do(func() {
 		featureSet := cpuid.HostFeatureSet()
-		hostXCR0Mask = featureSet.ValidXCR0Mask()
+		// Sentry threads never use AMX.
+		hostXCR0Mask = featureSet.ValidXCR0Mask() &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 		hostUseXsave = featureSet.UseXsave()
 		hostFPSize, _ = featureSet.ExtendedStateSize()
-		// TODO(gvisor.dev/issues/9896): Implement AMX Support.
 		hostFPSize = hostFPSize - featureSet.AMXExtendedStateSize()
 	})
 }
@@ -366,7 +366,11 @@ func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) error {
 			// using supported but disallowed features then it may no longer be
 			// migratable cross-CPU, but it's still better to not crash the
 			// app.)
-			supportedMask := cpuid.HostFeatureSet().ValidXCR0Mask() & SupportedXFeatureStates
+			//
+			// Unlike other disallowed features, AMX state that featureSet
+			// disallows is an error, because platforms that hide AMX can't
+			// restore it.
+			supportedMask := cpuid.HostFeatureSet().ValidXCR0Mask() & DefaultXFeatureStates
 			if unsupportedXstateBV := xstateBV &^ supportedMask; unsupportedXstateBV == 0 {
 				warnDisallowedXFeatureOnce.Do(func() {
 					log.Warningf("Application using supported but disallowed xfeatures %#x", disallowedXstateBV)
@@ -461,12 +465,14 @@ func (s *State) AfterLoad() {
 	// this state, we must verify here that there is no in-use state
 	// (according to XSTATE_BV) which we do not support.
 	// What do we support?
+	amx := cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask
 	supportedBV := fxsaveBV
 	hostFeatureSet := cpuid.HostFeatureSet()
+	hostAMX := cpuid.HostAMXEnabled()
 	if hostFeatureSet.UseXsave() {
 		supportedBV = hostFeatureSet.ValidXCR0Mask() & SupportedXFeatureStates
-		if !cpuid.HostAMXEnabled() {
-			supportedBV &^= cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask
+		if !hostAMX {
+			supportedBV &^= amx
 		}
 	}
 
@@ -474,6 +480,14 @@ func (s *State) AfterLoad() {
 	savedBV := fxsaveBV
 	if len(old) >= xstateBVOffset+8 {
 		savedBV = hostarch.ByteOrder.Uint64(old[xstateBVOffset:])
+	}
+	// If the state doesn't hold tile data, the task used AMX without
+	// permission (some platforms don't prevent this), and its tile data was
+	// not saved. If the host has no AMX, a task that was granted AMX makes
+	// restore fail later.
+	if savedBV&amx != 0 && (len(old) <= len(s.Slice()) || !hostAMX) {
+		savedBV &^= amx
+		hostarch.ByteOrder.PutUint64(old[xstateBVOffset:], savedBV)
 	}
 
 	// Supported features must be a superset of saved features.
