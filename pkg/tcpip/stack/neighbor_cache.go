@@ -311,6 +311,8 @@ func (n *neighborCache) init(nic *nic, r LinkAddressResolver) {
 		linkRes: r,
 	}
 	n.mu.Lock()
-	n.mu.cache = make(map[tcpip.Address]*neighborEntry, NeighborCacheSize)
+	// Don't presize the map: most caches only ever hold a few entries, and
+	// NeighborCacheSize is enforced as an upper bound by getOrCreateEntry.
+	n.mu.cache = make(map[tcpip.Address]*neighborEntry)
 	n.mu.Unlock()
 }
