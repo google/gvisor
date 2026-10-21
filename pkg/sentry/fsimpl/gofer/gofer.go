@@ -1041,15 +1041,13 @@ type inode struct {
 	// vfs.WriteCount.
 	writeCount vfs.WriteCount
 
-	// Inotify watches for this inode.
-	//
-	// Note that inotify may behave unexpectedly in the presence of hard links,
-	// because dentries corresponding to the same file have separate inotify
-	// watches when they should share the same set. This is the case because it is
-	// impossible for us to know for sure whether two dentries correspond to the
-	// same underlying file (see the gofer filesystem section fo vfs/inotify.md for
-	// a more in-depth discussion on this matter).
+	// Inotify watches shared by all dentries representing this inode.
 	watches vfs.Watches
+
+	// dentries contains this inode's dentries, protected by fs.syncMu. It lets
+	// OnZeroWatches reconsider every alias whose caching was inhibited.
+	// +checklocks:fs.syncMu
+	dentries dentryList
 
 	// refs is the reference count of the inode. A dentry holds a reference on the inode
 	// it points to. rsfs is protected by fs.inodeMu.
@@ -1179,6 +1177,9 @@ type dentry struct {
 	// protected by filesystem.syncMu.
 	syncableListEntry dentryListElem
 
+	// inodeListEntry links dentry into inode.dentries, protected by fs.syncMu.
+	inodeListEntry dentryListElem
+
 	// opMu synchronizes operations on this dentry. Operations that mutate
 	// the dentry tree must hold this lock for writing. Operations that
 	// only read the tree must hold for reading.
@@ -1271,6 +1272,13 @@ func (d *dentry) init() {
 	d.syncableListEntry.d = d
 	d.vfsd.Init(d)
 	refs.Register(d)
+	d.inodeListEntry.d = d
+	d.inode.fs.syncMu.Lock()
+	d.inode.dentries.PushBack(&d.inodeListEntry)
+	if !d.inode.isSynthetic() {
+		d.inode.fs.syncableDentries.PushBack(&d.syncableListEntry)
+	}
+	d.inode.fs.syncMu.Unlock()
 }
 
 // WriteCount implements vfs.WriteCounter.WriteCount.
@@ -1709,18 +1717,27 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 		events |= linux.IN_ISDIR
 	}
 
+	// Snapshot the parent and name together, but notify without ancestryMu.
+	// A one-shot watch can trigger caching of another alias of this inode,
+	// which may need to acquire renameMu. Notify tolerates a deleted target.
 	d.inode.fs.ancestryMu.RLock()
+	parent, name := d.parent.Load(), d.name
+	d.inode.fs.ancestryMu.RUnlock()
 	// The ordering below is important, Linux always notifies the parent first.
-	if parent := d.parent.Load(); parent != nil {
-		parent.inode.watches.Notify(ctx, d.name, events, cookie, et, d.isDeleted())
+	if parent != nil {
+		parent.inode.watches.Notify(ctx, name, events, cookie, et, d.isDeleted())
 	}
 	d.inode.watches.Notify(ctx, "", events, cookie, et, d.isDeleted())
-	d.inode.fs.ancestryMu.RUnlock()
 }
 
-// Watches implements vfs.DentryImpl.Watches.
-func (d *dentry) Watches() *vfs.Watches {
-	return &d.inode.watches
+// WatchTarget implements vfs.DentryImpl.WatchTarget.
+func (d *dentry) WatchTarget() vfs.WatchTarget {
+	return d.inode
+}
+
+// Watches implements vfs.WatchTarget.Watches.
+func (i *inode) Watches() *vfs.Watches {
+	return &i.watches
 }
 
 // contextID is this package's type for context.Context.Value keys.
@@ -1741,15 +1758,29 @@ func withCheckCachingList(ctx context.Context, ds **[]*dentry) context.Context {
 	return context.WithValue(ctx, CtxCheckCachingList, ds)
 }
 
-// OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
-//
-// If no watches are left on this dentry and it has no references, cache it.
-func (d *dentry) OnZeroWatches(ctx context.Context) {
-	if ds, ok := ctx.Value(CtxCheckCachingList).(**[]*dentry); ok {
-		*ds = appendDentry(*ds, d)
-		return
+// OnZeroWatches implements vfs.WatchTarget.OnZeroWatches.
+func (i *inode) OnZeroWatches(ctx context.Context) {
+	var ds *[]*dentry
+	dsp, deferred := ctx.Value(CtxCheckCachingList).(**[]*dentry)
+	if !deferred {
+		dsp = &ds
 	}
-	d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
+	i.fs.syncMu.Lock()
+	for e := i.dentries.Front(); e != nil; e = e.Next() {
+		d := e.d
+		// A newly allocated dentry may not yet be inserted into the tree.
+		// Its creator is responsible for checking its caching state.
+		if d.parent.Load() != nil || d == i.fs.root {
+			*dsp = appendDentry(*dsp, d)
+		}
+	}
+	i.fs.syncMu.Unlock()
+	if ds != nil {
+		for _, d := range *ds {
+			d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
+		}
+		putDentrySlice(ds)
+	}
 }
 
 // checkCachingLocked should be called after d's reference count becomes 0 or
@@ -1805,7 +1836,10 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 			}
 		}
 		var ds *[]*dentry
-		if d.isDeleted() {
+		if d.isDeleted() && (d.isDir() || d.inode.nlink.Load() == 0 || d.inode.refs.ReadRefs() == 1) {
+			// Keep watches while another hard link represents the inode. If this
+			// is the last in-memory alias, the inode is being destroyed even when
+			// the cached link count is stale.
 			// HandleDeletion sends IN_DELETE_SELF, which removes one-shot
 			// watches and calls OnZeroWatches on their targets while fs.renameMu
 			// is locked for writing. Hand it a list so OnZeroWatches does not
@@ -1835,9 +1869,9 @@ func (d *dentry) checkCachingLocked(ctx context.Context, renameMuWriteLocked boo
 	}
 	// If d still has inotify watches and it is not deleted or invalidated, it
 	// can't be evicted. Otherwise, we will lose its watches, even if a new
-	// dentry is created for the same file in the future. Note that the size of
-	// d.inode.watches cannot concurrently transition from zero to non-zero, because
-	// adding a watch requires holding a reference on d.
+	// dentry is created for the same file in the future. Watches may be added
+	// through another alias concurrently. Eviction
+	// rechecks the watch set before destroying d.
 	if d.inode.watches.Size() > 0 {
 		// As in the refs > 0 case, removing d is beneficial.
 		d.removeFromCacheLocked()
@@ -1994,21 +2028,21 @@ func (d *dentry) destroyDisconnected(ctx context.Context, destroyInode bool) {
 	if destroyInode {
 		d.inode.destroy(ctx, d)
 	}
-	if !d.inode.isSynthetic() {
-		// Note that it's possible that d.inode.atimeDirty or d.inode.mtimeDirty are true,
-		// i.e. client and server timestamps may differ (because e.g. a client
-		// write was serviced by the page cache, and only written back to the
-		// remote file later). Ideally, we'd write client timestamps back to
-		// the remote filesystem so that timestamps for a new dentry
-		// instantiated for the same file would remain coherent. Unfortunately,
-		// this turns out to be too expensive in many cases, so for now we
-		// don't do this.
+	// Note that it's possible that d.inode.atimeDirty or d.inode.mtimeDirty are true,
+	// i.e. client and server timestamps may differ (because e.g. a client
+	// write was serviced by the page cache, and only written back to the
+	// remote file later). Ideally, we'd write client timestamps back to
+	// the remote filesystem so that timestamps for a new dentry
+	// instantiated for the same file would remain coherent. Unfortunately,
+	// this turns out to be too expensive in many cases, so for now we
+	// don't do this.
 
-		// Remove d from the set of syncable dentries.
-		d.inode.fs.syncMu.Lock()
+	d.inode.fs.syncMu.Lock()
+	d.inode.dentries.Remove(&d.inodeListEntry)
+	if !d.inode.isSynthetic() {
 		d.inode.fs.syncableDentries.Remove(&d.syncableListEntry)
-		d.inode.fs.syncMu.Unlock()
 	}
+	d.inode.fs.syncMu.Unlock()
 
 	// Drop references and stop tracking this child.
 	d.refs.Store(-1)

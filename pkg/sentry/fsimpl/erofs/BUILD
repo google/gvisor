@@ -31,6 +31,19 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "alias_list",
+    out = "alias_list.go",
+    package = "erofs",
+    prefix = "alias",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*dentry",
+        "ElementMapper": "aliasElementMapper",
+        "Linker": "*aliasEntry",
+    },
+)
+
+go_template_instance(
     name = "inode_refs",
     out = "inode_refs.go",
     package = "erofs",
@@ -44,6 +57,7 @@ go_template_instance(
 go_library(
     name = "erofs",
     srcs = [
+        "alias_list.go",
         "dentry_list.go",
         "directory.go",
         "erofs.go",

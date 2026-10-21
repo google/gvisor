@@ -845,6 +845,9 @@ func (i *InodeWatches) Watches() *vfs.Watches {
 	return &i.watches
 }
 
+// OnZeroWatches implements vfs.WatchTarget.OnZeroWatches.
+func (i *InodeWatches) OnZeroWatches(context.Context) {}
+
 // InodeAnonymous partially implements Inode.
 //
 // +stateify savable

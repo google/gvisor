@@ -348,10 +348,15 @@ func (d *anonDentry) InotifyWithParent(ctx context.Context, events, cookie uint3
 	d.watches.Notify(ctx, "", events, cookie, et, false /* unlinked */)
 }
 
-// Watches implements DentryImpl.Watches.
+// WatchTarget implements DentryImpl.WatchTarget.
+func (d *anonDentry) WatchTarget() WatchTarget {
+	return d
+}
+
+// Watches implements WatchTarget.Watches.
 func (d *anonDentry) Watches() *Watches {
 	return &d.watches
 }
 
-// OnZeroWatches implements Dentry.OnZeroWatches.
+// OnZeroWatches implements WatchTarget.OnZeroWatches.
 func (d *anonDentry) OnZeroWatches(context.Context) {}

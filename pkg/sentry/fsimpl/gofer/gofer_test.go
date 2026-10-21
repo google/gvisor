@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func TestDestroyIdempotent(t *testing.T) {
@@ -192,5 +193,88 @@ func TestXattrCacheList(t *testing.T) {
 	list, found = ino.xattrCache.getList()
 	if !found || !slices.Equal(list, wantList) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+}
+
+// Removing the last watch must make every zero-reference alias evictable,
+// including aliases other than the one originally used to add the watch.
+func TestWatchRemovalReleasesAllAliases(t *testing.T) {
+	for _, removal := range []string{"remove", "close", "oneshot"} {
+		t.Run(removal, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			var vfsObj vfs.VirtualFilesystem
+			if err := vfsObj.Init(ctx); err != nil {
+				t.Fatal(err)
+			}
+			defer vfsObj.Release(ctx)
+			fs := filesystem{
+				mf:          pgalloc.MemoryFileFromContext(ctx),
+				inoByKey:    make(map[inoKey]uint64),
+				inodeByKey:  make(map[inoKey]*inode),
+				clock:       ktime.RealtimeClockFromContext(ctx),
+				dentryCache: &dentryCache{maxCachedDentries: 0},
+				client:      &lisafs.Client{},
+			}
+			parent := fs.newSyntheticDentry(&createSyntheticOpts{mode: linux.S_IFDIR | 0755})
+			defer parent.DecRef(ctx)
+			inotifyFD, err := vfs.NewInotifyFD(ctx, &vfsObj, linux.O_NONBLOCK)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if inotifyFD != nil {
+					inotifyFD.DecRef(ctx)
+				}
+			}()
+			ino := inotifyFD.Impl().(*vfs.Inotify)
+
+			var aliases []*dentry
+			var wd int32
+			for n, name := range []string{"a", "b"} {
+				child, err := fs.newLisafsDentry(ctx, &lisafs.Inode{
+					ControlFD: lisafs.FDID(n + 1),
+					Stat:      lisafs.Statx{Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_SIZE, Mode: linux.S_IFREG | 0644},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				child.IncRef()
+				parent.opMu.Lock()
+				parent.childrenMu.Lock()
+				parent.cacheNewChildLocked(child, name)
+				parent.childrenMu.Unlock()
+				parent.opMu.Unlock()
+				mask := uint32(linux.IN_MODIFY)
+				if removal == "oneshot" {
+					mask |= linux.IN_ONESHOT
+				}
+				gotWD := ino.AddWatch(child.WatchTarget(), mask)
+				if n == 0 {
+					wd = gotWD
+				} else if gotWD != wd {
+					t.Fatalf("aliases have different watches: %d and %d", wd, gotWD)
+				}
+				child.DecRef(ctx)
+				aliases = append(aliases, child)
+			}
+			switch removal {
+			case "remove":
+				if err := ino.RmWatch(ctx, wd); err != nil {
+					t.Fatal(err)
+				}
+			case "close":
+				inotifyFD.DecRef(ctx)
+				inotifyFD = nil
+			case "oneshot":
+				aliases[0].IncRef()
+				aliases[0].InotifyWithParent(ctx, linux.IN_MODIFY, 0, vfs.InodeEvent)
+				aliases[0].DecRef(ctx)
+			}
+			for _, d := range aliases {
+				if got := d.refs.Load(); got != -1 {
+					t.Errorf("alias %q retained after watch removal: refs=%d", d.name, got)
+				}
+			}
+		})
 	}
 }

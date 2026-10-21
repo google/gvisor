@@ -125,25 +125,10 @@ type DentryImpl interface {
 	// on the event masks.
 	InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType)
 
-	// Watches returns the set of inotify watches for the file corresponding to
-	// the Dentry. Dentries that are hard links to the same underlying file
-	// share the same watches.
-	//
-	// The caller does not need to hold a reference on the dentry.
-	Watches() *Watches
-
-	// OnZeroWatches is called whenever the number of watches on a dentry drops
-	// to zero. This is needed by some FilesystemImpls (e.g. gofer) to manage
-	// dentry lifetime.
-	//
-	// The caller does not need to hold a reference on the dentry. OnZeroWatches
-	// may acquire inotify locks, so to prevent deadlock, no inotify locks should
-	// be held by the caller.
-	//
-	// Watches.Notify may call OnZeroWatches synchronously (IN_ONESHOT), from
-	// a filesystem operation that holds filesystem locks, so OnZeroWatches
-	// must not acquire those locks.
-	OnZeroWatches(ctx context.Context)
+	// WatchTarget returns the object that owns this file's inotify watches.
+	// Hard links to the same file must return the same target. The caller must
+	// hold a reference on the Dentry while obtaining the target and adding a watch.
+	WatchTarget() WatchTarget
 }
 
 // IncRef increments d's reference count.
@@ -194,15 +179,9 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	d.impl.InotifyWithParent(ctx, events, cookie, et)
 }
 
-// Watches returns the set of inotify watches associated with d.
-func (d *Dentry) Watches() *Watches {
-	return d.impl.Watches()
-}
-
-// OnZeroWatches performs cleanup tasks whenever the number of watches on a
-// dentry drops to zero.
-func (d *Dentry) OnZeroWatches(ctx context.Context) {
-	d.impl.OnZeroWatches(ctx)
+// WatchTarget returns the object that owns the file's inotify watches.
+func (d *Dentry) WatchTarget() WatchTarget {
+	return d.impl.WatchTarget()
 }
 
 // The following functions are exported so that filesystem implementations can

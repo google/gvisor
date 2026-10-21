@@ -150,12 +150,17 @@ func (d *mountTestDentry) DecRef(ctx context.Context) {
 func (d *mountTestDentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {
 }
 
-// Watches implements DentryImpl.Watches.
+// WatchTarget implements DentryImpl.WatchTarget.
+func (d *mountTestDentry) WatchTarget() WatchTarget {
+	return d
+}
+
+// Watches implements WatchTarget.Watches.
 func (d *mountTestDentry) Watches() *Watches {
 	return &d.watches
 }
 
-// OnZeroWatches implements DentryImpl.OnZeroWatches.
+// OnZeroWatches implements WatchTarget.OnZeroWatches.
 func (d *mountTestDentry) OnZeroWatches(context.Context) {}
 
 // mountTestSystem is a VirtualFilesystem with a single mount namespace whose

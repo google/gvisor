@@ -496,8 +496,8 @@ func TestRmdirInotifyDeleteSelfBeforeParentDelete(t *testing.T) {
 	parentVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent"))
 	defer parentVD.DecRef(sys.Ctx)
 	childVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent/child"))
-	parentWD := ino.AddWatch(parentVD.Dentry(), linux.IN_ALL_EVENTS)
-	childWD := ino.AddWatch(childVD.Dentry(), linux.IN_ALL_EVENTS)
+	parentWD := ino.AddWatch(parentVD.Dentry().WatchTarget(), linux.IN_ALL_EVENTS)
+	childWD := ino.AddWatch(childVD.Dentry().WatchTarget(), linux.IN_ALL_EVENTS)
 	childVD.DecRef(sys.Ctx)
 
 	if err := sys.VFS.RmdirAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child")); err != nil {
@@ -536,8 +536,8 @@ func TestRmdirInotifyWithOpenFDDefersDeleteSelf(t *testing.T) {
 	parentVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent"))
 	defer parentVD.DecRef(sys.Ctx)
 	childVD := sys.GetDentryOrDie(sys.PathOpAtRoot("parent/child"))
-	parentWD := ino.AddWatch(parentVD.Dentry(), linux.IN_ALL_EVENTS)
-	childWD := ino.AddWatch(childVD.Dentry(), linux.IN_ALL_EVENTS)
+	parentWD := ino.AddWatch(parentVD.Dentry().WatchTarget(), linux.IN_ALL_EVENTS)
+	childWD := ino.AddWatch(childVD.Dentry().WatchTarget(), linux.IN_ALL_EVENTS)
 	childVD.DecRef(sys.Ctx)
 
 	childFD, err := sys.VFS.OpenAt(ctx, sys.Creds, sys.PathOpAtRoot("parent/child"), &vfs.OpenOptions{Flags: linux.O_RDONLY})
