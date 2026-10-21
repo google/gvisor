@@ -556,8 +556,13 @@ func (c *Config) PlatformDeviceFor(platform string) string {
 // Config.Override does not validate, so callers must call Validate once they
 // are done overriding.
 func (c *Config) Validate() error {
-	if _, err := parsePlatformDevicePaths(c.PlatformDevicePath); err != nil {
+	paths, err := parsePlatformDevicePaths(c.PlatformDevicePath)
+	if err != nil {
 		return err
+	}
+	if c.Platform == PlatformAuto && paths.any != "" {
+		// A single path cannot apply to every platform that auto may choose.
+		return fmt.Errorf("--platform=%s accepts only --platform_device_path={platform}={path}[,{platform}={path}...], got %q", PlatformAuto, c.PlatformDevicePath)
 	}
 	if c.Overlay && c.Overlay2.Enabled() {
 		// Deprecated flag was used together with flag that replaced it.
