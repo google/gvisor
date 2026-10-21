@@ -971,30 +971,55 @@ func TestIPv6DisabledLoopback(t *testing.T) {
 		loopbackNICID = 2
 	)
 
-	s, e, err := setupIPv6LoopbackStack(externalNICID, loopbackNICID)
-	if err != nil {
-		t.Fatalf("setupIPv6LoopbackStack(%d, %d): %v", externalNICID, loopbackNICID, err)
+	tests := []struct {
+		name    string
+		disable func(*stack.Stack, tcpip.NICID) tcpip.Error
+		enable  func(*stack.Stack, tcpip.NICID) tcpip.Error
+	}{
+		{
+			name:    "NIC disabled",
+			disable: (*stack.Stack).DisableNIC,
+			enable:  (*stack.Stack).EnableNIC,
+		},
+		{
+			name: "IPv6 protocol disabled",
+			disable: func(s *stack.Stack, id tcpip.NICID) tcpip.Error {
+				return s.SetNICNetworkProtocolEnabled(id, ipv6.ProtocolNumber /* protocol */, false /* enabled */)
+			},
+			enable: func(s *stack.Stack, id tcpip.NICID) tcpip.Error {
+				return s.SetNICNetworkProtocolEnabled(id, ipv6.ProtocolNumber /* protocol */, true /* enabled */)
+			},
+		},
 	}
-	defer s.Destroy()
 
-	if err := s.EnableNIC(loopbackNICID); err != nil {
-		t.Fatalf("s.EnableNIC(%d): %s", loopbackNICID, err)
-	}
-	if err := verifyIPv6LoopbackTraffic(s, loopbackNICID, e, true /* wantReachable */); err != nil {
-		t.Errorf("verifyIPv6LoopbackTraffic(enabled): %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, e, err := setupIPv6LoopbackStack(externalNICID, loopbackNICID)
+			if err != nil {
+				t.Fatalf("setupIPv6LoopbackStack(%d, %d): %v", externalNICID, loopbackNICID, err)
+			}
+			defer s.Destroy()
 
-	if err := s.DisableNIC(loopbackNICID); err != nil {
-		t.Fatalf("s.DisableNIC(%d): %s", loopbackNICID, err)
-	}
-	if err := verifyIPv6LoopbackTraffic(s, loopbackNICID, e, false /* wantReachable */); err != nil {
-		t.Errorf("verifyIPv6LoopbackTraffic(disabled): %v", err)
-	}
+			if err := tc.enable(s, loopbackNICID); err != nil {
+				t.Fatalf("enable(%d): %s", loopbackNICID, err)
+			}
+			if err := verifyIPv6LoopbackTraffic(s, loopbackNICID, e, true /* wantReachable */); err != nil {
+				t.Errorf("verifyIPv6LoopbackTraffic(enabled): %v", err)
+			}
 
-	if err := s.EnableNIC(loopbackNICID); err != nil {
-		t.Fatalf("s.EnableNIC(%d): %s", loopbackNICID, err)
-	}
-	if err := verifyIPv6LoopbackTraffic(s, loopbackNICID, e, true /* wantReachable */); err != nil {
-		t.Errorf("verifyIPv6LoopbackTraffic(re-enabled): %v", err)
+			if err := tc.disable(s, loopbackNICID); err != nil {
+				t.Fatalf("disable(%d): %s", loopbackNICID, err)
+			}
+			if err := verifyIPv6LoopbackTraffic(s, loopbackNICID, e, false /* wantReachable */); err != nil {
+				t.Errorf("verifyIPv6LoopbackTraffic(disabled): %v", err)
+			}
+
+			if err := tc.enable(s, loopbackNICID); err != nil {
+				t.Fatalf("enable(%d): %s", loopbackNICID, err)
+			}
+			if err := verifyIPv6LoopbackTraffic(s, loopbackNICID, e, true /* wantReachable */); err != nil {
+				t.Errorf("verifyIPv6LoopbackTraffic(re-enabled): %v", err)
+			}
+		})
 	}
 }
