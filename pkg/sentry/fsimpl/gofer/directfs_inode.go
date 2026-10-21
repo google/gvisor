@@ -263,7 +263,7 @@ func (i *directfsInode) openHandle(ctx context.Context, flags uint32, d *dentry)
 	})
 	defer cu.Clean()
 
-	// Verify that the opened file matches the expected file type and device.
+	// Verify that the opened file matches the expected file type, device, and inode.
 	var stat unix.Stat_t
 	if err := unix.Fstat(openFD, &stat); err != nil {
 		return noHandle, err
@@ -272,6 +272,9 @@ func (i *directfsInode) openHandle(ctx context.Context, flags uint32, d *dentry)
 		return noHandle, err
 	}
 	if got, want := stat.Mode&unix.S_IFMT, i.inode.fileType(); got != want {
+		return noHandle, unix.ESTALE
+	}
+	if got, want := inoKeyFromStat(&stat), i.inoKey; got != want {
 		return noHandle, unix.ESTALE
 	}
 	if i.inode.fileType() == unix.S_IFCHR {

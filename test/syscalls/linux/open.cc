@@ -544,6 +544,69 @@ TEST_F(OpenTest, OpenWithOpath) {
   ASSERT_NO_ERRNO(Open(path, O_PATH));
 }
 
+// Test that reopening an O_PATH descriptor via /proc/self/fd/N after the file
+// has been replaced via rename does not reopen the replacement file.
+TEST_F(OpenTest, ReopenOpathAfterRename) {
+  const std::string dir = NewTempAbsPath();
+  ASSERT_THAT(mkdir(dir.c_str(), 0755), SyscallSucceeds());
+  auto cleanup_dir = Cleanup([&dir]() {
+    unlink(JoinPath(dir, "file1").c_str());
+    unlink(JoinPath(dir, "file2").c_str());
+    rmdir(dir.c_str());
+  });
+
+  const std::string file1 = JoinPath(dir, "file1");
+  const std::string file2 = JoinPath(dir, "file2");
+
+  const std::string content1 = "original file content";
+  const std::string content2 = "replacement file data";
+
+  // Create file1 and write content1 using O_WRONLY so that no read handle is
+  // cached in Sentry.
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file1, O_CREAT | O_WRONLY, 0644));
+  ASSERT_THAT(WriteFd(fd1.get(), content1.data(), content1.size()),
+              SyscallSucceedsWithValue(content1.size()));
+  ASSERT_THAT(fsync(fd1.get()), SyscallSucceeds());
+
+  // Open file1 with O_PATH before closing fd1.
+  const FileDescriptor opath_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file1, O_PATH));
+  fd1.reset();
+
+  // Create file2 with different content.
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file2, O_CREAT | O_WRONLY, 0644));
+  ASSERT_THAT(WriteFd(fd2.get(), content2.data(), content2.size()),
+              SyscallSucceedsWithValue(content2.size()));
+  ASSERT_THAT(fsync(fd2.get()), SyscallSucceeds());
+  fd2.reset();
+
+  // Atomically replace file1 with file2 via rename.
+  ASSERT_THAT(rename(file2.c_str(), file1.c_str()), SyscallSucceeds());
+
+  // Reopen the O_PATH descriptor via /proc/self/fd/N.
+  const std::string proc_fd_path =
+      absl::StrCat("/proc/self/fd/", opath_fd.get());
+  const int reopened_fd = open(proc_fd_path.c_str(), O_RDONLY);
+  const int saved_errno = errno;
+
+  if (reopened_fd >= 0) {
+    // On native Linux, opening /proc/self/fd/N reopens the original unlinked
+    // inode (file1). Verify that reading from it returns the original file's
+    // content, not the replacement file's content.
+    std::vector<char> buf(content1.size(), 0);
+    EXPECT_THAT(ReadFd(reopened_fd, buf.data(), buf.size()),
+                SyscallSucceedsWithValue(content1.size()));
+    EXPECT_THAT(close(reopened_fd), SyscallSucceeds());
+    EXPECT_EQ(std::string(buf.data(), buf.size()), content1);
+  } else {
+    // In directfs, reopening an unlinked/replaced file fails handle validation
+    // and returns ESTALE.
+    EXPECT_EQ(saved_errno, ESTALE);
+  }
+}
+
 // NOTE(b/236445327): Regression test. Opening a non-directory with O_PATH and
 // O_DIRECTORY should fail with ENOTDIR.
 TEST_F(OpenTest, OPathWithODirectory) {

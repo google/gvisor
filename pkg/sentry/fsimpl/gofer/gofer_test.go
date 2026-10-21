@@ -15,9 +15,12 @@
 package gofer
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -192,5 +195,87 @@ func TestXattrCacheList(t *testing.T) {
 	list, found = ino.xattrCache.getList()
 	if !found || !slices.Equal(list, wantList) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+}
+
+func TestDirectfsOpenHandleInoKeyValidation(t *testing.T) {
+	ctx := contexttest.Context(t)
+	dir := t.TempDir()
+
+	parentFD, err := unix.Open(dir, unix.O_PATH|unix.O_DIRECTORY, 0)
+	if err != nil {
+		t.Fatalf("failed to open tempdir: %v", err)
+	}
+	defer unix.Close(parentFD)
+
+	// Create initial file.
+	filePath := filepath.Join(dir, "test_file")
+	f1, err := os.Create(filePath)
+	if err != nil {
+		t.Fatalf("failed to create initial file: %v", err)
+	}
+	f1.Close()
+
+	var stat1 unix.Stat_t
+	if err := unix.Stat(filePath, &stat1); err != nil {
+		t.Fatalf("failed to stat initial file: %v", err)
+	}
+	originalInoKey := inoKeyFromStat(&stat1)
+
+	// Set up parent dentry with directfsInode.
+	parentDentry := &dentry{}
+	parentDirectfsInode := &directfsInode{
+		controlFD: parentFD,
+	}
+	parentDirectfsInode.inode.init(parentDirectfsInode)
+	parentDentry.inode = &parentDirectfsInode.inode
+
+	// Set up child dentry with directfsInode.
+	childDentry := &dentry{
+		name: "test_file",
+	}
+	childDentry.parent.Store(parentDentry)
+	childDirectfsInode := &directfsInode{}
+	childDirectfsInode.inode.init(childDirectfsInode)
+	childDirectfsInode.inoKey = originalInoKey
+	childDirectfsInode.mode.Store(uint32(stat1.Mode))
+	childDentry.inode = &childDirectfsInode.inode
+
+	// First openHandle: should succeed because inoKey matches.
+	h, err := childDirectfsInode.openHandle(ctx, unix.O_RDONLY, childDentry)
+	if err != nil {
+		t.Fatalf("openHandle failed unexpectedly: %v", err)
+	}
+	unix.Close(int(h.fd))
+
+	// Atomically replace file on disk with a new file.
+	replacementPath := filepath.Join(dir, "replacement")
+	f2, err := os.Create(replacementPath)
+	if err != nil {
+		t.Fatalf("failed to create replacement file: %v", err)
+	}
+	f2.Close()
+
+	if err := os.Rename(replacementPath, filePath); err != nil {
+		t.Fatalf("failed to rename replacement file: %v", err)
+	}
+
+	// Verify the inode actually changed on disk.
+	var stat2 unix.Stat_t
+	if err := unix.Stat(filePath, &stat2); err != nil {
+		t.Fatalf("failed to stat replaced file: %v", err)
+	}
+	newInoKey := inoKeyFromStat(&stat2)
+	if newInoKey == originalInoKey {
+		t.Fatalf("new inode key (%+v) matches old inode key (%+v); expected distinct files", newInoKey, originalInoKey)
+	}
+
+	// Second openHandle: must fail with ESTALE because inoKey no longer matches.
+	h, err = childDirectfsInode.openHandle(ctx, unix.O_RDONLY, childDentry)
+	if err != unix.ESTALE {
+		if err == nil {
+			unix.Close(int(h.fd))
+		}
+		t.Fatalf("openHandle on replaced file returned (%v, %v), want ESTALE", h, err)
 	}
 }
