@@ -25,37 +25,47 @@ const (
 	UVM_DEINITIALIZE = 0x30000002
 
 	// From kernel-open/nvidia-uvm/uvm_ioctl.h:
-	UVM_CREATE_RANGE_GROUP             = 23
-	UVM_DESTROY_RANGE_GROUP            = 24
-	UVM_REGISTER_GPU_VASPACE           = 25
-	UVM_UNREGISTER_GPU_VASPACE         = 26
-	UVM_REGISTER_CHANNEL               = 27
-	UVM_UNREGISTER_CHANNEL             = 28
-	UVM_ENABLE_PEER_ACCESS             = 29
-	UVM_DISABLE_PEER_ACCESS            = 30
-	UVM_SET_RANGE_GROUP                = 31
-	UVM_MAP_EXTERNAL_ALLOCATION        = 33
-	UVM_FREE                           = 34
-	UVM_REGISTER_GPU                   = 37
-	UVM_UNREGISTER_GPU                 = 38
-	UVM_PAGEABLE_MEM_ACCESS            = 39
-	UVM_SET_PREFERRED_LOCATION         = 42
-	UVM_UNSET_PREFERRED_LOCATION       = 43
-	UVM_ENABLE_READ_DUPLICATION        = 44
-	UVM_DISABLE_READ_DUPLICATION       = 45
-	UVM_SET_ACCESSED_BY                = 46
-	UVM_UNSET_ACCESSED_BY              = 47
-	UVM_MIGRATE                        = 51
-	UVM_MIGRATE_RANGE_GROUP            = 53
-	UVM_TOOLS_READ_PROCESS_MEMORY      = 62
-	UVM_TOOLS_WRITE_PROCESS_MEMORY     = 63
-	UVM_MAP_DYNAMIC_PARALLELISM_REGION = 65
-	UVM_UNMAP_EXTERNAL                 = 66
-	UVM_ALLOC_SEMAPHORE_POOL           = 68
-	UVM_PAGEABLE_MEM_ACCESS_ON_GPU     = 70
-	UVM_VALIDATE_VA_RANGE              = 72
-	UVM_CREATE_EXTERNAL_RANGE          = 73
-	UVM_MM_INITIALIZE                  = 75
+	UVM_CREATE_RANGE_GROUP                = 23
+	UVM_DESTROY_RANGE_GROUP               = 24
+	UVM_REGISTER_GPU_VASPACE              = 25
+	UVM_UNREGISTER_GPU_VASPACE            = 26
+	UVM_REGISTER_CHANNEL                  = 27
+	UVM_UNREGISTER_CHANNEL                = 28
+	UVM_ENABLE_PEER_ACCESS                = 29
+	UVM_DISABLE_PEER_ACCESS               = 30
+	UVM_SET_RANGE_GROUP                   = 31
+	UVM_MAP_EXTERNAL_ALLOCATION           = 33
+	UVM_FREE                              = 34
+	UVM_REGISTER_GPU                      = 37
+	UVM_UNREGISTER_GPU                    = 38
+	UVM_PAGEABLE_MEM_ACCESS               = 39
+	UVM_SET_PREFERRED_LOCATION            = 42
+	UVM_UNSET_PREFERRED_LOCATION          = 43
+	UVM_ENABLE_READ_DUPLICATION           = 44
+	UVM_DISABLE_READ_DUPLICATION          = 45
+	UVM_SET_ACCESSED_BY                   = 46
+	UVM_UNSET_ACCESSED_BY                 = 47
+	UVM_MIGRATE                           = 51
+	UVM_MIGRATE_RANGE_GROUP               = 53
+	UVM_TOOLS_INIT_EVENT_TRACKER          = 56
+	UVM_TOOLS_SET_NOTIFICATION_THRESHOLD  = 57
+	UVM_TOOLS_EVENT_QUEUE_ENABLE_EVENTS   = 58
+	UVM_TOOLS_EVENT_QUEUE_DISABLE_EVENTS  = 59
+	UVM_TOOLS_ENABLE_COUNTERS             = 60
+	UVM_TOOLS_DISABLE_COUNTERS            = 61
+	UVM_TOOLS_READ_PROCESS_MEMORY         = 62
+	UVM_TOOLS_WRITE_PROCESS_MEMORY        = 63
+	UVM_TOOLS_GET_PROCESSOR_UUID_TABLE    = 64
+	UVM_MAP_DYNAMIC_PARALLELISM_REGION    = 65
+	UVM_UNMAP_EXTERNAL                    = 66
+	UVM_TOOLS_FLUSH_EVENTS                = 67
+	UVM_ALLOC_SEMAPHORE_POOL              = 68
+	UVM_PAGEABLE_MEM_ACCESS_ON_GPU        = 70
+	UVM_VALIDATE_VA_RANGE                 = 72
+	UVM_CREATE_EXTERNAL_RANGE             = 73
+	UVM_MM_INITIALIZE                     = 75
+	UVM_TOOLS_INIT_EVENT_TRACKER_V2       = 76
+	UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_V2 = 77
 )
 
 // +marshal
@@ -897,4 +907,136 @@ type UvmGpuMappingAttributes struct {
 	GPUFormatType      uint32
 	GPUElementBits     uint32
 	GPUCompressionType uint32
+}
+
+// From kernel-open/nvidia-uvm/uvm_types.h:
+const (
+	UvmEventNumTypesAll   = 64
+	UVM_TOTAL_COUNTERS    = 10
+	UVM_MAX_PROCESSORS_V1 = 33
+	UVM_MAX_PROCESSORS    = 257
+)
+
+// UvmEventEntry is an entry in the event queue of a tracker created by
+// UVM_TOOLS_INIT_EVENT_TRACKER. nvproxy does not interpret entries.
+//
+// +marshal
+type UvmEventEntry struct {
+	_    structs.HostLayout
+	Data [64]byte
+}
+
+// UvmEventEntry_V2 is an entry in the event queue of a tracker created by
+// UVM_TOOLS_INIT_EVENT_TRACKER_V2. nvproxy does not interpret entries.
+//
+// +marshal
+type UvmEventEntry_V2 struct {
+	_    structs.HostLayout
+	Data [72]byte
+}
+
+// +marshal
+type UvmToolsEventControlData struct {
+	_         structs.HostLayout
+	GetAhead  uint32
+	GetBehind uint32
+	PutAhead  uint32
+	PutBehind uint32
+	Dropped   [UvmEventNumTypesAll]uint64
+}
+
+// +marshal
+type UVM_TOOLS_INIT_EVENT_TRACKER_PARAMS struct {
+	_               structs.HostLayout
+	QueueBuffer     uint64
+	QueueBufferSize uint64
+	ControlBuffer   uint64
+	Processor       NvUUID
+	AllProcessors   uint32
+	UvmFD           uint32
+	RMStatus        uint32
+	Pad0            [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_TOOLS_INIT_EVENT_TRACKER_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_TOOLS_INIT_EVENT_TRACKER_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
+type UVM_TOOLS_SET_NOTIFICATION_THRESHOLD_PARAMS struct {
+	_                     structs.HostLayout
+	NotificationThreshold uint32
+	RMStatus              uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_TOOLS_SET_NOTIFICATION_THRESHOLD_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_TOOLS_SET_NOTIFICATION_THRESHOLD_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// UVM_TOOLS_TYPE_FLAGS_PARAMS is the parameter type for
+// UVM_TOOLS_EVENT_QUEUE_ENABLE_EVENTS, UVM_TOOLS_EVENT_QUEUE_DISABLE_EVENTS,
+// UVM_TOOLS_ENABLE_COUNTERS and UVM_TOOLS_DISABLE_COUNTERS.
+//
+// +marshal
+type UVM_TOOLS_TYPE_FLAGS_PARAMS struct {
+	_         structs.HostLayout
+	TypeFlags uint64
+	RMStatus  uint32
+	Pad0      [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_TOOLS_TYPE_FLAGS_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_TOOLS_TYPE_FLAGS_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
+type UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS struct {
+	_        structs.HostLayout
+	TablePtr uint64
+	RMStatus uint32
+	Pad0     [4]byte
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_TOOLS_GET_PROCESSOR_UUID_TABLE_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
+}
+
+// +marshal
+type UVM_TOOLS_FLUSH_EVENTS_PARAMS struct {
+	_        structs.HostLayout
+	RMStatus uint32
+}
+
+// GetStatus implements HasStatus.GetStatus.
+func (p *UVM_TOOLS_FLUSH_EVENTS_PARAMS) GetStatus() uint32 {
+	return p.RMStatus
+}
+
+// SetStatus implements HasStatus.SetStatus.
+func (p *UVM_TOOLS_FLUSH_EVENTS_PARAMS) SetStatus(status uint32) {
+	p.RMStatus = status
 }

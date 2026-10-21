@@ -502,7 +502,7 @@ func ShouldExposeNvidiaDevice(path string) bool {
 	if !strings.HasPrefix(path, "/dev/nvidia") {
 		return false
 	}
-	if path == "/dev/nvidiactl" || path == "/dev/nvidia-uvm" {
+	if path == "/dev/nvidiactl" || path == "/dev/nvidia-uvm" || path == "/dev/nvidia-uvm-tools" {
 		return true
 	}
 	nvidiaDevPathReg := regexp.MustCompile(`^/dev/nvidia(\d+)$`)

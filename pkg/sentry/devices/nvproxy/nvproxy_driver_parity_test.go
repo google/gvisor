@@ -152,6 +152,13 @@ func TestStructDefinitionParity(t *testing.T) {
 			for num, info := range nvproxyIoctls.UvmInfos {
 				checkIoctl(num, info)
 			}
+			for name, value := range nvproxyIoctls.UvmConstants {
+				if driverValue, ok := defs.Constants[name]; !ok {
+					t.Errorf("constant %q not found in driver source code", name)
+				} else if driverValue != value {
+					t.Errorf("constant %q differs between nvproxy (%d) and driver (%d)", name, value, driverValue)
+				}
+			}
 		})
 	})
 }
@@ -404,6 +411,7 @@ func compareTypes(t *testing.T, nvproxyType reflect.Type, driverTypeName string,
 	if typeAlias, ok := output.Aliases[driverTypeName]; ok {
 		driverTypeName = typeAlias.Type
 	}
+	driverTypeName = strings.TrimPrefix(driverTypeName, "volatile ")
 
 	// We have the following cases to compare:
 	// - Base type is given by typeMap
