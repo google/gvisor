@@ -18,12 +18,38 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
+
+func TestIPv6PayloadTransportHeaderOffset(t *testing.T) {
+	// An extension header length of 31 is the first whose total byte length
+	// does not fit in the wire length field's uint8 type.
+	for _, length := range []uint8{0, 30, 31, 32, 255} {
+		t.Run(strconv.Itoa(int(length)), func(t *testing.T) {
+			extensionLength := (int(length) + 1) * 8
+			payload := make([]byte, extensionLength+UDPMinimumSize)
+			payload[0] = uint8(UDPProtocolNumber)
+			payload[1] = length
+			it := MakeIPv6PayloadIterator(IPv6DestinationOptionsExtHdrIdentifier, buffer.MakeWithData(payload))
+			defer it.Release()
+			protocol, offset, ok := it.TransportHeader()
+			if !ok {
+				t.Fatal("TransportHeader() failed")
+			}
+			if got, want := protocol, UDPProtocolNumber; got != want {
+				t.Errorf("transport protocol = %d, want %d", got, want)
+			}
+			if got, want := offset, uint32(IPv6MinimumSize+extensionLength); got != want {
+				t.Errorf("transport offset = %d, want %d", got, want)
+			}
+		})
+	}
+}
 
 var (
 	bufferTransformer = cmp.Transformer("buffer", func(b buffer.Buffer) []byte {

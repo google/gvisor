@@ -552,6 +552,30 @@ func (i *IPv6PayloadIterator) Release() {
 	i.payload.Release()
 }
 
+// TransportHeader consumes extension headers and returns the remaining payload's
+// protocol and offset from the start of the IPv6 fixed header. It returns false
+// for a truncated extension header, a non-initial fragment, or no next header.
+// The caller must still validate the transport header at the returned offset.
+func (i *IPv6PayloadIterator) TransportHeader() (tcpip.TransportProtocolNumber, uint32, bool) {
+	for {
+		hdr, done, err := i.Next()
+		if err != nil || done {
+			return 0, 0, false
+		}
+		switch hdr := hdr.(type) {
+		case IPv6RawPayloadHeader:
+			hdr.Release()
+			return tcpip.TransportProtocolNumber(hdr.Identifier), i.HeaderOffset(), true
+		case IPv6FragmentExtHdr:
+			if hdr.FragmentOffset() != 0 {
+				hdr.Release()
+				return 0, 0, false
+			}
+		}
+		hdr.Release()
+	}
+}
+
 // AsRawHeader returns the remaining payload of i as a raw header and
 // optionally consumes the iterator.
 //
@@ -717,7 +741,7 @@ func (i *IPv6PayloadIterator) nextHeaderData(ignoreLength bool, bytes []byte) (I
 	// in section 4.8 for new extension headers at the top of page 24.
 	//   [ Hdr Ext Len ] ... Length of the Destination Options header in 8-octet
 	//   units, not including the first 8 octets.
-	i.nextOffset += uint32((length + 1) * ipv6ExtHdrLenBytesPerUnit)
+	i.nextOffset += (uint32(length) + 1) * ipv6ExtHdrLenBytesPerUnit
 
 	bytesLen := int(length)*ipv6ExtHdrLenBytesPerUnit + ipv6ExtHdrLenBytesExcluded
 	if ignoreLength {

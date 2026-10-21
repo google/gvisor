@@ -734,6 +734,44 @@ func TestGetHeadersUnknownProtocol(t *testing.T) {
 	}
 }
 
+func TestEmbeddedIPv6HeadersAcrossViews(t *testing.T) {
+	const extensionSize = 8
+	quote := make([]byte, header.IPv6MinimumSize+extensionSize+header.UDPMinimumSize)
+	header.IPv6(quote).Encode(&header.IPv6Fields{
+		// The rest of the original packet need not be included in the quote.
+		PayloadLength:     128,
+		TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6DestinationOptionsExtHdrIdentifier),
+	})
+	quote[header.IPv6MinimumSize] = uint8(header.UDPProtocolNumber)
+	var payload buffer.Buffer
+	// Split the network and transport headers to exercise PullUp's copying.
+	for _, part := range [][]byte{quote[:20], quote[20:44], quote[44:]} {
+		payload.Append(buffer.NewViewWithData(part))
+	}
+	pk := NewPacketBuffer(PacketBufferOptions{Payload: payload})
+	defer pk.DecRef()
+	netHdr, transHdr, protocol, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv6ProtocolNumber)
+	if !ok {
+		t.Fatal("GetEmbeddedNetAndTransHeaders() failed")
+	}
+	if got, want := protocol, header.UDPProtocolNumber; got != want {
+		t.Fatalf("transport protocol = %d, want %d", got, want)
+	}
+	address := tcpip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	netHdr.SetSourceAddress(address)
+	transHdr.SetSourcePort(1234)
+	bytes, ok := pk.Data().PullUp(len(quote))
+	if !ok {
+		t.Fatal("PullUp() failed")
+	}
+	if got, want := header.IPv6(bytes).SourceAddress(), address; got != want {
+		t.Errorf("quoted source address = %s, want %s", got, want)
+	}
+	if got, want := header.UDP(bytes[header.IPv6MinimumSize+extensionSize:]).SourcePort(), uint16(1234); got != want {
+		t.Errorf("quoted source port = %d, want %d", got, want)
+	}
+}
+
 // TestCalculateTransportChecksumUnknownProtocol verifies that
 // CalculateTransportChecksum() does not panic when encountering an unknown
 // transport protocol, even when falling back to parsing the network header.

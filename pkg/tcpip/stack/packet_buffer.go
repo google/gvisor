@@ -910,22 +910,68 @@ func (pk *PacketBuffer) ExperimentOptionValue() (uint16, bool) {
 	return 0, false
 }
 
-// GetEmbeddedNetAndTransHeaders returns the network and transport headers of the
-// packet.
-func (pk *PacketBuffer) GetEmbeddedNetAndTransHeaders(netHdrLength int, getNetAndTransHdr netAndTransHeadersFunc, transProto tcpip.TransportProtocolNumber) (header.Network, header.ChecksummableTransport, bool) {
+// GetEmbeddedNetAndTransHeaders returns the network and TCP or UDP headers in
+// an ICMP error's quoted packet, along with the transport protocol. It accepts
+// truncated payloads, but requires the complete network header and minimum TCP
+// or UDP header.
+func (pk *PacketBuffer) GetEmbeddedNetAndTransHeaders(netProto tcpip.NetworkProtocolNumber) (header.Network, header.ChecksummableTransport, tcpip.TransportProtocolNumber, bool) {
+	var netHdrLength int
+	var transProto tcpip.TransportProtocolNumber
+	switch netProto {
+	case header.IPv4ProtocolNumber:
+		h, ok := pk.Data().PullUp(header.IPv4MinimumSize)
+		if !ok {
+			return nil, nil, 0, false
+		}
+		netHdrLength = int(header.IPv4(h).HeaderLength())
+		if netHdrLength < header.IPv4MinimumSize {
+			return nil, nil, 0, false
+		}
+		transProto = header.IPv4(h).TransportProtocol()
+	case header.IPv6ProtocolNumber:
+		h, ok := pk.Data().PullUp(header.IPv6MinimumSize)
+		if !ok {
+			return nil, nil, 0, false
+		}
+		payload := pk.Data().ToBuffer()
+		payload.TrimFront(header.IPv6MinimumSize)
+		it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(header.IPv6(h).NextHeader()), payload)
+		defer it.Release()
+		protocol, offset, ok := it.TransportHeader()
+		if !ok {
+			return nil, nil, 0, false
+		}
+		transProto = protocol
+		netHdrLength = int(offset)
+	default:
+		return nil, nil, 0, false
+	}
+
+	var transHdrLength int
 	switch transProto {
 	case header.TCPProtocolNumber:
-		if netAndTransHeader, ok := pk.Data().PullUp(netHdrLength + header.TCPMinimumSize); ok {
-			netHeader, transHeaderBytes := getNetAndTransHdr(netAndTransHeader, header.TCPMinimumSize)
-			return netHeader, header.TCP(transHeaderBytes), true
-		}
+		transHdrLength = header.TCPMinimumSize
 	case header.UDPProtocolNumber:
-		if netAndTransHeader, ok := pk.Data().PullUp(netHdrLength + header.UDPMinimumSize); ok {
-			netHeader, transHeaderBytes := getNetAndTransHdr(netAndTransHeader, header.UDPMinimumSize)
-			return netHeader, header.UDP(transHeaderBytes), true
-		}
+		transHdrLength = header.UDPMinimumSize
+	default:
+		return nil, nil, 0, false
 	}
-	return nil, nil, false
+	h, ok := pk.Data().PullUp(netHdrLength + transHdrLength)
+	if !ok {
+		return nil, nil, 0, false
+	}
+	// Construct both headers after PullUp so mutations affect the packet's
+	// current backing buffer, including when the quote spans multiple views.
+	var netHdr header.Network
+	if netProto == header.IPv4ProtocolNumber {
+		netHdr = header.IPv4(h[:netHdrLength])
+	} else {
+		netHdr = header.IPv6(h[:netHdrLength])
+	}
+	if transProto == header.TCPProtocolNumber {
+		return netHdr, header.TCP(h[netHdrLength:]), transProto, true
+	}
+	return netHdr, header.UDP(h[netHdrLength:]), transProto, true
 }
 
 // GetHeaders returns the network and transport headers of the packet.
@@ -955,23 +1001,7 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return nil, nil, false, false
 		}
 
-		h, ok := pk.Data().PullUp(header.IPv4MinimumSize)
-		if !ok {
-			return nil, nil, false, false
-		}
-
-		hdrLength := int(header.IPv4(h).HeaderLength())
-		// Pull up the full IPv4 header which might include options.
-		if hdrLength > header.IPv4MinimumSize {
-			// TODO(https://gvisor.dev/issue/6765): Handle IPv4
-			// options.
-			h, ok = pk.Data().PullUp(hdrLength)
-			if !ok {
-				return nil, nil, false, false
-			}
-		}
-
-		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(hdrLength, v4NetAndTransHdr, tcpip.TransportProtocolNumber(header.IPv4(h).Protocol())); ok {
+		if netHdr, transHdr, _, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv4ProtocolNumber); ok {
 			return netHdr, transHdr, true, true
 		}
 		return nil, nil, false, false
@@ -989,17 +1019,7 @@ func (pk *PacketBuffer) GetHeaders() (netHdr header.Network, transHdr header.Tra
 			return nil, nil, false, false
 		}
 
-		h, ok := pk.Data().PullUp(header.IPv6MinimumSize)
-		if !ok {
-			return nil, nil, false, false
-		}
-
-		// We do not support extension headers in ICMP errors so the next header
-		// in the IPv6 packet should be a tracked protocol if we reach this point.
-		//
-		// TODO(https://gvisor.dev/issue/6789): Support extension headers.
-		transProto, _ := header.IPv6(h).TryParseTransportProtocol()
-		if netHdr, transHdr, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv6MinimumSize, v6NetAndTransHdr, transProto); ok {
+		if netHdr, transHdr, _, ok := pk.GetEmbeddedNetAndTransHeaders(header.IPv6ProtocolNumber); ok {
 			return netHdr, transHdr, true, true
 		}
 		return nil, nil, false, false
