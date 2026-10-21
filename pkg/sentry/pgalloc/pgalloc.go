@@ -582,6 +582,12 @@ const (
 	// uncommitted pages.
 	AllocateUncommitted AllocationMode = iota
 
+	// AllocateUncommittedOrRecycled indicates that the caller of
+	// MemoryFile.Allocate() may not commit all allocated pages, but tolerates
+	// their commitment. Thus, Allocate() may return uncommitted pages, or
+	// recycled waste pages, which are committed.
+	AllocateUncommittedOrRecycled
+
 	// AllocateCallerIndirectCommit indicates that the caller of
 	// MemoryFile.Allocate() intends to commit all allocated pages, without
 	// using our page tables. Thus, Allocate() may return committed or
@@ -626,7 +632,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	alloc := allocState{
 		length:     length,
 		opts:       opts,
-		willCommit: opts.Mode != AllocateUncommitted,
+		willCommit: opts.Mode != AllocateUncommitted && opts.Mode != AllocateUncommittedOrRecycled,
 		huge:       opts.Huge && f.opts.ExpectHugepages,
 	}
 
@@ -636,7 +642,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	}
 
 	var dsts safemem.BlockSeq
-	if alloc.willCommit {
+	if alloc.willCommit || alloc.recycled {
 		needHugeTouch := false
 		if alloc.recycled {
 			// We will need writable page table entries in our address space to
@@ -752,28 +758,13 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if alloc.willCommit {
+	if alloc.opts.Mode != AllocateUncommitted {
 		// Try to recycle waste pages, since this avoids the overhead of
 		// decommitting and then committing them again.
 		var uwgap unwasteGapIterator
-		if alloc.opts.Dir == BottomUp {
-			uwgap = unwaste.FirstLargeEnoughGap(alloc.length)
-		} else {
-			uwgap = unwaste.LastLargeEnoughGap(alloc.length)
-		}
+		uwgap, fr = findRecyclable(unwaste, alloc)
 		if uwgap.Ok() {
 			alloc.recycled = true
-			if alloc.opts.Dir == BottomUp {
-				fr = memmap.FileRange{
-					Start: uwgap.Start(),
-					End:   uwgap.Start() + alloc.length,
-				}
-			} else {
-				fr = memmap.FileRange{
-					Start: uwgap.End() - alloc.length,
-					End:   uwgap.End(),
-				}
-			}
 			unwaste.Insert(uwgap, fr, unwasteInfo{})
 			// Update reference count for these pages from 0 to 1.
 			unfree.MutateFullRange(fr, func(ufseg unfreeIterator) bool {
@@ -855,6 +846,54 @@ retryFree:
 		commitSeq:      f.commitSeq,
 	})
 	return
+}
+
+// findRecyclable returns a gap in unwaste that is large enough for alloc, and
+// the range within it that alloc should recycle. Huge allocations must be
+// hugepage-aligned to be backed by huge pages, but waste is only page-aligned,
+// so if the first large enough gap can't fit an aligned range, a gap large
+// enough to contain one is used instead.
+func findRecyclable(unwaste *unwasteSet, alloc *allocState) (unwasteGapIterator, memmap.FileRange) {
+	uwgap := largeEnoughGap(unwaste, alloc, alloc.length)
+	fr, ok := recycleRange(uwgap, alloc)
+	if !ok && alloc.huge {
+		uwgap = largeEnoughGap(unwaste, alloc, alloc.length+uint64(hostarch.HugePageSize)-uint64(hostarch.PageSize))
+		fr, ok = recycleRange(uwgap, alloc)
+	}
+	if !ok {
+		return unwasteGapIterator{}, memmap.FileRange{}
+	}
+	return uwgap, fr
+}
+
+func largeEnoughGap(unwaste *unwasteSet, alloc *allocState, minSize uint64) unwasteGapIterator {
+	if alloc.opts.Dir == BottomUp {
+		return unwaste.FirstLargeEnoughGap(minSize)
+	}
+	return unwaste.LastLargeEnoughGap(minSize)
+}
+
+// recycleRange returns the range in uwgap that alloc should recycle, and
+// whether uwgap can fit it.
+func recycleRange(uwgap unwasteGapIterator, alloc *allocState) (memmap.FileRange, bool) {
+	if !uwgap.Ok() {
+		return memmap.FileRange{}, false
+	}
+	var fr memmap.FileRange
+	if alloc.opts.Dir == BottomUp {
+		fr.Start = uwgap.Start()
+		if alloc.huge {
+			fr.Start, _ = hostarch.HugePageRoundUp(fr.Start)
+		}
+		fr.End = fr.Start + alloc.length
+	} else {
+		fr.End = uwgap.End()
+		if alloc.huge {
+			fr.End = hostarch.HugePageRoundDown(fr.End)
+		}
+		fr.Start = fr.End - alloc.length
+	}
+	return fr, uwgap.Range().IsSupersetOf(fr)
 }
 
 // Preconditions: f.mu must be locked.
