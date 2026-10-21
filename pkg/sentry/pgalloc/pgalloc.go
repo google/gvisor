@@ -756,24 +756,9 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 		// Try to recycle waste pages, since this avoids the overhead of
 		// decommitting and then committing them again.
 		var uwgap unwasteGapIterator
-		if alloc.opts.Dir == BottomUp {
-			uwgap = unwaste.FirstLargeEnoughGap(alloc.length)
-		} else {
-			uwgap = unwaste.LastLargeEnoughGap(alloc.length)
-		}
+		uwgap, fr = findRecyclable(unwaste, alloc)
 		if uwgap.Ok() {
 			alloc.recycled = true
-			if alloc.opts.Dir == BottomUp {
-				fr = memmap.FileRange{
-					Start: uwgap.Start(),
-					End:   uwgap.Start() + alloc.length,
-				}
-			} else {
-				fr = memmap.FileRange{
-					Start: uwgap.End() - alloc.length,
-					End:   uwgap.End(),
-				}
-			}
 			unwaste.Insert(uwgap, fr, unwasteInfo{})
 			// Update reference count for these pages from 0 to 1.
 			unfree.MutateFullRange(fr, func(ufseg unfreeIterator) bool {
@@ -855,6 +840,65 @@ retryFree:
 		commitSeq:      f.commitSeq,
 	})
 	return
+}
+
+// findRecyclable returns a gap in unwaste that is large enough for alloc, and
+// the range within it that alloc should recycle. Huge allocations must be
+// hugepage-aligned to be backed by huge pages, but waste is only page-aligned,
+// so if the first large enough gap can't fit an aligned range, a gap large
+// enough to contain one is used instead.
+func findRecyclable(unwaste *unwasteSet, alloc *allocState) (unwasteGapIterator, memmap.FileRange) {
+	uwgap := largeEnoughGap(unwaste, alloc, alloc.length)
+	if !uwgap.Ok() {
+		return uwgap, memmap.FileRange{}
+	}
+	fr, ok := recycleRange(uwgap, alloc)
+	if !ok && alloc.huge {
+		// A gap this large always contains a hugepage-aligned range of
+		// alloc.length bytes.
+		minSize := alloc.length + uint64(hostarch.HugePageSize) - uint64(hostarch.PageSize)
+		if minSize < alloc.length { // overflow
+			return unwasteGapIterator{}, memmap.FileRange{}
+		}
+		if uwgap = largeEnoughGap(unwaste, alloc, minSize); !uwgap.Ok() {
+			return uwgap, memmap.FileRange{}
+		}
+		fr, ok = recycleRange(uwgap, alloc)
+	}
+	if !ok {
+		return unwasteGapIterator{}, memmap.FileRange{}
+	}
+	return uwgap, fr
+}
+
+func largeEnoughGap(unwaste *unwasteSet, alloc *allocState, minSize uint64) unwasteGapIterator {
+	if alloc.opts.Dir == BottomUp {
+		return unwaste.FirstLargeEnoughGap(minSize)
+	}
+	return unwaste.LastLargeEnoughGap(minSize)
+}
+
+// recycleRange returns the range in uwgap that alloc should recycle, and
+// whether uwgap can fit it.
+func recycleRange(uwgap unwasteGapIterator, alloc *allocState) (memmap.FileRange, bool) {
+	var fr memmap.FileRange
+	if alloc.opts.Dir == BottomUp {
+		fr.Start = uwgap.Start()
+		if alloc.huge {
+			var ok bool
+			if fr.Start, ok = hostarch.HugePageRoundUp(fr.Start); !ok {
+				return fr, false
+			}
+		}
+		fr.End = fr.Start + alloc.length
+	} else {
+		fr.End = uwgap.End()
+		if alloc.huge {
+			fr.End = hostarch.HugePageRoundDown(fr.End)
+		}
+		fr.Start = fr.End - alloc.length
+	}
+	return fr, uwgap.Range().IsSupersetOf(fr)
 }
 
 // Preconditions: f.mu must be locked.
