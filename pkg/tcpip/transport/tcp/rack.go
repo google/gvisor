@@ -71,6 +71,8 @@ type rackControl struct {
 // init initializes RACK specific fields.
 func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 	rc.FACK = iss
+	rc.EndSequence = iss
+	rc.RTTSeq = iss
 	rc.ReoWndIncr = 1
 	rc.snd = snd
 }
