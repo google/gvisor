@@ -18,7 +18,10 @@
 package kvm
 
 import (
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 )
@@ -225,6 +228,13 @@ func updateGlobalOnce(fd int) error {
 	hasFSGSBASE = cpuid.HostFeatureSet().UseFSGSBASE()
 	fpu.InitHostState()
 
+	// KVM only reports and allows AMX for guests once the process has guest
+	// permission for it, which must be requested before creating vCPUs. If
+	// this fails, KVM_GET_SUPPORTED_CPUID below won't include AMX.
+	if cpuid.HostFeatureSet().ValidXCR0Mask()&cpuid.XCR0AmxDataMask != 0 {
+		hostsyscall.RawSyscall(unix.SYS_ARCH_PRCTL, linux.ARCH_REQ_XCOMP_GUEST_PERM, linux.XFEATURE_XTILEDATA, 0)
+	}
+
 	bitsForScaling = getBitsForScaling()
 	if err := updateSystemValues(int(fd)); err != nil {
 		return err
@@ -234,6 +244,8 @@ func updateGlobalOnce(fd int) error {
 	}
 	// Calculate whether guestPCID is supported.
 	hasGuestPCID = fs.HasFeature(cpuid.X86FeaturePCID)
+	amx := cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask
+	hasGuestAMX = fs.ValidXCR0Mask()&amx == amx
 	// Create a static feature set from the KVM entries. Then, we
 	// explicitly set OSXSAVE, since this does not come in the feature
 	// entries, but can be provided when the relevant CR4 bit is set.

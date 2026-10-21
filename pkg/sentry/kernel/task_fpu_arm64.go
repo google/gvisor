@@ -19,3 +19,8 @@ package kernel
 
 // syncFPStateSize is a no-op on arm64, which has no dynamic XSAVE features.
 func (t *Task) syncFPStateSize() {}
+
+// checkPlatformFeatures is a no-op on arm64.
+func (k *Kernel) checkPlatformFeatures() error {
+	return nil
+}

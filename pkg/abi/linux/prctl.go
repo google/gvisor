@@ -195,6 +195,8 @@ const (
 	ARCH_GET_XCOMP_SUPP = 0x1021
 	ARCH_GET_XCOMP_PERM = 0x1022
 	ARCH_REQ_XCOMP_PERM = 0x1023
+
+	ARCH_REQ_XCOMP_GUEST_PERM = 0x1025
 )
 
 // XSAVE state component indices, from arch/x86/include/asm/fpu/types.h.

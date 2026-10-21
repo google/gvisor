@@ -17,7 +17,11 @@
 
 package kernel
 
-import "gvisor.dev/gvisor/pkg/cpuid"
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/cpuid"
+)
 
 // syncFPStateSize grows t's FP state once its thread group has been granted
 // AMX, so that it holds tile data state.
@@ -25,4 +29,14 @@ func (t *Task) syncFPStateSize() {
 	if t.tg.xcompPerm.Load()&cpuid.XCR0AmxDataMask != 0 {
 		t.Arch().FloatingPointData().EnableAMX()
 	}
+}
+
+// checkPlatformFeatures returns an error if k's feature set exposes AMX, which
+// a restored application may be using, but k's platform cannot save and
+// restore AMX state.
+func (k *Kernel) checkPlatformFeatures() error {
+	if k.featureSet.HasFeature(cpuid.X86FeatureAMX_TILE) && !k.Platform.SupportsAMX() {
+		return fmt.Errorf("checkpoint exposes AMX, which this platform does not support")
+	}
+	return nil
 }

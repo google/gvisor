@@ -366,6 +366,11 @@ func (*Systrap) SupportsAddressSpaceIO() bool {
 	return false
 }
 
+// SupportsAMX implements platform.Platform.SupportsAMX.
+func (*Systrap) SupportsAMX() bool {
+	return true
+}
+
 // MapUnit implements platform.Platform.MapUnit.
 func (*Systrap) MapUnit() uint64 {
 	// The host kernel manages page tables and arbitrary-sized mappings
