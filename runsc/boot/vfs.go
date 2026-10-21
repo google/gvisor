@@ -1066,7 +1066,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		fsName = sys.Name
 
 	case proc.Name:
-		internalData = newProcInternalData(conf, spec)
+		internalData = newProcInternalData(conf, spec, containerName)
 
 	case sys.Name:
 		sysData := &sys.InternalData{
