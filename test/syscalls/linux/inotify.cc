@@ -2504,6 +2504,48 @@ TEST(Inotify, OneShotFileDeleteSelfWatchRemovedByClose) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+// A watch belongs to the inode, even after the pathname used to add it is
+// unlinked. Checkpointing must not retain that destroyed dentry as its target.
+TEST(Inotify, WatchSurvivesUnlinkOfWatchedHardLink) {
+  // Overlay still has separate watch sets for hard-link dentries.
+  SKIP_IF(IsRunningOnGvisor() &&
+          ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+  // Keep both aliases instantiated until the unlink. A setup checkpoint can
+  // evict the unwatched alias and hide the watch-target lifetime regression.
+  DisableSave ds;
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath file =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
+  TempPath link_path(root.path() + "/link");
+  ASSERT_THAT(link(file.path().c_str(), link_path.path().c_str()),
+              SyscallSucceeds());
+  const FileDescriptor inotify_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      inotify_fd.get(), file.path(), IN_MODIFY | IN_DELETE_SELF));
+
+  file.reset();
+  ds.reset();
+  MaybeSave();
+  EXPECT_THAT(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get())),
+              Are({}));
+
+  const int alias_wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      inotify_fd.get(), link_path.path(), IN_MODIFY | IN_DELETE_SELF));
+  EXPECT_EQ(alias_wd, wd);
+  {
+    const FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(link_path.path(), O_WRONLY));
+    ASSERT_THAT(write(fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+  }
+  EXPECT_THAT(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get())),
+              Are({Event(IN_MODIFY, wd)}));
+
+  link_path.reset();
+  EXPECT_THAT(ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get())),
+              Are({Event(IN_DELETE_SELF, wd), Event(IN_IGNORED, wd)}));
+}
+
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when inotify instances and watch targets are concurrently being
 // destroyed.
