@@ -752,6 +752,9 @@ func (d *netRouteData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			flags |= linux.RTF_GATEWAY
 			gw = hostarch.ByteOrder.Uint32(rt.GatewayAddr)
 		}
+		if rt.DstLen == header.IPv4AddressSizeBits {
+			flags |= linux.RTF_HOST
+		}
 		if len(rt.DstAddr) == header.IPv4AddressSize {
 			prefix = hostarch.ByteOrder.Uint32(rt.DstAddr)
 		}
