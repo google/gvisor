@@ -1602,6 +1602,44 @@ TEST(PtraceTest, GetRegSetPartialRead) {
       << " status " << status;
 }
 
+#if defined(__aarch64__)
+TEST(PtraceTest, SetRegSetKeepsTLS) {
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    uint64_t tls_before;
+    __asm__ __volatile__("mrs %0, tpidr_el0" : "=r"(tls_before));
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    MaybeSave();
+    kill(getpid(), SIGSTOP);
+    uint64_t tls_after;
+    __asm__ __volatile__("mrs %0, tpidr_el0" : "=r"(tls_after));
+    _exit(tls_after == tls_before ? 0 : 1);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  struct user_regs_struct regs;
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_SETREGSET, child_pid, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+#endif
+
 #if defined(__x86_64__)
 #define SYSNO_STR1(x) #x
 #define SYSNO_STR(x) SYSNO_STR1(x)
