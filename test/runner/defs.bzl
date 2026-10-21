@@ -81,6 +81,7 @@ def _syscall_test(
         tags,
         debug,
         network = "none",
+        limit_ephemeral_ports = False,
         file_access = "exclusive",
         overlay = False,
         add_host_uds = False,
@@ -100,6 +101,10 @@ def _syscall_test(
         in_sandbox_cgroup = "v1",
         requires_atime = False,
         **kwargs):
+    limit_ephemeral_ports = limit_ephemeral_ports and (network == "host" or platform == "native")
+    if limit_ephemeral_ports:
+        container = True
+
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
 
@@ -198,6 +203,9 @@ def _syscall_test(
 
     if in_sandbox_cgroup:
         runner_args.append("--in-sandbox-cgroup=" + in_sandbox_cgroup)
+
+    if limit_ephemeral_ports:
+        runner_args.append("--limit-ephemeral-ports")
 
     # Trace points are platform agnostic, so enable them for ptrace only.
     if platform == "ptrace":

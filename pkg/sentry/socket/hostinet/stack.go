@@ -49,8 +49,7 @@ var defaultSendBufSize = inet.TCPBufferSize{
 }
 
 // Stack implements inet.Stack for host sockets. Most fields are derived from
-// the host network configuration. During restore, ReplaceConfig overwrites the
-// deserialized Stack with values from the destination host.
+// the host network configuration.
 //
 // +stateify savable
 type Stack struct {
@@ -59,6 +58,7 @@ type Stack struct {
 	tcpRecvBufSize  inet.TCPBufferSize
 	tcpSendBufSize  inet.TCPBufferSize
 	tcpSACKEnabled  bool
+	portRange       [2]uint16
 	allowRawSockets bool
 	configured      bool     `state:"nosave"`
 	netDevFile      *os.File `state:"nosave"`
@@ -108,6 +108,8 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		log.Warningf("Failed to read TCP send buffer size, using default values")
 	}
 
+	s.portRange = ReadPortRange()
+
 	// SACK is important for performance and even compatibility, assume it's
 	// enabled if we can't find the actual value.
 	s.tcpSACKEnabled = true
@@ -153,6 +155,42 @@ func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 		Default: int(fields[1]),
 		Max:     int(fields[2]),
 	}, nil
+}
+
+// ReadPortRange reads the host network namespace's ephemeral port range.
+// It must run before installing seccomp filters. If the range cannot be read,
+// it uses the defaults set by Linux's inet_init_net():
+// https://github.com/torvalds/linux/blob/e5f0a698b/net/ipv4/af_inet.c#L1785-L1790
+func ReadPortRange() [2]uint16 {
+	ports, err := readPortRangeFile("/proc/sys/net/ipv4/ip_local_port_range")
+	if err != nil {
+		log.Warningf("Failed to read host ephemeral port range, using default values: %v", err)
+		return [2]uint16{32768, 60999}
+	}
+	return ports
+}
+
+func readPortRangeFile(filename string) ([2]uint16, error) {
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return [2]uint16{}, err
+	}
+	fields := strings.Fields(string(contents))
+	if len(fields) != 2 {
+		return [2]uint16{}, fmt.Errorf("invalid port range in %s: %q", filename, contents)
+	}
+	var ports [2]uint16
+	for i, field := range fields {
+		port, err := strconv.ParseUint(field, 10, 16)
+		if err != nil {
+			return [2]uint16{}, fmt.Errorf("invalid port range in %s: %w", filename, err)
+		}
+		ports[i] = uint16(port)
+	}
+	if ports[0] > ports[1] {
+		return [2]uint16{}, fmt.Errorf("invalid port range in %s: %q", filename, contents)
+	}
+	return ports, nil
 }
 
 // Interfaces implements inet.Stack.Interfaces.
@@ -429,8 +467,7 @@ func (*Stack) Restore() {
 	restoreListeners()
 }
 
-// ResetConfig implements inet.Stack.ResetConfig. It takes ownership of
-// the freshly configured stack's host state, including its proc net files.
+// ResetConfig implements inet.Stack.ResetConfig.
 func (s *Stack) ResetConfig() {
 	s.allowedSocketTypes = AllowedSocketTypes
 	if s.allowRawSockets {
@@ -439,9 +476,9 @@ func (s *Stack) ResetConfig() {
 	s.configured = true
 }
 
-// SetFiles sets the host proc net files for the stack.
+// SetHostConfig sets the destination host configuration after restore.
 // It takes ownership of the files.
-func (s *Stack) SetFiles(netDev, netSNMP *os.File) {
+func (s *Stack) SetHostConfig(netDev, netSNMP *os.File, ports [2]uint16) {
 	if s.netDevFile != nil {
 		s.netDevFile.Close()
 	}
@@ -450,6 +487,7 @@ func (s *Stack) SetFiles(netDev, netSNMP *os.File) {
 		s.netSNMPFile.Close()
 	}
 	s.netSNMPFile = netSNMP
+	s.portRange = ports
 }
 
 // Resume implements inet.Stack.Resume.
@@ -480,9 +518,8 @@ func (*Stack) SetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber, bool)
 }
 
 // PortRange implements inet.Stack.PortRange.
-func (*Stack) PortRange() (uint16, uint16) {
-	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
-	return 32768, 60999
+func (s *Stack) PortRange() (uint16, uint16) {
+	return s.portRange[0], s.portRange[1]
 }
 
 // SetPortRange implements inet.Stack.SetPortRange.
