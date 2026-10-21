@@ -3157,7 +3157,10 @@ TEST(NetlinkRouteTest, BridgeAddUnnamed) {
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   BridgeRequest req = GetBridgeRequest(kSeq, "");
-  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len));
+  PosixError err = NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+  // Native Linux kernels may not be built with CONFIG_BRIDGE.
+  SKIP_IF(!IsRunningOnGvisor() && err.errno_value() == EOPNOTSUPP);
+  ASSERT_NO_ERRNO(err);
 
   std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(fd));
   std::map<std::string, std::string> link_kinds;
@@ -3187,8 +3190,11 @@ TEST(NetlinkRouteTest, LinkInfoKind) {
       NetlinkRequestAckOrError(fd, kSeq, &veth_req, veth_req.hdr.nlmsg_len));
 
   BridgeRequest br_req = GetBridgeRequest(kSeq + 1, "br0");
-  ASSERT_NO_ERRNO(
-      NetlinkRequestAckOrError(fd, kSeq + 1, &br_req, br_req.hdr.nlmsg_len));
+  PosixError err =
+      NetlinkRequestAckOrError(fd, kSeq + 1, &br_req, br_req.hdr.nlmsg_len);
+  // Native Linux kernels may not be built with CONFIG_BRIDGE.
+  SKIP_IF(!IsRunningOnGvisor() && err.errno_value() == EOPNOTSUPP);
+  ASSERT_NO_ERRNO(err);
 
   std::vector<Link> links = ASSERT_NO_ERRNO_AND_VALUE(DumpLinks(fd));
   std::map<std::string, std::string> link_kinds;

@@ -1906,6 +1906,8 @@ TEST(MountTest, FailedBindDoesNotBreakPropagation) {
   int lower_mount_max = 100;
   Cleanup restore_mount_max;
   if (access(kMountMax, W_OK) == 0) {
+    auto const mounts = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
+    lower_mount_max += mounts.size();
     std::string const old_max =
         ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMountMax));
     ASSERT_NO_ERRNO(SetContents(kMountMax, absl::StrCat(lower_mount_max)));
