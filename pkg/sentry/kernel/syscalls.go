@@ -33,7 +33,7 @@ import (
 
 // outOfRangeSyscallNumber is used to represent a syscall number that is out of the
 // range [0, maxSyscallNum] in monitoring.
-var outOfRangeSyscallNumber = []*metric.FieldValue{{"-1"}}
+var outOfRangeSyscallNumber = &metric.FieldValue{"-1"}
 
 // SyscallSupportLevel is a syscall support levels.
 type SyscallSupportLevel int
@@ -344,12 +344,13 @@ var (
 	// unimplementedSyscallCounterInit ensures the following fields are only initialized once.
 	unimplementedSyscallCounterInit sync.Once
 
-	// unimplementedSyscallNumbers maps syscall numbers to their string representation.
-	// Used such that incrementing unimplementedSyscallCounter does not require allocating memory.
-	// Each element in the mapped slices are of length 1, as there is only one field for the
-	// unimplemented syscall counter metric. Allocating a slice is necessary as it is passed as a
-	// variadic argument to the metric library.
-	unimplementedSyscallNumbers map[uintptr][]*metric.FieldValue
+	// unimplementedSyscallNumbers contains the allowed values of the "sysno"
+	// field of unimplementedSyscallCounter: element i is the string
+	// representation of syscall number i for i <= sentry.MaxSyscallNum, and
+	// the last element represents out-of-range syscall numbers. Length-1
+	// subslices of it are passed to the metric library, so that incrementing
+	// unimplementedSyscallCounter does not require allocating memory.
+	unimplementedSyscallNumbers []*metric.FieldValue
 
 	// unimplementedSyscallCounter tracks the number of times each unimplemented syscall has been
 	// called by the sandboxed application.
@@ -382,13 +383,11 @@ func RegisterSyscallTable(s *SyscallTable) {
 	allSyscallTables = append(allSyscallTables, s)
 	unimplementedSyscallCounterInit.Do(func() {
 		allowedValues := make([]*metric.FieldValue, sentry.MaxSyscallNum+2)
-		unimplementedSyscallNumbers = make(map[uintptr][]*metric.FieldValue, len(allowedValues))
 		for i := uintptr(0); i <= sentry.MaxSyscallNum; i++ {
-			s := &metric.FieldValue{strconv.Itoa(int(i))}
-			allowedValues[i] = s
-			unimplementedSyscallNumbers[i] = []*metric.FieldValue{s}
+			allowedValues[i] = &metric.FieldValue{strconv.Itoa(int(i))}
 		}
-		allowedValues[len(allowedValues)-1] = outOfRangeSyscallNumber[0]
+		allowedValues[len(allowedValues)-1] = outOfRangeSyscallNumber
+		unimplementedSyscallNumbers = allowedValues
 		unimplementedSyscallCounter = metric.MustCreateNewUint64Metric("/unimplemented_syscalls",
 			metric.Uint64Metadata{
 				Cumulative:  true,
@@ -498,9 +497,8 @@ type SyscallInfo struct {
 // file and files named syscalls.go in other directories, resulting in false
 // positives, so this function cannot be +checkescape:all.
 func IncrementUnimplementedSyscallCounter(sysno uintptr) {
-	s, found := unimplementedSyscallNumbers[sysno]
-	if !found {
-		s = outOfRangeSyscallNumber
+	if sysno > sentry.MaxSyscallNum {
+		sysno = uintptr(len(unimplementedSyscallNumbers) - 1)
 	}
-	unimplementedSyscallCounter.Increment(s...)
+	unimplementedSyscallCounter.Increment(unimplementedSyscallNumbers[sysno : sysno+1]...)
 }
