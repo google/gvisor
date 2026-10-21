@@ -225,14 +225,27 @@ func (s *AsyncFileServer) RegisterClientFile(req *RegisterClientFileRequest, res
 	)
 	defer cu.Clean()
 	if req.Size > 0 {
+		// SECURITY: req.Size is client-controlled. Validate it against the
+		// file's actual size at registration time so that a client cannot
+		// register an undersized file. (Note: F_SEAL_SHRINK cannot be required
+		// here because sentry seccomp blocks MFD_ALLOW_SEALING/F_ADD_SEALS and
+		// pgalloc.MemoryFile is created unsealed; post-registration truncation
+		// protection is tracked in b/554329422.)
+		var st unix.Stat_t
+		if err := unix.Fstat(int(fd), &st); err != nil {
+			return fmt.Errorf("failed to stat client file: %w", err)
+		}
+		if st.Size < 0 || req.Size > uint64(st.Size) {
+			return fmt.Errorf("claimed size %d exceeds file size %d", req.Size, st.Size)
+		}
 		prot := unix.PROT_READ
 		if req.Writable {
 			prot |= unix.PROT_WRITE
 		}
-		var err error
-		mapping, err = unix.Mmap(int(fd), 0 /* offset */, int(req.Size), prot, unix.MAP_SHARED)
-		if err != nil {
-			return fmt.Errorf("failed to map file: %w", err)
+		var err2 error
+		mapping, err2 = unix.Mmap(int(fd), 0 /* offset */, int(req.Size), prot, unix.MAP_SHARED)
+		if err2 != nil {
+			return fmt.Errorf("failed to map file: %w", err2)
 		}
 		cu.Add(func() { unix.Munmap(mapping) })
 		for _, setting := range req.Settings {
@@ -334,6 +347,14 @@ func (f *readFile) startServing(handle uint32) {
 
 func (f *readFile) readerMain() {
 	defer func() {
+		// SECURITY: This loop parses submissions from an untrusted peer; a
+		// panic here must not kill the whole process (which also serves
+		// other files and holds ambient credentials). Compare
+		// lisafs.Connection.handleMsg.
+		if r := recover(); r != nil {
+			log.Warningf("stateipc.readFile(%s): recovered from panic in serving loop: %v", f.path, r)
+			f.ioep.Shutdown()
+		}
 		f.closeErr = f.ar.Close()
 		f.server.filesMu.Lock()
 		f.ioep.Destroy()
@@ -358,10 +379,17 @@ func (f *readFile) readerMain() {
 			return
 		}
 		f.ioep.resetForReadSubmissions()
+		fatal := false
 		for range numSubmissions {
-			cs = f.handleReadSubmission(cs)
+			cs, fatal = f.handleReadSubmission(cs)
+			if fatal {
+				// Protocol violation; a correct client can never send this.
+				f.ioep.Shutdown()
+				return
+			}
 		}
-		minCompletions := max(int(f.ioep.readRequestHeader().MinCompletions)-len(cs), 0)
+		syncCompletions := len(cs)
+		minCompletions := max(int(f.ioep.readRequestHeader().MinCompletions)-syncCompletions, 0)
 		var err error
 		cs, err = f.ar.Wait(cs, minCompletions)
 		numCompletions = uint32(len(cs))
@@ -369,14 +397,22 @@ func (f *readFile) readerMain() {
 		*f.ioep.ioResponseHeader() = ioResponseHeader{
 			Errno: ioErrnoFromError(err, "wait"),
 		}
-		for _, c := range cs {
+		for i, c := range cs {
 			*f.ioep.scanCompletion() = ioCompletion{
 				ID:    uint32(c.ID),
 				N:     uint32(c.N),
 				Errno: ioErrnoFromError(c.Err, "read"),
 			}
-			f.ids.clear(uint32(c.ID))
-			f.putSlices(f.slicesUsed[c.ID])
+			// SECURITY: c.ID indexes f.ids and f.slicesUsed; only recycle
+			// state for IDs that are actually inflight, so that invalid or
+			// duplicate completion IDs (whether from a misbehaving peer or
+			// a buggy AsyncReader implementation) cannot corrupt or
+			// double-free submission state.
+			if i >= syncCompletions && c.ID >= 0 && uint32(c.ID) < f.maxParallel && f.ids.isSet(uint32(c.ID)) {
+				f.ids.clear(uint32(c.ID))
+				f.putSlices(f.slicesUsed[c.ID])
+				f.slicesUsed[c.ID] = asyncIOSlices{}
+			}
 		}
 		cs = cs[:0]
 		if err != nil {
@@ -391,43 +427,48 @@ func (f *readFile) readerMain() {
 	}
 }
 
-func (f *readFile) handleReadSubmission(cs []stateio.Completion) []stateio.Completion {
+// handleReadSubmission parses one read submission. It returns fatal=true if
+// the submission is a protocol violation that must shut down the connection
+// (in particular, submission IDs that cannot safely be echoed in an error
+// completion: out-of-range IDs, and reuse of an ID with I/O still inflight,
+// which would alias the live submission's state).
+func (f *readFile) handleReadSubmission(cs []stateio.Completion) (_ []stateio.Completion, fatal bool) {
 	subHdr := f.ioep.scanReadSubmissionHeader()
 	id := subHdr.ID
 	if id >= f.maxParallel {
 		log.Warningf("stateipc.readFile(%s): invalid ID %d", f.path, id)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return cs, true
 	}
-	if f.ids.isSet(id) {
+	if f.ids.isSet(id) || hasCompletionWithID(cs, id) {
 		log.Warningf("stateipc.readFile(%s): reuse of inflight ID %d", f.path, id)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return cs, true
 	}
 	dfh := subHdr.DstHandle
 	df := f.dstFiles.Load(dfh)
 	if df == nil {
 		log.Warningf("stateipc.readFile(%s): invalid destination file handle %d", f.path, dfh)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return appendErrnoCompletion(cs, id, unix.EINVAL), false
 	}
 	numRanges := subHdr.NumRanges
 	if numRanges == 0 || numRanges > f.maxRanges {
 		log.Warningf("stateipc.readFile(%s): invalid NumRanges %d (max %d)", f.path, numRanges, f.maxRanges)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return appendErrnoCompletion(cs, id, unix.EINVAL), false
 	}
 
 	if numRanges == 1 {
 		fr := f.ioep.scanFileRanges(1)[0]
 		if !isValidFileRange(fr, len(df.mapping)) {
 			log.Warningf("stateipc.readFile(%s): invalid destination file range %v for destination handle %d, file size %d", f.path, fr, dfh, len(df.mapping))
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		if fr.Length() > uint64(f.maxIOBytes) {
 			log.Warningf("stateipc.readFile(%s): oversize read (%d bytes) after destination file range %v", f.path, fr.Length(), fr)
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		f.ar.AddRead(int(id), subHdr.Offset, df.df, fr, df.mapping[fr.Start:fr.End])
 		f.ids.set(id)
 		f.slicesUsed[id] = asyncIOSlices{}
-		return cs
+		return cs, false
 	}
 
 	slices := f.getSlices(numRanges)
@@ -437,13 +478,13 @@ func (f *readFile) handleReadSubmission(cs []stateio.Completion) []stateio.Compl
 		if !isValidFileRange(fr, len(df.mapping)) {
 			log.Warningf("stateipc.readFile(%s): invalid destination file range %v for destination file size %d", f.path, fr, len(df.mapping))
 			f.putSlices(slices)
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		newTotal := total + fr.Length()
 		if newTotal > uint64(f.maxIOBytes) || newTotal < total {
 			log.Warningf("stateipc.readFile(%s): oversize read (%d bytes or overflow) after destination file range %v", f.path, newTotal, fr)
 			f.putSlices(slices)
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		total = newTotal
 		slices.iovecs[i] = unix.Iovec{
@@ -454,7 +495,7 @@ func (f *readFile) handleReadSubmission(cs []stateio.Completion) []stateio.Compl
 	f.ar.AddReadv(int(id), subHdr.Offset, total, df.df, slices.frs, slices.iovecs)
 	f.ids.set(id)
 	f.slicesUsed[id] = slices
-	return cs
+	return cs, false
 }
 
 func (f *readFile) registerClientFD(req *RegisterClientFileRequest, fd int32, mapping []byte) (uint32, error) {
@@ -513,6 +554,14 @@ func (f *writeFile) startServing(handle uint32) {
 
 func (f *writeFile) writerMain() {
 	defer func() {
+		// SECURITY: This loop parses submissions from an untrusted peer; a
+		// panic here must not kill the whole process (which also serves
+		// other files and holds ambient credentials). Compare
+		// lisafs.Connection.handleMsg.
+		if r := recover(); r != nil {
+			log.Warningf("stateipc.writeFile(%s): recovered from panic in serving loop: %v", f.path, r)
+			f.ioep.Shutdown()
+		}
 		f.closeErr = f.aw.Close()
 		f.server.filesMu.Lock()
 		f.ioep.Destroy()
@@ -565,10 +614,17 @@ func (f *writeFile) writerMain() {
 			return
 		}
 		f.ioep.resetForWriteSubmissions()
+		fatal := false
 		for range numSubmissions {
-			cs = f.handleWriteSubmission(cs)
+			cs, fatal = f.handleWriteSubmission(cs)
+			if fatal {
+				// Protocol violation; a correct client can never send this.
+				f.ioep.Shutdown()
+				return
+			}
 		}
-		minCompletions := max(int(reqHdr.MinCompletions)-len(cs), 0)
+		syncCompletions := len(cs)
+		minCompletions := max(int(reqHdr.MinCompletions)-syncCompletions, 0)
 		var err error
 		cs, err = f.aw.Wait(cs, minCompletions)
 		numCompletions = uint32(len(cs))
@@ -576,16 +632,25 @@ func (f *writeFile) writerMain() {
 		*f.ioep.ioResponseHeader() = ioResponseHeader{
 			Errno: ioErrnoFromError(err, "wait"),
 		}
-		for _, c := range cs {
+		for i, c := range cs {
 			*f.ioep.scanCompletion() = ioCompletion{
 				ID:    uint32(c.ID),
 				N:     uint32(c.N),
 				Errno: ioErrnoFromError(c.Err, "write"),
 			}
-			f.ids.clear(uint32(c.ID))
-			f.putSlices(f.slicesUsed[c.ID])
+			// SECURITY: c.ID indexes f.ids and f.slicesUsed; only recycle
+			// state for IDs that are actually inflight, so that invalid or
+			// duplicate completion IDs (whether from a misbehaving peer or
+			// a buggy AsyncWriter implementation) cannot corrupt or
+			// double-free submission state. Only decrement numInflight for
+			// genuine completions.
+			if i >= syncCompletions && c.ID >= 0 && uint32(c.ID) < f.maxParallel && f.ids.isSet(uint32(c.ID)) {
+				f.ids.clear(uint32(c.ID))
+				f.putSlices(f.slicesUsed[c.ID])
+				f.slicesUsed[c.ID] = asyncIOSlices{}
+				f.numInflight--
+			}
 		}
-		f.numInflight -= len(cs)
 		cs = cs[:0]
 		if err != nil {
 			log.Warningf("stateipc.writeFile(%s): AsyncReader.Wait error: %v", f.path, err)
@@ -599,44 +664,49 @@ func (f *writeFile) writerMain() {
 	}
 }
 
-func (f *writeFile) handleWriteSubmission(cs []stateio.Completion) []stateio.Completion {
+// handleWriteSubmission parses one write submission. It returns fatal=true
+// if the submission is a protocol violation that must shut down the
+// connection (in particular, submission IDs that cannot safely be echoed in
+// an error completion: out-of-range IDs, and reuse of an ID with I/O still
+// inflight, which would alias the live submission's state).
+func (f *writeFile) handleWriteSubmission(cs []stateio.Completion) (_ []stateio.Completion, fatal bool) {
 	subHdr := f.ioep.scanWriteSubmissionHeader()
 	id := subHdr.ID
 	if id >= f.maxParallel {
 		log.Warningf("stateipc.writeFile(%s): invalid ID %d", f.path, id)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return cs, true
 	}
-	if f.ids.isSet(id) {
+	if f.ids.isSet(id) || hasCompletionWithID(cs, id) {
 		log.Warningf("stateipc.writeFile(%s): reuse of inflight ID %d", f.path, id)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return cs, true
 	}
 	sfh := subHdr.SrcHandle
 	sf := f.srcFiles.Load(sfh)
 	if sf == nil {
 		log.Warningf("stateipc.writeFile(%s): invalid source file handle %d", f.path, sfh)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return appendErrnoCompletion(cs, id, unix.EINVAL), false
 	}
 	numRanges := subHdr.NumRanges
 	if numRanges == 0 || numRanges > f.maxRanges {
 		log.Warningf("stateipc.writeFile(%s): invalid NumRanges %d (max %d)", f.path, numRanges, f.maxRanges)
-		return appendErrnoCompletion(cs, id, unix.EINVAL)
+		return appendErrnoCompletion(cs, id, unix.EINVAL), false
 	}
 
 	if numRanges == 1 {
 		fr := f.ioep.scanFileRanges(1)[0]
 		if !isValidFileRange(fr, len(sf.mapping)) {
 			log.Warningf("stateipc.writeFile(%s): invalid source file range %v for source handle %d, file size %d", f.path, fr, sfh, len(sf.mapping))
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		if fr.Length() > uint64(f.maxIOBytes) {
 			log.Warningf("stateipc.writeFile(%s): oversize write (%d bytes) after source file range %v", f.path, fr.Length(), fr)
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		f.aw.AddWrite(int(id), sf.sf, fr, sf.mapping[fr.Start:fr.End])
 		f.ids.set(id)
 		f.slicesUsed[id] = asyncIOSlices{}
 		f.numInflight++
-		return cs
+		return cs, false
 	}
 
 	slices := f.getSlices(numRanges)
@@ -646,13 +716,13 @@ func (f *writeFile) handleWriteSubmission(cs []stateio.Completion) []stateio.Com
 		if !isValidFileRange(fr, len(sf.mapping)) {
 			log.Warningf("stateipc.writeFile(%s): invalid source file range %v for source file size %d", f.path, fr, len(sf.mapping))
 			f.putSlices(slices)
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		newTotal := total + fr.Length()
 		if newTotal > uint64(f.maxIOBytes) || newTotal < total {
 			log.Warningf("stateipc.writeFile(%s): oversize write (%d bytes or overflow) after source file range %v", f.path, newTotal, fr)
 			f.putSlices(slices)
-			return appendErrnoCompletion(cs, id, unix.EINVAL)
+			return appendErrnoCompletion(cs, id, unix.EINVAL), false
 		}
 		total = newTotal
 		slices.iovecs[i] = unix.Iovec{
@@ -664,7 +734,7 @@ func (f *writeFile) handleWriteSubmission(cs []stateio.Completion) []stateio.Com
 	f.ids.set(id)
 	f.slicesUsed[id] = slices
 	f.numInflight++
-	return cs
+	return cs, false
 }
 
 func (f *writeFile) registerClientFD(req *RegisterClientFileRequest, fd int32, mapping []byte) (uint32, error) {
@@ -712,6 +782,15 @@ func appendErrnoCompletion(cs []stateio.Completion, id uint32, errno unix.Errno)
 		ID:  int(id),
 		Err: errno,
 	})
+}
+
+func hasCompletionWithID(cs []stateio.Completion, id uint32) bool {
+	for i := range cs {
+		if cs[i].ID >= 0 && uint32(cs[i].ID) == id {
+			return true
+		}
+	}
+	return false
 }
 
 // idsSet tracks in-use request IDs.
