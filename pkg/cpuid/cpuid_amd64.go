@@ -466,16 +466,13 @@ func (fs FeatureSet) AMXExtendedStateSize() uint {
 
 // ValidXCR0Mask returns the valid bits in control register XCR0.
 //
-// Always exclude AMX bits, because we do not support it.
-// TODO(gvisor.dev/issues/9896): Implement AMX Support.
-//
 //go:nosplit
 func (fs FeatureSet) ValidXCR0Mask() uint64 {
 	if !fs.HasFeature(X86FeatureXSAVE) {
 		return 0
 	}
 	ax, _, _, dx := fs.query(xSaveInfo)
-	return (uint64(dx)<<32 | uint64(ax)) &^ (XCR0AmxCfgMask | XCR0AmxDataMask)
+	return uint64(dx)<<32 | uint64(ax)
 }
 
 // UseXsave returns the choice of fp state saving instruction.

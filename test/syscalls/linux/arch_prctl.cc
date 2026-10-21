@@ -1073,17 +1073,11 @@ TEST(ArchPrctlTest, SigillAtRevertedPatchSiteIsDelivered) {
   }
 }
 
-// AMX (Advanced Matrix Extensions) support, gvisor.dev/issue/9896.
+// AMX (Advanced Matrix Extensions), gvisor.dev/issue/9896.
 //
-// gVisor advertises the AMX-TILE feature in CPUID but currently refuses every
-// arch_prctl() call needed to enable the AMX extended state, so a workload that
-// trusts CPUID (e.g. oneDNN / Intel Extension for PyTorch) cannot use AMX. These
-// tests assert the correct Linux behavior: they pass natively and are expected
-// to fail on current gVisor until AMX is implemented.
-//
-// Each test skips when AMX is genuinely unavailable on a native host (old CPU or
-// pre-5.16 kernel), but deliberately does NOT skip under gVisor: gVisor
-// advertises AMX in CPUID, so its refusal to enable it is the bug under test.
+// Workloads that see AMX-TILE in CPUID (e.g. oneDNN) enable it with
+// arch_prctl(). On a native host without AMX kernel support the tests skip;
+// gVisor must not skip, since it only advertises AMX where it supports it.
 
 TEST(ArchPrctlTest, AmxGetXcompSupp) {
   SKIP_IF(!CpuidHasAMXTile());

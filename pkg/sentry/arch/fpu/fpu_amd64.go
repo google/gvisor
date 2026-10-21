@@ -99,10 +99,8 @@ func initX86FPState(data *byte, useXsave bool)
 
 func newX86FPStateSlice() State {
 	maxsize, align := cpuid.HostFeatureSet().ExtendedStateSize()
-	// We need capacity to be large enough to hold AMX bytes because of
-	// ptrace. PTRACE_SETREGSET/GETREGSET assume that AMX portions should
-	// always be used.
-	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+	// Capacity covers AMX state, which EnableAMX extends into and which
+	// PTRACE_GETREGSET/SETREGSET always include.
 	capacity := maxsize + FP_XSTATE_MAGIC2_SIZE
 	size := maxsize - cpuid.HostFeatureSet().AMXExtendedStateSize()
 	// Always use at least 4096 bytes.
@@ -181,10 +179,10 @@ var (
 func InitHostState() {
 	initHostStateOnce.Do(func() {
 		featureSet := cpuid.HostFeatureSet()
-		hostXCR0Mask = featureSet.ValidXCR0Mask()
+		// Sentry threads never use AMX.
+		hostXCR0Mask = featureSet.ValidXCR0Mask() &^ (cpuid.XCR0AmxCfgMask | cpuid.XCR0AmxDataMask)
 		hostUseXsave = featureSet.UseXsave()
 		hostFPSize, _ = featureSet.ExtendedStateSize()
-		// TODO(gvisor.dev/issues/9896): Implement AMX Support.
 		hostFPSize = hostFPSize - featureSet.AMXExtendedStateSize()
 	})
 }
