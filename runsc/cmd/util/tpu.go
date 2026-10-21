@@ -41,7 +41,7 @@ var (
 	tpuV4DeviceIDs   = map[uint64]struct{}{tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}}
 	tpuVFIODeviceIDs = map[uint64]struct{}{
 		tpu.TPUV4DeviceID: {}, tpu.TPUV4liteDeviceID: {}, tpu.TPUV5eDeviceID: {}, tpu.TPUV5pDeviceID: {},
-		tpu.TPUV6eDeviceID: {}, tpu.TPU7xDeviceID: {}, tpu.TPUV6ePFDeviceID: {}, tpu.TPU7xPFDeviceID: {},
+		tpu.TPUV6eDeviceID: {}, tpu.TPUV7xDeviceID: {}, tpu.TPUV6ePFDeviceID: {}, tpu.TPUV7xPFDeviceID: {},
 	}
 	// Matches PCI device addresses in domain:bus:device.function form.
 	pciDeviceRegex = regexp.MustCompile(tpu.PCIDeviceRegexPattern)

@@ -184,6 +184,7 @@ func (d *DeviceInfo) StateFields() []string {
 		"MNCCManagementDevMinor",
 		"CapsIMEXChannelsDevMajor",
 		"UVMDevMajor",
+		"HaveUVMTools",
 	}
 }
 
@@ -199,6 +200,7 @@ func (d *DeviceInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &d.MNCCManagementDevMinor)
 	stateSinkObject.Save(5, &d.CapsIMEXChannelsDevMajor)
 	stateSinkObject.Save(6, &d.UVMDevMajor)
+	stateSinkObject.Save(7, &d.HaveUVMTools)
 }
 
 func (d *DeviceInfo) afterLoad(context.Context) {}
@@ -212,6 +214,7 @@ func (d *DeviceInfo) StateLoad(ctx context.Context, stateSourceObject state.Sour
 	stateSourceObject.Load(4, &d.MNCCManagementDevMinor)
 	stateSourceObject.Load(5, &d.CapsIMEXChannelsDevMajor)
 	stateSourceObject.Load(6, &d.UVMDevMajor)
+	stateSourceObject.Load(7, &d.HaveUVMTools)
 }
 
 func (nvp *nvproxy) StateTypeName() string {
@@ -585,6 +588,74 @@ func (mf *uvmFDMemmapFile) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(0, &mf.MmapPreciseFile)
 }
 
+func (dev *uvmToolsDevice) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.uvmToolsDevice"
+}
+
+func (dev *uvmToolsDevice) StateFields() []string {
+	return []string{
+		"nvp",
+	}
+}
+
+func (dev *uvmToolsDevice) beforeSave() {}
+
+// +checklocksignore
+func (dev *uvmToolsDevice) StateSave(stateSinkObject state.Sink) {
+	dev.beforeSave()
+	stateSinkObject.Save(0, &dev.nvp)
+}
+
+func (dev *uvmToolsDevice) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (dev *uvmToolsDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &dev.nvp)
+}
+
+func (fd *uvmToolsFD) StateTypeName() string {
+	return "pkg/sentry/devices/nvproxy.uvmToolsFD"
+}
+
+func (fd *uvmToolsFD) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"NoLockFD",
+		"dev",
+		"containerName",
+		"hostFD",
+		"queue",
+	}
+}
+
+// +checklocksignore
+func (fd *uvmToolsFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &fd.NoLockFD)
+	stateSinkObject.Save(4, &fd.dev)
+	stateSinkObject.Save(5, &fd.containerName)
+	stateSinkObject.Save(6, &fd.hostFD)
+	stateSinkObject.Save(7, &fd.queue)
+}
+
+// +checklocksignore
+func (fd *uvmToolsFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &fd.NoLockFD)
+	stateSourceObject.Load(4, &fd.dev)
+	stateSourceObject.Load(5, &fd.containerName)
+	stateSourceObject.Load(6, &fd.hostFD)
+	stateSourceObject.Load(7, &fd.queue)
+	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
+}
+
 func init() {
 	state.Register((*frontendDevice)(nil))
 	state.Register((*frontendFD)(nil))
@@ -602,4 +673,6 @@ func init() {
 	state.Register((*uvmDevice)(nil))
 	state.Register((*uvmFD)(nil))
 	state.Register((*uvmFDMemmapFile)(nil))
+	state.Register((*uvmToolsDevice)(nil))
+	state.Register((*uvmToolsFD)(nil))
 }

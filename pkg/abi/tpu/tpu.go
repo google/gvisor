@@ -51,11 +51,11 @@ const (
 	// TPUV6ePFDeviceID is PCI device ID of TPU V6e hardware PF.
 	TPUV6ePFDeviceID = 0x006e
 
-	// TPU7xDeviceID is the PCI device ID of TPU 7x hardware.
-	TPU7xDeviceID = 0x0075
+	// TPUV7xDeviceID is the PCI device ID of TPU 7x hardware.
+	TPUV7xDeviceID = 0x0076
 
-	// TPU7xPFDeviceID is the PCI device ID of TPU 7x hardware PF.
-	TPU7xPFDeviceID = 0x0076
+	// TPUV7xPFDeviceID is the PCI device ID of TPU 7x hardware PF.
+	TPUV7xPFDeviceID = 0x0075
 
 	// PCIBusRegexPattern matches PCI root bus directories in pciDDDD:BB form
 	// (e.g. pci0000:00 or pci0007:00).
