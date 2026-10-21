@@ -34,6 +34,8 @@ type MemoryUsageOpts struct {
 
 // MemoryUsage is a memory usage structure.
 type MemoryUsage struct {
+	// Unknown is memory used by the MemoryFile that is not counted in any
+	// memory kind. Total includes it only for a partial accounting.
 	Unknown   uint64 `json:"Unknown"`
 	System    uint64 `json:"System"`
 	Anonymous uint64 `json:"Anonymous"`
