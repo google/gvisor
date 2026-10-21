@@ -414,6 +414,11 @@ afterTrailingSymlink:
 		goto afterTrailingSymlink
 	}
 	if linuxerr.Equals(linuxerr.ENOENT, err) {
+		// tmpfs never calls VFS.InvalidateDentry(), so parentDir.dentry can
+		// only be dead if it was deleted.
+		if parentDir.dentry.vfsd.IsDead() {
+			return nil, linuxerr.ENOENT
+		}
 		// Already checked for searchability above; now check for writability.
 		if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 			return nil, err
