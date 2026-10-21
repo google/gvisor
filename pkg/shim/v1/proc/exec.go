@@ -56,8 +56,11 @@ type execProcess struct {
 	path        string
 	spec        specs.Process
 
-	parent    *Init
-	waitBlock chan struct{}
+	parent      *Init
+	waitBlock   chan struct{}
+	ioWaitOnce  sync.Once
+	ioDone      chan struct{}
+	ioCloseOnce sync.Once
 }
 
 func (e *execProcess) Wait() {
@@ -107,20 +110,41 @@ func (e *execProcess) setExited(status int) {
 }
 
 func (e *execProcess) Delete(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	ctx, unlock, err := lockRuntimeFor(&e.mu, ctx, runscTimeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	return e.execState.Delete(ctx)
 }
 
-func (e *execProcess) delete() {
-	e.wg.Wait()
-	if e.io != nil {
-		for _, c := range e.closers {
-			c.Close()
-		}
-		e.io.Close()
+func (e *execProcess) delete(ctx context.Context) error {
+	defer e.closeIO()
+	e.ioWaitOnce.Do(func() {
+		e.ioDone = make(chan struct{})
+		go func() {
+			e.wg.Wait()
+			close(e.ioDone)
+		}()
+	})
+	select {
+	case <-e.ioDone:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
 	}
+}
+
+func (e *execProcess) closeIO() {
+	e.ioCloseOnce.Do(func() {
+		for _, c := range e.closers {
+			_ = c.Close()
+		}
+		if e.io != nil {
+			_ = e.io.Close()
+		}
+	})
 }
 
 func (e *execProcess) Resize(ws console.WinSize) error {
@@ -138,8 +162,11 @@ func (e *execProcess) resize(ws console.WinSize) error {
 }
 
 func (e *execProcess) Kill(ctx context.Context, sig uint32, _ bool) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	ctx, unlock, err := lockRuntimeFor(&e.mu, ctx, runscTimeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	return e.execState.Kill(ctx, sig, false)
 }
@@ -166,8 +193,11 @@ func (e *execProcess) Stdio() stdio.Stdio {
 }
 
 func (e *execProcess) Start(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	ctx, unlock, err := lockRuntimeFor(&e.mu, ctx, runscLongOperationTimeout)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	return e.execState.Start(ctx, nil /* restoreConf */)
 }
