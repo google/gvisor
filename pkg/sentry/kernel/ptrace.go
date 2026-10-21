@@ -91,28 +91,95 @@ const (
 	ptraceSyscallEmu
 )
 
-// CanTrace checks that t is permitted to access target's state, as defined by
-// ptrace(2), subsection "Ptrace access mode checking". If attach is true, it
-// checks for access mode PTRACE_MODE_ATTACH; otherwise, it checks for access
-// mode PTRACE_MODE_READ.
+// PtraceAccessMode is a bitmask of access modes used in ptrace access checking,
+// as defined by include/uapi/linux/ptrace.h. Each flag corresponds to the
+// PTRACE_MODE_* constant of the same name.
+type PtraceAccessMode uint
+
+const (
+	// PtraceAccessModeRead corresponds to PTRACE_MODE_READ: access is being
+	// requested for the purpose of reading the target's memory or other state.
+	PtraceAccessModeRead PtraceAccessMode = linux.PTRACE_MODE_READ
+
+	// PtraceAccessModeAttach corresponds to PTRACE_MODE_ATTACH: access is being
+	// requested for the purpose of tracing (attaching to) the target.
+	PtraceAccessModeAttach PtraceAccessMode = linux.PTRACE_MODE_ATTACH
+
+	// PtraceAccessModeNoAudit corresponds to PTRACE_MODE_NOAUDIT: the access
+	// check should not be audited (e.g. because it is performed as a side
+	// effect of another system call). gVisor does not currently audit ptrace
+	// access checks, so this flag has no effect.
+	PtraceAccessModeNoAudit PtraceAccessMode = linux.PTRACE_MODE_NOAUDIT
+
+	// PtraceAccessModeFsCreds corresponds to PTRACE_MODE_FSCREDS: the access
+	// check should be performed using the caller's filesystem user and group
+	// IDs and effective capability set. Since gVisor does not yet implement
+	// setfsuid(2) and setfsgid(2), the caller's filesystem IDs are always
+	// equal to its effective IDs; see gvisor.dev/issue/260.
+	PtraceAccessModeFsCreds PtraceAccessMode = linux.PTRACE_MODE_FSCREDS
+
+	// PtraceAccessModeRealCreds corresponds to PTRACE_MODE_REALCREDS: the
+	// access check should be performed using the caller's real user and group
+	// IDs and permitted capability set.
+	PtraceAccessModeRealCreds PtraceAccessMode = linux.PTRACE_MODE_REALCREDS
+)
+
+// Contains returns true if mode contains all of the access mode flags in o.
+func (mode PtraceAccessMode) Contains(o PtraceAccessMode) bool {
+	return mode&o == o
+}
+
+// hasCredsMode returns true if mode specifies exactly one of
+// PtraceAccessModeFsCreds and PtraceAccessModeRealCreds, as required by
+// kernel/ptrace.c:__ptrace_may_access().
+func (mode PtraceAccessMode) hasCredsMode() bool {
+	return mode.Contains(PtraceAccessModeFsCreds) != mode.Contains(PtraceAccessModeRealCreds)
+}
+
+// ptraceMode returns an access mode with the given read/attach bit and
+// credential-selection bit.
+func ptraceMode(attach bool, credsMode PtraceAccessMode) PtraceAccessMode {
+	if attach {
+		return PtraceAccessModeAttach | credsMode
+	}
+	return PtraceAccessModeRead | credsMode
+}
+
+// CanTraceMode checks that t is permitted to access target's state, as defined
+// by ptrace(2), subsection "Ptrace access mode checking", using the given
+// access mode. Callers should use the PtraceAccessMode* constants; mode must
+// specify exactly one of PtraceAccessModeFsCreds and PtraceAccessModeRealCreds.
 //
 // In Linux, ptrace access restrictions may be configured by LSMs. While we do
 // not support LSMs, we do add additional restrictions based on the commoncap
 // and YAMA LSMs.
 //
-// TODO(gvisor.dev/issue/212): The result of CanTrace is immediately stale
+// TODO(gvisor.dev/issue/212): The result of CanTraceMode is immediately stale
 // (e.g., a racing setuid(2) or execve(2) may change traceability; in
 // particular, a target exec of a set-user/group-ID or non-readable file
 // replaces its MemoryManager with a non-dumpable one). Linux prevents the
 // execve race by holding signal_struct::exec_update_lock across the check and
 // the use of the target's mm (kernel/fork.c:mm_access()). Callers that go on
-// to access the target's memory should use CanTraceAndGetMM so that the
+// to access the target's memory should use CanTraceModeAndGetMM so that the
 // access check applies to the MemoryManager they use.
 //
 // +checklocksexclude:target.mu
-func (t *Task) CanTrace(target *Task, attach bool) bool {
+func (t *Task) CanTraceMode(target *Task, mode PtraceAccessMode) bool {
 	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
-	return t.canTraceWithMM(target, attach, targetMM, targetUserDumpable)
+	return t.canTraceWithMM(target, mode, targetMM, targetUserDumpable)
+}
+
+// CanTrace checks that t is permitted to access target's state, as defined by
+// ptrace(2), subsection "Ptrace access mode checking". If attach is true, it
+// checks for access mode PTRACE_MODE_ATTACH; otherwise, it checks for access
+// mode PTRACE_MODE_READ. In both cases, the check uses PTRACE_MODE_REALCREDS.
+//
+// CanTrace is a convenience wrapper around CanTraceMode; prefer CanTraceMode
+// when a more specific access mode is required.
+//
+// +checklocksexclude:target.mu
+func (t *Task) CanTrace(target *Task, attach bool) bool {
+	return t.CanTraceMode(target, ptraceMode(attach, PtraceAccessModeRealCreds))
 }
 
 // memoryManagerAndUserDumpable returns t's MemoryManager and, for use when it
@@ -127,9 +194,9 @@ func (t *Task) memoryManagerAndUserDumpable() (*mm.MemoryManager, bool) {
 	return targetMM, targetUserDumpable
 }
 
-// canTraceWithMM implements CanTrace, performing the dumpability check
+// canTraceWithMM implements CanTraceMode, performing the dumpability check
 // against the given targetMM and targetUserDumpable.
-func (t *Task) canTraceWithMM(target *Task, attach bool, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
+func (t *Task) canTraceWithMM(target *Task, mode PtraceAccessMode, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
 	// "If the calling thread and the target thread are in the same thread
 	// group, access is always allowed." - ptrace(2)
 	//
@@ -142,11 +209,11 @@ func (t *Task) canTraceWithMM(target *Task, attach bool, targetMM *mm.MemoryMana
 		return true
 	}
 
-	if !t.canTraceStandardWithMM(target, attach, targetMM, targetUserDumpable) {
+	if !t.canTraceStandardWithMM(target, mode, targetMM, targetUserDumpable) {
 		return false
 	}
 
-	if attach && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
+	if mode.Contains(PtraceAccessModeAttach) && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if !t.canTraceYAMALocked(target) {
@@ -156,8 +223,8 @@ func (t *Task) canTraceWithMM(target *Task, attach bool, targetMM *mm.MemoryMana
 	return true
 }
 
-// CanTraceAndGetMM is the equivalent of Linux's kernel/fork.c:mm_access():
-// it performs the CanTrace check and, on success, returns target's
+// CanTraceModeAndGetMM is the equivalent of Linux's kernel/fork.c:mm_access():
+// it performs the CanTraceMode check and, on success, returns target's
 // MemoryManager with a user reference held (which the caller must drop with
 // DecUsers). The access check is performed against the returned
 // MemoryManager, so a concurrent execve cannot substitute a different
@@ -167,7 +234,7 @@ func (t *Task) canTraceWithMM(target *Task, attach bool, targetMM *mm.MemoryMana
 // the access check fails.
 //
 // +checklocksexclude:target.mu
-func (t *Task) CanTraceAndGetMM(target *Task, attach bool) (*mm.MemoryManager, error) {
+func (t *Task) CanTraceModeAndGetMM(target *Task, mode PtraceAccessMode) (*mm.MemoryManager, error) {
 	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
 	if targetMM == nil {
 		return nil, linuxerr.ESRCH
@@ -175,7 +242,7 @@ func (t *Task) CanTraceAndGetMM(target *Task, attach bool) (*mm.MemoryManager, e
 	if !targetMM.IncUsers() {
 		return nil, linuxerr.EFAULT
 	}
-	if !t.canTraceWithMM(target, attach, targetMM, targetUserDumpable) {
+	if !t.canTraceWithMM(target, mode, targetMM, targetUserDumpable) {
 		// canTraceWithMM holds no locks on return, so dropping what may be
 		// the last reference to the MemoryManager is safe here.
 		targetMM.DecUsers(t)
@@ -184,20 +251,29 @@ func (t *Task) CanTraceAndGetMM(target *Task, attach bool) (*mm.MemoryManager, e
 	return targetMM, nil
 }
 
-// canTraceLocked is the same as CanTrace, except the caller must already hold
-// the TaskSet mutex (for reading or writing).
+// CanTraceAndGetMM is the same as CanTraceModeAndGetMM, using access mode
+// PTRACE_MODE_ATTACH_REALCREDS if attach is true, or
+// PTRACE_MODE_READ_REALCREDS if attach is false.
 //
 // +checklocksexclude:target.mu
-func (t *Task) canTraceLocked(target *Task, attach bool) bool {
+func (t *Task) CanTraceAndGetMM(target *Task, attach bool) (*mm.MemoryManager, error) {
+	return t.CanTraceModeAndGetMM(target, ptraceMode(attach, PtraceAccessModeRealCreds))
+}
+
+// canTraceLocked is the same as CanTraceMode, except the caller must already
+// hold the TaskSet mutex (for reading or writing).
+//
+// +checklocksexclude:target.mu
+func (t *Task) canTraceLocked(target *Task, mode PtraceAccessMode) bool {
 	if t.tg == target.tg {
 		return true
 	}
 
-	if !t.canTraceStandard(target, attach) {
+	if !t.canTraceStandard(target, mode) {
 		return false
 	}
 
-	if attach && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
+	if mode.Contains(PtraceAccessModeAttach) && t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		if !t.canTraceYAMALocked(target) {
 			return false
 		}
@@ -211,16 +287,14 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 // always invoked.
 //
 // +checklocksexclude:target.mu
-func (t *Task) canTraceStandard(target *Task, attach bool) bool {
+func (t *Task) canTraceStandard(target *Task, mode PtraceAccessMode) bool {
 	// """
-	// TODO(gvisor.dev/issue/260): 1. If the access mode specifies
-	// PTRACE_MODE_FSCREDS (ED: snipped, doesn't exist until Linux 4.5).
-	//
-	// Otherwise, the access mode specifies PTRACE_MODE_REALCREDS, so use the
-	// caller's real UID and GID for the checks in the next step. (Most APIs
-	// that check the caller's UID and GID use the effective IDs. For
-	// historical reasons, the PTRACE_MODE_REALCREDS check uses the real IDs
-	// instead.)
+	// 1. If the access mode specifies PTRACE_MODE_FSCREDS, use the caller's
+	// filesystem UID and GID for the checks in the next step; otherwise, the
+	// access mode specifies PTRACE_MODE_REALCREDS, so use the caller's real
+	// UID and GID. (Most APIs that check the caller's UID and GID use the
+	// effective IDs. For historical reasons, the PTRACE_MODE_REALCREDS check
+	// uses the real IDs instead.)
 	//
 	// 2. Deny access if neither of the following is true:
 	//
@@ -256,43 +330,77 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	// section: "the commoncap LSM ... is always invoked".)
 	// """
 	targetMM, targetUserDumpable := target.memoryManagerAndUserDumpable()
-	return t.canTraceStandardWithMM(target, attach, targetMM, targetUserDumpable)
+	return t.canTraceStandardWithMM(target, mode, targetMM, targetUserDumpable)
 }
 
 // canTraceStandardWithMM is the same as canTraceStandard, but performs the
 // dumpability check against the given targetMM and targetUserDumpable rather
 // than fetching them from target.
-func (t *Task) canTraceStandardWithMM(target *Task, attach bool, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
-	callerCreds := t.Credentials()
-	targetCreds := target.Credentials()
-	hasPtraceCapInTargetNS := callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace)
-	if !hasPtraceCapInTargetNS {
-		if cuid := callerCreds.RealKUID; cuid != targetCreds.RealKUID || cuid != targetCreds.EffectiveKUID || cuid != targetCreds.SavedKUID {
-			return false
-		}
-		if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
-			return false
-		}
-	}
+func (t *Task) canTraceStandardWithMM(target *Task, mode PtraceAccessMode, targetMM *mm.MemoryManager, targetUserDumpable bool) bool {
+	targetDumpable := targetUserDumpable
+	targetDumpableNS := t.Kernel().RootUserNamespace()
 	if targetMM != nil {
+		targetDumpable = targetMM.Dumpability() == mm.UserDumpable
 		// The capability against non-dumpable targets must be held in the
 		// MemoryManager's user namespace (Linux: mm_struct::user_ns), which
 		// fs/exec.c:would_dump() may have lowered to an ancestor of the
 		// target's namespace at execve.
-		if targetMM.Dumpability() != mm.UserDumpable &&
-			!callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, mmUserNamespace(targetMM)) {
+		targetDumpableNS = mmUserNamespace(targetMM)
+	}
+	return canTraceStandardWithCreds(mode, t.Credentials(), target.Credentials(), targetDumpable, targetDumpableNS)
+}
+
+// canTraceStandardWithCreds performs the credential and dumpability checks of
+// canTraceStandardWithMM given the caller's and target's credentials and
+// whether the target is dumpable. targetDumpableNS is the user namespace in
+// which the caller must hold CAP_SYS_PTRACE in order to access a non-dumpable
+// target.
+//
+// It is split out from canTraceStandardWithMM so that it can be unit tested
+// without constructing Tasks.
+func canTraceStandardWithCreds(mode PtraceAccessMode, callerCreds, targetCreds *auth.Credentials, targetDumpable bool, targetDumpableNS *auth.UserNamespace) bool {
+	// As in kernel/ptrace.c:__ptrace_may_access(), access modes that do not
+	// specify exactly one of PTRACE_MODE_FSCREDS and PTRACE_MODE_REALCREDS are
+	// rejected.
+	if !mode.hasCredsMode() {
+		return false
+	}
+	// Step 1: select the caller's IDs according to the credential-selection
+	// flag.
+	callerUID, callerGID := callerCreds.RealKUID, callerCreds.RealKGID
+	if mode.Contains(PtraceAccessModeFsCreds) {
+		// TODO(gvisor.dev/issue/260): Use FilesystemKUID/FilesystemKGID once
+		// setfsuid(2) and setfsgid(2) are implemented. Until then, the
+		// filesystem IDs always track the effective IDs.
+		callerUID, callerGID = callerCreds.EffectiveKUID, callerCreds.EffectiveKGID
+	}
+	hasPtraceCapInTargetNS := callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetCreds.UserNamespace)
+	if !hasPtraceCapInTargetNS {
+		// Step 2.
+		if callerUID != targetCreds.RealKUID || callerUID != targetCreds.EffectiveKUID || callerUID != targetCreds.SavedKUID {
 			return false
 		}
-	} else {
-		if !targetUserDumpable && !callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, t.Kernel().RootUserNamespace()) {
+		if callerGID != targetCreds.RealKGID || callerGID != targetCreds.EffectiveKGID || callerGID != targetCreds.SavedKGID {
 			return false
 		}
 	}
+	// Step 3.
+	if !targetDumpable && !callerCreds.HasCapabilityIn(linux.CAP_SYS_PTRACE, targetDumpableNS) {
+		return false
+	}
 	if !hasPtraceCapInTargetNS {
+		// Step 4.
 		if callerCreds.UserNamespace != targetCreds.UserNamespace {
 			return false
 		}
-		if targetCreds.PermittedCaps&^callerCreds.PermittedCaps != 0 {
+		// Step 4a: select the caller's capability set according to the
+		// credential-selection flag.
+		callerCaps := callerCreds.PermittedCaps
+		if mode.Contains(PtraceAccessModeFsCreds) {
+			callerCaps = callerCreds.EffectiveCaps
+		}
+		// Step 4b.
+		if targetCreds.PermittedCaps&^callerCaps != 0 {
 			return false
 		}
 	}
@@ -635,7 +743,8 @@ func (t *Task) ptraceTraceme() error {
 func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
-	if !t.canTraceLocked(target, true) {
+	// Linux's ptrace_attach() checks access mode PTRACE_MODE_ATTACH_REALCREDS.
+	if !t.canTraceLocked(target, PtraceAccessModeAttach|PtraceAccessModeRealCreds) {
 		return linuxerr.EPERM
 	}
 	if target.hasTracer() {

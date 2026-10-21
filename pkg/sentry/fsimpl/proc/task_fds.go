@@ -232,7 +232,9 @@ func (fs *filesystem) newFDSymlink(ctx context.Context, task *kernel.Task, fd in
 
 // +checklocksexclude:s.task.mu
 func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) {
-	if !kernel.ContextCanTrace(ctx, s.task, false) {
+	// Permission to read this symlink is governed by PTRACE_MODE_READ_FSCREDS;
+	// see fs/proc/base.c:proc_fd_link().
+	if !kernel.ContextCanTraceMode(ctx, s.task, kernel.PtraceAccessModeRead|kernel.PtraceAccessModeFsCreds) {
 		return "", linuxerr.EACCES
 	}
 	file, _ := getTaskFD(s.task, s.fd)
@@ -249,7 +251,9 @@ func (s *fdSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error) 
 
 // +checklocksexclude:s.task.mu
 func (s *fdSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualDentry, string, error) {
-	if !kernel.ContextCanTrace(ctx, s.task, false) {
+	// Permission to read this symlink is governed by PTRACE_MODE_READ_FSCREDS;
+	// see fs/proc/base.c:proc_fd_link().
+	if !kernel.ContextCanTraceMode(ctx, s.task, kernel.PtraceAccessModeRead|kernel.PtraceAccessModeFsCreds) {
 		return vfs.VirtualDentry{}, "", linuxerr.EACCES
 	}
 	file, _ := getTaskFD(s.task, s.fd)
