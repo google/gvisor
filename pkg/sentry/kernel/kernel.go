@@ -1116,6 +1116,9 @@ func (k *Kernel) LoadFrom(ctx context.Context, r io.Reader, asyncMFLoader *Async
 	if err := k.featureSet.CheckHostCompatible(); err != nil {
 		return err
 	}
+	if err := k.checkPlatformFeatures(); err != nil {
+		return err
+	}
 	timeline.Reached("CPUID checked")
 
 	// Suspend fdnotifier notifications.

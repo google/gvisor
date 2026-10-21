@@ -138,6 +138,15 @@ func (*KVM) SupportsAddressSpaceIO() bool {
 	return false
 }
 
+// hasGuestAMX indicates whether KVM allows AMX in guests. It is set by
+// updateGlobalOnce.
+var hasGuestAMX bool
+
+// SupportsAMX implements platform.Platform.SupportsAMX.
+func (*KVM) SupportsAMX() bool {
+	return hasGuestAMX
+}
+
 // MapUnit implements platform.Platform.MapUnit.
 func (*KVM) MapUnit() uint64 {
 	// We greedily creates PTEs in MapFile, so extremely large mappings can

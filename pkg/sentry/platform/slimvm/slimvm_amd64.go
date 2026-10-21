@@ -210,7 +210,7 @@ func (c *cpuidEntries) Query(in cpuid.In) (out cpuid.Out) {
 func updateGlobalOnce(fd int) error {
 	err := updateSystemValues(int(fd))
 	// TODO: b/529809802 - static feature set like kvm
-	ring0.Init(cpuid.HostFeatureSet())
+	ring0.Init(cpuid.HostFeatureSet().UnsetAMX())
 	// slimvm.ko's EPT only supports 4-level page tables. Clamp ring0 and
 	// pagetables to a 4-level layout regardless of host CPUID so that
 	// fillAddressSpace doesn't try to mmap a 2^56 userspace and so that
