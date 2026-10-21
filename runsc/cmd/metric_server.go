@@ -36,9 +36,7 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		Argv: os.Args,
 		Envv: os.Environ(),
 	})
-	if err != nil {
-		util.Fatalf("metric server: %v", err)
-	}
-	util.Fatalf("unreachable")
+	// Unreachable unless `MetricServer.Exec` fails.
+	util.Fatalf("metric server: %v", err)
 	return subcommands.ExitFailure
 }
