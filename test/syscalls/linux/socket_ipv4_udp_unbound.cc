@@ -2315,8 +2315,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIPPacketInfo) {
   recv_msg.msg_iovlen = 1;
   recv_msg.msg_controllen = CMSG_LEN(cmsg_data_len);
   recv_msg.msg_control = recv_cmsg_buf;
-  ASSERT_THAT(RetryEINTR(recvmsg)(receiver_socket->get(), &recv_msg, 0),
-              SyscallSucceedsWithValue(sizeof(send_buf)));
+  ASSERT_THAT(
+      RecvMsgTimeout(receiver_socket->get(), &recv_msg, kPositiveTimeoutSecs),
+      IsPosixErrorOkAndHolds(sizeof(send_buf)));
   EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 
   // Check the IP_PKTINFO control message.
