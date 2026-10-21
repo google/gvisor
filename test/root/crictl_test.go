@@ -1140,7 +1140,7 @@ func TestCrictlSandboxPosture(t *testing.T) {
 		NetworkMode:          "sandbox",
 		EnableRaw:            conf.EnableRaw,
 		RequiresCapSysPtrace: sandboxposture.PlatformCapSysPtrace[conf.Platform],
-		GoDebug:              sandboxposture.GoDebug(conf.Platform),
+		GoDebug:              sandboxposture.GoDebug(conf.Platform, conf.ProfileEnable),
 		Cgroup:               true,
 		ExtraFDClasses:       extraFDs,
 		CgoEnabled:           config.CgoEnabled,
