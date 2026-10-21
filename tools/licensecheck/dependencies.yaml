@@ -866,6 +866,12 @@
   commit: 3f62bf119e84c6e35e8518a2958089ade622d1a3
   sha256: 856c916b92f1fc5b53983c04f6249f632f56c47ebc003bbcdfc503500dfb58b8
   license: BSD-3-Clause
+- dependency: golang.org/x/crypto/x509roots/fallback
+  version: v0.0.0-20261016151342-0ae6809b7559
+  retrieved: "2026-10-19"
+  commit: 0ae6809b7559060fe62abe65e26bd18b1fcaf6b7
+  sha256: e38bb3412a82595ef87c2490eab3883c62e42d980781e70621033597a0a11256
+  license: BSD-3-Clause
 - dependency: golang.org/x/exp
   version: v0.0.0-20250711185948-6ae5c78190dc
   retrieved: "2026-08-27"

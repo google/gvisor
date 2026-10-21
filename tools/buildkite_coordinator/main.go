@@ -29,6 +29,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "golang.org/x/crypto/x509roots/fallback"
+
 	compute "google.golang.org/api/compute/v1"
 )
 
