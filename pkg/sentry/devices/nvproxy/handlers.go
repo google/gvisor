@@ -149,7 +149,7 @@ func (h uvmIoctlHandler) handle(ui *uvmIoctlState) (uintptr, error) {
 	if h.handler == nil {
 		return 0, &errUndefinedHandler
 	}
-	if h.capSet&ui.fd.dev.nvp.capsEnabled == 0 {
+	if h.capSet&ui.nvp.capsEnabled == 0 {
 		return 0, &errMissingCapability
 	}
 	return h.handler(ui)
