@@ -81,7 +81,7 @@ env:
 
 priority: ${PRIORITY:-0}
 steps:
-  # Run basic smoke tests before preceding to other tests.
+  # Run basic AMD64 smoke tests before preceding to other tests.
   - <<: *common
     <<: *source_test
     label: ":fire: Smoke tests (AMD64)"
@@ -89,13 +89,6 @@ steps:
     agents:
       arch: "amd64"
       queue: "default"
-  - <<: *common
-    <<: *source_test
-    label: ":fire: Smoke tests (ARM64)"
-    command: make smoke-tests
-    agents:
-      arch: "arm64"
-      queue: "arm64"
   - <<: *common
     <<: *source_test
     env:
@@ -110,6 +103,17 @@ steps:
   # only).
   - wait: ~
     if: build.branch != "master"
+
+  # Run ARM64 smoke tests alongside the other tests. Ideally, we would
+  # run this before the rest of the tests as with AMD64 smoke tests, but
+  # we are severely limited in ARM64 agent capacity.
+  - <<: *common
+    <<: *source_test
+    label: ":fire: Smoke tests (ARM64)"
+    command: make smoke-tests
+    agents:
+      arch: "arm64"
+      queue: "arm64"
 
   - <<: *common
     <<: *source_test
