@@ -753,6 +753,15 @@ run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends dat
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
 
+moby-benchmarks: BENCHMARKS_SUITE = ding
+moby-benchmarks: BENCHMARKS_TARGETS = //test/benchmarks/ding:moby_test
+moby-benchmarks: load-moby load-basic_alpine $(if $(filter-out runc,$(RUNTIME)),$(RUNTIME_BIN)) ## Runs Docker-in-gVisor (DING) benchmarks.
+ifneq ($(RUNTIME),runc)
+	@$(call install_runtime,$(RUNTIME),--net-raw --allow-packet-socket-write --TESTONLY-nftables --profile)
+endif
+	@$(call run_benchmark,$(RUNTIME))
+.PHONY: moby-benchmarks
+
 # For benchmarking seccheck, use setup-seccheck and run-benchmark-seccheck.
 # Default seccheck benchmark config.
 SECCHECK_BENCH_CONFIG ?= $(CURDIR)/test/benchmarks/seccheck/null_bench_config.json
