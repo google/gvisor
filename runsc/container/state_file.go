@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/gofrs/flock"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -367,8 +368,14 @@ func (s *StateFile) SaveLocked(v any) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.statePath(), meta, 0640); err != nil {
+	tmpPath := s.tmpStatePath()
+	if err := os.WriteFile(tmpPath, meta, 0640); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing json file: %v", err)
+	}
+	if err := os.Rename(tmpPath, s.statePath()); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("renaming json file: %v", err)
 	}
 	return nil
 }
@@ -423,6 +430,12 @@ func (s *StateFile) statePath() string {
 	return buildPath(s.RootDir, s.ID, stateFileExtension)
 }
 
+// tmpStatePath is the full path to the temporary file used to write the state
+// file. It must not match the state file glob used by listMatch.
+func (s *StateFile) tmpStatePath() string {
+	return buildPath(s.RootDir, s.ID, stateFileExtension+".tmp")
+}
+
 // lockPath is the full path to the lock file.
 func (s *StateFile) lockPath() string {
 	return buildPath(s.RootDir, s.ID, "lock")
@@ -433,6 +446,9 @@ func (s *StateFile) lockPath() string {
 // properly closed after destroy returns.
 func (s *StateFile) Destroy() error {
 	if err := os.Remove(s.statePath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Remove(s.tmpStatePath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := os.Remove(s.lockPath()); err != nil && !os.IsNotExist(err) {
