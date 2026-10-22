@@ -28,7 +28,6 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -64,8 +63,16 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/platforms" // register all platforms.
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet" // Top-level inet provider.
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink" // Register supported socket providers.
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
+	rdmanetlink "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack" // Top-level inet provider.
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -90,22 +97,10 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	pf "gvisor.dev/gvisor/runsc/boot/portforward"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
-
-	// Top-level inet providers.
-	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
-
-	// Include other supported socket providers.
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/netfilter"
-	rdmanetlink "gvisor.dev/gvisor/pkg/sentry/socket/netlink/rdma"
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/uevent"
-	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
-	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 
 type containerInfo struct {

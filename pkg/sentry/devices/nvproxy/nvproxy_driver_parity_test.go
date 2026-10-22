@@ -30,10 +30,9 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
-	"gvisor.dev/gvisor/pkg/test/testutil"
-
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/tools/gpu/drivers"
 	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )

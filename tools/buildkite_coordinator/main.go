@@ -31,7 +31,6 @@ import (
 	"time"
 
 	compute "google.golang.org/api/compute/v1"
-
 	"gvisor.dev/gvisor/pkg/cleanup"
 )
 

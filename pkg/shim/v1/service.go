@@ -20,20 +20,18 @@ import (
 	"flag"
 	"os"
 
+	api "github.com/containerd/containerd/api/runtime/sandbox/v1"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	types "github.com/containerd/containerd/v2/pkg/protobuf/types"
 	"github.com/containerd/containerd/v2/pkg/shim"
 	"github.com/containerd/containerd/v2/pkg/shutdown"
+	"github.com/containerd/errdefs"
 	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	"github.com/containerd/log"
 	"github.com/containerd/ttrpc"
-	taskServer "gvisor.dev/gvisor/pkg/shim/v1/taskserver"
-
-	api "github.com/containerd/containerd/api/runtime/sandbox/v1"
-	"github.com/containerd/errdefs"
-
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	rsc "gvisor.dev/gvisor/pkg/shim/v1/runsc"
+	taskServer "gvisor.dev/gvisor/pkg/shim/v1/taskserver"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 

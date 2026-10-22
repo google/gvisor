@@ -34,10 +34,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
@@ -49,8 +49,6 @@ import (
 	"gvisor.dev/gvisor/test/runner/gtest"
 	"gvisor.dev/gvisor/test/trace/config"
 	"gvisor.dev/gvisor/test/uds"
-
-	"github.com/creack/pty"
 )
 
 var (

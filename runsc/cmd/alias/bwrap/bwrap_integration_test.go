@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
