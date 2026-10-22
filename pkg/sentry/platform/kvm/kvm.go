@@ -176,6 +176,17 @@ func (k *KVM) ConcurrencyCount() int {
 	return k.machine.maxVCPUs
 }
 
+// BlockBeforeSeccomp implements platform.Platform.BlockBeforeSeccomp.
+//
+// The seccomp filters don't allow creating vCPUs, and apply to the whole
+// process. So BlockBeforeSeccomp waits until all machines have created their
+// vCPUs, not only the machine of this platform. It returns only the error of
+// this platform's machine.
+func (k *KVM) BlockBeforeSeccomp() error {
+	waitAllVCPUs()
+	return k.machine.vCPUsErr
+}
+
 // HasCPUNumbers implements platform.Platform.HasCPUNumbers.
 func (k *KVM) HasCPUNumbers() bool {
 	return k.machine.useCPUNums
@@ -197,6 +208,9 @@ func (*KVM) DetectsCPUPreemption() bool {
 // PreemptAllCPUs implements platform.Platform.PreemptAllCPUs.
 func (k *KVM) PreemptAllCPUs() error {
 	for _, c := range k.machine.vCPUsByID {
+		if c == nil {
+			continue // Not created (see machine.createVCPUsAsync).
+		}
 		c.lastCtx.Store(nil)
 		c.BounceToHost()
 	}
@@ -206,6 +220,9 @@ func (k *KVM) PreemptAllCPUs() error {
 // PreemptCPU implements platform.Platform.PreemptCPU.
 func (k *KVM) PreemptCPU(cpu int32) error {
 	c := k.machine.vCPUsByID[cpu]
+	if c == nil {
+		return nil // Not created (see machine.createVCPUsAsync).
+	}
 	c.lastCtx.Store(nil)
 	c.BounceToHost()
 	return nil
