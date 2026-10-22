@@ -25,6 +25,8 @@ go_library(
         "rdma.go",
         "save_restore.go",
         "sys.go",
+        "sys_amd64.go",
+        "sys_arm64.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
