@@ -17,6 +17,7 @@ ignore-words-list =
   nowns,
   offsetP,
   openIn,
+  PEvent,
   pevents,
   prevEnd,
   readIn,

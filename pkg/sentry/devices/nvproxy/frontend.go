@@ -318,6 +318,34 @@ func frontendIoctlSimpleNoStatus[Params any, PtrParams marshalPtr[Params]](fi *f
 	return n, nil
 }
 
+func rmGetEventData(fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.NVOS41_PARAMETERS
+	if fi.ioctlParamsSize != nvgpu.SizeofNVOS41Parameters {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	var event nvgpu.NvUnixEvent
+	if _, err := event.CopyIn(fi.t, addrFromP64(ioctlParams.PEvent)); err != nil {
+		return 0, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+	}
+	n, err := rmGetEventDataInvoke(fi, &ioctlParams, &event)
+	if err != nil {
+		return n, err
+	}
+	if ioctlParams.Status == nvgpu.NV_OK {
+		if _, err := event.CopyOut(fi.t, addrFromP64(ioctlParams.PEvent)); err != nil {
+			return n, frontendFailWithStatus(fi, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+		}
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 // frontendIoctlBytes is like frontendIoctlSimple, but for "simple" ioctls that
 // don't have a fixed-size parameter type (like NvU32 array). So these can be
 // directly copied into byte buffers and proxied to the host.
@@ -622,7 +650,10 @@ func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	}
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
-		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &miscObject{}, ioctlParams.Params.HObjectParent)
+		obj := &miscObject{object: object{
+			debugWritable: (ioctlParams.Params.Flags>>nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_SHIFT)&nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_MASK != nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_YES,
+		}}
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, obj, ioctlParams.Params.HObjectParent)
 		if createMmapCtx {
 			mapFile.memmapFile.mmapLength = ioctlParams.Params.Limit + 1
 			mapFile.memmapFile.memType = getMemoryType(fi.ctx, mapFile.dev, nvgpu.NVOS33_FLAGS_CACHING_TYPE_DEFAULT)
@@ -649,7 +680,10 @@ func rmAllocMemorySimple(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 	}
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Params.Status == nvgpu.NV_OK {
-		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, &miscObject{}, ioctlParams.Params.HObjectParent)
+		obj := &miscObject{object: object{
+			debugWritable: (ioctlParams.Params.Flags>>nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_SHIFT)&nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_MASK != nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_YES,
+		}}
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.Params.HObjectNew, ioctlParams.Params.HClass, obj, ioctlParams.Params.HObjectParent)
 	}
 	unlock()
 	ioctlParams.FD = origFD
@@ -785,7 +819,7 @@ func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02P
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_OBJECT_HANDLE)
 	}
 	at := hostarch.Read
-	if ((ioctlParams.Params.Flags >> 21) & 0x1) == 0 /* NVOS02_FLAGS_ALLOC_USER_READ_ONLY_NO */ {
+	if (ioctlParams.Params.Flags>>nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_SHIFT)&nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_MASK != nvgpu.NVOS02_FLAGS_ALLOC_USER_READ_ONLY_YES {
 		at.Write = true
 	}
 	obj, m, status, err := pinOSDescriptor(fi, ioctlParams.Params.PMemory, ioctlParams.Params.Limit, at)
@@ -861,7 +895,10 @@ func pinOSDescriptor(fi *frontendIoctlState, pMemory nvgpu.P64, limit uint64, at
 	if err != nil {
 		return nil, 0, nvgpu.NV_OK, err
 	}
-	return &osDescMem{appMirror: am}, m, nvgpu.NV_OK, nil
+	return &osDescMem{
+		object:    object{debugWritable: at.Write},
+		appMirror: am,
+	}, m, nvgpu.NV_OK, nil
 }
 
 func rmDupObject(fi *frontendIoctlState) (uintptr, error) {
@@ -1367,6 +1404,17 @@ func fixupHClass(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS) e
 // parameter type since the parameter's size is otherwise unknown.
 func rmAllocSimple[Params any, PtrParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
 	return rmAllocSimpleParams[Params, PtrParams](fi, ioctlParams, isNVOS64, addSimpleObjDepParentLocked)
+}
+
+func rmAllocMemoryParams[Params any, PtrParams hasMemoryAttr2Ptr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64_PARAMETERS, isNVOS64 bool) (uintptr, error) {
+	return rmAllocSimpleParams[Params, PtrParams](fi, ioctlParams, isNVOS64, func(fi *frontendIoctlState, client *rootClient, ioctlParams *nvgpu.NVOS64_PARAMETERS, rightsRequested nvgpu.RS_ACCESS_MASK, allocParams *Params) {
+		obj := newRmAllocObject(fi.fd, ioctlParams, rightsRequested, allocParams)
+		if allocParams != nil {
+			attr2 := PtrParams(allocParams).GetAttr2()
+			obj.debugWritable = (attr2>>nvgpu.NVOS32_ATTR2_PROTECTION_USER_SHIFT)&nvgpu.NVOS32_ATTR2_PROTECTION_USER_MASK == nvgpu.NVOS32_ATTR2_PROTECTION_USER_READ_WRITE
+		}
+		fi.fd.dev.nvp.objAdd(fi.ctx, client, ioctlParams.HObjectNew, ioctlParams.HClass, obj, ioctlParams.HObjectParent)
+	})
 }
 
 // addSimpleObjDepParentLocked implements rmAllocInvoke.addObjLocked for
