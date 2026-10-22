@@ -242,6 +242,27 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, dstNs)
 }
 
+// SetBridgePort implements inet.Stack.SetBridgePort.
+func (s *Stack) SetBridgePort(ctx context.Context, idx int32, cfg inet.BridgePortConfig) *syserr.Error {
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
+	var set, clear stack.BridgePortFlags
+	for _, f := range []struct {
+		on   *bool
+		flag stack.BridgePortFlags
+	}{{cfg.Hairpin, stack.BridgePortHairpin}, {cfg.Learning, stack.BridgePortLearning}} {
+		switch {
+		case f.on == nil:
+		case *f.on:
+			set |= f.flag
+		default:
+			clear |= f.flag
+		}
+	}
+	return syserr.TranslateNetstackError(s.Stack.SetBridgePortFlags(tcpip.NICID(idx), set, clear))
+}
+
 // If the linkAttrs map contains IFLA_NET_NS_FD, locks the source and
 // destination stacks and returns the destination netns, which must
 // be passed into unlockSrcAndDst by the caller.

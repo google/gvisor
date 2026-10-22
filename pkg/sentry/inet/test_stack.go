@@ -74,6 +74,11 @@ func (s *TestStack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syser
 	panic("unimplemented")
 }
 
+// SetBridgePort implements Stack.
+func (s *TestStack) SetBridgePort(ctx context.Context, idx int32, cfg BridgePortConfig) *syserr.Error {
+	panic("unimplemented")
+}
+
 // InterfaceAddrs implements Stack.
 func (s *TestStack) InterfaceAddrs() map[int32][]InterfaceAddr {
 	return s.InterfaceAddrsMap
