@@ -16,17 +16,15 @@
 package main
 
 import (
+	_ "embed" // Necessary to use go:embed.
 	"flag"
 	"fmt"
 	"os"
 
-	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
-
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
-
-	_ "embed" // Necessary to use go:embed.
+	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )
 
 var (
