@@ -39,6 +39,14 @@ const (
 	// EP_PRIVATE_BITS is fs/eventpoll.c:EP_PRIVATE_BITS, the set of all bits
 	// in an epoll event mask that correspond to flags rather than I/O events.
 	EP_PRIVATE_BITS = EPOLLEXCLUSIVE | EPOLLWAKEUP | EPOLLONESHOT | EPOLLET
+
+	// EPOLLINOUT_BITS is fs/eventpoll.c:EPOLLINOUT_BITS.
+	EPOLLINOUT_BITS = EPOLLIN | EPOLLOUT
+
+	// EPOLLEXCLUSIVE_OK_BITS is fs/eventpoll.c:EPOLLEXCLUSIVE_OK_BITS, the
+	// set of event bits that may be combined with EPOLLEXCLUSIVE in
+	// EPOLL_CTL_ADD.
+	EPOLLEXCLUSIVE_OK_BITS = EPOLLINOUT_BITS | EPOLLERR | EPOLLHUP | EPOLLWAKEUP | EPOLLET | EPOLLEXCLUSIVE
 )
 
 // Operation flags.
