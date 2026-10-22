@@ -161,6 +161,12 @@ type runscService struct {
 	// A nil pointer or empty command selects the default.
 	versionCommand atomic.Pointer[string]
 
+	// sandbox is set if the sandbox was created through the sandbox API. It is
+	// not a task, so it is kept out of containers.
+	//
+	// +checklocks:mu
+	sandbox *sandboxState
+
 	shutdown shutdown.Service
 }
 
@@ -262,11 +268,17 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A container in a sandbox API sandbox's shim resolves its options like
+	// the sandbox does.
+	opts, err := resolveOptions(rfs.Create.Options, s.sandbox != nil)
+	if err != nil {
+		return nil, err
+	}
 	c, err := NewContainer(ctx, s.platform, &ContainerConfig{
 		ID:                 rfs.Create.ID,
 		Bundle:             rfs.Create.Bundle,
 		Rootfs:             rfs.Create.Rootfs,
-		Options:            rfs.Create.Options,
+		Options:            opts,
 		Terminal:           rfs.Create.Terminal,
 		Stdin:              rfs.Create.Stdin,
 		Stdout:             rfs.Create.Stdout,
@@ -371,7 +383,8 @@ func (s *runscService) Delete(ctx context.Context, r *task.DeleteRequest) (*task
 	if len(r.ExecID) == 0 {
 		s.mu.Lock()
 		delete(s.containers, r.ID)
-		hasCont := len(s.containers) > 0
+		// A sandbox API sandbox outlives its containers and may get more.
+		hasCont := len(s.containers) > 0 || s.sandbox != nil
 		s.mu.Unlock()
 
 		if !hasCont && s.platform != nil {
@@ -612,6 +625,10 @@ func (s *runscService) Shutdown(ctx context.Context, r *task.ShutdownRequest) (*
 	if len(s.containers) > 0 {
 		return nil, fmt.Errorf("shim still servicing %d containers", len(s.containers))
 	}
+	if s.sandbox != nil {
+		// Only ShutdownSandbox ends a sandbox's shim.
+		return nil, fmt.Errorf("shim still servicing sandbox %q", s.sandbox.id)
+	}
 
 	return empty, nil
 }
@@ -683,6 +700,13 @@ func (s *runscService) checkProcesses(ctx context.Context, e proc.Exit) {
 		containerID string
 		exitingP    process.Process
 	)
+	if sb := s.sandbox; sb != nil && sb.id == e.ID {
+		s.mu.Unlock()
+		// No TaskExit event: containerd learns of the exit from WaitSandbox.
+		log.L.Debugf("Sandbox %q exited with status %d", sb.id, e.Status)
+		sb.task().SetExited(e.Status)
+		return
+	}
 	for cid, c := range s.containers {
 		for _, p := range c.All() {
 			if p.ID() == e.ID {

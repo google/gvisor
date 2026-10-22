@@ -22,6 +22,7 @@ go_library(
         "//pkg/shim/v1/runsc",
         "//pkg/shim/v1/runsccmd",
         "//pkg/shim/v1/taskserver",
+        "//pkg/shim/v1/utils",
         "//pkg/sync",
         "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/sandbox/v1:go_default_library",
