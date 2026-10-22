@@ -26,6 +26,10 @@ var _ NetworkLinkEndpoint = (*BridgeEndpoint)(nil)
 type bridgePort struct {
 	bridge *BridgeEndpoint
 	nic    *nic
+	// addr is the link address of nic as counted in bridge.localAddrs.
+	//
+	// +checklocks:bridge.mu
+	addr tcpip.LinkAddress
 }
 
 // BridgeFDBKey is the MAC address of a device which a bridge port is associated with.
@@ -54,7 +58,6 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
 	bridge := p.bridge
 	eth := header.Ethernet(pkt.LinkHeader().Slice())
-	updateFDB := false
 	bridge.mu.RLock()
 	// Add an entry at the bridge FDB, it maps a MAC address
 	// to a bridge port where the traffic is received when
@@ -63,12 +66,31 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	// will be forwarded to the bridge port that is stored in
 	// the FDB table.
 	sourceAddress := eth.SourceAddress()
-	if _, hasSourceFDB := bridge.fdbTable[BridgeFDBKey(sourceAddress)]; !header.IsMulticastEthernetAddress(sourceAddress) && !hasSourceFDB {
-		updateFDB = true
-	}
+	updateFDB := bridge.shouldLearnLocked(p, sourceAddress)
 	destAddress := eth.DestinationAddress()
 	isMulticast := header.IsMulticastEthernetAddress(destAddress)
-	if entry, exist := bridge.fdbTable[BridgeFDBKey(destAddress)]; !exist {
+	// As with BR_FDB_LOCAL entries in br_handle_frame_finish, a unicast frame
+	// for the bridge or for any of its ports is passed up and not forwarded.
+	isLocal := !isMulticast && bridge.isLocalAddressLocked(destAddress)
+	// Classify the frame as eth_type_trans does against the receiving port's
+	// address, except that, as in br_handle_frame, a frame for the bridge's
+	// address is for this host. A frame for another port's address is passed
+	// up as PacketOtherHost, which the network layer drops.
+	switch {
+	case destAddress == header.EthernetBroadcastAddress:
+		pkt.PktType = tcpip.PacketBroadcast
+	case isMulticast:
+		pkt.PktType = tcpip.PacketMulticast
+	case destAddress == bridge.addr || destAddress == p.nic.LinkAddress():
+		pkt.PktType = tcpip.PacketHost
+	default:
+		pkt.PktType = tcpip.PacketOtherHost
+	}
+	entry, inFDB := bridge.fdbTable[BridgeFDBKey(destAddress)]
+	switch {
+	case isLocal:
+		// Passed up below.
+	case !inFDB:
 		// When no FDB entry is found, send the packet to all ports.
 		for _, port := range bridge.ports {
 			if p == port {
@@ -81,7 +103,7 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 			port.nic.writeRawPacket(newPkt)
 			newPkt.DecRef()
 		}
-	} else if entry.port != p {
+	case entry.port != p:
 		destPort := entry.port
 		newPkt := NewPacketBuffer(PacketBufferOptions{
 			ReserveHeaderBytes: int(destPort.nic.MaxHeaderLength()),
@@ -92,17 +114,21 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	}
 
 	d := bridge.dispatcher
-	bridgeAddr := bridge.addr
 	bridge.mu.RUnlock()
 	if updateFDB {
 		bridge.mu.Lock()
-		bridge.addFDBEntryLocked(eth.SourceAddress(), p, 0)
+		// The port or the bridge's addresses may have changed while bridge.mu
+		// was unlocked, so check again. Linux's fdb_create() likewise inserts
+		// under hash_lock only if no entry exists.
+		if bridge.shouldLearnLocked(p, sourceAddress) {
+			bridge.addFDBEntryLocked(sourceAddress, p, 0)
+		}
 		bridge.mu.Unlock()
 	}
 	// As in Linux, only group frames and frames addressed to the bridge or to
-	// the receiving port reach the IP layer. Passing up transit unicast lets
-	// IP forwarding inject a duplicate back onto the bridge.
-	if d != nil && (isMulticast || destAddress == bridgeAddr || destAddress == p.nic.LinkAddress()) {
+	// one of its ports are passed up. Passing up transit unicast lets IP
+	// forwarding inject a duplicate back onto the bridge.
+	if d != nil && (isMulticast || isLocal) {
 		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
 		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
 		// bridge.mu to avoid circular locking.
@@ -120,6 +146,7 @@ func NewBridgeEndpoint(mtu uint32) *BridgeEndpoint {
 		addr: tcpip.GetRandMacAddr(),
 	}
 	b.ports = make(map[tcpip.NICID]*bridgePort)
+	b.localAddrs = make(map[tcpip.LinkAddress]int)
 	b.fdbTable = make(map[BridgeFDBKey]BridgeFDBEntry)
 	return b
 }
@@ -131,6 +158,11 @@ type BridgeEndpoint struct {
 	mu bridgeRWMutex `state:"nosave"`
 	// +checklocks:mu
 	ports map[tcpip.NICID]*bridgePort
+	// localAddrs counts the ports with each link address, like the
+	// BR_FDB_LOCAL entries Linux keeps for its ports.
+	//
+	// +checklocks:mu
+	localAddrs map[tcpip.LinkAddress]int
 	// +checklocks:mu
 	dispatcher NetworkDispatcher
 	// +checklocks:mu
@@ -181,6 +213,7 @@ func (b *BridgeEndpoint) AddNIC(n *nic) tcpip.Error {
 	}
 	n.NetworkLinkEndpoint.Attach(port)
 	b.ports[n.id] = port
+	b.addPortAddrLocked(port)
 
 	if b.maxHeaderLength.Load() < uint32(n.MaxHeaderLength()) {
 		b.maxHeaderLength.Store(uint32(n.MaxHeaderLength()))
@@ -189,16 +222,47 @@ func (b *BridgeEndpoint) AddNIC(n *nic) tcpip.Error {
 	return nil
 }
 
+// NICAddressChanged updates the bridge after the link address of the
+// specified NIC changed, as br_fdb_changeaddr does on NETDEV_CHANGEADDR.
+func (b *BridgeEndpoint) NICAddressChanged(n *nic) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	port, ok := b.ports[n.id]
+	if !ok {
+		return
+	}
+	b.removePortAddrLocked(port)
+	b.addPortAddrLocked(port)
+}
+
+// +checklocks:b.mu
+func (b *BridgeEndpoint) addPortAddrLocked(p *bridgePort) {
+	addr := p.nic.LinkAddress()
+	p.addr = addr // +checklocksforce: p.bridge is b.
+	b.localAddrs[addr]++
+}
+
+// +checklocks:b.mu
+func (b *BridgeEndpoint) removePortAddrLocked(p *bridgePort) {
+	addr := p.addr // +checklocksforce: p.bridge is b.
+	if b.localAddrs[addr]--; b.localAddrs[addr] == 0 {
+		delete(b.localAddrs, addr)
+	}
+}
+
 // DelNIC remove the specified NIC from the bridge.
 func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	port := b.ports[nic.id]
+	port, ok := b.ports[nic.id]
 	for k, e := range b.fdbTable {
 		if e.port == port {
 			delete(b.fdbTable, k)
 		}
+	}
+	if ok {
+		b.removePortAddrLocked(port)
 	}
 	delete(b.ports, nic.id)
 	nic.NetworkLinkEndpoint.Attach(nic)
@@ -255,6 +319,7 @@ func (b *BridgeEndpoint) Attach(dispatcher NetworkDispatcher) {
 	}
 	b.dispatcher = dispatcher
 	b.ports = make(map[tcpip.NICID]*bridgePort)
+	b.localAddrs = make(map[tcpip.LinkAddress]int)
 	b.fdbTable = make(map[BridgeFDBKey]BridgeFDBEntry)
 }
 
@@ -301,6 +366,29 @@ func (b *BridgeEndpoint) addFDBEntryLocked(addr tcpip.LinkAddress, source *bridg
 		port: source,
 	}
 	return true
+}
+
+// isLocalAddressLocked returns whether addr is the address of the bridge or of
+// one of its ports. Linux keeps BR_FDB_LOCAL entries for these addresses
+// (br_fdb_change_mac_address, br_add_if, br_fdb_changeaddr).
+//
+// +checklocksread:b.mu
+func (b *BridgeEndpoint) isLocalAddressLocked(addr tcpip.LinkAddress) bool {
+	return addr == b.addr || b.localAddrs[addr] > 0
+}
+
+// shouldLearnLocked returns whether a frame from addr received on p adds an FDB
+// entry. Multicast addresses are never learned and, as in br_fdb_update(),
+// neither are the addresses of the bridge and its ports. Nothing is learned
+// from a port that has left the bridge.
+//
+// +checklocksread:b.mu
+func (b *BridgeEndpoint) shouldLearnLocked(p *bridgePort, addr tcpip.LinkAddress) bool {
+	if header.IsMulticastEthernetAddress(addr) || b.isLocalAddressLocked(addr) || b.ports[p.nic.id] != p {
+		return false
+	}
+	_, ok := b.fdbTable[BridgeFDBKey(addr)]
+	return !ok
 }
 
 // FindFDBEntry find the FDB entry for the given address. If it doesn't exist,
