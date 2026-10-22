@@ -142,11 +142,23 @@
   commit: e992f090fd6a4a0d576b960a3c0590f73a71e3e7
   sha256: 646de8d32751e7e90d738382be1f163287239f5282855f9229b10a0dca87ebc5
   license: Apache-2.0
+- dependency: cloud.google.com/go/firestore
+  version: v1.22.0
+  retrieved: "2026-10-20"
+  commit: 9d47d1ca53dc1a3183352f67ebeb174b1d194846
+  sha256: 899690c561e928f15581c6372cdefb76afe372d0c98c9418b07fb647bb441829
+  license: Apache-2.0
 - dependency: cloud.google.com/go/iam
   version: v1.7.0
   retrieved: "2026-08-27"
   commit: 54d941a9a3f5177b37915f89084e4ba7ed3dae6a
   sha256: a3d9f0ebc3baf0cda13db7be112508b19c3b8dee58c2176997a8aadd50ecc87a
+  license: Apache-2.0
+- dependency: cloud.google.com/go/longrunning
+  version: v0.9.0
+  retrieved: "2026-10-20"
+  commit: 54d941a9a3f5177b37915f89084e4ba7ed3dae6a
+  sha256: 989d72eb620d4b04514df9d695a234edee783e00bfb0bdcbdb7f772ec50a43c8
   license: Apache-2.0
 - dependency: cloud.google.com/go/monitoring
   version: v1.24.3
