@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
+	erofsimage "gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
@@ -5401,6 +5403,271 @@ func TestMountEROFSConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestXattrsEROFS(t *testing.T) {
+	skipIfNotAvailable(t, "mkfs.erofs")
+
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_xattr_test_")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(testDir)
+
+	sourceDir := filepath.Join(testDir, "source")
+	if err := os.Mkdir(sourceDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	const contents = "contents"
+	file := filepath.Join(sourceDir, "file")
+	if err := os.WriteFile(file, []byte(contents), 0644); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	const value = "value"
+	for _, path := range []string{sourceDir, file} {
+		if err := unix.Setxattr(path, "user.test", []byte(value), 0); err != nil {
+			if errors.Is(err, unix.EOPNOTSUPP) {
+				t.Skipf("user xattrs are not supported in %q", sourceDir)
+			}
+			t.Fatalf("unix.Setxattr(%q) failed: %v", path, err)
+		}
+	}
+
+	cat, err := os.ReadFile("/bin/cat")
+	if err != nil {
+		t.Fatalf("os.ReadFile() failed: %v", err)
+	}
+	capcat := filepath.Join(sourceDir, "capcat")
+	if err := os.WriteFile(capcat, cat, 0755); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	vfsCaps := make([]byte, linux.XATTR_CAPS_SZ_2)
+	binary.LittleEndian.PutUint32(vfsCaps, linux.VFS_CAP_REVISION_2|linux.VFS_CAP_FLAGS_EFFECTIVE)
+	binary.LittleEndian.PutUint32(vfsCaps[4:], 1<<linux.CAP_NET_RAW)
+	if err := unix.Setxattr(capcat, linux.XATTR_SECURITY_CAPABILITY, vfsCaps, 0); err != nil {
+		if errors.Is(err, unix.EOPNOTSUPP) {
+			t.Skipf("file capabilities are not supported in %q", sourceDir)
+		}
+		t.Fatalf("unix.Setxattr(%q, %q) failed: %v", capcat, linux.XATTR_SECURITY_CAPABILITY, err)
+	}
+	aclFile := filepath.Join(sourceDir, "aclfile")
+	if err := os.WriteFile(aclFile, []byte(contents), 0644); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	acl := buildACLXattr([]linux.PosixACLXattrEntry{
+		{Tag: linux.ACL_USER_OBJ, Perm: linux.ACL_READ | linux.ACL_WRITE, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_USER, Perm: linux.ACL_READ, ID: uint32(os.Getuid())},
+		{Tag: linux.ACL_GROUP_OBJ, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_MASK, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+		{Tag: linux.ACL_OTHER, Perm: linux.ACL_READ, ID: linux.ACL_UNDEFINED_ID},
+	})
+	hasACL := true
+	if err := unix.Setxattr(aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS, acl, 0); err != nil {
+		if !errors.Is(err, unix.EOPNOTSUPP) {
+			t.Fatalf("unix.Setxattr(%q, %q) failed: %v", aclFile, linux.XATTR_NAME_POSIX_ACL_ACCESS, err)
+		}
+		t.Logf("%q does not support POSIX ACLs, so the ACL check is skipped", sourceDir)
+		hasACL = false
+	}
+
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+
+	// mkfs.erofs shares an xattr carried by more than -x non-root inodes.
+	for _, tc := range []struct {
+		name       string
+		options    []string
+		shared     bool
+		overlay    bool
+		tailPacked bool
+	}{
+		{name: "inline", options: []string{"-E noinline_data", "-x 2"}},
+		{name: "shared", options: []string{"-E noinline_data", "-x 0"}, shared: true},
+		{name: "overlay", options: []string{"-E noinline_data", "-x 2"}, overlay: true},
+		{name: "tail-packed", options: []string{"-x 2"}, tailPacked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			image := filepath.Join(testDir, tc.name+".img")
+			if err := createImageEROFS(image, sourceDir, tc.options...); err != nil {
+				t.Fatalf("error creating EROFS image: %v", err)
+			}
+			shared, layout := erofsFileInfo(t, image, "file")
+			if got := shared != 0; got != tc.shared {
+				t.Fatalf("file has shared xattrs: %t, want %t", got, tc.shared)
+			}
+			wantLayout := uint16(erofsimage.InodeDataLayoutFlatPlain)
+			if tc.tailPacked {
+				wantLayout = erofsimage.InodeDataLayoutFlatInline
+			}
+			if layout != wantLayout {
+				t.Fatalf("file has data layout %d, want %d", layout, wantLayout)
+			}
+
+			spec, conf := sleepSpecConf(t)
+			conf.EnableRaw = true
+			mount := specs.Mount{
+				Source:      image,
+				Destination: "/mnt",
+				Type:        erofs.Name,
+				Options:     []string{"ro"},
+			}
+			if tc.overlay {
+				conf.Overlay2.Set("all:memory")
+				mount.Options = nil
+			}
+			spec.Mounts = append(spec.Mounts, mount)
+			_, bundleDir, cleanupContainer, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanupContainer()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			paths := []string{"/mnt", "/mnt/file"}
+			if tc.overlay {
+				// The overlay's root directory comes from its upper layer.
+				paths = []string{"/mnt/file"}
+			}
+			checkXattrs := func() {
+				t.Helper()
+				for _, path := range paths {
+					out, err := executeCombinedOutput(conf, c, nil, app, "getxattr", "--path="+path, "--name=user.test")
+					if err != nil {
+						t.Fatalf("exec: getxattr %s, err: %v, out: %s", path, err, out)
+					}
+					if got, want := strings.TrimSpace(string(out)), base64.StdEncoding.EncodeToString([]byte(value)); got != want {
+						t.Errorf("got xattr %q on %s, want %q", got, path, want)
+					}
+				}
+			}
+
+			if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", "/mnt/file"); err != nil {
+				t.Fatalf("exec: cat /mnt/file, err: %v, out: %s", err, out)
+			} else if string(out) != contents {
+				t.Errorf("got contents %q, want %q", out, contents)
+			}
+			if hasACL {
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", "/mnt/aclfile"); err == nil || !strings.Contains(string(out), "Operation not supported") {
+					t.Errorf("cat /mnt/aclfile = %q, %v, want EOPNOTSUPP for a file with a POSIX ACL", out, err)
+				}
+			}
+			checkXattrs()
+
+			if tc.tailPacked {
+				return
+			}
+
+			caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
+			if err != nil {
+				t.Fatalf("specutils.Capabilities() failed: %v", err)
+			}
+			netRaw := auth.CapabilitySetOf(linux.CAP_NET_RAW)
+			caps.PermittedCaps &^= netRaw
+			caps.EffectiveCaps &^= netRaw
+			caps.InheritableCaps &^= netRaw
+			caps.AmbientCaps &^= netRaw
+			checkCapcat := func() {
+				t.Helper()
+				r, w, err := os.Pipe()
+				if err != nil {
+					t.Fatalf("os.Pipe() failed: %v", err)
+				}
+				defer r.Close()
+				ws, err := c.executeSync(conf, &controlapi.ExecArgs{
+					Filename:     "/bin/sh",
+					Argv:         []string{"/bin/sh", "-c", "/mnt/capcat /proc/self/status"},
+					KUID:         65534,
+					KGID:         65534,
+					Capabilities: caps,
+					FilePayload:  controlapi.NewFilePayload(map[int]*os.File{0: os.Stdin, 1: w, 2: w}, nil),
+				})
+				w.Close()
+				out, _ := io.ReadAll(r)
+				if err != nil || ws.ExitStatus() != 0 {
+					t.Fatalf("exec: capcat /proc/self/status, status: %v, err: %v, out: %s", ws, err, out)
+				}
+				var capEff uint64
+				for _, line := range strings.Split(string(out), "\n") {
+					if hex, ok := strings.CutPrefix(line, "CapEff:"); ok {
+						capEff, err = strconv.ParseUint(strings.TrimSpace(hex), 16, 64)
+						if err != nil {
+							t.Fatalf("parsing %q: %v", line, err)
+						}
+					}
+				}
+				if want := uint64(1) << linux.CAP_NET_RAW; capEff != want {
+					t.Errorf("got CapEff %#x, want %#x", capEff, want)
+				}
+			}
+			checkCapcat()
+
+			if tc.overlay {
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "echo more >> /mnt/file"); err != nil {
+					t.Fatalf("exec: append to /mnt/file, err: %v, out: %s", err, out)
+				}
+				checkXattrs()
+				// touch -a copies capcat up; a write would clear its capability.
+				if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "touch -a /mnt/capcat"); err != nil {
+					t.Fatalf("exec: touch -a /mnt/capcat, err: %v, out: %s", err, out)
+				}
+				checkCapcat()
+			}
+		})
+	}
+}
+
+// erofsFileInfo returns the shared xattr count and data layout of name.
+func erofsFileInfo(t *testing.T, path, name string) (int, uint16) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("os.Open() failed: %v", err)
+	}
+	defer f.Close()
+	image, err := erofsimage.OpenImage(f)
+	if err != nil {
+		t.Fatalf("erofs.OpenImage() failed: %v", err)
+	}
+	defer image.Close()
+	root, err := image.Inode(image.RootNid())
+	if err != nil {
+		t.Fatalf("Inode(root) failed: %v", err)
+	}
+	nid, err := root.Lookup(name)
+	if err != nil {
+		t.Fatalf("Lookup(%q) failed: %v", name, err)
+	}
+	sb := image.SuperBlock()
+	off := sb.NidToOffset(nid)
+	const sharedCountOff = 4
+	b, err := image.BytesAt(off, erofsimage.InodeExtendedSize+sharedCountOff+1)
+	if err != nil {
+		t.Fatalf("BytesAt() failed: %v", err)
+	}
+	size := erofsimage.InodeCompactSize
+	if (binary.LittleEndian.Uint16(b)>>erofsimage.InodeLayoutBit)&1 == erofsimage.InodeLayoutExtended {
+		size = erofsimage.InodeExtendedSize
+	}
+	ino, err := image.Inode(nid)
+	if err != nil {
+		t.Fatalf("Inode(%d) failed: %v", nid, err)
+	}
+	return int(b[size+sharedCountOff]), ino.DataLayout()
 }
 
 // createRootfsEROFS creates a rootfs directory and an EROFS rootfs image in
