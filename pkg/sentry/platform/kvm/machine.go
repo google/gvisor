@@ -386,8 +386,9 @@ func newMachine(vm int, config *Config) (*machine, error) {
 	// guest physical addresses that are not actually available. These
 	// physical pages are mapped on demand, see kernel_unsafe.go.
 	applyPhysicalRegions(func(pr physicalRegion) bool {
-		// Map everything in the lower half.
-		m.kernel.PageTables.Map(
+		// Map everything in the lower half. MapLarge writes the 1GiB
+		// entries directly: no vCPU uses these page tables yet.
+		m.kernel.PageTables.MapLarge(
 			hostarch.Addr(pr.virtual),
 			pr.length,
 			pagetables.MapOpts{AccessType: hostarch.ReadWrite},

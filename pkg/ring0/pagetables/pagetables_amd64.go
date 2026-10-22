@@ -16,6 +16,7 @@ package pagetables
 
 import (
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Address constraints.
@@ -106,3 +107,85 @@ func (p *PageTables) cloneUpperShared() {
 
 // PTEs is a collection of entries.
 type PTEs [entriesPerPage]PTE
+
+// MapLarge is equivalent to Map, but maps the 1GiB-aligned interior of the
+// range by writing 1GiB (PUD-level) entries directly instead of through the
+// generic walker. This is much faster for very large ranges: the KVM platform
+// maps the whole lower half of the address space (~131k 1GiB entries) every
+// time it creates a VM, which takes 3-4 ms with Map.
+//
+// The fast path uses plain stores and falls back to Map as soon as it finds a
+// valid entry in the range, so it must only be used on page tables that no CPU
+// is using yet, e.g. right after New.
+//
+// Precondition: same as Map.
+func (p *PageTables) MapLarge(addr hostarch.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
+	start := uintptr(addr)
+	end := start + length
+	if end < start {
+		panic("addr & length overflow")
+	}
+	fillStart := (start + pudSize - 1) &^ (pudSize - 1)
+	fillEnd := end &^ (pudSize - 1)
+	if p.readOnlyShared || !opts.AccessType.Any() || (start-physical)&(pudSize-1) != 0 ||
+		fillStart < start || fillStart >= fillEnd ||
+		(p.upperSharedPageTables != nil && end > p.upperStart) {
+		return p.Map(addr, length, opts, physical)
+	}
+
+	prev := false
+	if fillStart > start {
+		prev = p.Map(addr, fillStart-start, opts, physical)
+	}
+
+	// Compute the entry bits once.
+	var tmpl PTE
+	tmpl.SetSuper()
+	tmpl.Set(0, opts)
+	bits := uintptr(tmpl)
+
+	s := fillStart
+fill:
+	for s < fillEnd {
+		next := addrEnd(s, fillEnd, pudSize*entriesPerPage)
+		puds := p.pudsFor(s)
+		for ; s < next; s += pudSize {
+			e := &puds[(s&pudMask)>>pudShift]
+			if *e != 0 {
+				// Something is already here: let Map deal with
+				// the rest.
+				break fill
+			}
+			*e = PTE(bits | (physical + (s - start)))
+		}
+	}
+	if s < end {
+		if p.Map(hostarch.Addr(s), end-s, opts, physical+(s-start)) {
+			prev = true
+		}
+	}
+	return prev
+}
+
+// pudsFor returns the table of PUD entries covering addr, allocating upper
+// levels as needed.
+func (p *PageTables) pudsFor(addr uintptr) *PTEs {
+	pgdEntry := &p.root[(addr&pgdMask)>>pgdShift]
+	var next *PTEs
+	if !pgdEntry.Valid() {
+		next = p.Allocator.NewPTEs()
+		pgdEntry.setPageTable(p, next)
+	} else {
+		next = p.Allocator.LookupPTEs(pgdEntry.Address())
+	}
+	if !p.largeAddressesEnabled {
+		return next
+	}
+	p4dEntry := &next[(addr&p4dMask)>>p4dShift]
+	if !p4dEntry.Valid() {
+		puds := p.Allocator.NewPTEs()
+		p4dEntry.setPageTable(p, puds)
+		return puds
+	}
+	return p.Allocator.LookupPTEs(p4dEntry.Address())
+}
