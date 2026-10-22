@@ -348,13 +348,7 @@ func (r *specEnvironData) Generate(ctx context.Context, buf *bytes.Buffer) error
 		// The caller is not a task. Return an empty string.
 		return nil
 	}
-	cid := t.ContainerID()
-	cname := r.k.ContainerName(cid)
-	if cname == "" {
-		log.Warningf("Container name not found for container ID %q", cid)
-		return nil
-	}
-	env := r.k.Saver().SpecEnviron(cname)
+	env := r.k.SpecEnviron(t.ContainerID())
 	for _, e := range env {
 		buf.WriteString(e)
 		buf.WriteByte(0)

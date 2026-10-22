@@ -2693,29 +2693,6 @@ func unnamedContainerNumber(containerName string) (int, bool) {
 }
 
 // +checklocksexclude:l.mu
-func (l *Loader) getContainerSpec(containerName string) *specs.Spec {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.containerSpecs[containerName]
-}
-
-// SpecEnviron returns the environment variables for the given container from
-// the container spec it was created with.
-//
-// +checklocksexclude:l.mu
-func (l *Loader) SpecEnviron(containerName string) []string {
-	spec := l.getContainerSpec(containerName)
-	if spec == nil {
-		log.Warningf("Container spec not found for container %q", containerName)
-		return nil
-	}
-	if spec.Process == nil {
-		return nil
-	}
-	return spec.Process.Env
-}
-
-// +checklocksexclude:l.mu
 func (l *Loader) containerRuntimeState(cid string) sentryapi.ContainerRuntimeState {
 	l.mu.Lock()
 	defer l.mu.Unlock()
