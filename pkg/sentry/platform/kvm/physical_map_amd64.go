@@ -17,6 +17,7 @@ package kvm
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/ring0"
 )
@@ -66,7 +67,7 @@ func archSpecialRegions(vSize uintptr) (uintptr, []specialVirtualRegion) {
 	)
 
 	// Exclude all unmapped regions in the extended virtual address space.
-	start := defaultAddressSpaceSize
+	start := defaultAddressSpaceSize - hostarch.PageSize
 	for _, vr := range regionsInExtendedSpace {
 		if start > vr.virtual {
 			panic(fmt.Sprintf("start(%x) is greater than next(%x)", start, vr.virtual))
