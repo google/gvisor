@@ -1,0 +1,31 @@
+Expose libbpf's headers without its userspace library dependencies. BPF
+programs need these headers but cannot link libbpf, libelf or zlib. Keeping
+the implementation dependency on :bpf preserves the library target.
+
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -83,9 +83,8 @@
+ )
+ 
+ cc_library(
+-    name = "bpf",
++    name = "bpf_headers",
+     hdrs = _PUBLIC_HEADERS,
+-    implementation_deps = [":libbpf_impl"],
+     include_prefix = "bpf",
+     strip_include_prefix = "src",
+     visibility = ["//visibility:public"],
+@@ -94,6 +93,13 @@
+     ],
+ )
+ 
++cc_library(
++    name = "bpf",
++    implementation_deps = [":libbpf_impl"],
++    visibility = ["//visibility:public"],
++    deps = [":bpf_headers"],
++)
++
+ alias(
+     name = "libbpf",
+     actual = ":bpf",

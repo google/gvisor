@@ -22,6 +22,10 @@ bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:private"],
+    deps = [
+        "@bazel_skylib//rules/directory:providers",
+        "@rules_cc//cc/common",
+    ],
 )
 
 bzl_library(
