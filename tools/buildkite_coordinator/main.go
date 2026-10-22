@@ -55,6 +55,9 @@ const (
 	stackShutdownTimeout = 6 * time.Second
 
 	failedJobCancelTimeout = 5 * time.Second
+
+	// artifactTokenTimeout bounds fetching a job's artifact token.
+	artifactTokenTimeout = 10 * time.Second
 )
 
 type server struct {
@@ -64,6 +67,8 @@ type server struct {
 	tc *TimeoutController
 	// rc is safe for concurrent use.
 	rc *RateLimitController
+	// artifactTokenController is safe for concurrent use.
+	artifactTokenController *BucketTokenController
 
 	// pool is safe for concurrent use.
 	pool *JobPool
@@ -126,14 +131,21 @@ func newServer(ctx context.Context) *server {
 		log.Fatalf("Failed to create rate limiting controller: %v", err)
 	}
 
+	// Create the artifact token issuer
+	artifactTokenController, err := NewBucketTokenController(ctx, cfg.artifactBucket, artifactRoles)
+	if err != nil {
+		log.Fatalf("Failed to create artifact token issuer: %v", err)
+	}
+
 	return &server{
-		cfg:        cfg,
-		audience:   audience,
-		computeSvc: computeSvc,
-		stack:      stack,
-		tc:         tc,
-		rc:         rc,
-		pool:       NewJobPool(reservedJobsPerBuild, cfg.queues, cfg.trustedAuthors),
+		cfg:                     cfg,
+		audience:                audience,
+		computeSvc:              computeSvc,
+		stack:                   stack,
+		tc:                      tc,
+		rc:                      rc,
+		artifactTokenController: artifactTokenController,
+		pool:                    NewJobPool(reservedJobsPerBuild, cfg.queues, cfg.trustedAuthors),
 	}
 }
 
@@ -142,6 +154,7 @@ func newServer(ctx context.Context) *server {
 type AgentRequestJobResponse struct {
 	JobUUID             string `json:"job_uuid"`
 	JobAcquisitionToken string `json:"job_acquisition_token"`
+	ArtifactToken       string `json:"artifact_token"`
 }
 
 func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +262,17 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 		unaccountCleanup = &c
 	}
 
+	// Get a token for the agent to upload artifacts with.
+	tokenCtx, cancel := context.WithTimeout(r.Context(), artifactTokenTimeout)
+	token, err := s.artifactTokenController.GetToken(tokenCtx, artifactPrefix(jobAssignment.buildUUID), timeout)
+	cancel()
+	if err != nil {
+		log.Printf("Failed to get artifact token for job %v: %v", jobAssignment.jobUUID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	artifactToken := token.Value
+
 	// Pin the agent
 	agent, err = pinAgent(r.Context())
 	if err != nil {
@@ -283,6 +307,7 @@ func (s *server) handleAgentRequestJob(w http.ResponseWriter, r *http.Request) {
 	response := AgentRequestJobResponse{
 		JobUUID:             string(jobAssignment.jobUUID),
 		JobAcquisitionToken: jobAssignment.jat.token,
+		ArtifactToken:       artifactToken,
 	}
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {

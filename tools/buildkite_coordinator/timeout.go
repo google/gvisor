@@ -27,7 +27,10 @@ import (
 const (
 	// jobTimeout is the maximum time an instance is allowed to spend per job.
 	// An instance will be killed if it exceeds the timeout.
-	jobTimeout = 2 * time.Hour
+	//
+	// jobTimeout should be kept <= BucketTokenLifetime otherwise bucket tokens
+	// may expire before the job is complete.
+	jobTimeout = time.Hour
 
 	// setupGracePeriod is the grace period added to a timeout specified by a
 	// Buildkite job to account for agent setup, etc.
