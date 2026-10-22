@@ -339,6 +339,8 @@ func (r *Registry) Release(ctx context.Context) {
 //
 // +stateify savable
 type Shm struct {
+	memmap.MappableNoHugepages
+
 	// ShmRefs tracks the number of references to this segment.
 	//
 	// A segment holds a reference to itself until it is marked for

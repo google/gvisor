@@ -98,6 +98,7 @@ type frontendFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 	memmap.MappableNoTrackMappings
+	memmap.MappableNoHugepages
 
 	dev           *frontendDevice
 	containerName string

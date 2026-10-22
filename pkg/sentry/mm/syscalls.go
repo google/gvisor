@@ -423,14 +423,15 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	if !vseg.Ok() {
 		return 0, linuxerr.EFAULT
 	}
+	oldVMA := vseg.ValuePtr()
 
 	// Sealed vmas may not be resized, moved, or copied. oldSize can be 0, so
 	// check the vmas starting at oldAddr.
-	if vseg.ValuePtr().sealed || mm.isSealedLocked(hostarch.AddrRange{Start: oldAddr, End: oldEnd}) {
+	if oldVMA.sealed || mm.isSealedLocked(hostarch.AddrRange{Start: oldAddr, End: oldEnd}) {
 		return 0, linuxerr.EPERM
 	}
 
-	if vma := vseg.ValuePtr(); newSize > oldSize && vma.mappable != nil {
+	if newSize > oldSize && oldVMA.mappable != nil {
 		// Check that offset+length does not overflow.
 		offset := vseg.mappableOffsetAt(oldAddr)
 		if offset+newSize < offset {
@@ -451,7 +452,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	// occupies at least part of the destination. Thus the NoMove case always
 	// fails and the MayMove case always falls back to copying.
 
-	if vma := vseg.ValuePtr(); newSize > oldSize && vma.mlockMode != memmap.MLockNone {
+	if newSize > oldSize && oldVMA.mlockMode != memmap.MLockNone {
 		// Check against RLIMIT_MEMLOCK. Unlike mmap, mlock, and mlockall,
 		// mremap in Linux does not check mm/mlock.c:can_do_mlock() and
 		// therefore does not return EPERM if RLIMIT_MEMLOCK is 0 and
@@ -485,33 +486,33 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 			return 0, linuxerr.EFAULT
 		}
 		// "Grow" the existing vma by creating a new mergeable one.
-		vma := vseg.ValuePtr()
 		var newOffset uint64
-		if vma.mappable != nil {
+		if oldVMA.mappable != nil {
 			newOffset = vseg.mappableRange().End
 		}
+		oldMLockMode := oldVMA.mlockMode
 		var vseg vmaIterator
 		var ar hostarch.AddrRange
 		var err error
 		vseg, ar, droppedIDs, err = mm.createVMALocked(ctx, memmap.MMapOpts{
 			Length:          newSize - oldSize,
-			MappingIdentity: vma.id,
-			Mappable:        vma.mappable,
+			MappingIdentity: oldVMA.id,
+			Mappable:        oldVMA.mappable,
 			Offset:          newOffset,
 			Addr:            oldEnd,
 			Fixed:           true,
-			Perms:           vma.realPerms,
-			MaxPerms:        vma.maxPerms,
-			Private:         vma.private,
-			GrowsDown:       vma.growsDown,
-			Stack:           vma.isStack,
-			EagerForkCopy:   vma.eagerForkCopy,
-			MLockMode:       vma.mlockMode,
-			Name:            vma.name,
-			NameMut:         vma.nameMut,
+			Perms:           oldVMA.realPerms,
+			MaxPerms:        oldVMA.maxPerms,
+			Private:         oldVMA.private,
+			GrowsDown:       oldVMA.growsDown,
+			Stack:           oldVMA.isStack,
+			EagerForkCopy:   oldVMA.eagerForkCopy,
+			MLockMode:       oldVMA.mlockMode,
+			Name:            oldVMA.name,
+			NameMut:         oldVMA.nameMut,
 		}, droppedIDs)
 		if err == nil {
-			if vma.mlockMode == memmap.MLockEager {
+			if oldMLockMode == memmap.MLockEager {
 				mm.populateVMA(ctx, vseg, ar, memmap.PlatformEffectCommit)
 			}
 			return oldAddr, nil
@@ -527,7 +528,12 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 	var newAR hostarch.AddrRange
 	switch opts.Move {
 	case MRemapMayMove:
-		newAddr, err := mm.findAvailableLocked(newSize, findAvailableOpts{})
+		newAddr, err := mm.findAvailableLocked(newSize, findAvailableOpts{
+			Mappable:  oldVMA.mappable,
+			Offset:    oldVMA.off + uint64(oldAddr-vseg.Start()),
+			GrowsDown: oldVMA.growsDown,
+			Stack:     oldVMA.isStack,
+		})
 		if err != nil {
 			return 0, err
 		}
@@ -549,9 +555,13 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 		// Check that the new region is valid.
 		_, err := mm.findAvailableLocked(newSize, findAvailableOpts{
-			Addr:  newAddr,
-			Fixed: true,
-			Unmap: true,
+			Mappable:  oldVMA.mappable,
+			Offset:    oldVMA.off + uint64(oldAddr-vseg.Start()),
+			Addr:      newAddr,
+			Fixed:     true,
+			Unmap:     true,
+			GrowsDown: oldVMA.growsDown,
+			Stack:     oldVMA.isStack,
 		})
 		if err != nil {
 			return 0, err
@@ -576,6 +586,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 		// unmapLocked may have invalidated vseg; look it up again.
 		vseg = mm.vmas.FindSegment(oldAddr)
+		oldVMA = vseg.ValuePtr()
 	}
 
 	oldAR := hostarch.AddrRange{oldAddr, oldEnd}
@@ -591,9 +602,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 		return 0, linuxerr.ENOMEM
 	}
 
-	if vma := vseg.ValuePtr(); vma.mappable != nil {
+	if oldVMA.mappable != nil {
 		// Inform the Mappable, if any, of the new mapping.
-		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.canWriteMappableLocked()); err != nil {
+		if err := oldVMA.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), oldVMA.canWriteMappableLocked()); err != nil {
 			return 0, err
 		}
 	}
