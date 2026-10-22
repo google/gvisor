@@ -28,68 +28,99 @@
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
 namespace {
 
-constexpr char kMaxKeysPath[] = "/proc/sys/kernel/keys/maxkeys";
+struct KeyQuotaFile {
+  const char* name;
+  uint32_t linux_default;
+};
 
-TEST(ProcSysKernelKeysMax, Exists) {
-  const std::string maxkeys =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxKeysPath));
-  int32_t value;
-  ASSERT_TRUE(absl::SimpleAtoi(maxkeys, &value));
+class ProcSysKernelKeysQuotaTest
+    : public ::testing::TestWithParam<KeyQuotaFile> {
+ protected:
+  std::string Path() const {
+    return absl::StrCat("/proc/sys/kernel/keys/", GetParam().name);
+  }
+};
+
+TEST_P(ProcSysKernelKeysQuotaTest, Exists) {
+  const std::string contents = ASSERT_NO_ERRNO_AND_VALUE(GetContents(Path()));
+  uint32_t value;
+  ASSERT_TRUE(absl::SimpleAtoi(contents, &value)) << contents;
   EXPECT_GT(value, 0);
+  EXPECT_LE(value, std::numeric_limits<int32_t>::max());
   if (IsRunningOnGvisor()) {
-    // Each sandbox initializes its own limit; Linux's host policy may differ.
-    EXPECT_EQ(value, 200);
+    // Linux's host policy may differ.
+    EXPECT_EQ(value, GetParam().linux_default);
   }
 }
 
-// Returns true if the caller can write to /proc/sys/kernel/keys/maxkeys. On
-// Linux, sysctl file permissions ignore capabilities and only allow the global
-// root user to write to this file (see test_perm() in fs/proc/proc_sysctl.c).
-PosixErrorOr<bool> CanSetMaxKeys() {
-  ASSIGN_OR_RETURN_ERRNO(bool have_sys_admin, HaveCapability(CAP_SYS_ADMIN));
+// Returns true if the caller can write to the key quota files. On Linux,
+// sysctl file permissions ignore capabilities and only allow the global root
+// user to write to these files (see test_perm() in fs/proc/proc_sysctl.c).
+PosixErrorOr<bool> CanSetKeyQuotas() {
   ASSIGN_OR_RETURN_ERRNO(bool in_init_userns, InInitialUserNamespace());
-  return have_sys_admin && in_init_userns && geteuid() == 0;
+  return in_init_userns && geteuid() == 0;
 }
 
-TEST(ProcSysKernelKeysMax, InvalidMaxKeysValue) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetMaxKeys()));
-  const std::string before =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxKeysPath));
-  auto cleanup = Cleanup([before] {
-    EXPECT_NO_ERRNO(SetContents(kMaxKeysPath, before));
-    EXPECT_THAT(GetContents(kMaxKeysPath), IsPosixErrorOkAndHolds(before));
+// The quotas accept values from 1 to INT_MAX (see key_sysctls in
+// security/keys/sysctl.c).
+TEST_P(ProcSysKernelKeysQuotaTest, InvalidValue) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const std::string before = ASSERT_NO_ERRNO_AND_VALUE(GetContents(Path()));
+  const Cleanup cleanup([this, before] {
+    EXPECT_NO_ERRNO(SetContents(Path(), before));
+    EXPECT_THAT(GetContents(Path()), IsPosixErrorOkAndHolds(before));
   });
-  ASSERT_THAT(SetContents(kMaxKeysPath, "-1"), PosixErrorIs(EINVAL));
-  EXPECT_THAT(GetContents(kMaxKeysPath), IsPosixErrorOkAndHolds(before));
+  for (const char* value : {"0", "-1", "2147483648", "4294967296"}) {
+    SCOPED_TRACE(value);
+    ASSERT_THAT(SetContents(Path(), value), PosixErrorIs(EINVAL));
+    EXPECT_THAT(GetContents(Path()), IsPosixErrorOkAndHolds(before));
+  }
 }
 
-TEST(ProcSysKernelKeysMax, SetMaxKeys) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetMaxKeys()));
-  const std::string before =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxKeysPath));
-  int32_t value;
-  ASSERT_TRUE(absl::SimpleAtoi(before, &value));
-  ASSERT_GT(value, 0);
-  auto cleanup = Cleanup([before] {
-    EXPECT_NO_ERRNO(SetContents(kMaxKeysPath, before));
-    EXPECT_THAT(GetContents(kMaxKeysPath), IsPosixErrorOkAndHolds(before));
+TEST_P(ProcSysKernelKeysQuotaTest, SetValue) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const std::string before = ASSERT_NO_ERRNO_AND_VALUE(GetContents(Path()));
+  uint32_t value;
+  ASSERT_TRUE(absl::SimpleAtoi(before, &value)) << before;
+  const Cleanup cleanup([this, before] {
+    EXPECT_NO_ERRNO(SetContents(Path(), before));
+    EXPECT_THAT(GetContents(Path()), IsPosixErrorOkAndHolds(before));
   });
-  // Change the limit even when the host already uses a nondefault policy.
-  const int32_t updated =
-      value == std::numeric_limits<int32_t>::max() ? value - 1 : value + 1;
-  ASSERT_NO_ERRNO(SetContents(kMaxKeysPath, absl::StrCat(updated)));
-  const std::string maxkeys =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents(kMaxKeysPath));
-  int32_t actual;
-  ASSERT_TRUE(absl::SimpleAtoi(maxkeys, &actual));
-  EXPECT_EQ(actual, updated);
+  // Raising the limit keeps the host usable even when it is not Linux.
+  const uint32_t updated = value == std::numeric_limits<int32_t>::max()
+                               ? value - 1
+                               : std::numeric_limits<int32_t>::max();
+  ASSERT_NO_ERRNO(SetContents(Path(), absl::StrCat(updated)));
+  // Checkpoint and restore with the new value set.
+  MaybeSave();
+  EXPECT_THAT(GetContents(Path()),
+              IsPosixErrorOkAndHolds(absl::StrCat(updated, "\n")));
 }
+
+// Writing the files needs no capability, only the global root user.
+TEST_P(ProcSysKernelKeysQuotaTest, WriteWithoutCapSysAdmin) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanSetKeyQuotas()));
+  const std::string before = ASSERT_NO_ERRNO_AND_VALUE(GetContents(Path()));
+  AutoCapability no_sys_admin(CAP_SYS_ADMIN, false);
+  EXPECT_NO_ERRNO(SetContents(Path(), before));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    , ProcSysKernelKeysQuotaTest,
+    ::testing::Values(KeyQuotaFile{"maxkeys", 200},
+                      KeyQuotaFile{"maxbytes", 20000},
+                      KeyQuotaFile{"root_maxkeys", 1000000},
+                      KeyQuotaFile{"root_maxbytes", 25000000}),
+    [](const ::testing::TestParamInfo<KeyQuotaFile>& info) {
+      return info.param.name;
+    });
 
 }  // namespace
 }  // namespace testing
