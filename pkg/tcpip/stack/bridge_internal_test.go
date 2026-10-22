@@ -30,18 +30,23 @@ func TestBridgeShouldLearnLocked(t *testing.T) {
 		portAddr  = tcpip.LinkAddress("\x02\x00\x00\x00\x00\x02")
 	)
 	b := NewBridgeEndpoint(1500)
-	port := &bridgePort{bridge: b, nic: &nic{id: 1}}
-	removed := &bridgePort{bridge: b, nic: &nic{id: 2}}
+	port := &bridgePort{bridge: b, nic: &nic{id: 1}, flags: defaultBridgePortFlags}
+	removed := &bridgePort{bridge: b, nic: &nic{id: 2}, flags: defaultBridgePortFlags}
+	noLearning := &bridgePort{bridge: b, nic: &nic{id: 3}}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ports[port.nic.id] = port
+	b.ports[noLearning.nic.id] = noLearning
 
 	if !b.shouldLearnLocked(port, remote) {
 		t.Errorf("shouldLearnLocked(port, %s) = false, want true", remote)
 	}
 	if b.shouldLearnLocked(removed, remote) {
 		t.Errorf("shouldLearnLocked(removed port, %s) = true, want false", remote)
+	}
+	if b.shouldLearnLocked(noLearning, remote) {
+		t.Errorf("shouldLearnLocked(port without learning, %s) = true, want false", remote)
 	}
 	if b.shouldLearnLocked(port, multicast) {
 		t.Errorf("shouldLearnLocked(port, %s) = true, want false for a multicast address", multicast)
