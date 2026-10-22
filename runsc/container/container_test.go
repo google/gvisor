@@ -5217,6 +5217,98 @@ func TestMountEROFSConfig(t *testing.T) {
 	}
 }
 
+// TestXattrsEROFS reads files and extended attributes from EROFS images.
+func TestXattrsEROFS(t *testing.T) {
+	skipIfNotAvailable(t, "mkfs.erofs")
+
+	testDir, err := os.MkdirTemp(testutil.TmpDir(), "erofs_xattr_test_")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(testDir)
+
+	sourceDir := filepath.Join(testDir, "source")
+	if err := os.Mkdir(sourceDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	const contents = "contents"
+	file := filepath.Join(sourceDir, "file")
+	if err := os.WriteFile(file, []byte(contents), 0644); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+	const value = "value"
+	for _, path := range []string{sourceDir, file} {
+		if err := unix.Setxattr(path, "user.test", []byte(value), 0); err != nil {
+			if errors.Is(err, unix.EOPNOTSUPP) {
+				t.Skipf("user xattrs are not supported in %q", sourceDir)
+			}
+			t.Fatalf("unix.Setxattr(%q) failed: %v", path, err)
+		}
+	}
+
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		options []string
+	}{
+		{name: "inline", options: []string{"-x 2"}},
+		{name: "shared", options: []string{"-x 0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			image := filepath.Join(testDir, tc.name+".img")
+			if err := createImageEROFS(image, sourceDir, tc.options...); err != nil {
+				t.Fatalf("error creating EROFS image: %v", err)
+			}
+
+			spec, conf := sleepSpecConf(t)
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Source:      image,
+				Destination: "/mnt",
+				Type:        erofs.Name,
+				Options:     []string{"ro"},
+			})
+			_, bundleDir, cleanupContainer, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanupContainer()
+
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			if out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", "/mnt/file"); err != nil {
+				t.Fatalf("exec: cat /mnt/file, err: %v, out: %s", err, out)
+			} else if string(out) != contents {
+				t.Errorf("got contents %q, want %q", out, contents)
+			}
+			for _, path := range []string{"/mnt", "/mnt/file"} {
+				out, err := executeCombinedOutput(conf, c, nil, app, "getxattr", "--path="+path, "--name=user.test")
+				if err != nil {
+					t.Fatalf("exec: getxattr %s, err: %v, out: %s", path, err, out)
+				}
+				if got, want := strings.TrimSpace(string(out)), base64.StdEncoding.EncodeToString([]byte(value)); got != want {
+					t.Errorf("got xattr %q on %s, want %q", got, path, want)
+				}
+			}
+		})
+	}
+}
+
 // createRootfsEROFS creates a rootfs directory and an EROFS rootfs image in
 // the directory dir, passing options to mkfs.erofs.
 func createRootfsEROFS(dir string, options ...string) (string, string, error) {

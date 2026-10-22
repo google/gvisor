@@ -442,10 +442,7 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 		inode.format = format
 	}
 
-	var (
-		rawBlockAddr uint32
-		inodeSize    int
-	)
+	var rawBlockAddr uint32
 
 	switch layout := inode.Layout(); layout {
 	case InodeLayoutCompact:
@@ -454,13 +451,8 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 			return Inode{}, err
 		}
 
-		if ino.XattrCount != 0 {
-			log.Warningf("Unsupported xattr at inode (nid=%v)", nid)
-			return Inode{}, linuxerr.ENOTSUP
-		}
-
 		rawBlockAddr = ino.RawBlockAddr
-		inodeSize = ino.SizeBytes()
+		inode.xattrCount = ino.XattrCount
 
 		inode.size = uint64(ino.Size)
 		inode.nlink = uint32(ino.Nlink)
@@ -476,13 +468,8 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 			return Inode{}, err
 		}
 
-		if ino.XattrCount != 0 {
-			log.Warningf("Unsupported xattr at inode (nid=%v)", nid)
-			return Inode{}, linuxerr.ENOTSUP
-		}
-
 		rawBlockAddr = ino.RawBlockAddr
-		inodeSize = ino.SizeBytes()
+		inode.xattrCount = ino.XattrCount
 
 		inode.size = ino.Size
 		inode.nlink = ino.Nlink
@@ -500,11 +487,15 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 	blockSize := uint64(i.BlockSize())
 	inode.blocks = (inode.size + (blockSize - 1)) / blockSize
 
-	// inodeEnd is the end of the inode. Inline data starts there, and the chunk
-	// map starts at the first entry-aligned offset after it. Linux also adds
-	// xattr_isize to inodeSize to find both. Safe to skip here because
-	// XattrCount != 0 is rejected above; revisit if EROFS xattr support is added.
-	inodeEnd := off + uint64(inodeSize)
+	// Inline data follows the inode and its extended attributes. The chunk
+	// map starts at the first entry-aligned offset after them.
+	xattrSize := xattrIbodySize(inode.xattrCount)
+	inodeEnd := inode.xattrIbodyOff()
+	if xattrSize != 0 && !i.checkRange(inodeEnd, xattrSize) {
+		log.Warningf("Xattrs out of range at inode (nid=%v)", nid)
+		return Inode{}, linuxerr.EUCLEAN
+	}
+	inodeEnd += xattrSize
 
 	switch dataLayout := inode.DataLayout(); dataLayout {
 	case InodeDataLayoutFlatInline:
@@ -562,14 +553,15 @@ type Inode struct {
 	chunkFormat uint16
 
 	// Metadata.
-	mode      uint16
-	nid       uint64
-	size      uint64
-	mtime     uint64
-	mtimeNsec uint32
-	uid       uint32
-	gid       uint32
-	nlink     uint32
+	mode       uint16
+	xattrCount uint16
+	nid        uint64
+	size       uint64
+	mtime      uint64
+	mtimeNsec  uint32
+	uid        uint32
+	gid        uint32
+	nlink      uint32
 }
 
 // bitRange returns the bits within the range [bit, bit+bits) in value.
