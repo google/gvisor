@@ -37,6 +37,26 @@ func TestFeatureFromString(t *testing.T) {
 	}
 }
 
+func TestAllFeaturesBitmask(t *testing.T) {
+	var allNames []string
+	for feature := range allFeatures {
+		name := feature.String()
+		allNames = append(allNames, name)
+		blocks, err := FeatureMaskFromNames([]string{name})
+		if err != nil {
+			t.Fatalf("FeatureMaskFromNames([%q]) failed: %v", name, err)
+		}
+		wantBlock := int(feature) / 32
+		wantBit := uint32(1) << (uint(feature) % 32)
+		if blocks[wantBlock] != wantBit {
+			t.Errorf("FeatureMaskFromNames([%q]) block %d = %#08x, want %#08x", name, wantBlock, blocks[wantBlock], wantBit)
+		}
+	}
+	if _, err := FeatureMaskStringFromNames(allNames); err != nil {
+		t.Fatalf("FeatureMaskStringFromNames(allNames) failed: %v", err)
+	}
+}
+
 func TestReadHwCap(t *testing.T) {
 	// Make an auxv with fake entries
 	const (

@@ -463,6 +463,13 @@ func TestCheckpointCPUFeaturesMetadata(t *testing.T) {
 			if want := strings.Join(fs.FeatureNames(), ","); got != want {
 				t.Errorf("metadata[%q] = %q, want %q", sentryapi.CPUFeaturesKey, got, want)
 			}
+			gotMask, err := cpuid.FeatureMaskStringFromNames(strings.Split(got, ","))
+			if err != nil {
+				t.Fatalf("FeatureMaskStringFromNames(%q) failed: %v", got, err)
+			}
+			if wantMask := fs.FeatureMaskString(); gotMask != wantMask {
+				t.Errorf("FeatureMaskStringFromNames(%q) = %q, want %q", got, gotMask, wantMask)
+			}
 		})
 	}
 }
