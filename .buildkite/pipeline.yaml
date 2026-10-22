@@ -1,66 +1,142 @@
-_templates:
-  quick: &quick
-    command: "echo \"job $$BUILDKITE_JOB_ID on $$BUILDKITE_AGENT_NAME\" && sleep 15"
-    agents:
-      queue: "default"
-      stacktest: "yes"
-    timeout_in_minutes: 4
-    retry:
-      automatic:
-        - exit_status: 80
-          signal_reason: stack_error
-          limit: 0
-        - exit_status: "*"
-          limit: 2
-
 steps:
-  - label: ":skull: long job: VM timer (6m) across a coordinator restart"
-    command: "echo start && sleep 1200 && echo 'not killed by the coordinator'"
-    agents:
-      queue: "default"
-      stacktest: "yes"
-    timeout_in_minutes: 30
-    retry:
-      automatic: false
+- label: ':arrow_up: artifact upload (coordinator agent)'
+  key: artifact-upload
+  command: |
+    set -euo pipefail
+    echo "--- Upload with buildkite-agent's default destination (uses the artifact token)"
+    echo "artifact from job $${BUILDKITE_JOB_ID}" > upload-test.txt
+    head -c 20M /dev/urandom > upload-big.bin
+    buildkite-agent artifact upload upload-test.txt
+    buildkite-agent artifact upload upload-big.bin
+    base="https://storage.googleapis.com/$${BUILDKITE_ARTIFACT_UPLOAD_DESTINATION#gs://}"
+    got="$$(curl -sSf "$${base}/upload-test.txt")"
+    if [[ "$${got}" != "artifact from job $${BUILDKITE_JOB_ID}" ]]; then
+      echo "FAIL: unexpected content at $${base}/upload-test.txt: $${got}"
+      exit 1
+    fi
+    if ! cmp -s upload-big.bin <(curl -sSf "$${base}/upload-big.bin"); then
+      echo "FAIL: $${base}/upload-big.bin differs from what was uploaded"
+      exit 1
+    fi
+    echo "PASS: both artifacts uploaded and publicly readable under $${base}"
+  agents: &id001
+    queue: default
+    stacktest: 'yes'
+  retry:
+    automatic: false
+- label: ':arrow_down: artifact download (coordinator agent)'
+  key: artifact-download
+  depends_on: artifact-upload
+  command: |
+    set -euo pipefail
+    echo "--- Download another job's artifacts through Buildkite"
+    buildkite-agent artifact download upload-test.txt . --step artifact-upload
+    buildkite-agent artifact download upload-big.bin . --step artifact-upload
+    grep -q '^artifact from job ' upload-test.txt
+    [[ "$$(stat -c %s upload-big.bin)" == 20971520 ]]
+    echo "PASS: downloaded both artifacts from the artifact-upload step"
+  agents: *id001
+  retry:
+    automatic: false
+- label: ':lock: artifact isolation (coordinator agent)'
+  key: artifact-isolation
+  command: |
+    set -euo pipefail
+    BUCKET=gvisor-buildkite
+    fails=0
 
-  - { <<: *quick, label: ":zap: quick 01" }
-  - { <<: *quick, label: ":zap: quick 02" }
-  - { <<: *quick, label: ":zap: quick 03" }
-  - { <<: *quick, label: ":zap: quick 04" }
-  - { <<: *quick, label: ":zap: quick 05" }
-  - { <<: *quick, label: ":zap: quick 06" }
-  - { <<: *quick, label: ":zap: quick 07" }
-  - { <<: *quick, label: ":zap: quick 08" }
-  - { <<: *quick, label: ":zap: quick 09" }
-  - { <<: *quick, label: ":zap: quick 10" }
-  - { <<: *quick, label: ":zap: quick 11" }
-  - { <<: *quick, label: ":zap: quick 12" }
-  - { <<: *quick, label: ":zap: quick 13" }
-  - { <<: *quick, label: ":zap: quick 14" }
-  - { <<: *quick, label: ":zap: quick 15" }
-  - { <<: *quick, label: ":zap: quick 16" }
-  - { <<: *quick, label: ":zap: quick 17" }
-  - { <<: *quick, label: ":zap: quick 18" }
-  - { <<: *quick, label: ":zap: quick 19" }
-  - { <<: *quick, label: ":zap: quick 20" }
-  - { <<: *quick, label: ":zap: quick 21" }
-  - { <<: *quick, label: ":zap: quick 22" }
-  - { <<: *quick, label: ":zap: quick 23" }
-  - { <<: *quick, label: ":zap: quick 24" }
-  - { <<: *quick, label: ":zap: quick 25" }
-  - { <<: *quick, label: ":zap: quick 26" }
-  - { <<: *quick, label: ":zap: quick 27" }
-  - { <<: *quick, label: ":zap: quick 28" }
-  - { <<: *quick, label: ":zap: quick 29" }
-  - { <<: *quick, label: ":zap: quick 30" }
-  - { <<: *quick, label: ":zap: quick 31" }
-  - { <<: *quick, label: ":zap: quick 32" }
-  - { <<: *quick, label: ":zap: quick 33" }
-  - { <<: *quick, label: ":zap: quick 34" }
-  - { <<: *quick, label: ":zap: quick 35" }
-  - { <<: *quick, label: ":zap: quick 36" }
-  - { <<: *quick, label: ":zap: quick 37" }
-  - { <<: *quick, label: ":zap: quick 38" }
-  - { <<: *quick, label: ":zap: quick 39" }
-  - { <<: *quick, label: ":zap: quick 40" }
+    # check DESCRIPTION EXPECTED_HTTP_CODE ACTUAL_HTTP_CODE
+    check() {
+      if [[ "$$3" == "$$2" ]]; then
+        echo "PASS: $$1 (HTTP $$3)"
+      else
+        echo "FAIL: $$1: expected HTTP $$2, got $$3: $$(head -c 300 /tmp/gcs-resp 2>/dev/null | tr '\n' ' ')"
+        fails=$$((fails + 1))
+      fi
+    }
+    enc() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$$1"; }
+    # upload BUCKET OBJECT TOKEN: prints the HTTP status of a direct GCS upload.
+    upload() {
+      curl -sS -o /tmp/gcs-resp -w '%{http_code}' -X POST -H "Authorization: Bearer $$3" \
+        -H 'Content-Type: text/plain' --data-binary "isolation test from job $${BUILDKITE_JOB_ID}" \
+        "https://storage.googleapis.com/upload/storage/v1/b/$$1/o?uploadType=media&name=$$(enc "$$2")"
+    }
+    # delete BUCKET OBJECT TOKEN: prints the HTTP status of a GCS delete.
+    delete() {
+      curl -sS -o /tmp/gcs-resp -w '%{http_code}' -X DELETE -H "Authorization: Bearer $$3" \
+        "https://storage.googleapis.com/storage/v1/b/$$1/o/$$(enc "$$2")"
+    }
+
+    echo "--- Fetch this job's artifact token from the agent's local token server"
+    token="$$(curl -sSf -X POST http://127.0.0.1:29871/token | python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')"
+    echo "$${token}" | buildkite-agent redactor add
+    curl -sS "https://oauth2.googleapis.com/tokeninfo?access_token=$${token}" | python3 -c '
+    import json, sys
+    d = json.load(sys.stdin)
+    print("tokeninfo: expires_in=%s scope=%s error=%s" % (d.get("expires_in"), d.get("scope"), d.get("error_description")))'
+
+    own="$${BUILDKITE_BUILD_ID}/$${BUILDKITE_JOB_ID}/isolation-test.txt"
+    other_build="$$(cat /proc/sys/kernel/random/uuid)"
+
+    echo "--- Artifact token"
+    check "upload to this job's prefix" 200 "$$(upload "$${BUCKET}" "$${own}" "$${token}")"
+    check "upload to another job's prefix in the same build (allowed: tokens are build-scoped)" 200 \
+      "$$(upload "$${BUCKET}" "$${BUILDKITE_BUILD_ID}/other-job/isolation-test.txt" "$${token}")"
+    check "overwrite an existing object (objectCreator can't replace objects)" 403 "$$(upload "$${BUCKET}" "$${own}" "$${token}")"
+    check "delete an existing object" 403 "$$(delete "$${BUCKET}" "$${own}" "$${token}")"
+    check "upload to another build's prefix" 403 "$$(upload "$${BUCKET}" "$${other_build}/isolation-test.txt" "$${token}")"
+    check "upload to a sibling prefix (this build's UUID without the trailing slash)" 403 \
+      "$$(upload "$${BUCKET}" "$${BUILDKITE_BUILD_ID}x/isolation-test.txt" "$${token}")"
+    check "upload to the bucket root" 403 "$$(upload "$${BUCKET}" "isolation-test-$${other_build}.txt" "$${token}")"
+    check "upload to a different bucket (gvisor-buildkite-bazel-cache)" 403 \
+      "$$(upload gvisor-buildkite-bazel-cache "isolation-test/$${other_build}.txt" "$${token}")"
+
+    echo "--- buildkite-agent with an explicit destination in another build's prefix"
+    echo "cli test from job $${BUILDKITE_JOB_ID}" > cli-test.txt
+    if buildkite-agent artifact upload cli-test.txt "gs://$${BUCKET}/$${other_build}/cli"; then
+      echo "FAIL: buildkite-agent uploaded into another build's prefix"
+      fails=$$((fails + 1))
+    else
+      echo "PASS: buildkite-agent could not upload into another build's prefix"
+    fi
+
+    echo "--- The VM's own credentials (metadata server), which job code can always reach"
+    vm_token="$$(curl -sSf -H 'Metadata-Flavor: Google' \
+      http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token |
+      python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')"
+    echo "$${vm_token}" | buildkite-agent redactor add
+    check "VM credentials: upload to this job's prefix" 403 \
+      "$$(upload "$${BUCKET}" "$${BUILDKITE_BUILD_ID}/$${BUILDKITE_JOB_ID}/vm-credentials-test.txt" "$${vm_token}")"
+    check "VM credentials: upload to another build's prefix" 403 \
+      "$$(upload "$${BUCKET}" "$${other_build}/vm-credentials-test.txt" "$${vm_token}")"
+
+    echo "--- $${fails} check(s) failed"
+    [[ "$${fails}" == 0 ]]
+  agents: *id001
+  retry:
+    automatic: false
+- label: ':arrow_up: artifact upload (control: regular agent)'
+  key: artifact-control
+  command: |
+    set -euo pipefail
+    echo "--- Upload with buildkite-agent's default destination (uses the artifact token)"
+    echo "artifact from job $${BUILDKITE_JOB_ID}" > upload-test.txt
+    head -c 20M /dev/urandom > upload-big.bin
+    buildkite-agent artifact upload upload-test.txt
+    buildkite-agent artifact upload upload-big.bin
+    base="https://storage.googleapis.com/$${BUILDKITE_ARTIFACT_UPLOAD_DESTINATION#gs://}"
+    got="$$(curl -sSf "$${base}/upload-test.txt")"
+    if [[ "$${got}" != "artifact from job $${BUILDKITE_JOB_ID}" ]]; then
+      echo "FAIL: unexpected content at $${base}/upload-test.txt: $${got}"
+      exit 1
+    fi
+    if ! cmp -s upload-big.bin <(curl -sSf "$${base}/upload-big.bin"); then
+      echo "FAIL: $${base}/upload-big.bin differs from what was uploaded"
+      exit 1
+    fi
+    echo "PASS: both artifacts uploaded and publicly readable under $${base}"
+  agents:
+    queue: default
+  retry:
+    automatic: false
 
