@@ -45,6 +45,15 @@ func frontendIoctlInvokeNoStatus[Params any](fi *frontendIoctlState, ioctlParams
 	return n, nil
 }
 
+func rmGetEventDataInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS41_PARAMETERS, event *nvgpu.NvUnixEvent) (uintptr, error) {
+	defer runtime.KeepAlive(event) // since we convert to non-pointer-typed P64
+	origEvent := ioctlParams.PEvent
+	ioctlParams.PEvent = p64FromPtr(unsafe.Pointer(event))
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	ioctlParams.PEvent = origEvent
+	return n, err
+}
+
 func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS, ctrlParams *Params) (uintptr, error) {
 	defer runtime.KeepAlive(ctrlParams) // since we convert to non-pointer-typed P64
 	origParams := ioctlParams.Params
@@ -190,15 +199,15 @@ func ctrlGpuExecRegOps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMET
 	return n, nil
 }
 
-// debugReadMemoryMaxLength bounds the size of the sentry buffer allocated to
-// proxy a single NV83DE_CTRL_CMD_DEBUG_READ_MEMORY request, preventing a
+// debugMemoryMaxLength bounds the size of the sentry buffer allocated to proxy
+// a single NV83DE_CTRL_CMD_DEBUG_{READ,WRITE}_MEMORY request, preventing a
 // malicious application from forcing an arbitrarily large (up to ^uint32(0)
 // bytes) sentry allocation. The driver itself does not impose a limit below
-// the size of the memory object being read (it passes
+// the size of the memory object being accessed (it passes
 // RMAPI_PARAM_COPY_FLAGS_DISABLE_MAX_SIZE_CHECK for this control). In
 // practice, CUDA GPU coredump generation is expected to stay comfortably
 // within 1 GiB.
-const debugReadMemoryMaxLength = 1 << 30 // 1 GiB
+const debugMemoryMaxLength = 1 << 30 // 1 GiB
 
 // ctrlDebugReadMemory implements NV83DE_CTRL_CMD_DEBUG_READ_MEMORY, whose
 // parameters contain an embedded pointer (Buffer) that the driver fills with
@@ -206,7 +215,7 @@ const debugReadMemoryMaxLength = 1 << 30 // 1 GiB
 // src/nvidia/src/kernel/rmapi/embedded_param_copy.c:embeddedParamCopyIn();
 // note that the driver passes RMAPI_PARAM_COPY_FLAGS_DISABLE_MAX_SIZE_CHECK
 // for this control, so Buffer's size is not limited by
-// RMAPI_PARAM_COPY_MAX_PARAMS_SIZE; we bound it by debugReadMemoryMaxLength
+// RMAPI_PARAM_COPY_MAX_PARAMS_SIZE; we bound it by debugMemoryMaxLength
 // instead.
 func ctrlDebugReadMemory(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
 	var ctrlParams nvgpu.NV83DE_CTRL_DEBUG_READ_MEMORY_PARAMS
@@ -216,12 +225,12 @@ func ctrlDebugReadMemory(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAM
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-	if ctrlParams.Length > debugReadMemoryMaxLength {
+	if ctrlParams.Length > debugMemoryMaxLength {
 		// NV_ERR_INVALID_ARGUMENT is consistent with the status returned by
 		// src/nvidia/src/kernel/rmapi/param_copy.c:rmapiParamsAcquire() when
 		// RMAPI_PARAM_COPY_MAX_PARAMS_SIZE is exceeded, for controls where
 		// that check is enabled.
-		fi.ctx.Warningf("nvproxy: NV83DE_CTRL_CMD_DEBUG_READ_MEMORY length %d exceeds limit %d", ctrlParams.Length, uint32(debugReadMemoryMaxLength))
+		fi.ctx.Warningf("nvproxy: NV83DE_CTRL_CMD_DEBUG_READ_MEMORY length %d exceeds limit %d", ctrlParams.Length, uint32(debugMemoryMaxLength))
 		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 	var buffer []byte
@@ -246,6 +255,64 @@ func ctrlDebugReadMemory(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAM
 		if _, err := fi.t.CopyOutBytes(addrFromP64(origBuffer), buffer); err != nil {
 			return n, err
 		}
+	}
+	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// ctrlDebugWriteMemory implements NV83DE_CTRL_CMD_DEBUG_WRITE_MEMORY, whose
+// parameters contain an embedded pointer (Buffer) to Length bytes that the
+// driver writes into the debugged context. Compare
+// src/nvidia/src/kernel/rmapi/embedded_param_copy.c:embeddedParamCopyIn(); the
+// driver copies Buffer in and skips copying it out. The driver disables its
+// normal maximum-size check for this control, so use debugMemoryMaxLength.
+func ctrlDebugWriteMemory(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54_PARAMETERS) (uintptr, error) {
+	var ctrlParams nvgpu.NV83DE_CTRL_DEBUG_WRITE_MEMORY_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if ctrlParams.Length > debugMemoryMaxLength {
+		fi.ctx.Warningf("nvproxy: NV83DE_CTRL_CMD_DEBUG_WRITE_MEMORY length %d exceeds limit %d", ctrlParams.Length, uint32(debugMemoryMaxLength))
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	var buffer []byte
+	if ctrlParams.Buffer != 0 && ctrlParams.Length != 0 {
+		buffer = make([]byte, ctrlParams.Length)
+		if _, err := fi.t.CopyInBytes(addrFromP64(ctrlParams.Buffer), buffer); err != nil {
+			return 0, err
+		}
+	}
+
+	client, unlock := fi.fd.dev.nvp.getClientWithLock(fi.ctx, ioctlParams.HClient)
+	if client == nil {
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_CLIENT)
+	}
+	defer unlock()
+	memory := client.getObject(fi.ctx, nvgpu.Handle{Val: ctrlParams.HMemory})
+	if memory == nil {
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_OBJECT_HANDLE)
+	}
+	// The driver's kernel mapping can bypass both the pin's write permissions
+	// and the memory object's user-read-only protection.
+	if !memory.debugWritable {
+		return 0, frontendFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INSUFFICIENT_PERMISSIONS)
+	}
+
+	origBuffer := ctrlParams.Buffer
+	ctrlParams.Buffer = 0
+	if len(buffer) != 0 {
+		ctrlParams.Buffer = p64FromPtr(unsafe.Pointer(&buffer[0]))
+	}
+	n, err := rmControlInvoke(fi, ioctlParams, &ctrlParams)
+	runtime.KeepAlive(buffer) // since ctrlParams.Buffer is non-pointer-typed P64
+	ctrlParams.Buffer = origBuffer
+	if err != nil {
+		return n, err
 	}
 	if _, err := ctrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return n, err
@@ -505,9 +572,14 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 	n, err := frontendIoctlInvoke(fi, ioctlParams)
 	if err == nil && ioctlParams.Status == nvgpu.NV_OK {
 		// src/nvidia/interface/deprecated/rmapi_deprecated_vidheapctrl.c:_rmVidHeapControlAllocCommon()
+		obj := &miscObject{object: object{
+			debugWritable: (allocSizeParams.Attr2>>nvgpu.NVOS32_ATTR2_PROTECTION_USER_SHIFT)&nvgpu.NVOS32_ATTR2_PROTECTION_USER_MASK == nvgpu.NVOS32_ATTR2_PROTECTION_USER_READ_WRITE,
+		}}
 		if allocSizeParams.Flags&nvgpu.NVOS32_ALLOC_FLAGS_VIRTUAL != 0 {
+			// Virtual allocation attributes do not describe backing-memory permissions.
+			obj.debugWritable = false
 			// src/nvidia/src/kernel/mem_mgr/virtual_mem.c:virtmemConstruct_IMPL() => refAddDependant()
-			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, &miscObject{}, ioctlParams.HObjectParent, ioctlParams.HVASpace)
+			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, nvgpu.NV50_MEMORY_VIRTUAL, obj, ioctlParams.HObjectParent, ioctlParams.HVASpace)
 		} else {
 			classID := nvgpu.ClassID(nvgpu.NV01_MEMORY_SYSTEM)
 			if (allocSizeParams.Attr2>>nvgpu.NVOS32_ATTR2_USE_EGM_SHIFT)&nvgpu.NVOS32_ATTR2_USE_EGM_MASK == nvgpu.NVOS32_ATTR2_USE_EGM_TRUE {
@@ -515,7 +587,7 @@ func rmVidHeapControlAllocSize(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS32
 			} else if (allocSizeParams.Attr>>nvgpu.NVOS32_ATTR_LOCATION_SHIFT)&nvgpu.NVOS32_ATTR_LOCATION_MASK == nvgpu.NVOS32_ATTR_LOCATION_VIDMEM {
 				classID = nvgpu.NV01_MEMORY_LOCAL_USER
 			}
-			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, classID, &miscObject{}, ioctlParams.HObjectParent)
+			fi.fd.dev.nvp.objAdd(fi.ctx, client, allocSizeParams.HMemory, classID, obj, ioctlParams.HObjectParent)
 		}
 	}
 	unlock()
@@ -549,6 +621,9 @@ func rmVidHeapControlAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgp
 	}
 	if status != nvgpu.NV_OK {
 		return 0, frontendFailWithStatus(fi, ioctlParams, status)
+	}
+	if allocOSDescParams.Flags&nvgpu.NVOS32_ALLOC_FLAGS_USER_READ_ONLY != 0 {
+		obj.debugWritable = false
 	}
 	releaseObj := cleanup.Make(obj.Release(fi.ctx))
 	defer releaseObj.Clean()

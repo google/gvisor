@@ -292,6 +292,11 @@ type NV_MEMORY_ALLOCATION_PARAMS struct {
 	Tag           uint32
 }
 
+// GetAttr2 returns the memory allocation's secondary attributes.
+func (p *NV_MEMORY_ALLOCATION_PARAMS) GetAttr2() uint32 {
+	return p.Attr2
+}
+
 // NV_MEMORY_ALLOCATION_PARAMS_V545 is the updated version of
 // NV_MEMORY_ALLOCATION_PARAMS since 545.23.06.
 //
