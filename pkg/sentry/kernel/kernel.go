@@ -40,6 +40,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -429,8 +430,17 @@ type Kernel struct {
 	// Names are preserved between save/restore session, while IDs can change.
 	//
 	// Mapping: cid -> name.
-	// It's protected by extMu.
+	//
+	// +checklocks:extMu
 	containerNames map[string]string
+
+	// containerEnvs stores the initial environment variables of each container
+	// based on its container ID.
+	//
+	// Mapping: cid -> env.
+	//
+	// +checklocks:extMu
+	containerEnvs map[string][]string
 
 	// Lock order: checkpointMu precedes CheckpointWait.mu.
 	checkpointMu sync.Mutex `state:"nosave"`
@@ -645,7 +655,10 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		args.MaxFDLimit = MaxFdLimit
 	}
 	k.MaxFDLimit.Store(args.MaxFDLimit)
+	k.extMu.Lock()
 	k.containerNames = make(map[string]string)
+	k.containerEnvs = make(map[string][]string)
+	k.extMu.Unlock()
 	k.CheckpointWait.k = k
 
 	ctx := k.SupervisorContext()
@@ -1597,6 +1610,12 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	}
 
 	// Success.
+	if args.Origin != OriginExec {
+		if k.containerEnvs == nil {
+			k.containerEnvs = make(map[string][]string)
+		}
+		k.containerEnvs[args.ContainerID] = slices.Clone(args.Envv)
+	}
 	cu.Release()
 	tgid := k.tasks.Root.IDOfThreadGroup(tg)
 	// A namespace with a reserved init TID never gets a global init.
@@ -2701,6 +2720,16 @@ func (k *Kernel) RestoreContainerMapping(containerIDs map[string]string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 
+	newContainerEnvs := make(map[string][]string, len(k.containerEnvs))
+	for oldCID, env := range k.containerEnvs {
+		if name, ok := k.containerNames[oldCID]; ok {
+			if newCID, ok := containerIDs[name]; ok {
+				newContainerEnvs[newCID] = env
+			}
+		}
+	}
+	k.containerEnvs = newContainerEnvs
+
 	// Delete mapping from old session and replace with new values.
 	k.containerNames = make(map[string]string)
 	for name, cid := range containerIDs {
@@ -2713,6 +2742,23 @@ func (k *Kernel) ContainerName(cid string) string {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return k.containerNames[cid]
+}
+
+// SetContainerEnv sets the environment variables for a given container ID.
+func (k *Kernel) SetContainerEnv(cid string, env []string) {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	if k.containerEnvs == nil {
+		k.containerEnvs = make(map[string][]string)
+	}
+	k.containerEnvs[cid] = slices.Clone(env)
+}
+
+// SpecEnviron returns the environment variables for a given container ID.
+func (k *Kernel) SpecEnviron(cid string) []string {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	return slices.Clone(k.containerEnvs[cid])
 }
 
 func filterMFsToSave(mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, matchCtxs []*fsCheckpointMatchContext) map[checkpoint.ResourceID]*pgalloc.MemoryFile {

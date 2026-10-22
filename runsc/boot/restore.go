@@ -636,6 +636,11 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	l.k.RestoreContainerMapping(l.containerIDs)
+	for cid, spec := range specsByCID {
+		if spec != nil && spec.Process != nil {
+			l.k.SetContainerEnv(cid, spec.Process.Env)
+		}
+	}
 	l.k.SetSaver(l)
 	l.createNvproxyDeviceFilesAfterRestore(ctx)
 

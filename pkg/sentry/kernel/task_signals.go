@@ -173,7 +173,7 @@ var StopSignals = linux.MakeSignalSet(linux.SIGSTOP, linux.SIGTSTP, linux.SIGTTI
 // dequeueSignalLocked returns a pending signal that is *not* included in mask.
 // If there are no pending unmasked signals, dequeueSignalLocked returns nil.
 //
-// Preconditions: t.tg.signalHandlers.mu must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) dequeueSignalLocked(mask linux.SignalSet) *linux.SignalInfo {
 	if info := t.pendingSignals.dequeue(mask); info != nil {
 		return info
@@ -391,16 +391,26 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 // Sigtimedwait implements the semantics of sigtimedwait(2).
 //
 // Preconditions:
-//   - The caller must be running on the task goroutine.
+//   - If timeout != 0, the caller must be running on the task goroutine.
 //   - t.exitState < TaskExitZombie.
+//
+// TODO(b/171089913): Fix signalfd semantics.
+// If timeout == 0, Sigtimedwait does not block and may be called from any
+// goroutine; signalfd relies on this to dequeue signals for the task that
+// created the signalfd on behalf of whichever task reads it.
 func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.SignalInfo, error) {
 	// set is the set of signals we're interested in; invert it to get the set
 	// of signals to block.
 	mask := ^(set &^ UnblockableSignals)
 
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
-	if info := t.dequeueSignalLocked(mask); info != nil {
+	// If we are not running on t's task goroutine, an execve by t.tg may
+	// replace t.tg.signalHandlers concurrently, so use signalLock() to lock
+	// (and later unlock) the current SignalHandlers.
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	// signalLock returned t.tg's current handler with sh.mu held.
+	// checklocks does not relate that result to the thread-group field.
+	if info := t.dequeueSignalLocked(mask); info != nil { // +checklocksforce
 		return info, nil
 	}
 
@@ -414,10 +424,12 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 	t.realSignalMask = linux.SignalSet(t.signalMask.RacyLoad())
 	t.setSignalMaskLocked(t.realSignalMask & mask)
 
-	// Wait for a timeout or new signal.
-	t.tg.signalHandlers.mu.Unlock()
+	// Wait for a timeout or new signal. Since we're running on the task
+	// goroutine, t.tg can't complete an execve while we're blocked, so sh is
+	// still t.tg's SignalHandlers when we relock it.
+	sh.mu.Unlock()
 	_, err := t.BlockWithTimeout(nil, true, timeout)
-	t.tg.signalHandlers.mu.Lock()
+	sh.mu.Lock()
 
 	// Restore the original signal mask.
 	t.setSignalMaskLocked(t.realSignalMask)
@@ -681,8 +693,6 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 // sendSignalTimerLocked): checking tg.leader.Kernel() here would race
 // without the taskset mutex, which this function's callers don't hold.
 //
-// Preconditions: the signal mutex must be locked.
-//
 // +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) wakeFrozenTasksForFatalSignalLocked(sig linux.Signal) {
 	act := tg.signalHandlers.actions[sig]
@@ -791,7 +801,9 @@ func (t *Task) SetSignalMask(mask linux.SignalSet) {
 	t.tg.signalHandlers.mu.Unlock()
 }
 
-// Preconditions: The signal mutex must be locked.
+// Sets the signal mask of the task and handles any side effects.
+//
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 	oldMask := linux.SignalSet(t.signalMask.RacyLoad())
 	t.signalMask.Store(uint64(mask))
@@ -1399,17 +1411,25 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 }
 
 // SignalRegister registers a waiter for pending signals.
+//
+// TODO(b/171089913): Fix signalfd semantics.
+// SignalRegister may be called from any goroutine.
 func (t *Task) SignalRegister(e *waiter.Entry) {
-	t.tg.signalHandlers.mu.Lock()
+	// The caller may race with an execve by t.tg. See Sigtimedwait.
+	sh := t.tg.signalLock()
 	t.signalQueue.EventRegister(e)
-	t.tg.signalHandlers.mu.Unlock()
+	sh.mu.Unlock()
 }
 
 // SignalUnregister unregisters a waiter for pending signals.
+//
+// TODO(b/171089913): Fix signalfd semantics.
+// SignalUnregister may be called from any goroutine.
 func (t *Task) SignalUnregister(e *waiter.Entry) {
-	t.tg.signalHandlers.mu.Lock()
+	// The caller may race with an execve by t.tg. See Sigtimedwait.
+	sh := t.tg.signalLock()
 	t.signalQueue.EventUnregister(e)
-	t.tg.signalHandlers.mu.Unlock()
+	sh.mu.Unlock()
 }
 
 // MayKill checks if task t has permission to send signal sig to target.

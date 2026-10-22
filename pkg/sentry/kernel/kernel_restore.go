@@ -33,7 +33,6 @@ import (
 // Saver is an interface for saving the kernel.
 type Saver interface {
 	SaveAsync() error
-	SpecEnviron(containerName string) []string
 	FSSave() error
 }
 

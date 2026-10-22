@@ -581,6 +581,7 @@ func (k *Kernel) StateFields() []string {
 		"userCountersMap",
 		"MaxFDLimit",
 		"containerNames",
+		"containerEnvs",
 		"additionalCheckpointState",
 		"CheckpointWait",
 		"checkpointGen",
@@ -646,16 +647,17 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(42, &k.userCountersMap)
 	stateSinkObject.Save(43, &k.MaxFDLimit)
 	stateSinkObject.Save(44, &k.containerNames)
-	stateSinkObject.Save(45, &k.additionalCheckpointState)
-	stateSinkObject.Save(46, &k.CheckpointWait)
-	stateSinkObject.Save(47, &k.checkpointGen)
-	stateSinkObject.Save(48, &k.SaveRestoreExecConfig)
-	stateSinkObject.Save(49, &k.NvidiaDriverVersion)
-	stateSinkObject.Save(50, &k.AllowSUID)
-	stateSinkObject.Save(51, &k.IOUringEnabled)
-	stateSinkObject.Save(52, &k.MaxKeySetSize)
-	stateSinkObject.Save(53, &k.HostNamePoller)
-	stateSinkObject.Save(54, &k.DomainNamePoller)
+	stateSinkObject.Save(45, &k.containerEnvs)
+	stateSinkObject.Save(46, &k.additionalCheckpointState)
+	stateSinkObject.Save(47, &k.CheckpointWait)
+	stateSinkObject.Save(48, &k.checkpointGen)
+	stateSinkObject.Save(49, &k.SaveRestoreExecConfig)
+	stateSinkObject.Save(50, &k.NvidiaDriverVersion)
+	stateSinkObject.Save(51, &k.AllowSUID)
+	stateSinkObject.Save(52, &k.IOUringEnabled)
+	stateSinkObject.Save(53, &k.MaxKeySetSize)
+	stateSinkObject.Save(54, &k.HostNamePoller)
+	stateSinkObject.Save(55, &k.DomainNamePoller)
 }
 
 func (k *Kernel) afterLoad(context.Context) {}
@@ -706,16 +708,17 @@ func (k *Kernel) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(42, &k.userCountersMap)
 	stateSourceObject.Load(43, &k.MaxFDLimit)
 	stateSourceObject.Load(44, &k.containerNames)
-	stateSourceObject.Load(45, &k.additionalCheckpointState)
-	stateSourceObject.Load(46, &k.CheckpointWait)
-	stateSourceObject.Load(47, &k.checkpointGen)
-	stateSourceObject.Load(48, &k.SaveRestoreExecConfig)
-	stateSourceObject.Load(49, &k.NvidiaDriverVersion)
-	stateSourceObject.Load(50, &k.AllowSUID)
-	stateSourceObject.Load(51, &k.IOUringEnabled)
-	stateSourceObject.Load(52, &k.MaxKeySetSize)
-	stateSourceObject.Load(53, &k.HostNamePoller)
-	stateSourceObject.Load(54, &k.DomainNamePoller)
+	stateSourceObject.Load(45, &k.containerEnvs)
+	stateSourceObject.Load(46, &k.additionalCheckpointState)
+	stateSourceObject.Load(47, &k.CheckpointWait)
+	stateSourceObject.Load(48, &k.checkpointGen)
+	stateSourceObject.Load(49, &k.SaveRestoreExecConfig)
+	stateSourceObject.Load(50, &k.NvidiaDriverVersion)
+	stateSourceObject.Load(51, &k.AllowSUID)
+	stateSourceObject.Load(52, &k.IOUringEnabled)
+	stateSourceObject.Load(53, &k.MaxKeySetSize)
+	stateSourceObject.Load(54, &k.HostNamePoller)
+	stateSourceObject.Load(55, &k.DomainNamePoller)
 	stateSourceObject.LoadValue(26, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(ctx, y.([]tcpip.Endpoint)) })
 }
 
