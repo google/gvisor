@@ -448,6 +448,12 @@ type Endpoint struct {
 	boundPortFlags    ports.Flags
 	boundDest         tcpip.FullAddress
 
+	// boundAddr is the local address that was used to reserve the port. It
+	// differs from TransportEndpointInfo.ID.LocalAddress when the endpoint is
+	// bound to the wildcard address, in which case ID.LocalAddress is replaced
+	// by the connected address.
+	boundAddr tcpip.Address
+
 	// effectiveNetProtos contains the network protocols actually in use. In
 	// most cases it will only contain "netProto", but in cases like IPv6
 	// endpoints with v6only set to false, this could include multiple
@@ -1122,7 +1128,7 @@ func (e *Endpoint) closeNoShutdownLocked() {
 		portRes := ports.Reservation{
 			Networks:     e.effectiveNetProtos,
 			Transport:    ProtocolNumber,
-			Addr:         e.TransportEndpointInfo.ID.LocalAddress,
+			Addr:         e.boundAddr,
 			Port:         e.TransportEndpointInfo.ID.LocalPort,
 			Flags:        e.boundPortFlags,
 			BindToDevice: e.boundBindToDevice,
@@ -1133,6 +1139,7 @@ func (e *Endpoint) closeNoShutdownLocked() {
 		e.boundBindToDevice = 0
 		e.boundPortFlags = ports.Flags{}
 		e.boundDest = tcpip.FullAddress{}
+		e.boundAddr = tcpip.Address{}
 	}
 
 	// Mark endpoint as closed.
@@ -1233,7 +1240,7 @@ func (e *Endpoint) cleanupLocked() {
 		portRes := ports.Reservation{
 			Networks:     e.effectiveNetProtos,
 			Transport:    ProtocolNumber,
-			Addr:         e.TransportEndpointInfo.ID.LocalAddress,
+			Addr:         e.boundAddr,
 			Port:         e.TransportEndpointInfo.ID.LocalPort,
 			Flags:        e.boundPortFlags,
 			BindToDevice: e.boundBindToDevice,
@@ -1245,6 +1252,7 @@ func (e *Endpoint) cleanupLocked() {
 	e.boundBindToDevice = 0
 	e.boundPortFlags = ports.Flags{}
 	e.boundDest = tcpip.FullAddress{}
+	e.boundAddr = tcpip.Address{}
 
 	if e.route != nil {
 		e.route.Release()
@@ -2466,6 +2474,7 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 			e.boundBindToDevice = bindToDevice
 			e.boundPortFlags = e.portFlags
 			e.boundDest = addr
+			e.boundAddr = e.TransportEndpointInfo.ID.LocalAddress
 			return true, nil
 		}); err != nil {
 			e.stack.Stats().TCP.FailedPortReservations.Increment()
@@ -2931,6 +2940,7 @@ func (e *Endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 
 	e.boundBindToDevice = bindToDevice
 	e.boundPortFlags = e.portFlags
+	e.boundAddr = addr.Addr
 	// TODO(gvisor.dev/issue/3691): Add test to verify boundNICID is correct.
 	e.boundNICID = nic
 	e.isPortReserved = true

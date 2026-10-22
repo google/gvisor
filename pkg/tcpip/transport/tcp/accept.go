@@ -406,6 +406,7 @@ func (e *Endpoint) reserveTupleLocked() bool {
 
 	e.isPortReserved = true
 	e.boundDest = dest
+	e.boundAddr = e.TransportEndpointInfo.ID.LocalAddress
 	return true
 }
 
