@@ -45,19 +45,18 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unreachable"
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
-	"honnef.co/go/tools/analysis/lint"
-	"honnef.co/go/tools/quickfix"
-	"honnef.co/go/tools/simple"
-	"honnef.co/go/tools/staticcheck"
-	"honnef.co/go/tools/stylecheck"
-	"honnef.co/go/tools/unused"
-
 	"gvisor.dev/gvisor/tools/checkaligned"
 	"gvisor.dev/gvisor/tools/checkconst"
 	"gvisor.dev/gvisor/tools/checkescape"
 	"gvisor.dev/gvisor/tools/checkimports"
 	"gvisor.dev/gvisor/tools/checklinkname"
 	"gvisor.dev/gvisor/tools/checklocks"
+	"honnef.co/go/tools/analysis/lint"
+	"honnef.co/go/tools/quickfix"
+	"honnef.co/go/tools/simple"
+	"honnef.co/go/tools/staticcheck"
+	"honnef.co/go/tools/stylecheck"
+	"honnef.co/go/tools/unused"
 )
 
 // binaryAnalyzer is a special class of analyzer which supports an additional
