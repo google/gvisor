@@ -150,6 +150,62 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 }
 
+func TestDropOtherHostPackets(t *testing.T) {
+	tests := []struct {
+		name    string
+		pktType tcpip.PacketType
+		want    uint64
+	}{
+		{name: "host", pktType: tcpip.PacketHost, want: 1},
+		{name: "other host", pktType: tcpip.PacketOtherHost, want: 0},
+		{name: "broadcast", pktType: tcpip.PacketBroadcast, want: 1},
+		{name: "multicast", pktType: tcpip.PacketMulticast, want: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
+			ch := channel.New(1, defaultMTU, "")
+			defer ch.Close()
+			if err := s.CreateNIC(1, ch); err != nil {
+				t.Fatalf("CreateNIC(1, _): %s", err)
+			}
+			addr := testutil.MustParse4("10.0.0.1")
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ipv4.ProtocolNumber,
+				AddressWithPrefix: addr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(1, %+v, {}): %s", protocolAddr, err)
+			}
+
+			hdr := make([]byte, header.IPv4MinimumSize)
+			ip := header.IPv4(hdr)
+			ip.Encode(&header.IPv4Fields{
+				TotalLength: header.IPv4MinimumSize,
+				TTL:         64,
+				Protocol:    uint8(udp.ProtocolNumber),
+				SrcAddr:     testutil.MustParse4("10.0.0.2"),
+				DstAddr:     addr,
+			})
+			ip.SetChecksum(^ip.CalculateChecksum())
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(hdr),
+			})
+			pkt.PktType = test.pktType
+			received := s.Stats().IP.PacketsReceived
+			before := received.Value()
+			ch.InjectInbound(ipv4.ProtocolNumber, pkt)
+			pkt.DecRef()
+			if got := received.Value() - before; got != test.want {
+				t.Errorf("got PacketsReceived delta = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
 const (
 	incomingNICID = 1
 	outgoingNICID = 2
