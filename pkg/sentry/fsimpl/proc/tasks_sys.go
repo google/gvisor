@@ -74,7 +74,10 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 				"ptrace_scope": fs.newYAMAPtraceScopeFile(ctx, k, root),
 			}),
 			"keys": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-				"maxkeys": fs.newMaxKeySizeFile(ctx, k, root),
+				"maxkeys":       fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.KeyQuotas.MaxKeys, min: 1, max: math.MaxInt32}),
+				"maxbytes":      fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.KeyQuotas.MaxBytes, min: 1, max: math.MaxInt32}),
+				"root_maxkeys":  fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.KeyQuotas.RootMaxKeys, min: 1, max: math.MaxInt32}),
+				"root_maxbytes": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.KeyQuotas.RootMaxBytes, min: 1, max: math.MaxInt32}),
 			}),
 			"osrelease": fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxRelease())),
 			"ostype":    fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxSysname)),

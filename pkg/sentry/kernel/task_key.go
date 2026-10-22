@@ -21,14 +21,17 @@ import (
 )
 
 // joinNewSessionKeyringLocked creates a new session keyring with the given
-// description, and joins it immediately.
+// description, and joins it immediately. anonymous is true for the unnamed
+// keyrings of KEYCTL_JOIN_SESSION_KEYRING with a NULL name.
 // Preconditions: t.mu is held.
 //
 // +checklocks:t.mu
-func (t *Task) joinNewSessionKeyringLocked(newKeyDesc string, newKeyPerms auth.KeyPermissions) (*auth.Key, error) {
+func (t *Task) joinNewSessionKeyringLocked(newKeyDesc string, newKeyPerms auth.KeyPermissions, anonymous bool) (*auth.Key, error) {
 	creds := t.Credentials()
-	maxKeys := int(t.Kernel().MaxKeySetSize.Load())
-	sessionKeyring, err := t.UserNamespace().Keys.Add(newKeyDesc, creds, newKeyPerms, maxKeys)
+	// Like install_session_keyring_to_cred, a task's first anonymous session
+	// keyring is charged even if that exceeds its owner's quota.
+	quotaOverrun := anonymous && t.sessionKeyring == nil
+	sessionKeyring, err := t.UserNamespace().Keys.Add(newKeyDesc, creds, newKeyPerms, t.Kernel().KeyQuotas, quotaOverrun)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +68,7 @@ func (t *Task) JoinSessionKeyring(keyDesc *string) (*auth.Key, error) {
 		newKeyDesc = *keyDesc
 		newKeyPerms = auth.DefaultNamedSessionKeyringPermissions
 	}
-	return t.joinNewSessionKeyringLocked(newKeyDesc, newKeyPerms)
+	return t.joinNewSessionKeyringLocked(newKeyDesc, newKeyPerms, keyDesc == nil)
 }
 
 // lookupKeyLocked resolves a key ID without checking permissions. The caller
@@ -78,7 +81,7 @@ func (t *Task) JoinSessionKeyring(keyDesc *string) (*auth.Key, error) {
 func (t *Task) lookupKeyLocked(keyID auth.KeySerial) (*auth.Key, error) {
 	if keyID == linux.KEY_SPEC_SESSION_KEYRING {
 		if t.sessionKeyring == nil {
-			return t.joinNewSessionKeyringLocked(auth.DefaultSessionKeyringName, auth.DefaultUnnamedSessionKeyringPermissions)
+			return t.joinNewSessionKeyringLocked(auth.DefaultSessionKeyringName, auth.DefaultUnnamedSessionKeyringPermissions, true)
 		}
 		return t.sessionKeyring, nil
 	}
