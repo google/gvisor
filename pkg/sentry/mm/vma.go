@@ -45,13 +45,14 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Find a usable range.
 	addr, err := mm.findAvailableLocked(opts.Length, findAvailableOpts{
+		Mappable:  opts.Mappable,
+		Offset:    opts.Offset,
 		Addr:      opts.Addr,
 		Fixed:     opts.Fixed,
-		GrowsDown: opts.GrowsDown,
-		Stack:     opts.Stack,
-		Private:   opts.Private,
 		Unmap:     opts.Unmap,
 		NoReplace: opts.NoReplace,
+		GrowsDown: opts.GrowsDown,
+		Stack:     opts.Stack,
 		Map32Bit:  opts.Map32Bit,
 	})
 	if err != nil {
@@ -159,13 +160,14 @@ type findAvailableOpts struct {
 	//	- NoReplace allows existing guard pages (but not existing vmas) in the
 	//		returned range.
 
+	Mappable  memmap.Mappable
+	Offset    uint64
 	Addr      hostarch.Addr
 	Fixed     bool
-	GrowsDown bool
-	Stack     bool
-	Private   bool
 	Unmap     bool
 	NoReplace bool
+	GrowsDown bool
+	Stack     bool
 	Map32Bit  bool
 }
 
@@ -217,13 +219,38 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 		return 0, linuxerr.ENOMEM
 	}
 
+	if opts.Mappable != nil && opts.Mappable.MayUseHugepages() {
+		// If the mapping spans at least one whole huge page, try to ensure
+		// that HugePageOffset(opts.Offset) matches that of the returned
+		// address, so that huge pages in the Mappable are correctly aligned in
+		// application address spaces.
+		hugeEnd := hostarch.HugePageRoundDown(opts.Offset + length)
+		if hugeStart, ok := hostarch.HugePageRoundUp(opts.Offset); ok && hugeStart < hugeEnd {
+			if paddedLen := length + hostarch.HugePageSize - hostarch.PageSize; length < paddedLen {
+				if hugePaddedLen, ok := hostarch.HugePageRoundUp(paddedLen); ok {
+					if addr, err := mm.findAlignedAvailableLocked(hugePaddedLen, hostarch.HugePageSize, allowedAR, opts); err == nil {
+						return addr + hostarch.Addr(hostarch.HugePageOffset(opts.Offset)), nil
+					}
+				}
+			}
+		}
+	}
+
 	// Prefer hugepage alignment if length is hugepage-aligned and the vma will
 	// actually be eligible for hugepages.
 	alignment := uint64(hostarch.PageSize)
-	if hostarch.IsHugePageAligned(length) && opts.Private && !opts.GrowsDown && !opts.Stack {
+	if hostarch.IsHugePageAligned(length) && opts.Mappable == nil && !opts.GrowsDown && !opts.Stack {
 		alignment = uint64(hostarch.HugePageSize)
 	}
+	return mm.findAlignedAvailableLocked(length, alignment, allowedAR, opts)
+}
 
+func (mm *MemoryManager) applicationAddrRange() hostarch.AddrRange {
+	return hostarch.AddrRange{mm.layout.MinAddr, mm.layout.MaxAddr}
+}
+
+// +checklocksread:mm.mappingMu
+func (mm *MemoryManager) findAlignedAvailableLocked(length, alignment uint64, allowedAR hostarch.AddrRange, opts findAvailableOpts) (hostarch.Addr, error) {
 	if opts.Map32Bit {
 		return mm.findLowestAvailableLocked(length, alignment, allowedAR)
 	}
@@ -231,10 +258,6 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 		return mm.findLowestAvailableLocked(length, alignment, hostarch.AddrRange{mm.layout.BottomUpBase, mm.layout.MaxAddr})
 	}
 	return mm.findHighestAvailableLocked(length, alignment, hostarch.AddrRange{mm.layout.MinAddr, mm.layout.TopDownBase})
-}
-
-func (mm *MemoryManager) applicationAddrRange() hostarch.AddrRange {
-	return hostarch.AddrRange{mm.layout.MinAddr, mm.layout.MaxAddr}
 }
 
 // +checklocksread:mm.mappingMu

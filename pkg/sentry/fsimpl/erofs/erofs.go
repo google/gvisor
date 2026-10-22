@@ -331,6 +331,7 @@ func (fs *filesystem) inodeBucket(nid uint64) *inodeBucket {
 // +stateify savable
 type inode struct {
 	erofs.Inode
+	memmap.MappableNoHugepages
 
 	// inodeRefs is the reference count.
 	inodeRefs

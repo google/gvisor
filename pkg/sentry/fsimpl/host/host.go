@@ -134,6 +134,7 @@ type inode struct {
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
 	kernfs.InodeWatches
 	kernfs.InodeFSOwned
+	memmap.MappableNoHugepages
 
 	locks vfs.FileLocks
 
