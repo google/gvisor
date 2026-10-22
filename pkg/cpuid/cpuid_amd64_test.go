@@ -209,6 +209,22 @@ func TestHasFeature(t *testing.T) {
 	}
 }
 
+func TestFeatureNames(t *testing.T) {
+	// SPEC_CTRL does not appear in cpuinfo, so FlagString omits it but
+	// FeatureNames must include it. It is in a later block than FPU and PAE, so
+	// it must also come last regardless of insertion order.
+	fs := makeFeatureSet(X86FeatureSPEC_CTRL, X86FeaturePAE, X86FeatureFPU)
+	if got, want := fs.FeatureNames(), []string{"fpu", "pae", "spec_ctrl"}; !slices.Equal(got, want) {
+		t.Errorf("FeatureNames() = %v, want %v", got, want)
+	}
+	if got, want := fs.FlagString(), "fpu pae"; got != want {
+		t.Errorf("FlagString() = %q, want %q", got, want)
+	}
+	if got := makeFeatureSet().FeatureNames(); len(got) != 0 {
+		t.Errorf("FeatureNames() of empty set = %v, want empty", got)
+	}
+}
+
 func TestAdd(t *testing.T) {
 	// Test a basic insertion into the FeatureSet.
 	testFeatures := makeFeatureSet(X86FeatureCLFSH)

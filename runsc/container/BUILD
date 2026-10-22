@@ -76,6 +76,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/cpuid",
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/seccheck/scsdk",
@@ -90,6 +91,7 @@ go_test(
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/seccheck/sinks/remote/test",
         "//pkg/sentry/state/checkpointfiles",
+        "//pkg/state",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/test/testutil",

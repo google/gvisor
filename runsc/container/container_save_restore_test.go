@@ -20,6 +20,7 @@ package container
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -35,9 +36,11 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
@@ -386,6 +389,79 @@ func TestCheckpointRestore(t *testing.T) {
 						return testutil.NewSpecWithArgs("bash", "-c", script)
 					})
 				})
+			}
+		})
+	}
+}
+
+// TestCheckpointCPUFeaturesMetadata verifies that the checkpoint metadata
+// records the sandbox's CPU features, matching the CPUID FeatureSet saved in
+// the state file.
+func TestCheckpointCPUFeaturesMetadata(t *testing.T) {
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			spec, _ := sleepSpecConf(t)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
+
+			cont, err := New(conf, Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			})
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+			if err := waitForProcessCount(cont, 1); err != nil {
+				t.Fatalf("error waiting for init process: %v", err)
+			}
+
+			dir, err := os.MkdirTemp(testutil.TmpDir(), "checkpoint-cpu-features")
+			if err != nil {
+				t.Fatalf("os.MkdirTemp failed: %v", err)
+			}
+			defer os.RemoveAll(dir)
+			if err := os.Chmod(dir, 0777); err != nil {
+				t.Fatalf("error chmoding dir: %v", err)
+			}
+			if err := cont.Checkpoint(conf, dir, sandbox.CheckpointOpts{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+				t.Fatalf("error checkpointing container: %v", err)
+			}
+
+			f, err := os.Open(filepath.Join(dir, checkpointfiles.StateFileName))
+			if err != nil {
+				t.Fatalf("error opening state file: %v", err)
+			}
+			defer f.Close()
+			r, metadata, err := statefile.NewReader(f, nil /* key */)
+			if err != nil {
+				t.Fatalf("error reading state file: %v", err)
+			}
+			defer r.Close()
+
+			got, ok := metadata[sentryapi.CPUFeaturesKey]
+			if !ok {
+				t.Fatalf("metadata key %q not found", sentryapi.CPUFeaturesKey)
+			}
+			if got == "" {
+				t.Fatalf("metadata[%q] is empty", sentryapi.CPUFeaturesKey)
+			}
+
+			// Kernel.saveToLocked saves the CPUID FeatureSet as the first object in
+			// the state stream (which Kernel.LoadFrom also relies on).
+			var fs cpuid.FeatureSet
+			if _, err := state.Load(context.Background(), r, &fs); err != nil {
+				t.Fatalf("error loading CPUID FeatureSet from state file: %v", err)
+			}
+			if want := strings.Join(fs.FeatureNames(), ","); got != want {
+				t.Errorf("metadata[%q] = %q, want %q", sentryapi.CPUFeaturesKey, got, want)
 			}
 		})
 	}
