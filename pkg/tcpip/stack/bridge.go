@@ -22,6 +22,24 @@ import (
 
 var _ NetworkLinkEndpoint = (*BridgeEndpoint)(nil)
 
+// BridgePortFlags is a set of per-port bridge options.
+type BridgePortFlags uint32
+
+const (
+	// BridgePortHairpin allows the bridge to send a frame back out of the port
+	// it was received on. It is Linux's BR_HAIRPIN_MODE.
+	BridgePortHairpin BridgePortFlags = 1 << iota
+
+	// BridgePortLearning makes the bridge learn source addresses seen on the
+	// port. It is Linux's BR_LEARNING.
+	BridgePortLearning
+)
+
+// defaultBridgePortFlags are the modeled flags of a newly added port. Linux
+// starts a port with BR_LEARNING, BR_FLOOD, BR_MCAST_FLOOD and BR_BCAST_FLOOD
+// (net/bridge/br_if.c:new_nbp()); only BR_LEARNING is modeled.
+const defaultBridgePortFlags = BridgePortLearning
+
 // +stateify savable
 type bridgePort struct {
 	bridge *BridgeEndpoint
@@ -30,6 +48,9 @@ type bridgePort struct {
 	//
 	// +checklocks:bridge.mu
 	addr tcpip.LinkAddress
+
+	// +checklocks:bridge.mu
+	flags BridgePortFlags
 }
 
 // BridgeFDBKey is the MAC address of a device which a bridge port is associated with.
@@ -59,9 +80,10 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	bridge := p.bridge
 	eth := header.Ethernet(pkt.LinkHeader().Slice())
 	bridge.mu.RLock()
+	hairpin := p.flags&BridgePortHairpin != 0
 	// Add an entry at the bridge FDB, it maps a MAC address
 	// to a bridge port where the traffic is received when
-	// the MAC address is not multicast.
+	// the MAC address is not multicast and the port has learning enabled.
 	// Network packets that are sent to the learned MAC address
 	// will be forwarded to the bridge port that is stored in
 	// the FDB table.
@@ -87,13 +109,15 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 		pkt.PktType = tcpip.PacketOtherHost
 	}
 	entry, inFDB := bridge.fdbTable[BridgeFDBKey(destAddress)]
+	// As in net/bridge/br_forward.c:should_deliver(), the ingress port gets
+	// the frame only in hairpin mode.
 	switch {
 	case isLocal:
 		// Passed up below.
 	case !inFDB:
 		// When no FDB entry is found, send the packet to all ports.
 		for _, port := range bridge.ports {
-			if p == port {
+			if p == port && !hairpin {
 				continue
 			}
 			newPkt := NewPacketBuffer(PacketBufferOptions{
@@ -103,7 +127,7 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 			port.nic.writeRawPacket(newPkt)
 			newPkt.DecRef()
 		}
-	case entry.port != p:
+	case entry.port != p || hairpin:
 		destPort := entry.port
 		newPkt := NewPacketBuffer(PacketBufferOptions{
 			ReserveHeaderBytes: int(destPort.nic.MaxHeaderLength()),
@@ -210,6 +234,7 @@ func (b *BridgeEndpoint) AddNIC(n *nic) tcpip.Error {
 	port := &bridgePort{
 		nic:    n,
 		bridge: b,
+		flags:  defaultBridgePortFlags,
 	}
 	n.NetworkLinkEndpoint.Attach(port)
 	b.ports[n.id] = port
@@ -380,11 +405,12 @@ func (b *BridgeEndpoint) isLocalAddressLocked(addr tcpip.LinkAddress) bool {
 // shouldLearnLocked returns whether a frame from addr received on p adds an FDB
 // entry. Multicast addresses are never learned and, as in br_fdb_update(),
 // neither are the addresses of the bridge and its ports. Nothing is learned
+// from a port without learning (BR_LEARNING, as in br_handle_frame_finish()) or
 // from a port that has left the bridge.
 //
 // +checklocksread:b.mu
 func (b *BridgeEndpoint) shouldLearnLocked(p *bridgePort, addr tcpip.LinkAddress) bool {
-	if header.IsMulticastEthernetAddress(addr) || b.isLocalAddressLocked(addr) || b.ports[p.nic.id] != p {
+	if p.flags&BridgePortLearning == 0 || header.IsMulticastEthernetAddress(addr) || b.isLocalAddressLocked(addr) || b.ports[p.nic.id] != p { // +checklocksforce: p.bridge is b.
 		return false
 	}
 	_, ok := b.fdbTable[BridgeFDBKey(addr)]
@@ -397,4 +423,66 @@ func (b *BridgeEndpoint) FindFDBEntry(addr tcpip.LinkAddress) BridgeFDBEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.fdbTable[BridgeFDBKey(addr)]
+}
+
+// bridgeOfPortLocked returns the bridge that the NIC with the given ID is a
+// port of.
+//
+// +checklocksread:s.mu
+func (s *Stack) bridgeOfPortLocked(id tcpip.NICID) (*BridgeEndpoint, tcpip.Error) {
+	n, ok := s.nics[id]
+	if !ok {
+		return nil, &tcpip.ErrUnknownNICID{}
+	}
+	if n.Primary == nil {
+		return nil, &tcpip.ErrNotSupported{}
+	}
+	b, ok := n.Primary.NetworkLinkEndpoint.(*BridgeEndpoint)
+	if !ok {
+		return nil, &tcpip.ErrNotSupported{}
+	}
+	return b, nil
+}
+
+// BridgePortFlags returns the bridge port flags of the NIC with the given ID.
+// It returns ErrUnknownNICID if there is no such NIC and ErrNotSupported if
+// the NIC is not a bridge port.
+func (s *Stack) BridgePortFlags(id tcpip.NICID) (BridgePortFlags, tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b, err := s.bridgeOfPortLocked(id)
+	if err != nil {
+		return 0, err
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	port, ok := b.ports[id]
+	if !ok {
+		return 0, &tcpip.ErrNotSupported{}
+	}
+	return port.flags, nil // +checklocksforce: port.bridge is b.
+}
+
+// SetBridgePortFlags sets the flags in set and then clears the flags in clear
+// on the bridge port of the NIC with the given ID. It returns
+// ErrUnknownNICID if there is no such NIC and ErrNotSupported if the NIC is
+// not a bridge port.
+//
+// Addresses that were already learned stay in the forwarding table when
+// learning is turned off.
+func (s *Stack) SetBridgePortFlags(id tcpip.NICID, set, clear BridgePortFlags) tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b, err := s.bridgeOfPortLocked(id)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	port, ok := b.ports[id]
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+	port.flags = (port.flags | set) &^ clear // +checklocksforce: port.bridge is b.
+	return nil
 }
