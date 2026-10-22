@@ -448,6 +448,21 @@ type Endpoint struct {
 	boundPortFlags    ports.Flags
 	boundDest         tcpip.FullAddress
 
+	// boundAddr is the local address that was used to reserve the port. It
+	// differs from TransportEndpointInfo.ID.LocalAddress when the endpoint is
+	// bound to the wildcard address, in which case ID.LocalAddress is replaced
+	// by the connected address.
+	//
+	// +checklocks:mu
+	boundAddr tcpip.Address
+
+	// boundNetProtos contains the network protocols for which the port is
+	// reserved. It can differ from effectiveNetProtos after a dual-stack
+	// endpoint connects to an IPv4-mapped address.
+	//
+	// +checklocks:mu
+	boundNetProtos []tcpip.NetworkProtocolNumber
+
 	// effectiveNetProtos contains the network protocols actually in use. In
 	// most cases it will only contain "netProto", but in cases like IPv6
 	// endpoints with v6only set to false, this could include multiple
@@ -618,11 +633,6 @@ type Endpoint struct {
 	//
 	// +checklocks:mu
 	pmtud tcpip.PMTUDStrategy
-
-	// alsoBindToV4 indicates if `any` address was used to bind a port.
-	//
-	// +checklocks:mu
-	alsoBindToV4 bool
 
 	// terminateAtRestore indicates whether the endpoint must be terminated
 	// upon restore. This applies specifically when the snapshots are taken
@@ -1120,9 +1130,9 @@ func (e *Endpoint) closeNoShutdownLocked() {
 		}
 
 		portRes := ports.Reservation{
-			Networks:     e.effectiveNetProtos,
+			Networks:     e.boundNetProtos,
 			Transport:    ProtocolNumber,
-			Addr:         e.TransportEndpointInfo.ID.LocalAddress,
+			Addr:         e.boundAddr,
 			Port:         e.TransportEndpointInfo.ID.LocalPort,
 			Flags:        e.boundPortFlags,
 			BindToDevice: e.boundBindToDevice,
@@ -1133,6 +1143,8 @@ func (e *Endpoint) closeNoShutdownLocked() {
 		e.boundBindToDevice = 0
 		e.boundPortFlags = ports.Flags{}
 		e.boundDest = tcpip.FullAddress{}
+		e.boundAddr = tcpip.Address{}
+		e.boundNetProtos = nil
 	}
 
 	// Mark endpoint as closed.
@@ -1231,9 +1243,9 @@ func (e *Endpoint) cleanupLocked() {
 
 	if e.isPortReserved {
 		portRes := ports.Reservation{
-			Networks:     e.effectiveNetProtos,
+			Networks:     e.boundNetProtos,
 			Transport:    ProtocolNumber,
-			Addr:         e.TransportEndpointInfo.ID.LocalAddress,
+			Addr:         e.boundAddr,
 			Port:         e.TransportEndpointInfo.ID.LocalPort,
 			Flags:        e.boundPortFlags,
 			BindToDevice: e.boundBindToDevice,
@@ -1245,6 +1257,8 @@ func (e *Endpoint) cleanupLocked() {
 	e.boundBindToDevice = 0
 	e.boundPortFlags = ports.Flags{}
 	e.boundDest = tcpip.FullAddress{}
+	e.boundAddr = tcpip.Address{}
+	e.boundNetProtos = nil
 
 	if e.route != nil {
 		e.route.Release()
@@ -2471,6 +2485,8 @@ func (e *Endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 			e.stack.Stats().TCP.FailedPortReservations.Increment()
 			return err
 		}
+		e.boundAddr = e.TransportEndpointInfo.ID.LocalAddress
+		e.boundNetProtos = netProtos
 	}
 	return nil
 }
@@ -2559,17 +2575,21 @@ func (e *Endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 	e.effectiveNetProtos = []tcpip.NetworkProtocolNumber{netProto}
 	e.connectingAddress = connectingAddr
 
-	if e.alsoBindToV4 {
-		// If the endpoint was bound to `any` address the port will be
-		// reserved for both IPv4 and IPv6 addresses. Release the port
-		// reservation for the IPv4 address here so that the future bind
-		// for IPv4 socket will not fail.
+	if len(e.boundNetProtos) == 2 {
+		// A dual-stack wildcard bind reserves IPv6 followed by IPv4.
+		// Release the IPv4 reservation so that future IPv4 binds can
+		// succeed, and keep the IPv6 reservation until the endpoint closes.
 		portRes := ports.Reservation{
-			Networks:  []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber},
-			Transport: ProtocolNumber,
-			Port:      e.TransportEndpointInfo.ID.LocalPort,
+			Networks:     e.boundNetProtos[1:],
+			Transport:    ProtocolNumber,
+			Addr:         e.boundAddr,
+			Port:         e.TransportEndpointInfo.ID.LocalPort,
+			Flags:        e.boundPortFlags,
+			BindToDevice: e.boundBindToDevice,
+			Dest:         e.boundDest,
 		}
 		e.stack.ReleasePort(portRes)
+		e.boundNetProtos = e.boundNetProtos[:1]
 	}
 
 	e.initGSO()
@@ -2883,7 +2903,6 @@ func (e *Endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == tcpip.Address{} && stackHasV4
 		if alsoBindToV4 {
 			netProtos = append(netProtos, header.IPv4ProtocolNumber)
-			e.alsoBindToV4 = true
 		}
 	}
 
@@ -2931,6 +2950,8 @@ func (e *Endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 
 	e.boundBindToDevice = bindToDevice
 	e.boundPortFlags = e.portFlags
+	e.boundAddr = addr.Addr
+	e.boundNetProtos = netProtos
 	// TODO(gvisor.dev/issue/3691): Add test to verify boundNICID is correct.
 	e.boundNICID = nic
 	e.isPortReserved = true
