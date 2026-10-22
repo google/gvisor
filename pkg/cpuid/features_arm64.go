@@ -17,6 +17,11 @@
 
 package cpuid
 
+import (
+	"maps"
+	"slices"
+)
+
 const (
 	// ARM64FeatureFP indicates support for single and double precision
 	// float point types.
@@ -111,6 +116,22 @@ const (
 	// ARM64FeatureASIMDFHM indicates support for FMLAL and FMLSL
 	// instructions.
 	ARM64FeatureASIMDFHM
+
+	// ARM64FeatureDIT indicates support for the Data Independent Timing
+	// PSTATE bit (PSTATE.DIT).
+	ARM64FeatureDIT
+
+	// ARM64FeatureUSCAT indicates support for unaligned single-copy
+	// atomicity of loads and stores (FEAT_LSE2).
+	ARM64FeatureUSCAT
+
+	// ARM64FeatureILRCPC indicates support for the LDAPUR/STLUR family
+	// of instructions with immediate offsets (FEAT_LRCPC2).
+	ARM64FeatureILRCPC
+
+	// ARM64FeatureFLAGM indicates support for the CFINV, RMIF, SETF8 and
+	// SETF16 flag manipulation instructions (FEAT_FlagM).
+	ARM64FeatureFLAGM
 )
 
 var allFeatures = map[Feature]allFeatureInfo{
@@ -138,10 +159,19 @@ var allFeatures = map[Feature]allFeatureInfo{
 	ARM64FeatureSHA512:   {"sha512", true},
 	ARM64FeatureSVE:      {"sve", true},
 	ARM64FeatureASIMDFHM: {"asimdfhm", true},
+	ARM64FeatureDIT:      {"dit", true},
+	ARM64FeatureUSCAT:    {"uscat", true},
+	ARM64FeatureILRCPC:   {"ilrcpc", true},
+	ARM64FeatureFLAGM:    {"flagm", true},
 }
 
+// orderedFeatures is every feature in allFeatures, in bit order.
+var orderedFeatures = slices.Sorted(maps.Keys(allFeatures))
+
+// archFlagOrder calls fn for every defined feature in bit order. Bits without
+// a defined feature are skipped, so gaps in the numbering are harmless.
 func archFlagOrder(fn func(Feature)) {
-	for i := 0; i < len(allFeatures); i++ {
-		fn(Feature(i))
+	for _, f := range orderedFeatures {
+		fn(f)
 	}
 }
