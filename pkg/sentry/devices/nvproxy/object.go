@@ -33,6 +33,11 @@ type object struct {
 	parent nvgpu.Handle
 	impl   objectImpl
 
+	// debugWritable permits debugger writes to user-writable memory with a
+	// writable backing pin, if any. It does not gate driver event production.
+	// It is immutable after objAdd() and preserved on duplication.
+	debugWritable bool
+
 	// The driver tracks parent/child relationships and "arbitrary dependency"
 	// relationships between objects separately; we treat parent/child
 	// relationships as equivalent to other dependencies. These fields are
@@ -157,7 +162,9 @@ func (nvp *nvproxy) objDup(ctx context.Context, clientDst, clientSrc *rootClient
 	if oSrc == nil {
 		return
 	}
-	oDst := &miscObject{}
+	oDst := &miscObject{object: object{
+		debugWritable: oSrc.debugWritable,
+	}}
 	nvp.objAdd(ctx, clientDst, dstH, oSrc.class, oDst, parentDstH)
 	parentSrc := clientSrc.getObject(ctx, oSrc.parent)
 	// Copy all non-parent dependencies.
