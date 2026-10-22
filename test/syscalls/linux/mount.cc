@@ -3395,6 +3395,136 @@ TEST(MountTest, OverlayfsOnGoferBehavior) {
   }
 }
 
+// OverlayOnTmpfs is a tmpfs mount holding lower, upper, work, and merged
+// directories. MountOverlay mounts an overlay of lower and upper at merged.
+struct OverlayOnTmpfs {
+  TempPath base;
+  Cleanup tmpfs_mount;
+  std::string lower;
+  std::string upper;
+  std::string work;
+  std::string merged;
+  Cleanup overlay_mount;
+
+  PosixError MountOverlay() {
+    ASSIGN_OR_RETURN_ERRNO(
+        overlay_mount,
+        Mount("overlay", merged, "overlay", 0,
+              absl::StrCat("lowerdir=", lower, ",upperdir=", upper,
+                           ",workdir=", work, ",userxattr"),
+              MNT_DETACH));
+    return NoError();
+  }
+};
+
+// CreateOverlayOnTmpfs mounts a tmpfs and creates the overlay directories in
+// it. The overlay itself is not mounted yet, so that the caller can populate
+// lower first.
+PosixErrorOr<OverlayOnTmpfs> CreateOverlayOnTmpfs() {
+  OverlayOnTmpfs o;
+  ASSIGN_OR_RETURN_ERRNO(o.base, TempPath::CreateDir());
+  ASSIGN_OR_RETURN_ERRNO(
+      o.tmpfs_mount, Mount("tmpfs", o.base.path(), "tmpfs", 0, "", MNT_DETACH));
+  o.lower = JoinPath(o.base.path(), "lower");
+  o.upper = JoinPath(o.base.path(), "upper");
+  o.work = JoinPath(o.base.path(), "work");
+  o.merged = JoinPath(o.base.path(), "merged");
+  for (const std::string* dir : {&o.lower, &o.upper, &o.work, &o.merged}) {
+    if (mkdir(dir->c_str(), 0755) != 0) {
+      return PosixError(errno, absl::StrCat("mkdir ", *dir));
+    }
+  }
+  return o;
+}
+
+// Renaming a file only leaves a whiteout at its origin if the file also
+// exists on the lower layer.
+TEST(MountTest, OverlayfsRenameWhiteoutOnlyWhenLowerExists) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  OverlayOnTmpfs o = ASSERT_NO_ERRNO_AND_VALUE(CreateOverlayOnTmpfs());
+  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(o.lower, "lower_file"), ""));
+  ASSERT_NO_ERRNO(o.MountOverlay());
+
+  // Rename a pure-upper file; no whiteout should be created at its origin.
+  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(o.merged, "upper_only"), ""));
+  ASSERT_THAT(rename(JoinPath(o.merged, "upper_only").c_str(),
+                     JoinPath(o.merged, "upper_renamed").c_str()),
+              SyscallSucceeds());
+  struct stat st;
+  EXPECT_THAT(stat(JoinPath(o.upper, "upper_only").c_str(), &st),
+              SyscallFailsWithErrno(ENOENT));
+
+  // Rename the file that exists on the lower layer; a whiteout must be
+  // created.
+  ASSERT_THAT(rename(JoinPath(o.merged, "lower_file").c_str(),
+                     JoinPath(o.merged, "lower_renamed").c_str()),
+              SyscallSucceeds());
+  ASSERT_THAT(stat(JoinPath(o.upper, "lower_file").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISCHR(st.st_mode));
+  EXPECT_EQ(major(st.st_rdev), 0);
+  EXPECT_EQ(minor(st.st_rdev), 0);
+}
+
+// OpenDeletedOverlayDirWithLowerFile creates dir/file on the lower layer of
+// o, which must not be mounted yet, and mounts the overlay. It then removes
+// dir through the overlay while holding an FD to it, and returns the FD.
+// Removing dir deletes its upper copy, which makes dir/file from the lower
+// layer visible again through the deleted overlay directory.
+PosixErrorOr<FileDescriptor> OpenDeletedOverlayDirWithLowerFile(
+    OverlayOnTmpfs& o) {
+  if (mkdir(JoinPath(o.lower, "dir").c_str(), 0755) != 0) {
+    return PosixError(errno, "mkdir lower/dir");
+  }
+  if (PosixError err = CreateWithContents(JoinPath(o.lower, "dir/file"), "");
+      !err.ok()) {
+    return err;
+  }
+  if (PosixError err = o.MountOverlay(); !err.ok()) {
+    return err;
+  }
+
+  const std::string dir = JoinPath(o.merged, "dir");
+  FileDescriptor dirfd;
+  ASSIGN_OR_RETURN_ERRNO(dirfd, Open(dir, O_RDONLY | O_DIRECTORY));
+  if (unlink(JoinPath(dir, "file").c_str()) != 0) {
+    return PosixError(errno, "unlink merged/dir/file");
+  }
+  if (rmdir(dir.c_str()) != 0) {
+    return PosixError(errno, "rmdir merged/dir");
+  }
+  return dirfd;
+}
+
+TEST(MountTest, OverlayfsRenameFromDeletedDirFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  OverlayOnTmpfs o = ASSERT_NO_ERRNO_AND_VALUE(CreateOverlayOnTmpfs());
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenDeletedOverlayDirWithLowerFile(o));
+
+  const std::string dst = JoinPath(o.merged, "dst");
+  EXPECT_THAT(renameat(dirfd.get(), "file", AT_FDCWD, dst.c_str()),
+              SyscallFailsWithErrno(ENOENT));
+  struct stat st;
+  EXPECT_THAT(stat(dst.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(MountTest, OverlayfsUnlinkInDeletedDirFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  OverlayOnTmpfs o = ASSERT_NO_ERRNO_AND_VALUE(CreateOverlayOnTmpfs());
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(OpenDeletedOverlayDirWithLowerFile(o));
+
+  // Opening the lower file for writing would copy it up into the deleted
+  // directory's upper copy.
+  EXPECT_THAT(openat(dirfd.get(), "file", O_RDWR),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(unlinkat(dirfd.get(), "file", 0), SyscallFailsWithErrno(ENOENT));
+}
+
 TEST(MountTest, PollMountInfo) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

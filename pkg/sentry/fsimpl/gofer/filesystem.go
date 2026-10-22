@@ -1557,7 +1557,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		newParent.opMu.Lock()
 		defer newParent.opMu.Unlock()
 	}
-	if newParent.isDeleted() {
+	if oldParent.isDeleted() || newParent.isDeleted() {
 		return linuxerr.ENOENT
 	}
 	replaced, err := fs.getChildLocked(ctx, newParent, newName, &ds) // +checklocksforce: newParent.opMu taken if newParent != oldParent.

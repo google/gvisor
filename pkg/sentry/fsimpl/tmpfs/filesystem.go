@@ -703,9 +703,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return linuxerr.EMLINK
 		}
 	}
-	// tmpfs never calls VFS.InvalidateDentry(), so newParentDir.dentry can
-	// only be dead if it was deleted.
-	if newParentDir.dentry.vfsd.IsDead() {
+	// tmpfs never calls VFS.InvalidateDentry(), so oldParentDir.dentry and
+	// newParentDir.dentry can only be dead if they were deleted.
+	if oldParentDir.dentry.vfsd.IsDead() || newParentDir.dentry.vfsd.IsDead() {
 		return linuxerr.ENOENT
 	}
 
