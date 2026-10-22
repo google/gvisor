@@ -48,27 +48,28 @@ func (m *machine) initArchState() error {
 		return errno
 	}
 
-	// Initialize all vCPUs to minimize kvm ioctl-s allowed by seccomp filters.
+	// Create the first vCPU now, so that errors are reported here, and
+	// the others in the background. All of them are created before seccomp
+	// filters are installed, to minimize kvm ioctl-s allowed by seccomp
+	// filters (see createVCPUsAsync).
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	for i := 0; i < m.maxVCPUs; i++ {
-		if _, err := m.createVCPU(i); err != nil {
-			return err
-		}
+	c, err := m.createVCPU(0)
+	m.mu.Unlock()
+	if err != nil {
+		return err
 	}
 
 	// Cache the TSC frequency. Must happen while initialization
 	// is still in progress to avoid having KVM_GET_TSC_KHZ on the seccomp
 	// allowlist.
-	if m.maxVCPUs > 0 {
-		if freq, err := m.vCPUsByID[0].getTSCFreq(); err != nil {
-			log.Warningf("Unable to read the TSC frequency: %v", err)
-		} else {
-			m.tscFrequency = uint64(freq) * 1000 // KHz to Hz.
-		}
+	if freq, err := c.getTSCFreq(); err != nil {
+		log.Warningf("Unable to read the TSC frequency: %v", err)
+	} else {
+		m.tscFrequency = uint64(freq) * 1000 // KHz to Hz.
 	}
 	log.Debugf("Host TSC frequency: %d Hz.", m.tscFrequency)
 
+	m.createVCPUsAsync()
 	return nil
 }
 
