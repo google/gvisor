@@ -880,6 +880,9 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.Sav
 		saveOpts.Metadata[noRootContainerKey] = "true"
 	}
 
+	// Save the sandbox's CPU features.
+	saveOpts.Metadata[sentryapi.CPUFeaturesKey] = strings.Join(l.k.FeatureSet().FeatureNames(), ",")
+
 	// Save container specs.
 	specsStr, err := specutils.ConvertSpecsToString(l.GetContainerSpecs())
 	if err != nil {

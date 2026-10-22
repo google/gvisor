@@ -158,6 +158,18 @@ func (fs FeatureSet) FlagString() string {
 	return strings.Join(s, " ")
 }
 
+// FeatureNames returns the names of all features present in fs, in the same
+// order as AllFeatures.
+func (fs FeatureSet) FeatureNames() []string {
+	var names []string
+	archFlagOrder(func(feature Feature) {
+		if fs.HasFeature(feature) {
+			names = append(names, feature.String())
+		}
+	})
+	return names
+}
+
 // ErrIncompatible is returned for incompatible feature sets.
 type ErrIncompatible struct {
 	reason string

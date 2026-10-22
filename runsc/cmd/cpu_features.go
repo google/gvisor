@@ -57,15 +57,7 @@ func (*CPUFeatures) FetchSpec(_ *config.Config, _ *flag.FlagSet) (string, *specs
 func (*CPUFeatures) Execute(_ context.Context, _ *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	cpuid.Initialize()
 	hfs := cpuid.HostFeatureSet().Fixed()
-	allFeatures := cpuid.AllFeatures()
-
-	features := []string{}
-	for _, v := range allFeatures {
-		if hfs.HasFeature(v) {
-			features = append(features, v.String())
-		}
-	}
-	fmt.Println(strings.Join(features, ","))
+	fmt.Println(strings.Join(hfs.FeatureNames(), ","))
 
 	return subcommands.ExitSuccess
 }
