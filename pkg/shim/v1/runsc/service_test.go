@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -27,11 +28,15 @@ import (
 	apievents "github.com/containerd/containerd/api/events"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	coreevents "github.com/containerd/containerd/v2/core/events"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
+	typeurl "github.com/containerd/typeurl/v2"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/v1/proc"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
+	"gvisor.dev/gvisor/pkg/shim/v1/runtimeoptions"
 	"gvisor.dev/gvisor/pkg/shim/v1/utils"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -420,5 +425,118 @@ func TestHasPodCgroupParent(t *testing.T) {
 func TestHasPodCgroupParentNoSpec(t *testing.T) {
 	if hasPodCgroupParent(filepath.Join(t.TempDir(), "missing"), "/kubepods.slice/pod.slice/c.scope") {
 		t.Error("hasPodCgroupParent() = true for a bundle with no spec")
+	}
+}
+
+// TestCreateDoesNotBlockOtherContainers verifies that runscService.Create does
+// not hold s.mu across NewContainer, so RPCs for other containers in the pod
+// can proceed while runsc create is in flight.
+func TestCreateDoesNotBlockOtherContainers(t *testing.T) {
+	dir := t.TempDir()
+	enteredFIFO := filepath.Join(dir, "entered.fifo")
+	releaseFIFO := filepath.Join(dir, "release.fifo")
+	if err := unix.Mkfifo(enteredFIFO, 0o600); err != nil {
+		t.Fatalf("Mkfifo(entered): %v", err)
+	}
+	if err := unix.Mkfifo(releaseFIFO, 0o600); err != nil {
+		t.Fatalf("Mkfifo(release): %v", err)
+	}
+
+	bundle := filepath.Join(dir, "bundle")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatalf("MkdirAll(bundle): %v", err)
+	}
+	if err := utils.WriteSpec(bundle, &specs.Spec{}); err != nil {
+		t.Fatalf("WriteSpec: %v", err)
+	}
+
+	pidFile := filepath.Join(bundle, "init.pid")
+	script := filepath.Join(dir, "fake-runsc")
+	scriptBody := fmt.Sprintf("#!/bin/sh\nprintf '0' >%q\nprintf 'x' >%q\ncat %q >/dev/null\nexit 0\n", pidFile, enteredFIFO, releaseFIFO)
+	if err := os.WriteFile(script, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("WriteFile(fake-runsc): %v", err)
+	}
+
+	configPath := filepath.Join(dir, "config.toml")
+	configBody := fmt.Sprintf("binary_name = %q\nroot = %q\n", script, filepath.Join(dir, "root"))
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.toml): %v", err)
+	}
+	optsAny, err := typeurl.MarshalAnyToProto(&runtimeoptions.Options{ConfigPath: configPath})
+	if err != nil {
+		t.Fatalf("MarshalAnyToProto: %v", err)
+	}
+
+	existingInit := proc.New("existing", &runsccmd.Runsc{Command: script}, stdio.Stdio{})
+	s := &runscService{
+		containers: map[string]*Container{
+			"existing": {
+				ID:   "existing",
+				task: existingInit,
+			},
+		},
+	}
+
+	ctx := namespaces.WithNamespace(t.Context(), "test")
+	createDone := make(chan error, 1)
+	go func() {
+		_, err := s.Create(ctx, &task.CreateTaskRequest{
+			ID:      "creating",
+			Bundle:  bundle,
+			Options: optsAny,
+		})
+		createDone <- err
+	}()
+
+	// Wait until fake-runsc is executing inside NewContainer.
+	enteredFile, err := os.Open(enteredFIFO)
+	if err != nil {
+		t.Fatalf("Open(enteredFIFO): %v", err)
+	}
+	var buf [1]byte
+	if _, err := enteredFile.Read(buf[:]); err != nil {
+		enteredFile.Close()
+		t.Fatalf("Read(enteredFIFO): %v", err)
+	}
+	enteredFile.Close()
+
+	// While Create for "creating" is blocked in runsc create, lookups for
+	// "existing" must not block on s.mu.
+	connectDone := make(chan error, 1)
+	go func() {
+		_, err := s.Connect(ctx, &task.ConnectRequest{ID: "existing"})
+		if err == nil {
+			_, err = s.getContainer("existing")
+		}
+		connectDone <- err
+	}()
+
+	select {
+	case err := <-connectDone:
+		if err != nil {
+			t.Errorf("Connect/getContainer(existing) failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Errorf("Connect/getContainer(existing) blocked while another container's Create was in flight")
+	}
+
+	// Unblock fake-runsc and wait for Create to finish.
+	releaseFile, err := os.OpenFile(releaseFIFO, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(releaseFIFO): %v", err)
+	}
+	releaseFile.Close()
+
+	select {
+	case err := <-createDone:
+		if err != nil {
+			t.Fatalf("Create(creating) failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Create(creating) did not finish after releasing fake-runsc")
+	}
+
+	if _, err := s.getContainer("creating"); err != nil {
+		t.Errorf("getContainer(creating) after Create: %v", err)
 	}
 }

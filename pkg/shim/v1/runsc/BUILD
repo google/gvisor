@@ -80,6 +80,7 @@ go_test(
     deps = [
         "//pkg/shim/v1/proc",
         "//pkg/shim/v1/runsccmd",
+        "//pkg/shim/v1/runtimeoptions",
         "//pkg/shim/v1/utils",
         "//runsc/specutils",
         "@com_github_containerd_cgroups_v3//cgroup1:go_default_library",
@@ -89,8 +90,10 @@ go_test(
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
         "@com_github_containerd_containerd_v2//core/runtime:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/namespaces:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/stdio:go_default_library",
         "@com_github_containerd_errdefs//:go_default_library",
+        "@com_github_containerd_typeurl_v2//:go_default_library",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

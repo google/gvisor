@@ -128,6 +128,12 @@ type shimRedirector struct {
 	// +checklocks:mu
 	ext extension.TaskServiceExt
 
+	// extInitialized indicates whether the pod extension constructor has
+	// already been called.
+	//
+	// +checklocks:mu
+	extInitialized bool
+
 	// grouping indicates if shim grouping is enabled.
 	grouping bool
 
@@ -183,7 +189,7 @@ func (s *shimRedirector) initExt(ctx context.Context, r *task.CreateTaskRequest)
 
 	if s.grouping {
 		// Create shim extension if required.
-		if s.ext == nil && extension.NewPodExtension != nil {
+		if !s.extInitialized && extension.NewPodExtension != nil {
 			log.L.Debugf("Create shim extension per pod")
 			var err error
 			s.ext, err = extension.NewPodExtension(ctx, s.main, r)
@@ -191,6 +197,7 @@ func (s *shimRedirector) initExt(ctx context.Context, r *task.CreateTaskRequest)
 				log.L.Debugf("Creating shim extension per pod failed with error: %v", err)
 				return err
 			}
+			s.extInitialized = true
 		}
 	} else {
 		if extension.NewExtension != nil {
