@@ -45,6 +45,18 @@ raw_syscall:
   .section  .note.GNU-stack,"",@progbits
 
   .text
+  .globl  restore_rt
+  .type   restore_rt, @function
+
+restore_rt:
+  mov $15,%rax  // SYS_rt_sigreturn
+  syscall
+  ud2
+
+  .size  restore_rt,.-restore_rt
+  .section  .note.GNU-stack,"",@progbits
+
+  .text
   .globl  clone
   .type   clone, @function
 

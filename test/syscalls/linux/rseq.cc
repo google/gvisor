@@ -162,58 +162,36 @@ TEST(RseqTest, CPU) {
 // Critical section is eventually aborted.
 TEST(RseqTest, Abort) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
-  // TODO(b/456832928): Re-enable after making this test compatible with
-  // platform/KVM
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   RunChildTest(kRseqTestAbort, 0);
 }
 
 // Abort may be before the critical section.
 TEST(RseqTest, AbortBefore) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
-  // TODO(b/456832928): Re-enable after making this test compatible with
-  // platform/KVM
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   RunChildTest(kRseqTestAbortBefore, 0);
 }
 
 // Signature must match.
 TEST(RseqTest, AbortSignature) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
-  // TODO(b/456832928): Re-enable after making this test compatible with
-  // platform/KVM
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   RunChildTest(kRseqTestAbortSignature, SIGSEGV);
 }
 
 // Abort must not be in the critical section.
 TEST(RseqTest, AbortPreCommit) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
-  // TODO(b/456832928): Re-enable after making this test compatible with
-  // platform/KVM
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   RunChildTest(kRseqTestAbortPreCommit, SIGSEGV);
 }
 
 // rseq.rseq_cs is cleared on abort.
 TEST(RseqTest, AbortClearsCS) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
-  // TODO(b/456832928): Re-enable after making this test compatible with
-  // platform/KVM
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   RunChildTest(kRseqTestAbortClearsCS, 0);
 }
 
 // rseq.rseq_cs is cleared on abort outside of critical section.
 TEST(RseqTest, InvalidAbortClearsCS) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   RunChildTest(kRseqTestInvalidAbortClearsCS, 0);
 }
 
