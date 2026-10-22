@@ -614,7 +614,8 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080ecc.h:
 const (
-	NV2080_CTRL_CMD_ECC_GET_REPAIR_STATUS = 0x20803404
+	NV2080_CTRL_CMD_ECC_GET_CLIENT_EXPOSED_COUNTERS = 0x20803400
+	NV2080_CTRL_CMD_ECC_GET_REPAIR_STATUS           = 0x20803404
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fb.h:
@@ -632,6 +633,7 @@ const (
 	NV2080_CTRL_CMD_FB_FLUSH_GPU_CACHE                             = 0x2080130e
 	NV2080_CTRL_CMD_FB_QUERY_DRAM_ENCRYPTION_PENDING_CONFIGURATION = 0x20801355
 	NV2080_CTRL_CMD_FB_GET_FS_INFO                                 = 0x20801346
+	NV2080_CTRL_CMD_FB_GET_ROW_REMAPPER_HISTOGRAM                  = 0x20801347
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fifo.h:
@@ -951,6 +953,8 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl90cc.h:
 const (
+	NV90CC_CTRL_CMD_HWPM_RESERVE           = 0x90cc0101
+	NV90CC_CTRL_CMD_HWPM_RELEASE           = 0x90cc0102
 	NV90CC_CTRL_CMD_POWER_REQUEST_FEATURES = 0x90cc0301
 	NV90CC_CTRL_CMD_POWER_RELEASE_FEATURES = 0x90cc0302
 )
