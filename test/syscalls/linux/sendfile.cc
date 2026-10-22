@@ -13,9 +13,9 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#include <linux/unistd.h>
 #include <sys/eventfd.h>
 #include <sys/sendfile.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -81,7 +81,7 @@ TEST(SendFileTest, InvalidOffset) {
 }
 
 int memfd_create(const std::string& name, unsigned int flags) {
-  return syscall(__NR_memfd_create, name.c_str(), flags);
+  return syscall(SYS_memfd_create, name.c_str(), flags);
 }
 
 TEST(SendFileTest, Overflow) {

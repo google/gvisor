@@ -16,6 +16,7 @@
 // correctly after a signal handler returns. It also verifies that this works
 // with nested signals.
 #include <signal.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -76,11 +77,11 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
 #ifdef __x86_64__
   asm volatile("syscall;"
                : "=a"(ret)
-               : "a"(__NR_tgkill), "D"(pid), "S"(tid), "d"(SIGUSR2)
+               : "a"(SYS_tgkill), "D"(pid), "S"(tid), "d"(SIGUSR2)
                :  // Clobbered by syscall.
                "rcx", "r11");
 #elif __aarch64__
-  register uint64_t x8 __asm__("x8") = __NR_tgkill;
+  register uint64_t x8 __asm__("x8") = SYS_tgkill;
   register uint64_t x0 __asm__("x0") = pid;
   register uint64_t x1 __asm__("x1") = tid;
   register uint64_t x2 __asm__("x2") = SIGUSR2;
@@ -127,11 +128,11 @@ TEST(FPSigTest, NestedSignals) {
 #ifdef __x86_64__
   asm volatile("syscall;"
                : "=a"(ret)
-               : "a"(__NR_tgkill), "D"(pid), "S"(tid), "d"(SIGUSR1)
+               : "a"(SYS_tgkill), "D"(pid), "S"(tid), "d"(SIGUSR1)
                :  // Clobbered by syscall.
                "rcx", "r11");
 #elif __aarch64__
-  register uint64_t x8 __asm__("x8") = __NR_tgkill;
+  register uint64_t x8 __asm__("x8") = SYS_tgkill;
   register uint64_t x0 __asm__("x0") = pid;
   register uint64_t x1 __asm__("x1") = tid;
   register uint64_t x2 __asm__("x2") = SIGUSR1;

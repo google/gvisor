@@ -19,7 +19,7 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
-#include <syscall.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -72,7 +72,7 @@ TEST(PivotRootTest, Success) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_SUCCESS(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
@@ -103,7 +103,7 @@ TEST(PivotRootTest, CreatesNewRoot) {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     // pivot_root and switch into new_root.
     TEST_CHECK_SUCCESS(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
     TEST_CHECK_SUCCESS(chdir("/"));
     // Should not be able to stat file by its full path.
     char buf[1024];
@@ -112,7 +112,7 @@ TEST(PivotRootTest, CreatesNewRoot) {
     // Should be able to stat file at new rooted path.
     TEST_CHECK_SUCCESS(stat(file_in_new_root_new_path.c_str(), &statbuf));
     // getcwd should return "/".
-    TEST_CHECK_SUCCESS(syscall(__NR_getcwd, buf, sizeof(buf)));
+    TEST_CHECK_SUCCESS(syscall(SYS_getcwd, buf, sizeof(buf)));
     TEST_PCHECK(strcmp(buf, "/") == 0);
     // Statting '.', '..', '/', and '/..' all return the same dev and inode.
     struct stat statbuf_dot;
@@ -159,7 +159,7 @@ TEST(PivotRootTest, MovesOldRoot) {
     TEST_CHECK_SUCCESS(stat("/", &statbuf_oldroot));
     // pivot_root and switch into new_root.
     TEST_CHECK_SUCCESS(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
     TEST_CHECK_SUCCESS(chdir("/"));
     // Should not be able to stat file by its full path.
     struct stat statbuf;
@@ -202,7 +202,7 @@ TEST(PivotRootTest, ChangesCwdForAllProcesses) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_SUCCESS(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
   // pivot_root should change the cwd/root directory all threads and processes
@@ -236,7 +236,7 @@ TEST(PivotRootTest, DotDot) {
     TEST_CHECK_SUCCESS(chdir(new_root_path.c_str()));
     // pivot_root should be able to stack put_old on top of new_root. This
     // allows users to pivot_root without creating a temp directory.
-    TEST_CHECK_SUCCESS(syscall(__NR_pivot_root, ".", "."));
+    TEST_CHECK_SUCCESS(syscall(SYS_pivot_root, ".", "."));
     TEST_CHECK_SUCCESS(umount2(".", MNT_DETACH));
     struct stat statbuf;
     TEST_CHECK_SUCCESS(stat(file_in_new_root_path.c_str(), &statbuf));
@@ -251,25 +251,23 @@ TEST(PivotRootTest, NotDir) {
   auto file2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   EXPECT_THAT(
-      syscall(__NR_pivot_root, file1.path().c_str(), file2.path().c_str()),
+      syscall(SYS_pivot_root, file1.path().c_str(), file2.path().c_str()),
       SyscallFailsWithErrno(ENOTDIR));
-  EXPECT_THAT(
-      syscall(__NR_pivot_root, file1.path().c_str(), dir.path().c_str()),
-      SyscallFailsWithErrno(ENOTDIR));
-  EXPECT_THAT(
-      syscall(__NR_pivot_root, dir.path().c_str(), file2.path().c_str()),
-      SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(syscall(SYS_pivot_root, file1.path().c_str(), dir.path().c_str()),
+              SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(syscall(SYS_pivot_root, dir.path().c_str(), file2.path().c_str()),
+              SyscallFailsWithErrno(ENOTDIR));
 }
 
 TEST(PivotRootTest, NotExist) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  EXPECT_THAT(syscall(__NR_pivot_root, "/foo/bar", "/bar/baz"),
+  EXPECT_THAT(syscall(SYS_pivot_root, "/foo/bar", "/bar/baz"),
               SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(syscall(__NR_pivot_root, dir.path().c_str(), "/bar/baz"),
+  EXPECT_THAT(syscall(SYS_pivot_root, dir.path().c_str(), "/bar/baz"),
               SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(syscall(__NR_pivot_root, "/foo/bar", dir.path().c_str()),
+  EXPECT_THAT(syscall(SYS_pivot_root, "/foo/bar", dir.path().c_str()),
               SyscallFailsWithErrno(ENOENT));
 }
 
@@ -286,7 +284,7 @@ TEST(PivotRootTest, WithoutCapability) {
 
   AutoCapability cap(CAP_SYS_ADMIN, false);
   EXPECT_THAT(
-      syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+      syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
       SyscallFailsWithErrno(EPERM));
 }
 
@@ -310,7 +308,7 @@ TEST(PivotRootTest, NewRootOnRootMount) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EBUSY);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -343,7 +341,7 @@ TEST(PivotRootTest, NewRootNotAMountpoint) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -369,7 +367,7 @@ TEST(PivotRootTest, PutOldNotUnderNewRoot) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -393,7 +391,7 @@ TEST(PivotRootTest, CurrentRootNotAMountPoint) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -425,7 +423,7 @@ TEST(PivotRootTest, OnRootFS) {
 
   const auto rest = [&] {
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -453,7 +451,7 @@ TEST(PivotRootTest, OnSharedNewRootParent) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -482,7 +480,7 @@ TEST(PivotRootTest, OnSharedNewRoot) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -513,7 +511,7 @@ TEST(PivotRootTest, OnSharedPutOldMountpoint) {
   const auto rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -544,7 +542,7 @@ TEST(PivotRootTest, UnreachableNewRootFails) {
   const std::function<void()> rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     // "." references the directory outside the chroot.
-    TEST_CHECK_ERRNO(syscall(__NR_pivot_root, ".", put_old_path.c_str()),
+    TEST_CHECK_ERRNO(syscall(SYS_pivot_root, ".", put_old_path.c_str()),
                      EINVAL);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
@@ -571,7 +569,7 @@ TEST(PivotRootTest, LockedNewRootFails) {
   const std::function<void()> rest = [&] {
     TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
     TEST_CHECK_ERRNO(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
         EINVAL);
   };
   EXPECT_THAT(InForkedUserMountNamespace([] {}, rest),
@@ -597,7 +595,7 @@ TEST(PivotRootTest, OldRootUnlocked) {
     TEST_CHECK_SUCCESS(mkdir(put_old_path.c_str(), 0700));
     TEST_CHECK_SUCCESS(mount("", put_old_path.c_str(), "tmpfs", 0, ""));
     TEST_CHECK_SUCCESS(
-        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
+        syscall(SYS_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
     // The old root is no longer locked and can be unmounted.
     TEST_CHECK_SUCCESS(
         umount2(JoinPath("/", Basename(put_old_path)).c_str(), MNT_DETACH));

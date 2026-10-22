@@ -14,7 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <syscall.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "gmock/gmock.h"
@@ -33,17 +33,17 @@ TEST(FAdvise64Test, Basic) {
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
 
   // fadvise64 is noop in gVisor, so just test that it succeeds.
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
               SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_RANDOM),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_RANDOM),
               SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_SEQUENTIAL),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_SEQUENTIAL),
               SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_WILLNEED),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_WILLNEED),
               SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_DONTNEED),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_DONTNEED),
               SyscallSucceeds());
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_NOREUSE),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_NOREUSE),
               SyscallSucceeds());
 }
 
@@ -51,9 +51,9 @@ TEST(FAdvise64Test, FAdvise64WithOpath) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
               SyscallFailsWithErrno(EBADF));
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, POSIX_FADV_NORMAL),
               SyscallFailsWithErrno(EBADF));
 }
 
@@ -62,10 +62,10 @@ TEST(FAdvise64Test, InvalidArgs) {
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
 
   // Note: offset is allowed to be negative.
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, static_cast<off_t>(-1),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, static_cast<off_t>(-1),
                       POSIX_FADV_NORMAL),
               SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(syscall(__NR_fadvise64, fd.get(), 0, 10, 12345),
+  ASSERT_THAT(syscall(SYS_fadvise64, fd.get(), 0, 10, 12345),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -75,7 +75,7 @@ TEST(FAdvise64Test, NoPipes) {
   const FileDescriptor read(fds[0]);
   const FileDescriptor write(fds[1]);
 
-  ASSERT_THAT(syscall(__NR_fadvise64, read.get(), 0, 10, POSIX_FADV_NORMAL),
+  ASSERT_THAT(syscall(SYS_fadvise64, read.get(), 0, 10, POSIX_FADV_NORMAL),
               SyscallFailsWithErrno(ESPIPE));
 }
 
