@@ -4927,7 +4927,6 @@ cc_binary(
         ":socket_netlink_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
-        "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
@@ -4935,7 +4934,6 @@ cc_binary(
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
-        "@com_google_absl//absl/strings",
     ],
 )
 
