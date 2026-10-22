@@ -614,7 +614,8 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080ecc.h:
 const (
-	NV2080_CTRL_CMD_ECC_GET_REPAIR_STATUS = 0x20803404
+	NV2080_CTRL_CMD_ECC_GET_REPAIR_STATUS            = 0x20803404
+	NV2080_CTRL_CMD_ECC_GET_UNREPAIRABLE_MEMORY_FLAG = 0x20803406
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fb.h:
@@ -839,6 +840,7 @@ const (
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080rc.h:
 const (
 	NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO         = 0x20802209
+	NV2080_CTRL_CMD_RC_ENABLE_WATCHDOG           = 0x2080220b
 	NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS = 0x2080220c
 	NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG     = 0x20802210
 )
@@ -932,6 +934,7 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl90e7/ctrl90e7bbx.h:
 const (
+	NV90E7_CTRL_CMD_BBX_GET_TIME_DATA       = 0x90e70102
 	NV90E7_CTRL_CMD_BBX_GET_LAST_FLUSH_TIME = 0x90e70113
 )
 
