@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
@@ -1324,12 +1325,48 @@ func (s *subprocess) UserModifiedGS(ctx pkgcontext.Context, mm platform.MemoryMa
 		return nil
 	}
 
-	if err := s.usertrap.UnpatchSyscalls(ctx, mm); err != nil {
+	if err := s.usertrap.UnpatchSyscalls(ctx, mm, stubCoreSyncer{s}); err != nil {
+		if errors.Is(err, usertrap.ErrSyncCoreUnsupported) {
+			// This should not happen, but if it does, log it and report the error
+			// as if SET_GS is not supported.
+			ctx.Warningf("Unable to revert syscall patches, host kernel does not support MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE: %v", err)
+			return linuxerr.EINVAL
+		}
+		ctx.Warningf("Failed to revert syscall patches: %v", err)
 		s.kill()
-		return err
+		// The task is killed when it tries to switch to the dead address
+		// space, but the error is returned from arch_prctl, so it has to be
+		// an errno.
+		return linuxerr.EFAULT
 	}
 
 	return nil
+}
+
+// stubCoreSyncer implements usertrap.CoreSyncer using
+// membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE). membarrier only
+// affects threads that share the caller's memory map, so the stub's syscall
+// thread calls it.
+type stubCoreSyncer struct {
+	s *subprocess
+}
+
+// PrepareSyncCore implements usertrap.CoreSyncer.PrepareSyncCore by
+// registering the stub for the memory barrier.
+// Registration lasts for the stub's lifetime and slows down some of its
+// context switches, so stubs register only when patches have to be
+// reverted.
+func (c stubCoreSyncer) PrepareSyncCore() error {
+	_, err := c.s.syscall(unix.SYS_MEMBARRIER,
+		arch.SyscallArgument{Value: linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE})
+	return err
+}
+
+// SyncCore implements usertrap.CoreSyncer.SyncCore.
+func (c stubCoreSyncer) SyncCore() error {
+	_, err := c.s.syscall(unix.SYS_MEMBARRIER,
+		arch.SyscallArgument{Value: linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE})
+	return err
 }
 
 // activateContext activates the context in this subprocess.

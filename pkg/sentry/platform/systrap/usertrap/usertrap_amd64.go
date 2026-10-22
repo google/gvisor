@@ -503,10 +503,7 @@ func (s *State) recoverPatchesLocked(ctx context.Context, mm memoryManager) erro
 
 // UnpatchSyscalls reverts all applied syscall patches to their original
 // instructions and disables future syscall patching.
-func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager, syncer CoreSyncer) error {
 	if ctx == nil {
 		return fmt.Errorf("no context provided")
 	}
@@ -518,63 +515,118 @@ func (s *State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 	// This address space can contain patches that were applied before this
 	// State was created (i.e. before it was forked or restored).
 	// This seems expensive but it only happens once per address space.
-	if err := s.recoverPatchesLocked(ctx, mm); err != nil {
+	s.mu.Lock()
+	if s.disabled {
+		s.mu.Unlock()
+		return nil
+	}
+	err := s.recoverPatchesLocked(ctx, mm)
+	noPatches := len(s.patches) == 0
+	if err == nil && noPatches {
+		s.disabled = true
+	}
+	s.mu.Unlock()
+	if err != nil || noPatches {
 		return err
 	}
 
-	if len(s.patches) == 0 {
-		s.disabled = true
+	// Prepare only if there are patches to revert. Preparation can be slow and
+	// s.mu is held by threads that switch to application code, so do it
+	// without holding s.mu.
+	if err := syncer.PrepareSyncCore(); err != nil {
+		// This should not happen as gVisor requires Linux 5.6+ and SYNC_CORE is
+		// supported on all those kernels.
+		return fmt.Errorf("%w: %v", ErrSyncCoreUnsupported, err)
+	}
+
+	// Syscalls patched while s.mu was released are in s.patches, so they are
+	// reverted below too.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Another thread may have reverted the patches while s.mu was released.
+	// s.patches is never cleared, so reverting them again could overwrite
+	// code that the application has since mapped at a former patch site.
+	if s.disabled {
 		return nil
 	}
 
 	ignorePermContext := task.OwnCopyContext(usermem.IOOpts{IgnorePermissions: true})
 
-	// We recreate the original instruction using the sysno stored in the
-	// patch map.
+	// The patches can't be removed atomically, so we need to guarantee that
+	// in each moment, other threads will read a valid set of instructions,
+	// detect any inconsistent states and restart the unpatched code via
+	// HandleFault.
+	//
+	// Notably, a thread on another CPU can have fetched some bytes of a patch
+	// site before a write and fetch the rest after it. It then can execute a
+	// mix of old and new bytes. Thus, we need to synchronize all threads to
+	// either see the old patched code or certain execution-safe parts of the
+	// newly unpatched code, no in-between. This is why each step below is
+	// applied to all patch sites before SyncCore is called. This is the same
+	// protocol that Linux uses to modify kernel code on SMP. See
+	// arch/x86/kernel/alternative.c:smp_text_poke_batch_finish.
+
+	// The first step is to replace the first byte of every jmp instruction
+	// with a one-byte invalid instruction (0x06), so that other threads which
+	// attempt to execute at a patch site fault on the invalid instruction and
+	// restart the unpatched code via HandleFault.
+	faultInstB := primitive.ByteSlice(faultInst[:])
 	for patchAddr, sysno := range s.patches {
-		origCode := origSyscallCode(sysno)
-
 		ctx.Debugf("Reverting binary patch addr %x (sysno %d)", patchAddr, sysno)
-
-		// The patch can't be removed atomically, so we need to
-		// guarantee that in each moment other threads will read a
-		// valid set of instructions, detect any inconsistent states
-		// and restart the unpatched code via HandleFault.
-		//
-		// The unpatch is applied in three steps:
-		//
-		// The first step is to replace the first byte of the jmp
-		// instruction with a one-byte invalid instruction (0x06), so that
-		// other threads which attempt to execute at patchAddr fault on
-		// the invalid instruction and restart the unpatched code via HandleFault.
-		faultInstB := primitive.ByteSlice(faultInst[:])
 		if _, err := faultInstB.CopyOut(ignorePermContext, patchAddr); err != nil {
 			ctx.Warningf("Failed to write faultInst when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
 			return err
 		}
+	}
 
-		// The second step is to replace all bytes except the first one
-		// with the remainder of the original code, so that bytes 1..4
-		// become the sysno and bytes 5..6 become the syscall opcode (0x0f05).
-		// During this write, the first byte remains 0x06, ensuring any
-		// racing threads fault on the invalid instruction.
+	// A thread may have fetched the old first byte of a jmp instruction (0xff)
+	// before the first step and may try to fetch the remaining bytes after the
+	// second step. It would then execute 0xff and decode the rest of the
+	// instruction, which is now garbage values for that instruction.
+	// Synchronize all threads to ensure none still hold the old first byte
+	// before the remaining bytes change.
+	if err := syncer.SyncCore(); err != nil {
+		ctx.Warningf("Failed to synchronize threads after writing faultInst: %v", err)
+		return err
+	}
+
+	// The second step is to replace all bytes except the first one with the
+	// remainder of the original code, so that bytes 1..4 become the sysno and
+	// bytes 5..6 become the syscall opcode (0x0f05). No threads can execute
+	// these instructions as the first byte is still the faulting byte.
+	for patchAddr, sysno := range s.patches {
+		origCode := origSyscallCode(sysno)
 		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, hostarch.Addr(patchAddr+1), origCode[1:]); err != nil {
 			ctx.Warningf("Failed to write remaining code when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
 			return err
 		}
+	}
 
-		// The final step is to restore the first byte of the original
-		// instruction (0xb8, the opcode of "mov sysno, %eax").
-		// After this point, all threads will read the valid
-		// "mov sysno, %eax; syscall" instruction sequence.
+	// Although Intel says that this is not necessary because the first byte is
+	// still 0x06, Linux still synchronizes here just in case. It makes sure
+	// that no thread can combine the original first byte with remaining bytes
+	// that it fetched before the second step.
+	if err := syncer.SyncCore(); err != nil {
+		ctx.Warningf("Failed to synchronize threads after writing remaining code: %v", err)
+		return err
+	}
+
+	// The final step is to restore the first byte of the original
+	// instruction (0xb8, the opcode of "mov sysno, %eax"). After this point,
+	// all threads will read the valid "mov sysno, %eax; syscall" instruction
+	// sequence. No sync is needed after this point. A thread will either
+	// read the new valid instruction or fault on the faulting byte (0x06).
+	for patchAddr, sysno := range s.patches {
+		origCode := origSyscallCode(sysno)
 		if _, err := primitive.CopyUint8SliceOut(ignorePermContext, patchAddr, origCode[0:1]); err != nil {
 			ctx.Warningf("Failed to restore first byte when unpatching syscall at %x (sysno %d): %v", patchAddr, sysno, err)
 			return err
 		}
 	}
 
-	// Disable only after we ensure all patches have been reverted. Otherwise a fail could leave us
-	// in a disabled state with patches still being active.
+	// Disable only after we ensure all patches have been reverted. Otherwise a
+	// fail could leave us in a disabled state with patches still being active.
 	s.disabled = true
 	return nil
 }

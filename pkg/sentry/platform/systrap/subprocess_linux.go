@@ -109,6 +109,19 @@ func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error
 				unix.SYS_MMAP:   seccomp.MatchAll{},
 				unix.SYS_MUNMAP: seccomp.MatchAll{},
 
+				// Injected to synchronize stub threads with modified code.
+				// See stubCoreSyncer.
+				unix.SYS_MEMBARRIER: seccomp.Or{
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE),
+						seccomp.EqualTo(0),
+					},
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE),
+						seccomp.EqualTo(0),
+					},
+				},
+
 				// For sysmsg threads. Look at sysmsg/sighandler.c for more details.
 				unix.SYS_RT_SIGRETURN: seccomp.MatchAll{},
 				unix.SYS_SCHED_YIELD:  seccomp.MatchAll{},

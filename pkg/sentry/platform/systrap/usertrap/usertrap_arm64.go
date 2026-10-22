@@ -81,6 +81,6 @@ func (*State) PostFork() {
 }
 
 // UnpatchSyscalls does nothing on arm64 as syscall trapping is not supported.
-func (*State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
+func (*State) UnpatchSyscalls(ctx context.Context, mm memoryManager, syncer CoreSyncer) error {
 	return nil
 }
