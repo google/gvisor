@@ -1642,10 +1642,11 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
 func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
-	// Track if anything changed to elide the merge.
+	// Track if anything changed to elide the merge. f.SaveTo() holds an
+	// iterator into f.memAcct across f.mu unlocks, so don't merge while saving.
 	changedAny := false
 	defer func() {
-		if changedAny {
+		if changedAny && !f.isSaving {
 			f.memAcct.MergeAll()
 		}
 	}()

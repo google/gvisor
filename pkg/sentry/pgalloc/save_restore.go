@@ -381,6 +381,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	}
 	f.isSaving = true
 	defer func() { f.isSaving = false }()
+	// An f.updateUsageLocked() that is still in progress skips merging the
+	// segments it split in f.memAcct, since we hold an iterator into it
+	// across f.mu unlocks below.
+	f.memAcct.MergeAll()
 	// Reset f.commitSeq and memAcctInfo.commitSeq to 0 to make more segments
 	// in f.memAcct mergeable. This is safe because f.updateUsageLocked() is
 	// excluded by f.isSaving being set to true.
