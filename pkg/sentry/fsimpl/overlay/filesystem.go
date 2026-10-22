@@ -1165,7 +1165,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		newParent.dirMu.NestedLock(dirLockNew)
 		defer newParent.dirMu.NestedUnlock(dirLockNew)
 	}
-	if newParent.vfsd.IsDead() {
+	if oldParent.vfsd.IsDead() || newParent.vfsd.IsDead() {
 		return linuxerr.ENOENT
 	}
 	var (
@@ -1421,8 +1421,12 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	oldParent.dirents = nil
 	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &handle, &renamed.vfsd, replacedVFSD)
 
-	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
-		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
+	// Determine if the renamed file exists on any lower layers of oldParent;
+	// if not, we can skip creating the whiteout.
+	if newChildLayer, err := fs.lookupLayerLocked(ctx, oldParent, oldName); err != nil || newChildLayer != lookupLayerNone {
+		if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
+			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
+		}
 	}
 	if renamed.isDir() {
 		if err := vfsObj.SetXattrAt(ctx, fs.creds, &newpop, &vfs.SetXattrOptions{
