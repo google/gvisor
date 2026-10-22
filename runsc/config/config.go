@@ -475,6 +475,16 @@ type Config struct {
 	// and can be unpaused manually.
 	PauseExternalNetworking bool `flag:"pause-external-networking"`
 
+	// KeepHostAddrs is a comma-separated list of host interface names whose IP
+	// addresses must be preserved on the host NIC when the sandbox network stack
+	// takes ownership of the interface. By default runsc removes every host
+	// address from an interface it moves into the sandbox, so the host kernel
+	// stops answering for that address. Interfaces named here keep their host
+	// addresses: this is meant for secondary interfaces (for example a VPC
+	// private-network NIC) whose address must remain usable outside the sandbox.
+	// Names must match exactly; the primary interface is unaffected.
+	KeepHostAddrs string `flag:"keep-host-addrs"`
+
 	// AllowConnectedOnSave allows network connections to stay established on save.
 	AllowConnectedOnSave bool `flag:"allow-connected-on-save"`
 
