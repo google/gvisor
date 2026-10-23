@@ -364,6 +364,35 @@ TEST(MadviseDontforkTest, DontforkAnonPrivate) {
   ExpectAllMappingBytes(mp3, 3);
 }
 
+#ifndef MADV_FREE
+#define MADV_FREE 8
+#endif
+
+TEST(MadviseFreeTest, AcceptsPrivateAnonPage) {
+  auto m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  memset(m.ptr(), 1, m.len());
+  ASSERT_THAT(madvise(m.ptr(), m.len(), MADV_FREE), SyscallSucceeds());
+}
+
+TEST(MadviseFreeTest, RejectsPrivateFileMapping) {
+  TempPath f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      /* parent = */ GetAbsoluteTestTmpdir(),
+      /* content = */ std::string(kPageSize, 4), TempPath::kDefaultFileMode));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDWR));
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(Mmap(
+      nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(), 0));
+  EXPECT_THAT(madvise(m.ptr(), m.len(), MADV_FREE),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MadviseFreeTest, RejectsSharedAnonMapping) {
+  auto m = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED));
+  EXPECT_THAT(madvise(m.ptr(), m.len(), MADV_FREE),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 }  // namespace
 
 }  // namespace testing
