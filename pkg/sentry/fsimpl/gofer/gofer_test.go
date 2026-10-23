@@ -15,14 +15,23 @@
 package gofer
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func TestDestroyIdempotent(t *testing.T) {
@@ -192,5 +201,120 @@ func TestXattrCacheList(t *testing.T) {
 	list, found = ino.xattrCache.getList()
 	if !found || !slices.Equal(list, wantList) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+}
+
+func TestWrapRestoreError(t *testing.T) {
+	corruptionErrs := []error{
+		unix.ENOENT,
+		linuxerr.ENOENT,
+		unix.EACCES,
+		linuxerr.EACCES,
+		unix.ENOTDIR,
+		linuxerr.ENOTDIR,
+		unix.EISDIR,
+		linuxerr.EISDIR,
+		unix.ESTALE,
+		linuxerr.ESTALE,
+	}
+	for _, err := range corruptionErrs {
+		wrapped := fmt.Errorf("restore failed: %w", err)
+		got := wrapRestoreError(err, wrapped)
+		var corruption vfs.ErrCorruption
+		if !errors.As(got, &corruption) {
+			t.Errorf("wrapRestoreError(%v) = %T (%v), want vfs.ErrCorruption", err, got, got)
+		}
+	}
+
+	nonCorruptionErrs := []error{
+		unix.EIO,
+		linuxerr.EIO,
+		unix.EINVAL,
+		linuxerr.EINVAL,
+	}
+	for _, err := range nonCorruptionErrs {
+		wrapped := fmt.Errorf("restore failed: %w", err)
+		got := wrapRestoreError(err, wrapped)
+		var corruption vfs.ErrCorruption
+		if errors.As(got, &corruption) {
+			t.Errorf("wrapRestoreError(%v) = %T (%v), did not want vfs.ErrCorruption", err, got, got)
+		}
+	}
+}
+
+func TestSpecialFileFDCompleteRestoreWrapsCorruptionError(t *testing.T) {
+	ctx := contexttest.Context(t)
+	var vfsObj vfs.VirtualFilesystem
+	if err := vfsObj.Init(ctx); err != nil {
+		t.Fatalf("vfsObj.Init(): %v", err)
+	}
+	fs := &filesystem{
+		mf:          pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:    make(map[inoKey]uint64),
+		inodeByKey:  make(map[inoKey]*inode),
+		clock:       ktime.RealtimeClockFromContext(ctx),
+		dentryCache: &dentryCache{maxCachedDentries: 0},
+	}
+	fs.vfsfs.Init(&vfsObj, &FilesystemType{}, fs)
+
+	// Simulate a shared mount under CACHE_MODE_NONE
+	// (regularFilesUseSpecialFileFD) where a file was opened O_RDWR before
+	// save, then chmod 0444 by an external actor before restore.
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "locked.txt")
+	if err := os.WriteFile(filePath, []byte("data"), 0444); err != nil {
+		t.Fatalf("os.WriteFile(): %v", err)
+	}
+	dirFD, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	if err != nil {
+		t.Fatalf("unix.Open(%q): %v", dir, err)
+	}
+	defer unix.Close(dirFD)
+
+	parentInode := &directfsInode{
+		inode: inode{
+			fs:      fs,
+			mode:    atomicbitops.FromUint32(linux.S_IFDIR | 0755),
+			readFD:  atomicbitops.FromInt32(-1),
+			writeFD: atomicbitops.FromInt32(-1),
+			mmapFD:  atomicbitops.FromInt32(-1),
+		},
+		controlFD: dirFD,
+	}
+	parentInode.inode.init(parentInode)
+	parent := &dentry{
+		name:  "",
+		inode: &parentInode.inode,
+	}
+	parent.init()
+
+	di := &directfsInode{
+		inode: inode{
+			fs:      fs,
+			mode:    atomicbitops.FromUint32(linux.S_IFREG | 0444),
+			readFD:  atomicbitops.FromInt32(-1),
+			writeFD: atomicbitops.FromInt32(-1),
+			mmapFD:  atomicbitops.FromInt32(-1),
+		},
+		controlFD: -1,
+	}
+	di.inode.init(di)
+	d := &dentry{
+		name:  "locked.txt",
+		inode: &di.inode,
+	}
+	d.init()
+	d.parent.Store(parent)
+
+	var fd specialFileFD
+	mnt := vfsObj.NewDisconnectedMount(&fs.vfsfs, &parent.vfsd, &vfs.MountOptions{})
+	if err := fd.vfsfd.Init(&fd, linux.O_RDWR, auth.CredentialsFromContext(ctx), mnt, &d.vfsd, &vfs.FileDescriptionOptions{}); err != nil {
+		t.Fatalf("fd.vfsfd.Init(): %v", err)
+	}
+
+	err = fd.completeRestore(ctx)
+	var corruption vfs.ErrCorruption
+	if !errors.As(err, &corruption) {
+		t.Errorf("specialFileFD.completeRestore() = %T (%v), want vfs.ErrCorruption", err, err)
 	}
 }
