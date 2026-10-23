@@ -106,3 +106,9 @@ func (p *PageTables) cloneUpperShared() {
 
 // PTEs is a collection of entries.
 type PTEs [entriesPerPage]PTE
+
+// newPTEs allocates a page table page. The returned page table page may not be
+// aligned.
+func newPTEs() *PTEs {
+	return new(PTEs)
+}
