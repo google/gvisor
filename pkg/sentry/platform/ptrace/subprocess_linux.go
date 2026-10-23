@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ptrace/stubfilter"
 )
 
 const syscallEvent unix.Signal = 0x80
@@ -71,60 +72,15 @@ func createStub() (*thread, error) {
 //
 // Precondition: the runtime OS thread must be locked.
 func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error) {
-	// Create a BPF program that allows only the system calls needed by the
-	// stub and all its children. This is used to create child stubs
-	// (below), so we must include the ability to fork, but otherwise lock
-	// down available calls only to what is needed.
-	var rules []seccomp.RuleSet
-	if defaultAction != seccomp.Allow {
-		rules = append(rules, seccomp.RuleSet{
-			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-				unix.SYS_CLONE: seccomp.Or{
-					// Allow creation of new subprocesses (used by the master).
-					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGKILL)},
-					// Allow creation of new threads within a single address space (used by address spaces).
-					seccomp.PerArg{
-						seccomp.EqualTo(
-							unix.CLONE_FILES |
-								unix.CLONE_FS |
-								unix.CLONE_SIGHAND |
-								unix.CLONE_THREAD |
-								unix.CLONE_PTRACE |
-								unix.CLONE_VM)},
-				},
-
-				// For the initial process creation.
-				unix.SYS_WAIT4: seccomp.MatchAll{},
-				unix.SYS_EXIT:  seccomp.MatchAll{},
-
-				// For the stub prctl dance (all).
-				unix.SYS_PRCTL:   seccomp.PerArg{seccomp.EqualTo(unix.PR_SET_PDEATHSIG), seccomp.EqualTo(unix.SIGKILL)},
-				unix.SYS_GETPPID: seccomp.MatchAll{},
-
-				// For the stub to stop itself (all).
-				unix.SYS_GETPID: seccomp.MatchAll{},
-				unix.SYS_KILL:   seccomp.PerArg{seccomp.AnyValue{}, seccomp.EqualTo(unix.SIGSTOP)},
-
-				// Injected to support the address space operations.
-				unix.SYS_MMAP:   seccomp.MatchAll{},
-				unix.SYS_MUNMAP: seccomp.MatchAll{},
-			}),
-			Action: seccomp.Allow,
-		})
+	name := stubfilter.ProgramName(defaultAction)
+	program, ok := GetPrecompiled(name)
+	if !ok {
+		panic(fmt.Sprintf("precompiled seccomp program %q not found", name))
 	}
-	rules = appendArchSeccompRules(rules, defaultAction)
-	program := &seccomp.Program{
-		RuleSets: rules,
-		Options: seccomp.ProgramOptions{
-			DefaultAction: defaultAction,
-			BadArchAction: defaultAction,
-		},
-	}
-	instrs, _, err := program.Build()
+	instrs, err := program.RenderInstructions(nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot render precompiled seccomp program %q: %w", name, err)
 	}
-
 	return forkStub(flags, instrs)
 }
 

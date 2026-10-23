@@ -1,4 +1,4 @@
-// Copyright 2021 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package systrap
+//go:build amd64
+// +build amd64
+
+package stubfilter
 
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 )
 
-func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
-	return append(rules, []seccomp.RuleSet{
+func setSysmsgThreadArchVars(vars precompiledseccomp.Values, stubStart uint64) {
+	vars.SetUint64(stubStartVar, stubStart)
+}
+
+func stubProcessArchRules() []seccomp.RuleSet {
+	return []seccomp.RuleSet{
+		// Rules for trapping vsyscall access.
+		{
+			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+				unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
+				unix.SYS_TIME:         seccomp.MatchAll{},
+				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
+			}),
+			Action:   seccomp.Trap,
+			Vsyscall: true,
+		},
+		{
+			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+				unix.SYS_ARCH_PRCTL: seccomp.Or{
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_FS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_GS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_GS)},
+				},
+			}),
+			Action: seccomp.Allow,
+		},
+	}
+}
+
+func sysmsgThreadArchRules(vars precompiledseccomp.Values) []seccomp.RuleSet {
+	stubStart := vars.GetUint64(stubStartVar)
+	return []seccomp.RuleSet{
 		{
 			// Rules for trapping vsyscall access.
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
@@ -75,5 +111,5 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 			}),
 			Action: seccomp.Allow,
 		},
-	}...)
+	}
 }
