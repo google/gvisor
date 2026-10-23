@@ -14,12 +14,12 @@
 
 #include <fcntl.h>
 #include <linux/limits.h>
-#include <linux/unistd.h>
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -80,7 +80,7 @@ TEST(SpliceTest, TwoRegularFiles) {
 }
 
 int memfd_create(const std::string& name, unsigned int flags) {
-  return syscall(__NR_memfd_create, name.c_str(), flags);
+  return syscall(SYS_memfd_create, name.c_str(), flags);
 }
 
 TEST(SpliceTest, NegativeOffset) {
