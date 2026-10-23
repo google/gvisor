@@ -318,30 +318,6 @@ type bucket struct {
 	tuples tupleList
 }
 
-// A netAndTransHeadersFunc returns the network and transport headers found
-// in an ICMP payload. The transport layer's payload will not be returned.
-//
-// May panic if the packet does not hold the transport header.
-type netAndTransHeadersFunc func(icmpPayload []byte, minTransHdrLen int) (netHdr header.Network, transHdrBytes []byte)
-
-func v4NetAndTransHdr(icmpPayload []byte, minTransHdrLen int) (header.Network, []byte) {
-	netHdr := header.IPv4(icmpPayload)
-	// Do not use netHdr.Payload() as we might not hold the full packet
-	// in the ICMP error; Payload() panics if the buffer is smaller than
-	// the total length specified in the IPv4 header.
-	transHdr := icmpPayload[netHdr.HeaderLength():]
-	return netHdr, transHdr[:minTransHdrLen]
-}
-
-func v6NetAndTransHdr(icmpPayload []byte, minTransHdrLen int) (header.Network, []byte) {
-	netHdr := header.IPv6(icmpPayload)
-	// Do not use netHdr.Payload() as we might not hold the full packet
-	// in the ICMP error; Payload() panics if the IP payload is smaller than
-	// the payload length specified in the IPv6 header.
-	transHdr := icmpPayload[header.IPv6MinimumSize:]
-	return netHdr, transHdr[:minTransHdrLen]
-}
-
 func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkProtocolNumber, transHdr header.Transport, transProto tcpip.TransportProtocolNumber) tupleID {
 	return tupleID{
 		srcAddr:                   netHdr.SourceAddress(),
@@ -353,8 +329,8 @@ func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkPro
 	}
 }
 
-func getTupleIDForPacketInICMPError(pkt *PacketBuffer, getNetAndTransHdr netAndTransHeadersFunc, netProto tcpip.NetworkProtocolNumber, netLen int, transProto tcpip.TransportProtocolNumber) (tupleID, bool) {
-	if netHdr, transHdr, ok := pkt.GetEmbeddedNetAndTransHeaders(netLen, getNetAndTransHdr, transProto); ok {
+func getTupleIDForPacketInICMPError(pkt *PacketBuffer, netProto tcpip.NetworkProtocolNumber) (tupleID, bool) {
+	if netHdr, transHdr, transProto, ok := pkt.GetEmbeddedNetAndTransHeaders(netProto); ok {
 		return tupleID{
 			srcAddr:                   netHdr.DestinationAddress(),
 			srcPortOrEchoRequestIdent: transHdr.DestinationPort(),
@@ -435,7 +411,7 @@ func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 			return tupleID{}, getTupleIDNotOK
 		}
 
-		if tid, ok := getTupleIDForPacketInICMPError(pkt, v4NetAndTransHdr, header.IPv4ProtocolNumber, header.IPv4MinimumSize, ipv4.TransportProtocol()); ok {
+		if tid, ok := getTupleIDForPacketInICMPError(pkt, header.IPv4ProtocolNumber); ok {
 			// Do not create a new connection in response to an ICMP error.
 			return tid, getTupleIDOKAndDontAllowNewConn
 		}
@@ -458,13 +434,7 @@ func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 			return tupleID{}, getTupleIDNotOK
 		}
 
-		h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
-		if !ok {
-			return tupleID{}, getTupleIDNotOK
-		}
-
-		// TODO(https://gvisor.dev/issue/6789): Handle extension headers.
-		if tid, ok := getTupleIDForPacketInICMPError(pkt, v6NetAndTransHdr, header.IPv6ProtocolNumber, header.IPv6MinimumSize, header.IPv6(h).TransportProtocol()); ok {
+		if tid, ok := getTupleIDForPacketInICMPError(pkt, header.IPv6ProtocolNumber); ok {
 			// Do not create a new connection in response to an ICMP error.
 			return tid, getTupleIDOKAndDontAllowNewConn
 		}

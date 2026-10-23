@@ -106,6 +106,104 @@ func (*stubDispatcher) DeliverRawPacket(tcpip.TransportProtocolNumber, *stack.Pa
 	// No-op.
 }
 
+type controlDispatcher struct {
+	stubDispatcher
+	protocol tcpip.TransportProtocolNumber
+	payload  []byte
+}
+
+func (d *controlDispatcher) DeliverTransportError(_, _ tcpip.Address, _ tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, _ stack.TransportError, pkt *stack.PacketBuffer) {
+	d.protocol = protocol
+	data := pkt.Data().ToBuffer()
+	defer data.Release()
+	d.payload = data.Flatten()
+}
+
+func TestHandleControlExtensionHeaders(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		extensions []byte
+		wantError  bool
+	}{
+		{
+			name:       "destination options",
+			extensions: []byte{uint8(header.UDPProtocolNumber), 0, 0, 0, 0, 0, 0, 0},
+			wantError:  true,
+		},
+		{
+			name: "first fragment",
+			extensions: []byte{
+				uint8(header.IPv6FragmentExtHdrIdentifier), 0, 0, 0, 0, 0, 0, 0,
+				uint8(header.UDPProtocolNumber), 0, 0, 1, 1, 2, 3, 4,
+			},
+			wantError: true,
+		},
+		{
+			name: "atomic fragment",
+			extensions: []byte{
+				uint8(header.IPv6FragmentExtHdrIdentifier), 0, 0, 0, 0, 0, 0, 0,
+				uint8(header.UDPProtocolNumber), 0, 0, 0, 1, 2, 3, 4,
+			},
+			wantError: true,
+		},
+		{
+			name: "non-first fragment",
+			extensions: []byte{
+				uint8(header.IPv6FragmentExtHdrIdentifier), 0, 0, 0, 0, 0, 0, 0,
+				uint8(header.UDPProtocolNumber), 0, 0, 8, 1, 2, 3, 4,
+			},
+		},
+		{
+			// Claims a 24-byte extension header, but the quote has only 16 bytes.
+			name:       "truncated extension",
+			extensions: []byte{uint8(header.UDPProtocolNumber), 2, 0, 0, 0, 0, 0, 0},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := newTestContext()
+			defer c.cleanup()
+			dispatcher := &controlDispatcher{}
+			nic := &testInterface{LinkEndpoint: channel.New(0, header.IPv6MinimumMTU, linkAddr0)}
+			ep := c.s.NetworkProtocolInstance(ProtocolNumber).NewEndpoint(nic, dispatcher).(*endpoint)
+			defer ep.Close()
+			if err := ep.Enable(); err != nil {
+				t.Fatalf("Enable(): %s", err)
+			}
+			addr, err := ep.AddAndAcquirePermanentAddress(lladdr0.WithPrefix(), stack.AddressProperties{})
+			if err != nil {
+				t.Fatalf("AddAndAcquirePermanentAddress(): %s", err)
+			}
+			addr.DecRef()
+
+			transport := []byte{1, 2, 3, 4, 0, 8, 5, 6}
+			quote := make([]byte, header.IPv6MinimumSize)
+			header.IPv6(quote).Encode(&header.IPv6Fields{
+				// A valid ICMP quote need not contain the complete original payload.
+				PayloadLength:     uint16(len(test.extensions) + len(transport) + 128),
+				TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6DestinationOptionsExtHdrIdentifier),
+				SrcAddr:           lladdr0,
+				DstAddr:           lladdr1,
+			})
+			quote = append(quote, test.extensions...)
+			quote = append(quote, transport...)
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(quote)})
+			defer pkt.DecRef()
+			ep.handleControl(&icmpv6DestinationPortUnreachableSockError{}, pkt)
+			if got, want := dispatcher.payload != nil, test.wantError; got != want {
+				t.Fatalf("transport error delivered = %t, want %t", got, want)
+			}
+			if test.wantError {
+				if got, want := dispatcher.protocol, header.UDPProtocolNumber; got != want {
+					t.Errorf("transport protocol = %d, want %d", got, want)
+				}
+				if got, want := dispatcher.payload, transport; !bytes.Equal(got, want) {
+					t.Errorf("quoted transport = %x, want %x", got, want)
+				}
+			}
+		})
+	}
+}
+
 var _ stack.NetworkInterface = (*testInterface)(nil)
 
 type testInterface struct {
