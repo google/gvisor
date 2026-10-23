@@ -118,6 +118,7 @@ func createLimitSet(spec *specs.Spec, enableTPUProxy bool) (*limits.LimitSet, er
 	if err != nil {
 		return nil, err
 	}
+	ls = ls.GetCopy()
 	// Set RLIMIT_MEMLOCK's default value to unlimited when TPUProxy is enabled.
 	// The value will be overwritten if the exact rlimit is provided.
 	if enableTPUProxy {
