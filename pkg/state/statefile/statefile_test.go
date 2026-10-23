@@ -19,6 +19,7 @@ import (
 	crand "crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"runtime"
@@ -232,6 +233,68 @@ func TestMetadataKeyVerification(t *testing.T) {
 	}
 	if _, err := Metadata(bytes.NewReader(unkeyedBuf.Bytes()), key); !errors.Is(err, compressio.ErrHashMismatch) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Errorf("Metadata with key on unkeyed statefile = %v, want ErrHashMismatch or ErrUnexpectedEOF", err)
+	}
+}
+
+// TestStatefileShortReads reads a statefile from a pipe whose writer gives at
+// most three bytes at a time, so every read returns fewer bytes than asked.
+func TestStatefileShortReads(t *testing.T) {
+	integrityKey, err := randomKey()
+	if err != nil {
+		t.Fatalf("can't generate key: %v", err)
+	}
+	data := []byte("statefile data read from a pipe in short reads")
+	for _, compress := range []CompressionLevel{CompressionLevelNone, CompressionLevelFlateBestSpeed} {
+		for _, key := range [][]byte{nil, integrityKey} {
+			t.Run(fmt.Sprintf("%s/key=%t", compress, key != nil), func(t *testing.T) {
+				metadata := compress.ToMetadata()
+				metadata["foo"] = "bar"
+				var encoded bytes.Buffer
+				w, err := NewWriter(&encoded, key, metadata)
+				if err != nil {
+					t.Fatalf("NewWriter: %v", err)
+				}
+				if _, err := w.Write(data); err != nil {
+					t.Fatalf("Write: %v", err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatalf("Close: %v", err)
+				}
+
+				pr, pw := io.Pipe()
+				defer pr.Close()
+				go func() {
+					b := encoded.Bytes()
+					for i := 0; len(b) > 0; i++ {
+						n := min(i%3+1, len(b))
+						if _, err := pw.Write(b[:n]); err != nil {
+							pw.CloseWithError(err)
+							return
+						}
+						b = b[n:]
+					}
+					pw.Close()
+				}()
+
+				r, gotMetadata, err := NewReader(pr, key)
+				if err != nil {
+					t.Fatalf("NewReader: %v", err)
+				}
+				if got := gotMetadata["foo"]; got != "bar" {
+					t.Errorf("metadata[%q] = %q, want %q", "foo", got, "bar")
+				}
+				got, err := io.ReadAll(r)
+				if err != nil {
+					t.Fatalf("ReadAll: %v", err)
+				}
+				if !bytes.Equal(got, data) {
+					t.Errorf("data = %q, want %q", got, data)
+				}
+				if err := r.Verify(); err != nil {
+					t.Errorf("Verify: %v", err)
+				}
+			})
+		}
 	}
 }
 
