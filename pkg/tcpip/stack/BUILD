@@ -360,6 +360,7 @@ go_test(
     deps = [
         "//pkg/buffer",
         "//pkg/refs",
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
