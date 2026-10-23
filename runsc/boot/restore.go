@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
@@ -57,6 +58,21 @@ import (
 	"gvisor.dev/gvisor/runsc/version"
 )
 
+// checkPageSizeMetadata returns an error if the page size saved in the given
+// checkpoint metadata doesn't match the current page size.
+func checkPageSizeMetadata(metadata map[string]string) error {
+	savedPageSize, ok := metadata[PageSizeKey]
+	if !ok {
+		// Checkpoints taken by versions of runsc that predate PageSizeKey
+		// are rejected by the runsc version check.
+		return nil
+	}
+	if currentPageSize := strconv.FormatUint(uint64(hostarch.PageSize), 10); savedPageSize != currentPageSize {
+		return fmt.Errorf("page size does not match across checkpoint restore, checkpoint: %v current: %v", savedPageSize, currentPageSize)
+	}
+	return nil
+}
+
 const (
 	// VersionKey is the key used to save runsc version in the save metadata and compare
 	// it across checkpoint restore.
@@ -66,6 +82,11 @@ const (
 	// ContainerSpecsKey is the key used to add and pop the container specs to the
 	// metadata during save/restore.
 	ContainerSpecsKey = "container_specs"
+	// PageSizeKey is the key used to save the page size in the save metadata
+	// and compare it across checkpoint restore. The same runsc binary can run
+	// on hosts with different page sizes (e.g. 4K and 64K on arm64), but
+	// checkpoints can only be restored on hosts with the same page size.
+	PageSizeKey = "page_size"
 
 	// TSC snapshot metadata keys. These are written by the save side in
 	// pkg/sentry/state and consumed by computeTSCOffset.
@@ -879,6 +900,9 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.Sav
 
 	// Save runsc version.
 	saveOpts.Metadata[VersionKey] = version.Version()
+
+	// Save the page size.
+	saveOpts.Metadata[PageSizeKey] = strconv.FormatUint(uint64(hostarch.PageSize), 10)
 
 	saveOpts.Metadata[networkKey] = l.root.conf.Network.String()
 	if l.noRootContainer.enabled {

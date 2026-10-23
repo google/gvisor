@@ -97,7 +97,7 @@ func Boot() (*kernel.Kernel, error) {
 
 	// Create timekeeper.
 	tk := kernel.NewTimekeeper()
-	params := kernel.NewVDSOParamPage(k.MemoryFile(), vdso.ParamPage.FileRange())
+	params := kernel.NewVDSOParamPage(k.MemoryFile(), vdso.ParamsFileRange())
 	tk.SetClocks(time.NewCalibratedClocks(false), params)
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())

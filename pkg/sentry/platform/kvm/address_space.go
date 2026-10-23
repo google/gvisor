@@ -180,7 +180,8 @@ func (as *addressSpace) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.Fil
 		// lookup in our host page tables for this translation.
 		if precommit {
 			s := b.ToSlice()
-			for i := 0; i < len(s); i += hostarch.PageSize {
+			pageSize := int(hostarch.PageSize)
+			for i := 0; i < len(s); i += pageSize {
 				_ = s[i] // Touch to commit.
 			}
 		}
