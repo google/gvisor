@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -72,5 +73,34 @@ func TestRemoveRouteRemovesFirstMatchOnly(t *testing.T) {
 	}
 	if err := delRoute(); err != syserr.ErrNoProcess {
 		t.Fatalf("third RemoveRoute = %v, want %v", err, syserr.ErrNoProcess)
+	}
+}
+
+func TestUnprivilegedSysctlDefaults(t *testing.T) {
+	s := netstack.NewStack(stack.New(stack.Options{}), 0)
+	if got, want := s.UnprivilegedPortStart(), uint16(1024); got != want {
+		t.Errorf("UnprivilegedPortStart() = %d, want %d", got, want)
+	}
+	if low, high := s.PingGroupRange(); low != 1 || high != 0 {
+		t.Errorf("PingGroupRange() = (%d, %d), want (1, 0)", low, high)
+	}
+}
+
+func TestUnprivilegedPortStartPortRangeCrossCheck(t *testing.T) {
+	s := netstack.NewStack(stack.New(stack.Options{}), 0)
+	if err := s.SetPortRange(32768, 60999); err != nil {
+		t.Fatalf("SetPortRange(32768, 60999) = %v", err)
+	}
+	if err := s.SetUnprivilegedPortStart(32769); !linuxerr.Equals(linuxerr.EINVAL, err) {
+		t.Errorf("SetUnprivilegedPortStart(32769) = %v, want EINVAL", err)
+	}
+	if err := s.SetUnprivilegedPortStart(32768); err != nil {
+		t.Fatalf("SetUnprivilegedPortStart(32768) = %v", err)
+	}
+	if err := s.SetPortRange(32767, 60999); !linuxerr.Equals(linuxerr.EINVAL, err) {
+		t.Errorf("SetPortRange(32767, 60999) = %v, want EINVAL", err)
+	}
+	if low, _ := s.PortRange(); low != 32768 {
+		t.Errorf("PortRange() low = %d, want 32768", low)
 	}
 }

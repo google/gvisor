@@ -52,6 +52,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	cgroup2fs "gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroup2fs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -866,6 +867,9 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
+	if err := applyNetSysctls(args.Spec, netns.Stack(), rootUserNs); err != nil {
+		return nil, err
+	}
 	args.StartupTimer.Reached("network stack created")
 
 	if args.TotalHostMem > 0 {
@@ -1569,6 +1573,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	if creds == nil {
 		return fmt.Errorf("getting root credentials")
 	}
+	// All containers share the root network namespace.
+	if err := applyNetSysctls(spec, l.k.RootNetworkNamespace().Stack(), l.k.RootUserNamespace()); err != nil {
+		return err
+	}
 	var pidns *kernel.PIDNamespace
 	if ns, ok := specutils.GetNS(specs.PIDNamespace, spec); ok {
 		if ns.Path != "" {
@@ -2165,6 +2173,34 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, userns *aut
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
 
+}
+
+// netSysctls are the OCI linux.sysctl keys that are applied to the sandbox's
+// netstack, in the order they are applied.
+var netSysctls = []string{"ip_unprivileged_port_start", "ping_group_range"}
+
+// applyNetSysctls applies the netSysctls present in spec to s. As when a
+// runtime writes them to /proc/sys, an invalid value is an error. Host network
+// stacks are left alone: the host's network namespace applies to host
+// sockets.
+func applyNetSysctls(spec *specs.Spec, s inet.Stack, userns *auth.UserNamespace) error {
+	if spec.Linux == nil {
+		return nil
+	}
+	if _, ok := s.(*netstack.Stack); !ok {
+		return nil
+	}
+	for _, name := range netSysctls {
+		key := "net.ipv4." + name
+		val, ok := spec.Linux.Sysctl[key]
+		if !ok {
+			continue
+		}
+		if err := proc.SetNetIPv4Sysctl(context.Background(), s, userns, name, val); err != nil {
+			return fmt.Errorf("setting %s=%s: %w", key, val, err)
+		}
+	}
+	return nil
 }
 
 func (c *sandboxNetstackCreator) newEmptySandboxNetworkStack() (*netstack.Stack, error) {
