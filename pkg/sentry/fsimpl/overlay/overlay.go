@@ -145,6 +145,14 @@ type filesystem struct {
 	// is protected by dirInoCacheMu.
 	lastDirIno uint64
 
+	// copiedUpIDs maps the upper layer inode number of a copied-up
+	// non-directory file to the device and inode numbers it had before
+	// copy-up, which it keeps (Linux: fs/overlayfs/inode.c:ovl_getattr()
+	// reports the copy-up origin's). Each lower file is copied up at most
+	// once, so this is bounded by the number of lower files. copiedUpIDs is
+	// protected by dirInoCacheMu.
+	copiedUpIDs map[uint64]layerDevNoAndIno
+
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
 	maxFilenameLen uint64
 }
@@ -350,6 +358,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		dirDevMinor:    dirDevMinor,
 		lowerDevMinors: make(map[layerDevNumber]uint32),
 		dirInoCache:    make(map[layerDevNoAndIno]uint64),
+		copiedUpIDs:    make(map[uint64]layerDevNoAndIno),
 		maxFilenameLen: linux.NAME_MAX,
 	}
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
@@ -533,6 +542,19 @@ func (fs *filesystem) releaseDirIno(orig layerDevNoAndIno) {
 	fs.dirInoCacheMu.Lock()
 	defer fs.dirInoCacheMu.Unlock()
 	delete(fs.dirInoCache, orig)
+}
+
+func (fs *filesystem) setCopiedUpID(upperIno uint64, id layerDevNoAndIno) {
+	fs.dirInoCacheMu.Lock()
+	defer fs.dirInoCacheMu.Unlock()
+	fs.copiedUpIDs[upperIno] = id
+}
+
+func (fs *filesystem) copiedUpID(upperIno uint64) (layerDevNoAndIno, bool) {
+	fs.dirInoCacheMu.Lock()
+	defer fs.dirInoCacheMu.Unlock()
+	id, ok := fs.copiedUpIDs[upperIno]
+	return id, ok
 }
 
 func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, error) {
