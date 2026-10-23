@@ -257,9 +257,6 @@ func hasPodCgroupParent(bundle, cgPath string) bool {
 //
 // +checklocksexclude:s.mu
 func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.CreateWithFSRestoreRequest) (*task.CreateTaskResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	c, err := NewContainer(ctx, s.platform, &ContainerConfig{
 		ID:                 rfs.Create.ID,
 		Bundle:             rfs.Create.Bundle,
@@ -276,7 +273,9 @@ func (s *runscService) CreateWithFSRestore(ctx context.Context, rfs *extension.C
 		return nil, err
 	}
 
+	s.mu.Lock()
 	s.containers[rfs.Create.ID] = c
+	s.mu.Unlock()
 
 	p, err := c.Process("")
 	if err != nil {
