@@ -552,7 +552,9 @@ func walkStatusToString(ws WalkStatus) string {
 	case WalkComponentSymlink:
 		return "ComponentSymlink"
 	default:
-		panic(fmt.Sprintf("Unknown WalkStatus: %d", ws))
+		// ws may come from an untrusted server. Do not panic, since this is used
+		// to log responses before they are validated.
+		return fmt.Sprintf("Unknown(%d)", ws)
 	}
 }
 
