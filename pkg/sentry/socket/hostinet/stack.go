@@ -252,12 +252,12 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
-func (*Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+func (*Stack) AddInterfaceAddr(_ context.Context, idx int32, addr inet.InterfaceAddr) error {
 	return addInterfaceAddr(idx, addr)
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
-func (*Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+func (*Stack) RemoveInterfaceAddr(_ context.Context, idx int32, addr inet.InterfaceAddr) error {
 	return removeInterfaceAddr(idx, addr)
 }
 
