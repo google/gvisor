@@ -375,6 +375,10 @@ type Cgroup interface {
 	Update(res *specs.LinuxResources) error
 	Uninstall() error
 	Join() (func(), error)
+	// AllowDevices lets processes in the cgroup access the devices matched by
+	// rules, besides those allowed by earlier calls from any process. Other
+	// devices are denied.
+	AllowDevices(rules []DeviceRule) error
 	CloneIntoCgroup() (*os.File, error)
 	CPUQuota() (int64, error)
 	CPUPeriod() (int64, error)

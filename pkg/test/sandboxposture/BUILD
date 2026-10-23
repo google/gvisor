@@ -15,6 +15,8 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/test/sandboxposture",
     visibility = ["//:sandbox"],
     deps = [
+        "@com_github_cilium_ebpf//:go_default_library",
+        "@com_github_cilium_ebpf//link:go_default_library",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",
