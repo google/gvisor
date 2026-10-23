@@ -245,6 +245,10 @@ const ContMgrCreateTraceSession = "containerManager.CreateTraceSession"
 type CreateTraceSessionArgs struct {
 	Config seccheck.SessionConfig
 	Force  bool
+	// SinkIndexes holds the index in Config.Sinks of the sink for each endpoint
+	// in FilePayload. If SinkIndexes is nil, FilePayload holds one endpoint for
+	// each sink, in the same order.
+	SinkIndexes []int
 	urpc.FilePayload
 }
 
