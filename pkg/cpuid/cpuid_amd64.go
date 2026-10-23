@@ -553,8 +553,8 @@ func (fs FeatureSet) UnsetAMX() FeatureSet {
 	return sfs
 }
 
-// unsetAMX removes the AMX features, their XCR0 bits and their state component
-// subleaves from s.
+// unsetAMX removes the AMX features, their XCR0 bits, their state component
+// subleaves and the AMX tile and TMUL information leaves from s.
 func unsetAMX(s Static) {
 	X86FeatureAMX_TILE.Unset(s)
 	X86FeatureAMX_INT8.Unset(s)
@@ -565,4 +565,9 @@ func unsetAMX(s Static) {
 	s.Set(in, out)
 	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent})
 	delete(s, In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent})
+	for in := range s {
+		if fn := cpuidFunction(in.Eax); fn == amxTileInfo || fn == amxTMULInfo {
+			delete(s, in)
+		}
+	}
 }
