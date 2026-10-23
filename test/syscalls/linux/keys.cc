@@ -34,10 +34,13 @@
 #include "gtest/gtest.h"
 #include "absl/random/random.h"
 #include "absl/strings/numbers.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -51,6 +54,7 @@
 #define KEY_POS_SEARCH 0x08000000
 #define KEY_POS_LINK 0x10000000
 #define KEY_POS_SETATTR 0x20000000
+#define KEY_POS_ALL 0x3f000000
 
 #define KEY_USR_VIEW 0x00010000
 #define KEY_USR_READ 0x00020000
@@ -909,6 +913,134 @@ TEST(KeysTest, SearchableKeyringIsSharedAcrossThreads) {
         << "Bit " << bit << " in second child key";
   }
   EXPECT_EQ(first_child_final_key.perm, second_child_final_key.perm);
+}
+
+// KeyEventuallyReleased returns true once key_id can no longer be found.
+// Linux drops the references held by an exited task's credentials after an
+// RCU grace period, so this retries for a while.
+bool KeyEventuallyReleased(int64_t key_id) {
+  for (int i = 0; i < 1000; ++i) {
+    if (syscall(__NR_keyctl, KEYCTL_DESCRIBE, key_id, 0, 0, 0) < 0) {
+      EXPECT_EQ(errno, ENOKEY);
+      return errno == ENOKEY;
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  }
+  return false;
+}
+
+// Joining a session keyring drops the reference on the previous one, which
+// returns its quota. Linux frees the previous credentials, and with them that
+// reference, only after an RCU grace period, so natively this runs only as
+// root, whose key quota is far above the number of joins.
+TEST(KeysTest, RepeatedJoinsReleasePreviousKeyring) {
+  SKIP_IF(!IsRunningOnGvisor() && geteuid() != 0);
+  ScopedThread([&] {
+    for (int i = 0; i < 1000; ++i) {
+      ASSERT_NO_ERRNO(keyctl(KEYCTL_JOIN_SESSION_KEYRING)) << "join " << i;
+    }
+  }).Join();
+}
+
+// A keyring is released once the only task holding it exits.
+TEST(KeysTest, KeyringReleasedAfterHolderExits) {
+  const std::string name = absl::StrCat("keys_test_released_", getpid());
+  int64_t id = 0;
+  ScopedThread([&] {
+    id = ASSERT_NO_ERRNO_AND_VALUE(
+        keyctl(KEYCTL_JOIN_SESSION_KEYRING, (uint64_t)(name.c_str())));
+    // Let tasks that do not possess the keyring describe it.
+    ASSERT_NO_ERRNO(keyctl(KEYCTL_SETPERM, id,
+                           KEY_POS_ALL | KEY_USR_VIEW | KEY_USR_SEARCH));
+  }).Join();
+  ASSERT_GT(id, 0);
+  EXPECT_TRUE(KeyEventuallyReleased(id));
+}
+
+// JoinKeyringInForkedProcess forks a child that joins the session keyring
+// named name, lets its owner describe it, optionally moves to a new user
+// namespace, and exits. It returns the keyring's ID once the child is reaped.
+PosixErrorOr<int32_t> JoinKeyringInForkedProcess(const std::string& name,
+                                                 bool unshare_userns) {
+  int fds[2];
+  if (pipe(fds) < 0) {
+    return PosixError(errno, "pipe");
+  }
+  const char* const name_ptr = name.c_str();
+  const PosixErrorOr<int> status = InForkedProcess([&] {
+    const int64_t id =
+        syscall(__NR_keyctl, KEYCTL_JOIN_SESSION_KEYRING, name_ptr, 0, 0, 0);
+    TEST_PCHECK(id > 0);
+    TEST_PCHECK(syscall(__NR_keyctl, KEYCTL_SETPERM, id,
+                        KEY_POS_ALL | KEY_USR_VIEW | KEY_USR_SEARCH, 0,
+                        0) == 0);
+    if (unshare_userns) {
+      TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+    }
+    const int32_t id32 = id;
+    TEST_PCHECK(write(fds[1], &id32, sizeof(id32)) == sizeof(id32));
+    _exit(0);
+  });
+  close(fds[1]);
+  int32_t id = 0;
+  const ssize_t n = read(fds[0], &id, sizeof(id));
+  close(fds[0]);
+  RETURN_IF_ERRNO(status);
+  if (status.ValueOrDie() != 0) {
+    return PosixError(
+        ECHILD, absl::StrCat("child exited with status ", status.ValueOrDie()));
+  }
+  if (n != sizeof(id)) {
+    return PosixError(EIO, absl::StrCat("read returned ", n));
+  }
+  return id;
+}
+
+// A keyring is released once the process holding it exits and is reaped.
+TEST(KeysTest, KeyringReleasedAfterForkedHolderExits) {
+  const std::string name = absl::StrCat("keys_test_forked_", getpid());
+  const int32_t id = ASSERT_NO_ERRNO_AND_VALUE(
+      JoinKeyringInForkedProcess(name, /*unshare_userns=*/false));
+  EXPECT_TRUE(KeyEventuallyReleased(id));
+}
+
+// A keyring kept across unshare(CLONE_NEWUSER) is released from the user
+// namespace it was created in once its holder exits.
+TEST(KeysTest, KeyringReleasedAfterHolderLeavesUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  const std::string name = absl::StrCat("keys_test_userns_", getpid());
+  const int32_t id = ASSERT_NO_ERRNO_AND_VALUE(
+      JoinKeyringInForkedProcess(name, /*unshare_userns=*/true));
+  EXPECT_TRUE(KeyEventuallyReleased(id));
+}
+
+// A keyring stays usable while any task holds it, and is released once the
+// last holder exits.
+TEST(KeysTest, SharedKeyringOutlivesOneHolder) {
+  const std::string name = absl::StrCat("keys_test_shared_", getpid());
+  int64_t id = 0;
+  ScopedThread([&] {
+    id = ASSERT_NO_ERRNO_AND_VALUE(
+        keyctl(KEYCTL_JOIN_SESSION_KEYRING, (uint64_t)(name.c_str())));
+    ASSERT_NO_ERRNO(keyctl(KEYCTL_SETPERM, id,
+                           KEY_POS_ALL | KEY_USR_VIEW | KEY_USR_SEARCH));
+    ScopedThread([&] {
+      ASSERT_THAT(keyctl(KEYCTL_GET_KEYRING_ID, KEY_SPEC_SESSION_KEYRING),
+                  IsPosixErrorOkAndHolds(id));
+      // Drop this thread's reference; the parent thread still holds one.
+      ASSERT_THAT(keyctl(KEYCTL_JOIN_SESSION_KEYRING),
+                  IsPosixErrorOkAndHolds(::testing::Ne(id)));
+      MaybeSave();
+      EXPECT_THAT(keyctl(KEYCTL_DESCRIBE, id),
+                  IsPosixErrorOkAndHolds(::testing::Gt(0)));
+      EXPECT_THAT(keyctl(KEYCTL_JOIN_SESSION_KEYRING, (uint64_t)(name.c_str())),
+                  IsPosixErrorOkAndHolds(id));
+    }).Join();
+    EXPECT_THAT(keyctl(KEYCTL_GET_KEYRING_ID, KEY_SPEC_SESSION_KEYRING),
+                IsPosixErrorOkAndHolds(id));
+  }).Join();
+  ASSERT_GT(id, 0);
+  EXPECT_TRUE(KeyEventuallyReleased(id));
 }
 
 }  // namespace

@@ -712,7 +712,8 @@ type Task struct {
 	userCounters *UserCounters
 
 	// sessionKeyring is a pointer to the task's session keyring, if set.
-	// It is guaranteed to be of type "keyring".
+	// It is guaranteed to be of type "keyring". The task holds a reference on
+	// it, which it drops when it exits.
 	//
 	// +checklocks:mu
 	sessionKeyring *auth.Key

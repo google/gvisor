@@ -46,6 +46,17 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "key_refs",
+    out = "key_refs.go",
+    package = "auth",
+    prefix = "key",
+    template = "//pkg/refs:refs_template",
+    types = {
+        "T": "Key",
+    },
+)
+
 declare_mutex(
     name = "user_namespace_mutex",
     out = "user_namespace_mutex.go",
@@ -75,6 +86,7 @@ go_library(
         "id_map_range.go",
         "id_map_set.go",
         "key.go",
+        "key_refs.go",
         "keyset_mutex.go",
         "user_namespace.go",
         "user_namespace_mutex.go",
@@ -100,10 +112,14 @@ go_library(
 
 go_test(
     name = "auth_test",
-    srcs = ["capability_set_test.go"],
+    srcs = [
+        "capability_set_test.go",
+        "key_test.go",
+    ],
     embed = [":auth"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/errors/linuxerr",
+        "//pkg/refs",
     ],
 )

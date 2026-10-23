@@ -359,7 +359,12 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	userns := t.Credentials().UserNamespace
 	childPIDNS := t.childPIDNamespace
 	t.childPIDNamespace = nil
+	sessionKeyring := t.sessionKeyring
+	t.sessionKeyring = nil
 	t.mu.Unlock()
+	if sessionKeyring != nil {
+		sessionKeyring.DecRef(t)
+	}
 	mntns.DecRef(t)
 	utsns.DecRef(t)
 	ipcns.DecRef(t)

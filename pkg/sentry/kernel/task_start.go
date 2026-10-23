@@ -115,7 +115,7 @@ type TaskConfig struct {
 	UserCounters *UserCounters
 
 	// SessionKeyring is the session keyring associated with the parent task.
-	// It may be nil.
+	// It may be nil. If it is not nil, TaskConfig holds a reference on it.
 	SessionKeyring *auth.Key
 
 	// Personality is the personality of the parent task.
@@ -159,6 +159,9 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cfg.NetworkNamespace.DecRef(ctx)
 		if cfg.MountNamespace != nil {
 			cfg.MountNamespace.DecRef(ctx)
+		}
+		if cfg.SessionKeyring != nil {
+			cfg.SessionKeyring.DecRef(ctx)
 		}
 	}
 	if err := cfg.UserCounters.incRLimitNProc(ctx); err != nil {
