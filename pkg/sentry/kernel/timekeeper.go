@@ -42,6 +42,26 @@ const (
 	updaterActive
 )
 
+const (
+	// fastUpdateInterval is the update interval used while any enabled clock
+	// has not yet been calibrated. A calibrated clock becomes ready once its
+	// samples bound its frequency closely enough (see
+	// sentrytime.CalibratedClock.Update). Samples within the default sample
+	// overhead (at most about 1µs) do that over this window, so the vDSO
+	// parameters are usually ready after the second sample instead of one
+	// ApproxUpdateInterval later.
+	fastUpdateInterval = 10 * time.Millisecond
+
+	// maxFastUpdates is the number of consecutive updates that may leave a
+	// clock uncalibrated before the updater falls back to ApproxUpdateInterval.
+	// A clock whose sample overhead is too high to calibrate within
+	// maxFastUpdates fast intervals then becomes ready one
+	// ApproxUpdateInterval later, and a clock source that keeps failing is
+	// not polled (and its failures logged) at fastUpdateInterval
+	// indefinitely.
+	maxFastUpdates = 10
+)
+
 // Timekeeper manages all of the kernel clocks.
 //
 // +stateify savable
@@ -145,6 +165,13 @@ type Timekeeper struct {
 
 	// timer to periodically update the time calibration
 	timer *time.Timer `state:"nosave"`
+
+	// uncalibratedUpdates is the number of consecutive updates after which
+	// some enabled clock was not calibrated, saturating at maxFastUpdates.
+	// It is zero if the last update calibrated every enabled clock.
+	//
+	// +checklocks:updateMu
+	uncalibratedUpdates int `state:"nosave"`
 
 	// vDSO parameter page kept updated by the Timekeeper mechanism
 	params *VDSOParamPage `state:"nosave"`
@@ -277,15 +304,54 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks, params *VDSOParamPage) {
 // update samples the backing clocks and writes the new parameters to the VDSO
 // parameter page.
 //
+// update returns whether every enabled clock is calibrated, i.e. whether the
+// vDSO can use the published parameters for all of them.
+//
 // +checklocks:t.updateMu
-func (t *Timekeeper) update(parked bool) {
+func (t *Timekeeper) update(parked bool) bool {
+	var calibrated bool
 	// Call Update within a Write block to prevent the VDSO from using the old
 	// params between Update and Write.
 	if err := t.params.Write(func() vdsoParams {
-		return t.vdsoParamsLocked(t.clocks.Update(parked))
+		res := t.clocks.Update(parked)
+		// Derived from res rather than from the published readiness, which
+		// hides monotonic while restoring.
+		calibrated = res.MonotonicOk && res.RealtimeOk && (t.monotonicRawClock == nil || res.MonotonicRawOk)
+		return t.vdsoParamsLocked(res)
 	}); err != nil {
 		log.Warningf("Unable to update VDSO parameter page: %v", err)
 	}
+	return calibrated
+}
+
+// fastCalibrating returns whether the updater is waiting for some clock to
+// become calibrated and should therefore tick at fastUpdateInterval.
+//
+// +checklocks:t.updateMu
+func (t *Timekeeper) fastCalibrating() bool {
+	return t.uncalibratedUpdates > 0 && t.uncalibratedUpdates < maxFastUpdates
+}
+
+// nextUpdateInterval returns the interval until the next update.
+//
+// +checklocks:t.updateMu
+func (t *Timekeeper) nextUpdateInterval() time.Duration {
+	if t.fastCalibrating() {
+		return fastUpdateInterval
+	}
+	return sentrytime.ApproxUpdateInterval
+}
+
+// updateAndRearm calls update and arms the timer for the next update.
+//
+// +checklocks:t.updateMu
+func (t *Timekeeper) updateAndRearm(parked bool) {
+	if t.update(parked) {
+		t.uncalibratedUpdates = 0
+	} else if t.uncalibratedUpdates < maxFastUpdates {
+		t.uncalibratedUpdates++
+	}
+	t.timer.Reset(t.nextUpdateInterval())
 }
 
 // vdsoParamsLocked returns the VDSO parameters for the clock parameters in res.
@@ -342,9 +408,9 @@ func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 	t.updateMu.Lock()
 	// store-then-load to synchronize with addRef
 	t.updaterState.Store(updaterParked)
+	t.uncalibratedUpdates = 0
 	if t.refs.Load() != 0 {
-		t.timer.Reset(sentrytime.ApproxUpdateInterval)
-		t.update(true)
+		t.updateAndRearm(true)
 		t.updaterState.Store(updaterActive)
 	}
 	t.updateMu.Unlock()
@@ -363,19 +429,23 @@ func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 
 			t.updateMu.Lock()
 
-			switch t.updaterState.Load() {
-			case updaterStopped:
+			switch state := t.updaterState.Load(); {
+			case state == updaterStopped:
 				t.updateMu.Unlock()
 				return
 
-			case updaterActive:
+			case t.fastCalibrating():
+				// Keep ticking, without winding down, until the clocks
+				// are calibrated.
+
+			case state == updaterActive:
 				// store-then-load to synchronize with addRef
 				t.updaterState.Store(updaterIdle)
 				if t.refs.Load() != 0 {
 					t.updaterState.Store(updaterActive)
 				}
 
-			case updaterIdle:
+			case state == updaterIdle:
 				// no Timekeeper usage for a whole interval: park
 				// store-then-load to synchronize with addRef
 				t.updaterState.Store(updaterParked)
@@ -387,8 +457,7 @@ func (t *Timekeeper) startUpdater(params *VDSOParamPage) {
 				}
 			}
 
-			t.timer.Reset(sentrytime.ApproxUpdateInterval)
-			t.update(false)
+			t.updateAndRearm(false)
 			t.updateMu.Unlock()
 		}
 	}()
@@ -409,8 +478,7 @@ func (t *Timekeeper) addRef() {
 		t.updateMu.Lock()
 		cur := t.updaterState.Load()
 		if cur == updaterParked {
-			t.timer.Reset(sentrytime.ApproxUpdateInterval)
-			t.update(true)
+			t.updateAndRearm(true)
 		}
 		if cur != updaterStopped {
 			t.updaterState.Store(updaterActive)
