@@ -49,6 +49,7 @@ go_test(
     ],
     embed = [":sandboxsetup"],
     deps = [
+        "//pkg/log",
         "//runsc/config",
         "//runsc/specutils",
         "@org_golang_x_sys//unix:go_default_library",

@@ -27,14 +27,14 @@ import (
 )
 
 const (
-	googleVendorID            = 0x1AE0
-	accelDevicePathRegex      = `^/dev/accel(\d+)$`
-	accelSysfsFormat          = "/sys/class/accel/accel%d/device/%s"
-	vfioDevicePathRegex       = `^/dev/vfio/(\d+)$`
-	iommuGroupSysfsGlobFormat = "/sys/kernel/iommu_groups/%s/devices/*"
-	vendorFile                = "vendor"
-	deviceFile                = "device"
-	pciAddressMaxLength       = 13
+	googleVendorID       = 0x1AE0
+	accelDevicePathRegex = `^/dev/accel(\d+)$`
+	accelSysfsFormat     = "/sys/class/accel/accel%d/device/%s"
+	vfioDevicePathRegex  = `^/dev/vfio/(\d+)$`
+	iommuGroupsSysfsDir  = "/sys/kernel/iommu_groups"
+	vendorFile           = "vendor"
+	deviceFile           = "device"
+	pciAddressMaxLength  = 13
 )
 
 var (
@@ -45,6 +45,8 @@ var (
 	}
 	// Matches PCI device addresses in domain:bus:device.function form.
 	pciDeviceRegex = regexp.MustCompile(tpu.PCIDeviceRegexPattern)
+	// Matches VFIO group device nodes.
+	vfioDeviceRegex = regexp.MustCompile(vfioDevicePathRegex)
 )
 
 // IsPCIDeviceDirTPU returns if the given PCI device sysfs path is a TPU device
@@ -124,7 +126,19 @@ func tpuV4DeviceValid(devPath string) (bool, error) {
 // * Vendor is googleVendorID.
 // * Device ID is one of tpuVFIODeviceIDs.
 func tpuVFIODeviceValid(devPath string) (bool, error) {
-	paths, err := filepath.Glob(fmt.Sprintf(iommuGroupSysfsGlobFormat, path.Base(devPath)))
+	return tpuVFIODeviceValidIn(iommuGroupsSysfsDir, devPath)
+}
+
+// tpuVFIODeviceValidIn is tpuVFIODeviceValid, reading IOMMU groups from
+// iommuGroupsDir.
+func tpuVFIODeviceValidIn(iommuGroupsDir, devPath string) (bool, error) {
+	// Callers mount devPath itself, so it must be exactly /dev/vfio/<group>,
+	// not merely a path whose last component names a TPU IOMMU group.
+	matches := vfioDeviceRegex.FindStringSubmatch(devPath)
+	if matches == nil {
+		return false, nil
+	}
+	paths, err := filepath.Glob(path.Join(iommuGroupsDir, matches[1], "devices", "*"))
 	if err != nil {
 		return false, err
 	}
