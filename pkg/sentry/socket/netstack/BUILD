@@ -81,15 +81,15 @@ go_library(
 
 go_test(
     name = "netstack_test",
-    srcs = [
-        "bind_test.go",
-        "stack_test.go",
-    ],
+    srcs = ["stack_test.go"],
+    deps = [":netstack"],
+)
+
+go_test(
+    name = "netstack_internal_test",
+    srcs = ["bind_test.go"],
     library = ":netstack",
-    deps = [
-        ":netstack",
-        "//pkg/abi/linux",
-    ],
+    deps = ["//pkg/abi/linux"],
 )
 
 proto_library(

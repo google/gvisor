@@ -871,19 +871,28 @@ func (s *sock) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.E
 }
 
 // portRequiresBindService reports whether binding to port on a socket of the
-// given family and type requires CAP_NET_BIND_SERVICE.
+// given family, type and protocol requires CAP_NET_BIND_SERVICE.
 //
-// Linux applies this to AF_INET and AF_INET6 stream and datagram sockets. Raw
-// sockets are gated by CAP_NET_RAW at creation instead, and an ephemeral port
-// request (port 0) is always permitted.
-func portRequiresBindService(family int, skType linux.SockType, port uint16) bool {
+// Linux applies this only to AF_INET and AF_INET6 TCP and UDP sockets, where
+// sin_port/sin6_port is a transport port. Raw sockets are gated by CAP_NET_RAW
+// at creation instead, and an ephemeral port request (port 0) is always
+// permitted.
+//
+// A SOCK_DGRAM socket with IPPROTO_ICMP or IPPROTO_ICMPV6 is a ping socket: its
+// sin_port is the ICMP Echo identifier, not a transport port, so Linux does not
+// require CAP_NET_BIND_SERVICE for it (ping_bind() in net/ipv4/ping.c never
+// consults inet_port_requires_bind_service()). It is therefore excluded here by
+// matching TCP and UDP only, mirroring socket.IsTCP/socket.IsUDP.
+func portRequiresBindService(family int, skType linux.SockType, protocol int, port uint16) bool {
 	if port == 0 || port >= linux.PROT_SOCK {
 		return false
 	}
 	if family != linux.AF_INET && family != linux.AF_INET6 {
 		return false
 	}
-	return skType == linux.SOCK_STREAM || skType == linux.SOCK_DGRAM
+	isTCP := skType == linux.SOCK_STREAM && (protocol == 0 || protocol == linux.IPPROTO_TCP)
+	isUDP := skType == linux.SOCK_DGRAM && (protocol == 0 || protocol == linux.IPPROTO_UDP)
+	return isTCP || isUDP
 }
 
 // checkPrivilegedPort returns an error if binding to port requires
@@ -893,7 +902,7 @@ func portRequiresBindService(family int, skType linux.SockType, port uint16) boo
 // __inet_bind() in net/ipv4/af_inet.c, against the user namespace owning the
 // socket's network namespace, and fails with EACCES.
 func (s *sock) checkPrivilegedPort(t *kernel.Task, port uint16) *syserr.Error {
-	if !portRequiresBindService(s.family, s.skType, port) {
+	if !portRequiresBindService(s.family, s.skType, s.protocol, port) {
 		return nil
 	}
 	if s.HasCapability(linux.CAP_NET_BIND_SERVICE, t) {
