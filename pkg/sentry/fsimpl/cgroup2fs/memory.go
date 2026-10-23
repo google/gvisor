@@ -44,6 +44,9 @@ type memory struct {
 	// highBytes is the memory limit representing the memory.high limit.
 	// +checkatomic
 	highBytes atomicbitops.Int64
+	// oomGroup is the memory.oom.group setting.
+	// +checkatomic
+	oomGroup atomicbitops.Bool
 }
 
 // canEnter implements controller.canEnter.
@@ -82,12 +85,13 @@ func (m *memory) interfaceFiles() []interfaceFile {
 		{name: "memory.current", source: &memoryCurrent{m: m}, perm: 0444},
 		{name: "memory.max", source: &memoryMax{m: m}, perm: 0644},
 		{name: "memory.high", source: &memoryHigh{m: m}, perm: 0644},
+		{name: "memory.oom.group", source: &memoryOOMGroup{m: m}, perm: 0644, nsDelegatable: true},
 	}
 }
 
 // interfaceFileNames implements controller.interfaceFileNames.
 func (m *memory) interfaceFileNames() []string {
-	return []string{"memory.events", "memory.current", "memory.max", "memory.high"}
+	return []string{"memory.events", "memory.current", "memory.max", "memory.high", "memory.oom.group"}
 }
 
 // +stateify savable
@@ -213,6 +217,42 @@ func (mh *memoryHigh) Write(ctx context.Context, _ *vfs.FileDescription, src use
 		return 0, linuxerr.EINVAL
 	}
 	mh.m.highBytes.Store(val)
+	return int64(len(buf)), nil
+}
+
+// +stateify savable
+type memoryOOMGroup struct {
+	m *memory
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (mo *memoryOOMGroup) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	if mo.m.oomGroup.Load() {
+		buf.WriteString("1\n")
+	} else {
+		buf.WriteString("0\n")
+	}
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+//
+// Note: Although memory.oom.group is writable and remembers the value, there
+// is no OOM killer to act on it.
+func (mo *memoryOOMGroup) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() > 1024 {
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]byte, src.NumBytes())
+	if _, err := src.CopyIn(ctx, buf); err != nil {
+		return 0, err
+	}
+	str := strings.TrimSpace(string(buf))
+	val, err := strconv.ParseInt(str, 10, 64)
+	if err != nil || (val != 0 && val != 1) {
+		return 0, linuxerr.EINVAL
+	}
+	mo.m.oomGroup.Store(val == 1)
 	return int64(len(buf)), nil
 }
 
