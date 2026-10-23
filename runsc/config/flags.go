@@ -469,6 +469,8 @@ func (c *Config) isOverrideAllowed(name string, value string) error {
 // It returns an error if a bundle doesn't exist, or if the given
 // bundles have conflicting flag values.
 // Config values which are already specified prior to calling ApplyBundles are overridden.
+// Like Override, it does not validate the resulting Config. Callers must call
+// Validate after applying all bundles and individual flag overrides.
 func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) error {
 	// Populate a map from flag name to flag value to bundle name.
 	flagToValueToBundleName := make(map[string]map[string]BundleName)
@@ -533,7 +535,7 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 		}
 	}
 
-	return c.Validate()
+	return nil
 }
 
 func getVal(field reflect.Value) string {

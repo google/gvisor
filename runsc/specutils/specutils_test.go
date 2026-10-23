@@ -24,7 +24,67 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 )
+
+func TestFixConfigBundleValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		wantErr     string
+	}{
+		{
+			name: "flag annotation overrides incompatible bundle",
+			annotations: map[string]string{
+				"dev.gvisor.bundle.experimental-high-performance": "true",
+				"dev.gvisor.flag.overlay2":                        "none",
+			},
+		},
+		{
+			name: "incompatible bundle without override",
+			annotations: map[string]string{
+				"dev.gvisor.bundle.experimental-high-performance": "true",
+			},
+			wantErr: "overlay flag is incompatible with shared file access for rootfs",
+		},
+		{
+			name: "flag annotation leaves configuration invalid",
+			annotations: map[string]string{
+				"dev.gvisor.bundle.experimental-high-performance": "true",
+				"dev.gvisor.flag.overlay2":                        "root:memory",
+			},
+			wantErr: "overlay flag is incompatible with shared file access for rootfs",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flagSet := flag.NewFlagSet(t.Name(), flag.ContinueOnError)
+			config.RegisterFlags(flagSet)
+			if err := flagSet.Parse([]string{"--file-access=shared", "--overlay2=none"}); err != nil {
+				t.Fatal(err)
+			}
+			conf, err := config.NewFromFlags(flagSet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldFlags := flag.CommandLine
+			flag.CommandLine = flagSet
+			t.Cleanup(func() { flag.CommandLine = oldFlags })
+
+			if err := FixConfig(conf, &specs.Spec{Annotations: tc.annotations}); tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("FixConfig() got error %v, want %q", err, tc.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("FixConfig() failed: %v", err)
+				}
+				if got := conf.Overlay2.String(); got != "none" {
+					t.Errorf("overlay2 = %q, want none", got)
+				}
+			}
+		})
+	}
+}
 
 func TestWaitForReadyHappy(t *testing.T) {
 	cmd := exec.Command("/bin/sleep", "1000")

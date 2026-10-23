@@ -50,6 +50,7 @@ go_test(
     deps = [
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//runsc/config",
+        "//runsc/flag",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
