@@ -36,7 +36,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -384,7 +386,7 @@ func TestUnsupportedAddressFamily(t *testing.T) {
 	for _, unsupportedFamily := range []stack.AddressFamily{stack.AddressFamily(stack.NumAFs), stack.AddressFamily(-1)} {
 		// Note: the Prerouting hook is arbitrary (any hook would work).
 		pkt := makeArbitraryPacket(arbitraryReservedHeaderBytes)
-		v, err := nf.EvaluateHook(unsupportedFamily, arbitraryHook, pkt, nil /* route */)
+		v, err := nf.EvaluateHook(unsupportedFamily, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 		if err == nil {
 			t.Fatalf("expecting error for EvaluateHook with unsupported address family %d; got %v verdict, %s packet, and error %v",
 				int(unsupportedFamily),
@@ -416,7 +418,7 @@ func TestAcceptAllForSupportedHooks(t *testing.T) {
 					pkt = makeArbitraryPacket(arbitraryReservedHeaderBytes)
 				}
 				cmpPkt := pkt.Clone()
-				v, err := nf.EvaluateHook(pktFamily, hook, pkt, nil /* route */)
+				v, err := nf.EvaluateHook(pktFamily, hook, pkt, nil /* route */, 0 /* outNICID */)
 
 				supported := supportedHooks[family][hook]
 				if supported {
@@ -616,7 +618,7 @@ func TestEvaluateImmediateVerdict(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -671,7 +673,7 @@ func TestEvaluateImmediateBytesData(t *testing.T) {
 				}
 				// Runs evaluation and checks for default policy verdict accept
 				pkt := makeArbitraryIPv4Packet()
-				v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
+				v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
 				}
@@ -1155,7 +1157,7 @@ func TestEvaluateComparison(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /*route*/)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1390,7 +1392,7 @@ func TestEvaluateRanged(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -1622,7 +1624,7 @@ func TestEvaluatePayloadLoad(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2148,7 +2150,7 @@ func TestEvaluatePayloadSet(t *testing.T) {
 			if test.unchangedOnBreak {
 				originalNetworkHeader = slices.Clone(test.pkt.NetworkHeader().Slice())
 			}
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2338,7 +2340,7 @@ func TestEvaluateBitwise(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2397,7 +2399,7 @@ func TestEvaluateCounter(t *testing.T) {
 		prevBytes := counter.bytes.Load()
 		prevPackets := counter.packets.Load()
 		for i, pkt := range pkts {
-			_, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */)
+			_, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 			}
@@ -2475,7 +2477,7 @@ func TestEvaluateLast(t *testing.T) {
 				defer wg.Done()
 
 				// Evaluates the packet (which should update last's timestamp).
-				_, err := nf.EvaluateHook(pktFamily, arbitraryHook, pkt, nil /* route */)
+				_, err := nf.EvaluateHook(pktFamily, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 				if err != nil {
 					t.Fatalf("unexpected error for EvaluateHook for packet %d: %v", i, err)
 				}
@@ -2593,7 +2595,7 @@ func TestEvaluateRoute(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -2920,7 +2922,7 @@ func TestEvaluateByteorder(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3106,7 +3108,7 @@ func TestEvaluateMetaLoad(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3195,7 +3197,7 @@ func TestEvaluateMetaSet(t *testing.T) {
 			}
 
 			// Runs evaluation.
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(test.pkt, arbitraryFamily), arbitraryHook, test.pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3676,7 +3678,7 @@ func TestLoopCheckOnRegisterAndUnregister(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */)
+			v, err := nf.EvaluateHook(stack.IP, arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				t.Fatalf("unexpected error for EvaluateHook: %v", err)
 			}
@@ -3793,7 +3795,7 @@ func TestMaxNestedJumps(t *testing.T) {
 
 			// Runs evaluation and checks verdict.
 			pkt := makeArbitraryIPv4Packet()
-			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */)
+			v, err := nf.EvaluateHook(getAddrFamilyOrDefault(pkt, arbitraryFamily), arbitraryHook, pkt, nil /* route */, 0 /* outNICID */)
 			if err != nil {
 				if !test.expectErr {
 					t.Fatalf("unexpected error for EvaluateHook: %v", err)
@@ -6446,5 +6448,277 @@ func TestCompatNoopMatchEvaluation(t *testing.T) {
 	op.evaluate(regs, opEvalCtx{pkt: pkt})
 	if regs.verdict.Code != VC(linux.NFT_CONTINUE) {
 		t.Errorf("evaluate verdict = %d, want %d", regs.verdict.Code, VC(linux.NFT_CONTINUE))
+	}
+}
+
+// Output interface test stack: eth0 (NIC 1) with a default route and br0
+// (NIC 2), which has no route.
+const (
+	oifEth0NIC tcpip.NICID = 1
+	oifBr0NIC  tcpip.NICID = 2
+)
+
+var (
+	oifEth0Addr   = tcpip.AddrFrom4([4]byte{198, 51, 100, 1})
+	oifBr0Addr    = tcpip.AddrFrom4([4]byte{192, 0, 2, 1})
+	oifBr0Bcast   = tcpip.AddrFrom4([4]byte{192, 0, 2, 255})
+	oifGateway    = tcpip.AddrFrom4([4]byte{198, 51, 100, 254})
+	oifClient     = tcpip.AddrFrom4([4]byte{10, 0, 0, 2})
+	oifRemote     = tcpip.AddrFrom4([4]byte{203, 0, 113, 7})
+	oifRemotePort = uint16(53)
+)
+
+func newOutputInterfaceStack(t *testing.T) *stack.Stack {
+	t.Helper()
+	st := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+	})
+	for _, nic := range []struct {
+		id   tcpip.NICID
+		name string
+		addr tcpip.Address
+	}{
+		{id: oifEth0NIC, name: "eth0", addr: oifEth0Addr},
+		{id: oifBr0NIC, name: "br0", addr: oifBr0Addr},
+	} {
+		if err := st.CreateNICWithOptions(nic.id, channel.New(0, 1500, ""), stack.NICOptions{Name: nic.name}); err != nil {
+			t.Fatalf("CreateNICWithOptions(%d, _, {Name: %q}): %v", nic.id, nic.name, err)
+		}
+		protoAddr := tcpip.ProtocolAddress{
+			Protocol:          header.IPv4ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{Address: nic.addr, PrefixLen: 24},
+		}
+		if err := st.AddProtocolAddress(nic.id, protoAddr, stack.AddressProperties{}); err != nil {
+			t.Fatalf("AddProtocolAddress(%d, %+v, {}): %v", nic.id, protoAddr, err)
+		}
+	}
+	st.SetRouteTable([]tcpip.Route{{
+		Destination: header.IPv4EmptySubnet,
+		Gateway:     oifGateway,
+		NIC:         oifEth0NIC,
+	}})
+	return st
+}
+
+// newOutputInterfaceNFTables returns an NFTables object for st with one ip
+// family base chain of the given type at the postrouting hook, holding a rule
+// made of ops.
+func newOutputInterfaceNFTables(t *testing.T, st *stack.Stack, bcType BaseChainType, ops ...operation) *NFTables {
+	t.Helper()
+	nf := NewNFTables(st, tcpip.NewStdClock(), rand.RNGFrom(&fixedReader{}))
+	tab, err := nf.AddTable(stack.IP, "test", false)
+	if err != nil {
+		t.Fatalf("AddTable: %v", err)
+	}
+	bcInfo := &BaseChainInfo{BcType: bcType, Hook: stack.NFPostrouting, Priority: NewIntPriority(100)}
+	bc, err := nf.AddChainToTable(tab, "postrouting", bcInfo, "", false, 0, nil, linux.NF_ACCEPT)
+	if err != nil {
+		t.Fatalf("AddChainToTable: %v", err)
+	}
+	rule := &Rule{}
+	for _, op := range ops {
+		rule.addOperation(op)
+	}
+	if err := bc.RegisterRule(rule, -1); err != nil {
+		t.Fatalf("RegisterRule: %v", err)
+	}
+	return nf
+}
+
+// TestMetaOutputInterface tests that meta oif and oifname load the hook's
+// output interface whether or not the packet has a route, like
+// net/netfilter/nft_meta.c:nft_meta_get_eval_ifname.
+func TestMetaOutputInterface(t *testing.T) {
+	ifname := func(name string) []byte {
+		b := make([]byte, linux.IFNAMSIZ)
+		copy(b, name)
+		return b
+	}
+	for _, test := range []struct {
+		name     string
+		key      metaKey
+		dreg     uint8
+		data     []byte
+		outNICID tcpip.NICID
+		// route selects a route through eth0, whatever outNICID is.
+		route bool
+		// Drop means the loaded value equals data.
+		want uint32
+	}{
+		{name: "oifname", key: linux.NFT_META_OIFNAME, dreg: linux.NFT_REG_1, data: ifname("br0"), outNICID: oifBr0NIC, want: VC(linux.NF_DROP)},
+		{name: "oifname follows output interface over route", key: linux.NFT_META_OIFNAME, dreg: linux.NFT_REG_1, data: ifname("br0"), outNICID: oifBr0NIC, route: true, want: VC(linux.NF_DROP)},
+		{name: "oifname other interface", key: linux.NFT_META_OIFNAME, dreg: linux.NFT_REG_1, data: ifname("br0"), outNICID: oifEth0NIC, want: VC(linux.NF_ACCEPT)},
+		{name: "oifname empty without output interface", key: linux.NFT_META_OIFNAME, dreg: linux.NFT_REG_1, data: ifname(""), outNICID: 0, want: VC(linux.NF_DROP)},
+		{name: "oif", key: linux.NFT_META_OIF, dreg: linux.NFT_REG32_00, data: binary.NativeEndian.AppendUint32(nil, uint32(oifBr0NIC)), outNICID: oifBr0NIC, want: VC(linux.NF_DROP)},
+		{name: "oif other interface", key: linux.NFT_META_OIF, dreg: linux.NFT_REG32_00, data: binary.NativeEndian.AppendUint32(nil, uint32(oifBr0NIC)), outNICID: oifEth0NIC, want: VC(linux.NF_ACCEPT)},
+		{name: "oif zero without output interface", key: linux.NFT_META_OIF, dreg: linux.NFT_REG32_00, data: binary.NativeEndian.AppendUint32(nil, 0), outNICID: 0, want: VC(linux.NF_DROP)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := newOutputInterfaceStack(t)
+			defer st.Destroy()
+			nf := newOutputInterfaceNFTables(t, st, BaseChainTypeFilter,
+				mustCreateMetaLoad(t, test.key, test.dreg),
+				mustCreateComparison(t, test.dreg, linux.NFT_CMP_EQ, test.data),
+				mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
+			pkt := makeUDPv4Packet(oifClient, oifRemote, arbitraryPort, oifRemotePort)
+			defer pkt.DecRef()
+
+			var r *stack.Route
+			if test.route {
+				var err tcpip.Error
+				r, err = st.FindRoute(0, tcpip.Address{}, oifRemote, header.IPv4ProtocolNumber, false /* multicastLoop */)
+				if err != nil {
+					t.Fatalf("FindRoute(_, _, %s, _, _): %v", oifRemote, err)
+				}
+				defer r.Release()
+			}
+
+			v, err := nf.EvaluateHook(stack.IP, stack.NFPostrouting, pkt, r, test.outNICID)
+			if err != nil {
+				t.Fatalf("EvaluateHook: %v", err)
+			}
+			if v.Code != test.want {
+				t.Errorf("EvaluateHook(..., outNICID=%d) verdict = %s, want %s", test.outNICID, VerdictCodeToString(v.Code), VerdictCodeToString(test.want))
+			}
+		})
+	}
+}
+
+// TestMasqueradeOutputInterface tests that masq and the MASQUERADE compat
+// target take the source address from the hook's output interface, using the
+// route only for the next hop, like
+// net/netfilter/nf_nat_masquerade.c:nf_nat_masquerade_ipv4.
+func TestMasqueradeOutputInterface(t *testing.T) {
+	for _, target := range []struct {
+		name string
+		op   func(t *testing.T) operation
+	}{
+		{name: "masq", op: func(t *testing.T) operation {
+			op, err := newMasqOp(-1, -1, 0)
+			if err != nil {
+				t.Fatalf("newMasqOp: %v", err)
+			}
+			return op
+		}},
+		{name: "MASQUERADE", op: func(t *testing.T) operation {
+			return &compatMASQTarget{info: masqTargetInfo{netProto: header.IPv4ProtocolNumber}}
+		}},
+	} {
+		for _, test := range []struct {
+			name     string
+			route    bool
+			outNICID tcpip.NICID
+			want     uint32
+			wantSrc  tcpip.Address
+		}{
+			{name: "no route", outNICID: oifBr0NIC, want: VC(linux.NF_ACCEPT), wantSrc: oifBr0Addr},
+			{name: "no route other interface", outNICID: oifEth0NIC, want: VC(linux.NF_ACCEPT), wantSrc: oifEth0Addr},
+			{name: "route", route: true, want: VC(linux.NF_ACCEPT), wantSrc: oifEth0Addr},
+			{name: "no output interface", outNICID: 0, want: VC(linux.NF_DROP), wantSrc: oifClient},
+		} {
+			t.Run(target.name+"/"+test.name, func(t *testing.T) {
+				st := newOutputInterfaceStack(t)
+				defer st.Destroy()
+				nf := newOutputInterfaceNFTables(t, st, BaseChainTypeNat, target.op(t))
+				nf.InitConnTrackOnce()
+				nf.SetNATState(true)
+
+				pkt := makeUDPv4Packet(oifClient, oifRemote, arbitraryPort, oifRemotePort)
+				defer pkt.DecRef()
+				nf.GetConnTrack().GetConnAndUpdatePkt(pkt, false /* skipChecksumValidation */)
+				if !pkt.IsConnTrackConfigured() {
+					t.Fatal("packet is not tracked")
+				}
+
+				var r *stack.Route
+				outNICID := test.outNICID
+				if test.route {
+					var err tcpip.Error
+					r, err = st.FindRoute(0, tcpip.Address{}, oifRemote, header.IPv4ProtocolNumber, false /* multicastLoop */)
+					if err != nil {
+						t.Fatalf("FindRoute(_, _, %s, _, _): %v", oifRemote, err)
+					}
+					defer r.Release()
+					outNICID = r.OutgoingNIC()
+				}
+
+				v, err := nf.EvaluateHook(stack.IP, stack.NFPostrouting, pkt, r, outNICID)
+				if err != nil {
+					t.Fatalf("EvaluateHook: %v", err)
+				}
+				if v.Code != test.want {
+					t.Errorf("EvaluateHook(..., outNICID=%d) verdict = %s, want %s", outNICID, VerdictCodeToString(v.Code), VerdictCodeToString(test.want))
+				}
+				if got := header.IPv4(pkt.NetworkHeader().Slice()).SourceAddress(); got != test.wantSrc {
+					t.Errorf("source address = %s, want %s", got, test.wantSrc)
+				}
+			})
+		}
+	}
+}
+
+// TestFIBOutputInterface tests that fib daddr . oif type classifies the
+// address on the hook's output interface when the packet has no route, like
+// net/ipv4/netfilter/nft_fib_ipv4.c:nft_fib4_eval_type.
+func TestFIBOutputInterface(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		outNICID      tcpip.NICID
+		wantBroadcast bool
+	}{
+		{name: "broadcast on output interface", outNICID: oifBr0NIC, wantBroadcast: true},
+		{name: "not broadcast on output interface", outNICID: oifEth0NIC, wantBroadcast: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := newOutputInterfaceStack(t)
+			defer st.Destroy()
+			nf := NewNFTables(st, tcpip.NewStdClock(), rand.RNGFrom(&fixedReader{}))
+			op, err := newFIB(linux.NFT_FIB_RESULT_ADDRTYPE, linux.NFTA_FIB_F_DADDR|linux.NFTA_FIB_F_OIF, linux.NFT_REG32_00)
+			if err != nil {
+				t.Fatalf("newFIB: %v", err)
+			}
+			pkt := makeUDPv4Packet(oifEth0Addr, oifBr0Bcast, arbitraryPort, oifRemotePort)
+			defer pkt.DecRef()
+
+			regs := &registerSet{}
+			op.evaluate(regs, opEvalCtx{pkt: pkt, hook: stack.NFPostrouting, outNICID: test.outNICID, nftState: nf})
+			got := binary.NativeEndian.Uint32(regs.data[op.dregIdx:])
+			if isBroadcast := got == linux.RTN_BROADCAST; isBroadcast != test.wantBroadcast {
+				t.Errorf("fib daddr . oif type with outNICID=%d = %d, want broadcast = %t", test.outNICID, got, test.wantBroadcast)
+			}
+		})
+	}
+}
+
+// TestCompatAddrtypeLimitIfaceOut tests that addrtype --limit-iface-out
+// classifies the address on the hook's output interface when the packet has
+// no route, like net/netfilter/xt_addrtype.c:addrtype_mt_v1.
+func TestCompatAddrtypeLimitIfaceOut(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		outNICID tcpip.NICID
+		want     uint32
+	}{
+		{name: "broadcast on output interface", outNICID: oifBr0NIC, want: VC(linux.NFT_CONTINUE)},
+		{name: "not broadcast on output interface", outNICID: oifEth0NIC, want: VC(linux.NFT_BREAK)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			st := newOutputInterfaceStack(t)
+			defer st.Destroy()
+			nf := NewNFTables(st, tcpip.NewStdClock(), rand.RNGFrom(&fixedReader{}))
+			op := &compatAddrtypeMatch{info: addrTypeMatchInfo{
+				checkDst:      true,
+				destMask:      linux.XT_ADDRTYPE_BROADCAST,
+				limitIfaceOut: true,
+			}}
+			pkt := makeUDPv4Packet(oifClient, oifBr0Bcast, arbitraryPort, oifRemotePort)
+			defer pkt.DecRef()
+
+			regs := &registerSet{verdict: Verdict{Code: VC(linux.NFT_CONTINUE)}}
+			op.evaluate(regs, opEvalCtx{pkt: pkt, hook: stack.NFPostrouting, outNICID: test.outNICID, nftState: nf})
+			if regs.verdict.Code != test.want {
+				t.Errorf("addrtype --dst-type BROADCAST --limit-iface-out with outNICID=%d verdict = %s, want %s", test.outNICID, VerdictCodeToString(regs.verdict.Code), VerdictCodeToString(test.want))
+			}
+		})
 	}
 }
