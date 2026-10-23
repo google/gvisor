@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
@@ -420,7 +421,9 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, _ *struct{}) (retE
 
 	if o.HavePagesFile {
 		// This immediately starts loading the main MemoryFile asynchronously.
-		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader")) // transfers ownership
+		// For background restore, throttle page loading until the kernel is
+		// restored, so that restore does not wait behind page reads.
+		cm.restorer.asyncMFLoader = kernel.NewAsyncMFLoader(pagesMetadata, pagesFile, cm.restorer.mainMF, timer.Fork("PagesFileLoader"), pgalloc.AsyncPagesFileLoadOpts{Throttled: o.Background}) // transfers ownership
 		pagesMetadata = nil
 		pagesFile = nil
 		timer.Reached("created async MF loader")

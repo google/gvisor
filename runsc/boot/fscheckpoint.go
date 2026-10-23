@@ -489,13 +489,15 @@ func startFSRestore(optsList []fsRestoreOpts) (*fsRestore, error) {
 				}
 			}
 
+			// Page loading is not throttled, since no kernel restore competes
+			// with it and nothing would call Unthrottle().
 			apfl, err := pgalloc.StartAsyncPagesFileLoad(opts.PagesFile /* transfers ownership */, func(err error) {
 				if err != nil {
 					log.Warningf("Failed to load filesystem checkpoint pages: %v", err)
 				} else if log.IsLogging(log.Debug) {
 					log.Debugf("Finished loading filesystem checkpoint pages")
 				}
-			}, nil)
+			}, nil, pgalloc.AsyncPagesFileLoadOpts{})
 			opts.PagesFile = nil
 			if err != nil {
 				return fmt.Errorf("failed to start async page loading: %w", err)
