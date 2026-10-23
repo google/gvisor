@@ -53,12 +53,14 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_alpine=//images/basic:alpine_context \
   basic_busybox=//images/basic:busybox_context \
   basic_fsstress=//images/basic:fsstress_context \
+  basic_httpd=//images/basic:httpd_context \
   basic_nginx=//images/basic:nginx_context \
   basic_python=//images/basic:python_context \
   basic_redis=//images/basic:redis_context \
   basic_symlink-resolv=//images/basic:symlink_resolv_context \
   basic_tmpfile=//images/basic:tmpfile_context \
   benchmarks_bun-spawn=//images/benchmarks/bun-spawn:bun_spawn_context \
+  benchmarks_httpd=//images/benchmarks:httpd_context \
   benchmarks_redis=//images/basic:benchmark_redis_context \
   compatibility_postgresql_postgresql=//images/compatibility:postgresql_context
 ifeq ($(ARCH),x86_64)
