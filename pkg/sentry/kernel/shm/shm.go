@@ -705,16 +705,22 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 //
 // +checklocksexclude:s.mu
 // +checklocksexclude:s.registry.mu
-func (s *Shm) MarkDestroyed(ctx context.Context) {
-	s.registry.dissociateKey(s)
+func (s *Shm) MarkDestroyed(ctx context.Context) error {
+	creds := auth.CredentialsFromContext(ctx)
 
 	s.mu.Lock()
+	if !s.obj.CheckOwnership(creds) {
+		s.mu.Unlock()
+		return linuxerr.EPERM
+	}
 	if s.pendingDestruction {
 		s.mu.Unlock()
-		return
+		return nil
 	}
 	s.pendingDestruction = true
 	s.mu.Unlock()
+
+	s.registry.dissociateKey(s)
 
 	// Drop the self-reference so destruction occurs when all
 	// external references are gone.
@@ -722,4 +728,5 @@ func (s *Shm) MarkDestroyed(ctx context.Context) {
 	// N.B. This cannot be the final DecRef, as the caller also
 	// holds a reference.
 	s.DecRef(ctx)
+	return nil
 }
