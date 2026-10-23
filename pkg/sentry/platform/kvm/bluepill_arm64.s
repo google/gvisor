@@ -85,9 +85,34 @@ TEXT ·sighandler(SB),NOSPLIT,$0
 	CMPW	$0, R7
 	BEQ	fallback
 
+	// Check alignment and ensure address is canonical user address.
+	TST	$3, R7
+	BNE	fallback
+
+	// Verify instruction at CONTEXT_PC.
+	// If it is the bluepill MRS TPIDR_EL1, R10 instruction (0xd538d08a), handle bluepill.
+	MOVW	(R7), R6
+	MOVD	$0xd538d08a, R5
+	CMPW	R5, R6
+	BEQ	bluepill
+
+	// If it is an autia*/autib* instruction (such as autiasp 0xd50323bf), handle PAC failure.
+	MOVD	$0xfffff3df, R5
+	AND	R5, R6, R4
+	MOVD	$0xd503239f, R5
+	CMPW	R5, R4
+	BEQ	autia_fix
+
+	B	fallback
+
+bluepill:
 	MOVD	R2, 8(RSP)
 	BL	·bluepillHandler(SB)   // Call the handler.
+	RET
 
+autia_fix:
+	MOVD	R2, 8(RSP)
+	BL	·autiaspHandler(SB)    // Call the autiasp handler.
 	RET
 
 fallback:
@@ -134,11 +159,11 @@ TEXT ·addrOfSigsysHandler(SB), $0-8
 
 // dieTrampoline: see bluepill.go, bluepill_arm64_unsafe.go for documentation.
 TEXT ·dieTrampoline(SB),NOSPLIT,$0
-	// R0: Fake the old PC as caller
-	// R1: First argument (vCPU)
-	MOVD.P R1, 8(RSP) // R1: First argument (vCPU)
-	MOVD.P R0, 8(RSP) // R0: Fake the old PC as caller
-	B ·dieHandler(SB)
+	// R0: Fake the old PC as caller (place in R30)
+	// R1: First argument (vCPU, place in R0 for ABIInternal)
+	MOVD	R0, R30
+	MOVD	R1, R0
+	B	·dieHandler(SB)
 
 // func addrOfDieTrampoline() uintptr
 TEXT ·addrOfDieTrampoline(SB), $0-8
