@@ -15,7 +15,17 @@
 package sandboxsetup
 
 import (
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
 	"testing"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func TestShouldExposeNvidiaDevice(t *testing.T) {
@@ -84,6 +94,135 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 			got := ShouldExposeTpuDevice(tst.path)
 			if got != tst.want {
 				t.Errorf("ShouldExposeTpuDevice(%q) = %v, want %v", tst.path, got, tst.want)
+			}
+		})
+	}
+}
+
+const inMountNSEnv = "SANDBOXSETUP_TEST_IN_MOUNT_NS"
+
+// reexecInMountNS re-executes the current test in a new user and mount
+// namespace if not already in one. It returns true if the caller is the parent
+// process and should return immediately.
+func reexecInMountNS(t *testing.T) bool {
+	t.Helper()
+	if os.Getenv(inMountNSEnv) != "" {
+		if err := unix.Mount("", "/", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
+			t.Fatalf("making mounts slave: %v", err)
+		}
+		return false
+	}
+	cmd := exec.Command("/proc/self/exe", "-test.run=^"+t.Name()+"$", "-test.v")
+	cmd.Env = append(os.Environ(), inMountNSEnv+"=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags:  unix.CLONE_NEWUSER | unix.CLONE_NEWNS,
+		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
+		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(err, unix.EPERM) {
+			t.Skipf("cannot create user and mount namespaces: %v", err)
+		}
+		t.Fatalf("child failed: %v\n%s", err, out)
+	}
+	return true
+}
+
+func TestSetupMountsNodev(t *testing.T) {
+	if reexecInMountNS(t) {
+		return
+	}
+
+	var devStatfs unix.Statfs_t
+	if err := unix.Statfs("/dev", &devStatfs); err != nil {
+		t.Fatalf("statfs(/dev): %v", err)
+	}
+	if devStatfs.Flags&unix.ST_NODEV != 0 {
+		t.Skip("/dev is already mounted with ST_NODEV")
+	}
+
+	lisafsConf := specutils.GoferMountConf{
+		Lower: specutils.Lisafs,
+		Upper: specutils.NoOverlay,
+	}
+
+	tests := []struct {
+		name      string
+		policy    config.CharacterDevicePolicy
+		wantNodev bool
+	}{
+		{
+			name:      "EmulatedOnlySetsNodev",
+			policy:    config.CharDevEmulatedOnly,
+			wantNodev: true,
+		},
+		{
+			name:      "PassthroughAllowsDev",
+			policy:    config.CharDevPassthrough,
+			wantNodev: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			conf := &config.Config{
+				CharacterDevicePolicy: tc.policy,
+			}
+			mounts := []specs.Mount{
+				{
+					Source:      "/dev/null",
+					Destination: "/dev_null",
+					Type:        "bind",
+				},
+				{
+					Source:      "/dev",
+					Destination: "/mnt",
+					Type:        "bind",
+					Options:     []string{"rbind"},
+				},
+			}
+			mountConfs := []specutils.GoferMountConf{lisafsConf, lisafsConf, lisafsConf}
+			if err := SetupMounts(conf, mounts, root, "/proc", mountConfs, nil); err != nil {
+				t.Fatalf("SetupMounts failed: %v", err)
+			}
+			for _, relDst := range []string{"dev_null", "mnt"} {
+				dst := filepath.Join(root, relDst)
+				t.Cleanup(func() {
+					_ = unix.Unmount(dst, unix.MNT_DETACH)
+				})
+
+				var st unix.Statfs_t
+				if err := unix.Statfs(dst, &st); err != nil {
+					t.Fatalf("Statfs(%q): %v", dst, err)
+				}
+				if st.Flags&unix.ST_NOSUID == 0 {
+					t.Errorf("Statfs(%q).Flags = %#x, want ST_NOSUID (%#x) set", dst, st.Flags, unix.ST_NOSUID)
+				}
+				gotNodev := st.Flags&unix.ST_NODEV != 0
+				if gotNodev != tc.wantNodev {
+					t.Errorf("Statfs(%q).Flags ST_NODEV = %v (flags=%#x), want %v", dst, gotNodev, st.Flags, tc.wantNodev)
+				}
+			}
+
+			for _, devNull := range []string{
+				filepath.Join(root, "dev_null"),
+				filepath.Join(root, "mnt", "null"),
+			} {
+				f, openErr := os.OpenFile(devNull, os.O_RDONLY, 0)
+				if f != nil {
+					f.Close()
+				}
+				if tc.wantNodev {
+					if !errors.Is(openErr, unix.EACCES) {
+						t.Errorf("OpenFile(%q, O_RDONLY) = %v, want EACCES", devNull, openErr)
+					}
+				} else {
+					if openErr != nil {
+						t.Errorf("OpenFile(%q, O_RDONLY) = %v, want nil", devNull, openErr)
+					}
+				}
 			}
 		})
 	}

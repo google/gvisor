@@ -432,6 +432,9 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 			path := fmt.Sprintf("/proc/self/fd/%d", dstFD)
 			// The gofer process doesn't execute anything natively.
 			flags |= unix.MS_NOSUID
+			if !conf.CharacterDevicePolicy.AllowsPassthrough() {
+				flags |= unix.MS_NODEV
+			}
 
 			statfs := unix.Statfs_t{}
 			if err := unix.Statfs(path, &statfs); err != nil {
