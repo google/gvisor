@@ -912,7 +912,8 @@ func (d *dentry) topLayer() vfs.VirtualDentry {
 }
 
 func (d *dentry) topLookupLayer() lookupLayer {
-	if d.upperVD.Ok() {
+	// copyMu may not be held, so read the atomic copied-up flag rather than upperVD.
+	if d.isCopiedUp() {
 		return lookupLayerUpper
 	}
 	return lookupLayerLower
