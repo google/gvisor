@@ -86,6 +86,11 @@ func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, 
 	f := p.lookupLocked(eth.SourceAddress(), eth.DestinationAddress())
 	p.bridge.mu.RUnlock()
 	pkt.PktType = f.pktType
+	// The frame goes through the Prerouting hook before br_handle_frame_finish
+	// learns its source address, so a dropped frame isn't learned.
+	if !p.preRouting(protocol, pkt, &f) {
+		return
+	}
 	p.handleFrameFinish(protocol, pkt, &f)
 }
 
@@ -187,25 +192,41 @@ func (p *bridgePort) handleFrameFinish(protocol tcpip.NetworkProtocolNumber, pkt
 		}
 		p.bridge.mu.Unlock()
 	}
-	// When no FDB entry is found, send the packet to all ports. The ingress
-	// port is skipped unless it is in hairpin mode.
-	for _, port := range f.ports {
-		if port == p && !f.hairpin {
-			continue
+	if p.forwardAllowed(protocol, pkt) {
+		// When no FDB entry is found, send the packet to all ports. The
+		// ingress port is skipped unless it is in hairpin mode.
+		n := 0
+		for _, port := range f.ports {
+			if port != p || f.hairpin {
+				n++
+			}
 		}
-		p.forward(port, pkt)
-	}
-	if f.to != nil {
-		p.forward(f.to, pkt)
+		for _, port := range f.ports {
+			if port == p && !f.hairpin {
+				continue
+			}
+			n--
+			p.forward(f, port, pkt, n > 0 || f.passUp)
+		}
+		if f.to != nil {
+			p.forward(f, f.to, pkt, f.passUp)
+		}
 	}
 	if f.passUp {
-		f.d.DeliverNetworkPacket(protocol, pkt)
+		p.passUp(f.d, protocol, pkt)
 	}
 }
 
-// forward sends a frame received on p out of the port to.
-func (p *bridgePort) forward(to *bridgePort, pkt *PacketBuffer) {
+// forward sends a frame received on p out of the port to. shared is whether
+// the frame is also sent elsewhere afterwards.
+func (p *bridgePort) forward(f *bridgeForwarding, to *bridgePort, pkt *PacketBuffer, shared bool) {
 	if to.removed.Load() {
+		return
+	}
+	if pkt.bridge.physIn != 0 {
+		if brNIC, ok := f.d.(*nic); ok {
+			p.forwardNetfilter(brNIC, to, pkt, shared)
+		}
 		return
 	}
 	newPkt := NewPacketBuffer(PacketBufferOptions{
@@ -214,6 +235,27 @@ func (p *bridgePort) forward(to *bridgePort, pkt *PacketBuffer) {
 	})
 	to.nic.writeRawPacket(newPkt)
 	newPkt.DecRef()
+}
+
+// passUp passes a frame received on p up to the bridge's dispatcher d.
+func (p *bridgePort) passUp(d NetworkDispatcher, protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+	if pkt.bridge.physIn == 0 {
+		d.DeliverNetworkPacket(protocol, pkt)
+		return
+	}
+	// The network layer parses the packet itself.
+	up := NewPacketBuffer(PacketBufferOptions{
+		Payload: BufferSince(pkt.LinkHeader()),
+	})
+	defer up.DecRef()
+	mustConsume(up.LinkHeader(), len(pkt.LinkHeader().Slice()))
+	up.PktType = pkt.PktType
+	up.Mark = pkt.Mark
+	up.tuple = pkt.tuple
+	up.dnatDone = pkt.dnatDone
+	up.snatDone = pkt.snatDone
+	up.bridge = pkt.bridge
+	d.DeliverNetworkPacket(protocol, up)
 }
 
 func (p *bridgePort) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
@@ -265,17 +307,29 @@ type BridgeEndpoint struct {
 //
 // As for forwarded frames, the ports send the packets without bridge.mu held.
 func (b *BridgeEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) {
+	pktsSlice := pkts.AsSlice()
+	n := len(pktsSlice)
+	b.flood(pktsSlice)
+	for _, pkt := range pktsSlice {
+		if pkt.bridge.dnat {
+			b.writeBridgedDNAT(pkt)
+		}
+	}
+	return n, nil
+}
+
+func (b *BridgeEndpoint) flood(pktsSlice []*PacketBuffer) {
 	b.mu.RLock()
 	ports := b.portList
 	b.mu.RUnlock()
-
-	pktsSlice := pkts.AsSlice()
-	n := len(pktsSlice)
 	for _, p := range ports {
 		if p.removed.Load() {
 			continue
 		}
 		for _, pkt := range pktsSlice {
+			if pkt.bridge.dnat {
+				continue
+			}
 			// In order to properly loop back to the inbound side we must create a
 			// fresh packet that only contains the underlying payload with no headers
 			// or struct fields set.
@@ -289,8 +343,6 @@ func (b *BridgeEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) 
 			newPkt.DecRef()
 		}
 	}
-
-	return n, nil
 }
 
 // AddNIC adds the specified NIC to the bridge.
@@ -447,6 +499,14 @@ func (b *BridgeEndpoint) ARPHardwareType() header.ARPHardwareType {
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (b *BridgeEndpoint) AddHeader(pkt *PacketBuffer) {
+	// A frame that waited for the link address of the host it was DNATed to
+	// is sent by the bridge, as neigh_resolve_output sends it with the
+	// bridge's address before br_dev_xmit bridges it.
+	if pkt.bridge.dnat {
+		eth := header.Ethernet(pkt.LinkHeader().Slice())
+		eth.SetDestinationAddress(pkt.EgressRoute.RemoteLinkAddress)
+		eth.SetSourceAddress(pkt.EgressRoute.LocalLinkAddress)
+	}
 }
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.

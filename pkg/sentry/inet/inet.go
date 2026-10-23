@@ -146,6 +146,14 @@ type Stack interface {
 	// loopback packets (Linux net.ipv4.conf.*.route_localnet) for the protocol.
 	SetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber, enable bool) error
 
+	// BridgeNetfilterCall returns whether the bridged frames that c selects go
+	// through netfilter (Linux net.bridge.bridge-nf-call-*).
+	BridgeNetfilterCall(c stack.BridgeNetfilterCall) (bool, error)
+
+	// SetBridgeNetfilterCall sets whether the bridged frames that c selects go
+	// through netfilter.
+	SetBridgeNetfilterCall(c stack.BridgeNetfilterCall, enable bool) error
+
 	// PortRange returns the UDP and TCP inclusive range of ephemeral ports
 	// used in both IPv4 and IPv6.
 	PortRange() (uint16, uint16)

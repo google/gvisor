@@ -44,6 +44,17 @@ sh_binary(
     ],
 )
 
+sh_binary(
+    name = "bridge_netfilter_test",
+    srcs = ["bridge_netfilter_test.sh"],
+    data = [
+        ":tcp_serv",
+    ],
+    deps = [
+        ":rtnetlink_test",
+    ],
+)
+
 go_binary(
     name = "tcp_serv",
     srcs = ["tcp_serv.go"],

@@ -108,6 +108,17 @@ func (b Ethernet) DestinationAddress() tcpip.LinkAddress {
 	return tcpip.LinkAddress(b[dstMAC:][:EthernetAddressSize])
 }
 
+// SetSourceAddress sets the "MAC source" field of the ethernet frame header.
+func (b Ethernet) SetSourceAddress(addr tcpip.LinkAddress) {
+	copy(b[srcMAC:][:EthernetAddressSize], addr)
+}
+
+// SetDestinationAddress sets the "MAC destination" field of the ethernet frame
+// header.
+func (b Ethernet) SetDestinationAddress(addr tcpip.LinkAddress) {
+	copy(b[dstMAC:][:EthernetAddressSize], addr)
+}
+
 // Type returns the "ethertype" field of the ethernet frame header.
 func (b Ethernet) Type() tcpip.NetworkProtocolNumber {
 	return tcpip.NetworkProtocolNumber(binary.BigEndian.Uint16(b[ethType:]))

@@ -545,6 +545,16 @@ func (*Stack) SetAllowExternalLoopbackTraffic(tcpip.NetworkProtocolNumber, bool)
 	return linuxerr.EACCES
 }
 
+// BridgeNetfilterCall implements inet.Stack.BridgeNetfilterCall.
+func (*Stack) BridgeNetfilterCall(stack.BridgeNetfilterCall) (bool, error) {
+	return false, linuxerr.ENOENT
+}
+
+// SetBridgeNetfilterCall implements inet.Stack.SetBridgeNetfilterCall.
+func (*Stack) SetBridgeNetfilterCall(stack.BridgeNetfilterCall, bool) error {
+	return linuxerr.EACCES
+}
+
 // PortRange implements inet.Stack.PortRange.
 func (s *Stack) PortRange() (uint16, uint16) {
 	return s.portRange[0], s.portRange[1]

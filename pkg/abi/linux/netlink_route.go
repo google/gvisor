@@ -183,6 +183,13 @@ const (
 	IFLA_INFO_SLAVE_DATA = 5
 )
 
+// Bridge attributes, nested in IFLA_INFO_DATA, from uapi/linux/if_link.h.
+const (
+	IFLA_BR_NF_CALL_IPTABLES  = 36
+	IFLA_BR_NF_CALL_IP6TABLES = 37
+	IFLA_BR_NF_CALL_ARPTABLES = 38
+)
+
 // Bridge port attributes, nested in IFLA_PROTINFO, from
 // uapi/linux/if_link.h.
 const (

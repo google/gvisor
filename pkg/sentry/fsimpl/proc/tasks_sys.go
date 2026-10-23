@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	tcpipstack "gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -95,7 +96,7 @@ func (fs *filesystem) newLazySysDir(ctx context.Context, creds *auth.Credentials
 	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	// Set the link count of the populated directory now, so that Stat does
 	// not need to populate d.
-	d.IncLinks(uint32(len(sysSubdirs(path))))
+	d.IncLinks(uint32(len(sysSubdirs(k, path))))
 	return d
 }
 
@@ -112,7 +113,7 @@ func (d *lazySysDir) populate(ctx context.Context) {
 	// sysDirChildren creates subdirectories only from sysSubdirs, so the
 	// link count set by newLazySysDir is correct unless sysDirFiles returns
 	// a directory.
-	if links, want := d.OrderedChildren.Populate(d.fs.sysDirChildren(ctx, d.creds, d.k, d.path)), uint32(len(sysSubdirs(d.path))); links != want {
+	if links, want := d.OrderedChildren.Populate(d.fs.sysDirChildren(ctx, d.creds, d.k, d.path)), uint32(len(sysSubdirs(d.k, d.path))); links != want {
 		panic(fmt.Sprintf("/proc/sys/%s populated %d subdirectories, want %d", d.path, links, want))
 	}
 	d.populated.Store(true)
@@ -147,13 +148,20 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 // subdirectories are lazySysDirs.
 //
 // The returned slice must not be modified.
-func sysSubdirs(path string) []string {
+func sysSubdirs(k *kernel.Kernel, path string) []string {
 	switch path {
 	case "":
 		return []string{"kernel", "fs", "vm", "user", "net"}
 	case "kernel":
 		return []string{"random", "yama", "keys"}
 	case "net":
+		// As with br_netfilter loaded, /proc/sys/net/bridge exists when the
+		// stack passes bridged frames through netfilter.
+		if s := k.RootNetworkNamespace().Stack(); s != nil {
+			if _, err := s.BridgeNetfilterCall(tcpipstack.BridgeNetfilterCallIPTables); err == nil {
+				return []string{"ipv4", "core", "ipv6", "bridge"}
+			}
+		}
 		return []string{"ipv4", "core", "ipv6"}
 	case "net/ipv4", "net/ipv6":
 		return []string{"conf"}
@@ -177,7 +185,7 @@ func (fs *filesystem) sysDirChildren(ctx context.Context, root *auth.Credentials
 	stack := k.RootNetworkNamespace().Stack()
 
 	children := fs.sysDirFiles(ctx, root, k, stack, path)
-	subdirs := sysSubdirs(path)
+	subdirs := sysSubdirs(k, path)
 	if children == nil {
 		children = make(map[string]kernfs.Inode, len(subdirs))
 	}
@@ -343,6 +351,16 @@ func (fs *filesystem) sysDirFiles(ctx context.Context, root *auth.Credentials, k
 		// Stub for conf/default/forwarding.
 		return map[string]kernfs.Inode{
 			"forwarding": fs.newInode(ctx, root, 0644, &atomicInt32File{val: new(atomicbitops.Int32), min: 0, max: 1}),
+		}
+	case "net/bridge":
+		// The br_netfilter sysctls (brnf_table).
+		return map[string]kernfs.Inode{
+			"bridge-nf-call-arptables":      fs.newInode(ctx, root, 0644, &bridgeNFCallData{stack: stack, call: tcpipstack.BridgeNetfilterCallARPTables}),
+			"bridge-nf-call-iptables":       fs.newInode(ctx, root, 0644, &bridgeNFCallData{stack: stack, call: tcpipstack.BridgeNetfilterCallIPTables}),
+			"bridge-nf-call-ip6tables":      fs.newInode(ctx, root, 0644, &bridgeNFCallData{stack: stack, call: tcpipstack.BridgeNetfilterCallIP6Tables}),
+			"bridge-nf-filter-vlan-tagged":  fs.newInode(ctx, root, 0644, &bridgeNFUnsupportedData{}),
+			"bridge-nf-filter-pppoe-tagged": fs.newInode(ctx, root, 0644, &bridgeNFUnsupportedData{}),
+			"bridge-nf-pass-vlan-input-dev": fs.newInode(ctx, root, 0644, &bridgeNFUnsupportedData{}),
 		}
 	}
 	panic(fmt.Sprintf("unknown /proc/sys directory %q", path))
@@ -789,6 +807,86 @@ func (rl *routeLocalnetData) Write(ctx context.Context, _ *vfs.FileDescription, 
 	}
 	if err := rl.stack.SetAllowExternalLoopbackTraffic(ipv4.ProtocolNumber, buf[0] != 0); err != nil {
 		return 0, err
+	}
+	return n, nil
+}
+
+// bridgeNFCallData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/bridge/bridge-nf-call-{arptables,iptables,ip6tables}. As in
+// brnf_sysctl_call_tables, any nonzero value is stored as 1.
+//
+// +stateify savable
+type bridgeNFCallData struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+	call  tcpipstack.BridgeNetfilterCall
+}
+
+var _ vfs.WritableDynamicBytesSource = (*bridgeNFCallData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *bridgeNFCallData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	enabled, err := d.stack.BridgeNetfilterCall(d.call)
+	if err != nil {
+		return err
+	}
+	val := "0\n"
+	if enabled {
+		val = "1\n"
+	}
+	buf.WriteString(val)
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *bridgeNFCallData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if err := d.stack.SetBridgeNetfilterCall(d.call, buf[0] != 0); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// bridgeNFUnsupportedData implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/bridge/bridge-nf-filter-{vlan,pppoe}-tagged and
+// bridge-nf-pass-vlan-input-dev. Netfilter is never called for VLAN or PPPoE
+// tagged frames, so the files only take 0.
+//
+// +stateify savable
+type bridgeNFUnsupportedData struct {
+	kernfs.DynamicBytesFile
+}
+
+var _ vfs.WritableDynamicBytesSource = (*bridgeNFUnsupportedData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*bridgeNFUnsupportedData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	buf.WriteString("0\n")
+	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (*bridgeNFUnsupportedData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, buf)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+	if buf[0] != 0 {
+		return 0, linuxerr.EINVAL
 	}
 	return n, nil
 }

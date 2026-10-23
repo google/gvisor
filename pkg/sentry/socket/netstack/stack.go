@@ -252,6 +252,17 @@ func (s *Stack) SetInterface(ctx context.Context, msg *nlmsg.Message) *syserr.Er
 		return err
 	}
 	defer s.unlockSrcAndDst(ctx, dstNs)
+	if v, ok := attrs[linux.IFLA_LINKINFO]; ok {
+		if nicInfo, ok := s.Stack.SingleNICInfo(tcpip.NICID(ifinfomsg.Index)); ok && nicInfo.Kind == "bridge" {
+			linkInfoAttrs, ok := nlmsg.AttrsView(v).Parse()
+			if !ok {
+				return syserr.ErrInvalidArgument
+			}
+			if err := checkBridgeInfoData(linkInfoAttrs); err != nil {
+				return err
+			}
+		}
+	}
 	return s.setLinkLocked(ctx, tcpip.NICID(ifinfomsg.Index), attrs, ifinfomsg.Flags, ifinfomsg.Change, dstNs)
 }
 
@@ -801,7 +812,40 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	return nil
 }
 
+// checkBridgeInfoData checks the bridge attributes nested in IFLA_INFO_DATA,
+// as br_changelink does for IFLA_BR_NF_CALL_*. Bridged frames go through
+// netfilter as the net.bridge.bridge-nf-call-* sysctls say, without per-bridge
+// options, so enabling an IFLA_BR_NF_CALL_* option is not supported.
+func checkBridgeInfoData(linkInfoAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	value, ok := linkInfoAttrs[linux.IFLA_INFO_DATA]
+	if !ok {
+		return nil
+	}
+	data, ok := nlmsg.AttrsView(value).Parse()
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+	// As with br_policy, the attributes may be longer than their type, but not
+	// shorter.
+	for _, typ := range [...]uint16{linux.IFLA_BR_NF_CALL_IPTABLES, linux.IFLA_BR_NF_CALL_IP6TABLES, linux.IFLA_BR_NF_CALL_ARPTABLES} {
+		v, ok := data[typ]
+		if !ok {
+			continue
+		}
+		if len(v) < 1 {
+			return syserr.ErrRange
+		}
+		if v[0] != 0 {
+			return syserr.ErrNotSupported
+		}
+	}
+	return nil
+}
+
 func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesView, linkInfoAttrs map[uint16]nlmsg.BytesView) *syserr.Error {
+	if err := checkBridgeInfoData(linkInfoAttrs); err != nil {
+		return err
+	}
 	dstNs, sysErr := s.lockSrcAndDst(ctx, linkAttrs)
 	if sysErr != nil {
 		return sysErr
@@ -1676,6 +1720,17 @@ func (s *Stack) SetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNu
 	if err := s.Stack.SetNetworkProtocolOption(protocol, &opt); err != nil {
 		return fmt.Errorf("SetNetworkProtocolOption(%d, &%t): %s", protocol, enable, err)
 	}
+	return nil
+}
+
+// BridgeNetfilterCall implements inet.Stack.BridgeNetfilterCall.
+func (s *Stack) BridgeNetfilterCall(c stack.BridgeNetfilterCall) (bool, error) {
+	return s.Stack.BridgeNetfilterCall(c), nil
+}
+
+// SetBridgeNetfilterCall implements inet.Stack.SetBridgeNetfilterCall.
+func (s *Stack) SetBridgeNetfilterCall(c stack.BridgeNetfilterCall, enable bool) error {
+	s.Stack.SetBridgeNetfilterCall(c, enable)
 	return nil
 }
 

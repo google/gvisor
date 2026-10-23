@@ -127,6 +127,7 @@ go_library(
         "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/stack",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

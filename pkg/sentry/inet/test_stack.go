@@ -43,6 +43,7 @@ type TestStack struct {
 	IPForwarding                 bool
 	AllowExternalLoopbackTraffic bool
 	IPv6KeepAddrOnDownFlag       bool
+	BridgeNFCall                 map[stack.BridgeNetfilterCall]bool
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -239,6 +240,20 @@ func (s *TestStack) GetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtoc
 // SetAllowExternalLoopbackTraffic implements Stack.
 func (s *TestStack) SetAllowExternalLoopbackTraffic(protocol tcpip.NetworkProtocolNumber, enable bool) error {
 	s.AllowExternalLoopbackTraffic = enable
+	return nil
+}
+
+// BridgeNetfilterCall implements Stack.
+func (s *TestStack) BridgeNetfilterCall(c stack.BridgeNetfilterCall) (bool, error) {
+	return s.BridgeNFCall[c], nil
+}
+
+// SetBridgeNetfilterCall implements Stack.
+func (s *TestStack) SetBridgeNetfilterCall(c stack.BridgeNetfilterCall, enable bool) error {
+	if s.BridgeNFCall == nil {
+		s.BridgeNFCall = make(map[stack.BridgeNetfilterCall]bool)
+	}
+	s.BridgeNFCall[c] = enable
 	return nil
 }
 
