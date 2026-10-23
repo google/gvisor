@@ -512,7 +512,12 @@ func ShouldExposeNvidiaDevice(path string) bool {
 // ShouldExposeVFIODevice returns true if path refers to a VFIO device
 // which should be exposed to the container.
 func ShouldExposeVFIODevice(path string) bool {
-	return strings.HasPrefix(path, vfioPathDir)
+	// SetupDev bind-mounts from path as given, so it must not contain ".."
+	// components that resolve outside of vfioPathDir.
+	if path != filepath.Clean(path) {
+		return false
+	}
+	return path == vfioPathDir || strings.HasPrefix(path, vfioPathDir+"/")
 }
 
 // ShouldExposeTpuDevice returns true if path refers to a TPU device which
@@ -528,6 +533,11 @@ func ShouldExposeTpuDevice(path string) bool {
 //
 // Precondition: rdmaproxy is enabled.
 func ShouldExposeRDMADevice(path string) bool {
+	// SetupDev bind-mounts from path as given, so it must not contain ".."
+	// components that resolve outside of /dev/infiniband.
+	if path != filepath.Clean(path) {
+		return false
+	}
 	return strings.HasPrefix(path, "/dev/infiniband/uverbs")
 }
 

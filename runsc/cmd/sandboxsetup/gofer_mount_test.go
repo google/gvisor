@@ -55,6 +55,10 @@ func TestShouldExposeVFIODevice(t *testing.T) {
 		{name: "vfio group", path: "/dev/vfio/0", want: true},
 		{name: "vfio dir itself", path: "/dev/vfio", want: true},
 		{name: "not vfio", path: "/dev/sda", want: false},
+		{name: "vfio prefix but not dir", path: "/dev/vfiox", want: false},
+		{name: "dotdot escape", path: "/dev/vfio/../../etc/shadow", want: false},
+		{name: "dotdot within dir", path: "/dev/vfio/../vfio/0", want: false},
+		{name: "trailing slash", path: "/dev/vfio/0/", want: false},
 		{name: "empty", path: "", want: false},
 	}
 	for _, tst := range tests {
@@ -77,6 +81,7 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 		{name: "vfio device", path: "/dev/vfio/0", want: true},
 		{name: "vfio vfio", path: "/dev/vfio/vfio", want: true},
 		{name: "not tpu", path: "/dev/sda", want: false},
+		{name: "vfio dotdot escape", path: "/dev/vfio/../../etc/shadow", want: false},
 		{name: "empty", path: "", want: false},
 	}
 	for _, tst := range tests {
@@ -84,6 +89,29 @@ func TestShouldExposeTpuDevice(t *testing.T) {
 			got := ShouldExposeTpuDevice(tst.path)
 			if got != tst.want {
 				t.Errorf("ShouldExposeTpuDevice(%q) = %v, want %v", tst.path, got, tst.want)
+			}
+		})
+	}
+}
+
+func TestShouldExposeRDMADevice(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "uverbs0", path: "/dev/infiniband/uverbs0", want: true},
+		{name: "uverbs12", path: "/dev/infiniband/uverbs12", want: true},
+		{name: "rdma_cm", path: "/dev/infiniband/rdma_cm", want: false},
+		{name: "dotdot escape", path: "/dev/infiniband/uverbs0/../../../etc/shadow", want: false},
+		{name: "not rdma", path: "/dev/sda", want: false},
+		{name: "empty", path: "", want: false},
+	}
+	for _, tst := range tests {
+		t.Run(tst.name, func(t *testing.T) {
+			got := ShouldExposeRDMADevice(tst.path)
+			if got != tst.want {
+				t.Errorf("ShouldExposeRDMADevice(%q) = %v, want %v", tst.path, got, tst.want)
 			}
 		})
 	}
