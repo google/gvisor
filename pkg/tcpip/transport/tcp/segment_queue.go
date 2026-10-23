@@ -14,6 +14,8 @@
 
 package tcp
 
+import "gvisor.dev/gvisor/pkg/tcpip/header"
+
 // segmentQueue is a bounded, thread-safe queue of TCP segments.
 //
 // +stateify savable
@@ -58,6 +60,33 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 	// Allow zero sized segments (ACK/FIN/RSTs etc even if the segment queue
 	// is currently full).
 	allow := (used <= int(bufSz) || s.payloadSize() == 0) && !q.frozen
+
+	if !allow && !q.frozen {
+		// The receive buffer is full. Drop the payload but queue the
+		// segment so that it is acknowledged (RFC 9293 section 3.10.7.4),
+		// as Linux does when tcp_data_queue drops for memory. A zero
+		// sized segment is admitted regardless of memory.
+		// Handshake completion can requeue an already-owned segment. Release
+		// its old charge before replacing the payload; setOwner below will
+		// account for the compact packet.
+		if s.ep != nil && s.qFlags == recvQ {
+			s.ep.updateReceiveMemUsed(-s.segMemSize())
+			s.ep = nil
+			s.qFlags = 0
+		}
+		oldPkt := s.pkt
+		oldPkt.Data().CapLength(0)
+		// Truncating a view does not release its backing allocation. Copy the
+		// remaining headers so the queued segment does not retain the payload.
+		s.pkt = oldPkt.DeepCopyForForwarding(0)
+		s.pkt.NICID = oldPkt.NICID
+		s.pkt.NetworkPacketInfo = oldPkt.NetworkPacketInfo
+		s.options = s.pkt.TransportHeader().Slice()[header.TCPMinimumSize:]
+		s.dataMemSize = s.pkt.MemSize()
+		s.dataDropped = true
+		oldPkt.DecRef()
+		allow = true
+	}
 
 	if allow {
 		s.IncRef()

@@ -459,6 +459,17 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	segLen := seqnum.Size(s.payloadSize())
 	segSeq := s.sequenceNumber
 
+	if s.dataDropped {
+		// The payload was dropped because the receive buffer was full.
+		// Acknowledge the segment and ignore it otherwise; TS.Recent is
+		// updated as for an unacceptable segment (RFC 7323 section 4.3).
+		if r.ep.SendTSOk && s.parsedOptions.TS {
+			r.ep.updateRecentTimestamp(s.parsedOptions.TSVal, r.ep.snd.MaxSentAck, segSeq)
+		}
+		r.ep.snd.sendAck()
+		return true, nil
+	}
+
 	// If the sequence number range is outside the acceptable range, just
 	// send an ACK and stop further processing of the segment.
 	// This is according to RFC 793, page 68.
