@@ -33,8 +33,23 @@ func (t *Task) joinNewSessionKeyringLocked(newKeyDesc string, newKeyPerms auth.K
 		return nil, err
 	}
 	t.Debugf("Joining newly-created session keyring with ID %d, permissions %v", sessionKeyring.ID, newKeyPerms)
-	t.sessionKeyring = sessionKeyring
+	t.setSessionKeyringLocked(sessionKeyring)
 	return sessionKeyring, nil
+}
+
+// setSessionKeyringLocked makes key t's session keyring, taking ownership of
+// the caller's reference on key, and drops t's reference on its previous
+// session keyring.
+//
+// Preconditions: t.mu is held.
+//
+// +checklocks:t.mu
+func (t *Task) setSessionKeyringLocked(key *auth.Key) {
+	old := t.sessionKeyring
+	t.sessionKeyring = key
+	if old != nil {
+		old.DecRef(t)
+	}
 }
 
 // JoinSessionKeyring causes the task to join a keyring with the given
@@ -51,7 +66,7 @@ func (t *Task) JoinSessionKeyring(keyDesc *string) (*auth.Key, error) {
 	newKeyDesc := auth.DefaultSessionKeyringName
 	if keyDesc != nil {
 		creds.UserNamespace.Keys.ForEach(func(k *auth.Key) bool {
-			if k.Description == *keyDesc && creds.HasKeyPermission(k, possessed, auth.KeySearch) {
+			if k.Description == *keyDesc && creds.HasKeyPermission(k, possessed, auth.KeySearch) && k.TryIncRef() {
 				sessionKeyring = k
 				return true
 			}
@@ -59,7 +74,7 @@ func (t *Task) JoinSessionKeyring(keyDesc *string) (*auth.Key, error) {
 		})
 		if sessionKeyring != nil {
 			t.Debugf("Joining existing session keyring with ID %d", sessionKeyring.ID)
-			t.sessionKeyring = sessionKeyring
+			t.setSessionKeyringLocked(sessionKeyring)
 			return sessionKeyring, nil
 		}
 		newKeyDesc = *keyDesc
