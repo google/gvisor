@@ -161,6 +161,11 @@ func (*endpoint) WriteHeaderIncludedPacket(*stack.Route, *stack.PacketBuffer) tc
 }
 
 func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
+	// As in arp_rcv, frames for another host's link address are dropped
+	// before they are counted.
+	if pkt.PktType == tcpip.PacketOtherHost {
+		return
+	}
 	stats := e.stats.arp
 	stats.packetsReceived.Increment()
 

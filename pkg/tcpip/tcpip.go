@@ -513,8 +513,8 @@ const (
 	// PacketHost indicates a packet addressed to the local host.
 	PacketHost PacketType = iota
 
-	// PacketOtherHost indicates an outgoing packet addressed to
-	// another host caught by a NIC in promiscuous mode.
+	// PacketOtherHost indicates an incoming frame addressed to another
+	// host's link address.
 	PacketOtherHost
 
 	// PacketOutgoing for a packet originating from the local host

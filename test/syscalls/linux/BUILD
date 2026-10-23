@@ -412,6 +412,26 @@ cc_binary(
 )
 
 cc_binary(
+    name = "bridge_test",
+    testonly = 1,
+    srcs = ["bridge.cc"],
+    linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
+    deps = select_gtest() + [
+        ":socket_netlink_route_util",
+        ":socket_netlink_util",
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:socket_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
     name = "brk_test",
     testonly = 1,
     srcs = ["brk.cc"],
