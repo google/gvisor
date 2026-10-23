@@ -18,7 +18,6 @@ package globals
 
 import (
 	"fmt"
-
 	"go/ast"
 	"go/token"
 	"path/filepath"

@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"

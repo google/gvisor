@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-
 	pointspb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 

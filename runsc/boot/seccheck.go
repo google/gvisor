@@ -17,7 +17,6 @@ package boot
 import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
-
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 )
 

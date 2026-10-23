@@ -23,7 +23,6 @@ import (
 	errgrpc "github.com/containerd/errdefs/pkg/errgrpc"
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 	"gvisor.dev/gvisor/pkg/shim/v1/runsccmd"
 )

@@ -18,7 +18,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
