@@ -492,6 +492,53 @@ func TestCloseWithoutConnect(t *testing.T) {
 	}
 }
 
+// TestWildcardBoundPortReleasedOnClose tests that an endpoint that binds to the
+// wildcard address and then connects releases its port when it is closed.
+func TestWildcardBoundPortReleasedOnClose(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+
+	// Create TCP endpoint.
+	var err tcpip.Error
+	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+
+	// Binding to the wildcard address makes the stack pick an ephemeral port.
+	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+
+	// Save the port because connecting replaces the local address of the
+	// endpoint with the connected address.
+	bound, err := c.EP.GetLocalAddress()
+	if err != nil {
+		t.Fatalf("GetLocalAddress failed: %s", err)
+	}
+
+	// Connect so that the local address of the endpoint is no longer the
+	// wildcard address.
+	c.Connect(context.TestInitialSequenceNumber, 30000, nil)
+
+	// Reset the connection instead of entering TIME-WAIT so that the endpoint
+	// releases the port when it is closed.
+	c.EP.SocketOptions().SetLinger(tcpip.LingerOption{Enabled: true, Timeout: 0})
+	c.EP.Close()
+	c.EP = nil
+
+	// The port must be available for a new endpoint.
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+	defer ep.Close()
+
+	if err := ep.Bind(tcpip.FullAddress{Port: bound.Port}); err != nil {
+		t.Fatalf("Bind(port=%d) failed after the previous endpoint was closed: %s", bound.Port, err)
+	}
+}
+
 func TestHandshakeTimeoutConnectedCount(t *testing.T) {
 	clock := faketime.NewManualClock()
 	c := context.NewWithOpts(t, context.Options{
