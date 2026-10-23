@@ -323,3 +323,13 @@ const ContMgrSetNetworkArgs = "containerManager.SetNetworkArgs"
 // ContMgrGetNetworkConfig returns the network interfaces and routes applied
 // during the creation of root container.
 const ContMgrGetNetworkConfig = "containerManager.GetNetworkConfig"
+
+// ContMgrSetTotalMemory updates the total memory reported inside the sandbox,
+// without a restart.
+const ContMgrSetTotalMemory = "containerManager.SetTotalMemory"
+
+// SetTotalMemoryArgs are arguments to the SetTotalMemory method.
+type SetTotalMemoryArgs struct {
+	// TotalMem is the new total memory, in bytes, to report to applications.
+	TotalMem uint64
+}
