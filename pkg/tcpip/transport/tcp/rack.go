@@ -78,7 +78,7 @@ func (rc *rackControl) init(snd *sender, iss seqnum.Value) {
 }
 
 // update will update the RACK related fields when an ACK has been received.
-// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-09#section-6.2
+// See: https://www.rfc-editor.org/rfc/rfc8985.html#section-6.2
 //
 // +checklocks:rc.snd.ep.mu
 func (rc *rackControl) update(seg *segment, ackSeg *segment) {
@@ -94,12 +94,11 @@ func (rc *rackControl) update(seg *segment, ackSeg *segment) {
 
 	// If the ACK is for a retransmitted packet, do not update if it is a
 	// spurious inference which is determined by below checks:
-	// 1. When Timestamping option is available, if the TSVal is less than
+	// 1. When Timestamping option is available, if the TSecr is less than
 	// the transmit time of the most recent retransmitted packet.
-	// 2. When RTT calculated for the packet is less than the smoothed RTT
+	// 2. When RTT calculated for the packet is less than the minimum RTT
 	// for the connection.
-	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-7.2
-	// step 2
+	// See: https://www.rfc-editor.org/rfc/rfc8985.html#section-6.2, step 2.
 	if seg.xmitCount > 1 {
 		if ackSeg.parsedOptions.TS && ackSeg.parsedOptions.TSEcr != 0 {
 			if ackSeg.parsedOptions.TSEcr < rc.snd.ep.tsVal(seg.xmitTime) {
