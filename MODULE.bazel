@@ -22,7 +22,7 @@ bazel_dep(name = "protobuf", version = "35.1", repo_name = "com_google_protobuf"
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "abseil-cpp", version = "20260817.0", repo_name = "com_google_absl")
 bazel_dep(name = "googletest", version = "1.18.0", repo_name = "com_google_googletest")
-bazel_dep(name = "google_benchmark", version = "1.9.5", repo_name = "com_google_benchmark")
+bazel_dep(name = "google_benchmark", version = "1.10.0", repo_name = "com_google_benchmark")
 bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.2")
 bazel_dep(name = "rules_python", version = "2.0.2")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
