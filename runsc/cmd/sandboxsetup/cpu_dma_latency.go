@@ -16,7 +16,6 @@ package sandboxsetup
 
 import (
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )

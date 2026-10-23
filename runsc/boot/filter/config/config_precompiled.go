@@ -18,15 +18,12 @@ import (
 	"fmt"
 
 	"golang.org/x/sync/errgroup"
-
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	_ "gvisor.dev/gvisor/pkg/sentry/platform/platforms" // Register platforms to precompile filters for.
 	"gvisor.dev/gvisor/pkg/sync"
-
-	// Import platforms that we need to precompile filters for.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/platforms"
 )
 
 // Variable names used in precompiled filters.
