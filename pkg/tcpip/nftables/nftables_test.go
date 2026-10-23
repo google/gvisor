@@ -39,7 +39,9 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 // Table Constants.
@@ -6463,13 +6465,13 @@ func newOutputInterfaceStack(t *testing.T) *stack.Stack {
 	return st
 }
 
-// newOutputInterfaceNFTables returns an NFTables object for st with one ip
-// family base chain of the given type at the postrouting hook, holding a rule
+// newOutputInterfaceNFTables returns an NFTables object for st with one base
+// chain of the given family and type at the postrouting hook, holding a rule
 // made of ops.
-func newOutputInterfaceNFTables(t *testing.T, st *stack.Stack, bcType BaseChainType, ops ...operation) *NFTables {
+func newOutputInterfaceNFTables(t *testing.T, st *stack.Stack, family stack.AddressFamily, bcType BaseChainType, ops ...operation) *NFTables {
 	t.Helper()
 	nf := NewNFTables(st, tcpip.NewStdClock(), rand.RNGFrom(&fixedReader{}))
-	tab, err := nf.AddTable(stack.IP, "test", false)
+	tab, err := nf.AddTable(family, "test", false)
 	if err != nil {
 		t.Fatalf("AddTable: %v", err)
 	}
@@ -6519,7 +6521,7 @@ func TestMetaOutputInterface(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			st := newOutputInterfaceStack(t)
 			defer st.Destroy()
-			nf := newOutputInterfaceNFTables(t, st, BaseChainTypeFilter,
+			nf := newOutputInterfaceNFTables(t, st, stack.IP, BaseChainTypeFilter,
 				mustCreateMetaLoad(t, test.key, test.dreg),
 				mustCreateComparison(t, test.dreg, linux.NFT_CMP_EQ, test.data),
 				mustCreateImmediate(t, linux.NFT_REG_VERDICT, nil, Verdict{Code: VC(linux.NF_DROP)}))
@@ -6582,7 +6584,7 @@ func TestMasqueradeOutputInterface(t *testing.T) {
 			t.Run(target.name+"/"+test.name, func(t *testing.T) {
 				st := newOutputInterfaceStack(t)
 				defer st.Destroy()
-				nf := newOutputInterfaceNFTables(t, st, BaseChainTypeNat, target.op(t))
+				nf := newOutputInterfaceNFTables(t, st, stack.IP, BaseChainTypeNat, target.op(t))
 				nf.InitConnTrackOnce()
 				nf.SetNATState(true)
 
@@ -6683,5 +6685,129 @@ func TestCompatAddrtypeLimitIfaceOut(t *testing.T) {
 				t.Errorf("addrtype --dst-type BROADCAST --limit-iface-out with outNICID=%d verdict = %s, want %s", test.outNICID, VerdictCodeToString(regs.verdict.Code), VerdictCodeToString(test.want))
 			}
 		})
+	}
+}
+
+func makeUDPv6Packet(srcAddr, dstAddr tcpip.Address, srcPort, dstPort uint16) *stack.PacketBuffer {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		ReserveHeaderBytes: header.IPv6MinimumSize + header.UDPMinimumSize,
+	})
+	pkt.NetworkProtocolNumber = header.IPv6ProtocolNumber
+	pkt.TransportProtocolNumber = header.UDPProtocolNumber
+
+	udpHdr := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
+	udpHdr.Encode(&header.UDPFields{
+		SrcPort: srcPort,
+		DstPort: dstPort,
+		Length:  header.UDPMinimumSize,
+	})
+	xsum := header.PseudoHeaderChecksum(header.UDPProtocolNumber, srcAddr, dstAddr, header.UDPMinimumSize)
+	udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
+
+	ipHdr := header.IPv6(pkt.NetworkHeader().Push(header.IPv6MinimumSize))
+	ipHdr.Encode(&header.IPv6Fields{
+		PayloadLength:     header.UDPMinimumSize,
+		TransportProtocol: header.UDPProtocolNumber,
+		HopLimit:          64,
+		SrcAddr:           srcAddr,
+		DstAddr:           dstAddr,
+	})
+	return pkt
+}
+
+// TestMasqueradeIPv6Source tests that masq and the MASQUERADE compat target
+// select the IPv6 source address for the packet's destination, not the next
+// hop, like net/netfilter/nf_nat_masquerade.c:nf_nat_masquerade_ipv6.
+func TestMasqueradeIPv6Source(t *testing.T) {
+	var (
+		linkLocal = testutil.MustParse6("fe80::1")
+		global    = testutil.MustParse6("2001:db8:1::1")
+		gateway   = testutil.MustParse6("fe80::ff")
+		client    = testutil.MustParse6("fd00::2")
+		remote    = testutil.MustParse6("2001:db8:5::7")
+	)
+	for _, target := range []struct {
+		name string
+		op   func(t *testing.T) operation
+	}{
+		{name: "masq", op: func(t *testing.T) operation {
+			op, err := newMasqOp(-1, -1, 0)
+			if err != nil {
+				t.Fatalf("newMasqOp: %v", err)
+			}
+			return op
+		}},
+		{name: "MASQUERADE", op: func(t *testing.T) operation {
+			return &compatMASQTarget{info: masqTargetInfo{netProto: header.IPv6ProtocolNumber}}
+		}},
+	} {
+		for _, test := range []struct {
+			name  string
+			route bool
+		}{
+			{name: "link-local gateway", route: true},
+			// Without a route the destination was already used; this case
+			// guards that fallback.
+			{name: "no route fallback"},
+		} {
+			t.Run(target.name+"/"+test.name, func(t *testing.T) {
+				st := stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocol},
+				})
+				defer st.Destroy()
+				if err := st.CreateNICWithOptions(oifEth0NIC, channel.New(0, 1500, ""), stack.NICOptions{Name: "eth0"}); err != nil {
+					t.Fatalf("CreateNICWithOptions(%d, _, _): %v", oifEth0NIC, err)
+				}
+				for _, addr := range []tcpip.Address{linkLocal, global} {
+					protoAddr := tcpip.ProtocolAddress{
+						Protocol:          header.IPv6ProtocolNumber,
+						AddressWithPrefix: tcpip.AddressWithPrefix{Address: addr, PrefixLen: 64},
+					}
+					if err := st.AddProtocolAddress(oifEth0NIC, protoAddr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %v", oifEth0NIC, protoAddr, err)
+					}
+				}
+				st.SetRouteTable([]tcpip.Route{{
+					Destination: header.IPv6EmptySubnet,
+					Gateway:     gateway,
+					NIC:         oifEth0NIC,
+				}})
+
+				nf := newOutputInterfaceNFTables(t, st, stack.IP6, BaseChainTypeNat, target.op(t))
+				nf.InitConnTrackOnce()
+				nf.SetNATState(true)
+
+				pkt := makeUDPv6Packet(client, remote, arbitraryPort, oifRemotePort)
+				defer pkt.DecRef()
+				nf.GetConnTrack().GetConnAndUpdatePkt(pkt, false /* skipChecksumValidation */)
+				if !pkt.IsConnTrackConfigured() {
+					t.Fatal("packet is not tracked")
+				}
+
+				var r *stack.Route
+				if test.route {
+					var err tcpip.Error
+					r, err = st.FindRoute(0, tcpip.Address{}, remote, header.IPv6ProtocolNumber, false /* multicastLoop */)
+					if err != nil {
+						t.Fatalf("FindRoute(_, _, %s, _, _): %v", remote, err)
+					}
+					defer r.Release()
+					if got := r.NextHop(); got != gateway {
+						t.Fatalf("route next hop = %s, want %s", got, gateway)
+					}
+				}
+
+				v, err := nf.EvaluateHook(stack.IP6, stack.NFPostrouting, pkt, r, oifEth0NIC)
+				if err != nil {
+					t.Fatalf("EvaluateHook: %v", err)
+				}
+				if v.Code != VC(linux.NF_ACCEPT) {
+					t.Errorf("EvaluateHook verdict = %s, want %s", VerdictCodeToString(v.Code), VerdictCodeToString(VC(linux.NF_ACCEPT)))
+				}
+				if got := header.IPv6(pkt.NetworkHeader().Slice()).SourceAddress(); got != global {
+					t.Errorf("source address = %s, want %s", got, global)
+				}
+			})
+		}
 	}
 }
