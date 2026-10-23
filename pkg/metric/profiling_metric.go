@@ -643,8 +643,6 @@ func writeProfilingMetrics[T bufferedMetricsWriter](sink T, s *snapshots, header
 	sink.Close()
 
 	doneProfilingMetrics <- stats
-	close(doneProfilingMetrics)
-	profilingMetricsStarted.Store(false)
 }
 
 // Log logs some statistics about the profiling metrics collection process.
@@ -746,6 +744,9 @@ func StopProfilingMetrics() {
 		return
 	}
 	stats := <-doneProfilingMetrics
+	// The writer has finished using this session's state. Allow a new session
+	// before returning, without letting it replace the channel before this receive.
+	profilingMetricsStarted.Store(false)
 	log.Infof("Profiling metrics stopped.")
 	stats.Log(func(format string, val ...any) {
 		log.Infof("Profiling metrics: "+format, val...)
