@@ -23,12 +23,14 @@
 // clang-format off
 #include <netinet/in.h>
 #include <stddef.h>
+// <net/if.h> must precede Linux headers so <linux/if.h> doesn't redefine
+// struct ifreq.
+#include <net/if.h>
 // clang-format on
 
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
-#include <net/if.h>
 #include <netinet/ip.h>
 #include <stdint.h>
 
