@@ -82,7 +82,9 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
