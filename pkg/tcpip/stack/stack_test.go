@@ -1003,6 +1003,8 @@ func TestDisabledNICsNICInfoAndCheckNIC(t *testing.T) {
 			t.Errorf("entry for %d missing from allNICInfo = %+v", nicID, allNICInfo)
 		} else if nicInfo.Flags.Running != enabled {
 			t.Errorf("got nicInfo.Flags.Running = %t, want = %t", nicInfo.Flags.Running, enabled)
+		} else if nicInfo.Flags.Up != enabled {
+			t.Errorf("got nicInfo.Flags.Up = %t, want = %t", nicInfo.Flags.Up, enabled)
 		}
 
 		if got := s.CheckNIC(nicID); got != enabled {
@@ -3777,6 +3779,93 @@ func TestAddRemoveIPv4BroadcastAddressOnNICEnableDisable(t *testing.T) {
 		} else if containsAddr(allNICAddrs, broadcastAddr) {
 			t.Fatalf("got allNICAddrs = %+v, don't want = %+v", allNICAddrs, broadcastAddr)
 		}
+	}
+}
+
+// TestFindRouteToDisabledNICAddress tests that a disabled NIC's IPv4 address
+// is still a local destination and its IPv6 address is not, with and without
+// HandleLocal.
+func TestFindRouteToDisabledNICAddress(t *testing.T) {
+	const (
+		loopbackNICID = 1
+		nicID         = 2
+	)
+	v4Loopback := testutil.MustParse4("127.0.0.1")
+	v4Addr := testutil.MustParse4("192.0.2.1")
+	v6Addr := testutil.MustParse6("2001:db8::1")
+
+	for _, handleLocal := range []bool{true, false} {
+		t.Run(fmt.Sprintf("HandleLocal=%t", handleLocal), func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+				HandleLocal:      handleLocal,
+			})
+			defer s.Close()
+			if err := s.CreateNIC(loopbackNICID, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", loopbackNICID, err)
+			}
+			if err := s.CreateNIC(nicID, channel.New(0, defaultMTU, "")); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			for _, a := range []struct {
+				nicID tcpip.NICID
+				addr  tcpip.ProtocolAddress
+			}{
+				{loopbackNICID, tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: v4Loopback, PrefixLen: 8}}},
+				{nicID, tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: v4Addr.WithPrefix()}},
+				{nicID, tcpip.ProtocolAddress{Protocol: ipv6.ProtocolNumber, AddressWithPrefix: v6Addr.WithPrefix()}},
+			} {
+				if err := s.AddProtocolAddress(a.nicID, a.addr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", a.nicID, a.addr, err)
+				}
+			}
+			// Without HandleLocal, an enabled NIC's addresses are reached
+			// through the route table.
+			s.SetRouteTable([]tcpip.Route{
+				{Destination: tcpip.AddressWithPrefix{Address: v4Loopback, PrefixLen: 8}.Subnet(), NIC: loopbackNICID},
+				{Destination: v4Addr.WithPrefix().Subnet(), NIC: nicID},
+				{Destination: v6Addr.WithPrefix().Subnet(), NIC: nicID},
+			})
+
+			for _, test := range []struct {
+				name         string
+				nicID        tcpip.NICID
+				addr         tcpip.Address
+				proto        tcpip.NetworkProtocolNumber
+				wantDisabled tcpip.Error
+			}{
+				{name: "IPv4", nicID: nicID, addr: v4Addr, proto: ipv4.ProtocolNumber, wantDisabled: nil},
+				{name: "IPv6", nicID: nicID, addr: v6Addr, proto: ipv6.ProtocolNumber, wantDisabled: &tcpip.ErrNetworkUnreachable{}},
+				{name: "IPv4 loopback", nicID: loopbackNICID, addr: v4Loopback, proto: ipv4.ProtocolNumber, wantDisabled: nil},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					for _, id := range []tcpip.NICID{loopbackNICID, nicID} {
+						if err := s.EnableNIC(id); err != nil {
+							t.Fatalf("EnableNIC(%d): %s", id, err)
+						}
+					}
+					r, err := s.FindRoute(0, tcpip.Address{}, test.addr, test.proto, false /* multicastLoop */)
+					if err != nil {
+						t.Fatalf("FindRoute(0, '', %s, %d, false) with NIC enabled: %s", test.addr, test.proto, err)
+					}
+					r.Release()
+
+					if err := s.DisableNIC(test.nicID); err != nil {
+						t.Fatalf("DisableNIC(%d): %s", test.nicID, err)
+					}
+					r, err = s.FindRoute(0, tcpip.Address{}, test.addr, test.proto, false /* multicastLoop */)
+					if err == nil {
+						if r.NICID() != loopbackNICID {
+							t.Errorf("got r.NICID() = %d, want = %d", r.NICID(), loopbackNICID)
+						}
+						r.Release()
+					}
+					if diff := cmp.Diff(test.wantDisabled, err); diff != "" {
+						t.Errorf("FindRoute(0, '', %s, %d, false) with NIC %d disabled mismatch (-want +got):\n%s", test.addr, test.proto, test.nicID, diff)
+					}
+				})
+			}
+		})
 	}
 }
 
