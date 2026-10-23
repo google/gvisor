@@ -263,15 +263,7 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 	if err != nil {
 		return linux.Statx{}, err
 	}
-	if opts.Mask&(linux.STATX_UID|linux.STATX_GID) != 0 {
-		uid, gid := i.getOwner(linux.FileMode(stat.Mode))
-		if opts.Mask&linux.STATX_UID != 0 {
-			stat.UID = uint32(uid)
-		}
-		if opts.Mask&linux.STATX_GID != 0 {
-			stat.GID = uint32(gid)
-		}
-	}
+	fillTaskOwner(i.owner, &stat, opts.Mask)
 	return stat, nil
 }
 
@@ -280,14 +272,36 @@ func (i *taskOwnedInode) Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.
 // +checklocksexclude:i.owner.mu
 func (i *taskOwnedInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	mode := i.Mode()
-	uid, gid := i.getOwner(mode)
+	uid, gid := taskOwner(i.owner, mode)
 	return vfs.GenericCheckPermissions(creds, ats, mode, nil, uid, gid)
 }
 
-// +checklocksexclude:i.owner.mu
-func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {
+// fillTaskOwner fills in the owner fields of stat requested by mask with
+// taskOwner(t, stat.Mode).
+//
+// +checklocksexclude:t.mu
+func fillTaskOwner(t *kernel.Task, stat *linux.Statx, mask uint32) {
+	if mask&(linux.STATX_UID|linux.STATX_GID) == 0 {
+		return
+	}
+	uid, gid := taskOwner(t, linux.FileMode(stat.Mode))
+	if mask&linux.STATX_UID != 0 {
+		stat.UID = uint32(uid)
+	}
+	if mask&linux.STATX_GID != 0 {
+		stat.GID = uint32(gid)
+	}
+}
+
+// taskOwner returns the owner of a /proc/[pid] file with the given mode. It
+// must be computed on each access rather than at inode creation, since the
+// task's credentials and dumpability change over its lifetime (Linux
+// re-evaluates it in fs/proc/base.c:pid_revalidate).
+//
+// +checklocksexclude:t.mu
+func taskOwner(t *kernel.Task, mode linux.FileMode) (auth.KUID, auth.KGID) {
 	// By default, set the task owner as the file owner.
-	creds := i.owner.Credentials()
+	creds := t.Credentials()
 	uid := creds.EffectiveKUID
 	gid := creds.EffectiveKGID
 
@@ -300,7 +314,7 @@ func (i *taskOwnedInode) getOwner(mode linux.FileMode) (auth.KUID, auth.KGID) {
 
 	// If the task is not dumpable, then root (in the namespace preferred)
 	// owns the file.
-	m := getMM(i.owner)
+	m := getMM(t)
 	if m == nil {
 		return auth.RootKUID, auth.RootKGID
 	}
