@@ -46,6 +46,7 @@
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/escaping.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -2900,15 +2901,15 @@ TEST_F(Cgroup2Test, MemoryFilesNotOnRoot) {
   SKIP_IF(!absl::StrContains(available, "memory"));
 
   // Absent on the root cgroup.
-  for (const char* name :
-       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+  for (const char* name : {"memory.current", "memory.max", "memory.high",
+                           "memory.events", "memory.oom.group"}) {
     EXPECT_THAT(Exists(root().Relpath(name)), IsPosixErrorOkAndHolds(false))
         << name << " should not exist on the root cgroup";
   }
 
   // Present on a non-root cgroup that has the memory controller.
-  for (const char* name :
-       {"memory.current", "memory.max", "memory.high", "memory.events"}) {
+  for (const char* name : {"memory.current", "memory.max", "memory.high",
+                           "memory.events", "memory.oom.group"}) {
     EXPECT_THAT(Exists(c().Relpath(name)), IsPosixErrorOkAndHolds(true))
         << name << " should exist on a non-root cgroup";
   }
@@ -3103,6 +3104,51 @@ TEST_F(Cgroup2Test, MemoryLimits) {
               PosixErrorIs(EINVAL));
   EXPECT_THAT(parent.WriteControlFile("memory.max", "abc100"),
               PosixErrorIs(EINVAL));
+}
+
+TEST_F(Cgroup2Test, MemoryOOMGroup) {
+  std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "memory"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+memory"));
+  Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("parent"));
+
+  EXPECT_THAT(parent.ReadControlFile("memory.oom.group"),
+              IsPosixErrorOkAndHolds("0\n"));
+
+  struct {
+    absl::string_view input;
+    absl::string_view want;
+  } const valid[] = {
+      {"1", "1\n"},   {"0", "0\n"},     {"1\n", "1\n"}, {"0\n", "0\n"},
+      {" 1 ", "1\n"}, {"\t0\n", "0\n"}, {"+1", "1\n"},
+  };
+  for (const auto& tc : valid) {
+    EXPECT_NO_ERRNO(parent.WriteControlFile("memory.oom.group", tc.input))
+        << "input: " << absl::CEscape(tc.input);
+    EXPECT_THAT(parent.ReadControlFile("memory.oom.group"),
+                IsPosixErrorOkAndHolds(tc.want))
+        << "input: " << absl::CEscape(tc.input);
+  }
+
+  ASSERT_NO_ERRNO(parent.WriteControlFile("memory.oom.group", "1"));
+  for (absl::string_view input :
+       {"2", "-1", "abc", "\n", "1abc", "1.0", "1 1", "-+1"}) {
+    EXPECT_THAT(parent.WriteControlFile("memory.oom.group", input),
+                PosixErrorIs(EINVAL))
+        << "input: " << absl::CEscape(input);
+    EXPECT_THAT(parent.ReadControlFile("memory.oom.group"),
+                IsPosixErrorOkAndHolds("1\n"));
+  }
+
+  // A new child starts at 0 rather than inheriting its parent's value.
+  ASSERT_NO_ERRNO(parent.WriteControlFile("cgroup.subtree_control", "+memory"));
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("child"));
+  EXPECT_THAT(child.ReadControlFile("memory.oom.group"),
+              IsPosixErrorOkAndHolds("0\n"));
+  EXPECT_THAT(parent.ReadControlFile("memory.oom.group"),
+              IsPosixErrorOkAndHolds("1\n"));
 }
 
 TEST_F(Cgroup2Test, CpuLimits) {
@@ -4018,6 +4064,44 @@ TEST_F(Cgroup2Test, NsdelegateRootWrites) {
   ASSERT_GT(pid2, 0);
   ASSERT_THAT(waitpid(pid2, &status, 0), SyscallSucceedsWithValue(pid2));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// memory.oom.group is CFTYPE_NS_DELEGATABLE in Linux, unlike memory.max.
+TEST_F(Cgroup2Test, NsdelegateMemoryOOMGroup) {
+  const std::string controllers =
+      ASSERT_NO_ERRNO_AND_VALUE(c().ReadControlFile("cgroup.controllers"));
+  SKIP_IF(!absl::StrContains(controllers, "memory"));
+
+  ASSERT_NO_ERRNO(c().WriteControlFile("cgroup.subtree_control", "+memory"));
+  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("nsd"));
+  const std::string procs = cg.Relpath("cgroup.procs");
+  const std::string oom_group = cg.Relpath("memory.oom.group");
+  const std::string mem_max = cg.Relpath("memory.max");
+
+  Mounter m2(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup r2 = ASSERT_NO_ERRNO_AND_VALUE(m2.MountCgroup2fs("nsdelegate"));
+  const bool nsdelegate_applied =
+      ASSERT_NO_ERRNO_AND_VALUE(NsdelegateApplied(r2.Path()));
+  SKIP_IF(!nsdelegate_applied);
+
+  const pid_t pid = fork();
+  if (pid == 0) {
+    TEST_CHECK(WriteFileErrno(procs.c_str(), "0") == 0);
+    TEST_PCHECK(unshare(CLONE_NEWCGROUP) == 0);
+    TEST_CHECK(WriteFileErrno(mem_max.c_str(), "max") == EPERM);
+    TEST_CHECK(WriteFileErrno(oom_group.c_str(), "1") == 0);
+    _exit(0);
+  }
+  ASSERT_GT(pid, 0);
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  EXPECT_THAT(cg.ReadControlFile("memory.oom.group"),
+              IsPosixErrorOkAndHolds("1\n"));
+
+  // Mounting without the option from the init namespace clears the flag.
+  Mounter m3(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  ASSERT_NO_ERRNO(m3.MountCgroup2fs());
 }
 
 // With nsdelegate, processes can't be migrated into or out of the namespace
