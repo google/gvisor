@@ -245,6 +245,15 @@ const (
 	SI_ASYNCNL = -60
 )
 
+// SEGV_* codes are only meaningful for SIGSEGV.
+const (
+	// SEGV_MAPERR indicates that no mapping covers the faulting address.
+	SEGV_MAPERR = 1
+
+	// SEGV_ACCERR indicates that the mapping forbids the access.
+	SEGV_ACCERR = 2
+)
+
 // CLD_* codes are only meaningful for SIGCHLD.
 const (
 	// CLD_EXITED indicates that a task exited.
