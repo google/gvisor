@@ -134,6 +134,13 @@ type RestoreOpts struct {
 	SplitFSRestore bool `json:"split_fsrestore"`
 }
 
+// RestoreReply is the reply of ContMgrRestore and ContMgrRestoreSubcontainer.
+type RestoreReply struct {
+	// KernelStarted is set when the call restored the last container, which
+	// starts the kernel.
+	KernelStarted bool
+}
+
 // ContMgrRestoreSubcontainer restores a container from a statefile.
 const ContMgrRestoreSubcontainer = "containerManager.RestoreSubcontainer"
 

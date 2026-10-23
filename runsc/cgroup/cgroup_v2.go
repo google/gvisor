@@ -46,10 +46,12 @@ const (
 	memoryLimitCgroup = "memory.max"
 	cpuLimitCgroup    = "cpu.max"
 	maxLimitStr       = "max"
-
-	// https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
-	defaultPeriod = 100000
 )
+
+// DefaultCPUPeriod is the CFS period used when the OCI spec sets none, in
+// microseconds.
+// https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
+const DefaultCPUPeriod = 100000
 
 var (
 	ErrInvalidFormat    = errors.New("cgroup: parsing file with invalid format failed")
@@ -295,7 +297,7 @@ func readCPUQuotaAndPeriod(path string) (int64, int64, error) {
 		}
 		return -1, -1, err
 	}
-	return parseCPUQuotaAndPeriod(cpuMax)
+	return ParseCPUMax(cpuMax)
 }
 
 // CPUQuota returns the raw CFS CPU quota in microseconds.
@@ -339,7 +341,9 @@ func (c *cgroupV2) CPUPeriod() (int64, error) {
 	return period, nil
 }
 
-func parseCPUQuotaAndPeriod(cpuMax string) (int64, int64, error) {
+// ParseCPUMax parses a cpu.max value into its quota and period.
+// The quota is -1 for "max".
+func ParseCPUMax(cpuMax string) (int64, int64, error) {
 	data := strings.SplitN(strings.TrimSpace(cpuMax), " ", 2)
 	if len(data) != 2 {
 		return -1, -1, fmt.Errorf("invalid cpu.max data %q", cpuMax)
@@ -474,7 +478,7 @@ func (*cpu2) generateProperties(spec *specs.LinuxResources) ([]dbus.Property, er
 		if quota > 0 {
 			if period == 0 {
 				// Assume the default.
-				period = defaultPeriod
+				period = DefaultCPUPeriod
 			}
 			// systemd converts CPUQuotaPerSecUSec (microseconds per CPU second) to
 			// CPUQuota (integer percentage of CPU) internally. This means that if a
@@ -515,7 +519,7 @@ func (*cpu2) set(spec *specs.LinuxResources, path string) error {
 		if spec.CPU.Period != nil && *spec.CPU.Period != 0 {
 			period = *spec.CPU.Period
 		} else {
-			period = defaultPeriod
+			period = DefaultCPUPeriod
 		}
 
 		v += " " + strconv.FormatUint(period, 10)
