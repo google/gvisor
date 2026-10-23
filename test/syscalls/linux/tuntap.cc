@@ -402,6 +402,8 @@ TEST_F(TuntapTest, CreateInterface) {
   EXPECT_THAT(ifname, ::testing::StartsWith("tap"));
   EXPECT_THAT(DumpLinkNames(),
               IsPosixErrorOkAndHolds(::testing::Contains(ifname)));
+  auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(ifname));
+  EXPECT_EQ(link.flags & IFF_MULTICAST, IFF_MULTICAST);
   fd.reset();
   EXPECT_THAT(GetLinkByName(ifname), PosixErrorIs(ENOENT));
 }
@@ -681,6 +683,7 @@ TEST_F(TuntapTest, TUNNoPacketInfo) {
 
   // Interface setup.
   auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kTunName));
+  EXPECT_EQ(link.flags & IFF_MULTICAST, IFF_MULTICAST);
   const struct in_addr dev_ipv4_addr = {.s_addr = kTapIPAddr};
   FileDescriptor nlsk =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
