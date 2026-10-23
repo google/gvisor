@@ -759,21 +759,27 @@ func RecvMMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 	return uintptr(count), nil, nil
 }
 
-func getSCMRights(t *kernel.Task, rights transport.RightsControlMessage) control.SCMRights {
+// getSCMRights converts rights to control.SCMRights. The bool result is true if
+// some of the rights were lost in the conversion.
+func getSCMRights(t *kernel.Task, rights transport.RightsControlMessage) (control.SCMRights, bool) {
 	switch v := rights.(type) {
 	case control.SCMRights:
-		return v
+		return v, false
 	case *transport.SCMRights:
-		rf := control.RightsFiles(fdsToHostFiles(t, v.FDs))
-		return &rf
+		files, trunc := fdsToHostFiles(t, v.FDs)
+		rf := control.RightsFiles(files)
+		return &rf, trunc
 	default:
 		panic(fmt.Sprintf("rights of type %T must be *transport.SCMRights or implement SCMRights", rights))
 	}
 }
 
+// fdsToHostFiles takes ownership of fds and imports them as host files.
+//
 // If an error is encountered, only files created before the error will be
-// returned. This is what Linux does.
-func fdsToHostFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
+// returned. This is what Linux does. The FDs after the one that failed are
+// closed, and the bool result is true.
+func fdsToHostFiles(ctx context.Context, fds []int) ([]*vfs.FileDescription, bool) {
 	files := make([]*vfs.FileDescription, 0, len(fds))
 	for _, fd := range fds {
 		// Get flags. We do it here because they may be modified
@@ -793,12 +799,21 @@ func fdsToHostFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
 
 		if err := file.SetStatusFlags(ctx, auth.CredentialsFromContext(ctx), uint32(fileFlags&linux.O_NONBLOCK)); err != nil {
 			ctx.Warningf("Error setting flags on host FD file: %v", err)
+			file.DecRef(ctx)
 			break
 		}
 
 		files = append(files, file)
 	}
-	return files
+	if len(files) == len(fds) {
+		return files, false
+	}
+	// fds[len(files)] is the FD that failed. Depending on where host.NewFD
+	// failed, it may already be closed, so it isn't closed here.
+	for _, fd := range fds[len(files)+1:] {
+		unix.Close(fd)
+	}
+	return files, true
 }
 
 func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
@@ -855,7 +870,11 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	}
 
 	if cms.Unix.Rights != nil {
-		cms.Unix.Rights = getSCMRights(t, cms.Unix.Rights)
+		var trunc bool
+		cms.Unix.Rights, trunc = getSCMRights(t, cms.Unix.Rights)
+		if trunc {
+			mflags |= linux.MSG_CTRUNC
+		}
 		controlData, mflags = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
 	}
 
