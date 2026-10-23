@@ -74,3 +74,20 @@ func TestOneCPUMask(t *testing.T) {
 		}
 	}
 }
+
+func TestCPUListString(t *testing.T) {
+	for _, test := range []struct {
+		cores uint
+		want  string
+	}{
+		{1, "0\n"},
+		{2, "0-1\n"},
+		{3, "0-2\n"},
+		{64, "0-63\n"},
+		{65, "0-64\n"},
+	} {
+		if got := cpuListString(test.cores); got != test.want {
+			t.Errorf("cpuListString(%d): got %q, want %q", test.cores, got, test.want)
+		}
+	}
+}

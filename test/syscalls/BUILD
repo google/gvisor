@@ -1229,6 +1229,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:sysfs_cpu_topology_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:sysinfo_test",
 )
 

@@ -268,17 +268,34 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 		"present":  fs.newCPUFile(ctx, creds, maxCPUCores, defaultSysMode),
 	}
 	// For consistency with /proc/cpuinfo, pretend all CPUs are in the same
-	// socket and each CPU is a distinct core.
+	// socket and die and each CPU is a distinct core with its own cluster.
 	fullMask := fullCPUMask(maxCPUCores) + "\n"
+	fullList := cpuListString(maxCPUCores)
 	for i := uint(0); i < maxCPUCores; i++ {
 		oneMask := oneCPUMask(i, maxCPUCores) + "\n"
+		oneList := fmt.Sprintf("%d\n", i)
+		topology := map[string]kernfs.Inode{
+			"cluster_cpus":         fs.newStaticFile(ctx, creds, defaultSysMode, oneMask),
+			"cluster_cpus_list":    fs.newStaticFile(ctx, creds, defaultSysMode, oneList),
+			"cluster_id":           fs.newStaticFile(ctx, creds, defaultSysMode, fmt.Sprintf("%d\n", i)),
+			"core_cpus":            fs.newStaticFile(ctx, creds, defaultSysMode, oneMask),
+			"core_cpus_list":       fs.newStaticFile(ctx, creds, defaultSysMode, oneList),
+			"core_id":              fs.newStaticFile(ctx, creds, defaultSysMode, fmt.Sprintf("%d\n", i)),
+			"core_siblings":        fs.newStaticFile(ctx, creds, defaultSysMode, fullMask),
+			"core_siblings_list":   fs.newStaticFile(ctx, creds, defaultSysMode, fullList),
+			"package_cpus":         fs.newStaticFile(ctx, creds, defaultSysMode, fullMask),
+			"package_cpus_list":    fs.newStaticFile(ctx, creds, defaultSysMode, fullList),
+			"physical_package_id":  fs.newStaticFile(ctx, creds, defaultSysMode, "0\n"),
+			"thread_siblings":      fs.newStaticFile(ctx, creds, defaultSysMode, oneMask),
+			"thread_siblings_list": fs.newStaticFile(ctx, creds, defaultSysMode, oneList),
+		}
+		if topologyHasDie {
+			topology["die_cpus"] = fs.newStaticFile(ctx, creds, defaultSysMode, fullMask)
+			topology["die_cpus_list"] = fs.newStaticFile(ctx, creds, defaultSysMode, fullList)
+			topology["die_id"] = fs.newStaticFile(ctx, creds, defaultSysMode, "0\n")
+		}
 		children[fmt.Sprintf("cpu%d", i)] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"topology": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-				"core_cpus":       fs.newStaticFile(ctx, creds, defaultSysMode, oneMask),
-				"core_siblings":   fs.newStaticFile(ctx, creds, defaultSysMode, fullMask),
-				"package_cpus":    fs.newStaticFile(ctx, creds, defaultSysMode, fullMask),
-				"thread_siblings": fs.newStaticFile(ctx, creds, defaultSysMode, oneMask),
-			}),
+			"topology": fs.newDir(ctx, creds, defaultSysDirMode, topology),
 		})
 	}
 	return fs.newDir(ctx, creds, defaultSysDirMode, children)
@@ -335,6 +352,17 @@ func oneCPUMask(i, cores uint) string {
 		sep = ","
 	}
 	return b.String()
+}
+
+// cpuListString formats CPUs 0..cores-1 in the kernel's "%*pbl" cpulist format
+// (lib/vsprintf.c:bitmap_list_string()), as used by
+// drivers/base/cpu.c:show_cpus_attr() and the drivers/base/topology.c *_list
+// files.
+func cpuListString(cores uint) string {
+	if cores == 1 {
+		return "0\n"
+	}
+	return fmt.Sprintf("0-%d\n", cores-1)
 }
 
 func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) map[string]kernfs.Inode {
@@ -491,7 +519,7 @@ type cpuFile struct {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (c *cpuFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "0-%d\n", c.maxCores-1)
+	buf.WriteString(cpuListString(c.maxCores))
 	return nil
 }
 
