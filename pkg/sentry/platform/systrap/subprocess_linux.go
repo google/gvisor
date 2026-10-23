@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -107,6 +108,14 @@ func attachedThread(flags uintptr, defaultAction seccomp.Action) (*thread, error
 				// Injected to support the address space operations.
 				unix.SYS_MMAP:   seccomp.MatchAll{},
 				unix.SYS_MUNMAP: seccomp.MatchAll{},
+				// Only the trusted syscall thread can invoke UVM. The
+				// additional sysmsg-thread filter still traps every ioctl.
+				unix.SYS_IOCTL: seccomp.Or{
+					seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_INITIALIZE)},
+					seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_POPULATE_PAGEABLE)},
+					seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_SET_PREFERRED_LOCATION)},
+					seccomp.PerArg{seccomp.NonNegativeFD{}, seccomp.EqualTo(nvgpu.UVM_UNSET_PREFERRED_LOCATION)},
+				},
 
 				// For sysmsg threads. Look at sysmsg/sighandler.c for more details.
 				unix.SYS_RT_SIGRETURN: seccomp.MatchAll{},

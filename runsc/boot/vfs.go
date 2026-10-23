@@ -1819,6 +1819,27 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {
+	var nvidiaMinors []uint32
+	if specutils.NVProxyEnabled(info.spec, info.conf) {
+		devClient := devutil.GoferClientFromContext(ctx)
+		minors := make(map[uint32]*devutil.GoferClient)
+		if _, err := collectContainerNvidiaRegularDevices(ctx, info.spec, info.conf, devClient, minors); err != nil {
+			return err
+		}
+		for minor := range minors {
+			nvidiaMinors = append(nvidiaMinors, minor)
+		}
+		slices.Sort(nvidiaMinors)
+		caps, err := specutils.NVProxyDriverCapsAllowed(info.conf)
+		if err != nil {
+			return err
+		}
+		applicationMM, err := nvproxy.UseApplicationMMUVM(ctx, devClient, nvidiaMinors, caps, kernel.KernelFromContext(ctx).NvidiaDriverVersion)
+		if err != nil {
+			return err
+		}
+		nvproxy.SetContainerUVMMode(vfsObj, info.containerName, applicationMM)
+	}
 	if info.spec.Linux != nil {
 		// Register vfio control device early if TPUv5 is enabled, so that
 		// subsequent TPU devices can find the tpuproxy object.
@@ -1854,15 +1875,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 		}
 		// There is no nvidia-container-cli flag to enable fabric-imex-mgmt, so
 		// we never create a /dev/nvidia-caps/nvidia-cap# file for it here.
-		devClient := devutil.GoferClientFromContext(ctx)
-		if devClient == nil {
-			return fmt.Errorf("dev gofer client not found in context")
-		}
-		minors, err := nvidiaRegularDeviceMinorsFromGofer(ctx, devClient)
-		if err != nil {
-			return err
-		}
-		for _, minor := range minors {
+		for _, minor := range nvidiaMinors {
 			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor)})
 		}
 		for _, nvidiaDev := range nvidiaDevs {

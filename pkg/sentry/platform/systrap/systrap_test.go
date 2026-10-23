@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"errors"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -103,6 +104,55 @@ func newSystrapTest(t *testing.T) (*Systrap, platform.AddressSpace, *platformCon
 	return s, as, pctx, ac
 }
 
+func TestUVMDispatchAndCleanup(t *testing.T) {
+	var stub *subprocess
+	var tids []int
+	t.Cleanup(func() {
+		if stub == nil {
+			return
+		}
+		if !stub.dead.Load() {
+			t.Error("UVM-bound address space was pooled instead of destroyed")
+		}
+		select {
+		case <-stub.requestsDone:
+		default:
+			t.Error("request goroutine remains running after Release")
+		}
+		for _, tid := range tids {
+			var status unix.WaitStatus
+			if _, err := unix.Wait4(tid, &status, unix.WALL|unix.WNOHANG, nil); err != unix.ECHILD {
+				t.Errorf("thread %d was not reaped: %v", tid, err)
+			}
+		}
+	})
+	_, as, _, _ := newSystrapTest(t)
+	stub = as.(*subprocess)
+	tids = append(tids, int(stub.syscallThread.thread.tid))
+	for _, thread := range stub.sysmsgThreads {
+		tids = append(tids, int(thread.thread.tid))
+	}
+	f, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	// ENOTTY proves that the real syscall thread can access the shared host FD.
+	fd := int32(f.Fd())
+	if _, err := stub.UVMInitialize(fd, 0); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMInitialize(/dev/null): got %v, want ENOTTY", err)
+	}
+	if _, err := stub.UVMPopulatePageable(fd, 0, hostarch.PageSize, 0); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMPopulatePageable(/dev/null): got %v, want ENOTTY", err)
+	}
+	if _, err := stub.UVMSetPreferredLocation(fd, 0, hostarch.PageSize, [16]byte{}, -1); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMSetPreferredLocation(/dev/null): got %v, want ENOTTY", err)
+	}
+	if _, err := stub.UVMUnsetPreferredLocation(fd, 0, hostarch.PageSize); !errors.Is(err, unix.ENOTTY) {
+		t.Fatalf("UVMUnsetPreferredLocation(/dev/null): got %v, want ENOTTY", err)
+	}
+}
+
 // TestSwitchThreadIDVisibility runs a real Systrap instance and verifies
 // that there is no window during which the ContextState indicates it's being
 // worked on AND there is no thread currently working on it.
@@ -161,5 +211,43 @@ func TestSpinningQueueLayout(t *testing.T) {
 	queueStart := stubContextQueueRegion + stubContextQueueRegionLen
 	if stubSpinningThreadQueueAddr < queueStart || stubSpinningThreadQueueAddr+sysmsg.SpinningQueueMemSize > stubContextRegion {
 		t.Errorf("spinning queue %#x not in [%#x, %#x)", stubSpinningThreadQueueAddr, queueStart, stubContextRegion)
+	}
+}
+
+// A clone rejected before a child exists must not poison an otherwise usable
+// address space. An overflowing stack address gives a deterministic failure
+// without exhausting the host's process limit.
+func TestUVMThreadCreationRejectedBeforeClone(t *testing.T) {
+	_, as, _, _ := newSystrapTest(t)
+	stub := as.(*subprocess)
+	stub.uvmInitialized.Store(true)
+	stub.syscallThreadMu.Lock()
+	original := stub.syscallThread.thread.initRegs
+	ac := arch.New(arch.Host)
+	ac.Regs = original
+	ac.SetStack(^uintptr(0))
+	stub.syscallThread.thread.initRegs = ac.Regs
+	stub.syscallThreadMu.Unlock()
+	defer func() {
+		stub.syscallThreadMu.Lock()
+		stub.syscallThread.thread.initRegs = original
+		stub.syscallThreadMu.Unlock()
+	}()
+	defer func() {
+		if p := recover(); p != nil {
+			t.Errorf("clean clone rejection panicked: %v", p)
+		}
+	}()
+	if err := stub.createSysmsgThread(); !errors.Is(err, unix.EINVAL) {
+		t.Fatalf("thread creation with invalid clone stack: got %v, want EINVAL", err)
+	}
+	if stub.uvmUnsafe {
+		t.Fatal("clean clone rejection poisoned the UVM address space")
+	}
+	stub.syscallThreadMu.Lock()
+	stub.syscallThread.thread.initRegs = original
+	stub.syscallThreadMu.Unlock()
+	if err := stub.createSysmsgThread(); err != nil {
+		t.Fatalf("retry after clean clone rejection failed: %v", err)
 	}
 }

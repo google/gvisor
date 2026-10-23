@@ -120,21 +120,22 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Finally insert the vma.
 	v := vma{
-		mappable:       opts.Mappable,
-		off:            opts.Offset,
-		realPerms:      opts.Perms,
-		effectivePerms: opts.Perms.Effective(),
-		maxPerms:       opts.MaxPerms,
-		private:        opts.Private,
-		growsDown:      opts.GrowsDown,
-		isStack:        opts.Stack,
-		eagerForkCopy:  opts.EagerForkCopy,
-		sealed:         opts.Sealed,
-		mlockMode:      opts.MLockMode,
-		numaPolicy:     linux.MPOL_DEFAULT,
-		id:             opts.MappingIdentity,
-		name:           opts.Name,
-		nameMut:        opts.NameMut,
+		mappable:              opts.Mappable,
+		off:                   opts.Offset,
+		realPerms:             opts.Perms,
+		effectivePerms:        opts.Perms.Effective(),
+		maxPerms:              opts.MaxPerms,
+		private:               opts.Private,
+		growsDown:             opts.GrowsDown,
+		isStack:               opts.Stack,
+		eagerForkCopy:         opts.EagerForkCopy,
+		requirePlatformEffect: opts.RequirePlatformEffect,
+		sealed:                opts.Sealed,
+		mlockMode:             opts.MLockMode,
+		numaPolicy:            linux.MPOL_DEFAULT,
+		id:                    opts.MappingIdentity,
+		name:                  opts.Name,
+		nameMut:               opts.NameMut,
 	}
 
 	vseg := mm.vmas.Insert(vgap, ar, v)
@@ -529,6 +530,7 @@ func (vmaSetFunctions) Merge(ar1 hostarch.AddrRange, vma1 vma, ar2 hostarch.Addr
 		vma1.numaNodemask != vma2.numaNodemask ||
 		vma1.dontfork != vma2.dontfork ||
 		vma1.eagerForkCopy != vma2.eagerForkCopy ||
+		vma1.requirePlatformEffect != vma2.requirePlatformEffect ||
 		vma1.sealed != vma2.sealed ||
 		vma1.id != vma2.id ||
 		vma1.name != vma2.name ||

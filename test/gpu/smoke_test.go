@@ -105,6 +105,32 @@ func TestCUDASmokeTests_12_8(t *testing.T) {
 	runCUDASmokeTests(ctx, t, image)
 }
 
+func TestUVMPopulatePageable_12_8(t *testing.T) {
+	ctx := context.Background()
+	cudaVersion, err := dockerutil.MaxSuportedCUDAVersion(ctx, t)
+	if err != nil {
+		t.Fatalf("failed to get CUDA version: %v", err)
+	}
+	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
+		t.Skipf("CUDA version %s is not at least 12.8, skipping test", cudaVersion)
+	}
+	c := dockerutil.MakeContainer(ctx, t)
+	defer c.CleanUp(ctx)
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
+	if err != nil {
+		t.Fatalf("failed to get GPU run options: %v", err)
+	}
+	opts.Image = "gpu/cuda-tests-12-8"
+	out, err := c.Run(ctx, opts, "/uvm_populate_pageable")
+	t.Logf("UVM_POPULATE_PAGEABLE output: %s", out)
+	if err != nil {
+		t.Fatalf("could not run UVM_POPULATE_PAGEABLE regression: %v", err)
+	}
+	if strings.Contains(string(out), "SKIP: ATS pageable memory is unavailable") {
+		t.Skip("ATS pageable memory is unavailable")
+	}
+}
+
 func runCUDASmokeTests(ctx context.Context, t *testing.T, image string) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
@@ -118,5 +144,35 @@ func runCUDASmokeTests(ctx context.Context, t *testing.T, image string) {
 	t.Logf("cuda-tests smoke tests output: %s", string(out))
 	if err != nil {
 		t.Fatalf("could not run cuda-tests smoke tests: %v", err)
+	}
+}
+
+func TestUVMMemoryPolicy_12_8(t *testing.T) {
+	cudaVersion, err := dockerutil.MaxSuportedCUDAVersion(context.Background(), t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cudaVersion.IsAtLeast(dockerutil.MustParseCudaVersion("12.8")) {
+		t.Skipf("CUDA version %s is not at least 12.8", cudaVersion)
+	}
+	for _, operation := range []string{"unset", "migrate"} {
+		t.Run(operation, func(t *testing.T) {
+			ctx := context.Background()
+			c := dockerutil.MakeContainer(ctx, t)
+			defer c.CleanUp(ctx)
+			opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts.Image = "gpu/cuda-tests-12-8"
+			out, err := c.Run(ctx, opts, "/uvm_memory_policy", operation)
+			t.Logf("%s", out)
+			if err != nil {
+				t.Fatalf("pageable memory %s failed: %v", operation, err)
+			}
+			if strings.Contains(out, "SKIP: ATS pageable memory is unavailable") {
+				t.Skip("ATS pageable memory is unavailable")
+			}
+		})
 	}
 }

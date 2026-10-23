@@ -79,3 +79,38 @@ func TestGPUCheckpointRestore(t *testing.T) {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 }
+
+func TestUVMCheckpointWithOnlyMMFD(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+	ctx := context.Background()
+	c := dockerutil.MakeContainer(ctx, t)
+	defer c.CleanUp(ctx)
+	opts, err := dockerutil.GPURunOpts(dockerutil.SniffGPUOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.Image = "gpu/cuda-tests-12-8"
+	if err := c.Spawn(ctx, opts, "/uvm_mm_checkpoint"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.WaitForOutput(ctx, "(READY|SKIP|FAIL): [^\\n]*", 30*time.Second)
+	if err != nil {
+		t.Fatalf("MM descriptor setup failed: %v", err)
+	}
+	if strings.HasPrefix(out, "SKIP:") {
+		t.Skip(out)
+	}
+	if strings.HasPrefix(out, "FAIL:") {
+		t.Fatal(out)
+	}
+	err = c.Checkpoint(ctx, "retained-mm")
+	if err == nil {
+		t.Fatal("checkpoint accepted an MM descriptor retaining an application host mm")
+	}
+	if !strings.Contains(err.Error(), "checkpointing UVM bound to an application host mm is unsupported") {
+		t.Fatalf("checkpoint failed for an unrelated reason: %v", err)
+	}
+}

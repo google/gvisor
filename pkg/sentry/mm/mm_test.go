@@ -1080,3 +1080,282 @@ func TestSealedMapping(t *testing.T) {
 	defer mm2.DecUsers(ctx)
 	wantError(t, linuxerr.EPERM, "child MUnmap(sealed)", mm2.MUnmap(ctx, sealedAddr, pageSize))
 }
+
+type recordedMapping struct {
+	ar    hostarch.AddrRange
+	perms hostarch.AccessType
+}
+
+// mappingRecorder checks the requested ranges while installing real mappings.
+type mappingRecorder struct {
+	platform.AddressSpace
+	maps   []recordedMapping
+	unmaps int
+}
+
+func (as *mappingRecorder) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.FileRange, at hostarch.AccessType, precommit bool) error {
+	as.maps = append(as.maps, recordedMapping{hostarch.AddrRange{addr, addr + hostarch.Addr(fr.Length())}, at})
+	return as.AddressSpace.MapFile(addr, f, fr, at, precommit)
+}
+
+func (as *mappingRecorder) Unmap(addr hostarch.Addr, length uint64) {
+	as.unmaps++
+	as.AddressSpace.Unmap(addr, length)
+}
+
+func TestEnsureAddressSpaceMappingsResidentRange(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx, t)
+	defer mm.DecUsers(ctx)
+	const length = 64 << 20
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length: length, Private: true, Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := &mappingRecorder{AddressSpace: mm.as}
+	mm.as = as
+	// Populate, repopulate resident memory, then request less than a whole PMA.
+	for _, ar := range []hostarch.AddrRange{{addr, addr + length}, {addr, addr + length}, {addr + hostarch.PageSize, addr + 2*hostarch.PageSize}} {
+		as.maps = nil
+		if err := mm.EnsureAddressSpaceMappings(ctx, ar); err != nil {
+			t.Fatal(err)
+		}
+		if len(as.maps) != 1 || as.maps[0] != (recordedMapping{ar, hostarch.ReadWrite}) || as.unmaps != 0 {
+			t.Fatalf("maps = %+v, unmaps = %d, want one RW mapping of %v", as.maps, as.unmaps, ar)
+		}
+	}
+}
+
+func TestEnsureAddressSpaceMappingsBacking(t *testing.T) {
+	for _, kind := range []string{"fork", "private-file", "shared-file"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManager(ctx, t)
+			defer mm.DecUsers(ctx)
+			opts := memmap.MMapOpts{
+				Length: 2 * hostarch.PageSize, Private: kind != "shared-file", Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+			}
+			var offsets [2]uint64
+			if kind != "fork" {
+				mf := pgalloc.MemoryFileFromContext(ctx)
+				fr, err := mf.Allocate(opts.Length, pgalloc.AllocOpts{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				m := NewSpecialMappable("cpu-file", mf, fr)
+				defer m.DecRef(ctx)
+				opts.Mappable, opts.MappingIdentity = m, m
+				offsets = [2]uint64{fr.Start, fr.Start + hostarch.PageSize}
+			}
+			addr, err := mm.MMap(ctx, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var child *MemoryManager
+			initial := bytes.Repeat([]byte{'A'}, int(opts.Length))
+			if kind == "fork" {
+				if _, err := mm.CopyOut(ctx, addr, initial, usermem.IOOpts{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := mm.MProtect(addr, hostarch.PageSize, hostarch.Read, false); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "fork" {
+				child, err = mm.Fork(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer child.DecUsers(ctx)
+				for i := range offsets {
+					offsets[i], _ = pmaAt(t, mm, addr+hostarch.Addr(i*hostarch.PageSize))
+				}
+			}
+			as := &mappingRecorder{AddressSpace: mm.as}
+			mm.as = as
+			if err := mm.EnsureAddressSpaceMappings(ctx, hostarch.AddrRange{addr, addr + hostarch.Addr(opts.Length)}); err != nil {
+				t.Fatal(err)
+			}
+			if len(as.maps) != 2 {
+				t.Fatalf("maps = %+v, want RO then RW", as.maps)
+			}
+			for i, m := range as.maps {
+				offset, cow := pmaAt(t, mm, addr+hostarch.Addr(i*hostarch.PageSize))
+				wantCopy := opts.Private && i == 1
+				if (offset != offsets[i]) != wantCopy || cow != (opts.Private && i == 0) || m.perms.Write != (i == 1) {
+					t.Errorf("page %d: offset %#x -> %#x, COW %t, mapping %+v", i, offsets[i], offset, cow, m)
+				}
+			}
+			if child != nil {
+				if _, err := mm.CopyOut(ctx, addr+hostarch.PageSize, []byte{'B'}, usermem.IOOpts{}); err != nil {
+					t.Fatal(err)
+				}
+				got := make([]byte, len(initial))
+				if _, err := child.CopyIn(ctx, addr, got, usermem.IOOpts{}); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(got, initial) {
+					t.Error("preparing the parent's mapping corrupted child memory")
+				}
+			}
+		})
+	}
+}
+
+func TestEnsureAddressSpaceMappingsPreflight(t *testing.T) {
+	for _, kind := range []string{"hole", "no-access", "execute-only", "device-first", "device-last"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManager(ctx, t)
+			defer mm.DecUsers(ctx)
+			addr, err := mm.MMap(ctx, memmap.MMapOpts{
+				// Avoid MMap's eager population of small anonymous mappings.
+				Length: 2 * hostarch.HugePageSize, Private: true, Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			lazy, resident, bad := addr, addr+hostarch.PageSize, addr+2*hostarch.PageSize
+			if kind == "device-first" {
+				lazy, bad = bad, lazy
+			}
+			// Split the VMA so faulting the resident page cannot populate lazy.
+			if err := mm.MProtect(lazy, hostarch.PageSize, hostarch.Read, false); err != nil {
+				t.Fatal(err)
+			}
+			var excluded *SpecialMappable
+			wantErr := linuxerr.EFAULT
+			switch kind {
+			case "hole":
+				err = mm.MUnmap(ctx, bad, hostarch.PageSize)
+			case "no-access", "execute-only":
+				perms := hostarch.AccessType{}
+				if kind == "execute-only" {
+					perms = hostarch.Execute
+				}
+				err = mm.MProtect(bad, hostarch.PageSize, perms, false)
+				wantErr = linuxerr.EACCES
+			default:
+				mf := pgalloc.MemoryFileFromContext(ctx)
+				fr, allocErr := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{})
+				if allocErr != nil {
+					t.Fatal(allocErr)
+				}
+				excluded = NewSpecialMappable("device", mf, fr)
+				defer excluded.DecRef(ctx)
+				_, err = mm.MMap(ctx, memmap.MMapOpts{
+					Addr: bad, Fixed: true, Unmap: true, Length: hostarch.PageSize,
+					Mappable: excluded, MappingIdentity: excluded,
+					Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+					PlatformEffect: memmap.PlatformEffectPopulate, RequirePlatformEffect: true,
+				})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := mm.CopyOut(ctx, resident, []byte{'A'}, usermem.IOOpts{}); err != nil {
+				t.Fatal(err)
+			}
+			child, err := mm.Fork(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer child.DecUsers(ctx)
+			before, cow := pmaAt(t, mm, resident)
+			if !cow {
+				t.Fatal("resident page is not copy-on-write after fork")
+			}
+			as := &mappingRecorder{AddressSpace: mm.as}
+			mm.as = as
+			if err := mm.EnsureAddressSpaceMappings(ctx, hostarch.AddrRange{addr, addr + 3*hostarch.PageSize}); !linuxerr.Equals(wantErr, err) {
+				t.Fatalf("EnsureAddressSpaceMappings got %v, want %v", err, wantErr)
+			}
+			mm.activeMu.RLock()
+			lazyPMA := mm.pmas.FindSegment(lazy).Ok()
+			mm.activeMu.RUnlock()
+			after, cow := pmaAt(t, mm, resident)
+			if lazyPMA || after != before || !cow || len(as.maps) != 0 || as.unmaps != 0 {
+				t.Errorf("invalid range mutated memory: lazy PMA %t, offset %#x -> %#x, COW %t, maps %+v, unmaps %d", lazyPMA, before, after, cow, as.maps, as.unmaps)
+			}
+		})
+	}
+}
+
+// Host-device VMAs must remain identifiable after VMA transformations. Use
+// ordinary backing with the same mmap options as GenericProxyDeviceConfigureMMap
+// so these regressions don't require NVIDIA, RDMA, or TPU hardware.
+func TestEnsureAddressSpaceMappingsHostDevice(t *testing.T) {
+	for _, kind := range []string{"partial", "split", "fork", "grow", "move", "merge-before", "merge-after", "ordinary-file"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			mm := testMemoryManager(ctx, t)
+			defer mm.DecUsers(ctx)
+			mf := pgalloc.MemoryFileFromContext(ctx)
+			fr, err := mf.Allocate(4*pageSize, pgalloc.AllocOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := NewSpecialMappable("host-device", mf, fr)
+			defer m.DecRef(ctx)
+			opts := memmap.MMapOpts{
+				Length: 2 * pageSize, Mappable: m, MappingIdentity: m,
+				Perms: hostarch.ReadWrite, MaxPerms: hostarch.AnyAccess,
+				PlatformEffect:        memmap.PlatformEffectPopulate,
+				RequirePlatformEffect: kind != "ordinary-file",
+			}
+			addr, err := mm.MMap(ctx, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Request only one page of the original multi-page mapping.
+			ar := hostarch.AddrRange{addr, addr + pageSizeAddr}
+			switch kind {
+			case "split":
+				err = mm.MProtect(addr+pageSizeAddr, pageSize, hostarch.Read, false)
+				ar = hostarch.AddrRange{addr + pageSizeAddr, addr + 2*pageSizeAddr}
+			case "fork":
+				mm, err = mm.Fork(ctx)
+				if err == nil {
+					defer mm.DecUsers(ctx)
+				}
+			case "grow":
+				_, err = mm.MRemap(ctx, addr, 2*pageSize, 3*pageSize, MRemapOpts{Move: MRemapNoMove})
+				ar = hostarch.AddrRange{addr + 2*pageSizeAddr, addr + 3*pageSizeAddr}
+			case "move":
+				newAddr := addr + 4*pageSizeAddr
+				_, err = mm.MRemap(ctx, addr, 2*pageSize, 2*pageSize, MRemapOpts{Move: MRemapMustMove, NewAddr: newAddr})
+				ar = hostarch.AddrRange{newAddr, newAddr + pageSizeAddr}
+			case "merge-before", "merge-after":
+				// Replacing one page with otherwise identical, mergeable
+				// ordinary file memory must not erase the other page's flag.
+				opts.Length = pageSize
+				opts.Addr = addr
+				opts.Fixed, opts.Unmap = true, true
+				opts.RequirePlatformEffect = false
+				if kind == "merge-after" {
+					opts.Addr += pageSizeAddr
+					opts.Offset = pageSize
+				}
+				_, err = mm.MMap(ctx, opts)
+				ar = hostarch.AddrRange{addr, addr + 2*pageSizeAddr}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			as := &mappingRecorder{AddressSpace: mm.as}
+			mm.as = as
+			err = mm.EnsureAddressSpaceMappings(ctx, ar)
+			if kind == "ordinary-file" {
+				if err != nil || len(as.maps) != 1 || as.unmaps != 0 {
+					t.Fatalf("ordinary file: err %v, maps %+v, unmaps %d", err, as.maps, as.unmaps)
+				}
+				return
+			}
+			if !linuxerr.Equals(linuxerr.EFAULT, err) || len(as.maps) != 0 || as.unmaps != 0 {
+				t.Errorf("host device: err %v, maps %+v, unmaps %d; want EFAULT without host mapping changes", err, as.maps, as.unmaps)
+			}
+		})
+	}
+}

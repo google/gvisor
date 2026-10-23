@@ -15,14 +15,95 @@
 package systrap
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
+
+// UVMInitialize implements platform.UVMAddressSpace.
+func (s *subprocess) UVMInitialize(hostFD int32, flags uint64) (uint32, error) {
+	return s.uvmIoctl(hostFD, nvgpu.UVM_INITIALIZE, func(t *syscallThread) (uintptr, *uint32) {
+		params := &t.stubMessage.uvmInitializeParams
+		*params = nvgpu.UVM_INITIALIZE_PARAMS{Flags: flags, RMStatus: nvgpu.NV_ERR_INVALID_ARGUMENT}
+		return t.stubAddr + syscallStubMessageOffset + unsafe.Offsetof(syscallStubMessage{}.uvmInitializeParams), &params.RMStatus
+	})
+}
+
+// UVMPopulatePageable implements platform.UVMAddressSpace.
+func (s *subprocess) UVMPopulatePageable(hostFD int32, base, length uint64, flags uint32) (uint32, error) {
+	return s.uvmIoctl(hostFD, nvgpu.UVM_POPULATE_PAGEABLE, func(t *syscallThread) (uintptr, *uint32) {
+		params := &t.stubMessage.uvmPopulatePageableParams
+		*params = nvgpu.UVM_POPULATE_PAGEABLE_PARAMS{Base: base, Length: length, Flags: flags, RMStatus: nvgpu.NV_ERR_INVALID_ARGUMENT}
+		return t.stubAddr + syscallStubMessageOffset + unsafe.Offsetof(syscallStubMessage{}.uvmPopulatePageableParams), &params.RMStatus
+	})
+}
+
+// UVMSetPreferredLocation implements platform.UVMAddressSpace.
+func (s *subprocess) UVMSetPreferredLocation(hostFD int32, base, length uint64, location [16]byte, cpuNumaNode int32) (uint32, error) {
+	return s.uvmIoctl(hostFD, nvgpu.UVM_SET_PREFERRED_LOCATION, func(t *syscallThread) (uintptr, *uint32) {
+		params := &t.stubMessage.uvmSetPreferredLocationParams
+		*params = nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550{
+			RequestedBase: base, Length: length, PreferredLocation: nvgpu.NvUUID(location),
+			PreferredCPUNumaNode: cpuNumaNode, RMStatus: nvgpu.NV_ERR_INVALID_ARGUMENT,
+		}
+		return t.stubAddr + syscallStubMessageOffset + unsafe.Offsetof(syscallStubMessage{}.uvmSetPreferredLocationParams), &params.RMStatus
+	})
+}
+
+// UVMUnsetPreferredLocation implements platform.UVMAddressSpace.
+func (s *subprocess) UVMUnsetPreferredLocation(hostFD int32, base, length uint64) (uint32, error) {
+	return s.uvmIoctl(hostFD, nvgpu.UVM_UNSET_PREFERRED_LOCATION, func(t *syscallThread) (uintptr, *uint32) {
+		params := &t.stubMessage.uvmUnsetPreferredLocationParams
+		*params = nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS{RequestedBase: base, Length: length, RMStatus: nvgpu.NV_ERR_INVALID_ARGUMENT}
+		return t.stubAddr + syscallStubMessageOffset + unsafe.Offsetof(syscallStubMessage{}.uvmUnsetPreferredLocationParams), &params.RMStatus
+	})
+}
+
+// uvmIoctl is restricted to the flat, application-controlled structures
+// above. It must not accept translated descriptors or pointers into the Sentry:
+// guest threads can change the parameter scratch page while an ioctl runs.
+func (s *subprocess) uvmIoctl(hostFD int32, cmd uintptr, prepare func(*syscallThread) (uintptr, *uint32)) (uint32, error) {
+	if hostFD < 0 {
+		return nvgpu.NV_ERR_INVALID_ARGUMENT, unix.EBADF
+	}
+	status := uint32(nvgpu.NV_ERR_INVALID_ARGUMENT)
+	err := s.withAliveRLock(func() error {
+		s.syscallThreadMu.Lock()
+		defer s.syscallThreadMu.Unlock()
+		if s.uvmUnsafe {
+			return unix.EIO
+		}
+		// Serialize against failed thread creation before the driver can
+		// retain this mm. It must never contain aliases of recycled backing
+		// or become another application's address space.
+		s.uvmInitialized.Store(true)
+
+		t := s.syscallThread
+		paramsAddr, statusPtr := prepare(t)
+		// CLONE_FILES shares hostFD with the stub. The syscall request page is
+		// read-only there, protecting the FD, command, and parameter address.
+		_, err := t.syscall(unix.SYS_IOCTL,
+			arch.SyscallArgument{Value: uintptr(hostFD)},
+			arch.SyscallArgument{Value: cmd},
+			arch.SyscallArgument{Value: paramsAddr})
+		// The scratch page, status, and syscall return are guest-writable.
+		// Nothing returned here is used to make a privileged Sentry decision.
+		status = *statusPtr
+		var errno unix.Errno
+		if errors.As(err, &errno) {
+			return errno
+		}
+		return err
+	})
+	return status, err
+}
 
 func (t *syscallThread) initRequestReplyAddresses(sentryStackAddr uintptr) {
 	// These are safe as these addresses are mmapped and never moved/gced.

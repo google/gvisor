@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -28,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -50,6 +52,15 @@ func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry
 	if err != nil {
 		return nil, err
 	}
+	dev.nvp.fdsMu.Lock()
+	applicationMM, ok := dev.nvp.containerUVMModes[fd.containerName]
+	dev.nvp.fdsMu.Unlock()
+	if !ok {
+		unix.Close(int(fd.hostFD))
+		ctx.Warningf("nvproxy: UVM mode is not configured for container %q", fd.containerName)
+		return nil, linuxerr.EIO
+	}
+	fd.applicationMM = applicationMM
 	if err := fdnotifier.AddFD(fd.hostFD, &fd.queue); err != nil {
 		unix.Close(int(fd.hostFD))
 		return nil, err
@@ -81,6 +92,9 @@ type uvmFD struct {
 	containerName string
 	hostFD        int32
 	memmapFile    uvmFDMemmapFile
+	applicationMM bool `state:"nosave"`
+	// Application-bound UVM cannot be restored against a different host mm.
+	applicationMMInitialized atomicbitops.Bool
 
 	queue waiter.Queue
 }
@@ -122,10 +136,10 @@ func (fd *uvmFD) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-	return uvmIoctl(ctx, fd.dev.nvp, fd.hostFD, nil /* toolsFD */, args)
+	return uvmIoctl(ctx, fd.dev.nvp, fd.hostFD, fd, nil /* toolsFD */, args)
 }
 
-func uvmIoctl(ctx context.Context, nvp *nvproxy, hostFD int32, toolsFD *uvmToolsFD, args arch.SyscallArguments) (uintptr, error) {
+func uvmIoctl(ctx context.Context, nvp *nvproxy, hostFD int32, fd *uvmFD, toolsFD *uvmToolsFD, args arch.SyscallArguments) (uintptr, error) {
 	cmd := args[1].Uint()
 	argPtr := args[2].Pointer()
 
@@ -141,6 +155,7 @@ func uvmIoctl(ctx context.Context, nvp *nvproxy, hostFD int32, toolsFD *uvmTools
 	ui := uvmIoctlState{
 		nvp:             nvp,
 		hostFD:          hostFD,
+		fd:              fd,
 		toolsFD:         toolsFD,
 		ctx:             ctx,
 		t:               t,
@@ -162,14 +177,16 @@ func (fd *uvmFD) IsNvidiaDeviceFD() {}
 
 // uvmIoctlState holds the state of a call to uvmIoctl().
 type uvmIoctlState struct {
-	nvp    *nvproxy
-	hostFD int32
+	nvp *nvproxy
+	// fd is the /dev/nvidia-uvm FD, or nil for /dev/nvidia-uvm-tools.
+	fd *uvmFD
 	// toolsFD is the /dev/nvidia-uvm-tools FD the ioctl was issued on, or
 	// nil if it was issued on /dev/nvidia-uvm.
 	toolsFD         *uvmToolsFD
 	ctx             context.Context
 	t               *kernel.Task
 	cmd             uint32
+	hostFD          int32
 	ioctlParamsAddr hostarch.Addr
 }
 
@@ -201,6 +218,23 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 	var ioctlParams nvgpu.UVM_INITIALIZE_PARAMS
 	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
 		return 0, err
+	}
+	if ui.fd != nil && ui.fd.applicationMM {
+		if initializer, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace); ok {
+			// ATS requires UVM to retain the application's host mm, rather
+			// than disabling mm tracking or binding the Sentry.
+			// Mark the attempt before invoking the application: its returned
+			// status is untrusted and must not decide checkpoint eligibility.
+			ui.fd.applicationMMInitialized.Store(true)
+			status, err := initializer.UVMInitialize(ui.hostFD, ioctlParams.Flags)
+			if err != nil {
+				return 0, err
+			}
+			ioctlParams.RMStatus = status
+			_, err = ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
+			return 0, err
+		}
+		return 0, linuxerr.EOPNOTSUPP
 	}
 	origFlags := ioctlParams.Flags
 	// This is necessary to share the host UVM FD between sentry and
@@ -234,6 +268,14 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
 
+	// UVM_MM_INITIALIZE makes this file retain the original UVM file and its
+	// host mm. Mark the attempt before calling the driver, even if another
+	// task has not yet finished initializing the referenced file. Driver
+	// status must not decide whether the resulting state can be checkpointed.
+	if ui.fd != nil && uvmFile.applicationMM {
+		ui.fd.applicationMMInitialized.Store(true)
+	}
+
 	origFD := ioctlParams.UvmFD
 	ioctlParams.UvmFD = uvmFile.hostFD
 	n, err := uvmIoctlInvoke(ui, &ioctlParams)
@@ -245,6 +287,86 @@ func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
 		return n, err
 	}
 	return n, nil
+}
+
+func uvmPopulatePageable(ui *uvmIoctlState) (uintptr, error) {
+	if ui.fd == nil {
+		return uvmIoctlSimple[nvgpu.UVM_POPULATE_PAGEABLE_PARAMS](ui)
+	}
+	var ioctlParams nvgpu.UVM_POPULATE_PAGEABLE_PARAMS
+	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	initializer, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace)
+	if !ui.fd.applicationMMInitialized.Load() || !ok {
+		return 0, linuxerr.EOPNOTSUPP
+	}
+	// Nonzero flags are reserved for NVIDIA's built-in tests or internal use.
+	if ioctlParams.Flags != 0 {
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	ar, valid := hostarch.Addr(ioctlParams.Base).ToRange(ioctlParams.Length)
+	if !valid || ar.Length() == 0 || !ar.IsPageAligned() {
+		return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+	}
+	// UVM can only populate VMAs already installed in the host mm. Resolve
+	// lazy mappings and software COW once per range, inheriting VMA permissions.
+	// Reject driver-owned mappings before changing any host mappings: replacing
+	// a managed UVM VMA discards the allocation, and even a failed replacement
+	// of an RDMA mapping can leave a gap in the host mm.
+	mm := ui.t.MemoryManager()
+	if err := mm.EnsureAddressSpaceMappings(ui.ctx, ar); err != nil {
+		if linuxerr.Equals(linuxerr.EPERM, err) || linuxerr.Equals(linuxerr.EACCES, err) || linuxerr.Equals(linuxerr.EFAULT, err) {
+			return 0, uvmFailWithStatus(ui, &ioctlParams, nvgpu.NV_ERR_INVALID_ADDRESS)
+		}
+		return 0, err
+	}
+	status, err := initializer.UVMPopulatePageable(ui.hostFD, ioctlParams.Base, ioctlParams.Length, ioctlParams.Flags)
+	if err != nil {
+		return 0, err
+	}
+	ioctlParams.RMStatus = status
+	_, err = ioctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
+	return 0, err
+}
+
+func uvmSetPreferredLocationV550(ui *uvmIoctlState) (uintptr, error) {
+	as, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace)
+	if ui.fd == nil || !ui.fd.applicationMMInitialized.Load() || !ok {
+		return uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550](ui)
+	}
+	var params nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550
+	if _, err := params.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	// NVIDIA requires the calling mm to match UVM's saved mm when applying
+	// preferred-location policy to ATS memory, including pinned allocations.
+	status, err := as.UVMSetPreferredLocation(ui.hostFD, params.RequestedBase, params.Length, params.PreferredLocation, params.PreferredCPUNumaNode)
+	if err != nil {
+		return 0, err
+	}
+	params.RMStatus = status
+	_, err = params.CopyOut(ui.t, ui.ioctlParamsAddr)
+	return 0, err
+}
+
+func uvmUnsetPreferredLocation(ui *uvmIoctlState) (uintptr, error) {
+	as, ok := ui.t.MemoryManager().AddressSpace().(platform.UVMAddressSpace)
+	if ui.fd == nil || !ui.fd.applicationMMInitialized.Load() || !ok {
+		return uvmIoctlSimple[nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS](ui)
+	}
+	var params nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS
+	if _, err := params.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	// Removing ATS policy requires the same mm as setting it.
+	status, err := as.UVMUnsetPreferredLocation(ui.hostFD, params.RequestedBase, params.Length)
+	if err != nil {
+		return 0, err
+	}
+	params.RMStatus = status
+	_, err = params.CopyOut(ui.t, ui.ioctlParamsAddr)
+	return 0, err
 }
 
 func uvmIoctlHasFrontendFD[Params any, PtrParams hasFrontendFDAndStatusPtr[Params]](ui *uvmIoctlState) (uintptr, error) {

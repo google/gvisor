@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
@@ -36,4 +37,11 @@ type syscallSentryMessage struct {
 // Attention: It can be compromised by user threads.
 type syscallStubMessage struct {
 	ret uint64
+
+	// These UVM operations have no translated file descriptors or Sentry
+	// pointers that a guest could substitute. Their outputs are untrusted.
+	uvmInitializeParams             nvgpu.UVM_INITIALIZE_PARAMS
+	uvmPopulatePageableParams       nvgpu.UVM_POPULATE_PAGEABLE_PARAMS
+	uvmSetPreferredLocationParams   nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS_V550
+	uvmUnsetPreferredLocationParams nvgpu.UVM_UNSET_PREFERRED_LOCATION_PARAMS
 }
