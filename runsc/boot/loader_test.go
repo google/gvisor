@@ -43,7 +43,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
-	"gvisor.dev/gvisor/runsc/fsgofer"
+	fsgofer "gvisor.dev/gvisor/runsc/gofer/fs"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

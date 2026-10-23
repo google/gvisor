@@ -15,7 +15,7 @@
 //go:build msan
 // +build msan
 
-package config
+package filter
 
 import (
 	"golang.org/x/sys/unix"
@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// instrumentationFilters returns additional filters for syscalls used by MSAN.
-func instrumentationFilters() seccomp.SyscallRules {
+// InstrumentationFilters returns additional filters for syscalls used by MSAN.
+func InstrumentationFilters() seccomp.SyscallRules {
 	log.Warningf("*** SECCOMP WARNING: MSAN is enabled: syscall filters less restrictive!")
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_SCHED_GETAFFINITY: seccomp.MatchAll{},

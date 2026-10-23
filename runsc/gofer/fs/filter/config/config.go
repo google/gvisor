@@ -24,11 +24,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
+	"gvisor.dev/gvisor/runsc/gofer/filter"
 )
-
-// selfPIDVarName is the variable name for the current process ID used in
-// the precompiled seccomp filters.
-const selfPIDVarName = "self_pid"
 
 // Options are seccomp filter related options.
 type Options struct {
@@ -59,7 +56,7 @@ func HostVendorSyscalls() precompiledseccomp.VarSyscallNumbers {
 // isInstrumentationEnabled returns whether there are any
 // instrumentation-specific filters enabled.
 func isInstrumentationEnabled() bool {
-	return instrumentationFilters().Size() > 0
+	return filter.InstrumentationFilters().Size() > 0
 }
 
 // ConfigKey returns a unique string representing this set of options.
@@ -87,7 +84,7 @@ func (opt Options) ConfigKey() string {
 
 // Warnings returns a set of warnings that may be useful to display to the
 // user when the given options are used.
-func Warnings(opt Options) []string {
+func (opt Options) Warnings() []string {
 	var warnings []string
 	if opt.ProfileEnabled {
 		warnings = append(warnings, "profile enabled: syscall filters less restrictive!")
@@ -101,28 +98,39 @@ func Warnings(opt Options) []string {
 	return warnings
 }
 
+// Warnings returns a set of warnings that may be useful to display to the
+// user when the given options are used.
+func Warnings(opt Options) []string {
+	return opt.Warnings()
+}
+
 // Vars returns the values to use for rendering the precompiled seccomp
 // program.
 func (opt Options) Vars() precompiledseccomp.Values {
 	vars := precompiledseccomp.Values{}
-	vars.SetUint64(selfPIDVarName, uint64(os.Getpid()))
+	vars.SetUint64(filter.SelfPIDVarName, uint64(os.Getpid()))
 	opt.VendorSyscalls.SetVars(vars)
 	return vars
 }
 
 // Rules returns the seccomp rules and denyRules to use for the gofer.
-func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
+func (opt Options) Rules() (seccomp.SyscallRules, seccomp.SyscallRules) {
 	return rules(opt, opt.Vars())
+}
+
+// Rules returns the seccomp rules and denyRules to use for the gofer.
+func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
+	return opt.Rules()
 }
 
 // rules returns the seccomp rules and denyRules to use for the gofer,
 // using `vars` as override for variables defined during precompilation.
 func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, seccomp.SyscallRules) {
 	s := allowedSyscalls.Copy()
-	s.Merge(selfPIDFilters(vars.GetUint64(selfPIDVarName)))
+	s.Merge(filter.SelfPIDFilters(vars.GetUint64(filter.SelfPIDVarName)))
 	s.Merge(precompiledseccomp.VarSyscallRules(vendorSyscalls, opt.VendorSyscalls, vars))
 	if opt.ProfileEnabled {
-		s.Merge(profileFilters)
+		s.Merge(filter.ProfileFilters())
 	}
 	if opt.UDSOpenEnabled || opt.UDSCreateEnabled {
 		s.Merge(udsCommonSyscalls)
@@ -134,9 +142,9 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 		}
 	}
 	if opt.CgoEnabled {
-		s.Merge(cgoFilters())
+		s.Merge(filter.CgoFilters())
 	}
-	s.Merge(instrumentationFilters())
+	s.Merge(filter.InstrumentationFilters())
 	// When DirectFS is not enabled, filters for LisaFS are installed.
 	// Also needed when needing to serve a mount that disallows DirectFS.
 	if !opt.DirectFS || opt.LisafsNeeded {

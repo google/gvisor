@@ -6,7 +6,7 @@ package(
 )
 
 go_library(
-    name = "fsgofer",
+    name = "fs",
     srcs = [
         "lisafs.go",
     ],
@@ -30,7 +30,7 @@ go_test(
     size = "small",
     srcs = ["lisafs_test.go"],
     deps = [
-        ":fsgofer",
+        ":fs",
         "//pkg/lisafs",
         "//pkg/lisafs/testsuite",
         "//pkg/log",
@@ -41,7 +41,7 @@ go_test(
     name = "groups_test",
     size = "small",
     srcs = ["groups_test.go"],
-    embed = [":fsgofer"],
+    embed = [":fs"],
     deps = [
         "//pkg/lisafs",
         "@org_golang_x_sys//unix:go_default_library",
