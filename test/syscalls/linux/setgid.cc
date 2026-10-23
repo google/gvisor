@@ -16,11 +16,14 @@
 #include <limits.h>
 #include <linux/capability.h>
 #include <linux/limits.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,6 +39,7 @@
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -235,6 +239,28 @@ TEST_F(SetgidDirTest, NoGroupExec) {
   struct stat stats = ASSERT_NO_ERRNO_AND_VALUE(Stat(g2created));
   EXPECT_EQ(stats.st_gid, groups_.first);
   EXPECT_EQ(stats.st_mode & S_ISGID, S_ISGID);
+}
+
+// Setgid directories cause bound Unix domain sockets to inherit GID.
+TEST_F(SetgidDirTest, BindSocket) {
+  auto g1owned = JoinPath(temp_dir_.path(), "g1owned/");
+  ASSERT_NO_FATAL_FAILURE(MkdirAsGid(groups_.first, g1owned, kDirmodeSgid));
+  ASSERT_THAT(chmod(g1owned.c_str(), kDirmodeSgid), SyscallSucceeds());
+
+  auto sock_path = JoinPath(g1owned, "s");
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  SKIP_IF(sock_path.size() >= sizeof(addr.sun_path));
+  strncpy(addr.sun_path, sock_path.c_str(), sizeof(addr.sun_path) - 1);
+
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(Setegid(groups_.second));
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_THAT(
+      bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceeds());
+  struct stat stats = ASSERT_NO_ERRNO_AND_VALUE(Stat(sock_path));
+  EXPECT_EQ(stats.st_gid, groups_.first);
 }
 
 // Setting the setgid bit on directories with an existing file does not change
