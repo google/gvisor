@@ -413,3 +413,42 @@ func TestRACKZeroClockResolutionPreservesLossBoundary(t *testing.T) {
 		t.Fatalf("detectLoss at zero-resolution boundary got %d losses, want 1", got)
 	}
 }
+
+// TestRACKPTOInflatedForFlightGreaterThanOne verifies that the probe timeout
+// is inflated by tcpTimeoutMin when more than one segment is outstanding
+// (mirroring TCP_TIMEOUT_MIN_US in Linux's tcp_schedule_loss_probe), so that
+// on low-RTT paths a bare 2*SRTT PTO cannot fire while ACKs are merely
+// delayed by end-host or transport jitter (GRO/batched delivery).
+func TestRACKPTOInflatedForFlightGreaterThanOne(t *testing.T) {
+	clock := faketime.NewManualClock()
+	ctx := newRACKTestContext(clock, 0 /* resolution */)
+	defer ctx.cleanup()
+	ctx.snd.ep.mu.Lock()
+	defer ctx.snd.ep.mu.Unlock()
+
+	const srtt = 5 * time.Millisecond
+	ctx.snd.rtt.TCPRTTState.SRTTInited = true
+	ctx.snd.rtt.TCPRTTState.SRTT = srtt
+	ctx.snd.probeTimer.init(clock, func() {})
+	defer ctx.snd.probeTimer.cleanup()
+
+	for _, test := range []struct {
+		name        string
+		outstanding int
+		wantPTO     time.Duration
+	}{
+		{"FlightSizeOne", 1, 2*srtt + wcDelayedACKTimeout},
+		{"FlightSizeTwo", 2, 2*srtt + tcpTimeoutMin},
+		{"FlightSizeMany", 42, 2*srtt + tcpTimeoutMin},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx.snd.Outstanding = test.outstanding
+			now := clock.NowMonotonic()
+			ctx.snd.schedulePTO()
+			if got, want := ctx.snd.probeTimer.target.Sub(now), test.wantPTO; got != want {
+				t.Errorf("probe timer duration = %v, want %v", got, want)
+			}
+			ctx.snd.probeTimer.disable()
+		})
+	}
+}

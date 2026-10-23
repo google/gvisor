@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -483,6 +484,106 @@ func TestRACKOnePacketTailLoss(t *testing.T) {
 	}
 	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestRACKDelayedACKWithinMinPTO tests that a tail ACK delayed past 2*SRTT
+// but within the minimum PTO does not trigger a tail loss probe or any
+// congestion response. On low-RTT paths a bare 2*SRTT PTO can fire while the
+// ACK is merely delayed (e.g. by receiver-side delayed ACK or batched
+// delivery), so the PTO is inflated by tcpTimeoutMin when more than one
+// segment is outstanding.
+func TestRACKDelayedACKWithinMinPTO(t *testing.T) {
+	clock := faketime.NewManualClock()
+	c := context.NewWithOpts(t, context.Options{
+		EnableV4: true,
+		MTU:      uint32(mtu),
+		Clock:    clock,
+	})
+	defer c.Cleanup()
+	e2e.SetStackSACKPermitted(t, c, true)
+
+	// Advance the clock so the stack's SYN carries a nonzero timestamp: a
+	// zero TSEcr in the SYN-ACK would suppress timestamp-based RTT
+	// measurements (parsedOptions.TSEcr != 0) for the lifetime of the
+	// connection.
+	clock.Advance(time.Second)
+	c.CreateConnectedWithOptions(header.TCPSynOptions{SACKPermitted: true, TS: true, TSVal: 100}, 0 /* delay */)
+
+	seq := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+
+	// Send 3 packets and read them out at the peer.
+	const numPackets = 3
+	data := make([]byte, numPackets*maxPayload)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	var r bytes.Reader
+	r.Reset(data)
+	if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+	for i := 0; i < numPackets; i++ {
+		c.ReceiveAndCheckPacketWithOptions(data, i*maxPayload, maxPayload, e2e.TSOptionSize)
+	}
+
+	// Acknowledge only the first packet. gVisor does not measure RTT during
+	// the handshake, so this first data ACK initializes SRTT; the sample is
+	// approximately zero on the manual clock and is clamped to MinSRTT (1ms).
+	// More than one segment is outstanding, so the PTO is 2*MinSRTT (2ms) plus
+	// tcpTimeoutMin (2ms) = 4ms.
+	c.SendAck(seq, maxPayload)
+	c.Stack().Pause()
+	c.Stack().Resume()
+	var info tcpip.TCPInfoOption
+	if err := c.EP.GetSockOpt(&info); err != nil {
+		t.Fatalf("GetSockOpt failed: %v", err)
+	}
+	if got, want := info.RTT, time.Millisecond; got != want {
+		t.Fatalf("got SRTT = %v, want %v (MinSRTT)", got, want)
+	}
+
+	// Advance past 2*SRTT (2ms) but not past the inflated PTO (4ms). No probe
+	// may fire while the tail ACK is merely delayed.
+	clock.Advance(3 * time.Millisecond)
+	c.Stack().Pause()
+	c.Stack().Resume()
+	if p := c.GetPacketNonBlocking(); p != nil {
+		p.Release()
+		t.Fatalf("sender emitted a tail loss probe for an ACK delayed within the minimum PTO")
+	}
+
+	// The delayed ACK arrives within the inflated PTO and cumulatively
+	// acknowledges everything, disarming the probe timer.
+	c.SendAck(seq, numPackets*maxPayload)
+	c.Stack().Pause()
+	c.Stack().Resume()
+
+	// Advancing past the original probe time must not produce a probe or any
+	// other packet.
+	clock.Advance(5 * time.Millisecond)
+	c.Stack().Pause()
+	c.Stack().Resume()
+	if p := c.GetPacketNonBlocking(); p != nil {
+		p.Release()
+		t.Fatalf("sender emitted a packet after the delayed ACK arrived within the minimum PTO")
+	}
+
+	// No probe, retransmit or recovery may have occurred.
+	tcpStats := c.Stack().Stats().TCP
+	for _, s := range []struct {
+		stat *tcpip.StatCounter
+		name string
+	}{
+		{tcpStats.FastRetransmit, "stats.TCP.FastRetransmit"},
+		{tcpStats.SACKRecovery, "stats.TCP.SACKRecovery"},
+		{tcpStats.TLPRecovery, "stats.TCP.TLPRecovery"},
+		{tcpStats.Retransmits, "stats.TCP.Retransmits"},
+		{tcpStats.Timeouts, "stats.TCP.Timeouts"},
+	} {
+		if got := s.stat.Value(); got != 0 {
+			t.Errorf("got %s = %d, want 0", s.name, got)
+		}
 	}
 }
 
