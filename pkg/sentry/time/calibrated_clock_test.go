@@ -33,13 +33,13 @@ func newTestCalibratedClock(samples []sample, cycles []TSCValue) *CalibratedCloc
 func TestConstantFrequency(t *testing.T) {
 	// Perfectly constant frequency.
 	samples := []sample{
-		{before: 100000, after: 100000 + defaultOverheadCycles, ref: 100},
-		{before: 200000, after: 200000 + defaultOverheadCycles, ref: 200},
-		{before: 300000, after: 300000 + defaultOverheadCycles, ref: 300},
-		{before: 400000, after: 400000 + defaultOverheadCycles, ref: 400},
-		{before: 500000, after: 500000 + defaultOverheadCycles, ref: 500},
-		{before: 600000, after: 600000 + defaultOverheadCycles, ref: 600},
-		{before: 700000, after: 700000 + defaultOverheadCycles, ref: 700},
+		{before: 100000, after: 100000 + 1, ref: 100},
+		{before: 200000, after: 200000 + 1, ref: 200},
+		{before: 300000, after: 300000 + 1, ref: 300},
+		{before: 400000, after: 400000 + 1, ref: 400},
+		{before: 500000, after: 500000 + 1, ref: 500},
+		{before: 600000, after: 600000 + 1, ref: 600},
+		{before: 700000, after: 700000 + 1, ref: 700},
 	}
 
 	c := newTestCalibratedClock(samples, nil)
@@ -258,6 +258,128 @@ func TestErrorCorrection(t *testing.T) {
 			}
 
 			t.Logf("final error: %v ns", currentErr)
+		})
+	}
+}
+
+// TestInitialCalibrationError tests that a clock sampled at a short interval
+// becomes ready only once its samples bound the frequency to within
+// maxInitialFrequencyErrorPPM, or once they span ApproxUpdateInterval.
+func TestInitialCalibrationError(t *testing.T) {
+	// Count cycles at the rate that makes defaultOverheadCycles 1µs, as it is
+	// for the arm64 counter.
+	hz := int64(defaultOverheadCycles) * 1_000_000
+	const interval = 10 * time.Millisecond
+	for _, tc := range []struct {
+		name     string
+		overhead TSCValue
+		// readyAt is the number of samples, 10ms apart, after which the
+		// clock is ready, or 0 if it is not ready within maxSamples.
+		readyAt int
+	}{
+		{name: "low overhead", overhead: defaultOverheadCycles / 10, readyAt: 2},
+		{name: "high overhead", overhead: defaultOverheadCycles * 5 / 2, readyAt: 4},
+		{name: "max overhead", overhead: maxOverheadCycles, readyAt: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The reference clock is read at the start of the first sample's
+			// overhead and the end of the others', so the frequency estimate
+			// is off by the full uncertainty.
+			at := func(ref time.Duration, first bool) sample {
+				cycles := TSCValue(ref.Nanoseconds() * hz / time.Second.Nanoseconds())
+				if !first {
+					cycles -= tc.overhead
+				}
+				return sample{before: cycles, after: cycles + tc.overhead, ref: ReferenceNS(ref.Nanoseconds())}
+			}
+			samples := []sample{at(0, true)}
+			for i := 1; i < maxSamples; i++ {
+				samples = append(samples, at(time.Duration(i)*interval, false))
+			}
+			samples = append(samples, at((maxSamples-1)*interval+ApproxUpdateInterval, false))
+			c := newTestCalibratedClock(samples, nil)
+			c.ref.overhead = maxOverheadCycles
+
+			checkError := func(p Parameters) {
+				t.Helper()
+				if errPPM := math.Abs(float64(p.Frequency)-float64(hz)) * 1e6 / float64(hz); errPPM > maxInitialFrequencyErrorPPM {
+					t.Errorf("Frequency = %d, %.0fppm from %d, want at most %dppm", p.Frequency, errPPM, hz, maxInitialFrequencyErrorPPM)
+				}
+			}
+			for i := 1; i <= maxSamples; i++ {
+				p, ok := c.Update(false)
+				if want := tc.readyAt != 0 && i >= tc.readyAt; ok != want {
+					t.Fatalf("Update %d ready = %t, want %t", i, ok, want)
+				}
+				if ok {
+					checkError(p)
+				}
+			}
+			// A sample ApproxUpdateInterval later makes any clock ready.
+			p, ok := c.Update(false)
+			if !ok {
+				t.Fatalf("not ready after a sample %v later", ApproxUpdateInterval)
+			}
+			if tc.readyAt == 0 {
+				checkError(p)
+			}
+		})
+	}
+}
+
+// TestRealtimeStep tests that a host realtime step between samples taken less
+// than ApproxUpdateInterval apart doesn't make the realtime clock ready with a
+// frequency that differs from monotonic's.
+func TestRealtimeStep(t *testing.T) {
+	hz := int64(defaultOverheadCycles) * 1_000_000
+	const interval = 10 * time.Millisecond
+	// samples returns n samples 10ms apart. step is added to the reference
+	// of every sample after the first.
+	samples := func(n int, step time.Duration) []sample {
+		var s []sample
+		for i := 0; i < n; i++ {
+			ref := time.Duration(i) * interval
+			cycles := TSCValue(ref.Nanoseconds() * hz / time.Second.Nanoseconds())
+			if i > 0 {
+				ref += step
+			}
+			s = append(s, sample{before: cycles, after: cycles + defaultOverheadCycles/10, ref: ReferenceNS(ref.Nanoseconds())})
+		}
+		return s
+	}
+	const updates = 4
+	for _, tc := range []struct {
+		name string
+		step time.Duration
+		// readyAt is the update after which realtime is ready, or 0 if it
+		// is not ready within updates.
+		readyAt int
+	}{
+		{name: "no step", step: 0, readyAt: 2},
+		{name: "forward", step: 3 * time.Millisecond, readyAt: 0},
+		// The clock resets at the second sample, then calibrates from
+		// the third and fourth.
+		{name: "backward", step: -20 * time.Millisecond, readyAt: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &CalibratedClocks{
+				monotonic: newTestCalibratedClock(samples(updates, 0), nil),
+				realtime:  newTestCalibratedClock(samples(updates, tc.step), nil),
+			}
+			for i := 1; i <= updates; i++ {
+				res := c.Update(false)
+				if want := i >= 2; res.MonotonicOk != want {
+					t.Fatalf("Update %d monotonic ready = %t, want %t", i, res.MonotonicOk, want)
+				}
+				if want := tc.readyAt != 0 && i >= tc.readyAt; res.RealtimeOk != want {
+					t.Fatalf("Update %d realtime ready = %t (Frequency %d), want %t", i, res.RealtimeOk, res.Realtime.Frequency, want)
+				}
+				if res.RealtimeOk {
+					if errPPM := math.Abs(float64(res.Realtime.Frequency)-float64(hz)) * 1e6 / float64(hz); errPPM > maxInitialFrequencyErrorPPM {
+						t.Errorf("Update %d realtime Frequency = %d, %.0fppm from %d", i, res.Realtime.Frequency, errPPM, hz)
+					}
+				}
+			}
 		})
 	}
 }

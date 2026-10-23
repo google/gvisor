@@ -15,11 +15,13 @@
 package kernel
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -691,4 +693,155 @@ func TestTimekeeperPauseWaitsForInFlightAfterFunc(t *testing.T) {
 	default:
 		t.Fatal("Pause() returned while AfterFunc was still running")
 	}
+}
+
+// calibratingClocks is a sentrytime.Clocks whose clocks become calibrated on
+// the readyAfter'th Update since construction or the last reset.
+type calibratingClocks struct {
+	mockClocks
+	readyAfter int
+	samples    int
+}
+
+// Update implements sentrytime.Clocks.Update.
+func (c *calibratingClocks) Update(parked bool) sentrytime.UpdateResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.samples++
+	if c.samples < c.readyAfter {
+		return sentrytime.UpdateResult{}
+	}
+	p := sentrytime.Parameters{Frequency: 1_000_000_000}
+	return sentrytime.UpdateResult{Monotonic: p, MonotonicOk: true, Realtime: p, RealtimeOk: true}
+}
+
+// reset makes the clocks uncalibrated until readyAfter further Updates.
+func (c *calibratingClocks) reset(readyAfter int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.samples = 0
+	c.readyAfter = readyAfter
+}
+
+// fastCalibrationDeadline is far shorter than sentrytime.ApproxUpdateInterval
+// but many times fastUpdateInterval.
+const fastCalibrationDeadline = 500 * time.Millisecond
+
+// vdsoReady returns whether the parameter page marks monotonic and realtime
+// ready.
+func vdsoReady(tb testing.TB, tk *Timekeeper, params *VDSOParamPage) bool {
+	tb.Helper()
+	// Every writer of the parameter page holds updateMu.
+	tk.updateMu.Lock()
+	defer tk.updateMu.Unlock()
+	blk, err := params.access()
+	if err != nil {
+		tb.Fatalf("params.access: %v", err)
+	}
+	var p vdsoParams
+	buf := make([]byte, p.SizeBytes())
+	if _, err := safemem.Copy(safemem.BlockFromSafeSlice(buf), blk.DropFirst(8)); err != nil {
+		tb.Fatalf("safemem.Copy: %v", err)
+	}
+	p.UnmarshalUnsafe(buf)
+	return p.monotonicReady == 1 && p.realtimeReady == 1
+}
+
+// waitVDSOReady waits for the parameter page to become ready.
+func waitVDSOReady(tb testing.TB, tk *Timekeeper, params *VDSOParamPage) bool {
+	tb.Helper()
+	for deadline := time.Now().Add(fastCalibrationDeadline); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		if vdsoReady(tb, tk, params) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestTimekeeperFastCalibration tests that the vDSO parameters become ready
+// well before ApproxUpdateInterval, whether or not anything reads the time
+// meanwhile, and that updates then return to ApproxUpdateInterval.
+func TestTimekeeperFastCalibration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		readyAfter int
+		reader     bool
+	}{
+		{name: "two samples", readyAfter: 2},
+		{name: "five samples", readyAfter: 5},
+		{name: "five samples with reader", readyAfter: 5, reader: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &calibratingClocks{readyAfter: tc.readyAfter}
+			tk, params := stateTestClocklessTimekeeper(t)
+			tk.SetClocks(c, params)
+			defer tk.Destroy()
+			if tc.reader {
+				tk.addRef()
+				defer tk.release()
+			}
+
+			if !waitVDSOReady(t, tk, params) {
+				t.Fatalf("vDSO parameters not ready within %v of SetClocks", fastCalibrationDeadline)
+			}
+			tk.updateMu.Lock()
+			got := tk.nextUpdateInterval()
+			tk.updateMu.Unlock()
+			if want := sentrytime.ApproxUpdateInterval; got != want {
+				t.Errorf("update interval after calibration = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// expectUpdateIntervals runs n updates and checks that each leaves the next
+// update interval at want.
+//
+// +checklocks:tk.updateMu
+func expectUpdateIntervals(t *testing.T, tk *Timekeeper, n int, want time.Duration) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		tk.updateAndRearm(false)
+		if got := tk.nextUpdateInterval(); got != want {
+			t.Fatalf("update interval = %v, want %v (uncalibratedUpdates = %d)", got, want, tk.uncalibratedUpdates)
+		}
+	}
+}
+
+// TestTimekeeperUpdateInterval tests the update interval across calibration,
+// loss of calibration, and a clock that never calibrates.
+func TestTimekeeperUpdateInterval(t *testing.T) {
+	c := &calibratingClocks{readyAfter: 3}
+	tk, params := stateTestClocklessTimekeeper(t)
+	tk.clocks = c
+	tk.params = params
+	tk.timer = time.NewTimer(time.Hour)
+	defer tk.timer.Stop()
+	fast, slow := fastUpdateInterval, sentrytime.ApproxUpdateInterval
+
+	tk.updateMu.Lock()
+	defer tk.updateMu.Unlock()
+
+	// Calibrates on the third update.
+	expectUpdateIntervals(t, tk, 2, fast)
+	expectUpdateIntervals(t, tk, 2, slow)
+
+	// Loses calibration, as after a reset, and calibrates again.
+	c.reset(3)
+	expectUpdateIntervals(t, tk, 2, fast)
+	expectUpdateIntervals(t, tk, 1, slow)
+
+	// Never calibrates: fast until maxFastUpdates uncalibrated updates.
+	c.reset(math.MaxInt)
+	expectUpdateIntervals(t, tk, maxFastUpdates-1, fast)
+	expectUpdateIntervals(t, tk, 3, slow)
+	if got, want := tk.uncalibratedUpdates, maxFastUpdates; got != want {
+		t.Errorf("uncalibratedUpdates = %d, want %d", got, want)
+	}
+
+	// Calibrating clears the limit for the next loss of calibration.
+	c.reset(1)
+	expectUpdateIntervals(t, tk, 1, slow)
+	c.reset(math.MaxInt)
+	expectUpdateIntervals(t, tk, 1, fast)
 }

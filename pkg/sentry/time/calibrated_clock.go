@@ -25,6 +25,18 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+// maxInitialFrequencyErrorPPM bounds, in parts per million, the frequency
+// error that a clock may become ready with before its samples span
+// ApproxUpdateInterval. The estimate is the midpoint of the frequencies the
+// samples allow, so its error is at most half their range, which is the
+// overhead of the oldest and newest sample over the cycles between them.
+//
+// Linux's NTP code never slews a clock by more than 500ppm (MAXFREQ), so
+// this is well within the rate changes applications already tolerate. It is
+// also the worst case of a window of ApproxUpdateInterval at
+// maxOverheadCycles on arm64 (100µs of counter time at each end).
+const maxInitialFrequencyErrorPPM = 100
+
 // CalibratedClock implements a clock that tracks a reference clock.
 //
 // Users should call Update at regular intervals of around approxUpdateInterval
@@ -161,6 +173,10 @@ func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
 // the clock is calibrated. Update should be called regularly to prevent the
 // clock from getting significantly out of sync from the reference clock.
 //
+// A clock becomes calibrated once it has two samples that either bound its
+// frequency to within maxInitialFrequencyErrorPPM or are at least
+// ApproxUpdateInterval apart.
+//
 // parked indicates that this Update resumes a parked (unobserved) period; see
 // updateParams.
 //
@@ -169,6 +185,16 @@ func (c *CalibratedClock) updateParams(actual Parameters, parked bool) {
 //
 // +checklocksexclude:c.mu
 func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
+	return c.update(parked, false, 0)
+}
+
+// update is Update, except that if checkPeer is set, the clock may become
+// calibrated before its samples span ApproxUpdateInterval only if its
+// frequency is within maxInitialFrequencyErrorPPM of peerHz. peerHz of 0
+// means the peer is not calibrated.
+//
+// +checklocksexclude:c.mu
+func (c *CalibratedClock) update(parked, checkPeer bool, peerHz uint64) (Parameters, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -180,6 +206,12 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 	oldest, newest, ok := c.ref.Range()
 	if !ok {
 		// Not ready yet.
+		return Parameters{}, false
+	}
+
+	if newest.ref <= oldest.ref {
+		// The reference clock stepped backwards between the samples.
+		c.resetLocked("Unable to update calibrated clock: reference went from %v to %v.", oldest.ref, newest.ref)
 		return Parameters{}, false
 	}
 
@@ -202,8 +234,22 @@ func (c *CalibratedClock) Update(parked bool) (Parameters, bool) {
 		return Parameters{}, false
 	}
 
+	freq := (minHz + maxHz) / 2
+	if !c.ready && refInterval < uint64(ApproxUpdateInterval.Nanoseconds()) {
+		maxErrHz := freq * maxInitialFrequencyErrorPPM / 1_000_000
+		if (maxHz-minHz)/2 > maxErrHz {
+			// The samples do not yet bound the frequency closely enough.
+			return Parameters{}, false
+		}
+		if checkPeer && (peerHz == 0 || max(freq, peerHz)-min(freq, peerHz) > maxErrHz) {
+			// A reference step between the samples scales the frequency
+			// and its bounds alike, so only the peer can reveal it.
+			return Parameters{}, false
+		}
+	}
+
 	c.updateParams(Parameters{
-		Frequency:  (minHz + maxHz) / 2,
+		Frequency:  freq,
 		BaseRef:    newest.ref,
 		BaseCycles: newest.after,
 	}, parked)
@@ -293,7 +339,13 @@ func NewCalibratedClocks(monotonicRawEnabled bool) *CalibratedClocks {
 func (c *CalibratedClocks) Update(parked bool) UpdateResult {
 	var res UpdateResult
 	res.Monotonic, res.MonotonicOk = c.monotonic.Update(parked)
-	res.Realtime, res.RealtimeOk = c.realtime.Update(parked)
+	// Host CLOCK_REALTIME runs at the rate of CLOCK_MONOTONIC but may step,
+	// so it calibrates early only if it agrees with monotonic.
+	var monotonicHz uint64
+	if res.MonotonicOk {
+		monotonicHz = res.Monotonic.Frequency
+	}
+	res.Realtime, res.RealtimeOk = c.realtime.update(parked, true, monotonicHz)
 	if c.monotonicRaw != nil {
 		res.MonotonicRaw, res.MonotonicRawOk = c.monotonicRaw.Update(parked)
 	}
