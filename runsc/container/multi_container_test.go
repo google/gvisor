@@ -908,6 +908,53 @@ func testSharedMount(t *testing.T, tester func(t *testing.T, conf *config.Config
 	}
 }
 
+// TestMultiContainerNetSysctls checks that a subcontainer's OCI
+// net.ipv4.ip_unprivileged_port_start sysctl is applied to the network
+// namespace that all containers share, and that an invalid value fails the
+// subcontainer's start.
+func TestMultiContainerNetSysctls(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+
+	podSpecs, ids := createSpecs(sleepCmd, sleepCmd)
+	podSpecs[1].Linux = &specs.Linux{Sysctl: map[string]string{"net.ipv4.ip_unprivileged_port_start": "600"}}
+	containers, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	const file = "/proc/sys/net/ipv4/ip_unprivileged_port_start"
+	out, err := executeCombinedOutput(conf, containers[0], nil, "/bin/cat", file)
+	if err != nil {
+		t.Fatalf("error reading %s: %v, output: %q", file, err, out)
+	}
+	if got, want := string(out), "600\n"; got != want {
+		t.Errorf("%s in root container = %q, want %q", file, got, want)
+	}
+
+	badSpecs, badIDs := createSpecs(sleepCmd)
+	bad := badSpecs[0]
+	bad.Annotations = map[string]string{
+		specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+		specutils.ContainerdSandboxIDAnnotation:     ids[0],
+	}
+	bad.Linux = &specs.Linux{Sysctl: map[string]string{"net.ipv4.ip_unprivileged_port_start": "abc"}}
+	bundleDir, cleanupBundle, err := testutil.SetupBundleDir(bad)
+	if err != nil {
+		t.Fatalf("error setting up bundle: %v", err)
+	}
+	defer cleanupBundle()
+	cont, err := New(conf, Args{ID: badIDs[0], Spec: bad, BundleDir: bundleDir})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err == nil {
+		t.Errorf("subcontainer started with ip_unprivileged_port_start=abc, want error")
+	}
+}
+
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {

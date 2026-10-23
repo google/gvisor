@@ -516,6 +516,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:net_unprivileged_sysctls_test",
+)
+
+syscall_test(
     add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:open_create_test",
