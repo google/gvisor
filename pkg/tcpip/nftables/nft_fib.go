@@ -456,9 +456,9 @@ const nftFibFlagsAll = linux.NFTA_FIB_F_SADDR | linux.NFTA_FIB_F_DADDR |
 
 // Ref: net/netfilter/nft_fib.c:nft_fib_policy
 var nftFibPolicy = []NlaPolicy{
-	{nlaType: linux.NLA_U32, validator: AttrMaskValidator[uint32](nftFibFlagsAll)},
-	{nlaType: linux.NLA_U32},
-	{nlaType: linux.NLA_U32},
+	linux.NFTA_FIB_DREG:   {nlaType: linux.NLA_BE32, validator: AttrMaxValidator[uint32](linux.NFT_REG32_15)},
+	linux.NFTA_FIB_RESULT: {nlaType: linux.NLA_U32},
+	linux.NFTA_FIB_FLAGS:  {nlaType: linux.NLA_BE32, validator: AttrMaskValidator[uint32](nftFibFlagsAll)},
 }
 
 // Ref: net/netfilter/nft_fib.c:nft_fib_init()
