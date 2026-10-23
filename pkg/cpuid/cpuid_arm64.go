@@ -101,7 +101,14 @@ func (fs FeatureSet) HasPointerAuth() bool {
 func (fs FeatureSet) WriteCPUInfoTo(cpu, numCPU uint, w io.Writer) {
 	fmt.Fprintf(w, "processor\t: %d\n", cpu)
 	fmt.Fprintf(w, "BogoMIPS\t: %.02f\n", fs.cpuFreqMHz) // It's bogus anyway.
-	fmt.Fprintf(w, "Features\t\t: %s\n", fs.FlagString())
+	// List only the features that apps are given in AT_HWCAP and AT_HWCAP2,
+	// as Linux derives both from the same elf_hwcap.
+	allowed := fs
+	allowed.hwCap = hwCap{
+		hwCap1: fs.AllowedHWCap1(),
+		hwCap2: fs.AllowedHWCap2(),
+	}
+	fmt.Fprintf(w, "Features\t\t: %s\n", allowed.FlagString())
 	fmt.Fprintf(w, "CPU implementer\t: 0x%x\n", fs.cpuImplHex)
 	fmt.Fprintf(w, "CPU architecture\t: %d\n", fs.cpuArchDec)
 	fmt.Fprintf(w, "CPU variant\t: 0x%x\n", fs.cpuVarHex)
