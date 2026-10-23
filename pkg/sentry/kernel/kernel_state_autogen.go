@@ -440,6 +440,42 @@ func (i *IPCNamespace) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(5, &i.posixQueues)
 }
 
+func (kcov *Kcov) StateTypeName() string {
+	return "pkg/sentry/kernel.Kcov"
+}
+
+func (kcov *Kcov) StateFields() []string {
+	return []string{
+		"mode",
+		"size",
+		"owningTask",
+		"count",
+		"mappable",
+	}
+}
+
+func (kcov *Kcov) beforeSave() {}
+
+// +checklocksignore
+func (kcov *Kcov) StateSave(stateSinkObject state.Sink) {
+	kcov.beforeSave()
+	stateSinkObject.Save(0, &kcov.mode)
+	stateSinkObject.Save(1, &kcov.size)
+	stateSinkObject.Save(2, &kcov.owningTask)
+	stateSinkObject.Save(3, &kcov.count)
+	stateSinkObject.Save(4, &kcov.mappable)
+}
+
+// +checklocksignore
+func (kcov *Kcov) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &kcov.mode)
+	stateSourceObject.Load(1, &kcov.size)
+	stateSourceObject.Load(2, &kcov.owningTask)
+	stateSourceObject.Load(3, &kcov.count)
+	stateSourceObject.Load(4, &kcov.mappable)
+	stateSourceObject.AfterLoad(func() { kcov.afterLoad(ctx) })
+}
+
 func (uc *UserCounters) StateTypeName() string {
 	return "pkg/sentry/kernel.UserCounters"
 }
@@ -3145,6 +3181,7 @@ func init() {
 	state.Register((*FSContext)(nil))
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
+	state.Register((*Kcov)(nil))
 	state.Register((*UserCounters)(nil))
 	state.Register((*CgroupMount)(nil))
 	state.Register((*SaveRestoreExecConfig)(nil))
