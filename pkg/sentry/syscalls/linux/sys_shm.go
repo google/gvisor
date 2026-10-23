@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
 )
@@ -145,6 +146,10 @@ func Shmctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, nil, err
 
 	case linux.IPC_RMID:
+		creds := auth.CredentialsFromContext(t)
+		if !segment.Object().CheckOwnership(creds) {
+			return 0, nil, linuxerr.EPERM
+		}
 		segment.MarkDestroyed(t)
 		return 0, nil, nil
 
