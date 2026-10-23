@@ -138,10 +138,10 @@ func (i *tasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, err
 	}
 
 	// Not a static entry. Try to lookup a corresponding task.
-	tid, err := strconv.ParseUint(name, 10, 64)
-	if err != nil {
+	tid, err := strconv.ParseUint(name, 10, 31)
+	if err != nil || (len(name) > 1 && name[0] == '0') {
 		root := auth.NewRootCredentials(i.pidns.UserNamespace())
-		// If it failed to parse, check if it's one of the special handled files.
+		// Check if it's one of the specially handled files.
 		switch name {
 		case selfName:
 			return i.newSelfSymlink(ctx, root), nil

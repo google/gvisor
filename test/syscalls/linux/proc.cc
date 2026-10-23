@@ -2748,6 +2748,24 @@ TEST(ProcTask, Basic) {
       DirContains("/proc/self/task", {".", "..", absl::StrCat(getpid())}, {}));
 }
 
+TEST(ProcTask, InvalidTaskNames) {
+  const std::string invalid_names[] = {
+      absl::StrCat("0", getpid()),
+      absl::StrCat((uint64_t{1} << 32) + getpid()),
+      "2147483648",
+      "4294967295",
+      "18446744073709551616",
+  };
+  for (const std::string& name : invalid_names) {
+    for (const char* dir : {"/proc/", "/proc/self/task/"}) {
+      const std::string path = absl::StrCat(dir, name);
+      SCOPED_TRACE(path);
+      struct stat st;
+      EXPECT_THAT(stat(path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+    }
+  }
+}
+
 // Helper class for creating a new task in the current thread group.
 class BlockingChild {
  public:
