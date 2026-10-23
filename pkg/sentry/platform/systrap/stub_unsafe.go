@@ -92,6 +92,13 @@ type mapsRegion struct {
 	start, end uintptr
 }
 
+// stubGlobal returns a pointer to the 64-bit global variable of the stub code
+// at the given offset in sysmsg.SighandlerBlob, which has been copied to
+// stubSysmsg (see stubInit).
+func stubGlobal(stubSysmsg []byte, offset int) *uint64 {
+	return (*uint64)(unsafe.Pointer(&stubSysmsg[offset]))
+}
+
 // parseMaps parses the /proc/self/maps file and returns regions where the stub
 // region can be mapped.
 func parseMaps(stubAreaStart, stubAreaEnd, minLen uintptr) ([]mapsRegion, error) {
@@ -227,7 +234,7 @@ func stubInit() {
 	for i := 0; i < 32; i++ {
 		if i == 0 { // fast path
 			// Randomize stubStart address.
-			randomOffset := uintptr(rand.Uint64() * hostarch.PageSize)
+			randomOffset := uintptr(rand.Uint64()) * hostarch.PageSize
 			maxRandomOffset := maxRandomOffsetOfStubAddress - mapLen
 			stubStart = maxStubUserAddress + randomOffset%maxRandomOffset
 		} else {
@@ -292,21 +299,16 @@ func stubInit() {
 	copy(targetSlice, sysmsg.SighandlerBlob)
 
 	// Initialize stub globals
-	p := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_deep_sleep_timeout)))
-	*p = deepSleepTimeout
-	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_region)))
-	*p = uint64(stubContextRegion)
-	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_stub_start)))
-	*p = uint64(stubStart)
+	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_deep_sleep_timeout) = deepSleepTimeout
+	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_context_region) = uint64(stubContextRegion)
+	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_stub_start) = uint64(stubStart)
 	archState := (*sysmsg.ArchState)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_arch_state)))
 	archState.Init()
-	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_queue_addr)))
-	*p = uint64(stubContextQueueRegion)
-	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
-	*p = uint64(stubSpinningThreadQueueAddr)
+	initStubArchGlobals(targetSlice)
+	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_context_queue_addr) = uint64(stubContextQueueRegion)
+	*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_spinning_queue_addr) = uint64(stubSpinningThreadQueueAddr)
 	if disableSyscallPatching {
-		p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_disable_syscall_patching)))
-		*p = 1
+		*stubGlobal(targetSlice, sysmsg.Sighandler_blob_offset____export_disable_syscall_patching) = 1
 	}
 
 	prepareSeccompRules(stubSysmsgStart,

@@ -16,24 +16,24 @@ package pagetables
 
 import (
 	"unsafe"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // newAlignedPTEs returns a set of aligned PTEs.
+//
+// The returned page table page is pteSize bytes long, and aligned to pteSize.
 func newAlignedPTEs() *PTEs {
-	ptes := new(PTEs)
-	offset := physicalFor(ptes) & (hostarch.PageSize - 1)
+	ptes := newPTEs()
+	offset := physicalFor(ptes) & (pteSize - 1)
 	if offset == 0 {
 		// Already aligned.
 		return ptes
 	}
 
 	// Need to force an aligned allocation.
-	unaligned := make([]byte, (2*hostarch.PageSize)-1)
-	offset = uintptr(unsafe.Pointer(&unaligned[0])) & (hostarch.PageSize - 1)
+	unaligned := make([]byte, (2*pteSize)-1)
+	offset = uintptr(unsafe.Pointer(&unaligned[0])) & (pteSize - 1)
 	if offset != 0 {
-		offset = hostarch.PageSize - offset
+		offset = pteSize - offset
 	}
 	return (*PTEs)(unsafe.Pointer(&unaligned[offset]))
 }

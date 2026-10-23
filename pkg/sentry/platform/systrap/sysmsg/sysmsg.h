@@ -114,21 +114,38 @@ enum stub_error {
   STUB_ERROR_FPSTATE_BAD_HEADER,
 };
 
+// MIN_PAGE_SIZE is the smallest supported host page size.
+#define MIN_PAGE_SIZE 4096
+
+#if defined(__aarch64__)
+// arm64 supports hosts with different page sizes, so the per-thread memory
+// layout is only known at runtime. The Sentry sets these variables when it
+// installs the stub, see sysmsg_layout_arm64.go.
+//
+// They are hidden so that the compiler accesses them PC-relative instead of
+// through GOT entries, which would need dynamic relocations that the stub
+// doesn't support.
+#pragma GCC visibility push(hidden)
+extern uint64_t __export_per_thread_mem_size;
+extern uint64_t __export_page_size;
+#pragma GCC visibility pop
+
+#define PER_THREAD_MEM_SIZE (__export_per_thread_mem_size)
+#define MSG_OFFSET_FROM_START \
+  (__export_per_thread_mem_size - __export_page_size)
+#else
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 4096
 #endif
 
-#if PAGE_SIZE == 65536
-#define PER_THREAD_MEM_SIZE (5 * PAGE_SIZE)
-#else
 #define PER_THREAD_MEM_SIZE (8 * PAGE_SIZE)
+#define MSG_OFFSET_FROM_START (PER_THREAD_MEM_SIZE - PAGE_SIZE)
 #endif
 
-#define GUARD_SIZE (PAGE_SIZE)
-#define MSG_OFFSET_FROM_START (PER_THREAD_MEM_SIZE - PAGE_SIZE)
-
-#define SPINNING_QUEUE_MEM_SIZE PAGE_SIZE
-// LINT.ThenChange(sysmsg.go)
+// The spinning queue memory region is one page long, so the spinning queue
+// must fit in the smallest supported page.
+#define SPINNING_QUEUE_MEM_SIZE MIN_PAGE_SIZE
+// LINT.ThenChange(sysmsg.go, sysmsg_layout_amd64.go, sysmsg_layout_arm64.go)
 
 #define FAULT_OPCODE 0x06  // "push %es" on x32 and invalid opcode on x64.
 
@@ -148,9 +165,10 @@ static void* sysmsg_sp() {
   void* sp =
       (struct sysmsg*)(((long)&p) / PER_THREAD_MEM_SIZE * PER_THREAD_MEM_SIZE);
 
-  _Static_assert(
-      sizeof(struct sysmsg) < (PER_THREAD_MEM_SIZE - MSG_OFFSET_FROM_START),
-      "The sysmsg structure is too big.");
+  // The sysmsg structure is stored in the last page of the per-thread memory
+  // region, i.e. PER_THREAD_MEM_SIZE - MSG_OFFSET_FROM_START is the page size.
+  _Static_assert(sizeof(struct sysmsg) < MIN_PAGE_SIZE,
+                 "The sysmsg structure is too big.");
   return sp;
 }
 

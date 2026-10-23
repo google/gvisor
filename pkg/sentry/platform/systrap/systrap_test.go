@@ -80,7 +80,7 @@ func newSystrapTest(t *testing.T) (*Systrap, platform.AddressSpace, *platformCon
 	}
 	t.Cleanup(as.Release)
 
-	fr, err := s.memoryFile.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.System})
+	fr, err := s.memoryFile.Allocate(uint64(hostarch.PageSize), pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
 		t.Fatalf("failed to allocate user code page: %v", err)
 	}
