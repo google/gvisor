@@ -66,6 +66,15 @@ func (fs FeatureSet) ToStatic() Static {
 		s[in] = fs.Query(in)
 	}
 
+	// AMX tile palettes, which AMX users such as oneDNN size tiles from.
+	if fs.HasFeature(X86FeatureAMX_TILE) {
+		maxPalette := fs.Query(In{Eax: uint32(amxTileInfo)}).Eax
+		for i := uint32(1); i <= maxPalette; i++ {
+			in := In{Eax: uint32(amxTileInfo), Ecx: i}
+			s[in] = fs.Query(in)
+		}
+	}
+
 	// Save all cache information.
 	out := fs.Query(In{Eax: uint32(featureInfo)})
 	for i := uint32(0); i < out.Ecx; i++ {

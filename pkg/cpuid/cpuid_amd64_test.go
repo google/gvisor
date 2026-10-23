@@ -335,6 +335,10 @@ func TestUnsetAMXStatic(t *testing.T) {
 	s.Set(avx, Out{Eax: 256, Ebx: 576})
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileCfgComponent}, Out{Eax: 64, Ebx: 2752})
 	s.Set(In{Eax: uint32(xSaveInfo), Ecx: amxTileDataComponent}, Out{Eax: 8192, Ebx: 2816})
+	tileInfo := []In{{Eax: uint32(amxTileInfo)}, {Eax: uint32(amxTileInfo), Ecx: 1}, {Eax: uint32(amxTMULInfo)}}
+	s.Set(tileInfo[0], Out{Eax: 1})
+	s.Set(tileInfo[1], Out{Eax: 0x04002000, Ebx: 0x00080040, Ecx: 0x10})
+	s.Set(tileInfo[2], Out{Ebx: 0x4010})
 
 	if fs := s.ToFeatureSet(); !fs.HasFeature(X86FeatureAMX_TILE) {
 		t.Errorf("ToFeatureSet hid %v", X86FeatureAMX_TILE)
@@ -355,6 +359,32 @@ func TestUnsetAMXStatic(t *testing.T) {
 		if got := fs.Query(In{Eax: uint32(xSaveInfo), Ecx: i}); got != (Out{}) {
 			t.Errorf("AMX subleaf %d: got %+v, want zero", i, got)
 		}
+	}
+	for _, in := range tileInfo {
+		if got := fs.Query(in); got != (Out{}) {
+			t.Errorf("AMX tile information %+v: got %+v, want zero", in, got)
+		}
+	}
+}
+
+func TestAMXTileInfo(t *testing.T) {
+	fs := HostFeatureSet().Fixed()
+	if !fs.HasFeature(X86FeatureAMX_TILE) {
+		t.Skip("host does not support AMX")
+	}
+	maxPalette := native(In{Eax: uint32(amxTileInfo)}).Eax
+	if maxPalette == 0 {
+		t.Fatalf("host advertises AMX but reports no tile palettes")
+	}
+	for i := uint32(0); i <= maxPalette; i++ {
+		in := In{Eax: uint32(amxTileInfo), Ecx: i}
+		if got, want := fs.Query(in), native(in); got != want {
+			t.Errorf("tile information %+v: got %+v, want %+v", in, got, want)
+		}
+	}
+	in := In{Eax: uint32(amxTMULInfo)}
+	if got, want := fs.Query(in), native(in); got != want {
+		t.Errorf("TMUL information: got %+v, want %+v", got, want)
 	}
 }
 
