@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 
-# Install gcloud and gsutil from apt.
+# Install google-cloud-cli from apt.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends apt-transport-https ca-certificates gnupg curl && \
     curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
