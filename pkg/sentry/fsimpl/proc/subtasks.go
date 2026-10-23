@@ -71,8 +71,8 @@ func (fs *filesystem) newSubtasks(ctx context.Context, task *kernel.Task, pidns 
 
 // Lookup implements kernfs.inodeDirectory.Lookup.
 func (i *subtasksInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	tid, err := strconv.ParseUint(name, 10, 31)
-	if err != nil || (len(name) > 1 && name[0] == '0') {
+	tid, ok := parseIDName(name)
+	if !ok {
 		return nil, linuxerr.ENOENT
 	}
 

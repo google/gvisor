@@ -1345,6 +1345,21 @@ TEST(ProcSelfFdInfo, GetdentsDuplicates) {
   CheckFdDirGetdentsDuplicates("/proc/self/fdinfo");
 }
 
+TEST(ProcSelfFd, NoncanonicalNames) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY));
+  for (const char* dir : {"/proc/self/fd/", "/proc/self/fdinfo/"}) {
+    struct stat st;
+    ASSERT_THAT(lstat(absl::StrCat(dir, fd.get()).c_str(), &st),
+                SyscallSucceeds());
+    for (const char* prefix : {"0", "+"}) {
+      const std::string path = absl::StrCat(dir, prefix, fd.get());
+      SCOPED_TRACE(path);
+      EXPECT_THAT(lstat(path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+    }
+  }
+}
+
 TEST(ProcSelfFdInfo, CorrectFds) {
   // Make sure there is at least one open file.
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
