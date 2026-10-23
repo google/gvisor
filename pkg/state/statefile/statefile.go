@@ -248,7 +248,7 @@ func metadata(r io.Reader, key []byte) (map[string]string, error) {
 
 	// Read and validate magic header.
 	b := make([]byte, len(magicHeader))
-	if _, err := r.Read(b); err != nil {
+	if _, err := io.ReadFull(r, b); err != nil {
 		return nil, err
 	}
 	if !bytes.Equal(b, magicHeader) {
