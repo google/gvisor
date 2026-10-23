@@ -108,7 +108,7 @@ func IOUringEnter(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (ui
 
 	// If a user requested to submit zero SQEs, then we don't process any and return right away.
 	if toSubmit == 0 {
-		return uintptr(ret), nil, nil
+		return 0, nil, nil
 	}
 
 	file := t.GetFile(fd)
