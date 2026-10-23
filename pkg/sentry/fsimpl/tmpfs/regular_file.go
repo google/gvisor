@@ -363,9 +363,16 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		}
 		fillRange = required
 	}
+	// Recycled pages are zeroed through a mapping, which for a disk-backed
+	// MemoryFile reads their discarded contents back from disk first.
+	allocMode := pgalloc.AllocateUncommittedOrRecycled
+	if rf.inode.fs.mf.IsDiskBacked() {
+		allocMode = pgalloc.AllocateUncommitted
+	}
 	pagesAlloced, cerr := rf.data.Fill(ctx, required, fillRange, rf.size.RacyLoad(), rf.inode.fs.mf, pgalloc.AllocOpts{
 		Kind:    rf.memoryUsageKind,
 		MemCgID: memCgID,
+		Mode:    allocMode,
 		Huge:    mayHuge,
 	}, nil)
 	// rf.data.Fill() may fail mid-way. We still want to account any pages that
