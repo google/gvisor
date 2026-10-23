@@ -16,6 +16,7 @@ package lisafs
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -1563,16 +1564,26 @@ func Getdents64Handler(c *Connection, comm Communicator, payloadLen uint32) (uin
 	// Request enough payloadBuf for 10 dirents, we will extend when needed.
 	// unix.Dirent is 280 bytes for amd64.
 	payloadBuf := comm.PayloadBuf(payloadBufPos + 10*unixDirentMaxSize)
+	// overflow is set if the dirents read do not fit in the response.
+	overflow := false
 	if err := fd.controlFD.safelyRead(func() error {
 		if fd.controlFD.node.isDeleted() {
 			return unix.EINVAL
 		}
 		return fd.impl.Getdent64(uint32(req.Count), seek0, func(dirent Dirent64) {
+			if overflow || numDirents == math.MaxUint16 {
+				overflow = true
+				return
+			}
 			// Paste the dirent into the payload buffer without having the dirent
 			// escape. Request a larger buffer if needed.
 			if int(payloadBufPos)+dirent.SizeBytes() > len(payloadBuf) {
+				if int(payloadBufPos)+dirent.SizeBytes() > int(c.maxMessageSize) {
+					overflow = true
+					return
+				}
 				// Ask for 10 large dirents worth of more space.
-				payloadBuf = comm.PayloadBuf(payloadBufPos + 10*unixDirentMaxSize)
+				payloadBuf = comm.PayloadBuf(min(payloadBufPos+10*unixDirentMaxSize, c.maxMessageSize))
 			}
 			dirent.MarshalBytes(payloadBuf[payloadBufPos:])
 			payloadBufPos += uint32(dirent.SizeBytes())
@@ -1580,6 +1591,9 @@ func Getdents64Handler(c *Connection, comm Communicator, payloadLen uint32) (uin
 		})
 	}); err != nil {
 		return 0, err
+	}
+	if overflow {
+		return 0, unix.EIO
 	}
 
 	// The number of dirents goes at the beginning of the payload.
