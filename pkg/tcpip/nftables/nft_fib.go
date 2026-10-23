@@ -172,9 +172,7 @@ func (op *fib) evaluateOIF(regs *registerSet, evalCtx opEvalCtx) {
 	// this constraint, and only store the result if they match.
 	nicID := tcpip.NICID(0)
 	if op.flags&linux.NFTA_FIB_F_OIF != 0 {
-		if evalCtx.route != nil {
-			nicID = evalCtx.route.OutgoingNIC()
-		}
+		nicID = evalCtx.outNICID
 	} else if op.flags&linux.NFTA_FIB_F_IIF != 0 {
 		nicID = pkt.InputNICID
 	}
@@ -291,9 +289,7 @@ func (op *fib) evaluateAddrType(regs *registerSet, evalCtx opEvalCtx) {
 	if op.flags&linux.NFTA_FIB_F_IIF != 0 {
 		nicID = pkt.InputNICID
 	} else if op.flags&linux.NFTA_FIB_F_OIF != 0 {
-		if evalCtx.route != nil {
-			nicID = evalCtx.route.OutgoingNIC()
-		}
+		nicID = evalCtx.outNICID
 	}
 
 	// Find route to determine address type.

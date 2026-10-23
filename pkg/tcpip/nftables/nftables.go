@@ -35,47 +35,47 @@ import (
 
 // CheckPrerouting checks at the Prerouting hook if the packet should continue traversing the stack.
 func (nf *NFTables) CheckPrerouting(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFPrerouting)
+	return nf.checkHook(pkt, route, 0 /* outNICID */, af, stack.NFPrerouting)
 }
 
 // CheckInput checks at the Input hook if the packet should continue traversing the stack.
 func (nf *NFTables) CheckInput(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFInput)
+	return nf.checkHook(pkt, route, 0 /* outNICID */, af, stack.NFInput)
 }
 
 // CheckForward checks at the Forward hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckForward(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFForward)
+func (nf *NFTables) CheckForward(pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, outNICID, af, stack.NFForward)
 }
 
 // CheckOutput checks at the Output hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckOutput(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFOutput)
+func (nf *NFTables) CheckOutput(pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, outNICID, af, stack.NFOutput)
 }
 
 // CheckPostrouting checks at the Postrouting hook if the packet should continue traversing the stack.
-func (nf *NFTables) CheckPostrouting(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFPostrouting)
+func (nf *NFTables) CheckPostrouting(pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, af stack.AddressFamily) bool {
+	return nf.checkHook(pkt, route, outNICID, af, stack.NFPostrouting)
 }
 
 // CheckIngress checks at the Ingress hook if the packet should continue traversing the stack.
 func (nf *NFTables) CheckIngress(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFIngress)
+	return nf.checkHook(pkt, route, 0 /* outNICID */, af, stack.NFIngress)
 }
 
 // CheckEgress checks at the Egress hook if the packet should continue traversing the stack.
 func (nf *NFTables) CheckEgress(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily) bool {
-	return nf.checkHook(pkt, route, af, stack.NFEgress)
+	return nf.checkHook(pkt, route, 0 /* outNICID */, af, stack.NFEgress)
 }
 
 // checkHook returns true if the packet should continue traversing the stack or false
 // if the packet should be dropped.
 // If NFTables is not enabled, the packet is always allowed to continue traversing the stack.
-func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, route *stack.Route, af stack.AddressFamily, hook stack.NFHook) bool {
+func (nf *NFTables) checkHook(pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, af stack.AddressFamily, hook stack.NFHook) bool {
 	if !IsNFTablesEnabled() {
 		return true
 	}
-	v, err := nf.EvaluateHook(af, hook, pkt, route)
+	v, err := nf.EvaluateHook(af, hook, pkt, route, outNICID)
 
 	if err != nil {
 		return false
@@ -102,7 +102,7 @@ func isTerminalCode(code uint32) bool {
 // if NAT has not been configured for this packet.
 // Reserves a no-op NAT if no rules matched.
 // Returns error and whether NAT is/was configured.
-func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.Route, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) (*syserr.AnnotatedError, bool) {
+func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) (*syserr.AnnotatedError, bool) {
 	natType := stack.NfHookToNATType(hook)
 	if natType == stack.NATUnknown {
 		return syserr.NewAnnotatedError(syserr.ErrInvalidArgument, fmt.Sprintf("invalid hook: %s for NATType: %s", hook, natType)), false
@@ -119,6 +119,7 @@ func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.
 	evalCtx := opEvalCtx{
 		pkt:      pkt,
 		route:    route,
+		outNICID: outNICID,
 		hook:     hook,
 		nftState: nf,
 	}
@@ -150,13 +151,13 @@ func (nf *NFTables) evaluateNATBaseChains(pkt *stack.PacketBuffer, route *stack.
 }
 
 // evaluateNAT evaluates then applies NAT to the packet.
-func (nf *NFTables) evaluateNAT(pkt *stack.PacketBuffer, route *stack.Route, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) *syserr.AnnotatedError {
+func (nf *NFTables) evaluateNAT(pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, hook stack.NFHook, family stack.AddressFamily, regs *registerSet) *syserr.AnnotatedError {
 	if !pkt.IsConnTrackConfigured() {
 		log.Warningf("ConnTrack should be configured before NAT")
 		return nil
 	}
 
-	err, natConfigured := nf.evaluateNATBaseChains(pkt, route, hook, family, regs)
+	err, natConfigured := nf.evaluateNATBaseChains(pkt, route, outNICID, hook, family, regs)
 	if err != nil {
 		return err
 	}
@@ -179,7 +180,7 @@ type extraEvaluator struct {
 }
 
 // getExtraEvaluators returns a list of extra evaluators beside the nft chains.
-func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route, regs *registerSet) []*extraEvaluator {
+func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID, regs *registerSet) []*extraEvaluator {
 	var e []*extraEvaluator
 	// Get ConnTrack evaluator.
 	connTrackHookPriority, connTrackOk := stack.NfConnTrackPriority(hook)
@@ -204,7 +205,7 @@ func (nf *NFTables) getExtraEvaluators(family stack.AddressFamily, hook stack.NF
 		e = append(e, &extraEvaluator{
 			priority: natHookPriority,
 			handle: func() *syserr.AnnotatedError {
-				return nf.evaluateNAT(pkt, route, hook, family, regs)
+				return nf.evaluateNAT(pkt, route, outNICID, hook, family, regs)
 			},
 		})
 	}
@@ -243,10 +244,11 @@ func (nf *NFTables) getBaseChainsForEvaluation(family stack.AddressFamily, hook 
 
 // EvaluateHook evaluates a packet using the rules of the given hook for the
 // given address family, returning a netfilter verdict and modifying the packet
-// in place.
+// in place. outNICID is the output interface, as in
+// stack.NFTablesInterface; it is 0 at hooks without one.
 // Returns an error if address family or hook is invalid or they don't match.
 // TODO(b/345684870): Consider removing error case if we never return an error.
-func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route) (Verdict, *syserr.AnnotatedError) {
+func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, pkt *stack.PacketBuffer, route *stack.Route, outNICID tcpip.NICID) (Verdict, *syserr.AnnotatedError) {
 	// Note: none of the other evaluate functions are public because they require
 	// jumping to different chains in the same table, so all chains, rules, and
 	// operations must be tied to a table. Thus, calling evaluate for standalone
@@ -270,7 +272,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 	// Create a new register set for the evaluation.
 	regs := newRegisterSet()
 	// Evaluates packet through all base chains for given hook in priority order.
-	extraEvaluators := nf.getExtraEvaluators(family, hook, pkt, route, &regs)
+	extraEvaluators := nf.getExtraEvaluators(family, hook, pkt, route, outNICID, &regs)
 	ei := 0 // Extra evaluator iterator.
 	numExtraHooks := len(extraEvaluators)
 	ci := 0 // Base chain iterator.
@@ -284,6 +286,7 @@ func (nf *NFTables) EvaluateHook(family stack.AddressFamily, hook stack.NFHook, 
 	evalCtx := opEvalCtx{
 		pkt:      pkt,
 		route:    route,
+		outNICID: outNICID,
 		hook:     hook,
 		nftState: nf,
 	}

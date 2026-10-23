@@ -546,12 +546,13 @@ func (pk *PacketBuffer) ConfigureNAT(portsOrIdents PortOrIdentRange, natAddress 
 	return pk.tuple.conn.ConfigureNAT(portsOrIdents, natAddress, natType, changePort, changeAddress)
 }
 
-// ConfigureMasquerade configures NAT masquerade for the packet.
-func (pk *PacketBuffer) ConfigureMasquerade(portsOrIdents PortOrIdentRange, route *Route, stk *Stack, changePort bool) bool {
+// ConfigureMasquerade configures NAT masquerade for the packet to the primary
+// address of the output interface outNICID. route may be nil.
+func (pk *PacketBuffer) ConfigureMasquerade(portsOrIdents PortOrIdentRange, route *Route, outNICID tcpip.NICID, stk *Stack, changePort bool) bool {
 	if !pk.IsConnTrackConfigured() {
 		return false
 	}
-	return pk.tuple.conn.configureMasquerade(pk, route, stk, portsOrIdents, changePort)
+	return pk.tuple.conn.configureMasquerade(pk, route, outNICID, stk, portsOrIdents, changePort)
 }
 
 // FinalizeConnTrack finalizes the connection tracking state for the packet.
