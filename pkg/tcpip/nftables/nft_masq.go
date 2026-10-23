@@ -115,7 +115,7 @@ func (m *masqOp) evaluate(regs *registerSet, evalCtx opEvalCtx) {
 	}
 
 	// Configure NAT for the packet to change the source address.
-	if !pkt.ConfigureMasquerade(ports, evalCtx.route, evalCtx.nftState.stack, changePort) {
+	if !pkt.ConfigureMasquerade(ports, evalCtx.route, evalCtx.outNICID, evalCtx.nftState.stack, changePort) {
 		regs.verdict.Code = VC(linux.NF_DROP)
 		return
 	}

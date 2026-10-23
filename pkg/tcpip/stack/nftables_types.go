@@ -16,15 +16,21 @@ package stack
 
 import (
 	"fmt"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // NFTablesInterface is an interface for evaluating chains.
+//
+// outNICID is the interface the packet leaves through, like
+// nf_hook_state.out in Linux. It is what rules see as the output interface
+// (oif, oifname, masquerade), whether or not route is set.
 type NFTablesInterface interface {
 	CheckPrerouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 	CheckInput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
-	CheckForward(pkt *PacketBuffer, route *Route, af AddressFamily) bool
-	CheckOutput(pkt *PacketBuffer, route *Route, af AddressFamily) bool
-	CheckPostrouting(pkt *PacketBuffer, route *Route, af AddressFamily) bool
+	CheckForward(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, af AddressFamily) bool
+	CheckOutput(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, af AddressFamily) bool
+	CheckPostrouting(pkt *PacketBuffer, route *Route, outNICID tcpip.NICID, af AddressFamily) bool
 	CheckIngress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 	CheckEgress(pkt *PacketBuffer, route *Route, af AddressFamily) bool
 }
