@@ -78,6 +78,8 @@ var (
 	compareAndSwapUint32End   uintptr
 	loadUint32Begin           uintptr
 	loadUint32End             uintptr
+	storeUint64Begin          uintptr
+	storeUint64End            uintptr
 
 	// savedSigSegVHandler is a pointer to the SIGSEGV handler that was
 	// configured before we replaced it with our own. We still call into it
@@ -129,6 +131,8 @@ func initializeAddresses() {
 	compareAndSwapUint32End = FindEndAddress(compareAndSwapUint32Begin)
 	loadUint32Begin = addrOfLoadUint32()
 	loadUint32End = FindEndAddress(loadUint32Begin)
+	storeUint64Begin = addrOfStoreUint64()
+	storeUint64End = FindEndAddress(storeUint64Begin)
 	initializeArchAddresses()
 }
 
