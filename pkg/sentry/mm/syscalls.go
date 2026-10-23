@@ -1235,6 +1235,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 						if psegAR.End <= firstHugeEnd {
 							// All of psegAR falls within a single huge page.
 							mm.mf.Decommit(pseg.fileRangeOf(psegAR))
+							mm.notePartialHugeDecommitLocked(psegAR)
 							pseg = pseg.NextSegment()
 							continue
 						}
@@ -1246,10 +1247,12 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 							// MemoryFile.Decommit() for the first and last
 							// huge pages respectively.
 							mm.mf.Decommit(pseg.fileRangeOf(psegAR))
+							mm.notePartialHugeDecommitLocked(psegAR)
 							pseg = pseg.NextSegment()
 							continue
 						}
 						mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{psegAR.Start, firstHugeEnd}))
+						mm.notePartialHugeDecommitLocked(hostarch.AddrRange{psegAR.Start, firstHugeEnd})
 						psegAR.Start = firstHugeEnd
 					}
 					// Drop whole huge pages between psegAR.Start (which after the above
@@ -1272,6 +1275,7 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 					if lastWholeHugeEnd != psegAR.End {
 						// psegAR.End is not hugepage-aligned.
 						mm.mf.Decommit(pseg.fileRangeOf(hostarch.AddrRange{lastWholeHugeEnd, psegAR.End}))
+						mm.notePartialHugeDecommitLocked(hostarch.AddrRange{lastWholeHugeEnd, psegAR.End})
 						pseg = pseg.NextSegment()
 					}
 					continue
@@ -1577,7 +1581,7 @@ func (mm *MemoryManager) VirtualMemorySizeRange(ar hostarch.AddrRange) uint64 {
 func (mm *MemoryManager) ResidentSetSize() uint64 {
 	mm.activeMu.RLock()
 	defer mm.activeMu.RUnlock()
-	return mm.curRSS
+	return mm.curRSS - mm.uncommittedRSSLocked(hostarch.AddrRange{0, ^hostarch.Addr(0)})
 }
 
 // MaxResidentSetSize returns the value advertised as mm's max RSS in bytes.
