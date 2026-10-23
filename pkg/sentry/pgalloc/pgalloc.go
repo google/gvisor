@@ -1800,6 +1800,23 @@ func (f *MemoryFile) TotalUsage() (uint64, error) {
 	return uint64(stat.Blocks * 512), nil
 }
 
+// UnaccountedUsage returns the number of bytes used by the backing file that
+// are not known to be committed, and so are not counted in
+// usage.MemoryAccounting: pages committed since the last scan for committed
+// pages, and waste pages that were committed before any scan saw them.
+func (f *MemoryFile) UnaccountedUsage() (uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	total, err := f.TotalUsage()
+	if err != nil {
+		return 0, err
+	}
+	if total < f.knownCommittedBytes {
+		return 0, nil
+	}
+	return total - f.knownCommittedBytes, nil
+}
+
 // TotalSize returns the current size of the backing file in bytes, which is an
 // upper bound on the amount of memory that can currently be allocated from the
 // MemoryFile. The value returned by TotalSize is permitted to change.
