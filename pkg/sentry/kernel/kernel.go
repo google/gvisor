@@ -26,6 +26,7 @@
 //	        SignalHandlers.mu
 //	          Task.mu
 //	            FSContext.mu
+//	            auth.KeyQuotas.mu
 //	      runningTasksMu
 //	        Timekeeper.updateMu
 //
@@ -479,8 +480,8 @@ type Kernel struct {
 	// IOUringEnabled determines if io_uring is enabled.
 	IOUringEnabled bool
 
-	// MaxKeySetSize is the maximum number of keys in a key set.
-	MaxKeySetSize atomicbitops.Int32
+	// KeyQuotas accounts the keys of each user against the key quotas.
+	KeyQuotas *auth.KeyQuotas
 
 	fsSaveMu fsSaveMutex `state:"nosave"`
 
@@ -740,7 +741,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.rootCgroupNamespace = newCgroupNamespace(k.Cgroup2FS().RootCgroup(), k.rootUserNamespace)
 	k.rootCgroupNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootCgroupNamespace))
 
-	k.MaxKeySetSize = atomicbitops.FromInt32(auth.MaxSetSize)
+	k.KeyQuotas = auth.NewKeyQuotas()
 	return nil
 }
 
