@@ -594,6 +594,8 @@ type ControlFDImpl interface {
 	// the attribute value size using getxattr(2) by passing size=0. Then request
 	// a buffer large enough using getValueBuf and write the value there.
 	//
+	// The server caps size at linux.XATTR_SIZE_MAX before calling GetXattr.
+	//
 	// On the server, GetXattr has a read concurrency guarantee.
 	GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error)
 
@@ -609,6 +611,8 @@ type ControlFDImpl interface {
 	// return ERANGE to indicate that the buffer is too small, but they are also
 	// free to ignore the hint entirely (i.e. the value returned may be larger
 	// than size). All size checking is done independently at the syscall layer.
+	//
+	// The server caps size at linux.XATTR_LIST_MAX before calling ListXattr.
 	//
 	// On the server, ListXattr has a read concurrency guarantee.
 	ListXattr(size uint64) (StringArray, error)
