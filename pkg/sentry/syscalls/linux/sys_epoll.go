@@ -96,6 +96,11 @@ func EpollCtl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintpt
 		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
+	// Linux: fs/eventpoll.c:do_epoll_ctl() returns EPERM for every op if the
+	// target does not support poll.
+	if !file.Epollable() {
+		return 0, nil, linuxerr.EPERM
+	}
 	if epfile == file {
 		return 0, nil, linuxerr.EINVAL
 	}

@@ -680,6 +680,15 @@ TEST(EpollTest, RegularFiles) {
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_RDONLY));
   EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, fd.get(), &event),
               SyscallFailsWithErrno(EPERM));
+
+  // EPERM takes precedence over ENOENT for MOD and DEL, and over EINVAL for an
+  // invalid op.
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, fd.get(), &event),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_DEL, fd.get(), nullptr),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(epoll_ctl(epollfd.get(), -1, fd.get(), &event),
+              SyscallFailsWithErrno(EPERM));
 }
 
 // Regression test for b/222369818.
