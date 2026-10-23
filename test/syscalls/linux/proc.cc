@@ -30,6 +30,7 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/stat.h>
@@ -3632,13 +3633,174 @@ TEST(ProcSysVmMmapMinAddr, HasNumericValue) {
       << mmap_min_addr_str;
 }
 
-TEST(ProcSysVmOvercommitMemory, HasNumericValue) {
-  const std::string overcommit_memory_str =
-      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/vm/overcommit_memory"));
-  uintptr_t overcommit_memory;
-  EXPECT_TRUE(absl::SimpleAtoi(overcommit_memory_str, &overcommit_memory))
-      << "/proc/sys/vm/overcommit_memory does not contain a numeric value: "
-      << overcommit_memory;
+// Kernel-wide integer sysctls that Linux keeps in a single global variable.
+constexpr const char* kGlobalIntSysctls[] = {
+    "/sys/kernel/panic",
+    "/sys/kernel/panic_on_oops",
+    "/sys/vm/overcommit_memory",
+    "/sys/vm/panic_on_oom",
+};
+
+// Linux bounds these to 0..2 (proc_dointvec_minmax).
+constexpr const char* kBoundedIntSysctls[] = {
+    "/sys/vm/overcommit_memory",
+    "/sys/vm/panic_on_oom",
+};
+
+PosixErrorOr<int> ReadIntSysctl(const std::string& path) {
+  ASSIGN_OR_RETURN_ERRNO(std::string contents, GetContents(path));
+  int val;
+  if (!absl::SimpleAtoi(contents, &val)) {
+    return PosixError(EINVAL, absl::StrCat(path, " is not an int: ", contents));
+  }
+  return val;
+}
+
+// Writes val to the sysctl at path in one write(2) at offset 0.
+PosixError WriteIntSysctl(const std::string& path, int val) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, Open(path, O_WRONLY));
+  const std::string s = absl::StrCat(val, "\n");
+  int ret = WriteFd(fd.get(), s.data(), s.size());
+  if (ret < 0) {
+    return PosixError(errno, absl::StrCat("write ", path));
+  }
+  if (ret != static_cast<int>(s.size())) {
+    return PosixError(EIO, absl::StrCat("short write to ", path));
+  }
+  return NoError();
+}
+
+// Linux lets only euid 0 open these for writing (test_perm in
+// fs/proc/proc_sysctl.c); gVisor also honors CAP_DAC_OVERRIDE.
+PosixErrorOr<bool> CanWriteGlobalIntSysctls() {
+  if (geteuid() == 0) {
+    return true;
+  }
+  if (!IsRunningOnGvisor()) {
+    return false;
+  }
+  return HaveCapability(CAP_DAC_OVERRIDE);
+}
+
+// Restores every sysctl in kGlobalIntSysctls to its Linux default of 0.
+Cleanup ResetGlobalIntSysctls() {
+  return Cleanup([] {
+    for (const char* knob : kGlobalIntSysctls) {
+      EXPECT_NO_ERRNO(WriteIntSysctl(absl::StrCat("/proc", knob), 0));
+    }
+  });
+}
+
+TEST(ProcSysGlobalInt, HasNumericValue) {
+  for (const char* knob : kGlobalIntSysctls) {
+    EXPECT_NO_ERRNO(ReadIntSysctl(absl::StrCat("/proc", knob)));
+  }
+}
+
+TEST(ProcSysGlobalInt, DefaultIsZero) {
+  // Native defaults depend on the host's kernel config and settings.
+  SKIP_IF(!IsRunningOnGvisor());
+
+  for (const char* knob : kGlobalIntSysctls) {
+    EXPECT_THAT(ReadIntSysctl(absl::StrCat("/proc", knob)),
+                IsPosixErrorOkAndHolds(0))
+        << knob;
+  }
+}
+
+TEST(ProcSysGlobalInt, WriteReadsBack) {
+  // Changing these would change the host's panic and overcommit behavior.
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanWriteGlobalIntSysctls()));
+  auto reset = ResetGlobalIntSysctls();
+
+  for (const char* knob : kGlobalIntSysctls) {
+    const std::string path = absl::StrCat("/proc", knob);
+    for (int val : {1, 2, 0}) {
+      ASSERT_NO_ERRNO(WriteIntSysctl(path, val));
+      EXPECT_THAT(ReadIntSysctl(path), IsPosixErrorOkAndHolds(val)) << path;
+    }
+  }
+
+  // kernel.panic and kernel.panic_on_oops accept any int.
+  for (const char* path :
+       {"/proc/sys/kernel/panic", "/proc/sys/kernel/panic_on_oops"}) {
+    for (int val : {-1, 10, INT_MIN, INT_MAX}) {
+      ASSERT_NO_ERRNO(WriteIntSysctl(path, val));
+      EXPECT_THAT(ReadIntSysctl(path), IsPosixErrorOkAndHolds(val)) << path;
+    }
+  }
+}
+
+// Linux rejects out-of-range values before storing them, so this never
+// changes the host's settings when run natively.
+TEST(ProcSysGlobalInt, BoundedRejectsOutOfRange) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanWriteGlobalIntSysctls()));
+
+  // Under gVisor, start from a non-default value so a write that resets
+  // the value is caught too.
+  Cleanup reset;
+  if (IsRunningOnGvisor()) {
+    reset = ResetGlobalIntSysctls();
+    for (const char* knob : kBoundedIntSysctls) {
+      ASSERT_NO_ERRNO(WriteIntSysctl(absl::StrCat("/proc", knob), 1));
+    }
+  }
+
+  for (const char* knob : kBoundedIntSysctls) {
+    const std::string path = absl::StrCat("/proc", knob);
+    const int want = ASSERT_NO_ERRNO_AND_VALUE(ReadIntSysctl(path));
+    for (int val : {3, -1}) {
+      EXPECT_THAT(WriteIntSysctl(path, val), PosixErrorIs(EINVAL)) << path;
+      EXPECT_THAT(ReadIntSysctl(path), IsPosixErrorOkAndHolds(want)) << path;
+    }
+  }
+}
+
+TEST(ProcSysGlobalInt, NonRootCannotOpenForWrite) {
+  // Root drops to an unprivileged uid in the child, which needs CAP_SETUID.
+  SKIP_IF(geteuid() == 0 &&
+          !ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  EXPECT_THAT(InForkedProcess([] {
+                if (geteuid() == 0) {
+                  // Without PR_SET_KEEPCAPS this also clears every capability.
+                  constexpr int kNobody = 65534;
+                  TEST_PCHECK(syscall(SYS_setuid, kNobody) == 0);
+                }
+                // gVisor lets CAP_DAC_OVERRIDE write; Linux does not.
+                TEST_CHECK_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+                for (const char* knob : kGlobalIntSysctls) {
+                  const std::string path = absl::StrCat("/proc", knob);
+                  TEST_CHECK(open(path.c_str(), O_WRONLY) == -1);
+                  TEST_PCHECK(errno == EACCES);
+                }
+              }),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// Linux keeps one value per kernel, so every procfs instance shows it.
+TEST(ProcSysGlobalInt, SharedAcrossProcMounts) {
+  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanWriteGlobalIntSysctls()));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount(nullptr, dir.path().c_str(), "proc", 0, nullptr),
+              SyscallSucceeds());
+  auto unmount = Cleanup([&dir] {
+    EXPECT_THAT(umount2(dir.path().c_str(), 0), SyscallSucceeds());
+  });
+  auto reset = ResetGlobalIntSysctls();
+
+  for (const char* knob : kGlobalIntSysctls) {
+    const std::string proc_path = absl::StrCat("/proc", knob);
+    const std::string other_path = JoinPath(dir.path(), knob);
+    ASSERT_NO_ERRNO(WriteIntSysctl(proc_path, 1));
+    EXPECT_THAT(ReadIntSysctl(other_path), IsPosixErrorOkAndHolds(1)) << knob;
+    ASSERT_NO_ERRNO(WriteIntSysctl(other_path, 2));
+    EXPECT_THAT(ReadIntSysctl(proc_path), IsPosixErrorOkAndHolds(2)) << knob;
+  }
 }
 
 // Check that link for proc fd entries point the target node, not the

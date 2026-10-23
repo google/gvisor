@@ -79,6 +79,11 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"osrelease": fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxRelease())),
 			"ostype":    fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxSysname)),
 			"version":   fs.newInode(ctx, root, 0444, newStaticFile(version.LinuxVersion)),
+
+			// Linux handles both with proc_dointvec, so any int is accepted; a
+			// negative kernel.panic means reboot at once on panic.
+			"panic":         fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.PanicTimeout, min: math.MinInt32, max: math.MaxInt32}),
+			"panic_on_oops": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.PanicOnOops, min: math.MinInt32, max: math.MaxInt32}),
 		}),
 		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"file-max":      fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", int64(math.MaxInt64)))),
@@ -88,9 +93,12 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"pipe-max-size": fs.newInode(ctx, root, 0644, newStaticFile(fmt.Sprintf("%d\n", pipe.MaximumPipeSize))),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
-			"max_map_count":     fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
-			"mmap_min_addr":     fs.newInode(ctx, root, 0444, &mmapMinAddrData{k: k}),
-			"overcommit_memory": fs.newInode(ctx, root, 0444, newStaticFile("0\n")),
+			"max_map_count": fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
+			"mmap_min_addr": fs.newInode(ctx, root, 0444, &mmapMinAddrData{k: k}),
+
+			// Linux bounds both to 0..2 with proc_dointvec_minmax.
+			"overcommit_memory": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.OvercommitMemory, min: 0, max: 2}),
+			"panic_on_oom":      fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.PanicOnOOM, min: 0, max: 2}),
 		}),
 		"net": fs.newSysNetDir(ctx, root, k),
 		"user": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
