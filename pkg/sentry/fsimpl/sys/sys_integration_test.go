@@ -412,6 +412,58 @@ func TestEnableTPUProxyPathsV5(t *testing.T) {
 	}
 }
 
+// Check that the DMI entries exist after mount and after CompleteRestore
+// rebuilds /sys/class and /sys/devices.
+func TestProductNameCompleteRestore(t *testing.T) {
+	sysfsTestDir := t.TempDir()
+	for _, dir := range []string{
+		path.Join(sysfsTestDir, "sys", "devices"),
+		path.Join(sysfsTestDir, "sys", "kernel", "iommu_groups"),
+	} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create %q: %v", dir, err)
+		}
+	}
+	const productName = "Test Product"
+	s := newTestSystemWithInternalData(t, &sys.InternalData{
+		ProductName:         productName,
+		EnableTPUProxyPaths: true,
+		TestSysfsPathPrefix: sysfsTestDir,
+	})
+	defer s.Destroy()
+
+	checkDMI := func(stage string) {
+		t.Helper()
+		pop := s.PathOpAtRoot("devices/virtual/dmi/id/product_name")
+		fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{})
+		if err != nil {
+			t.Fatalf("%s: OpenAt(product_name) failed: %v", stage, err)
+		}
+		defer fd.DecRef(s.Ctx)
+		content, err := s.ReadToEnd(fd)
+		if err != nil {
+			t.Fatalf("%s: Read(product_name) failed: %v", stage, err)
+		}
+		if want := productName + "\n"; content != want {
+			t.Errorf("%s: product_name = %q, want %q", stage, content, want)
+		}
+		pop = s.PathOpAtRoot("class/dmi/id")
+		got, err := s.VFS.ReadlinkAt(s.Ctx, s.Creds, pop)
+		if err != nil {
+			t.Fatalf("%s: ReadlinkAt(class/dmi/id) failed: %v", stage, err)
+		}
+		if want := "../../devices/virtual/dmi/id"; got != want {
+			t.Errorf("%s: ReadlinkAt(class/dmi/id) = %q, want %q", stage, got, want)
+		}
+	}
+
+	checkDMI("before CompleteRestore")
+	if err := s.VFS.CompleteRestore(s.Ctx, &vfs.CompleteRestoreOptions{}); err != nil {
+		t.Fatalf("CompleteRestore failed: %v", err)
+	}
+	checkDMI("after CompleteRestore")
+}
+
 // rdmaTestPCIConfig is a fake raw PCI config space blob; deliberately not
 // valid UTF-8 to check binary-faithful mirroring.
 var rdmaTestPCIConfig = []byte{0x86, 0x80, 0x0d, 0x02, 0x00, 0x00, 0x10, 0x00}

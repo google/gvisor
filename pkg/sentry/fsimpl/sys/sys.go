@@ -79,7 +79,10 @@ type filesystem struct {
 	devMinor            uint32
 	enableTPUProxyPaths bool
 	testSysfsPathPrefix string
-	root                *dir
+	// productName is the value of devices/virtual/dmi/id/product_name. If
+	// empty, the DMI directories are not created.
+	productName string
+	root        *dir
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -134,14 +137,13 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"cpu": cpuDir(ctx, fs, creds),
 	}
 
-	productName := ""
 	busSub := make(map[string]kernfs.Inode)     // /sys/bus
 	pciDevices := make(map[string]kernfs.Inode) // /sys/bus/pci/devices
 	pciDrivers := make(map[string]kernfs.Inode) // /sys/bus/pci/drivers
 	kernelSub := kernelDir(ctx, fs, creds)      // /sys/kernel
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
-		productName = idata.ProductName
+		fs.productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
 			fs.enableTPUProxyPaths = true
 			fs.testSysfsPathPrefix = idata.TestSysfsPathPrefix
@@ -225,19 +227,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	devicesSub["system"] = fs.newDir(ctx, creds, defaultSysDirMode, systemSub)
 
-	if len(productName) > 0 {
-		log.Debugf("Setting product_name: %q", productName)
-		classSub["dmi"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"id": kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "../../devices/virtual/dmi/id"),
-		})
-		devicesSub["virtual"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"dmi": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-				"id": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-					"product_name": fs.newStaticFile(ctx, creds, defaultSysMode, productName+"\n"),
-				}),
-			}),
-		})
-	}
+	fs.addDMIDirs(ctx, creds, classSub, devicesSub)
 	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 		"block": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"bus":   fs.newDir(ctx, creds, defaultSysDirMode, busSub),
@@ -257,6 +247,25 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	var rootD kernfs.Dentry
 	rootD.InitRoot(&fs.Filesystem, root)
 	return fs.VFSFilesystem(), rootD.VFSDentry(), nil
+}
+
+// addDMIDirs adds the DMI entries to classSub (/sys/class) and devicesSub
+// (/sys/devices) if fs.productName is set.
+func (fs *filesystem) addDMIDirs(ctx context.Context, creds *auth.Credentials, classSub, devicesSub map[string]kernfs.Inode) {
+	if len(fs.productName) == 0 {
+		return
+	}
+	log.Debugf("Setting product_name: %q", fs.productName)
+	classSub["dmi"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+		"id": kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "../../devices/virtual/dmi/id"),
+	})
+	devicesSub["virtual"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+		"dmi": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"id": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+				"product_name": fs.newStaticFile(ctx, creds, defaultSysMode, fs.productName+"\n"),
+			}),
+		}),
+	})
 }
 
 func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs.Inode {
