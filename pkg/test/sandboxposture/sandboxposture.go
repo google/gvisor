@@ -22,10 +22,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 	"github.com/moby/sys/capability"
 	"golang.org/x/sys/unix"
 )
@@ -46,6 +49,16 @@ const (
 // NSJoined returns the namespace value meaning "this namespace is the one
 // registered under `name` in `Opts.NamespaceTargets`".
 func NSJoined(name string) string { return NSJoinedPrefix + name }
+
+// Normalized values for `Attrs.DeviceCgroup`.
+const (
+	// DeviceCgroupConfined means the process's cgroup denies access to devices
+	// outside a whitelist.
+	DeviceCgroupConfined = "confined"
+
+	// DeviceCgroupUnconfined means the process's cgroup allows every device.
+	DeviceCgroupUnconfined = "unconfined"
+)
 
 // Normalized values for `Credentials.Groups`.
 const (
@@ -332,6 +345,9 @@ type Attrs struct {
 	// We use this as a proxy for whether `/proc/<pid>/mem` is reachable by
 	// the process's own user.
 	ProcFileOwner string
+
+	// DeviceCgroup is `DeviceCgroupConfined` or `DeviceCgroupUnconfined`.
+	DeviceCgroup string
 
 	// Argv is the full command line. Informational only.
 	Argv []string `posture:"info"`
@@ -1224,6 +1240,9 @@ func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS stri
 	if a.ProcFileOwner, err = collectProcFileOwner(p, status); err != nil {
 		return a, err
 	}
+	if a.DeviceCgroup, err = deviceCgroupOf(p); err != nil {
+		return a, err
+	}
 	return a, nil
 }
 
@@ -1457,4 +1476,62 @@ func collectChildren(p *proc) (map[string]int, error) {
 		}
 	}
 	return out, nil
+}
+
+// DeviceCgroupOf classifies the device cgroup of the given process.
+// `procRoot` defaults to "/proc".
+func DeviceCgroupOf(pid int, procRoot string) (string, error) {
+	if procRoot == "" {
+		procRoot = "/proc"
+	}
+	return deviceCgroupOf(&proc{root: procRoot, pid: pid})
+}
+
+// deviceCgroupOf reports whether the process's cgroup confines device access:
+// on cgroup v2 a device filter is attached to it or an ancestor, on cgroup v1
+// its devices controller does not allow every device.
+func deviceCgroupOf(p *proc) (string, error) {
+	raw, err := p.read("cgroup")
+	if err != nil {
+		return "", fmt.Errorf("reading cgroup: %w", err)
+	}
+	const cgroupRoot = "/sys/fs/cgroup"
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		fields := strings.SplitN(line, ":", 3)
+		if len(fields) != 3 {
+			return "", fmt.Errorf("malformed cgroup line %q", line)
+		}
+		switch controllers, path := fields[1], fields[2]; {
+		case fields[0] == "0" && controllers == "":
+			dir, err := os.Open(filepath.Join(cgroupRoot, path))
+			if err != nil {
+				return "", err
+			}
+			defer dir.Close()
+			res, err := link.QueryPrograms(link.QueryOptions{
+				Target:     int(dir.Fd()),
+				Attach:     ebpf.AttachCGroupDevice,
+				QueryFlags: unix.BPF_F_QUERY_EFFECTIVE,
+			})
+			if err != nil {
+				return "", fmt.Errorf("querying device filters of %s: %w", path, err)
+			}
+			if len(res.Programs) > 0 {
+				return DeviceCgroupConfined, nil
+			}
+			return DeviceCgroupUnconfined, nil
+		case slices.Contains(strings.Split(controllers, ","), "devices"):
+			list, err := os.ReadFile(filepath.Join(cgroupRoot, "devices", path, "devices.list"))
+			if err != nil {
+				return "", err
+			}
+			for _, rule := range strings.Split(strings.TrimSpace(string(list)), "\n") {
+				if strings.HasPrefix(rule, "a ") {
+					return DeviceCgroupUnconfined, nil
+				}
+			}
+			return DeviceCgroupConfined, nil
+		}
+	}
+	return "", fmt.Errorf("process %d is in no cgroup with device control", p.pid)
 }

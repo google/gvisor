@@ -17,16 +17,25 @@ package root
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 	"github.com/docker/docker/api/types/container"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/sandboxposture"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/cgroup"
 )
@@ -572,6 +581,184 @@ func TestCgroupV2(t *testing.T) {
 	if err := verifyPid(pid, path); err != nil {
 		t.Errorf("cgroup control processes (%s): %v", path, err)
 	}
+}
+
+// TestCgroupDevices checks that the sandbox's cgroup restricts device access.
+func TestCgroupDevices(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+	if err := d.Spawn(ctx, dockerutil.RunOpts{Image: "basic/alpine"}, "sleep", "10000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	pid, err := d.SandboxPid(ctx)
+	if err != nil {
+		t.Fatalf("SandboxPid: %v", err)
+	}
+
+	if cgroup.IsOnlyV2() {
+		path, err := pidCgroupPath(pid, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer dir.Close()
+		res, err := link.QueryPrograms(link.QueryOptions{Target: int(dir.Fd()), Attach: ebpf.AttachCGroupDevice})
+		if err != nil {
+			t.Fatalf("querying device filters of %s: %v", path, err)
+		}
+		if len(res.Programs) == 0 {
+			t.Errorf("no device filter attached to %s", path)
+		}
+		return
+	}
+
+	path, err := pidCgroupPath(pid, "devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := os.ReadFile(filepath.Join(path, "devices.list"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := strings.Split(strings.TrimSpace(string(list)), "\n")
+	if slices.Contains(rules, "a *:* rwm") {
+		t.Errorf("%s allows all devices", path)
+	}
+	if !slices.Contains(rules, "c 1:3 rw") {
+		t.Errorf("%s does not allow /dev/null, rules: %q", path, rules)
+	}
+}
+
+// TestCgroupDevicesShared checks that rules allowed on a cgroup extend the
+// rules allowed before, as when several sandboxes share a cgroup.
+func TestCgroupDevicesShared(t *testing.T) {
+	cg, err := cgroup.NewFromPath("/"+testutil.RandomID("devices"), false /* useSystemd */)
+	if err != nil {
+		t.Fatalf("cgroup.NewFromPath: %v", err)
+	}
+	if err := cg.Install(&specs.LinuxResources{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	defer cg.Uninstall()
+	for _, rules := range [][]cgroup.DeviceRule{
+		{{Type: "c", Major: 1, Minor: 3, Access: "rw"}, {Type: "c", Major: 195, Minor: cgroup.DeviceAny, Access: "rwm"}},
+		{{Type: "c", Major: 1, Minor: 3, Access: "rw"}, {Type: "c", Major: 10, Minor: 232, Access: "rwm"}},
+	} {
+		if err := cg.AllowDevices(rules); err != nil {
+			t.Fatalf("AllowDevices(%v): %v", rules, err)
+		}
+	}
+
+	restore, err := cg.Join()
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	defer restore()
+	for _, tc := range []struct {
+		major, minor uint32
+		want         error
+	}{
+		{195, 255, nil},
+		{10, 232, nil},
+		{199, 0, unix.EPERM},
+	} {
+		path := filepath.Join(t.TempDir(), "dev")
+		if err := unix.Mknod(path, unix.S_IFCHR|0600, int(unix.Mkdev(tc.major, tc.minor))); !errors.Is(err, tc.want) {
+			t.Errorf("mknod c %d:%d: got %v, want %v", tc.major, tc.minor, err, tc.want)
+		}
+	}
+
+	if !cgroup.IsOnlyV2() {
+		return
+	}
+	dir, err := os.Open(cg.MakePath(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	res, err := link.QueryPrograms(link.QueryOptions{Target: int(dir.Fd()), Attach: ebpf.AttachCGroupDevice})
+	if err != nil {
+		t.Fatalf("querying device filters: %v", err)
+	}
+	if len(res.Programs) != 1 {
+		t.Errorf("got %d device filters attached, want 1", len(res.Programs))
+	}
+}
+
+// TestCgroupDevicesAtCreate checks that the sandbox is confined once
+// `runsc create` returns, before the container can be started.
+func TestCgroupDevicesAtCreate(t *testing.T) {
+	conf := postureConfig(t)
+	runsc, err := dockerutil.RuntimePath()
+	if err != nil {
+		t.Fatalf("Cannot find the runsc binary: %v", err)
+	}
+	rootDir, cleanupRoot, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupRoot()
+	bundleDir, cleanupBundle, err := testutil.SetupBundleDir(testutil.NewSpecWithArgs("sleep", "1000"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupBundle()
+	id := testutil.RandomContainerID()
+	run := func(args ...string) ([]byte, error) {
+		args = append([]string{"--root", rootDir, "--network=none", "--platform=" + conf.Platform}, args...)
+		return exec.Command(runsc, args...).CombinedOutput()
+	}
+	// The sandbox inherits the stdio of `runsc create`, which must outlive it.
+	stdio, err := os.Create(filepath.Join(rootDir, "stdio"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdio.Close()
+	create := exec.Command(runsc, "--root", rootDir, "--network=none", "--platform="+conf.Platform, "create", "--bundle", bundleDir, id)
+	create.Stdin, create.Stdout, create.Stderr = stdio, stdio, stdio
+	if err := create.Run(); err != nil {
+		out, _ := os.ReadFile(stdio.Name())
+		t.Fatalf("runsc create: %v: %s", err, out)
+	}
+	defer run("delete", "--force", id)
+	out, err := run("state", id)
+	if err != nil {
+		t.Fatalf("runsc state: %v: %s", err, out)
+	}
+	var state struct {
+		Pid int `json:"pid"`
+	}
+	if err := json.Unmarshal(out, &state); err != nil {
+		t.Fatalf("parsing %q: %v", out, err)
+	}
+	got, err := sandboxposture.DeviceCgroupOf(state.Pid, procPath())
+	if err != nil {
+		t.Fatalf("Sandbox after create, state %s: %v", out, err)
+	}
+	if got != sandboxposture.DeviceCgroupConfined {
+		t.Errorf("Sandbox %d after create: device cgroup is %s, want %s", state.Pid, got, sandboxposture.DeviceCgroupConfined)
+	}
+}
+
+// pidCgroupPath returns the path of pid's cgroup in the given controller's
+// hierarchy, or in the unified hierarchy if controller is empty.
+func pidCgroupPath(pid int, controller string) (string, error) {
+	data, err := os.ReadFile(procPath(strconv.Itoa(pid), "cgroup"))
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		// Format: hierarchy-ID:controller-list:cgroup-path
+		fields := strings.SplitN(line, ":", 3)
+		if len(fields) == 3 && slices.Contains(strings.Split(fields[1], ","), controller) {
+			return cgroupPath(controller, fields[2]), nil
+		}
+	}
+	return "", fmt.Errorf("no %q cgroup for pid %d", controller, pid)
 }
 
 // TestCgroupParent sets the "CgroupParent" option and checks that the child and
