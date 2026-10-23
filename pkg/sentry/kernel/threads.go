@@ -469,6 +469,13 @@ func (ns *PIDNamespace) NumTasks() int {
 	return len(ns.tids)
 }
 
+// LastTID returns the last ThreadID allocated in ns.
+func (ns *PIDNamespace) LastTID() ThreadID {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+	return ns.last
+}
+
 // NumTasksPerContainer returns the number of tasks in ns that belongs to given container.
 func (ns *PIDNamespace) NumTasksPerContainer(cid string) int {
 	ns.owner.mu.RLock()
