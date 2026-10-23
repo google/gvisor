@@ -1,4 +1,4 @@
-// Copyright 2021 The gVisor Authors.
+// Copyright 2026 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package systrap
+//go:build arm64
+// +build arm64
+
+package stubfilter
 
 import "gvisor.dev/gvisor/pkg/seccomp"
 
-func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
-	return rules
+func archRules(seccomp.Action) []seccomp.RuleSet {
+	return nil // Nothing on arm64.
 }
