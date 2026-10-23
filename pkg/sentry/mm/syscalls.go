@@ -580,8 +580,11 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr hostarch.Addr, oldS
 
 	oldAR := hostarch.AddrRange{oldAddr, oldEnd}
 
-	// Check that oldEnd maps to the same vma as oldAddr.
-	if vseg.End() < oldEnd {
+	// Check that a vma still exists at oldAddr and that oldEnd maps to it. An
+	// empty source range (oldSize == 0) doesn't overlap newAR, so unmapping
+	// the destination may have removed the source vma; Linux's
+	// mm/mremap.c:mremap_to() returns EFAULT when vma_lookup() then fails.
+	if !vseg.Ok() || vseg.End() < oldEnd {
 		return 0, linuxerr.EFAULT
 	}
 
