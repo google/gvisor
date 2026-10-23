@@ -1885,6 +1885,149 @@ TEST_P(NetlinkRouteIpInvariantTest, DeleteRoute) {
       PosixErrorIs(ESRCH, _));
 }
 
+// Route and address dumps for AF_INET or AF_INET6 only return entries of that
+// family.
+TEST_P(NetlinkRouteIpInvariantTest, DumpFiltersFamily) {
+  const int family = GetParam();
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtgenmsg rgm;
+  };
+
+  for (uint16_t type : {RTM_GETROUTE, RTM_GETADDR}) {
+    struct request req = {};
+    req.hdr.nlmsg_len = sizeof(req);
+    req.hdr.nlmsg_type = type;
+    req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    req.hdr.nlmsg_seq = kSeq;
+    req.rgm.rtgen_family = family;
+
+    ASSERT_NO_ERRNO(NetlinkRequestResponse(
+        fd, &req, sizeof(req),
+        [&](const struct nlmsghdr* hdr) {
+          if (hdr->nlmsg_type == RTM_NEWROUTE) {
+            const struct rtmsg* msg =
+                reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+            EXPECT_EQ(msg->rtm_family, family);
+          } else if (hdr->nlmsg_type == RTM_NEWADDR) {
+            const struct ifaddrmsg* msg =
+                reinterpret_cast<const struct ifaddrmsg*>(NLMSG_DATA(hdr));
+            EXPECT_EQ(msg->ifa_family, family);
+          }
+        },
+        false));
+  }
+}
+
+// Main-table routes are dumped in Linux FIB order: IPv4 by ascending
+// destination with longer prefixes first on ties, IPv6 with every route before
+// the routes containing it.
+TEST_P(NetlinkRouteIpInvariantTest, GetRouteDumpOrder) {
+  const int family = GetParam();
+  const int addr_len = family == AF_INET ? 4 : 16;
+  // Routes are not savable.
+  DisableSave ds;
+
+  std::vector<Cleanup> route_cleanups;
+  if (IsRunningOnGvisor() &&
+      ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
+    // Add routes that netstack's longest-prefix-first order would misorder.
+    std::vector<std::pair<std::string, int>> routes;
+    if (family == AF_INET) {
+      routes = {
+          {"203.0.113.0", 25}, {"203.0.113.0", 24}, {"203.0.113.128", 25}};
+    } else {
+      routes = {{"2001:db8:fe00::", 40},
+                {"2001:db8:fe00::", 48},
+                {"2001:db8:ff00::", 48}};
+    }
+    Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    for (const auto& route : routes) {
+      int index = loopback_link.index;
+      int prefixlen = route.second;
+      struct in6_addr dst = {};
+      ASSERT_EQ(inet_pton(family, route.first.c_str(), &dst), 1);
+      ASSERT_NO_ERRNO(
+          AddUnicastRoute(index, family, prefixlen, &dst, addr_len));
+      route_cleanups.emplace_back([=] {
+        EXPECT_NO_ERRNO(
+            DelUnicastRoute(index, family, prefixlen, &dst, addr_len));
+      });
+    }
+  }
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETROUTE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rtm.rtm_family = family;
+
+  struct DumpedRoute {
+    std::vector<uint8_t> dst;
+    int len;
+  };
+  std::vector<DumpedRoute> dumped;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        if (hdr->nlmsg_type != RTM_NEWROUTE) {
+          return;
+        }
+        const struct rtmsg* msg =
+            reinterpret_cast<const struct rtmsg*>(NLMSG_DATA(hdr));
+        // hostinet reports the host's local table routes, which are not
+        // unicast, in the main table.
+        if (msg->rtm_family != family || msg->rtm_table != RT_TABLE_MAIN ||
+            msg->rtm_type != RTN_UNICAST) {
+          return;
+        }
+        DumpedRoute rt = {std::vector<uint8_t>(addr_len), msg->rtm_dst_len};
+        int len = RTM_PAYLOAD(hdr);
+        for (struct rtattr* attr = RTM_RTA(msg); RTA_OK(attr, len);
+             attr = RTA_NEXT(attr, len)) {
+          if (attr->rta_type == RTA_DST &&
+              RTA_PAYLOAD(attr) == static_cast<size_t>(addr_len)) {
+            memcpy(rt.dst.data(), RTA_DATA(attr), addr_len);
+          }
+        }
+        dumped.push_back(rt);
+      },
+      false));
+
+  auto compare = [family](const DumpedRoute& a, const DumpedRoute& b) {
+    int bits = family == AF_INET ? 32 : std::min(a.len, b.len);
+    for (int i = 0; i < bits; i++) {
+      int abit = (a.dst[i / 8] >> (7 - i % 8)) & 1;
+      int bbit = (b.dst[i / 8] >> (7 - i % 8)) & 1;
+      if (abit != bbit) {
+        return abit - bbit;
+      }
+    }
+    return b.len - a.len;
+  };
+  auto format = [family](const DumpedRoute& rt) {
+    char addr[INET6_ADDRSTRLEN] = {};
+    inet_ntop(family, rt.dst.data(), addr, sizeof(addr));
+    return absl::StrFormat("%s/%d", addr, rt.len);
+  };
+  for (size_t i = 1; i < dumped.size(); i++) {
+    EXPECT_LE(compare(dumped[i - 1], dumped[i]), 0)
+        << format(dumped[i - 1]) << " dumped before " << format(dumped[i]);
+  }
+}
+
 TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
   // Gvisor does not support `RTM_NEWROUTE` or `RTM_DELROUTE`.
   SKIP_IF(IsRunningOnGvisor());
