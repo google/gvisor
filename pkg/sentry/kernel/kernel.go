@@ -1508,6 +1508,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	args.StartupTimeline.Reached("FS context created")
 
 	tg := k.NewThreadGroup(args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits)
+	tg.containerInit = args.Origin != OriginExec
 	cu := cleanup.Make(func() {
 		tg.Release(ctx)
 	})

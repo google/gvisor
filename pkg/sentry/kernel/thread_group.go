@@ -292,6 +292,14 @@ type ThreadGroup struct {
 	isChildSubreaper  bool
 	hasChildSubreaper bool
 
+	// containerInit is true if Kernel.CreateProcess created this thread group
+	// as a container's init process, not for an exec. It has no equivalent in
+	// Linux. runsc uses it to find a container's init process after restore:
+	// without a global init, an orphan has no parent either.
+	//
+	// containerInit is immutable.
+	containerInit bool
+
 	// These help serialize execve(2) with PTRACE_ATTACH and seccomp thread-sync. Since checkpointing
 	// precludes holding onto a sync.Mutex across taskRunStates, and execve(2) spans multiple
 	// taskRunStates, we implement locking by way of the ptraceExecveMutexStop internal stop.
@@ -773,6 +781,12 @@ func (tg *ThreadGroup) IsChildSubreaper() bool {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	return tg.isChildSubreaper
+}
+
+// IsContainerInit returns whether this ThreadGroup was created as a
+// container's init process.
+func (tg *ThreadGroup) IsContainerInit() bool {
+	return tg.containerInit
 }
 
 // IsInitIn returns whether this ThreadGroup has TID 1 int the given
