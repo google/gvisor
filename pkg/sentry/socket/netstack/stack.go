@@ -1090,34 +1090,56 @@ func (s *Stack) localRoute(msg *nlmsg.Message) (tcpip.Route, *syserr.Error) {
 			return tcpip.Route{}, syserr.ErrNotSupported
 		}
 	}
+	var zero []byte
+	switch route.Family {
+	case linux.AF_INET:
+		zero = tcpip.IPv4Zero
+	case linux.AF_INET6:
+		zero = tcpip.IPv6Zero
+	default:
+		return tcpip.Route{}, syserr.ErrNotSupported
+	}
+	if msg.Header().Type == linux.RTM_NEWROUTE {
+		switch route.Type {
+		case linux.RTN_UNICAST:
+		case linux.RTN_UNSPEC:
+			if route.Family == linux.AF_INET {
+				return tcpip.Route{}, syserr.ErrInvalidArgument
+			}
+		case linux.RTN_BLACKHOLE, linux.RTN_UNREACHABLE, linux.RTN_PROHIBIT, linux.RTN_THROW, linux.RTN_NAT, linux.RTN_XRESOLVE:
+			if route.Family == linux.AF_INET && (route.GatewayAddr != nil || route.OutputInterface != 0) {
+				return tcpip.Route{}, syserr.ErrInvalidArgument
+			}
+			return tcpip.Route{}, syserr.ErrNotSupported
+		case linux.RTN_LOCAL, linux.RTN_BROADCAST, linux.RTN_ANYCAST, linux.RTN_MULTICAST:
+			return tcpip.Route{}, syserr.ErrNotSupported
+		default:
+			return tcpip.Route{}, syserr.ErrInvalidArgument
+		}
+	}
+	if route.GatewayAddr != nil {
+		if len(route.GatewayAddr) < len(zero) {
+			return tcpip.Route{}, syserr.ErrRange
+		}
+		route.GatewayAddr = route.GatewayAddr[:len(zero)]
+	} else if route.DstAddr == nil && route.OutputInterface == 0 && msg.Header().Type == linux.RTM_NEWROUTE {
+		return tcpip.Route{}, syserr.ErrNoDevice
+	}
 	var dest tcpip.Subnet
 	// When no destination address is provided, the new route might be the default route.
 	if route.DstAddr == nil {
-		var zero []byte
-		switch route.Family {
-		case linux.AF_INET:
-			zero = tcpip.IPv4Zero
-		case linux.AF_INET6:
-			zero = tcpip.IPv6Zero
-		default:
-			return tcpip.Route{}, syserr.ErrNotSupported
-		}
-		if route.GatewayAddr != nil {
-			if len(route.GatewayAddr) < len(zero) {
-				return tcpip.Route{}, syserr.ErrRange
-			}
-			route.GatewayAddr = route.GatewayAddr[:len(zero)]
-		} else if route.OutputInterface == 0 && msg.Header().Type == linux.RTM_NEWROUTE {
-			return tcpip.Route{}, syserr.ErrNoDevice
-		}
 		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice(zero), tcpip.MaskFromBytes(zero))
 		if err != nil {
 			return tcpip.Route{}, syserr.ErrInvalidArgument
 		}
 		dest = subnet
 	} else {
+		dst := make([]byte, len(zero))
+		if copy(dst, route.DstAddr)*8 < int(route.DstLen) {
+			return tcpip.Route{}, syserr.ErrInvalidArgument
+		}
 		dest = tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFromSlice(route.DstAddr),
+			Address:   tcpip.AddrFromSlice(dst),
 			PrefixLen: int(route.DstLen)}.Subnet()
 	}
 
