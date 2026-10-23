@@ -216,6 +216,8 @@ func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 	switch adv {
 	case linux.MADV_DONTNEED:
 		return 0, nil, t.MemoryManager().Decommit(addr, length)
+	case linux.MADV_FREE:
+		return 0, nil, t.MemoryManager().MadviseFree(addr, length)
 	case linux.MADV_DOFORK:
 		return 0, nil, t.MemoryManager().SetDontFork(addr, length, false)
 	case linux.MADV_DONTFORK:
