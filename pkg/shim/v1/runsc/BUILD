@@ -89,6 +89,7 @@ go_test(
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
         "@com_github_containerd_containerd_v2//core/runtime:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/namespaces:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/stdio:go_default_library",
         "@com_github_containerd_errdefs//:go_default_library",
         "@com_github_google_go_cmp//cmp:go_default_library",

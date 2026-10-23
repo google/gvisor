@@ -74,8 +74,11 @@ func (e *epoller) run(ctx context.Context) {
 				if err == unix.EINTR || err == unix.EAGAIN {
 					continue
 				}
-				// Should not happen.
-				panic(fmt.Errorf("cgroups: epoll wait: %w", err))
+				// The remaining errors (EBADF, EFAULT, EINVAL) are permanent, so
+				// retrying would spin. Stop reporting OOM events rather than exit
+				// the shim, which would take down every container it serves.
+				log.L.WithError(err).Error("cgroups: epoll wait failed, no longer reporting OOM events")
+				return
 			}
 			for i := 0; i < n; i++ {
 				e.process(ctx, uintptr(events[i].Fd))
@@ -134,11 +137,9 @@ func (e *epoller) process(ctx context.Context, fd uintptr) {
 	if err := e.publisher.Publish(ctx, runtime.TaskOOMEventTopic, &TaskOOM{
 		ContainerID: i.id,
 	}); err != nil {
-		if publishFailureIsFatal() {
-			// Should not happen when an event sink is configured.
-			panic(fmt.Errorf("publish OOM event: %w", err))
-		}
-		log.L.Warningf("Failed to publish OOM event (no containerd event sink): %v", err)
+		// Not fatal, as in runscService.forward: the publisher has already
+		// queued the event for retry.
+		log.L.WithError(err).Warningf("Failed to publish OOM event, id: %q", i.id)
 	}
 }
 
