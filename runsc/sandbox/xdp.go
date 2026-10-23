@@ -215,6 +215,7 @@ func prepareRedirectInterfaceArgs(bind sentryapi.BindOpt, conf *config.Config, d
 
 		xdplink := sentryapi.XDPLink{
 			Name:              iface.Name,
+			Multicast:         iface.Flags&net.FlagMulticast != 0,
 			InterfaceIndex:    iface.Index,
 			Routes:            routes,
 			TXChecksumOffload: conf.TXChecksumOffload,
