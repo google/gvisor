@@ -1576,6 +1576,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 				if l.noRootContainer.enabled && eid.cid == l.sandboxID {
 					log.Debugf("Joining sandbox PID namespace named %q", ns.Path)
 					pidns = l.k.RootPIDNamespace()
+					pidns.IncRef()
 					break
 				}
 			}

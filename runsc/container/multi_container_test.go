@@ -768,6 +768,41 @@ func TestNoRootContainerPIDNSSandboxSpec(t *testing.T) {
 	}
 }
 
+// TestNoRootContainerPIDNSSandboxSpecChurn tests that containers joining the
+// PID namespace that the sandbox's spec declares can come and go. Each one
+// must take its own reference on the namespace, or destroying them drops
+// references the kernel still holds.
+func TestNoRootContainerPIDNSSandboxSpecChurn(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+
+	const pidnsPath = "/proc/1/ns/pid"
+	sbID := testutil.RandomContainerID()
+	sbSpec := &specs.Spec{
+		Version: specs.Version,
+		Annotations: map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+		Linux: &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{Type: specs.PIDNamespace, Path: pidnsPath},
+			},
+		},
+	}
+	startNoRootContainerSandboxWithSpec(t, conf, sbID, sbSpec)
+
+	for i := 0; i < 3; i++ {
+		path := pidnsPath
+		joiner := startNoRootContainerSub(t, conf, sbID, &path)
+		if _, err := execPS(conf, joiner); err != nil {
+			t.Fatalf("joiner %d: %v", i, err)
+		}
+		if err := joiner.Destroy(); err != nil {
+			t.Fatalf("destroying joiner %d: %v", i, err)
+		}
+	}
+}
+
 // TestNoRootContainerOrphan checks that a container's init exiting with a live
 // child leaves the rest of the pod running, the orphan among it, and no zombie.
 func TestNoRootContainerOrphan(t *testing.T) {
