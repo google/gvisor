@@ -156,7 +156,7 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 	case "recv":
 		direction = sniffer.DirectionRecv
 	default:
-		panic(fmt.Sprintf("unknown direction %q", tokens[0]))
+		return fmt.Errorf("unknown direction %q", tokens[0])
 	}
 	tokens = tokens[1:]
 
@@ -301,7 +301,7 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 		windowScale, err := consumeFieldUint[uint16](&tokens, "WS")
 		if err != nil {
 			// -1 is special output for "no window scaling".
-			if tokens[0] != "WS:-1" {
+			if len(tokens) == 0 || tokens[0] != "WS:-1" {
 				return fmt.Errorf("bad window scale: %w", err)
 			}
 			tokens = tokens[1:]
@@ -323,7 +323,7 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 			return fmt.Errorf("bad SACKPermitted: %w", err)
 		}
 		// "Flags:" can be ignored, as it's used internally only.
-		if !strings.HasPrefix(tokens[0], "Flags:") {
+		if len(tokens) == 0 || !strings.HasPrefix(tokens[0], "Flags:") {
 			return fmt.Errorf("bad \"Flags:\"")
 		}
 		tokens = tokens[1:]
@@ -357,14 +357,20 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 		}
 
 		// For now, just skip SACK blocks by looking for a "]".
-		if !strings.HasPrefix(tokens[0], "SACKBlocks:[") {
+		if len(tokens) == 0 || !strings.HasPrefix(tokens[0], "SACKBlocks:[") {
 			return fmt.Errorf("bad missing SACKBlocks field")
 		}
+		sackEnd := -1
 		for i, token := range tokens {
 			if strings.Contains(token, "]") {
-				tokens = tokens[i+1:]
+				sackEnd = i
+				break
 			}
 		}
+		if sackEnd == -1 {
+			return fmt.Errorf("unterminated SACKBlocks field")
+		}
+		tokens = tokens[sackEnd+1:]
 
 		options = header.TCPOptions{
 			TS:         timestamp,
