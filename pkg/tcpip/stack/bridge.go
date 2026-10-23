@@ -51,6 +51,10 @@ type bridgePort struct {
 
 	// +checklocks:bridge.mu
 	flags BridgePortFlags
+
+	// removed is set when the port is removed from the bridge. A frame looked
+	// up before then may still be on its way to the port.
+	removed atomicbitops.Bool
 }
 
 // BridgeFDBKey is the MAC address of a device which a bridge port is associated with.
@@ -77,87 +81,139 @@ func (p *bridgePort) ParseHeader(pkt *PacketBuffer) bool {
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (p *bridgePort) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
-	bridge := p.bridge
 	eth := header.Ethernet(pkt.LinkHeader().Slice())
-	bridge.mu.RLock()
-	hairpin := p.flags&BridgePortHairpin != 0
+	p.bridge.mu.RLock()
+	f := p.lookupLocked(eth.SourceAddress(), eth.DestinationAddress())
+	p.bridge.mu.RUnlock()
+	pkt.PktType = f.pktType
+	p.handleFrameFinish(protocol, pkt, &f)
+}
+
+// bridgeForwarding is where a bridge sends a frame received on one of its
+// ports.
+type bridgeForwarding struct {
+	// d is the bridge's dispatcher.
+	d NetworkDispatcher
+
+	// ports are the ports a frame for an unknown address is flooded to. It is
+	// the bridge's port list, which is never modified.
+	ports []*bridgePort
+
+	// to is the port a frame for a learned address is sent to.
+	to *bridgePort
+
+	// hairpin is whether the frame may be sent back out of the ingress port.
+	hairpin bool
+
+	// learn is whether the source address of the frame is learned.
+	learn bool
+
+	// passUp is whether the frame is passed up to the bridge's dispatcher.
+	passUp bool
+
+	// pktType is the packet type of the frame.
+	pktType tcpip.PacketType
+}
+
+// lookupLocked returns where the bridge sends a frame from src to dst
+// received on p, as br_handle_frame_finish looks it up.
+//
+// +checklocksread:p.bridge.mu
+func (p *bridgePort) lookupLocked(src, dst tcpip.LinkAddress) bridgeForwarding {
+	bridge := p.bridge
+	f := bridgeForwarding{
+		d:       bridge.dispatcher,
+		hairpin: p.flags&BridgePortHairpin != 0,
+	}
 	// Add an entry at the bridge FDB, it maps a MAC address
 	// to a bridge port where the traffic is received when
 	// the MAC address is not multicast and the port has learning enabled.
 	// Network packets that are sent to the learned MAC address
 	// will be forwarded to the bridge port that is stored in
 	// the FDB table.
-	sourceAddress := eth.SourceAddress()
-	updateFDB := bridge.shouldLearnLocked(p, sourceAddress)
-	destAddress := eth.DestinationAddress()
-	isMulticast := header.IsMulticastEthernetAddress(destAddress)
+	f.learn = bridge.shouldLearnLocked(p, src)
+	isMulticast := header.IsMulticastEthernetAddress(dst)
 	// As with BR_FDB_LOCAL entries in br_handle_frame_finish, a unicast frame
 	// for the bridge or for any of its ports is passed up and not forwarded.
-	isLocal := !isMulticast && bridge.isLocalAddressLocked(destAddress)
+	isLocal := !isMulticast && bridge.isLocalAddressLocked(dst)
 	// Classify the frame as eth_type_trans does against the receiving port's
 	// address, except that, as in br_handle_frame, a frame for the bridge's
 	// address is for this host. A frame for another port's address is passed
 	// up as PacketOtherHost, which the network layer drops.
 	switch {
-	case destAddress == header.EthernetBroadcastAddress:
-		pkt.PktType = tcpip.PacketBroadcast
+	case dst == header.EthernetBroadcastAddress:
+		f.pktType = tcpip.PacketBroadcast
 	case isMulticast:
-		pkt.PktType = tcpip.PacketMulticast
-	case destAddress == bridge.addr || destAddress == p.nic.LinkAddress():
-		pkt.PktType = tcpip.PacketHost
+		f.pktType = tcpip.PacketMulticast
+	case dst == bridge.addr || dst == p.nic.LinkAddress():
+		f.pktType = tcpip.PacketHost
 	default:
-		pkt.PktType = tcpip.PacketOtherHost
+		f.pktType = tcpip.PacketOtherHost
 	}
-	entry, inFDB := bridge.fdbTable[BridgeFDBKey(destAddress)]
+	entry, inFDB := bridge.fdbTable[BridgeFDBKey(dst)]
 	// As in net/bridge/br_forward.c:should_deliver(), the ingress port gets
 	// the frame only in hairpin mode.
 	switch {
 	case isLocal:
-		// Passed up below.
+		// Passed up.
 	case !inFDB:
-		// When no FDB entry is found, send the packet to all ports.
-		for _, port := range bridge.ports {
-			if p == port && !hairpin {
-				continue
-			}
-			newPkt := NewPacketBuffer(PacketBufferOptions{
-				ReserveHeaderBytes: int(port.nic.MaxHeaderLength()),
-				Payload:            pkt.ToBuffer(),
-			})
-			port.nic.writeRawPacket(newPkt)
-			newPkt.DecRef()
-		}
-	case entry.port != p || hairpin:
-		destPort := entry.port
-		newPkt := NewPacketBuffer(PacketBufferOptions{
-			ReserveHeaderBytes: int(destPort.nic.MaxHeaderLength()),
-			Payload:            pkt.ToBuffer(),
-		})
-		destPort.nic.writeRawPacket(newPkt)
-		newPkt.DecRef()
-	}
-
-	d := bridge.dispatcher
-	bridge.mu.RUnlock()
-	if updateFDB {
-		bridge.mu.Lock()
-		// The port or the bridge's addresses may have changed while bridge.mu
-		// was unlocked, so check again. Linux's fdb_create() likewise inserts
-		// under hash_lock only if no entry exists.
-		if bridge.shouldLearnLocked(p, sourceAddress) {
-			bridge.addFDBEntryLocked(sourceAddress, p, 0)
-		}
-		bridge.mu.Unlock()
+		f.ports = bridge.portList
+	case entry.port != p || f.hairpin:
+		f.to = entry.port
 	}
 	// As in Linux, only group frames and frames addressed to the bridge or to
 	// one of its ports are passed up. Passing up transit unicast lets IP
 	// forwarding inject a duplicate back onto the bridge.
-	if d != nil && (isMulticast || isLocal) {
-		// The dispatcher may acquire Stack.mu in DeliverNetworkPacket(), which is
-		// ordered above bridge.mu. So call DeliverNetworkPacket() without holding
-		// bridge.mu to avoid circular locking.
-		d.DeliverNetworkPacket(protocol, pkt)
+	f.passUp = f.d != nil && (isMulticast || isLocal)
+	return f
+}
+
+// handleFrameFinish learns the source address of a frame received on p and
+// forwards, floods or passes up the frame as f says, as br_handle_frame_finish
+// does.
+//
+// The dispatcher may acquire Stack.mu, which is ordered above bridge.mu, so
+// frames are sent and passed up without holding bridge.mu. Linux forwards
+// under RCU only, too.
+func (p *bridgePort) handleFrameFinish(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer, f *bridgeForwarding) {
+	if f.learn {
+		src := header.Ethernet(pkt.LinkHeader().Slice()).SourceAddress()
+		p.bridge.mu.Lock()
+		// The port or the bridge's addresses may have changed while bridge.mu
+		// was unlocked, so check again. Linux's fdb_create() likewise inserts
+		// under hash_lock only if no entry exists.
+		if p.bridge.shouldLearnLocked(p, src) {
+			p.bridge.addFDBEntryLocked(src, p, 0)
+		}
+		p.bridge.mu.Unlock()
 	}
+	// When no FDB entry is found, send the packet to all ports. The ingress
+	// port is skipped unless it is in hairpin mode.
+	for _, port := range f.ports {
+		if port == p && !f.hairpin {
+			continue
+		}
+		p.forward(port, pkt)
+	}
+	if f.to != nil {
+		p.forward(f.to, pkt)
+	}
+	if f.passUp {
+		f.d.DeliverNetworkPacket(protocol, pkt)
+	}
+}
+
+// forward sends a frame received on p out of the port to.
+func (p *bridgePort) forward(to *bridgePort, pkt *PacketBuffer) {
+	if to.removed.Load() {
+		return
+	}
+	newPkt := NewPacketBuffer(PacketBufferOptions{
+		ReserveHeaderBytes: int(to.nic.MaxHeaderLength()),
+		Payload:            pkt.ToBuffer(),
+	})
+	to.nic.writeRawPacket(newPkt)
+	newPkt.DecRef()
 }
 
 func (p *bridgePort) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
@@ -182,6 +238,11 @@ type BridgeEndpoint struct {
 	mu bridgeRWMutex `state:"nosave"`
 	// +checklocks:mu
 	ports map[tcpip.NICID]*bridgePort
+	// portList holds the ports in ports, newest first. It is replaced and never
+	// modified, so it can be used after mu is released.
+	//
+	// +checklocks:mu
+	portList []*bridgePort
 	// localAddrs counts the ports with each link address, like the
 	// BR_FDB_LOCAL entries Linux keeps for its ports.
 	//
@@ -201,13 +262,19 @@ type BridgeEndpoint struct {
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
+//
+// As for forwarded frames, the ports send the packets without bridge.mu held.
 func (b *BridgeEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	ports := b.portList
+	b.mu.RUnlock()
 
 	pktsSlice := pkts.AsSlice()
 	n := len(pktsSlice)
-	for _, p := range b.ports {
+	for _, p := range ports {
+		if p.removed.Load() {
+			continue
+		}
 		for _, pkt := range pktsSlice {
 			// In order to properly loop back to the inbound side we must create a
 			// fresh packet that only contains the underlying payload with no headers
@@ -238,6 +305,8 @@ func (b *BridgeEndpoint) AddNIC(n *nic) tcpip.Error {
 	}
 	n.NetworkLinkEndpoint.Attach(port)
 	b.ports[n.id] = port
+	// As br_add_if does with list_add_rcu, the newest port is flooded first.
+	b.portList = append([]*bridgePort{port}, b.portList...)
 	b.addPortAddrLocked(port)
 
 	if b.maxHeaderLength.Load() < uint32(n.MaxHeaderLength()) {
@@ -281,6 +350,9 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 	defer b.mu.Unlock()
 
 	port, ok := b.ports[nic.id]
+	if ok {
+		port.removed.Store(true)
+	}
 	for k, e := range b.fdbTable {
 		if e.port == port {
 			delete(b.fdbTable, k)
@@ -290,6 +362,13 @@ func (b *BridgeEndpoint) DelNIC(nic *nic) tcpip.Error {
 		b.removePortAddrLocked(port)
 	}
 	delete(b.ports, nic.id)
+	portList := make([]*bridgePort, 0, len(b.ports))
+	for _, p := range b.portList {
+		if p != port {
+			portList = append(portList, p)
+		}
+	}
+	b.portList = portList
 	nic.NetworkLinkEndpoint.Attach(nic)
 	return nil
 }
@@ -340,10 +419,12 @@ func (b *BridgeEndpoint) Attach(dispatcher NetworkDispatcher) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, p := range b.ports {
+		p.removed.Store(true)
 		p.nic.Primary = nil
 	}
 	b.dispatcher = dispatcher
 	b.ports = make(map[tcpip.NICID]*bridgePort)
+	b.portList = nil
 	b.localAddrs = make(map[tcpip.LinkAddress]int)
 	b.fdbTable = make(map[BridgeFDBKey]BridgeFDBEntry)
 }

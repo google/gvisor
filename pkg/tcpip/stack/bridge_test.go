@@ -16,11 +16,13 @@ package bridge_test
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -836,6 +838,164 @@ func TestBridgePortLearning(t *testing.T) {
 				t.Errorf("hostY learned on %q, want port 1 (%q)", e.PortLinkAddress(), portAddr1)
 			}
 		})
+	}
+}
+
+// funcNotification calls f when a packet is written.
+type funcNotification func()
+
+func (f funcNotification) WriteNotify() {
+	f()
+}
+
+// TestBridgeForwardsWithoutLock checks that a port sends out forwarded and
+// flooded frames without the bridge locked, so that its transmit path may
+// change the bridge.
+func TestBridgeForwardsWithoutLock(t *testing.T) {
+	const (
+		portAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x60")
+		portAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x61")
+		hostA     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x62")
+		hostB     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x63")
+		unknown   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x64")
+	)
+	env := newBridgePortTestEnv(t, portAddr1, portAddr2)
+	h := env.chs[1].AddNotify(funcNotification(func() {
+		if err := env.s.SetBridgePortFlags(env.nicIDs[1], 0, 0); err != nil {
+			t.Errorf("SetBridgePortFlags(%d, 0, 0): %s", env.nicIDs[1], err)
+		}
+	}))
+	defer env.chs[1].RemoveNotify(h)
+	env.inject(1, hostB, unknown)
+	drainChannels(env.chs...)
+
+	for _, dst := range []tcpip.LinkAddress{unknown, hostB} {
+		done := make(chan struct{})
+		go func() {
+			env.inject(0, hostA, dst)
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("frame for %s isn't sent out of port 2 within 10s", dst)
+		}
+		if !env.forwardedTo(1) {
+			t.Errorf("frame for %s was not sent out of port 2", dst)
+		}
+	}
+
+	// The bridge's own output is sent without the lock, too.
+	done := make(chan struct{})
+	go func() {
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			ReserveHeaderBytes: header.EthernetMinimumSize,
+			Payload:            buffer.MakeWithData([]byte{1, 2, 3, 4}),
+		})
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		env.bridge.WritePackets(pkts)
+		pkts.Reset()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("bridge output isn't sent out of port 2 within 10s")
+	}
+	if !env.forwardedTo(1) {
+		t.Errorf("bridge output was not sent out of port 2")
+	}
+}
+
+// TestBridgeFloodsNewestPortFirst checks that, as in Linux, a flooded frame
+// goes out of the most recently added port first.
+func TestBridgeFloodsNewestPortFirst(t *testing.T) {
+	const (
+		portAddr1 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x70")
+		portAddr2 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x71")
+		portAddr3 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x72")
+		hostA     = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x73")
+		unknown   = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x74")
+	)
+	env := newBridgePortTestEnv(t, portAddr1, portAddr2, portAddr3)
+	var order []int
+	for i := 1; i < 3; i++ {
+		h := env.chs[i].AddNotify(funcNotification(func() { order = append(order, i+1) }))
+		defer env.chs[i].RemoveNotify(h)
+	}
+	env.inject(0, hostA, unknown)
+	if want := []int{3, 2}; !slices.Equal(order, want) {
+		t.Errorf("flooded out of ports %v, want %v", order, want)
+	}
+}
+
+// noCloseEndpoint is a link endpoint that stays open when its NIC is removed,
+// so a frame sent to a removed port can be seen.
+type noCloseEndpoint struct {
+	stack.LinkEndpoint
+}
+
+// Close implements stack.LinkEndpoint.Close.
+func (noCloseEndpoint) Close() {}
+
+// TestBridgeRemovedPortNotFlooded checks that a frame being flooded isn't sent
+// out of a port that is removed from the bridge during the flood.
+func TestBridgeRemovedPortNotFlooded(t *testing.T) {
+	const (
+		bridgeID = 30
+		hostA    = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x83")
+		unknown  = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x84")
+	)
+	s := stack.New(stack.Options{})
+	defer s.Destroy()
+	if err := s.CreateNIC(bridgeID, stack.NewBridgeEndpoint(1500)); err != nil {
+		t.Fatalf("s.CreateNIC(%d, _): %s", bridgeID, err)
+	}
+	var chs []*channel.Endpoint
+	var ids []tcpip.NICID
+	for i := 0; i < 3; i++ {
+		id := tcpip.NICID(31 + i)
+		ch := channel.New(4, header.EthernetMinimumSize, tcpip.LinkAddress([]byte{2, 2, 3, 4, 5, byte(0x80 + i)}))
+		defer ch.Close()
+		if err := s.CreateNIC(id, noCloseEndpoint{ethernet.New(ch)}); err != nil {
+			t.Fatalf("s.CreateNIC(%d, _): %s", id, err)
+		}
+		if err := s.SetNICCoordinator(id, bridgeID); err != nil {
+			t.Fatalf("s.SetNICCoordinator(%d, %d): %s", id, bridgeID, err)
+		}
+		chs = append(chs, ch)
+		ids = append(ids, id)
+	}
+	defer drainChannels(chs...)
+
+	// Whichever of ports 2 and 3 is sent the frame first removes the other.
+	var once sync.Once
+	for i := 1; i < 3; i++ {
+		other := ids[3-i]
+		h := chs[i].AddNotify(funcNotification(func() {
+			once.Do(func() {
+				if err := s.RemoveNIC(other); err != nil {
+					t.Errorf("s.RemoveNIC(%d): %s", other, err)
+				}
+			})
+		}))
+		defer chs[i].RemoveNotify(h)
+	}
+	pkt := makeEthernetFrame(hostA, unknown, header.IPv4ProtocolNumber, nil)
+	chs[0].InjectInbound(header.IPv4ProtocolNumber, pkt)
+	pkt.DecRef()
+
+	sent := 0
+	for _, ch := range chs[1:] {
+		for p := ch.Read(); p != nil; p = ch.Read() {
+			sent++
+			p.DecRef()
+		}
+	}
+	if sent != 1 {
+		t.Errorf("frame sent out of %d ports, want 1", sent)
 	}
 }
 
