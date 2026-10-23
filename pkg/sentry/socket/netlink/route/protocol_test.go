@@ -16,10 +16,13 @@ package route
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"net"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
@@ -614,5 +617,222 @@ func TestProcessMessageUnsupported(t *testing.T) {
 	msgUnsuppReq.Put(&family)
 	if err := p.ProcessMessage(nil, nil, msgUnsuppReq, ms); err != syserr.ErrNotSupported {
 		t.Errorf("ProcessMessage on unsupported REQUEST type got err = %v, want ErrNotSupported", err)
+	}
+}
+
+// fakeBridgeStack implements the bridge port part of inet.Stack and records the
+// configurations it applies.
+type fakeBridgeStack struct {
+	inet.Stack
+	known   bool
+	isPort  bool
+	applied []string
+}
+
+func (f *fakeBridgeStack) SetBridgePort(ctx context.Context, idx int32, cfg inet.BridgePortConfig) *syserr.Error {
+	if !f.known {
+		return syserr.ErrNoDevice
+	}
+	if !f.isPort {
+		return syserr.ErrNotSupported
+	}
+	str := func(b *bool) string {
+		if b == nil {
+			return "-"
+		}
+		return fmt.Sprint(*b)
+	}
+	f.applied = append(f.applied, fmt.Sprintf("hairpin=%s learning=%s", str(cfg.Hairpin), str(cfg.Learning)))
+	return nil
+}
+
+// nlAttr encodes a netlink attribute.
+func nlAttr(typ uint16, payload ...[]byte) []byte {
+	var value []byte
+	for _, p := range payload {
+		value = append(value, p...)
+	}
+	b := make([]byte, linux.NetlinkAttrHeaderSize, linux.NetlinkAttrHeaderSize+len(value)+3)
+	binary.NativeEndian.PutUint16(b, uint16(linux.NetlinkAttrHeaderSize+len(value)))
+	binary.NativeEndian.PutUint16(b[2:], typ)
+	b = append(b, value...)
+	for len(b)%linux.NLA_ALIGNTO != 0 {
+		b = append(b, 0)
+	}
+	return b
+}
+
+func TestSetBridgePort(t *testing.T) {
+	protinfo := func(attrs ...[]byte) []byte {
+		return nlAttr(linux.IFLA_PROTINFO|linux.NLA_F_NESTED, attrs...)
+	}
+	u8 := func(typ uint16, v byte) []byte { return nlAttr(typ, []byte{v}) }
+
+	for _, test := range []struct {
+		name   string
+		known  bool
+		isPort bool
+		attrs  []byte
+		want   *syserr.Error
+		// orWant is also accepted. A request with both an interface error and
+		// an attribute error gets the interface error on Linux and the
+		// attribute error here.
+		orWant  *syserr.Error
+		applied []string
+	}{
+		{
+			name:    "hairpin on",
+			known:   true,
+			isPort:  true,
+			attrs:   protinfo(u8(linux.IFLA_BRPORT_MODE, 1)),
+			applied: []string{"hairpin=true learning=-"},
+		},
+		{
+			name:    "hairpin off and learning on",
+			known:   true,
+			isPort:  true,
+			attrs:   protinfo(u8(linux.IFLA_BRPORT_MODE, 0), u8(linux.IFLA_BRPORT_LEARNING, 1)),
+			applied: []string{"hairpin=false learning=true"},
+		},
+		{
+			name:    "any nonzero value is on",
+			known:   true,
+			isPort:  true,
+			attrs:   protinfo(u8(linux.IFLA_BRPORT_MODE, 2)),
+			applied: []string{"hairpin=true learning=-"},
+		},
+		{
+			name:    "longer value uses the first byte",
+			known:   true,
+			isPort:  true,
+			attrs:   protinfo(nlAttr(linux.IFLA_BRPORT_LEARNING, []byte{0, 1, 0, 0})),
+			applied: []string{"hairpin=- learning=false"},
+		},
+		{
+			name:    "last attribute of a type wins",
+			known:   true,
+			isPort:  true,
+			attrs:   protinfo(u8(linux.IFLA_BRPORT_MODE, 1), u8(linux.IFLA_BRPORT_MODE, 0)),
+			applied: []string{"hairpin=false learning=-"},
+		},
+		{
+			name:    "attributes Linux ignores",
+			known:   true,
+			isPort:  true,
+			attrs:   protinfo(u8(linux.IFLA_BRPORT_UNSPEC, 1), u8(linux.IFLA_BRPORT_MAX+1, 1)),
+			applied: []string{"hairpin=- learning=-"},
+		},
+		{
+			name:   "empty value",
+			known:  true,
+			isPort: true,
+			attrs:  protinfo(nlAttr(linux.IFLA_BRPORT_MODE)),
+			want:   syserr.ErrRange,
+		},
+		{
+			name:   "unsupported flag",
+			known:  true,
+			isPort: true,
+			attrs:  protinfo(u8(linux.IFLA_BRPORT_GUARD, 1)),
+			want:   syserr.ErrNotSupported,
+		},
+		{
+			name:   "unsupported flag after a supported one changes nothing",
+			known:  true,
+			isPort: true,
+			attrs:  protinfo(u8(linux.IFLA_BRPORT_MODE, 1), u8(linux.IFLA_BRPORT_UNICAST_FLOOD, 0)),
+			want:   syserr.ErrNotSupported,
+		},
+		{
+			name:   "unsupported attribute with a value that is too short",
+			known:  true,
+			isPort: true,
+			attrs:  protinfo(u8(linux.IFLA_BRPORT_MODE, 1), nlAttr(linux.IFLA_BRPORT_COST)),
+			want:   syserr.ErrNotSupported,
+		},
+		{
+			name:   "spanning tree port state",
+			known:  true,
+			isPort: true,
+			attrs:  nlAttr(linux.IFLA_PROTINFO, []byte{0}),
+			want:   syserr.ErrNotSupported,
+		},
+		{
+			name:   "af_spec changes nothing",
+			known:  true,
+			isPort: true,
+			attrs:  append(protinfo(u8(linux.IFLA_BRPORT_MODE, 1)), nlAttr(linux.IFLA_AF_SPEC|linux.NLA_F_NESTED)...),
+			want:   syserr.ErrNotSupported,
+		},
+		{
+			name:   "truncated nested attribute",
+			known:  true,
+			isPort: true,
+			attrs:  nlAttr(linux.IFLA_PROTINFO|linux.NLA_F_NESTED, []byte{9, 0, 4}),
+			want:   syserr.ErrInvalidArgument,
+		},
+		{
+			name:    "no attributes",
+			known:   true,
+			isPort:  true,
+			applied: []string{"hairpin=- learning=-"},
+		},
+		{
+			name:    "unrelated attributes",
+			known:   true,
+			isPort:  true,
+			attrs:   nlAttr(linux.IFLA_MTU, []byte{0, 0, 0, 0}),
+			applied: []string{"hairpin=- learning=-"},
+		},
+		{
+			name:  "not a bridge port",
+			known: true,
+			attrs: protinfo(u8(linux.IFLA_BRPORT_MODE, 1)),
+			want:  syserr.ErrNotSupported,
+		},
+		{
+			name:   "malformed request on something that is not a bridge port",
+			known:  true,
+			attrs:  protinfo(nlAttr(linux.IFLA_BRPORT_MODE)),
+			want:   syserr.ErrNotSupported,
+			orWant: syserr.ErrRange,
+		},
+		{
+			name:  "no attributes on something that is not a bridge port",
+			known: true,
+			want:  syserr.ErrNotSupported,
+		},
+		{
+			name:  "unknown interface",
+			attrs: protinfo(u8(linux.IFLA_BRPORT_MODE, 1)),
+			want:  syserr.ErrNoDevice,
+		},
+		{
+			name:   "unsupported flag on an unknown interface",
+			attrs:  protinfo(u8(linux.IFLA_BRPORT_GUARD, 1)),
+			want:   syserr.ErrNoDevice,
+			orWant: syserr.ErrNotSupported,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := &fakeBridgeStack{known: test.known, isPort: test.isPort}
+			p := &Protocol{}
+			got := p.setBridgePort(context.Background(), f, 7, nlmsg.AttrsView(test.attrs))
+			if got != test.want && (test.orWant == nil || got != test.orWant) {
+				if test.orWant != nil {
+					t.Errorf("setBridgePort() = %v, want %v or %v", got, test.want, test.orWant)
+				} else {
+					t.Errorf("setBridgePort() = %v, want %v", got, test.want)
+				}
+			}
+			if len(f.applied) != len(test.applied) {
+				t.Fatalf("applied flags = %v, want %v", f.applied, test.applied)
+			}
+			for i := range f.applied {
+				if f.applied[i] != test.applied[i] {
+					t.Errorf("applied flags = %v, want %v", f.applied, test.applied)
+				}
+			}
+		})
 	}
 }

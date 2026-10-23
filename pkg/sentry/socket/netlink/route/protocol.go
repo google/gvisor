@@ -188,11 +188,108 @@ func (p *Protocol) setLink(ctx context.Context, s *netlink.Socket, msg *nlmsg.Me
 		return syserr.ErrProtocolNotSupported
 	}
 
+	var ifi linux.InterfaceInfoMessage
+	if attrs, ok := msg.GetData(&ifi); ok && ifi.Family == linux.AF_BRIDGE {
+		return p.setBridgePort(ctx, stack, ifi.Index, attrs)
+	}
+
 	if msg.Header().Flags&linux.NLM_F_CREATE == linux.NLM_F_CREATE {
 		return syserr.ErrInvalidArgument
 	}
 
 	return stack.SetInterface(ctx, msg)
+}
+
+// setBridgePort handles RTM_SETLINK requests with ifi_family AF_BRIDGE, which
+// configure a bridge port. It follows rtnl_bridge_setlink and br_setlink in
+// net/core/rtnetlink.c and net/bridge/br_netlink.c, but only supports the
+// hairpin and learning flags of IFLA_PROTINFO.
+func (p *Protocol) setBridgePort(ctx context.Context, stack inet.Stack, idx int32, attrs nlmsg.AttrsView) *syserr.Error {
+	cfg, err := parseBridgePortRequest(attrs)
+	if err != nil {
+		return err
+	}
+	return stack.SetBridgePort(ctx, idx, cfg)
+}
+
+// parseBridgePortRequest parses the attributes of an AF_BRIDGE RTM_SETLINK
+// request, as br_setlink does.
+func parseBridgePortRequest(attrs nlmsg.AttrsView) (inet.BridgePortConfig, *syserr.Error) {
+	// As with nlmsg_find_attr, the first IFLA_PROTINFO and IFLA_AF_SPEC win.
+	var (
+		protinfo    []byte
+		hasProtinfo bool
+		protinfoHdr linux.NetlinkAttrHeader
+		hasAFSpec   bool
+	)
+	for !attrs.Empty() {
+		hdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			return inet.BridgePortConfig{}, syserr.ErrInvalidArgument
+		}
+		attrs = rest
+		switch hdr.Type & linux.NLA_TYPE_MASK {
+		case linux.IFLA_PROTINFO:
+			if !hasProtinfo {
+				hasProtinfo = true
+				protinfoHdr = hdr
+				protinfo = value
+			}
+		case linux.IFLA_AF_SPEC:
+			hasAFSpec = true
+		}
+	}
+
+	var cfg inet.BridgePortConfig
+	if hasProtinfo {
+		// Without NLA_F_NESTED the attribute is the spanning tree port state.
+		if protinfoHdr.Type&linux.NLA_F_NESTED == 0 {
+			return inet.BridgePortConfig{}, syserr.ErrNotSupported
+		}
+		var err *syserr.Error
+		if cfg, err = parseBridgePortAttrs(nlmsg.AttrsView(protinfo)); err != nil {
+			return inet.BridgePortConfig{}, err
+		}
+	}
+	// IFLA_AF_SPEC carries VLAN and bridge mode configuration.
+	if hasAFSpec {
+		return inet.BridgePortConfig{}, syserr.ErrNotSupported
+	}
+	return cfg, nil
+}
+
+// parseBridgePortAttrs parses the attributes nested in IFLA_PROTINFO, as
+// nla_parse_nested_deprecated and br_setport do. Attributes other than the
+// hairpin and learning flags are not supported.
+func parseBridgePortAttrs(attrs nlmsg.AttrsView) (inet.BridgePortConfig, *syserr.Error) {
+	// A later attribute of the same type replaces an earlier one.
+	var cfg inet.BridgePortConfig
+	for !attrs.Empty() {
+		hdr, value, rest, ok := attrs.ParseFirst()
+		if !ok {
+			return inet.BridgePortConfig{}, syserr.ErrInvalidArgument
+		}
+		attrs = rest
+		typ := hdr.Type & linux.NLA_TYPE_MASK
+		switch {
+		case typ == linux.IFLA_BRPORT_MODE || typ == linux.IFLA_BRPORT_LEARNING:
+			// The attributes are u8 and may be longer, but not shorter.
+			if len(value) < 1 {
+				return inet.BridgePortConfig{}, syserr.ErrRange
+			}
+			on := value[0] != 0
+			if typ == linux.IFLA_BRPORT_MODE {
+				cfg.Hairpin = &on
+			} else {
+				cfg.Learning = &on
+			}
+		case typ == linux.IFLA_BRPORT_UNSPEC || typ > linux.IFLA_BRPORT_MAX:
+			// Linux ignores attributes outside of 1..IFLA_BRPORT_MAX.
+		default:
+			return inet.BridgePortConfig{}, syserr.ErrNotSupported
+		}
+	}
+	return cfg, nil
 }
 
 // delLink handles RTM_DELLINK requests.

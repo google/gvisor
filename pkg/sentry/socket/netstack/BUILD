@@ -87,9 +87,13 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/context",
         "//pkg/marshal/primitive",
+        "//pkg/sentry/inet",
         "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/ethernet",
         "//pkg/tcpip/stack",
     ],
 )

@@ -34,6 +34,7 @@ go_test(
     embed = [":route"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/context",
         "//pkg/marshal/primitive",
         "//pkg/sentry/inet",
         "//pkg/sentry/socket/netlink/nlmsg",
