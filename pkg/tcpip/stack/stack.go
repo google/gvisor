@@ -1314,7 +1314,7 @@ func forwardingValue(forwardingFn forwardingFn, proto tcpip.NetworkProtocolNumbe
 // precondition: s.mu is held.
 func (s *Stack) nicInfo(nic *nic, id tcpip.NICID) *NICInfo {
 	flags := NICStateFlags{
-		Up:          true, // Netstack interfaces are always up.
+		Up:          nic.Enabled(),
 		Running:     nic.Enabled(),
 		Promiscuous: nic.Promiscuous(),
 		Loopback:    nic.IsLoopback(),
@@ -1383,10 +1383,12 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 
 // NICStateFlags holds information about the state of an NIC.
 type NICStateFlags struct {
-	// Up indicates whether the interface is running.
+	// Up indicates whether the interface is administratively enabled
+	// (EnableNIC/DisableNIC).
 	Up bool
 
-	// Running indicates whether resources are allocated.
+	// Running indicates whether the interface is enabled and its link is
+	// operational.
 	Running bool
 
 	// Promiscuous indicates whether the interface is in promiscuous mode.
@@ -1491,6 +1493,20 @@ func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address
 	return nil
 }
 
+// isLocalDestination returns whether addr is assigned to nic and has a local
+// route. A disabled NIC's IPv4 addresses stay local, as fib_sync_down_dev keeps
+// host-scope routes on NETDEV_DOWN. Its IPv6 addresses do not: rt6_disable_ip
+// deletes every route through the device, including the local ones.
+func isLocalDestination(nic *nic, netProto tcpip.NetworkProtocolNumber, addr tcpip.Address) bool {
+	// TODO: Remove a disabled NIC's IPv6 addresses, as addrconf_ifdown does
+	// with keep_addr_on_down=0, the default. They stay assigned, as with
+	// keep_addr_on_down=1.
+	if netProto == header.IPv6ProtocolNumber && !nic.Enabled() {
+		return false
+	}
+	return nic.hasAddress(netProto, addr)
+}
+
 // findLocalRouteFromNICRLocked is like findLocalRouteRLocked but finds a route
 // from the specified NIC.
 //
@@ -1503,7 +1519,7 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 
 	var outgoingNIC *nic
 	// Prefer a local route to the same interface as the local address.
-	if localAddressNIC.hasAddress(netProto, remoteAddr) {
+	if isLocalDestination(localAddressNIC, netProto, remoteAddr) {
 		outgoingNIC = localAddressNIC
 	}
 
@@ -1511,7 +1527,7 @@ func (s *Stack) findLocalRouteFromNICRLocked(localAddressNIC *nic, localAddr, re
 	// NICs.
 	if outgoingNIC == nil {
 		for _, nic := range s.nics {
-			if nic.hasAddress(netProto, remoteAddr) {
+			if isLocalDestination(nic, netProto, remoteAddr) {
 				outgoingNIC = nic
 				break
 			}
@@ -1580,7 +1596,7 @@ func (s *Stack) findLocalRouteRLocked(localAddressNICID tcpip.NICID, localAddr, 
 		if s.loopbackNIC != nil {
 			// Send all packets directed to local ip addresses through the loopback device.
 			for _, nic := range s.nics {
-				if !nic.hasAddress(netProto, remoteAddr) {
+				if !isLocalDestination(nic, netProto, remoteAddr) {
 					continue
 				}
 				if isSubnetBroadcastOnNIC(nic, netProto, remoteAddr) {
