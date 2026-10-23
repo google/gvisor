@@ -3079,6 +3079,65 @@ TEST(ProcTask, VerifyTaskChildren) {
   EXPECT_EQ(expectedContent, proc_children_file);
 }
 
+// A process's additional threads are not separate child processes.
+TEST(ProcTask, VerifyTaskChildrenOmitsChildThreads) {
+  int ready[2];
+  int release[2];
+  ASSERT_THAT(pipe(ready), SyscallSucceeds());
+  FileDescriptor ready_read(ready[0]);
+  FileDescriptor ready_write(ready[1]);
+  ASSERT_THAT(pipe(release), SyscallSucceeds());
+  FileDescriptor release_read(release[0]);
+  FileDescriptor release_write(release[1]);
+
+  pid_t child = fork();
+  ASSERT_THAT(child, SyscallSucceeds());
+  if (child == 0) {
+    ready_read.CloseSignalSafe();
+    release_write.CloseSignalSafe();
+    auto worker = [&] {
+      const char started = 's';
+      TEST_PCHECK(RetryEINTR(write)(ready_write.get(), &started, 1) == 1);
+      char go;
+      TEST_PCHECK(RetryEINTR(read)(release_read.get(), &go, 1) == 1);
+    };
+    {
+      ScopedThread first(worker);
+      ScopedThread second(worker);
+    }
+    _exit(0);
+  }
+  auto cleanup_child = Cleanup([&] {
+    if (child > 0) {
+      kill(child, SIGKILL);
+      RetryEINTR(waitpid)(child, nullptr, 0);
+    }
+  });
+
+  ready_write.reset();
+  release_read.reset();
+
+  for (int i = 0; i < 2; ++i) {
+    char started;
+    ASSERT_THAT(RetryEINTR(read)(ready_read.get(), &started, 1),
+                SyscallSucceedsWithValue(1));
+  }
+  const std::string path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                                    absl::StrCat(gettid()), "children");
+  EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetContents(path)),
+            absl::StrCat(child, " "));
+
+  const char go[2] = {'g', 'g'};
+  ASSERT_THAT(RetryEINTR(write)(release_write.get(), go, sizeof(go)),
+              SyscallSucceedsWithValue(sizeof(go)));
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
+  child = 0;
+  ASSERT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
 // A child reaped while this file is generated must be omitted, never TID 0.
 TEST(ProcTask, VerifyTaskChildrenNeverReportsZeroTID) {
   const DisableSave ds;  // Too many syscalls.
