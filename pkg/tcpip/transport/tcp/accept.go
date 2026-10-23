@@ -128,17 +128,17 @@ func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *Endpoint, 
 	return l
 }
 
-// cookieHash calculates the cookieHash for the given id, timestamp and nonce
-// index. The hash is used to create and validate cookies.
+// cookieHash hashes the endpoint ID and value with the selected nonce.
+// The value is the client's initial sequence number or the cookie timestamp.
 //
 // +checklocksexclude:l.hasherMu
-func (l *listenContext) cookieHash(id stack.TransportEndpointID, ts uint32, nonceIndex int) uint32 {
+func (l *listenContext) cookieHash(id stack.TransportEndpointID, value uint32, nonceIndex int) uint32 {
 
-	// Initialize block with fixed-size data: local ports and v.
+	// Initialize the block with the ports and value.
 	var payload [8]byte
 	binary.BigEndian.PutUint16(payload[0:], id.LocalPort)
 	binary.BigEndian.PutUint16(payload[2:], id.RemotePort)
-	binary.BigEndian.PutUint32(payload[4:], ts)
+	binary.BigEndian.PutUint32(payload[4:], value)
 
 	// Feed everything to the hasher.
 	l.hasherMu.Lock()
@@ -165,7 +165,7 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, ts uint32, nonc
 // +checklocksexclude:l.hasherMu
 func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Value, data uint32) seqnum.Value {
 	ts := timeStamp(l.stack.Clock())
-	v := l.cookieHash(id, 0, 0) + uint32(seq) + (ts << tsOffset)
+	v := l.cookieHash(id, uint32(seq), 0) + (ts << tsOffset)
 	v += (l.cookieHash(id, ts, 1) + data) & hashMask
 	return seqnum.Value(v)
 }
@@ -177,7 +177,7 @@ func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Va
 // +checklocksexclude:l.hasherMu
 func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnum.Value, seq seqnum.Value) (uint32, bool) {
 	ts := timeStamp(l.stack.Clock())
-	v := uint32(cookie) - l.cookieHash(id, 0, 0) - uint32(seq)
+	v := uint32(cookie) - l.cookieHash(id, uint32(seq), 0)
 	cookieTS := v >> tsOffset
 	if ((ts - cookieTS) & tsMask) > maxTSDiff {
 		return 0, false

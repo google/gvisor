@@ -31,9 +31,10 @@ import (
 )
 
 var (
-	dir   = flag.String("dir", "/tmp", "The directory to mount the fuse filesystem on.")
-	cmd   = flag.String("cmd", "", "Command to execute after starting the fuse server. If empty, just wait after starting.")
-	debug = flag.Bool("debug", true, "Whether to log FUSE traffic. Set to false for benchmarks.")
+	dir       = flag.String("dir", "/tmp", "The directory to mount the fuse filesystem on.")
+	cmd       = flag.String("cmd", "", "Command to execute after starting the fuse server. If empty, just wait after starting.")
+	debug     = flag.Bool("debug", true, "Whether to log FUSE traffic. Set to false for benchmarks.")
+	readyFile = flag.String("ready-file", "", "File to create once the FUSE mount is ready.")
 )
 
 func waitOnMount(s *fuse.Server) {
@@ -76,13 +77,18 @@ func main() {
 	// Clear umask so that it doesn't affect the mode bits twice.
 	unix.Umask(0)
 
-	if *cmd == "" {
-		server.Serve()
-		waitOnMount(server)
-		return
-	}
 	go server.Serve()
 	waitOnMount(server)
+	if *readyFile != "" {
+		if err := os.WriteFile(*readyFile, nil, 0600); err != nil {
+			log.Warningf("could not signal FUSE mount readiness: %v", err)
+			os.Exit(1)
+		}
+	}
+	if *cmd == "" {
+		server.Wait()
+		return
+	}
 	defer func() {
 		server.Unmount()
 		server.Wait()

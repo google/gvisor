@@ -37,6 +37,7 @@ import (
 // A nonnil leader always belongs to this thread group.
 //
 // +checklocksalias:leader.tg.signalHandlers.mu=signalHandlers.mu
+// +checklocksalias:leader.tg.pidns.owner.mu=pidns.owner.mu
 // +stateify savable
 type ThreadGroup struct {
 	threadGroupNode

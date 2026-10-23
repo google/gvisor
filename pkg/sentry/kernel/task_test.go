@@ -112,3 +112,23 @@ func TestMatchesPathsDefaultRoot(t *testing.T) {
 		t.Errorf("matchesPaths(%+v, isTmpfs=true) = false, want true", rid)
 	}
 }
+
+func TestPIDNamespaceLastTID(t *testing.T) {
+	ns := newTaskSet(NewRootPIDNamespace(nil)).Root
+	if got := ns.LastTID(); got != 0 {
+		t.Errorf("ns.LastTID() = %d, want 0", got)
+	}
+	ns.ReserveInitTID()
+	if got := ns.LastTID(); got != initTID {
+		t.Errorf("ns.LastTID() = %d, want %d", got, initTID)
+	}
+	ns.owner.mu.Lock()
+	tid, err := ns.allocateTID()
+	ns.owner.mu.Unlock()
+	if err != nil {
+		t.Fatalf("ns.allocateTID() failed: %v", err)
+	}
+	if got := ns.LastTID(); got != tid {
+		t.Errorf("ns.LastTID() = %d, want %d", got, tid)
+	}
+}

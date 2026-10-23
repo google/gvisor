@@ -484,7 +484,7 @@ func (t *Task) beginPtraceStopLocked() bool {
 	return true
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.tg.pidns.owner.mu
 func (t *Task) ptraceTrapLocked(code int32) {
 	// This is unconditional in ptrace_stop().
 	t.tg.signalHandlers.mu.Lock()
@@ -861,7 +861,7 @@ func (t *Task) ptraceSyscallExit() {
 	t.ptraceSyscallStopLocked()
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.tg.pidns.owner.mu
 func (t *Task) ptraceSyscallStopLocked() {
 	code := int32(linux.SIGTRAP)
 	if t.ptraceOpts.SysGood {
@@ -1043,7 +1043,7 @@ func (t *Task) ptraceExit() {
 	t.ptraceEventLocked(linux.PTRACE_EVENT_EXIT, uint64(status))
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.tg.pidns.owner.mu
 func (t *Task) ptraceEventLocked(event int32, msg uint64) {
 	t.ptraceEventMsg = msg
 	// """

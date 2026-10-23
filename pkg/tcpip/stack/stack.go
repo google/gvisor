@@ -979,6 +979,11 @@ type NICOptions struct {
 
 	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
 	Kind string
+
+	// MinMTU and MaxMTU bound subsequent changes through SetNICMTU. A zero
+	// value leaves the corresponding bound unrestricted.
+	MinMTU uint32
+	MaxMTU uint32
 }
 
 // GetNICByID return a network device associated with the specified ID.
@@ -1233,6 +1238,9 @@ func (s *Stack) SetNICMTU(id tcpip.NICID, mtu uint32) tcpip.Error {
 	nic, ok := s.nics[id]
 	if !ok {
 		return &tcpip.ErrUnknownNICID{}
+	}
+	if mtu < nic.minMTU || (nic.maxMTU != 0 && mtu > nic.maxMTU) {
+		return &tcpip.ErrInvalidOptionValue{}
 	}
 	nic.NetworkLinkEndpoint.SetMTU(mtu)
 	return nil
@@ -2714,7 +2722,11 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	}
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
-	name := nic.Name()
+	opts := NICOptions{
+		Name:   nic.Name(),
+		MinMTU: nic.minMTU,
+		MaxMTU: nic.maxMTU,
+	}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)
 	s.mu.Unlock()
@@ -2726,7 +2738,7 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	}
 
 	id = tcpip.NICID(peer.NextNICID())
-	return id, peer.CreateNICWithOptions(id, linkEp, NICOptions{Name: name})
+	return id, peer.CreateNICWithOptions(id, linkEp, opts)
 }
 
 // SetRemoveConf sets the removeConf in stack to the given value.

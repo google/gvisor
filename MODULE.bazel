@@ -12,7 +12,7 @@ bazel_dep(name = "yq.bzl", version = "0.4.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_cc", version = "0.2.25")
 bazel_dep(name = "llvm", version = "0.8.24")
-bazel_dep(name = "libbpf", version = "1.7.0")
+bazel_dep(name = "libbpf", version = "1.7.0.bcr.1")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "grpc", version = "1.84.0", repo_name = "com_github_grpc_grpc")
 
@@ -42,12 +42,6 @@ single_version_override(
         "//tools:rules_go_export.patch",
     ],
     version = "0.63.0",
-)
-
-single_version_override(
-    module_name = "libbpf",
-    patch_strip = 1,
-    patches = ["//tools:libbpf_headers.patch"],
 )
 
 ### LLVM
