@@ -17,6 +17,7 @@
 package fragmentation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -159,6 +160,17 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 	f.releaseJob = tcpip.NewJob(f.clock, &f.mu, f.releaseReassemblersLocked)
 
 	return f
+}
+
+// afterLoad is invoked by stateify after deserialization.
+func (f *Fragmentation) afterLoad(context.Context) {
+	f.releaseJob = tcpip.NewJob(f.clock, &f.mu, f.releaseReassemblersLocked)
+
+	// Job timers are not saved, so restart expiration for any reassemblers that
+	// were active when the checkpoint was taken.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.releaseReassemblersLocked()
 }
 
 // Process processes an incoming fragment belonging to an ID and returns a
