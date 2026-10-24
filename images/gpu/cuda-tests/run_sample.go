@@ -123,9 +123,7 @@ func (c *Command) Start(ctx context.Context) error {
 	if c.started {
 		return errors.New("command already started")
 	}
-	for _, env := range os.Environ() {
-		c.Cmd.Env = append(c.Cmd.Env, env)
-	}
+	c.Cmd.Env = append(c.Cmd.Env, os.Environ()...)
 	if len(c.Stdin) == 0 {
 		c.Cmd.Stdin = nil // Read from /dev/null
 	} else {
@@ -211,8 +209,9 @@ func (c *Command) PID() int {
 // ExitCode returns the exit code of the command.
 func (c *Command) ExitCode(ctx context.Context) (int, error) {
 	c.mu.Lock()
-	if !c.started {
-		c.mu.Unlock()
+	started := c.started
+	c.mu.Unlock()
+	if !started {
 		return 0, errors.New("command not started")
 	}
 	select {
@@ -338,7 +337,7 @@ func NewXServer(ctx context.Context) (*XServer, error) {
 	x := &XServer{xvfb: xvfb}
 	if err := x.Probe(ctx); err != nil {
 		x.Shutdown(ctx)
-		return nil, fmt.Errorf("X server did not start in time: %w", err)
+		return nil, fmt.Errorf("timed out starting X server: %w", err)
 	}
 	return x, nil
 }
@@ -489,7 +488,7 @@ func (w *XWindow) Screenshot(ctx context.Context) (image.Image, error) {
 	cmd.Stderr = &stderrBuf
 	err := cmd.Run()
 	screenshotCancel()
-	stderr := string(stderrBuf.Bytes())
+	stderr := stderrBuf.String()
 	if err != nil {
 		// Best-effort attempt to kill the process.
 		_ = Terminate(ctx, cmd.Process.Pid)
