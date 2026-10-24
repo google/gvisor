@@ -87,7 +87,7 @@ type ResolvingPath struct {
 const (
 	rpflagsHaveMountRef       = 1 << iota // do we hold a reference on mount?
 	rpflagsHaveStartRef                   // do we hold a reference on start?
-	rpflagsFollowFinalSymlink             // same as PathOperation.FollowFinalSymlink
+	rpflagsFollowFinalSymlink             // FollowFinalSymlink or a trailing '/'
 	rpflagsBeneath                        // same as RESOLVE_BENEATH
 	rpflagsInRoot                         // same as RESOLVE_IN_ROOT
 	rpflagsNoMagicLinks                   // same as RESOLVE_NO_MAGICLINKS
@@ -165,7 +165,7 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 	rp.start = pop.Start.dentry
 	rp.pit = pop.Path.Begin
 	rp.flags = 0
-	if pop.FollowFinalSymlink {
+	if pop.FollowFinalSymlink || pop.Path.Dir {
 		rp.flags |= rpflagsFollowFinalSymlink
 	}
 	if resolveBeneath {
@@ -470,9 +470,8 @@ func (rp *ResolvingPath) CheckMount(ctx context.Context, d *Dentry) error {
 //
 // Preconditions: !rp.Done().
 func (rp *ResolvingPath) ShouldFollowSymlink() bool {
-	// Non-final symlinks are always followed. Paths terminated with '/' are also
-	// always followed.
-	return rp.flags&rpflagsFollowFinalSymlink != 0 || !rp.Final() || rp.MustBeDir()
+	// Non-final symlinks are always followed.
+	return rp.flags&rpflagsFollowFinalSymlink != 0 || !rp.Final()
 }
 
 // HandleSymlink is called when the current path component is a symbolic link
