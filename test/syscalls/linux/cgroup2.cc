@@ -1232,6 +1232,19 @@ TEST_F(Cgroup2Test, AttachNonExistentProc) {
   constexpr pid_t kNonExistentPid = 99999999;
   EXPECT_THAT(c().WriteIntegerControlFile("cgroup.procs", kNonExistentPid),
               PosixErrorIs(ESRCH));
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c().CreateChild("child"));
+  const int64_t pid = getpid();
+  // An out-of-range PID must not select the calling process after narrowing.
+  for (int64_t invalid : {int64_t{INT_MAX} + 1, (int64_t{1} << 32) + pid,
+                          pid - (int64_t{1} << 32)}) {
+    SCOPED_TRACE(invalid);
+    ASSERT_NO_ERRNO(c().WriteIntegerControlFile("cgroup.procs", 0));
+    EXPECT_THAT(child.WriteIntegerControlFile("cgroup.procs", invalid),
+                PosixErrorIs(EINVAL));
+    EXPECT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(c().Procs()).contains(getpid()));
+    EXPECT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(child.Procs()).empty());
+  }
 }
 
 TEST_F(Cgroup2Test, PIDZeroMovesSelf) {
