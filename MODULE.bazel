@@ -44,6 +44,12 @@ single_version_override(
     version = "0.63.0",
 )
 
+single_version_override(
+    module_name = "google_benchmark",
+    patch_strip = 1,
+    patches = ["//tools:benchmark-umbrella-exports.patch"],
+)
+
 ### LLVM
 # TODO: try using "llvm-raw" from BCR
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")

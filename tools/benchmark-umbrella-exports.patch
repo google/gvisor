@@ -1,0 +1,22 @@
+# Mark benchmark.h as the public umbrella for its component headers so
+# include-cleaner accepts clients that use the umbrella header.
+# https://github.com/google/benchmark/blob/a6b4a9f00/include/benchmark/benchmark.h#L18-L28
+# Remove after Benchmark ships equivalent IWYU export annotations.
+
+--- a/include/benchmark/benchmark.h
++++ b/include/benchmark/benchmark.h
+@@ -15,6 +15,7 @@
+ #ifndef BENCHMARK_BENCHMARK_H_
+ #define BENCHMARK_BENCHMARK_H_
+ 
++// IWYU pragma: begin_exports
+ #include "benchmark/benchmark_api.h"
+ #include "benchmark/counter.h"
+ #include "benchmark/macros.h"
+@@ -26,5 +27,6 @@
+ #include "benchmark/sysinfo.h"
+ #include "benchmark/types.h"
+ #include "benchmark/utils.h"
++// IWYU pragma: end_exports
+ 
+ #endif  // BENCHMARK_BENCHMARK_H_
