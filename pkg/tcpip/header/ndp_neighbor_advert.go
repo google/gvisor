@@ -14,7 +14,9 @@
 
 package header
 
-import "gvisor.dev/gvisor/pkg/tcpip"
+import (
+	"net/netip"
+)
 
 // NDPNeighborAdvert is an NDP Neighbor Advertisement message. It will
 // only contain the body of an ICMPv6 packet.
@@ -53,12 +55,12 @@ const (
 )
 
 // TargetAddress returns the value within the Target Address field.
-func (b NDPNeighborAdvert) TargetAddress() tcpip.Address {
-	return tcpip.AddrFrom16Slice(b[ndpNATargetAddressOffset:][:IPv6AddressSize])
+func (b NDPNeighborAdvert) TargetAddress() netip.Addr {
+	return netip.AddrFrom16([16]byte(b[ndpNATargetAddressOffset:][:IPv6AddressSize]))
 }
 
 // SetTargetAddress sets the value within the Target Address field.
-func (b NDPNeighborAdvert) SetTargetAddress(addr tcpip.Address) {
+func (b NDPNeighborAdvert) SetTargetAddress(addr netip.Addr) {
 	copy(b[ndpNATargetAddressOffset:][:IPv6AddressSize], addr.AsSlice())
 }
 

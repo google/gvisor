@@ -15,6 +15,7 @@
 package ipv4_test
 
 import (
+	"net/netip"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ var (
 // validateIgmpPacket checks that a passed packet is an IPv4 IGMP packet sent
 // to the provided address with the passed fields set. Raises a t.Error if any
 // field does not match.
-func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress tcpip.Address) {
+func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.IGMPType, maxRespTime byte, srcAddr, dstAddr, groupAddress netip.Addr) {
 	t.Helper()
 
 	payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -70,12 +71,12 @@ func validateIgmpPacket(t *testing.T, pkt *stack.PacketBuffer, igmpType header.I
 	)
 }
 
-func validateIgmpv3ReportPacket(t *testing.T, pkt *stack.PacketBuffer, srcAddr, groupAddress tcpip.Address) {
+func validateIgmpv3ReportPacket(t *testing.T, pkt *stack.PacketBuffer, srcAddr, groupAddress netip.Addr) {
 	t.Helper()
 
 	payload := stack.PayloadSince(pkt.NetworkHeader())
 	defer payload.Release()
-	iptestutil.ValidateIGMPv3Report(t, payload, srcAddr, []tcpip.Address{groupAddress}, header.IGMPv3ReportRecordChangeToExcludeMode)
+	iptestutil.ValidateIGMPv3Report(t, payload, srcAddr, []netip.Addr{groupAddress}, header.IGMPv3ReportRecordChangeToExcludeMode)
 }
 
 type igmpTestContext struct {
@@ -117,7 +118,7 @@ func newIGMPTestContext(t *testing.T, igmpEnabled bool) igmpTestContext {
 	}
 }
 
-func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, maxRespTime byte, ttl uint8, srcAddr, dstAddr, groupAddress tcpip.Address, hasRouterAlertOption bool) {
+func createAndInjectIGMPPacket(e *channel.Endpoint, igmpType header.IGMPType, maxRespTime byte, ttl uint8, srcAddr, dstAddr, groupAddress netip.Addr, hasRouterAlertOption bool) {
 	var options header.IPv4OptionsSerializer
 	if hasRouterAlertOption {
 		options = header.IPv4OptionsSerializer{
@@ -160,7 +161,7 @@ func TestIGMPV1Present(t *testing.T) {
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: stackAddr, PrefixLen: defaultPrefixLength},
+		AddressWithPrefix: netip.PrefixFrom(stackAddr, defaultPrefixLength),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
@@ -243,13 +244,13 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 	tests := []struct {
 		name            string
 		v2Compatibility bool
-		validate        func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address)
+		validate        func(t *testing.T, e *channel.Endpoint, localAddress netip.Addr, groupAddresses []netip.Addr)
 		checkStats      func(*testing.T, *stack.Stack, uint64, uint64, uint64)
 	}{
 		{
 			name:            "V2 Compatibility",
 			v2Compatibility: true,
-			validate: func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address) {
+			validate: func(t *testing.T, e *channel.Endpoint, localAddress netip.Addr, groupAddresses []netip.Addr) {
 				t.Helper()
 
 				iptestutil.ValidMultipleIGMPv2ReportLeaves(t, e, localAddress, groupAddresses, false /* leave */)
@@ -259,7 +260,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 		{
 			name:            "V3",
 			v2Compatibility: false,
-			validate: func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address) {
+			validate: func(t *testing.T, e *channel.Endpoint, localAddress netip.Addr, groupAddresses []netip.Addr) {
 				t.Helper()
 
 				iptestutil.ValidateIGMPv3RecordsAcrossReports(t, e, localAddress, groupAddresses, header.IGMPv3ReportRecordChangeToExcludeMode)
@@ -292,11 +293,8 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 				}
 			}
 			protocolAddr := tcpip.ProtocolAddress{
-				Protocol: ipv4.ProtocolNumber,
-				AddressWithPrefix: tcpip.AddressWithPrefix{
-					Address:   stackAddr,
-					PrefixLen: defaultPrefixLength,
-				},
+				Protocol:          ipv4.ProtocolNumber,
+				AddressWithPrefix: netip.PrefixFrom(stackAddr, defaultPrefixLength),
 			}
 			// Multicast traffic is not accepted unless we have an address so add an
 			// address and check the version which receives a multicast packet.
@@ -304,8 +302,8 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			checkVersion()
-			if err := s.RemoveAddress(nicID, protocolAddr.AddressWithPrefix.Address); err != nil {
-				t.Fatalf("RemoveAddress(%d, %s): %s", nicID, protocolAddr.AddressWithPrefix.Address, err)
+			if err := s.RemoveAddress(nicID, protocolAddr.AddressWithPrefix.Addr()); err != nil {
+				t.Fatalf("RemoveAddress(%d, %s): %s", nicID, protocolAddr.AddressWithPrefix.Addr(), err)
 			}
 
 			var reportCounter uint64
@@ -315,7 +313,7 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 
 			// Joining groups without an assigned address should queue IGMP packets;
 			// none should be sent without an assigned address.
-			multicastAddrs := []tcpip.Address{multicastAddr1, multicastAddr2}
+			multicastAddrs := []netip.Addr{multicastAddr1, multicastAddr2}
 			for _, multicastAddr := range multicastAddrs {
 				if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr); err != nil {
 					t.Fatalf("JoinGroup(%d, %d, %s): %s", ipv4.ProtocolNumber, nicID, multicastAddr, err)
@@ -369,8 +367,8 @@ func TestIGMPPacketValidation(t *testing.T) {
 	tests := []struct {
 		name                     string
 		messageType              header.IGMPType
-		stackAddresses           []tcpip.AddressWithPrefix
-		srcAddr                  tcpip.Address
+		stackAddresses           []netip.Prefix
+		srcAddr                  netip.Addr
 		includeRouterAlertOption bool
 		ttl                      uint8
 		expectValidIGMP          bool
@@ -380,7 +378,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "valid",
 			messageType:              header.IGMPLeaveGroup,
 			includeRouterAlertOption: true,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  remoteAddr,
 			ttl:                      1,
 			expectValidIGMP:          true,
@@ -390,7 +388,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "bad ttl",
 			messageType:              header.IGMPv1MembershipReport,
 			includeRouterAlertOption: true,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  remoteAddr,
 			ttl:                      2,
 			expectValidIGMP:          false,
@@ -400,7 +398,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "missing router alert ip option",
 			messageType:              header.IGMPv2MembershipReport,
 			includeRouterAlertOption: false,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  remoteAddr,
 			ttl:                      1,
 			expectValidIGMP:          false,
@@ -410,7 +408,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "igmp leave group and src ip does not belong to nic subnet",
 			messageType:              header.IGMPLeaveGroup,
 			includeRouterAlertOption: true,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          false,
@@ -420,7 +418,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "igmp query and src ip does not belong to nic subnet",
 			messageType:              header.IGMPMembershipQuery,
 			includeRouterAlertOption: true,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          true,
@@ -430,7 +428,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "igmp report v1 and src ip does not belong to nic subnet",
 			messageType:              header.IGMPv1MembershipReport,
 			includeRouterAlertOption: true,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          false,
@@ -440,7 +438,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "igmp report v2 and src ip does not belong to nic subnet",
 			messageType:              header.IGMPv2MembershipReport,
 			includeRouterAlertOption: true,
-			stackAddresses:           []tcpip.AddressWithPrefix{{Address: stackAddr, PrefixLen: 24}},
+			stackAddresses:           []netip.Prefix{netip.PrefixFrom(stackAddr, 24)},
 			srcAddr:                  testutil.MustParse4("10.0.1.2"),
 			ttl:                      1,
 			expectValidIGMP:          false,
@@ -450,9 +448,9 @@ func TestIGMPPacketValidation(t *testing.T) {
 			name:                     "src ip belongs to the subnet of the nic's second address",
 			messageType:              header.IGMPv2MembershipReport,
 			includeRouterAlertOption: true,
-			stackAddresses: []tcpip.AddressWithPrefix{
-				{Address: testutil.MustParse4("10.0.15.1"), PrefixLen: 24},
-				{Address: stackAddr, PrefixLen: 24},
+			stackAddresses: []netip.Prefix{
+				netip.PrefixFrom(testutil.MustParse4("10.0.15.1"), 24),
+				netip.PrefixFrom(stackAddr, 24),
 			},
 			srcAddr:                 remoteAddr,
 			ttl:                     1,
@@ -531,7 +529,7 @@ func TestGetSetIGMPVersion(t *testing.T) {
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: stackAddr, PrefixLen: defaultPrefixLength},
+		AddressWithPrefix: netip.PrefixFrom(stackAddr, defaultPrefixLength),
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)

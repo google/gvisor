@@ -16,6 +16,7 @@ package ipv6
 
 import (
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -211,32 +212,32 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult)
+	OnDuplicateAddressDetectionResult(tcpip.NICID, netip.Addr, stack.DADResult)
 
 	// OnOffLinkRouteUpdated is called when an off-link route is updated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOffLinkRouteUpdated(tcpip.NICID, tcpip.Subnet, tcpip.Address, header.NDPRoutePreference)
+	OnOffLinkRouteUpdated(tcpip.NICID, netip.Prefix, netip.Addr, header.NDPRoutePreference)
 
 	// OnOffLinkRouteInvalidated is called when an off-link route is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOffLinkRouteInvalidated(tcpip.NICID, tcpip.Subnet, tcpip.Address)
+	OnOffLinkRouteInvalidated(tcpip.NICID, netip.Prefix, netip.Addr)
 
 	// OnOnLinkPrefixDiscovered is called when a new on-link prefix is discovered.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet)
+	OnOnLinkPrefixDiscovered(tcpip.NICID, netip.Prefix)
 
 	// OnOnLinkPrefixInvalidated is called when a discovered on-link prefix that
 	// was remembered is invalidated.
 	//
 	// This function is not permitted to block indefinitely. This function
 	// is also not permitted to call into the stack.
-	OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet)
+	OnOnLinkPrefixInvalidated(tcpip.NICID, netip.Prefix)
 
 	// OnAutoGenAddress is called when a new prefix with its autonomous address-
 	// configuration flag set is received and SLAAC was performed.
@@ -246,7 +247,7 @@ type NDPDispatcher interface {
 	//
 	// If a non-nil AddressDispatcher is returned, events related to the address
 	// will be sent to the dispatcher.
-	OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) stack.AddressDispatcher
+	OnAutoGenAddress(tcpip.NICID, netip.Prefix) stack.AddressDispatcher
 
 	// OnAutoGenAddressDeprecated is called when an auto-generated address (SLAAC)
 	// is deprecated, but is still considered valid. Note, if an address is
@@ -255,14 +256,14 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
-	OnAutoGenAddressDeprecated(tcpip.NICID, tcpip.AddressWithPrefix)
+	OnAutoGenAddressDeprecated(tcpip.NICID, netip.Prefix)
 
 	// OnAutoGenAddressInvalidated is called when an auto-generated address
 	// (SLAAC) is invalidated.
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
-	OnAutoGenAddressInvalidated(tcpip.NICID, tcpip.AddressWithPrefix)
+	OnAutoGenAddressInvalidated(tcpip.NICID, netip.Prefix)
 
 	// OnRecursiveDNSServerOption is called when the stack learns of DNS servers
 	// through NDP. Note, the addresses may contain link-local addresses.
@@ -275,7 +276,7 @@ type NDPDispatcher interface {
 	//
 	// This function is not permitted to block indefinitely. It must not
 	// call functions on the stack itself.
-	OnRecursiveDNSServerOption(tcpip.NICID, []tcpip.Address, time.Duration)
+	OnRecursiveDNSServerOption(tcpip.NICID, []netip.Addr, time.Duration)
 
 	// OnDNSSearchListOption is called when the stack learns of DNS search lists
 	// through NDP.
@@ -476,8 +477,8 @@ type timer struct {
 
 // +stateify savable
 type offLinkRoute struct {
-	dest   tcpip.Subnet
-	router tcpip.Address
+	dest   netip.Prefix
+	router netip.Addr
 }
 
 // ndpState is the per-Interface NDP state.
@@ -507,11 +508,11 @@ type ndpState struct {
 
 	// The on-link prefixes discovered through Router Advertisements' Prefix
 	// Information option.
-	onLinkPrefixes map[tcpip.Subnet]onLinkPrefixState
+	onLinkPrefixes map[netip.Prefix]onLinkPrefixState
 
 	// The SLAAC prefixes discovered through Router Advertisements' Prefix
 	// Information option.
-	slaacPrefixes map[tcpip.Subnet]slaacPrefixState
+	slaacPrefixes map[netip.Prefix]slaacPrefixState
 
 	// The last learned DHCPv6 configuration from an NDP RA.
 	dhcpv6Configuration DHCPv6ConfigurationFromNDPRA
@@ -617,7 +618,7 @@ type slaacPrefixState struct {
 	stableAddr stableAddrState
 
 	// The temporary (short-lived) addresses generated for the SLAAC prefix.
-	tempAddrs map[tcpip.Address]tempSLAACAddrState
+	tempAddrs map[netip.Addr]tempSLAACAddrState
 
 	// The next two fields are used by both stable and temporary addresses
 	// generated for a SLAAC prefix. This is safe as only 1 address is in the
@@ -641,7 +642,7 @@ type slaacPrefixState struct {
 // tentative.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressEndpoint stack.AddressEndpoint) tcpip.Error {
+func (ndp *ndpState) startDuplicateAddressDetection(addr netip.Addr, addressEndpoint stack.AddressEndpoint) tcpip.Error {
 	// addr must be a valid unicast IPv6 address.
 	if !header.IsV6UnicastAddress(addr) {
 		return &tcpip.ErrAddressFamilyNotSupported{}
@@ -681,7 +682,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 			if addressEndpoint.ConfigType() == stack.AddressConfigSlaac && !addressEndpoint.Temporary() {
 				// Reset the generation attempts counter as we are starting the
 				// generation of a new address for the SLAAC prefix.
-				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Subnet(), true /* resetGenAttempts */) // +checklocksforce: DAD calls its handlers with ndp.ep.mu held.
+				ndp.regenerateTempSLAACAddr(addressEndpoint.AddressWithPrefix().Masked(), true /* resetGenAttempts */) // +checklocksforce: DAD calls its handlers with ndp.ep.mu held.
 			}
 			ndp.ep.onAddressAssignedLocked(addr) // +checklocksforce: DAD calls its handlers with ndp.ep.mu held.
 		}
@@ -714,7 +715,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, addressE
 // of this function to handle such a scenario.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, reason stack.DADResult) {
+func (ndp *ndpState) stopDuplicateAddressDetection(addr netip.Addr, reason stack.DADResult) {
 	ndp.dad.StopLocked(addr, reason)
 }
 
@@ -722,7 +723,7 @@ func (ndp *ndpState) stopDuplicateAddressDetection(addr tcpip.Address, reason st
 // this ndp is for. Does nothing if the NIC is configured to not handle RAs.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
+func (ndp *ndpState) handleRA(ip netip.Addr, ra header.NDPRouterAdvert) {
 	// Is the IPv6 endpoint configured to handle RAs at all?
 	//
 	// Currently, the stack does not determine router interface status on a
@@ -805,14 +806,14 @@ func (ndp *ndpState) handleRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 			prefix := opt.Subnet()
 
 			// Is the prefix a link-local?
-			if header.IsV6LinkLocalUnicastAddress(prefix.ID()) {
+			if header.IsV6LinkLocalUnicastAddress(prefix.Addr()) {
 				// ...Yes, skip as per RFC 4861 section 6.3.4,
 				// and RFC 4862 section 5.5.3.b (for SLAAC).
 				continue
 			}
 
 			// Is the Prefix Length 0?
-			if prefix.Prefix() == 0 {
+			if prefix.Bits() == 0 {
 				// ...Yes, skip as this is an invalid prefix
 				// as all IPv6 addresses cannot be on-link.
 				continue
@@ -938,7 +939,7 @@ func (ndp *ndpState) newOffLinkRouteInvalidationJob(route offLinkRoute) *tcpip.J
 // The prefix identified by prefix MUST NOT already be known.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) {
+func (ndp *ndpState) rememberOnLinkPrefix(prefix netip.Prefix, l time.Duration) {
 	ndpDisp := ndp.ep.protocol.options.NDPDisp
 	if ndpDisp == nil {
 		return
@@ -958,7 +959,7 @@ func (ndp *ndpState) rememberOnLinkPrefix(prefix tcpip.Subnet, l time.Duration) 
 	ndp.onLinkPrefixes[prefix] = state
 }
 
-func (ndp *ndpState) newOnLinkPrefixInvalidationJob(prefix tcpip.Subnet) *tcpip.Job {
+func (ndp *ndpState) newOnLinkPrefixInvalidationJob(prefix netip.Prefix) *tcpip.Job {
 	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 		ndp.invalidateOnLinkPrefix(prefix) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 	})
@@ -967,7 +968,7 @@ func (ndp *ndpState) newOnLinkPrefixInvalidationJob(prefix tcpip.Subnet) *tcpip.
 // invalidateOnLinkPrefix invalidates a discovered on-link prefix.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) invalidateOnLinkPrefix(prefix tcpip.Subnet) {
+func (ndp *ndpState) invalidateOnLinkPrefix(prefix netip.Prefix) {
 	s, ok := ndp.onLinkPrefixes[prefix]
 
 	// Is the on-link prefix still discovered?
@@ -1086,7 +1087,7 @@ func (ndp *ndpState) handleAutonomousPrefixInformation(pi header.NDPPrefixInform
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
+func (ndp *ndpState) doSLAAC(prefix netip.Prefix, pl, vl time.Duration) {
 	// If we do not already have an address for this prefix and the valid
 	// lifetime is 0, no need to do anything further, as per RFC 4862
 	// section 5.5.3.d.
@@ -1097,14 +1098,14 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	// Make sure the prefix is valid (as far as its length is concerned) to
 	// generate a valid IPv6 address from an interface identifier (IID), as
 	// per RFC 4862 sectiion 5.5.3.d.
-	if prefix.Prefix() != validPrefixLenForAutoGen {
+	if prefix.Bits() != validPrefixLenForAutoGen {
 		return
 	}
 
 	state := slaacPrefixState{
 		deprecationJob:        ndp.newSLAACPrefixDeprecationJob(prefix),
 		invalidationJob:       ndp.newSLAACPrefixInvalidationJob(prefix),
-		tempAddrs:             make(map[tcpip.Address]tempSLAACAddrState),
+		tempAddrs:             make(map[netip.Addr]tempSLAACAddrState),
 		maxGenerationAttempts: ndp.configs.AutoGenAddressConflictRetries + 1,
 	}
 
@@ -1150,7 +1151,7 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 	ndp.slaacPrefixes[prefix] = state
 }
 
-func (ndp *ndpState) newSLAACPrefixDeprecationJob(prefix tcpip.Subnet) *tcpip.Job {
+func (ndp *ndpState) newSLAACPrefixDeprecationJob(prefix netip.Prefix) *tcpip.Job {
 	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 		state, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
@@ -1161,7 +1162,7 @@ func (ndp *ndpState) newSLAACPrefixDeprecationJob(prefix tcpip.Subnet) *tcpip.Jo
 	})
 }
 
-func (ndp *ndpState) newSLAACPrefixInvalidationJob(prefix tcpip.Subnet) *tcpip.Job {
+func (ndp *ndpState) newSLAACPrefixInvalidationJob(prefix netip.Prefix) *tcpip.Job {
 	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 		state, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
@@ -1175,7 +1176,7 @@ func (ndp *ndpState) newSLAACPrefixInvalidationJob(prefix tcpip.Subnet) *tcpip.J
 // addAndAcquireSLAACAddr adds a SLAAC address to the IPv6 endpoint.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, temporary bool, lifetimes stack.AddressLifetimes) stack.AddressEndpoint {
+func (ndp *ndpState) addAndAcquireSLAACAddr(addr netip.Prefix, temporary bool, lifetimes stack.AddressLifetimes) stack.AddressEndpoint {
 	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.AddressProperties{
 		PEB:        stack.FirstPrimaryEndpoint,
 		ConfigType: stack.AddressConfigSlaac,
@@ -1203,7 +1204,7 @@ func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, tempor
 // Panics if the prefix is not a SLAAC prefix or it already has an address.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixState) bool {
+func (ndp *ndpState) generateSLAACAddr(prefix netip.Prefix, state *slaacPrefixState) bool {
 	if addressEndpoint := state.stableAddr.addressEndpoint; addressEndpoint != nil {
 		panic(fmt.Sprintf("ndp: SLAAC prefix %s already has a permanent address %s", prefix, addressEndpoint.AddressWithPrefix()))
 	}
@@ -1214,8 +1215,8 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 		return false
 	}
 
-	var generatedAddr tcpip.AddressWithPrefix
-	prefixID := prefix.ID()
+	var generatedAddr netip.Prefix
+	prefixID := prefix.Addr()
 	addrBytes := prefixID.AsSlice()
 
 	for i := 0; ; i++ {
@@ -1257,12 +1258,9 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 			return false
 		}
 
-		generatedAddr = tcpip.AddressWithPrefix{
-			Address:   tcpip.AddrFrom16Slice(addrBytes),
-			PrefixLen: validPrefixLenForAutoGen,
-		}
+		generatedAddr = netip.PrefixFrom(netip.AddrFrom16([16]byte(addrBytes)), validPrefixLenForAutoGen)
 
-		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Address) {
+		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Addr()) {
 			break
 		}
 
@@ -1300,7 +1298,7 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 // If generating a new address for the prefix fails, the prefix is invalidated.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
+func (ndp *ndpState) regenerateSLAACAddr(prefix netip.Prefix) {
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
 		panic(fmt.Sprintf("ndp: SLAAC prefix state not found to regenerate address for %s", prefix))
@@ -1324,10 +1322,10 @@ func (ndp *ndpState) regenerateSLAACAddr(prefix tcpip.Subnet) {
 // Returns true if a new address was generated.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *slaacPrefixState, resetGenAttempts bool) bool {
+func (ndp *ndpState) generateTempSLAACAddr(prefix netip.Prefix, prefixState *slaacPrefixState, resetGenAttempts bool) bool {
 	// Are we configured to auto-generate new temporary global addresses for the
 	// prefix?
-	if !ndp.configs.AutoGenTempGlobalAddresses || prefix == header.IPv6LinkLocalPrefix.Subnet() {
+	if !ndp.configs.AutoGenTempGlobalAddresses || prefix == header.IPv6LinkLocalPrefix.Masked() {
 		return false
 	}
 
@@ -1342,7 +1340,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		return false
 	}
 
-	stableAddr := prefixState.stableAddr.addressEndpoint.AddressWithPrefix().Address
+	stableAddr := prefixState.stableAddr.addressEndpoint.AddressWithPrefix().Addr()
 	now := ndp.ep.protocol.stack.Clock().NowMonotonic()
 
 	// As per RFC 4941 section 3.3 step 4, the valid lifetime of a temporary
@@ -1383,7 +1381,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 
 	// Attempt to generate a new address that is not already assigned to the IPv6
 	// endpoint.
-	var generatedAddr tcpip.AddressWithPrefix
+	var generatedAddr netip.Prefix
 	for i := 0; ; i++ {
 		// If we were unable to generate an address after the maximum SLAAC address
 		// local regeneration attempts, do nothing further.
@@ -1392,7 +1390,7 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 		}
 
 		generatedAddr = header.GenerateTempIPv6SLAACAddr(ndp.temporaryIIDHistory[:], stableAddr)
-		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Address) {
+		if !ndp.ep.hasPermanentAddressRLocked(generatedAddr.Addr()) {
 			break
 		}
 	}
@@ -1422,19 +1420,19 @@ func (ndp *ndpState) generateTempSLAACAddr(prefix tcpip.Subnet, prefixState *sla
 	state.regenJob.Schedule(pl - ndp.configs.RegenAdvanceDuration)
 
 	prefixState.generationAttempts++
-	prefixState.tempAddrs[generatedAddr.Address] = state
+	prefixState.tempAddrs[generatedAddr.Addr()] = state
 
 	return true
 }
 
-func (ndp *ndpState) newTempSLAACAddrDeprecationJob(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) *tcpip.Job {
+func (ndp *ndpState) newTempSLAACAddrDeprecationJob(prefix netip.Prefix, generatedAddr netip.Prefix) *tcpip.Job {
 	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 		prefixState, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to deprecate temporary address %s", prefix, generatedAddr))
 		}
 
-		tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Address]
+		tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Addr()]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a tempAddr entry to deprecate temporary address %s", generatedAddr))
 		}
@@ -1443,30 +1441,30 @@ func (ndp *ndpState) newTempSLAACAddrDeprecationJob(prefix tcpip.Subnet, generat
 	})
 }
 
-func (ndp *ndpState) newTempSLAACAddrInvalidationJob(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) *tcpip.Job {
+func (ndp *ndpState) newTempSLAACAddrInvalidationJob(prefix netip.Prefix, generatedAddr netip.Prefix) *tcpip.Job {
 	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 		prefixState, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to invalidate temporary address %s", prefix, generatedAddr))
 		}
 
-		tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Address]
+		tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Addr()]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a tempAddr entry to invalidate temporary address %s", generatedAddr))
 		}
 
-		ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Address, tempAddrState) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
+		ndp.invalidateTempSLAACAddr(prefixState.tempAddrs, generatedAddr.Addr(), tempAddrState) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
 	})
 }
 
-func (ndp *ndpState) newTempSLAACAddrRegenJob(prefix tcpip.Subnet, generatedAddr tcpip.AddressWithPrefix) *tcpip.Job {
+func (ndp *ndpState) newTempSLAACAddrRegenJob(prefix netip.Prefix, generatedAddr netip.Prefix) *tcpip.Job {
 	return tcpip.NewJob(ndp.ep.protocol.stack.Clock(), &ndp.ep.mu, func() {
 		prefixState, ok := ndp.slaacPrefixes[prefix]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry for %s to regenerate temporary address after %s", prefix, generatedAddr))
 		}
 
-		tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Address]
+		tempAddrState, ok := prefixState.tempAddrs[generatedAddr.Addr()]
 		if !ok {
 			panic(fmt.Sprintf("ndp: must have a tempAddr entry to regenerate temporary address after %s", generatedAddr))
 		}
@@ -1480,7 +1478,7 @@ func (ndp *ndpState) newTempSLAACAddrRegenJob(prefix tcpip.Subnet, generatedAddr
 		// Reset the generation attempts counter as we are starting the generation
 		// of a new address for the SLAAC prefix.
 		tempAddrState.regenerated = ndp.generateTempSLAACAddr(prefix, &prefixState, true /* resetGenAttempts */) // +checklocksforce: NewJob calls back with ndp.ep.mu held.
-		prefixState.tempAddrs[generatedAddr.Address] = tempAddrState
+		prefixState.tempAddrs[generatedAddr.Addr()] = tempAddrState
 		ndp.slaacPrefixes[prefix] = prefixState
 	})
 }
@@ -1488,7 +1486,7 @@ func (ndp *ndpState) newTempSLAACAddrRegenJob(prefix tcpip.Subnet, generatedAddr
 // regenerateTempSLAACAddr regenerates a temporary address for a SLAAC prefix.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttempts bool) {
+func (ndp *ndpState) regenerateTempSLAACAddr(prefix netip.Prefix, resetGenAttempts bool) {
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
 		panic(fmt.Sprintf("ndp: SLAAC prefix state not found to regenerate temporary address for %s", prefix))
@@ -1503,7 +1501,7 @@ func (ndp *ndpState) regenerateTempSLAACAddr(prefix tcpip.Subnet, resetGenAttemp
 // pl is the new preferred lifetime. vl is the new valid lifetime.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixState *slaacPrefixState, pl, vl time.Duration) {
+func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix netip.Prefix, prefixState *slaacPrefixState, pl, vl time.Duration) {
 	// If prefix was preferred for some finite lifetime before, cancel the
 	// deprecation job so it can be reset.
 	prefixState.deprecationJob.Cancel()
@@ -1598,7 +1596,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 
 	// Note, we do not need to update the entries in the temporary address map
 	// after updating the jobs because the jobs are held as pointers.
-	var regenForAddr tcpip.Address
+	var regenForAddr netip.Addr
 	allAddressesRegenerated := true
 	for tempAddr, tempAddrState := range prefixState.tempAddrs {
 		// As per RFC 4941 section 3.3 step 4, the valid lifetime of a temporary
@@ -1673,7 +1671,7 @@ func (ndp *ndpState) refreshSLAACPrefixLifetimes(prefix tcpip.Subnet, prefixStat
 	// If each temporary address has already been regenerated, no new temporary
 	// address is generated. To ensure continuation of temporary SLAAC addresses,
 	// we manually try to regenerate an address here.
-	if regenForAddr.BitLen() != 0 || allAddressesRegenerated {
+	if regenForAddr.IsValid() || allAddressesRegenerated {
 		// Reset the generation attempts counter as we are starting the generation
 		// of a new address for the SLAAC prefix.
 		if state, ok := prefixState.tempAddrs[regenForAddr]; ndp.generateTempSLAACAddr(prefix, prefixState, true /* resetGenAttempts */) && ok {
@@ -1703,7 +1701,7 @@ func (ndp *ndpState) deprecateSLAACAddress(addressEndpoint stack.AddressEndpoint
 // invalidateSLAACPrefix invalidates a SLAAC prefix.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefixState) {
+func (ndp *ndpState) invalidateSLAACPrefix(prefix netip.Prefix, state slaacPrefixState) {
 	ndp.cleanupSLAACPrefixResources(prefix, state)
 
 	if addressEndpoint := state.stableAddr.addressEndpoint; addressEndpoint != nil {
@@ -1721,14 +1719,14 @@ func (ndp *ndpState) invalidateSLAACPrefix(prefix tcpip.Subnet, state slaacPrefi
 // resources.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix, invalidatePrefix bool) {
+func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr netip.Prefix, invalidatePrefix bool) {
 	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), addr)
 	}
 
-	prefix := addr.Subnet()
+	prefix := addr.Masked()
 	state, ok := ndp.slaacPrefixes[prefix]
-	if !ok || state.stableAddr.addressEndpoint == nil || addr.Address != state.stableAddr.addressEndpoint.AddressWithPrefix().Address {
+	if !ok || state.stableAddr.addressEndpoint == nil || addr.Addr() != state.stableAddr.addressEndpoint.AddressWithPrefix().Addr() {
 		return
 	}
 
@@ -1749,7 +1747,7 @@ func (ndp *ndpState) cleanupSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPr
 // Panics if the SLAAC prefix is not known.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaacPrefixState) {
+func (ndp *ndpState) cleanupSLAACPrefixResources(prefix netip.Prefix, state slaacPrefixState) {
 	// Invalidate all temporary addresses.
 	for tempAddr, tempAddrState := range state.tempAddrs {
 		ndp.invalidateTempSLAACAddr(state.tempAddrs, tempAddr, tempAddrState)
@@ -1767,7 +1765,7 @@ func (ndp *ndpState) cleanupSLAACPrefixResources(prefix tcpip.Subnet, state slaa
 // invalidateTempSLAACAddr invalidates a temporary SLAAC address.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[netip.Addr]tempSLAACAddrState, tempAddr netip.Addr, tempAddrState tempSLAACAddrState) {
 	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs, tempAddr, tempAddrState)
 
 	if err := ndp.ep.removePermanentEndpointInnerLocked(tempAddrState.addressEndpoint, stack.AddressRemovalInvalidated, &stack.DADAborted{}); err != nil {
@@ -1780,19 +1778,19 @@ func (ndp *ndpState) invalidateTempSLAACAddr(tempAddrs map[tcpip.Address]tempSLA
 // address was invalidated.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWithPrefix) {
-	prefix := addr.Subnet()
+func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr netip.Prefix) {
+	prefix := addr.Masked()
 	state, ok := ndp.slaacPrefixes[prefix]
 	if !ok {
 		panic(fmt.Sprintf("ndp: must have a slaacPrefixes entry to clean up temp addr %s resources", addr))
 	}
 
-	tempAddrState, ok := state.tempAddrs[addr.Address]
+	tempAddrState, ok := state.tempAddrs[addr.Addr()]
 	if !ok {
 		panic(fmt.Sprintf("ndp: must have a tempAddr entry to clean up temp addr %s resources", addr))
 	}
 
-	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(state.tempAddrs, addr.Address, tempAddrState)
+	ndp.cleanupTempSLAACAddrResourcesAndNotifyInner(state.tempAddrs, addr.Addr(), tempAddrState)
 }
 
 // cleanupTempSLAACAddrResourcesAndNotifyInner is like
@@ -1800,7 +1798,7 @@ func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotify(addr tcpip.AddressWi
 // temporary address's state in ndp - it assumes the passed state is valid.
 //
 // +checklocks:ndp.ep.mu.RWMutex
-func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs map[tcpip.Address]tempSLAACAddrState, tempAddr tcpip.Address, tempAddrState tempSLAACAddrState) {
+func (ndp *ndpState) cleanupTempSLAACAddrResourcesAndNotifyInner(tempAddrs map[netip.Addr]tempSLAACAddrState, tempAddr netip.Addr, tempAddrState tempSLAACAddrState) {
 	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
 		ndpDisp.OnAutoGenAddressInvalidated(ndp.ep.nic.ID(), tempAddrState.addressEndpoint.AddressWithPrefix())
 	}
@@ -1887,8 +1885,8 @@ func (ndp *ndpState) startSolicitingRouters() {
 			//       the unspecified address if no address is assigned
 			//       to the sending interface.
 			localAddr := header.IPv6Any
-			if addressEndpoint := ndp.ep.AcquireOutgoingPrimaryAddress(header.IPv6AllRoutersLinkLocalMulticastAddress, tcpip.Address{} /* srcHint */, false); addressEndpoint != nil {
-				localAddr = addressEndpoint.AddressWithPrefix().Address
+			if addressEndpoint := ndp.ep.AcquireOutgoingPrimaryAddress(header.IPv6AllRoutersLinkLocalMulticastAddress, netip.Addr{} /* srcHint */, false); addressEndpoint != nil {
+				localAddr = addressEndpoint.AddressWithPrefix().Addr()
 				addressEndpoint.DecRef()
 			}
 
@@ -2011,8 +2009,8 @@ func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 	ndp.configs = ep.protocol.options.NDPConfigs
 	ndp.dad.Init(&ndp.ep.mu, ep.protocol.options.DADConfigs, dadOptions)
 	ndp.offLinkRoutes = make(map[offLinkRoute]offLinkRouteState)
-	ndp.onLinkPrefixes = make(map[tcpip.Subnet]onLinkPrefixState)
-	ndp.slaacPrefixes = make(map[tcpip.Subnet]slaacPrefixState)
+	ndp.onLinkPrefixes = make(map[netip.Prefix]onLinkPrefixState)
+	ndp.slaacPrefixes = make(map[netip.Prefix]slaacPrefixState)
 
 	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
 	ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.InsecureRNG().Int63n(int64(MaxDesyncFactor)))
@@ -2049,14 +2047,14 @@ func (ndp *ndpState) restore() {
 	}
 }
 
-func (ndp *ndpState) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {
+func (ndp *ndpState) SendDADMessage(addr netip.Addr, nonce []byte) tcpip.Error {
 	snmc := header.SolicitedNodeAddr(addr)
 	return ndp.ep.sendNDPNS(header.IPv6Any, snmc, addr, header.EthernetAddressFromMulticastIPv6Address(snmc), header.NDPOptionsSerializer{
 		header.NDPNonceOption(nonce),
 	})
 }
 
-func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr tcpip.Address, remoteLinkAddr tcpip.LinkAddress, opts header.NDPOptionsSerializer) tcpip.Error {
+func (e *endpoint) sendNDPNS(srcAddr, dstAddr, targetAddr netip.Addr, remoteLinkAddr tcpip.LinkAddress, opts header.NDPOptionsSerializer) tcpip.Error {
 	icmpView := buffer.NewView(header.ICMPv6NeighborSolicitMinimumSize + opts.Length())
 	icmpView.Grow(header.ICMPv6NeighborSolicitMinimumSize + opts.Length())
 	icmp := header.ICMPv6(icmpView.AsSlice())

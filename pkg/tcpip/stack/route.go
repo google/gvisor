@@ -16,6 +16,7 @@ package stack
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -63,13 +64,13 @@ type Route struct {
 
 // +stateify savable
 type routeInfo struct {
-	RemoteAddress tcpip.Address
+	RemoteAddress netip.Addr
 
-	LocalAddress tcpip.Address
+	LocalAddress netip.Addr
 
 	LocalLinkAddress tcpip.LinkAddress
 
-	NextHop tcpip.Address
+	NextHop netip.Addr
 
 	NetProto tcpip.NetworkProtocolNumber
 
@@ -77,12 +78,12 @@ type routeInfo struct {
 }
 
 // RemoteAddress returns the route's destination.
-func (r *Route) RemoteAddress() tcpip.Address {
+func (r *Route) RemoteAddress() netip.Addr {
 	return r.routeInfo.RemoteAddress
 }
 
 // LocalAddress returns the route's local address.
-func (r *Route) LocalAddress() tcpip.Address {
+func (r *Route) LocalAddress() netip.Addr {
 	return r.routeInfo.LocalAddress
 }
 
@@ -92,7 +93,7 @@ func (r *Route) LocalLinkAddress() tcpip.LinkAddress {
 }
 
 // NextHop returns the next node in the route's path to the destination.
-func (r *Route) NextHop() tcpip.Address {
+func (r *Route) NextHop() netip.Addr {
 	return r.routeInfo.NextHop
 }
 
@@ -145,9 +146,9 @@ func (r *Route) fieldsLocked() RouteInfo {
 // ownership of the provided local address.
 //
 // Returns an empty route if validation fails.
-func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *nic, gateway, localAddr, remoteAddr tcpip.Address, handleLocal, multicastLoop bool, mtu uint32) *Route {
-	if localAddr.BitLen() == 0 {
-		localAddr = addressEndpoint.AddressWithPrefix().Address
+func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndpoint AssignableAddressEndpoint, localAddressNIC, outgoingNIC *nic, gateway, localAddr, remoteAddr netip.Addr, handleLocal, multicastLoop bool, mtu uint32) *Route {
+	if !localAddr.IsValid() {
+		localAddr = addressEndpoint.AddressWithPrefix().Addr()
 	}
 
 	if localAddressNIC != outgoingNIC && header.IsV6LinkLocalUnicastAddress(localAddr) {
@@ -156,7 +157,7 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 	}
 
 	// If no remote address is provided, use the local address.
-	if remoteAddr.BitLen() == 0 {
+	if !remoteAddr.IsValid() {
 		remoteAddr = localAddr
 	}
 
@@ -178,13 +179,13 @@ func constructAndValidateRoute(netProto tcpip.NetworkProtocolNumber, addressEndp
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // AssignableAddressEndpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool, mtu uint32) *Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteAddr netip.Addr, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, handleLocal, multicastLoop bool, mtu uint32) *Route {
 	if localAddressNIC.stack != outgoingNIC.stack {
 		panic("cannot create a route with NICs from different stacks")
 	}
 
-	if localAddr.BitLen() == 0 {
-		localAddr = localAddressEndpoint.AddressWithPrefix().Address
+	if !localAddr.IsValid() {
+		localAddr = localAddressEndpoint.AddressWithPrefix().Addr()
 	}
 
 	loop := PacketOut
@@ -193,13 +194,13 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 	// could remove this check if loopback interfaces looped back packets
 	// at the network layer.
 	if !outgoingNIC.IsLoopback() {
-		if handleLocal && localAddr != (tcpip.Address{}) && remoteAddr == localAddr {
+		if handleLocal && localAddr != (netip.Addr{}) && remoteAddr == localAddr {
 			loop = PacketLoop
 		} else if multicastLoop && (header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)) {
 			loop |= PacketLoop
 		} else if remoteAddr == header.IPv4Broadcast {
 			loop |= PacketLoop
-		} else if subnet := localAddressEndpoint.AddressWithPrefix().Subnet(); subnet.IsBroadcast(remoteAddr) {
+		} else if subnet := localAddressEndpoint.AddressWithPrefix().Masked(); header.IsIPv4SubnetBroadcast(subnet, remoteAddr) {
 			loop |= PacketLoop
 		}
 	}
@@ -217,7 +218,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		}
 	}
 
-	if gateway.BitLen() > 0 {
+	if gateway.IsValid() {
 		r.routeInfo.NextHop = gateway
 		return r
 	}
@@ -231,7 +232,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 		return r
 	}
 
-	if subnet := localAddressEndpoint.Subnet(); subnet.IsBroadcast(remoteAddr) {
+	if subnet := localAddressEndpoint.Subnet(); header.IsIPv4SubnetBroadcast(subnet, remoteAddr) {
 		r.ResolveWith(header.EthernetBroadcastAddress)
 		return r
 	}
@@ -244,7 +245,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, gateway, localAddr, remoteA
 	return r
 }
 
-func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping, mtu uint32) *Route {
+func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr netip.Addr, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint, loop PacketLooping, mtu uint32) *Route {
 	if mtu != 0 {
 		adjusted := mtu - outgoingNIC.getNetworkEndpoint(netProto).EndpointHeaderSize()
 		if adjusted > mtu {
@@ -277,7 +278,7 @@ func makeRouteInner(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr 
 // provided AssignableAddressEndpoint.
 //
 // A local route is a route to a destination that is local to the stack.
-func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint) *Route {
+func makeLocalRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr netip.Addr, outgoingNIC, localAddressNIC *nic, localAddressEndpoint AssignableAddressEndpoint) *Route {
 	loop := PacketLoop
 	// Loopback interface loops back packets at the link endpoint level. We
 	// could remove this check if loopback interfaces looped back packets
@@ -404,7 +405,7 @@ func (r *Route) resolvedFields(afterResolve func(ResolvedFieldsResult)) (RouteIn
 
 	// If specified, the local address used for link address resolution must be an
 	// address on the outgoing interface.
-	var linkAddressResolutionRequestLocalAddr tcpip.Address
+	var linkAddressResolutionRequestLocalAddr netip.Addr
 	if r.localAddressNIC == r.outgoingNIC {
 		linkAddressResolutionRequestLocalAddr = r.LocalAddress()
 	}
@@ -448,8 +449,8 @@ func (r *Route) setCachedNeighborEntry(entry *neighborEntry) {
 	r.neighborEntry = entry
 }
 
-func (r *Route) nextHop() tcpip.Address {
-	if r.NextHop().BitLen() == 0 {
+func (r *Route) nextHop() netip.Addr {
+	if !r.NextHop().IsValid() {
 		return r.RemoteAddress()
 	}
 	return r.NextHop()
@@ -567,7 +568,7 @@ func (r *Route) Stack() *Stack {
 	return r.outgoingNIC.stack
 }
 
-func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
+func (r *Route) isV4Broadcast(addr netip.Addr) bool {
 	if addr == header.IPv4Broadcast {
 		return true
 	}
@@ -580,7 +581,7 @@ func (r *Route) isV4Broadcast(addr tcpip.Address) bool {
 	}
 
 	subnet := localAddressEndpoint.Subnet()
-	return subnet.IsBroadcast(addr)
+	return header.IsIPv4SubnetBroadcast(subnet, addr)
 }
 
 // IsOutboundBroadcast returns true if the route is for an outbound broadcast

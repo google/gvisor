@@ -42,6 +42,7 @@ package fdbased
 
 import (
 	"fmt"
+	"net/netip"
 	"runtime"
 
 	"golang.org/x/sys/unix"
@@ -880,7 +881,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 }
 
 // InjectOutbound implements stack.InjectableEndpoint.InjectOutbound.
-func (e *endpoint) InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip.Error {
+func (e *endpoint) InjectOutbound(dest netip.Addr, packet *buffer.View) tcpip.Error {
 	if errno := rawfile.NonBlockingWrite(e.fds[0].fd, packet.AsSlice()); errno != 0 {
 		return tcpip.TranslateErrno(errno)
 	}

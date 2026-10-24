@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -59,10 +60,10 @@ type IPv6Fields struct {
 	HopLimit uint8
 
 	// SrcAddr is the "source ip address" of an IPv6 packet.
-	SrcAddr tcpip.Address
+	SrcAddr netip.Addr
 
 	// DstAddr is the "destination ip address" of an IPv6 packet.
-	DstAddr tcpip.Address
+	DstAddr netip.Addr
 
 	// ExtensionHeaders are the extension headers following the IPv6 header.
 	ExtensionHeaders IPv6ExtHdrSerializer
@@ -132,7 +133,7 @@ var (
 	// destined to this address will reach all nodes on a link.
 	//
 	// The address is ff02::1.
-	IPv6AllNodesMulticastAddress = tcpip.AddrFrom16([16]byte{0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01})
+	IPv6AllNodesMulticastAddress = netip.IPv6LinkLocalAllNodes()
 
 	// IPv6AllRoutersInterfaceLocalMulticastAddress is an interface-local
 	// multicast group that all IPv6 routers MUST join, as per RFC 4291, section
@@ -140,53 +141,44 @@ var (
 	// interface.
 	//
 	// The address is ff01::2.
-	IPv6AllRoutersInterfaceLocalMulticastAddress = tcpip.AddrFrom16([16]byte{0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})
+	IPv6AllRoutersInterfaceLocalMulticastAddress = netip.AddrFrom16([16]byte{0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})
 
 	// IPv6AllRoutersLinkLocalMulticastAddress is a link-local multicast group
 	// that all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
 	// destined to this address will reach all routers on a link.
 	//
 	// The address is ff02::2.
-	IPv6AllRoutersLinkLocalMulticastAddress = tcpip.AddrFrom16([16]byte{0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})
+	IPv6AllRoutersLinkLocalMulticastAddress = netip.IPv6LinkLocalAllRouters()
 
 	// IPv6AllRoutersSiteLocalMulticastAddress is a site-local multicast group
 	// that all IPv6 routers MUST join, as per RFC 4291, section 2.8. Packets
 	// destined to this address will reach all routers in a site.
 	//
 	// The address is ff05::2.
-	IPv6AllRoutersSiteLocalMulticastAddress = tcpip.AddrFrom16([16]byte{0xff, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})
+	IPv6AllRoutersSiteLocalMulticastAddress = netip.AddrFrom16([16]byte{0xff, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02})
 
 	// IPv6Loopback is the IPv6 Loopback address.
-	IPv6Loopback = tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01})
+	IPv6Loopback = netip.IPv6Loopback()
 
 	// IPv6Any is the non-routable IPv6 "any" meta address. It is also
 	// known as the unspecified address.
-	IPv6Any = tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	IPv6Any = netip.IPv6Unspecified()
 )
 
 // IPv6EmptySubnet is the empty IPv6 subnet. It may also be known as the
 // catch-all or wildcard subnet. That is, all IPv6 addresses are considered to
 // be contained within this subnet.
-var IPv6EmptySubnet = tcpip.AddressWithPrefix{
-	Address:   IPv6Any,
-	PrefixLen: 0,
-}.Subnet()
+var IPv6EmptySubnet = netip.PrefixFrom(IPv6Any, 0)
 
 // IPv4MappedIPv6Subnet is the prefix for an IPv4 mapped IPv6 address as defined
 // by RFC 4291 section 2.5.5.
-var IPv4MappedIPv6Subnet = tcpip.AddressWithPrefix{
-	Address:   tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00}),
-	PrefixLen: 96,
-}.Subnet()
+var IPv4MappedIPv6Subnet = netip.PrefixFrom(netip.AddrFrom16([16]byte{10: 0xff, 11: 0xff}), 96)
 
 // IPv6LinkLocalPrefix is the prefix for IPv6 link-local addresses, as defined
 // by RFC 4291 section 2.5.6.
 //
 // The prefix is fe80::/64
-var IPv6LinkLocalPrefix = tcpip.AddressWithPrefix{
-	Address:   tcpip.AddrFrom16([16]byte{0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
-	PrefixLen: 64,
-}
+var IPv6LinkLocalPrefix = netip.PrefixFrom(netip.AddrFrom16([16]byte{0xfe, 0x80}), 64)
 
 // PayloadLength returns the value of the "payload length" field of the ipv6
 // header.
@@ -285,14 +277,14 @@ func (b IPv6) Payload() []byte {
 }
 
 // SourceAddress returns the "source address" field of the ipv6 header.
-func (b IPv6) SourceAddress() tcpip.Address {
-	return tcpip.AddrFrom16([16]byte(b[v6SrcAddr:][:IPv6AddressSize]))
+func (b IPv6) SourceAddress() netip.Addr {
+	return netip.AddrFrom16([16]byte(b[v6SrcAddr:][:IPv6AddressSize]))
 }
 
 // DestinationAddress returns the "destination address" field of the ipv6
 // header.
-func (b IPv6) DestinationAddress() tcpip.Address {
-	return tcpip.AddrFrom16([16]byte(b[v6DstAddr:][:IPv6AddressSize]))
+func (b IPv6) DestinationAddress() netip.Addr {
+	return netip.AddrFrom16([16]byte(b[v6DstAddr:][:IPv6AddressSize]))
 }
 
 // SourceAddressSlice returns the "source address" field of the ipv6 header as a
@@ -331,13 +323,13 @@ func (b IPv6) SetPayloadLength(payloadLength uint16) {
 }
 
 // SetSourceAddress sets the "source address" field of the ipv6 header.
-func (b IPv6) SetSourceAddress(addr tcpip.Address) {
+func (b IPv6) SetSourceAddress(addr netip.Addr) {
 	copy(b[v6SrcAddr:][:IPv6AddressSize], addr.AsSlice())
 }
 
 // SetDestinationAddress sets the "destination address" field of the ipv6
 // header.
-func (b IPv6) SetDestinationAddress(addr tcpip.Address) {
+func (b IPv6) SetDestinationAddress(addr netip.Addr) {
 	copy(b[v6DstAddr:][:IPv6AddressSize], addr.AsSlice())
 }
 
@@ -388,28 +380,21 @@ func (b IPv6) IsValid(pktSize int) bool {
 
 // IsV4MappedAddress determines if the provided address is an IPv4 mapped
 // address by checking if its prefix is 0:0:0:0:0:ffff::/96.
-func IsV4MappedAddress(addr tcpip.Address) bool {
-	if addr.BitLen() != IPv6AddressSizeBits {
-		return false
-	}
-
-	return IPv4MappedIPv6Subnet.Contains(addr)
+func IsV4MappedAddress(addr netip.Addr) bool {
+	return addr.Is4In6()
 }
 
 // IsV6MulticastAddress determines if the provided address is an IPv6
 // multicast address (anything starting with FF).
-func IsV6MulticastAddress(addr tcpip.Address) bool {
-	if addr.BitLen() != IPv6AddressSizeBits {
-		return false
-	}
-	return addr.As16()[0] == 0xff
+func IsV6MulticastAddress(addr netip.Addr) bool {
+	return addr.Unmap().Is6() && addr.IsMulticast()
 }
 
 // IsV6UnicastAddress determines if the provided address is a valid IPv6
 // unicast (and specified) address. That is, IsV6UnicastAddress returns
 // true if addr contains IPv6AddressSize bytes, is not the unspecified
 // address and is not a multicast address.
-func IsV6UnicastAddress(addr tcpip.Address) bool {
+func IsV6UnicastAddress(addr netip.Addr) bool {
 	if addr.BitLen() != IPv6AddressSizeBits {
 		return false
 	}
@@ -428,14 +413,14 @@ var solicitedNodeMulticastPrefix = [13]byte{0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 
 // SolicitedNodeAddr computes the solicited-node multicast address. This is
 // used for NDP. Described in RFC 4291. The argument must be a full-length IPv6
 // address.
-func SolicitedNodeAddr(addr tcpip.Address) tcpip.Address {
+func SolicitedNodeAddr(addr netip.Addr) netip.Addr {
 	addrBytes := addr.As16()
-	return tcpip.AddrFrom16([16]byte(append(solicitedNodeMulticastPrefix[:], addrBytes[len(addrBytes)-3:]...)))
+	return netip.AddrFrom16([16]byte(append(solicitedNodeMulticastPrefix[:], addrBytes[len(addrBytes)-3:]...)))
 }
 
 // IsSolicitedNodeAddr determines whether the address is a solicited-node
 // multicast address.
-func IsSolicitedNodeAddr(addr tcpip.Address) bool {
+func IsSolicitedNodeAddr(addr netip.Addr) bool {
 	addrBytes := addr.As16()
 	return solicitedNodeMulticastPrefix == [13]byte(addrBytes[:len(addrBytes)-3])
 }
@@ -465,7 +450,7 @@ func EthernetAddressToModifiedEUI64(linkAddr tcpip.LinkAddress) [IIDSize]byte {
 
 // LinkLocalAddr computes the default IPv6 link-local address from a link-layer
 // (MAC) address.
-func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
+func LinkLocalAddr(linkAddr tcpip.LinkAddress) netip.Addr {
 	// Convert a 48-bit MAC to a modified EUI-64 and then prepend the
 	// link-local header, FE80::.
 	//
@@ -477,28 +462,24 @@ func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
 		1: 0x80,
 	}
 	EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, lladdrb[IIDOffsetInIPv6Address:])
-	return tcpip.AddrFrom16(lladdrb)
+	return netip.AddrFrom16(lladdrb)
 }
 
 // IsV6LinkLocalUnicastAddress returns true iff the provided address is an IPv6
 // link-local unicast address, as defined by RFC 4291 section 2.5.6.
-func IsV6LinkLocalUnicastAddress(addr tcpip.Address) bool {
-	if addr.BitLen() != IPv6AddressSizeBits {
-		return false
-	}
-	addrBytes := addr.As16()
-	return addrBytes[0] == 0xfe && (addrBytes[1]&0xc0) == 0x80
+func IsV6LinkLocalUnicastAddress(addr netip.Addr) bool {
+	return addr.Unmap().Is6() && addr.IsLinkLocalUnicast()
 }
 
 // IsV6LoopbackAddress returns true iff the provided address is an IPv6 loopback
 // address, as defined by RFC 4291 section 2.5.3.
-func IsV6LoopbackAddress(addr tcpip.Address) bool {
+func IsV6LoopbackAddress(addr netip.Addr) bool {
 	return addr == IPv6Loopback
 }
 
 // IsV6LinkLocalMulticastAddress returns true iff the provided address is an
 // IPv6 link-local multicast address, as defined by RFC 4291 section 2.7.
-func IsV6LinkLocalMulticastAddress(addr tcpip.Address) bool {
+func IsV6LinkLocalMulticastAddress(addr netip.Addr) bool {
 	return IsV6MulticastAddress(addr) && V6MulticastScope(addr) == IPv6LinkLocalMulticastScope
 }
 
@@ -513,13 +494,13 @@ func IsV6LinkLocalMulticastAddress(addr tcpip.Address) bool {
 //
 // If buf has enough capacity for the IID (IIDSize bytes), a new underlying
 // array for the buffer will not be allocated.
-func AppendOpaqueInterfaceIdentifier(buf []byte, prefix tcpip.Subnet, nicName string, dadCounter uint8, secretKey []byte) []byte {
+func AppendOpaqueInterfaceIdentifier(buf []byte, prefix netip.Prefix, nicName string, dadCounter uint8, secretKey []byte) []byte {
 	// As per RFC 7217 section 5, the opaque identifier can be generated as a
 	// cryptographic hash of the concatenation of each of the function parameters.
 	// Note, we omit the optional Network_ID field.
 	h := sha256.New()
 	// h.Write never returns an error.
-	prefixID := prefix.ID()
+	prefixID := prefix.Addr()
 	h.Write([]byte(prefixID.AsSlice()[:IIDOffsetInIPv6Address]))
 	h.Write([]byte(nicName))
 	h.Write([]byte{dadCounter})
@@ -533,13 +514,13 @@ func AppendOpaqueInterfaceIdentifier(buf []byte, prefix tcpip.Subnet, nicName st
 
 // LinkLocalAddrWithOpaqueIID computes the default IPv6 link-local address with
 // an opaque IID.
-func LinkLocalAddrWithOpaqueIID(nicName string, dadCounter uint8, secretKey []byte) tcpip.Address {
+func LinkLocalAddrWithOpaqueIID(nicName string, dadCounter uint8, secretKey []byte) netip.Addr {
 	lladdrb := [IPv6AddressSize]byte{
 		0: 0xFE,
 		1: 0x80,
 	}
 
-	return tcpip.AddrFrom16([16]byte(AppendOpaqueInterfaceIdentifier(lladdrb[:IIDOffsetInIPv6Address], IPv6LinkLocalPrefix.Subnet(), nicName, dadCounter, secretKey)))
+	return netip.AddrFrom16([16]byte(AppendOpaqueInterfaceIdentifier(lladdrb[:IIDOffsetInIPv6Address], IPv6LinkLocalPrefix.Masked(), nicName, dadCounter, secretKey)))
 }
 
 // IPv6AddressScope is the scope of an IPv6 address.
@@ -554,7 +535,7 @@ const (
 )
 
 // ScopeForIPv6Address returns the scope for an IPv6 address.
-func ScopeForIPv6Address(addr tcpip.Address) (IPv6AddressScope, tcpip.Error) {
+func ScopeForIPv6Address(addr netip.Addr) (IPv6AddressScope, tcpip.Error) {
 	if addr.BitLen() != IPv6AddressSizeBits {
 		return GlobalScope, &tcpip.ErrBadAddress{}
 	}
@@ -598,7 +579,7 @@ func InitialTempIID(initialTempIIDHistory []byte, seed []byte, nicID tcpip.NICID
 // used when generating a new temporary IID.
 //
 // Panics if tempIIDHistory is not at least IIDSize bytes.
-func GenerateTempIPv6SLAACAddr(tempIIDHistory []byte, stableAddr tcpip.Address) tcpip.AddressWithPrefix {
+func GenerateTempIPv6SLAACAddr(tempIIDHistory []byte, stableAddr netip.Addr) netip.Prefix {
 	addrBytes := stableAddr.As16()
 	h := sha256.New()
 	h.Write(tempIIDHistory)
@@ -616,10 +597,7 @@ func GenerateTempIPv6SLAACAddr(tempIIDHistory []byte, stableAddr tcpip.Address) 
 		panic(fmt.Sprintf("copied %d IID bytes, expected %d bytes", n, IIDSize))
 	}
 
-	return tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFrom16(addrBytes),
-		PrefixLen: IIDOffsetInIPv6Address * 8,
-	}
+	return netip.PrefixFrom(netip.AddrFrom16(addrBytes), IIDOffsetInIPv6Address*8)
 }
 
 // IPv6MulticastScope is the scope of a multicast IPv6 address, as defined by
@@ -661,7 +639,7 @@ const (
 )
 
 // V6MulticastScope returns the scope of a multicast address.
-func V6MulticastScope(addr tcpip.Address) IPv6MulticastScope {
+func V6MulticastScope(addr netip.Addr) IPv6MulticastScope {
 	addrBytes := addr.As16()
 	return IPv6MulticastScope(addrBytes[ipv6MulticastAddressScopeByteIdx] & ipv6MulticastAddressScopeMask)
 }
