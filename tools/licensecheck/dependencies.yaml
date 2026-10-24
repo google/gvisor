@@ -642,10 +642,12 @@
   license: Apache-2.0
 - dependency: github.com/moby/sys/symlink
   version: v0.3.0
-  retrieved: "2026-08-27"
+  retrieved: "2026-10-21"
   commit: cafbe42351600ca9b363e220722f66d96f6e71f4
   sha256: c0036c97c9b7b7a246468165a968fedd974691161b083f1e7e99bafc58e57451
-  license: Apache-2.0
+  license:
+    - Apache-2.0
+    - BSD-3-Clause
 - dependency: github.com/moby/sys/user
   version: v0.4.0
   retrieved: "2026-08-27"
@@ -1024,10 +1026,12 @@
   license: BSD-3-Clause
 - dependency: gopkg.in/yaml.v2
   version: v2.4.0
-  retrieved: "2026-08-27"
+  retrieved: "2026-10-21"
   commit: ""
   sha256: ede49e27c4cca6cdd2ec719aed8ea4d363710cceb3d411e7a786fbdec0d391fd
-  license: Apache-2.0
+  license:
+    - Apache-2.0
+    - MIT
 - dependency: gopkg.in/yaml.v3
   version: v3.0.1
   retrieved: "2026-08-27"
@@ -1047,10 +1051,12 @@
     - MPL-2.0
 - dependency: honnef.co/go/tools
   version: v0.5.1
-  retrieved: "2026-08-27"
+  retrieved: "2026-10-21"
   commit: 56172d41b117cc2c2f99f65fe0a790c8d7d7ea66
   sha256: d728ff392fc5b6f676a30c36e9d0a5b85f6f2e06b4ebbb121c27d965cbdffa11
-  license: MIT
+  license:
+    - BSD-3-Clause
+    - MIT
 - dependency: k8s.io/api
   version: v0.32.3
   retrieved: "2026-08-27"
@@ -1162,6 +1168,12 @@
   retrieved: "2026-09-29"
   commit: 9792f1c079a7602347e0fd966542b6d6b35a6c64
   sha256: c3e253237109ab2e2a8d3cb075688b98a6e6fce43d849849648e8e3a84f20d6f
+  license: Apache-2.0
+- dependency: rules_img
+  version: https://github.com/bazel-contrib/rules_img/releases/download/v0.3.23/rules_img-v0.3.23.tar.gz
+  retrieved: "2026-10-21"
+  commit: 5a6bfd045c78fec2ad600e22ec697e65a7c49c27
+  sha256: 22092bd8f72d915995ab75c803a12f8506b8cf56bc59bc540f7df7812cc49a1d
   license: Apache-2.0
 - dependency: rules_license
   version: https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz
