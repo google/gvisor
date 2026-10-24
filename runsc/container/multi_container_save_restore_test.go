@@ -2161,6 +2161,62 @@ func TestCheckpointRestoreNoRootContainerFork(t *testing.T) {
 	}
 }
 
+// TestCheckpointRestoreNoRootContainerOrphans checks that restore finds a
+// container's init process when the container also has orphans. In a sandbox
+// with no root container, orphans have no parent, like the init process.
+func TestCheckpointRestoreNoRootContainerOrphans(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	setupTestRootDir(t, conf)
+	dir := checkpointDir(t)
+
+	// The init process is PID 2, because it starts first and TID 1 is
+	// reserved. It leaves orphans that look the same in a process list.
+	const orphans = 20
+	orphanerCmd := []string{"/bin/sh", "-c", fmt.Sprintf("for i in $(seq %d); do (/bin/sleep 1000 &); done; exec /bin/sleep 1000", orphans)}
+	const initPID = 2
+	sbID := testutil.RandomContainerID()
+	sb := startNoRootContainerSandbox(t, conf, sbID)
+	orphaner := startNoRootContainerSubWithArgs(t, conf, sbID, nil /* pidnsPath */, orphanerCmd...)
+	if err := testutil.Poll(func() error {
+		pl, err := orphaner.Processes()
+		if err != nil {
+			return err
+		}
+		if len(pl) != orphans+1 {
+			return fmt.Errorf("got %d processes, want %d: %s", len(pl), orphans+1, procListToString(pl))
+		}
+		return nil
+	}, 10*time.Second); err != nil {
+		t.Fatalf("orphans did not start: %v", err)
+	}
+	startNoRootContainerSub(t, conf, sbID, nil /* pidnsPath */)
+	checkpointNoRootContainer(t, conf, sb, dir, sandbox.CheckpointOpts{})
+
+	newSbID := testutil.RandomContainerID()
+	_, subs := restoreNoRootContainer(t, conf, dir, newSbID, []*specs.Spec{
+		noRootContainerSubSpec(newSbID, orphanerCmd...),
+		noRootContainerSubSpec(newSbID, sleepCmd...),
+	})
+	restored, bystander := subs[0], subs[1]
+
+	// A signal to the container must reach its init process, not an orphan.
+	if err := restored.SignalContainer(unix.SIGKILL, false /* all */); err != nil {
+		t.Fatalf("error signaling container: %v", err)
+	}
+	if _, err := restored.Wait(); err != nil {
+		t.Fatalf("error waiting for container: %v", err)
+	}
+	pl, err := execPS(conf, bystander)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pl {
+		if p.PID == initPID {
+			t.Errorf("init process PID %d still runs after SIGKILL to its container: %s", initPID, procListToString(pl))
+		}
+	}
+}
+
 // TestCheckpointRestoreNoRootContainerPIDNamespace checks that containers in a
 // sandbox with no root container keep their PID namespaces across restore.
 func TestCheckpointRestoreNoRootContainerPIDNamespace(t *testing.T) {
