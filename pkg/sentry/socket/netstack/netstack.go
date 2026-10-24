@@ -3494,6 +3494,7 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 
 	switch arg := int(args[1].Int()); arg {
 	case linux.SIOCGIFFLAGS,
+		linux.SIOCSIFFLAGS,
 		linux.SIOCGIFADDR,
 		linux.SIOCGIFBRDADDR,
 		linux.SIOCGIFDSTADDR,
@@ -3511,8 +3512,16 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr,
 		if _, err := ifr.CopyIn(t, args[2].Pointer()); err != nil {
 			return 0, err
 		}
+		if arg == linux.SIOCSIFFLAGS && !t.HasCapabilityIn(linux.CAP_NET_ADMIN, t.NetworkNamespace().UserNamespace()) {
+			// dev_ioctl checks the capability before looking up the device.
+			return 0, linuxerr.EPERM
+		}
 		if err := interfaceIoctl(ctx, io, arg, &ifr); err != nil {
 			return 0, err.ToError()
+		}
+		if arg == linux.SIOCSIFFLAGS {
+			// dev_ioctl does not copy the ifreq back for set requests.
+			return 0, nil
 		}
 		_, err := ifr.CopyOut(t, args[2].Pointer())
 		return 0, err
@@ -3636,6 +3645,14 @@ func interfaceIoctl(ctx context.Context, _ usermem.IO, arg int, ifr *linux.IFReq
 		// Drop the flags that don't fit in the size that we need to return. This
 		// matches Linux behavior.
 		hostarch.ByteOrder.PutUint16(ifr.Data[:2], uint16(f))
+
+	case linux.SIOCSIFFLAGS:
+		epstack, ok := stk.(*Stack)
+		if !ok {
+			return errStackType
+		}
+		flags := uint32(hostarch.ByteOrder.Uint16(ifr.Data[:2]))
+		return epstack.setLinkFlagsAndNotify(ctx, tcpip.NICID(index), flags)
 
 	case linux.SIOCGIFADDR:
 		// Copy the IPv4 address out.
@@ -3775,10 +3792,12 @@ func interfaceStatusFlags(stack inet.Stack, name string) (uint32, *syserr.Error)
 func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
 	var rv uint32
 	if f.Up {
-		rv |= linux.IFF_UP | linux.IFF_LOWER_UP
+		rv |= linux.IFF_UP
 	}
 	if f.Running {
-		rv |= linux.IFF_RUNNING
+		// Linux reports IFF_RUNNING and IFF_LOWER_UP only while the device is up
+		// (netif_get_flags).
+		rv |= linux.IFF_RUNNING | linux.IFF_LOWER_UP
 	}
 	if f.Promiscuous {
 		rv |= linux.IFF_PROMISC
