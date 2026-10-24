@@ -312,6 +312,26 @@ img_pull(
     tag = "1.4.3",
 )
 
+# Both platform manifests belong to the official postgres:18.4 index:
+# sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+img_pull(
+    name = "test_postgresql_amd64",
+    digest = "sha256:4cc13dede823cab4e05290c7fb3350fb4e599ecabd9b07e6706b5d5e8f5bc929",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/postgres",
+    tag = "18.4",
+)
+
+img_pull(
+    name = "test_postgresql_arm64",
+    digest = "sha256:0826e5f2996099babb925e09fb72bf2c6eb5d187cfcae20aa9291af1612307e4",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/postgres",
+    tag = "18.4",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
