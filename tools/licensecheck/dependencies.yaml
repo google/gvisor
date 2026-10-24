@@ -993,10 +993,10 @@
   sha256: 14983d36c56a814ed91b6d652f2b8f895baba1b84eb43b28a0b132c8637cd274
   license: BSD-3-Clause
 - dependency: google_benchmark
-  version: https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz
-  retrieved: "2026-09-10"
-  commit: 192ef10025eb2c4cdd392bc502f0c852196baa48
-  sha256: 9631341c82bac4a288bef951f8b26b41f69021794184ece969f8473977eaa340
+  version: https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
+  retrieved: "2026-10-17"
+  commit: a6b4a9f00b36c19af9997d68a1cf6e0b5b3d032c
+  sha256: acc5c7c0fbed855c4aaa2d7c3c36fb82b0c15c28f4e151e3f679c2fc0aa404af
   license: Apache-2.0
 - dependency: google_root_pem
   version: https://pki.goog/roots.pem
