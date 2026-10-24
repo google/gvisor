@@ -33,8 +33,10 @@ import (
 
 	"github.com/moby/sys/capability"
 	"golang.org/x/sync/errgroup"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -173,33 +175,18 @@ func getUnusedPort() (int, error) {
 }
 
 func waitUntilServerIsUp(ctx context.Context, server *dockerutil.Container, port int) error {
-	// This is a bit crude, but we need to make sure the server is up without exposing a port to the
-	// host. When the server container boots, the nginx process should run first. If we run nginx
-	// again, it will fail to bind to port 80. Run exec calls until we get that failure.
-	serverUpChan := make(chan struct{})
-	var upOut string
-	var upErr error
+	// Check the listening socket inside the container without exposing a host port.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	reg := regexp.MustCompile(fmt.Sprintf(`0\.0\.0\.0:%d[\s]*0\.0\.0\.0:\*[\s]*LISTEN`, port))
-	go func() {
-		for {
-			time.Sleep(time.Millisecond * 500)
-			upOut, upErr = server.Exec(ctx, dockerutil.ExecOpts{}, []string{"netstat", "-l"}...)
-			if reg.MatchString(upOut) {
-				close(serverUpChan)
-				return
-			}
+	return testutil.PollContext(ctx, func() error {
+		out, err := server.Exec(ctx, dockerutil.ExecOpts{}, "netstat", "-l")
+		if reg.MatchString(out) {
+			return nil
 		}
-	}()
-
-	// If the server isn't up after 30 seconds, there is probably something wrong.
-	select {
-	case <-serverUpChan:
-		break
-	case <-time.After(time.Second * 30):
-		return fmt.Errorf("could not verify server is up: err: %v out: %s", upErr, upOut)
-	}
-
-	return nil
+		return fmt.Errorf("could not verify server is up: netstat error: %v, output: %s", err, out)
+	})
 }
 
 type portForwardProcess struct {
