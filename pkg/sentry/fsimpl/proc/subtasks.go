@@ -61,7 +61,7 @@ func (fs *filesystem) newSubtasks(ctx context.Context, task *kernel.Task, pidns 
 		cgroupControllers: cgroupControllers,
 	}
 	// Note: credentials are overridden by taskOwnedInode.
-	subInode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	subInode.InodeAttrs.Init(ctx, taskOwnerCreds(task), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	subInode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	subInode.InitRefs()
 
