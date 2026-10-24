@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -198,5 +199,55 @@ func TestReplicaModeAndOwner(t *testing.T) {
 				t.Errorf("root mode: got %#o, want %#o", got, rootMode)
 			}
 		})
+	}
+}
+
+func TestNonCanonicalMinZeroTimeZeroReadReturnsImmediately(t *testing.T) {
+	ctx := contexttest.Context(t)
+	termios := linux.DefaultReplicaTermios
+	termios.LocalFlags &^= linux.ICANON
+	termios.ControlCharacters[linux.VMIN] = 0
+	termios.ControlCharacters[linux.VTIME] = 0
+	ld := newLineDiscipline(termios, nil)
+	ld.replicaOpen()
+
+	// With MIN=0 and TIME=0, a read with no input returns 0 bytes instead of
+	// blocking.
+	outBytes := make([]byte, 32)
+	nr, err := ld.inputQueueRead(ctx, usermem.BytesIOSequence(outBytes))
+	if err != nil {
+		t.Fatalf("error reading from an empty input queue: %v", err)
+	}
+	if nr != 0 {
+		t.Fatalf("read length should be zero: got %d", nr)
+	}
+
+	// Input that is available is still returned.
+	inBytes := []byte("x")
+	if _, err := ld.inputQueueWrite(ctx, usermem.BytesIOSequence(inBytes)); err != nil {
+		t.Fatalf("error writing to input queue: %v", err)
+	}
+	nr, err = ld.inputQueueRead(ctx, usermem.BytesIOSequence(outBytes))
+	if err != nil {
+		t.Fatalf("error reading from input queue: %v", err)
+	}
+	if nr != int64(len(inBytes)) || string(outBytes[:nr]) != string(inBytes) {
+		t.Fatalf("read %q (%d bytes), want %q", outBytes[:nr], nr, inBytes)
+	}
+}
+
+func TestNonCanonicalMinOneReadBlocks(t *testing.T) {
+	ctx := contexttest.Context(t)
+	termios := linux.DefaultReplicaTermios
+	termios.LocalFlags &^= linux.ICANON
+	termios.ControlCharacters[linux.VMIN] = 1
+	termios.ControlCharacters[linux.VTIME] = 0
+	ld := newLineDiscipline(termios, nil)
+	ld.replicaOpen()
+
+	// With MIN=1, a read with no input still has to wait.
+	outBytes := make([]byte, 32)
+	if _, err := ld.inputQueueRead(ctx, usermem.BytesIOSequence(outBytes)); !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+		t.Fatalf("read from an empty input queue: got error %v, want %v", err, linuxerr.ErrWouldBlock)
 	}
 }
