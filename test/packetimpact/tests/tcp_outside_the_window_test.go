@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
@@ -162,6 +163,10 @@ func TestAckOTWSeqInClosing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expected an ACK to our FIN, but got none: %s", err)
 			}
+
+			// Consume the queued FIN so the probe tests closing-state handling
+			// with an empty receive queue, rather than receive-queue validation.
+			dut.ExpectEOF(t, acceptFD, linux.TCP_CLOSING)
 
 			windowSize := seqnum.Size(*gotTCP.WindowSize) + tt.seqNumOffset
 			conn.SendFrameStateless(t, conn.CreateFrame(t, testbench.Layers{&testbench.TCP{
