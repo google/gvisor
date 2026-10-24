@@ -666,10 +666,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (ch
 		} else {
 			if op.SemOp < 0 {
 				// Handle 'wait' operation.
-				if -op.SemOp > valueMax {
-					return nil, 0, linuxerr.ERANGE
-				}
-				if -op.SemOp > tmpVals[op.SemNum] {
+				if int32(tmpVals[op.SemNum])+int32(op.SemOp) < 0 {
 					// Not enough resources, must wait.
 					if op.SemFlg&linux.IPC_NOWAIT != 0 {
 						return nil, 0, linuxerr.ErrWouldBlock
@@ -734,20 +731,13 @@ func (s *Set) Destroy() {
 	}
 }
 
-func abs(val int16) int16 {
-	if val < 0 {
-		return -val
-	}
-	return val
-}
-
 // wakeWaiters goes over all waiters and checks which of them can be notified.
 //
 // Preconditions: The owning Set.mu must be held.
 func (s *sem) wakeWaiters() {
 	// Note that this will release all waiters waiting for 0 too.
 	for w := s.waiters.Front(); w != nil; {
-		if s.value < abs(w.value) {
+		if int32(s.value)+int32(w.value) < 0 {
 			// Still blocked, skip it.
 			w = w.Next()
 			continue
