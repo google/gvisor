@@ -39,6 +39,64 @@ var (
 	udiffMIT string
 )
 
+// The public LLVM source extension imports libraries separately from compiler
+// toolchains. Their archive identity comes from the generated repository rule.
+func TestLLVMSourceDependency(t *testing.T) {
+	const sourceURL = "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst"
+	const sourceSHA = "271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56"
+	graph, err := parseModGraph(`{
+  "extensionUsages": [
+    {"key": "@@llvm+//extensions:llvm.bzl%llvm", "used_repos": ["llvm-project"]},
+    {"key": "@@llvm+//extensions:llvm_toolchain.bzl%llvm_toolchain", "used_repos": ["llvm_toolchain"]},
+    {"key": "@@another+//extensions:llvm.bzl%llvm", "used_repos": ["unrelated"]}
+  ]
+}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := graph.repoRefs()
+	if want := []repoRef{{"@llvm-project", "llvm-project"}}; !slices.Equal(refs, want) {
+		t.Fatalf("source repository selection = %v, want %v", refs, want)
+	}
+	for _, test := range []struct {
+		name, url, sha256, wantErr string
+	}{
+		{name: "pinned source", url: sourceURL, sha256: sourceSHA},
+		{name: "missing URL", sha256: sourceSHA, wantErr: "llvm_project_archive llvm-project has no URL"},
+		{name: "missing checksum", url: sourceURL, wantErr: "llvm_project_archive llvm-project has no SHA-256"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Missing attributes are omitted, as in show_repo output.
+			row := "## @llvm-project:\nllvm_project_archive(\n"
+			if test.url != "" {
+				row += "  url = \"" + test.url + "\",\n"
+			}
+			if test.sha256 != "" {
+				row += "  sha256 = \"" + test.sha256 + "\",\n"
+			}
+			repos, err := parseShowRepos(row + ")\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo, ok := repos[refs[0].ref]
+			if !ok {
+				t.Fatalf("show_repo did not report selected repository %s", refs[0].ref)
+			}
+			got, err := repo.archiveDependency(refs[0].name)
+			if test.wantErr != "" {
+				if err == nil || err.Error() != test.wantErr {
+					t.Fatalf("archiveDependency = %+v, %v, want error %q", got, err, test.wantErr)
+				}
+				return
+			}
+			want := dep{name: "llvm-project", kind: kindArchive, url: sourceURL, sha256: sourceSHA}
+			if err != nil || got != want {
+				t.Fatalf("archiveDependency = %+v, %v, want %+v", got, err, want)
+			}
+		})
+	}
+}
+
 func TestModuleLicenses(t *testing.T) {
 	const prefix = "example.com/module@v1.0.0/"
 	for _, test := range []struct {
