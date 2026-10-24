@@ -143,7 +143,7 @@ func newUnlinkedRegularFileDescription(ctx context.Context, creds *auth.Credenti
 		panic("tmpfs.newUnlinkedRegularFileDescription() called with non-tmpfs mount")
 	}
 
-	inode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, 0777, nil /* parentDir */)
+	inode, err := fs.newRegularFile(creds.FilesystemKUID, creds.FilesystemKGID, 0777, nil /* parentDir */)
 	if err != nil {
 		return nil, err
 	}

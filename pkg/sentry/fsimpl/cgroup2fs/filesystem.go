@@ -349,7 +349,7 @@ func (fs *filesystem) newRootInode(ctx context.Context, mode linux.FileMode) ker
 	c.InodeAttrs.Init(ctx, fs.rootCreds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), mode)
 	c.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 
-	c.IncLinks(c.OrderedChildren.Populate(fs.rootInodes(ctx, fs.rootCreds.EffectiveKUID, fs.rootCreds.EffectiveKGID, c)))
+	c.IncLinks(c.OrderedChildren.Populate(fs.rootInodes(ctx, fs.rootCreds.FilesystemKUID, fs.rootCreds.FilesystemKGID, c)))
 
 	c.fs.treeMu.Lock()
 	defer c.fs.treeMu.Unlock()
@@ -373,7 +373,7 @@ func (fs *filesystem) newCgroupLocked(ctx context.Context, creds *auth.Credentia
 	c.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), mode)
 	c.OrderedChildren.Init(kernfs.OrderedChildrenOptions{Writable: true})
 
-	c.IncLinks(c.OrderedChildren.Populate(fs.cgroupInodes(ctx, creds.EffectiveKUID, creds.EffectiveKGID, c)))
+	c.IncLinks(c.OrderedChildren.Populate(fs.cgroupInodes(ctx, creds.FilesystemKUID, creds.FilesystemKGID, c)))
 
 	c.init(ctx) // +checklocksforce: c.fs.treeMu is locked
 	c.maxDescendants.Store(limitMax)

@@ -232,6 +232,74 @@ TEST(FuseTest, CloneDevice) {
   fuse_server.Join();
 }
 
+// Requests carry the caller's filesystem IDs, while access to a mount without
+// allow_other still requires the real, effective and saved IDs to match the
+// mount owner.
+TEST(FuseTest, RequestUsesFilesystemIDs) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETGID)));
+  SKIP_IF(getuid() != 0 || getgid() != 0);
+  DisableSave ds;
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/fuse", O_RDWR));
+  auto mount_point = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount_opts =
+      absl::StrFormat("fd=%d,user_id=0,group_id=0,rootmode=40000", fd.get());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("fuse", mount_point.path(), "fuse", MS_NODEV | MS_NOSUID,
+            mount_opts, 0 /* umountflags */));
+  FuseInit(fd.get());
+  const FileDescriptor root =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(mount_point.path(), O_PATH));
+
+  constexpr uid_t kFSUID = 65534;
+  constexpr gid_t kFSGID = 65533;
+  ScopedThread fuse_server = ScopedThread([&] {
+    alignas(fuse_in_header) char req_buf[4096 * 4];
+    ASSERT_THAT(read(fd.get(), req_buf, sizeof(req_buf)),
+                SyscallSucceedsWithValue(Ge(sizeof(fuse_in_header))));
+    fuse_in_header* in_hdr = reinterpret_cast<fuse_in_header*>(req_buf);
+    ASSERT_EQ(in_hdr->opcode, FUSE_GETATTR);
+    EXPECT_EQ(in_hdr->uid, kFSUID);
+    EXPECT_EQ(in_hdr->gid, kFSGID);
+
+    fuse_out_header out_hdr = {};
+    out_hdr.unique = in_hdr->unique;
+    fuse_attr_out out_payload = {};
+    out_payload.attr.mode = S_IFDIR | 0755;
+    out_payload.attr.nlink = 1;
+    struct iovec iov[] = {
+        {.iov_base = &out_hdr, .iov_len = sizeof(out_hdr)},
+        {.iov_base = &out_payload, .iov_len = sizeof(out_payload)},
+    };
+    out_hdr.len = sizeof(out_hdr) + sizeof(out_payload);
+    ASSERT_THAT(writev(fd.get(), iov, 2),
+                SyscallSucceedsWithValue(out_hdr.len));
+  });
+
+  ScopedThread([&] {
+    syscall(SYS_setfsgid, kFSGID);
+    syscall(SYS_setfsuid, kFSUID);
+    // setfs[ug]id return the previous ID even on failure, so query instead.
+    ASSERT_EQ(syscall(SYS_setfsgid, -1), kFSGID);
+    ASSERT_EQ(syscall(SYS_setfsuid, -1), kFSUID);
+    struct stat st;
+    EXPECT_THAT(fstatat(root.get(), "", &st, AT_EMPTY_PATH), SyscallSucceeds());
+  });
+  fuse_server.Join();
+
+  // A set-user-ID process (real UID differs from the mount owner) is refused
+  // before any request is sent.
+  ScopedThread([&] {
+    ASSERT_THAT(syscall(SYS_setresuid, kFSUID, -1, -1), SyscallSucceeds());
+    struct stat st;
+    EXPECT_THAT(fstatat(root.get(), "", &st, AT_EMPTY_PATH),
+                SyscallFailsWithErrno(EACCES));
+  });
+}
+
 TEST(FuseTest, CloneToConnectedDeviceFails) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   const FileDescriptor fd1 =
