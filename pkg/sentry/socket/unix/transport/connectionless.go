@@ -51,12 +51,16 @@ func NewConnectionless(ctx context.Context) Endpoint {
 }
 
 // isBound returns true iff the endpoint is bound.
+//
+// +checklocks:e.endpointMutex
 func (e *connectionlessEndpoint) isBound() bool {
 	return e.path != ""
 }
 
 // Close puts the endpoint in a closed state and frees all resources associated
-// with it.
+// with it. The caller must exclude operations using the Receiver being
+// released, including RecvMsg calls that retained it before Close took the
+// lock.
 func (e *connectionlessEndpoint) Close(ctx context.Context) {
 	e.Lock()
 	peer := e.peer
@@ -75,6 +79,8 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 		peer.Release(ctx)
 	}
 	r.NotifyStateChange()
+	// Close's caller excludes other uses of r; detaching it above alone does
+	// not wait for an in-flight RecvMsg to finish.
 	r.Release(ctx)
 }
 
