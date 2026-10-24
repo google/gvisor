@@ -18,6 +18,11 @@ runtime spec in the following way:
 1.  If `Linux.CgroupsPath` is set, it is expected to be in the form
     `[slice]:[prefix]:[name]`.
 
+    `--systemd-cgroup` does not accept cgroupfs paths such as
+    `/kubepods/burstable/pod<uid>/<container-id>`. If a container manager
+    provides cgroupfs paths, leave `--systemd-cgroup` disabled so runsc joins
+    the same cgroupfs tree where the manager applies pod limits.
+
     Here `slice` is a systemd slice under which the container is placed. If
     empty, it defaults to `system.slice`, except when cgroup v2 is used and
     rootless container is created, in which case it defaults to `user.slice`.
@@ -40,6 +45,20 @@ runtime spec in the following way:
 As described above, a unit will be created as a systemd scope. For a scope,
 runsc specifies its parent slice via a *Slice=* systemd property, and also sets
 *Delegate=true*.
+
+For Kubernetes through containerd, verify that kubelet and containerd pass
+systemd-style cgroup paths before enabling `--systemd-cgroup`. After creating a
+gVisor pod, inspect the sandbox process cgroup:
+
+```shell
+PID=$(sudo crictl inspectp <sandbox-id> | jq -r .info.pid)
+sudo cat /proc/$PID/cgroup
+```
+
+The cgroup path should be in the same subtree where kubelet writes resource
+limits. On cgroup v2 systems, compare that path with the host `cpu.max` file;
+it should contain the expected quota and period, not `max 100000`, when a CPU
+limit is configured.
 
 ### Resource limits
 
