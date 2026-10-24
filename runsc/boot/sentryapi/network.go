@@ -71,6 +71,7 @@ type FDBasedLink struct {
 	Name              string
 	InterfaceIndex    int
 	MTU               int
+	Multicast         bool
 	Addresses         []IPWithPrefix
 	Routes            []Route
 	GSOMaxSize        uint32
@@ -123,6 +124,7 @@ type XDPLink struct {
 	Name              string
 	InterfaceIndex    int
 	MTU               int
+	Multicast         bool
 	Addresses         []IPWithPrefix
 	Routes            []Route
 	TXChecksumOffload bool
@@ -143,6 +145,7 @@ type XDPLink struct {
 // LoopbackLink configures a loopback link.
 type LoopbackLink struct {
 	Name      string
+	Multicast bool
 	Addresses []IPWithPrefix
 	Routes    []Route
 	GVisorGRO bool
