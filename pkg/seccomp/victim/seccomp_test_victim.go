@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -116,6 +117,13 @@ func main() {
 			},
 		},
 	}
+
+	// The Go runtime periodically recomputes GOMAXPROCS using
+	// sched_getaffinity, which the filter does not allow. Setting GOMAXPROCS
+	// explicitly disables automatic updates and waits for any in-progress
+	// one.
+	runtime.GOMAXPROCS(runtime.GOMAXPROCS(0))
+
 	if err := program.Install(nil /* timer */); err != nil {
 		fmt.Printf("Failed to install seccomp: %v\n", err)
 		os.Exit(1)
