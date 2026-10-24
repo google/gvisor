@@ -1128,10 +1128,10 @@
   sha256: dbad4a23abcca6171e47b79edc53bd6a41067a3b75f9e8b104656b459ff25046
   license: Apache-2.0
 - dependency: protobuf
-  version: https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.bazel.tar.gz
-  retrieved: "2026-10-06"
-  commit: 35cd01f9fe9afbeea38cc7b979a3b6bfcde82c03
-  sha256: 75b7b0b36b630c7b6e3aeb07b2e58993fb9494fbb2b08bba0891aaa231d4e4d1
+  version: https://github.com/protocolbuffers/protobuf/releases/download/v37.0-rc1/protobuf-37.0-rc1.bazel.tar.gz
+  retrieved: "2026-10-23"
+  commit: 51a9b17260f86e7bbb30107d6241ddcec5fc4089
+  sha256: 21089c701f5932b74a0580a1fe3e9811df5bfca1133f80bcc3fe2b4db50d45af
   license: BSD-3-Clause
 - dependency: protoc-gen-validate
   version: https://github.com/bufbuild/protoc-gen-validate/archive/refs/tags/v1.3.0.tar.gz
@@ -1176,10 +1176,10 @@
   sha256: d20c951960ed77cb7b341c2a59488534e494d5ad1d30c4818c736d57772a9fef
   license: Apache-2.0
 - dependency: rules_python
-  version: https://github.com/bazel-contrib/rules_python/releases/download/2.0.2/rules_python-2.0.2.tar.gz
-  retrieved: "2026-10-06"
-  commit: 6aad8828e82667cda09ff449862a5a8559bee27b
-  sha256: 2119ca04726066c53b8f1ff42dffa090ea7f3e42a75679f1cfda937406cf7753
+  version: https://github.com/bazel-contrib/rules_python/releases/download/2.3.0/rules_python-2.3.0.tar.gz
+  retrieved: "2026-10-23"
+  commit: 54df9b704afe70de2b40f4fc14c2faf8a836c97e
+  sha256: 70c519e8f0a5d9244c0d3496a6993bd42edf111c4499b68ce2f155c26fc8d4ee
   license: Apache-2.0
 - dependency: rules_shell
   version: https://github.com/bazel-contrib/rules_shell/releases/download/v0.8.0/rules_shell-v0.8.0.tar.gz
