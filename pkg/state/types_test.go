@@ -16,7 +16,9 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +52,59 @@ func TestBinaryErrors(t *testing.T) {
 	}
 	if _, err := Load(t.Context(), &buf, &binaryFailure{}); !errors.Is(err, errBinary) {
 		t.Fatalf("Load = %v, want %v", err, errBinary)
+	}
+}
+
+// lazyType counts StateFields calls.
+type lazyType struct{}
+
+var lazyTypeFieldsCalls int
+
+func (*lazyType) StateTypeName() string { return "state.lazyType" }
+
+func (*lazyType) StateFields() []string {
+	lazyTypeFieldsCalls++
+	return nil
+}
+
+func (*lazyType) StateSave(Sink) {}
+
+func (*lazyType) StateLoad(context.Context, Source) {}
+
+// duplicateFieldType is never registered: race builds would reject it at init.
+type duplicateFieldType struct {
+	v int64
+}
+
+func (*duplicateFieldType) StateTypeName() string { return "state.duplicateFieldType" }
+
+func (*duplicateFieldType) StateFields() []string { return []string{"v", "v"} }
+
+func (d *duplicateFieldType) StateSave(s Sink) { s.Save(0, &d.v) }
+
+func (d *duplicateFieldType) StateLoad(_ context.Context, s Source) { s.Load(0, &d.v) }
+
+// TestRegisterIsLazy checks that Register does not collect type metadata when
+// it is deferred.
+func TestRegisterIsLazy(t *testing.T) {
+	if eagerTypeInfo {
+		t.Skip("type metadata is collected eagerly")
+	}
+	before := lazyTypeFieldsCalls
+	Register((*lazyType)(nil))
+	if calls := lazyTypeFieldsCalls - before; calls != 0 {
+		t.Errorf("Register called StateFields %d times, want 0", calls)
+	}
+}
+
+// TestLazyValidation checks that types skipped by Register are validated on use.
+func TestLazyValidation(t *testing.T) {
+	if eagerTypeInfo {
+		t.Skip("type metadata is validated eagerly")
+	}
+	var buf bytes.Buffer
+	_, err := Save(t.Context(), &buf, &duplicateFieldType{})
+	if err == nil || !strings.Contains(err.Error(), "duplicate field") {
+		t.Fatalf("Save = %v, want duplicate field error", err)
 	}
 }
