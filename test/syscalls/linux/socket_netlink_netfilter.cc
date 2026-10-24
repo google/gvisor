@@ -20,13 +20,16 @@
 #include <linux/netfilter.h>
 #include <linux/netlink.h>
 #include <linux/netfilter/nf_tables_compat.h>
+#include <linux/netfilter/x_tables.h>
 #include <linux/netfilter/xt_addrtype.h>
+#include <linux/netfilter/xt_comment.h>
 #include <linux/netfilter/xt_conntrack.h>
 #include <linux/netfilter/nf_nat.h>
 #include <linux/netfilter/xt_tcpudp.h>
 #include <endian.h>
 #include <sched.h>
 #include <linux/capability.h>
+#include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_compat.h>
 // clang-format on
 
@@ -5779,6 +5782,51 @@ TEST(NetlinkNetfilterTest, ErrUpdateBindingChain) {
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
 }
 
+TEST(NetlinkNetfilterTest, CommentMatchRevision) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCaps()));
+  for (uint8_t family : {NFPROTO_IPV4, NFPROTO_IPV6}) {
+    for (uint32_t revision : {0, 1}) {
+      SCOPED_TRACE(absl::StrCat("family=", family, " revision=", revision));
+      FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
+      std::vector<char> attrs = NlNestedAttr()
+                                    .StrAttr(NFTA_COMPAT_NAME, "comment")
+                                    .U32Attr(NFTA_COMPAT_REV, revision)
+                                    .U32Attr(NFTA_COMPAT_TYPE, 0)
+                                    .Build();
+      std::vector<char> request(NLMSG_LENGTH(sizeof(nfgenmsg)) + attrs.size());
+      auto* hdr = reinterpret_cast<nlmsghdr*>(request.data());
+      InitNetlinkHdr(
+          hdr, request.size(),
+          MakeNetlinkMsgType(NFNL_SUBSYS_NFT_COMPAT, NFNL_MSG_COMPAT_GET), kSeq,
+          NLM_F_REQUEST | (revision == 0 ? 0 : NLM_F_ACK));
+      InitNetfilterGenmsg(reinterpret_cast<nfgenmsg*>(NLMSG_DATA(hdr)), family,
+                          NFNETLINK_V0, 0);
+      memcpy(request.data() + NLMSG_LENGTH(sizeof(nfgenmsg)), attrs.data(),
+             attrs.size());
+      if (revision != 0) {
+        ASSERT_THAT(
+            NetlinkRequestAckOrError(fd, kSeq, request.data(), request.size()),
+            PosixErrorIs(EPROTONOSUPPORT, _));
+        continue;
+      }
+      bool received = false;
+      ASSERT_NO_ERRNO(NetlinkRequestResponseSingle(
+          fd, request.data(), request.size(), [&](const nlmsghdr* response) {
+            received = true;
+            EXPECT_EQ(response->nlmsg_type, hdr->nlmsg_type);
+            const nfattr* name =
+                FindNfAttr(response, nullptr, NFTA_COMPAT_NAME);
+            const nfattr* rev = FindNfAttr(response, nullptr, NFTA_COMPAT_REV);
+            ASSERT_NE(name, nullptr);
+            ASSERT_NE(rev, nullptr);
+            EXPECT_EQ(GetNfAttrString(name), "comment");
+            EXPECT_EQ(GetNfAttrU32(rev), 0);
+          }));
+      EXPECT_TRUE(received);
+    }
+  }
+}
+
 struct CompatMatchOptions {
   std::optional<std::string> name;
   std::optional<uint32_t> rev;
@@ -6851,6 +6899,84 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+// The kernel treats the entire comment as opaque data; it need not contain a
+// terminating NUL.
+INSTANTIATE_TEST_SUITE_P(
+    CompatCommentTests, NetlinkNetfilterCompatTest,
+    ::testing::Values(
+        CompatTestParam{
+            .test_name = "IPv4",
+            .family = NFPROTO_IPV4,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "comment",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_comment_info),
+                                                   'x'),
+                },
+        },
+        CompatTestParam{
+            .test_name = "IPv6",
+            .family = NFPROTO_IPV6,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "comment",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_comment_info),
+                                                   'x'),
+                },
+        },
+        CompatTestParam{
+            .test_name = "Inet",
+            .family = NFPROTO_INET,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "comment",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_comment_info),
+                                                   'x'),
+                },
+        },
+        CompatTestParam{
+            .test_name = "UnsupportedRevision",
+            .family = NFPROTO_IPV4,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "comment",
+                    .rev = 1,
+                    .info_data = std::vector<char>(sizeof(xt_comment_info),
+                                                   'x'),
+                },
+            .expected_error = ENOENT,
+        },
+        CompatTestParam{
+            .test_name = "InfoTooShort",
+            .family = NFPROTO_IPV4,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "comment",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_comment_info) - 1,
+                                                   'x'),
+                },
+            .expected_error = EINVAL,
+        },
+        CompatTestParam{
+            .test_name = "InfoTooLong",
+            .family = NFPROTO_IPV4,
+            .match_opts =
+                CompatMatchOptions{
+                    .name = "comment",
+                    .rev = 0,
+                    .info_data = std::vector<char>(sizeof(xt_comment_info) + 1,
+                                                   'x'),
+                },
+            .expected_error = EINVAL,
+        }),
+    [](const ::testing::TestParamInfo<CompatTestParam>& info) {
+      return info.param.test_name;
+    });
+
 INSTANTIATE_TEST_SUITE_P(
     CompatNoopMatchTests, NetlinkNetfilterCompatTest,
     ::testing::Values(
@@ -6901,7 +7027,13 @@ TEST_P(NetlinkNetfilterCompatDumpTest, RuleDump) {
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetfilterBoundSocket());
 
   NlListAttr expr_list;
-  for (const auto& match_opt : param.matches) {
+  // iptables sends XT_ALIGN-padded match data, and Linux includes zeroed
+  // alignment bytes in dumps. Use that layout for these round trips.
+  auto matches = param.matches;
+  for (auto& match_opt : matches) {
+    ASSERT_TRUE(match_opt.info_data.has_value());
+    auto& info = *match_opt.info_data;
+    info.resize(XT_ALIGN(info.size()), 0);
     expr_list.Add(BuildRawCompatMatchExpr(match_opt));
   }
   for (const auto& target_opt : param.targets) {
@@ -6965,6 +7097,31 @@ TEST_P(NetlinkNetfilterCompatDumpTest, RuleDump) {
   ASSERT_EQ(rules.size(), 1);
   EXPECT_THAT(rules[0].ExpressionNames(),
               ::testing::ElementsAreArray(param.expected_expr_names));
+  ASSERT_GE(rules[0].expressions.size(), matches.size());
+  for (size_t i = 0; i < matches.size(); ++i) {
+    const auto& expected = matches[i];
+    const auto attrs = ParseNfAttrs(rules[0].expressions[i].data);
+    ASSERT_EQ(attrs.size(), 3);
+    CompatMatchOptions actual;
+    for (const nfattr* attr : attrs) {
+      switch (attr->nfa_type & NLA_TYPE_MASK) {
+        case NFTA_MATCH_NAME:
+          actual.name = GetNfAttrString(attr);
+          break;
+        case NFTA_MATCH_REV:
+          actual.rev = GetNfAttrU32(attr);
+          break;
+        case NFTA_MATCH_INFO:
+          actual.info_data = GetNfAttrBytes(attr);
+          break;
+        default:
+          FAIL() << "Unexpected match attribute " << attr->nfa_type;
+      }
+    }
+    EXPECT_EQ(actual.name, expected.name);
+    EXPECT_EQ(actual.rev, expected.rev);
+    EXPECT_EQ(actual.info_data, expected.info_data);
+  }
 
   ASSERT_NO_ERRNO(DestroyNetfilterTable(fd, param.table_name, kSeq + 6));
   ASSERT_NO_ERRNO(NetfilterFlushRuleset(fd));
@@ -6973,6 +7130,18 @@ TEST_P(NetlinkNetfilterCompatDumpTest, RuleDump) {
 INSTANTIATE_TEST_SUITE_P(
     CompatRuleDumpTests, NetlinkNetfilterCompatDumpTest,
     ::testing::Values(
+        CompatRuleDumpTestParam{
+            .test_name = "CommentMatch",
+            .table_name = "filter",
+            .hook = NF_INET_PRE_ROUTING,
+            .chain_type = "filter",
+            .matches = {CompatMatchOptions{
+                .name = "comment",
+                .rev = 0,
+                .info_data = std::vector<char>(sizeof(xt_comment_info), 'x'),
+            }},
+            .expected_expr_names = {"match"},
+        },
         CompatRuleDumpTestParam{
             .test_name = "NoopTCPMatch",
             .table_name = "filter",
