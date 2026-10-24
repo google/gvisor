@@ -516,10 +516,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				// Remove the args that have already been done before calling self.
 				args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
-				// Note that we've already read the spec from the spec FD, and
-				// we will read it again after the exec call. This works
-				// because the ReadSpecFromFile function seeks to the beginning
-				// of the file before reading.
 				util.Fatalf("callSelfAsNobody(%v): %v", args, sandboxsetup.CallSelfAsNobody(args))
 
 				// This prevents the specFile finalizer from running and closed
@@ -587,10 +583,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// Remove the args that have already been done before calling self.
 			args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
-			// Note that we've already read the spec from the spec FD, and
-			// we will read it again after the exec call. This works
-			// because the ReadSpecFromFile function seeks to the beginning
-			// of the file before reading.
 			util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, sandboxsetup.SetCapsAndCallSelf(args, caps))
 
 			// This prevents the specFile finalizer from running and closed

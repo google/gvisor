@@ -15,9 +15,13 @@
 package specutils
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1028,5 +1032,34 @@ func TestTPUProxyEnabled(t *testing.T) {
 				t.Errorf("TPUProxyEnabled() got: %v, want: %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCopySpec checks that spec copies hold the given spec, and that the copy
+// is actually sealed (i.e. read-only).
+func TestCopySpec(t *testing.T) {
+	want := &specs.Spec{
+		Version:  "1.0.0",
+		Hostname: "test",
+		Process:  &specs.Process{Args: []string{"/bin/true"}},
+	}
+	f, err := CopySpec(want)
+	if err != nil {
+		t.Fatalf("CopySpec failed: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteAt([]byte("{}"), 0); err == nil {
+		t.Errorf("writing the spec copy succeeded")
+	}
+	data, err := io.ReadAll(io.NewSectionReader(f, 0, math.MaxInt64))
+	if err != nil {
+		t.Fatalf("error reading spec copy: %v", err)
+	}
+	var got specs.Spec
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("error decoding spec copy: %v", err)
+	}
+	if !reflect.DeepEqual(&got, want) {
+		t.Errorf("spec copy got %+v, want %+v", got, want)
 	}
 }
