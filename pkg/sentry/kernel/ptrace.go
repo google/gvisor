@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -628,27 +629,43 @@ func (t *Task) ptraceTraceme() error {
 	return nil
 }
 
+// prepareForPtrace prepares t's current address space for tracing. It is safe
+// to call after t has released its MemoryManager or after the address space has
+// already been prepared.
+func (t *Task) prepareForPtrace(ctx context.Context) error {
+	targetMM, _ := t.memoryManagerAndUserDumpable()
+	if targetMM == nil || !targetMM.IncUsers() {
+		return nil
+	}
+	defer targetMM.DecUsers(ctx)
+	return targetMM.PrepareForPtrace(ctx)
+}
+
 // ptraceAttach implements ptrace(PTRACE_ATTACH, target) if seize is false, and
 // ptrace(PTRACE_SEIZE, target, 0, opts) if seize is true. t is the caller.
 //
 // +checklocksexclude:target.mu
 func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
-	t.tg.pidns.owner.mu.Lock()
-	defer t.tg.pidns.owner.mu.Unlock()
+	ts := t.tg.pidns.owner
+	ts.mu.Lock()
 	if !t.canTraceLocked(target, true) {
+		ts.mu.Unlock()
 		return linuxerr.EPERM
 	}
 	if target.hasTracer() {
+		ts.mu.Unlock()
 		return linuxerr.EPERM
 	}
 	// Attaching to zombies and dead tasks is not permitted; the exit
 	// notification logic relies on this. Linux allows attaching to PF_EXITING
 	// tasks, though.
 	if target.exitStateLocked() >= TaskExitZombie {
+		ts.mu.Unlock()
 		return linuxerr.EPERM
 	}
 	if seize {
 		if err := target.ptraceSetOptionsLocked(opts); err != nil {
+			ts.mu.Unlock()
 			return linuxerr.EIO
 		}
 	}
@@ -657,14 +674,32 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	t.ptraceTracees[target] = struct{}{}
 	target.tg.signalHandlers.mu.Lock()
 	target.ptraceSeized = seize
+	target.tg.signalHandlers.mu.Unlock()
+	ts.mu.Unlock()
+
+	if err := target.prepareForPtrace(t); err != nil {
+		t.Warningf("Unable to prepare address space for ptrace: %v", err)
+		target.detachPtraceRelationship(t)
+		return linuxerr.EIO
+	}
+
 	// "Unlike PTRACE_ATTACH, PTRACE_SEIZE does not stop the process." -
 	// ptrace(2)
-	if !seize {
-		target.sendForcedSignalLocked(&linux.SignalInfo{
-			Signo: int32(linux.SIGSTOP),
-			Code:  linux.SI_USER,
-		}, false /* group */)
+	if seize {
+		return nil
 	}
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if target.Tracer() != t || target.exitStateLocked() >= TaskExitZombie {
+		return nil
+	}
+	target.tg.signalHandlers.mu.Lock()
+	defer target.tg.signalHandlers.mu.Unlock()
+	target.sendForcedSignalLocked(&linux.SignalInfo{
+		Signo: int32(linux.SIGSTOP),
+		Code:  linux.SI_USER,
+	}, false /* group */)
 	// Undocumented Linux feature: If the tracee is already group-stopped (and
 	// consequently will not report the SIGSTOP just sent), force it to leave
 	// and re-enter the stop so that it will switch to a ptrace-stop.
@@ -674,8 +709,19 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 		// TODO(jamieliu): Linux blocks ptrace_attach() until the task has
 		// entered the ptrace-stop (or exited) via JOBCTL_TRAPPING.
 	}
-	target.tg.signalHandlers.mu.Unlock()
 	return nil
+}
+
+// detachPtraceRelationship detaches t if tracer still owns its ptrace
+// relationship.
+func (t *Task) detachPtraceRelationship(tracer *Task) {
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
+	if t.Tracer() != tracer {
+		return
+	}
+	t.forgetTracerLocked()
+	delete(tracer.ptraceTracees, t)
 }
 
 // ptraceDetach implements ptrace(PTRACE_DETACH, target, 0, sig). t is the
@@ -893,9 +939,10 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 	if !t.hasTracer() {
 		return false
 	}
-	t.tg.pidns.owner.mu.Lock()
-	defer t.tg.pidns.owner.mu.Unlock()
+	ts := t.tg.pidns.owner
+	ts.mu.Lock()
 	event := false
+	autoAttached := false
 	if args.Flags&linux.CLONE_UNTRACED == 0 {
 		switch kind {
 		case ptraceCloneKindClone:
@@ -934,6 +981,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 	if event || args.Flags&linux.CLONE_PTRACE != 0 {
 		tracer := t.Tracer()
 		if tracer != nil {
+			autoAttached = true
 			child.ptraceTracer.Store(tracer)
 			// Automatically attached children inherit the forking tracee's
 			// tracer credential snapshot, as in Linux's
@@ -964,6 +1012,12 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneA
 			child.tg.signalHandlers.mu.Unlock()
 		}
 	}
+	ts.mu.Unlock()
+	if autoAttached {
+		if err := child.prepareForPtrace(t); err != nil {
+			t.Warningf("Unable to prepare auto-attached child for ptrace: %v", err)
+		}
+	}
 	return event
 }
 
@@ -990,6 +1044,10 @@ func (t *Task) ptraceVforkDone(child ThreadID) bool {
 // oldTID was read, oldTID may be 0. This is consistent with Linux.)
 func (t *Task) ptraceExec(oldTID ThreadID) {
 	if !t.hasTracer() {
+		return
+	}
+	if err := t.prepareForPtrace(t); err != nil {
+		t.Warningf("Unable to prepare exec address space for ptrace: %v", err)
 		return
 	}
 	t.tg.pidns.owner.mu.RLock()
@@ -1200,7 +1258,19 @@ func (r *runPtraceAfterExecveCredsLock) execute(t *Task) taskRunState {
 func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// PTRACE_TRACEME ignores all other arguments.
 	if req == linux.PTRACE_TRACEME {
-		return t.ptraceTraceme()
+		if err := t.ptraceTraceme(); err != nil {
+			return err
+		}
+		tracer := t.Tracer()
+		if tracer == nil {
+			return nil
+		}
+		if err := t.prepareForPtrace(t); err != nil {
+			t.Warningf("Unable to prepare address space for ptrace: %v", err)
+			t.detachPtraceRelationship(tracer)
+			return linuxerr.EIO
+		}
+		return nil
 	}
 	// All other ptrace requests operate on a current or future tracee
 	// specified by pid.
