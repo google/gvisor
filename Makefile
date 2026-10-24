@@ -147,6 +147,7 @@ else
 	  tar -C "$(RUNTIME_DIR)" -zxvf - && \
 	  chmod -R a+rx "$(RUNTIME_DIR)"
 endif
+	@chcon system_u:object_r:container_runtime_exec_t:s0 $(RUNTIME_BIN) $(RUNTIME_DIR)/gvisor-bin/*
 .PHONY: $(RUNTIME_BIN) # Real file, but force rebuild.
 
 # Configure helpers for below.

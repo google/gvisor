@@ -31,6 +31,15 @@ import (
 	"gvisor.dev/gvisor/runsc/starttime"
 )
 
+// TODO: comment
+func CallSelf(args []string) error {
+	binPath := specutils.ExePath
+
+	log.Infof("Execve %q again, bye!", binPath)
+	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
+	return fmt.Errorf("error executing %s: %v", binPath, err)
+}
+
 // SetCapsAndCallSelf sets capabilities to the current thread and then
 // execve's itself again with the arguments specified in 'args' to restart
 // the process with the desired capabilities.
@@ -42,11 +51,8 @@ func SetCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	if err := ApplyCaps(caps); err != nil {
 		return fmt.Errorf("ApplyCaps() failed: %v", err)
 	}
-	binPath := specutils.ExePath
 
-	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
-	return fmt.Errorf("error executing %s: %v", binPath, err)
+	return CallSelf(args)
 }
 
 // CallSelfAsNobody sets UID and GID to nobody and then execve's itself
@@ -69,11 +75,7 @@ func CallSelfAsNobody(args []string) error {
 		return fmt.Errorf("error dropping capabilities: %w", err)
 	}
 
-	binPath := specutils.ExePath
-
-	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, starttime.AppendEnviron(os.Environ()))
-	return fmt.Errorf("error executing %s: %v", binPath, err)
+	return CallSelf(args)
 }
 
 // PrepareArgs returns the args that can be used to re-execute the current

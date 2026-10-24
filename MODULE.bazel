@@ -326,6 +326,7 @@ use_repo(
     "com_github_munnerz_goautoneg",
     "com_github_opencontainers_image_spec",
     "com_github_opencontainers_runtime_spec",
+    "com_github_opencontainers_selinux",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
     "com_github_sirupsen_logrus",

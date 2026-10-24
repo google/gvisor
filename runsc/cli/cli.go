@@ -228,7 +228,7 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 		emitters = append(emitters, newEmitter(conf.DebugLogFormat, f))
 	} else if len(conf.DebugLog) > 0 && specutils.IsDebugCommand(conf, subCmdName) {
-		f, err := specutils.OpenDebugLogFile(conf.DebugLog, lfOpts)
+		f, err := specutils.OpenDebugLogFile(conf.DebugLog, lfOpts, spec)
 		if err != nil {
 			util.Fatalf("error opening debug log file in %q: %v", conf.DebugLog, err)
 		}

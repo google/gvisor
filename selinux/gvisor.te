@@ -1,0 +1,8 @@
+policy_module(gvisor, 1.0.0)
+
+gen_require(`
+  type container_runtime_t;
+  type container_t;
+')
+
+allow container_runtime_t container_t:unix_stream_socket create_socket_perms;

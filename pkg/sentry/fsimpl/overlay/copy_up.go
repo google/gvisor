@@ -486,8 +486,8 @@ func (d *dentry) copyXattrsLocked(ctx context.Context) error {
 	}
 
 	for _, name := range lowerXattrs {
-		// Do not copy up overlay attributes.
-		if d.fs.isOverlayXattr(name) {
+		// Do not copy up overlay or SELinux attributes.
+		if d.fs.isOverlayXattr(name) || name == "security.selinux" {
 			continue
 		}
 

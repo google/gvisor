@@ -19,11 +19,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"syscall"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
@@ -101,12 +103,13 @@ type goferSyncFDs struct {
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
 	util.InternalSubCommand
-	bundleDir  string
-	ioFDs      sandboxsetup.IntFlags
-	devIoFD    int
-	applyCaps  bool
-	setUpRoot  bool
-	mountConfs specutils.GoferMountConfFlags
+	bundleDir    string
+	ioFDs        sandboxsetup.IntFlags
+	devIoFD      int
+	applyCaps    bool
+	selinuxLabel string
+	setUpRoot    bool
+	mountConfs   specutils.GoferMountConfFlags
 
 	// uid and gid are the user and group IDs to switch to after setting up the
 	// user namespace.
@@ -140,6 +143,7 @@ func (*Gofer) Usage() string {
 func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
+	f.StringVar(&g.selinuxLabel, "selinux-label", "", "if non-empty, set the SELinux label for the process")
 	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
 
 	// Open FDs that are donated to the gofer.
@@ -181,9 +185,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	debug.SetTraceback(conf.Traceback)
 
 	// Whether this process will re-execute itself to apply credential and
-	// capability changes, rather than applying capabilities in-process.
+	// capability changes, rather than applying capabilities in-process, or
+	// in order to enter a new selinux context.
 	// Computed before the sync FDs are consumed below.
-	willReexec := g.applyCaps && (config.CgoEnabled || g.syncFDs.usernsFD >= 0)
+	willReexec := (g.applyCaps && (config.CgoEnabled || g.syncFDs.usernsFD >= 0)) || len(g.selinuxLabel) > 0
 
 	specFile := os.NewFile(uintptr(g.specFD), "spec file")
 	defer specFile.Close()
@@ -215,18 +220,49 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if g.setUpRoot {
 		// The /proc unmounter binary must be opened before SetupRootFS pivots
 		// away from the host filesystem.
-		var umounter *os.File
 		spawnUnmounter := willReexec && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot
 		if spawnUnmounter {
-			umounter = openProcUmounter()
-		}
-		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC), containerID, g.bundleDir); err != nil {
-			util.Fatalf("Error setting up root FS: %v", err)
-		}
-		if spawnUnmounter {
+			// TODO: selinux: why is it significant that the binary is opened now but
+			// exec'd later? is that safe to change?
+			umounter := openProcUmounter()
 			cleanupUnmounter := g.syncFDs.spawnProcUnmounter(umounter)
 			umounter.Close()
 			defer cleanupUnmounter()
+		}
+	}
+
+	overrides := g.syncFDs.flags()
+
+	if g.selinuxLabel != "" {
+		newSpecFile, err := specutils.CopySpecFileAsMountLabel(spec, specFile)
+		if err != nil {
+			util.Fatalf("failed to copy spec file: %v", err)
+		}
+
+		if newSpecFile != nil {
+			specFile.Close()
+			specFile = newSpecFile
+		}
+
+		overrides["spec-fd"] = fmt.Sprintf("%d", specFile.Fd()) // Point at the relabeled spec copy.
+
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		// The exec label has to be set before the chroot, because this needs to
+		// interact with the original procfs, but it needs to be *after* the proc
+		// unmounter is spawned, because it needs to run with the original label in
+		// order to retain the permissions needed.
+		if err := selinux.SetExecLabel(g.selinuxLabel); err != nil {
+			util.Fatalf("failed to set SELinux exec label: %v", err)
+		}
+
+		overrides["selinux-label"] = ""
+	}
+
+	if g.setUpRoot {
+		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC), containerID, g.bundleDir); err != nil {
+			util.Fatalf("Error setting up root FS: %v", err)
 		}
 	}
 	extensionPrepare, err := extension.PrepareGofer(extension.GoferPrepareContext{
@@ -247,7 +283,6 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		} else {
 			log.Infof("Re-execing. FYI, this step isn't necessary when running with root. gVisor will start up faster (and is just as secure) when started as root, as it has to do fewer hoops to get to its as-sandboxed-as-possible state.")
 		}
-		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
 		overrides["setup-root"] = "false"
 		for key, value := range extensionPrepare.FlagOverrides {
@@ -257,6 +292,18 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, capsToApply, sandboxsetup.SetCapsAndCallSelf(args, capsToApply))
 		panic("unreachable")
 	}
+
+	// If the SELinux label is still set, we haven't re-exec'd to enter the exec
+	// context, so do so now.
+	if g.selinuxLabel != "" {
+		for key, value := range extensionPrepare.FlagOverrides {
+			overrides[key] = value
+		}
+		args := sandboxsetup.PrepareArgs(g.Name(), f, overrides)
+		util.Fatalf("callSelf(%v): %v", args, sandboxsetup.CallSelf(args))
+		panic("unreachable")
+	}
+
 	// No re-exec from here on out.
 
 	// This can't happen until after setCapsAndCallSelf(), since otherwise the

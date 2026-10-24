@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -1483,7 +1485,22 @@ func shouldSpawnGofer(spec *specs.Spec, conf *config.Config, goferConfs []specut
 
 // createLisafsSocketPair creates a socket pair for Lisafs communication and
 // appends the sandbox end to sandEnds while donating the gofer end.
-func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) error {
+func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency, spec *specs.Spec) error {
+	if spec.Process != nil && spec.Process.SelinuxLabel != "" {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if err := selinux.SetSocketLabel(spec.Process.SelinuxLabel); err != nil {
+			return fmt.Errorf("failed to set socket label to %q: %w", spec.Process.SelinuxLabel, err)
+		}
+
+		defer func() {
+			if err := selinux.SetSocketLabel(""); err != nil {
+				log.Warningf("failed to reset socket label: %v", err)
+			}
+		}()
+	}
+
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return err
@@ -1578,7 +1595,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	}
 
 	if specutils.IsDebugCommand(conf, "gofer") {
-		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, lfOpts); err != nil {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, c.Spec, lfOpts); err != nil {
 			return nil, nil, nil, nil, err
 		}
 	}
@@ -1662,7 +1679,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	// Handle rootfs (index 0)
 	switch {
 	case c.GoferMountConfs[0].ShouldUseLisafs():
-		if err := createLisafsSocketPair(&sandEnds, &donations); err != nil {
+		if err := createLisafsSocketPair(&sandEnds, &donations, c.Spec); err != nil {
 			return nil, nil, nil, nil, err
 		}
 
@@ -1683,7 +1700,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 
 		switch {
 		case c.GoferMountConfs[cfgIdx].ShouldUseLisafs():
-			if err := createLisafsSocketPair(&sandEnds, &donations); err != nil {
+			if err := createLisafsSocketPair(&sandEnds, &donations, c.Spec); err != nil {
 				return nil, nil, nil, nil, err
 			}
 
@@ -1785,6 +1802,10 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	defer chrootSyncSandEnd.Close()
 
 	donations.Transfer(cmd, nextFD)
+
+	if c.Spec.Process != nil && c.Spec.Process.SelinuxLabel != "" {
+		cmd.Args = append(cmd.Args, fmt.Sprintf("--selinux-label=%s", c.Spec.Process.SelinuxLabel))
+	}
 
 	// Add container ID as the last argument.
 	cmd.Args = append(cmd.Args, c.ID)

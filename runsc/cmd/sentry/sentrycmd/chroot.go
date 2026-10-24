@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux/label"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/log"
@@ -61,7 +62,7 @@ func bindMountSysfsInChrootReadonly(chroot, src, dst string) error {
 }
 
 // setupMinimalProcfs creates a minimal procfs-like tree at `${chroot}/proc`.
-func setupMinimalProcfs(chroot string, timer *timing.Timer) error {
+func setupMinimalProcfs(chroot, mountLabel string, timer *timing.Timer) error {
 	// We can't always directly mount procfs because it may be obstructed
 	// by submounts within it. See https://gvisor.dev/issue/10944.
 	// All we really need from procfs is /proc/self and a few kernel
@@ -84,7 +85,7 @@ func setupMinimalProcfs(chroot string, timer *timing.Timer) error {
 		return fmt.Errorf("error creating /proc in chroot: %v", err)
 	}
 	if err := specutils.SafeMount("runsc-proc", procRoot, "tmpfs",
-		unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
+		unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, label.FormatMountLabel("", mountLabel), "/proc"); err != nil {
 		return fmt.Errorf("error mounting tmpfs in /proc: %v", err)
 	}
 	flags := uint32(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_RDONLY)
@@ -140,13 +141,18 @@ func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) err
 
 	log.Infof("Setting up sandbox chroot in %q", chroot)
 
+	var mountLabel string
+	if spec.Linux != nil {
+		mountLabel = spec.Linux.MountLabel
+	}
+
 	// Convert all shared mounts into slave to be sure that nothing will be
 	// propagated outside of our namespace.
 	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", "/proc"); err != nil {
 		return fmt.Errorf("error converting mounts: %v", err)
 	}
 
-	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
+	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, label.FormatMountLabel("", mountLabel), "/proc"); err != nil {
 		return fmt.Errorf("error mounting tmpfs in chroot: %v", err)
 	}
 
@@ -159,7 +165,7 @@ func setUpChroot(spec *specs.Spec, conf *config.Config, timer *timing.Timer) err
 	}
 	timer.Reached("chroot base mounted")
 
-	if err := setupMinimalProcfs(chroot, timer); err != nil {
+	if err := setupMinimalProcfs(chroot, mountLabel, timer); err != nil {
 		return fmt.Errorf("error setting up minimal procfs in chroot %q: %v", chroot, err)
 	}
 	timer.Reached("chroot procfs set up")

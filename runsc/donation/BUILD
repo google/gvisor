@@ -14,5 +14,6 @@ go_library(
     deps = [
         "//pkg/log",
         "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )

@@ -29,6 +29,7 @@ import (
 	"github.com/google/subcommands"
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -132,6 +133,8 @@ type Boot struct {
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
+
+	selinuxLabel string
 
 	// setUpChroot is set to true if the sandbox is started in an empty root.
 	setUpRoot bool
@@ -268,6 +271,7 @@ func (*Boot) Usage() string {
 func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
+	f.StringVar(&b.selinuxLabel, "selinux-label", "", "if non-empty, set the SELinux label for the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	// cpu-quota defaults to -1 (unlimited), matching the Linux CFS default
@@ -340,6 +344,9 @@ func (b *Boot) willReexec() bool {
 	}
 	if !b.applyCaps {
 		return true // No caps to change but will change UID/GID to `nobody`.
+	}
+	if b.selinuxLabel != "" {
+		return true // SELinux label to change.
 	}
 	if b.syncUsernsFD >= 0 {
 		return true // Rootless mode.
@@ -473,6 +480,30 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 		}
 		timer.Reached("set nvproxy flags")
+	}
+
+	if b.selinuxLabel != "" {
+		newSpecFile, err := specutils.CopySpecFileAsMountLabel(spec, specFile)
+		if err != nil {
+			util.Fatalf("failed to copy spec file: %v", err)
+		}
+
+		if newSpecFile != nil {
+			specFile.Close()
+			specFile = newSpecFile
+			argOverride["spec-fd"] = fmt.Sprintf("%d", specFile.Fd())
+		}
+
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		// The exec label has to be set before the chroot, because this needs to
+		// interact with the original procfs.
+		if err := selinux.SetExecLabel(b.selinuxLabel); err != nil {
+			util.Fatalf("failed to set SELinux exec label: %v", err)
+		}
+
+		argOverride["selinux-label"] = ""
 	}
 
 	if b.setUpRoot {
@@ -619,6 +650,25 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if b.syncUsernsFD >= 0 {
 		// syncUsernsFD is set, but runsc hasn't been re-executed with a new UID and GID.
 		// We expect that setCapsAndCallSelf has to be called in this case.
+		panic("unreachable")
+	}
+
+	// If the SELinux label is still set, we haven't re-exec'd to enter the exec
+	// context, so do so now.
+	if b.selinuxLabel != "" {
+		// Remove the args that have already been done before calling self.
+		args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
+
+		// Note that we've already read the spec from the spec FD, and
+		// we will read it again after the exec call. This works
+		// because the ReadSpecFromFile function seeks to the beginning
+		// of the file before reading.
+		util.Fatalf("callSelf(%v): %v", args, sandboxsetup.CallSelf(args))
+
+		// This prevents the specFile finalizer from running and closed
+		// the specFD, which we have passed to ourselves when
+		// re-execing.
+		runtime.KeepAlive(specFile)
 		panic("unreachable")
 	}
 

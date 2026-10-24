@@ -39,6 +39,7 @@ go_library(
         "//runsc/starttime",
         "@com_github_gofrs_flock//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@com_github_opencontainers_selinux//go-selinux:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

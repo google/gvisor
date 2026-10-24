@@ -18,10 +18,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -117,6 +120,21 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 
 	if err := os.MkdirAll(c.imagePath, 0755); err != nil {
 		util.Fatalf("making directories at path provided: %v", err)
+	}
+
+	// TODO: more narrowly scope this
+	if cont.Spec.Linux != nil && cont.Spec.Linux.MountLabel != "" {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if err := selinux.SetFSCreateLabel(cont.Spec.Linux.MountLabel); err != nil {
+			util.Fatalf("setting SELinux FS create label for checkpoint files: %v", err)
+		}
+		defer func() {
+			if err := selinux.SetFSCreateLabel(""); err != nil {
+				log.Warningf("error resetting SELinux FS create label: %v", err)
+			}
+		}()
 	}
 
 	opts := sandbox.CheckpointOpts{

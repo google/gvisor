@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	"github.com/mohae/deepcopy"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-spec/specs-go/features"
+	"github.com/opencontainers/selinux/go-selinux"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
@@ -170,9 +172,10 @@ func ValidateSpec(spec *specs.Spec, conf *config.Config, noRootContainer bool) e
 		return fmt.Errorf("Spec.Windows is not supported: %+v", spec)
 	}
 	if spec.Process != nil {
-		if len(spec.Process.SelinuxLabel) != 0 {
-			return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
-		}
+		// TODO: selinux: gate behind some flag?
+		// if len(spec.Process.SelinuxLabel) != 0 {
+		// 	return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
+		// }
 
 		// Docker uses AppArmor by default, so just log that it's being ignored.
 		if spec.Process.ApparmorProfile != "" {
@@ -292,6 +295,62 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, opts SpecOpts) (*spec
 		return nil, err
 	}
 	return &spec, nil
+}
+
+// CopySpecFileAsMountLabel copies the given spec file into a new temporary file
+// with the given label, so that the sentry/gofer can read it after
+// transitioning to the target context.
+//
+// Returns nil if no mount label was given in the spec.
+// TODO: selinux: generalize this to non-spec files? checkpoint files?
+func CopySpecFileAsMountLabel(spec *specs.Spec, specFile *os.File) (*os.File, error) {
+	if spec.Linux.MountLabel == "" {
+		return nil, nil
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	if err := selinux.SetFSCreateLabel(spec.Linux.MountLabel); err != nil {
+		return nil, fmt.Errorf("error setting SELinux FS create label: %v", err)
+	}
+	defer func() {
+		if err := selinux.SetFSCreateLabel(""); err != nil {
+			log.Warningf("error resetting SELinux FS create label: %v", err)
+		}
+	}()
+
+	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
+	}
+
+	newSpecFile, err := os.CreateTemp("", "spec-file")
+	if err != nil {
+		return nil, fmt.Errorf("error creating spec file copy: %v", err)
+	}
+
+	close := true
+	defer func() {
+		if close {
+			newSpecFile.Close()
+		}
+	}()
+
+	if err := os.Remove(newSpecFile.Name()); err != nil {
+		return nil, fmt.Errorf("error unlinking spec file copy %q: %v", newSpecFile.Name(), err)
+	}
+
+	if _, err := unix.FcntlInt(newSpecFile.Fd(), unix.F_SETFD, 0); err != nil {
+		return nil, fmt.Errorf("error clearing O_CLOEXEC: %v", err)
+	}
+
+	_, err = io.Copy(newSpecFile, specFile)
+	if err != nil {
+		return nil, fmt.Errorf("error copying spec file %q -> %q: %v", err)
+	}
+
+	close = false
+	return newSpecFile, nil
 }
 
 func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
@@ -716,11 +775,26 @@ func WaitForNonChildExit(pid int, timeout time.Duration) error {
 // OpenDebugLogFile opens a log file using 'logPattern' as location. If 'logPattern'
 // ends with '/', it's used as a directory with default file name. See OpenLogFile
 // for more details about variable substitutions.
-func OpenDebugLogFile(logPattern string, opts log.FileOpts) (*os.File, error) {
+func OpenDebugLogFile(logPattern string, opts log.FileOpts, spec *specs.Spec) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
 		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>.txt
 		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%.txt"
 	}
+
+	if spec != nil && spec.Linux != nil {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if err := selinux.SetFSCreateLabel(spec.Linux.MountLabel); err != nil {
+			return nil, fmt.Errorf("error setting SELinux FS create label for debug log: %w", err)
+		}
+		defer func() {
+			if err := selinux.SetFSCreateLabel(""); err != nil {
+				log.Warningf("error resetting SELinux FS create label: %v", err)
+			}
+		}()
+	}
+
 	return log.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, opts)
 }
 

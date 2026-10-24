@@ -376,9 +376,28 @@ func (c *Container) config(ctx context.Context, r RunOpts, args []string) (*cont
 func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 	c.mounts = append(c.mounts, r.Mounts...)
 
+	var mounts []mount.Mount
+	var binds []string
+	for _, m := range c.mounts {
+		// TODO: selinux: this is to make sure all the mounts get relabeled, which
+		// can't happen in `mounts` itself because the API doesn't support an
+		// equivalent to :Z.
+		// Also avoid relabeling /sys/fs/cgroup, HACK.
+		if m.Type == mount.TypeBind && m.Source != "/sys/fs/cgroup" {
+			bind := fmt.Sprintf("%s:%s:Z", m.Source, m.Target)
+			if m.ReadOnly {
+				bind += ",ro"
+			}
+			binds = append(binds, bind)
+		} else {
+			mounts = append(mounts, m)
+		}
+	}
+
 	hc := &container.HostConfig{
 		Runtime:         c.runtime,
-		Mounts:          c.mounts,
+		Mounts:          mounts,
+		Binds:           binds,
 		Tmpfs:           r.Tmpfs,
 		PublishAllPorts: true,
 		Links:           r.Links,

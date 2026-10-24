@@ -35,6 +35,7 @@ import (
 
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/selinux/go-selinux"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -94,7 +95,35 @@ func controlSocketName(id string) string {
 //
 // Note that abstract sockets are *not* used, because any user can connect to
 // them. There is no file mode protecting abstract sockets.
-func createControlSocket(rootDir, id string) (string, int, error) {
+func createControlSocket(rootDir, id string, spec *specs.Spec) (string, int, error) {
+	if spec.Process != nil && spec.Process.SelinuxLabel != "" {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if err := selinux.SetSocketLabel(spec.Process.SelinuxLabel); err != nil {
+			return "", -1, fmt.Errorf("failed to set socket label to %q: %w", spec.Process.SelinuxLabel, err)
+		}
+		defer func() {
+			if err := selinux.SetSocketLabel(""); err != nil {
+				log.Warningf("failed to reset socket label: %v", err)
+			}
+		}()
+	}
+
+	if spec.Linux != nil && spec.Linux.MountLabel != "" {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if err := selinux.SetFSCreateLabel(spec.Linux.MountLabel); err != nil {
+			return "", -1, fmt.Errorf("failed to set socket fs label to %q: %w", spec.Linux.MountLabel, err)
+		}
+		defer func() {
+			if err := selinux.SetFSCreateLabel(""); err != nil {
+				log.Warningf("failed to reset socket label: %v", err)
+			}
+		}()
+	}
+
 	name := controlSocketName(id)
 
 	// Only use absolute paths to guarantee resolution from anywhere.
@@ -1048,12 +1077,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		Test:      specutils.TestName(conf, args.Spec),
 	}
 	if specutils.IsDebugCommand(conf, "boot") {
-		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, lfOpts); err != nil {
+		if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, args.Spec, lfOpts); err != nil {
 			return fmt.Errorf("donating debug log file: %w", err)
 		}
 	}
 	lfOpts.Command = "panic"
-	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, lfOpts); err != nil {
+	if err := donations.DonateDebugLogFile("panic-log-fd", conf.PanicLog, args.Spec, lfOpts); err != nil {
 		return fmt.Errorf("donating panic log file: %w", err)
 	}
 	covFilename := conf.CoverageReport
@@ -1062,7 +1091,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	if covFilename != "" && coverage.Available() {
 		lfOpts.Command = "cov"
-		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, lfOpts); err != nil {
+		if err := donations.DonateDebugLogFile("coverage-fd", covFilename, args.Spec, lfOpts); err != nil {
 			return fmt.Errorf("donating coverage log file: %w", err)
 		}
 	}
@@ -1164,7 +1193,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	// Create a socket for the control server and donate it to the sandbox.
-	controlSocketPath, sockFD, err := createControlSocket(conf.RootDir, s.ID)
+	controlSocketPath, sockFD, err := createControlSocket(conf.RootDir, s.ID, args.Spec)
 	if err != nil {
 		return fmt.Errorf("failed to create control socket: %v", err)
 	}
@@ -1271,6 +1300,14 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// overridden below.
 	s.UID = os.Getuid()
 	s.GID = os.Getgid()
+
+	if args.Spec.Process != nil && args.Spec.Process.SelinuxLabel != "" {
+		if !selinux.GetEnabled() {
+			return fmt.Errorf("SELinuxLabel is set but SELinux is disabled")
+		}
+
+		cmd.Args = append(cmd.Args, fmt.Sprintf("--selinux-label=%s", args.Spec.Process.SelinuxLabel))
+	}
 
 	// User namespace depends on the network type or whether access to the host
 	// filesystem is required. These features require to run inside the user
@@ -1457,7 +1494,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.Args = append(cmd.Args, "--profiling-metrics-fd-lossy=true")
 	} else if conf.ProfilingMetricsLog != "" {
 		lfOpts.Command = "metrics"
-		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, lfOpts); err != nil {
+		if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, args.Spec, lfOpts); err != nil {
 			return err
 		}
 		lfOpts.Command = "boot"
@@ -2451,7 +2488,7 @@ func (s *Sandbox) maybeStartCheckpointGoferAndGetSocket(conf *config.Config, cg 
 			Timestamp: s.StartTime,
 		}
 		if conf.DebugLog != "" && specutils.IsDebugCommand(conf, "checkpointgofer") {
-			f, err := specutils.OpenDebugLogFile(conf.DebugLog, lfOpts)
+			f, err := specutils.OpenDebugLogFile(conf.DebugLog, lfOpts, nil)
 			if err != nil {
 				return fmt.Errorf("opening debug log file: %w", err)
 			}
@@ -2822,7 +2859,7 @@ func (s *Sandbox) configureStdios(conf *config.Config, stdios []*os.File) error 
 	for _, file := range stdios {
 		log.Debugf("Changing %q ownership to %d/%d", file.Name(), s.UID, s.GID)
 		if err := file.Chown(s.UID, s.GID); err != nil {
-			if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.EPERM) || errors.Is(err, unix.EROFS) {
+			if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.EROFS) {
 				log.Warningf("can't change an owner of %s: %s", file.Name(), err)
 				continue
 			}
