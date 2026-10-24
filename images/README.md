@@ -44,7 +44,20 @@ Docker still builds the separate ASCII image converter using `golang:1.25`.
 
 ## Adding new images
 
-To add a new image, create a new directory under `images` containing a
+Images can be assembled with `rules_img`; see `basic/BUILD` for examples.
+Group related images in one Bazel package. Declare immutable base images in
+`MODULE.bazel` and expose each image with `image_outputs` from
+`//images:img.bzl`. Its `image_name` preserves the image's test-facing name
+independently of the Bazel package. Add the image's Make name and context
+target to `BAZEL_IMAGE_CONTEXTS` in `tools/images.mk`. Make hashes the
+assembled archive, including its transitive inputs, before checking the image
+cache. The image can also be built directly with Bazel, without a Docker daemon:
+
+```sh
+bazel build --config=x86_64 //images/basic:tmpfile_archive
+```
+
+For a Docker build, create a directory under `images` containing a
 Dockerfile and any other files that the image requires. You may choose to add to
 an existing subdirectory if applicable, or create a new one.
 
