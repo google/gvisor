@@ -94,12 +94,6 @@ type Device struct {
 	NetDevs []NetDev `json:"netdevs"`
 }
 
-// NUMA is the /sys/devices/system/node subtree.
-type NUMA struct {
-	// Aggregate holds the top-level range files (online, possible, ...).
-	Aggregate map[string]string `json:"aggregate"`
-}
-
 // Snapshot is the host sysfs snapshot for RDMA device topology.
 type Snapshot struct {
 	VerbsABIVersion string `json:"verbs_abi_version"`
@@ -108,7 +102,6 @@ type Snapshot struct {
 	// which places parents before children.
 	PCINodes []PCINode `json:"pci_nodes"`
 	Devices  []Device  `json:"devices"`
-	NUMA     *NUMA     `json:"numa,omitempty"`
 }
 
 // safeName matches names we are willing to reproduce inside the sandbox or
