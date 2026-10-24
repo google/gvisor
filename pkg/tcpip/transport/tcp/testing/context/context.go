@@ -1253,7 +1253,7 @@ func (c *Context) PassiveConnectWithOptions(maxPayload, wndScale int, synOptions
 		checker.DstPort(TestPort),
 		checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
 		checker.TCPAckNum(uint32(iss) + 1),
-		checker.TCPSynOptions(header.TCPSynOptions{MSS: synOptions.MSS, WS: wndScale, SACKPermitted: synOptions.SACKPermitted && c.SACKEnabled()}),
+		checker.TCPSynOptions(header.TCPSynOptions{MSS: synOptions.MSS, WS: wndScale}),
 	}
 
 	// If TS option was enabled in the original SYN then add a checker to
@@ -1309,7 +1309,7 @@ func (c *Context) PassiveConnectWithOptions(maxPayload, wndScale int, synOptions
 		NextSeqNum:    iss + 1,
 		AckNum:        c.IRS + 1,
 		WndSize:       rcvWnd,
-		SACKPermitted: synOptions.SACKPermitted && c.SACKEnabled(),
+		SACKPermitted: rcvdSynOptions.SACKPermitted,
 		RecentTS:      parsedOpts.TSVal,
 		TSVal:         synOptions.TSVal + 1,
 	}

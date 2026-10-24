@@ -9684,9 +9684,6 @@ func TestSendBufferTuning(t *testing.T) {
 
 func TestTimestampSynCookies(t *testing.T) {
 	clock := faketime.NewManualClock()
-	tsNow := func() uint32 {
-		return uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Milliseconds())
-	}
 	// Advance the clock so that NowMonotonic is non-zero.
 	clock.Advance(time.Second)
 	c := context.NewWithOpts(t, context.Options{
@@ -9730,8 +9727,6 @@ func TestTimestampSynCookies(t *testing.T) {
 	tcpHdr := header.TCP(header.IPv4(b.AsSlice()).Payload())
 	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
 	initialTSVal := tcpHdr.ParsedOptions().TSVal
-	// derive the tsOffset.
-	tsOffset := initialTSVal - tsNow()
 
 	header.EncodeTSOption(420, initialTSVal, tcpOpts[2:])
 	c.SendPacket(nil, &context.Headers{
@@ -9765,7 +9760,8 @@ func TestTimestampSynCookies(t *testing.T) {
 	}
 
 	// Advance the clock again so that we expect the next TSVal to change.
-	clock.Advance(time.Second)
+	const elapsed = time.Second
+	clock.Advance(elapsed)
 	data := []byte{1, 2, 3}
 	var r bytes.Reader
 	r.Reset(data)
@@ -9773,12 +9769,12 @@ func TestTimestampSynCookies(t *testing.T) {
 		t.Fatalf("Write failed: %s", err)
 	}
 
-	// The endpoint should have a correct TSOffset so that the received TSVal
-	// should match our expectation.
+	// The SYN-ACK may be one tick behind the endpoint clock to encode SACK.
 	p := c.GetPacket()
 	defer p.Release()
-	if got, want := header.TCP(header.IPv4(p.AsSlice()).Payload()).ParsedOptions().TSVal, tsNow()+tsOffset; got != want {
-		t.Fatalf("got TSVal = %d, want %d", got, want)
+	dataTSVal := header.TCP(header.IPv4(p.AsSlice()).Payload()).ParsedOptions().TSVal
+	if got, want := dataTSVal-initialTSVal, uint32(elapsed/time.Millisecond); got != want && got != want+1 {
+		t.Fatalf("timestamp advanced by %d ticks, want %d or %d", got, want, want+1)
 	}
 }
 
