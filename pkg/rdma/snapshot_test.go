@@ -15,6 +15,8 @@
 package rdma
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -124,5 +126,73 @@ func TestAddWithAncestors(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("addWithAncestors(%q) = %v, want %v", tc.leaf, got, tc.want)
 		}
+	}
+}
+
+func TestIsGPUClass(t *testing.T) {
+	for class, want := range map[string]bool{
+		"0x030200\n": true,
+		"0x030000":   true,
+		"0x068000\n": true,
+		"0x020000\n": false,
+		"0x060400":   false,
+		"":           false,
+	} {
+		if got := IsGPUClass(class); got != want {
+			t.Errorf("IsGPUClass(%q) = %v, want %v", class, got, want)
+		}
+	}
+}
+
+func TestCollectEmpty(t *testing.T) {
+	fakeSys := t.TempDir()
+	snap, err := Collect(fakeSys, nil)
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+	if snap != nil {
+		t.Errorf("Collect with empty sysfs returned %+v, want nil", snap)
+	}
+}
+
+func TestCollectGPUOnly(t *testing.T) {
+	fakeSys := t.TempDir()
+	gpuLeaf := filepath.Join(fakeSys, "devices/pci0000:00/0000:00:01.0/0000:01:00.0")
+	if err := os.MkdirAll(gpuLeaf, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, val := range map[string]string{
+		"class":     "0x030000\n",
+		"vendor":    "0x10de\n",
+		"device":    "0x2330\n",
+		"numa_node": "0\n",
+	} {
+		if err := os.WriteFile(filepath.Join(gpuLeaf, name), []byte(val), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	busDir := filepath.Join(fakeSys, "bus/pci/devices")
+	if err := os.MkdirAll(busDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("../../../devices/pci0000:00/0000:00:01.0/0000:01:00.0"), filepath.Join(busDir, "0000:01:00.0")); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := Collect(fakeSys, nil)
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("Collect returned nil snapshot, want non-nil")
+	}
+	if len(snap.Devices) != 0 {
+		t.Errorf("Collect returned %d devices, want 0", len(snap.Devices))
+	}
+	if snap.VerbsABIVersion != "" {
+		t.Errorf("Collect returned VerbsABIVersion %q, want empty", snap.VerbsABIVersion)
+	}
+	if len(snap.PCINodes) != 3 {
+		t.Errorf("Collect returned %d PCINodes, want 3", len(snap.PCINodes))
 	}
 }
