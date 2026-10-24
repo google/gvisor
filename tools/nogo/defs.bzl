@@ -1,7 +1,7 @@
 """Nogo rules."""
 
 load("//tools:arch.bzl", "arch_transition")
-load("//tools/bazeldefs:go.bzl", "go_binary_archive", "go_context", "go_embed_libraries", "go_has_source", "go_importpath", "go_rule", "go_source_files", "nogo_extra_proto_deps")
+load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_has_source", "go_package", "go_rule", "go_source_files")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -61,6 +61,7 @@ NogoStdlibInfo = provider(
     "information for nogo analysis (standard library facts)",
     fields = {
         "facts": "serialized standard library facts",
+        "exports": "directory of standard library export data",
         "raw_findings": "raw package findings (if relevant)",
     },
 )
@@ -74,13 +75,14 @@ def _nogo_stdlib_impl(ctx):
 
     # Build the analyzer command.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
+    exports = ctx.actions.declare_directory(ctx.label.name + ".exports")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".raw_findings")
     stdlib_srcs = go_ctx.stdlib_srcs if type(go_ctx.stdlib_srcs) == "list" else go_ctx.stdlib_srcs.to_list()
     ctx.actions.run(
         # For the standard library, we need to include the full set of Go
         # sources in the inputs.
         inputs = inputs + stdlib_srcs,
-        outputs = [facts_file, findings_file],
+        outputs = [facts_file, findings_file, exports],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
         env = go_ctx.env,
@@ -93,6 +95,7 @@ def _nogo_stdlib_impl(ctx):
         execution_requirements = {"no-sandbox": "1"},
         arguments = args + [
             "bundle",
+            "-export=%s" % exports.path,
             "-findings=%s" % findings_file.path,
             "-facts=%s" % facts_file.path,
             "-root=.*?/src/",
@@ -103,12 +106,13 @@ def _nogo_stdlib_impl(ctx):
     # Return the stdlib facts as output.
     return [NogoStdlibInfo(
         facts = facts_file,
+        exports = exports,
         raw_findings = raw_findings + [findings_file],
     ), DefaultInfo(
         # Declare the facts and findings as default outputs. This is not
         # strictly required, but ensures that the target still perform analysis
         # when built directly rather than just indirectly via a nogo_test.
-        files = depset([facts_file, findings_file]),
+        files = depset([facts_file, findings_file, exports]),
     )]
 
 nogo_stdlib = go_rule(
@@ -135,32 +139,16 @@ NogoInfo = provider(
     "information for nogo analysis",
     fields = {
         "facts": "serialized package facts",
+        "export": "source-derived package export data",
         "transitive_facts": "depset of (import path, facts file) pairs",
         "raw_findings": "raw package findings (if relevant)",
-        "importpath": "package import path",
-        "binaries": "package binary files",
+        "importpath": "canonical package path",
+        "importpaths": "source import paths for the package",
+        "archive": "compiled package archive for binary analyzers",
         "srcs": "srcs (for go_test support)",
         "deps": "deps (for go_test support)",
     },
 )
-
-def _select_objfile(files):
-    """Returns (.a file, .x file).
-
-    If no .x file is available, then the first .x file will be returned
-    instead, and vice versa. If neither are available, then the first provided
-    file will be returned."""
-    a_files = [f for f in files if f.path.endswith(".a")]
-    x_files = [f for f in files if f.path.endswith(".x")]
-    if not len(x_files) and not len(a_files):
-        if not len(files):
-            return (None, None)
-        return (files[0], files[0])
-    if not len(x_files):
-        x_files = a_files
-    if not len(a_files):
-        a_files = x_files
-    return a_files[0], x_files[0]
 
 def _nogo_config(ctx, deps, attr = None):
     # Build a configuration for the given set of deps. This is most basic
@@ -180,33 +168,19 @@ def _nogo_config(ctx, deps, attr = None):
     raw_findings = []
     fact_sets = []
     for dep in deps:
-        extras = nogo_extra_proto_deps(dep)
-        for importpath, a_file, x_file in extras:
-            args.append("-archive=%s=%s" % (importpath, a_file.path))
-            args.append("-import=%s=%s" % (importpath, x_file.path))
-            inputs.append(a_file)
-            inputs.append(x_file)
-
-        # There will be no file attribute set for all transitive dependencies
-        # that are not go_library or go_binary rules, such as a proto rules.
-        # This is handled by the ctx.rule.kind check above.
+        # Non-Go dependencies do not produce export data or facts.
         info = dep[NogoInfo]
         if not hasattr(info, "facts"):
             continue
 
-        # Configure where to find the export data and Go archive. Binary
-        # dependencies also expose their archive rather than the executable.
-        a_file, x_file = _select_objfile(info.binaries)
-        args.append("-archive=%s=%s" % (info.importpath, a_file.path))
-        args.append("-import=%s=%s" % (info.importpath, x_file.path))
+        args.append("-archive=%s=%s" % (info.importpath, info.archive.path))
+        args.append("-import=%s=%s" % (info.importpath, info.export.path))
+        for importpath in info.importpaths:
+            if importpath != info.importpath:
+                args.append("-import-map=%s=%s" % (importpath, info.importpath))
         fact_sets.append(info.transitive_facts)
-
-        # Collect all findings; duplicates are resolved at the end.
         raw_findings.extend(info.raw_findings)
-
-        # Ensure the above are available as inputs.
-        inputs.append(a_file)
-        inputs.append(x_file)
+        inputs.extend([info.archive, info.export])
 
     # Export data can expose types and methods from indirect imports. Their
     # facts must be available even without a direct source import.
@@ -216,7 +190,7 @@ def _nogo_config(ctx, deps, attr = None):
 
     return (go_ctx, args, inputs, raw_findings)
 
-def _nogo_package_config(ctx, deps, importpath = None, objfiles = (None, None), attr = None):
+def _nogo_package_config(ctx, deps, importpath = None, archive = None, attr = None):
     # See _nogo_config. This includes package details.
     #
     # Returns (go_ctx, args, inputs, raw_findings).
@@ -226,15 +200,14 @@ def _nogo_package_config(ctx, deps, importpath = None, objfiles = (None, None), 
     args.append("-GOVERSION=%s" % go_ctx.lang_version)
 
     # Add the compiled package itself for analyzers that inspect object code.
-    target_afile, target_xfile = objfiles
-    if target_xfile != None:
-        args.append("-archive=%s=%s" % (importpath, target_afile.path))
-        args.append("-import=%s=%s" % (importpath, target_xfile.path))
-        inputs.append(target_afile)
-        inputs.append(target_xfile)
+    if archive != None:
+        args.append("-archive=%s=%s" % (importpath, archive.path))
+        inputs.append(archive)
 
     # Add the standard library facts.
     stdlib_info = ctx.attr._nogo_stdlib[NogoStdlibInfo]
+    inputs.append(stdlib_info.exports)
+    args.append("-stdlib=%s" % stdlib_info.exports.path)
     stdlib_facts = stdlib_info.facts
     if stdlib_facts:
         inputs.append(stdlib_facts)
@@ -250,78 +223,66 @@ def _nogo_package_config(ctx, deps, importpath = None, objfiles = (None, None), 
     return go_ctx, args, inputs, raw_findings
 
 def _nogo_aspect_impl(target, ctx):
-    # If this is a nogo rule itself (and not the shadow of a go_library or
-    # go_binary rule created by such a rule), then we simply return nothing.
-    # All work is done in the shadow properties for go rules. For a proto
-    # library, we simply skip the analysis portion but still need to return a
-    # valid NogoInfo to reference the generated binary.
-    #
-    # Note that we almost exclusively use go_library, not go_tool_library.
-    # This is because nogo is manually annotated, so the go_tool_library kind
-    # is not needed to avoid dependency loops. Unfortunately, bazel coverdata
-    # is exported *only* as a go_tool_library. This does not cause a problem,
-    # since there is guaranteed to be no conflict. However for consistency,
-    # we should not introduce new go_tool_library dependencies unless strictly
-    # necessary.
+    # Proto compilers inject Go runtime dependencies into generated packages.
+    # Traverse those targets instead of importing the compiler's export files.
+    if ctx.rule.kind == "_go_proto_compiler":
+        return [NogoInfo(deps = ctx.rule.attr.deps)]
+
     is_binary = ctx.rule.kind in ("go_binary", "go_non_executable_binary")
-    analyze_sources = is_binary or ctx.rule.kind in ("go_library", "go_tool_library", "go_test")
-    if analyze_sources:
-        srcs = ctx.rule.files.srcs
-        deps = ctx.rule.attr.deps
-    elif ctx.rule.kind in ("go_proto_library", "go_wrap_cc"):
-        # N.B. go_proto_library is strange because transitive dependencies are
-        # not also go_proto_library targets. We don't care about analysis of
-        # transitive dependencies, but we do need them for type checking. See
-        # _nogo_config for the workaround that directly adds all proto
-        # transitive dependencies.
-        srcs = []
-        deps = ctx.rule.attr.deps
-    else:
+    is_test = ctx.rule.kind == "go_test"
+    analyze_sources = is_binary or ctx.rule.kind in ("go_library", "go_tool_library", "go_test", "go_proto_library", "go_wrap_cc")
+    if not analyze_sources and not go_has_source(target):
         return [NogoInfo()]
 
-    # Match the compiler's source order: objectpath identifies named methods
-    # by their source-order index, which compiler exports preserve.
-    # https://github.com/golang/tools/blob/ea2f152dc/go/types/objectpath/objectpath.go#L718-L724
-    has_source_info = analyze_sources and go_has_source(target)
-    if has_source_info:
-        srcs = go_source_files(target)
+    deps = list(ctx.rule.attr.deps) if hasattr(ctx.rule.attr, "deps") else []
     for embed in go_embed_libraries(ctx.rule):
         info = embed[NogoInfo]
-        if analyze_sources and not has_source_info:
-            # Binary/test targets may expose only an archive. Retain their
-            # own sources and rules_go's prepend order for each embed.
+        if hasattr(info, "deps"):
+            deps.extend(info.deps)
+    if not analyze_sources:
+        # Source-only GoInfo providers contribute their dependencies when
+        # embedded; the consuming package owns compilation and analysis.
+        return [NogoInfo(deps = deps)]
+
+    if ctx.rule.kind == "go_proto_library":
+        compilers = [ctx.rule.attr.compiler] if ctx.rule.attr.compiler else ctx.rule.attr.compilers
+        for compiler in compilers:
+            deps.extend(compiler[NogoInfo].deps)
+
+    if is_test:
+        # rules_go does not expose GoInfo for test binaries. Preserve the
+        # source package under test rather than analyzing its generated main.
+        srcs = list(ctx.rule.files.srcs)
+        for embed in go_embed_libraries(ctx.rule):
+            # Match rules_go's prepend order, including source-only embeds.
             if go_has_source(embed):
                 srcs = go_source_files(embed) + srcs
-            elif hasattr(info, "srcs"):
-                srcs = info.srcs + srcs
-        if hasattr(info, "deps"):
-            deps = deps + info.deps
+            elif hasattr(embed[NogoInfo], "srcs"):
+                srcs = embed[NogoInfo].srcs + srcs
+        importpath = "test"
+        importpaths = []
 
-    # Binary analysis needs the compiled Go archive, not the linked executable:
-    # the linker can remove functions that checkescape still needs to inspect.
-    if is_binary:
-        archive = go_binary_archive(target)
-        importpath = archive.importpath
-        objfiles = (archive.file, archive.export_file)
-        binaries = list(objfiles)
+        # The GoArchive provider describes generated testmain, while this
+        # output group contains the source package's internal/external code.
+        archive, _ = target.output_groups.compilation_outputs.to_list()
     else:
-        importpath = "test" if ctx.rule.kind == "go_test" else go_importpath(target)
-        binaries = target.files.to_list()
-        compilation_outputs = binaries
-        if hasattr(target.output_groups, "compilation_outputs"):
-            compilation_outputs = compilation_outputs + target.output_groups.compilation_outputs.to_list()
-        objfiles = _select_objfile(compilation_outputs)
+        package = go_package(target)
+        srcs = package.srcs
+        importpath = package.importpath
+        importpaths = package.importpaths
+        archive = package.archive
 
     # Use the analyzed rule's transitioned Go configuration, including its build
     # tags, rather than the aspect's own attributes.
-    go_ctx, args, inputs, raw_findings = _nogo_package_config(ctx, deps, importpath = importpath, objfiles = objfiles, attr = ctx.rule.attr)
+    go_ctx, args, inputs, raw_findings = _nogo_package_config(ctx, deps, importpath = importpath, archive = archive, attr = ctx.rule.attr)
 
     # Build the argument file, and the runner.
     facts_file = ctx.actions.declare_file(ctx.label.name + ".facts")
+    export_file = ctx.actions.declare_file(ctx.label.name + ".export")
     findings_file = ctx.actions.declare_file(ctx.label.name + ".findings")
     ctx.actions.run(
         inputs = inputs + srcs,
-        outputs = [findings_file, facts_file],
+        outputs = [findings_file, facts_file, export_file],
         tools = depset(go_ctx.runfiles.to_list() + ctx.files._nogo),
         executable = ctx.files._nogo[0],
         env = go_ctx.env,
@@ -331,6 +292,7 @@ def _nogo_aspect_impl(target, ctx):
         execution_requirements = {"no-sandbox": "1"},
         arguments = args + [
             "check",
+            "-export=%s" % export_file.path,
             "-findings=%s" % findings_file.path,
             "-facts=%s" % facts_file.path,
             "-package=%s" % importpath,
@@ -342,6 +304,7 @@ def _nogo_aspect_impl(target, ctx):
     return [
         NogoInfo(
             facts = facts_file,
+            export = export_file,
             transitive_facts = depset(
                 [(importpath, facts_file)],
                 transitive = [
@@ -352,7 +315,8 @@ def _nogo_aspect_impl(target, ctx):
             ),
             raw_findings = raw_findings + [findings_file],
             importpath = importpath,
-            binaries = binaries,
+            importpaths = importpaths,
+            archive = archive,
             srcs = srcs,
             deps = deps,
         ),
@@ -365,6 +329,8 @@ nogo_aspect = go_rule(
         "deps",
         "library",
         "embed",
+        "compiler",
+        "compilers",
     ],
     attrs = {
         "_nogo": attr.label(
