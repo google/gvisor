@@ -406,6 +406,14 @@ type AddressSpace interface {
 	// PostFork() is called after creating a copy of AddressSpace.
 	PostFork()
 
+	// PrepareForPtrace removes and disables transformations incompatible with
+	// ptrace instruction inspection and modification. It must tolerate repeated
+	// calls and concurrently running application contexts. On error, the
+	// implementation must prevent further execution in this address space.
+	//
+	// Preconditions: The ptrace relationship is already visible.
+	PrepareForPtrace(ctx context.Context, mm MemoryManager) error
+
 	// UserModifiedGS notifies the address space that the user has modified the GS
 	// register.
 	UserModifiedGS(ctx context.Context, mm MemoryManager) error
@@ -421,10 +429,8 @@ type AddressSpaceOptions struct {
 	// DisableSyscallPatching is used by systrap to indicate that the platform must not patch
 	// application syscall instructions in this address space.
 	//
-	// It is set when the application in the corresponding MemoryManager has
-	// decided to use the GS register, meaning we can no longer patch system calls.
 	// Since a MemoryManager acquires a fresh AddressSpace on fork() and after
-	// restore, it must be initialized to match the parent's state.
+	// restore, it must be initialized to match the MemoryManager's state.
 	DisableSyscallPatching bool
 }
 
