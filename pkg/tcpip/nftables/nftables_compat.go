@@ -41,6 +41,8 @@ const (
 	// TargetDNAT is the DNAT xtables target.
 	TargetDNAT = "DNAT"
 
+	// MatchComment is the comment xtables match.
+	MatchComment = "comment"
 	// MatchConntrack is the conntrack xtables match.
 	MatchConntrack = "conntrack"
 	// MatchAddrtype is the addrtype xtables match.

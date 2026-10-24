@@ -17,14 +17,13 @@ package netfilter
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const (
 	matcherNameComment = "comment"
 	commentRevision    = 0
-	// xtCommentInfoSize is sizeof(struct xt_comment_info) == [256]char.
-	xtCommentInfoSize = 256
 )
 
 func init() {
@@ -45,17 +44,17 @@ func (commentMarshaler) revision() uint8 {
 
 func (commentMarshaler) marshal(mr matcher) []byte {
 	m := mr.(*commentMatcher)
-	var buf [xtCommentInfoSize]byte
+	var buf [linux.SizeOfXTCommentInfo]byte
 	copy(buf[:], m.comment)
 	return marshalEntryMatch(matcherNameComment, buf[:])
 }
 
 func (commentMarshaler) unmarshal(_ IDMapper, buf []byte, _ stack.IPHeaderFilter) (stack.Matcher, error) {
-	if len(buf) < xtCommentInfoSize {
+	if len(buf) < linux.SizeOfXTCommentInfo {
 		return nil, fmt.Errorf("buf has insufficient size for comment match: %d", len(buf))
 	}
 	n := 0
-	for n < xtCommentInfoSize && buf[n] != 0 {
+	for n < linux.SizeOfXTCommentInfo && buf[n] != 0 {
 		n++
 	}
 	return &commentMatcher{comment: string(buf[:n])}, nil
