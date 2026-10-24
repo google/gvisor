@@ -18,10 +18,13 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/bitmap"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/rand"
 )
 
@@ -319,4 +322,50 @@ func TestGoQueue(t *testing.T) {
 		q := NewGoQueue(cap)
 		return q, nil
 	})
+}
+
+// TestSerialGoQueue checks serial reads and writes with queued operations.
+func TestSerialGoQueue(t *testing.T) {
+	testQueue(t, func(cap int) (Queue, error) {
+		return NewSerialGoQueue(cap), nil
+	})
+}
+
+// TestGoQueueGOMAXPROCS checks CPU budgets across overlapping queue lifetimes.
+func TestGoQueueGOMAXPROCS(t *testing.T) {
+	// Isolate the process-wide gomaxprocs initialization from other tests.
+	const childEnv = "GVISOR_AIO_GOMAXPROCS_TEST"
+	if os.Getenv(childEnv) == "" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestGoQueueGOMAXPROCS$")
+		cmd.Env = append(os.Environ(), childEnv+"=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("GOMAXPROCS subprocess failed: %v\n%s", err, out)
+		}
+		return
+	}
+	check := func(want int) {
+		t.Helper()
+		if got := runtime.GOMAXPROCS(0); got != want {
+			t.Fatalf("GOMAXPROCS = %d, want %d", got, want)
+		}
+	}
+
+	initial := runtime.GOMAXPROCS(0)
+	readers := []*GoQueue{NewGoQueue(1), NewGoQueue(8)}
+	serial := NewSerialGoQueue(8)
+	check(initial)
+	gomaxprocs.SetBase(2)
+	check(3)
+	readers = append(readers, NewGoQueue(8))
+	check(3)
+	otherSerial := NewSerialGoQueue(8)
+	check(4)
+	for _, q := range readers {
+		q.Destroy()
+		check(4)
+	}
+	serial.Destroy()
+	check(3)
+	otherSerial.Destroy()
+	check(2)
 }
