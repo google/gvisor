@@ -27,11 +27,11 @@ import (
 	"time"
 	"unicode"
 
-	v1proto "github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/expfmt"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
@@ -1215,8 +1215,8 @@ func reflectProto(m any) protoreflect.ProtoMessage {
 		return msg
 	}
 	// Convert v1 proto to introspectable view, if possible and necessary.
-	if v1pb, ok := m.(v1proto.Message); ok {
-		return v1proto.MessageReflect(v1pb).Interface()
+	if v1pb, ok := m.(protoadapt.MessageV1); ok {
+		return protoadapt.MessageV2Of(v1pb)
 	}
 	panic(fmt.Sprintf("Proto message %v isn't of a supported protobuf type", m))
 }

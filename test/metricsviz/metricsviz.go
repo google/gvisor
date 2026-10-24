@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/components"
 	"github.com/go-echarts/go-echarts/v2/opts"
@@ -746,7 +746,7 @@ func slugify(s string) string {
 // get logs.
 type Container interface {
 	Stop(context.Context) error
-	Status(context.Context) (types.ContainerState, error)
+	Status(context.Context) (container.State, error)
 	Logs(context.Context) (string, error)
 }
 
