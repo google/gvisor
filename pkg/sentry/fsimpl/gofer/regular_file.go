@@ -48,15 +48,35 @@ type regularFileFD struct {
 	// off is the file offset. off is protected by mu.
 	mu  sync.Mutex `state:"nosave"`
 	off int64
+
+	// If the FD was opened with O_DIRECT, directHandle may be a handle opened
+	// with O_DIRECT, which is used for I/O while O_DIRECT is set. Otherwise,
+	// directHandle is noHandle. directHandle is immutable.
+	directHandle handle `state:"nosave"`
 }
 
-func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32, creds *auth.Credentials) (*regularFileFD, error) {
-	fd := &regularFileFD{}
+// Preconditions: d.inode.fs.renameMu must be locked.
+func newRegularFileFD(ctx context.Context, mnt *vfs.Mount, d *dentry, flags uint32, creds *auth.Credentials) (*regularFileFD, error) {
+	fd := &regularFileFD{directHandle: noHandle}
+	// directfs re-opens files by name, which doesn't work for deleted files.
+	if flags&linux.O_DIRECT != 0 && !d.isDeleted() {
+		h, err := d.openDirectHandle(ctx, vfs.MayReadFileWithOpenFlags(flags), vfs.MayWriteFileWithOpenFlags(flags))
+		if err != nil {
+			return nil, err
+		}
+		fd.directHandle = h
+	}
 	fd.LockFD.Init(&d.inode.locks)
 	if err := fd.vfsfd.Init(fd, flags, creds, mnt, &d.vfsd, &vfs.FileDescriptionOptions{
 		AllowDirectIO: true,
 	}); err != nil {
+		fd.directHandle.close(ctx)
 		return nil, err
+	}
+	if fd.directHandle.fd >= 0 {
+		d.inode.fs.syncMu.Lock()
+		d.inode.fs.directFDs[fd] = struct{}{}
+		d.inode.fs.syncMu.Unlock()
 	}
 	if fd.vfsfd.IsWritable() && (d.inode.mode.Load()&0111 != 0) {
 		metric.SuspiciousOperationsMetric.Increment(&metric.SuspiciousOperationsTypeOpenedWriteExecuteFile)
@@ -69,8 +89,37 @@ func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32, creds *auth.Crede
 	return fd, nil
 }
 
+// openDirectHandle returns a handle opened with O_DIRECT for use as
+// regularFileFD.directHandle, or noHandle if O_DIRECT I/O should use the
+// dentry's shared handles instead.
+//
+// Preconditions:
+//   - d.isRegularFile().
+//   - d.inode.fs.renameMu must be locked.
+//   - The file is linked at d.name.
+func (d *dentry) openDirectHandle(ctx context.Context, read, write bool) (handle, error) {
+	h, err := d.openHandle(ctx, read, write, false /* trunc */, true /* direct */)
+	if err != nil {
+		return noHandle, err
+	}
+	// I/O without a host FD goes through gofer buffers that don't meet
+	// O_DIRECT's alignment requirements.
+	if h.fd < 0 {
+		h.close(ctx)
+		return noHandle, nil
+	}
+	return h, nil
+}
+
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *regularFileFD) Release(context.Context) {
+func (fd *regularFileFD) Release(ctx context.Context) {
+	if fd.directHandle.fd >= 0 {
+		fs := fd.filesystem()
+		fs.syncMu.Lock()
+		delete(fs.directFDs, fd)
+		fs.syncMu.Unlock()
+		fd.directHandle.close(ctx)
+	}
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
@@ -150,6 +199,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		rw := getDentryReadWriter(ctx, d, offset)
 		// Require the read to go to the remote file.
 		rw.direct = true
+		rw.directHandle = fd.directHandle
 		n, readErr = dst.CopyOutFrom(ctx, rw)
 		putDentryReadWriter(rw)
 		if d.inode.fs.opts.interop != InteropModeShared {
@@ -239,6 +289,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 
 		// Require the write to go to the remote file.
 		rw.direct = true
+		rw.directHandle = fd.directHandle
 	}
 
 	n, err := src.CopyInTo(ctx, rw)
@@ -330,6 +381,12 @@ type dentryReadWriter struct {
 	d      *dentry
 	off    uint64
 	direct bool
+
+	// If direct is true and directHandle has a host FD, page-aligned I/O uses
+	// directHandle instead of d's shared handles. Other I/O, such as through
+	// sentry buffers used by splice(2), may not meet O_DIRECT alignment
+	// requirements.
+	directHandle handle
 }
 
 var dentryReadWriterPool = sync.Pool{
@@ -344,12 +401,14 @@ func getDentryReadWriter(ctx context.Context, d *dentry, offset int64) *dentryRe
 	rw.d = d
 	rw.off = uint64(offset)
 	rw.direct = false
+	rw.directHandle = noHandle
 	return rw
 }
 
 func putDentryReadWriter(rw *dentryReadWriter) {
 	rw.ctx = nil
 	rw.d = nil
+	rw.directHandle = noHandle
 	dentryReadWriterPool.Put(rw)
 }
 
@@ -368,6 +427,9 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	defer rw.d.inode.handleMu.RUnlock()
 	h := rw.d.inode.readHandle()
 	if (rw.d.inode.mmapFD.RacyLoad() >= 0 && !rw.d.inode.fs.opts.forcePageCache) || rw.d.inode.fs.opts.interop == InteropModeShared || rw.direct {
+		if rw.direct && rw.directHandle.fd >= 0 && isPageAligned(rw.off, dsts) {
+			h = rw.directHandle
+		}
 		n, err := h.readToBlocksAt(rw.ctx, dsts, rw.off)
 		rw.off += n
 		return n, err
@@ -482,6 +544,9 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	defer rw.d.inode.handleMu.RUnlock()
 	h := rw.d.inode.writeHandle()
 	if (rw.d.inode.mmapFD.RacyLoad() >= 0 && !rw.d.inode.fs.opts.forcePageCache) || rw.d.inode.fs.opts.interop == InteropModeShared || rw.direct {
+		if rw.direct && rw.directHandle.fd >= 0 && isPageAligned(rw.off, srcs) {
+			h = rw.directHandle
+		}
 		n, err := h.writeFromBlocksAt(rw.ctx, srcs, rw.off)
 		rw.off += n
 		rw.d.inode.dataMu.Lock()
@@ -578,6 +643,20 @@ exitLoop:
 		}
 	}
 	return done, retErr
+}
+
+// isPageAligned returns true if off and every block in bs are page-aligned,
+// and every block is a multiple of the page size long.
+func isPageAligned(off uint64, bs safemem.BlockSeq) bool {
+	if off%hostarch.PageSize != 0 {
+		return false
+	}
+	for ; !bs.IsEmpty(); bs = bs.Tail() {
+		if b := bs.Head(); b.Addr()%hostarch.PageSize != 0 || b.Len()%hostarch.PageSize != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (d *dentry) writeback(ctx context.Context, offset, size int64) error {

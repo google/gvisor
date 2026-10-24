@@ -1149,7 +1149,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 			if err := d.ensureSharedHandle(ctx, needReadHandle, ats.MayWrite(), trunc); err != nil {
 				return nil, err
 			}
-			fd, err := newRegularFileFD(mnt, d, opts.Flags, rp.Credentials())
+			fd, err := newRegularFileFD(ctx, mnt, d, opts.Flags, rp.Credentials())
 			if err != nil {
 				return nil, err
 			}
@@ -1313,7 +1313,7 @@ func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.
 	// sentry must read the executable to load it.
 	needReadHandle := ats.MayRead() || opts.FileExec
 retry:
-	h, err := d.openHandle(ctx, needReadHandle, ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
+	h, err := d.openHandle(ctx, needReadHandle, ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0, false /* direct */)
 	if err != nil {
 		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
@@ -1416,7 +1416,7 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	// Finally, construct a file description representing the created file.
 	var childVFSFD *vfs.FileDescription
 	if useRegularFileFD {
-		fd, err := newRegularFileFD(mnt, child, opts.Flags, creds)
+		fd, err := newRegularFileFD(ctx, mnt, child, opts.Flags, creds)
 		if err != nil {
 			return nil, err
 		}

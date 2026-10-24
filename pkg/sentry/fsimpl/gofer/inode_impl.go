@@ -111,7 +111,7 @@ func (i *inode) writeHandle() handle {
 // Preconditions:
 //   - !d.isSynthetic().
 //   - fs.renameMu is locked.
-func (d *dentry) openHandle(ctx context.Context, read, write, trunc bool) (handle, error) {
+func (d *dentry) openHandle(ctx context.Context, read, write, trunc, direct bool) (handle, error) {
 	flags := uint32(unix.O_RDONLY)
 	switch {
 	case read && write:
@@ -125,6 +125,9 @@ func (d *dentry) openHandle(ctx context.Context, read, write, trunc bool) (handl
 	}
 	if trunc {
 		flags |= unix.O_TRUNC
+	}
+	if direct {
+		flags |= unix.O_DIRECT
 	}
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
