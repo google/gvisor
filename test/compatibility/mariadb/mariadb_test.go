@@ -14,8 +14,8 @@
 
 // Package mariadb is a gVisor compatibility test for MariaDB.
 //
-// The MariaDB version under test is pinned in
-// images/compatibility/mariadb/mariadb/Dockerfile.
+// The MariaDB image under test is pinned in MODULE.bazel and assembled by
+// //images/compatibility:mariadb_archive.
 package mariadb
 
 import (
