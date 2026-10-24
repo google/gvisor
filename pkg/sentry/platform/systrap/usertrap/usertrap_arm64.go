@@ -84,3 +84,8 @@ func (*State) PostFork() {
 func (*State) UnpatchSyscalls(ctx context.Context, mm memoryManager) error {
 	return nil
 }
+
+// RewindPC returns ip on arm64 as syscall trapping is not supported.
+func (*State) RewindPC(ctx context.Context, ip hostarch.Addr, mm memoryManager) (hostarch.Addr, error) {
+	return ip, nil
+}

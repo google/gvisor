@@ -579,6 +579,64 @@ TEST(ArchPrctlTest, UnpatchSyscallsOnArchSetGS) {
   munmap(page, kPageSize);
 }
 
+TEST(ArchPrctlTest, UnpatchSyscallsSkipsStaleSites) {
+  SKIP_IF(GvisorPlatform() != Platform::kSystrap);
+
+  constexpr uint8_t kSyscallStub[] = {0xb8, SYS_getpid, 0x00, 0x00,
+                                      0x00, 0x0f,       0x05, 0xc3};
+  constexpr uint8_t kReplacement[] = {0xb8, 42,   0x00, 0x00,
+                                      0x00, 0xc3, 0x90, 0x90};
+  constexpr uint8_t kJmpOpcode = 0xff;
+
+  uintptr_t orig_gs;
+  ASSERT_THAT(arch_prctl(ARCH_GET_GS, reinterpret_cast<uintptr_t>(&orig_gs)),
+              SyscallSucceeds());
+  void* gs_page = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(gs_page, MAP_FAILED);
+  void* unmapped_page =
+      mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(unmapped_page, MAP_FAILED);
+  void* reused_page =
+      mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(reused_page, MAP_FAILED);
+
+  const auto cleanup = Cleanup([&] {
+    EXPECT_THAT(arch_prctl(ARCH_SET_GS, orig_gs), SyscallSucceeds());
+    munmap(unmapped_page, kPageSize);
+    munmap(reused_page, kPageSize);
+    munmap(gs_page, kPageSize);
+  });
+
+  uint8_t* unmapped_code = static_cast<uint8_t*>(unmapped_page) + 16;
+  uint8_t* reused_code = static_cast<uint8_t*>(reused_page) + 16;
+  memcpy(unmapped_code, kSyscallStub, sizeof(kSyscallStub));
+  memcpy(reused_code, kSyscallStub, sizeof(kSyscallStub));
+  ASSERT_EQ(reinterpret_cast<pid_t (*)()>(unmapped_code)(), getpid());
+  ASSERT_EQ(reinterpret_cast<pid_t (*)()>(reused_code)(), getpid());
+  if (unmapped_code[0] != kJmpOpcode || reused_code[0] != kJmpOpcode) {
+    GTEST_SKIP() << "Syscall patching is disabled";
+  }
+
+  ASSERT_THAT(munmap(unmapped_page, kPageSize), SyscallSucceeds());
+  ASSERT_THAT(munmap(reused_page, kPageSize), SyscallSucceeds());
+  ASSERT_EQ(mmap(reused_page, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
+            reused_page);
+  memcpy(reused_code, kReplacement, sizeof(kReplacement));
+
+  ASSERT_THAT(arch_prctl(ARCH_SET_GS, reinterpret_cast<uintptr_t>(gs_page)),
+              SyscallSucceeds());
+
+  unsigned char resident;
+  EXPECT_THAT(mincore(unmapped_page, kPageSize, &resident),
+              SyscallFailsWithErrno(ENOMEM));
+  EXPECT_EQ(memcmp(reused_code, kReplacement, sizeof(kReplacement)), 0);
+  EXPECT_EQ(reinterpret_cast<pid_t (*)()>(reused_code)(), 42);
+}
+
 // Tests that multithreaded applications calling syscalls are safely interrupted
 // and unpatched without crashing when another thread invokes ARCH_SET_GS.
 TEST(ArchPrctlTest, MultithreadedUnpatchSyscalls) {
