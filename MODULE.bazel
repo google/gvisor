@@ -312,6 +312,19 @@ img_pull(
     tag = "1.4.3",
 )
 
+img_pull(
+    name = "test_python",
+    digest = "sha256:c5075348770d14159b316d99a4f65f3771d227710877021833119b014cd1a803",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "library/python",
+    tag = "3.15.1-trixie",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
