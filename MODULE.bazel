@@ -312,6 +312,27 @@ img_pull(
     tag = "1.4.3",
 )
 
+# Select the platform manifest directly to preserve Docker's health check.
+# Both manifests belong to mysql/mysql-server:8.0.19's pinned index:
+# sha256:7cd104d6ff11f7e6a16087f88b1ce538bcb0126c048a60cd28632e7cf3dbe1b7
+img_pull(
+    name = "test_mysql_amd64",
+    digest = "sha256:dc8cea19bc103ff2faf1ef01ac2bd337f5dd0c68a4981a962db8800d13d3b7c7",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "mysql/mysql-server",
+    tag = "8.0.19",
+)
+
+img_pull(
+    name = "test_mysql_arm64",
+    digest = "sha256:5495664652ac1a8c78c8079bc838483732c12ef59a7f7dbed21adbade33fa1ea",
+    layer_handling = "eager",
+    registries = DOCKER_HUB_REGISTRIES,
+    repository = "mysql/mysql-server",
+    tag = "8.0.19",
+)
+
 ### Toolchains
 register_toolchains("//:cc_toolchain_k8")
 
