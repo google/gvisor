@@ -1034,6 +1034,18 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		specutils.DropCapability(spec.Process.Capabilities, "CAP_NET_RAW")
 	}
 
+	// Use the values Docker sets for its containers, which native runs of the
+	// tests inside the build container see: any group may create ICMP
+	// datagram sockets, and any user may bind any port.
+	if spec.Linux == nil {
+		spec.Linux = &specs.Linux{}
+	}
+	if spec.Linux.Sysctl == nil {
+		spec.Linux.Sysctl = make(map[string]string)
+	}
+	spec.Linux.Sysctl["net.ipv4.ping_group_range"] = "0 2147483647"
+	spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"] = "0"
+
 	// Set environment variables that indicate we are running in gVisor with
 	// the given platform, network, and filesystem stack.
 	const (

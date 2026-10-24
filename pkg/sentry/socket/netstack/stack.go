@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
@@ -27,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -54,14 +56,40 @@ type Stack struct {
 	// id is a unique identifier for this stack, it is currently only
 	// used for a deterministic lock ordering.
 	id uint64
+
+	// portSysctlMu serializes writes of the ephemeral port range and
+	// unprivilegedPortStart, which are validated against each other.
+	portSysctlMu sync.Mutex `state:"nosave"`
+
+	// unprivilegedPortStart is net.ipv4.ip_unprivileged_port_start.
+	unprivilegedPortStart atomicbitops.Uint32
+
+	// pingGroupRange is net.ipv4.ping_group_range, with the low KGID in the
+	// upper 32 bits and the high KGID in the lower 32 bits.
+	pingGroupRange atomicbitops.Uint64
 }
+
+// Linux defaults from net/ipv4/af_inet.c:inet_init_net(): PROT_SOCK, and a
+// ping group range that contains no group.
+const (
+	defaultUnprivilegedPortStart = 1024
+	defaultPingGroupLow          = auth.KGID(1)
+	defaultPingGroupHigh         = auth.KGID(0)
+)
 
 // NewStack creates a new netstack.Stack which wraps the given tcpip.Stack.
 func NewStack(s *stack.Stack, id uint64) *Stack {
-	return &Stack{
+	st := &Stack{
 		Stack: s,
 		id:    id,
 	}
+	st.unprivilegedPortStart.Store(defaultUnprivilegedPortStart)
+	st.pingGroupRange.Store(packPingGroupRange(defaultPingGroupLow, defaultPingGroupHigh))
+	return st
+}
+
+func packPingGroupRange(low, high auth.KGID) uint64 {
+	return uint64(low)<<32 | uint64(high)
 }
 
 // AddInterfaceEventSubscriber implements inet.InterfaceEventPublisher.AddInterfaceEventSubscriber.
@@ -1363,7 +1391,42 @@ func (s *Stack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements inet.Stack.SetPortRange.
 func (s *Stack) SetPortRange(start uint16, end uint16) error {
+	s.portSysctlMu.Lock()
+	defer s.portSysctlMu.Unlock()
+	// Linux: net/ipv4/sysctl_net_ipv4.c:ipv4_local_port_range().
+	if uint32(start) < s.unprivilegedPortStart.Load() {
+		return linuxerr.EINVAL
+	}
 	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
+}
+
+// UnprivilegedPortStart implements inet.Stack.UnprivilegedPortStart.
+func (s *Stack) UnprivilegedPortStart() uint16 {
+	return uint16(s.unprivilegedPortStart.Load())
+}
+
+// SetUnprivilegedPortStart implements inet.Stack.SetUnprivilegedPortStart.
+func (s *Stack) SetUnprivilegedPortStart(start uint16) error {
+	s.portSysctlMu.Lock()
+	defer s.portSysctlMu.Unlock()
+	// Linux: net/ipv4/sysctl_net_ipv4.c:ipv4_privileged_ports().
+	if low, _ := s.Stack.PortRange(); low < start {
+		return linuxerr.EINVAL
+	}
+	s.unprivilegedPortStart.Store(uint32(start))
+	return nil
+}
+
+// PingGroupRange implements inet.Stack.PingGroupRange.
+func (s *Stack) PingGroupRange() (auth.KGID, auth.KGID) {
+	r := s.pingGroupRange.Load()
+	return auth.KGID(r >> 32), auth.KGID(uint32(r))
+}
+
+// SetPingGroupRange implements inet.Stack.SetPingGroupRange.
+func (s *Stack) SetPingGroupRange(low, high auth.KGID) error {
+	s.pingGroupRange.Store(packPingGroupRange(low, high))
+	return nil
 }
 
 // SetRemoveConf implements inet.Stack.SetRemoveConf.
