@@ -79,7 +79,7 @@ func (e *connectionlessEndpoint) Close(ctx context.Context) {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error {
+func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, clientCreds CredentialsControlMessage, returnConnect func(Receiver, Sender)) *syserr.Error {
 	return syserr.ErrConnectionRefused
 }
 
@@ -136,7 +136,7 @@ func (e *connectionlessEndpoint) Type() linux.SockType {
 }
 
 // Connect attempts to connect directly to server.
-func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
+func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint, clientCreds CredentialsControlMessage) *syserr.Error {
 	peer, err := server.UnidirectionalConnect(ctx)
 	if err != nil {
 		return err
