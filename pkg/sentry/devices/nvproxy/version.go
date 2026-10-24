@@ -26,9 +26,7 @@ import (
 )
 
 const (
-	// ChecksumNoDriver is a special value that indicates that the driver runfile
-	// does not exist. This is mostly for ARM drivers that NVIDIA does not
-	// provide a driver installer.
+	// ChecksumNoDriver marks an architecture without an NVIDIA .run installer.
 	ChecksumNoDriver = "NO_DRIVER"
 )
 
@@ -41,11 +39,36 @@ type driverABIFunc func() *driverABI
 // the driver ABI is not needed.
 type driverABIInfoFunc func() *DriverABIInfo
 
-// Checksums is a struct containing the SHA256 checksum of the linux .run
-// driver installer file from NVIDIA.
+// Checksums contains NVIDIA .run installer hashes and public availability.
 type Checksums struct {
 	X86_64 string
 	ARM64  string
+
+	// These flags preserve known hashes for installers that are unavailable at
+	// NVIDIA's public download locations. ABI support is independent of public
+	// installer availability.
+	NoPublicX86_64Installer bool
+	NoPublicARM64Installer  bool
+}
+
+// PublicInstallerUnavailable reports whether the public installer URL for arch
+// is expected to return HTTP 404. A known hash is retained even when its public
+// installer is unavailable. Empty hashes and unknown architectures are errors.
+func (c Checksums) PublicInstallerUnavailable(arch string) (bool, error) {
+	var checksum string
+	var unavailable bool
+	switch arch {
+	case "amd64":
+		checksum, unavailable = c.X86_64, c.NoPublicX86_64Installer
+	case "arm64":
+		checksum, unavailable = c.ARM64, c.NoPublicARM64Installer
+	default:
+		return false, fmt.Errorf("unsupported driver architecture %q", arch)
+	}
+	if checksum == "" {
+		return false, fmt.Errorf("empty NVIDIA installer checksum for arch %q", arch)
+	}
+	return checksum == ChecksumNoDriver || unavailable, nil
 }
 
 // NewChecksums creates a new Checksums struct.
@@ -135,10 +158,14 @@ var abis map[nvconf.DriverVersion]driverABIEntry
 var abisOnce sync.Once
 
 func addDriverABI(major, minor, patch int, checksumX86_64, checksumARM64 string, cons driverABIFunc) driverABIFunc {
+	return addDriverABIWithChecksums(major, minor, patch, NewChecksums(checksumX86_64, checksumARM64), cons)
+}
+
+func addDriverABIWithChecksums(major, minor, patch int, checksums Checksums, cons driverABIFunc) driverABIFunc {
 	version := nvconf.NewDriverVersion(major, minor, patch)
 	abis[version] = driverABIEntry{
 		cons:      cons,
-		checksums: NewChecksums(checksumX86_64, checksumARM64),
+		checksums: checksums,
 		supported: true,
 	}
 	return cons
@@ -1222,7 +1249,11 @@ func Init() {
 		v580_159_04 := addDriverABI(580, 159, 04, "c1e66761b088d17b3adf6cb6979de9af38be2684d102b001a176dcfafabdca1e", "8912f2623bc7c839765f36fcee3db4a3531834a2caff3aa5d49c1259b2372aeb", v580_159_03)
 		v580_167_08 := addDriverABI(580, 167, 8, "eeaf59b4939aa7283e7883e208fb874a3f71f5a3479df324d500d1abf1bc9cef", ChecksumNoDriver, v580_159_04)
 		v580_173_02 := addDriverABI(580, 173, 02, "8d8eb9001e05a9a8a663d3d5d304feb64ef2844ee185ccdfd952786820f46e1b", "d65bd56087ef4d78f04a808da7883c35a5901c5fd37e95d150a7602eba97aa80", v580_167_08)
-		v580_173_10 := addDriverABI(580, 173, 10, ChecksumNoDriver, "01756a4a5a239e07be1a042ef423829fc0dd66f3688e72060f97ae527f353000", v580_173_02)
+		v580_173_10 := addDriverABIWithChecksums(580, 173, 10, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "01756a4a5a239e07be1a042ef423829fc0dd66f3688e72060f97ae527f353000",
+			NoPublicARM64Installer: true,
+		}, v580_173_02)
 		// Drivers only handle the application-provided flags and attributes of
 		// NVOS32_FUNCTION_ALLOC_OS_DESCRIPTOR safely starting with 580.178.04 in
 		// the 580 branch and 610.57.04 in the 610 branch.
@@ -1326,8 +1357,16 @@ func Init() {
 		// 615.15.00 and 615.62.00 are pre-release builds without public source.
 		// 615.71.09's ABI changes likely apply to them too, but are only
 		// introduced at 615.71.09 until that can be verified.
-		v615_15_00 := addDriverABI(615, 15, 00, ChecksumNoDriver, "d5a40daa72e011395721f2a3de8598b77c3271eec057948de9b3d1755d8d02bc", v610_57_04)
-		v615_62_00 := addDriverABI(615, 62, 00, ChecksumNoDriver, "2f59d8a7b8901269e8df57e9ab968d4749959bf0a90a8637f248b1df8c4a2fdc", v615_15_00)
+		v615_15_00 := addDriverABIWithChecksums(615, 15, 00, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "d5a40daa72e011395721f2a3de8598b77c3271eec057948de9b3d1755d8d02bc",
+			NoPublicARM64Installer: true,
+		}, v610_57_04)
+		v615_62_00 := addDriverABIWithChecksums(615, 62, 00, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "2f59d8a7b8901269e8df57e9ab968d4749959bf0a90a8637f248b1df8c4a2fdc",
+			NoPublicARM64Installer: true,
+		}, v615_15_00)
 		v615_71_09 := addDriverABI(615, 71, 9, "cdceed22bbeb61248d1a6deabc2596673e3a6501698ee71ac8d2fdc28f3b70fe", "21b7a442113b7057e69cf65a2d8f4d0d8705ec2a0d67ed906fbb1177810e8163", func() *driverABI {
 			abi := v615_62_00()
 			abi.allocationClass[nvgpu.KEPLER_CHANNEL_GROUP_A] = allocHandler(rmAllocChannelGroupV615, compUtil)
@@ -1343,7 +1382,11 @@ func Init() {
 			return abi
 		})
 
-		v620_06_00 := addDriverABI(620, 6, 0, ChecksumNoDriver, "95b94e43fd0cb0fb409fd523be491ac7248fec6d1cf82543fa4119cdcbad05b3", func() *driverABI {
+		v620_06_00 := addDriverABIWithChecksums(620, 6, 0, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "95b94e43fd0cb0fb409fd523be491ac7248fec6d1cf82543fa4119cdcbad05b3",
+			NoPublicARM64Installer: true,
+		}, func() *driverABI {
 			abi := v615_71_09()
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_LOCK_REMAP_TABLE_AND_MSE] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_SETUP_NVLE_ENCRYPTION_KEY] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
@@ -1363,7 +1406,11 @@ func Init() {
 			}
 			return abi
 		})
-		v620_30_00 := addDriverABI(620, 30, 0, ChecksumNoDriver, "d7f6cad7861c3b4faea8b539af72da98a5a72c60665f4779ca0c6f1e1660856d", func() *driverABI {
+		v620_30_00 := addDriverABIWithChecksums(620, 30, 0, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "d7f6cad7861c3b4faea8b539af72da98a5a72c60665f4779ca0c6f1e1660856d",
+			NoPublicARM64Installer: true,
+		}, func() *driverABI {
 			abi := v620_06_00()
 			abi.controlCmd[nvgpu.NV2080_CTRL_CMD_NVLINK_SET_NVLE_READY] = ctrlHandler(rmControlSimple, nvconf.CapFabricIMEXManagement)
 
@@ -1375,9 +1422,21 @@ func Init() {
 			}
 			return abi
 		})
-		v620_32_00 := addDriverABI(620, 32, 00, ChecksumNoDriver, "48b576150f3d25219162912a4a1e457c678ab13761350ef770f6ef6e8c44483b", v620_30_00)
-		v620_47_00 := addDriverABI(620, 47, 00, ChecksumNoDriver, "866b5775ee3bb95c07b90252fa238b538aeabda038a0566590c16b13e16193cc", v620_32_00)
-		v620_51_00 := addDriverABI(620, 51, 0, ChecksumNoDriver, "cf761f39bffc561f6529171e342b5ecfdb4fabcc8dff4159f9400432bf7dc2e8", func() *driverABI {
+		v620_32_00 := addDriverABIWithChecksums(620, 32, 00, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "48b576150f3d25219162912a4a1e457c678ab13761350ef770f6ef6e8c44483b",
+			NoPublicARM64Installer: true,
+		}, v620_30_00)
+		v620_47_00 := addDriverABIWithChecksums(620, 47, 00, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "866b5775ee3bb95c07b90252fa238b538aeabda038a0566590c16b13e16193cc",
+			NoPublicARM64Installer: true,
+		}, v620_32_00)
+		v620_51_00 := addDriverABIWithChecksums(620, 51, 0, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "cf761f39bffc561f6529171e342b5ecfdb4fabcc8dff4159f9400432bf7dc2e8",
+			NoPublicARM64Installer: true,
+		}, func() *driverABI {
 			abi := v620_47_00()
 			abi.allocationClass[nvgpu.NV_MNCC_SESSION] = allocHandler(rmAllocMNCCSession, nvconf.CapFabricIMEXManagement)
 
