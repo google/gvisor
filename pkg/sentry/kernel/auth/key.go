@@ -281,7 +281,7 @@ func (c *Credentials) HasKeyPermission(k *Key, possessed *PossessedKeys, permiss
 	// falls back to other permissions when the group permission mask is empty.
 	var perms KeyPermissions
 	switch {
-	case c.EffectiveKUID == k.kuid:
+	case c.FilesystemKUID == k.kuid:
 		perms = (keyPerms & keyOwnerPermissionsMask) >> keyOwnerPermissionsShift
 	case k.kgid.Ok() && keyPerms&keyGroupPermissionsMask != 0 && c.InGroup(k.kgid):
 		perms = (keyPerms & keyGroupPermissionsMask) >> keyGroupPermissionsShift

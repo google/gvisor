@@ -154,8 +154,8 @@ var AMD64 = &kernel.SyscallTable{
 		119: syscalls.SupportedPoint("setresgid", Setresgid, PointSetresgid),
 		120: syscalls.Supported("getresgid", Getresgid),
 		121: syscalls.Supported("getpgid", Getpgid),
-		122: syscalls.ErrorWithEvent("setfsuid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
-		123: syscalls.ErrorWithEvent("setfsgid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
+		122: syscalls.Supported("setfsuid", Setfsuid),
+		123: syscalls.Supported("setfsgid", Setfsgid),
 		124: syscalls.Supported("getsid", Getsid),
 		125: syscalls.Supported("capget", Capget),
 		126: syscalls.Supported("capset", Capset),
@@ -559,8 +559,8 @@ var ARM64 = &kernel.SyscallTable{
 		148: syscalls.Supported("getresuid", Getresuid),
 		149: syscalls.SupportedPoint("setresgid", Setresgid, PointSetresgid),
 		150: syscalls.Supported("getresgid", Getresgid),
-		151: syscalls.ErrorWithEvent("setfsuid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
-		152: syscalls.ErrorWithEvent("setfsgid", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
+		151: syscalls.Supported("setfsuid", Setfsuid),
+		152: syscalls.Supported("setfsgid", Setfsgid),
 		153: syscalls.Supported("times", Times),
 		154: syscalls.Supported("setpgid", Setpgid),
 		155: syscalls.Supported("getpgid", Getpgid),

@@ -1007,17 +1007,15 @@ func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 // credsForCreate returns the creds to use for creation operations.
 func (d *dentry) credsForCreate(creds *auth.Credentials, isSGIDSet bool) *auth.Credentials {
 	// During creation operations, Linux uses a modified version of fs.creds. It
-	// sets the fsuid/fsgid to the caller's fsuid/fsgid. Note that gVisor doesn't
-	// support fsuid/fsgid and just uses euid/egid to determine file ownership
-	// for new files. So we just update euid/egid with the caller's euid/egid.
+	// sets the fsuid/fsgid to the caller's fsuid/fsgid.
 	key := createCredsKey{
-		uid: creds.EffectiveKUID,
-		gid: creds.EffectiveKGID,
+		uid: creds.FilesystemKUID,
+		gid: creds.FilesystemKGID,
 	}
 	if isSGIDSet {
 		key.gid = auth.KGID(d.gid.Load())
 	}
-	if d.fs.creds.EffectiveKUID == key.uid && d.fs.creds.EffectiveKGID == key.gid {
+	if d.fs.creds.FilesystemKUID == key.uid && d.fs.creds.FilesystemKGID == key.gid {
 		return d.fs.creds
 	}
 	d.fs.createCredsMu.Lock()
@@ -1025,8 +1023,8 @@ func (d *dentry) credsForCreate(creds *auth.Credentials, isSGIDSet bool) *auth.C
 	newCreds, ok := d.fs.createCreds[key]
 	if !ok {
 		newCreds = d.fs.creds.Fork()
-		newCreds.EffectiveKUID = key.uid
-		newCreds.EffectiveKGID = key.gid
+		newCreds.FilesystemKUID = key.uid
+		newCreds.FilesystemKGID = key.gid
 		if d.fs.createCreds == nil {
 			d.fs.createCreds = make(map[createCredsKey]*auth.Credentials)
 		}

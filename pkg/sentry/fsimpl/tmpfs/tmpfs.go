@@ -269,8 +269,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	maxSizeInPages := getDefaultSizeLimit(disableDefaultSizeLimit) >> hostarch.PageShift
 	maxInodes := getDefaultInodeLimit(disableDefaultSizeLimit)
-	rootKUID := creds.EffectiveKUID
-	rootKGID := creds.EffectiveKGID
+	rootKUID := creds.FilesystemKUID
+	rootKGID := creds.FilesystemKGID
 
 	printedOptsMap := make(map[string]string)
 
