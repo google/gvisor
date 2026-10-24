@@ -2369,10 +2369,10 @@ func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
 	// nvidia-container-runtime-hook, we don't add the container's filesystem
 	// to the search path. We also don't support
 	// /etc/nvidia-container-runtime/config.toml to avoid importing a TOML
-	// parser.
-	cliPath, err := exec.LookPath("nvidia-container-cli")
+	// parser; use --nvproxy-container-cli-path for non-PATH installations.
+	cliPath, err := specutils.FindNVIDIAContainerCLI(conf)
 	if err != nil {
-		return fmt.Errorf("failed to locate nvidia-container-cli in PATH: %w", err)
+		return err
 	}
 
 	// nvidia-container-cli --load-kmods seems to be a noop; load kernel modules ourselves.
@@ -2463,9 +2463,9 @@ func nvproxySetup(spec *specs.Spec, conf *config.Config, goferPid int) error {
 		return fmt.Errorf("failed to create /proc/driver/nvidia in app filesystem: %w", err)
 	}
 
-	cliPath, err := exec.LookPath("nvidia-container-cli")
+	cliPath, err := specutils.FindNVIDIAContainerCLI(conf)
 	if err != nil {
-		return fmt.Errorf("failed to locate nvidia-container-cli in PATH: %w", err)
+		return err
 	}
 
 	// On Ubuntu, ldconfig is a wrapper around ldconfig.real, and we need the latter.
