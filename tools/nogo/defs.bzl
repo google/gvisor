@@ -285,8 +285,17 @@ def _nogo_aspect_impl(target, ctx):
     has_source_info = analyze_sources and go_has_source(target)
     if has_source_info:
         srcs = go_source_files(target)
+
+    # The canonical source view includes the sources of embedded targets.
+    # Exclude those that the embed itself does not get analyzed.
+    unanalyzed_srcs = {}
     for embed in go_embed_libraries(ctx.rule):
         info = embed[NogoInfo]
+        if analyze_sources and go_has_source(embed):
+            analyzed_srcs = {src: None for src in getattr(info, "srcs", [])}
+            for src in go_source_files(embed):
+                if src not in analyzed_srcs:
+                    unanalyzed_srcs[src] = None
         if analyze_sources and not has_source_info:
             # Binary/test targets may expose only an archive. Retain their
             # own sources and rules_go's prepend order for each embed.
@@ -296,6 +305,8 @@ def _nogo_aspect_impl(target, ctx):
                 srcs = info.srcs + srcs
         if hasattr(info, "deps"):
             deps = deps + info.deps
+    if unanalyzed_srcs:
+        srcs = [src for src in srcs if src not in unanalyzed_srcs]
 
     # Binary analysis needs the compiled Go archive, not the linked executable:
     # the linker can remove functions that checkescape still needs to inspect.
