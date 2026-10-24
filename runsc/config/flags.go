@@ -47,6 +47,7 @@ const (
 	flagOverlay2                = "overlay2"
 	flagAllowFlagOverride       = "allow-flag-override"
 	flagPauseExternalNetworking = "pause-external-networking"
+	flagKeepHostAddrs           = "keep-host-addrs"
 	flagAllowConnectedOnSave    = "allow-connected-on-save"
 	flagQDisc                   = "qdisc"
 	flagQDiscTBFRate            = "qdisc-tbf-rate"
@@ -185,6 +186,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool(flagReproduceNFTables, false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 	flagSet.Bool(flagNetDisconnectOK, true, "Indicates whether open network connections and open unix domain sockets should be disconnected upon save.")
 	flagSet.Bool(flagPauseExternalNetworking, false, "Start the sandbox with external networking disabled. Only supported when using the sandbox network type. The network can be unpaused manually after the sandbox is running.")
+	flagSet.String(flagKeepHostAddrs, "", "comma-separated list of host interface names whose IP addresses are preserved on the host NIC instead of being removed when the sandbox takes over the interface. Intended for secondary interfaces (e.g. a VPC private-network NIC) whose address must stay usable outside the sandbox. Names must match exactly; the primary interface is unaffected.")
 	flagSet.Bool(flagAllowConnectedOnSave, false, "Allow network connections to stay established on save.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
