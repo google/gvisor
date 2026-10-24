@@ -15,6 +15,8 @@ package docprocessor
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,18 +96,44 @@ func TestProcessDocuments_TimeoutEnforcement(t *testing.T) {
 	}
 }
 
-func TestProcessDocuments_NetworkIsolation(t *testing.T) {
-	ctx := context.Background()
-
-	// In NetworkModeNone, outbound network requests to 8.8.8.8 must fail.
-	cfg := ProcessConfig{
-		Command: "nc -z -w 1 8.8.8.8 53 || echo 'NETWORK_BLOCKED'",
-		Timeout: 5 * time.Second,
-		Network: "none",
+func TestProcessDocuments_NetworkModes(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 
-	if err := ProcessDocuments(ctx, cfg); err != nil {
-		t.Fatalf("ProcessDocuments failed: %v", err)
+	// The host case verifies that the command can reach the listener. The
+	// same host loopback endpoint must be unreachable with network=none.
+	const deniedExitCode = 42
+	command := fmt.Sprintf(
+		"bash -c 'if : 3<>/dev/tcp/127.0.0.1/%d; then exit 0; else exit %d; fi'",
+		listener.Addr().(*net.TCPAddr).Port, deniedExitCode,
+	)
+	for _, tc := range []struct {
+		network string
+		wantErr bool
+	}{
+		{network: "host", wantErr: false},
+		{network: "none", wantErr: true},
+	} {
+		t.Run(tc.network, func(t *testing.T) {
+			err := ProcessDocuments(t.Context(), ProcessConfig{
+				Command: command,
+				Timeout: 10 * time.Second,
+				Network: tc.network,
+			})
+			if got, want := err != nil, tc.wantErr; got != want {
+				t.Fatalf("ProcessDocuments(network=%q) error = %v, want error: %t", tc.network, err, want)
+			}
+			if err != nil && !strings.HasPrefix(err.Error(), fmt.Sprintf("command exited with code %d:", deniedExitCode)) {
+				t.Fatalf("connection probe did not run: %v", err)
+			}
+		})
 	}
 }
 
@@ -218,34 +246,5 @@ func TestProcessDocuments_ExitCodeFailure(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "code 42") {
 		t.Errorf("expected error message mentioning exit code 42, got: %v", err)
-	}
-}
-
-func TestProcessDocuments_NetworkHost(t *testing.T) {
-	ctx := context.Background()
-
-	outDir := t.TempDir()
-
-	cfg := ProcessConfig{
-		OutputDir: outDir,
-		Command:   "echo 'HOST_NETWORK_OK' > /output/net.txt",
-		Timeout:   10 * time.Second,
-		Network:   "host",
-	}
-
-	if err := ProcessDocuments(ctx, cfg); err != nil {
-		t.Fatalf("ProcessDocuments failed with host network: %v", err)
-	}
-
-	netFile := filepath.Join(outDir, "net.txt")
-	gotBytes, err := os.ReadFile(netFile)
-	if err != nil {
-		t.Fatalf("failed to read network test output file: %v", err)
-	}
-
-	got := strings.TrimSpace(string(gotBytes))
-	want := "HOST_NETWORK_OK"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
 	}
 }
