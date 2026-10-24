@@ -38,6 +38,16 @@ const (
 	defaultMaxCachedDentries = uint64(1000)
 )
 
+// parseIDName parses a task or file descriptor name. Linux exposes each ID
+// under a single decimal spelling (fs/proc/util.c:name_to_int).
+func parseIDName(name string) (int32, bool) {
+	if len(name) > 1 && name[0] == '0' {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(name, 10, 31)
+	return int32(id), err == nil
+}
+
 // FilesystemType is the factory class for procfs.
 //
 // +stateify savable
