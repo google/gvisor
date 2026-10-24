@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -23,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/ktime"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func TestDestroyIdempotent(t *testing.T) {
@@ -192,5 +194,104 @@ func TestXattrCacheList(t *testing.T) {
 	list, found = ino.xattrCache.getList()
 	if !found || !slices.Equal(list, wantList) {
 		t.Errorf("getList() = (%v, %v), want (%v, true)", list, found, wantList)
+	}
+}
+
+func TestPrepareSaveRecursiveSkipMetadataValidation(t *testing.T) {
+	ctx := contexttest.Context(t)
+	fs := filesystem{
+		mf:          pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:    make(map[inoKey]uint64),
+		inodeByKey:  make(map[inoKey]*inode),
+		clock:       ktime.RealtimeClockFromContext(ctx),
+		dentryCache: &dentryCache{maxCachedDentries: 0},
+		client:      &lisafs.Client{},
+	}
+	fs.opts.interop = InteropModeShared
+	fs.savedDentryRW = make(map[*dentry]savedDentryRW)
+
+	parentInode := lisafs.Inode{
+		ControlFD: 1,
+		Stat: lisafs.Statx{
+			Mask: linux.STATX_TYPE | linux.STATX_MODE,
+			Mode: linux.S_IFDIR | 0666,
+		},
+	}
+	parent, err := fs.newLisafsDentry(ctx, &parentInode)
+	if err != nil {
+		t.Fatalf("fs.newLisafsDentry(): %v", err)
+	}
+	fs.root = parent
+
+	childInode := lisafs.Inode{
+		ControlFD: 2,
+		Stat: lisafs.Statx{
+			Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_SIZE,
+			Mode: linux.S_IFREG | 0666,
+			Size: 0,
+		},
+	}
+	child, err := fs.newLisafsDentry(ctx, &childInode)
+	if err != nil {
+		t.Fatalf("fs.newLisafsDentry(): %v", err)
+	}
+	parent.children["child"] = child
+
+	// When ValidateMetadata is false, prepareSaveRecursive should succeed
+	// without attempting to call updateMetadata on the regular file child.
+	if err := parent.prepareSaveRecursive(ctx, vfs.PrepareSaveOptions{ValidateMetadata: false}); err != nil {
+		t.Fatalf("prepareSaveRecursive(ValidateMetadata: false) failed: %v", err)
+	}
+}
+
+func BenchmarkPrepareSaveRecursive(b *testing.B) {
+	ctx := contexttest.Context(b)
+	fs := filesystem{
+		mf:          pgalloc.MemoryFileFromContext(ctx),
+		inoByKey:    make(map[inoKey]uint64),
+		inodeByKey:  make(map[inoKey]*inode),
+		clock:       ktime.RealtimeClockFromContext(ctx),
+		dentryCache: &dentryCache{maxCachedDentries: 0},
+		client:      &lisafs.Client{},
+	}
+	fs.opts.interop = InteropModeShared
+	fs.savedDentryRW = make(map[*dentry]savedDentryRW)
+
+	parentInode := lisafs.Inode{
+		ControlFD: 1,
+		Stat: lisafs.Statx{
+			Mask: linux.STATX_TYPE | linux.STATX_MODE,
+			Mode: linux.S_IFDIR | 0666,
+		},
+	}
+	parent, err := fs.newLisafsDentry(ctx, &parentInode)
+	if err != nil {
+		b.Fatalf("fs.newLisafsDentry(): %v", err)
+	}
+	fs.root = parent
+
+	const numFiles = 1000
+	for i := 0; i < numFiles; i++ {
+		childInode := lisafs.Inode{
+			ControlFD: uint64(i + 2),
+			Stat: lisafs.Statx{
+				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_SIZE,
+				Mode: linux.S_IFREG | 0666,
+				Size: 0,
+			},
+		}
+		child, err := fs.newLisafsDentry(ctx, &childInode)
+		if err != nil {
+			b.Fatalf("fs.newLisafsDentry(): %v", err)
+		}
+		parent.children[fmt.Sprintf("file_%d", i)] = child
+	}
+
+	opts := vfs.PrepareSaveOptions{ValidateMetadata: false}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := parent.prepareSaveRecursive(ctx, opts); err != nil {
+			b.Fatalf("prepareSaveRecursive failed: %v", err)
+		}
 	}
 }
