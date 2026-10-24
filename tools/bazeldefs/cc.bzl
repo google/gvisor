@@ -3,6 +3,24 @@
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", _cc_grpc_library = "cc_grpc_library")
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", _cc_proto_library = "cc_proto_library")
 load("@rules_cc//cc:defs.bzl", _cc_binary = "cc_binary", _cc_library = "cc_library", _cc_test = "cc_test")
+load("//tools/bazeldefs:test_architectures.bzl", "test_architecture_variants", "with_test_architecture")
+
+def _compile_cc_test(compile_exec_compatible_with, **kwargs):
+    kwargs["exec_compatible_with"] = compile_exec_compatible_with
+    _cc_test(**kwargs)
+
+cc_amd64_test, _cc_amd64_transition = with_test_architecture(_compile_cc_test, "amd64", implicit_targets = ["{name}.dwp", "{name}.stripped"]).build()
+cc_arm64_test, _cc_arm64_transition = with_test_architecture(_compile_cc_test, "arm64", implicit_targets = ["{name}.dwp", "{name}.stripped"]).build()
+
+def cc_test(name, architectures = [], **kwargs):
+    """Declares a C++ test and optional native architecture variants."""
+    _cc_test(name = name, **kwargs)
+    test_architecture_variants(
+        name,
+        architectures,
+        {"amd64": cc_amd64_test, "arm64": cc_arm64_test},
+        kwargs,
+    )
 
 def cc_library(**kwargs):
     """Wraps _cc_library and deduplicates deps.
@@ -21,7 +39,6 @@ def cc_library(**kwargs):
     _cc_library(**kwargs)
 
 cc_proto_library = _cc_proto_library
-cc_test = _cc_test
 cc_toolchain = "@bazel_tools//tools/cpp:current_cc_toolchain"
 gtest = "@com_google_googletest//:gtest"
 gbenchmark = "@com_google_benchmark//:benchmark"
