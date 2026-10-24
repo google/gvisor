@@ -1287,6 +1287,13 @@ func (s *sender) shouldEnterRecovery() bool {
 func (s *sender) detectLoss(seg *segment) (fastRetransmit bool) {
 	// We're not in fast recovery yet.
 
+	// Preserve timeout recovery until the pre-RTO flight is acknowledged.
+	// In particular, a duplicate ACK must not change the state to Disorder.
+	// See RFC 6675, section 5.1.
+	if s.state == tcpip.RTORecovery {
+		return false
+	}
+
 	// If RACK is enabled and there is no reordering we should honor the
 	// three duplicate ACK rule to enter recovery.
 	// See: https://tools.ietf.org/html/draft-ietf-tcpm-rack-08#section-4
@@ -1793,7 +1800,9 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 		// After the reorder window is calculated, detect any loss by checking
 		// if the time elapsed after the segments are sent is greater than the
 		// reorder window.
-		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && !s.FastRecovery.Active {
+		// Do not start fast recovery while timeout recovery is still draining
+		// the pre-RTO flight. See RFC 6675, section 5.1.
+		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && !s.FastRecovery.Active && s.state != tcpip.RTORecovery {
 			// If any segment is marked as lost by
 			// RACK, enter recovery and retransmit
 			// the lost segments.

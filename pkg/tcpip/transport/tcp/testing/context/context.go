@@ -131,6 +131,9 @@ type Options struct {
 	// Clock that is used by Stack.
 	Clock tcpip.Clock
 
+	// ClockResolution is the uncertainty in the clock's timestamps.
+	ClockResolution time.Duration
+
 	// Probe is a probe function to attach to the stack.
 	Probe tcp.TCPProbeFunc
 
@@ -208,6 +211,7 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 	stackOpts := stack.Options{
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocolProbe(opts.Probe)},
 		Clock:              opts.Clock,
+		ClockResolution:    opts.ClockResolution,
 	}
 	if opts.EnableV4 {
 		stackOpts.NetworkProtocols = append(stackOpts.NetworkProtocols, ipv4.NewProtocol)
