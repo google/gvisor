@@ -2356,6 +2356,7 @@ cc_binary(
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
+        "//test/util:pty_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2627,6 +2628,7 @@ cc_binary(
         ":file_base",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
+        "//test/util:pty_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
