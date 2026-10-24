@@ -3421,6 +3421,70 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
               IsPosixErrorOkAndHolds(0));
 }
 
+// rename(2): "If oldpath and newpath are existing hard links referring to the
+// same file, then rename() does nothing, and returns a success status." dpkg
+// does this when it rolls back its hard link backups of files it replaces.
+TEST(MountTest, OverlayfsRenameHardLinkToSameFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Overlayfs can not be used as upper layer for another overlayfs mount. If
+  // running in overlayfs, create a tmpfs mount to use as the upper layer.
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  const std::string kContents = "lower_content";
+  ASSERT_NO_ERRNO(
+      CreateWithContents(JoinPath(lower.path(), "file"), kContents, 0644));
+
+  // Mount the overlayfs.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  auto overlay_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", merged.path(), "overlay", 0, opts, MNT_DETACH));
+
+  // Hard linking the file copies it up.
+  const std::string merged_file = JoinPath(merged.path(), "file");
+  const std::string merged_link = JoinPath(merged.path(), "link");
+  ASSERT_THAT(link(merged_file.c_str(), merged_link.c_str()),
+              SyscallSucceeds());
+
+  ASSERT_THAT(rename(merged_link.c_str(), merged_file.c_str()),
+              SyscallSucceeds());
+  ASSERT_THAT(rename(merged_file.c_str(), merged_link.c_str()),
+              SyscallSucceeds());
+
+  // Both names still refer to the file.
+  for (const std::string& path : {merged_file, merged_link}) {
+    std::string contents;
+    ASSERT_NO_ERRNO(GetContents(path, &contents));
+    EXPECT_EQ(contents, kContents);
+    EXPECT_THAT(Links(path), IsPosixErrorOkAndHolds(2));
+  }
+  struct stat st_file, st_link;
+  ASSERT_THAT(stat(merged_file.c_str(), &st_file), SyscallSucceeds());
+  ASSERT_THAT(stat(merged_link.c_str(), &st_link), SyscallSucceeds());
+  EXPECT_EQ(st_file.st_ino, st_link.st_ino);
+  EXPECT_EQ(st_file.st_dev, st_link.st_dev);
+}
+
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
@@ -3651,6 +3715,66 @@ TEST(MountTest, OverlayfsUnlinkInDeletedDirFails) {
   EXPECT_THAT(openat(dirfd.get(), "file", O_RDWR),
               SyscallFailsWithErrno(ENOENT));
   EXPECT_THAT(unlinkat(dirfd.get(), "file", 0), SyscallFailsWithErrno(ENOENT));
+}
+
+// Copy up a file that is memory-mapped through the overlay, as dpkg does when
+// it hard links a running binary or a loaded shared library to back it up
+// before replacing it. gVisor moves the file's mappings to the upper layer
+// file (Linux leaves them on the lower layer file); either way, the mapping
+// must remain readable.
+TEST(MountTest, OverlayfsCopyUpOfMappedFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Overlayfs can not be used as upper layer for another overlayfs mount. If
+  // running in overlayfs, create a tmpfs mount to use as the upper layer.
+  bool in_overlayfs = ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(base_dir.path()));
+  if (in_overlayfs) {
+    ASSERT_THAT(
+        mount("tmpfs", base_dir.path().c_str(), "tmpfs", 0, "mode=1777"),
+        SyscallSucceeds());
+  }
+  auto tmpfs_cleanup = Cleanup([&base_dir, &in_overlayfs] {
+    if (in_overlayfs) {
+      ASSERT_THAT(umount2(base_dir.path().c_str(), MNT_DETACH),
+                  SyscallSucceeds());
+    }
+  });
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  const std::string kContents = "lower_content";
+  ASSERT_NO_ERRNO(
+      CreateWithContents(JoinPath(lower.path(), "file"), kContents, 0755));
+
+  // Mount the overlayfs.
+  std::string opts = "lowerdir=" + lower.path() + ",upperdir=" + upper.path() +
+                     ",workdir=" + work.path();
+  auto overlay_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("overlay", merged.path(), "overlay", 0, opts, MNT_DETACH));
+
+  // Map the lower layer file through the overlay.
+  const std::string merged_file = JoinPath(merged.path(), "file");
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(merged_file, O_RDONLY));
+  const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kPageSize, PROT_READ, MAP_PRIVATE, fd.get(), 0));
+  EXPECT_EQ(m.view().substr(0, kContents.size()), kContents);
+
+  // Hard linking the file copies it up.
+  const std::string merged_link = JoinPath(merged.path(), "link");
+  ASSERT_THAT(link(merged_file.c_str(), merged_link.c_str()),
+              SyscallSucceeds());
+  EXPECT_THAT(Exists(JoinPath(upper.path(), "file")),
+              IsPosixErrorOkAndHolds(true));
+
+  // The mapping still reads the file's contents.
+  EXPECT_EQ(m.view().substr(0, kContents.size()), kContents);
 }
 
 TEST(MountTest, PollMountInfo) {

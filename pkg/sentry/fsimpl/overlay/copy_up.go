@@ -162,8 +162,17 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			return err
 		}
 		defer oldFD.DecRef(ctx)
+		// If the file may be memory-mapped, its mappings are switched to the
+		// upper layer file below, so that file must be readable: its
+		// Mappable translates faults by reading from it, and some filesystems
+		// (e.g. a gofer mount in shared mode) can't provide one without a
+		// readable host FD.
+		newFlags := uint32(linux.O_WRONLY)
+		if d.wrappedMappable != nil {
+			newFlags = linux.O_RDWR
+		}
 		newFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &newpop, &vfs.OpenOptions{
-			Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_EXCL,
+			Flags: newFlags | linux.O_CREAT | linux.O_EXCL,
 			// d.mode can be read because d.copyMu is locked.
 			Mode: linux.FileMode(d.mode.RacyLoad() &^ linux.S_IFMT),
 		})

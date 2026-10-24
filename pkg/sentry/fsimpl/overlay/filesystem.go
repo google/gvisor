@@ -1091,6 +1091,18 @@ func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 	})
 }
 
+// isSameUpperFile returns true if a and b are copied-up non-directories whose
+// upper layer files are the same file, i.e. hard links to one inode.
+func isSameUpperFile(a, b *dentry) bool {
+	// Copied-up non-directories use the device and inode numbers of their
+	// upper layer file (see filesystem.lookupLocked() and
+	// dentry.copyUpMaybeSyntheticMountpointLocked()).
+	return !a.isDir() && !b.isDir() && a.isCopiedUp() && b.isCopiedUp() &&
+		a.ino.Load() == b.ino.Load() &&
+		a.devMajor.Load() == b.devMajor.Load() &&
+		a.devMinor.Load() == b.devMinor.Load()
+}
+
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
 func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldParentVD vfs.VirtualDentry, oldName string, opts vfs.RenameOptions) error {
 	// Resolve newParent first to verify that it's on this Mount.
@@ -1249,6 +1261,14 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// upper layer.
 	if err := renamed.copyUpLocked(ctx); err != nil {
 		return err
+	}
+	// rename(2): "If oldpath and newpath are existing hard links referring to
+	// the same file, then rename() does nothing, and returns a success
+	// status." This can't be left to the upper layer: if it does nothing,
+	// creating the whiteout at the origin below fails, and if it renames
+	// anyway (as tmpfs does), oldName is lost.
+	if replaced != nil && isSameUpperFile(renamed, replaced) {
+		return nil
 	}
 	// If renamed is a directory, all of its descendants need to be copied-up
 	// before they're renamed on the upper layer.
