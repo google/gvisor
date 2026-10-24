@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -52,12 +53,30 @@ type Tester interface {
 
 // RunAllLocalFSTests runs all local FS tests as subtests.
 func RunAllLocalFSTests(t *testing.T, tester Tester) {
+	mountRoot := os.Getenv("TEST_TMPDIR")
+	if mountRoot == "" {
+		mountRoot = os.TempDir()
+	}
+	parent, err := os.Open(mountRoot)
+	if err != nil {
+		t.Fatalf("opening temporary directory failed: %v", err)
+	}
+	defer parent.Close()
+
 	for name, testFn := range localFSTests {
-		mountPath, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "")
+		mountPath, err := os.MkdirTemp(mountRoot, "")
 		if err != nil {
 			t.Fatalf("creation of temporary mountpoint failed: %v", err)
 		}
-		RunTest(t, tester, name, testFn, mountPath)
+		serverPath := mountPath
+		if name == "UDS" {
+			// Keep socket paths below UnixPathMax even with a long TEST_TMPDIR.
+			// The final component must remain a directory, not a procfs symlink,
+			// since servers may open the mount point with O_NOFOLLOW. Other tests
+			// require the original path for operations that forbid all symlinks.
+			serverPath = fmt.Sprintf("/proc/self/fd/%d/%s", parent.Fd(), filepath.Base(mountPath))
+		}
+		RunTest(t, tester, name, testFn, serverPath)
 		os.RemoveAll(mountPath)
 	}
 }
@@ -619,7 +638,11 @@ func testUDS(ctx context.Context, t *testing.T, tester Tester, root lisafs.Clien
 	const name = "sock"
 	file, socket, stat := bind(ctx, t, root, name, unix.SOCK_STREAM)
 	defer closeFD(ctx, t, file)
-	defer socket.Close(ctx)
+	defer func() {
+		if socket != nil {
+			socket.Close(ctx)
+		}
+	}()
 
 	if got := stat.Mode & unix.S_IFMT; got != unix.S_IFSOCK {
 		t.Errorf("socket file mode is incorrect: want %#x, got %#x", unix.S_IFSOCK, got)
@@ -645,8 +668,25 @@ func testUDS(ctx context.Context, t *testing.T, tester Tester, root lisafs.Clien
 		t.Errorf("mknod GID is incorrect: want %d, got %d", stat.GID, got.GID)
 	}
 
-	// TODO(b/194709873): Once listen and accept are implemented, test connecting
-	// and accepting a connection using sockF.
+	if err := socket.Listen(ctx, 1); err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	connected, err := file.Connect(ctx, unix.SOCK_STREAM, lisafs.NoUID, lisafs.NoGID)
+	if err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	defer unix.Close(connected)
+	accepted, err := socket.Accept(ctx)
+	if err != nil {
+		t.Fatalf("accept failed: %v", err)
+	}
+	defer unix.Close(accepted)
+
+	// The filesystem descriptor must remain usable after the bound socket
+	// closes. RunTest checks for leaked server references before shutdown.
+	socket.Close(ctx)
+	socket = nil
+	statTo(ctx, t, file, &got)
 }
 
 func testGetdents(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {

@@ -58,6 +58,7 @@ var _ lisafs.ConnectionImpl = (*testConnImpl)(nil)
 //
 // +checklocksread:c.server.renameMu
 // +checklocksexclude:c.fdsMu
+// +checklocksexclude:mountNode.controlFDsMu
 func (s *testConnImpl) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, lisafs.Statx, int, error) {
 	dummyRoot := &testControlFD{}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
