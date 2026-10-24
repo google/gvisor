@@ -64,6 +64,7 @@ go_test(
     deps = [
         ":sys",
         "//pkg/abi/linux",
+        "//pkg/errors/linuxerr",
         "//pkg/rdma",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",
