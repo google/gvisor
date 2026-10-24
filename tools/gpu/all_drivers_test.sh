@@ -21,7 +21,7 @@ set -ueo pipefail
 tmp_file="$(mktemp)"
 trap "rm -f ${tmp_file}" EXIT
 
-make sudo TARGETS=tools/gpu:main ARGS="list --outfile=${tmp_file}"
+make run TARGETS=tools/gpu:main ARGS="list --outfile=${tmp_file}"
 read -r -a all_versions <<< "$(cat "${tmp_file}")"
 
 if [[ "${#all_versions[@]}" -eq 0 ]]; then

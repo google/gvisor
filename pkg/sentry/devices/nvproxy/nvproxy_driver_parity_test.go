@@ -20,7 +20,6 @@
 package nvproxy_driver_parity_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -441,12 +440,13 @@ func compareTypes(t *testing.T, nvproxyType reflect.Type, driverTypeName string,
 
 // TestDriverChecksums tests that the checksums of all drivers are correct.
 func TestDriverChecksums(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
+	var downloader drivers.Downloader
 	nvproxy.Init()
 	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
 		t.Run(version.String(), func(t *testing.T) {
 			t.Parallel()
-			if err := drivers.ValidateChecksum(ctx, version.String(), checksums); err != nil {
+			if err := downloader.ValidateChecksum(ctx, version, checksums); err != nil {
 				t.Errorf("checksum mismatch for driver %q: %v", version.String(), err)
 			}
 		})
