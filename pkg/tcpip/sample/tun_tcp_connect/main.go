@@ -45,7 +45,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"net"
+	"net/netip"
 	"os"
 	"strconv"
 
@@ -98,10 +98,18 @@ func main() {
 	remoteAddrName := os.Args[4]
 	remotePortName := os.Args[5]
 
-	addr := tcpip.AddrFromSlice(net.ParseIP(addrName).To4())
+	addr, err := netip.ParseAddr(addrName)
+	if err != nil || addr.Zone() != "" || !addr.Unmap().Is4() {
+		log.Fatalf("Bad local IPv4 address: %s", addrName)
+	}
+	remoteAddr, err := netip.ParseAddr(remoteAddrName)
+	if err != nil || remoteAddr.Zone() != "" || !remoteAddr.Unmap().Is4() {
+		log.Fatalf("Bad remote IPv4 address: %s", remoteAddrName)
+	}
+	addr = addr.Unmap()
 	remote := tcpip.FullAddress{
 		NIC:  1,
-		Addr: tcpip.AddrFromSlice(net.ParseIP(remoteAddrName).To4()),
+		Addr: remoteAddr.Unmap(),
 	}
 
 	var localPort uint16
@@ -144,7 +152,7 @@ func main() {
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: addr.WithPrefix(),
+		AddressWithPrefix: tcpip.FullPrefix(addr),
 	}
 	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
 		log.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)

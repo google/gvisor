@@ -17,11 +17,13 @@ package tcp_timestamp_test
 import (
 	"bytes"
 	"math/rand"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -117,7 +119,7 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 		if diff := cmp.Diff(tcpip.ReadResult{
 			Count: len(buf),
 			Total: len(buf),
-		}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+		}, result, checker.IgnoreCmpPath("ControlMessages"), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 			t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
 		}
 		if got, want := buf, data; !bytes.Equal(got, want) {
@@ -349,7 +351,7 @@ func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 	if diff := cmp.Diff(tcpip.ReadResult{
 		Count: buf.Len(),
 		Total: buf.Len(),
-	}, result, checker.IgnoreCmpPath("ControlMessages")); diff != "" {
+	}, result, checker.IgnoreCmpPath("ControlMessages"), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 		t.Errorf("Read: unexpected result (-want +got):\n%s", diff)
 	}
 	if got, want := buf.Bytes(), data; !bytes.Equal(got, want) {

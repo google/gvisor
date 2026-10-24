@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 	"strings"
 
@@ -336,8 +337,8 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 		TTL:            64,
 		Protocol:       0,
 		Checksum:       0,
-		SrcAddr:        tcpip.Address{},
-		DstAddr:        tcpip.Address{},
+		SrcAddr:        netip.Addr{},
+		DstAddr:        netip.Addr{},
 		Options:        nil,
 	}
 	if l.TOS != nil {
@@ -381,10 +382,16 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 		}
 	}
 	if l.SrcAddr != nil && len(*l.SrcAddr) > 0 {
-		fields.SrcAddr = tcpip.AddrFrom4Slice(*l.SrcAddr)
+		if len(*l.SrcAddr) != 4 {
+			return nil, fmt.Errorf("invalid IPv4 SrcAddr length: %d", len(*l.SrcAddr))
+		}
+		fields.SrcAddr = netip.AddrFrom4([4]byte(*l.SrcAddr))
 	}
 	if l.DstAddr != nil && len(*l.DstAddr) > 0 {
-		fields.DstAddr = tcpip.AddrFrom4Slice(*l.DstAddr)
+		if len(*l.DstAddr) != 4 {
+			return nil, fmt.Errorf("invalid IPv4 DstAddr length: %d", len(*l.DstAddr))
+		}
+		fields.DstAddr = netip.AddrFrom4([4]byte(*l.DstAddr))
 	}
 
 	h.Encode(fields)
@@ -434,10 +441,8 @@ func TCPFlags(v header.TCPFlags) *header.TCPFlags {
 
 // Address is a helper routine that allocates a new net.IP value to
 // store v and returns a pointer to it.
-func Address(v tcpip.Address) *net.IP {
-	bs := make([]byte, v.Len())
-	copy(bs, v.AsSlice())
-	ret := net.IP(bs)
+func Address(v netip.Addr) *net.IP {
+	ret := net.IP(v.AsSlice())
 	return &ret
 }
 
@@ -545,10 +550,16 @@ func (l *IPv6) ToBytes() ([]byte, error) {
 		fields.HopLimit = *l.HopLimit
 	}
 	if l.SrcAddr != nil && len(*l.SrcAddr) > 0 {
-		fields.SrcAddr = tcpip.AddrFrom16Slice(*l.SrcAddr)
+		if len(*l.SrcAddr) != 16 {
+			return nil, fmt.Errorf("invalid IPv6 SrcAddr length: %d", len(*l.SrcAddr))
+		}
+		fields.SrcAddr = netip.AddrFrom16([16]byte(*l.SrcAddr))
 	}
 	if l.DstAddr != nil && len(*l.DstAddr) > 0 {
-		fields.DstAddr = tcpip.AddrFrom16Slice(*l.DstAddr)
+		if len(*l.DstAddr) != 16 {
+			return nil, fmt.Errorf("invalid IPv6 DstAddr length: %d", len(*l.DstAddr))
+		}
+		fields.DstAddr = netip.AddrFrom16([16]byte(*l.DstAddr))
 	}
 	h.Encode(fields)
 	return h, nil
@@ -889,10 +900,13 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 		// We need to search backwards to find the IPv6 header.
 		for layer := l.Prev(); layer != nil; layer = layer.Prev() {
 			if ipv6, ok := layer.(*IPv6); ok {
+				if ipv6.SrcAddr == nil || ipv6.DstAddr == nil || len(*ipv6.SrcAddr) != 16 || len(*ipv6.DstAddr) != 16 {
+					return nil, fmt.Errorf("ICMPv6 checksum requires IPv6 source and destination addresses")
+				}
 				h.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 					Header:      h[:header.ICMPv6PayloadOffset],
-					Src:         tcpip.AddrFrom16Slice(*ipv6.SrcAddr),
-					Dst:         tcpip.AddrFrom16Slice(*ipv6.DstAddr),
+					Src:         netip.AddrFrom16([16]byte(*ipv6.SrcAddr)),
+					Dst:         netip.AddrFrom16([16]byte(*ipv6.DstAddr)),
 					PayloadCsum: checksum.Checksum(l.Payload, 0 /* initial */),
 					PayloadLen:  len(l.Payload),
 				}))
@@ -1144,9 +1158,15 @@ func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, 
 	var xsum uint16
 	switch p := l.Prev().(type) {
 	case *IPv4:
-		xsum = header.PseudoHeaderChecksum(protoNumber, tcpip.AddrFrom4Slice(*p.SrcAddr), tcpip.AddrFrom4Slice(*p.DstAddr), totalLength)
+		if p.SrcAddr == nil || p.DstAddr == nil || len(*p.SrcAddr) != 4 || len(*p.DstAddr) != 4 {
+			return 0, fmt.Errorf("IPv4 checksum requires IPv4 source and destination addresses")
+		}
+		xsum = header.PseudoHeaderChecksum(protoNumber, netip.AddrFrom4([4]byte(*p.SrcAddr)), netip.AddrFrom4([4]byte(*p.DstAddr)), totalLength)
 	case *IPv6:
-		xsum = header.PseudoHeaderChecksum(protoNumber, tcpip.AddrFrom16Slice(*p.SrcAddr), tcpip.AddrFrom16Slice(*p.DstAddr), totalLength)
+		if p.SrcAddr == nil || p.DstAddr == nil || len(*p.SrcAddr) != 16 || len(*p.DstAddr) != 16 {
+			return 0, fmt.Errorf("IPv6 checksum requires IPv6 source and destination addresses")
+		}
+		xsum = header.PseudoHeaderChecksum(protoNumber, netip.AddrFrom16([16]byte(*p.SrcAddr)), netip.AddrFrom16([16]byte(*p.DstAddr)), totalLength)
 	default:
 		// TODO(b/161246171): Support more protocols.
 		return 0, fmt.Errorf("checksum for protocol %d is not supported when previous layer is %T", protoNumber, p)

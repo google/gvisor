@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -123,22 +124,22 @@ func (b IPv6Fragment) Checksum() uint16 {
 }
 
 // SourceAddress is not supported by IPv6Fragment.
-func (b IPv6Fragment) SourceAddress() tcpip.Address {
+func (b IPv6Fragment) SourceAddress() netip.Addr {
 	panic("not supported")
 }
 
 // DestinationAddress is not supported by IPv6Fragment.
-func (b IPv6Fragment) DestinationAddress() tcpip.Address {
+func (b IPv6Fragment) DestinationAddress() netip.Addr {
 	panic("not supported")
 }
 
 // SetSourceAddress is not supported by IPv6Fragment.
-func (b IPv6Fragment) SetSourceAddress(tcpip.Address) {
+func (b IPv6Fragment) SetSourceAddress(netip.Addr) {
 	panic("not supported")
 }
 
 // SetDestinationAddress is not supported by IPv6Fragment.
-func (b IPv6Fragment) SetDestinationAddress(tcpip.Address) {
+func (b IPv6Fragment) SetDestinationAddress(netip.Addr) {
 	panic("not supported")
 }
 

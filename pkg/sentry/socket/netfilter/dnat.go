@@ -16,6 +16,7 @@ package netfilter
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -124,7 +125,7 @@ func (*dnatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 
 	target.ChangeAddress = nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0
 	target.ChangePort = nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0
-	target.Addr = tcpip.AddrFrom4(nfRange.RangeIPV4.MinIP)
+	target.Addr = netip.AddrFrom4(nfRange.RangeIPV4.MinIP)
 	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
 	return &target, nil
@@ -206,9 +207,9 @@ func (dt *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 	}
 	switch dt.NetworkProtocol {
 	case header.IPv4ProtocolNumber:
-		target.DNATTarget.Addr = tcpip.AddrFrom4Slice(natRange.MinAddr[:4])
+		target.DNATTarget.Addr = netip.AddrFrom4([4]byte(natRange.MinAddr[:4]))
 	case header.IPv6ProtocolNumber:
-		target.DNATTarget.Addr = tcpip.AddrFrom16(natRange.MinAddr)
+		target.DNATTarget.Addr = netip.AddrFrom16(natRange.MinAddr)
 	default:
 		panic(fmt.Sprintf("invalid protocol number: %d", dt.NetworkProtocol))
 	}
@@ -296,9 +297,9 @@ func (dt *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 	}
 	switch dt.NetworkProtocol {
 	case header.IPv4ProtocolNumber:
-		target.DNATTarget.Addr = tcpip.AddrFrom4Slice(natRange.MinAddr[:4])
+		target.DNATTarget.Addr = netip.AddrFrom4([4]byte(natRange.MinAddr[:4]))
 	case header.IPv6ProtocolNumber:
-		target.DNATTarget.Addr = tcpip.AddrFrom16(natRange.MinAddr)
+		target.DNATTarget.Addr = netip.AddrFrom16(natRange.MinAddr)
 	default:
 		panic(fmt.Sprintf("invalid protocol number: %d", dt.NetworkProtocol))
 	}

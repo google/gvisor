@@ -17,9 +17,8 @@ package header
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"time"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 func mldv2AndIGMPv3QuerierQueryCodeToInterval(code uint8) time.Duration {
@@ -101,9 +100,9 @@ func (it *AddressIterator) Done() bool {
 // Next returns the next address in the iterator.
 //
 // Returns false if the iterator has been exhausted.
-func (it *AddressIterator) Next() (tcpip.Address, bool) {
+func (it *AddressIterator) Next() (netip.Addr, bool) {
 	if it.Done() {
-		var emptyAddress tcpip.Address
+		var emptyAddress netip.Addr
 		return emptyAddress, false
 	}
 
@@ -112,7 +111,11 @@ func (it *AddressIterator) Next() (tcpip.Address, bool) {
 		panic(fmt.Sprintf("got len(buf.Next(%d)) = %d, want = %d", it.addressSize, len(b), it.addressSize))
 	}
 
-	return tcpip.AddrFromSlice(b), true
+	addr, ok := netip.AddrFromSlice(b)
+	if !ok {
+		panic(fmt.Sprintf("invalid IP address size: %d", it.addressSize))
+	}
+	return addr, true
 }
 
 func makeAddressIterator(b []byte, expectedAddresses uint16, addressSize int) (AddressIterator, bool) {

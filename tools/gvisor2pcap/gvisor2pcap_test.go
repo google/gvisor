@@ -15,6 +15,7 @@
 package gvisor2pcap_test
 
 import (
+	"net/netip"
 	"os"
 	"os/exec"
 	"path"
@@ -105,8 +106,8 @@ func genIPv4(payload []byte, proto tcpip.TransportProtocolNumber) *stack.PacketB
 		FragmentOffset: 0,
 		TTL:            48,
 		Protocol:       uint8(proto),
-		SrcAddr:        tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04")),
-		DstAddr:        tcpip.AddrFromSlice([]byte("\x05\x06\x07\x08")),
+		SrcAddr:        netip.AddrFrom4([4]byte{1, 2, 3, 4}),
+		DstAddr:        netip.AddrFrom4([4]byte{5, 6, 7, 8}),
 	})
 	ip.SetChecksum(42)
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -125,8 +126,8 @@ func genIPv6(payload []byte, proto tcpip.TransportProtocolNumber) *stack.PacketB
 		PayloadLength:     uint16(len(payload)),
 		TransportProtocol: proto,
 		HopLimit:          78,
-		SrcAddr:           tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04\x01\x02\x03\x04")),
-		DstAddr:           tcpip.AddrFromSlice([]byte("\x05\x06\x07\x08\x05\x06\x07\x08\x05\x06\x07\x08\x05\x06\x07\x08")),
+		SrcAddr:           netip.MustParseAddr("102:304:102:304:102:304:102:304"),
+		DstAddr:           netip.MustParseAddr("506:708:506:708:506:708:506:708"),
 		ExtensionHeaders:  header.IPv6ExtHdrSerializer{},
 	})
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{

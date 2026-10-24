@@ -16,6 +16,7 @@ package ipv6
 
 import (
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -95,20 +96,20 @@ func (mld *mldState) Enabled() bool {
 // SendReport implements ip.MulticastGroupProtocol.
 //
 // +checklocksread:mld.ep.mu.RWMutex
-func (mld *mldState) SendReport(groupAddress tcpip.Address) (bool, tcpip.Error) {
+func (mld *mldState) SendReport(groupAddress netip.Addr) (bool, tcpip.Error) {
 	return mld.writePacket(groupAddress, groupAddress, header.ICMPv6MulticastListenerReport)
 }
 
 // SendLeave implements ip.MulticastGroupProtocol.
 //
 // +checklocksread:mld.ep.mu.RWMutex
-func (mld *mldState) SendLeave(groupAddress tcpip.Address) tcpip.Error {
+func (mld *mldState) SendLeave(groupAddress netip.Addr) tcpip.Error {
 	_, err := mld.writePacket(header.IPv6AllRoutersLinkLocalMulticastAddress, groupAddress, header.ICMPv6MulticastListenerDone)
 	return err
 }
 
 // ShouldPerformProtocol implements ip.MulticastGroupProtocol.
-func (mld *mldState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
+func (mld *mldState) ShouldPerformProtocol(groupAddress netip.Addr) bool {
 	// As per RFC 2710 section 5 page 10,
 	//
 	//   The link-scope all-nodes address (FF02::1) is handled as a special
@@ -133,7 +134,7 @@ type mldv2ReportBuilder struct {
 }
 
 // AddRecord implements ip.MulticastGroupProtocolV2ReportBuilder.
-func (b *mldv2ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress tcpip.Address) {
+func (b *mldv2ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress netip.Addr) {
 	var recordType header.MLDv2ReportRecordType
 	switch genericRecordType {
 	case ip.MulticastGroupProtocolV2ReportRecordModeIsInclude:
@@ -286,14 +287,14 @@ func (mld *mldState) handleMulticastListenerReport(mldHdr header.MLD) {
 // If the group is already joined, returns *tcpip.ErrDuplicateAddress.
 //
 // +checklocks:mld.ep.mu.RWMutex
-func (mld *mldState) joinGroup(groupAddress tcpip.Address) {
+func (mld *mldState) joinGroup(groupAddress netip.Addr) {
 	mld.genericMulticastProtocol.JoinGroupLocked(groupAddress)
 }
 
 // isInGroup returns true if the specified group has been joined locally.
 //
 // +checklocksread:mld.ep.mu.RWMutex
-func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
+func (mld *mldState) isInGroup(groupAddress netip.Addr) bool {
 	return mld.genericMulticastProtocol.IsLocallyJoinedRLocked(groupAddress)
 }
 
@@ -302,7 +303,7 @@ func (mld *mldState) isInGroup(groupAddress tcpip.Address) bool {
 // required.
 //
 // +checklocks:mld.ep.mu.RWMutex
-func (mld *mldState) leaveGroup(groupAddress tcpip.Address) tcpip.Error {
+func (mld *mldState) leaveGroup(groupAddress netip.Addr) tcpip.Error {
 	// LeaveGroup returns false only if the group was not joined.
 	if mld.genericMulticastProtocol.LeaveGroupLocked(groupAddress) {
 		return nil
@@ -368,7 +369,7 @@ func (mld *mldState) getVersion() MLDVersion {
 // writePacket assembles and sends an MLD packet.
 //
 // +checklocksread:mld.ep.mu.RWMutex
-func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldType header.ICMPv6Type) (bool, tcpip.Error) {
+func (mld *mldState) writePacket(destAddress, groupAddress netip.Addr, mldType header.ICMPv6Type) (bool, tcpip.Error) {
 	sentStats := mld.ep.stats.icmp.packetsSent
 	var mldStat tcpip.MultiCounterStat
 	switch mldType {
@@ -400,7 +401,7 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 }
 
 // +checklocksread:mld.ep.mu.RWMutex
-func (mld *mldState) writePacketInner(buf *buffer.View, mldType header.ICMPv6Type, reportStat tcpip.MultiCounterStat, extensionHeaders header.IPv6ExtHdrSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
+func (mld *mldState) writePacketInner(buf *buffer.View, mldType header.ICMPv6Type, reportStat tcpip.MultiCounterStat, extensionHeaders header.IPv6ExtHdrSerializer, destAddress netip.Addr) (bool, tcpip.Error) {
 	icmp := header.ICMPv6(buf.AsSlice())
 	icmp.SetType(mldType)
 
@@ -455,7 +456,7 @@ func (mld *mldState) writePacketInner(buf *buffer.View, mldType header.ICMPv6Typ
 	//   Report and Done messages sent with the unspecified address as the
 	//   IPv6 source address.
 	localAddress := mld.ep.getLinkLocalAddressRLocked()
-	if localAddress.BitLen() == 0 {
+	if !localAddress.IsValid() {
 		localAddress = header.IPv6Any
 	}
 
