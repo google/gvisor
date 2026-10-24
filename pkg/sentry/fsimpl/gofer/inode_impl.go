@@ -429,11 +429,37 @@ func (i *inode) flush(ctx context.Context) error {
 	case *lisafsInode:
 		return flush(ctx, it.writeFDLisa)
 	case *directfsInode:
-		// Nothing to do here.
-		return nil
+		return flushHostFD(ctx, i.writeFD.RacyLoad())
 	default:
 		panic("unknown inode implementation")
 	}
+}
+
+// flushHostFD emulates the implicit flush that close(2) performs on Linux
+// (file_operations.flush, e.g. FUSE_FLUSH) for a host FD that the sentry keeps
+// open across application FDs. The host FD itself stays open, so a duplicate
+// of it is closed instead. Remote filesystems report deferred write failures
+// (e.g. EIO, ENOSPC, EDQUOT) on flush; without this, close(2) succeeds for
+// data that was lost.
+func flushHostFD(ctx context.Context, fd int32) error {
+	if fd < 0 {
+		return nil
+	}
+	dupFD, err := unix.Dup(int(fd))
+	if err != nil {
+		// Best effort, as before: failing close(2) because the sentry could
+		// not duplicate its own FD would be worse.
+		log.Debugf("gofer.flushHostFD: dup(%d) failed: %v", fd, err)
+		return nil
+	}
+	ctx.UninterruptibleSleepStart()
+	err = unix.Close(dupFD)
+	ctx.UninterruptibleSleepFinish()
+	if err == unix.EINTR {
+		// The duplicate is closed regardless; the flush outcome is unknown.
+		return nil
+	}
+	return err
 }
 
 // Precondition: !d.isSynthetic().

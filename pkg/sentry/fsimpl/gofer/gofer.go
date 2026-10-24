@@ -2328,10 +2328,11 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context, dataOnly bool) error 
 	// filesystem implementations may not sync changes made through write
 	// handles otherwise.
 	wh := d.inode.writeHandle()
+	var err error
 	if dataOnly {
-		wh.syncData(ctx)
+		err = wh.syncData(ctx)
 	} else {
-		wh.sync(ctx)
+		err = wh.sync(ctx)
 	}
 	rh := d.inode.readHandle()
 	if dataOnly {
@@ -2339,7 +2340,13 @@ func (d *dentry) syncRemoteFileLocked(ctx context.Context, dataOnly bool) error 
 	} else {
 		rh.sync(ctx)
 	}
-	return nil
+	// Report errors from syncing the write handle: remote filesystems (e.g.
+	// FUSE filesystems that commit written data asynchronously) report
+	// deferred write failures such as EIO, ENOSPC and EDQUOT here, and
+	// dropping them makes fsync(2) succeed for data that was lost. Errors
+	// from syncing a read-only handle are still ignored, since no data was
+	// written through it.
+	return err
 }
 
 func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, dataOnly bool) error {
