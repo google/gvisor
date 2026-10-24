@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	k8s "gvisor.dev/gvisor/test/kubernetes"
 	"gvisor.dev/gvisor/test/kubernetes/benchmetric"
 	"gvisor.dev/gvisor/test/kubernetes/testcluster"
@@ -173,7 +175,17 @@ func (h *HTTPBenchmark) runRound(ctx context.Context, t *testing.T, round Round,
 	if err != nil {
 		t.Fatalf("Failed to initialize benchmark recorder: %v", err)
 	}
-	if err := recorder.RecordIters(ctx, fmt.Sprintf("%s/%dThreads/%sQPS", strings.Title(h.Name), round.NumThreads, qpsText), numRequests, data...); err != nil {
+	if err := recorder.RecordIters(
+		ctx,
+		fmt.Sprintf(
+			"%s/%dThreads/%sQPS",
+			cases.Title(language.Und, cases.NoLower).String(h.Name),
+			round.NumThreads,
+			qpsText,
+		),
+		numRequests,
+		data...,
+	); err != nil {
 		t.Fatalf("Failed to record benchmark data: %v", err)
 	}
 }
