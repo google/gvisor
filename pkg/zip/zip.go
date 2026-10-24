@@ -21,8 +21,14 @@ import (
 	"io"
 )
 
+// Deflate is the DEFLATE compression method.
+const Deflate = zip.Deflate
+
 // File is an alias for zip.File.
 type File = zip.File
+
+// FileHeader is an alias for zip.FileHeader.
+type FileHeader = zip.FileHeader
 
 // ReadCloser is an alias for zip.ReadCloser.
 type ReadCloser = zip.ReadCloser
