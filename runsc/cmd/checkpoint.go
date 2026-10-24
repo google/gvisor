@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/state/checkpointfiles"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -44,6 +45,7 @@ type Checkpoint struct {
 	saveRestoreExecArgv       string
 	saveRestoreExecTimeout    time.Duration
 	splitFSCheckpointPaths    pathVar
+	validateMetadata          bool
 
 	// direct indicates whether O_DIRECT should be used for writing the
 	// checkpoint pages file. It bypasses the kernel page cache. It is beneficial
@@ -82,6 +84,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	// Must match the default prefix applied by sandbox.Sandbox.Checkpoint.
 	c.splitFSCheckpointPaths.defaultPrefix = checkpointfiles.FSCheckpointDir
 	f.Var(&c.splitFSCheckpointPaths, "fs-checkpoint-paths", `[<prefix>=][<container>:]<path> target to include in the filesystem checkpoint (can be repeated). <prefix> defaults to "fs". The files are written to --image-path as <prefix>_*, or into a <prefix>/ subdirectory if <prefix> ends with "/". Paths containing "=" require an explicit prefix. For capturing all of tmpfs, the path should be "all-tmpfs".`)
+	f.BoolVar(&c.validateMetadata, "validate-metadata", false, "refresh and validate file metadata during save/restore")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -130,6 +133,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		SaveRestoreExecTimeout:     c.saveRestoreExecTimeout,
 		SaveRestoreExecContainerID: cont.ID,
 		SplitFSCheckpointPaths:     c.splitFSCheckpointPaths.targets,
+		ValidateMetadata:           c.validateMetadata,
 	}
 
 	if err := cont.Checkpoint(conf, c.imagePath, opts); err != nil {

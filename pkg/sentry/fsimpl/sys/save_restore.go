@@ -26,7 +26,7 @@ import (
 var _ vfs.FilesystemImplSaveRestoreExtension = (*filesystem)(nil)
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
-func (fs *filesystem) PrepareSave(ctx context.Context) error {
+func (fs *filesystem) PrepareSave(ctx context.Context, _ vfs.PrepareSaveOptions) error {
 	return nil
 }
 
