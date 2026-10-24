@@ -387,14 +387,28 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		args.Spec.Linux.CgroupsPath = "/" + args.ID
 	}
 	var subCgroup, parentCgroup, containerCgroup cgroup.Cgroup
+	var cpuLimits *sandbox.CPULimits
 	if !conf.IgnoreCgroups {
 		var err error
 
+		cpuLimits = newCPULimits(conf, args.Spec.Linux.Resources, willRestoreSandbox(args))
+		if parentPath, inPod := args.Spec.Annotations[cgroupParentAnnotation]; inPod && cpuLimits != nil {
+			logCPUPoliciesNotApplied(conf, fmt.Sprintf("the orchestrator owns the pod cgroup %q. Note that this means gVisor sandbox lifecycle operations are being capped by the pod CPU limit, and could go faster otherwise", parentPath))
+			cpuLimits = nil
+		}
+
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all their children processes).
-		parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec)
+		parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec, cpuLimits)
 		if err != nil {
 			return nil, fmt.Errorf("cannot set up cgroup for root: %w", err)
+		}
+		if cpuLimits != nil && parentCgroup == nil {
+			cpuLimits = nil
+		}
+		if cpuLimits != nil && !cgroup.OwnsCPULimit(parentCgroup) {
+			logCPUPoliciesNotApplied(conf, "runsc did not create the sandbox cgroup. Note that this means gVisor sandbox lifecycle operations are being capped by the CPU limit you set in that cgroup, and could go faster otherwise")
+			cpuLimits = nil
 		}
 		// Join the child cgroup when using cgroupfs. Joining non leaf-node
 		// cgroups is illegal in cgroupsv2 and will return EBUSY.
@@ -441,6 +455,7 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			DevIOFile:           devIOFile,
 			MountsFile:          specFile,
 			Cgroup:              containerCgroup,
+			CPULimits:           cpuLimits,
 			CloneIntoCgroupFD:   cloneIntoCgroupFD,
 			Attached:            args.Attached,
 			GoferFilestoreFiles: goferFilestores,
@@ -635,7 +650,7 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 }
 
 // Update sets the resources of a running container as configured.
-func (c *Container) Update(res *specs.LinuxResources) error {
+func (c *Container) Update(conf *config.Config, res *specs.LinuxResources) error {
 	log.Debugf("Set resources for container, cid: %s", c.ID)
 	if err := c.requireStatus("set resources for", Created, Running); err != nil {
 		return err
@@ -650,9 +665,14 @@ func (c *Container) Update(res *specs.LinuxResources) error {
 		if cg == nil {
 			return fmt.Errorf("cgroup cannot be nil")
 		}
-		if err := cg.Update(res); err != nil {
+		oldCPULimits := c.Sandbox.CPULimits
+		if _, inPod := c.Spec.Annotations[cgroupParentAnnotation]; !inPod && cgroup.OwnsCPULimit(cg) {
+			c.Sandbox.CPULimits = newCPULimits(conf, res, oldCPULimits != nil && oldCPULimits.WillRestore)
+		}
+		if err := cg.Update(c.cgroupResources(res)); err != nil {
 			// set back to original
-			if err2 := cg.Update(c.Spec.Linux.Resources); err2 != nil {
+			c.Sandbox.CPULimits = oldCPULimits
+			if err2 := cg.Update(c.cgroupResources(c.Spec.Linux.Resources)); err2 != nil {
 				return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
 			}
 			return err
@@ -2171,10 +2191,57 @@ func (c *Container) createParentCgroup(parentPath string, conf *config.Config) (
 	return parentCgroup, nil
 }
 
+// logCPUPoliciesNotApplied logs that the sandbox CPU policies do not apply,
+// because of `reason`.
+// Only warns if either policy was set explicitly.
+func logCPUPoliciesNotApplied(conf *config.Config, reason string) {
+	logf := log.Infof
+	if !conf.SandboxCreationCPUPolicy.Implicit() || !conf.SandboxLifecycleCPUPolicy.Implicit() {
+		logf = log.Warningf
+	}
+	logf("[Lifecycle CPU] Not applying --sandbox-creation-cpu-policy=%v and --sandbox-lifecycle-cpu-policy=%v: %s.", conf.SandboxCreationCPUPolicy, conf.SandboxLifecycleCPUPolicy, reason)
+}
+
+// cgroupResources returns `res` as the sandbox cgroup should have it now:
+// with the creation CPU limit until the application starts.
+func (c *Container) cgroupResources(res *specs.LinuxResources) *specs.LinuxResources {
+	if c.Status == Created && c.Sandbox.CPULimits != nil {
+		return c.Sandbox.CPULimits.CreationResources(res)
+	}
+	return res
+}
+
+// newCPULimits returns the CPU limits of the sandbox with resources `res`.
+// `willRestore` is whether creating it restores application data (see
+// `willRestoreSandbox`).
+func newCPULimits(conf *config.Config, res *specs.LinuxResources, willRestore bool) *sandbox.CPULimits {
+	limits := sandbox.NewCPULimits(conf.SandboxCreationCPUPolicy, conf.SandboxLifecycleCPUPolicy, res)
+	if limits != nil && willRestore {
+		limits.WillRestore = true
+		limits.Creation = limits.Lifecycle
+	}
+	return limits
+}
+
+// willRestoreSandbox returns whether creating the sandbox for `args` already
+// restores application data. Its CPU cost scales with that data, so it runs
+// under the lifecycle CPU limit rather than the creation one.
+func willRestoreSandbox(args Args) bool {
+	// TODO(fvoznika): Also return true when `runsc create --for-restore=true`
+	// is specified, when such a flag exists.
+	for _, p := range args.FSRestoreImagePaths {
+		if p != "" {
+			return true
+		}
+	}
+	return specutils.RootfsTarUpperPath(args.Spec) != ""
+}
+
 // setupCgroupForRoot configures and returns cgroup for the sandbox and the
 // root container. If `cgroupParentAnnotation` is set, use that path as the
 // sandbox cgroup and use Spec.Linux.CgroupsPath as the root container cgroup.
-func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (cgroup.Cgroup, cgroup.Cgroup, error) {
+// `cpuLimits`, if set, gives the sandbox cgroup its creation CPU limit.
+func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec, cpuLimits *sandbox.CPULimits) (cgroup.Cgroup, cgroup.Cgroup, error) {
 	var parentCgroup cgroup.Cgroup
 	if parentPath, ok := spec.Annotations[cgroupParentAnnotation]; ok {
 		var err error
@@ -2193,8 +2260,12 @@ func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (c
 		}
 	}
 
+	res := spec.Linux.Resources
+	if cpuLimits != nil {
+		res = cpuLimits.CreationResources(res)
+	}
 	var err error
-	parentCgroup, err = cgroupInstall(conf, parentCgroup, spec.Linux.Resources)
+	parentCgroup, err = cgroupInstall(conf, parentCgroup, res)
 	if parentCgroup == nil || err != nil {
 		return nil, nil, err
 	}

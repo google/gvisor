@@ -178,6 +178,9 @@ type Sandbox struct {
 	// and allow serialization of the configuration into json
 	CgroupJSON cgroup.CgroupJSON `json:"cgroup"`
 
+	// CPULimits, if set, are the CPU limits of the cgroup in CgroupJSON.
+	CPULimits *CPULimits `json:"cpuLimits,omitempty"`
+
 	// OriginalOOMScoreAdj stores the value of oom_score_adj when the sandbox
 	// started, before it may be modified.
 	OriginalOOMScoreAdj int `json:"originalOomScoreAdj"`
@@ -313,6 +316,10 @@ type Args struct {
 	// Gcgroup is the cgroup that the sandbox is part of.
 	Cgroup cgroup.Cgroup
 
+	// CPULimits, if set, are the CPU limits of `Cgroup`, which currently has
+	// the lifecycle limit.
+	CPULimits *CPULimits
+
 	// CloneIntoCgroupFD, when non-nil, is an FD to `Cgroup`'s directory. The
 	// sandbox process is created inside the cgroup via `CLONE_INTO_CGROUP`.
 	CloneIntoCgroupFD *os.File
@@ -354,6 +361,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		CgroupJSON: cgroup.CgroupJSON{
 			Cgroup: args.Cgroup,
 		},
+		CPULimits:           args.CPULimits,
 		UID:                 -1, // prevent usage before it's set.
 		GID:                 -1, // prevent usage before it's set.
 		MetricMetadata:      conf.MetricMetadata(),
@@ -500,8 +508,7 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 	if err := conn.Call(sentryapi.ContMgrRootContainerStart, &s.ID, nil); err != nil {
 		return fmt.Errorf("starting root container: %w", err)
 	}
-
-	return nil
+	return s.applyAppCPULimit(cpuPhaseCreation)
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
@@ -567,6 +574,12 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
+	// TODO(fvoznika): Once `runsc create --for-restore` exists, this should
+	// become a no-op and no longer be needed:
+	if err := s.switchCPULimit(cpuPhaseCreation, cpuPhaseLifecycle); err != nil {
+		log.Warningf("[Lifecycle CPU] Restore will run under the creation CPU limit: %v. This affects gVisor restore speed.", err)
+	}
+
 	if !s.FSRestore && HasFSCheckpointManifest(imagePath) {
 		return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
 	}
@@ -620,7 +633,8 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 
 	// Restore the container and start the root container.
-	if err := conn.Call(sentryapi.ContMgrRestore, &opt, nil); err != nil {
+	var reply sentryapi.RestoreReply
+	if err := conn.Call(sentryapi.ContMgrRestore, &opt, &reply); err != nil {
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
 				return fmt.Errorf("restoring container %q from %s: %w", cid, target, err)
@@ -629,7 +643,10 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		return fmt.Errorf("restoring container %q: %w", cid, err)
 	}
 	s.Restored = true
-	return nil
+	if !reply.KernelStarted {
+		return nil
+	}
+	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
 func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, direct bool, opt *sentryapi.RestoreOpts) error {
@@ -764,10 +781,14 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 		GoferMountConfs:      goferMountConf,
 		FilePayload:          payload,
 	}
-	if err := s.call(sentryapi.ContMgrRestoreSubcontainer, &args, nil); err != nil {
+	var reply sentryapi.RestoreReply
+	if err := s.call(sentryapi.ContMgrRestoreSubcontainer, &args, &reply); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
 	}
-	return nil
+	if !reply.KernelStarted {
+		return nil
+	}
+	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
 // Processes retrieves the list of processes and associated metadata for a
@@ -1472,7 +1493,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	mem := totalSysMem
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, conf.CPUNumFromQuota)
+		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, s.CPULimits, conf.CPUNumFromQuota)
 		if err != nil {
 			return err
 		}
@@ -1611,19 +1632,24 @@ func spawnFDParking(ring *os.File, pid int) error {
 
 // calculateCPUNum calculates the number of CPUs to configure for the sandbox,
 // along with the cgroup CPU quota and period.
-func calculateCPUNum(cg cgroup.Cgroup, cpuNumFromQuota bool) (int, int64, int64, error) {
+// `limits`, if set, holds the application CPU limit, which `cg` does not have
+// yet.
+func calculateCPUNum(cg cgroup.Cgroup, limits *CPULimits, cpuNumFromQuota bool) (int, int64, int64, error) {
 	cpuNum, err := cg.NumCPU()
 	if err != nil {
 		log.Warningf("Failed to get cpu count from cgroups: %v. Falling back to runtime.NumCPU()", err)
 		cpuNum = runtime.NumCPU()
 	}
-	cpuQuota, err := cg.CPUQuota()
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
-	}
-	cpuPeriod, err := cg.CPUPeriod()
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+	var cpuQuota, cpuPeriod int64
+	if limits != nil {
+		cpuQuota, cpuPeriod = *limits.App.Quota, int64(*limits.App.Period)
+	} else {
+		if cpuQuota, err = cg.CPUQuota(); err != nil {
+			return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
+		}
+		if cpuPeriod, err = cg.CPUPeriod(); err != nil {
+			return 0, 0, 0, fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+		}
 	}
 	if cpuNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
 		// Dropping below 2 CPUs can trigger application to disable
@@ -1694,6 +1720,9 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		conn.Close()
 		if err == nil {
 			if s.IsRootContainer(cid) {
+				if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+					log.Warningf("[Lifecycle CPU] Sandbox teardown after root container exit will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+				}
 				if err := s.waitForStopped(); err != nil {
 					return unix.WaitStatus(0), err
 				}
@@ -1792,6 +1821,11 @@ func (s *Sandbox) destroy() error {
 	}
 	pid := s.Pid.Load()
 	if pid != 0 {
+		if running, _ := s.IsRunning(); running {
+			if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+				log.Warningf("[Lifecycle CPU] Sandbox destruction will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+			}
+		}
 		log.Debugf("Killing sandbox %q", s.ID)
 		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
 			return fmt.Errorf("killing sandbox %q PID %d: %w", s.ID, pid, err)
@@ -1809,6 +1843,12 @@ func (s *Sandbox) destroy() error {
 // returning.
 func (s *Sandbox) SignalContainer(cid string, sig unix.Signal, all bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
+	if sig == unix.SIGKILL && s.IsRootContainer(cid) {
+		// This stops the application.
+		if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+			log.Warningf("[Lifecycle CPU] Sandbox teardown after SIGKILL of the root container will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+		}
+	}
 	mode := sentryapi.DeliverToProcess
 	if all {
 		mode = sentryapi.DeliverToAllProcesses
@@ -1917,7 +1957,14 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return err
 	}
 
+	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
+	}
 	if err := s.call(sentryapi.ContMgrCheckpoint, &opt, nil); err != nil {
+		// The application may still be running.
+		if err := s.applyAppCPULimit(cpuPhaseLifecycle); err != nil {
+			log.Warningf("[Lifecycle CPU] Cannot restore the application CPU limit after failed checkpoint: %v", err)
+		}
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
 				return fmt.Errorf("checkpointing container %q to %s: %w", cid, target, err)
@@ -1926,6 +1973,9 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
 	}
 	s.Checkpointed = true
+	if opts.Resume {
+		return s.applyAppCPULimit(cpuPhaseLifecycle)
+	}
 	return nil
 }
 
