@@ -18,6 +18,7 @@
 #include <sched.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -107,11 +108,11 @@ TEST(FPSigTest, Fork) {
 #ifdef __x86_64__
   asm volatile("syscall;"
                : "=a"(ret)
-               : "a"(__NR_tgkill), "D"(parent), "S"(parent_tid), "d"(SIGUSR1)
+               : "a"(SYS_tgkill), "D"(parent), "S"(parent_tid), "d"(SIGUSR1)
                :  // Clobbered by syscall.
                "rcx", "r11");
 #elif __aarch64__
-  register uint64_t x8 __asm__("x8") = __NR_tgkill;
+  register uint64_t x8 __asm__("x8") = SYS_tgkill;
   register uint64_t x0 __asm__("x0") = parent;
   register uint64_t x1 __asm__("x1") = parent_tid;
   register uint64_t x2 __asm__("x2") = SIGUSR1;
@@ -163,8 +164,8 @@ TEST(FPSigTest, ForkWithZeroMxcsr) {
       "movl %[sig], %%edx;"
       "syscall;"
       :
-      : [killnr] "i"(__NR_tgkill), [parent] "rm"(parent),
-        [tid] "rm"(parent_tid), [sig] "i"(SIGUSR1)
+      : [killnr] "i"(SYS_tgkill), [parent] "rm"(parent), [tid] "rm"(parent_tid),
+        [sig] "i"(SIGUSR1)
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");

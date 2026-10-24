@@ -14,6 +14,7 @@
 
 #include <linux/unistd.h>
 #include <signal.h>
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/ucontext.h>
@@ -21,6 +22,7 @@
 
 #include "gtest/gtest.h"
 #include "test/util/logging.h"
+#include "test/util/posix_error.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/timer_util.h"

@@ -31,6 +31,7 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/sysmacros.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
 #include <sys/wait.h>
