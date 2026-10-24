@@ -968,14 +968,16 @@ func (t *Task) SetOOMScoreAdj(adj int32) error {
 	return nil
 }
 
-// KUID returns t's kuid.
+// KUID implements tcpip.PacketOwner.KUID. Like Linux's netfilter owner match,
+// it uses the filesystem UID.
 func (t *Task) KUID() uint32 {
-	return uint32(t.Credentials().EffectiveKUID)
+	return uint32(t.Credentials().FilesystemKUID)
 }
 
-// KGID returns t's kgid.
+// KGID implements tcpip.PacketOwner.KGID. Like Linux's netfilter owner match,
+// it uses the filesystem GID.
 func (t *Task) KGID() uint32 {
-	return uint32(t.Credentials().EffectiveKGID)
+	return uint32(t.Credentials().FilesystemKGID)
 }
 
 // SetKcov sets the kcov instance associated with t.

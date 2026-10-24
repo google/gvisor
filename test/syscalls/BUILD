@@ -1304,6 +1304,7 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:uidgid_test",
+    use_tmpfs = True,  # uidgid tests chown files to scratch IDs.
 )
 
 syscall_test(

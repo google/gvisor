@@ -374,6 +374,8 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 	// Lower dumpability based on cred delta, see kernel/cred.c:commit_creds().
 	if r.newCreds.EffectiveKUID != oldCreds.EffectiveKUID ||
 		r.newCreds.EffectiveKGID != oldCreds.EffectiveKGID ||
+		r.newCreds.FilesystemKUID != oldCreds.FilesystemKUID ||
+		r.newCreds.FilesystemKGID != oldCreds.FilesystemKGID ||
 		!r.newCreds.PermittedCaps.IsSubsetOf(oldCreds.PermittedCaps) {
 		r.image.MemoryManager.SetDumpability(mm.NotDumpable) // suid_dumpable is not implemented
 		t.parentDeathSignal = 0
