@@ -116,6 +116,8 @@ type MountOptions struct {
 	// Locked determines whether to lock this mount so it cannot be unmounted by
 	// normal user processes.
 	Locked bool
+
+	lockReadOnly bool
 }
 
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and

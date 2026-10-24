@@ -363,9 +363,27 @@ func (fd *Fd) DoCmdReconfigure(ctx context.Context, vfsObj *vfs.VirtualFilesyste
 	return nil
 }
 
+// PeekFilesystem returns the filesystem type name and a copy of the mount options, without
+// changing state, if the fd is in "awaiting-mount" mode. Otherwise, it returns an error.
+func (fd *Fd) PeekFilesystem() (string, vfs.MountOptions, error) {
+	fd.contextMu.Lock()
+	defer fd.contextMu.Unlock()
+
+	fdContext, ok := fd.context.(*awaitingMountContext)
+	if !ok {
+		switch fd.context.(type) {
+		case *createParamsContext:
+			return "", vfs.MountOptions{}, linuxerr.EINVAL
+		default:
+			return "", vfs.MountOptions{}, linuxerr.EBUSY
+		}
+	}
+	return fdContext.filesystem.FilesystemType().Name(), *fdContext.opts, nil
+}
+
 // GetFilesystem returns the filesystem and transitions the fd into the appropriate state if the
 // fd is in "awaiting-mount" mode. If the fd is not in "awaiting-mount" mode, returns an error.
-func (fd *Fd) GetFilesystem() (*vfs.Filesystem, *vfs.Dentry, *vfs.MountOptions, error) {
+func (fd *Fd) GetFilesystem() (*vfs.Filesystem, *vfs.Dentry, error) {
 	fd.contextMu.Lock()
 	defer fd.contextMu.Unlock()
 
@@ -380,19 +398,18 @@ func (fd *Fd) GetFilesystem() (*vfs.Filesystem, *vfs.Dentry, *vfs.MountOptions, 
 		default:
 			err = linuxerr.EBUSY
 		}
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	fs := fdContext.filesystem
 	root := fdContext.root
-	opts := fdContext.opts
 
 	// Transition into reconfParamsContext
 	fd.context = &reconfParamsContext{
 		creds: fdContext.creds,
 	}
 
-	return fs, root, opts, nil
+	return fs, root, nil
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
