@@ -29,9 +29,8 @@
 #include <iostream>
 #include <ostream>
 
-#include "test/syscalls/linux/socket_netlink_util.h"
-#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
@@ -132,12 +131,14 @@ PosixError SetupContainer() {
 }  // namespace gvisor
 
 using ::gvisor::testing::EnableAtime;
+using ::gvisor::testing::SetContents;
 using ::gvisor::testing::SetupContainer;
 
 // Binary setup_container initializes a test container, or prepares host atime
 // semantics before the runner creates containers, then execs the given binary.
 // Usage:
 //   ./setup_container test_binary [arguments forwarded to test_binary...]
+//   ./setup_container --limit-ephemeral-ports test_binary [arguments...]
 //   ./setup_container --require-atime runner [arguments forwarded to runner...]
 int main(int argc, char* argv[], char* envp[]) {
   if (argc < 2) {
@@ -158,6 +159,22 @@ int main(int argc, char* argv[], char* envp[]) {
     command = 2;
   } else if (!SetupContainer().ok()) {
     return 1;
+  }
+  if (strcmp(argv[1], "--limit-ephemeral-ports") == 0) {
+    if (argc < 3) {
+      std::cerr << "Must provide arguments to exec." << std::endl;
+      return 2;
+    }
+    // Hostinet cannot change this sysctl from inside the sandbox. Limit
+    // its private namespace before runsc starts so exhaustion is bounded.
+    // If the host denies writes, preserve the tests' large-range skip.
+    const auto err =
+        SetContents("/proc/sys/net/ipv4/ip_local_port_range", "32768 32818");
+    if (!err.ok() && err.errno_value() != EACCES) {
+      std::cerr << "Cannot prepare test network: " << err << std::endl;
+      return 1;
+    }
+    command = 2;
   }
   if (execve(argv[command], &argv[command], envp) == -1) {
     std::cerr << "execv returned errno " << errno << std::endl;
