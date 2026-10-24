@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -39,6 +40,98 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+// TestInheritedCPULimits checks CPU discovery without cgroup management.
+func TestInheritedCPULimits(t *testing.T) {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("requires cgroup v2")
+	}
+	for _, tc := range []struct {
+		name      string
+		cpus      int64
+		setCPU    bool
+		fromQuota bool
+	}{
+		{name: "one", cpus: 1, fromQuota: true},
+		{name: "four", cpus: 4, fromQuota: true},
+		{name: "quota-disabled", cpus: 1},
+		{name: "cpuset", cpus: 1, setCPU: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cg, err := cgroup.NewFromPath("/"+testutil.RandomID("runsc-inherited-cpu-"), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			period := uint64(100000)
+			quota := tc.cpus * int64(period)
+			if err := cg.Install(&specs.LinuxResources{
+				CPU: &specs.LinuxCPU{Quota: &quota, Period: &period},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := cg.Uninstall(); err != nil {
+					t.Errorf("removing inherited cgroup: %v", err)
+				}
+			})
+			if tc.setCPU {
+				data, err := os.ReadFile(filepath.Join(cg.MakePath(""), "cpuset.cpus.effective"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				cpu := strings.FieldsFunc(string(data), func(r rune) bool {
+					return r == '-' || r == ',' || r == '\n'
+				})[0]
+				if err := cg.Update(&specs.LinuxResources{CPU: &specs.LinuxCPU{Cpus: cpu}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := cg.NumCPU()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.fromQuota {
+				want = min(want, max(int(tc.cpus), 2))
+			}
+			limitsPath := filepath.Join(cg.MakePath(""), "cpu.max")
+			before, err := os.ReadFile(limitsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(specutils.ExePath,
+				"--root="+t.TempDir(),
+				"--ignore-cgroups=true",
+				"--network=none",
+				"--platform=systrap",
+				fmt.Sprintf("--cpu-num-from-quota=%t", tc.fromQuota),
+				"do", "--quiet", "getconf", "_NPROCESSORS_ONLN")
+			var out []byte
+			if err := cgroup.RunInCgroup(cg, func(cgroupFD *os.File) error {
+				if cgroupFD != nil {
+					cmd.SysProcAttr = &syscall.SysProcAttr{
+						UseCgroupFD: true,
+						CgroupFD:    int(cgroupFD.Fd()),
+					}
+				}
+				var err error
+				out, err = cmd.CombinedOutput()
+				return err
+			}); err != nil {
+				t.Fatalf("running with inherited CPU limits: %v\n%s", err, out)
+			}
+			if got := strings.TrimSpace(string(out)); got != strconv.Itoa(want) {
+				t.Errorf("online CPUs: got %q, want %d", got, want)
+			}
+			after, err := os.ReadFile(limitsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Errorf("inherited limits changed: got %q, want %q", after, before)
+			}
+		})
+	}
+}
 
 func TestCreateFailureRemovesCgroup(t *testing.T) {
 	parentPath := "/" + testutil.RandomID("runsc-create-")

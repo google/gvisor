@@ -416,6 +416,25 @@ func NewFromPid(pid int, useSystemd bool) (Cgroup, error) {
 	return new(strconv.Itoa(pid), "", useSystemd)
 }
 
+// LoadFromPid loads the exact existing cgroup membership of the given process.
+func LoadFromPid(pid int) (Cgroup, error) {
+	paths, err := loadPaths(strconv.Itoa(pid))
+	if err != nil {
+		return nil, fmt.Errorf("finding process cgroups: %w", err)
+	}
+	if IsOnlyV2() {
+		path, ok := paths[cgroup2Key]
+		if !ok {
+			return nil, fmt.Errorf("no cgroup v2 membership for process %d", pid)
+		}
+		return newCgroupV2(cgroupRoot(), path, false)
+	}
+	return &cgroupV1{
+		Parents: paths,
+		Own:     make(map[string]bool),
+	}, nil
+}
+
 // LikelySystemdPath returns true if the path looks like a systemd path. This is
 // by no means an exhaustive check, it's just a useful proxy for logging a
 // warning.
