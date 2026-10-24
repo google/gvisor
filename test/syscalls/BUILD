@@ -46,6 +46,8 @@ syscall_test(
 )
 
 syscall_test(
+    # ARCH_SET_GS permanently disables patching in the address space.
+    one_sandbox = False,
     test = "//test/syscalls/linux:arch_prctl_test",
 )
 
