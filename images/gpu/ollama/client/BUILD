@@ -14,4 +14,7 @@ filegroup(
 go_binary(
     name = "client",
     srcs = ["client.go"],
+    pure = True,
+    static = True,
+    visibility = ["//images:__pkg__"],
 )

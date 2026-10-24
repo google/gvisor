@@ -271,7 +271,7 @@ $(_image_context_targets):
 .PHONY: $(_image_context_targets)
 
 _cuda_context_options = $(_image_context_options) --@io_bazel_rules_go//go/config:race=false
-_cuda_context_targets := $(foreach op,$(_image_context_operations),$(addprefix $(op)-,gpu_cuda-tests gpu_cuda-tests-12-8))
+_cuda_context_targets := $(foreach op,$(_image_context_operations),$(addprefix $(op)-,gpu_cuda-tests gpu_cuda-tests-12-8 gpu_ollama_client))
 $(_cuda_context_targets):
 	@set -eu; image_context_dir=$$(mktemp -d); trap 'rm -rf "$$image_context_dir"' EXIT; \
 	$(MAKE) --no-print-directory -C "$(dir $(_image_root_makefile))" -f "$(_image_root_makefile)" copy \
