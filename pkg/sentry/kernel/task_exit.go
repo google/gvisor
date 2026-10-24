@@ -188,9 +188,9 @@ func (t *Task) PrepareGroupExit(ws linux.WaitStatus) {
 	t.prepareGroupExitLocked(ws)
 }
 
-// Preconditions:
-//   - The caller must be running on the task goroutine.
-//   - The signal mutex must be locked.
+// Preconditions: The caller must be running on the task goroutine.
+//
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) prepareGroupExitLocked(ws linux.WaitStatus) {
 	if t.tg.exiting || t.tg.execing != nil {
 		// Note that if t.tg.exiting is false but t.tg.execing is not nil, i.e.
@@ -916,11 +916,17 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.S
 }
 
 // Preconditions: The TaskSet mutex must be locked.
+//
+// +checklocksexclude:t.tg.signalHandlers.mu
 func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.FieldSet, *pb.ExitNotifyParentInfo) {
 	fields := seccheck.Global.GetFieldSet(seccheck.PointExitNotifyParent)
 
+	// Signal delivery can still change a Zombie's group exit status.
+	t.tg.signalHandlers.mu.Lock()
+	exitStatus := int32(t.tg.exitStatus)
+	t.tg.signalHandlers.mu.Unlock()
 	info := &pb.ExitNotifyParentInfo{
-		ExitStatus: int32(t.tg.exitStatus),
+		ExitStatus: exitStatus,
 	}
 	if !fields.Context.Empty() {
 		info.ContextData = &pb.ContextData{}
