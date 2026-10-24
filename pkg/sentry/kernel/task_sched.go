@@ -233,7 +233,7 @@ func (k *Kernel) runCPUClockTicker() {
 	// Storage reused between iterations of the main loop:
 	var (
 		allTasks []*Task
-		incTasks = make([]*Task, k.applicationCores)
+		incTasks = make([]*Task, k.applicationCores.Load())
 	)
 	concurrencyCount := k.ConcurrencyCount()
 
@@ -281,6 +281,10 @@ func (k *Kernel) runCPUClockTicker() {
 		// - This would require us to mutate CPU clocks and check timers for
 		// all running tasks and their thread groups, rather than only up to
 		// applicationCores running tasks (and their thread groups).
+		if cores := k.applicationCores.Load(); cores != uint32(len(incTasks)) {
+			// ApplicationCores grew via SetApplicationCores; resize to match.
+			incTasks = make([]*Task, cores)
+		}
 		allTasks = k.tasks.Root.TasksAppend(allTasks)
 		runningTasks := 0
 		runningAppTasks := 0
@@ -395,26 +399,45 @@ func (t *Task) StateStatus() string {
 //
 // +checklocksexclude:t.mu
 func (t *Task) CPUMask() sched.CPUSet {
+	mask, _ := t.cpuMaskState()
+	return mask
+}
+
+// +checklocksexclude:t.mu
+func (t *Task) cpuMaskState() (sched.CPUSet, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.allowedCPUMask.Copy()
+	if !t.cpuMaskPinned {
+		return sched.NewFullCPUSet(uint(t.k.applicationCores.Load())), false
+	}
+	return t.allowedCPUMask.Copy(), true
 }
 
 // SetCPUMask sets t's allowed CPU mask based on mask. It takes ownership of
 // mask.
 //
 // Preconditions: mask.Size() ==
-// sched.CPUSetSize(t.Kernel().ApplicationCores()).
+// sched.CPUSetSize(t.Kernel().ApplicationCores()) as of when mask was built.
+// ApplicationCores may grow (never shrink) before this call runs, so a
+// smaller mask is zero-extended rather than rejected; a larger one is a
+// caller bug.
 //
 // +checklocksexclude:t.mu
 // +checklocksexclude:t.tg.pidns.owner.mu
 func (t *Task) SetCPUMask(mask sched.CPUSet) error {
-	if want := sched.CPUSetSize(t.k.applicationCores); mask.Size() != want {
-		panic(fmt.Sprintf("Invalid CPUSet %v (expected %d bytes)", mask, want))
+	cores := uint(t.k.applicationCores.Load())
+	want := sched.CPUSetSize(cores)
+	switch {
+	case mask.Size() > want:
+		panic(fmt.Sprintf("Invalid CPUSet %v (expected at most %d bytes)", mask, want))
+	case mask.Size() < want:
+		grown := sched.NewCPUSet(cores)
+		copy(grown, mask)
+		mask = grown
 	}
 
 	// Remove CPUs in mask above Kernel.applicationCores.
-	mask.ClearAbove(t.k.applicationCores)
+	mask.ClearAbove(cores)
 
 	// Ensure that at least 1 CPU is still allowed.
 	if mask.NumCPUs() == 0 {
@@ -433,6 +456,7 @@ func (t *Task) SetCPUMask(mask sched.CPUSet) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.allowedCPUMask = mask
+	t.cpuMaskPinned = mask.NumCPUs() < cores
 	t.cpu.Store(assignCPU(mask, rootTID))
 	return nil
 }

@@ -560,11 +560,17 @@ type Task struct {
 	// This is mostly a fake cpumask just for sched_set/getaffinity as we
 	// don't really control the affinity.
 	//
-	// Invariant: allowedCPUMask.Size() ==
+	// Invariant: allowedCPUMask.Size() <=
 	// sched.CPUSetSize(Kernel.applicationCores).
 	//
 	// +checklocks:mu
 	allowedCPUMask sched.CPUSet
+
+	// cpuMaskPinned is set once sched_setaffinity narrows the mask; until
+	// then the task follows applicationCores as it grows.
+	//
+	// +checklocks:mu
+	cpuMaskPinned bool
 
 	// cpu is the fake cpu number returned by getcpu(2). cpu is ignored
 	// entirely if Kernel.useHostCores is true.

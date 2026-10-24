@@ -702,6 +702,16 @@ func (cm *containerManager) Resume(_, _ *struct{}) error {
 	return control.PostResume(cm.l.k, nil)
 }
 
+// SetCPUCount pushes a live cgroup CPU quota change into the running
+// sentry, without restarting the sandbox.
+func (cm *containerManager) SetCPUCount(args *sentryapi.SetCPUCountArgs, _ *struct{}) error {
+	log.Debugf("containerManager.SetCPUCount: %d", args.NumCPU)
+	if args.NumCPU <= 0 {
+		return fmt.Errorf("SetCPUCount: invalid NumCPU %d", args.NumCPU)
+	}
+	return cm.l.k.SetApplicationCores(uint(args.NumCPU))
+}
+
 // Wait waits for the init process in the given container.
 func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
 	log.Debugf("containerManager.Wait, cid: %s", *cid)

@@ -37,6 +37,16 @@ func (k *Kernel) loadDanglingEndpoints(_ context.Context, es []tcpip.Endpoint) {
 	}
 }
 
+// saveApplicationCores is invoked by stateify.
+func (k *Kernel) saveApplicationCores() uint {
+	return uint(k.applicationCores.Load())
+}
+
+// loadApplicationCores is invoked by stateify.
+func (k *Kernel) loadApplicationCores(_ context.Context, applicationCores uint) {
+	k.applicationCores.Store(uint32(applicationCores))
+}
+
 // saveVforkParent is invoked by stateify.
 func (t *Task) saveVforkParent() *Task {
 	return t.vforkParent.Load()
