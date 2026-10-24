@@ -23,6 +23,7 @@ go_library(
     srcs = [
         "endpoint.go",
         "endpoint_state.go",
+        "forwarder.go",
         "icmp_packet_list.go",
         "protocol.go",
     ],
