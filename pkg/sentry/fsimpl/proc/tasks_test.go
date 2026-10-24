@@ -181,6 +181,65 @@ func TestTasksEmpty(t *testing.T) {
 	s.AssertDirentOffsets(collector, tasksStaticFilesNextOffs)
 }
 
+func TestReadOnlyCreation(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	proc := s.GetDentryOrDie(s.PathOpAtRoot("/proc"))
+	defer proc.DecRef(s.Ctx)
+	if err := s.VFS.SetMountReadOnly(proc.Mount(), true); err != nil {
+		t.Fatalf("SetMountReadOnly(/proc): %v", err)
+	}
+	for _, op := range []struct {
+		name   string
+		create func(*vfs.PathOperation) error
+	}{
+		{"mkdir", func(pop *vfs.PathOperation) error {
+			return s.VFS.MkdirAt(s.Ctx, s.Creds, pop, &vfs.MkdirOptions{Mode: 0700})
+		}},
+		{"symlink", func(pop *vfs.PathOperation) error {
+			return s.VFS.SymlinkAt(s.Ctx, s.Creds, pop, "target")
+		}},
+		{"mknod", func(pop *vfs.PathOperation) error {
+			return s.VFS.MknodAt(s.Ctx, s.Creds, pop, &vfs.MknodOptions{Mode: linux.S_IFIFO | 0600})
+		}},
+		{"open", func(pop *vfs.PathOperation) error {
+			fd, err := s.VFS.OpenAt(s.Ctx, s.Creds, pop, &vfs.OpenOptions{Flags: linux.O_CREAT | linux.O_EXCL | linux.O_RDONLY, Mode: 0600})
+			if fd != nil {
+				fd.DecRef(s.Ctx)
+			}
+			return err
+		}},
+	} {
+		t.Run(op.name, func(t *testing.T) {
+			// procfs lookup errors take precedence over the read-only mount.
+			if err := op.create(s.PathOpAtRoot("/proc/nonexistent")); !linuxerr.Equals(linuxerr.ENOENT, err) {
+				t.Errorf("create missing child: got %v, want ENOENT", err)
+			}
+			if err := op.create(s.PathOpAtRoot("/proc/version")); !linuxerr.Equals(linuxerr.EEXIST, err) {
+				t.Errorf("create existing child: got %v, want EEXIST", err)
+			}
+		})
+	}
+}
+
+func TestSyntheticMountpointCreation(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+
+	for _, name := range []string{"/proc/mountpoint", "/proc/mountpoint/nested"} {
+		pop := s.PathOpAtRoot(name)
+		if err := s.VFS.MkdirAt(s.Ctx, s.Creds, pop, &vfs.MkdirOptions{Mode: 0755, ForSyntheticMountpoint: true}); err != nil {
+			t.Fatalf("MkdirAt(%q, ForSyntheticMountpoint): %v", name, err)
+		}
+		d := s.GetDentryOrDie(pop)
+		d.DecRef(s.Ctx)
+	}
+	if err := s.VFS.MkdirAt(s.Ctx, s.Creds, s.PathOpAtRoot("/proc/ordinary"), &vfs.MkdirOptions{Mode: 0755}); !linuxerr.Equals(linuxerr.ENOENT, err) {
+		t.Errorf("MkdirAt(/proc/ordinary): got %v, want ENOENT", err)
+	}
+}
+
 // TestManyProcMounts tests that many procfs instances can exist concurrently.
 // Regression test for the case where each instance permanently consumed one of
 // the ~149 available dynamic character device major numbers for

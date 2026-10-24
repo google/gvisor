@@ -448,6 +448,69 @@ TEST(ProcTest, NotFoundInRoot) {
   EXPECT_THAT(stat("/proc/foobar", &s), SyscallFailsWithErrno(ENOENT));
 }
 
+TEST(ProcTest, Create) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY));
+  const auto check = [&] {
+    for (const char* parent :
+         {"/proc", "/proc/self", "/proc/thread-self", "/proc/self/task",
+          "/proc/self/fd", "/proc/self/fdinfo", "/proc/sys", "/proc/sys/kernel",
+          "/proc/fs"}) {
+      SCOPED_TRACE(parent);
+      for (const std::string& name : {std::string("nonexistent-create"),
+                                      std::string(NAME_MAX + 1, 'x')}) {
+        SCOPED_TRACE(name);
+        const std::string missing = JoinPath(parent, name);
+        EXPECT_THAT(mkdir(missing.c_str(), 0700),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(symlink("target", missing.c_str()),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(mknod(missing.c_str(), S_IFIFO | 0600, 0),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(Open(missing, O_CREAT | O_RDONLY, 0600),
+                    PosixErrorIs(ENOENT));
+        EXPECT_THAT(Open(missing, O_RDONLY), PosixErrorIs(ENOENT));
+        EXPECT_THAT(mkdir(absl::StrCat(missing, "/").c_str(), 0700),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(mkdir(JoinPath(missing, "child").c_str(), 0700),
+                    SyscallFailsWithErrno(ENOENT));
+      }
+      EXPECT_THAT(mkdir(JoinPath(parent, ".").c_str(), 0700),
+                  SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(mkdir(JoinPath(parent, "..").c_str(), 0700),
+                  SyscallFailsWithErrno(EEXIST));
+    }
+    // Existing directories, files, and symlinks fail with EEXIST, whether or
+    // not they have already been looked up or the path has a trailing slash.
+    for (const std::string& existing :
+         {std::string("/proc/self"), std::string("/proc/version"),
+          std::string("/proc/self/status"), std::string("/proc/self/exe"),
+          absl::StrCat("/proc/self/task/", getpid()),
+          absl::StrCat("/proc/self/fd/", fd.get()),
+          absl::StrCat("/proc/self/fdinfo/", fd.get())}) {
+      SCOPED_TRACE(existing);
+      EXPECT_THAT(mkdir(existing.c_str(), 0700), SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(symlink("target", existing.c_str()),
+                  SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(mknod(existing.c_str(), S_IFIFO | 0600, 0),
+                  SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(Open(existing, O_CREAT | O_EXCL | O_RDONLY, 0600),
+                  PosixErrorIs(EEXIST));
+      EXPECT_THAT(mkdir(absl::StrCat(existing, "/").c_str(), 0700),
+                  SyscallFailsWithErrno(EEXIST));
+    }
+  };
+  check();
+  // O_CREAT without O_EXCL still opens an existing file.
+  EXPECT_NO_ERRNO(Open("/proc/version", O_CREAT | O_RDONLY, 0600));
+  // A missing procfs child fails lookup before the parent's write permissions
+  // are checked.
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
+  SCOPED_TRACE("without DAC capabilities");
+  check();
+}
+
 TEST(ProcSelfTest, IsThreadGroupLeader) {
   ScopedThread([] {
     const pid_t tgid = getpid();

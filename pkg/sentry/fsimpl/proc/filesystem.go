@@ -97,6 +97,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 		devMinor: devMinor,
 	}
 	procfs.MaxCachedDentries = maxCachedDentries
+	procfs.NoNegativeDentries = true
 	procfs.VFSFilesystem().Init(vfsObj, &ft, procfs)
 
 	var internalData *InternalData
