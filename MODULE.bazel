@@ -10,6 +10,7 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "bazel_lib", version = "3.2.2")
 bazel_dep(name = "yq.bzl", version = "0.4.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_img", version = "0.3.23")
 bazel_dep(name = "rules_cc", version = "0.2.25")
 bazel_dep(name = "llvm", version = "0.8.24")
 bazel_dep(name = "libbpf", version = "1.7.0.bcr.1")
@@ -238,6 +239,37 @@ http_file(
     urls = [
         "https://pki.goog/roots.pem",
     ],
+)
+
+### Docker integration test images
+# Pin both architectures of the existing test distributions. Image assembly
+# uses declared layers and does not require a Docker daemon.
+img_pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")
+
+img_pull(
+    name = "test_alpine",
+    digest = "sha256:b276d875eeed9c7d3f1cfa7edb06b22ed22b14219a7d67c52c56612330348239",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registry = "index.docker.io",
+    repository = "library/alpine",
+    tag = "3.11.5",
+)
+
+img_pull(
+    name = "test_busybox",
+    digest = "sha256:95cf004f559831017cdf4628aaf1bb30133677be8702a8c5f2994629f637a209",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registry = "index.docker.io",
+    repository = "library/busybox",
+    tag = "1.31.1",
 )
 
 ### Toolchains
