@@ -50,6 +50,25 @@ const (
 	InodeEvent EventType = iota
 )
 
+// WatchTarget is the filesystem object that owns a set of inotify watches.
+// It is usually an inode, but filesystems without shared inodes may use a dentry.
+// Watches do not acquire a reference on the target. The filesystem must preserve
+// its watches until it explicitly deletes them, independently of the lifetime of
+// the dentry used to add a watch.
+type WatchTarget interface {
+	// Watches returns the target's watch set.
+	Watches() *Watches
+
+	// OnZeroWatches is called after the last watch is removed, with no inotify
+	// locks held. It lets the filesystem reconsider caching or destruction of
+	// objects kept alive by watches. It must tolerate concurrent watch changes.
+	//
+	// Notifications may remove one-shot watches synchronously while filesystem
+	// locks are held. Implementations must defer cleanup in that case instead
+	// of recursively acquiring those locks.
+	OnZeroWatches(ctx context.Context)
+}
+
 // Inotify represents an inotify instance created by inotify_init(2) or
 // inotify_init1(2). Inotify implements FileDescriptionImpl.
 //
@@ -123,7 +142,7 @@ func NewInotifyFD(ctx context.Context, vfsObj *VirtualFilesystem, flags uint32) 
 // Release implements FileDescriptionImpl.Release. Release removes all
 // watches and frees all resources for an inotify instance.
 func (i *Inotify) Release(ctx context.Context) {
-	var ds []*Dentry
+	var targets []WatchTarget
 
 	// We need to hold i.mu to avoid a race with concurrent calls to
 	// Inotify.handleDeletion from Watches. There's no risk of Watches
@@ -134,21 +153,21 @@ func (i *Inotify) Release(ctx context.Context) {
 		// Remove references to the watch from the watches set on the target. We
 		// don't need to worry about the references from i.watches, since this
 		// file description is about to be destroyed.
-		d := w.target
-		ws := d.Watches()
-		// Watchable dentries should never return a nil watch set.
+		target := w.target
+		ws := target.Watches()
+		// Watch targets should never return a nil watch set.
 		if ws == nil {
-			panic("Cannot remove watch from an unwatchable dentry")
+			panic("Cannot remove watch from an unwatchable target")
 		}
 		ws.Remove(i.id)
 		if ws.Size() == 0 {
-			ds = append(ds, d)
+			targets = append(targets, target)
 		}
 	}
 	i.mu.Unlock()
 
-	for _, d := range ds {
-		d.OnZeroWatches(ctx)
+	for _, target := range targets {
+		target.OnZeroWatches(ctx)
 	}
 }
 
@@ -299,12 +318,12 @@ func (i *Inotify) queueEvent(ev *Event) {
 
 // newWatchLocked creates and adds a new watch to target.
 //
-// Precondition: i.mu must be locked. ws must be the watch set for target d.
-func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
+// Precondition: i.mu must be locked. ws must be the watch set for target.
+func (i *Inotify) newWatchLocked(target WatchTarget, ws *Watches, mask uint32) *Watch {
 	w := &Watch{
 		owner:  i,
 		wd:     i.nextWatchIDLocked(),
-		target: d,
+		target: target,
 		mask:   atomicbitops.FromUint32(mask),
 	}
 
@@ -326,8 +345,8 @@ func (i *Inotify) nextWatchIDLocked() int32 {
 // AddWatch constructs a new inotify watch and adds it to the target. It
 // returns the watch descriptor returned by inotify_add_watch(2).
 //
-// The caller must hold a reference on target.
-func (i *Inotify) AddWatch(target *Dentry, mask uint32) int32 {
+// The caller must hold a reference on a dentry representing target.
+func (i *Inotify) AddWatch(target WatchTarget, mask uint32) int32 {
 	// Note: Locking this inotify instance protects the result returned by
 	// Lookup() below. With the lock held, we know for sure the lookup result
 	// won't become stale because it's impossible for *this* instance to
@@ -552,10 +571,10 @@ type Watch struct {
 	// This field is immutable after creation.
 	wd int32
 
-	// target is a dentry representing the watch target. Its watch set contains this watch.
+	// target owns the watch set containing this watch.
 	//
 	// This field is immutable after creation.
-	target *Dentry
+	target WatchTarget
 
 	// Events being monitored via this watch.
 	mask atomicbitops.Uint32

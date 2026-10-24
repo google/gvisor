@@ -850,7 +850,12 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events uint32, cookie ui
 	d.fs.ancestryMu.RUnlock()
 }
 
-// Watches implements vfs.DentryImpl.Watches.
+// WatchTarget implements vfs.DentryImpl.WatchTarget.
+func (d *dentry) WatchTarget() vfs.WatchTarget {
+	return d
+}
+
+// Watches implements vfs.WatchTarget.Watches.
 func (d *dentry) Watches() *vfs.Watches {
 	return &d.watches
 }
@@ -873,7 +878,7 @@ func withDropList(ctx context.Context, ds **[]*dentry) context.Context {
 	return context.WithValue(ctx, CtxDropList, ds)
 }
 
-// OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
+// OnZeroWatches implements vfs.WatchTarget.OnZeroWatches.
 func (d *dentry) OnZeroWatches(ctx context.Context) {
 	if d.refs.Load() != 0 {
 		return

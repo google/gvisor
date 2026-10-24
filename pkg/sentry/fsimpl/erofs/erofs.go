@@ -19,6 +19,7 @@
 //	dentry.cachingMu
 //	  dentry.dirMu
 //	    inode.dirMu
+//	    inode.dentriesMu
 //	    inodeBucket.mu
 //	    filesystem.cacheMu
 package erofs
@@ -362,6 +363,11 @@ type inode struct {
 
 	// Inotify watches for this inode.
 	watches vfs.Watches
+
+	// dentries contains the aliases whose caching depends on watches.
+	dentriesMu sync.Mutex `state:"nosave"`
+	// +checklocks:dentriesMu
+	dentries aliasList
 }
 
 // getInode returns the inode identified by nid. A reference on inode is also
@@ -484,7 +490,13 @@ type dentry struct {
 	cached bool
 
 	dentryEntry
+	aliasEntry aliasEntry
 }
+
+type aliasElementMapper struct{}
+
+//go:nosplit
+func (aliasElementMapper) linkerFor(d *dentry) *aliasEntry { return &d.aliasEntry }
 
 // newDentry returns a dentry with refs == 1 (held by the caller). The caller
 // is responsible for inserting it into the dentry tree.
@@ -499,6 +511,9 @@ func (fs *filesystem) newDentry(nid uint64) (*dentry, error) {
 	d.refs.Store(1)
 	d.vfsd.Init(d)
 	refs.Register(d)
+	i.dentriesMu.Lock()
+	i.dentries.PushBack(d)
+	i.dentriesMu.Unlock()
 	return d, nil
 }
 
@@ -581,9 +596,8 @@ func (d *dentry) checkCaching(ctx context.Context) {
 	}
 	// If d still has inotify watches, it can't be evicted. Otherwise, we will
 	// lose its watches, even if a new dentry is created for the same file in
-	// the future. Note that the size of d.inode.watches cannot concurrently
-	// transition from zero to non-zero, because adding a watch requires
-	// holding a reference on d.
+	// the future. Watches may be added through another alias concurrently;
+	// eviction rechecks the watch set before destroying d.
 	if r > 0 || d.inode.watches.Size() > 0 {
 		d.removeFromCache()
 		d.cachingMu.Unlock()
@@ -734,6 +748,9 @@ func (d *dentry) destroy(ctx context.Context) {
 	}
 
 	refs.Unregister(d)
+	d.inode.dentriesMu.Lock()
+	d.inode.dentries.Remove(d)
+	d.inode.dentriesMu.Unlock()
 
 	d.inode.DecRef(ctx)
 
@@ -755,15 +772,30 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	d.inode.watches.Notify(ctx, "", events, cookie, et, false)
 }
 
-// Watches implements vfs.DentryImpl.Watches.
-func (d *dentry) Watches() *vfs.Watches {
-	return &d.inode.watches
+// WatchTarget implements vfs.DentryImpl.WatchTarget.
+func (d *dentry) WatchTarget() vfs.WatchTarget {
+	return d.inode
 }
 
-// OnZeroWatches implements vfs.DentryImpl.OnZeroWatches.
-func (d *dentry) OnZeroWatches(ctx context.Context) {
-	// If no watches are left on this dentry, try caching it.
-	d.checkCaching(ctx)
+// Watches implements vfs.WatchTarget.Watches.
+func (i *inode) Watches() *vfs.Watches {
+	return &i.watches
+}
+
+// OnZeroWatches implements vfs.WatchTarget.OnZeroWatches.
+func (i *inode) OnZeroWatches(ctx context.Context) {
+	// Snapshot the aliases before checking caching: eviction can destroy an
+	// alias and acquire dentriesMu again. checkCaching tolerates destroyed
+	// dentries, so the snapshot doesn't need to acquire references.
+	var ds []*dentry
+	i.dentriesMu.Lock()
+	for d := i.dentries.Front(); d != nil; d = d.aliasEntry.Next() {
+		ds = append(ds, d)
+	}
+	i.dentriesMu.Unlock()
+	for _, d := range ds {
+		d.checkCaching(ctx)
+	}
 }
 
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {

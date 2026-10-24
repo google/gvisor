@@ -100,6 +100,11 @@ func (d *dentryTestDentry) DecRef(ctx context.Context) {
 func (d *dentryTestDentry) InotifyWithParent(ctx context.Context, events, cookie uint32, et EventType) {
 }
 
+func (d *dentryTestDentry) WatchTarget() WatchTarget {
+	return d
+}
+
+// Watches implements WatchTarget.Watches.
 func (d *dentryTestDentry) Watches() *Watches {
 	return &d.watches
 }

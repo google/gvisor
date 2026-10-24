@@ -28,9 +28,16 @@ The set of all watches held on a single file (i.e., the watch target) is stored
 in vfs.Watches. Each watch will belong to a different inotify instance (an
 instance can only have one watch on any watch target). The watches are stored in
 a map indexed by their vfs.Inotify owner’s id. Hard links and file descriptions
-to a single file will all share the same vfs.Watches (with the exception of the
-gofer filesystem, described in a later section). Activity on the target causes
+to a single file share the same vfs.Watches when the filesystem shares inodes
+between hard links. Activity on the target causes
 its vfs.Watches to generate notifications on its watches’ inotify instances.
+
+### vfs.WatchTarget
+
+A filesystem object that owns a vfs.Watches and provides its OnZeroWatches
+callback. Each vfs.Watch retains this target instead of the dentry used to add
+the watch. This allows a hard-link dentry to be destroyed while watches survive
+on the shared inode, including across checkpoint/restore.
 
 ### vfs.Watch
 
@@ -80,114 +87,40 @@ not even have inodes), so we have to plumb inotify support through each specific
 filesystem implementation. Some of the technical considerations are outlined
 below.
 
-### Tmpfs
+### Inode-owned watches
 
-For filesystems with inodes, like tmpfs, the design is quite similar to that of
-Linux, where watches reside on the inode.
+Gofer, tmpfs, EROFS, and kernfs use their inode as the WatchTarget. All dentries
+for the same inode share its watch set. Kernfs provides this support for its
+pseudo-filesystems, although changes that bypass filesystem operations (such as
+adding an fd to /proc/self/fd) do not generate events automatically.
 
-### Pseudo-filesystems
+Gofer and EROFS cache zero-reference dentries and may later evict them. While an
+inode has watches, its live dentries must stay out of the eviction cache so that
+later lookups find the same inode and watches. When the last watch is removed,
+the inode's OnZeroWatches callback rechecks caching for all its remaining aliases.
+Gofer still destroys deleted dentries, retaining the shared watches while
+another hard link represents the inode. Its remote filesystem operations only generate events
+for activity performed inside the sandbox.
 
-Technically, because inotify is implemented at the vfs layer in Linux,
-pseudo-filesystems on top of kernfs support inotify passively. However, watches
-can only track explicit filesystem operations like read/write, open/close,
-mknod, etc., so watches on a target like /proc/self/fd will not generate events
-every time a new fd is added or removed. As of this writing, we leave inotify
-unimplemented in kernfs and anonfs; it does not seem particularly useful.
+### Dentry-owned watches
 
-### Gofer Filesystem (fsimpl/gofer)
+Overlay and anonfs keep watches on their dentries and use the dentry as the
+WatchTarget. Overlay does not currently share watch sets between hard links.
 
-The gofer filesystem has several traits that make it difficult to support
-inotify:
+## Filesystem Interfaces
 
-*   **There are no inodes.** A file is represented as a dentry that holds an
-    unopened p9 file (and possibly an open FID), through which the Sentry
-    interacts with the gofer.
-    *   *Solution:* Because there is no inode structure stored in the sandbox,
-        inotify watches must be held on the dentry. For the purposes of inotify,
-        we assume that every dentry corresponds to a unique inode, which may
-        cause unexpected behavior in the presence of hard links, where multiple
-        dentries should share the same set of watches. Indeed, it is impossible
-        for us to be absolutely sure whether dentries correspond to the same
-        file or not, due to the following point:
-*   **The Sentry cannot always be aware of hard links on the remote
-    filesystem.** There is no way for us to confirm whether two files on the
-    remote filesystem are actually links to the same inode. QIDs and inodes are
-    not always 1:1. The assumption that dentries and inodes are 1:1 is
-    inevitably broken if there are remote hard links that we cannot detect.
-    *   *Solution:* this is an issue with gofer fs in general, not only inotify,
-        and we will have to live with it.
-*   **Dentries can be cached, and then evicted.** Dentry lifetime does not
-    correspond to file lifetime. Because gofer fs is not entirely in-memory, the
-    absence of a dentry does not mean that the corresponding file does not
-    exist, nor does a dentry reaching zero references mean that the
-    corresponding file no longer exists. When a dentry reaches zero references,
-    it will be cached, in case the file at that path is needed again in the
-    future. However, the dentry may be evicted from the cache, which will cause
-    a new dentry to be created next time the same file path is used. The
-    existing watches will be lost.
-    *   *Solution:* When a dentry reaches zero references, do not cache it if it
-        has any watches, so we can avoid eviction/destruction. Note that if the
-        dentry was deleted or invalidated (d.vfsd.IsDead()), we should still
-        destroy it along with its watches. Additionally, when a dentry’s last
-        watch is removed, we cache it if it also has zero references. This way,
-        the dentry can eventually be evicted from memory if it is no longer
-        needed.
-*   **Dentries can be invalidated.** Another issue with dentry lifetime is that
-    the remote file at the file path represented may change from underneath the
-    dentry. In this case, the next time that the dentry is used, it will be
-    invalidated and a new dentry will replace it. In this case, it is not clear
-    what should be done with the watches on the old dentry.
-    *   *Solution:* Silently destroy the watches when invalidation occurs. We
-        have no way of knowing exactly what happened, when it happens. Inotify
-        instances on NFS files in Linux probably behave in a similar fashion,
-        since inotify is implemented at the vfs layer and is not aware of the
-        complexities of remote file systems.
-    *   An alternative would be to issue some kind of event upon invalidation,
-        e.g. a delete event, but this has several issues:
-    *   We cannot discern whether the remote file was invalidated because it was
-        moved, deleted, etc. This information is crucial, because these cases
-        should result in different events. Furthermore, the watches should only
-        be destroyed if the file has been deleted.
-    *   Moreover, the mechanism for detecting whether the underlying file has
-        changed is to check whether a new QID is given by the gofer. This may
-        result in false positives, e.g. suppose that the server closed and
-        re-opened the same file, which may result in a new QID.
-    *   Finally, the time of the event may be completely different from the time
-        of the file modification, since a dentry is not immediately notified
-        when the underlying file has changed. It would be quite unexpected to
-        receive the notification when invalidation was triggered, i.e. the next
-        time the file was accessed within the sandbox, because then the
-        read/write/etc. operation on the file would not result in the expected
-        event.
-    *   Another point in favor of the first solution: inotify in Linux can
-        already be lossy on local filesystems (one of the sacrifices made so
-        that filesystem performance isn’t killed), and it is lossy on NFS for
-        similar reasons to gofer fs. Therefore, it is better for inotify to be
-        silent than to emit incorrect notifications.
-*   **There may be external users of the remote filesystem.** We can only track
-    operations performed on the file within the sandbox. This is sufficient
-    under InteropModeExclusive, but whenever there are external users, the set
-    of actions we are aware of is incomplete.
-    *   *Solution:* We could either return an error or just issue a warning when
-        inotify is used without InteropModeExclusive. Although faulty, VFS1
-        allows it when the filesystem is shared, and Linux does the same for
-        remote filesystems (as mentioned above, inotify sits at the vfs level).
+DentryImpl provides two methods for inotify:
 
-## Dentry Interface
+*   **InotifyWithParent()** generates events on the file's watches and its
+    parent's watches.
+*   **WatchTarget()** returns the object that owns the file's watches.
 
-For events that must be generated above the vfs layer, we provide the following
-DentryImpl methods to allow interactions with targets on any FilesystemImpl:
-
-*   **InotifyWithParent()** generates events on the dentry’s watches as well as
-    its parent’s.
-*   **Watches()** retrieves the watch set of the target represented by the
-    dentry. This is used to access and modify watches on a target.
-*   **OnZeroWatches()** performs cleanup tasks after the last watch is removed
-    from a dentry. This is needed by gofer fs, which must allow a watched dentry
-    to be cached once it has no more watches. Most implementations can just do
-    nothing. Note that OnZeroWatches() must be called after all inotify locks
-    are released to preserve lock ordering, since it may acquire
-    FilesystemImpl-specific locks.
+WatchTarget provides **Watches()** to access the watch set and **OnZeroWatches()**
+to perform filesystem-specific cleanup after the last watch is removed. Most
+filesystems need no cleanup. Gofer and EROFS use it to allow dentries to be cached
+again. OnZeroWatches is called without inotify locks held, but notifications can
+remove one-shot watches while filesystem locks are held. Filesystems must defer
+cleanup when it would otherwise reacquire those locks.
 
 ## IN_EXCL_UNLINK
 

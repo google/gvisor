@@ -203,9 +203,6 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	if temp.d.inode.endpoint != nil {
 		temp.d.IncRef()
 	}
-	fs.syncMu.Lock()
-	fs.syncableDentries.PushBack(&temp.d.syncableListEntry)
-	fs.syncMu.Unlock()
 	return &temp.d, nil
 }
 
