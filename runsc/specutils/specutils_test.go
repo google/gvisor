@@ -16,15 +16,62 @@ package specutils
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
 )
+
+func TestIsProcessRunning(t *testing.T) {
+	for _, tc := range []struct {
+		pid  int
+		want bool
+	}{
+		{pid: 0, want: false},
+		{pid: -1, want: false},
+		{pid: os.Getpid(), want: true},
+	} {
+		if got, err := IsProcessRunning(tc.pid); err != nil || got != tc.want {
+			t.Errorf("IsProcessRunning(%d) = (%t, %v), want (%t, nil)", tc.pid, got, err, tc.want)
+		}
+	}
+
+	cmd := exec.Command("/bin/true")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	})
+	pid := cmd.Process.Pid
+	// Wait for exit without reaping the child so the zombie remains observable.
+	_, _, err := RetryEintr(func() (uintptr, uintptr, error) {
+		_, _, errno := unix.Syscall6(unix.SYS_WAITID, unix.P_PID, uintptr(pid), 0, unix.WEXITED|unix.WNOWAIT, 0, 0)
+		if errno != 0 {
+			return 0, 0, errno
+		}
+		return 0, 0, nil
+	})
+	if err != nil {
+		t.Fatalf("waitid(%d): %v", pid, err)
+	}
+	if got, err := IsProcessRunning(pid); err != nil || got {
+		t.Errorf("IsProcessRunning(%d) for zombie = (%t, %v), want (false, nil)", pid, got, err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := IsProcessRunning(pid); err != nil || got {
+		t.Errorf("IsProcessRunning(%d) after reaping = (%t, %v), want (false, nil)", pid, got, err)
+	}
+}
 
 func TestWaitForReadyHappy(t *testing.T) {
 	cmd := exec.Command("/bin/sleep", "1000")
