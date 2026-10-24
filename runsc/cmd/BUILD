@@ -125,6 +125,7 @@ go_test(
     embed = [":cmd"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/control/server",
         "//pkg/log",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/kernel/auth",

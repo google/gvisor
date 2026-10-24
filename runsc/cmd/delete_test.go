@@ -15,11 +15,17 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
+	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -99,5 +105,117 @@ func TestDeleteRunningRequiresForce(t *testing.T) {
 				t.Errorf("requireForce() = %v, wantErr: %t", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// startUnresponsiveSandbox writes the state of a container with the given
+// status and for which the sandbox never responds on its control socket.
+// Returns the container ID, and a channel closed when the sandbox process
+// exits.
+func startUnresponsiveSandbox(t *testing.T, rootDir string, status container.Status) (string, <-chan struct{}) {
+	t.Helper()
+	sockPath := filepath.Join(rootDir, "control.sock")
+	sockFD, err := server.CreateSocket(sockPath)
+	if err != nil {
+		t.Fatalf("error creating control socket: %v", err)
+	}
+	t.Cleanup(func() { unix.Close(sockFD) })
+	if err := unix.Listen(sockFD, 16); err != nil {
+		t.Fatalf("error listening on control socket: %v", err)
+	}
+	proc := exec.Command("/bin/sleep", "1000")
+	if err := proc.Start(); err != nil {
+		t.Fatalf("error starting fake sandbox process: %v", err)
+	}
+	t.Cleanup(func() { proc.Process.Kill() })
+	exited := make(chan struct{})
+	go func() {
+		proc.Wait()
+		close(exited)
+	}()
+	const id = "booting"
+	path := filepath.Join(rootDir, fmt.Sprintf("%s_sandbox:%s.state", id, id))
+	state := fmt.Sprintf(`{"id":%q,"status":%q,"spec":{},"saver":{"rootDir":%q,"id":{"sandboxId":%q,"containerId":%q}},"sandbox":{"id":%q,"pid":%d,"controlSocketPath":%q,"mountHints":{}}}`, id, status, rootDir, id, id, id, proc.Process.Pid, sockPath)
+	if err := os.WriteFile(path, []byte(state), 0644); err != nil {
+		t.Fatalf("error writing state file %q: %v", path, err)
+	}
+	return id, exited
+}
+
+// checkTeardownBootingSandbox checks that `teardown` returns and kills the
+// sandbox process, even if it is unresponsive.
+func checkTeardownBootingSandbox(t *testing.T, teardown func(conf *config.Config, f *flag.FlagSet) error) {
+	t.Helper()
+	rootDir := t.TempDir()
+	id, exited := startUnresponsiveSandbox(t, rootDir, container.Created)
+	f := flag.NewFlagSet("test", flag.ContinueOnError)
+	f.Parse([]string{id})
+	if err := teardown(&config.Config{RootDir: rootDir}, f); err != nil {
+		t.Fatalf("teardown failed: %v", err)
+	}
+	<-exited
+}
+
+// TestDeleteBootingSandbox checks that deleting a created container always
+// does its job, even if the sandbox is unresponsive.
+func TestDeleteBootingSandbox(t *testing.T) {
+	checkTeardownBootingSandbox(t, func(conf *config.Config, f *flag.FlagSet) error {
+		d := Delete{}
+		return d.execute(f, conf)
+	})
+}
+
+// TestKillBootingSandbox checks that killing a created container
+// that is in the middle of booting does its job.
+func TestKillBootingSandbox(t *testing.T) {
+	checkTeardownBootingSandbox(t, func(conf *config.Config, f *flag.FlagSet) error {
+		k := Kill{}
+		c, err := k.loadContainer(conf, f, container.LoadOpts{})
+		if err != nil {
+			return err
+		}
+		return c.SignalContainer(unix.SIGKILL, false)
+	})
+}
+
+// TestStateBootingSandbox checks that loading container that is in the
+// middle of booting doesn't block, and reports it as stopped if its
+// sandbox exits.
+func TestStateBootingSandbox(t *testing.T) {
+	rootDir := t.TempDir()
+	id, exited := startUnresponsiveSandbox(t, rootDir, container.Created)
+	load := func() *container.Container {
+		t.Helper()
+		c, err := container.Load(rootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+		if err != nil {
+			t.Fatalf("error loading container: %v", err)
+		}
+		return c
+	}
+	c := load()
+	if c.Status != container.Created {
+		t.Errorf("got status %v, expected %v", c.Status, container.Created)
+	}
+	if err := unix.Kill(c.Sandbox.Pid.Load(), unix.SIGKILL); err != nil {
+		t.Fatalf("error killing sandbox process: %v", err)
+	}
+	<-exited
+	if got := load().Status; got != container.Stopped {
+		t.Errorf("got status %v, expected %v", got, container.Stopped)
+	}
+}
+
+// TestListUnresponsiveSandbox checks that `runsc list` on an unresponsive
+// sandbox still works.
+func TestListUnresponsiveSandbox(t *testing.T) {
+	rootDir := t.TempDir()
+	id, _ := startUnresponsiveSandbox(t, rootDir, container.Running)
+	var out bytes.Buffer
+	l := List{format: "text"}
+	if err := l.execute(rootDir, &out); err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if !regexp.MustCompile(id + `\s+\d+\s+running`).Match(out.Bytes()) {
+		t.Errorf("list output doesn't show %q as running:\n%s", id, out.String())
 	}
 }
