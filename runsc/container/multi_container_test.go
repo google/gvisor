@@ -416,6 +416,108 @@ func TestMultiContainerRlimitsExec(t *testing.T) {
 	}
 }
 
+// TestMultiContainerRlimitsIsolated checks that the rlimits of one container
+// do not change those of other containers in the same sandbox.
+func TestMultiContainerRlimitsIsolated(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		noRootContainer bool
+	}{
+		{name: "root container"},
+		{name: "no root container", noRootContainer: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+			setupTestRootDir(t, conf)
+
+			// Containers A, B and C start in this order. C sets no RLIMIT_NOFILE.
+			podSpecs, ids := createSpecs(sleepCmd, sleepCmd, sleepCmd, sleepCmd)
+			if tc.noRootContainer {
+				podSpecs[0].Process = nil
+				podSpecs[0].Root = nil
+			}
+			podSpecs[1].Process.Rlimits = []specs.POSIXRlimit{
+				{Type: "RLIMIT_NOFILE", Hard: 4321, Soft: 1234},
+			}
+			podSpecs[2].Process.Rlimits = []specs.POSIXRlimit{
+				{Type: "RLIMIT_NOFILE", Hard: 8765, Soft: 5678},
+			}
+			containers, cleanup, err := startContainersWithArgs(conf, podSpecs, ids, func(i int, args *Args) {
+				args.NoRootContainer = i == 0 && tc.noRootContainer
+			})
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			t.Cleanup(cleanup)
+			a, b, c := containers[1], containers[2], containers[3]
+
+			// Read the limits from C: an exec into a container that sets an
+			// rlimit could hide the bug.
+			nofile := func(target *Container) string {
+				t.Helper()
+				pid := initPID(t, target)
+				out, err := executeCombinedOutput(conf, c, nil, "/bin/cat", fmt.Sprintf("/proc/%d/limits", pid))
+				if err != nil {
+					t.Fatalf("error reading limits of PID %d: %v", pid, err)
+				}
+				for _, line := range strings.Split(string(out), "\n") {
+					if rest, ok := strings.CutPrefix(line, "Max open files"); ok {
+						if f := strings.Fields(rest); len(f) >= 2 {
+							return f[0] + "/" + f[1]
+						}
+					}
+				}
+				t.Fatalf("no \"Max open files\" line in limits of PID %d: %q", pid, out)
+				return ""
+			}
+
+			if got, want := nofile(a), "1234/4321"; got != want {
+				t.Errorf("RLIMIT_NOFILE of container A init, got: %s, want: %s", got, want)
+			}
+			if got, want := nofile(b), "5678/8765"; got != want {
+				t.Errorf("RLIMIT_NOFILE of container B init, got: %s, want: %s", got, want)
+			}
+			gotC := nofile(c)
+			if gotC == "5678/8765" {
+				t.Errorf("RLIMIT_NOFILE of container C init is %s, the value of container B", gotC)
+			}
+			if !tc.noRootContainer {
+				if want := nofile(containers[0]); gotC != want {
+					t.Errorf("RLIMIT_NOFILE of container C init, got: %s, want the sandbox default: %s", gotC, want)
+				}
+			}
+
+			// setrlimit in an exec must not change the init of any container.
+			if _, err := executeCombinedOutput(conf, b, nil, "/bin/sh", "-c", "ulimit -n 77"); err != nil {
+				t.Fatalf("error executing ulimit in container B: %v", err)
+			}
+			if got, want := nofile(a), "1234/4321"; got != want {
+				t.Errorf("RLIMIT_NOFILE of container A init after setrlimit in B, got: %s, want: %s", got, want)
+			}
+			if got, want := nofile(b), "5678/8765"; got != want {
+				t.Errorf("RLIMIT_NOFILE of container B init after setrlimit in B, got: %s, want: %s", got, want)
+			}
+		})
+	}
+}
+
+// initPID returns the PID of the init process of c.
+func initPID(t *testing.T, c *Container) int32 {
+	t.Helper()
+
+	procs, err := c.Processes()
+	if err != nil {
+		t.Fatalf("error getting processes of container %s: %v", c.ID, err)
+	}
+	for _, p := range procs {
+		if p.Cmd == "sleep" {
+			return int32(p.PID)
+		}
+	}
+	t.Fatalf("no sleep process in container %s: %s", c.ID, procListToString(procs))
+	return 0
+}
+
 // sandboxRunning reports whether c's sandbox process is running.
 func sandboxRunning(t *testing.T, c *Container) bool {
 	t.Helper()
