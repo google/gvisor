@@ -429,6 +429,11 @@ func maxOptionalRange(required, optional memmap.MappableRange, maxBytes uint64) 
 	return optional
 }
 
+// MayUseHugepages implements memmap.Mappable.MayUseHugepages.
+func (rf *regularFile) MayUseHugepages() bool {
+	return rf.huge && rf.inode.fs.mf.HugepagesEnabled()
+}
+
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (*regularFile) InvalidateUnsavable(context.Context) error {
 	return nil
