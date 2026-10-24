@@ -823,6 +823,11 @@ func (kernelSCM) Credentials(*kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
 	return 0, auth.RootUID, auth.RootGID
 }
 
+// Groups implements control.SCMCredentials.Groups.
+func (kernelSCM) Groups(*kernel.Task) []auth.GID {
+	return nil
+}
+
 // kernelCreds is the concrete version of kernelSCM used in all creds.
 var kernelCreds = &kernelSCM{}
 

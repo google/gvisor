@@ -120,6 +120,7 @@ go_library(
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
+        "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",

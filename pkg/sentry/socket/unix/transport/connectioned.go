@@ -107,11 +107,12 @@ type connectionedEndpoint struct {
 	stype linux.SockType
 
 	// peerCreds is used to store the peer credentials.
-	// This will store the socket's own credentials until the connection is
-	// established with connect(2). Once the connection is established, this
-	// will store the peer's credentials. The use of this option is possible
-	// only for connected `AF_UNIX` stream sockets and for `AF_UNIX` stream and
-	// datagram socket pairs created using socketpair(2)
+	// It is nil until the connection is established with connect(2), so a
+	// connect(2) that fails leaves it untouched. Once the connection is
+	// established, this stores the peer's credentials. The use of this option
+	// is possible only for connected `AF_UNIX` stream and seqpacket sockets and
+	// for `AF_UNIX` stream, seqpacket and datagram socket pairs created using
+	// socketpair(2).
 	peerCreds CredentialsControlMessage
 
 	// acceptedChan is per the TCP endpoint implementation. Note that the
@@ -297,24 +298,20 @@ func (e *connectionedEndpoint) Close(ctx context.Context) {
 	}
 }
 
-func (e *connectionedEndpoint) swapPeerCredsLocked(ctx context.Context, cend ConnectingEndpoint, ne *connectionedEndpoint) *syserr.Error {
-	ce, ok := cend.(*connectionedEndpoint)
-	if !ok {
-		return syserr.ErrInvalidEndpointState
-	}
-	// Swap peer credentials between the two endpoints.
-	ne.peerCreds, ce.peerCreds = ce.peerCreds, ne.peerCreds
-	return nil
-}
-
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, Sender)) *syserr.Error {
+func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, clientCreds CredentialsControlMessage, returnConnect func(Receiver, Sender)) *syserr.Error {
 	if ce.Type() != e.stype {
 		return syserr.ErrWrongProtocolForSocket
 	}
 
+	// The peer credentials of the connecting endpoint are set on commit.
+	cce, ok := ce.(*connectionedEndpoint)
+	if !ok {
+		return syserr.ErrInvalidEndpointState
+	}
+
 	// Check if ce is e to avoid a deadlock.
-	if ce, ok := ce.(*connectionedEndpoint); ok && ce == e {
+	if cce == e {
 		return syserr.ErrInvalidEndpointState
 	}
 
@@ -360,7 +357,9 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	ne.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ne.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	ne.SocketOptions().SetPassCred(e.SocketOptions().GetPassCred())
-	ne.peerCreds = e.peerCreds
+	// The accepted endpoint reports the connecting task as its peer, like
+	// Linux does for both SOCK_STREAM and SOCK_SEQPACKET.
+	ne.peerCreds = clientCreds
 
 	readQueue := &queue{readerWaiters: ce.WaiterQueue(), writerWaiters: ne.WaitQueue, limit: defaultBufferSize}
 	readQueue.InitRefs()
@@ -387,10 +386,11 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 			writeQueue: writeQueue,
 		}
 		readQueue.IncRef()
+		// The connecting endpoint reports the listener as its peer. This is
+		// done only here, with both endpoints locked, so that a failed or
+		// concurrent connect(2) never changes the peer credentials.
+		cce.peerCreds = e.peerCreds
 		if e.stype == linux.SOCK_STREAM {
-			if err := e.swapPeerCredsLocked(ctx, ce, ne); err != nil {
-				return err
-			}
 			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, peer)
 		} else {
 			returnConnect(&queueReceiver{readQueue: readQueue}, peer)
@@ -421,7 +421,7 @@ func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context) (Sende
 
 // Connect attempts to directly connect to another Endpoint.
 // Implements Endpoint.Connect.
-func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
+func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint, clientCreds CredentialsControlMessage) *syserr.Error {
 	returnConnect := func(r Receiver, ce Sender) {
 		e.receiver = r
 		e.peer = ce
@@ -433,7 +433,7 @@ func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint
 		}
 	}
 
-	return server.BidirectionalConnect(ctx, e, returnConnect)
+	return server.BidirectionalConnect(ctx, e, clientCreds, returnConnect)
 }
 
 // Listen starts listening on the connection.
