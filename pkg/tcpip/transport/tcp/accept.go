@@ -32,6 +32,9 @@ import (
 )
 
 const (
+	// cookieTimestampSACK is echoed by the peer in the final ACK.
+	cookieTimestampSACK = 1
+
 	// tsLen is the length, in bits, of the timestamp in the SYN cookie.
 	tsLen = 8
 
@@ -566,6 +569,12 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			offset := e.protocol.tsOffset(net.DestinationAddress(), net.SourceAddress())
 			now := e.stack.Clock().NowMonotonic()
 			synOpts.TSVal = offset.TSVal(now)
+			synOpts.SACKPermitted = opts.SACKPermitted && e.protocol.sackPermitted()
+			// Carry the SACK negotiation in the low timestamp bit. Round
+			// down so the first data packet's timestamp cannot go backward.
+			if (synOpts.TSVal&cookieTimestampSACK != 0) != synOpts.SACKPermitted {
+				synOpts.TSVal--
+			}
 		}
 		cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 		fields := tcpFields{
@@ -656,6 +665,7 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 			rcvdSynOptions.TS = true
 			rcvdSynOptions.TSVal = s.parsedOptions.TSVal
 			rcvdSynOptions.TSEcr = s.parsedOptions.TSEcr
+			rcvdSynOptions.SACKPermitted = s.parsedOptions.TSEcr&cookieTimestampSACK != 0
 		}
 
 		n, err := ctx.createConnectingEndpoint(s, rcvdSynOptions, &waiter.Queue{})

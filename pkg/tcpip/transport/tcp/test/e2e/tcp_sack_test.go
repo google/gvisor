@@ -127,26 +127,20 @@ func TestSackDisabledConnect(t *testing.T) {
 
 // TestSackPermittedAccept accepts and establishes a connection with the
 // SACKPermitted option enabled if the connection request specifies the
-// SACKPermitted option. In case of SYN cookies SACK should be disabled as we
-// don't encode the SACK information in the cookie.
+// SACKPermitted option. A SYN cookie can preserve SACK negotiation when the
+// peer uses TCP timestamps.
 func TestSackPermittedAccept(t *testing.T) {
-	type testCase struct {
+	for _, tc := range []struct {
+		name          string
 		cookieEnabled bool
-		sackPermitted bool
 		wndScale      int
-		wndSize       uint16
-	}
-
-	testCases := []testCase{
-		// When cookie is used window scaling is disabled.
-		{true, false, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, true, 5, 0x8000},  // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("test: %#v", tc), func(t *testing.T) {
+	}{
+		{"ordinary", false, 5},
+		{"cookie", true, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			for _, sackEnabled := range []bool{false, true} {
-				t.Run(fmt.Sprintf("test stack.sackEnabled: %v", sackEnabled), func(t *testing.T) {
+				t.Run(fmt.Sprintf("sack=%t", sackEnabled), func(t *testing.T) {
 					c := context.New(t, e2e.DefaultMTU)
 					defer c.Cleanup()
 
@@ -159,40 +153,32 @@ func TestSackPermittedAccept(t *testing.T) {
 					e2e.SetStackSACKPermitted(t, c, sackEnabled)
 					e2e.SetStackTCPRecovery(t, c, 0)
 
-					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS, SACKPermitted: tc.sackPermitted})
-					//  Now verify no SACK blocks are
-					//  received when sack is disabled.
+					rep := c.AcceptWithOptionsNoDelay(tc.wndScale, header.TCPSynOptions{
+						MSS: e2e.DefaultIPv4MSS, TS: true, SACKPermitted: true,
+					})
 					data := []byte{1, 2, 3}
-					rep.SendPacket(data, nil)
+					rep.SendPacketWithTS(data, rep.TSVal+1)
 					rep.VerifyACKNoSACK()
 
 					savedSeqNum := rep.NextSeqNum
 
-					// Make an out of order packet and send
-					// it.
+					// Leave a hole for the receiver to report.
 					rep.NextSeqNum += 3
 					sackBlocks := []header.SACKBlock{
 						{rep.NextSeqNum, rep.NextSeqNum.Add(seqnum.Size(len(data)))},
 					}
-					rep.SendPacket(data, nil)
+					rep.SendPacketWithTS(data, rep.TSVal+1)
 
-					// The ACK should contain the older
-					// sequence number.
 					rep.NextSeqNum = savedSeqNum
-					if sackEnabled && tc.sackPermitted {
+					if sackEnabled {
 						rep.VerifyACKHasSACK(sackBlocks)
 					} else {
 						rep.VerifyACKNoSACK()
 					}
 
 					// Send the missing segment.
-					rep.SendPacket(data, nil)
-					// The ACK should contain the cumulative
-					// ACK for all 9 bytes sent and no SACK
-					// blocks.
+					rep.SendPacketWithTS(data, rep.TSVal+1)
 					rep.NextSeqNum += 3
-					// Check that no SACK block is returned
-					// in the ACK.
 					rep.VerifyACKNoSACK()
 				})
 			}

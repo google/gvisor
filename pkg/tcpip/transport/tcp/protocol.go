@@ -415,15 +415,19 @@ func (p *protocol) SetOption(option tcpip.SettableTransportProtocolOption) tcpip
 	}
 }
 
+func (p *protocol) sackPermitted() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.sackEnabled
+}
+
 // Option implements stack.TransportProtocol.Option.
 //
 // +checklocksexclude:p.mu
 func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	switch v := option.(type) {
 	case *tcpip.TCPSACKEnabled:
-		p.mu.RLock()
-		*v = tcpip.TCPSACKEnabled(p.sackEnabled)
-		p.mu.RUnlock()
+		*v = tcpip.TCPSACKEnabled(p.sackPermitted())
 		return nil
 
 	case *tcpip.TCPRecovery:
