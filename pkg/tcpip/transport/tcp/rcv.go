@@ -382,16 +382,6 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		// acknowledgment segment containing the current send-sequence number
 		// and an acknowledgment indicating the next sequence number expected
 		// to be received, and the connection remains in the same state.
-		//
-		// Just as on Linux, we do not apply this behavior when state is
-		// ESTABLISHED.
-		// Linux receive processing for all states except ESTABLISHED and
-		// TIME_WAIT is here where if the ACK check fails, we attempt to
-		// reply back with an ACK with correct seq/ack numbers.
-		// https://github.com/torvalds/linux/blob/v5.8/net/ipv4/tcp_input.c#L6186
-		// The ESTABLISHED state processing is here where if the ACK check
-		// fails, we ignore the packet:
-		// https://github.com/torvalds/linux/blob/v5.8/net/ipv4/tcp_input.c#L5591
 		if r.ep.snd.SndNxt.LessThan(s.ackNumber) {
 			r.ep.snd.maybeSendOutOfWindowAck(s)
 			return true, nil
@@ -473,7 +463,16 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 		return true, nil
 	}
 
-	if state != StateEstablished {
+	if state == StateEstablished {
+		// RFC 9293 section 3.10.7.4 requires an ACK and discarding the
+		// segment when it acknowledges data that has not been sent.
+		if r.ep.snd.SndNxt.LessThan(s.ackNumber) {
+			if r.ep.allowOutOfWindowAck() {
+				r.ep.snd.sendAck()
+			}
+			return true, nil
+		}
+	} else {
 		drop, err := r.handleRcvdSegmentClosing(s, state, closed)
 		if drop || err != nil {
 			return drop, err
