@@ -864,6 +864,34 @@ website-deploy: website-push ## Deploy a new version of the website.
 .PHONY: website-deploy
 
 ##
+## Buildkite coordinator helpers.
+##
+##   The coordinator image is built from a static binary and deployed
+##   to a Cloud Run service. The following variables may be set when
+##   using buildkite-coordinator-push:
+##     BUILDKITE_COORDINATOR_IMAGE   - The name of the container image.
+##     BUILDKITE_COORDINATOR_SERVICE - The Cloud Run service.
+##     BUILDKITE_COORDINATOR_PROJECT - The project id to use.
+##     BUILDKITE_COORDINATOR_REGION  - The region to deploy to.
+##
+BUILDKITE_COORDINATOR_PROJECT := gvisor-kokoro-testing
+BUILDKITE_COORDINATOR_REGION  := us-central1
+BUILDKITE_COORDINATOR_SERVICE := buildkite-coordinator
+BUILDKITE_COORDINATOR_IMAGE   := $(BUILDKITE_COORDINATOR_REGION)-docker.pkg.dev/$(BUILDKITE_COORDINATOR_PROJECT)/buildkite-coordinator/coordinator
+
+buildkite-coordinator-build: ## Build the Buildkite coordinator image locally.
+	@$(call run,//tools/buildkite_coordinator:image,$(BUILDKITE_COORDINATOR_IMAGE))
+.PHONY: buildkite-coordinator-build
+
+buildkite-coordinator-push: buildkite-coordinator-build ## Push a new Buildkite coordinator image.
+	@docker push $(BUILDKITE_COORDINATOR_IMAGE)
+.PHONY: buildkite-coordinator-push
+
+buildkite-coordinator-deploy: buildkite-coordinator-push ## Deploy a new version of the Buildkite coordinator.
+	@gcloud run deploy $(BUILDKITE_COORDINATOR_SERVICE) --platform=managed --region=$(BUILDKITE_COORDINATOR_REGION) --project=$(BUILDKITE_COORDINATOR_PROJECT) --image=$(BUILDKITE_COORDINATOR_IMAGE)
+.PHONY: buildkite-coordinator-deploy
+
+##
 ## Webhook helpers.
 ##
 ##   The webhook is built locally.

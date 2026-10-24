@@ -75,6 +75,15 @@ steps:
       arch: "amd64"
       queue: "release"
   - <<: *common
+    label: ":ship: Buildkite Coordinator Deploy"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      # The built coordinator image must be x86_64.
+      - make BAZEL_OPTIONS=--config=x86_64 buildkite-coordinator-deploy
+    agents:
+      arch: "amd64"
+      queue: "release"
+  - <<: *common
     label: ":bun: COS Latest Driver Compatibility Test"
     commands:
       - tools/gpu/cos_drivers_test.sh

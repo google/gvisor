@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "go_binary")
+load("//images:defs.bzl", "docker_image")
+load("//tools:defs.bzl", "go_binary", "pkg_tar")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -19,7 +20,7 @@ go_binary(
         "storage.go",
         "timeout.go",
     ],
-    # Static binary to allow running under distroless Cloud Run image
+    # Static binary, since the container image contains nothing else.
     pure = True,
     static = True,
     visibility = ["//visibility:public"],
@@ -40,5 +41,41 @@ go_binary(
         "@org_golang_google_api//secretmanager/v1:go_default_library",
         "@org_golang_google_grpc//codes:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
+    ],
+)
+
+genrule(
+    name = "ca_certificates",
+    srcs = ["@ca_certificates_files//:mozilla"],
+    outs = ["ca-certificates.crt"],
+    cmd = "cat $(SRCS) > $@",
+)
+
+pkg_tar(
+    name = "certs",
+    srcs = [":ca_certificates"],
+    mode = "0644",
+    package_dir = "/etc/ssl/certs",
+)
+
+pkg_tar(
+    name = "files",
+    srcs = [":buildkite_coordinator"],
+    extension = "tgz",
+    deps = [":certs"],
+)
+
+docker_image(
+    name = "image",
+    data = ":files",
+    statements = [
+        "EXPOSE 8080/tcp",
+        "USER 65532:65532",
+        'ENTRYPOINT ["/buildkite_coordinator"]',
+    ],
+    tags = [
+        "local",
+        "manual",
+        "no-sandbox",
     ],
 )

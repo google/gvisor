@@ -233,11 +233,33 @@ deb_data(
 #
 # Note that the sha256 hash is omitted here intentionally. This should not be
 # used in any part of the build other than as certificates present in images.
+
 http_file(
     name = "google_root_pem",
     urls = [
         "https://pki.goog/roots.pem",
     ],
+)
+
+http_archive(
+    name = "ca_certificates",
+    build_file_content = 'exports_files(["data.tar.xz"])',
+    sha256 = "1cb8b73c74c47677b329fad4095fb9370227d4b8f1969372411478a4586c46cf",
+    type = "deb",
+    urls = [
+        "https://snapshot.debian.org/archive/debian/20260817T022356Z/pool/main/c/ca-certificates/ca-certificates_20260816_all.deb",
+        "https://deb.debian.org/debian/pool/main/c/ca-certificates/ca-certificates_20260816_all.deb",
+    ],
+)
+
+deb_data(
+    name = "ca_certificates_files",
+    build_file_content = """filegroup(
+    name = "mozilla",
+    srcs = glob(["usr/share/ca-certificates/mozilla/*.crt"]),
+    visibility = ["//visibility:public"],
+)""",
+    data = "@ca_certificates//:data.tar.xz",
 )
 
 ### Toolchains
