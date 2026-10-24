@@ -862,6 +862,13 @@ func TestCheckpointHostinetRestoreNetworkMismatch(t *testing.T) {
 	if !strings.Contains(err.Error(), "cannot be restored with") {
 		t.Errorf("restore failed with %v, want network mismatch error", err)
 	}
+	loaded, err := Load(conf.RootDir, FullID{ContainerID: cont2.ID}, LoadOpts{})
+	if err != nil {
+		t.Fatalf("error loading container: %v", err)
+	}
+	if loaded.Status != Stopped {
+		t.Errorf("got status %v after failed restore, want %v", loaded.Status, Stopped)
+	}
 }
 
 // TestCheckpointRestoreExecKilled checks that exec'd processes are killed
