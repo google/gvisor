@@ -301,14 +301,14 @@ func (s *StateFile) lock(tryLock TryLock) error {
 	if tryLock {
 		gotLock, err := s.flock.TryLock()
 		if err != nil {
-			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+			return fmt.Errorf("acquiring lock on %q: %w", s.flock, err)
 		}
 		if !gotLock {
 			return ErrStateFileLocked
 		}
 	} else {
 		if err := s.flock.Lock(); err != nil {
-			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+			return fmt.Errorf("acquiring lock on %q: %w", s.flock, err)
 		}
 	}
 	return nil
@@ -387,7 +387,14 @@ func (s *StateFile) Stat() (os.FileInfo, error) {
 }
 
 func (s *StateFile) load(v any, opts LoadOpts) error {
+	// Open the lock file without O_CREATE, so that loading a destroyed container does not recreate it.
+	s.once.Do(func() {
+		s.flock = flock.New(s.lockPath(), flock.SetFlag(os.O_RDONLY))
+	})
 	if err := s.lock(opts.TryLock); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return os.ErrNotExist
+		}
 		return err
 	}
 	defer s.UnlockOrDie()

@@ -26,7 +26,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/creack/pty v1.1.24
 	github.com/godbus/dbus/v5 v5.1.0
-	github.com/gofrs/flock v0.8.0
+	github.com/gofrs/flock v0.11.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/btree v1.1.2
 	github.com/google/go-github/v84 v84.0.0

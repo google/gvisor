@@ -116,6 +116,12 @@ go_test(
 )
 
 go_test(
+    name = "state_file_test",
+    srcs = ["state_file_test.go"],
+    embed = [":container"],
+)
+
+go_test(
     name = "serialization_test",
     srcs = ["serialization_test.go"],
     deps = [
