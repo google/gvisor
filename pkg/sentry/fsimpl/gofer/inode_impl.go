@@ -455,6 +455,8 @@ func (i *inode) allocate(ctx context.Context, mode, offset, length uint64) error
 //   - fs.renameMu is locked.
 func (d *dentry) connect(ctx context.Context, sockType linux.SockType) (int, error) {
 	creds := auth.CredentialsOrNilFromContext(ctx)
+	// The host reports these IDs as the client's SO_PEERCRED, which Linux
+	// derives from the effective (not filesystem) IDs.
 	euid := lisafs.NoUID
 	egid := lisafs.NoGID
 	var groups []lisafs.GID
