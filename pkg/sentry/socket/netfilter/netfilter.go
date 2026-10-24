@@ -133,6 +133,10 @@ func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, outLe
 		return linux.KernelIPTGetEntries{}, syserr.FromError(err)
 	}
 
+	if outLen != userEntries.SizeBytes()+int(userEntries.Size) {
+		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
+	}
+
 	// Convert netstack's iptables rules to something that the iptables
 	// tool can understand.
 	entries, _, err := convertNetstackToBinary4(stack, userEntries.Name)
@@ -156,6 +160,10 @@ func GetEntries6(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, outLe
 	if _, err := userEntries.CopyIn(t, outPtr); err != nil {
 		nflog("couldn't copy in entries %q", userEntries.Name)
 		return linux.KernelIP6TGetEntries{}, syserr.FromError(err)
+	}
+
+	if outLen != userEntries.SizeBytes()+int(userEntries.Size) {
+		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
 	}
 
 	// Convert netstack's iptables rules to something that the iptables
