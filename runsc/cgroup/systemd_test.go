@@ -175,13 +175,6 @@ func TestInstall(t *testing.T) {
 				},
 			},
 			wantUpdatedProps: []systemdDbus.Property{
-				// initial properties
-				{"CPUWeight", dbus.MakeVariant(convertCPUSharesToCgroupV2Value(1))},
-				{"CPUQuotaPeriodUSec", dbus.MakeVariant(uint64(20000))},
-				{"CPUQuotaPerSecUSec", dbus.MakeVariant(uint64(15000000))},
-				{"AllowedCPUs", dbus.MakeVariant([]byte{1 << 4})},
-				{"AllowedMemoryNodes", dbus.MakeVariant([]byte{1 << 5})},
-				// updated properties
 				{"CPUWeight", dbus.MakeVariant(convertCPUSharesToCgroupV2Value(1))},
 				{"CPUQuotaPeriodUSec", dbus.MakeVariant(uint64(10000))},
 				{"CPUQuotaPerSecUSec", dbus.MakeVariant(uint64(30000000))},
@@ -223,10 +216,11 @@ func TestInstall(t *testing.T) {
 
 			if tc.updatedRes != nil {
 				// Check the generated properties without updating a host systemd unit.
-				if err := cg.updateControllersProps(tc.updatedRes); !errors.Is(err, tc.err) {
-					t.Fatalf("updateControllersProps() = %v, want %v", err, tc.err)
+				updatedProps, err := cg.resourceProps(tc.updatedRes)
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("resourceProps() = %v, want %v", err, tc.err)
 				}
-				filteredProps = filterProperties(cg.properties, tc.wantUpdatedProps)
+				filteredProps = filterProperties(updatedProps, tc.wantUpdatedProps)
 				if diff := cmp.Diff(filteredProps, tc.wantUpdatedProps, cmper, sorter); diff != "" {
 					t.Errorf("cgroup properties list diff %s", diff)
 				}

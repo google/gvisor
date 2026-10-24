@@ -356,7 +356,7 @@ func (cm *containerManager) PortForward(opts *sentryapi.PortForwardOpts, _ *stru
 // The container's current kernel is destroyed, a restore environment is
 // created, and the kernel is recreated with the restore state file. The
 // container then sends the signal to start.
-func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, _ *struct{}) (retErr error) {
+func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.RestoreReply) (retErr error) {
 	timer := starttime.Timer("Restore")
 	timer.Reached("cm.Restore RPC")
 	log.Debugf("containerManager.Restore")
@@ -485,7 +485,8 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, _ *struct{}) (retE
 		return fmt.Errorf("checkpoint taken with no-root-container=%t cannot be restored with no-root-container=%t", saved, cm.l.noRootContainer.enabled)
 	}
 	timer.Reached("restorer initialized")
-	return cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
+	reply.KernelStarted, err = cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
+	return err
 }
 
 func getRestoreReaders(o *sentryapi.RestoreOpts) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
@@ -601,7 +602,7 @@ func (cm *containerManager) onRestoreDone(s sentryapi.Savings) {
 	cm.restorer = nil
 }
 
-func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, _ *struct{}) (retErr error) {
+func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, reply *sentryapi.RestoreReply) (retErr error) {
 	log.Debugf("containerManager.RestoreSubcontainer, cid: %s, args: %+v", args.CID, args)
 	cm.l.mu.Lock()
 	state := cm.l.state
@@ -681,7 +682,7 @@ func (cm *containerManager) RestoreSubcontainer(args *sentryapi.StartArgs, _ *st
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
 	}
 
-	err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs)
+	reply.KernelStarted, err = cm.restorer.restoreSubcontainer(args.Spec, args.Conf, cm.l, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs)
 	if err != nil {
 		log.Debugf("containerManager.RestoreSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err

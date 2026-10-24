@@ -269,7 +269,8 @@ type restorer struct {
 }
 
 // restoreSubcontainer restores a subcontainer.
-func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf) error {
+// It returns whether this started the kernel.
+func (r *restorer) restoreSubcontainer(spec *specs.Spec, conf *config.Config, l *Loader, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []specutils.GoferMountConf) (bool, error) {
 	containerName := r.registerContainer(l, spec, cid)
 	info := &containerInfo{
 		cid:               cid,
@@ -313,16 +314,17 @@ func (r *restorer) registerContainer(l *Loader, spec *specs.Spec, cid string) st
 }
 
 // restoreContainerInfo restores a container.
-func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
+// It returns whether this started the kernel.
+func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for _, container := range r.containers {
 		if container.containerName == info.containerName {
-			return fmt.Errorf("container %q already restored", info.containerName)
+			return false, fmt.Errorf("container %q already restored", info.containerName)
 		}
 		if container.cid == info.cid {
-			return fmt.Errorf("container CID %q already belongs to container %q", info.cid, container.containerName)
+			return false, fmt.Errorf("container CID %q already belongs to container %q", info.cid, container.containerName)
 		}
 	}
 
@@ -341,10 +343,11 @@ func (r *restorer) restoreContainerInfo(l *Loader, info *containerInfo) error {
 	if len(r.containers) == r.totalContainers {
 		// Trigger the restore if this is the last container.
 		if err := r.restore(l); err != nil {
-			return err
+			return false, err
 		}
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 type restoreMounts struct {

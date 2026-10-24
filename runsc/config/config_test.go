@@ -871,7 +871,7 @@ func TestOverrideDeferredValidation(t *testing.T) {
 func TestBundles(t *testing.T) {
 	noChange := func(t *testing.T, old, new *Config) {
 		t.Helper()
-		if diff := cmp.Diff(old, new, cmp.AllowUnexported(Config{}, Overlay2{})); diff != "" {
+		if diff := cmp.Diff(old, new, cmp.AllowUnexported(Config{}, Overlay2{}, SandboxCPUPolicy{})); diff != "" {
 			t.Errorf("different configs:\n%+v\nvs\n%+v\nDiff:\n%s", old, new, diff)
 		}
 	}
@@ -1213,4 +1213,67 @@ func TestSignalUnkillablePolicy(t *testing.T) {
 		}()
 		_ = SignalUnkillablePolicy(-1).String()
 	})
+}
+
+func TestSandboxCPUPolicy(t *testing.T) {
+	if got := (SandboxCPUPolicy{}).String(); got != "1x" {
+		t.Errorf("zero value String() = %q, want %q", got, "1x")
+	}
+	if !DefaultSandboxLifecycleCPUPolicy.Implicit() {
+		t.Errorf("default policy is not implicit")
+	}
+	explicit := DefaultSandboxLifecycleCPUPolicy
+	if err := explicit.Set(DefaultSandboxLifecycleCPUPolicy.String()); err != nil {
+		t.Fatalf("Set(%q) failed: %v", DefaultSandboxLifecycleCPUPolicy, err)
+	}
+	if explicit.Implicit() || explicit.String() != DefaultSandboxLifecycleCPUPolicy.String() {
+		t.Errorf("policy set to the default value = %+v, want the same value and explicit", explicit)
+	}
+	const quota, period = 50000, 100000
+	for _, tc := range []struct {
+		val       string
+		str       string
+		wantQuota int64
+		wantErr   bool
+	}{
+		{val: "1x", str: "1x", wantQuota: quota},
+		{val: "1.0x", str: "1x", wantQuota: quota},
+		{val: "uncapped", str: "uncapped", wantQuota: -1},
+		{val: "2500m", str: "2500m", wantQuota: 250000},
+		{val: "3.5x", str: "3.5x", wantQuota: 175000},
+		{val: "1m", str: "1m", wantQuota: quota},
+		{val: "0.5x", str: "1x", wantQuota: quota},
+		{val: "9223372036854775807m", str: "9223372036854775807m", wantQuota: 1<<44 - 1},
+		{val: "max(4x,1000m)", str: "max(4x,1000m)", wantQuota: 200000},
+		{val: "max( 1000m , 4x )", str: "max(4x,1000m)", wantQuota: 200000},
+		{val: "max(0.5x,2000m,1x)", str: "2000m", wantQuota: 200000},
+		{val: "max(1x)", str: "1x", wantQuota: quota},
+		{val: "max(uncapped,4x)", str: "uncapped", wantQuota: -1},
+		{val: "max()", wantErr: true},
+		{val: "max(4x", wantErr: true},
+		{val: "max(4x,bogus)", wantErr: true},
+		{val: "0m", wantErr: true},
+		{val: "-1x", wantErr: true},
+		{val: "1.5m", wantErr: true},
+		{val: "2", wantErr: true},
+	} {
+		t.Run(tc.val, func(t *testing.T) {
+			var p SandboxCPUPolicy
+			if err := p.Set(tc.val); (err != nil) != tc.wantErr {
+				t.Fatalf("p.Set(%q) = %v, want error: %t", tc.val, err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if got := p.String(); got != tc.str {
+				t.Errorf("p.String() = %q, want %q", got, tc.str)
+			}
+			if got := p.Enabled(); got != (tc.str != "1x") {
+				t.Errorf("p.Enabled() = %t, want %t", got, tc.str != "1x")
+			}
+			if got := p.Quota(quota, period); got != tc.wantQuota {
+				t.Errorf("p.Quota(%d, %d) = %d, want %d", quota, period, got, tc.wantQuota)
+			}
+		})
+	}
 }
