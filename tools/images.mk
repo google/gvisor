@@ -54,7 +54,8 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_busybox=//images/basic:busybox_context \
   basic_fsstress=//images/basic:fsstress_context \
   basic_tmpfile=//images/basic:tmpfile_context \
-  benchmarks_bun-spawn=//images/benchmarks/bun-spawn:bun_spawn_context
+  benchmarks_bun-spawn=//images/benchmarks/bun-spawn:bun_spawn_context \
+  basic_tomcat=//images/basic:tomcat_context
 ifeq ($(ARCH),x86_64)
 BAZEL_IMAGE_CONTEXTS += benchmarks_syscallbench=//images/benchmarks/syscallbench:syscallbench_context
 endif

@@ -91,3 +91,19 @@ image_outputs(
     image = ":tmpfile",
     image_name = "basic/tmpfile",
 )
+
+# Loading the pulled manifest directly preserves its complete configuration.
+alias(
+    name = "tomcat",
+    actual = select({
+        "@platforms//cpu:aarch64": "@test_tomcat_arm64",
+        "@platforms//cpu:x86_64": "@test_tomcat_amd64",
+    }),
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "tomcat",
+    image = ":tomcat",
+    image_name = "basic/tomcat",
+)
