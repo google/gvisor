@@ -94,18 +94,57 @@ func hasFDBasedLink(args *sentryapi.CreateLinksAndRoutesArgs, name string) bool 
 	return false
 }
 
-// primaryInterface returns the interface name that handles default traffic
-// and is present in FDBasedLinks. If a default gateway is configured on an
-// interface that is not in FDBasedLinks (e.g. an XDP link), or if IPv4 and
-// IPv6 default gateways point to different interfaces, an error is returned
-// rather than falling back so default traffic cannot silently bypass the UDS
-// link.
+// primaryInterface selects the FD-based link to connect to the UDS proxy.
+// Per-link defaults are considered in boot's installation order, before the
+// separately appended defaults. Selection does not move or change any routes.
+// Defaults on non-FD links or different links for IPv4 and IPv6 are rejected.
 func primaryInterface(args *sentryapi.CreateLinksAndRoutesArgs) (string, error) {
 	if args == nil {
 		return "", errors.New("network link arguments are nil")
 	}
-	v4Gw := args.Defaultv4Gateway.Name
-	v6Gw := args.Defaultv6Gateway.Name
+	var v4Gw, v6Gw string
+	consider := func(name string, addresses []sentryapi.IPWithPrefix, routes []sentryapi.Route) {
+		var hasV4, hasV6 bool
+		for _, addr := range addresses {
+			if addr.Address.To4() != nil {
+				hasV4 = true
+			} else if addr.Address.To16() != nil {
+				hasV6 = true
+			}
+		}
+		for _, r := range routes {
+			ones, bits := r.Destination.Mask.Size()
+			if ones != 0 {
+				continue
+			}
+			if hasV4 && bits == 32 && r.Destination.IP.To4() != nil && v4Gw == "" {
+				v4Gw = name
+			} else if hasV6 && bits == 128 && r.Destination.IP.To4() == nil && r.Destination.IP.To16() != nil && v6Gw == "" {
+				v6Gw = name
+			}
+		}
+	}
+	// Match boot.Network.CreateLinksAndRoutes: loopback routes, then FD
+	// routes (or XDP when there are no FD links), then separate defaults.
+	// Netstack preserves this order among equal-length prefixes. The gateway
+	// is irrelevant here: on-link defaults participate in the same ordering.
+	// With forwarding disabled (the initial state), unbound lookups skip
+	// links without an address in the route's IP family.
+	for _, link := range args.LoopbackLinks {
+		consider(link.Name, link.Addresses, link.Routes)
+	}
+	for _, link := range args.FDBasedLinks {
+		consider(link.Name, link.Addresses, link.Routes)
+	}
+	if len(args.FDBasedLinks) == 0 && len(args.XDPLinks) > 0 {
+		consider(args.XDPLinks[0].Name, args.XDPLinks[0].Addresses, args.XDPLinks[0].Routes)
+	}
+	if v4Gw == "" {
+		v4Gw = args.Defaultv4Gateway.Name
+	}
+	if v6Gw == "" {
+		v6Gw = args.Defaultv6Gateway.Name
+	}
 	if v4Gw != "" && !hasFDBasedLink(args, v4Gw) {
 		return "", fmt.Errorf("default IPv4 gateway interface %q is not an fd-based link", v4Gw)
 	}
