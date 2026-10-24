@@ -260,6 +260,12 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 		}
 		opt = opt[:sockOpt.Size]
 	}
+	// Linux's net/core/sock.c:sk_setsockopt() requires CAP_NET_ADMIN in the
+	// initial user namespace. The host checks the sandbox's capabilities, not
+	// the caller's.
+	if level == linux.SOL_SOCKET && name == linux.SO_RCVBUFFORCE && !t.HasRootCapability(linux.CAP_NET_ADMIN) {
+		return syserr.ErrNotPermitted
+	}
 	if _, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(s.fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(len(opt)), 0); errno != 0 {
 		return syserr.FromError(errno)
 	}
