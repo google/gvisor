@@ -437,10 +437,8 @@ func findContainerInitProcess(k *kernel.Kernel, containerID string) (*kernel.Tas
 		}
 		return init.Leader(), nil
 	}
-	// To find the init process of a container, we look for the process with no
-	// parent (root of execution) that is not an exec process.
 	for _, tg := range k.RootPIDNamespace().ThreadGroups() {
-		if leader := tg.Leader(); leader.Parent() == nil && leader.Origin != kernel.OriginExec && leader.ContainerID() == containerID {
+		if leader := tg.Leader(); tg.IsContainerInit() && leader.ContainerID() == containerID {
 			return leader, nil
 		}
 	}

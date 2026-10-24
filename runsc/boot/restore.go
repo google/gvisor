@@ -612,9 +612,9 @@ func (r *restorer) restore(l *Loader) error {
 		specsByCID[cid] = l.containerSpecs[name]
 	}
 	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
-		// Find all processes with no parent (root of execution), that were not started
-		// via a call to `exec`.
-		if tg.Leader().Parent() == nil && tg.Leader().Origin != kernel.OriginExec {
+		// Find all container init processes. A process with no parent is not
+		// enough: in a sandbox with no root container, orphans have none.
+		if tg.IsContainerInit() {
 			cid := tg.Leader().ContainerID()
 			proc := l.processes[execID{cid: cid}]
 			if proc == nil {

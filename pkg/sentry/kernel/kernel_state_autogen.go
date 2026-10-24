@@ -2671,6 +2671,7 @@ func (tg *ThreadGroup) StateFields() []string {
 		"oomScoreAdj",
 		"isChildSubreaper",
 		"hasChildSubreaper",
+		"containerInit",
 		"execveCredsMutexLocked",
 		"execveCredsMutexWaiters",
 		"sigsegvLockCount",
@@ -2733,10 +2734,11 @@ func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(41, &tg.oomScoreAdj)
 	stateSinkObject.Save(42, &tg.isChildSubreaper)
 	stateSinkObject.Save(43, &tg.hasChildSubreaper)
-	stateSinkObject.Save(44, &tg.execveCredsMutexLocked)
-	stateSinkObject.Save(45, &tg.execveCredsMutexWaiters)
-	stateSinkObject.Save(46, &tg.sigsegvLockCount)
-	stateSinkObject.Save(47, &tg.coredumpFilter)
+	stateSinkObject.Save(44, &tg.containerInit)
+	stateSinkObject.Save(45, &tg.execveCredsMutexLocked)
+	stateSinkObject.Save(46, &tg.execveCredsMutexWaiters)
+	stateSinkObject.Save(47, &tg.sigsegvLockCount)
+	stateSinkObject.Save(48, &tg.coredumpFilter)
 }
 
 func (tg *ThreadGroup) afterLoad(context.Context) {}
@@ -2784,10 +2786,11 @@ func (tg *ThreadGroup) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(41, &tg.oomScoreAdj)
 	stateSourceObject.Load(42, &tg.isChildSubreaper)
 	stateSourceObject.Load(43, &tg.hasChildSubreaper)
-	stateSourceObject.Load(44, &tg.execveCredsMutexLocked)
-	stateSourceObject.Load(45, &tg.execveCredsMutexWaiters)
-	stateSourceObject.Load(46, &tg.sigsegvLockCount)
-	stateSourceObject.Load(47, &tg.coredumpFilter)
+	stateSourceObject.Load(44, &tg.containerInit)
+	stateSourceObject.Load(45, &tg.execveCredsMutexLocked)
+	stateSourceObject.Load(46, &tg.execveCredsMutexWaiters)
+	stateSourceObject.Load(47, &tg.sigsegvLockCount)
+	stateSourceObject.Load(48, &tg.coredumpFilter)
 	stateSourceObject.LoadValue(27, new(*Task), func(y any) { tg.loadAppCPUClockLast(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(29, new(*Task), func(y any) { tg.loadAppSysCPUClockLast(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(39, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(ctx, y.(*OldRSeqCriticalRegion)) })
