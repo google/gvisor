@@ -17,6 +17,7 @@ package faketime
 
 import (
 	"container/heap"
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -120,9 +121,22 @@ type ManualClock struct {
 	// runningTimers tracks the completion of timer callbacks that began running
 	// immediately upon their scheduling. It is used to ensure the proper ordering
 	// of timer callback dispatch.
-	runningTimers notificationChannels
+	runningTimers notificationChannels `state:"nosave"`
 
-	mu manualClockMutex
+	mu manualClockMutex `state:".(int64)"`
+}
+
+// saveMu saves the clock's current time. Timers are reconstructed by their
+// owners after restore, since timer callbacks cannot be serialized.
+func (mc *ManualClock) saveMu() int64 {
+	return mc.Now().UnixNano()
+}
+
+func (mc *ManualClock) loadMu(_ context.Context, now int64) {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	mc.mu.now = time.Unix(0, now)
+	mc.mu.timers = make(map[time.Time]map[*manualTimer]struct{})
 }
 
 // NewManualClock creates a new ManualClock instance.
