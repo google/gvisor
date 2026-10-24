@@ -275,26 +275,10 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 				topLookupLayer = lookupLayerLower
 			}
 
-			// Fetch POSIX ACLs.
-			acl, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.AccessACL)
-			if err != nil {
+			if err := child.initAttrs(ctx, childPop, &stat); err != nil {
 				lookupErr = err
 				return false
 			}
-			defaultACL, err := vfsObj.GetPosixACLAt(ctx, fs.creds, childPop, vfs.DefaultACL)
-			if err != nil {
-				lookupErr = err
-				return false
-			}
-
-			child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
-			child.accessACL.Store(acl)
-			child.defaultACL.Store(defaultACL)
-			child.uid = atomicbitops.FromUint32(stat.UID)
-			child.gid = atomicbitops.FromUint32(stat.GID)
-			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
-			child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
-			child.ino = atomicbitops.FromUint64(stat.Ino)
 		}
 
 		// For non-directory files, only the topmost layer that contains a file
@@ -359,6 +343,33 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	child.parent.Store(parent)
 	child.name = name
 	return child, topLookupLayer, nil
+}
+
+// initAttrs sets d's mode, POSIX ACLs, owner, and device and inode numbers
+// from stat and the file at pop, which is on the topmost layer on which d
+// exists.
+//
+// Preconditions: d is still being initialized, so no one else can observe
+// it.
+func (d *dentry) initAttrs(ctx context.Context, pop *vfs.PathOperation, stat *linux.Statx) error {
+	vfsObj := d.fs.vfsfs.VirtualFilesystem()
+	acl, err := vfsObj.GetPosixACLAt(ctx, d.fs.creds, pop, vfs.AccessACL)
+	if err != nil {
+		return err
+	}
+	defaultACL, err := vfsObj.GetPosixACLAt(ctx, d.fs.creds, pop, vfs.DefaultACL)
+	if err != nil {
+		return err
+	}
+	d.mode = atomicbitops.FromUint32(uint32(stat.Mode))
+	d.accessACL.Store(acl)
+	d.defaultACL.Store(defaultACL)
+	d.uid = atomicbitops.FromUint32(stat.UID)
+	d.gid = atomicbitops.FromUint32(stat.GID)
+	d.devMajor = atomicbitops.FromUint32(stat.DevMajor)
+	d.devMinor = atomicbitops.FromUint32(stat.DevMinor)
+	d.ino = atomicbitops.FromUint64(stat.Ino)
+	return nil
 }
 
 // lookupLayerLocked is similar to lookupLocked, but only returns information
@@ -904,6 +915,22 @@ afterTrailingSymlink:
 // Preconditions: filesystem.renameMu must be locked for reading, and the
 // caller must hold a reference on d.
 func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) error {
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		// The unnamed file will be created on the upper layer in d by
+		// d.openTmpfile(), so d must be a writable directory that exists
+		// there; compare Linux's fs/namei.c:vfs_tmpfile().
+		if !d.isDir() {
+			return linuxerr.ENOTDIR
+		}
+		if err := d.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+			return err
+		}
+		if err := rp.Mount().CheckBeginWrite(); err != nil {
+			return err
+		}
+		defer rp.Mount().EndWrite()
+		return d.copyUpLocked(ctx)
+	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if err := d.checkPermissions(rp.Credentials(), ats); err != nil {
 		return err
@@ -953,6 +980,9 @@ func (d *dentry) ensureOpenableLocked(ctx context.Context, rp *vfs.ResolvingPath
 // Preconditions: If vfs.AccessTypesForOpenFlags(opts).MayWrite() and d is not a
 // special file, then d has been copied up.
 func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	if opts.Flags&linux.O_TMPFILE != 0 {
+		return d.openTmpfile(ctx, rp, opts)
+	}
 	mnt := rp.Mount()
 
 	// Directory FDs open FDs from each layer when directory entries are read,
@@ -992,6 +1022,81 @@ func (d *dentry) openCopiedUp(ctx context.Context, rp *vfs.ResolvingPath, opts *
 		layerFD.DecRef(ctx)
 		return nil, err
 	}
+	return &fd.vfsfd, nil
+}
+
+// openTmpfile implements open(O_TMPFILE) on the directory d. The unnamed file
+// is created on the upper layer in d; it only becomes visible in the
+// directory tree if it is later named by LinkAt.
+//
+// Preconditions: d.ensureOpenableLocked() succeeded, so d is a copied-up
+// directory.
+func (d *dentry) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	fs := d.fs
+	creds := rp.Credentials()
+	mnt := rp.Mount()
+	if err := mnt.CheckBeginWrite(); err != nil {
+		return nil, err
+	}
+	defer mnt.EndWrite()
+	vfsObj := fs.vfsfs.VirtualFilesystem()
+	upperFD, err := vfsObj.OpenAt(ctx, d.credsForCreate(creds, d.isSGIDSet()), &vfs.PathOperation{
+		Root:  d.upperVD,
+		Start: d.upperVD,
+	}, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Describe the new file as lookupLocked() would, except that it is never
+	// inserted into d.children. As in Linux's fs/dcache.c:d_tmpfile(), it is
+	// named after its inode number and keeps d as its parent (holding a
+	// reference on it, released by destroyLocked()) so that scoped path
+	// resolution, /proc/[pid]/fd/* and inotify watches on d see the file as
+	// a deleted child of d.
+	child := fs.newDentry()
+	child.IncRef()
+	defer child.DecRef(ctx)
+	upperVD := upperFD.VirtualDentry()
+	childPop := vfs.PathOperation{
+		Root:  upperVD,
+		Start: upperVD,
+	}
+	const mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
+	stat, err := upperFD.Stat(ctx, vfs.StatOptions{Mask: mask})
+	if err != nil {
+		upperFD.DecRef(ctx)
+		return nil, err
+	}
+	if stat.Mask&mask != mask {
+		upperFD.DecRef(ctx)
+		return nil, linuxerr.EREMOTE
+	}
+	if err := child.initAttrs(ctx, &childPop, &stat); err != nil {
+		upperFD.DecRef(ctx)
+		return nil, err
+	}
+	upperVD.IncRef()
+	child.upperVD = upperVD
+	child.copiedUp = atomicbitops.FromUint32(1)
+	d.IncRef()
+	child.parent.Store(d)
+	child.name = fmt.Sprintf("#%d", stat.Ino)
+	child.vfsd.MarkDeleted()
+
+	layerFlags := upperFD.StatusFlags()
+	fd := &regularFileFD{
+		copiedUp:    true,
+		cachedFD:    upperFD,
+		cachedFlags: layerFlags,
+	}
+	fd.LockFD.Init(&child.locks)
+	layerFDOpts := upperFD.Options()
+	if err := fd.vfsfd.Init(fd, layerFlags, creds, mnt, &child.vfsd, &layerFDOpts); err != nil {
+		upperFD.DecRef(ctx)
+		return nil, err
+	}
+	fd.vfsfd.SetCreated()
 	return &fd.vfsfd, nil
 }
 

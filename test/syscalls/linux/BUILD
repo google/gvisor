@@ -4919,6 +4919,25 @@ cc_binary(
 )
 
 cc_binary(
+    name = "tmpfile_test",
+    testonly = 1,
+    srcs = ["tmpfile.cc"],
+    linkstatic = 1,
+    deps = select_gtest() + [
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:mount_util",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_binary(
     name = "tuntap_test",
     testonly = 1,
     srcs = ["tuntap.cc"],

@@ -364,3 +364,42 @@ func TestMountOptionsEnforcement(t *testing.T) {
 		t.Fatalf("second write got err %v, want ENOSPC", err)
 	}
 }
+
+// TestOpenTmpfile checks that open(O_TMPFILE) creates an unlinked regular
+// file, including under a context with no mount namespace.
+func TestOpenTmpfile(t *testing.T) {
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+	vfsObj, root, cleanup, err := newTmpfsRoot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+		Path:  fspath.Parse("/"),
+	}, &vfs.OpenOptions{
+		Flags: linux.O_RDWR | linux.O_DIRECTORY | linux.O_TMPFILE,
+		Mode:  linux.ModeRegular | 0644,
+	})
+	if err != nil {
+		t.Fatalf("OpenAt(O_TMPFILE): %v", err)
+	}
+	defer fd.DecRef(ctx)
+
+	if !fd.Dentry().IsDead() {
+		t.Error("tmpfile dentry is not marked deleted")
+	}
+	stat, err := fd.Stat(ctx, vfs.StatOptions{Mask: linux.STATX_TYPE | linux.STATX_NLINK})
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if stat.Mode&linux.S_IFMT != linux.S_IFREG {
+		t.Errorf("got file type %#o, want S_IFREG", stat.Mode&linux.S_IFMT)
+	}
+	if stat.Nlink != 0 {
+		t.Errorf("got nlink %d, want 0", stat.Nlink)
+	}
+}
