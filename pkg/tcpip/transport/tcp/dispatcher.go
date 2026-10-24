@@ -558,12 +558,12 @@ type jenkinsHasher struct {
 // algorithm.
 func (j jenkinsHasher) hash(id stack.TransportEndpointID) uint32 {
 	var payload [4]byte
-	binary.LittleEndian.PutUint16(payload[0:], id.LocalPort)
-	binary.LittleEndian.PutUint16(payload[2:], id.RemotePort)
+	binary.LittleEndian.PutUint16(payload[0:], id.Local.Port())
+	binary.LittleEndian.PutUint16(payload[2:], id.Remote.Port())
 
 	h := jenkins.Sum32(j.seed)
 	h.Write(payload[:])
-	h.Write(id.LocalAddress.AsSlice())
-	h.Write(id.RemoteAddress.AsSlice())
+	h.Write(id.Local.Addr().AsSlice())
+	h.Write(id.Remote.Addr().AsSlice())
 	return h.Sum32()
 }

@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -176,7 +177,7 @@ func (e *Endpoint) newHandshake() (h *handshake) {
 	// Store reference to handshake state in endpoint.
 	e.h = h
 	// By the time handshake is created, e.ID is already initialized.
-	e.TSOffset = e.protocol.tsOffset(e.ID.LocalAddress, e.ID.RemoteAddress)
+	e.TSOffset = e.protocol.tsOffset(e.ID.Local.Addr(), e.ID.Remote.Addr())
 	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, timerHandler(e, h.retransmitHandlerLocked))
 	if err != nil {
 		panic(fmt.Sprintf("newBackOffTimer(_, %s, %s, _) failed: %s", InitialRTO, MaxRTO, err))
@@ -229,12 +230,12 @@ func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed [16
 	//
 	// It never returns an error.
 	_, _ = isnHasher.Write(seed[:])
-	_, _ = isnHasher.Write(id.LocalAddress.AsSlice())
-	_, _ = isnHasher.Write(id.RemoteAddress.AsSlice())
+	_, _ = isnHasher.Write(id.Local.Addr().AsSlice())
+	_, _ = isnHasher.Write(id.Remote.Addr().AsSlice())
 	portBuf := make([]byte, 2)
-	binary.LittleEndian.PutUint16(portBuf, id.LocalPort)
+	binary.LittleEndian.PutUint16(portBuf, id.Local.Port())
 	_, _ = isnHasher.Write(portBuf)
-	binary.LittleEndian.PutUint16(portBuf, id.RemotePort)
+	binary.LittleEndian.PutUint16(portBuf, id.Remote.Port())
 	_, _ = isnHasher.Write(portBuf)
 	// The time period here is 64ns. This is similar to what linux uses
 	// generate a sequence number that overlaps less than one
@@ -866,8 +867,8 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stac
 	tcp := header.TCP(pkt.TransportHeader().Push(header.TCPMinimumSize + optLen))
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber
 	tcp.Encode(&header.TCPFields{
-		SrcPort:    tf.id.LocalPort,
-		DstPort:    tf.id.RemotePort,
+		SrcPort:    tf.id.Local.Port(),
+		DstPort:    tf.id.Remote.Port(),
 		SeqNum:     uint32(tf.seq),
 		AckNum:     uint32(tf.ack),
 		DataOffset: uint8(header.TCPMinimumSize + optLen),
@@ -1158,7 +1159,7 @@ func (e *Endpoint) transitionToStateCloseLocked() {
 // to any other listening endpoint. We reply with RST if we cannot find one.
 func (e *Endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.TransportEndpointInfo.ID, s.pkt.NICID)
-	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.LocalAddress.To4() != (tcpip.Address{}) {
+	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.Local.Addr().Unmap().Is4() {
 		// Dual-stack socket, try IPv4.
 		ep = e.stack.FindTransportEndpoint(
 			header.IPv4ProtocolNumber,
@@ -1507,13 +1508,12 @@ func (e *Endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 		if newSyn {
 			info := e.TransportEndpointInfo
 			newID := info.ID
-			newID.RemoteAddress = tcpip.Address{}
-			newID.RemotePort = 0
+			newID.Remote = netip.AddrPort{}
 			netProtos := []tcpip.NetworkProtocolNumber{info.NetProto}
 			// If the local address is an IPv4 address then also
 			// look for IPv6 dual stack endpoints that might be
 			// listening on the local address.
-			if newID.LocalAddress.To4() != (tcpip.Address{}) {
+			if newID.Local.Addr().Unmap().Is4() {
 				netProtos = []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber}
 			}
 			for _, netProto := range netProtos {

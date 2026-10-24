@@ -140,8 +140,8 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, value uint32, n
 
 	// Initialize the block with the ports and value.
 	var payload [8]byte
-	binary.BigEndian.PutUint16(payload[0:], id.LocalPort)
-	binary.BigEndian.PutUint16(payload[2:], id.RemotePort)
+	binary.BigEndian.PutUint16(payload[0:], id.Local.Port())
+	binary.BigEndian.PutUint16(payload[2:], id.Remote.Port())
 	binary.BigEndian.PutUint32(payload[4:], value)
 
 	// Feed everything to the hasher.
@@ -153,8 +153,8 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, value uint32, n
 	// It never returns an error.
 	l.hasher.Write(payload[:])
 	l.hasher.Write(l.nonce[nonceIndex][:])
-	l.hasher.Write(id.LocalAddress.AsSlice())
-	l.hasher.Write(id.RemoteAddress.AsSlice())
+	l.hasher.Write(id.Local.Addr().AsSlice())
+	l.hasher.Write(id.Remote.Addr().AsSlice())
 
 	// Finalize the calculation of the hash and return the first 4 bytes.
 	h := l.hasher.Sum(nil)
@@ -390,15 +390,11 @@ func (e *Endpoint) propagateInheritableOptionsLocked(n *Endpoint) {
 //
 // +checklocks:e.mu
 func (e *Endpoint) reserveTupleLocked() bool {
-	dest := tcpip.FullAddress{
-		Addr: e.TransportEndpointInfo.ID.RemoteAddress,
-		Port: e.TransportEndpointInfo.ID.RemotePort,
-	}
+	dest := e.TransportEndpointInfo.ID.Remote
 	portRes := ports.Reservation{
 		Networks:     e.effectiveNetProtos,
 		Transport:    ProtocolNumber,
-		Addr:         e.TransportEndpointInfo.ID.LocalAddress,
-		Port:         e.TransportEndpointInfo.ID.LocalPort,
+		Local:        e.TransportEndpointInfo.ID.Local,
 		Flags:        e.boundPortFlags,
 		BindToDevice: e.boundBindToDevice,
 		Dest:         dest,
@@ -461,7 +457,7 @@ func (e *Endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 	netProtos := []tcpip.NetworkProtocolNumber{s.pkt.NetworkProtocolNumber}
 	// If the local address is an IPv4 Address then also look for IPv6
 	// dual stack endpoints.
-	if s.id.LocalAddress.To4() != (tcpip.Address{}) {
+	if s.id.Local.Addr().Unmap().Is4() {
 		netProtos = []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber}
 	}
 	for _, netProto := range netProtos {

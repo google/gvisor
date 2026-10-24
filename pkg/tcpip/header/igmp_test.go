@@ -17,10 +17,10 @@ package header_test
 import (
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -156,7 +156,7 @@ func TestIGMPv3Query(t *testing.T) {
 		exponentialQQIC(1, 1),
 	}
 
-	sourceAddrs := []tcpip.Address{
+	sourceAddrs := []netip.Addr{
 		testutil.MustParse4("1.0.0.1"),
 		testutil.MustParse4("2.0.0.2"),
 		testutil.MustParse4("3.0.0.3"),
@@ -234,7 +234,7 @@ func TestIGMPv3Query(t *testing.T) {
 						if got := query.QuerierQueryInterval(); got != qqic.expectedInterval {
 							t.Errorf("got query.QuerierQueryInterval() = %s, want = %s", got, qqic.expectedInterval)
 						}
-						if got, want := query.GroupAddress(), tcpip.AddrFrom4([4]byte{1, 2, 3, 4}); got != want {
+						if got, want := query.GroupAddress(), netip.AddrFrom4([4]byte{1, 2, 3, 4}); got != want {
 							t.Errorf("got query.GroupAddress() = %s, want = %s", got, want)
 						}
 
@@ -301,7 +301,7 @@ func TestIGMPv3Report(t *testing.T) {
 					{
 						RecordType:   header.IGMPv3ReportRecordModeIsInclude,
 						GroupAddress: mcastAddr1,
-						Sources:      []tcpip.Address{srcAddr1},
+						Sources:      []netip.Addr{srcAddr1},
 					},
 				},
 			},
@@ -318,12 +318,12 @@ func TestIGMPv3Report(t *testing.T) {
 					{
 						RecordType:   header.IGMPv3ReportRecordModeIsExclude,
 						GroupAddress: mcastAddr2,
-						Sources:      []tcpip.Address{srcAddr1, srcAddr2, srcAddr3},
+						Sources:      []netip.Addr{srcAddr1, srcAddr2, srcAddr3},
 					},
 					{
 						RecordType:   header.IGMPv3ReportRecordChangeToIncludeMode,
 						GroupAddress: mcastAddr3,
-						Sources:      []tcpip.Address{srcAddr1, srcAddr2},
+						Sources:      []netip.Addr{srcAddr1, srcAddr2},
 					},
 				},
 			},
