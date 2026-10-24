@@ -3421,6 +3421,140 @@ TEST(MountTest, OverlayfsDirectoryRenameInUserNamespace) {
               IsPosixErrorOkAndHolds(0));
 }
 
+// Mounts a tmpfs at base and an overlay at base/merged, with its layers inside
+// the tmpfs, and returns the overlay's root. An empty directory is created in
+// the lower layer for each of lower_dirs. Called from the child of
+// InForkedUserMountNamespace(); the mounts go away when the child exits.
+std::string MountOverlayOnTmpfs(const std::string& base,
+                                std::initializer_list<const char*> lower_dirs) {
+  TEST_CHECK_SUCCESS(
+      mount("tmpfs", base.c_str(), "tmpfs", 0, "mode=1777,size=10m"));
+  auto lower = JoinPath(base, "lower");
+  auto upper = JoinPath(base, "upper");
+  auto work = JoinPath(base, "work");
+  auto merged = JoinPath(base, "merged");
+  for (const std::string& dir : {lower, upper, work, merged}) {
+    TEST_CHECK_SUCCESS(mkdir(dir.c_str(), 0755));
+  }
+  for (const char* name : lower_dirs) {
+    TEST_CHECK_SUCCESS(mkdir(JoinPath(lower, name).c_str(), 0755));
+  }
+  std::string opts =
+      "lowerdir=" + lower + ",upperdir=" + upper + ",workdir=" + work;
+  TEST_CHECK_SUCCESS(
+      mount("overlay", merged.c_str(), "overlay", 0, opts.c_str()));
+  return merged;
+}
+
+// Returns true if an overlay mounted by MountOverlayOnTmpfs() inside a new
+// user namespace is in noxattr mode: it can't set the xattrs it uses to mark
+// directories opaque. gVisor always behaves this way, but some distro kernels
+// don't: Ubuntu's, for example, default to userxattr when overlayfs is mounted
+// in a user namespace.
+PosixErrorOr<bool> OverlayIsNoxattrInUserNamespace() {
+  ASSIGN_OR_RETURN_ERRNO(TempPath base_dir, TempPath::CreateDir());
+  const std::function<void()> parent = [] {};
+  const std::function<void()> child = [&base_dir] {
+    std::string merged = MountOverlayOnTmpfs(base_dir.path(), {});
+    // Renaming a pure upper directory within a merge directory requires
+    // marking it opaque, which fails with EXDEV only in noxattr mode.
+    auto dir = JoinPath(merged, "dir");
+    TEST_CHECK_SUCCESS(mkdir(dir.c_str(), 0755));
+    if (rename(dir.c_str(), JoinPath(merged, "renamed").c_str()) == 0) {
+      _exit(1);
+    }
+    TEST_PCHECK(errno == EXDEV);
+  };
+  ASSIGN_OR_RETURN_ERRNO(int status, InForkedUserMountNamespace(parent, child));
+  if (!WIFEXITED(status) || WEXITSTATUS(status) > 1) {
+    return PosixError(ECHILD, absl::StrCat("probe child failed: ", status));
+  }
+  return WEXITSTATUS(status) == 0;
+}
+
+// Renaming a directory on an overlay mounted without userxattr inside a user
+// namespace triggers noxattr mode (trusted.overlay.* xattrs are not available).
+// Renaming a merged directory returns EXDEV.
+TEST(MountTest, OverlayfsDirectoryRenameInUserNamespaceNoxattrFallback) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  SKIP_IF(!IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(OverlayIsNoxattrInUserNamespace()));
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const std::function<void()> parent = [] {};
+  const std::function<void()> child = [&base_dir] {
+    std::string merged =
+        MountOverlayOnTmpfs(base_dir.path(), {"mydir", "renamed"});
+    TEST_CHECK_ERRNO(rename(JoinPath(merged, "mydir").c_str(),
+                            JoinPath(merged, "renamed").c_str()),
+                     EXDEV);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// Same setup as above, but for RENAME_EXCHANGE. Exchanging directories that
+// would need to be marked opaque returns EXDEV in noxattr mode, while
+// exchanging directories whose parent has no lower layers still succeeds.
+TEST(MountTest, OverlayfsDirectoryExchangeInUserNamespaceNoxattrFallback) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  // gVisor only supports RENAME_EXCHANGE when running under runsc.
+  SKIP_IF(IsRunningOnGvisor() && !IsRunningOnRunsc());
+  SKIP_IF(!IsRunningOnGvisor() &&
+          !ASSERT_NO_ERRNO_AND_VALUE(OverlayIsNoxattrInUserNamespace()));
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const std::function<void()> parent = [] {};
+  const std::function<void()> child = [&base_dir] {
+    std::string merged = MountOverlayOnTmpfs(base_dir.path(), {"mydir"});
+
+    // Two pure upper directories whose parent has a lower layer: each would
+    // need to be marked opaque at its new location, which noxattr can't do.
+    auto a = JoinPath(merged, "a");
+    auto b = JoinPath(merged, "b");
+    TEST_CHECK_SUCCESS(mkdir(a.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(b.c_str(), 0755));
+    int fd = open(JoinPath(a, "file").c_str(), O_WRONLY | O_CREAT, 0644);
+    TEST_CHECK_SUCCESS(fd);
+    TEST_CHECK_SUCCESS(close(fd));
+    TEST_CHECK_ERRNO(
+        renameat2(AT_FDCWD, a.c_str(), AT_FDCWD, b.c_str(), RENAME_EXCHANGE),
+        EXDEV);
+
+    // A merge directory can't be moved without redirect_dir, whichever side
+    // of the exchange it's on.
+    auto mydir = JoinPath(merged, "mydir");
+    TEST_CHECK_ERRNO(renameat2(AT_FDCWD, a.c_str(), AT_FDCWD, mydir.c_str(),
+                               RENAME_EXCHANGE),
+                     EXDEV);
+    TEST_CHECK_ERRNO(renameat2(AT_FDCWD, mydir.c_str(), AT_FDCWD, a.c_str(),
+                               RENAME_EXCHANGE),
+                     EXDEV);
+
+    // None of the failed exchanges moved anything.
+    struct stat st;
+    TEST_CHECK_SUCCESS(stat(JoinPath(a, "file").c_str(), &st));
+
+    // Inside a pure upper parent nothing needs to be marked opaque, so the
+    // exchange goes ahead.
+    auto sub = JoinPath(merged, "sub");
+    auto p = JoinPath(sub, "p");
+    auto q = JoinPath(sub, "q");
+    TEST_CHECK_SUCCESS(mkdir(sub.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(p.c_str(), 0755));
+    TEST_CHECK_SUCCESS(mkdir(q.c_str(), 0755));
+    fd = open(JoinPath(p, "file").c_str(), O_WRONLY | O_CREAT, 0644);
+    TEST_CHECK_SUCCESS(fd);
+    TEST_CHECK_SUCCESS(close(fd));
+    TEST_CHECK_SUCCESS(
+        renameat2(AT_FDCWD, p.c_str(), AT_FDCWD, q.c_str(), RENAME_EXCHANGE));
+    TEST_CHECK_SUCCESS(stat(JoinPath(q, "file").c_str(), &st));
+    TEST_CHECK_ERRNO(stat(JoinPath(p, "file").c_str(), &st), ENOENT);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
+}
+
 // Test that overlay can be mounted with a gofer upper layer. Runs some basic
 // overlayfs tests to confirm basic functionality.
 TEST(MountTest, OverlayfsOnGoferBehavior) {
