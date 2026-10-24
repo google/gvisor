@@ -16,6 +16,7 @@ package ports
 
 import (
 	"math"
+	"net/netip"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -36,12 +37,12 @@ var (
 
 type portReserveTestAction struct {
 	port    uint16
-	ip      tcpip.Address
+	ip      netip.Addr
 	want    tcpip.Error
 	flags   Flags
 	release bool
 	device  tcpip.NICID
-	dest    tcpip.FullAddress
+	dest    netip.AddrPort
 }
 
 func TestPortReservation(t *testing.T) {
@@ -281,44 +282,44 @@ func TestPortReservation(t *testing.T) {
 		}, {
 			tname: "bind tuple with reuseaddr, and then wildcard with reuseaddr",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPort{}, want: nil},
 			},
 		}, {
 			tname: "bind tuple with reuseaddr, and then wildcard",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: nil},
 				{port: 24, ip: fakeIPAddress, want: &tcpip.ErrPortInUse{}},
 			},
 		}, {
 			tname: "bind wildcard with reuseaddr, and then tuple with reuseaddr",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{}, want: nil},
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPort{}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: nil},
 			},
 		}, {
 			tname: "bind tuple with reuseaddr, and then wildcard",
 			actions: []portReserveTestAction{
 				{port: 24, ip: fakeIPAddress, want: nil},
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: &tcpip.ErrPortInUse{}},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: &tcpip.ErrPortInUse{}},
 			},
 		}, {
 			tname: "bind two tuples with reuseaddr",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 25}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 25), want: nil},
 			},
 		}, {
 			tname: "bind two tuples",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: nil},
-				{port: 24, ip: fakeIPAddress, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 25}, want: nil},
+				{port: 24, ip: fakeIPAddress, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: nil},
+				{port: 24, ip: fakeIPAddress, dest: netip.AddrPortFrom(fakeIPAddress, 25), want: nil},
 			},
 		}, {
 			tname: "bind wildcard, and then tuple with reuseaddr",
 			actions: []portReserveTestAction{
-				{port: 24, ip: fakeIPAddress, dest: tcpip.FullAddress{}, want: nil},
-				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: tcpip.FullAddress{Addr: fakeIPAddress, Port: 24}, want: &tcpip.ErrPortInUse{}},
+				{port: 24, ip: fakeIPAddress, dest: netip.AddrPort{}, want: nil},
+				{port: 24, ip: fakeIPAddress, flags: Flags{TupleOnly: true}, dest: netip.AddrPortFrom(fakeIPAddress, 24), want: &tcpip.ErrPortInUse{}},
 			},
 		}, {
 			tname: "bind wildcard twice with reuseaddr",
@@ -339,8 +340,7 @@ func TestPortReservation(t *testing.T) {
 					portRes := Reservation{
 						Networks:     net,
 						Transport:    fakeTransNumber,
-						Addr:         test.ip,
-						Port:         test.port,
+						Local:        netip.AddrPortFrom(test.ip, test.port),
 						Flags:        test.flags,
 						BindToDevice: test.device,
 						Dest:         test.dest,
@@ -351,8 +351,7 @@ func TestPortReservation(t *testing.T) {
 				portRes := Reservation{
 					Networks:     net,
 					Transport:    fakeTransNumber,
-					Addr:         test.ip,
-					Port:         test.port,
+					Local:        netip.AddrPortFrom(test.ip, test.port),
 					Flags:        test.flags,
 					BindToDevice: test.device,
 					Dest:         test.dest,

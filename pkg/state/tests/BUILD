@@ -39,6 +39,7 @@ go_test(
         "isomorphism_test.go",
         "load_test.go",
         "map_test.go",
+        "netip_test.go",
         "register_test.go",
         "string_test.go",
         "struct_test.go",

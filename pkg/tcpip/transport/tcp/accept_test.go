@@ -16,6 +16,7 @@ package tcp
 
 import (
 	"context"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -60,18 +61,15 @@ func TestListenerShrinkingBacklogUsesCookies(t *testing.T) {
 		initialSize             = 4
 		reducedSize             = 2
 	)
-	local := tcpip.AddrFrom4([4]byte{192, 0, 2, 1})
-	remote := tcpip.AddrFrom4([4]byte{192, 0, 2, 2})
+	local := netip.AddrFrom4([4]byte{192, 0, 2, 1})
+	remote := netip.AddrFrom4([4]byte{192, 0, 2, 2})
 
 	if err := s.CreateNIC(nicID, link); err != nil {
 		t.Fatalf("CreateNIC: %v", err)
 	}
 	if err := s.AddProtocolAddress(nicID, tcpip.ProtocolAddress{
-		Protocol: ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   local,
-			PrefixLen: 24,
-		},
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: netip.PrefixFrom(local, 24),
 	}, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress: %v", err)
 	}

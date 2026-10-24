@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -31,8 +32,8 @@ import (
 )
 
 var (
-	testSrcAddrV4 = tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
-	testDstAddrV4 = tcpip.AddrFrom4([4]byte{5, 6, 7, 8})
+	testSrcAddrV4 = netip.AddrFrom4([4]byte{1, 2, 3, 4})
+	testDstAddrV4 = netip.AddrFrom4([4]byte{5, 6, 7, 8})
 )
 
 const (
@@ -114,8 +115,8 @@ func TestTCPIPConnectionIDIPv4(t *testing.T) {
 // TestTCPIPConnectionIDIPv6 verifies that connection IDs are computed for well
 // formed IPv6 packets.
 func TestTCPIPConnectionIDIPv6(t *testing.T) {
-	srcAddr := tcpip.AddrFrom16([16]byte{0x20, 0x01, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
-	dstAddr := tcpip.AddrFrom16([16]byte{0x20, 0x01, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	srcAddr := netip.AddrFrom16([16]byte{0x20, 0x01, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	dstAddr := netip.AddrFrom16([16]byte{0x20, 0x01, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
 	buf := make([]byte, header.IPv6MinimumSize+header.TCPMinimumSize)
 	header.IPv6(buf).Encode(&header.IPv6Fields{
 		PayloadLength:     header.TCPMinimumSize,
