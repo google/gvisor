@@ -14,9 +14,9 @@ cc_binary(
     srcs = ["setup_container.cc"],
     visibility = ["//test/runner:__subpackages__"],
     deps = [
-        "//test/syscalls/linux:socket_netlink_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
+        "//test/util:fs_util",
         "//test/util:posix_error",
         "//test/util:socket_util",
     ],
