@@ -15,9 +15,9 @@
 package stack_test
 
 import (
+	"net/netip"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -32,10 +32,7 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 	var s stack.AddressableEndpointState
 	s.Init(&ep, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 
-	addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
-		PrefixLen: 32,
-	}
+	addr := netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 0, 0, 0}), 32)
 
 	{
 		properties := stack.AddressProperties{PEB: stack.NeverPrimaryEndpoint}
@@ -47,15 +44,15 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 		ep.DecRef()
 	}
 	{
-		ep := s.AcquireAssignedAddress(addr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */)
+		ep := s.AcquireAssignedAddress(addr.Addr(), false /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */)
 		if ep == nil {
-			t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = nil, want = non-nil", addr.Address)
+			t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = nil, want = non-nil", addr.Addr())
 		}
 	}
 
 	s.Cleanup()
-	if ep := s.AcquireAssignedAddress(addr.Address, false /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */); ep != nil {
-		t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = %s, want = nil", addr.Address, ep.AddressWithPrefix())
+	if ep := s.AcquireAssignedAddress(addr.Addr(), false /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */); ep != nil {
+		t.Fatalf("got s.AcquireAssignedAddress(%s, false, NeverPrimaryEndpoint) = %s, want = nil", addr.Addr(), ep.AddressWithPrefix())
 	}
 }
 
@@ -68,10 +65,7 @@ func TestAddressDispatcherExpiredToAssigned(t *testing.T) {
 	var s stack.AddressableEndpointState
 	s.Init(&networkEp, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 
-	addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
-		PrefixLen: 32,
-	}
+	addr := netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 0, 0, 0}), 32)
 
 	ep, err := s.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{})
 	if err != nil {

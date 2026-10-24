@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -347,7 +348,7 @@ func (b TCP) CalculateChecksum(partialChecksum uint16) uint16 {
 }
 
 // IsChecksumValid returns true iff the TCP header's checksum is valid.
-func (b TCP) IsChecksumValid(src, dst tcpip.Address, payloadChecksum, payloadLength uint16) bool {
+func (b TCP) IsChecksumValid(src, dst netip.Addr, payloadChecksum, payloadLength uint16) bool {
 	xsum := PseudoHeaderChecksum(TCPProtocolNumber, src, dst, uint16(b.DataOffset())+payloadLength)
 	xsum = checksum.Combine(xsum, payloadChecksum)
 	return b.CalculateChecksum(xsum) == 0xffff
@@ -420,7 +421,7 @@ func (b TCP) SetDestinationPortWithChecksumUpdate(new uint16) {
 }
 
 // UpdateChecksumPseudoHeaderAddress implements ChecksummableTransport.
-func (b TCP) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address, fullChecksum bool) {
+func (b TCP) UpdateChecksumPseudoHeaderAddress(old, new netip.Addr, fullChecksum bool) {
 	xsum := b.Checksum()
 	if fullChecksum {
 		xsum = ^xsum
@@ -704,7 +705,7 @@ func Acceptable(segSeq seqnum.Value, segLen seqnum.Size, rcvNxt, rcvAcc seqnum.V
 //   - The checksum is invalid.
 //
 // TCPValid corresponds to net/netfilter/nf_conntrack_proto_tcp.c:tcp_error.
-func TCPValid(hdr TCP, payloadChecksum func() uint16, payloadSize uint16, srcAddr, dstAddr tcpip.Address, skipChecksumValidation bool) (csum uint16, csumValid, ok bool) {
+func TCPValid(hdr TCP, payloadChecksum func() uint16, payloadSize uint16, srcAddr, dstAddr netip.Addr, skipChecksumValidation bool) (csum uint16, csumValid, ok bool) {
 	if offset := int(hdr.DataOffset()); offset < TCPMinimumSize || offset > len(hdr) {
 		return
 	}

@@ -17,6 +17,7 @@ package header
 import (
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -86,10 +87,10 @@ type IPv4Fields struct {
 	Checksum uint16
 
 	// SrcAddr is the "source ip address" of an IPv4 packet.
-	SrcAddr tcpip.Address
+	SrcAddr netip.Addr
 
 	// DstAddr is the "destination ip address" of an IPv4 packet.
-	DstAddr tcpip.Address
+	DstAddr netip.Addr
 
 	// Options must be 40 bytes or less as they must fit along with the
 	// rest of the IPv4 header into the maximum size describable in the
@@ -168,19 +169,19 @@ var (
 	// IPv4AllSystems is the all systems IPv4 multicast address as per
 	// IANA's IPv4 Multicast Address Space Registry. See
 	// https://www.iana.org/assignments/multicast-addresses/multicast-addresses.xhtml.
-	IPv4AllSystems = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x01})
+	IPv4AllSystems = netip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x01})
 
 	// IPv4Broadcast is the broadcast address of the IPv4 protocol.
-	IPv4Broadcast = tcpip.AddrFrom4([4]byte{0xff, 0xff, 0xff, 0xff})
+	IPv4Broadcast = netip.AddrFrom4([4]byte{0xff, 0xff, 0xff, 0xff})
 
 	// IPv4Any is the non-routable IPv4 "any" meta address.
-	IPv4Any = tcpip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00})
+	IPv4Any = netip.IPv4Unspecified()
 
 	// IPv4AllRoutersGroup is a multicast address for all routers.
-	IPv4AllRoutersGroup = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x02})
+	IPv4AllRoutersGroup = netip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x02})
 
 	// IPv4Loopback is the loopback IPv4 address.
-	IPv4Loopback = tcpip.AddrFrom4([4]byte{0x7f, 0x00, 0x00, 0x01})
+	IPv4Loopback = netip.AddrFrom4([4]byte{0x7f, 0x00, 0x00, 0x01})
 )
 
 // Flags that may be set in an IPv4 packet.
@@ -191,32 +192,14 @@ const (
 
 // ipv4LinkLocalUnicastSubnet is the IPv4 link local unicast subnet as defined
 // by RFC 3927 section 1.
-var ipv4LinkLocalUnicastSubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet(tcpip.AddrFrom4([4]byte{0xa9, 0xfe, 0x00, 0x00}), tcpip.MaskFrom("\xff\xff\x00\x00"))
-	if err != nil {
-		panic(err)
-	}
-	return subnet
-}()
+var ipv4LinkLocalUnicastSubnet = netip.PrefixFrom(netip.AddrFrom4([4]byte{169, 254}), 16)
 
 // ipv4LinkLocalMulticastSubnet is the IPv4 link local multicast subnet as
 // defined by RFC 5771 section 4.
-var ipv4LinkLocalMulticastSubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet(tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x00}), tcpip.MaskFrom("\xff\xff\xff\x00"))
-	if err != nil {
-		panic(err)
-	}
-	return subnet
-}()
+var ipv4LinkLocalMulticastSubnet = netip.PrefixFrom(netip.AddrFrom4([4]byte{224}), 24)
 
 // IPv4EmptySubnet is the empty IPv4 subnet.
-var IPv4EmptySubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet(IPv4Any, tcpip.MaskFrom("\x00\x00\x00\x00"))
-	if err != nil {
-		panic(err)
-	}
-	return subnet
-}()
+var IPv4EmptySubnet = netip.PrefixFrom(IPv4Any, 0)
 
 // IPv4CurrentNetworkSubnet is the subnet of addresses for the current network,
 // per RFC 6890 section 2.2.2,
@@ -235,22 +218,28 @@ var IPv4EmptySubnet = func() tcpip.Subnet {
 //	| Global               | False                      |
 //	| Reserved-by-Protocol | True                       |
 //	+----------------------+----------------------------+
-var IPv4CurrentNetworkSubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet(IPv4Any, tcpip.MaskFrom("\xff\x00\x00\x00"))
-	if err != nil {
-		panic(err)
-	}
-	return subnet
-}()
+var IPv4CurrentNetworkSubnet = netip.PrefixFrom(IPv4Any, 8)
 
 // IPv4LoopbackSubnet is the loopback subnet for IPv4.
-var IPv4LoopbackSubnet = func() tcpip.Subnet {
-	subnet, err := tcpip.NewSubnet(tcpip.AddrFrom4([4]byte{0x7f, 0x00, 0x00, 0x00}), tcpip.MaskFrom("\xff\x00\x00\x00"))
-	if err != nil {
-		panic(err)
+var IPv4LoopbackSubnet = netip.PrefixFrom(IPv4Loopback, 8).Masked()
+
+// IPv4SubnetBroadcast returns the address with every host bit set in subnet.
+// subnet must be a valid IPv4 prefix.
+func IPv4SubnetBroadcast(subnet netip.Prefix) netip.Addr {
+	if !subnet.IsValid() || !subnet.Addr().Is4() {
+		panic(fmt.Sprintf("invalid IPv4 subnet %s", subnet))
 	}
-	return subnet
-}()
+	addr := subnet.Addr().As4()
+	binary.BigEndian.PutUint32(addr[:], binary.BigEndian.Uint32(addr[:])|uint32(1<<(32-subnet.Bits())-1))
+	return netip.AddrFrom4(addr)
+}
+
+// IsIPv4SubnetBroadcast reports whether addr is the broadcast address of subnet.
+func IsIPv4SubnetBroadcast(subnet netip.Prefix, addr netip.Addr) bool {
+	// RFC 3021 gives /31 links two host addresses. A /32 is a host route,
+	// so neither has a subnet broadcast address.
+	return subnet.IsValid() && subnet.Addr().Is4() && subnet.Bits() <= 30 && addr == IPv4SubnetBroadcast(subnet)
+}
 
 // IPVersion returns the version of IP used in the given packet. It returns -1
 // if the packet is not large enough to contain the version field.
@@ -339,14 +328,14 @@ func (b IPv4) Checksum() uint16 {
 }
 
 // SourceAddress returns the "source address" field of the IPv4 header.
-func (b IPv4) SourceAddress() tcpip.Address {
-	return tcpip.AddrFrom4([4]byte(b[srcAddr : srcAddr+IPv4AddressSize]))
+func (b IPv4) SourceAddress() netip.Addr {
+	return netip.AddrFrom4([4]byte(b[srcAddr : srcAddr+IPv4AddressSize]))
 }
 
 // DestinationAddress returns the "destination address" field of the IPv4
 // header.
-func (b IPv4) DestinationAddress() tcpip.Address {
-	return tcpip.AddrFrom4([4]byte(b[dstAddr : dstAddr+IPv4AddressSize]))
+func (b IPv4) DestinationAddress() netip.Addr {
+	return netip.AddrFrom4([4]byte(b[dstAddr : dstAddr+IPv4AddressSize]))
 }
 
 // SourceAddressSlice returns the "source address" field of the IPv4 header as a
@@ -362,13 +351,13 @@ func (b IPv4) DestinationAddressSlice() []byte {
 }
 
 // SetSourceAddressWithChecksumUpdate implements ChecksummableNetwork.
-func (b IPv4) SetSourceAddressWithChecksumUpdate(new tcpip.Address) {
+func (b IPv4) SetSourceAddressWithChecksumUpdate(new netip.Addr) {
 	b.SetChecksum(^checksumUpdate2ByteAlignedAddress(^b.Checksum(), b.SourceAddress(), new))
 	b.SetSourceAddress(new)
 }
 
 // SetDestinationAddressWithChecksumUpdate implements ChecksummableNetwork.
-func (b IPv4) SetDestinationAddressWithChecksumUpdate(new tcpip.Address) {
+func (b IPv4) SetDestinationAddressWithChecksumUpdate(new netip.Addr) {
 	b.SetChecksum(^checksumUpdate2ByteAlignedAddress(^b.Checksum(), b.DestinationAddress(), new))
 	b.SetDestinationAddress(new)
 }
@@ -444,13 +433,13 @@ func (b IPv4) SetID(v uint16) {
 }
 
 // SetSourceAddress sets the "source address" field of the IPv4 header.
-func (b IPv4) SetSourceAddress(addr tcpip.Address) {
+func (b IPv4) SetSourceAddress(addr netip.Addr) {
 	copy(b[srcAddr:srcAddr+IPv4AddressSize], addr.AsSlice())
 }
 
 // SetDestinationAddress sets the "destination address" field of the IPv4
 // header.
-func (b IPv4) SetDestinationAddress(addr tcpip.Address) {
+func (b IPv4) SetDestinationAddress(addr netip.Addr) {
 	copy(b[dstAddr:dstAddr+IPv4AddressSize], addr.AsSlice())
 }
 
@@ -515,13 +504,13 @@ func (b IPv4) IsValid(pktSize int) bool {
 
 // IsV4LinkLocalUnicastAddress determines if the provided address is an IPv4
 // link-local unicast address.
-func IsV4LinkLocalUnicastAddress(addr tcpip.Address) bool {
+func IsV4LinkLocalUnicastAddress(addr netip.Addr) bool {
 	return ipv4LinkLocalUnicastSubnet.Contains(addr)
 }
 
 // IsV4LinkLocalMulticastAddress determines if the provided address is an IPv4
 // link-local multicast address.
-func IsV4LinkLocalMulticastAddress(addr tcpip.Address) bool {
+func IsV4LinkLocalMulticastAddress(addr netip.Addr) bool {
 	return ipv4LinkLocalMulticastSubnet.Contains(addr)
 }
 
@@ -554,22 +543,14 @@ func (b IPv4) IsChecksumValid() bool {
 // IsV4MulticastAddress determines if the provided address is an IPv4 multicast
 // address (range 224.0.0.0 to 239.255.255.255). The four most significant bits
 // will be 1110 = 0xe0.
-func IsV4MulticastAddress(addr tcpip.Address) bool {
-	if addr.BitLen() != IPv4AddressSizeBits {
-		return false
-	}
-	addrBytes := addr.As4()
-	return (addrBytes[0] & 0xf0) == 0xe0
+func IsV4MulticastAddress(addr netip.Addr) bool {
+	return addr.Is4() && addr.IsMulticast()
 }
 
 // IsV4LoopbackAddress determines if the provided address is an IPv4 loopback
 // address (belongs to 127.0.0.0/8 subnet). See RFC 1122 section 3.2.1.3.
-func IsV4LoopbackAddress(addr tcpip.Address) bool {
-	if addr.BitLen() != IPv4AddressSizeBits {
-		return false
-	}
-	addrBytes := addr.As4()
-	return addrBytes[0] == 0x7f
+func IsV4LoopbackAddress(addr netip.Addr) bool {
+	return addr.Is4() && addr.IsLoopback()
 }
 
 // ========================= Options ==========================
@@ -957,7 +938,7 @@ func (ts *IPv4OptionTimestamp) IncOverflow() uint8 {
 }
 
 // UpdateTimestamp updates the fields of the next free timestamp slot.
-func (ts *IPv4OptionTimestamp) UpdateTimestamp(addr tcpip.Address, clock tcpip.Clock) {
+func (ts *IPv4OptionTimestamp) UpdateTimestamp(addr netip.Addr, clock tcpip.Clock) {
 	slot := (*ts)[ts.Pointer()-1:]
 
 	switch ts.Flags() {
@@ -971,7 +952,7 @@ func (ts *IPv4OptionTimestamp) UpdateTimestamp(addr tcpip.Address, clock tcpip.C
 		binary.BigEndian.PutUint32(slot[IPv4AddressSize:], ipv4TimestampTime(clock))
 		(*ts)[IPv4OptTSPointerOffset] += IPv4OptionTimestampWithAddrSize
 	case IPv4OptionTimestampWithPredefinedIPFlag:
-		if tcpip.AddrFrom4([4]byte(slot[:IPv4AddressSize])) == addr {
+		if netip.AddrFrom4([4]byte(slot[:IPv4AddressSize])) == addr {
 			binary.BigEndian.PutUint32(slot[IPv4AddressSize:], ipv4TimestampTime(clock))
 			(*ts)[IPv4OptTSPointerOffset] += IPv4OptionTimestampWithAddrSize
 		}
@@ -1020,7 +1001,7 @@ func (rr *IPv4OptionRecordRoute) Pointer() uint8 {
 }
 
 // StoreAddress stores the given IPv4 address into the next free slot.
-func (rr *IPv4OptionRecordRoute) StoreAddress(addr tcpip.Address) {
+func (rr *IPv4OptionRecordRoute) StoreAddress(addr netip.Addr) {
 	start := rr.Pointer() - 1 // A one based number.
 	// start and room checked by caller.
 	if n := copy((*rr)[start:], addr.AsSlice()); n != IPv4AddressSize {

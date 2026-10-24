@@ -16,6 +16,7 @@ package netfilter
 
 import (
 	"fmt"
+	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -27,10 +28,10 @@ import (
 // emptyIPv4Filter is for comparison with a rule's filters to determine whether
 // it is also empty. It is immutable.
 var emptyIPv4Filter = stack.IPHeaderFilter{
-	Dst:     tcpip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
-	DstMask: tcpip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
-	Src:     tcpip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
-	SrcMask: tcpip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
+	Dst:     netip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
+	DstMask: netip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
+	Src:     netip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
+	SrcMask: netip.AddrFrom4([4]byte{0x00, 0x00, 0x00, 0x00}),
 }
 
 // convertNetstackToBinary4 converts the iptables as stored in netstack to the
@@ -221,11 +222,11 @@ func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
 		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
 		// A Protocol value of 0 indicates all protocols match.
 		CheckProtocol:         iptip.Protocol != 0,
-		Dst:                   tcpip.AddrFrom4(iptip.Dst),
-		DstMask:               tcpip.AddrFrom4(iptip.DstMask),
+		Dst:                   netip.AddrFrom4(iptip.Dst),
+		DstMask:               netip.AddrFrom4(iptip.DstMask),
 		DstInvert:             iptip.InverseFlags&linux.IPT_INV_DSTIP != 0,
-		Src:                   tcpip.AddrFrom4(iptip.Src),
-		SrcMask:               tcpip.AddrFrom4(iptip.SrcMask),
+		Src:                   netip.AddrFrom4(iptip.Src),
+		SrcMask:               netip.AddrFrom4(iptip.SrcMask),
 		SrcInvert:             iptip.InverseFlags&linux.IPT_INV_SRCIP != 0,
 		InputInterface:        string(trimNullBytes(iptip.InputInterface[:])),
 		InputInterfaceMask:    string(trimNullBytes(iptip.InputInterfaceMask[:])),

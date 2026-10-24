@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"net/netip"
 	"sync"
 	"testing"
 
@@ -144,18 +145,22 @@ func TestICMPv6Checksum(t *testing.T) {
 	}, want, fmt.Sprintf("header: {% x} data {% x}", h, b.Flatten()))
 }
 
-func randomAddress(size int) tcpip.Address {
+func randomAddress(size int) netip.Addr {
 	s := make([]byte, size)
 	for i := 0; i < size; i++ {
 		s[i] = byte(rand.Uint32())
 	}
-	return tcpip.AddrFromSlice(s)
+	addr, ok := netip.AddrFromSlice(s)
+	if !ok {
+		panic(fmt.Sprintf("invalid address size: %d", size))
+	}
+	return addr
 }
 
 func TestChecksummableNetworkUpdateAddress(t *testing.T) {
 	tests := []struct {
 		name   string
-		update func(header.IPv4, tcpip.Address)
+		update func(header.IPv4, netip.Addr)
 	}{
 		{
 			name:   "SetSourceAddressWithChecksumUpdate",
@@ -353,40 +358,40 @@ func TestUDPChecksumIncrementalUpdate(t *testing.T) {
 		name            string
 		initialChecksum uint16
 		newPort         uint16
-		oldAddr         tcpip.Address
-		newAddr         tcpip.Address
+		oldAddr         netip.Addr
+		newAddr         netip.Addr
 		wantChecksum    uint16
 	}{
 		{
 			name:            "ChecksumIncrementalUpdate",
 			initialChecksum: 0x1234,
 			newPort:         0x5678,
-			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
-			newAddr:         tcpip.AddrFromSlice([]byte{0x56, 0x78, 0, 0}),
+			oldAddr:         netip.IPv4Unspecified(),
+			newAddr:         netip.AddrFrom4([4]byte{86, 120, 0, 0}),
 			wantChecksum:    0xBBBB,
 		},
 		{
 			name:            "ChecksumNoUpdate",
 			initialChecksum: 0x1234,
 			newPort:         0,
-			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
-			newAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
+			oldAddr:         netip.IPv4Unspecified(),
+			newAddr:         netip.IPv4Unspecified(),
 			wantChecksum:    0x1234,
 		},
 		{
 			name:            "ChecksumZero",
 			initialChecksum: 0xEFFF,
 			newPort:         0xEFFF,
-			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
-			newAddr:         tcpip.AddrFromSlice([]byte{0xEF, 0xFF, 0, 0}),
+			oldAddr:         netip.IPv4Unspecified(),
+			newAddr:         netip.AddrFrom4([4]byte{239, 255, 0, 0}),
 			wantChecksum:    0xFFFF,
 		},
 		{
 			name:            "ChecksumDisabled",
 			initialChecksum: 0,
 			newPort:         0xEFFF,
-			oldAddr:         tcpip.AddrFromSlice([]byte{0, 0, 0, 0}),
-			newAddr:         tcpip.AddrFromSlice([]byte{0xEF, 0xFF, 0, 0}),
+			oldAddr:         netip.IPv4Unspecified(),
+			newAddr:         netip.AddrFrom4([4]byte{239, 255, 0, 0}),
 			wantChecksum:    0,
 		},
 	}

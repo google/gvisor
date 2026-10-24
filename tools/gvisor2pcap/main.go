@@ -470,8 +470,8 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 			TOS:         0,  // Made up.
 			Protocol:    uint8(transProto),
 			Checksum:    csum,
-			SrcAddr:     tcpip.AddrFrom4(srcIP.As4()),
-			DstAddr:     tcpip.AddrFrom4(dstIP.As4()),
+			SrcAddr:     netip.AddrFrom4(srcIP.As4()),
+			DstAddr:     netip.AddrFrom4(dstIP.As4()),
 			Options:     nil,
 		})
 		ipHdr = hdr
@@ -481,8 +481,8 @@ func processLine(ep *sniffer.Endpoint, scanner *bufio.Scanner) error {
 		hdr.Encode(&header.IPv6Fields{
 			PayloadLength:     uint16(len(tcpHdr)),
 			TransportProtocol: transProto,
-			SrcAddr:           tcpip.AddrFrom16(srcIP.As16()),
-			DstAddr:           tcpip.AddrFrom16(dstIP.As16()),
+			SrcAddr:           netip.AddrFrom16(srcIP.As16()),
+			DstAddr:           netip.AddrFrom16(dstIP.As16()),
 			ExtensionHeaders:  header.IPv6ExtHdrSerializer{},
 		})
 		ipHdr = hdr

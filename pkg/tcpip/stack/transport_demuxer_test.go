@@ -18,6 +18,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net/netip"
 	"strconv"
 	"testing"
 
@@ -40,11 +41,11 @@ const (
 )
 
 var (
-	testDstAddrV6 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
-	testSrcAddrV6 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+	testDstAddrV6 = netip.MustParseAddr("a00::2")
+	testSrcAddrV6 = netip.MustParseAddr("a00::1")
 
-	testSrcAddrV4 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
-	testDstAddrV4 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
+	testSrcAddrV4 = netip.AddrFrom4([4]byte{10, 0, 0, 1})
+	testDstAddrV4 = netip.AddrFrom4([4]byte{10, 0, 0, 2})
 )
 
 type testContext struct {
@@ -69,7 +70,7 @@ func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICI
 
 		protocolAddrV4 := tcpip.ProtocolAddress{
 			Protocol:          ipv4.ProtocolNumber,
-			AddressWithPrefix: testDstAddrV4.WithPrefix(),
+			AddressWithPrefix: tcpip.FullPrefix(testDstAddrV4),
 		}
 		if err := s.AddProtocolAddress(linkEpID, protocolAddrV4, stack.AddressProperties{}); err != nil {
 			t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", linkEpID, protocolAddrV4, err)
@@ -77,7 +78,7 @@ func newDualTestContextMultiNIC(t *testing.T, mtu uint32, linkEpIDs []tcpip.NICI
 
 		protocolAddrV6 := tcpip.ProtocolAddress{
 			Protocol:          ipv6.ProtocolNumber,
-			AddressWithPrefix: testDstAddrV6.WithPrefix(),
+			AddressWithPrefix: tcpip.FullPrefix(testDstAddrV6),
 		}
 		if err := s.AddProtocolAddress(linkEpID, protocolAddrV6, stack.AddressProperties{}); err != nil {
 			t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", linkEpID, protocolAddrV6, err)
@@ -252,7 +253,7 @@ func TestTransportDemuxerRegisterMultiple(t *testing.T) {
 				if !ok {
 					t.Fatalf("%T does not implement stack.TransportEndpoint", ep)
 				}
-				id := stack.TransportEndpointID{LocalPort: 1}
+				id := stack.TransportEndpointID{Local: netip.AddrPortFrom(netip.Addr{}, 1)}
 				if got, want := s.RegisterTransportEndpoint([]tcpip.NetworkProtocolNumber{ipv4.ProtocolNumber}, udp.ProtocolNumber, id, tEP, test.flags, 0), test.want; got != want {
 					t.Fatalf("test index: %d, s.RegisterTransportEndpoint(ipv4.ProtocolNumber, udp.ProtocolNumber, _, _, %+v, 0) = %s, want %s", idx, test.flags, got, want)
 				}
@@ -382,7 +383,7 @@ func TestBindToDeviceDistribution(t *testing.T) {
 							t.Fatalf("SetSockOpt(&%T(%d)) on endpoint %d failed: %s", endpoint.bindToDevice, endpoint.bindToDevice, i, err)
 						}
 
-						var dstAddr tcpip.Address
+						var dstAddr netip.Addr
 						switch protoNum {
 						case ipv4.ProtocolNumber:
 							dstAddr = testDstAddrV4

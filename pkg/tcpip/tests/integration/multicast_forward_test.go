@@ -16,6 +16,7 @@ package multicast_forward_test
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
@@ -95,7 +96,7 @@ func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.
 }
 
 var (
-	v4Addrs = map[addrType]tcpip.Address{
+	v4Addrs = map[addrType]netip.Addr{
 		anyAddr:                header.IPv4Any,
 		emptyAddr:              {},
 		linkLocalMulticastAddr: testutil.MustParse4("224.0.0.1"),
@@ -105,7 +106,7 @@ var (
 		remoteUnicastAddr:      utils.RemoteIPv4Addr,
 	}
 
-	v6Addrs = map[addrType]tcpip.Address{
+	v6Addrs = map[addrType]netip.Addr{
 		anyAddr:                header.IPv6Any,
 		emptyAddr:              {},
 		linkLocalMulticastAddr: testutil.MustParse6("ff02::a"),
@@ -115,14 +116,14 @@ var (
 		remoteUnicastAddr:      utils.RemoteIPv6Addr,
 	}
 
-	v4EndpointAddrs = map[endpointAddrType]tcpip.AddressWithPrefix{
+	v4EndpointAddrs = map[endpointAddrType]netip.Prefix{
 		incomingEndpointAddr: utils.RouterNIC1IPv4Addr.AddressWithPrefix,
 		otherEndpointAddr:    utils.Host1IPv4Addr.AddressWithPrefix,
 		outgoingEndpointAddr: utils.RouterNIC2IPv4Addr.AddressWithPrefix,
 		otherOutgoingNICID:   utils.Host2IPv4Addr.AddressWithPrefix,
 	}
 
-	v6EndpointAddrs = map[endpointAddrType]tcpip.AddressWithPrefix{
+	v6EndpointAddrs = map[endpointAddrType]netip.Prefix{
 		incomingEndpointAddr: utils.RouterNIC1IPv6Addr.AddressWithPrefix,
 		otherEndpointAddr:    utils.Host1IPv6Addr.AddressWithPrefix,
 		outgoingEndpointAddr: utils.RouterNIC2IPv6Addr.AddressWithPrefix,
@@ -130,7 +131,7 @@ var (
 	}
 )
 
-func getAddr(protocol tcpip.NetworkProtocolNumber, addrType addrType) tcpip.Address {
+func getAddr(protocol tcpip.NetworkProtocolNumber, addrType addrType) netip.Addr {
 	switch protocol {
 	case ipv4.ProtocolNumber:
 		if addr, ok := v4Addrs[addrType]; ok {
@@ -147,7 +148,7 @@ func getAddr(protocol tcpip.NetworkProtocolNumber, addrType addrType) tcpip.Addr
 	}
 }
 
-func getEndpointAddr(protocol tcpip.NetworkProtocolNumber, addrType endpointAddrType) tcpip.AddressWithPrefix {
+func getEndpointAddr(protocol tcpip.NetworkProtocolNumber, addrType endpointAddrType) netip.Prefix {
 	switch protocol {
 	case ipv4.ProtocolNumber:
 		if addr, ok := v4EndpointAddrs[addrType]; ok {
@@ -164,7 +165,7 @@ func getEndpointAddr(protocol tcpip.NetworkProtocolNumber, addrType endpointAddr
 	}
 }
 
-func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address, ttl uint8) {
+func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr netip.Addr, ttl uint8) {
 	payload := stack.PayloadSince(pkt.NetworkHeader())
 	defer payload.Release()
 	switch protocol {
@@ -191,7 +192,7 @@ func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *s
 	}
 }
 
-func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address) {
+func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr netip.Addr) {
 	payload := stack.PayloadSince(pkt.NetworkHeader())
 	defer payload.Release()
 	switch protocol {
@@ -216,7 +217,7 @@ func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *sta
 	}
 }
 
-func injectPacket(ep *channel.Endpoint, protocol tcpip.NetworkProtocolNumber, srcAddr, dstAddr tcpip.Address, ttl uint8) {
+func injectPacket(ep *channel.Endpoint, protocol tcpip.NetworkProtocolNumber, srcAddr, dstAddr netip.Addr, ttl uint8) {
 	switch protocol {
 	case ipv4.ProtocolNumber:
 		utils.RxICMPv4EchoRequest(ep, srcAddr, dstAddr, ttl)
@@ -1122,7 +1123,7 @@ func TestMulticastForwarding(t *testing.T) {
 				}
 
 				if test.joinMulticastGroup {
-					checkEchoReply(t, protocol, p, getEndpointAddr(protocol, incomingEpAddrType).Address, srcAddr)
+					checkEchoReply(t, protocol, p, getEndpointAddr(protocol, incomingEpAddrType).Addr(), srcAddr)
 					p.DecRef()
 				}
 
@@ -1133,7 +1134,7 @@ func TestMulticastForwarding(t *testing.T) {
 					return nil
 				}()
 
-				if diff := cmp.Diff(wantUnexpectedInputInterfaceEvent, eventDispatcher.onUnexpectedInputInterfaceData, cmp.AllowUnexported(onUnexpectedInputInterfaceData{})); diff != "" {
+				if diff := cmp.Diff(wantUnexpectedInputInterfaceEvent, eventDispatcher.onUnexpectedInputInterfaceData, cmp.AllowUnexported(onUnexpectedInputInterfaceData{}), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 					t.Errorf("onUnexpectedInputInterfaceData mismatch (-want +got):\n%s", diff)
 				}
 
@@ -1144,7 +1145,7 @@ func TestMulticastForwarding(t *testing.T) {
 					return nil
 				}()
 
-				if diff := cmp.Diff(wantMissingRouteEvent, eventDispatcher.onMissingRouteData, cmp.AllowUnexported(onMissingRouteData{})); diff != "" {
+				if diff := cmp.Diff(wantMissingRouteEvent, eventDispatcher.onMissingRouteData, cmp.AllowUnexported(onMissingRouteData{}), cmpopts.EquateComparable(netip.Addr{})); diff != "" {
 					t.Errorf("onMissingRouteData mismatch (-want +got):\n%s", diff)
 				}
 			})

@@ -16,10 +16,12 @@ package loopback_test
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -41,28 +43,28 @@ var _ ipv6.NDPDispatcher = (*ndpDispatcher)(nil)
 
 type ndpDispatcher struct{}
 
-func (*ndpDispatcher) OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult) {
+func (*ndpDispatcher) OnDuplicateAddressDetectionResult(tcpip.NICID, netip.Addr, stack.DADResult) {
 }
 
-func (*ndpDispatcher) OnOffLinkRouteUpdated(tcpip.NICID, tcpip.Subnet, tcpip.Address, header.NDPRoutePreference) {
+func (*ndpDispatcher) OnOffLinkRouteUpdated(tcpip.NICID, netip.Prefix, netip.Addr, header.NDPRoutePreference) {
 }
 
-func (*ndpDispatcher) OnOffLinkRouteInvalidated(tcpip.NICID, tcpip.Subnet, tcpip.Address) {}
+func (*ndpDispatcher) OnOffLinkRouteInvalidated(tcpip.NICID, netip.Prefix, netip.Addr) {}
 
-func (*ndpDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) {
+func (*ndpDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, netip.Prefix) {
 }
 
-func (*ndpDispatcher) OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet) {}
+func (*ndpDispatcher) OnOnLinkPrefixInvalidated(tcpip.NICID, netip.Prefix) {}
 
-func (*ndpDispatcher) OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) stack.AddressDispatcher {
+func (*ndpDispatcher) OnAutoGenAddress(tcpip.NICID, netip.Prefix) stack.AddressDispatcher {
 	return nil
 }
 
-func (*ndpDispatcher) OnAutoGenAddressDeprecated(tcpip.NICID, tcpip.AddressWithPrefix) {}
+func (*ndpDispatcher) OnAutoGenAddressDeprecated(tcpip.NICID, netip.Prefix) {}
 
-func (*ndpDispatcher) OnAutoGenAddressInvalidated(tcpip.NICID, tcpip.AddressWithPrefix) {}
+func (*ndpDispatcher) OnAutoGenAddressInvalidated(tcpip.NICID, netip.Prefix) {}
 
-func (*ndpDispatcher) OnRecursiveDNSServerOption(tcpip.NICID, []tcpip.Address, time.Duration) {}
+func (*ndpDispatcher) OnRecursiveDNSServerOption(tcpip.NICID, []netip.Addr, time.Duration) {}
 
 func (*ndpDispatcher) OnDNSSearchListOption(tcpip.NICID, []string, time.Duration) {}
 
@@ -114,31 +116,31 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		Protocol:          header.IPv4ProtocolNumber,
 		AddressWithPrefix: utils.Ipv4Addr,
 	}
-	addrCopy := ipv4ProtocolAddress.AddressWithPrefix.Address
+	addrCopy := ipv4ProtocolAddress.AddressWithPrefix.Addr()
 	ipv4Bytes := addrCopy.AsSlice()
 	ipv4Bytes[len(ipv4Bytes)-1]++
-	otherIPv4Address := tcpip.AddrFromSlice(ipv4Bytes)
+	otherIPv4Address := netip.AddrFrom4([4]byte(ipv4Bytes))
 
 	ipv6ProtocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv6ProtocolNumber,
 		AddressWithPrefix: utils.Ipv6Addr,
 	}
-	addrCopy = utils.Ipv6Addr.Address
+	addrCopy = utils.Ipv6Addr.Addr()
 	ipv6Bytes := addrCopy.AsSlice()
 	ipv6Bytes[len(ipv6Bytes)-1]++
-	otherIPv6Address := tcpip.AddrFromSlice(ipv6Bytes)
+	otherIPv6Address := netip.AddrFrom16([16]byte(ipv6Bytes))
 
 	tests := []struct {
 		name       string
 		addAddress tcpip.ProtocolAddress
-		bindAddr   tcpip.Address
-		dstAddr    tcpip.Address
+		bindAddr   netip.Addr
+		dstAddr    netip.Addr
 		expectRx   bool
 	}{
 		{
 			name:       "IPv4 bind to wildcard and send to assigned address",
 			addAddress: ipv4ProtocolAddress,
-			dstAddr:    ipv4ProtocolAddress.AddressWithPrefix.Address,
+			dstAddr:    ipv4ProtocolAddress.AddressWithPrefix.Addr(),
 			expectRx:   true,
 		},
 		{
@@ -157,7 +159,7 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 			name:       "IPv4 bind to other subnet-local address and send to assigned address",
 			addAddress: ipv4ProtocolAddress,
 			bindAddr:   otherIPv4Address,
-			dstAddr:    ipv4ProtocolAddress.AddressWithPrefix.Address,
+			dstAddr:    ipv4ProtocolAddress.AddressWithPrefix.Addr(),
 			expectRx:   false,
 		},
 		{
@@ -170,7 +172,7 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		{
 			name:       "IPv4 bind to assigned address and send to other subnet-local address",
 			addAddress: ipv4ProtocolAddress,
-			bindAddr:   ipv4ProtocolAddress.AddressWithPrefix.Address,
+			bindAddr:   ipv4ProtocolAddress.AddressWithPrefix.Addr(),
 			dstAddr:    otherIPv4Address,
 			expectRx:   false,
 		},
@@ -178,8 +180,8 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		{
 			name:       "IPv6 bind and send to assigned address",
 			addAddress: ipv6ProtocolAddress,
-			bindAddr:   utils.Ipv6Addr.Address,
-			dstAddr:    utils.Ipv6Addr.Address,
+			bindAddr:   utils.Ipv6Addr.Addr(),
+			dstAddr:    utils.Ipv6Addr.Addr(),
 			expectRx:   true,
 		},
 		{
@@ -258,10 +260,11 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 					Count: buf.Len(),
 					Total: buf.Len(),
 					RemoteAddr: tcpip.FullAddress{
-						Addr: test.addAddress.AddressWithPrefix.Address,
+						Addr: test.addAddress.AddressWithPrefix.Addr(),
 					},
 				}, res,
 					checker.IgnoreCmpPath("ControlMessages", "RemoteAddr.NIC", "RemoteAddr.Port"),
+					cmpopts.EquateComparable(netip.Addr{}),
 				); diff != "" {
 					t.Errorf("rep.Read: unexpected result (-want +got):\n%s", diff)
 				}
@@ -285,10 +288,10 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		Protocol:          ipv4.ProtocolNumber,
 		AddressWithPrefix: utils.Ipv4Addr,
 	}
-	addrCopy := utils.Ipv4Addr.Address
+	addrCopy := utils.Ipv4Addr.Addr()
 	addrBytes := addrCopy.AsSlice()
 	addrBytes[len(addrBytes)-1]++
-	otherAddr := tcpip.AddrFromSlice(addrBytes)
+	otherAddr := netip.AddrFrom4([4]byte(addrBytes))
 
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -327,8 +330,8 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 	}
 
 	// Removing the address should make the endpoint invalid.
-	if err := s.RemoveAddress(nicID, protoAddr.AddressWithPrefix.Address); err != nil {
-		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Address, err)
+	if err := s.RemoveAddress(nicID, protoAddr.AddressWithPrefix.Addr()); err != nil {
+		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Addr(), err)
 	}
 	{
 		err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -354,32 +357,32 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		Protocol:          header.IPv4ProtocolNumber,
 		AddressWithPrefix: utils.Ipv4Addr,
 	}
-	ipv4ProtocolAddress.AddressWithPrefix.PrefixLen = 8
-	addrCopy := ipv4ProtocolAddress.AddressWithPrefix.Address
+	ipv4ProtocolAddress.AddressWithPrefix = netip.PrefixFrom(ipv4ProtocolAddress.AddressWithPrefix.Addr(), 8)
+	addrCopy := ipv4ProtocolAddress.AddressWithPrefix.Addr()
 	ipv4Bytes := addrCopy.AsSlice()
 	ipv4Bytes[len(ipv4Bytes)-1]++
-	otherIPv4Address := tcpip.AddrFromSlice(ipv4Bytes)
+	otherIPv4Address := netip.AddrFrom4([4]byte(ipv4Bytes))
 
 	ipv6ProtocolAddress := tcpip.ProtocolAddress{
 		Protocol:          header.IPv6ProtocolNumber,
 		AddressWithPrefix: utils.Ipv6Addr,
 	}
-	addrCopy = utils.Ipv6Addr.Address
+	addrCopy = utils.Ipv6Addr.Addr()
 	ipv6Bytes := addrCopy.AsSlice()
 	ipv6Bytes[len(ipv6Bytes)-1]++
-	otherIPv6Address := tcpip.AddrFromSlice(ipv6Bytes)
+	otherIPv6Address := netip.AddrFrom16([16]byte(ipv6Bytes))
 
 	tests := []struct {
 		name         string
 		addAddress   tcpip.ProtocolAddress
-		bindAddr     tcpip.Address
-		dstAddr      tcpip.Address
+		bindAddr     netip.Addr
+		dstAddr      netip.Addr
 		expectAccept bool
 	}{
 		{
 			name:         "IPv4 bind to wildcard and send to assigned address",
 			addAddress:   ipv4ProtocolAddress,
-			dstAddr:      ipv4ProtocolAddress.AddressWithPrefix.Address,
+			dstAddr:      ipv4ProtocolAddress.AddressWithPrefix.Addr(),
 			expectAccept: true,
 		},
 		{
@@ -398,7 +401,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 			name:         "IPv4 bind to other subnet-local address and send to assigned address",
 			addAddress:   ipv4ProtocolAddress,
 			bindAddr:     otherIPv4Address,
-			dstAddr:      ipv4ProtocolAddress.AddressWithPrefix.Address,
+			dstAddr:      ipv4ProtocolAddress.AddressWithPrefix.Addr(),
 			expectAccept: false,
 		},
 		{
@@ -411,7 +414,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		{
 			name:         "IPv4 bind to assigned address and send to other subnet-local address",
 			addAddress:   ipv4ProtocolAddress,
-			bindAddr:     ipv4ProtocolAddress.AddressWithPrefix.Address,
+			bindAddr:     ipv4ProtocolAddress.AddressWithPrefix.Addr(),
 			dstAddr:      otherIPv4Address,
 			expectAccept: false,
 		},
@@ -419,8 +422,8 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		{
 			name:         "IPv6 bind and send to assigned address",
 			addAddress:   ipv6ProtocolAddress,
-			bindAddr:     utils.Ipv6Addr.Address,
-			dstAddr:      utils.Ipv6Addr.Address,
+			bindAddr:     utils.Ipv6Addr.Addr(),
+			dstAddr:      utils.Ipv6Addr.Addr(),
 			expectAccept: true,
 		},
 		{
@@ -506,8 +509,8 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 			if _, _, err := listeningEndpoint.Accept(&addr); err != nil {
 				t.Fatalf("listeningEndpoint.Accept(nil): %s", err)
 			}
-			if addr.Addr != test.addAddress.AddressWithPrefix.Address {
-				t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.addAddress.AddressWithPrefix.Address)
+			if addr.Addr != test.addAddress.AddressWithPrefix.Addr() {
+				t.Errorf("got addr.Addr = %s, want = %s", addr.Addr, test.addAddress.AddressWithPrefix.Addr())
 			}
 		})
 	}
@@ -524,11 +527,11 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 	ipv4Loopback := testutil.MustParse4("127.0.0.1")
 
 	loopbackSourcedICMPv4 := func(e *channel.Endpoint) {
-		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address, ttl)
+		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Addr(), ttl)
 	}
 
 	loopbackSourcedICMPv6 := func(e *channel.Endpoint) {
-		utils.RxICMPv6EchoRequest(e, header.IPv6Loopback, utils.Ipv6Addr.Address, ttl)
+		utils.RxICMPv6EchoRequest(e, header.IPv6Loopback, utils.Ipv6Addr.Addr(), ttl)
 	}
 
 	loopbackDestinedICMPv4 := func(e *channel.Endpoint) {
@@ -723,18 +726,15 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
 			}
 			protocolAddrV4 := tcpip.ProtocolAddress{
-				Protocol: ipv4.ProtocolNumber,
-				AddressWithPrefix: tcpip.AddressWithPrefix{
-					Address:   ipv4Loopback,
-					PrefixLen: 8,
-				},
+				Protocol:          ipv4.ProtocolNumber,
+				AddressWithPrefix: netip.PrefixFrom(ipv4Loopback, 8),
 			}
 			if err := s.AddProtocolAddress(nicID2, protocolAddrV4, stack.AddressProperties{}); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV4, err)
 			}
 			protocolAddrV6 := tcpip.ProtocolAddress{
 				Protocol:          ipv6.ProtocolNumber,
-				AddressWithPrefix: header.IPv6Loopback.WithPrefix(),
+				AddressWithPrefix: tcpip.FullPrefix(header.IPv6Loopback),
 			}
 			if err := s.AddProtocolAddress(nicID2, protocolAddrV6, stack.AddressProperties{}); err != nil {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV6, err)
@@ -759,11 +759,11 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 					NIC:         nicID1,
 				},
 				{
-					Destination: ipv4Loopback.WithPrefix().Subnet(),
+					Destination: tcpip.FullPrefix(ipv4Loopback).Masked(),
 					NIC:         nicID2,
 				},
 				{
-					Destination: header.IPv6Loopback.WithPrefix().Subnet(),
+					Destination: tcpip.FullPrefix(header.IPv6Loopback).Masked(),
 					NIC:         nicID2,
 				},
 			})
@@ -829,14 +829,14 @@ func TestExternalLoopbackTrafficRuntimeToggle(t *testing.T) {
 	}
 	loopbackAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddressWithPrefix{Address: ipv4Loopback, PrefixLen: 8},
+		AddressWithPrefix: netip.PrefixFrom(ipv4Loopback, 8),
 	}
 	if err := s.AddProtocolAddress(nicID2, loopbackAddr, stack.AddressProperties{}); err != nil {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, loopbackAddr, err)
 	}
 	s.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: nicID1},
-		{Destination: ipv4Loopback.WithPrefix().Subnet(), NIC: nicID2},
+		{Destination: tcpip.FullPrefix(ipv4Loopback).Masked(), NIC: nicID2},
 	})
 
 	stats := s.Stats().IP
@@ -844,7 +844,7 @@ func TestExternalLoopbackTrafficRuntimeToggle(t *testing.T) {
 	delivered := stats.PacketsDelivered
 
 	rxMartian := func() {
-		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address, ttl)
+		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Addr(), ttl)
 	}
 	setOption := func(enable bool) {
 		opt := tcpip.AllowExternalLoopbackTrafficOption(enable)

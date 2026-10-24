@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be
@@ -136,25 +137,6 @@ type TCPRACKState struct {
 
 	// RTTSeq is the SND.NXT when RTT is updated.
 	RTTSeq seqnum.Value
-}
-
-// TCPEndpointID is the unique 4 tuple that identifies a given endpoint.
-//
-// +stateify savable
-type TCPEndpointID struct {
-	// LocalPort is the local port associated with the endpoint.
-	LocalPort uint16
-
-	// LocalAddress is the local [network layer] address associated with
-	// the endpoint.
-	LocalAddress tcpip.Address
-
-	// RemotePort is the remote port associated with the endpoint.
-	RemotePort uint16
-
-	// RemoteAddress it the remote [network layer] address associated with
-	// the endpoint.
-	RemoteAddress tcpip.Address
 }
 
 // TCPFastRecoveryState holds a copy of the internal fast recovery state of a
@@ -457,7 +439,7 @@ type TCPEndpointState struct {
 	TCPEndpointStateInner
 
 	// ID is a copy of the TransportEndpointID for the endpoint.
-	ID TCPEndpointID
+	ID stack.TransportEndpointID
 
 	// SegTime denotes the absolute time when this segment was received.
 	SegTime tcpip.MonotonicTime
