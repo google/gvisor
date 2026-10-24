@@ -1448,7 +1448,11 @@ func Init() {
 			}
 			return abi
 		})
-		_ = addDriverABI(620, 51, 03, ChecksumNoDriver, "7c7f4e71ec27a6c050ed3d074eda4bd3c10a0c2d3f330cd1bf9485e5265a569e", v620_51_00)
+		_ = addDriverABIWithChecksums(620, 51, 03, Checksums{
+			X86_64:                 ChecksumNoDriver,
+			ARM64:                  "7c7f4e71ec27a6c050ed3d074eda4bd3c10a0c2d3f330cd1bf9485e5265a569e",
+			NoPublicARM64Installer: true,
+		}, v620_51_00)
 	})
 }
 
