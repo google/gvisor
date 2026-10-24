@@ -11,6 +11,7 @@ package(
 filegroup(
     name = "sources",
     srcs = glob(["**"]) + [
+        "//images/basic:sources",
         "//images/gpu/ollama/client:sources",
     ],
 )
