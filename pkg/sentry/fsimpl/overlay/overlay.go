@@ -567,6 +567,8 @@ func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 //
 // +stateify savable
 type dentry struct {
+	memmap.MappableNoHugepages
+
 	vfsd vfs.Dentry
 
 	refs atomicbitops.Int64
