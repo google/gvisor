@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"testing"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
@@ -688,6 +690,18 @@ func TestSetLock(t *testing.T) {
 	}
 }
 
+func TestUnusedFileLocks(t *testing.T) {
+	var locks Locks
+	r := LockRange{End: LockEOF}
+	locks.UnlockRegion(1, r)
+	if got, want := locks.TestRegion(context.Background(), 1, WriteLock, r, false).Type, int16(unix.F_UNLCK); got != want {
+		t.Errorf("F_GETLK returned %d, want %d", got, want)
+	}
+	if locks.locks != nil {
+		t.Fatal("unlock or query allocated a lock tree")
+	}
+}
+
 func TestUnlock(t *testing.T) {
 	tests := []struct {
 		// description of test.
@@ -1033,7 +1047,8 @@ func TestUnlock(t *testing.T) {
 			l := fill(test.before)
 
 			r := LockRange{Start: test.start, End: test.end}
-			l.unlock(test.uid, r)
+			locks := Locks{locks: &l}
+			locks.UnlockRegion(test.uid, r)
 			var got []entry
 			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 				got = append(got, entry{

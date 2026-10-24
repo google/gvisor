@@ -63,6 +63,7 @@ go_test(
     ],
     embed = [":lock"],
     deps = [
+        "//pkg/context",
         "//pkg/errors/linuxerr",
         "@org_golang_x_sys//unix:go_default_library",
     ],
