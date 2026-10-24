@@ -17,10 +17,13 @@
 package pgalloc
 
 import (
+	"os"
 	"testing"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 const (
@@ -54,6 +57,7 @@ func TestFindAllocatable(t *testing.T) {
 		length  uint64
 		huge    bool
 		recycle bool
+		mode    AllocationMode // if recycle is true; default AllocateCallerIndirectCommit
 		dir     Direction
 		// Expected outcome:
 		want uint64
@@ -431,6 +435,107 @@ func TestFindAllocatable(t *testing.T) {
 			want:    chunkSize - hugepage,
 		},
 		{
+			name:      "uncommitted-or-recycled small allocation recycles waste pages",
+			chunkHuge: []bool{false},
+			existing: []existingSegment{
+				{chunkSize - page, chunkSize, existingWaste},
+			},
+			length:  page,
+			recycle: true,
+			mode:    AllocateUncommittedOrRecycled,
+			want:    chunkSize - page,
+		},
+		{
+			name:      "recycling bottom-up huge allocation aligns within unaligned waste pages",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{0, page, existingUsed},
+				{page, 2 * hugepage, existingWaste},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			want:    hugepage,
+		},
+		{
+			name:      "recycling top-down huge allocation aligns within unaligned waste pages",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{chunkSize - 2*hugepage, chunkSize - page, existingWaste},
+				{chunkSize - page, chunkSize, existingUsed},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			dir:     TopDown,
+			want:    chunkSize - 2*hugepage,
+		},
+		{
+			name:      "recycling bottom-up huge allocation aligns within barely large enough waste pages",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{hugepage - page, 2 * hugepage, existingWaste},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			want:    hugepage,
+		},
+		{
+			name:      "recycling top-down huge allocation aligns within barely large enough waste pages",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{chunkSize - 2*hugepage, chunkSize - hugepage + page, existingWaste},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			dir:     TopDown,
+			want:    chunkSize - 2*hugepage,
+		},
+		{
+			name:      "recycling bottom-up huge allocation skips unaligned waste pages that can't fit",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{0, page, existingUsed},
+				{page, hugepage + page, existingWaste},
+				{hugepage + page, 2 * hugepage, existingUsed},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			want:    2 * hugepage,
+		},
+		{
+			name:      "recycling bottom-up huge allocation skips to later waste pages that fit",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{0, page, existingUsed},
+				{page, hugepage + page, existingWaste},
+				{hugepage + page, 2 * hugepage, existingUsed},
+				{2 * hugepage, 4 * hugepage, existingWaste},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			want:    2 * hugepage,
+		},
+		{
+			name:      "recycling top-down huge allocation skips to earlier waste pages that fit",
+			chunkHuge: []bool{true},
+			existing: []existingSegment{
+				{chunkSize - 4*hugepage, chunkSize - 2*hugepage, existingWaste},
+				{chunkSize - 2*hugepage, chunkSize - hugepage - page, existingUsed},
+				{chunkSize - hugepage - page, chunkSize - page, existingWaste},
+				{chunkSize - page, chunkSize, existingUsed},
+			},
+			length:  hugepage,
+			huge:    true,
+			recycle: true,
+			dir:     TopDown,
+			want:    chunkSize - 3*hugepage,
+		},
+		{
 			name:      "non-recycling bottom-up small allocation skips releasing pages",
 			chunkHuge: []bool{false},
 			existing: []existingSegment{
@@ -571,6 +676,10 @@ func TestFindAllocatable(t *testing.T) {
 			if test.recycle {
 				alloc.opts.Mode = AllocateCallerIndirectCommit
 				alloc.willCommit = true
+				if test.mode != AllocateUncommitted {
+					alloc.opts.Mode = test.mode
+					alloc.willCommit = false
+				}
 			}
 			fr, err := f.findAllocatableAndMarkUsed(&alloc)
 			if err != nil {
@@ -583,5 +692,42 @@ func TestFindAllocatable(t *testing.T) {
 				t.Errorf("findAllocatableAndMarkUsed(%+v): got: end=%#x, want: %#x\n%v", alloc, fr.End, wantEnd, f)
 			}
 		})
+	}
+}
+
+func TestRecycledPagesAreZeroed(t *testing.T) {
+	fd, err := unix.MemfdCreate("pgalloc_test", 0)
+	if err != nil {
+		t.Fatalf("memfd_create failed: %v", err)
+	}
+	f, err := NewMemoryFile(os.NewFile(uintptr(fd), "pgalloc_test"), MemoryFileOpts{
+		DisableIMAWorkAround:    true,
+		DisableMemoryAccounting: true,
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryFile failed: %v", err)
+	}
+	defer f.Destroy()
+
+	const length = 16 * page
+	for i := 0; i < 1000; i++ {
+		fr, err := f.Allocate(length, AllocOpts{
+			Kind: usage.Anonymous,
+			Mode: AllocateUncommittedOrRecycled,
+		})
+		if err != nil {
+			t.Fatalf("Allocate failed: %v", err)
+		}
+		f.forEachMappingSlice(fr, func(bs []byte) {
+			for j, b := range bs {
+				if b != 0 {
+					t.Fatalf("iteration %d: allocated byte %d of %v is %#x, want 0", i, j, fr, b)
+				}
+			}
+			for j := range bs {
+				bs[j] = 0xff
+			}
+		})
+		f.DecRef(fr)
 	}
 }
