@@ -787,6 +787,45 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
+func TestGoferWillNeedHostRPC(t *testing.T) {
+	allIDs := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 0, Size: math.MaxUint32}}
+	uidMappings, err := getIdentityMapping("uid_map")
+	if err != nil {
+		t.Fatalf("getIdentityMapping failed: %v", err)
+	}
+	gidMappings, err := getIdentityMapping("gid_map")
+	if err != nil {
+		t.Fatalf("getIdentityMapping failed: %v", err)
+	}
+	// Tests may run in a user namespace that doesn't map every ID, where the
+	// gofer may always need this process.
+	partialUserNS := !slices.Equal(uidMappings, allIDs) || !slices.Equal(gidMappings, allIDs)
+	userns := []specs.LinuxNamespace{{Type: specs.UserNamespace}}
+	shifted := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 100000, Size: 65536}}
+	idMapped := specs.Mount{Destination: "/mnt", Source: "/mnt", Type: "bind", UIDMappings: shifted, GIDMappings: shifted}
+	for _, tc := range []struct {
+		name string
+		spec *specs.Spec
+		want bool
+	}{
+		{name: "no userns", spec: &specs.Spec{Linux: &specs.Linux{}}, want: partialUserNS},
+		{name: "userns mapping all IDs", spec: &specs.Spec{Linux: &specs.Linux{Namespaces: userns, UIDMappings: allIDs, GIDMappings: allIDs}}, want: partialUserNS},
+		{name: "shifted userns", spec: &specs.Spec{Linux: &specs.Linux{Namespaces: userns, UIDMappings: shifted, GIDMappings: shifted}}, want: true},
+		{name: "id-mapped mount", spec: &specs.Spec{Linux: &specs.Linux{}, Mounts: []specs.Mount{idMapped}}, want: true},
+		{name: "host procfs mount", spec: &specs.Spec{Linux: &specs.Linux{}, Mounts: []specs.Mount{{Destination: "/mnt", Source: "/proc/1/ns", Type: "bind"}}}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := goferWillNeedHostRPC(tc.spec)
+			if err != nil {
+				t.Fatalf("goferWillNeedHostRPC failed: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("goferWillNeedHostRPC got %t, expected %t", got, tc.want)
+			}
+		})
+	}
+}
+
 // Test the we can execute the application with different path formats.
 func TestExePath(t *testing.T) {
 	// Create two directories that will be prepended to PATH.
@@ -2554,6 +2593,11 @@ func TestIDMappedMount(t *testing.T) {
 				t.Fatalf("error creating container: %v", err)
 			}
 			defer c.Destroy()
+			select {
+			case <-c.goferRPCDone:
+			default:
+				t.Errorf("New returned before the gofer was done with gofer-to-host RPCs")
+			}
 			if err := c.Start(conf); err != nil {
 				t.Fatalf("error starting container: %v", err)
 			}
