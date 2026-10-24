@@ -20,7 +20,6 @@ import (
 	"io"
 	"path"
 	"strconv"
-	"sync"
 	gtime "time"
 
 	"golang.org/x/sys/unix"
@@ -436,7 +435,6 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, _ *struct{}) (retE
 	stateFile = nil
 	timer.Reached("created statefile reader")
 
-	cm.l.restoreDone = sync.NewCond(&cm.l.mu)
 	cm.l.state = restoringUnstarted
 
 	// Release `cm.l.mu`.

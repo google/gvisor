@@ -256,6 +256,23 @@ func TestStartSignal(t *testing.T) {
 	}
 }
 
+// TestRestoreFailBeforeStart checks that a restore that fails before it starts
+// restoring reports the failure.
+func TestRestoreFailBeforeStart(t *testing.T) {
+	l, cleanup, err := createLoader(testConfig(), testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer l.Destroy()
+	defer cleanup()
+	if err := l.ctrl.manager.Restore(&sentryapi.RestoreOpts{}, nil); err == nil {
+		t.Fatalf("restoring without files succeeded")
+	}
+	if err := l.waitRestore(); err == nil {
+		t.Errorf("waiting for the failed restore succeeded")
+	}
+}
+
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the
 // host.
 func TestHostnetWithRawSockets(t *testing.T) {
