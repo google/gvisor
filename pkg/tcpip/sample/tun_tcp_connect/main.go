@@ -105,13 +105,13 @@ func main() {
 	}
 
 	var localPort uint16
-	if v, err := strconv.Atoi(portName); err != nil {
+	if v, err := strconv.ParseUint(portName, 10, 16); err != nil {
 		log.Fatalf("Unable to convert port %v: %v", portName, err)
 	} else {
 		localPort = uint16(v)
 	}
 
-	if v, err := strconv.Atoi(remotePortName); err != nil {
+	if v, err := strconv.ParseUint(remotePortName, 10, 16); err != nil {
 		log.Fatalf("Unable to convert port %v: %v", remotePortName, err)
 	} else {
 		remote.Port = uint16(v)
