@@ -65,10 +65,17 @@ func newReceiver(ep *Endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 	}
 }
 
-// acceptable checks if the segment sequence number range is acceptable
-// according to the table on page 26 of RFC 793.
+// acceptable checks whether the segment is within the receive window.
+//
+// +checklocks:r.ep.mu
 func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
-	return header.Acceptable(segSeq, segLen, r.RcvNxt, r.RcvNxt.Add(r.rcvWnd))
+	rightEdge := r.RcvNxt.Add(r.rcvWnd)
+	// After acknowledging FIN, Linux checks payload crossing the advertised
+	// edge before processing the closing state if the read queue is nonempty.
+	if r.closed && segLen != 0 && rightEdge.LessThan(segSeq.Add(segLen)) && (r.ep.pendingFIN || r.ep.rcvQueue.Front() != nil) {
+		return false
+	}
+	return header.Acceptable(segSeq, segLen, r.RcvNxt, rightEdge)
 }
 
 // currentWindow returns the available space in the window that was advertised
@@ -228,6 +235,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		r.ep.snd.sendAck()
 
 		// Tell any readers that no more data will come.
+		if !r.closed {
+			r.ep.pendingFIN = r.ep.rcvQueue.Front() == nil
+		}
 		r.closed = true
 		r.ep.readyToRead(nil)
 
