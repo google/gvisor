@@ -1511,7 +1511,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer,
 
 	// Raw socket packets are delivered based solely on the transport protocol
 	// number. We only require that the packet be valid IPv6.
-	e.dispatcher.DeliverRawPacket(h.TransportProtocol(), pkt)
+	e.dispatcher.DeliverRawPacket(tcpip.TransportProtocolNumber(h.NextHeader()), pkt)
 
 	stats := e.stats.ip
 	stats.ValidPacketsReceived.Increment()
