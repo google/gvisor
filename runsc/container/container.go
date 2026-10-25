@@ -334,7 +334,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			SandboxID:   sandboxID,
 			ContainerID: sandboxID,
 		}
-		sb, err := Load(conf.RootDir, fullID, LoadOpts{Exact: true})
+		sb, err := Load(conf.RootDir, fullID, LoadOpts{Exact: true, SkipCheck: true})
 		if err != nil {
 			return nil, fmt.Errorf("cannot load sandbox: %w", err)
 		}
@@ -552,14 +552,13 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
+	var err error
 	if specutils.IsRootContainer(c.Spec) {
-		if err := startRoot(conf, c.Spec); err != nil {
-			return err
-		}
+		err = startRoot(conf, c.Spec)
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
+		err = cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
 			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
 			if err != nil {
@@ -596,9 +595,20 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 			}
 
 			return startSub(c.Spec, conf, c.ID, stdios, goferFiles, goferFilestores, devIOFile, c.GoferMountConfs)
-		}); err != nil {
-			return err
+		})
+	}
+	if err != nil {
+		// Treat container as stopped.
+		var remoteErr urpc.RemoteError
+		if errors.As(err, &remoteErr) && specutils.IsRootContainer(c.Spec) {
+			if state, stateErr := c.Sandbox.ContainerRuntimeState(c.ID); stateErr == nil && state == sentryapi.RuntimeStateStopped {
+				c.changeStatus(Stopped)
+				if err := c.saveLocked(); err != nil {
+					log.Warningf("Cannot mark container %q as stopped: %v", c.ID, err)
+				}
+			}
 		}
+		return err
 	}
 
 	// "If any poststart hook fails, the runtime MUST generate an error,
@@ -2674,21 +2684,27 @@ func nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath string) bool {
 
 // CheckStopped checks if the container is stopped and updates its status.
 func (c *Container) CheckStopped() error {
-	if state, err := c.Sandbox.ContainerRuntimeState(c.ID); err != nil {
+	// The sandbox of a Created root container may still be booting, and only
+	// answers once it has booted. Such a container is stopped only if its
+	// sandbox exited.
+	if c.Status != Created || !c.IsSandboxRoot() {
+		state, err := c.Sandbox.ContainerRuntimeState(c.ID)
+		if err == nil {
+			if state == sentryapi.RuntimeStateStopped {
+				log.Warningf("Container %v is stopped", c.ID)
+				c.changeStatus(Stopped)
+			}
+			return nil
+		}
 		log.Warningf("Cannot find if container %v exists, checking if sandbox %v is running, err: %v", c.ID, c.Sandbox.ID, err)
-		running, err := c.IsSandboxRunning()
-		if err != nil {
-			return fmt.Errorf("checking if sandbox %v is running: %w", c.Sandbox.ID, err)
-		}
-		if !running {
-			log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
-			c.changeStatus(Stopped)
-		}
-	} else {
-		if state == sentryapi.RuntimeStateStopped {
-			log.Warningf("Container %v is stopped", c.ID)
-			c.changeStatus(Stopped)
-		}
+	}
+	running, err := c.IsSandboxRunning()
+	if err != nil {
+		return fmt.Errorf("checking if sandbox %v is running: %w", c.Sandbox.ID, err)
+	}
+	if !running {
+		log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
+		c.changeStatus(Stopped)
 	}
 	return nil
 }
