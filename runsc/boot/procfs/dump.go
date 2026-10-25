@@ -32,9 +32,10 @@ type FDInfo struct {
 
 // UIDGID contains information for /proc/[pid]/status/{uid,gid}.
 type UIDGID struct {
-	Real      uint32 `json:"real"`
-	Effective uint32 `json:"effective"`
-	Saved     uint32 `json:"saved"`
+	Real       uint32 `json:"real"`
+	Effective  uint32 `json:"effective"`
+	Saved      uint32 `json:"saved"`
+	Filesystem uint32 `json:"filesystem"`
 }
 
 // Status contains information for /proc/[pid]/status.

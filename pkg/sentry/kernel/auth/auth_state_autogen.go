@@ -20,6 +20,8 @@ func (c *Credentials) StateFields() []string {
 		"RealKGID",
 		"EffectiveKGID",
 		"SavedKGID",
+		"FilesystemKUID",
+		"FilesystemKGID",
 		"ExtraKGIDs",
 		"PermittedCaps",
 		"InheritableCaps",
@@ -43,15 +45,17 @@ func (c *Credentials) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &c.RealKGID)
 	stateSinkObject.Save(4, &c.EffectiveKGID)
 	stateSinkObject.Save(5, &c.SavedKGID)
-	stateSinkObject.Save(6, &c.ExtraKGIDs)
-	stateSinkObject.Save(7, &c.PermittedCaps)
-	stateSinkObject.Save(8, &c.InheritableCaps)
-	stateSinkObject.Save(9, &c.EffectiveCaps)
-	stateSinkObject.Save(10, &c.BoundingCaps)
-	stateSinkObject.Save(11, &c.AmbientCaps)
-	stateSinkObject.Save(12, &c.KeepCaps)
-	stateSinkObject.Save(13, &c.NoSetUIDFixup)
-	stateSinkObject.Save(14, &c.UserNamespace)
+	stateSinkObject.Save(6, &c.FilesystemKUID)
+	stateSinkObject.Save(7, &c.FilesystemKGID)
+	stateSinkObject.Save(8, &c.ExtraKGIDs)
+	stateSinkObject.Save(9, &c.PermittedCaps)
+	stateSinkObject.Save(10, &c.InheritableCaps)
+	stateSinkObject.Save(11, &c.EffectiveCaps)
+	stateSinkObject.Save(12, &c.BoundingCaps)
+	stateSinkObject.Save(13, &c.AmbientCaps)
+	stateSinkObject.Save(14, &c.KeepCaps)
+	stateSinkObject.Save(15, &c.NoSetUIDFixup)
+	stateSinkObject.Save(16, &c.UserNamespace)
 }
 
 func (c *Credentials) afterLoad(context.Context) {}
@@ -64,15 +68,17 @@ func (c *Credentials) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(3, &c.RealKGID)
 	stateSourceObject.Load(4, &c.EffectiveKGID)
 	stateSourceObject.Load(5, &c.SavedKGID)
-	stateSourceObject.Load(6, &c.ExtraKGIDs)
-	stateSourceObject.Load(7, &c.PermittedCaps)
-	stateSourceObject.Load(8, &c.InheritableCaps)
-	stateSourceObject.Load(9, &c.EffectiveCaps)
-	stateSourceObject.Load(10, &c.BoundingCaps)
-	stateSourceObject.Load(11, &c.AmbientCaps)
-	stateSourceObject.Load(12, &c.KeepCaps)
-	stateSourceObject.Load(13, &c.NoSetUIDFixup)
-	stateSourceObject.Load(14, &c.UserNamespace)
+	stateSourceObject.Load(6, &c.FilesystemKUID)
+	stateSourceObject.Load(7, &c.FilesystemKGID)
+	stateSourceObject.Load(8, &c.ExtraKGIDs)
+	stateSourceObject.Load(9, &c.PermittedCaps)
+	stateSourceObject.Load(10, &c.InheritableCaps)
+	stateSourceObject.Load(11, &c.EffectiveCaps)
+	stateSourceObject.Load(12, &c.BoundingCaps)
+	stateSourceObject.Load(13, &c.AmbientCaps)
+	stateSourceObject.Load(14, &c.KeepCaps)
+	stateSourceObject.Load(15, &c.NoSetUIDFixup)
+	stateSourceObject.Load(16, &c.UserNamespace)
 }
 
 func (i *IDMapEntry) StateTypeName() string {
