@@ -7,6 +7,12 @@ package(
     licenses = ["notice"],
 )
 
+filegroup(
+    name = "sources",
+    srcs = glob(["**"]),
+    visibility = ["//images:__pkg__"],
+)
+
 image_manifest(
     name = "alpine",
     base = "@test_alpine",
