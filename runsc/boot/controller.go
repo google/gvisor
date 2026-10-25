@@ -482,6 +482,9 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 	if saved := cm.restorer.metadata[noRootContainerKey] == "true"; saved != cm.l.noRootContainer.enabled {
 		return fmt.Errorf("checkpoint taken with no-root-container=%t cannot be restored with no-root-container=%t", saved, cm.l.noRootContainer.enabled)
 	}
+	if err := checkPageSizeMetadata(cm.restorer.metadata); err != nil {
+		return err
+	}
 	timer.Reached("restorer initialized")
 	reply.KernelStarted, err = cm.restorer.restoreContainerInfo(cm.l, &cm.l.root)
 	return err
