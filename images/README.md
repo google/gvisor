@@ -46,7 +46,8 @@ Docker still builds the separate ASCII image converter using `golang:1.25`.
 
 Images can be assembled with `rules_img`; see `basic/BUILD` for examples. Group
 related images in one Bazel package. Declare immutable base images in
-`MODULE.bazel` and expose each image with `image_outputs` from
+`MODULE.bazel`. For a Docker Hub image, set `registries = DOCKER_HUB_REGISTRIES`
+on the pull. Expose each image with `image_outputs` from
 `//images:img.bzl`. Its `image_name` preserves the image's test-facing name
 independently of the Bazel package. Add the image's Make name and context target
 to `BAZEL_IMAGE_CONTEXTS` in `tools/images.mk`. Make hashes the assembled
