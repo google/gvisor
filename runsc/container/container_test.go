@@ -633,6 +633,42 @@ func TestSpecChangeAfterCreate(t *testing.T) {
 	}
 }
 
+// TestRootStartFailureStops checks that a root container that the sandbox
+// fails to start is reported as stopped once its sandbox exits.
+func TestRootStartFailureStops(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	spec.Process.Args = []string{"/does/not/exist"}
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	c, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err == nil {
+		t.Fatalf("starting a container with a missing executable succeeded")
+	}
+	if err := testutil.Poll(func() error {
+		loaded, err := Load(conf.RootDir, FullID{ContainerID: c.ID}, LoadOpts{})
+		if err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		if loaded.Status != Stopped {
+			return fmt.Errorf("got status %v, expected %v", loaded.Status, Stopped)
+		}
+		return nil
+	}, pollTimeout); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestGetNetworkConfig(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
