@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
@@ -527,9 +528,12 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	cleanMnts.Release()
 
-	ctx, err = r.prepareNvproxyRestoreContextLocked(ctx, l)
+	nvproxyRemapping, err := r.getNvproxyDeviceRemapping(ctx, l)
 	if err != nil {
 		return err
+	}
+	if nvproxyRemapping != nil {
+		ctx = context.WithValue(ctx, nvproxy.CtxDeviceRemapping, nvproxyRemapping)
 	}
 	ctx, err = r.prepareTPURestoreContextLocked(ctx, l)
 	if err != nil {
@@ -667,7 +671,7 @@ func (r *restorer) restore(l *Loader) error {
 	// but some restore tasks may still run in the background, and we don't
 	// want to block this function until they finish.
 	postRestoreTimeline := r.timer.Fork("postRestore")
-	go r.postRestore(l.k, postRestoreTimeline, r.timer)
+	go r.postRestore(l.k, postRestoreTimeline, r.timer, nvproxyRemapping)
 	r.timer = nil
 
 	return nil
@@ -688,12 +692,12 @@ func (l *Loader) restoreNamespacePathsLocked(proc *execProcess, spec *specs.Spec
 	}
 }
 
-func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, timer *timing.Timer) {
+func (r *restorer) postRestore(k *kernel.Kernel, timeline *timing.Timeline, timer *timing.Timer, nvproxyRemapping *nvproxy.DeviceRemapping) {
 	defer timer.Log()
 	defer timeline.End()
 
 	timeline.Reached("scheduled")
-	if err := control.PostRestore(k, timeline); err != nil {
+	if err := control.PostRestore(k, timeline, nvproxyRemapping); err != nil {
 		r.cm.onRestoreFailed(fmt.Errorf("post restore work failed: %w", err))
 		log.Warningf("Killing the sandbox after post restore work failed: %v", err)
 		k.Kill(linux.WaitStatusTerminationSignal(linux.SIGKILL))
