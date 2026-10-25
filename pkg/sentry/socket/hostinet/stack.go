@@ -59,6 +59,7 @@ type Stack struct {
 	tcpRecvBufSize  inet.TCPBufferSize
 	tcpSendBufSize  inet.TCPBufferSize
 	tcpSACKEnabled  bool
+	unprivPortStart uint16
 	allowRawSockets bool
 	configured      bool     `state:"nosave"`
 	netDevFile      *os.File `state:"nosave"`
@@ -115,6 +116,15 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.tcpSACKEnabled = strings.TrimSpace(string(sack)) != "0"
 	} else {
 		log.Warningf("Failed to read if TCP SACK if enabled, setting to true")
+	}
+
+	// Report the host's boundary; bind(2) is forwarded to the host, which
+	// enforces its own value, so this file reflects what is actually in force.
+	s.unprivPortStart = uint16(linux.PROT_SOCK)
+	if v, err := os.ReadFile("/proc/sys/net/ipv4/ip_unprivileged_port_start"); err == nil {
+		if n, err := strconv.ParseUint(strings.TrimSpace(string(v)), 10, 16); err == nil {
+			s.unprivPortStart = uint16(n)
+		}
 	}
 
 	if f, err := os.Open("/proc/net/dev"); err != nil {
@@ -487,6 +497,17 @@ func (*Stack) PortRange() (uint16, uint16) {
 
 // SetPortRange implements inet.Stack.SetPortRange.
 func (*Stack) SetPortRange(uint16, uint16) error {
+	return linuxerr.EACCES
+}
+
+// UnprivilegedPortStart implements inet.Stack.UnprivilegedPortStart.
+func (s *Stack) UnprivilegedPortStart() uint16 {
+	return s.unprivPortStart
+}
+
+// SetUnprivilegedPortStart implements inet.Stack.SetUnprivilegedPortStart.
+func (*Stack) SetUnprivilegedPortStart(uint16) error {
+	// The host owns this boundary; the sandbox cannot change it.
 	return linuxerr.EACCES
 }
 

@@ -94,6 +94,13 @@ go_test(
     ],
 )
 
+go_test(
+    name = "netstack_internal_test",
+    srcs = ["bind_test.go"],
+    library = ":netstack",
+    deps = ["//pkg/abi/linux"],
+)
+
 proto_library(
     name = "events",
     srcs = ["events.proto"],

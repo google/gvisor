@@ -61,6 +61,7 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -868,9 +869,52 @@ func (s *sock) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.E
 	return syserr.TranslateNetstackError(s.Endpoint.Connect(addr))
 }
 
+// portRequiresBindService reports whether binding to port on a socket of the
+// given family, type and protocol requires CAP_NET_BIND_SERVICE.
+//
+// Linux applies this only to AF_INET and AF_INET6 TCP and UDP sockets, where
+// sin_port/sin6_port is a transport port. Raw sockets are gated by CAP_NET_RAW
+// at creation instead, and an ephemeral port request (port 0) is always
+// permitted. unprivilegedStart is the stack's
+// net.ipv4.ip_unprivileged_port_start: ports at or above it are unprivileged,
+// so a value of 0 disables the check entirely (the Docker/containerd default).
+//
+// A SOCK_DGRAM socket with IPPROTO_ICMP or IPPROTO_ICMPV6 is a ping socket: its
+// sin_port is the ICMP Echo identifier, not a transport port, so Linux does not
+// require CAP_NET_BIND_SERVICE for it (ping_bind() in net/ipv4/ping.c never
+// consults inet_port_requires_bind_service()). It is therefore excluded here by
+// matching TCP and UDP only, mirroring socket.IsTCP/socket.IsUDP.
+func portRequiresBindService(family int, skType linux.SockType, protocol int, port, unprivilegedStart uint16) bool {
+	if port == 0 || port >= unprivilegedStart {
+		return false
+	}
+	if family != linux.AF_INET && family != linux.AF_INET6 {
+		return false
+	}
+	isTCP := skType == linux.SOCK_STREAM && (protocol == 0 || protocol == linux.IPPROTO_TCP)
+	isUDP := skType == linux.SOCK_DGRAM && (protocol == 0 || protocol == linux.IPPROTO_UDP)
+	return isTCP || isUDP
+}
+
+// checkPrivilegedPort returns an error if binding to port requires
+// CAP_NET_BIND_SERVICE and the task does not hold it.
+//
+// Linux performs this check in inet_port_requires_bind_service(), called from
+// __inet_bind() in net/ipv4/af_inet.c, against the user namespace owning the
+// socket's network namespace, and fails with EACCES.
+func (s *sock) checkPrivilegedPort(t *kernel.Task, port uint16) *syserr.Error {
+	if !portRequiresBindService(s.family, s.skType, s.protocol, port, s.namespace.Stack().UnprivilegedPortStart()) {
+		return nil
+	}
+	if s.HasCapability(linux.CAP_NET_BIND_SERVICE, t) {
+		return nil
+	}
+	return syserr.ErrPermissionDenied
+}
+
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
+func (s *sock) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	if len(sockaddr) < 2 {
 		return syserr.ErrInvalidArgument
 	}
@@ -912,6 +956,23 @@ func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 		}
 
 		addr = s.mapFamily(addr, family)
+
+		if permErr := s.checkPrivilegedPort(t, addr.Port); permErr != nil {
+			// Linux's __inet_bind() validates the bind address before the
+			// privileged-port capability check, so binding a non-local unicast
+			// IPv4 address without CAP_NET_BIND_SERVICE fails with EADDRNOTAVAIL
+			// rather than EACCES. __inet6_bind() checks the port first, so
+			// AF_INET6 keeps EACCES. INADDR_ANY, broadcast and multicast are
+			// always valid bind addresses, so they fall through to EACCES too.
+			if family == linux.AF_INET && addr.Addr != header.IPv4Any &&
+				addr.Addr != header.IPv4Broadcast && !header.IsV4MulticastAddress(addr.Addr) {
+				if ns, ok := s.namespace.Stack().(*Stack); ok &&
+					ns.Stack.CheckLocalAddress(addr.NIC, ipv4.ProtocolNumber, addr.Addr) == 0 {
+					return syserr.ErrAddressNotAvailable
+				}
+			}
+			return permErr
+		}
 	}
 
 	// Issue the bind request to the endpoint.

@@ -142,6 +142,16 @@ type Stack interface {
 	// (inclusive).
 	SetPortRange(start uint16, end uint16) error
 
+	// UnprivilegedPortStart returns the lowest port (Linux
+	// net.ipv4.ip_unprivileged_port_start) that an AF_INET/AF_INET6 TCP or UDP
+	// socket may bind without CAP_NET_BIND_SERVICE. Ports below it are
+	// privileged.
+	UnprivilegedPortStart() uint16
+
+	// SetUnprivilegedPortStart sets the lowest unprivileged port (Linux
+	// net.ipv4.ip_unprivileged_port_start).
+	SetUnprivilegedPortStart(start uint16) error
+
 	// Stats returns the network stats.
 	Stats() tcpip.Stats
 
