@@ -556,7 +556,12 @@ func SetupDev(spec *specs.Spec, conf *config.Config, root, procPath string) erro
 		if !shouldMount {
 			continue
 		}
-		dst := filepath.Join(root, dev.Path)
+		// The rootfs may contain symlinks at dev.Path; resolve them within
+		// root so the mount point is never created outside the rootfs.
+		dst, err := ResolveSymlinks(root, dev.Path)
+		if err != nil {
+			return fmt.Errorf("resolving symlinks to %q: %v", dev.Path, err)
+		}
 		log.Infof("Mounting device %q as bind mount at %q", dev.Path, dst)
 		if err := specutils.SafeSetupAndMount(dev.Path, dst, "bind", unix.MS_BIND, procPath); err != nil {
 			return fmt.Errorf("mounting %q: %v", dev.Path, err)

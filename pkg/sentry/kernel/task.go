@@ -64,6 +64,9 @@ const (
 // by the task goroutine while it is running. The task goroutine does not
 // require synchronization to read or write these fields.
 //
+// A task's Kernel and ThreadGroup belong to the same TaskSet.
+//
+// +checklocksalias:tg.pidns.owner.mu=k.tasks.mu
 // +stateify savable
 type Task struct {
 	taskNode
