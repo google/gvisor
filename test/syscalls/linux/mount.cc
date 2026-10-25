@@ -1205,6 +1205,81 @@ TEST(MountTest, TmpfsSizeMmap) {
   EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds());
 }
 
+// Faulting in a page of a sparse file must not use much more of the mount's
+// size limit than the page itself, even if the preceding page was written by
+// write(2).
+TEST(MountTest, TmpfsSizeMmapFaultAfterWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr size_t kMountSize = 2 << 20;
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, absl::StrCat("size=", kMountSize), 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  ASSERT_THAT(ftruncate(fd.get(), 2 * kMountSize), SyscallSucceeds());
+  char c = 1;
+  ASSERT_THAT(pwrite(fd.get(), &c, 1, 0), SyscallSucceedsWithValue(1));
+  void* addr = mmap(NULL, 2 * kMountSize, PROT_READ, MAP_PRIVATE, fd.get(), 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  EXPECT_EQ(reinterpret_cast<volatile char*>(addr)[kPageSize], 0);
+  EXPECT_THAT(munmap(addr, 2 * kMountSize), SyscallSucceeds());
+  EXPECT_THAT(pwrite(fd.get(), &c, 1, 3 * kMountSize / 2),
+              SyscallSucceedsWithValue(1));
+}
+
+// Writing the start of a sparse file sequentially through a mapping must not
+// use much more of the mount's size limit than the pages written.
+TEST(MountTest, TmpfsSizeMmapShortSequentialWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr size_t kMountSize = 2 << 20;
+  constexpr size_t kWriteSize = 68 << 10;
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, absl::StrCat("size=", kMountSize), 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  ASSERT_THAT(ftruncate(fd.get(), 2 * kMountSize), SyscallSucceeds());
+  void* addr = mmap(NULL, 2 * kMountSize, PROT_READ | PROT_WRITE, MAP_SHARED,
+                    fd.get(), 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  for (size_t off = 0; off < kWriteSize; off += kPageSize) {
+    reinterpret_cast<volatile char*>(addr)[off] = 1;
+  }
+  EXPECT_THAT(munmap(addr, 2 * kMountSize), SyscallSucceeds());
+  char c = 1;
+  EXPECT_THAT(pwrite(fd.get(), &c, 1, 3 * kMountSize / 2),
+              SyscallSucceedsWithValue(1));
+}
+
+// Faulting in consecutive pages of a sparse file through separate mappings
+// must not grow a later fault's allocation beyond what those faults filled.
+TEST(MountTest, TmpfsSizeMmapSeparateSequentialFaults) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  constexpr size_t kMountSize = 2 << 20;
+  constexpr size_t kPages = 10;
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, absl::StrCat("size=", kMountSize), 0));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  ASSERT_THAT(ftruncate(fd.get(), 2 * kMountSize), SyscallSucceeds());
+  for (size_t i = 0; i < kPages; i++) {
+    void* addr = mmap(NULL, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
+                      fd.get(), i * kPageSize);
+    ASSERT_NE(addr, MAP_FAILED);
+    *reinterpret_cast<volatile char*>(addr) = 1;
+    EXPECT_THAT(munmap(addr, kPageSize), SyscallSucceeds());
+  }
+  void* addr = mmap(NULL, 2 * kMountSize, PROT_READ | PROT_WRITE, MAP_SHARED,
+                    fd.get(), 0);
+  ASSERT_NE(addr, MAP_FAILED);
+  reinterpret_cast<volatile char*>(addr)[kPages * kPageSize] = 1;
+  EXPECT_THAT(munmap(addr, 2 * kMountSize), SyscallSucceeds());
+  char c = 1;
+  EXPECT_THAT(pwrite(fd.get(), &c, 1, 3 * kMountSize / 2),
+              SyscallSucceedsWithValue(1));
+}
+
 TEST(MountTest, SimpleBind) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

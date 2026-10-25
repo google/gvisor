@@ -75,6 +75,14 @@ type regularFile struct {
 	// Protected by dataMu.
 	data fsutil.FileRangeSet
 
+	// seqFillStart and seqFillEnd bound the range that consecutive calls to
+	// Translate() have filled sequentially, used to size fills that continue
+	// it. seqFillEnd is 0 if there is no such range.
+	//
+	// Protected by dataMu.
+	seqFillStart uint64
+	seqFillEnd   uint64
+
 	// seals represents file seals on this inode.
 	//
 	// Protected by dataMu.
@@ -266,6 +274,9 @@ func (rf *regularFile) truncateNoTimeUpdateLocked(newSize uint64) error {
 	// and can remove them.
 	rf.dataMu.Lock()
 	decPages := rf.data.Truncate(newSize, rf.inode.fs.mf)
+	if decPages != 0 {
+		rf.seqFillEnd = 0
+	}
 	rf.dataMu.Unlock()
 	rf.inode.fs.unaccountPages(decPages)
 	return nil
@@ -352,6 +363,22 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	// the mount's size limit. This matches gofer.maxFillRange().
 	const maxFillBytes = 64 << 10 // 64 KiB
 	fillRange := maxOptionalRange(required, optional, maxFillBytes)
+	// A fault that starts where the previous fill ended, as when the file is
+	// written sequentially through a mapping, fills as much as has already
+	// been filled sequentially, up to maxSequentialFillBytes and without
+	// crossing a maxSequentialFillBytes boundary. Speculative allocation thus
+	// never exceeds what the file has already filled sequentially, while the
+	// file's pages stay contiguous in the MemoryFile, so that its freed pages
+	// are few large ranges rather than many small ones.
+	const maxSequentialFillBytes = 2 << 20 // 2 MiB
+	seq := rf.seqFillEnd != 0 && required.Start == rf.seqFillEnd
+	if seq {
+		fillSize := min(required.Start-rf.seqFillStart, maxSequentialFillBytes)
+		seqEnd := min(required.Start+fillSize, (required.Start|(maxSequentialFillBytes-1))+1)
+		if seqRange := optional.Intersect(memmap.MappableRange{required.Start, max(seqEnd, required.End)}); seqRange.Length() > fillRange.Length() {
+			fillRange = seqRange
+		}
+	}
 	pagesToFill := rf.data.PagesToFill(required, fillRange)
 	if !rf.inode.fs.accountPages(pagesToFill) {
 		// If we can not accommodate pagesToFill pages, then retry with just
@@ -363,14 +390,31 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		}
 		fillRange = required
 	}
+	// Fills that continue a sequential run may recycle waste pages: the
+	// application is writing through them and has already written at least
+	// as much, which bounds the committed pages it hasn't touched yet. Other
+	// fills stay uncommitted, so that sparse accesses commit only what they
+	// touch. Recycled pages are zeroed through a mapping, which for a
+	// disk-backed MemoryFile reads their discarded contents back from disk.
+	allocMode := pgalloc.AllocateUncommitted
+	if seq && !rf.inode.fs.mf.IsDiskBacked() {
+		allocMode = pgalloc.AllocateUncommittedOrRecycled
+	}
 	pagesAlloced, cerr := rf.data.Fill(ctx, required, fillRange, rf.size.RacyLoad(), rf.inode.fs.mf, pgalloc.AllocOpts{
 		Kind:    rf.memoryUsageKind,
 		MemCgID: memCgID,
+		Mode:    allocMode,
 		Huge:    mayHuge,
 	}, nil)
 	// rf.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
+	if pagesAlloced == pagesToFill && pagesToFill<<hostarch.PageShift == fillRange.Length() {
+		if !seq {
+			rf.seqFillStart = fillRange.Start
+		}
+		rf.seqFillEnd = fillRange.End
+	}
 
 	// translateRange bounds how far Translate extends the returned translation
 	// over pages that are *already* present, beyond the allocation-bounded

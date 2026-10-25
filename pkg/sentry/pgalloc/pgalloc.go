@@ -582,6 +582,12 @@ const (
 	// uncommitted pages.
 	AllocateUncommitted AllocationMode = iota
 
+	// AllocateUncommittedOrRecycled indicates that the caller of
+	// MemoryFile.Allocate() may not commit all allocated pages, but tolerates
+	// their commitment. Thus, Allocate() may return uncommitted pages, or
+	// recycled waste pages, which are committed.
+	AllocateUncommittedOrRecycled
+
 	// AllocateCallerIndirectCommit indicates that the caller of
 	// MemoryFile.Allocate() intends to commit all allocated pages, without
 	// using our page tables. Thus, Allocate() may return committed or
@@ -626,7 +632,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	alloc := allocState{
 		length:     length,
 		opts:       opts,
-		willCommit: opts.Mode != AllocateUncommitted,
+		willCommit: opts.Mode != AllocateUncommitted && opts.Mode != AllocateUncommittedOrRecycled,
 		huge:       opts.Huge && f.opts.ExpectHugepages,
 	}
 
@@ -636,7 +642,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	}
 
 	var dsts safemem.BlockSeq
-	if alloc.willCommit {
+	if alloc.willCommit || alloc.recycled {
 		needHugeTouch := false
 		if alloc.recycled {
 			// We will need writable page table entries in our address space to
@@ -752,7 +758,7 @@ func (f *MemoryFile) findAllocatableAndMarkUsed(alloc *allocState) (fr memmap.Fi
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if alloc.willCommit {
+	if alloc.opts.Mode != AllocateUncommitted {
 		// Try to recycle waste pages, since this avoids the overhead of
 		// decommitting and then committing them again.
 		var uwgap unwasteGapIterator
