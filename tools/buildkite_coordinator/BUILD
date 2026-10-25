@@ -19,7 +19,7 @@ go_binary(
         "storage.go",
         "timeout.go",
     ],
-    # Static binary to allow running under distroless Cloud Run image
+    # Static binary to allow running on any VM image
     pure = True,
     static = True,
     visibility = ["//visibility:public"],
