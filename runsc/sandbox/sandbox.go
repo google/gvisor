@@ -259,8 +259,15 @@ type Sandbox struct {
 	// Checkpointed will be true when the sandbox has been checkpointed.
 	Checkpointed bool `json:"checkpointed"`
 
-	// Restored will be true when the sandbox has been restored.
+	// Restored is set after the root restore RPC succeeds. Kernel restoration
+	// may still be waiting for subcontainers.
 	Restored bool `json:"restored"`
+
+	// DeferCheckpoint is true when the sandbox was prepared for a deferred
+	// checkpoint restore. It remains set in serialized container metadata so
+	// child restores can supply checkpoint files and refresh their bundle mounts
+	// before creating Gofers.
+	DeferCheckpoint bool `json:"deferCheckpoint,omitempty"`
 
 	// savingsMu protects the cached time saved by restoration.
 	savingsMu sync.Mutex `nojson:"true"`
@@ -606,8 +613,19 @@ func (d DirectIO) String() string {
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, directIO DirectIO, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, directIO DirectIO, background, deferCheckpoint bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
 	waitRegisteredMetrics := s.fetchRegisteredMetrics()
+	if deferCheckpoint {
+		if !s.NoRootContainer || !specutils.IsRootContainer(spec) {
+			return fmt.Errorf("defer-checkpoint requires the root container of a no-root sandbox")
+		}
+		if imagePath != "" {
+			return fmt.Errorf("image-path cannot be used with defer-checkpoint")
+		}
+		if s.FSRestore {
+			return fmt.Errorf("defer-checkpoint does not support split filesystem restore")
+		}
+	}
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -621,33 +639,23 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		log.Warningf("[Lifecycle CPU] Restore will run under the creation CPU limit: %v. This affects gVisor restore speed.", err)
 	}
 
-	if !s.FSRestore && HasFSCheckpointManifest(imagePath) {
-		return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
-	}
-
 	opt := sentryapi.RestoreOpts{
-		Background:     background,
-		SplitFSRestore: s.FSRestore,
+		Background:      background,
+		SplitFSRestore:  s.FSRestore,
+		DeferCheckpoint: deferCheckpoint,
 	}
 	defer func() {
 		for _, f := range opt.FilePayload.Files {
 			_ = f.Close()
 		}
 	}()
-	if directIO == DirectIOAuto && !specutils.NVProxyEnabled(spec, conf) {
-		directIO = DirectIOOff
-	}
-	if err := s.setRestoreOpts(conf, imagePath, directIO, &opt); err != nil {
-		return err
-	}
-
-	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDeviceFor(conf.Platform)); err != nil {
-		return err
-	} else if deviceFile != nil {
-		defer deviceFile.Close()
-		opt.HaveDeviceFile = true
-		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile.ReleaseToFile("device file"))
+	if !deferCheckpoint {
+		if directIO == DirectIOAuto && !specutils.NVProxyEnabled(spec, conf) {
+			directIO = DirectIOOff
+		}
+		if err := s.setRestoreOpts(conf, imagePath, directIO, &opt); err != nil {
+			return err
+		}
 	}
 
 	conn, err := s.sandboxConnect()
@@ -693,23 +701,44 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	}
 	s.RegisteredMetrics = registeredMetrics
 	s.Restored = true
+	if deferCheckpoint {
+		s.DeferCheckpoint = true
+	}
 	if !reply.KernelStarted {
 		return nil
 	}
 	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
+// setRestoreOpts opens checkpoint files and the optional platform device.
+// The caller must close files added to opt, including when an error is returned.
 func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, directIO DirectIO, opt *sentryapi.RestoreOpts) error {
+	if !s.FSRestore && HasFSCheckpointManifest(imagePath) {
+		return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
+	}
+
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-reads")
 	if err != nil {
 		return err
 	}
 	if clientSockFile == nil {
-		return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, directIO, opt)
+		if err := s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, directIO, opt); err != nil {
+			return err
+		}
+	} else {
+		log.Infof("Restoring from GCS via checkpoint gofer")
+		opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
+		opt.UseCheckpointGofer = true
 	}
-	log.Infof("Restoring from GCS via checkpoint gofer")
-	opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
-	opt.UseCheckpointGofer = true
+
+	// The platform device must follow the checkpoint files in the payload.
+	if deviceFile, err := deviceFileForPlatform(conf.Platform, conf.PlatformDeviceFor(conf.Platform)); err != nil {
+		return err
+	} else if deviceFile != nil {
+		defer deviceFile.Close()
+		opt.HaveDeviceFile = true
+		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile.ReleaseToFile("device file"))
+	}
 	return nil
 }
 
@@ -809,8 +838,11 @@ func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, ima
 }
 
 // RestoreSubcontainer sends the restore call for a sub-container in the sandbox.
-func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []specutils.GoferMountConf) error {
+func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestoreFiles []*os.File, devIOFile *os.File, goferMountConf []specutils.GoferMountConf, imagePath string, directIO DirectIO, background bool) error {
 	log.Debugf("Restore sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.Load())
+	if s.DeferCheckpoint && imagePath == "" {
+		return fmt.Errorf("deferred checkpoint restore requires an explicit child restore with --image-path")
+	}
 
 	if err := s.configureStdios(conf, stdios); err != nil {
 		return err
@@ -839,6 +871,38 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 		IsDevIoFilePresent:   devIOFile != nil,
 		GoferMountConfs:      goferMountConf,
 		FilePayload:          payload,
+	}
+	if s.DeferCheckpoint {
+		if s.FSRestore {
+			return fmt.Errorf("deferred checkpoint restore does not support split filesystem restore")
+		}
+		checkpointDir, err := filepath.Abs(imagePath)
+		if err != nil {
+			return fmt.Errorf("getting absolute checkpoint directory %q: %w", imagePath, err)
+		}
+		checkpoint := sentryapi.RestoreOpts{
+			Background:    background,
+			CheckpointDir: checkpointDir,
+		}
+		defer func() {
+			for _, f := range checkpoint.FilePayload.Files {
+				_ = f.Close()
+			}
+		}()
+		if directIO == DirectIOAuto && !specutils.NVProxyEnabled(spec, conf) {
+			directIO = DirectIOOff
+		}
+		if err := s.setRestoreOpts(conf, checkpointDir, directIO, &checkpoint); err != nil {
+			return err
+		}
+		// Copy options without files; URPC sends FDs in the outer payload.
+		// Retain checkpoint's file list for cleanup after the RPC returns.
+		checkpointArgs := checkpoint
+		checkpointArgs.FilePayload.Files = nil
+		args.Checkpoint = &checkpointArgs
+		// Keep checkpoint descriptors after the child stdio, gofer and device
+		// descriptors. The Sentry derives their count from the restore options.
+		args.FilePayload.Files = append(args.FilePayload.Files, checkpoint.FilePayload.Files...)
 	}
 	var reply sentryapi.RestoreReply
 	if err := s.call(sentryapi.ContMgrRestoreSubcontainer, &args, &reply); err != nil {
