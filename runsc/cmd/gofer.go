@@ -204,30 +204,38 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	g.syncFDs.syncChroot()
 	g.syncFDs.syncUsernsForRootless(uint32(g.uid), uint32(g.gid))
 
-	goferToHostRPCSock, err := unet.NewSocket(g.goferToHostRPCFD)
-	if err != nil {
-		util.Fatalf("creating rpc socket: %v", err)
+	// Only pass the FD if the gofer will actually need it.
+	var goferToHostRPC *urpc.Client
+	var mountOpener sandboxsetup.MountOpener
+	if g.goferToHostRPCFD >= 0 {
+		goferToHostRPCSock, err := unet.NewSocket(g.goferToHostRPCFD)
+		if err != nil {
+			util.Fatalf("creating rpc socket: %v", err)
+		}
+		goferToHostRPC = urpc.NewClient(goferToHostRPCSock)
+		mountOpener = makeRPCMountOpener(goferToHostRPC)
 	}
 
-	goferToHostRPC := urpc.NewClient(goferToHostRPCSock)
-	defer goferToHostRPC.Close()
-
+	var umounter *os.File
+	spawnUnmounter := g.setUpRoot && willReexec && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot
 	if g.setUpRoot {
 		// The /proc unmounter binary must be opened before SetupRootFS pivots
 		// away from the host filesystem.
-		var umounter *os.File
-		spawnUnmounter := willReexec && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot
 		if spawnUnmounter {
 			umounter = openProcUmounter()
 		}
-		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, makeRPCMountOpener(goferToHostRPC), containerID, g.bundleDir); err != nil {
+		if err := sandboxsetup.SetupRootFS(spec, conf, g.mountConfs, g.devIoFD, mountOpener, containerID, g.bundleDir); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
-		if spawnUnmounter {
-			cleanupUnmounter := g.syncFDs.spawnProcUnmounter(umounter)
-			umounter.Close()
-			defer cleanupUnmounter()
-		}
+	}
+	// No longer needed past rootfs setup.
+	if goferToHostRPC != nil {
+		goferToHostRPC.Close()
+	}
+	if spawnUnmounter {
+		cleanupUnmounter := g.syncFDs.spawnProcUnmounter(umounter)
+		umounter.Close()
+		defer cleanupUnmounter()
 	}
 	extensionPrepare, err := extension.PrepareGofer(extension.GoferPrepareContext{
 		Spec:        spec,
@@ -250,6 +258,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		overrides := g.syncFDs.flags()
 		overrides["apply-caps"] = "false"
 		overrides["setup-root"] = "false"
+		overrides["rpc-fd"] = "-1" // Skip the `goferToHostRPCFD >= 0` branch on re-exec.
 		for key, value := range extensionPrepare.FlagOverrides {
 			overrides[key] = value
 		}
@@ -258,11 +267,6 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		panic("unreachable")
 	}
 	// No re-exec from here on out.
-
-	// This can't happen until after setCapsAndCallSelf(), since otherwise the
-	// re-executed gofer may reuse goferToHostRPCFD's file descriptor for an
-	// unrelated file.
-	goferToHostRPC.Close()
 
 	// Start profiling. This will be a noop if no profiling arguments were passed.
 	// This *must* happen while procfs is still mounted (need `/proc/self/maps`).

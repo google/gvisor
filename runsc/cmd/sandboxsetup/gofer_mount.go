@@ -50,6 +50,8 @@ const vfioPathDir = "/dev/vfio"
 // point which has had the requested id mapping configured using mount_setattr().
 //
 // The caller is responsible for closing the returned file.
+//
+// If nil, the current process opens mount sources itself.
 type MountOpener func(m *specs.Mount, flags uint32) (*os.File, error)
 
 // NewSocket creates a unet.Socket from a file descriptor.
@@ -396,13 +398,17 @@ func SetupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		src := m.Source
 		var srcFile *os.File
 		if specutils.IsIDMappedMount(m) || unix.Access(src, unix.R_OK) != nil {
-			if mountOpener == nil {
-				return fmt.Errorf("cannot access mount source %q (or id mapped) and no mount opener provided", src)
+			switch {
+			case mountOpener != nil:
+				// The current process cannot open the source, or it
+				// is id-mapped, so need to open it through `mountOpener`.
+				srcFile, err = mountOpener(&m, flags)
+			case specutils.IsIDMappedMount(m):
+				return fmt.Errorf("cannot set up id-mapped mount source %q: no mount opener provided", src)
+			default:
+				// Open the source directly.
+				srcFile, err = os.OpenFile(src, unix.O_PATH|unix.O_CLOEXEC, 0)
 			}
-			// The current process doesn't have enough permissions
-			// to open the mount (or it is ID mapped), so let's try to open it via the
-			// caller-provided opener.
-			srcFile, err = mountOpener(&m, flags)
 			if err != nil {
 				return fmt.Errorf("opening %s: %w", m.Source, err)
 			}

@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path"
@@ -31,6 +32,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
@@ -150,6 +152,11 @@ type Container struct {
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
 	goferIsChild bool `nojson:"true"`
+
+	// goferRPCDone is closed once the gofer has reached the point where it
+	// no longer needs to make RPCs to its parent process.
+	// Set to nil if the RPC channel was never needed to begin with.
+	goferRPCDone chan struct{} `nojson:"true"`
 }
 
 // Args is used to configure a new container.
@@ -360,6 +367,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err := specutils.ExecuteHooks(c.Spec.Hooks.CreateRuntime, c.State()); err != nil {
 			return nil, err
 		}
+	}
+
+	if c.goferRPCDone != nil {
+		<-c.goferRPCDone // Wait until Gofer no longer needs us.
 	}
 
 	// Write the PID file. Containerd considers the call to create complete after
@@ -1650,24 +1661,34 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	}
 	donations.DonateAndClose("mounts-fd", mountsGofer)
 
-	rpcServ, rpcClnt, err := unet.SocketPair(false)
+	willNeedHostRPC, err := goferWillNeedHostRPC(c.Spec)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create an rpc socket pair: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("cannot determine whether the gofer needs gofer-to-host RPCs: %w", err)
 	}
-	rpcClntFD, _ := rpcClnt.Release()
-	donations.DonateAndClose("rpc-fd", os.NewFile(uintptr(rpcClntFD), "gofer-rpc"))
+
 	rpcPidCh := make(chan int, 1)
 	defer close(rpcPidCh)
-	go func() {
-		pid := <-rpcPidCh
-		if pid == 0 {
-			rpcServ.Close()
-			return
+	if willNeedHostRPC {
+		rpcServ, rpcClnt, err := unet.SocketPair(false)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to create an rpc socket pair: %w", err)
 		}
-		s := urpc.NewServer()
-		s.Register(&goferToHostRPC{goferPID: pid})
-		s.StartHandling(rpcServ)
-	}()
+		rpcClntFD, _ := rpcClnt.Release()
+		donations.DonateAndClose("rpc-fd", os.NewFile(uintptr(rpcClntFD), "gofer-rpc"))
+		goferRPCDone := make(chan struct{})
+		c.goferRPCDone = goferRPCDone
+		go func() {
+			defer close(goferRPCDone)
+			pid := <-rpcPidCh
+			if pid == 0 {
+				rpcServ.Close()
+				return
+			}
+			s := urpc.NewServer()
+			s.Register(&goferToHostRPC{goferPID: pid})
+			s.Handle(rpcServ)
+		}()
+	}
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0
@@ -2378,6 +2399,31 @@ func modifySpecForDirectfs(conf *config.Config, spec *specs.Spec) error {
 	spec.Linux.GIDMappings = gidMappings
 	logIDMappings(gidMappings, "GID")
 	return nil
+}
+
+// goferWillNeedHostRPC returns whether the gofer may need its setup process,
+// e.g. to open mounts that it cannot open itself (which need capabilities in
+// the initial user namespace, or different permissions).
+func goferWillNeedHostRPC(spec *specs.Spec) (bool, error) {
+	if slices.ContainsFunc(spec.Mounts, func(m specs.Mount) bool {
+		return specutils.IsIDMappedMount(m) || strings.HasPrefix(m.Source, "/proc/")
+	}) {
+		return true, nil
+	}
+	allIDs := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 0, Size: math.MaxUint32}}
+	for _, mapFileName := range []string{"uid_map", "gid_map"} {
+		mappings, err := getIdentityMapping(mapFileName)
+		if err != nil {
+			return false, err
+		}
+		if !slices.Equal(mappings, allIDs) {
+			return true, nil
+		}
+	}
+	if _, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
+		return !slices.Equal(spec.Linux.UIDMappings, allIDs) || !slices.Equal(spec.Linux.GIDMappings, allIDs), nil
+	}
+	return false, nil
 }
 
 func getIdentityMapping(mapFileName string) ([]specs.LinuxIDMapping, error) {
