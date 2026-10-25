@@ -72,7 +72,7 @@ import (
 )
 
 // tmpfs has some extra supported options that we must pass through.
-var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
+var tmpfsAllowedData = []string{"mode", "size", "uid", "gid", "huge"}
 
 func cgroupfsCPUDefaults(rawQuota, rawPeriod int64) map[string]int64 {
 	const defaultPeriod int64 = 100000
