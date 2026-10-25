@@ -95,6 +95,14 @@ type regularFile struct {
 	// alignment padding after seals.
 	initiallyUnlinked bool
 
+	// linkable is true if this file was created by open(O_TMPFILE) without
+	// O_EXCL and has not yet been given a name by linkat(2), in which case
+	// LinkAt may link it despite nlink == 0. It corresponds to Linux's
+	// I_LINKABLE inode state flag. linkable is set once by openTmpfile()
+	// before any other goroutine can observe the file, and is otherwise
+	// protected by filesystem.mu.
+	linkable bool
+
 	// memfd is true if this file was created using NewMemfd.
 	// Immutable; fits in padding.
 	memfd bool

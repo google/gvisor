@@ -1277,6 +1277,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:tmpfile_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:tuntap_test",
 )
 

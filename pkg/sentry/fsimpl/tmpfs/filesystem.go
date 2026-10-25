@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -281,13 +282,25 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		if err := vfs.MayLink(auth.CredentialsFromContext(ctx), linux.FileMode(i.mode.Load()), i.accessACL.Load(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
 			return err
 		}
-		if i.nlink.Load() == 0 {
-			return linuxerr.ENOENT
-		}
-		if i.nlink.Load() == maxLinks {
+		switch i.nlink.Load() {
+		case 0:
+			// A file created by open(O_TMPFILE) without O_EXCL may be given
+			// its first name here, as in Linux's fs/namei.c:vfs_link() for
+			// I_LINKABLE inodes.
+			rf, ok := i.impl.(*regularFile)
+			if !ok || !rf.linkable {
+				return linuxerr.ENOENT
+			}
+			rf.linkable = false
+			// i's links collectively hold a reference on i, which
+			// decLinksLocked() drops when the last link is removed.
+			i.incRef()
+			i.nlink.Store(1)
+		case maxLinks:
 			return linuxerr.EMLINK
+		default:
+			i.incLinksLocked()
 		}
-		i.incLinksLocked()
 		i.watches.Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
 		parentDir.insertChildLocked(fs.newDentry(i), name)
 		return nil
@@ -341,11 +354,6 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	if opts.Flags&linux.O_TMPFILE != 0 {
-		// Not yet supported.
-		return nil, linuxerr.EOPNOTSUPP
-	}
-
 	// Handle O_CREAT and !O_CREAT separately, since in the latter case we
 	// don't need fs.mu for writing.
 	if opts.Flags&linux.O_CREAT == 0 {
@@ -462,9 +470,60 @@ afterTrailingSymlink:
 	return child.open(ctx, rp, &opts, false)
 }
 
+// openTmpfile implements open(O_TMPFILE) on the directory d: it creates an
+// unnamed regular file in d and returns a FileDescription for it, as in
+// Linux's fs/namei.c:vfs_tmpfile(). VFS.OpenAt() has already checked that
+// opts.Flags specifies O_DIRECTORY and a writable access mode.
+func (d *dentry) openTmpfile(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
+	parentDir, ok := d.inode.impl.(*directory)
+	if !ok {
+		return nil, linuxerr.ENOTDIR
+	}
+	creds := rp.Credentials()
+	if err := parentDir.inode.checkPermissions(creds, vfs.MayWrite|vfs.MayExec); err != nil {
+		return nil, err
+	}
+	if err := rp.Mount().CheckBeginWrite(); err != nil {
+		return nil, err
+	}
+	defer rp.Mount().EndWrite()
+	fs := d.inode.fs
+	childInode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+	if err != nil {
+		return nil, err
+	}
+	childInode.nlink.Store(0)
+	rf := childInode.impl.(*regularFile)
+	rf.linkable = opts.Flags&linux.O_EXCL == 0
+	// As in Linux's fs/dcache.c:d_tmpfile(), the dentry is named after its
+	// inode number and is never inserted into the directory, but keeps the
+	// directory as its parent (holding a reference on it for as long as the
+	// dentry itself is referenced) so that scoped path resolution,
+	// /proc/[pid]/fd/* and inotify watches on the directory see the file as
+	// its deleted child.
+	child := fs.newDentry(childInode)
+	child.unnamedRefs = new(atomicbitops.Int64)
+	child.unnamedRefs.Store(1)
+	parentDir.inode.incRef()
+	defer child.DecRef(ctx)
+	genericSetParentAndName(fs, child, &parentDir.dentry, fmt.Sprintf("#%d", childInode.ino))
+	child.vfsd.MarkDeleted()
+	fd, err := child.open(ctx, rp, opts, true /* afterCreate */)
+	if err != nil {
+		return nil, err
+	}
+	fd.SetCreated()
+	return fd, nil
+}
+
 // Preconditions: The caller must hold no locks (since opening pipes may block
 // indefinitely).
 func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.OpenOptions, afterCreate bool) (*vfs.FileDescription, error) {
+	if !afterCreate && opts.Flags&linux.O_TMPFILE != 0 {
+		// d is the directory in which to create the unnamed file; afterCreate
+		// means d is that file.
+		return d.openTmpfile(ctx, rp, opts)
+	}
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if opts.FileExec {
 		_, isRegular := d.inode.impl.(*regularFile)
