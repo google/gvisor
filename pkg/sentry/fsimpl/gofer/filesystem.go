@@ -863,14 +863,14 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		// If the parent is a setgid directory, use the parent's GID
 		// rather than the caller's and enable setgid.
-		kgid := creds.EffectiveKGID
+		kgid := creds.FilesystemKGID
 		mode := opts.Mode
 		if parent.inode.mode.Load()&linux.S_ISGID != 0 {
 			kgid = auth.KGID(parent.inode.gid.Load())
 			mode |= linux.S_ISGID
 		}
 
-		child, err := parent.mkdir(ctx, name, mode, creds.EffectiveKUID, kgid, true /* createDentry */)
+		child, err := parent.mkdir(ctx, name, mode, creds.FilesystemKUID, kgid, true /* createDentry */)
 		if err == nil {
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
@@ -886,8 +886,8 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		child = fs.newSyntheticDentry(&createSyntheticOpts{
 			name: name,
 			mode: linux.S_IFDIR | opts.Mode,
-			kuid: creds.EffectiveKUID,
-			kgid: creds.EffectiveKGID,
+			kuid: creds.FilesystemKUID,
+			kgid: creds.FilesystemKGID,
 		})
 		if fs.opts.interop != InteropModeShared {
 			parent.incLinks()
@@ -901,8 +901,8 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		child := fs.newSyntheticDentry(&createSyntheticOpts{
 			name: name,
 			mode: linux.S_IFDIR | opts.Mode,
-			kuid: creds.EffectiveKUID,
-			kgid: creds.EffectiveKGID,
+			kuid: creds.FilesystemKUID,
+			kgid: creds.FilesystemKGID,
 		})
 		parent.incLinks()
 		return child, nil
@@ -938,16 +938,16 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			return fs.newSyntheticDentry(&createSyntheticOpts{
 				name:     name,
 				mode:     opts.Mode,
-				kuid:     creds.EffectiveKUID,
-				kgid:     creds.EffectiveKGID,
+				kuid:     creds.FilesystemKUID,
+				kgid:     creds.FilesystemKGID,
 				endpoint: opts.Endpoint,
 			}), nil
 		case linux.S_IFIFO:
 			return fs.newSyntheticDentry(&createSyntheticOpts{
 				name: name,
 				mode: opts.Mode,
-				kuid: creds.EffectiveKUID,
-				kgid: creds.EffectiveKGID,
+				kuid: creds.FilesystemKUID,
+				kgid: creds.FilesystemKGID,
 				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize),
 			}), nil
 		}
@@ -1371,12 +1371,12 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 	name := rp.Component()
 	// If the parent is a setgid directory, use the parent's GID rather
 	// than the caller's.
-	kgid := creds.EffectiveKGID
+	kgid := creds.FilesystemKGID
 	if d.inode.mode.Load()&linux.S_ISGID != 0 {
 		kgid = auth.KGID(d.inode.gid.Load())
 	}
 
-	child, h, err := d.openCreate(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, creds.EffectiveKUID, kgid, true /* createDentry */)
+	child, h, err := d.openCreate(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, creds.FilesystemKUID, kgid, true /* createDentry */)
 	if err != nil {
 		return nil, err
 	}

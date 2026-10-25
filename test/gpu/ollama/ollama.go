@@ -681,7 +681,7 @@ func (llm *Ollama) WarmModel(ctx context.Context, model *Model, keepWarmFor time
 		if err != nil {
 			return nil, fmt.Errorf("cannot find a replacement model to load instead of %q to forcefully unload it: %w", model.Name, err)
 		}
-		unloadCtx, unloadCancel := context.WithTimeout(ctx, 3*time.Minute)
+		unloadCtx, unloadCancel := context.WithTimeout(ctx, 5*time.Minute)
 		_, err = llm.Prompt(unloadCtx, &Prompt{Model: replacementModel, KeepModelAlive: 1 * time.Millisecond})
 		unloadCancel()
 		if err != nil {

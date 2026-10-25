@@ -73,7 +73,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 	} else {
 		// Fallback: check permission bits.
 		perms := uint16(mode.Permissions())
-		if creds.EffectiveKUID == kuid {
+		if creds.FilesystemKUID == kuid {
 			perms >>= 6
 		} else if creds.InGroup(kgid) {
 			perms >>= 3
@@ -244,13 +244,13 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 		}
 	}
 	if stat.Mask&linux.STATX_UID != 0 {
-		if !((creds.EffectiveKUID == kuid && auth.KUID(stat.UID) == kuid) ||
+		if !((creds.FilesystemKUID == kuid && auth.KUID(stat.UID) == kuid) ||
 			creds.HasCapabilityOnFile(linux.CAP_CHOWN, kuid, kgid)) {
 			return linuxerr.EPERM
 		}
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
-		if !((creds.EffectiveKUID == kuid && creds.InGroup(auth.KGID(stat.GID))) ||
+		if !((creds.FilesystemKUID == kuid && creds.InGroup(auth.KGID(stat.GID))) ||
 			creds.HasCapabilityOnFile(linux.CAP_CHOWN, kuid, kgid)) {
 			return linuxerr.EPERM
 		}
@@ -283,8 +283,8 @@ func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, paren
 	if parentMode&linux.ModeSticky == 0 {
 		return nil
 	}
-	if creds.EffectiveKUID == childKUID ||
-		creds.EffectiveKUID == parentKUID ||
+	if creds.FilesystemKUID == childKUID ||
+		creds.FilesystemKUID == parentKUID ||
 		creds.HasCapabilityOnFile(linux.CAP_FOWNER, childKUID, childKGID) {
 		return nil
 	}
@@ -295,7 +295,7 @@ func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, paren
 // given owning UID, consistent with Linux's
 // fs/inode.c:inode_owner_or_capable().
 func CanActAsOwner(creds *auth.Credentials, kuid auth.KUID) bool {
-	if creds.EffectiveKUID == kuid {
+	if creds.FilesystemKUID == kuid {
 		return true
 	}
 	return creds.HasSelfCapability(linux.CAP_FOWNER) && creds.UserNamespace.MapFromKUID(kuid).Ok()
