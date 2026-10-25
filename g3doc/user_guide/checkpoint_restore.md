@@ -73,31 +73,39 @@ described below require `--compression=none`.
 
 ### Exclude Committed Zero Pages
 
-By providing the `--exclude-committed-zero-pages` flag to `runsc checkpoint`,
-gVisor skips saving memory pages that are committed but contain only zeros. This
-can significantly reduce the checkpoint size for applications that have large,
-zero-filled memory regions (like LLMs), thereby speeding up restore. However, it
-may increase checkpoint duration, as it requires scanning all committed pages to
-determine if they are zero-filled.
+By default, `runsc checkpoint` skips saving memory pages that are committed but
+contain only zeros. This can significantly reduce the checkpoint size for
+applications that have large, zero-filled memory regions (like LLMs), thereby
+speeding up restore. However, it may increase checkpoint duration, as it
+requires scanning all committed pages to determine if they are zero-filled.
+Pass `--exclude-committed-zero-pages=false` to skip the scan.
 
 ### Direct I/O
 
-By providing the `--direct` flag to `runsc checkpoint` or `runsc restore`,
-gVisor uses `O_DIRECT` when writing or reading the pages file. This bypasses the
-host page cache. This optimization requires `--compression=none` during
-checkpoint. This is only supported on filesystems that support direct I/O.
+The `--direct-io` flag of `runsc restore` controls whether gVisor uses
+`O_DIRECT` when reading the pages file, bypassing the host page cache. This
+optimization requires `--compression=none` during checkpoint and is only
+supported on filesystems that support direct I/O.
 
 This is particularly advantageous when the snapshot is being read for the first
 time from disk and will not be restored on the same machine again, making
 caching in the host page cache undesirable.
 
+The default, `--direct-io=auto`, uses `O_DIRECT` for GPU restores if the
+filesystem containing the pages file supports it. `--direct-io=on` always uses
+`O_DIRECT` and `--direct-io=off` always reads through the page cache.
+
+`runsc checkpoint --direct` likewise uses `O_DIRECT` when writing the pages
+file.
+
 ### Background Restore
 
-By providing the `--background` flag to `runsc restore`, the application can
-start execution as soon as the kernel state is loaded. The remaining application
-memory and file data are restored asynchronously in the background while the
-application is running. This optimization requires `--compression=none` during
-checkpoint.
+By default, `runsc restore` lets the application start execution as soon as
+the kernel state is loaded. The remaining application memory and file data are
+restored asynchronously in the background while the application is running.
+This optimization requires `--compression=none` during checkpoint. Pass
+`--background=false` to make `runsc restore` wait for all data to be loaded
+instead.
 
 If the application accesses a memory page that has not yet been restored, gVisor
 prioritizes loading that page immediately to unblock the application thread.
