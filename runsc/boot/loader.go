@@ -992,6 +992,21 @@ func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if !ok {
 		return nil
 	}
+	// Honour net.ipv4.ip_unprivileged_port_start from the OCI spec. Docker (since
+	// 20.10) and containerd set it to 0 by default so non-root containers can
+	// bind low ports; leaving the netstack default of 1024 in force would
+	// regress them.
+	if l.root.spec != nil && l.root.spec.Linux != nil {
+		if val, ok := l.root.spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"]; ok {
+			start, err := strconv.ParseUint(val, 10, 16)
+			if err != nil {
+				return fmt.Errorf("invalid net.ipv4.ip_unprivileged_port_start=%q: %w", val, err)
+			}
+			if err := eps.SetUnprivilegedPortStart(uint16(start)); err != nil {
+				return fmt.Errorf("setting net.ipv4.ip_unprivileged_port_start=%q: %w", val, err)
+			}
+		}
+	}
 	if eps.Stack.IPTables() == nil {
 		eps.Stack.SetIPTables(netfilter.DefaultLinuxTables(eps.Stack.Clock(), eps.Stack.InsecureRNG()))
 	}

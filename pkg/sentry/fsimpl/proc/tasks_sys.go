@@ -106,11 +106,11 @@ func (fs *filesystem) newSysNetDir(ctx context.Context, root *auth.Credentials, 
 				"ip_forward":          fs.newInode(ctx, root, 0644, &ipForwarding{stack: stack, protocol: ipv4.ProtocolNumber}),
 				"ip_local_port_range": fs.newInode(ctx, root, 0644, &portRange{stack: stack}),
 
-				// Read-only: the Sentry enforces the Linux default and does not
-				// support moving the boundary. Exposing it lets a workload that
-				// reads this file to decide which ports need a capability see the
-				// value that is actually enforced, instead of an absent file.
-				"ip_unprivileged_port_start": fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", linux.PROT_SOCK))),
+				// Backed by the stack so the file reflects the boundary that is
+				// actually enforced: netstack reports its configured value and
+				// hostinet reports the host's. Writable (like ip_local_port_range)
+				// so a container runtime can set net.ipv4.ip_unprivileged_port_start.
+				"ip_unprivileged_port_start": fs.newInode(ctx, root, 0644, &ipUnprivilegedPortStart{stack: stack}),
 				"tcp_recovery":               fs.newInode(ctx, root, 0644, &tcpRecoveryData{stack: stack}),
 				"tcp_rmem":                   fs.newInode(ctx, root, 0644, &tcpMemData{stack: stack, dir: tcpRMem}),
 				"tcp_sack":                   fs.newInode(ctx, root, 0644, &tcpSackData{stack: stack}),
@@ -596,6 +596,48 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	}
 
 	if err := pr.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// ipUnprivilegedPortStart implements vfs.WritableDynamicBytesSource for
+// /proc/sys/net/ipv4/ip_unprivileged_port_start.
+//
+// +stateify savable
+type ipUnprivilegedPortStart struct {
+	kernfs.DynamicBytesFile
+
+	stack inet.Stack `state:"wait"`
+}
+
+var _ vfs.WritableDynamicBytesSource = (*ipUnprivilegedPortStart)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (ps *ipUnprivilegedPortStart) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	_, err := fmt.Fprintf(buf, "%d\n", ps.stack.UnprivilegedPortStart())
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (ps *ipUnprivilegedPortStart) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// No need to handle partial writes thus far.
+		return 0, linuxerr.EINVAL
+	}
+
+	ports := make([]int32, 1)
+	n, err := ParseInt32Vec(ctx, src, ports)
+	if err != nil || n == 0 {
+		return 0, err
+	}
+
+	// The boundary is a uint16.
+	if ports[0] < 0 || ports[0] > math.MaxUint16 {
+		return 0, linuxerr.EINVAL
+	}
+
+	if err := ps.stack.SetUnprivilegedPortStart(uint16(ports[0])); err != nil {
 		return 0, err
 	}
 	return n, nil

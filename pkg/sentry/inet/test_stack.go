@@ -42,6 +42,7 @@ type TestStack struct {
 	Recovery                     TCPLossRecovery
 	IPForwarding                 bool
 	AllowExternalLoopbackTraffic bool
+	UnprivilegedPortStartValue   uint16
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -234,6 +235,17 @@ func (*TestStack) PortRange() (uint16, uint16) {
 // SetPortRange implements Stack.
 func (*TestStack) SetPortRange(start uint16, end uint16) error {
 	// No-op.
+	return nil
+}
+
+// UnprivilegedPortStart implements Stack.
+func (s *TestStack) UnprivilegedPortStart() uint16 {
+	return s.UnprivilegedPortStartValue
+}
+
+// SetUnprivilegedPortStart implements Stack.
+func (s *TestStack) SetUnprivilegedPortStart(start uint16) error {
+	s.UnprivilegedPortStartValue = start
 	return nil
 }
 
