@@ -13,18 +13,15 @@
 // limitations under the License.
 
 #include <stdint.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
-#include <syscall.h>
 #include <time.h>
 #include <unistd.h>
 
-#include <map>
 #include <string>
-#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -59,15 +56,14 @@ TEST_P(MonotonicVDSOClockTest, IsCorrect) {
   // monotonic.
   struct timespec tvdso, tsys;
   absl::Time vdso_time, sys_time;
-  ASSERT_THAT(syscall(__NR_clock_gettime, GetParam(), &tsys),
-              SyscallSucceeds());
+  ASSERT_THAT(syscall(SYS_clock_gettime, GetParam(), &tsys), SyscallSucceeds());
   sys_time = absl::TimeFromTimespec(tsys);
   auto end = absl::Now() + absl::Seconds(10);
   while (absl::Now() < end) {
     ASSERT_THAT(clock_gettime(GetParam(), &tvdso), SyscallSucceeds());
     vdso_time = absl::TimeFromTimespec(tvdso);
     EXPECT_LE(sys_time, vdso_time);
-    ASSERT_THAT(syscall(__NR_clock_gettime, GetParam(), &tsys),
+    ASSERT_THAT(syscall(SYS_clock_gettime, GetParam(), &tsys),
                 SyscallSucceeds());
     sys_time = absl::TimeFromTimespec(tsys);
     EXPECT_LE(vdso_time, sys_time);

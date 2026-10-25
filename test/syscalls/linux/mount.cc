@@ -31,6 +31,7 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/sysmacros.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <sys/vfs.h>
 #include <sys/wait.h>
@@ -43,12 +44,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <iostream>
-#include <memory>
-#include <ostream>
 #include <string>
-#include <tuple>
-#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -57,13 +53,10 @@
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_format.h"
-#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"

@@ -33,6 +33,7 @@
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
@@ -868,6 +869,7 @@ TEST(ExecTest, ExecveArgvE2BIG) {
 TEST(ExecTest, ExecveEnvvE2BIG) {
   std::string long_env(128 * 1024, 'B');
   std::vector<std::string> envv;
+  envv.reserve(17);
   for (int i = 0; i < 17; i++) {
     envv.push_back("VAR=" + long_env);
   }
