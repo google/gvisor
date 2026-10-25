@@ -3200,7 +3200,8 @@ func (j *jobInstance) StateTypeName() string {
 
 func (j *jobInstance) StateFields() []string {
 	return []string{
-		"earlyReturn",
+		"deadline",
+		"done",
 	}
 }
 
@@ -3209,14 +3210,16 @@ func (j *jobInstance) beforeSave() {}
 // +checklocksignore
 func (j *jobInstance) StateSave(stateSinkObject state.Sink) {
 	j.beforeSave()
-	stateSinkObject.Save(0, &j.earlyReturn)
+	stateSinkObject.Save(0, &j.deadline)
+	stateSinkObject.Save(1, &j.done)
 }
 
 func (j *jobInstance) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (j *jobInstance) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &j.earlyReturn)
+	stateSourceObject.Load(0, &j.deadline)
+	stateSourceObject.Load(1, &j.done)
 }
 
 func (j *Job) StateTypeName() string {

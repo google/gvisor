@@ -14,7 +14,6 @@ func (mc *ManualClock) StateTypeName() string {
 
 func (mc *ManualClock) StateFields() []string {
 	return []string{
-		"runningTimers",
 		"mu",
 	}
 }
@@ -24,16 +23,16 @@ func (mc *ManualClock) beforeSave() {}
 // +checklocksignore
 func (mc *ManualClock) StateSave(stateSinkObject state.Sink) {
 	mc.beforeSave()
-	stateSinkObject.Save(0, &mc.runningTimers)
-	stateSinkObject.Save(1, &mc.mu)
+	muValue := mc.saveMu()
+	_ = (int64)(muValue)
+	stateSinkObject.SaveValue(0, muValue)
 }
 
 func (mc *ManualClock) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (mc *ManualClock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mc.runningTimers)
-	stateSourceObject.Load(1, &mc.mu)
+	stateSourceObject.LoadValue(0, new(int64), func(y any) { mc.loadMu(ctx, y.(int64)) })
 }
 
 func init() {
