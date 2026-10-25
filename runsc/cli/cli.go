@@ -236,7 +236,7 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	} else {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
-		emitters = append(emitters, newEmitter("text", io.Discard))
+		emitters = append(emitters, discardEmitter{})
 	}
 
 	if *panicLogFD > -1 || *debugLogFD > -1 {
@@ -332,6 +332,12 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	log.Warningf("Failure to execute command, err: %v", subCmdCode)
 	os.Exit(128)
 }
+
+// discardEmitter drops logs without formatting them.
+type discardEmitter struct{}
+
+// Emit implements log.Emitter.Emit.
+func (discardEmitter) Emit(int, log.Level, time.Time, string, ...any) {}
 
 func newEmitter(format string, logFile io.Writer) log.Emitter {
 	switch format {
