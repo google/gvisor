@@ -341,10 +341,8 @@ func makeIPv6TCPPacket(reserved int, ipv6Fields *header.IPv6Fields, tcpFields *h
 
 	// Calculates the TCP checksum using the pseudo-header and sets it in the TCP header.
 	tcpHdr.SetChecksum(^tcpHdr.CalculateChecksum(header.PseudoHeaderChecksum(
-		// Next header is supposed to be in pseudo-header calculation for IPv6
-		// transport protocol checksum, not the transport protocol number according
-		// to RFC 2460 (https://www.rfc-editor.org/rfc/rfc2460.html#section-8.1).
-		header.IPv6(pkt.NetworkHeader().Slice()).TransportProtocol(),
+		// No extension headers separate the IPv6 and TCP headers here.
+		tcpip.TransportProtocolNumber(header.IPv6(pkt.NetworkHeader().Slice()).NextHeader()),
 		ipv6Fields.SrcAddr,
 		ipv6Fields.DstAddr,
 		uint16(ipv6Fields.PayloadLength),

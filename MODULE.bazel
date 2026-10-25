@@ -254,7 +254,10 @@ img_pull(
         "linux/amd64",
         "linux/arm64",
     ],
-    registry = "index.docker.io",
+    registries = [
+        "mirror.gcr.io",
+        "index.docker.io",
+    ],
     repository = "library/alpine",
     tag = "3.11.5",
 )
@@ -267,7 +270,10 @@ img_pull(
         "linux/amd64",
         "linux/arm64",
     ],
-    registry = "index.docker.io",
+    registries = [
+        "mirror.gcr.io",
+        "index.docker.io",
+    ],
     repository = "library/busybox",
     tag = "1.31.1",
 )
@@ -402,6 +408,7 @@ use_repo(
     "org_golang_x_sys",
     "org_golang_x_telemetry",
     "org_golang_x_term",
+    "org_golang_x_text",
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_golang_x_xerrors",
