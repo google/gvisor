@@ -110,6 +110,7 @@ go_library(
         "//pkg/fdchannel",
         "//pkg/flipcall",
         "//pkg/fspath",
+        "//pkg/gomaxprocs",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal/primitive",

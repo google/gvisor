@@ -20,12 +20,12 @@ package slimvm
 import (
 	"fmt"
 	"reflect"
-	"runtime"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -67,12 +67,12 @@ func (m *machine) dropPageTables(pcid uint16) {
 	dropPCID(pcid)
 }
 
-// getMaxVCPU sets m.maxVCPUs from GOMAXPROCS and the configured application
-// cores, bounded by the _SLIMVM_NR_VCPUS hard cap.
+// getMaxVCPU sets m.maxVCPUs from base GOMAXPROCS and the configured
+// application cores, bounded by the _SLIMVM_NR_VCPUS hard cap.
 func (m *machine) getMaxVCPU() {
 	// Allow a CPU overcommit factor of ~3, but give explicitly-configured
 	// application cores their own vCPU with room to spare (factor of 2).
-	n := 3 * runtime.GOMAXPROCS(0)
+	n := 3 * gomaxprocs.Base()
 	if d := 2 * m.applicationCores; n < d {
 		n = d
 	}

@@ -62,6 +62,7 @@ go_library(
         "//pkg/erofs",
         "//pkg/errors/linuxerr",
         "//pkg/fspath",
+        "//pkg/gomaxprocs",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",

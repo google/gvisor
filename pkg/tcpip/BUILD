@@ -73,6 +73,7 @@ deps_test(
         "//pkg/cpuid",
         "//pkg/gohacks",
         "//pkg/goid",
+        "//pkg/gomaxprocs",
         "//pkg/ilist",
         "//pkg/linewriter",
         "//pkg/log",
