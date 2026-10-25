@@ -152,12 +152,8 @@ func (i *fdDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 //
 // +checklocksexclude:i.fdDir.task.mu
 func (i *fdDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	fdInt, err := strconv.ParseInt(name, 10, 32)
-	if err != nil {
-		return nil, linuxerr.ENOENT
-	}
-	fd := int32(fdInt)
-	if !taskFDExists(ctx, i.fs, i.task, fd) {
+	fd, ok := parseIDName(name)
+	if !ok || !taskFDExists(ctx, i.fs, i.task, fd) {
 		return nil, linuxerr.ENOENT
 	}
 	return i.fs.newFDSymlink(ctx, i.task, fd, i.fs.NextIno()), nil
@@ -306,12 +302,8 @@ func (fs *filesystem) newFDInfoDirInode(ctx context.Context, task *kernel.Task) 
 //
 // +checklocksexclude:i.fdDir.task.mu
 func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	fdInt, err := strconv.ParseInt(name, 10, 32)
-	if err != nil {
-		return nil, linuxerr.ENOENT
-	}
-	fd := int32(fdInt)
-	if !taskFDExists(ctx, i.fs, i.task, fd) {
+	fd, ok := parseIDName(name)
+	if !ok || !taskFDExists(ctx, i.fs, i.task, fd) {
 		return nil, linuxerr.ENOENT
 	}
 	data := &fdInfoData{
