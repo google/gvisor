@@ -517,10 +517,6 @@ func (s *sender) updateRTO(rtt time.Duration) {
 // resendSegment resends the first unacknowledged segment.
 // +checklocks:s.ep.mu
 func (s *sender) resendSegment() {
-	// Don't use any segments we already sent to measure RTT as they may
-	// have been affected by packets being lost.
-	s.RTTMeasureSeqNum = s.SndNxt
-
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
 		if seg.payloadSize() > s.MaxPayloadSize {
@@ -1830,6 +1826,10 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 // +checklocks:s.ep.mu
 func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	if seg.xmitCount > 0 {
+		// Karn's algorithm excludes ambiguous RTT samples after a
+		// retransmission, including a tail loss probe (RFC 6298, section 3).
+		// Timestamp-based samples are selected separately by the ACK path.
+		s.RTTMeasureSeqNum = s.SndNxt
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
 		s.ep.stats.SendErrors.Retransmits.Increment()
 		if s.SndCwnd < s.Ssthresh {
