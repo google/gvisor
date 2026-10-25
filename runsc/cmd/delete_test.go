@@ -16,20 +16,26 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/sandbox"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func TestNotFound(t *testing.T) {
@@ -186,7 +192,7 @@ func TestStateBootingSandbox(t *testing.T) {
 	id, exited := startUnresponsiveSandbox(t, rootDir, container.Created)
 	load := func() *container.Container {
 		t.Helper()
-		c, err := container.Load(rootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+		c, err := container.Load(rootDir, container.FullID{ContainerID: id}, container.LoadOpts{ReadOnly: true})
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -206,10 +212,18 @@ func TestStateBootingSandbox(t *testing.T) {
 }
 
 // TestListUnresponsiveSandbox checks that `runsc list` on an unresponsive
-// sandbox still works.
+// sandbox still works, even while another command holds its state file lock.
 func TestListUnresponsiveSandbox(t *testing.T) {
 	rootDir := t.TempDir()
 	id, _ := startUnresponsiveSandbox(t, rootDir, container.Running)
+	lockFile, err := os.OpenFile(filepath.Join(rootDir, fmt.Sprintf("%s_sandbox:%s.lock", id, id)), os.O_CREATE|os.O_RDONLY, 0644)
+	if err != nil {
+		t.Fatalf("error opening lock file: %v", err)
+	}
+	defer lockFile.Close()
+	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
+		t.Fatalf("error locking state file: %v", err)
+	}
 	var out bytes.Buffer
 	l := List{format: "text"}
 	if err := l.execute(rootDir, &out); err != nil {
@@ -217,5 +231,93 @@ func TestListUnresponsiveSandbox(t *testing.T) {
 	}
 	if !regexp.MustCompile(id + `\s+\d+\s+running`).Match(out.Bytes()) {
 		t.Errorf("list output doesn't show %q as running:\n%s", id, out.String())
+	}
+}
+
+// startFakeSandbox writes the state of a created container with a sandbox
+// process that has no control socket.
+// It returns the container ID, and a channel closed when the sandbox process
+// exits.
+// `reusedPID` makes the state contain a different process identity under the
+// same PID.
+func startFakeSandbox(t *testing.T, rootDir string, reusedPID bool) (string, <-chan struct{}) {
+	t.Helper()
+	proc := exec.Command("/bin/sleep", "1000")
+	if err := proc.Start(); err != nil {
+		t.Fatalf("error starting fake sandbox process: %v", err)
+	}
+	t.Cleanup(func() { proc.Process.Kill() })
+	exited := make(chan struct{})
+	go func() {
+		proc.Wait()
+		close(exited)
+	}()
+	identity, err := specutils.ProcessIdentity(proc.Process.Pid)
+	if err != nil {
+		t.Fatalf("error getting fake sandbox process identity: %v", err)
+	}
+	if reusedPID {
+		identity = math.MaxUint64
+	}
+	const id = "booting"
+	c := &container.Container{
+		ID:     id,
+		Status: container.Created,
+		Spec:   &specs.Spec{},
+		Saver: container.StateFile{
+			RootDir: rootDir,
+			ID:      container.FullID{SandboxID: id, ContainerID: id},
+		},
+		Sandbox: &sandbox.Sandbox{
+			ID:                id,
+			PidIdentity:       identity,
+			ControlSocketPath: filepath.Join(rootDir, "control.sock"),
+			MountHints:        &sentryapi.PodMountHints{},
+		},
+	}
+	c.Sandbox.Pid.Store(proc.Process.Pid)
+	state, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("error marshalling container state: %v", err)
+	}
+	path := filepath.Join(rootDir, fmt.Sprintf("%s_sandbox:%s.state", id, id))
+	if err := os.WriteFile(path, state, 0644); err != nil {
+		t.Fatalf("error writing state file %q: %v", path, err)
+	}
+	return id, exited
+}
+
+// TestReadOnlyContainerIsNotWritable checks that a container loaded read-only
+// cannot be destroyed.
+func TestReadOnlyContainerIsNotWritable(t *testing.T) {
+	rootDir := t.TempDir()
+	id, _ := startFakeSandbox(t, rootDir, false)
+	c, err := container.Load(rootDir, container.FullID{ContainerID: id}, container.LoadOpts{SkipCheck: true, ReadOnly: true})
+	if err != nil {
+		t.Fatalf("error loading container: %v", err)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Errorf("destroying a container loaded read-only didn't panic")
+		}
+	}()
+	c.Destroy()
+}
+
+// TestDeleteReusedPID checks that deleting a container doesn't kill a process
+// that reused its sandbox's PID.
+func TestDeleteReusedPID(t *testing.T) {
+	rootDir := t.TempDir()
+	id, exited := startFakeSandbox(t, rootDir, true)
+	f := flag.NewFlagSet("test", flag.ContinueOnError)
+	f.Parse([]string{id})
+	d := Delete{}
+	if err := d.execute(f, &config.Config{RootDir: rootDir}); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+	select {
+	case <-exited:
+		t.Errorf("delete killed the process that reused the sandbox PID")
+	case <-time.After(500 * time.Millisecond):
 	}
 }

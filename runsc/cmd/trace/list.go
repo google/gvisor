@@ -58,6 +58,7 @@ func (l *list) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	opts := container.LoadOpts{
 		SkipCheck:     true,
+		ReadOnly:      true,
 		RootContainer: true,
 	}
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, opts)

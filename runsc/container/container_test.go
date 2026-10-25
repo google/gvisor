@@ -292,7 +292,7 @@ func TestSetOOMScoreAdjPermissionDenied(t *testing.T) {
 	if !errors.Is(err, unix.EACCES) {
 		t.Fatalf("opening PID 1's oom_score_adj: %v, want EACCES", err)
 	}
-	if running, err := specutils.IsProcessRunning(1); err != nil || !running {
+	if running, err := specutils.IsProcessRunning(1, 0); err != nil || !running {
 		t.Fatalf("IsProcessRunning(1) = (%t, %v), want (true, nil)", running, err)
 	}
 	if err := setOOMScoreAdj(1, 1000); !errors.Is(err, unix.EACCES) {
@@ -4520,7 +4520,7 @@ func TestSaveSystemdCgroup(t *testing.T) {
 	defer cont.Destroy()
 
 	cont.CompatCgroup = cgroup.CgroupJSON{Cgroup: cgroup.CreateMockSystemdCgroup()}
-	if err := cont.Saver.lock(BlockAcquire); err != nil {
+	if err := cont.Saver.lock(); err != nil {
 		t.Fatalf("cannot lock container metadata file: %v", err)
 	}
 	if err := cont.saveLocked(); err != nil {

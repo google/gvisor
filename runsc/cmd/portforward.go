@@ -86,7 +86,7 @@ func (p *PortForward) SetFlags(f *flag.FlagSet) {
 
 // FetchSpec implements util.SubCommand.FetchSpec.
 func (p *PortForward) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
-	c, err := p.loadContainer(conf, f, container.LoadOpts{})
+	c, err := p.loadContainer(conf, f, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		return "", nil, fmt.Errorf("loading container: %w", err)
 	}
@@ -104,7 +104,7 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 
 	portStr := f.Arg(1)
 
-	c, err := p.loadContainer(conf, f, container.LoadOpts{})
+	c, err := p.loadContainer(conf, f, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}

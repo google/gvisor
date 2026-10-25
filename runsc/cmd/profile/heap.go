@@ -67,6 +67,7 @@ func (h *heap) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	opts := container.LoadOpts{
 		SkipCheck:     true,
+		ReadOnly:      true,
 		RootContainer: true,
 	}
 	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, opts)
