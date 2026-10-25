@@ -438,17 +438,21 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		return parentCgroup, err
 	}
 	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
+		specFile, err := specutils.CopySpec(args.Spec)
+		if err != nil {
+			return fmt.Errorf("cannot copy spec file: %w", err)
+		}
+		defer specFile.Close()
 		// No rootfs and no mounts, so nothing for a gofer to serve.
 		// Subcontainers get their own.
 		var (
 			ioFiles         []*os.File
 			goferFilestores []*os.File
 			devIOFile       *os.File
-			specFile        *os.File
+			mountsFile      *os.File
 		)
 		if !args.NoRootContainer {
-			var err error
-			ioFiles, goferFilestores, devIOFile, specFile, err = c.createGoferProcess(conf, mountHints, args.Attached, cloneIntoCgroupFD)
+			ioFiles, goferFilestores, devIOFile, mountsFile, err = c.createGoferProcess(conf, specFile, mountHints, args.Attached, cloneIntoCgroupFD)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
 			}
@@ -464,7 +468,8 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			UserLog:             args.UserLog,
 			IOFiles:             ioFiles,
 			DevIOFile:           devIOFile,
-			MountsFile:          specFile,
+			SpecFile:            specFile,
+			MountsFile:          mountsFile,
 			Cgroup:              containerCgroup,
 			CPULimits:           cpuLimits,
 			CloneIntoCgroupFD:   cloneIntoCgroupFD,
@@ -560,7 +565,12 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		// the start (and all their children processes).
 		err = cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
-			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
+			specFile, err := specutils.CopySpec(c.Spec)
+			if err != nil {
+				return fmt.Errorf("cannot copy spec file: %w", err)
+			}
+			defer specFile.Close()
+			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, specFile, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
 			if err != nil {
 				return err
 			}
@@ -1541,7 +1551,7 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
 	rootfsHint, err := sentryapi.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1651,12 +1661,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	cmd.Args = append(cmd.Args, "gofer", "--bundle", c.BundleDir)
 	cmd.Args = append(cmd.Args, "--gofer-mount-confs="+c.GoferMountConfs.String())
 
-	// Open the spec file to donate to the sandbox.
-	specFile, err := specutils.OpenSpec(c.BundleDir)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("opening spec file: %v", err)
-	}
-	donations.DonateAndClose("spec-fd", specFile)
+	donations.Donate("spec-fd", specFile)
 
 	// Donate any profile FDs to the gofer.
 	if err := profile.DonateProfileFDs(conf, &donations, true /* isGofer */, lfOpts); err != nil {

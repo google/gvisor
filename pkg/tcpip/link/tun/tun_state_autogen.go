@@ -84,8 +84,6 @@ func (e *tunEndpoint) StateFields() []string {
 	return []string{
 		"tunEndpointRefs",
 		"Endpoint",
-		"stack",
-		"nicID",
 		"name",
 		"isTap",
 		"persistent",
@@ -100,25 +98,22 @@ func (e *tunEndpoint) StateSave(stateSinkObject state.Sink) {
 	e.beforeSave()
 	stateSinkObject.Save(0, &e.tunEndpointRefs)
 	stateSinkObject.Save(1, &e.Endpoint)
-	stateSinkObject.Save(2, &e.stack)
-	stateSinkObject.Save(3, &e.nicID)
-	stateSinkObject.Save(4, &e.name)
-	stateSinkObject.Save(5, &e.isTap)
-	stateSinkObject.Save(6, &e.persistent)
-	stateSinkObject.Save(7, &e.closed)
+	stateSinkObject.Save(2, &e.name)
+	stateSinkObject.Save(3, &e.isTap)
+	stateSinkObject.Save(4, &e.persistent)
+	stateSinkObject.Save(5, &e.closed)
 }
+
+func (e *tunEndpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (e *tunEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.tunEndpointRefs)
 	stateSourceObject.Load(1, &e.Endpoint)
-	stateSourceObject.Load(2, &e.stack)
-	stateSourceObject.Load(3, &e.nicID)
-	stateSourceObject.Load(4, &e.name)
-	stateSourceObject.Load(5, &e.isTap)
-	stateSourceObject.Load(6, &e.persistent)
-	stateSourceObject.Load(7, &e.closed)
-	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
+	stateSourceObject.Load(2, &e.name)
+	stateSourceObject.Load(3, &e.isTap)
+	stateSourceObject.Load(4, &e.persistent)
+	stateSourceObject.Load(5, &e.closed)
 }
 
 func (r *tunEndpointRefs) StateTypeName() string {

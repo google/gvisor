@@ -185,10 +185,11 @@ type Sandbox struct {
 	// started, before it may be modified.
 	OriginalOOMScoreAdj int `json:"originalOomScoreAdj"`
 
-	// RegisteredMetrics is the set of metrics registered in the sandbox.
-	// Used for verifying metric data integrity after containers are started.
-	// Only populated if exporting metrics was requested when the sandbox was
-	// created.
+	// RegisteredMetrics is the set of metrics registered in the sandbox before
+	// it starts running untrusted code, so that a compromised sandbox cannot
+	// produce bogus metrics.
+	// Set when the root container starts/is restored,
+	// if the sandbox is configured to export metrics at all.
 	RegisteredMetrics *metricpb.MetricRegistration `json:"registeredMetrics"`
 
 	// MetricMetadata are key-value pairs that are useful to export about this
@@ -307,6 +308,9 @@ type Args struct {
 	// MountHints provides extra information about containers mounts that apply
 	// to the entire pod.
 	MountHints *sentryapi.PodMountHints
+
+	// SpecFile is a specutils.CopySpec copy of Spec. Caller closes it.
+	SpecFile *os.File
 
 	// MountsFile is a file container mount information from the spec. It's
 	// equivalent to the mounts from the spec, except that all paths have been
@@ -429,17 +433,6 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		return nil, fmt.Errorf("cannot read client sync file: %w", err)
 	}
 
-	if conf.MetricServer != "" {
-		// The control server is up and the sandbox was configured to export metrics.
-		// We must gather data about registered metrics prior to any process starting in the sandbox.
-		log.Debugf("Getting metric registration information from sandbox %q", s.ID)
-		var registeredMetrics controlapi.MetricsRegistrationResponse
-		if err := s.call(sentryapi.MetricsGetRegistered, nil, &registeredMetrics); err != nil {
-			return nil, fmt.Errorf("cannot get registered metrics: %v", err)
-		}
-		s.RegisteredMetrics = registeredMetrics.RegisteredMetrics
-	}
-
 	c.Release()
 	return s, nil
 }
@@ -483,6 +476,7 @@ func getDisableIPv6(spec *specs.Spec) (bool, error) {
 
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
+	waitRegisteredMetrics := s.fetchRegisteredMetrics()
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -504,10 +498,16 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 		return fmt.Errorf("setting up network: %w", err)
 	}
 
+	registeredMetrics, err := waitRegisteredMetrics()
+	if err != nil {
+		return err
+	}
+
 	// Send a message to the sandbox control server to start the root container.
 	if err := conn.Call(sentryapi.ContMgrRootContainerStart, &s.ID, nil); err != nil {
 		return fmt.Errorf("starting root container: %w", err)
 	}
+	s.RegisteredMetrics = registeredMetrics
 	return s.applyAppCPULimit(cpuPhaseCreation)
 }
 
@@ -568,6 +568,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 
 // Restore sends the restore call for a container in the sandbox.
 func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+	waitRegisteredMetrics := s.fetchRegisteredMetrics()
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -632,6 +633,11 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		}
 	}
 
+	registeredMetrics, err := waitRegisteredMetrics()
+	if err != nil {
+		return err
+	}
+
 	// Restore the container and start the root container.
 	var reply sentryapi.RestoreReply
 	if err := conn.Call(sentryapi.ContMgrRestore, &opt, &reply); err != nil {
@@ -642,6 +648,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		}
 		return fmt.Errorf("restoring container %q: %w", cid, err)
 	}
+	s.RegisteredMetrics = registeredMetrics
 	s.Restored = true
 	if !reply.KernelStarted {
 		return nil
@@ -1193,11 +1200,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	log.Infof("Control socket path: %q", s.ControlSocketPath)
 	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
-	specFile, err := specutils.OpenSpec(args.BundleDir)
-	if err != nil {
-		return fmt.Errorf("cannot open spec file in bundle dir %v: %w", args.BundleDir, err)
-	}
-	donations.DonateAndClose("spec-fd", specFile)
+	donations.Donate("spec-fd", args.SpecFile)
 
 	if err := donations.DonateLogFile("pod-init-config-fd", conf.PodInitConfig, os.O_RDONLY, lfOpts); err != nil {
 		return err
@@ -2655,16 +2658,23 @@ func (s *Sandbox) UsageFD() (*controlapi.MemoryUsageRecord, error) {
 	return controlapi.NewMemoryUsageRecord(*m.FilePayload.Files[0], *m.FilePayload.Files[1])
 }
 
-// GetRegisteredMetrics returns metric registration data from the sandbox.
-// This data is meant to be used as a way to sanity-check any exported metrics data during the
-// lifetime of the sandbox in order to avoid a compromised sandbox from being able to produce
-// bogus metrics.
-// This returns an error if the sandbox has not requested instrumentation during creation time.
-func (s *Sandbox) GetRegisteredMetrics() (*metricpb.MetricRegistration, error) {
-	if s.RegisteredMetrics == nil {
-		return nil, errors.New("sandbox did not request instrumentation when it was created")
+// fetchRegisteredMetrics starts fetching the metrics registered in the
+// sandbox, if it exports metrics.
+// Must be called before untrusted code starts running in the sandbox.
+func (s *Sandbox) fetchRegisteredMetrics() func() (*metricpb.MetricRegistration, error) {
+	if s.MetricServerAddress == "" {
+		return func() (*metricpb.MetricRegistration, error) { return nil, nil } // No-op
 	}
-	return s.RegisteredMetrics, nil
+	log.Debugf("Getting metric registration information from sandbox %q", s.ID)
+	var registeredMetrics controlapi.MetricsRegistrationResponse
+	done := make(chan error, 1)
+	go func() { done <- s.call(sentryapi.MetricsGetRegistered, nil, &registeredMetrics) }()
+	return func() (*metricpb.MetricRegistration, error) {
+		if err := <-done; err != nil {
+			return nil, fmt.Errorf("cannot get registered metrics: %w", err)
+		}
+		return registeredMetrics.RegisteredMetrics, nil
+	}
 }
 
 // TimeSaved returns the cached CPU and wall time saved by restoration.
