@@ -1047,6 +1047,45 @@ func TestMultiContainerSanity(t *testing.T) {
 	}
 }
 
+// TestMultiContainerSpecChangeAfterCreate checks that changes to a
+// subcontainer's config.json after create don't affect the subcontainer.
+func TestMultiContainerSpecChangeAfterCreate(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	specs, ids := createSpecs(sleepCmd, sleepCmd)
+	_, cleanup, err = startContainers(conf, specs[:1], ids[:1])
+	if err != nil {
+		t.Fatalf("error starting root container: %v", err)
+	}
+	defer cleanup()
+	bundleDir, cleanup, err := testutil.SetupBundleDir(specs[1])
+	if err != nil {
+		t.Fatalf("error setting up bundle: %v", err)
+	}
+	defer cleanup()
+	c, err := New(conf, Args{ID: ids[1], Spec: specs[1], BundleDir: bundleDir})
+	if err != nil {
+		t.Fatalf("error creating subcontainer: %v", err)
+	}
+	defer c.Destroy()
+
+	if err := os.WriteFile(filepath.Join(bundleDir, "config.json"), nil, 0644); err != nil {
+		t.Fatalf("error truncating config.json: %v", err)
+	}
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting subcontainer: %v", err)
+	}
+	if out, err := executeCombinedOutput(conf, c, nil, "/bin/true"); err != nil {
+		t.Errorf("exec failed: %v, output: %s", err, out)
+	}
+}
+
 // TestMultiPIDNS checks that it is possible to run 2 dead-simple containers in
 // the same sandbox with different pidns.
 func TestMultiPIDNS(t *testing.T) {
