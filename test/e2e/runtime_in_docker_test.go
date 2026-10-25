@@ -99,6 +99,9 @@ func (test testVariant) run(ctx context.Context, logger testutil.Logger) (string
 		}, sidecarMounts...),
 	}
 	if test.MountCgroupfs {
+		// Match the host cgroupfs mount so /proc/self/cgroup paths resolve
+		// within the same cgroup namespace.
+		opts.CgroupnsMode = "host"
 		opts.Mounts = append(opts.Mounts, mount.Mount{
 			Type:     mount.TypeBind,
 			Source:   "/sys/fs/cgroup",
