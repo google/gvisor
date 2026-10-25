@@ -250,7 +250,9 @@ func (r *runExecveAfterExecveCredsLock) execveWithImage(t *Task, newImage *TaskI
 		// if they exited via _exit(2) with exit code 0." - ptrace(2)
 		for sibling := t.tg.tasks.Front(); sibling != nil; sibling = sibling.Next() {
 			if t != sibling {
-				sibling.killLocked()
+				// The list contains tasks in t.tg; checklocks cannot infer
+				// that sibling uses the signal mutex held above.
+				sibling.killLocked() // +checklocksignore
 			}
 		}
 		// The last sibling to exit will wake t.
@@ -406,10 +408,10 @@ func (r *runExecveAfterSiblingExitStop) execute(t *Task) taskRunState {
 // promoteLocked makes t the leader of its thread group. If t is already the
 // thread group leader, promoteLocked is a no-op.
 //
-// Preconditions:
-//   - All other tasks in t's thread group, including the existing leader (if it
-//     is not t), have reached TaskExitZombie.
-//   - The TaskSet mutex must be locked for writing.
+// Preconditions: All other tasks in t's thread group, including the existing
+// leader (if it is not t), have reached TaskExitZombie.
+//
+// +checklocks:t.tg.pidns.owner.mu
 func (t *Task) promoteLocked() {
 	oldLeader := t.tg.leader
 	if t == oldLeader {
