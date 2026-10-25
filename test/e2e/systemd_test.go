@@ -214,6 +214,24 @@ func TestSystemdArch(t *testing.T) {
 	}
 }
 
+func checkTestDaemonJournal(t *testing.T, read func(context.Context) (string, error)) {
+	t.Helper()
+	// systemd can report the service active before the daemon writes its first message.
+	const want = "Hello from test daemon"
+	if err := pollWithTimeout(t.Context(), daemonPollTimeout, func(ctx context.Context) error {
+		out, err := read(ctx)
+		if err != nil {
+			return fmt.Errorf("journalctl: %w: %s", err, out)
+		}
+		if !strings.Contains(out, want) {
+			return fmt.Errorf("journal does not contain %q:\n%s", want, out)
+		}
+		return nil
+	}); err != nil {
+		t.Errorf("waiting for test-daemon.service output: %v", err)
+	}
+}
+
 // TestSystemdSimpleDaemon verifies that a custom systemd service can be enabled, started,
 // stopped, and restarted by systemd after an out-of-band kill.
 func TestSystemdSimpleDaemon(t *testing.T) {
@@ -239,12 +257,9 @@ func TestSystemdSimpleDaemon(t *testing.T) {
 	}
 	t.Logf("test-daemon started with PID %d", pid1)
 
-	// Verify journalctl has output from the daemon.
-	wantJournalOutput := "Hello from test daemon"
-	out = execOrFatal(ctx, t, d, "journalctl", "-u", "test-daemon.service", "--no-pager")
-	if !strings.Contains(out, wantJournalOutput) {
-		t.Errorf("After starting test-daemon.service, journalctl is missing expected output (output does not contain %q):\n%s", wantJournalOutput, out)
-	}
+	checkTestDaemonJournal(t, func(ctx context.Context) (string, error) {
+		return d.Exec(ctx, dockerutil.ExecOpts{User: "root"}, "journalctl", "-u", "test-daemon.service", "--no-pager")
+	})
 
 	// Stop the daemon and verify it is inactive.
 	stopService(ctx, t, d, "test-daemon.service")
@@ -1099,17 +1114,9 @@ func TestSystemdMultiUser(t *testing.T) {
 		}
 
 		// Its stdout must flow into alice's own journal.
-		wantMsg := "Hello from test daemon"
-		checkJournal := func(ctx context.Context) error {
-			out, err := userExec(ctx, d, "alice", "journalctl", "--user", "-u", "test-daemon.service", "--no-pager")
-			if err != nil || !strings.Contains(out, wantMsg) {
-				return fmt.Errorf("alice's journal has no test-daemon output yet: %v (output does not contain %q): %s", err, wantMsg, out)
-			}
-			return nil
-		}
-		if err := pollWithTimeout(ctx, daemonPollTimeout, checkJournal); err != nil {
-			t.Errorf("test-daemon's stdout did not reach alice's user journal: %v", err)
-		}
+		checkTestDaemonJournal(t, func(ctx context.Context) (string, error) {
+			return userExec(ctx, d, "alice", "journalctl", "--user", "-u", "test-daemon.service", "--no-pager")
+		})
 
 		// Restart= supervision by the unprivileged manager: an
 		// out-of-band SIGKILL must produce a fresh main process.
