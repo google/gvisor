@@ -607,6 +607,32 @@ func TestPostStartHookFailure(t *testing.T) {
 	}
 }
 
+// TestSpecChangeAfterCreate checks that changes to config.json after create
+// don't affect the container.
+func TestSpecChangeAfterCreate(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	c, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+
+	if err := os.WriteFile(filepath.Join(bundleDir, "config.json"), nil, 0644); err != nil {
+		t.Fatalf("error truncating config.json: %v", err)
+	}
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if out, err := executeCombinedOutput(conf, c, nil, "/bin/true"); err != nil {
+		t.Errorf("exec failed: %v, output: %s", err, out)
+	}
+}
+
 func TestGetNetworkConfig(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {

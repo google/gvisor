@@ -308,6 +308,9 @@ type Args struct {
 	// to the entire pod.
 	MountHints *sentryapi.PodMountHints
 
+	// SpecFile is a specutils.CopySpec copy of Spec. Caller closes it.
+	SpecFile *os.File
+
 	// MountsFile is a file container mount information from the spec. It's
 	// equivalent to the mounts from the spec, except that all paths have been
 	// resolved to their final absolute location.
@@ -1193,11 +1196,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	log.Infof("Control socket path: %q", s.ControlSocketPath)
 	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
-	specFile, err := specutils.OpenSpec(args.BundleDir)
-	if err != nil {
-		return fmt.Errorf("cannot open spec file in bundle dir %v: %w", args.BundleDir, err)
-	}
-	donations.DonateAndClose("spec-fd", specFile)
+	donations.Donate("spec-fd", args.SpecFile)
 
 	if err := donations.DonateLogFile("pod-init-config-fd", conf.PodInitConfig, os.O_RDONLY, lfOpts); err != nil {
 		return err
