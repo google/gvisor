@@ -16,7 +16,6 @@ package container
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,21 +30,6 @@ import (
 
 const stateFileExtension = "state"
 
-// ErrStateFileLocked indicates that a state file is locked and TryLock is
-// enabled. Callers can identify wrapped lock errors with errors.Is.
-var ErrStateFileLocked = errors.New("state file locked")
-
-// TryLock represents whether we should block waiting for the lock to be acquired or not.
-type TryLock bool
-
-const (
-	// BlockAcquire means we will block until the lock can be acquired.
-	BlockAcquire TryLock = false
-
-	// TryAcquire means we will fail fast if the lock cannot be acquired.
-	TryAcquire TryLock = true
-)
-
 // LoadOpts provides options for Load()ing a container.
 type LoadOpts struct {
 	// Exact tells whether the search should be exact. See Load() for more.
@@ -54,10 +38,10 @@ type LoadOpts struct {
 	// SkipCheck tells Load() to skip checking if container is running.
 	SkipCheck bool
 
-	// TryLock tells Load() to fail if the container state file cannot be locked,
-	// as opposed to blocking until it is available.
-	// When the state file cannot be locked, it will error with ErrStateFileLocked.
-	TryLock TryLock
+	// ReadOnly tells Load() to read the container state file without locking
+	// it, which never blocks. Container objects returned when `ReadOnly` is
+	// `true` will panic if the caller attempts to save them.
+	ReadOnly bool
 
 	// RootContainer when true matches the search only with the root container of
 	// a sandbox. This is used when looking for a sandbox given that root
@@ -93,7 +77,7 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 	}
 	defer state.close()
 
-	c := &Container{}
+	c := &Container{allowWrite: !opts.ReadOnly}
 	if err := state.load(c, opts); err != nil {
 		if os.IsNotExist(err) {
 			// Preserve error so that callers can distinguish 'not found' errors.
@@ -293,23 +277,12 @@ type StateFile struct {
 }
 
 // lock globally locks all locking operations for the container.
-func (s *StateFile) lock(tryLock TryLock) error {
+func (s *StateFile) lock() error {
 	s.once.Do(func() {
 		s.flock = flock.New(s.lockPath())
 	})
-
-	if tryLock {
-		gotLock, err := s.flock.TryLock()
-		if err != nil {
-			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
-		}
-		if !gotLock {
-			return ErrStateFileLocked
-		}
-	} else {
-		if err := s.flock.Lock(); err != nil {
-			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
-		}
+	if err := s.flock.Lock(); err != nil {
+		return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
 	}
 	return nil
 }
@@ -318,7 +291,7 @@ func (s *StateFile) lock(tryLock TryLock) error {
 // is done to ensure that more than one creation didn't race to create
 // containers with the same ID.
 func (s *StateFile) LockForNew() error {
-	if err := s.lock(BlockAcquire); err != nil {
+	if err := s.lock(); err != nil {
 		return err
 	}
 
@@ -387,7 +360,10 @@ func (s *StateFile) Stat() (os.FileInfo, error) {
 }
 
 func (s *StateFile) load(v any, opts LoadOpts) error {
-	if err := s.lock(opts.TryLock); err != nil {
+	if opts.ReadOnly {
+		return s.loadLocked(v)
+	}
+	if err := s.lock(); err != nil {
 		return err
 	}
 	defer s.UnlockOrDie()
@@ -396,7 +372,8 @@ func (s *StateFile) load(v any, opts LoadOpts) error {
 
 // loadLocked reads and decodes the state file into v.
 //
-// Preconditions: lock(*) must have been called.
+// Preconditions: lock() must have been called, unless v is not saved (see
+// LoadOpts.ReadOnly).
 func (s *StateFile) loadLocked(v any) error {
 	path := s.statePath()
 	metaBytes, err := os.ReadFile(path)

@@ -115,7 +115,7 @@ func (l *List) execute(rootDir string, out io.Writer) error {
 	for i, id := range ids {
 		results[i] = make(chan loaded, 1)
 		go func(i int, id container.FullID) {
-			c, err := container.Load(rootDir, id, container.LoadOpts{Exact: true})
+			c, err := container.Load(rootDir, id, container.LoadOpts{Exact: true, ReadOnly: true})
 			results[i] <- loaded{c, err}
 		}(i, id)
 	}
@@ -130,7 +130,7 @@ func (l *List) execute(rootDir string, out io.Writer) error {
 			case r = <-results[i]:
 			default:
 				log.Warningf("Timed out checking whether container %q stopped, reporting its saved status", id.ContainerID)
-				r.c, r.err = container.Load(rootDir, id, container.LoadOpts{Exact: true, SkipCheck: true})
+				r.c, r.err = container.Load(rootDir, id, container.LoadOpts{Exact: true, SkipCheck: true, ReadOnly: true})
 			}
 		}
 		if r.err != nil {

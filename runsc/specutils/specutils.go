@@ -659,18 +659,19 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 	return backoff.Retry(op, b)
 }
 
-// IsProcessRunning returns true if pid identifies a running process, rather than
-// a zombie. Nonpositive PIDs and processes that no longer exist return false.
-func IsProcessRunning(pid int) (bool, error) {
+// IsProcessRunning returns true if the process with the given PID and
+// ProcessIdentity is running, rather than a zombie. Nonpositive PIDs and
+// processes that no longer exist return false.
+func IsProcessRunning(pid int, identity uint64) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}
-	pidfd, err := unix.PidfdOpen(pid, 0)
+	pidfd, err := OpenProcess(pid, identity)
 	if err != nil {
-		if err == unix.ESRCH || err == unix.EINVAL {
+		if err == unix.ESRCH {
 			return false, nil
 		}
-		return false, fmt.Errorf("pidfd_open(%d): %w", pid, err)
+		return false, fmt.Errorf("cannot open pidfd for process %d: %w", pid, err)
 	}
 	defer unix.Close(pidfd)
 
@@ -688,26 +689,90 @@ func IsProcessRunning(pid int) (bool, error) {
 	}
 }
 
-// WaitForNonChildExit waits for the given process to exit, up to `timeout`.
-// As the name implies, `pid` must not be a child of the current process.
+const PIDFS_MAGIC = 0x50494446
+
+// ProcessIdentity returns an identifier of the process with the given PID
+// that is stable and unique. Returns 0 on hosts without `pidfs`.
+func ProcessIdentity(pid int) (uint64, error) {
+	pidfd, err := OpenProcess(pid, 0)
+	if err != nil {
+		return 0, fmt.Errorf("cannot open pidfd for process %d: %w", pid, err)
+	}
+	defer unix.Close(pidfd)
+	return pidfdIdentity(pidfd)
+}
+
+func pidfdIdentity(pidfd int) (uint64, error) {
+	var fs unix.Statfs_t
+	if err := unix.Fstatfs(pidfd, &fs); err != nil {
+		return 0, fmt.Errorf("cannot statfs pidfd: %w", err)
+	}
+	if fs.Type != PIDFS_MAGIC {
+		return 0, nil
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(pidfd, &st); err != nil {
+		return 0, fmt.Errorf("cannot stat pidfd: %w", err)
+	}
+	return st.Ino, nil
+}
+
+// OpenProcess returns a pidfd for the process with the given PID and
+// identity, or `unix.ESRCH` if there is no such process.
+// If `identity` is 0, is matches any process with the given PID.
+func OpenProcess(pid int, identity uint64) (int, error) {
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err == unix.EINVAL {
+		return -1, unix.ESRCH // pid is a thread, not a process.
+	}
+	if err != nil || identity == 0 {
+		return pidfd, err
+	}
+	got, err := pidfdIdentity(pidfd)
+	if err == nil && got != identity {
+		err = unix.ESRCH
+	}
+	if err != nil {
+		unix.Close(pidfd)
+		return -1, err
+	}
+	return pidfd, nil
+}
+
+// KillProcess sends SIGKILL to the process with the given PID and
+// ProcessIdentity, if it exists.
+// If `identity` is zero, the process with PID `pid` is killed regardless
+// of its identity.
+func KillProcess(pid int, identity uint64) error {
+	pidfd, err := OpenProcess(pid, identity)
+	if err == unix.ESRCH {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("cannot open pidfd for process %d: %w", pid, err)
+	}
+	defer unix.Close(pidfd)
+	if err := unix.PidfdSendSignal(pidfd, unix.SIGKILL, nil, 0); err != nil && err != unix.ESRCH {
+		return fmt.Errorf("cannot kill process %d: %w", pid, err)
+	}
+	return nil
+}
+
+// WaitForNonChildExit waits for the process with the given PID and
+// `identity` to exit, up to `timeout`
+// If `identity` is zero, match processes on `pid` alone.
+// `pid` must not be a child of the current process.
 // Returns immediately if the process does not exist.
-func WaitForNonChildExit(pid int, timeout time.Duration) error {
+func WaitForNonChildExit(pid int, identity uint64, timeout time.Duration) error {
 	if pid <= 0 {
 		return fmt.Errorf("invalid pid: %d", pid)
 	}
-	pidfd, err := unix.PidfdOpen(pid, 0)
+	pidfd, err := OpenProcess(pid, identity)
 	if err == unix.ESRCH {
 		return nil // Already gone.
 	}
 	if err != nil {
-		// pidfd_open failed (Linux < 5.3). Fall back to polling.
-		b := backoff.WithMaxRetries(backoff.NewConstantBackOff(10*time.Millisecond), uint64(timeout/(10*time.Millisecond)))
-		return backoff.Retry(func() error {
-			if err := unix.Kill(pid, 0); err == nil {
-				return fmt.Errorf("process %d is still running", pid)
-			}
-			return nil
-		}, b)
+		return fmt.Errorf("cannot open pidfd for process %d: %w", pid, err)
 	}
 	defer unix.Close(pidfd)
 	deadline := time.Now().Add(timeout)

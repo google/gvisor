@@ -169,6 +169,11 @@ type Sandbox struct {
 	// is not running.
 	Pid Pid `json:"pid"`
 
+	// PidIdentity is the specutils.ProcessIdentity of the sandbox process,
+	// which distinguishes it from processes that later reuse its PID.
+	// Zero if unknown.
+	PidIdentity uint64 `json:"pidIdentity,omitempty"`
+
 	// UID is the user ID in the parent namespace that the sandbox is running as.
 	UID int `json:"uid"`
 	// GID is the group ID in the parent namespace that the sandbox is running as.
@@ -1567,6 +1572,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	s.child = true
 	s.Pid.Store(cmd.Process.Pid)
+	if s.PidIdentity, err = specutils.ProcessIdentity(cmd.Process.Pid); err != nil {
+		return err
+	}
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	if pinRing != nil {
@@ -1830,8 +1838,8 @@ func (s *Sandbox) destroy() error {
 			}
 		}
 		log.Debugf("Killing sandbox %q", s.ID)
-		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
-			return fmt.Errorf("killing sandbox %q PID %d: %w", s.ID, pid, err)
+		if err := specutils.KillProcess(pid, s.PidIdentity); err != nil {
+			return fmt.Errorf("killing sandbox %q: %w", s.ID, err)
 		}
 		if err := s.waitForStopped(); err != nil {
 			return fmt.Errorf("waiting sandbox %q stop: %w", s.ID, err)
@@ -2728,7 +2736,7 @@ func (s *Sandbox) ExportMetrics(opts controlapi.MetricsExportOpts) (*prometheus.
 
 // IsRunning returns true if the sandbox process is running (and not a zombie).
 func (s *Sandbox) IsRunning() (bool, error) {
-	return specutils.IsProcessRunning(s.Pid.Load())
+	return specutils.IsProcessRunning(s.Pid.Load(), s.PidIdentity)
 }
 
 // Stacks collects and returns all stacks for the sandbox.
@@ -2865,7 +2873,7 @@ func (s *Sandbox) waitForStopped() error {
 	if pid == 0 {
 		return nil
 	}
-	return specutils.WaitForNonChildExit(pid, waitTimeout)
+	return specutils.WaitForNonChildExit(pid, s.PidIdentity, waitTimeout)
 }
 
 // configureStdios change stdios ownership to give access to the sandbox
