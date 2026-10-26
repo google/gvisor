@@ -37,6 +37,19 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// DrainDentryCache implements vfs.FilesystemImpl.DrainDentryCache.
+func (fs *filesystem) DrainDentryCache(ctx context.Context) error {
+	if fs.dentryCache == globalDentryCache {
+		return linuxerr.EOPNOTSUPP
+	}
+	fs.renameMu.Lock()
+	defer fs.renameMu.Unlock()
+	// Keep renameMu locked so lookups cannot repopulate the cache during the
+	// drain. Existing references may still be released and become cacheable.
+	fs.evictAllCachedDentriesLocked(ctx, true /* keepRenameMu */)
+	return nil
+}
+
 // Sync implements vfs.FilesystemImpl.Sync.
 func (fs *filesystem) Sync(ctx context.Context) error {
 	// Snapshot current syncable dentries and special file FDs.
@@ -132,8 +145,9 @@ func putDentrySlice(ds *[]*dentry) {
 }
 
 // renameMuRUnlockAndCheckCaching calls fs.renameMu.RUnlock(), then calls
-// dentry.checkCachingLocked on all dentries in *dsp with fs.renameMu locked
-// for writing.
+// dentry.checkCachingLocked on all dentries in *dsp. Cache updates do not require
+// fs.renameMu; checkCachingLocked acquires it for writing if eviction or
+// destruction is needed.
 //
 // dsp is a pointer-to-pointer since defer evaluates its arguments immediately,
 // but dentry slices are allocated lazily, and it's much easier to say "defer
@@ -147,7 +161,7 @@ func (fs *filesystem) renameMuRUnlockAndCheckCaching(ctx context.Context, dsp **
 	}
 	ds := **dsp
 	for _, d := range ds {
-		d.checkCachingLocked(ctx, false /* renameMuWriteLocked */)
+		d.checkCachingLocked(ctx, false /* renameMuWriteLocked */, false /* keepRenameMu */)
 	}
 	putDentrySlice(*dsp)
 }
@@ -159,7 +173,7 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 		return
 	}
 	for _, d := range **ds {
-		d.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+		d.checkCachingLocked(ctx, true /* renameMuWriteLocked */, false /* keepRenameMu */)
 	}
 	fs.renameMu.Unlock()
 	putDentrySlice(*ds)

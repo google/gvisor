@@ -70,7 +70,7 @@ func TestDestroyIdempotent(t *testing.T) {
 
 	fs.renameMu.Lock()
 	defer fs.renameMu.Unlock()
-	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */, false /* keepRenameMu */)
 	if got := child.refs.Load(); got != -1 {
 		t.Fatalf("child.refs=%d, want: -1", got)
 	}
@@ -78,8 +78,8 @@ func TestDestroyIdempotent(t *testing.T) {
 	if got := parent.refs.Load(); got != -1 {
 		t.Fatalf("parent.refs=%d, want: -1", got)
 	}
-	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
-	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */)
+	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */, false /* keepRenameMu */)
+	child.checkCachingLocked(ctx, true /* renameMuWriteLocked */, false /* keepRenameMu */)
 }
 
 func TestStringFixedCache(t *testing.T) {

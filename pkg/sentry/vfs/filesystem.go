@@ -128,6 +128,11 @@ type FilesystemImpl interface {
 	// file data to be written to the underlying [filesystem]", as by syncfs(2).
 	Sync(ctx context.Context) error
 
+	// DrainDentryCache evicts unused cached dentries without changing cache
+	// policy. Live references are preserved, and concurrent operations may
+	// refill the cache. Unsupported filesystems return EOPNOTSUPP.
+	DrainDentryCache(ctx context.Context) error
+
 	// AccessAt checks whether a user with creds can access the file at rp.
 	AccessAt(ctx context.Context, rp *ResolvingPath, creds *auth.Credentials, ats AccessTypes) error
 
