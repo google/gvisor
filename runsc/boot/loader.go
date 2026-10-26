@@ -368,6 +368,10 @@ type Loader struct {
 
 	// hostinetNetSNMPFile is the pre-opened /proc/net/snmp file for hostinet restore.
 	hostinetNetSNMPFile *os.File
+
+	// hostinetPortRange is read before restore installs seccomp filters. A nil
+	// value means no destination host configuration is awaiting transfer.
+	hostinetPortRange *[2]uint16
 }
 
 // noRootContainer is the state of a sandbox with no root container.
@@ -1036,9 +1040,12 @@ func New(args Args) (*Loader, error) {
 // +checklocks:l.mu
 func (l *Loader) ConfigureNetwork(s inet.Stack) error {
 	if h, ok := s.(*hostinet.Stack); ok {
-		h.SetFiles(l.hostinetNetDevFile, l.hostinetNetSNMPFile)
-		l.hostinetNetDevFile = nil
-		l.hostinetNetSNMPFile = nil
+		if l.hostinetPortRange != nil {
+			h.SetHostConfig(l.hostinetNetDevFile, l.hostinetNetSNMPFile, *l.hostinetPortRange)
+			l.hostinetNetDevFile = nil
+			l.hostinetNetSNMPFile = nil
+			l.hostinetPortRange = nil
+		}
 		return nil
 	}
 

@@ -41,6 +41,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -413,6 +414,8 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	if l.root.conf.Network == config.NetworkHost {
+		ports := hostinet.ReadPortRange()
+		l.hostinetPortRange = &ports
 		devFile, err := os.Open("/proc/net/dev")
 		if err != nil {
 			log.Warningf("Failed to open /proc/net/dev during restore: %v", err)
@@ -426,6 +429,7 @@ func (r *restorer) restore(l *Loader) error {
 			l.hostinetNetSNMPFile = snmpFile
 		}
 		defer func() {
+			l.hostinetPortRange = nil
 			if l.hostinetNetDevFile != nil {
 				l.hostinetNetDevFile.Close()
 				l.hostinetNetDevFile = nil
