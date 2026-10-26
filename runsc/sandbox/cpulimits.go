@@ -17,6 +17,7 @@ package sandbox
 import (
 	"fmt"
 	"maps"
+	"math"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
@@ -94,6 +95,16 @@ func (l *CPULimits) CreationResources(res *specs.LinuxResources) *specs.LinuxRes
 		delete(creationRes.Unified, "cpu.max")
 	}
 	return &creationRes
+}
+
+// lifecycleCPUNum returns the number of CPUs that the lifecycle CPU limit lets
+// the sandbox use, out of the `cgCPUNum` CPUs that its cgroup can run on.
+func (l *CPULimits) lifecycleCPUNum(cgCPUNum int) int {
+	quota, period := *l.Lifecycle.Quota, *l.Lifecycle.Period
+	if quota < 0 {
+		return cgCPUNum
+	}
+	return min(cgCPUNum, int(math.Ceil(float64(quota)/float64(period))))
 }
 
 // cpuPhase is a phase of the sandbox with its own CPU limit.

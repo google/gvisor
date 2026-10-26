@@ -28,6 +28,7 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -252,6 +253,9 @@ type Loader struct {
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
 	cpuPeriod int64
+
+	// lifecycleCPUs are the CPUs that checkpoint and restore can use.
+	lifecycleCPUs lifecycleCPUs
 
 	hostTHP HostTHP
 
@@ -496,6 +500,9 @@ type Args struct {
 	GoferMountConfs []specutils.GoferMountConf
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
+	// LifecycleNumCPU is the number of CPUs that the sandbox can use during
+	// checkpoint and restore. `NumCPU` takes precedence if larger.
+	LifecycleNumCPU int
 	// CPUQuota and CPUPeriod are the raw host CFS settings that should be
 	// reflected by sandbox cgroupfs.
 	CPUQuota  int64
@@ -707,8 +714,12 @@ func New(args Args) (*Loader, error) {
 	if args.NumCPU == 0 {
 		args.NumCPU = runtime.NumCPU()
 	}
-	log.Infof("CPUs: %d", args.NumCPU)
 	gomaxprocs.SetBase(args.NumCPU)
+	l.lifecycleCPUs.init(args.LifecycleNumCPU, args.NumCPU)
+	log.Infof("CPUs: %d, lifecycle CPUs: %d", args.NumCPU, l.lifecycleCPUs.num)
+	if len(args.FSRestoreFDs) != 0 || args.RootfsUpperTarFD >= 0 {
+		l.lifecycleCPUs.holdForRestore()
+	}
 	args.StartupTimer.Reached("GOMAXPROCS set")
 
 	// Start filesystem checkpoint restore as soon as possible to maximize

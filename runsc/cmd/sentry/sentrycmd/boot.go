@@ -139,6 +139,10 @@ type Boot struct {
 	// cpuNum number of CPUs to create inside the sandbox.
 	cpuNum int
 
+	// lifecycleCPUNum is the number of CPUs that the sandbox can use during
+	// checkpoint and restore.
+	lifecycleCPUNum int
+
 	// cpuQuota and cpuPeriod carry the raw host CFS CPU settings that should be
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
@@ -270,6 +274,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
+	f.IntVar(&b.lifecycleCPUNum, "lifecycle-cpu-num", 0, "number of CPUs that the sandbox can use during checkpoint and restore (0 means the same as --cpu-num)")
 	// cpu-quota defaults to -1 (unlimited), matching the Linux CFS default
 	// for cpu.cfs_quota_us. A positive value is passed through as-is to sandbox
 	// cgroupfs.
@@ -712,6 +717,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
 		GoferMountConfs:     b.goferMountConfs.GetArray(),
 		NumCPU:              b.cpuNum,
+		LifecycleNumCPU:     b.lifecycleCPUNum,
 		CPUQuota:            b.cpuQuota,
 		CPUPeriod:           b.cpuPeriod,
 		TotalMem:            b.totalMem,
