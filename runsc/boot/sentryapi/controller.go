@@ -246,8 +246,8 @@ type CreateTraceSessionArgs struct {
 	Config seccheck.SessionConfig
 	Force  bool
 	// SinkIndexes holds the index in Config.Sinks of the sink for each endpoint
-	// in FilePayload. If SinkIndexes is nil, FilePayload holds one endpoint for
-	// each sink, in the same order.
+	// in FilePayload, in the same order. Sinks that have no endpoint have no
+	// entry.
 	SinkIndexes []int
 	urpc.FilePayload
 }
