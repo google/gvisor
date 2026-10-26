@@ -404,38 +404,8 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		}
 	}
 
-	// Create pipe to synchronize when sandbox process has been booted.
-	clientSyncFile, sandboxSyncFile, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("creating pipe for sandbox %q: %v", s.ID, err)
-	}
-	defer clientSyncFile.Close()
-
-	// Create the sandbox process.
-	err = s.createSandboxProcess(conf, args, sandboxSyncFile)
-	// sandboxSyncFile has to be closed to be able to detect when the sandbox
-	// process exits unexpectedly.
-	sandboxSyncFile.Close()
-	if err != nil {
+	if err := s.createSandboxProcess(conf, args); err != nil {
 		return nil, fmt.Errorf("cannot create sandbox process: %w", err)
-	}
-
-	// Wait until the sandbox has booted.
-	b := make([]byte, 1)
-	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
-		err := fmt.Errorf("waiting for sandbox to start: %v", err)
-		// If the sandbox failed to start, it may be because the binary
-		// permissions were incorrect. Check the bits and return a more helpful
-		// error message.
-		//
-		// NOTE: The error message is checked because error types are lost over
-		// rpc calls.
-		if strings.Contains(err.Error(), io.EOF.Error()) {
-			if permsErr := checkBinaryPermissions(conf); permsErr != nil {
-				return nil, fmt.Errorf("%v: %v", err, permsErr)
-			}
-		}
-		return nil, fmt.Errorf("cannot read client sync file: %w", err)
 	}
 
 	c.Release()
@@ -1034,7 +1004,7 @@ const sentryExeFD = 3
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
+func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	// Ensure we don't leak FDs to the sandbox process.
 	if err := SetCloExeOnAllFDs(); err != nil {
 		return fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
@@ -1166,7 +1136,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations.DonateAndClose("dev-io-fd", args.DevIOFile)
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
-	donations.Donate("start-sync-fd", startSyncFile)
 	var pinRing *os.File
 	if _, err := gvisorbinaries.FDParking.Path(); err != nil {
 		log.Warningf("Sidecar %q not found or usable (%v). This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
@@ -2936,6 +2905,16 @@ func sentryBinary(conf *config.Config) *gvisorbinaries.Binary {
 		return &gvisorbinaries.GvisorSentryPluginStack
 	}
 	return &gvisorbinaries.GvisorSentry
+}
+
+// ExitedBeforeStartError means that the sandbox exited before a container
+// could be started in it (failed to boot).
+func ExitedBeforeStartError(conf *config.Config) error {
+	err := errors.New("the sandbox exited before the container started (see the sandbox logs)")
+	if permsErr := checkBinaryPermissions(conf); permsErr != nil {
+		return fmt.Errorf("%w: %v", err, permsErr)
+	}
+	return err
 }
 
 // checkBinaryPermissions verifies that the required binary bits are set on

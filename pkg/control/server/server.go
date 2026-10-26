@@ -88,22 +88,15 @@ func (s *Server) Stop(timeout time.Duration) {
 	s.server.Load().Stop(timeout)
 }
 
-// StartServing starts listening for connect and spawns the main service
-// goroutine for handling incoming control requests. StartServing does not
-// block; to wait for the control server to exit, call Wait.
-func (s *Server) StartServing() error {
-	// Actually start listening.
-	if err := s.socket.Listen(); err != nil {
-		return err
-	}
-
+// StartServing spawns the main service goroutine for handling incoming control
+// requests. StartServing does not block; to wait for the control server to
+// exit, call Wait.
+func (s *Server) StartServing() {
 	s.wg.Add(1)
 	go func() { // S/R-SAFE: does not impact state directly.
 		s.serve()
 		s.wg.Done()
 	}()
-
-	return nil
 }
 
 // serve is the body of the main service goroutine. It handles incoming control
@@ -168,7 +161,7 @@ func CreateSocket(addr string) (int, error) {
 			return -1, fmt.Errorf("socket name %q is too long, use a shorter name", name)
 		}
 	}
-	socket, err := unet.Bind(addr, false)
+	socket, err := unet.BindAndListen(addr, false)
 	if err != nil {
 		return -1, err
 	}
