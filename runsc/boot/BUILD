@@ -204,7 +204,7 @@ go_test(
         "//runsc/boot/sentryapi",
         "//runsc/config",
         "//runsc/flag",
-        "//runsc/fsgofer",
+        "//runsc/gofer/fs",
         "//runsc/specutils",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_moby_sys_capability//:go_default_library",

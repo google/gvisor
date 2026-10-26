@@ -279,7 +279,7 @@ runsc --root=/path/to/rootdir debug --mount erofs:{source}:{destination}
 The stock gofer serves host filesystem mounts via LISAFS. For workloads that
 need a different filesystem backend (a network-backed store, an encrypted
 filesystem, a tiered cache), a custom runsc build can import
-`runsc/fsgofer/extension` and register an extension that supplies a
+`runsc/gofer/fs/extension` and register an extension that supplies a
 `lisafs.ConnectionImpl` for selected mounts.
 
 An extension registers itself at startup and claims mounts by path. For example,

@@ -15,12 +15,16 @@
 //go:build race
 // +build race
 
-package config
+package filter
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 func archInstrumentationFilters(f seccomp.SyscallRules) seccomp.SyscallRules {
+	f.Set(unix.SYS_OPEN, seccomp.MatchAll{})
+	// Used within glibc's malloc.
+	f.Set(unix.SYS_TIME, seccomp.MatchAll{})
 	return f
 }

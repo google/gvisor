@@ -8,7 +8,7 @@ package(
 go_library(
     name = "extension",
     srcs = ["extension.go"],
-    importpath = "gvisor.dev/gvisor/runsc/fsgofer/extension",
+    importpath = "gvisor.dev/gvisor/runsc/gofer/fs/extension",
     visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/lisafs",

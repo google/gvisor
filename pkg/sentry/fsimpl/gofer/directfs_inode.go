@@ -1019,4 +1019,4 @@ func checkSupportedFileType(mode uint32) error {
 	}
 }
 
-// LINT.ThenChange(../../../../runsc/fsgofer/lisafs.go)
+// LINT.ThenChange(../../../../runsc/gofer/fs/lisafs.go)
