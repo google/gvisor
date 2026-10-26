@@ -1083,7 +1083,6 @@ func TestSealedMapping(t *testing.T) {
 
 type bufferedIOFallbackFile struct {
 	*pgalloc.MemoryFile
-	bufferWrites int
 }
 
 func (f *bufferedIOFallbackFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
@@ -1099,7 +1098,6 @@ func (f *bufferedIOFallbackFile) BufferReadAt(off uint64, dst []byte) (uint64, e
 }
 
 func (f *bufferedIOFallbackFile) BufferWriteAt(off uint64, src []byte) (uint64, error) {
-	f.bufferWrites++
 	ims, err := f.MemoryFile.MapInternal(memmap.FileRange{Start: off, End: off + uint64(len(src))}, hostarch.Write)
 	if err != nil {
 		return 0, err
@@ -1120,21 +1118,9 @@ func (m *bufferedIOFallbackMappable) Translate(ctx context.Context, required, op
 	return ts, err
 }
 
+// TestEnsurePMAsExistBufferedIOFallback tests that EnsurePMAsExist doesn't
+// modify the contents of a mapping whose memmap.File requires buffered I/O.
 func TestEnsurePMAsExistBufferedIOFallback(t *testing.T) {
-	// Verify that recycled buffers from byteSlicePtrPool are zeroed.
-	dirty := getByteSlicePtr(pageSizeInt)
-	for i := range *dirty {
-		(*dirty)[i] = 0xfe
-	}
-	putByteSlicePtr(dirty)
-	recycled := getByteSlicePtr(pageSizeInt)
-	for i, b := range *recycled {
-		if b != 0 {
-			t.Fatalf("getByteSlicePtr returned non-zero byte %#x at index %d", b, i)
-		}
-	}
-	putByteSlicePtr(recycled)
-
 	ctx := contexttest.Context(t)
 	mm := testMemoryManager(ctx, t)
 	defer mm.DecUsers(ctx)
@@ -1144,10 +1130,18 @@ func TestEnsurePMAsExistBufferedIOFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to allocate memory file range: %v", err)
 	}
-	bf := &bufferedIOFallbackFile{MemoryFile: mf}
+	want := bytes.Repeat([]byte{0xa5}, pageSizeInt)
+	ims, err := mf.MapInternal(fr, hostarch.Write)
+	if err != nil {
+		t.Fatalf("MapInternal got err %v want nil", err)
+	}
+	if _, err := safemem.CopySeq(ims, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(want))); err != nil {
+		t.Fatalf("failed to fill memory file range: %v", err)
+	}
+
 	mappable := &bufferedIOFallbackMappable{
 		SpecialMappable: NewSpecialMappable("buffered_fallback", mf, fr),
-		file:            bf,
+		file:            &bufferedIOFallbackFile{MemoryFile: mf},
 	}
 	defer mappable.DecRef(ctx)
 
@@ -1163,18 +1157,45 @@ func TestEnsurePMAsExistBufferedIOFallback(t *testing.T) {
 		t.Fatalf("MMap got err %v want nil", err)
 	}
 
-	// Zero-length EnsurePMAsExist should succeed without panicking.
-	if n, err := mm.EnsurePMAsExist(ctx, addr, 0, usermem.IOOpts{}); err != nil || n != 0 {
-		t.Fatalf("EnsurePMAsExist(0) got (%d, %v), want (0, nil)", n, err)
-	}
-
-	// EnsurePMAsExist on a BufferedIOFallbackErr mapping must return the
-	// mapped length without flushing unwritten buffers via BufferWriteAt.
 	n, err := mm.EnsurePMAsExist(ctx, addr, int64(pageSize), usermem.IOOpts{})
 	if err != nil || n != int64(pageSize) {
 		t.Fatalf("EnsurePMAsExist(%d) got (%d, %v), want (%d, nil)", pageSize, n, err, pageSize)
 	}
-	if bf.bufferWrites != 0 {
-		t.Errorf("EnsurePMAsExist triggered %d BufferWriteAt calls, want 0", bf.bufferWrites)
+
+	got := make([]byte, pageSizeInt)
+	ims, err = mf.MapInternal(fr, hostarch.Read)
+	if err != nil {
+		t.Fatalf("MapInternal got err %v want nil", err)
+	}
+	if _, err := safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(got)), ims); err != nil {
+		t.Fatalf("failed to read memory file range: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("EnsurePMAsExist modified mapped file contents: got %#x..., want %#x...", got[:4], want[:4])
+	}
+}
+
+// TestGetByteSlicePtrZeroed tests that getByteSlicePtr returns zero-filled
+// slices, including when it recycles a slice passed to putByteSlicePtr.
+//
+// sync.Pool doesn't guarantee that Get returns a slice that was just Put (for
+// example, it randomly drops items when the race detector is enabled), so this
+// test may not exercise recycling on every iteration. It never fails spuriously.
+func TestGetByteSlicePtrZeroed(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		dirty := getByteSlicePtr(pageSizeInt)
+		for j := range *dirty {
+			(*dirty)[j] = 0xfe
+		}
+		putByteSlicePtr(dirty)
+
+		s := getByteSlicePtr(pageSizeInt)
+		for j, b := range *s {
+			if b != 0 {
+				putByteSlicePtr(s)
+				t.Fatalf("getByteSlicePtr returned non-zero byte %#x at index %d", b, j)
+			}
+		}
+		putByteSlicePtr(s)
 	}
 }

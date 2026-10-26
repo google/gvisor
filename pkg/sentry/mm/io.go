@@ -388,6 +388,10 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq
 // initialize PMAs for, or ascertain that PMAs exist for. If this length is
 // smaller than the requested length it returns an error explaining why.
 //
+// EnsurePMAsExist never writes to the range, including for memmap.Files that
+// require buffered I/O. It requests write access only so that writable PMAs
+// are created and copy-on-write is broken.
+//
 // +checklocksexclude:mm.mappingMu
 // +checklocksexclude:mm.activeMu
 func (mm *MemoryManager) EnsurePMAsExist(ctx context.Context, addr hostarch.Addr, length int64, opts usermem.IOOpts) (int64, error) {
@@ -994,9 +998,9 @@ func (t *ioBufTracker) flushSlow(prevN uint64, prevErr error) (uint64, error) {
 
 var byteSlicePtrPool sync.Pool
 
-// getByteSlicePtr returns a pointer to a byte slice with the given length. The
-// slice is either newly-allocated or recycled from a previous call to
-// putByteSlicePtr. The pointer should be passed to putByteSlicePtr when the
+// getByteSlicePtr returns a pointer to a zero-filled byte slice with the given
+// length. The slice is either newly-allocated or recycled from a previous call
+// to putByteSlicePtr. The pointer should be passed to putByteSlicePtr when the
 // slice is no longer in use.
 func getByteSlicePtr(l int) *[]byte {
 	a := byteSlicePtrPool.Get()
