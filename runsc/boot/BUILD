@@ -16,6 +16,7 @@ go_library(
         "debug.go",
         "events.go",
         "fscheckpoint.go",
+        "lifecyclecpus.go",
         "limits.go",
         "loader.go",
         "mount_hints.go",
@@ -176,6 +177,7 @@ go_test(
     srcs = [
         "compat_test.go",
         "fscheckpoint_test.go",
+        "lifecyclecpus_test.go",
         "loader_test.go",
         "mount_hints_test.go",
         "restore_test.go",
@@ -190,6 +192,7 @@ go_test(
         "//pkg/cpuid",
         "//pkg/fd",
         "//pkg/fspath",
+        "//pkg/gomaxprocs",
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/seccomp",

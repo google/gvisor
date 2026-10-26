@@ -1501,11 +1501,15 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	mem := totalSysMem
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, s.CPULimits, conf.CPUNumFromQuota)
+		cgCPUNum := cgroupCPUNum(s.CgroupJSON.Cgroup)
+		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, cgCPUNum, s.CPULimits, conf.CPUNumFromQuota)
 		if err != nil {
 			return err
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
+		if s.CPULimits != nil {
+			cmd.Args = append(cmd.Args, "--lifecycle-cpu-num", strconv.Itoa(s.CPULimits.lifecycleCPUNum(cgCPUNum)))
+		}
 		cmd.Env = append(cmd.Env, "GOMAXPROCS="+strconv.Itoa(cpuNum))
 		if cpuQuota > 0 {
 			cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
@@ -1641,20 +1645,28 @@ func spawnFDParking(ring *os.File, pid int) error {
 	return nil
 }
 
-// calculateCPUNum calculates the number of CPUs to configure for the sandbox,
-// along with the cgroup CPU quota and period.
-// `limits`, if set, holds the application CPU limit, which `cg` does not have
-// yet.
-func calculateCPUNum(cg cgroup.Cgroup, limits *CPULimits, cpuNumFromQuota bool) (int, int64, int64, error) {
+// cgroupCPUNum returns the number of CPUs that `cg` can run on.
+func cgroupCPUNum(cg cgroup.Cgroup) int {
 	cpuNum, err := cg.NumCPU()
 	if err != nil {
 		log.Warningf("Failed to get cpu count from cgroups: %v. Falling back to runtime.NumCPU()", err)
-		cpuNum = runtime.NumCPU()
+		return runtime.NumCPU()
 	}
+	return cpuNum
+}
+
+// calculateCPUNum calculates the number of CPUs to configure for the sandbox,
+// out of the `cgCPUNum` CPUs that `cg` can run on, along with the cgroup CPU
+// quota and period.
+// `limits`, if set, holds the application CPU limit, which `cg` does not have
+// yet.
+func calculateCPUNum(cg cgroup.Cgroup, cgCPUNum int, limits *CPULimits, cpuNumFromQuota bool) (int, int64, int64, error) {
+	cpuNum := cgCPUNum
 	var cpuQuota, cpuPeriod int64
 	if limits != nil {
 		cpuQuota, cpuPeriod = *limits.App.Quota, int64(*limits.App.Period)
 	} else {
+		var err error
 		if cpuQuota, err = cg.CPUQuota(); err != nil {
 			return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
 		}
