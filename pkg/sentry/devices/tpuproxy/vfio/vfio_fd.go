@@ -47,6 +47,7 @@ type vfioFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 	memmap.MappableNoTrackMappings
+	memmap.MappableNoHugepages
 
 	// If hostFD is -1, this file descriptor has been restored from a save state,
 	// and should be treated as invalid. Any operations on this file descriptor

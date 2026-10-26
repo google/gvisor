@@ -552,6 +552,7 @@ func (d *dentry) StateTypeName() string {
 
 func (d *dentry) StateFields() []string {
 	return []string{
+		"MappableNoHugepages",
 		"vfsd",
 		"refs",
 		"parent",
@@ -572,34 +573,36 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	parentValue := d.saveParent()
 	_ = (*dentry)(parentValue)
-	stateSinkObject.SaveValue(2, parentValue)
-	stateSinkObject.Save(0, &d.vfsd)
-	stateSinkObject.Save(1, &d.refs)
-	stateSinkObject.Save(3, &d.name)
-	stateSinkObject.Save(4, &d.inode)
-	stateSinkObject.Save(5, &d.deleted)
-	stateSinkObject.Save(6, &d.cached)
-	stateSinkObject.Save(7, &d.cacheEntry)
-	stateSinkObject.Save(8, &d.syncableListEntry)
-	stateSinkObject.Save(9, &d.children)
-	stateSinkObject.Save(10, &d.syntheticChildren)
-	stateSinkObject.Save(11, &d.forMountpoint)
+	stateSinkObject.SaveValue(3, parentValue)
+	stateSinkObject.Save(0, &d.MappableNoHugepages)
+	stateSinkObject.Save(1, &d.vfsd)
+	stateSinkObject.Save(2, &d.refs)
+	stateSinkObject.Save(4, &d.name)
+	stateSinkObject.Save(5, &d.inode)
+	stateSinkObject.Save(6, &d.deleted)
+	stateSinkObject.Save(7, &d.cached)
+	stateSinkObject.Save(8, &d.cacheEntry)
+	stateSinkObject.Save(9, &d.syncableListEntry)
+	stateSinkObject.Save(10, &d.children)
+	stateSinkObject.Save(11, &d.syntheticChildren)
+	stateSinkObject.Save(12, &d.forMountpoint)
 }
 
 // +checklocksignore
 func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.vfsd)
-	stateSourceObject.Load(1, &d.refs)
-	stateSourceObject.Load(3, &d.name)
-	stateSourceObject.Load(4, &d.inode)
-	stateSourceObject.Load(5, &d.deleted)
-	stateSourceObject.Load(6, &d.cached)
-	stateSourceObject.Load(7, &d.cacheEntry)
-	stateSourceObject.Load(8, &d.syncableListEntry)
-	stateSourceObject.Load(9, &d.children)
-	stateSourceObject.Load(10, &d.syntheticChildren)
-	stateSourceObject.Load(11, &d.forMountpoint)
-	stateSourceObject.LoadValue(2, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
+	stateSourceObject.Load(0, &d.MappableNoHugepages)
+	stateSourceObject.Load(1, &d.vfsd)
+	stateSourceObject.Load(2, &d.refs)
+	stateSourceObject.Load(4, &d.name)
+	stateSourceObject.Load(5, &d.inode)
+	stateSourceObject.Load(6, &d.deleted)
+	stateSourceObject.Load(7, &d.cached)
+	stateSourceObject.Load(8, &d.cacheEntry)
+	stateSourceObject.Load(9, &d.syncableListEntry)
+	stateSourceObject.Load(10, &d.children)
+	stateSourceObject.Load(11, &d.syntheticChildren)
+	stateSourceObject.Load(12, &d.forMountpoint)
+	stateSourceObject.LoadValue(3, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 
@@ -885,6 +888,7 @@ func (fd *specialFileFD) StateTypeName() string {
 
 func (fd *specialFileFD) StateFields() []string {
 	return []string{
+		"MappableNoHugepages",
 		"fileDescription",
 		"specialFDEntry",
 		"isRegularFile",
@@ -902,28 +906,30 @@ func (fd *specialFileFD) beforeSave() {}
 // +checklocksignore
 func (fd *specialFileFD) StateSave(stateSinkObject state.Sink) {
 	fd.beforeSave()
-	stateSinkObject.Save(0, &fd.fileDescription)
-	stateSinkObject.Save(1, &fd.specialFDEntry)
-	stateSinkObject.Save(2, &fd.isRegularFile)
-	stateSinkObject.Save(3, &fd.seekable)
-	stateSinkObject.Save(4, &fd.queue)
-	stateSinkObject.Save(5, &fd.off)
-	stateSinkObject.Save(6, &fd.haveBuf)
-	stateSinkObject.Save(7, &fd.buf)
-	stateSinkObject.Save(8, &fd.mmapFile)
+	stateSinkObject.Save(0, &fd.MappableNoHugepages)
+	stateSinkObject.Save(1, &fd.fileDescription)
+	stateSinkObject.Save(2, &fd.specialFDEntry)
+	stateSinkObject.Save(3, &fd.isRegularFile)
+	stateSinkObject.Save(4, &fd.seekable)
+	stateSinkObject.Save(5, &fd.queue)
+	stateSinkObject.Save(6, &fd.off)
+	stateSinkObject.Save(7, &fd.haveBuf)
+	stateSinkObject.Save(8, &fd.buf)
+	stateSinkObject.Save(9, &fd.mmapFile)
 }
 
 // +checklocksignore
 func (fd *specialFileFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &fd.fileDescription)
-	stateSourceObject.Load(1, &fd.specialFDEntry)
-	stateSourceObject.Load(2, &fd.isRegularFile)
-	stateSourceObject.Load(3, &fd.seekable)
-	stateSourceObject.Load(4, &fd.queue)
-	stateSourceObject.Load(5, &fd.off)
-	stateSourceObject.Load(6, &fd.haveBuf)
-	stateSourceObject.Load(7, &fd.buf)
-	stateSourceObject.Load(8, &fd.mmapFile)
+	stateSourceObject.Load(0, &fd.MappableNoHugepages)
+	stateSourceObject.Load(1, &fd.fileDescription)
+	stateSourceObject.Load(2, &fd.specialFDEntry)
+	stateSourceObject.Load(3, &fd.isRegularFile)
+	stateSourceObject.Load(4, &fd.seekable)
+	stateSourceObject.Load(5, &fd.queue)
+	stateSourceObject.Load(6, &fd.off)
+	stateSourceObject.Load(7, &fd.haveBuf)
+	stateSourceObject.Load(8, &fd.buf)
+	stateSourceObject.Load(9, &fd.mmapFile)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 

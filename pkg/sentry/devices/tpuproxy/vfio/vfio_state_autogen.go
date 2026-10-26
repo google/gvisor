@@ -150,6 +150,7 @@ func (fd *pciDeviceFD) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
+		"MappableNoHugepages",
 		"hostFD",
 		"deviceAddress",
 		"containerName",
@@ -167,13 +168,14 @@ func (fd *pciDeviceFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.hostFD)
-	stateSinkObject.Save(5, &fd.deviceAddress)
-	stateSinkObject.Save(6, &fd.containerName)
-	stateSinkObject.Save(7, &fd.queue)
-	stateSinkObject.Save(8, &fd.mappings)
-	stateSinkObject.Save(9, &fd.memmapFile)
-	stateSinkObject.Save(10, &fd.tpuproxy)
+	stateSinkObject.Save(4, &fd.MappableNoHugepages)
+	stateSinkObject.Save(5, &fd.hostFD)
+	stateSinkObject.Save(6, &fd.deviceAddress)
+	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.Save(8, &fd.queue)
+	stateSinkObject.Save(9, &fd.mappings)
+	stateSinkObject.Save(10, &fd.memmapFile)
+	stateSinkObject.Save(11, &fd.tpuproxy)
 }
 
 func (fd *pciDeviceFD) afterLoad(context.Context) {}
@@ -184,13 +186,14 @@ func (fd *pciDeviceFD) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.hostFD)
-	stateSourceObject.Load(5, &fd.deviceAddress)
-	stateSourceObject.Load(6, &fd.containerName)
-	stateSourceObject.Load(7, &fd.queue)
-	stateSourceObject.Load(8, &fd.mappings)
-	stateSourceObject.Load(9, &fd.memmapFile)
-	stateSourceObject.Load(10, &fd.tpuproxy)
+	stateSourceObject.Load(4, &fd.MappableNoHugepages)
+	stateSourceObject.Load(5, &fd.hostFD)
+	stateSourceObject.Load(6, &fd.deviceAddress)
+	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.Load(8, &fd.queue)
+	stateSourceObject.Load(9, &fd.mappings)
+	stateSourceObject.Load(10, &fd.memmapFile)
+	stateSourceObject.Load(11, &fd.tpuproxy)
 }
 
 func (fd *tpuFD) StateTypeName() string {
@@ -204,6 +207,7 @@ func (fd *tpuFD) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
 		"MappableNoTrackMappings",
+		"MappableNoHugepages",
 		"hostFD",
 		"containerName",
 		"device",
@@ -220,11 +224,12 @@ func (fd *tpuFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
-	stateSinkObject.Save(5, &fd.hostFD)
-	stateSinkObject.Save(6, &fd.containerName)
-	stateSinkObject.Save(7, &fd.device)
-	stateSinkObject.Save(8, &fd.queue)
-	stateSinkObject.Save(9, &fd.memmapFile)
+	stateSinkObject.Save(5, &fd.MappableNoHugepages)
+	stateSinkObject.Save(6, &fd.hostFD)
+	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.Save(8, &fd.device)
+	stateSinkObject.Save(9, &fd.queue)
+	stateSinkObject.Save(10, &fd.memmapFile)
 }
 
 // +checklocksignore
@@ -234,11 +239,12 @@ func (fd *tpuFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
-	stateSourceObject.Load(5, &fd.hostFD)
-	stateSourceObject.Load(6, &fd.containerName)
-	stateSourceObject.Load(7, &fd.device)
-	stateSourceObject.Load(8, &fd.queue)
-	stateSourceObject.Load(9, &fd.memmapFile)
+	stateSourceObject.Load(5, &fd.MappableNoHugepages)
+	stateSourceObject.Load(6, &fd.hostFD)
+	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.Load(8, &fd.device)
+	stateSourceObject.Load(9, &fd.queue)
+	stateSourceObject.Load(10, &fd.memmapFile)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
@@ -336,6 +342,7 @@ func (fd *vfioFD) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
 		"MappableNoTrackMappings",
+		"MappableNoHugepages",
 		"hostFD",
 		"containerName",
 		"device",
@@ -352,11 +359,12 @@ func (fd *vfioFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
-	stateSinkObject.Save(5, &fd.hostFD)
-	stateSinkObject.Save(6, &fd.containerName)
-	stateSinkObject.Save(7, &fd.device)
-	stateSinkObject.Save(8, &fd.queue)
-	stateSinkObject.Save(9, &fd.memmapFile)
+	stateSinkObject.Save(5, &fd.MappableNoHugepages)
+	stateSinkObject.Save(6, &fd.hostFD)
+	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.Save(8, &fd.device)
+	stateSinkObject.Save(9, &fd.queue)
+	stateSinkObject.Save(10, &fd.memmapFile)
 }
 
 // +checklocksignore
@@ -366,11 +374,12 @@ func (fd *vfioFD) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
-	stateSourceObject.Load(5, &fd.hostFD)
-	stateSourceObject.Load(6, &fd.containerName)
-	stateSourceObject.Load(7, &fd.device)
-	stateSourceObject.Load(8, &fd.queue)
-	stateSourceObject.Load(9, &fd.memmapFile)
+	stateSourceObject.Load(5, &fd.MappableNoHugepages)
+	stateSourceObject.Load(6, &fd.hostFD)
+	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.Load(8, &fd.device)
+	stateSourceObject.Load(9, &fd.queue)
+	stateSourceObject.Load(10, &fd.memmapFile)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 

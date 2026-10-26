@@ -101,6 +101,7 @@ func (m *aioMappable) StateTypeName() string {
 
 func (m *aioMappable) StateFields() []string {
 	return []string{
+		"MappableNoHugepages",
 		"aioMappableRefs",
 		"fr",
 	}
@@ -111,14 +112,16 @@ func (m *aioMappable) beforeSave() {}
 // +checklocksignore
 func (m *aioMappable) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.aioMappableRefs)
-	stateSinkObject.Save(1, &m.fr)
+	stateSinkObject.Save(0, &m.MappableNoHugepages)
+	stateSinkObject.Save(1, &m.aioMappableRefs)
+	stateSinkObject.Save(2, &m.fr)
 }
 
 // +checklocksignore
 func (m *aioMappable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.aioMappableRefs)
-	stateSourceObject.Load(1, &m.fr)
+	stateSourceObject.Load(0, &m.MappableNoHugepages)
+	stateSourceObject.Load(1, &m.aioMappableRefs)
+	stateSourceObject.Load(2, &m.fr)
 	stateSourceObject.AfterLoad(func() { m.afterLoad(ctx) })
 }
 
@@ -519,6 +522,7 @@ func (m *SpecialMappable) StateTypeName() string {
 
 func (m *SpecialMappable) StateFields() []string {
 	return []string{
+		"MappableNoHugepages",
 		"SpecialMappableRefs",
 		"fr",
 		"name",
@@ -530,16 +534,18 @@ func (m *SpecialMappable) beforeSave() {}
 // +checklocksignore
 func (m *SpecialMappable) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
-	stateSinkObject.Save(0, &m.SpecialMappableRefs)
-	stateSinkObject.Save(1, &m.fr)
-	stateSinkObject.Save(2, &m.name)
+	stateSinkObject.Save(0, &m.MappableNoHugepages)
+	stateSinkObject.Save(1, &m.SpecialMappableRefs)
+	stateSinkObject.Save(2, &m.fr)
+	stateSinkObject.Save(3, &m.name)
 }
 
 // +checklocksignore
 func (m *SpecialMappable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &m.SpecialMappableRefs)
-	stateSourceObject.Load(1, &m.fr)
-	stateSourceObject.Load(2, &m.name)
+	stateSourceObject.Load(0, &m.MappableNoHugepages)
+	stateSourceObject.Load(1, &m.SpecialMappableRefs)
+	stateSourceObject.Load(2, &m.fr)
+	stateSourceObject.Load(3, &m.name)
 	stateSourceObject.AfterLoad(func() { m.afterLoad(ctx) })
 }
 

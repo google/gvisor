@@ -236,6 +236,7 @@ func (i *inode) StateTypeName() string {
 func (i *inode) StateFields() []string {
 	return []string{
 		"Inode",
+		"MappableNoHugepages",
 		"inodeRefs",
 		"fs",
 		"mappings",
@@ -250,11 +251,12 @@ func (i *inode) beforeSave() {}
 func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.Inode)
-	stateSinkObject.Save(1, &i.inodeRefs)
-	stateSinkObject.Save(2, &i.fs)
-	stateSinkObject.Save(3, &i.mappings)
-	stateSinkObject.Save(4, &i.locks)
-	stateSinkObject.Save(5, &i.watches)
+	stateSinkObject.Save(1, &i.MappableNoHugepages)
+	stateSinkObject.Save(2, &i.inodeRefs)
+	stateSinkObject.Save(3, &i.fs)
+	stateSinkObject.Save(4, &i.mappings)
+	stateSinkObject.Save(5, &i.locks)
+	stateSinkObject.Save(6, &i.watches)
 }
 
 func (i *inode) afterLoad(context.Context) {}
@@ -262,11 +264,12 @@ func (i *inode) afterLoad(context.Context) {}
 // +checklocksignore
 func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Inode)
-	stateSourceObject.Load(1, &i.inodeRefs)
-	stateSourceObject.Load(2, &i.fs)
-	stateSourceObject.Load(3, &i.mappings)
-	stateSourceObject.Load(4, &i.locks)
-	stateSourceObject.Load(5, &i.watches)
+	stateSourceObject.Load(1, &i.MappableNoHugepages)
+	stateSourceObject.Load(2, &i.inodeRefs)
+	stateSourceObject.Load(3, &i.fs)
+	stateSourceObject.Load(4, &i.mappings)
+	stateSourceObject.Load(5, &i.locks)
+	stateSourceObject.Load(6, &i.watches)
 }
 
 func (d *dentry) StateTypeName() string {

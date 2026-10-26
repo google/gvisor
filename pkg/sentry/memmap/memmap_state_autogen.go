@@ -141,10 +141,32 @@ func (m *MappableNoTrackMappings) afterLoad(context.Context) {}
 func (m *MappableNoTrackMappings) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
+func (m *MappableNoHugepages) StateTypeName() string {
+	return "pkg/sentry/memmap.MappableNoHugepages"
+}
+
+func (m *MappableNoHugepages) StateFields() []string {
+	return []string{}
+}
+
+func (m *MappableNoHugepages) beforeSave() {}
+
+// +checklocksignore
+func (m *MappableNoHugepages) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+}
+
+func (m *MappableNoHugepages) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (m *MappableNoHugepages) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+}
+
 func init() {
 	state.Register((*FileRange)(nil))
 	state.Register((*MappableRange)(nil))
 	state.Register((*MappingOfRange)(nil))
 	state.Register((*NoMapInternal)(nil))
 	state.Register((*MappableNoTrackMappings)(nil))
+	state.Register((*MappableNoHugepages)(nil))
 }

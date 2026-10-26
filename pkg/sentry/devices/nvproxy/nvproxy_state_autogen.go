@@ -47,6 +47,7 @@ func (fd *frontendFD) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
 		"MappableNoTrackMappings",
+		"MappableNoHugepages",
 		"dev",
 		"containerName",
 		"hostFD",
@@ -67,15 +68,16 @@ func (fd *frontendFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
-	stateSinkObject.Save(5, &fd.dev)
-	stateSinkObject.Save(6, &fd.containerName)
-	stateSinkObject.Save(7, &fd.hostFD)
-	stateSinkObject.Save(8, &fd.memmapFile)
-	stateSinkObject.Save(9, &fd.internalQueue)
-	stateSinkObject.Save(10, &fd.internalEntry)
-	stateSinkObject.Save(11, &fd.cachedEvents)
-	stateSinkObject.Save(12, &fd.appQueue)
-	stateSinkObject.Save(13, &fd.clients)
+	stateSinkObject.Save(5, &fd.MappableNoHugepages)
+	stateSinkObject.Save(6, &fd.dev)
+	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.Save(8, &fd.hostFD)
+	stateSinkObject.Save(9, &fd.memmapFile)
+	stateSinkObject.Save(10, &fd.internalQueue)
+	stateSinkObject.Save(11, &fd.internalEntry)
+	stateSinkObject.Save(12, &fd.cachedEvents)
+	stateSinkObject.Save(13, &fd.appQueue)
+	stateSinkObject.Save(14, &fd.clients)
 }
 
 // +checklocksignore
@@ -85,15 +87,16 @@ func (fd *frontendFD) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
-	stateSourceObject.Load(5, &fd.dev)
-	stateSourceObject.Load(6, &fd.containerName)
-	stateSourceObject.Load(7, &fd.hostFD)
-	stateSourceObject.Load(8, &fd.memmapFile)
-	stateSourceObject.Load(9, &fd.internalQueue)
-	stateSourceObject.Load(10, &fd.internalEntry)
-	stateSourceObject.Load(11, &fd.cachedEvents)
-	stateSourceObject.Load(12, &fd.appQueue)
-	stateSourceObject.Load(13, &fd.clients)
+	stateSourceObject.Load(5, &fd.MappableNoHugepages)
+	stateSourceObject.Load(6, &fd.dev)
+	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.Load(8, &fd.hostFD)
+	stateSourceObject.Load(9, &fd.memmapFile)
+	stateSourceObject.Load(10, &fd.internalQueue)
+	stateSourceObject.Load(11, &fd.internalEntry)
+	stateSourceObject.Load(12, &fd.cachedEvents)
+	stateSourceObject.Load(13, &fd.appQueue)
+	stateSourceObject.Load(14, &fd.clients)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
@@ -525,6 +528,7 @@ func (fd *uvmFD) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
 		"MappableNoTrackMappings",
+		"MappableNoHugepages",
 		"dev",
 		"containerName",
 		"hostFD",
@@ -541,11 +545,12 @@ func (fd *uvmFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
 	stateSinkObject.Save(4, &fd.MappableNoTrackMappings)
-	stateSinkObject.Save(5, &fd.dev)
-	stateSinkObject.Save(6, &fd.containerName)
-	stateSinkObject.Save(7, &fd.hostFD)
-	stateSinkObject.Save(8, &fd.memmapFile)
-	stateSinkObject.Save(9, &fd.queue)
+	stateSinkObject.Save(5, &fd.MappableNoHugepages)
+	stateSinkObject.Save(6, &fd.dev)
+	stateSinkObject.Save(7, &fd.containerName)
+	stateSinkObject.Save(8, &fd.hostFD)
+	stateSinkObject.Save(9, &fd.memmapFile)
+	stateSinkObject.Save(10, &fd.queue)
 }
 
 // +checklocksignore
@@ -555,11 +560,12 @@ func (fd *uvmFD) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
 	stateSourceObject.Load(4, &fd.MappableNoTrackMappings)
-	stateSourceObject.Load(5, &fd.dev)
-	stateSourceObject.Load(6, &fd.containerName)
-	stateSourceObject.Load(7, &fd.hostFD)
-	stateSourceObject.Load(8, &fd.memmapFile)
-	stateSourceObject.Load(9, &fd.queue)
+	stateSourceObject.Load(5, &fd.MappableNoHugepages)
+	stateSourceObject.Load(6, &fd.dev)
+	stateSourceObject.Load(7, &fd.containerName)
+	stateSourceObject.Load(8, &fd.hostFD)
+	stateSourceObject.Load(9, &fd.memmapFile)
+	stateSourceObject.Load(10, &fd.queue)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 

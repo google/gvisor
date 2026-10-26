@@ -61,6 +61,7 @@ func (sqemf *sqEntriesFile) StateTypeName() string {
 func (sqemf *sqEntriesFile) StateFields() []string {
 	return []string{
 		"MappableNoTrackMappings",
+		"MappableNoHugepages",
 		"fr",
 	}
 }
@@ -71,7 +72,8 @@ func (sqemf *sqEntriesFile) beforeSave() {}
 func (sqemf *sqEntriesFile) StateSave(stateSinkObject state.Sink) {
 	sqemf.beforeSave()
 	stateSinkObject.Save(0, &sqemf.MappableNoTrackMappings)
-	stateSinkObject.Save(1, &sqemf.fr)
+	stateSinkObject.Save(1, &sqemf.MappableNoHugepages)
+	stateSinkObject.Save(2, &sqemf.fr)
 }
 
 func (sqemf *sqEntriesFile) afterLoad(context.Context) {}
@@ -79,7 +81,8 @@ func (sqemf *sqEntriesFile) afterLoad(context.Context) {}
 // +checklocksignore
 func (sqemf *sqEntriesFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sqemf.MappableNoTrackMappings)
-	stateSourceObject.Load(1, &sqemf.fr)
+	stateSourceObject.Load(1, &sqemf.MappableNoHugepages)
+	stateSourceObject.Load(2, &sqemf.fr)
 }
 
 func (rbmf *ringsBufferFile) StateTypeName() string {
@@ -89,6 +92,7 @@ func (rbmf *ringsBufferFile) StateTypeName() string {
 func (rbmf *ringsBufferFile) StateFields() []string {
 	return []string{
 		"MappableNoTrackMappings",
+		"MappableNoHugepages",
 		"fr",
 	}
 }
@@ -99,7 +103,8 @@ func (rbmf *ringsBufferFile) beforeSave() {}
 func (rbmf *ringsBufferFile) StateSave(stateSinkObject state.Sink) {
 	rbmf.beforeSave()
 	stateSinkObject.Save(0, &rbmf.MappableNoTrackMappings)
-	stateSinkObject.Save(1, &rbmf.fr)
+	stateSinkObject.Save(1, &rbmf.MappableNoHugepages)
+	stateSinkObject.Save(2, &rbmf.fr)
 }
 
 func (rbmf *ringsBufferFile) afterLoad(context.Context) {}
@@ -107,7 +112,8 @@ func (rbmf *ringsBufferFile) afterLoad(context.Context) {}
 // +checklocksignore
 func (rbmf *ringsBufferFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rbmf.MappableNoTrackMappings)
-	stateSourceObject.Load(1, &rbmf.fr)
+	stateSourceObject.Load(1, &rbmf.MappableNoHugepages)
+	stateSourceObject.Load(2, &rbmf.fr)
 }
 
 func init() {
