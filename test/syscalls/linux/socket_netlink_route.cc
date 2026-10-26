@@ -56,6 +56,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/util/cleanup.h"
@@ -68,6 +70,7 @@
 #include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/timer_util.h"
 
 // Tests for NETLINK_ROUTE sockets.
 
@@ -3714,21 +3717,33 @@ TEST(NetlinkRouteTest, VethOperStateUpWhenBothEndsUp) {
   get.ifm.ifi_family = AF_UNSPEC;
   get.ifm.ifi_index = veth1_idx;
 
-  bool found = false;
-  ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &get, sizeof(get),
-      [&](const struct nlmsghdr* hdr) {
-        ASSERT_EQ(hdr->nlmsg_type, RTM_NEWLINK);
-        const struct ifinfomsg* msg =
-            reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
-        const struct rtattr* rta = FindRtAttr(hdr, msg, IFLA_OPERSTATE);
-        ASSERT_NE(rta, nullptr) << "IFLA_OPERSTATE not found in message.";
-        const auto operstate = *reinterpret_cast<const uint8_t*>(RTA_DATA(rta));
-        EXPECT_EQ(operstate, IF_OPER_UP);
-        found = true;
-      },
-      false));
-  EXPECT_TRUE(found);
+  // Linux's workqueue updates IFLA_OPERSTATE after carrier changes, so an
+  // IFF_UP acknowledgement can precede IF_OPER_UP.
+  // https://github.com/torvalds/linux/blob/e5f0a698b/Documentation/networking/operstates.rst#L132-L147
+  MonotonicTimer timer;
+  timer.Start();
+  uint8_t operstate = IF_OPER_UNKNOWN;
+  do {
+    bool found = false;
+    ASSERT_NO_ERRNO(NetlinkRequestResponse(
+        fd, &get, sizeof(get),
+        [&](const struct nlmsghdr* hdr) {
+          ASSERT_EQ(hdr->nlmsg_type, RTM_NEWLINK);
+          const struct ifinfomsg* msg =
+              reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
+          const struct rtattr* rta = FindRtAttr(hdr, msg, IFLA_OPERSTATE);
+          ASSERT_NE(rta, nullptr) << "IFLA_OPERSTATE not found in message.";
+          operstate = *reinterpret_cast<const uint8_t*>(RTA_DATA(rta));
+          found = true;
+        },
+        false));
+    ASSERT_TRUE(found);
+    if (operstate == IF_OPER_UP) {
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(10));
+  } while (timer.Duration() < absl::Seconds(5));
+  EXPECT_EQ(operstate, IF_OPER_UP);
 }
 
 TEST(NetlinkRouteTest, VethAddShortPeerIfInfoMsg) {
