@@ -120,6 +120,7 @@ func (s *Stack) StateFields() []string {
 		"tcpRecvBufSize",
 		"tcpSendBufSize",
 		"tcpSACKEnabled",
+		"portRange",
 		"allowRawSockets",
 	}
 }
@@ -134,7 +135,8 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.tcpRecvBufSize)
 	stateSinkObject.Save(3, &s.tcpSendBufSize)
 	stateSinkObject.Save(4, &s.tcpSACKEnabled)
-	stateSinkObject.Save(5, &s.allowRawSockets)
+	stateSinkObject.Save(5, &s.portRange)
+	stateSinkObject.Save(6, &s.allowRawSockets)
 }
 
 func (s *Stack) afterLoad(context.Context) {}
@@ -146,7 +148,8 @@ func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &s.tcpRecvBufSize)
 	stateSourceObject.Load(3, &s.tcpSendBufSize)
 	stateSourceObject.Load(4, &s.tcpSACKEnabled)
-	stateSourceObject.Load(5, &s.allowRawSockets)
+	stateSourceObject.Load(5, &s.portRange)
+	stateSourceObject.Load(6, &s.allowRawSockets)
 }
 
 func init() {
