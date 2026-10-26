@@ -471,6 +471,17 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "AsPID1",
+			args: []string{"--as-pid-1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:    os.Environ(),
+				UID:    -1,
+				GID:    -1,
+				AsPID1: true,
+				Args:   []string{"bash"},
+			},
+		},
+		{
 			name: "ValidHostname",
 			args: []string{"--hostname", "test-host", "bash"},
 			wantCfg: &bwrapConfig{

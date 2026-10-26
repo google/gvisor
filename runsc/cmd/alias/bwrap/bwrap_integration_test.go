@@ -913,3 +913,206 @@ func TestDir(t *testing.T) {
 		})
 	}
 }
+
+func TestAsPID1(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name      string
+		bwrapArgs []string
+		wantPID1  bool
+	}{
+		{
+			name: "AsPID1",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--as-pid-1",
+				"--",
+				"/bin/sh", "-c", "echo $$",
+			},
+			wantPID1: true,
+		},
+		{
+			// Without --as-pid-1 the /bin/sleep placeholder is PID 1.
+			name: "NotPID1ByDefault",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--",
+				"/bin/sh", "-c", "echo $$",
+			},
+			wantPID1: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			pid := strings.TrimSpace(stdout.String())
+			if gotPID1 := pid == "1"; gotPID1 != tc.wantPID1 {
+				t.Errorf("COMMAND ran as PID %q, want PID 1: %t", pid, tc.wantPID1)
+			}
+		})
+	}
+}
+
+// TestAsPID1ExitStatus checks that runsc bwrap exits with COMMAND's exit status
+// when COMMAND runs as PID 1.
+func TestAsPID1ExitStatus(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	cmd := exec.Command(specutils.ExePath, "--root", newRunRootDir(t), "bwrap",
+		"--unshare-user",
+		"--ro-bind", "/", "/",
+		"--as-pid-1",
+		"--",
+		"/bin/sh", "-c", "exit 7",
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := testutil.RunCmd(cmd)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
+		t.Errorf("runsc bwrap = %v, want exit status 7\nStderr: %s", err, stderr.String())
+	}
+}
+
+// TestAsPID1Argv0 checks --as-pid-1 and --argv0 alone and together. --as-pid-1
+// decides whether COMMAND is PID 1, and --argv0 decides its argv[0]. Neither
+// flag changes what the other does.
+func TestAsPID1Argv0(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	tests := []struct {
+		name      string
+		bwrapArgs []string
+		wantArgv0 string
+		wantPID1  bool
+	}{
+		{
+			name: "Default",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--",
+				"/bin/sh", "-c", "echo $0 $$",
+			},
+			wantArgv0: "/bin/sh",
+			wantPID1:  false,
+		},
+		{
+			name: "Argv0",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--argv0", "custom-sh",
+				"--",
+				"/bin/sh", "-c", "echo $0 $$",
+			},
+			wantArgv0: "custom-sh",
+			wantPID1:  false,
+		},
+		{
+			name: "AsPID1",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--as-pid-1",
+				"--",
+				"/bin/sh", "-c", "echo $0 $$",
+			},
+			wantArgv0: "/bin/sh",
+			wantPID1:  true,
+		},
+		{
+			name: "AsPID1AndArgv0",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--as-pid-1",
+				"--argv0", "custom-sh",
+				"--",
+				"/bin/sh", "-c", "echo $0 $$",
+			},
+			wantArgv0: "custom-sh",
+			wantPID1:  true,
+		},
+		{
+			// COMMAND has no slash, so the Sentry looks it up in PATH by its
+			// name, sh, not by argv[0].
+			name: "AsPID1AndArgv0PathLookup",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--as-pid-1",
+				"--argv0", "custom-sh",
+				"--",
+				"sh", "-c", "echo $0 $$",
+			},
+			wantArgv0: "custom-sh",
+			wantPID1:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			argv0, pid, ok := strings.Cut(strings.TrimSpace(stdout.String()), " ")
+			if !ok {
+				t.Fatalf(`output = %q, want "<argv0> <pid>"`, stdout.String())
+			}
+			if argv0 != tc.wantArgv0 {
+				t.Errorf("COMMAND ran with argv[0] %q, want %q", argv0, tc.wantArgv0)
+			}
+			if gotPID1 := pid == "1"; gotPID1 != tc.wantPID1 {
+				t.Errorf("COMMAND ran as PID %q, want PID 1: %t", pid, tc.wantPID1)
+			}
+		})
+	}
+}

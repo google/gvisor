@@ -438,3 +438,32 @@ func TestSandboxCustomProcMount(t *testing.T) {
 		t.Errorf("output of cat /custom_proc/self/status missing 'Name:', got: %v", output)
 	}
 }
+
+// TestExecNewPIDNamespace checks that WithExecNewPIDNamespace runs the command
+// as PID 1, and that the sandbox outlives the command.
+func TestExecNewPIDNamespace(t *testing.T) {
+	ctx := context.Background()
+
+	sb, err := sandbox.New(ctx, sandbox.WithNetwork(sandbox.NetworkModeNone))
+	if err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+	defer sb.Close(ctx)
+
+	argv := []string{"/bin/sh", "-c", "echo $$"}
+	res, err := sb.Exec(ctx, argv, sandbox.WithExecNewPIDNamespace())
+	if err != nil {
+		t.Fatalf("failed to execute %v in sandbox: %v", argv, err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("%v exited with %d, stderr: %s", argv, res.ExitCode, res.Stderr)
+	}
+	if got := strings.TrimSpace(res.Stdout); got != "1" {
+		t.Errorf("command ran as PID %q, want 1", got)
+	}
+
+	// The sandbox keeps running after the command exits, so Exec still works.
+	if got := strings.TrimSpace(execOutput(ctx, t, sb, argv...)); got == "1" {
+		t.Errorf("command without WithExecNewPIDNamespace ran as PID 1")
+	}
+}

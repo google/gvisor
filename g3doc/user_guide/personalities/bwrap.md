@@ -136,6 +136,7 @@ application itself sits in a host namespace.
 | :--- | :--- | :--- | :--- |
 | `--new-session` | None | No-op. The flag exists to block `TIOCSTI` input injection into the host terminal, and the Sentry leaves `TIOCSTI` unimplemented. | No-op. The protection it asks for is already in place. |
 | `--die-with-parent` | None | No-op. The sandbox init process is a placeholder and the command runs as an exec inside it, so there is no parent-child relationship for `PR_SET_PDEATHSIG` to act on. | Accepted and ignored. Nothing signals the command when `runsc`'s parent dies. |
+| `--as-pid-1` | None | Runs the command as PID 1 of a new PID namespace inside the sandbox. When it exits, every process left in that namespace is killed. Without the flag, the placeholder init process is PID 1. | Does not require `--unshare-pid`, because the sandbox always has its own PID namespace. |
 
 <!-- mdformat on -->
 
