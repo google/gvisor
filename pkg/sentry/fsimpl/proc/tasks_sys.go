@@ -595,6 +595,14 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 		return 0, linuxerr.EINVAL
 	}
 
+	// Linux's ipv4_local_port_range() refuses an ephemeral range that starts
+	// below ip_unprivileged_port_start, which would otherwise let autobind hand
+	// out ports that an explicit bind(2) rejects without CAP_NET_BIND_SERVICE.
+	// SetPortRange already rejects an inverted range (start > end).
+	if uint16(ports[0]) < pr.stack.UnprivilegedPortStart() {
+		return 0, linuxerr.EINVAL
+	}
+
 	if err := pr.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {
 		return 0, err
 	}
@@ -634,6 +642,13 @@ func (ps *ipUnprivilegedPortStart) Write(ctx context.Context, _ *vfs.FileDescrip
 
 	// The boundary is a uint16.
 	if ports[0] < 0 || ports[0] > math.MaxUint16 {
+		return 0, linuxerr.EINVAL
+	}
+
+	// Linux's ipv4_privileged_ports() refuses, with EINVAL, a boundary above the
+	// start of the ephemeral range: the privileged range must not overlap the
+	// ephemeral one.
+	if lo, _ := ps.stack.PortRange(); uint16(ports[0]) > lo {
 		return 0, linuxerr.EINVAL
 	}
 

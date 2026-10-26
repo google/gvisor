@@ -966,8 +966,11 @@ func (s *sock) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			// rather than EACCES. __inet6_bind() checks the port first, so
 			// AF_INET6 keeps EACCES. INADDR_ANY, broadcast and multicast are
 			// always valid bind addresses, so they fall through to EACCES too.
-			if family == linux.AF_INET && addr.Addr != header.IPv4Any &&
-				addr.Addr != header.IPv4Broadcast && !header.IsV4MulticastAddress(addr.Addr) {
+			// INADDR_ANY reaches here as the zero-length address (BitLen() == 0)
+			// as well as header.IPv4Any; both are excluded.
+			if family == linux.AF_INET && addr.Addr.BitLen() != 0 &&
+				addr.Addr != header.IPv4Any && addr.Addr != header.IPv4Broadcast &&
+				!header.IsV4MulticastAddress(addr.Addr) {
 				if ns, ok := s.namespace.Stack().(*Stack); ok &&
 					ns.Stack.CheckLocalAddress(addr.NIC, ipv4.ProtocolNumber, addr.Addr) == 0 {
 					return syserr.ErrAddressNotAvailable

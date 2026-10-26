@@ -124,9 +124,7 @@ const (
 // port below it requires CAP_NET_BIND_SERVICE. From linux/include/net/sock.h.
 //
 // Linux makes this boundary configurable per network namespace through
-// net.ipv4.ip_unprivileged_port_start. The Sentry does not implement that
-// sysctl as writable, so this value is also what /proc/sys/net/ipv4/
-// ip_unprivileged_port_start reports.
+// net.ipv4.ip_unprivileged_port_start; PROT_SOCK is its default.
 const PROT_SOCK = 1024
 
 // SOCK_TYPE_MASK covers all of the above socket types. The remaining bits are
