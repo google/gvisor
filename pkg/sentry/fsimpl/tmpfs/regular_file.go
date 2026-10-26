@@ -120,6 +120,7 @@ func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.
 	file := &regularFile{
 		memoryUsageKind: fs.usage,
 		seals:           linux.F_SEAL_SEAL,
+		huge:            fs.huge,
 	}
 	err := file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)
 	if err != nil {

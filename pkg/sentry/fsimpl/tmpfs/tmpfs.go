@@ -64,6 +64,7 @@ const (
 	optUID      = "uid"
 	optGID      = "gid"
 	optNoSwap   = "noswap"
+	optHuge     = "huge"
 )
 
 // FilesystemType implements vfs.FilesystemType.
@@ -94,6 +95,10 @@ type filesystem struct {
 	// usage is the memory accounting category under which pages backing
 	// files in this filesystem are accounted.
 	usage usage.MemoryKind
+
+	// huge is true if regular files in this filesystem may be hugepage-backed,
+	// as the files backing shared anonymous mappings are. Immutable.
+	huge bool
 
 	// mu serializes changes to the Dentry tree.
 	mu filesystemRWMutex `state:"nosave"`
@@ -271,6 +276,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	maxInodes := getDefaultInodeLimit(disableDefaultSizeLimit)
 	rootKUID := creds.FilesystemKUID
 	rootKGID := creds.FilesystemKGID
+	huge := false
 
 	printedOptsMap := make(map[string]string)
 
@@ -368,6 +374,24 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		case optNoSwap:
 			// Accept, but ignore, noswap.
 
+		case optHuge:
+			switch value {
+			case "always", "within_size":
+				// Fills allocate huge pages only for hugepage-aligned ranges
+				// within a file's size, so these behave the same.
+				huge = true
+			case "never", "advise":
+				// Hugepage advice on mappings isn't tracked, so advise can't
+				// enable huge pages.
+				huge = false
+			default:
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid huge: %q", value)
+				return nil, nil, linuxerr.EINVAL
+			}
+			if value != "never" {
+				printedOptsMap[optHuge] = fmt.Sprintf("huge=%s", value)
+			}
+
 		default:
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unknown option: %s", key)
 			return nil, nil, linuxerr.EINVAL
@@ -375,7 +399,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	var printedOpts []string
-	for _, key := range []string{optSize, optNrInodes, optMode, optUID, optGID} {
+	for _, key := range []string{optSize, optNrInodes, optMode, optUID, optGID, optHuge} {
 		if val, ok := printedOptsMap[key]; ok {
 			printedOpts = append(printedOpts, val)
 		}
@@ -396,6 +420,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		devMinor:         devMinor,
 		mopts:            strings.Join(printedOpts, ","),
 		usage:            memUsage,
+		huge:             huge,
 		maxFilenameLen:   linux.NAME_MAX,
 		maxSizeInPages:   maxSizeInPages,
 		maxInodes:        maxInodes,

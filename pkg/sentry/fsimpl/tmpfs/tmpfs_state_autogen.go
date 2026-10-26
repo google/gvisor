@@ -392,6 +392,7 @@ func (fs *filesystem) StateFields() []string {
 		"devMinor",
 		"mopts",
 		"usage",
+		"huge",
 		"nextInoMinusOne",
 		"root",
 		"maxFilenameLen",
@@ -417,15 +418,16 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fs.devMinor)
 	stateSinkObject.Save(4, &fs.mopts)
 	stateSinkObject.Save(5, &fs.usage)
-	stateSinkObject.Save(6, &fs.nextInoMinusOne)
-	stateSinkObject.Save(7, &fs.root)
-	stateSinkObject.Save(8, &fs.maxFilenameLen)
-	stateSinkObject.Save(9, &fs.maxSizeInPages)
-	stateSinkObject.Save(10, &fs.maxInodes)
-	stateSinkObject.Save(11, &fs.pagesUsed)
-	stateSinkObject.Save(12, &fs.inodesUsed)
-	stateSinkObject.Save(13, &fs.allowXattrPrefix)
-	stateSinkObject.Save(14, &fs.ovlWhiteout)
+	stateSinkObject.Save(6, &fs.huge)
+	stateSinkObject.Save(7, &fs.nextInoMinusOne)
+	stateSinkObject.Save(8, &fs.root)
+	stateSinkObject.Save(9, &fs.maxFilenameLen)
+	stateSinkObject.Save(10, &fs.maxSizeInPages)
+	stateSinkObject.Save(11, &fs.maxInodes)
+	stateSinkObject.Save(12, &fs.pagesUsed)
+	stateSinkObject.Save(13, &fs.inodesUsed)
+	stateSinkObject.Save(14, &fs.allowXattrPrefix)
+	stateSinkObject.Save(15, &fs.ovlWhiteout)
 }
 
 func (fs *filesystem) afterLoad(context.Context) {}
@@ -437,15 +439,16 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(3, &fs.devMinor)
 	stateSourceObject.Load(4, &fs.mopts)
 	stateSourceObject.Load(5, &fs.usage)
-	stateSourceObject.Load(6, &fs.nextInoMinusOne)
-	stateSourceObject.Load(7, &fs.root)
-	stateSourceObject.Load(8, &fs.maxFilenameLen)
-	stateSourceObject.Load(9, &fs.maxSizeInPages)
-	stateSourceObject.Load(10, &fs.maxInodes)
-	stateSourceObject.Load(11, &fs.pagesUsed)
-	stateSourceObject.Load(12, &fs.inodesUsed)
-	stateSourceObject.Load(13, &fs.allowXattrPrefix)
-	stateSourceObject.Load(14, &fs.ovlWhiteout)
+	stateSourceObject.Load(6, &fs.huge)
+	stateSourceObject.Load(7, &fs.nextInoMinusOne)
+	stateSourceObject.Load(8, &fs.root)
+	stateSourceObject.Load(9, &fs.maxFilenameLen)
+	stateSourceObject.Load(10, &fs.maxSizeInPages)
+	stateSourceObject.Load(11, &fs.maxInodes)
+	stateSourceObject.Load(12, &fs.pagesUsed)
+	stateSourceObject.Load(13, &fs.inodesUsed)
+	stateSourceObject.Load(14, &fs.allowXattrPrefix)
+	stateSourceObject.Load(15, &fs.ovlWhiteout)
 	stateSourceObject.LoadValue(1, new(checkpoint.ResourceID), func(y any) { fs.loadMf(ctx, y.(checkpoint.ResourceID)) })
 }
 
