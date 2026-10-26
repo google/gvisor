@@ -242,11 +242,13 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		alreadyUncommittedBytes uint64
 		newUncommittedBytes     uint64
 		hostHoleBytes           uint64
+		queuedPageBytes         uint64
 	)
 	asyncWritePages := func(fr memmap.FileRange) {}
 	if amfs != nil {
 		asyncWritePages = func(fr memmap.FileRange) {
 			amount := fr.Length()
+			queuedPageBytes += amount
 			amfs.pf.mu.Lock()
 			amfs.pf.unsaved.PushBack(apsRange{
 				amfs:      amfs,
@@ -512,6 +514,11 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 
 	// Save metadata.
 	timeMetadataStart := gohacks.Nanotime()
+	if amfs != nil && queuedPageBytes != f.knownCommittedBytes {
+		// MemoryFiles share a pages file, so a mismatch shifts the
+		// PagesFileOffset used to restore every subsequent MemoryFile.
+		return fmt.Errorf("async page save queued %d bytes, but metadata describes %d bytes", queuedPageBytes, f.knownCommittedBytes)
+	}
 	pb := f.exportMetadataProto()
 	data, err := proto.Marshal(pb)
 	if err != nil {

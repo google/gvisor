@@ -216,6 +216,7 @@ go_test(
         "//pkg/hostarch",
         "//pkg/memutil",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/state/stateio",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
