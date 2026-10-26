@@ -121,7 +121,7 @@ func (r *RootfsUpper) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		util.Fatalf("error loading container: %v", err)
 	}

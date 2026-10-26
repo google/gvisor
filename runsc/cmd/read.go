@@ -65,7 +65,7 @@ func (r *Read) SetFlags(f *flag.FlagSet) {
 
 // FetchSpec implements util.SubCommand.FetchSpec.
 func (r *Read) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
-	c, err := r.loadContainer(conf, f, container.LoadOpts{SkipCheck: true})
+	c, err := r.loadContainer(conf, f, container.LoadOpts{SkipCheck: true, ReadOnly: true})
 	if err != nil {
 		return "", nil, fmt.Errorf("loading container: %w", err)
 	}
@@ -83,7 +83,7 @@ func (r *Read) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	size := r.size
 
 	conf := args[0].(*config.Config)
-	c, err := r.loadContainer(conf, f, container.LoadOpts{SkipCheck: true})
+	c, err := r.loadContainer(conf, f, container.LoadOpts{SkipCheck: true, ReadOnly: true})
 	if err != nil {
 		util.Fatalf("Failed to load container: %v", err)
 	}

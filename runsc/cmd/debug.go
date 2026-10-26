@@ -108,7 +108,7 @@ func (d *Debug) loadContainer(conf *config.Config, f *flag.FlagSet) (*container.
 			f.Usage()
 			return nil, fmt.Errorf("container ID should be provided when -pid is not set")
 		}
-		return d.containerLoader.loadContainer(conf, f, container.LoadOpts{SkipCheck: true})
+		return d.containerLoader.loadContainer(conf, f, container.LoadOpts{SkipCheck: true, ReadOnly: true})
 	}
 	// Fetch the container associated with the PID.
 	if f.NArg() != 0 {
@@ -121,7 +121,7 @@ func (d *Debug) loadContainer(conf *config.Config, f *flag.FlagSet) (*container.
 		return nil, fmt.Errorf("listing containers: %v", err)
 	}
 	for _, id := range ids {
-		candidate, err := container.Load(conf.RootDir, id, container.LoadOpts{Exact: true, SkipCheck: true})
+		candidate, err := container.Load(conf.RootDir, id, container.LoadOpts{Exact: true, SkipCheck: true, ReadOnly: true})
 		if err != nil {
 			log.Warningf("Skipping container %q: %v", id, err)
 			continue
