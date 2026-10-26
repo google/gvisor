@@ -186,6 +186,12 @@ type Sandbox struct {
 	// CPULimits, if set, are the CPU limits of the cgroup in CgroupJSON.
 	CPULimits *CPULimits `json:"cpuLimits,omitempty"`
 
+	// In a sandbox with no root container and with CPULimits set,
+	// `Creating` is set to true from sandbox creation until its first
+	// subcontainer starts. During this time, the sandbox keeps its
+	// creation-time CPU limit. Cleared by `Sandbox.MarkCreated`.
+	Creating bool `json:"creating,omitempty"`
+
 	// OriginalOOMScoreAdj stores the value of oom_score_adj when the sandbox
 	// started, before it may be modified.
 	OriginalOOMScoreAdj int `json:"originalOomScoreAdj"`
@@ -378,6 +384,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		MountHints:          args.MountHints,
 		StartTime:           starttime.Get(),
 		NoRootContainer:     args.NoRootContainer,
+		Creating:            args.NoRootContainer && args.CPULimits != nil,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
@@ -513,6 +520,10 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 		return fmt.Errorf("starting root container: %w", err)
 	}
 	s.RegisteredMetrics = registeredMetrics
+	if s.Creating {
+		log.Infof("[Lifecycle CPU] Keeping the creation CPU limit until the first container of sandbox %q starts", s.ID)
+		return nil
+	}
 	return s.applyAppCPULimit(cpuPhaseCreation)
 }
 
@@ -580,6 +591,7 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
 
+	s.Creating = false
 	// TODO(fvoznika): Once `runsc create --for-restore` exists, this should
 	// become a no-op and no longer be needed:
 	if err := s.switchCPULimit(cpuPhaseCreation, cpuPhaseLifecycle); err != nil {

@@ -103,6 +103,12 @@ type fakeCgroup struct {
 	numCPUErr error
 	cpuQuota  int64
 	cpuPeriod int64
+	updates   []specs.LinuxCPU
+}
+
+func (f *fakeCgroup) Update(res *specs.LinuxResources) error {
+	f.updates = append(f.updates, *res.CPU)
+	return nil
 }
 
 func (f *fakeCgroup) NumCPU() (int, error) {
@@ -297,6 +303,44 @@ func TestNewCPULimits(t *testing.T) {
 			} {
 				if *got.cpu.Quota != got.quota || *got.cpu.Period != tc.wantPeriod {
 					t.Errorf("%s = %d/%d, want %d/%d", got.name, *got.cpu.Quota, *got.cpu.Period, got.quota, tc.wantPeriod)
+				}
+			}
+		})
+	}
+}
+
+func TestMarkCreated(t *testing.T) {
+	limits := &CPULimits{
+		App:       specs.LinuxCPU{Quota: new(int64(25000)), Period: new(uint64(100000))},
+		Creation:  specs.LinuxCPU{Quota: new(int64(-1)), Period: new(uint64(100000))},
+		Lifecycle: specs.LinuxCPU{Quota: new(int64(100000)), Period: new(uint64(100000))},
+	}
+	for _, tc := range []struct {
+		name        string
+		creating    bool
+		wantUpdates int
+	}{
+		{name: "application CPU limit already applied", creating: false, wantUpdates: 0},
+		{name: "creation CPU limit kept for the first container", creating: true, wantUpdates: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cg := &fakeCgroup{}
+			s := &Sandbox{CgroupJSON: cgroup.CgroupJSON{Cgroup: cg}, CPULimits: limits, Creating: tc.creating}
+			// Only the first container to start marks the sandbox as having been created.
+			for range 2 {
+				if err := s.MarkCreated(); err != nil {
+					t.Fatalf("MarkCreated() failed: %v", err)
+				}
+			}
+			if s.Creating {
+				t.Errorf("Creating still set after MarkCreated()")
+			}
+			if len(cg.updates) != tc.wantUpdates {
+				t.Fatalf("MarkCreated() applied %d CPU limits, want %d", len(cg.updates), tc.wantUpdates)
+			}
+			for _, got := range cg.updates {
+				if *got.Quota != *limits.App.Quota || *got.Period != *limits.App.Period {
+					t.Errorf("MarkCreated() applied CPU limit %d/%d, want %d/%d", *got.Quota, *got.Period, *limits.App.Quota, *limits.App.Period)
 				}
 			}
 		})

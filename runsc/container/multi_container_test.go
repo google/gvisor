@@ -15,6 +15,7 @@
 package container
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -35,7 +36,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -809,6 +812,143 @@ func TestNoRootContainerOrphan(t *testing.T) {
 		return nil
 	}, pollTimeout); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestNoRootContainerCreationCPULimit checks that a sandbox with no root
+// container keeps its creation CPU limit through `runsc update` until its
+// first container starts, which only then applies the CPU limit.
+func TestNoRootContainerCreationCPULimit(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	if err := conf.SandboxCreationCPUPolicy.Set("uncapped"); err != nil {
+		t.Fatal(err)
+	}
+	if err := conf.SandboxLifecycleCPUPolicy.Set("max(4x,1000m)"); err != nil {
+		t.Fatal(err)
+	}
+	cpuRes := func(quota int64) *specs.LinuxResources {
+		return &specs.LinuxResources{CPU: &specs.LinuxCPU{Quota: new(quota), Period: new(uint64(100000))}}
+	}
+
+	// A cgroupfs-like directory, so that the sandbox cgroup is owned by runsc
+	// and its cpu.max can be read back.
+	cgDir := t.TempDir()
+	cpuMax := filepath.Join(cgDir, "cpu.max")
+	readCPUMax := func() string {
+		t.Helper()
+		b, err := os.ReadFile(cpuMax)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	writeCPUMax := func(v string) {
+		t.Helper()
+		if err := os.WriteFile(cpuMax, []byte(v), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeCPUMax("max 100000")
+	var cg cgroup.CgroupJSON
+	cgJSON := fmt.Sprintf(`{"cgroupv2": {"mountpoint": %q, "path": "/", "controllers": ["cpu", "cpuset", "io", "memory", "pids", "hugetlb"], "own": [%q]}}`, cgDir, cgDir)
+	if err := json.Unmarshal([]byte(cgJSON), &cg); err != nil {
+		t.Fatal(err)
+	}
+
+	// The root container's metadata after `runsc start`.
+	rootDir := t.TempDir()
+	sbID := testutil.RandomContainerID()
+	limits := newCPULimits(conf, cpuRes(25000), false /* willRestore */)
+	if limits == nil {
+		t.Fatalf("newCPULimits() = nil")
+	}
+	root := &Container{
+		ID:      sbID,
+		Spec:    &specs.Spec{Linux: &specs.Linux{Resources: cpuRes(25000)}},
+		Status:  Running,
+		Sandbox: &sandbox.Sandbox{ID: sbID, CgroupJSON: cg, CPULimits: limits, NoRootContainer: true, Creating: true},
+		Saver:   StateFile{RootDir: rootDir, ID: FullID{SandboxID: sbID, ContainerID: sbID}},
+
+		allowWrite: true,
+	}
+	if err := root.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	root.Saver.unlock()
+	loadRoot := func() *Container {
+		t.Helper()
+		c, err := Load(rootDir, root.Saver.ID, LoadOpts{Exact: true, SkipCheck: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	// A container created before the update, with a copy of the sandbox
+	// metadata at that time.
+	subID := testutil.RandomContainerID()
+	sub := &Container{
+		ID:      subID,
+		Sandbox: &sandbox.Sandbox{ID: sbID, CgroupJSON: cg, CPULimits: limits, NoRootContainer: true, Creating: true},
+		Saver:   StateFile{RootDir: rootDir, ID: FullID{SandboxID: sbID, ContainerID: subID}},
+	}
+
+	if err := root.Update(conf, cpuRes(50000)); err != nil {
+		t.Fatalf("Update() failed: %v", err)
+	}
+	if got, want := readCPUMax(), "max 100000"; got != want {
+		t.Errorf("cpu.max after update before the first container starts = %q, want %q", got, want)
+	}
+
+	// A copy of the root container metadata from before the first container
+	// starts.
+	stale := loadRoot()
+
+	if err := sub.endSandboxCreation(); err != nil {
+		t.Fatalf("endSandboxCreation() failed: %v", err)
+	}
+	if got, want := readCPUMax(), "50000 100000"; got != want {
+		t.Errorf("cpu.max after the first container starts = %q, want %q", got, want)
+	}
+	if loadRoot().Sandbox.Creating {
+		t.Errorf("Creating still set in the root container metadata after the first container starts")
+	}
+
+	// Later containers leave the CPU limit alone.
+	writeCPUMax("unchanged")
+	if err := sub.endSandboxCreation(); err != nil {
+		t.Fatalf("endSandboxCreation() failed: %v", err)
+	}
+	if got, want := readCPUMax(), "unchanged"; got != want {
+		t.Errorf("cpu.max after a second container starts = %q, want %q", got, want)
+	}
+
+	// Updates now apply the application CPU limit directly, even from a copy
+	// of the metadata loaded before the first container started.
+	if err := root.Update(conf, cpuRes(75000)); err != nil {
+		t.Fatalf("Update() failed: %v", err)
+	}
+	if got, want := readCPUMax(), "75000 100000"; got != want {
+		t.Errorf("cpu.max after update once the first container started = %q, want %q", got, want)
+	}
+
+	// Modifying a copy of the metadata loaded before the first container
+	// started doesn't set Creating again, nor revert the update.
+	if err := stale.modify(func() error { return nil }); err != nil {
+		t.Fatalf("modify() failed: %v", err)
+	}
+	saved := loadRoot()
+	if saved.Sandbox.Creating {
+		t.Errorf("Creating set again in the root container metadata by a stale copy")
+	}
+	if got, want := *saved.Sandbox.CPULimits.App.Quota, int64(75000); got != want {
+		t.Errorf("application CPU quota after modifying a stale copy = %d, want %d", got, want)
+	}
+	if got, want := *saved.Spec.Linux.Resources.CPU.Quota, int64(75000); got != want {
+		t.Errorf("spec CPU quota after modifying a stale copy = %d, want %d", got, want)
 	}
 }
 
