@@ -104,8 +104,8 @@ new_local_repository(
 
 http_file(
     name = "buildkite_pipeline_schema",
-    sha256 = "3369c58038b4d55c08928affafb653716eb1e7b3cabb4a391aef979dd921f4e1",
-    urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json"],
+    sha256 = "c0340a344ebb83f72e4969e09818d945055abe7ac0bb0c49226a60e7d33f84f6",
+    urls = ["https://raw.githubusercontent.com/buildkite/pipeline-schema/3413455899dadd5f721f481ca247bc55e78bf5b9/schema.json"],
 )
 
 http_archive(
