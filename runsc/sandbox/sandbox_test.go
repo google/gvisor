@@ -179,7 +179,7 @@ func TestCalculateCPUNum(t *testing.T) {
 				cpuQuota:  tc.cpuQuota,
 				cpuPeriod: tc.cpuPeriod,
 			}
-			gotNum, gotQuota, gotPeriod, err := calculateCPUNum(cg, tc.limits, tc.cpuNumFromQuota)
+			gotNum, gotQuota, gotPeriod, err := calculateCPUNum(cg, cgroupCPUNum(cg), tc.limits, tc.cpuNumFromQuota)
 			if err != nil {
 				t.Fatalf("calculateCPUNum failed: %v", err)
 			}
@@ -195,6 +195,27 @@ func TestCalculateCPUNum(t *testing.T) {
 			}
 			if gotPeriod != wantPeriod {
 				t.Errorf("calculateCPUNum() got cpuPeriod = %d, want %d", gotPeriod, wantPeriod)
+			}
+		})
+	}
+}
+
+func TestLifecycleCPUNum(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		quota    int64
+		cgCPUNum int
+		want     int
+	}{
+		{name: "uncapped", quota: -1, cgCPUNum: 16, want: 16},
+		{name: "rounds up", quota: 450000, cgCPUNum: 16, want: 5},
+		{name: "fractional CPU", quota: 25000, cgCPUNum: 16, want: 1},
+		{name: "above cgroup CPUs", quota: 800000, cgCPUNum: 4, want: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := &CPULimits{Lifecycle: specs.LinuxCPU{Quota: new(tc.quota), Period: new(uint64(100000))}}
+			if got := l.lifecycleCPUNum(tc.cgCPUNum); got != tc.want {
+				t.Errorf("lifecycleCPUNum(%d) = %d, want %d", tc.cgCPUNum, got, tc.want)
 			}
 		})
 	}
