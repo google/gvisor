@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -733,9 +734,10 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	}
 	// Linux's veth_setup uses ether_setup, which sets IFF_MULTICAST.
 	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.NewWithNetworkMTU(ep)), stack.NICOptions{
-		Name:      ifname,
-		Kind:      "veth",
-		Multicast: true,
+		Name:           ifname,
+		Kind:           "veth",
+		Multicast:      true,
+		Checkpointable: true,
 	})
 	if err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
@@ -761,9 +763,10 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	}
 
 	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.NewWithNetworkMTU(peerEP)), stack.NICOptions{
-		Name:      peerName,
-		Kind:      "veth",
-		Multicast: true,
+		Name:           peerName,
+		Kind:           "veth",
+		Multicast:      true,
+		Checkpointable: true,
 	})
 	if err != nil {
 		peerEP.Close()
@@ -799,9 +802,10 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	id := s.Stack.NextNICID()
 	// Linux's br_dev_setup also inherits IFF_MULTICAST from ether_setup.
 	err := s.Stack.CreateNICWithOptions(id, ep, stack.NICOptions{
-		Name:      ifname,
-		Kind:      "bridge",
-		Multicast: true,
+		Name:           ifname,
+		Kind:           "bridge",
+		Multicast:      true,
+		Checkpointable: true,
 	})
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
@@ -1598,6 +1602,20 @@ func (s *Stack) Pause() {
 func (s *Stack) Restore() {
 	s.Stack.Restore()
 }
+
+// PrepareRestore implements inet.Stack.PrepareRestore.
+func (s *Stack) PrepareRestore() {
+	if s.Stack.IPTables() == nil {
+		s.Stack.SetIPTables(netfilter.DefaultLinuxTables(s.Stack.Clock(), s.Stack.InsecureRNG()))
+	}
+	s.Stack.PrepareRestore()
+}
+
+// RestoreEndpoints implements inet.Stack.RestoreEndpoints.
+func (s *Stack) RestoreEndpoints() { s.Stack.RestoreEndpoints() }
+
+// CompleteRestore implements inet.Stack.CompleteRestore.
+func (s *Stack) CompleteRestore() { s.Stack.CompleteRestore() }
 
 // ResetConfig implements inet.Stack.ResetConfig.
 func (s *Stack) ResetConfig() {
