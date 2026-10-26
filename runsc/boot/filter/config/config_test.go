@@ -112,6 +112,7 @@ func TestOptionsConfigKey(t *testing.T) {
 		"HostNetwork":           func(opt *Options) { opt.HostNetwork = !opt.HostNetwork },
 		"HostNetworkRawSockets": func(opt *Options) { opt.HostNetworkRawSockets = !opt.HostNetworkRawSockets },
 		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
+		"FilestoreReflink":      func(opt *Options) { opt.FilestoreReflink = !opt.FilestoreReflink },
 		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
 		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
 		"NVProxyCaps":           func(opt *Options) { opt.NVProxyCaps = ^opt.NVProxyCaps },

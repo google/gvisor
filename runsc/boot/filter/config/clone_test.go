@@ -78,3 +78,29 @@ func TestCgoThreadClone(t *testing.T) {
 		}
 	}
 }
+
+func TestFilestoreReflinkPermission(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		rules, deny := Rules(Options{FilestoreReflink: enabled, Platform: (&systrap.Systrap{}).SeccompInfo()})
+		program := seccomp.Program{RuleSets: []seccomp.RuleSet{{Rules: deny}, {Rules: rules, Action: seccomp.Allow}}, Options: seccomp.ProgramOptions{DefaultAction: seccomp.KillProcess}}
+		insns, _, err := program.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		compiled, err := bpf.Compile(insns, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][6]uint64{{3, uint64(linux.FICLONE), 4}, {^uint64(0), uint64(linux.FICLONE), 4}, {3, uint64(linux.FICLONE), ^uint64(0)}} {
+			data := linux.SeccompData{Nr: unix.SYS_IOCTL, Arch: seccomp.LINUX_AUDIT_ARCH, Args: args}
+			got, err := bpf.Exec[bpf.NativeEndian](compiled, seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes())))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := enabled && args[0] == 3 && args[2] == 4
+			if allowed := got == uint32(linux.SECCOMP_RET_ALLOW); allowed != want {
+				t.Errorf("reflink=%t args=%v action=%#x, want allowed=%t", enabled, args, got, want)
+			}
+		}
+	}
+}

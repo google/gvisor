@@ -227,6 +227,9 @@ func New(conf *config.Config, args Args) (*Container, error) {
 	log.Debugf("Create container, cid: %s, rootDir: %q", args.ID, conf.RootDir)
 
 	args.FSRestoreImagePaths = slices.DeleteFunc(slices.Clone(args.FSRestoreImagePaths), func(p string) bool { return p == "" })
+	if conf.FilestoreAdoptDir != "" && args.CheckpointDirPath == "" && len(args.FSRestoreImagePaths) == 0 {
+		return nil, fmt.Errorf("filestore adoption requires restore")
+	}
 	if specutils.IsRootContainer(args.Spec) && len(args.FSRestoreImagePaths) == 0 && args.CheckpointDirPath != "" {
 		if sandbox.HasFSCheckpointManifest(args.CheckpointDirPath) {
 			args.FSRestoreImagePaths = []string{args.CheckpointDirPath}
@@ -1035,6 +1038,42 @@ func (c *Container) Checkpoint(conf *config.Config, imagePath string, opts sandb
 	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
 		return err
 	}
+	if opts.SkipFilestorePages && opts.Resume && opts.FilestoreSnapshotDir == "" {
+		return fmt.Errorf("--leave-running with --skip-filestore-pages requires --filestore-snapshot-dir")
+	}
+	if opts.FilestoreSnapshotDir != "" {
+		if !opts.SkipFilestorePages {
+			return fmt.Errorf("--filestore-snapshot-dir requires --skip-filestore-pages")
+		}
+		if !c.Sandbox.FilestoreReflink {
+			return fmt.Errorf("filestore snapshots require creating the sandbox with --filestore-reflink=enabled")
+		}
+		targets, destFiles, sidecar, err := c.prepareFilestoreSnapshot(opts.FilestoreSnapshotDir)
+		if err != nil {
+			return err
+		}
+		opts.FilestoreSnapshotTargets = targets
+		opts.FilestoreSnapshotFiles = destFiles
+		opts.FilestoreSidecarFile = sidecar
+		complete := false
+		defer func() {
+			for _, file := range destFiles {
+				file.Close()
+				if !complete {
+					os.Remove(file.Name())
+				}
+			}
+			sidecar.Close()
+			if !complete {
+				os.Remove(sidecar.Name())
+			}
+		}()
+		if err := c.Sandbox.Checkpoint(conf, c.ID, imagePath, opts); err != nil {
+			return err
+		}
+		complete = true
+		return nil
+	}
 	return c.Sandbox.Checkpoint(conf, c.ID, imagePath, opts)
 }
 
@@ -1327,8 +1366,22 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryap
 // tmpfs/overlayfs mounts that will overlay some gofer mounts.
 //
 // Precondition: gofer process must be running.
-func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints) ([]*os.File, error) {
+func (c *Container) createGoferFilestores(conf *config.Config, ovlConf config.Overlay2, mountHints *sentryapi.PodMountHints) ([]*os.File, error) {
+	var adopter *filestoreAdopter
+	if conf.FilestoreAdoptDir != "" {
+		var err error
+		adopter, err = newFilestoreAdopter(conf, c)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var goferFilestores []*os.File
+	clean := cleanup.Make(func() {
+		for _, file := range goferFilestores {
+			file.Close()
+		}
+	})
+	defer clean.Clean()
 	// NOTE(gvisor.dev/issue/9834): Create the filestores in the gofer mount
 	// namespace, so that they don't prevent the host mount points from being
 	// unmounted from the host's mount namespace. We will use /proc/pid/root
@@ -1337,7 +1390,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 
 	// Handle rootfs first.
 	rootfsConf := c.GoferMountConfs[0]
-	filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
+	filestore, err := c.createOrAdoptGoferFilestore(adopter, "/", goferRootfs, ovlConf, rootfsConf, c.Spec.Root.Path, mountHints)
 	if err != nil {
 		return nil, err
 	}
@@ -1353,7 +1406,7 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 		}
 		mountConf := c.GoferMountConfs[mountIdx]
 		mountIdx++
-		filestore, err := c.createGoferFilestore(goferRootfs, ovlConf, mountConf, m.Source, mountHints)
+		filestore, err := c.createOrAdoptGoferFilestore(adopter, m.Destination, goferRootfs, ovlConf, mountConf, m.Source, mountHints)
 		if err != nil {
 			return nil, err
 		}
@@ -1366,7 +1419,18 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *s
 		// running with seccomp filters that do not allow this.
 		hostmm.IMAWorkAroundForMemFile(filestore.Fd())
 	}
+	clean.Release()
 	return goferFilestores, nil
+}
+
+func (c *Container) createOrAdoptGoferFilestore(adopter *filestoreAdopter, dest, goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
+	if adopter == nil || !goferConf.IsFilestorePresent() {
+		return c.createGoferFilestore(goferRootfs, ovlConf, goferConf, mountSrc, mountHints)
+	}
+	if goferConf.IsSelfBacked() {
+		return nil, fmt.Errorf("filestore adoption does not support self-backed mounts")
+	}
+	return adopter.adopt(c, dest)
 }
 
 func (c *Container) createGoferFilestore(goferRootfs string, ovlConf config.Overlay2, goferConf specutils.GoferMountConf, mountSrc string, mountHints *sentryapi.PodMountHints) (*os.File, error) {
@@ -2063,7 +2127,7 @@ func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, m
 
 	// Create gofer filestore files with the Gofer's mount namespaces while
 	// chrootSyncSandEnd is still open.
-	goferFilestores, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
+	goferFilestores, err := c.createGoferFilestores(conf, conf.GetOverlay2(), mountHints)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("creating gofer filestore files: %w", err)
 	}

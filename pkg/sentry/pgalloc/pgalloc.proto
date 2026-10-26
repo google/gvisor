@@ -48,4 +48,26 @@ message MemoryFileMetadataProto {
   repeated FileRangeProto unwaste_small = 6;
   repeated FileRangeProto unwaste_huge = 7;
   map<uint64, uint64> subreleased = 8;
+
+  // ContentExternal is true if page contents were not saved to the
+  // checkpoint. LoadFrom() requires the backing file to already contain the
+  // correct contents at the offsets described by the saved segment table
+  // (i.e. the MemoryFile must adopt the host file that the original
+  // MemoryFile was backed by when it was saved).
+  bool content_external = 9;
+
+  // ContentExternalFileSize is the exact stat size of the backing host file
+  // at save time, when content_external is true. LoadFrom() requires the
+  // adopted file to match it exactly (not merely be large enough), so that a
+  // mismatched artifact is rejected instead of silently restoring with tail
+  // garbage or holes.
+  uint64 content_external_file_size = 10;
+
+  // ContentExternalFingerprint is an O(1) sampled fingerprint (SHA-256 of
+  // the first and last 4KiB) of the backing host file at save time, when
+  // content_external is true. It catches "same size, different contents"
+  // mistakes, e.g. adopting the original filestore after it diverged
+  // following a leave-running checkpoint (divergence changes contents but
+  // not necessarily size).
+  string content_external_fingerprint = 11;
 }

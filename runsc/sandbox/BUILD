@@ -33,6 +33,7 @@ go_library(
         "//pkg/metric:metric_go_proto",
         "//pkg/pinring",
         "//pkg/prometheus",
+        "//pkg/sentry/checkpoint",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/devices/nvproxy/nvconf",
         "//pkg/sentry/fscheckpoint",

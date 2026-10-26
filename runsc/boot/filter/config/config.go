@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
@@ -39,6 +40,7 @@ type Options struct {
 	HostNetwork           bool
 	HostNetworkRawSockets bool
 	HostFilesystem        bool
+	FilestoreReflink      bool
 	ProfileEnable         bool
 	NVProxy               bool
 	NVProxyCaps           nvconf.DriverCaps
@@ -83,6 +85,7 @@ func (opt Options) ConfigKey() string {
 	fmt.Fprintf(&sb, "HostNetwork=%t ", opt.HostNetwork)
 	fmt.Fprintf(&sb, "HostNetworkRawSockets=%t ", opt.HostNetworkRawSockets)
 	fmt.Fprintf(&sb, "HostFilesystem=%t ", opt.HostFilesystem)
+	fmt.Fprintf(&sb, "FilestoreReflink=%t ", opt.FilestoreReflink)
 	fmt.Fprintf(&sb, "ProfileEnable=%t ", opt.ProfileEnable)
 	fmt.Fprintf(&sb, "Instrumentation=%t ", isInstrumentationEnabled())
 	fmt.Fprintf(&sb, "NVProxy=%t ", opt.NVProxy)
@@ -164,6 +167,13 @@ func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, s
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
+	if opt.FilestoreReflink {
+		s.Add(unix.SYS_IOCTL, seccomp.PerArg{
+			seccomp.NonNegativeFD{},
+			seccomp.EqualTo(linux.FICLONE),
+			seccomp.NonNegativeFD{},
+		})
+	}
 	if opt.HostNetwork {
 		s.Merge(hostInetFilters(opt.HostNetworkRawSockets))
 	}

@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fdcollector"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
@@ -73,6 +74,7 @@ func ConvertToStateSaveOpts(o *controlapi.SaveOpts) (*state.SaveOpts, error) {
 		Metadata:                       o.Metadata,
 		AppMFExcludeCommittedZeroPages: o.AppMFExcludeCommittedZeroPages,
 		Resume:                         o.Resume,
+		PrivateMFExternalContent:       o.PrivateMFExternalContent,
 		CudaCheckpointPath:             o.CudaCheckpointPath,
 		CudaCheckpointSequential:       o.CudaCheckpointSequential,
 		ValidateMetadata:               o.ValidateMetadata,
@@ -90,6 +92,9 @@ func setSaveOpts(o *controlapi.SaveOpts, saveOpts *state.SaveOpts) error {
 	if len(o.SplitFSCheckpointPaths) > 0 && o.UseCheckpointGofer {
 		return fmt.Errorf("split filesystem checkpoint is not supported with checkpoint gofer")
 	}
+	if o.UseCheckpointGofer && (len(o.FilestoreSnapshot) != 0 || o.FilestoreSidecarFDIndex != 0) {
+		return fmt.Errorf("filestore snapshots are not supported with checkpoint gofer")
+	}
 	if o.UseCheckpointGofer {
 		return setSaveOptsForCheckpointGofer(o, saveOpts)
 	}
@@ -105,6 +110,20 @@ func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.
 	// Each filesystem checkpoint bundle comprises 4 files:
 	// manifest, multi-tar archive, pages metadata, and pages file.
 	wantFiles += 4 * len(o.SplitFSCheckpointPaths)
+	snapshotStart := wantFiles
+	wantFiles += len(o.FilestoreSnapshot)
+	haveFilestoreSidecar := o.FilestoreSidecarFDIndex != 0 || len(o.FilestoreSnapshot) != 0
+	if haveFilestoreSidecar {
+		wantFiles++
+	}
+	if haveFilestoreSidecar && o.FilestoreSidecarFDIndex != wantFiles-1 {
+		return fmt.Errorf("invalid filestore sidecar FD index %d", o.FilestoreSidecarFDIndex)
+	}
+	for i, target := range o.FilestoreSnapshot {
+		if target.FDIndex != snapshotStart+i {
+			return fmt.Errorf("invalid filestore snapshot FD index %d", target.FDIndex)
+		}
+	}
 	if gotFiles := len(o.Files); gotFiles != wantFiles {
 		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
 	}
@@ -166,6 +185,23 @@ func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.
 			bundle.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
 		}
 	}
+	for _, target := range o.FilestoreSnapshot {
+		dest, err := o.ReleaseFD(target.FDIndex)
+		if err != nil {
+			return err
+		}
+		saveOpts.FilestoreSnapshots = append(saveOpts.FilestoreSnapshots, checkpoint.FilestoreSnapshot{
+			ID: target.ResourceID, Name: target.Name, Dest: dest.ReleaseToFile("filestore-snapshot"),
+		})
+	}
+	if haveFilestoreSidecar {
+		sidecar, err := o.ReleaseFD(o.FilestoreSidecarFDIndex)
+		if err != nil {
+			return err
+		}
+		saveOpts.FilestoreSidecar = sidecar.ReleaseToFile("filestore-sidecar")
+	}
+
 	return nil
 }
 

@@ -17,6 +17,7 @@ package controlapi
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
@@ -24,6 +25,17 @@ import (
 // DefaultSaveRestoreExecTimeout is the default timeout for the save/restore
 // binary.
 const DefaultSaveRestoreExecTimeout = 10 * time.Minute
+
+// FilestoreSnapshotTarget identifies one filestore snapshot destination for
+// the Save RPC's FilePayload.
+type FilestoreSnapshotTarget struct {
+	ResourceID checkpoint.ResourceID `json:"resource_id"`
+	// Name is the artifact file name the destination will get in the
+	// snapshot directory (e.g. "filestore-0"); it is recorded in the
+	// filestores.json sidecar.
+	Name    string `json:"name"`
+	FDIndex int    `json:"fd_index"`
+}
 
 // SaveOpts contains options for the Save RPC call.
 type SaveOpts struct {
@@ -37,6 +49,26 @@ type SaveOpts struct {
 	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application memory
 	// file.
 	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
+
+	// PrivateMFExternalContent is the value of
+	// pgalloc.SaveOpts.ExternalContent for private (disk-backed) MemoryFiles.
+	// If true, their page contents are not saved into the checkpoint; the
+	// backing host files (gofer filestore files) must be captured out-of-band
+	// and provided for adoption on restore.
+	PrivateMFExternalContent bool `json:"private_mf_external_content"`
+
+	// FilestoreSnapshot specifies in-freeze-window filestore snapshots: each
+	// private MemoryFile matching a target's ResourceID is FICLONE'd to the
+	// target's donated destination FD after the kernel pauses and before
+	// memory-file metadata is serialized, so the snapshot and the saved
+	// metadata describe the same instant (valid with Resume/leave-running).
+	FilestoreSnapshot []FilestoreSnapshotTarget `json:"filestore_snapshot,omitempty"`
+
+	// FilestoreSidecarFDIndex is the index into FilePayload.Files of the
+	// donated file that receives the filestores.json artifact manifest
+	// during the save window. Zero means absent (FD 0 is the state file).
+	// A sidecar may be donated even when there are no filestore mounts.
+	FilestoreSidecarFDIndex int `json:"filestore_sidecar_fd_index,omitempty"`
 
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.

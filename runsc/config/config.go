@@ -109,6 +109,19 @@ type Config struct {
 	// archives of overlay upper layers and filesystem checkpoints.
 	TarTimestampResolution TarTimestampResolution `flag:"tar-timestamp-resolution"`
 
+	// FilestoreReflink permits host reflink ioctls for filestore snapshots.
+	FilestoreReflink FilestoreReflinkMode `flag:"filestore-reflink"`
+
+	// FilestoreAdoptDir is the directory containing host filestore files to
+	// adopt as the sandbox's writable-layer backing files, instead of creating
+	// new anonymous ones. It is used together with state checkpoint restore of
+	// a checkpoint saved with --skip-filestore-pages: the adopted files provide
+	// the private MemoryFile contents that the checkpoint does not carry.
+	FilestoreAdoptDir string `flag:"filestore-adopt-dir"`
+
+	// FilestoreAdoptMode selects private reflink copies or consuming adoption.
+	FilestoreAdoptMode FilestoreAdoptMode `flag:"filestore-adopt-mode"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
