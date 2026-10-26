@@ -45,7 +45,9 @@ func (fs *filesystem) newGvisorInode(ctx context.Context, root *auth.Credentials
 		return nil, err
 	}
 	gvisorFiles["checkpoint"] = checkpoint
-	gvisorFiles["spec_environ"] = fs.newInode(ctx, root, 0444, &specEnvironData{k: k})
+	// Like /proc/[pid]/environ, only the owner of the environment may read it.
+	envOwner := auth.NewUserCredentials(internalData.ContainerUID, internalData.ContainerGID, nil, nil, root.UserNamespace)
+	gvisorFiles["spec_environ"] = fs.newInode(ctx, envOwner, 0400, &specEnvironData{k: k, containerName: internalData.ContainerName})
 	if internalData.FSCheckpointEnabled {
 		log.Infof("Setting up fscheckpoint files under [procfs]/gvisor")
 		fsCheckpoint, err := newFSCheckpointInode(ctx, k, root, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno())
@@ -336,20 +338,15 @@ func (fd *checkpointFD) EventUnregister(e *waiter.Entry) {
 type specEnvironData struct {
 	dynamicBytesFileSetAttr
 
-	k *kernel.Kernel
+	k             *kernel.Kernel
+	containerName string
 }
 
 var _ dynamicInode = (*specEnvironData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (r *specEnvironData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	t := kernel.TaskFromContext(ctx)
-	if t == nil {
-		// The caller is not a task. Return an empty string.
-		return nil
-	}
-	env := r.k.SpecEnviron(t.ContainerID())
-	for _, e := range env {
+	for _, e := range r.k.SpecEnvironByName(r.containerName) {
 		buf.WriteString(e)
 		buf.WriteByte(0)
 	}

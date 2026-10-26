@@ -122,6 +122,7 @@ func (r *specEnvironData) StateFields() []string {
 	return []string{
 		"dynamicBytesFileSetAttr",
 		"k",
+		"containerName",
 	}
 }
 
@@ -132,6 +133,7 @@ func (r *specEnvironData) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.dynamicBytesFileSetAttr)
 	stateSinkObject.Save(1, &r.k)
+	stateSinkObject.Save(2, &r.containerName)
 }
 
 func (r *specEnvironData) afterLoad(context.Context) {}
@@ -140,6 +142,7 @@ func (r *specEnvironData) afterLoad(context.Context) {}
 func (r *specEnvironData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.dynamicBytesFileSetAttr)
 	stateSourceObject.Load(1, &r.k)
+	stateSourceObject.Load(2, &r.containerName)
 }
 
 func (i *fsCheckpointInode) StateTypeName() string {
@@ -377,6 +380,9 @@ func (i *InternalData) StateFields() []string {
 		"SaveTriggerEnabled",
 		"FSCheckpointEnabled",
 		"GVisorMarkerFile",
+		"ContainerName",
+		"ContainerUID",
+		"ContainerGID",
 		"OverrideProcs",
 		"Cgroups",
 	}
@@ -390,8 +396,11 @@ func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.SaveTriggerEnabled)
 	stateSinkObject.Save(1, &i.FSCheckpointEnabled)
 	stateSinkObject.Save(2, &i.GVisorMarkerFile)
-	stateSinkObject.Save(3, &i.OverrideProcs)
-	stateSinkObject.Save(4, &i.Cgroups)
+	stateSinkObject.Save(3, &i.ContainerName)
+	stateSinkObject.Save(4, &i.ContainerUID)
+	stateSinkObject.Save(5, &i.ContainerGID)
+	stateSinkObject.Save(6, &i.OverrideProcs)
+	stateSinkObject.Save(7, &i.Cgroups)
 }
 
 func (i *InternalData) afterLoad(context.Context) {}
@@ -401,8 +410,11 @@ func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(0, &i.SaveTriggerEnabled)
 	stateSourceObject.Load(1, &i.FSCheckpointEnabled)
 	stateSourceObject.Load(2, &i.GVisorMarkerFile)
-	stateSourceObject.Load(3, &i.OverrideProcs)
-	stateSourceObject.Load(4, &i.Cgroups)
+	stateSourceObject.Load(3, &i.ContainerName)
+	stateSourceObject.Load(4, &i.ContainerUID)
+	stateSourceObject.Load(5, &i.ContainerGID)
+	stateSourceObject.Load(6, &i.OverrideProcs)
+	stateSourceObject.Load(7, &i.Cgroups)
 }
 
 func (i *implStatFS) StateTypeName() string {
