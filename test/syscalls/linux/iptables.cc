@@ -17,6 +17,7 @@
 #include <arpa/inet.h>
 #include <linux/capability.h>
 #include <linux/netfilter.h>
+#include <linux/netfilter/nf_nat.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4.h>
 #include <net/if.h>
@@ -32,6 +33,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -46,13 +48,16 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "test/syscalls/linux/iptables_util.h"
+#include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -740,6 +745,231 @@ TEST(IPTablesBasic, UserChainTargetCrash) {
       setsockopt(sock.get(), SOL_IP, IPT_SO_SET_REPLACE, replace.data(),
                  replace.size()),
       AnyOf(SyscallFailsWithErrno(EINVAL), SyscallFailsWithErrno(ENOPROTOOPT)));
+}
+
+// Replaces the selected table with ACCEPT policies and, optionally, one rule
+// before the selected hook's policy. Counters describe the old table.
+void ReplaceCheckpointTable(int sock, const char* name, int hook,
+                            const std::vector<char>& rule) {
+  ipt_getinfo info = {};
+  snprintf(info.name, sizeof(info.name), "%s", name);
+  socklen_t info_size = sizeof(info);
+  ASSERT_THAT(getsockopt(sock, SOL_IP, IPT_SO_GET_INFO, &info, &info_size),
+              SyscallSucceeds());
+
+  std::vector<char> entries;
+  ipt_replace replace = {};
+  snprintf(replace.name, sizeof(replace.name), "%s", name);
+  replace.valid_hooks = info.valid_hooks;
+  for (int h = 0; h < NF_IP_NUMHOOKS; ++h) {
+    if (!(info.valid_hooks & (1 << h))) {
+      continue;
+    }
+    replace.hook_entry[h] = entries.size();
+    if (h == hook && !rule.empty()) {
+      entries.insert(entries.end(), rule.begin(), rule.end());
+      ++replace.num_entries;
+    }
+    replace.underflow[h] = entries.size();
+    const size_t offset = entries.size();
+    entries.resize(offset + kEmptyStandardEntrySize);
+    auto* entry = reinterpret_cast<ipt_entry*>(entries.data() + offset);
+    entry->target_offset = sizeof(*entry);
+    entry->next_offset = kEmptyStandardEntrySize;
+    auto* target = reinterpret_cast<xt_standard_target*>(entry->elems);
+    target->target.u.user.target_size = sizeof(*target);
+    target->verdict = -NF_ACCEPT - 1;
+    ++replace.num_entries;
+  }
+  const size_t offset = entries.size();
+  entries.resize(offset + kEmptyErrorEntrySize);
+  auto* error = reinterpret_cast<ipt_entry*>(entries.data() + offset);
+  error->target_offset = sizeof(*error);
+  error->next_offset = kEmptyErrorEntrySize;
+  auto* target = reinterpret_cast<xt_error_target*>(error->elems);
+  target->target.u.user.target_size = sizeof(*target);
+  snprintf(target->target.u.user.name, sizeof(target->target.u.user.name),
+           "ERROR");
+  snprintf(target->errorname, sizeof(target->errorname), "ERROR");
+  ++replace.num_entries;
+  replace.size = entries.size();
+  std::vector<xt_counters> counters(info.num_entries);
+  replace.num_counters = counters.size();
+  replace.counters = counters.data();
+  std::vector<char> payload(sizeof(replace) + entries.size());
+  memcpy(payload.data(), &replace, sizeof(replace));
+  memcpy(payload.data() + sizeof(replace), entries.data(), entries.size());
+  ASSERT_THAT(setsockopt(sock, SOL_IP, IPT_SO_SET_REPLACE, payload.data(),
+                         payload.size()),
+              SyscallSucceeds());
+}
+
+TEST(IPTablesCheckpointTest, FilterDropAndRemovalAcrossSave) {
+  auto disable_save = std::make_unique<DisableSave>();
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  ScopedThread thread([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+    const Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+    const FileDescriptor control =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_RAW));
+    const FileDescriptor receiver =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    const FileDescriptor sender =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT_THAT(bind(receiver.get(), AsSockAddr(&addr), sizeof(addr)),
+                SyscallSucceeds());
+    socklen_t addr_len = sizeof(addr);
+    ASSERT_THAT(getsockname(receiver.get(), AsSockAddr(&addr), &addr_len),
+                SyscallSucceeds());
+    ASSERT_THAT(connect(sender.get(), AsSockAddr(&addr), sizeof(addr)),
+                SyscallSucceeds());
+
+    auto packet = [&](uint32_t value, bool allowed) {
+      ASSERT_THAT(send(sender.get(), &value, sizeof(value), 0),
+                  SyscallSucceedsWithValue(sizeof(value)));
+      pollfd ready = {receiver.get(), POLLIN, 0};
+      ASSERT_THAT(RetryEINTR(poll)(&ready, 1, allowed ? 2000 : 200),
+                  SyscallSucceedsWithValue(allowed ? 1 : 0));
+      if (allowed) {
+        uint32_t received = 0;
+        ASSERT_THAT(
+            recv(receiver.get(), &received, sizeof(received), MSG_DONTWAIT),
+            SyscallSucceedsWithValue(sizeof(received)));
+        EXPECT_EQ(received, value);
+      }
+    };
+    ASSERT_NO_FATAL_FAILURE(packet(1, true));
+    std::vector<char> rule(kEmptyStandardEntrySize);
+    auto* entry = reinterpret_cast<ipt_entry*>(rule.data());
+    entry->ip.proto = IPPROTO_UDP;
+    entry->target_offset = sizeof(*entry);
+    entry->next_offset = rule.size();
+    auto* drop = reinterpret_cast<xt_standard_target*>(entry->elems);
+    drop->target.u.user.target_size = sizeof(*drop);
+    drop->verdict = -NF_DROP - 1;
+    ASSERT_NO_FATAL_FAILURE(
+        ReplaceCheckpointTable(control.get(), "filter", NF_IP_LOCAL_IN, rule));
+    ASSERT_NO_FATAL_FAILURE(packet(2, false));
+
+    disable_save.reset();
+    MaybeSave();
+    disable_save = std::make_unique<DisableSave>();
+
+    ASSERT_NO_FATAL_FAILURE(packet(3, false));
+    ASSERT_NO_FATAL_FAILURE(
+        ReplaceCheckpointTable(control.get(), "filter", -1, {}));
+    ASSERT_NO_FATAL_FAILURE(packet(4, true));
+  });
+}
+
+TEST(IPTablesCheckpointTest,
+     EstablishedDNATMappingAcrossSaveWithoutMatchingRule) {
+  auto disable_save = std::make_unique<DisableSave>();
+  SKIP_IF(IsRunningWithHostinet());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  ScopedThread thread([&] {
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+    const Link lo = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+    ASSERT_NO_ERRNO(LinkChangeFlags(lo.index, IFF_UP, IFF_UP));
+    const FileDescriptor control =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_RAW, IPPROTO_RAW));
+    const FileDescriptor server =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    sockaddr_in mapped = {};
+    mapped.sin_family = AF_INET;
+    mapped.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT_THAT(bind(server.get(), AsSockAddr(&mapped), sizeof(mapped)),
+                SyscallSucceeds());
+    socklen_t addr_len = sizeof(mapped);
+    ASSERT_THAT(getsockname(server.get(), AsSockAddr(&mapped), &addr_len),
+                SyscallSucceeds());
+    sockaddr_in original = mapped;
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.2", &original.sin_addr), 1);
+    original.sin_port = htons(9);
+
+    std::vector<char> rule(sizeof(ipt_entry) +
+                           XT_ALIGN(sizeof(xt_entry_target) +
+                                    sizeof(nf_nat_ipv4_multi_range_compat)));
+    auto* entry = reinterpret_cast<ipt_entry*>(rule.data());
+    entry->ip.proto = IPPROTO_UDP;
+    entry->ip.dst = original.sin_addr;
+    entry->ip.dmsk.s_addr = htonl(0xffffffff);
+    entry->target_offset = sizeof(*entry);
+    entry->next_offset = rule.size();
+    auto* target = reinterpret_cast<xt_entry_target*>(entry->elems);
+    target->u.user.target_size = rule.size() - sizeof(*entry);
+    snprintf(target->u.user.name, sizeof(target->u.user.name), "DNAT");
+    auto* range =
+        reinterpret_cast<nf_nat_ipv4_multi_range_compat*>(target->data);
+    range->rangesize = 1;
+    range->range[0].flags = NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_PROTO_SPECIFIED;
+    range->range[0].min_ip = mapped.sin_addr.s_addr;
+    range->range[0].max_ip = mapped.sin_addr.s_addr;
+    range->range[0].min.udp.port = mapped.sin_port;
+    range->range[0].max.udp.port = mapped.sin_port;
+    ASSERT_NO_FATAL_FAILURE(
+        ReplaceCheckpointTable(control.get(), "nat", NF_IP_LOCAL_OUT, rule));
+    const FileDescriptor client =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    ASSERT_THAT(connect(client.get(), AsSockAddr(&original), sizeof(original)),
+                SyscallSucceeds());
+    auto exchange = [&](uint32_t value) {
+      ASSERT_THAT(send(client.get(), &value, sizeof(value), 0),
+                  SyscallSucceedsWithValue(sizeof(value)));
+      pollfd ready = {server.get(), POLLIN, 0};
+      ASSERT_THAT(RetryEINTR(poll)(&ready, 1, 2000),
+                  SyscallSucceedsWithValue(1));
+      uint32_t received = 0;
+      sockaddr_in peer = {};
+      socklen_t peer_len = sizeof(peer);
+      ASSERT_THAT(recvfrom(server.get(), &received, sizeof(received),
+                           MSG_DONTWAIT, AsSockAddr(&peer), &peer_len),
+                  SyscallSucceedsWithValue(sizeof(received)));
+      EXPECT_EQ(received, value);
+      ASSERT_THAT(sendto(server.get(), &received, sizeof(received), 0,
+                         AsSockAddr(&peer), peer_len),
+                  SyscallSucceedsWithValue(sizeof(received)));
+      ready = {client.get(), POLLIN, 0};
+      ASSERT_THAT(RetryEINTR(poll)(&ready, 1, 2000),
+                  SyscallSucceedsWithValue(1));
+      received = 0;
+      ASSERT_THAT(recv(client.get(), &received, sizeof(received), MSG_DONTWAIT),
+                  SyscallSucceedsWithValue(sizeof(received)));
+      EXPECT_EQ(received, value);
+    };
+    ASSERT_NO_FATAL_FAILURE(exchange(1));
+    // Keep a rule for a different destination. The existing flow cannot
+    // recreate its translation from this replacement after restore.
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.3", &entry->ip.dst), 1);
+    ASSERT_NO_FATAL_FAILURE(
+        ReplaceCheckpointTable(control.get(), "nat", NF_IP_LOCAL_OUT, rule));
+    ASSERT_NO_FATAL_FAILURE(exchange(2));
+
+    disable_save.reset();
+    MaybeSave();
+    disable_save = std::make_unique<DisableSave>();
+
+    ASSERT_NO_FATAL_FAILURE(exchange(3));
+    const FileDescriptor new_client =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+    ASSERT_THAT(
+        connect(new_client.get(), AsSockAddr(&original), sizeof(original)),
+        SyscallSucceeds());
+    const uint32_t value = 4;
+    ASSERT_THAT(send(new_client.get(), &value, sizeof(value), 0),
+                SyscallSucceedsWithValue(sizeof(value)));
+    pollfd ready = {server.get(), POLLIN, 0};
+    EXPECT_THAT(RetryEINTR(poll)(&ready, 1, 200), SyscallSucceedsWithValue(0));
+  });
 }
 
 }  // namespace

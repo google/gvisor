@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -86,7 +87,16 @@ const (
 type IPTables struct {
 	connections ConnTrack
 
+	reaperMu sync.Mutex `state:"nosave"`
+	// +checklocks:reaperMu
 	reaper tcpip.Timer `state:"nosave"`
+	// reaperGeneration invalidates callbacks queued before a checkpoint.
+	// +checklocks:reaperMu
+	reaperGeneration uint64 `state:"nosave"`
+
+	// saveLocked records whether beforeSave acquired the conntrack lock.
+	// Only checkpoint serialization and source resumption access it.
+	saveLocked bool `state:"nosave"`
 
 	mu ipTablesRWMutex `state:"nosave"`
 	// v4Tables and v6tables map tableIDs to tables. They hold builtin
