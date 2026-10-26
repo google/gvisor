@@ -36,6 +36,11 @@ var nextFileID atomicbitops.Int64
 // newTmpfsRoot creates a new tmpfs mount, and returns the root. If the error
 // is not nil, then cleanup should be called when the root is no longer needed.
 func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentry, func(), error) {
+	return newTmpfsRootWithOpts(ctx, "")
+}
+
+// newTmpfsRootWithOpts is newTmpfsRoot with the given mount options.
+func newTmpfsRootWithOpts(ctx context.Context, data string) (*vfs.VirtualFilesystem, vfs.VirtualDentry, func(), error) {
 	creds := auth.CredentialsFromContext(ctx)
 
 	vfsObj := &vfs.VirtualFilesystem{}
@@ -46,7 +51,11 @@ func newTmpfsRoot(ctx context.Context) (*vfs.VirtualFilesystem, vfs.VirtualDentr
 	vfsObj.MustRegisterFilesystemType("tmpfs", FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserMount: true,
 	})
-	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{}, nil)
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			Data: data,
+		},
+	}, nil)
 	if err != nil {
 		return nil, vfs.VirtualDentry{}, nil, fmt.Errorf("failed to create tmpfs root mount: %v", err)
 	}
@@ -255,6 +264,17 @@ func TestMountOptions(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:       "huge always",
+			opts:       "huge=always",
+			wantBlocks: (totalHostMem / 2) >> hostarch.PageShift,
+			wantErr:    false,
+		},
+		{
+			name:    "invalid huge fails",
+			opts:    "huge=sometimes",
+			wantErr: true,
+		},
+		{
 			name:    "unknown option fails",
 			opts:    "unknown=1",
 			wantErr: true,
@@ -362,5 +382,47 @@ func TestMountOptionsEnforcement(t *testing.T) {
 	_, err = fd.Write(ctx, usermem.BytesIOSequence(data2), vfs.WriteOptions{})
 	if !linuxerr.Equals(linuxerr.ENOSPC, err) {
 		t.Fatalf("second write got err %v, want ENOSPC", err)
+	}
+}
+
+func TestHugeMountOption(t *testing.T) {
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+	for _, test := range []struct {
+		opts     string
+		wantHuge bool
+		wantOpts string
+	}{
+		{"", false, ""},
+		{"huge=never", false, ""},
+		{"huge=always", true, "huge=always"},
+		{"huge=within_size", true, "huge=within_size"},
+		{"huge=advise", false, "huge=advise"},
+	} {
+		t.Run(test.opts, func(t *testing.T) {
+			vfsObj, root, cleanup, err := newTmpfsRootWithOpts(ctx, test.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
+				Root:  root,
+				Start: root,
+				Path:  fspath.Parse("file"),
+			}, &vfs.OpenOptions{
+				Flags: linux.O_RDWR | linux.O_CREAT,
+				Mode:  0644,
+			})
+			if err != nil {
+				t.Fatalf("OpenAt failed: %v", err)
+			}
+			defer fd.DecRef(ctx)
+			if got := fd.Impl().(*regularFileFD).inode().impl.(*regularFile).huge; got != test.wantHuge {
+				t.Errorf("regular file huge: got %t, want %t", got, test.wantHuge)
+			}
+			if got := root.Mount().Filesystem().Impl().(*filesystem).mopts; got != test.wantOpts {
+				t.Errorf("mount options: got %q, want %q", got, test.wantOpts)
+			}
+		})
 	}
 }
