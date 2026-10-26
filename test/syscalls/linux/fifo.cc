@@ -19,14 +19,18 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
@@ -187,6 +191,76 @@ TEST(FifoTest, OpenBlockedAndInterrupted) {
   EXPECT_THAT(open(fifo.c_str(), O_WRONLY), SyscallFailsWithErrno(EINTR));
   EXPECT_THAT(open(fifo.c_str(), O_RDONLY), SyscallFailsWithErrno(EINTR));
 }
+
+void CheckRestartedOpen(int flags) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY));
+  ASSERT_THAT(mkfifoat(dirfd.get(), "fifo", 0600), SyscallSucceeds());
+
+  struct sigaction sa = {};
+  sa.sa_sigaction = [](int, siginfo_t* info, void*) {
+    // Only make a peer available once the signal has interrupted openat.
+    // The child keeps this peer open until the first openat returns.
+    if (openat(info->si_value.sival_int, "fifo", O_RDWR) < 0) {
+      _exit(255);
+    }
+  };
+  sa.sa_flags = SA_SIGINFO | SA_RESTART;
+  sigemptyset(&sa.sa_mask);
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGUSR1);
+
+  pid_t child = fork();
+  if (child == 0) {
+    if (sigaction(SIGUSR1, &sa, nullptr) < 0 ||
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr) < 0) {
+      _exit(255);
+    }
+    _exit(openat(dirfd.get(), "fifo", flags) < 0 ? errno : 0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  Cleanup reap([child] {
+    kill(child, SIGKILL);
+    RetryEINTR(waitpid)(child, nullptr, 0);
+  });
+
+  const std::string status_path = "/proc/" + std::to_string(child) + "/status";
+  auto wait_for_state = [&](char state) {
+    const std::string field = std::string("\nState:\t") + state;
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    do {
+      auto status = GetContents(status_path);
+      if (!status.ok()) {
+        ADD_FAILURE() << status.error();
+        return false;
+      }
+      if (status.ValueOrDie().find(field) != std::string::npos) {
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+  };
+  // The child runs no other blocking syscall before opening the FIFO.
+  ASSERT_TRUE(wait_for_state('S')) << "child did not block in openat";
+  union sigval value = {};
+  value.sival_int = dirfd.get();
+  ASSERT_THAT(sigqueue(child, SIGUSR1, value), SyscallSucceeds());
+  ASSERT_TRUE(wait_for_state('Z')) << "openat did not return after SIGUSR1";
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0), SyscallSucceeds());
+  reap.Release();
+  ASSERT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 0) << "openat returned errno "
+                                    << WEXITSTATUS(status);
+}
+
+TEST(FifoTest, RestartBlockedReadOpen) { CheckRestartedOpen(O_RDONLY); }
+
+TEST(FifoTest, RestartBlockedWriteOpen) { CheckRestartedOpen(O_WRONLY); }
 
 TEST(FifoTest, FifoOpenRDWR) {
   const std::string fifo = NewTempAbsPath();
