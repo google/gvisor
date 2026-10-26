@@ -246,6 +246,12 @@ http_file(
 # uses declared layers and does not require a Docker daemon.
 img_pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")
 
+# CI workers share a Docker Hub pull quota. Try the mirror first.
+DOCKER_HUB_REGISTRIES = [
+    "mirror.gcr.io",
+    "index.docker.io",
+]
+
 img_pull(
     name = "test_alpine",
     digest = "sha256:b276d875eeed9c7d3f1cfa7edb06b22ed22b14219a7d67c52c56612330348239",
@@ -254,10 +260,7 @@ img_pull(
         "linux/amd64",
         "linux/arm64",
     ],
-    registries = [
-        "mirror.gcr.io",
-        "index.docker.io",
-    ],
+    registries = DOCKER_HUB_REGISTRIES,
     repository = "library/alpine",
     tag = "3.11.5",
 )
@@ -270,10 +273,7 @@ img_pull(
         "linux/amd64",
         "linux/arm64",
     ],
-    registries = [
-        "mirror.gcr.io",
-        "index.docker.io",
-    ],
+    registries = DOCKER_HUB_REGISTRIES,
     repository = "library/busybox",
     tag = "1.31.1",
 )
