@@ -17,11 +17,11 @@ package lisafs
 import (
 	"fmt"
 	"math"
-	"runtime"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -36,7 +36,7 @@ var (
 // accounts for a large region of shared memory.
 // TODO(gvisor.dev/issue/6313): Tune the number of channels.
 func maxChannels() int {
-	maxChans := runtime.GOMAXPROCS(0)
+	maxChans := gomaxprocs.Base()
 	if maxChans < 2 {
 		maxChans = 2
 	}

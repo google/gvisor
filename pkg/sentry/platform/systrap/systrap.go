@@ -61,6 +61,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -292,8 +293,8 @@ func New(opts platform.Options) (*Systrap, error) {
 	if maxSysmsgThreads == 0 {
 		// CPUID information has been initialized at this point.
 		archState.Init()
-		// GOMAXPROCS has been set at this point.
-		maxSysmsgThreads = runtime.GOMAXPROCS(0)
+		// Base GOMAXPROCS has been set at this point.
+		maxSysmsgThreads = gomaxprocs.Base()
 		// Account for syscall thread.
 		maxChildThreads = maxSysmsgThreads + 1
 	}
@@ -311,7 +312,7 @@ func New(opts platform.Options) (*Systrap, error) {
 		configureSystrapAddressSpace()
 		// Don't use sentry and stub fast paths if here is just one cpu,
 		// or if the fast path has been explicitly disabled.
-		neverEnableFastPath = opts.DisableFastPath || min(runtime.NumCPU(), runtime.GOMAXPROCS(0)) == 1
+		neverEnableFastPath = opts.DisableFastPath || min(runtime.NumCPU(), gomaxprocs.Base()) == 1
 
 		// Convert the spin/deep-sleep timeouts into cputicks() units for
 		// the current architecture. Must happen before stubInit(), which
