@@ -69,6 +69,24 @@ image_outputs(
     image_name = "basic/fsstress",
 )
 
+image_manifest(
+    name = "python",
+    base = "@test_python",
+    entrypoint = [
+        "python",
+        "-m",
+        "http.server",
+        "8080",
+    ],
+    tags = ["manual"],
+)
+
+image_outputs(
+    name = "python",
+    image = ":python",
+    image_name = "basic/python",
+)
+
 # The integration test checks that mounting /tmp preserves image contents.
 image_layer(
     name = "tmpfile_layer",
