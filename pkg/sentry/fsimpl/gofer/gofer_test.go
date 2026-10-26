@@ -32,6 +32,8 @@ func TestDestroyIdempotent(t *testing.T) {
 		inoByKey:   make(map[inoKey]uint64),
 		inodeByKey: make(map[inoKey]*inode),
 		clock:      ktime.RealtimeClockFromContext(ctx),
+		// There is no VFS to allocate device numbers from.
+		devMinorByHostDev: map[uint64]uint32{0: 1},
 		// Test relies on no dentry being held in the cache.
 		dentryCache: &dentryCache{maxCachedDentries: 0},
 		client:      &lisafs.Client{},
