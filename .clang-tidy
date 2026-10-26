@@ -1,4 +1,4 @@
 Checks: '-*,misc-include-cleaner'
 CheckOptions:
   misc-include-cleaner.UnusedIncludes: 'false'
-  misc-include-cleaner.IgnoreHeaders: 'new;.*/bits/.*;.*/asm/.*;.*/asm-generic/.*;.*/sys/poll[.]h;.*/benchmark/[^/]*[.]h'
+  misc-include-cleaner.IgnoreHeaders: 'new;.*/bits/.*;.*/asm/.*;.*/asm-generic/.*;.*/sys/poll[.]h'
