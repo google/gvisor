@@ -192,6 +192,8 @@ func (awaitingMountContext) isFSContext() {}
 
 // reconfParamsContext represents a filesystem configuration context after fsmount(2) has
 // been called.
+//
+// +stateify savable
 type reconfParamsContext struct {
 	// The credentials of the process that mounted the filesystem.
 	creds *auth.Credentials
