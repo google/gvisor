@@ -439,7 +439,8 @@ func parseMountOption(opt string, allowedKeys ...string) (bool, error) {
 }
 
 type fdDispenser struct {
-	fds []*fd.FD
+	fds  []*fd.FD
+	next int
 }
 
 func (f *fdDispenser) remove() int {
@@ -452,6 +453,7 @@ func (f *fdDispenser) removeAsFD() *fd.FD {
 	}
 	rv := f.fds[0]
 	f.fds = f.fds[1:]
+	f.next++
 	return rv
 }
 
@@ -650,7 +652,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, spec *specs
 		if rootfsConf.IsFilestorePresent() {
 			filestoreFD = c.goferFilestoreFDs.removeAsFD()
 		}
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, rootfsConf, "/", c.rootfsUpperTarFD)
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, 0, rootfsConf, "/", c.rootfsUpperTarFD)
 		if err != nil {
 			return nil, fmt.Errorf("mounting root with overlay: %w", err)
 		}
@@ -695,7 +697,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, spec *specs
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf specutils.GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, filestoreIndex int, mountConf specutils.GoferMountConf, dst string, rootfsUpperTarFD *fd.FD) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -748,7 +750,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
 		resourceID := checkpoint.ResourceID{ContainerName: c.containerName, Path: dst}
-		mf, _, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore)
+		mf, _, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), resourceID, c.containerID, c.l.fsRestore, c.l.root.conf.FilestoreAdoptDir != "", filestoreIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
@@ -923,6 +925,7 @@ type mountInfo struct {
 	hint           *sentryapi.MountHint
 	goferMountConf specutils.GoferMountConf
 	filestoreFD    *fd.FD
+	filestoreIndex int
 }
 
 func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
@@ -949,6 +952,7 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 				info.goferFD = c.goferFDs.removeAsFD()
 			}
 			if info.goferMountConf.IsFilestorePresent() {
+				info.filestoreIndex = c.goferFilestoreFDs.next
 				info.filestoreFD = c.goferFilestoreFDs.removeAsFD()
 			}
 			if info.goferMountConf.ShouldUseTmpfs() {
@@ -997,7 +1001,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 	if submount.goferMountConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of mount %q", submount.mount.Destination)
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.goferMountConf, submount.mount.Destination, nil)
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.filestoreIndex, submount.goferMountConf, submount.mount.Destination, nil)
 		if err != nil {
 			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.mount.Destination, err)
 		}
@@ -1093,7 +1097,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		if m.filestoreFD != nil {
 			resourceID := checkpoint.ResourceID{ContainerName: containerName, Path: m.mount.Destination}
-			mf, _, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr)
+			mf, _, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), resourceID, containerID, fsr, conf.FilestoreAdoptDir != "", m.filestoreIndex)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %w", err)
 			}
@@ -1215,7 +1219,7 @@ func parseKeyValue(s string) (string, string, bool) {
 //   - A boolean indicating if the memory file was successfully loaded
 //     (restored) from the checkpoint.
 //   - An error if creation or restoration failed.
-func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore) (*pgalloc.MemoryFile, bool, error) {
+func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, cid string, fsr *fsRestore, restoreExternal bool, filestoreIndex int) (*pgalloc.MemoryFile, bool, error) {
 	cleanFile := cleanup.Make(func() { file.Close() })
 	defer cleanFile.Clean()
 
@@ -1226,7 +1230,9 @@ func createPrivateMemoryFile(file *os.File, resourceID checkpoint.ResourceID, ci
 	loaded := pagesMetadataReader != nil
 	mfOpts := pgalloc.MemoryFileOpts{
 		// Private memory files are usually backed by files on disk.
-		DiskBackedFile: true,
+		DiskBackedFile:  true,
+		RestoreExternal: restoreExternal,
+		FilestoreIndex:  filestoreIndex,
 		// Disk backed files need to be decommited on destroy to release disk space.
 		DecommitOnDestroy: true,
 		// Pages of a disk backed file are host page cache for that file, which
@@ -1778,7 +1784,7 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 	restoreMnts.fdmap[rootKey] = c.goferFDs.remove()
 
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
-		mf, loaded, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore)
+		mf, loaded, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey, c.containerID, c.l.fsRestore, c.l.root.conf.FilestoreAdoptDir != "", 0)
 		if err != nil {
 			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
@@ -1816,7 +1822,7 @@ func (c *containerMounter) configureRestore(restoreMnts *restoreMounts) error {
 			restoreMnts.fdmap[key] = submount.goferFD.Release()
 		}
 		if submount.filestoreFD != nil {
-			mf, loaded, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore)
+			mf, loaded, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key, c.containerID, c.l.fsRestore, c.l.root.conf.FilestoreAdoptDir != "", submount.filestoreIndex)
 			if err != nil {
 				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}

@@ -9,6 +9,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "filestore_snapshot.go",
         "gofer_to_host_rpc.go",
         "null_netns.go",
         "state_file.go",
@@ -50,6 +51,8 @@ go_test(
         "console_test.go",
         "container_save_restore_test.go",
         "container_test.go",
+        "filestore_integration_test.go",
+        "filestore_snapshot_test.go",
         "metric_server_test.go",
         "multi_container_save_restore_test.go",
         "multi_container_test.go",

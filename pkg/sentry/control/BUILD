@@ -94,6 +94,7 @@ go_test(
     name = "control_test",
     size = "small",
     srcs = [
+        "filestore_test.go",
         "fs_test.go",
         "proc_test.go",
         "state_test.go",

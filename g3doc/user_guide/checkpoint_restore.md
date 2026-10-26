@@ -124,6 +124,51 @@ that until the sandbox has fully restored (async page loading has completed):
 You can use `runsc wait --restore` to wait for restore to complete fully, after
 which you can clean up the `--image-path` directory if necessary.
 
+### External writable-layer filestores (experimental)
+
+For anonymous disk-backed writable layers, checkpoint can capture independent
+reflink snapshots instead of serializing their contents into the pages file:
+
+```bash
+runsc --filestore-reflink=enabled --overlay2=all:dir=/mnt/xfs/stores run <container id>
+runsc checkpoint --image-path=/images/state \
+  --filestore-snapshot-dir=/mnt/xfs/snapshot <container id>
+runsc --filestore-reflink=enabled --overlay2=all:dir=/mnt/xfs/stores \
+  --filestore-adopt-dir=/mnt/xfs/snapshot restore \
+  --image-path=/images/state <restored container id>
+```
+
+Provide the other sandbox flags as usual. The snapshot directory must be empty
+and on the same reflink-capable filesystem as the filestores (for example, XFS
+with reflink enabled or btrfs). The filesystem must also support `O_TMPFILE`.
+This interface supports full checkpoints of single-container sandboxes with the
+same mount layout on restore. Self-backed layers, split filesystem checkpoints,
+and the checkpoint gofer are unsupported.
+
+Both stopping checkpoints and `--leave-running` are supported. Clone and
+metadata capture occur while the application is paused. Destination snapshots
+and checkpoint files are synchronized after capture, outside the leave-running
+pause. The CLI waits for persistence before returning success. FICLONE itself
+can wait for dirty source data writeback: a first, fully dirty layer may be
+slower than an ordinary checkpoint. Latency is not constant or guaranteed O(1).
+
+Keep the checkpoint and all `filestore-*` files together and transfer both when
+migrating. The root artifact is named `filestore-root`; other artifact names
+encode the original OCI mount destination. Reordering mounts or relocating their
+host sources does not change this association. Restore creates private writable
+clones in the configured overlay directory, so snapshots remain reusable by
+multiple instances. Duplicate filestore destinations are unsupported.
+
+Keep artifact names unchanged. Positional artifacts from earlier experimental
+versions are not accepted. Treat artifacts as a trusted, matched set: the hash
+in a filename identifies a mount destination, not file contents. No content
+checksum or protection against swapping equal-size artifacts is provided.
+
+If a save RPC or later persistence fails, runsc retains the artifacts because
+the stopping source may already be gone. An error does not certify a complete
+or durable checkpoint. Preserve these files for recovery and use fresh
+directories for subsequent attempts.
+
 ## How to use checkpoint/restore in Docker:
 
 Run a container:

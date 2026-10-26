@@ -48,4 +48,7 @@ message MemoryFileMetadataProto {
   repeated FileRangeProto unwaste_small = 6;
   repeated FileRangeProto unwaste_huge = 7;
   map<uint64, uint64> subreleased = 8;
+
+  // Contents are in an independent filestore snapshot instead of page data.
+  bool content_external = 9;
 }

@@ -38,6 +38,10 @@ type SaveOpts struct {
 	// file.
 	AppMFExcludeCommittedZeroPages bool `json:"app_mf_exclude_committed_zero_pages"`
 
+	// NumFilestoreSnapshots is the number of trailing destination FDs, in
+	// the same order as the sandbox's donated filestore FDs.
+	NumFilestoreSnapshots int `json:"num_filestore_snapshots"`
+
 	// HavePagesFile indicates whether the pages file and its corresponding
 	// metadata file is provided.
 	HavePagesFile bool `json:"have_pages_file"`

@@ -473,6 +473,9 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 	if count < 1 {
 		return fmt.Errorf("invalid container count value: %v", count)
 	}
+	if cm.l.root.conf.FilestoreAdoptDir != "" && count != 1 {
+		return fmt.Errorf("external filestore restore requires a single-container checkpoint")
+	}
 	cm.restorer.totalContainers = count
 	log.Infof("Restoring a total of %d containers", cm.restorer.totalContainers)
 

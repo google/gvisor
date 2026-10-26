@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -184,6 +185,10 @@ type SaveOpts struct {
 	// returns, so SaveTo() may leave zero pages that are already committed on
 	// the host in place rather than decommit them.
 	ExitAfterSaving bool
+	// FilestoreSnapshots are private-file clone destinations, in donated FD
+	// order. The caller pauses writers until SaveTo returns and persists the
+	// destinations after resuming the application. Empty means ordinary save.
+	FilestoreSnapshots []*os.File
 }
 
 // SaveTo writes f's state to the given stream.
@@ -204,6 +209,34 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	// Ensure that there are no pending evictions.
 	if len(f.evictable) != 0 {
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
+	}
+
+	if len(opts.FilestoreSnapshots) != 0 {
+		if !f.opts.DiskBackedFile || f.opts.FilestoreIndex < 0 || f.opts.FilestoreIndex >= len(opts.FilestoreSnapshots) {
+			return fmt.Errorf("invalid snapshot index %d for private MemoryFile", f.opts.FilestoreIndex)
+		}
+		dst := opts.FilestoreSnapshots[f.opts.FilestoreIndex]
+		cloneStart := gohacks.Nanotime()
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, dst.Fd(), unix.FICLONE, f.file.Fd()); errno != 0 {
+			return fmt.Errorf("FICLONE of filestore %d: %w", f.opts.FilestoreIndex, errno)
+		}
+		log.Debugf("Filestore %d FICLONE: %d ns", f.opts.FilestoreIndex, gohacks.Nanotime()-cloneStart)
+		// Clone and metadata capture share this lock; the background releaser
+		// cannot decommit pages between them. The destination is independent
+		// of subsequent source writes and teardown. Do not fsync while paused.
+		pb := f.exportMetadataProto()
+		pb.ContentExternal = true
+		data, err := proto.Marshal(pb)
+		if err != nil {
+			return err
+		}
+		var lengthBuf [8]byte
+		binary.LittleEndian.PutUint64(lengthBuf[:], uint64(len(data)))
+		if _, err := w.Write(lengthBuf[:]); err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
 	}
 
 	// Register this MemoryFile with async page saving if a pages file has been
@@ -1161,16 +1194,39 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 	if err := proto.Unmarshal(data, &pb); err != nil {
 		return fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
+	if uint64(len(pb.Chunks)) > math.MaxInt64/chunkSize {
+		return fmt.Errorf("MemoryFile chunk table exceeds maximum file size")
+	}
+	fileSize := uint64(len(pb.Chunks)) * chunkSize
+	if pb.ContentExternal {
+		if !f.opts.RestoreExternal {
+			return fmt.Errorf("external MemoryFile requires a private snapshot clone")
+		}
+		fi, err := f.file.Stat()
+		if err != nil {
+			return err
+		}
+		if uint64(fi.Size()) != fileSize {
+			return fmt.Errorf("filestore size %d does not match chunk table size %d", fi.Size(), fileSize)
+		}
+	} else if f.opts.RestoreExternal {
+		// A mismatched ordinary checkpoint must not expose old clone contents
+		// in uncommitted regions. The template itself is never writable.
+		if err := f.file.Truncate(0); err != nil {
+			return err
+		}
+	}
+
 	if err := f.importMetadataProto(&pb); err != nil {
 		return fmt.Errorf("failed to import metadata: %w", err)
 	}
 	chunks := f.chunksLoad()
 	mfTimeline.Reached("metadata loaded")
 	log.Infof("MemoryFile(%p): loaded metadata in %s", f, time.Duration(gohacks.Nanotime()-timeMetadataStart))
-
-	fileSize := uint64(len(chunks)) * chunkSize
-	if err := f.file.Truncate(int64(fileSize)); err != nil {
-		return fmt.Errorf("failed to truncate MemoryFile: %w", err)
+	if !pb.ContentExternal {
+		if err := f.file.Truncate(int64(fileSize)); err != nil {
+			return fmt.Errorf("failed to truncate MemoryFile: %w", err)
+		}
 	}
 	// Obtain chunk mappings, then madvise them concurrently with loading data.
 	var (
@@ -1211,11 +1267,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		}()
 	}
 	defer madviseWG.Wait()
-
 	// Register this MemoryFile with async page loading if a pages file has
-	// been provided.
+	// been provided. This is skipped for externally-contented MemoryFiles:
+	// no pages are read from the pages file, so there is nothing to load.
 	var amfl *asyncMemoryFileLoad
-	if opts.PagesFile != nil {
+	if opts.PagesFile != nil && !pb.ContentExternal {
 		var df stateio.DestinationFile
 		if opts.PagesFile.ar.NeedRegisterDestinationFD() {
 			var err error
@@ -1275,9 +1331,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 		}
 		maFR := maseg.Range()
 		amount := maFR.Length()
-		// Wait for all chunks spanned by this segment to be madvised.
-		for madviseEnd.Load() < maFR.End {
-			<-madviseChan
+		if !pb.ContentExternal {
+			// Wait for all chunks spanned by this segment to be madvised.
+			for madviseEnd.Load() < maFR.End {
+				<-madviseChan
+			}
 		}
 		if amfl != nil {
 			// Record where to read data.
@@ -1292,7 +1350,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader, opts *LoadOpts) 
 			amfl.pf.mu.Unlock()
 			opts.PagesFileOffset += amount
 			amfl.pf.lfStatus.Notify(aplLFPending)
-		} else {
+		} else if !pb.ContentExternal {
 			// Verify header.
 			length, object, err := state.ReadHeader(&wr)
 			if err != nil {

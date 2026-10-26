@@ -803,6 +803,28 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 	return nil
 }
 
+// SaveOpts contains options for Kernel.SaveTo.
+type SaveOpts struct {
+	// VFSOptions controls filesystem preparation for saving.
+	VFSOptions vfs.PrepareSaveOptions
+
+	// GraphEngine overrides the state serialization engine for this save.
+	GraphEngine *bool
+
+	// AppMFExcludeCommittedZeroPages is the value of
+	// pgalloc.SaveOpts.ExcludeCommittedZeroPages for the application
+	// MemoryFile. It is expected to reflect application memory usage
+	// behavior, but not necessarily usage of private MemoryFiles.
+	AppMFExcludeCommittedZeroPages bool
+
+	// FilestoreSnapshots contains private filestore destinations in donated FD
+	// order. Capture occurs while paused; the host persists them after resume.
+	FilestoreSnapshots []*os.File
+
+	// Resume indicates if the statefile is used for save-resume.
+	Resume bool
+}
+
 // SaveTo saves the state of k to stateFile. It takes ownership of stateFile,
 // pagesMetadata, pagesFile, and fsOpts, even if it returns a non-nil error.
 //
@@ -811,7 +833,7 @@ func savePrivateMFs(ctx context.Context, w io.Writer, mfsToSave map[checkpoint.R
 // +checklocksexclude:k.extMu
 // +checklocksexclude:k.runningTasksMu
 // +checklocksexclude:k.tasks.mu
-func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool, fsOpts *FSSaveOpts, vfsOpts vfs.PrepareSaveOptions, graphEngine *bool) error {
+func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, opts *SaveOpts, fsOpts *FSSaveOpts) error {
 	// The bypass is part of the saved task state, so it is armed before the
 	// state is written and covers both resuming after the save and restoring.
 	k.armSeccompRestartSyscallBypasses()
@@ -838,19 +860,19 @@ func (k *Kernel) SaveTo(ctx context.Context, stateFile, pagesMetadata io.WriteCl
 	defer fsCleanup.Clean()
 
 	return k.quiescePausedAnd(ctx, func() error {
-		if graphEngine != nil {
+		if opts.GraphEngine != nil {
 			prevGraphEngine := state.GraphEngineEnabled()
-			state.EnableGraphEngine(*graphEngine)
+			state.EnableGraphEngine(*opts.GraphEngine)
 			defer state.EnableGraphEngine(prevGraphEngine)
 		}
-		return k.saveToLocked(ctx, stateFile, pagesMetadata, pagesFile, appMFExcludeCommittedZeroPages, resume, fsOpts, vfsOpts, &stateFileCleanup, &pagesCleanup, &fsCleanup)
+		return k.saveToLocked(ctx, stateFile, pagesMetadata, pagesFile, opts, fsOpts, &stateFileCleanup, &pagesCleanup, &fsCleanup)
 	})
 }
 
 // saveToLocked saves the kernel state while the kernel is paused and quiesced.
 //
 // Preconditions: The kernel must be paused and quiesced.
-func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, appMFExcludeCommittedZeroPages, resume bool, fsOpts *FSSaveOpts, vfsOpts vfs.PrepareSaveOptions, stateFileCleanup, pagesCleanup, fsCleanup *cleanup.Cleanup) error {
+func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, opts *SaveOpts, fsOpts *FSSaveOpts, stateFileCleanup, pagesCleanup, fsCleanup *cleanup.Cleanup) error {
 	saveStart := time.Now()
 
 	// Discard unsavable mappings, such as those for host file descriptors.
@@ -864,13 +886,17 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 	// Prepare filesystems for saving. This must be done after
 	// invalidateUnsavableMappings(), since dropping memory mappings may
 	// affect filesystem state (e.g. page cache reference counts).
-	if err := k.vfs.PrepareSave(vfsCtx, vfsOpts); err != nil {
+	if err := k.vfs.PrepareSave(vfsCtx, opts.VFSOptions); err != nil {
 		return err
 	}
 	// Mark all to-be-saved MemoryFiles as savable to inform kernel save below.
 	k.mf.MarkSavable()
 	for _, mf := range mfsToSave {
 		mf.MarkSavable()
+	}
+
+	if len(opts.FilestoreSnapshots) != 0 && len(opts.FilestoreSnapshots) != len(mfsToSave) {
+		return fmt.Errorf("snapshot count %d does not match private file count %d", len(opts.FilestoreSnapshots), len(mfsToSave))
 	}
 
 	mfsToSaveActual := mfsToSave
@@ -893,7 +919,7 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 		mfSaveWg.Add(1)
 		go func() {
 			defer mfSaveWg.Done()
-			mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, appMFExcludeCommittedZeroPages, resume) // transfers ownership
+			mfSaveErr = k.saveMemoryFiles(ctx, nil, pagesMetadata, pagesFile, mfsToSaveActual, opts) // transfers ownership
 		}()
 		pagesCleanup.Release()
 		// Defer a Wait() so we wait for k.saveMemoryFiles() to complete even if we
@@ -918,7 +944,7 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 		// Pause the network stack.
 		netstackPauseStart := time.Now()
 		// Stack.removeConf should be true when resume=false and vice versa.
-		k.rootNetworkNamespace.Stack().SetRemoveConf(!resume)
+		k.rootNetworkNamespace.Stack().SetRemoveConf(!opts.Resume)
 		log.Infof("Pausing root network namespace")
 		k.rootNetworkNamespace.Stack().Pause()
 		defer k.rootNetworkNamespace.Stack().Resume()
@@ -958,7 +984,7 @@ func (k *Kernel) saveToLocked(ctx context.Context, stateFile, pagesMetadata io.W
 			return mfSaveErr
 		}
 	} else {
-		mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, appMFExcludeCommittedZeroPages, resume)
+		mfSaveErr = k.saveMemoryFiles(ctx, stateFile, nil, nil, mfsToSaveActual, opts)
 		if mfSaveErr != nil {
 			return mfSaveErr
 		}
@@ -986,7 +1012,7 @@ func (k *Kernel) BeforeResume(ctx context.Context) {
 // pagesFile must be non-nil, saveMemoryFiles takes ownership of both
 // pagesMetadata and pagesFile (even if it returns a non-nil error), and
 // MemoryFile state will be saved to pagesMetadata and pagesFile.
-func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, appMFExcludeCommittedZeroPages, resume bool) error {
+func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata io.WriteCloser, pagesFile stateio.AsyncWriter, mfsToSave map[checkpoint.ResourceID]*pgalloc.MemoryFile, opts *SaveOpts) error {
 	memoryStart := time.Now()
 
 	pmw := w
@@ -998,8 +1024,8 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 	defer pmwCleanup.Clean()
 
 	mfOpts := pgalloc.SaveOpts{
-		ExcludeCommittedZeroPages: appMFExcludeCommittedZeroPages,
-		ExitAfterSaving:           !resume,
+		ExcludeCommittedZeroPages: opts.AppMFExcludeCommittedZeroPages,
+		ExitAfterSaving:           !opts.Resume,
 	}
 	var (
 		asyncPageSaveWg      sync.WaitGroup
@@ -1029,6 +1055,7 @@ func (k *Kernel) saveMemoryFiles(ctx context.Context, w io.Writer, pagesMetadata
 	// appMFExcludeCommittedZeroPages is expected to reflect application memory
 	// usage behavior, but not necessarily usage of private MemoryFiles.
 	mfOpts.ExcludeCommittedZeroPages = false
+	mfOpts.FilestoreSnapshots = opts.FilestoreSnapshots
 	if err := savePrivateMFs(ctx, pmw, mfsToSave, &mfOpts); err != nil {
 		return err
 	}

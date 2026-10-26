@@ -1364,6 +1364,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProcSelfFD:            uint32(l.procSelfFD),
+			FilestoreReflink:      l.root.conf.FilestoreReflink == config.FilestoreReflinkEnabled,
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               nvproxyEnabled,
 			NVProxyCaps:           nvproxyCaps,

@@ -392,7 +392,17 @@ type MemoryFileOpts struct {
 	// If DisableMemoryAccounting is true, memory usage observed by the
 	// MemoryFile will not be reported in usage.MemoryAccounting.
 	DisableMemoryAccounting bool
+
+	// FilestoreIndex identifies a private file in the donated filestore FD order.
+	FilestoreIndex int
+
+	// RestoreExternal indicates that file is a private writable clone of an
+	// external checkpoint. The caller must call LoadFrom before using this file.
+	RestoreExternal bool
 }
+
+// FilestoreIndex returns the private file's position in the donated FD layout.
+func (f *MemoryFile) FilestoreIndex() int { return f.opts.FilestoreIndex }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
 type DelayedEvictionType uint8
@@ -440,9 +450,11 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		return nil, fmt.Errorf("invalid MemoryFileOpts.DelayedEviction: %v", opts.DelayedEviction)
 	}
 
-	// Truncate the file to 0 bytes first to ensure that it's empty.
-	if err := file.Truncate(0); err != nil {
-		return nil, err
+	// A fresh restore clone must survive until LoadFrom validates its metadata.
+	if !opts.RestoreExternal {
+		if err := file.Truncate(0); err != nil {
+			return nil, err
+		}
 	}
 	f := &MemoryFile{
 		opts: opts,
@@ -520,6 +532,10 @@ func (f *MemoryFile) releaserDestroyLocked() {
 	chunks := f.chunksLoad()
 	for i := range chunks {
 		chunk := &chunks[i]
+		// A failed LoadFrom may import chunks without establishing mappings.
+		if chunk.mapping == 0 {
+			continue
+		}
 		_, _, errno := unix.Syscall(unix.SYS_MUNMAP, chunk.mapping, chunkSize, 0)
 		if errno != 0 {
 			log.Warningf("Failed to unmap mapping %#x for MemoryFile chunk %d: %v", chunk.mapping, i, errno)

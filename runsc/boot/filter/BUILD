@@ -36,6 +36,22 @@ go_library(
     ],
 )
 
+go_test(
+    name = "filter_test",
+    srcs = ["reflink_test.go"],
+    embed = [":filter"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/bpf",
+        "//pkg/seccomp",
+        "//pkg/sentry/platform",
+        "//pkg/sentry/platform/kvm",
+        "//pkg/sentry/platform/systrap",
+        "//runsc/boot/filter/config",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
 secbench_test(
     name = "filter_bench_test",
     srcs = ["filter_bench_test.go"],

@@ -86,9 +86,15 @@ func ConvertToStateSaveOpts(o *controlapi.SaveOpts) (*state.SaveOpts, error) {
 }
 
 func setSaveOpts(o *controlapi.SaveOpts, saveOpts *state.SaveOpts) error {
+	if o.NumFilestoreSnapshots < 0 || (o.NumFilestoreSnapshots != 0 && len(o.SplitFSCheckpointPaths) != 0) {
+		return fmt.Errorf("invalid external filestore configuration: split filesystem checkpoints are unsupported")
+	}
 	// TODO(b/541219576): Support checkpoint gofer with split checkpoint.
 	if len(o.SplitFSCheckpointPaths) > 0 && o.UseCheckpointGofer {
 		return fmt.Errorf("split filesystem checkpoint is not supported with checkpoint gofer")
+	}
+	if o.UseCheckpointGofer && o.NumFilestoreSnapshots != 0 {
+		return fmt.Errorf("filestore snapshots are not supported with checkpoint gofer")
 	}
 	if o.UseCheckpointGofer {
 		return setSaveOptsForCheckpointGofer(o, saveOpts)
@@ -105,6 +111,9 @@ func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.
 	// Each filesystem checkpoint bundle comprises 4 files:
 	// manifest, multi-tar archive, pages metadata, and pages file.
 	wantFiles += 4 * len(o.SplitFSCheckpointPaths)
+	snapshotStart := wantFiles
+	wantFiles += o.NumFilestoreSnapshots
+
 	if gotFiles := len(o.Files); gotFiles != wantFiles {
 		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
 	}
@@ -166,6 +175,14 @@ func setSaveOptsForLocalCheckpointFiles(o *controlapi.SaveOpts, saveOpts *state.
 			bundle.PagesFile = stateio.NewPagesFileFDWriterDefault(int32(pagesFileFD))
 		}
 	}
+	for i := 0; i < o.NumFilestoreSnapshots; i++ {
+		dest, err := o.ReleaseFD(snapshotStart + i)
+		if err != nil {
+			return err
+		}
+		saveOpts.FilestoreSnapshots = append(saveOpts.FilestoreSnapshots, dest.ReleaseToFile("filestore-snapshot"))
+	}
+
 	return nil
 }
 

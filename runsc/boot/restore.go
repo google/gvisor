@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/proc"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -899,6 +900,12 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.Sav
 		}
 	}()
 
+	if len(saveOpts.FilestoreSnapshots) != 0 {
+		if err := l.validateFilestoreSnapshots(saveOpts.FilestoreSnapshots); err != nil {
+			return err
+		}
+	}
+
 	if saveOpts.Metadata == nil {
 		saveOpts.Metadata = make(map[string]string)
 	}
@@ -938,6 +945,52 @@ func (l *Loader) saveWithOpts(saveOpts *state.SaveOpts, execOpts *controlapi.Sav
 	}
 	defer l.stopIfKilled()
 	return state.SaveWithOpts(saveOpts, execOpts)
+}
+
+// validateFilestoreSnapshots checks the live FD layout before entering the
+// destructive save path. It does not freeze application writers.
+func (l *Loader) validateFilestoreSnapshots(destinations []*os.File) error {
+	if l.root.conf.FilestoreReflink != config.FilestoreReflinkEnabled {
+		return fmt.Errorf("filestore reflink permission was not enabled at sandbox creation")
+	}
+	if l.containerCount() != 1 {
+		return fmt.Errorf("external filestore snapshots require a single-container sandbox")
+	}
+	seen := make(map[int]*pgalloc.MemoryFile)
+	filesystems := l.k.VFS().GetFilesystems()
+	defer func() {
+		for _, fs := range filesystems {
+			fs.DecRef(l.k.SupervisorContext())
+		}
+	}()
+	for _, fs := range filesystems {
+		mf := tmpfs.MemoryFileOf(fs)
+		if mf == nil || mf == l.k.MemoryFile() {
+			continue
+		}
+		index := mf.FilestoreIndex()
+		if index < 0 || index >= len(destinations) {
+			return fmt.Errorf("invalid filestore index %d", index)
+		}
+		if previous := seen[index]; previous != nil && previous != mf {
+			return fmt.Errorf("duplicate filestore index %d", index)
+		}
+		seen[index] = mf
+		var src, dst unix.Stat_t
+		if err := unix.Fstat(mf.FD(), &src); err != nil {
+			return err
+		}
+		if err := unix.Fstat(int(destinations[index].Fd()), &dst); err != nil {
+			return err
+		}
+		if src.Dev != dst.Dev {
+			return fmt.Errorf("filestore %d and its snapshot must be on the same filesystem", index)
+		}
+	}
+	if len(seen) != len(destinations) {
+		return fmt.Errorf("snapshot count %d does not match live filestore count %d", len(destinations), len(seen))
+	}
+	return nil
 }
 
 // postResume runs post-resume work and then completes the checkpoint attempt.

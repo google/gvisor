@@ -109,6 +109,13 @@ type Config struct {
 	// archives of overlay upper layers and filesystem checkpoints.
 	TarTimestampResolution TarTimestampResolution `flag:"tar-timestamp-resolution"`
 
+	// FilestoreReflink permits host reflink ioctls for filestore snapshots.
+	FilestoreReflink FilestoreReflinkMode `flag:"filestore-reflink"`
+
+	// FilestoreAdoptDir supplies independent snapshots for a full restore.
+	// Each snapshot is restored into a private writable clone.
+	FilestoreAdoptDir string `flag:"filestore-adopt-dir"`
+
 	// FSGoferHostUDS is deprecated: use host-uds=all.
 	FSGoferHostUDS bool `flag:"fsgofer-host-uds"`
 
