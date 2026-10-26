@@ -94,6 +94,10 @@ type Mappable interface {
 	// Postconditions: See CheckTranslateResult.
 	Translate(ctx context.Context, required, optional MappableRange, at hostarch.AccessType) ([]Translation, error)
 
+	// MayUseHugepages returns true if hugepage-aligned ranges in the Mappable
+	// may be backed by huge pages.
+	MayUseHugepages() bool
+
 	// InvalidateUnsavable requests that the Mappable invalidate Translations
 	// that cannot be preserved across save/restore.
 	//
@@ -638,6 +642,17 @@ func (MappableNoTrackMappings) CopyMapping(ctx context.Context, ms MappingSpace,
 // InvalidateUnsavable implements Mappable.InvalidateUnsavable.
 func (MappableNoTrackMappings) InvalidateUnsavable(ctx context.Context) error {
 	return nil
+}
+
+// MappableNoHugepages implements Mappable.MayUseHugepages for Mappables that
+// never use huge pages.
+//
+// +stateify savable
+type MappableNoHugepages struct{}
+
+// MayUseHugepages implements Mappable.MayUseHugepages.
+func (MappableNoHugepages) MayUseHugepages() bool {
+	return false
 }
 
 // FileRange represents a range of uint64 offsets into a File.

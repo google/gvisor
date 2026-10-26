@@ -1132,6 +1132,8 @@ func (i *inode) destroy(ctx context.Context, d *dentry) {
 //
 // +stateify savable
 type dentry struct {
+	memmap.MappableNoHugepages
+
 	vfsd vfs.Dentry
 
 	// refs is the reference count. Each dentry holds a reference on its
