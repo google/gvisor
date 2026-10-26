@@ -237,7 +237,11 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		if uid != 0 || gid != 0 {
 			return fmt.Errorf("container spec specified both an explicit UID/GID and a user name, only one or the other may be provided")
 		}
-		uid, gid = user.GetExecUIDGIDFromUser(l.Kernel.SupervisorContext(), contNS.MountNamespace, args.User)
+		var err error
+		uid, gid, err = user.GetExecUIDGIDFromUser(l.Kernel.SupervisorContext(), contNS.MountNamespace, args.User)
+		if err != nil {
+			return fmt.Errorf("resolving user %q: %w", args.User, err)
+		}
 	}
 
 	creds := auth.NewUserCredentials(
