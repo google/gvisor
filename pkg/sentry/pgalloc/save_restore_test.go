@@ -236,6 +236,61 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 	}
 }
 
+type readerFunc func([]byte) (int, error)
+
+func (r readerFunc) Read(p []byte) (int, error) { return r(p) }
+
+func TestLoadFromWithUpdateUsage(t *testing.T) {
+	page := uint64(hostarch.PageSize)
+	src := newSaveTestMemoryFile(t, false)
+	fr, err := src.Allocate(3*page, AllocOpts{Mode: AllocateUncommitted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { src.DecRef(fr) })
+	pwritePage(t, src, fr, 0, 1)
+	pwritePage(t, src, fr, 2, 2)
+	var checkpoint bytes.Buffer
+	if err := src.SaveTo(t.Context(), &checkpoint, &SaveOpts{ExcludeCommittedZeroPages: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := newSaveTestMemoryFile(t, false)
+	scanned := false
+	reader := readerFunc(func(p []byte) (int, error) {
+		if checkpoint.Len() == int(page) {
+			// The first page has been restored and only the last page's
+			// payload remains. Make the omitted middle page resident
+			// without changing its zero contents.
+			pwritePage(t, dst, fr, 1, 0)
+			if err := dst.UpdateUsage(nil); err != nil {
+				t.Fatal(err)
+			}
+			if got, want := dst.knownCommittedBytes, page; got != want {
+				t.Errorf("committed bytes during restore: got %d, want %d", got, want)
+			}
+			scanned = true
+		}
+		return checkpoint.Read(p)
+	})
+	if err := dst.LoadFrom(t.Context(), reader, &LoadOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { dst.DecRef(fr) })
+	if !scanned {
+		t.Fatal("did not scan while restoring the last page")
+	}
+	if got, want := dst.knownCommittedBytes, 2*page; got != want {
+		t.Errorf("committed bytes before post-restore scan: got %d, want %d", got, want)
+	}
+	if err := dst.UpdateUsage(nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := dst.knownCommittedBytes, 3*page; got != want {
+		t.Errorf("committed bytes after restore: got %d, want %d", got, want)
+	}
+}
+
 // TestSaveToExitAfterSaving checks that SaveTo leaves zero pages that are
 // committed on the host in place only if the sentry exits after saving.
 func TestSaveToExitAfterSaving(t *testing.T) {
