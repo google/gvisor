@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+// Package filter provides common seccomp syscall rules shared by gofers.
+package filter
 
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-func cgoFilters() seccomp.SyscallRules {
+// CgoFilters returns additional syscall rules required when CGO is enabled.
+func CgoFilters() seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		// musl pthread_create uses legacy clone with TID pointers, unlike the
 		// Go runtime's clone call. Keep this exact thread-only flag set in

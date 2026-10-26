@@ -17,6 +17,7 @@ package container
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -84,6 +85,9 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("reading container metadata file %q: %w", state.statePath(), err)
+	}
+	if !opts.ReadOnly {
+		c.Saver.loaded, state.loaded = state.loaded, nil
 	}
 	c.Sandbox.SetRootDir(rootDir)
 
@@ -274,6 +278,12 @@ type StateFile struct {
 
 	once  sync.Once    `nojson:"true"`
 	flock *flock.Flock `nojson:"true"`
+
+	// loaded is the state file as last loaded or saved.
+	// Stays open so that its inode number cannot be reused.
+	// This makes it possible to use inode number matching as evidence that
+	// no concurrent write occurred.
+	loaded *os.File `nojson:"true"`
 }
 
 // lock globally locks all locking operations for the container.
@@ -342,14 +352,21 @@ func (s *StateFile) SaveLocked(v any) error {
 		return err
 	}
 	tmpPath := s.tmpStatePath()
-	if err := os.WriteFile(tmpPath, meta, 0640); err != nil {
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	if err != nil {
+		return fmt.Errorf("writing json file: %v", err)
+	}
+	if _, err := f.Write(meta); err != nil {
+		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing json file: %v", err)
 	}
 	if err := os.Rename(tmpPath, s.statePath()); err != nil {
+		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming json file: %v", err)
 	}
+	s.setLoaded(f)
 	return nil
 }
 
@@ -376,17 +393,57 @@ func (s *StateFile) load(v any, opts LoadOpts) error {
 // LoadOpts.ReadOnly).
 func (s *StateFile) loadLocked(v any) error {
 	path := s.statePath()
-	metaBytes, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		// Caller of this function relies on error code, we cannot return new error,
 		// but we need to provide a message with file name.
 		log.Warningf("Error loading state file %q: %v", path, err)
 		return err
 	}
-	return json.Unmarshal(metaBytes, &v)
+	metaBytes, err := io.ReadAll(f)
+	if err != nil {
+		_ = f.Close()
+		log.Warningf("Error loading state file %q: %v", path, err)
+		return err
+	}
+	if err := json.Unmarshal(metaBytes, &v); err != nil {
+		_ = f.Close()
+		return err
+	}
+	s.setLoaded(f)
+	return nil
+}
+
+// unchangedLocked returns true if the state file was not saved since `s` last
+// loaded or saved it. Replaces the state file with a new file, which
+// cannot have the same inode number as we stored in `s.loaded`.
+//
+// Preconditions: lock() must have been called.
+func (s *StateFile) unchangedLocked() bool {
+	if s.loaded == nil {
+		return false
+	}
+	loaded, err := s.loaded.Stat()
+	if err != nil {
+		return false
+	}
+	current, err := os.Stat(s.statePath())
+	if err != nil {
+		return false
+	}
+	return os.SameFile(loaded, current)
+}
+
+// setLoaded replaces `s.loaded` with `f`, which may be nil.
+func (s *StateFile) setLoaded(f *os.File) {
+	if s.loaded != nil {
+		_ = s.loaded.Close()
+	}
+	s.loaded = f
 }
 
 func (s *StateFile) close() error {
+	s.setLoaded(nil)
 	if s.flock == nil {
 		return nil
 	}
