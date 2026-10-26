@@ -550,12 +550,27 @@ func (c *Container) Restore(conf *config.Config, imagePath string, direct, backg
 }
 
 func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
-	if err := c.Saver.lock(); err != nil {
+	if err := c.modify(func() error {
+		return c.startLocked(conf, action, startRoot, startSub)
+	}); err != nil {
 		return err
 	}
-	unlock := cleanup.Make(c.Saver.UnlockOrDie)
-	defer unlock.Clean()
 
+	// Adjust the oom_score_adj for sandbox. This must be done after saving c,
+	// and without its lock, which is acquired there.
+	if err := adjustSandboxOOMScoreAdj(c.Sandbox, c.Spec, c.Saver.RootDir, false); err != nil {
+		return err
+	}
+
+	// Set container's oom_score_adj to the gofer since it is dedicated to
+	// the container, in case the gofer uses up too much memory.
+	return c.adjustGoferOOMScoreAdj()
+}
+
+// startLocked starts the container with startRoot or startSub.
+//
+// Preconditions: c.Saver is locked.
+func (c *Container) startLocked(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
 	if err := c.requireStatus(action, Created); err != nil {
 		return err
 	}
@@ -639,21 +654,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	}
 
 	c.changeStatus(Running)
-	if err := c.saveLocked(); err != nil {
-		return err
-	}
-
-	// Release lock before adjusting OOM score because the lock is acquired there.
-	unlock.Clean()
-
-	// Adjust the oom_score_adj for sandbox. This must be done after saveLocked().
-	if err := adjustSandboxOOMScoreAdj(c.Sandbox, c.Spec, c.Saver.RootDir, false); err != nil {
-		return err
-	}
-
-	// Set container's oom_score_adj to the gofer since it is dedicated to
-	// the container, in case the gofer uses up too much memory.
-	return c.adjustGoferOOMScoreAdj()
+	return nil
 }
 
 // Run is a helper that calls Create + Start + Wait.
@@ -692,40 +693,37 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 // Update sets the resources of a running container as configured.
 func (c *Container) Update(conf *config.Config, res *specs.LinuxResources) error {
 	log.Debugf("Set resources for container, cid: %s", c.ID)
-	if err := c.requireStatus("set resources for", Created, Running); err != nil {
-		return err
-	}
-
-	if c.Sandbox == nil {
-		return fmt.Errorf("sandbox cannot be nil")
-	}
-
-	if c.Sandbox.IsRootContainer(c.ID) {
-		cg := c.Sandbox.CgroupJSON.Cgroup
-		if cg == nil {
-			return fmt.Errorf("cgroup cannot be nil")
-		}
-		oldCPULimits := c.Sandbox.CPULimits
-		if _, inPod := c.Spec.Annotations[cgroupParentAnnotation]; !inPod && cgroup.OwnsCPULimit(cg) {
-			c.Sandbox.CPULimits = newCPULimits(conf, res, oldCPULimits != nil && oldCPULimits.WillRestore)
-		}
-		if err := cg.Update(c.cgroupResources(res)); err != nil {
-			// set back to original
-			c.Sandbox.CPULimits = oldCPULimits
-			if err2 := cg.Update(c.cgroupResources(c.Spec.Linux.Resources)); err2 != nil {
-				return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
-			}
+	return c.modify(func() error {
+		if err := c.requireStatus("set resources for", Created, Running); err != nil {
 			return err
 		}
-	}
 
-	c.Spec.Linux.Resources = res
+		if c.Sandbox == nil {
+			return fmt.Errorf("sandbox cannot be nil")
+		}
 
-	if err := c.Saver.lock(); err != nil {
-		return err
-	}
-	defer c.Saver.unlock()
-	return c.saveLocked()
+		if c.Sandbox.IsRootContainer(c.ID) {
+			cg := c.Sandbox.CgroupJSON.Cgroup
+			if cg == nil {
+				return fmt.Errorf("cgroup cannot be nil")
+			}
+			oldCPULimits := c.Sandbox.CPULimits
+			if _, inPod := c.Spec.Annotations[cgroupParentAnnotation]; !inPod && cgroup.OwnsCPULimit(cg) {
+				c.Sandbox.CPULimits = newCPULimits(conf, res, oldCPULimits != nil && oldCPULimits.WillRestore)
+			}
+			if err := cg.Update(c.cgroupResources(res)); err != nil {
+				// set back to original
+				c.Sandbox.CPULimits = oldCPULimits
+				if err2 := cg.Update(c.cgroupResources(c.Spec.Linux.Resources)); err2 != nil {
+					return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
+				}
+				return err
+			}
+		}
+
+		c.Spec.Linux.Resources = res
+		return nil
+	})
 }
 
 // Execute runs the specified command in the container. It returns the PID of
@@ -917,38 +915,30 @@ func (c *Container) signalRunning(sig unix.Signal, all bool) error {
 // receive the signal, so a terminating signal (SIGKILL/SIGTERM) is honored by
 // stopping the container.
 func (c *Container) signalCreated(sig unix.Signal, all bool) error {
-	if err := c.Saver.lock(); err != nil {
-		return err
-	}
-	defer c.Saver.UnlockOrDie()
-	// The status read before acquiring the lock may be stale: a concurrent start
-	// could have moved the container to Running (or a kill/delete to Stopped).
-	// Re-read the persisted state under the lock before acting on it.
-	reloaded := &Container{}
-	if err := c.Saver.loadLocked(reloaded); err != nil {
-		return err
-	}
-	c.Status = reloaded.Status
-	if c.Status != Created {
-		// The container now has a process (or has already stopped), so deliver
-		// the signal normally.
-		return c.signalRunning(sig, all)
-	}
-	// Still Created: only a terminating signal is actionable; there is nothing
-	// to deliver other signals to, so drop them.
-	if sig != unix.SIGKILL && sig != unix.SIGTERM {
-		return nil
-	}
-	// Tear down the container. For the root container this SIGKILLs the sandbox
-	// (boot) process; for a subcontainer it destroys the not-yet-started
-	// container in the sentry.
-	if c.Sandbox != nil {
-		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
-			return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+	// modify reloads the status, which a concurrent start could have moved
+	// to Running (or a kill/delete to Stopped).
+	return c.modify(func() error {
+		if c.Status != Created {
+			// The container now has a process (or has already stopped), so
+			// deliver the signal normally.
+			return c.signalRunning(sig, all)
 		}
-	}
-	c.changeStatus(Stopped)
-	return c.saveLocked()
+		// Still Created: only a terminating signal is actionable; there is
+		// nothing to deliver other signals to, so drop them.
+		if sig != unix.SIGKILL && sig != unix.SIGTERM {
+			return nil
+		}
+		// Tear down the container. For the root container this SIGKILLs the
+		// sandbox (boot) process; for a subcontainer it destroys the
+		// not-yet-started container in the sentry.
+		if c.Sandbox != nil {
+			if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
+				return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+			}
+		}
+		c.changeStatus(Stopped)
+		return nil
+	})
 }
 
 // SignalProcess sends sig to a specific process in the container.
@@ -1016,39 +1006,33 @@ func (c *Container) FSSave(conf *config.Config, imagePath string, opts sandbox.F
 // The call only succeeds if the container's status is created or running.
 func (c *Container) Pause() error {
 	log.Debugf("Pausing container, cid: %s", c.ID)
-	if err := c.Saver.lock(); err != nil {
-		return err
-	}
-	defer c.Saver.UnlockOrDie()
+	return c.modify(func() error {
+		if c.Status != Created && c.Status != Running {
+			return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
+		}
 
-	if c.Status != Created && c.Status != Running {
-		return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
-	}
-
-	if err := c.Sandbox.Pause(c.ID); err != nil {
-		return fmt.Errorf("pausing container %q: %v", c.ID, err)
-	}
-	c.changeStatus(Paused)
-	return c.saveLocked()
+		if err := c.Sandbox.Pause(c.ID); err != nil {
+			return fmt.Errorf("pausing container %q: %v", c.ID, err)
+		}
+		c.changeStatus(Paused)
+		return nil
+	})
 }
 
 // Resume unpauses the container and its kernel.
 // The call only succeeds if the container's status is paused.
 func (c *Container) Resume() error {
 	log.Debugf("Resuming container, cid: %s", c.ID)
-	if err := c.Saver.lock(); err != nil {
-		return err
-	}
-	defer c.Saver.UnlockOrDie()
-
-	if c.Status != Paused {
-		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
-	}
-	if err := c.Sandbox.Resume(c.ID); err != nil {
-		return fmt.Errorf("resuming container: %v", err)
-	}
-	c.changeStatus(Running)
-	return c.saveLocked()
+	return c.modify(func() error {
+		if c.Status != Paused {
+			return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
+		}
+		if err := c.Sandbox.Resume(c.ID); err != nil {
+			return fmt.Errorf("resuming container: %v", err)
+		}
+		c.changeStatus(Running)
+		return nil
+	})
 }
 
 // State returns the metadata of the container.
@@ -1440,6 +1424,54 @@ func (c *Container) saveLocked() error {
 	log.Debugf("Save container, cid: %s", c.ID)
 	if err := c.Saver.SaveLocked(c); err != nil {
 		return fmt.Errorf("saving container metadata: %v", err)
+	}
+	return nil
+}
+
+// modify locks the state file of `c`, reloads the fields of `c` that other
+// `runsc` commands change, and calls `fn`.
+// If `fn` succeeds, it saves `c`.
+// `fn` runs with the state file lock held.
+func (c *Container) modify(fn func() error) error {
+	c.requireAllowWrite()
+	if err := c.Saver.lock(); err != nil {
+		return err
+	}
+	defer c.Saver.UnlockOrDie()
+	if err := c.reloadLocked(); err != nil {
+		return err
+	}
+	if err := fn(); err != nil {
+		// fn may have changed c without saving it, so reload it next time.
+		c.Saver.setLoaded(nil)
+		return err
+	}
+	return c.saveLocked()
+}
+
+// reloadLocked sets the fields of c that runsc commands change after the
+// container is created to their saved values. Other saved fields are only
+// changed by the process that created the container, or only in memory, such
+// as process IDs when processes exit.
+//
+// Preconditions: c.Saver is locked.
+func (c *Container) reloadLocked() error {
+	if c.Saver.unchangedLocked() {
+		return nil
+	}
+	saved := &Container{}
+	if err := c.Saver.loadLocked(saved); err != nil {
+		return fmt.Errorf("loading container metadata: %w", err)
+	}
+	// Stopped is final, and c may know it from CheckStopped or Wait only.
+	if c.Status != Stopped {
+		c.Status = saved.Status
+	}
+	c.Spec = saved.Spec
+	if c.Sandbox != nil && saved.Sandbox != nil {
+		c.Sandbox.CPULimits = saved.Sandbox.CPULimits
+		c.Sandbox.RegisteredMetrics = saved.Sandbox.RegisteredMetrics
+		c.Sandbox.Restored = saved.Sandbox.Restored
 	}
 	return nil
 }
