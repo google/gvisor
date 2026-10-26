@@ -15,7 +15,9 @@
 package kernel
 
 import (
+	"fmt"
 	"testing"
+	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
@@ -46,5 +48,52 @@ func TestCopiedSeccompCacheArchitecture(t *testing.T) {
 	child.image.st = parent.image.st
 	if got := child.evaluateSyscallFilters(0, arch.SyscallArguments{}, 0); got != uint32(linux.SECCOMP_RET_ALLOW) {
 		t.Fatalf("original architecture: got %#x, want %#x", got, uint32(linux.SECCOMP_RET_ALLOW))
+	}
+}
+
+// TestSeccompCacheableInputSize checks the cacheable prefix against the ABI
+// layout.
+func TestSeccompCacheableInputSize(t *testing.T) {
+	var sd linux.SeccompData
+	if got, want := unsafe.Offsetof(sd.Arch), unsafe.Sizeof(sd.Nr); unsafe.Offsetof(sd.Nr) != 0 || got != want {
+		t.Fatalf("Nr and Arch are not adjacent at the start: Arch offset = %d, want %d", got, want)
+	}
+	if got := unsafe.Offsetof(sd.InstructionPointer); got != seccompCacheableInputSize {
+		t.Errorf("InstructionPointer offset = %d, want %d", got, seccompCacheableInputSize)
+	}
+}
+
+// TestSeccompCacheInput checks that argument and instruction pointer reads stay
+// uncacheable, including when the previous syscall read different input bytes.
+func TestSeccompCacheInput(t *testing.T) {
+	const auditNumber = linux.AUDIT_ARCH_X86_64
+	task := &Task{image: TaskImage{st: &SyscallTable{AuditNumber: auditNumber}}}
+	var sd linux.SeccompData
+	for offset := 0; offset < sd.SizeBytes(); offset++ {
+		t.Run(fmt.Sprintf("byte-%d", offset), func(t *testing.T) {
+			program, err := bpf.Compile([]bpf.Instruction{
+				bpf.Stmt(bpf.Ld|bpf.Abs|bpf.W, 0),
+				bpf.Jump(bpf.Jmp|bpf.Jset|bpf.K, 1, 0, 1),
+				bpf.Stmt(bpf.Ld|bpf.Abs|bpf.B, uint32(offset)),
+				bpf.Stmt(bpf.Ret|bpf.K, uint32(linux.SECCOMP_RET_ALLOW)),
+			}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ts := taskSeccomp{filters: []bpf.Program{program}}
+			ts.populateCache(task)
+			if ts.cacheAuditNumber != auditNumber {
+				t.Fatalf("cache architecture: got %#x, want %#x", ts.cacheAuditNumber, auditNumber)
+			}
+			for sysno, got := range ts.cache {
+				want := linux.BPFAction(linux.SECCOMP_RET_ALLOW)
+				if offset >= seccompCacheableInputSize && sysno&1 != 0 {
+					want = uncacheableBPFAction
+				}
+				if got != want {
+					t.Fatalf("syscall %d: got %#x, want %#x", sysno, uint32(got), uint32(want))
+				}
+			}
+		})
 	}
 }
