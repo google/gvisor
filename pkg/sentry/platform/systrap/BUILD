@@ -127,6 +127,9 @@ go_test(
         "systrap_test.go",
     ],
     embed = [":systrap"],
+    # Stub processes unmap glibc's registered rseq area, so disable
+    # registration at process startup, as runsc does for the sentry.
+    env = {"GLIBC_TUNABLES": "glibc.pthread.rseq=0"},
     deps = [
         "//pkg/bpf",
         "//pkg/context",
