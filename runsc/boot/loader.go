@@ -1031,14 +1031,14 @@ func New(args Args) (*Loader, error) {
 	}
 	l.ctrl = ctrl
 
-	// Only start serving after Loader is set to controller and controller is set
-	// to Loader, because they are both used in the urpc methods.
-	if err := ctrl.srv.StartServing(); err != nil {
-		return nil, fmt.Errorf("starting control server: %w", err)
-	}
-	args.StartupTimer.Reached("control server started")
-
 	return l, nil
+}
+
+// StartControlServer starts serving control RPCs, including those that might
+// have been backlogged while the sandbox was booting.
+func (l *Loader) StartControlServer() {
+	l.ctrl.srv.StartServing()
+	l.startupTimer.Reached("control server started")
 }
 
 // ConfigureNetwork implements inet.NetworkArgs.ConfigureNetwork.
