@@ -272,6 +272,73 @@ func TestRestoreFailBeforeStart(t *testing.T) {
 	}
 }
 
+// watchStartupHeapReleases replaces l.freeOSMemory. It returns a channel that
+// receives a value for each release.
+func watchStartupHeapReleases(l *Loader) <-chan struct{} {
+	released := make(chan struct{}, 10)
+	l.freeOSMemory = func() { released <- struct{}{} }
+	return released
+}
+
+// expectOneStartupHeapRelease checks that exactly one release happens.
+func expectOneStartupHeapRelease(t *testing.T, released <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-released:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("startup heap was not released")
+	}
+	select {
+	case <-released:
+		t.Errorf("startup heap was released more than once")
+	case <-time.After(2 * startupHeapReleaseIdleDelay):
+	}
+}
+
+// TestStartupHeapReleaseOnStart checks that the startup heap is released once
+// after the root container starts.
+func TestStartupHeapReleaseOnStart(t *testing.T) {
+	l, cleanup, err := createLoader(testConfig(), testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer l.Destroy()
+	defer cleanup()
+	released := watchStartupHeapReleases(l)
+
+	go func() { <-l.ctrl.manager.startResultChan }()
+	if err := l.Run(); err != nil {
+		t.Fatalf("error running container: %v", err)
+	}
+	expectOneStartupHeapRelease(t, released)
+	if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+		t.Errorf("application exited with %s, want exit status 0", status)
+	}
+}
+
+// TestStartupHeapReleaseOnRestore checks that the startup heap is released
+// once after a restore is complete.
+func TestStartupHeapReleaseOnRestore(t *testing.T) {
+	l, cleanup, err := createLoader(testConfig(), testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer l.Destroy()
+	defer cleanup()
+	released := watchStartupHeapReleases(l)
+	defer l.ctrl.srv.Stop(time.Hour)
+
+	// Put the loader in the state that a restore leaves it in after the
+	// restored kernel starts (see containerManager.Restore and Loader.run).
+	l.mu.Lock()
+	l.state = restoringStarted
+	l.mu.Unlock()
+	l.ctrl.manager.onRestoreDone(sentryapi.Savings{})
+	// A second trigger while the release is pending doesn't add a release.
+	l.releaseStartupHeapWhenIdle()
+	expectOneStartupHeapRelease(t, released)
+}
+
 // Test that network=host with raw sockets enabled requires CAP_NET_RAW on the
 // host.
 func TestHostnetWithRawSockets(t *testing.T) {

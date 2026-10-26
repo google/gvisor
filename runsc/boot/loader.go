@@ -21,6 +21,7 @@ import (
 	"maps"
 	"os"
 	"runtime"
+	runtimedebug "runtime/debug"
 	"strconv"
 	"strings"
 	gtime "time"
@@ -30,6 +31,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
@@ -258,6 +260,14 @@ type Loader struct {
 	lifecycleCPUs lifecycleCPUs
 
 	hostTHP HostTHP
+
+	// startupHeapReleasePending is true while a goroutine waits to return
+	// the free Sentry heap memory to the host. See
+	// Loader.releaseStartupHeapWhenIdle.
+	startupHeapReleasePending atomicbitops.Bool
+
+	// freeOSMemory is runtimedebug.FreeOSMemory, replaced in tests.
+	freeOSMemory func()
 
 	// saveMu serializes save operations. Saves can be requested concurrently:
 	// autosave in save-resume mode is triggered by any task executing the
@@ -683,7 +693,8 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		sandboxID: args.ID,
+		sandboxID:    args.ID,
+		freeOSMemory: runtimedebug.FreeOSMemory,
 		noRootContainer: noRootContainer{
 			enabled: args.NoRootContainer,
 			exit:    make(chan struct{}),
@@ -1365,6 +1376,25 @@ func (l *Loader) Run() error {
 	return nil
 }
 
+// startupHeapReleaseIdleDelay is how long the application must stay idle
+// before the Sentry returns its free startup heap memory to the host.
+const startupHeapReleaseIdleDelay = 250 * gtime.Millisecond
+
+// releaseStartupHeapWhenIdle returns the free Sentry heap memory to the host
+// when the application is next idle for startupHeapReleaseIdleDelay. If a
+// release is already pending, it does nothing.
+func (l *Loader) releaseStartupHeapWhenIdle() {
+	if !l.startupHeapReleasePending.CompareAndSwap(false, true) {
+		return
+	}
+	k := l.k
+	go func() {
+		k.WaitForIdle(startupHeapReleaseIdleDelay)
+		l.startupHeapReleasePending.Store(false)
+		l.freeOSMemory()
+	}()
+}
+
 // +checklocksexclude:l.mu
 func (l *Loader) run() error {
 	if l.root.conf.Network == config.NetworkHost {
@@ -1515,7 +1545,10 @@ func (l *Loader) run() error {
 	switch l.state {
 	case created:
 		l.state = started
+		l.releaseStartupHeapWhenIdle()
 	case restoringUnstarted:
+		// A restored sandbox releases its startup heap once the restore is
+		// complete, in containerManager.onRestoreDone.
 		l.state = restoringStarted
 	default:
 		panic(fmt.Sprintf("state=%s in Loader.run() should be impossible", l.state))
