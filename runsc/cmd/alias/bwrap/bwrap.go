@@ -90,6 +90,7 @@ type bwrapConfig struct {
 	UnshareUser bool
 	Hostname    string
 	Argv0       string
+	AsPID1      bool
 	hasArgv0    bool
 	nextPerms   *uint32
 }
@@ -434,7 +435,7 @@ func (d HostDir) parentPerms() uint32 {
 // clears its umask while it sets up the sandbox, so the umask runsc inherits
 // must not narrow perms: a chmod after mkdir(2) restores any bits it masked,
 // keeping a setgid bit inherited from the parent as mkdir(2) would. A path
-// that appeared in the meantime is left as it is, like an existing --dir.
+// that appeared in the meantime is left as it is.
 func mkdir(path string, perms uint32, uid, gid int) error {
 	if err := unix.Mkdir(path, perms); err != nil {
 		if errors.Is(err, unix.EEXIST) {
@@ -479,6 +480,9 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 	execOpts := []sandbox.ExecOption{
 		sandbox.WithExecStdio(os.Stdin, os.Stdout, os.Stderr),
 		sandbox.WithExecSignalRelay(),
+	}
+	if c.AsPID1 {
+		execOpts = append(execOpts, sandbox.WithExecNewPIDNamespace())
 	}
 	argv := c.Args
 	if c.hasArgv0 {

@@ -60,6 +60,7 @@ const (
 	flagArgv0         = "argv0"
 	flagPerms         = "perms"
 	flagDir           = "dir"
+	flagAsPID1        = "as-pid-1"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -90,6 +91,7 @@ type Cli struct {
 	argv0         string
 	perms         string
 	dir           string
+	asPID1        bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -134,6 +136,7 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.argv0, flagArgv0, "", "Set argv[0] to VALUE before running the program")
 	f.StringVar(&c.perms, flagPerms, "", "Set permissions of the next argument (--tmpfs, --dir)")
 	f.StringVar(&c.dir, flagDir, "", "Create dir at DEST")
+	f.BoolVar(&c.asPID1, flagAsPID1, false, "Do not install a reaper process with PID=1")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -227,6 +230,8 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parsePerms(bwrapArgs, i)
 		case flagDir:
 			i, err = cfg.parseDir(bwrapArgs, i)
+		case flagAsPID1:
+			i, err = cfg.parseAsPID1(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -469,6 +474,15 @@ func (c *bwrapConfig) parseUserns(args []string, i int) (int, error) {
 //
 // All are accepted for bubblewrap CLI compatibility.
 func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
+	return i + 1, nil
+}
+
+// parseAsPID1 handles --as-pid-1. The /bin/sleep placeholder is PID 1 of the
+// sandbox and COMMAND runs as an exec inside it, so do() runs COMMAND in a new
+// PID namespace where it is PID 1. The Sentry always gives the sandbox its own
+// PID namespace, so this does not require --unshare-pid.
+func (c *bwrapConfig) parseAsPID1(args []string, i int) (int, error) {
+	c.AsPID1 = true
 	return i + 1, nil
 }
 

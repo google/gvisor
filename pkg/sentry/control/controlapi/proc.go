@@ -72,6 +72,9 @@ type ExecArgs struct {
 
 	// ContainerID is the container for the process being executed.
 	ContainerID string
+
+	// NewPIDNamespace runs the process as PID 1 of a new child PID namespace.
+	NewPIDNamespace bool
 }
 
 // String prints the arguments as a string.
