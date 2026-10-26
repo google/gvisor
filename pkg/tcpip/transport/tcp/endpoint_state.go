@@ -207,7 +207,15 @@ func (e *Endpoint) Restore(s *stack.Stack) {
 	}
 
 	if terminateAtRestore && !e.stack.AllowLiveTCPMigration() {
-		e.closeEndpointAtRestore()
+		if EndpointState(e.origEndpointState).handshake() {
+			tcpip.AsyncLoading.Add(1)
+			go func() {
+				defer tcpip.AsyncLoading.Done()
+				e.closeEndpointAtRestore()
+			}()
+		} else {
+			e.closeEndpointAtRestore()
+		}
 		return
 	}
 

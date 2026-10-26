@@ -19,6 +19,7 @@ package stack_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"net"
@@ -31,6 +32,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -44,6 +46,51 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
+
+// crossStackRestoreEndpoint models TCP's global connected-before-listener
+// dependency when the connected endpoint belongs to a different namespace.
+type crossStackRestoreEndpoint struct {
+	connected chan struct{}
+	listener  bool
+}
+
+func (e *crossStackRestoreEndpoint) Restore(*stack.Stack) {
+	if !e.listener {
+		close(e.connected)
+		return
+	}
+	tcpip.AsyncLoading.Add(1)
+	go func() {
+		defer tcpip.AsyncLoading.Done()
+		<-e.connected
+	}()
+}
+
+func TestRestoreEndpointsAcrossNamespaces(t *testing.T) {
+	root := stack.New(stack.Options{})
+	child := stack.New(stack.Options{})
+	defer root.Destroy()
+	defer child.Destroy()
+	connected := make(chan struct{})
+	root.RegisterRestoredEndpoint(&crossStackRestoreEndpoint{connected: connected, listener: true})
+	child.RegisterRestoredEndpoint(&crossStackRestoreEndpoint{connected: connected})
+	for _, s := range []*stack.Stack{root, child} {
+		s.PrepareRestore()
+	}
+	root.RestoreEndpoints()
+	child.RestoreEndpoints()
+	done := make(chan struct{})
+	go func() {
+		root.CompleteRestore()
+		child.CompleteRestore()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cross-namespace endpoint restoration deadlocked")
+	}
+}
 
 func TestClockResolution(t *testing.T) {
 	for _, test := range []struct {
@@ -5979,4 +6026,54 @@ func TestNetworkProtocolEnabled(t *testing.T) {
 		t.Fatalf("SetNICNetworkProtocolEnabled(%d, ipv6, true): %s", nicID1, err)
 	}
 	checkState(false /* wantGlobal */, false /* wantDefault */, map[tcpip.NICID]bool{nicID1: true, nicID2: false})
+}
+
+func TestMovedCheckpointableNICSurvivesRestore(t *testing.T) {
+	source := stack.New(stack.Options{NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol}})
+	defer source.Destroy()
+	destination := stack.New(stack.Options{NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol}})
+	defer destination.Destroy()
+	link := channel.New(1, 1500, "")
+	link.LinkEPCapabilities |= stack.CapabilitySaveRestore
+	id := source.NextNICID()
+	if err := source.CreateNICWithOptions(id, link, stack.NICOptions{Name: "moved", Kind: "veth", Checkpointable: true}); err != nil {
+		t.Fatal(err)
+	}
+	movedID, err := source.SetNICStack(id, destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: tcpip.AddressWithPrefix{Address: tcpip.AddrFrom4([4]byte{10, 77, 0, 2}), PrefixLen: 24}}
+	if err := destination.AddProtocolAddress(movedID, address, stack.AddressProperties{}); err != nil {
+		t.Fatal(err)
+	}
+	route := tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: movedID}
+	destination.AddRoute(route)
+	var encoded bytes.Buffer
+	if _, err := state.Save(context.Background(), &encoded, destination); err != nil {
+		t.Fatal(err)
+	}
+	destination.Resume()
+	restored := stack.New(stack.Options{})
+	defer restored.Destroy()
+	if _, err := state.Load(context.Background(), &encoded, restored); err != nil {
+		t.Fatal(err)
+	}
+	restored.Restore()
+	nic, ok := restored.NICInfo()[movedID]
+	if !ok {
+		t.Fatal("moved checkpointable NIC disappeared")
+	}
+	if nic.Name != "moved" || nic.Kind != "veth" {
+		t.Fatalf("NIC identity changed: %+v", nic)
+	}
+	if diff := cmp.Diff([]tcpip.ProtocolAddress{address}, nic.ProtocolAddresses); diff != "" {
+		t.Errorf("addresses changed (-want +got): %s", diff)
+	}
+	if routes := restored.GetRouteTable(); len(routes) != 1 || !routes[0].Equal(route) {
+		t.Fatalf("routes changed: %+v", routes)
+	}
+	if next := restored.NextNICID(); next <= movedID {
+		t.Fatalf("next NIC ID=%d reuses moved ID=%d", next, movedID)
+	}
 }

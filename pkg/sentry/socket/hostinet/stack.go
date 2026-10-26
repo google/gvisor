@@ -467,6 +467,15 @@ func (*Stack) Restore() {
 	restoreListeners()
 }
 
+// PrepareRestore implements inet.Stack.PrepareRestore.
+func (*Stack) PrepareRestore() {}
+
+// RestoreEndpoints implements inet.Stack.RestoreEndpoints.
+func (*Stack) RestoreEndpoints() { restoreListeners() }
+
+// CompleteRestore implements inet.Stack.CompleteRestore.
+func (*Stack) CompleteRestore() {}
+
 // ResetConfig implements inet.Stack.ResetConfig.
 func (s *Stack) ResetConfig() {
 	s.allowedSocketTypes = AllowedSocketTypes

@@ -97,6 +97,10 @@ type Stack struct {
 	mu stackRWMutex `state:"nosave"`
 	// +checklocks:mu
 	nics map[tcpip.NICID]*nic `state:"nosave"`
+
+	// checkpointableNicIDGen preserves the NIC allocation high watermark.
+	checkpointableNicIDGen int32
+
 	// +checklocks:mu
 	loopbackNIC *nic `state:"nosave"`
 	// +checklocks:mu
@@ -109,7 +113,7 @@ type Stack struct {
 	// nicIDGen is used to generate NIC IDs.
 	nicIDGen atomicbitops.Int32 `state:"nosave"`
 
-	// preservedNICs and preservedRoutes hold virtual NICs (such as tun/tap) and
+	// preservedNICs and preservedRoutes hold virtual NICs (TUN/TAP, veth, bridge) and
 	// their routes across save and restore.
 	// +checklocks:mu
 	preservedNICs map[tcpip.NICID]*nic
@@ -1074,6 +1078,10 @@ type NICOptions struct {
 	// Kind specifies the link kind of the NIC (e.g. "veth", "bridge").
 	Kind string
 
+	// Checkpointable preserves an in-memory link endpoint across restore.
+	// Host FD-backed endpoints must be recreated by network configuration.
+	Checkpointable bool
+
 	// MinMTU and MaxMTU bound subsequent changes through SetNICMTU. A zero
 	// value leaves the corresponding bound unrestricted.
 	MinMTU uint32
@@ -1138,7 +1146,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 	s.nics[id] = n
-	if n.kind == "tun" {
+	if n.kind == "tun" || opts.Checkpointable {
 		s.preservedNICs[id] = n
 	}
 	if n.IsLoopback() {
@@ -2279,6 +2287,14 @@ func (s *Stack) ResetConfig() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nics = nics
+	// This stack is being reconfigured from the host network configuration.
+	// Its loopback will be recreated by boot; only nested stacks that do
+	// not pass through ResetConfig retain their saved loopback.
+	for id, n := range s.preservedNICs {
+		if n.IsLoopback() {
+			delete(s.preservedNICs, id)
+		}
+	}
 	s.loopbackNIC = nil
 	s.nicIDGen.Store(0)
 }
@@ -2315,10 +2331,29 @@ func (s *Stack) ReplaceConfig(st *Stack) {
 // Restore restarts the stack after a restore. This must be called after the
 // entire system has been restored.
 func (s *Stack) Restore() {
-	// RestoredEndpoint.Restore() may call other methods on s, so we can't hold
-	// s.mu while restoring the endpoints.
+	s.PrepareRestore()
+	s.RestoreEndpoints()
+	s.CompleteRestore()
+}
+
+// PrepareRestore rebuilds topology before any stack restores endpoints.
+// Call this for every restored network namespace before RestoreEndpoints.
+func (s *Stack) PrepareRestore() {
+
 	s.mu.Lock()
+	if s.nics == nil {
+		s.nics = make(map[tcpip.NICID]*nic, len(s.preservedNICs))
+	}
+	if s.nicIDGen.Load() < s.checkpointableNicIDGen {
+		s.nicIDGen.Store(s.checkpointableNicIDGen)
+	}
 	for id, nic := range s.preservedNICs {
+		if existing, ok := s.nics[id]; ok && existing != nic {
+			panic(fmt.Sprintf("restored NIC ID %d conflicts with network configuration", id))
+		}
+		if nic.IsLoopback() {
+			s.loopbackNIC = nic
+		}
 		nic.stack = s
 		s.nics[id] = nic
 		nic.NetworkLinkEndpoint.SetOnCloseAction(func() {
@@ -2362,16 +2397,28 @@ func (s *Stack) Restore() {
 		}
 		nic.linkResQueue.mu.Unlock()
 	}
-	eps := s.restoredEndpoints
-	s.restoredEndpoints = nil
 	s.mu.Unlock()
 	for _, r := range preservedRoutes {
 		s.AddRoute(r)
 	}
+}
+
+// RestoreEndpoints starts endpoint restoration without waiting for global TCP
+// dependencies. Call this on all stacks before CompleteRestore on any stack.
+func (s *Stack) RestoreEndpoints() {
+	// Endpoint restore calls back into the stack and must not hold s.mu.
+	s.mu.Lock()
+	eps := s.restoredEndpoints
+	s.restoredEndpoints = nil
+	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)
 	}
+}
 
+// CompleteRestore waits for endpoints across all namespaces before restarting
+// protocol workers. All stacks must have run RestoreEndpoints first.
+func (s *Stack) CompleteRestore() {
 	// Make sure all the endpoints are loaded correctly before resuming the
 	// protocol level background workers.
 	tcpip.AsyncLoading.Wait()
@@ -2380,6 +2427,7 @@ func (s *Stack) Restore() {
 	for _, p := range s.transportProtocols {
 		p.proto.Restore()
 	}
+
 }
 
 // Resume resumes the stack after a save.
@@ -2406,6 +2454,7 @@ func (s *Stack) Resume() {
 	for _, p := range s.transportProtocols {
 		p.proto.Resume()
 	}
+
 }
 
 // RegisterPacketEndpoint registers ep with the stack, causing it to receive
@@ -2824,11 +2873,13 @@ func (s *Stack) SetNICStack(id tcpip.NICID, peer *Stack) (tcpip.NICID, tcpip.Err
 	}
 
 	linkEp := nic.NetworkLinkEndpoint.(LinkEndpoint)
+	_, checkpointable := s.preservedNICs[id]
 	opts := NICOptions{
-		Name:   nic.Name(),
-		Kind:   nic.kind,
-		MinMTU: nic.minMTU,
-		MaxMTU: nic.maxMTU,
+		Name:           nic.Name(),
+		Kind:           nic.kind,
+		MinMTU:         nic.minMTU,
+		MaxMTU:         nic.maxMTU,
+		Checkpointable: checkpointable,
 	}
 
 	deferAct, err := s.removeNICLocked(id, false /* closeLinkEndpoint */)

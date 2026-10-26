@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -518,8 +519,9 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 		ifname = s.allocDeviceName("veth", dstNs)
 	}
 	err := s.Stack.CreateNICWithOptions(id, packetsocket.New(ethernet.New(ep)), stack.NICOptions{
-		Name: ifname,
-		Kind: "veth",
+		Name:           ifname,
+		Kind:           "veth",
+		Checkpointable: true,
 	})
 	if err != nil {
 		s.unlockSrcAndDst(ctx, dstNs)
@@ -545,8 +547,9 @@ func (s *Stack) newVeth(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesVie
 	}
 
 	err = peerStack.Stack.CreateNICWithOptions(peerID, packetsocket.New(ethernet.New(peerEP)), stack.NICOptions{
-		Name: peerName,
-		Kind: "veth",
+		Name:           peerName,
+		Kind:           "veth",
+		Checkpointable: true,
 	})
 	if err != nil {
 		peerEP.Close()
@@ -581,8 +584,9 @@ func (s *Stack) newBridge(ctx context.Context, linkAttrs map[uint16]nlmsg.BytesV
 	ep := stack.NewBridgeEndpoint(defaultMTU)
 	id := s.Stack.NextNICID()
 	err := s.Stack.CreateNICWithOptions(id, ep, stack.NICOptions{
-		Name: ifname,
-		Kind: "bridge",
+		Name:           ifname,
+		Kind:           "bridge",
+		Checkpointable: true,
 	})
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
@@ -1296,6 +1300,20 @@ func (s *Stack) Pause() {
 func (s *Stack) Restore() {
 	s.Stack.Restore()
 }
+
+// PrepareRestore implements inet.Stack.PrepareRestore.
+func (s *Stack) PrepareRestore() {
+	if s.Stack.IPTables() == nil {
+		s.Stack.SetIPTables(netfilter.DefaultLinuxTables(s.Stack.Clock(), s.Stack.InsecureRNG()))
+	}
+	s.Stack.PrepareRestore()
+}
+
+// RestoreEndpoints implements inet.Stack.RestoreEndpoints.
+func (s *Stack) RestoreEndpoints() { s.Stack.RestoreEndpoints() }
+
+// CompleteRestore implements inet.Stack.CompleteRestore.
+func (s *Stack) CompleteRestore() { s.Stack.CompleteRestore() }
 
 // ResetConfig implements inet.Stack.ResetConfig.
 func (s *Stack) ResetConfig() {

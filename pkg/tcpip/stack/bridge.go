@@ -29,9 +29,13 @@ type bridgePort struct {
 }
 
 // BridgeFDBKey is the MAC address of a device which a bridge port is associated with.
+//
+// +stateify savable
 type BridgeFDBKey tcpip.LinkAddress
 
 // BridgeFDBEntry consists of all metadata for a FDB record.
+//
+// +stateify savable
 type BridgeFDBEntry struct {
 	port *bridgePort
 }

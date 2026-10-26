@@ -106,6 +106,14 @@ type Stack interface {
 	// Restore restarts the network stack after restore.
 	Restore()
 
+	// PrepareRestore rebuilds topology before endpoints in any namespace resume.
+	PrepareRestore()
+	// RestoreEndpoints starts endpoint recovery without global completion waits.
+	RestoreEndpoints()
+	// CompleteRestore waits for endpoint recovery and restarts protocol workers.
+	// All namespaces must have run RestoreEndpoints before this is called.
+	CompleteRestore()
+
 	// ResetConfig resets the stack's NICs and configuration.
 	ResetConfig()
 
