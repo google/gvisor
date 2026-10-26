@@ -116,6 +116,16 @@ go_test(
 )
 
 go_test(
+    name = "modify_test",
+    srcs = ["modify_test.go"],
+    embed = [":container"],
+    deps = [
+        "//runsc/sandbox",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+    ],
+)
+
+go_test(
     name = "serialization_test",
     srcs = ["serialization_test.go"],
     deps = [
