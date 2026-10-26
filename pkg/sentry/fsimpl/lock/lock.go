@@ -128,8 +128,10 @@ type Locks struct {
 	// mu protects locks below.
 	mu sync.Mutex `state:"nosave"`
 
-	// locks is the set of region locks currently held on an Inode.
-	locks LockSet
+	// locks holds the region locks on the inode. It is nil until first use.
+	//
+	// +checklocks:mu
+	locks *LockSet
 
 	// blockedQueue is the queue of waiters that are waiting on a lock.
 	blockedQueue waiter.Queue
@@ -141,6 +143,10 @@ type Locks struct {
 func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, ofd bool, block bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// Like Linux's fs/locks.c:locks_get_lock_context, allocate only for a lock request.
+	if l.locks == nil {
+		l.locks = new(LockSet)
+	}
 	for {
 
 		// Blocking locks must run in a loop because we'll be woken up whenever an unlock event
@@ -186,7 +192,7 @@ func (l *Locks) EventUnregister(e *waiter.Entry) {
 func (l *Locks) UnlockRegion(uid UniqueID, r LockRange) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.locks.unlock(uid, r)
+	l.unlock(uid, r)
 
 	// Now that we've released the lock, we need to wake up any waiters.
 	// We track how many notifications have happened since the last attempt
@@ -380,22 +386,32 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange, of
 	return nil
 }
 
-// unlock is always successful.  If uid has no locks held for the range LockRange,
-// unlock is a no-op.
+// lowerBoundSegment returns a terminal iterator if there is no lock tree.
 //
-// Preconditions: same as lock.
-func (l *LockSet) unlock(uid UniqueID, r LockRange) {
+// +checklocks:l.mu
+func (l *Locks) lowerBoundSegment(start uint64) LockIterator {
+	if l.locks == nil {
+		return LockIterator{}
+	}
+	return l.locks.LowerBoundSegment(start)
+}
+
+// unlock releases any locks held by uid in r.
+//
+// Preconditions: r.Start <= r.End.
+//
+// +checklocks:l.mu
+func (l *Locks) unlock(uid UniqueID, r LockRange) {
 	if r.Start > r.End {
 		panic(fmt.Sprintf("unlock: r.Start %d > r.End %d", r.Start, r.End))
 	}
 
-	// Same as setlock.
 	if r.Length() == 0 {
 		return
 	}
 
 	// Get our starting point.
-	seg := l.LowerBoundSegment(r.Start)
+	seg := l.lowerBoundSegment(r.Start)
 	for seg.Ok() && seg.Start() < r.End {
 		// If this segment doesn't have a lock from uid then
 		// there is no need to fragment the set with Isolate (below).
@@ -407,7 +423,7 @@ func (l *LockSet) unlock(uid UniqueID, r LockRange) {
 
 		// Ensure that if we need to unlock a sub-segment that
 		// we don't unlock/remove that entire segment.
-		seg = l.Isolate(seg, r)
+		seg = l.locks.Isolate(seg, r)
 
 		value := seg.Value()
 		var remove bool
@@ -436,7 +452,7 @@ func (l *LockSet) unlock(uid UniqueID, r LockRange) {
 			}
 		}
 		if remove {
-			seg = l.Remove(seg).NextSegment()
+			seg = l.locks.Remove(seg).NextSegment()
 		} else {
 			seg = seg.NextSegment()
 		}
@@ -542,8 +558,7 @@ func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r Lock
 func (l *Locks) testRegion(r LockRange, check func(lock Lock, start, length uint64) bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	seg := l.locks.LowerBoundSegment(r.Start)
+	seg := l.lowerBoundSegment(r.Start)
 	for seg.Ok() && seg.Start() < r.End {
 		lock := seg.Value()
 		if !check(lock, seg.Start(), seg.End()-seg.Start()) {
