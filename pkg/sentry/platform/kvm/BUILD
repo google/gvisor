@@ -96,6 +96,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/eventfd",
         "//pkg/fd",
+        "//pkg/gomaxprocs",
         "//pkg/hostarch",
         "//pkg/hostos",
         "//pkg/hostsyscall",

@@ -82,3 +82,17 @@ func TestAddIgnoredUntilSetBase(t *testing.T) {
 		t.Errorf("GOMAXPROCS after Add(-3): got %d, want %d", got, want)
 	}
 }
+
+func TestBase(t *testing.T) {
+	init := runtime.GOMAXPROCS(0)
+	defer reset(init)
+
+	if got, want := Base(), init; got != want {
+		t.Errorf("Base before SetBase: got %d, want %d", got, want)
+	}
+	SetBase(init + 1)
+	Add(2)
+	if got, want := Base(), init+1; got != want {
+		t.Errorf("Base after SetBase(%d) and Add(2): got %d, want %d", init+1, got, want)
+	}
+}

@@ -26,7 +26,6 @@ package erofs
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strconv"
 	"sync/atomic"
 
@@ -37,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/checkpoint"
@@ -195,7 +195,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		return nil, nil, err
 	}
 
-	fs.inodeBuckets = make([]inodeBucket, runtime.GOMAXPROCS(0))
+	fs.inodeBuckets = make([]inodeBucket, gomaxprocs.Base())
 	for i := range fs.inodeBuckets {
 		fs.inodeBuckets[i].init()
 	}

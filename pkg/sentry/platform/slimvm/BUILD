@@ -46,6 +46,7 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/fd",
+        "//pkg/gomaxprocs",
         "//pkg/hostarch",
         "//pkg/hostsyscall",
         "//pkg/hosttid",
