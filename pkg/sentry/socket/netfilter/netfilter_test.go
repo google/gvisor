@@ -15,12 +15,19 @@
 package netfilter
 
 import (
+	"bytes"
+	"context"
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -728,5 +735,67 @@ func TestSetEntriesLoopOrder(t *testing.T) {
 				t.Fatalf("SetEntries expected %v, got %v", syserr.ErrLinkLoop, err)
 			}
 		})
+	}
+}
+
+// Matcher graphs are saved through stack.Matcher interfaces in iptables rules.
+func TestCheckpointMatchers(t *testing.T) {
+	for _, matcher := range []stack.Matcher{
+		&TCPMatcher{}, &UDPMatcher{}, &MarkMatcher{}, &OwnerMatcher{},
+		&OwnerMatcherV1{}, &multiportMatcher{}, &multiportMatcherV1{},
+		&conntrackMatcher{}, &commentMatcher{comment: "checkpoint"},
+		&addrTypeMatcher{},
+	} {
+		t.Run(reflect.TypeOf(matcher).String(), func(t *testing.T) {
+			var encoded bytes.Buffer
+			if _, err := state.Save(context.Background(), &encoded, &matcher); err != nil {
+				t.Fatal(err)
+			}
+			var restored stack.Matcher
+			if _, err := state.Load(context.Background(), &encoded, &restored); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(matcher, restored) {
+				t.Fatalf("matcher changed: got %#v, want %#v", restored, matcher)
+			}
+		})
+	}
+}
+
+// A stack-dependent matcher must follow the loaded stack, including later
+// address changes, rather than retaining the source namespace's addresses.
+func TestCheckpointAddrtypeStack(t *testing.T) {
+	network := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		Clock:            faketime.NewManualClock(),
+	})
+	defer network.Destroy()
+	if err := network.CreateNICWithOptions(1, loopback.New(), stack.NICOptions{Checkpointable: true}); err != nil {
+		t.Fatal(err)
+	}
+	local := tcpip.AddrFrom4([4]byte{10, 77, 0, 2})
+	if err := network.AddProtocolAddress(1, tcpip.ProtocolAddress{Protocol: ipv4.ProtocolNumber, AddressWithPrefix: local.WithPrefix()}, stack.AddressProperties{}); err != nil {
+		t.Fatal(err)
+	}
+	matcher := &addrTypeMatcher{stack: network, netProto: ipv4.ProtocolNumber, info: linux.XTAddrtypeInfoV1{Dest: linux.XT_ADDRTYPE_LOCAL}}
+	var encoded bytes.Buffer
+	if _, err := state.Save(context.Background(), &encoded, matcher); err != nil {
+		t.Fatal(err)
+	}
+	network.Resume()
+	var restored addrTypeMatcher
+	if _, err := state.Load(context.Background(), &encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	defer restored.stack.Destroy()
+	restored.stack.Restore()
+	if restored.stack == network || !restored.isLocal(ipv4.ProtocolNumber, local) {
+		t.Fatal("matcher did not recover its namespace's local address")
+	}
+	if err := restored.stack.RemoveAddress(1, local); err != nil {
+		t.Fatal(err)
+	}
+	if restored.isLocal(ipv4.ProtocolNumber, local) || !matcher.isLocal(ipv4.ProtocolNumber, local) {
+		t.Fatal("restored matcher did not follow its own stack's address changes")
 	}
 }

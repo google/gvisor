@@ -30,6 +30,7 @@ import (
 // and/or IP for packets.
 const SNATTargetName = "SNAT"
 
+// +stateify savable
 type snatTarget struct {
 	stack.SNATTarget
 	revision uint8

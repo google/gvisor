@@ -1079,6 +1079,7 @@ const (
 // include/uapi/linux/netfilter/xt_addrtype.h.
 //
 // +marshal
+// +stateify savable
 type XTAddrtypeInfoV1 struct {
 	_      structs.HostLayout
 	Source uint16

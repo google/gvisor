@@ -18,6 +18,8 @@
 package tcpconntrack
 
 import (
+	goContext "context"
+
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
@@ -72,6 +74,18 @@ type TCB struct {
 
 	// state is the current state of the stream.
 	state Result
+}
+
+// afterLoad is invoked by stateify. The state handler function pointers
+// are not savable; re-derive them from the persisted state.
+func (t *TCB) afterLoad(goContext.Context) {
+	if t.state == ResultConnecting {
+		t.handlerReply = synSentStateReply
+		t.handlerOriginal = synSentStateOriginal
+		return
+	}
+	t.handlerReply = allOtherReply
+	t.handlerOriginal = allOtherOriginal
 }
 
 // Init initializes the state of the TCB according to the initial SYN.
