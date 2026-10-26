@@ -15,7 +15,9 @@
 package user
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -218,8 +220,10 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 		passwdContents string
 		groupContents  string
 		fileMode       linux.FileMode
+		missingGroup   bool
 		expectedUID    auth.KUID
 		expectedGID    auth.KGID
+		wantErr        error
 	}{
 		"user0": {
 			user:           "user0",
@@ -396,7 +400,222 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 			fileMode:       linux.S_IFREG | 0666,
 			expectedUID:    1000,
 			expectedGID:    1113,
-		}}
+		},
+		"negative_uid_missing_files": {
+			user:    "-4294967296",
+			wantErr: strconv.ErrSyntax,
+		},
+		"oversized_uid_missing_files": {
+			user:    "4294967296",
+			wantErr: strconv.ErrRange,
+		},
+		"reserved_uid_missing_files": {
+			user:    "4294967295",
+			wantErr: strconv.ErrRange,
+		},
+		"negative_gid_missing_files": {
+			user:    "1000:-1",
+			wantErr: strconv.ErrSyntax,
+		},
+		"oversized_gid_missing_group": {
+			user:           "user0:4294967296",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			missingGroup:   true,
+			wantErr:        strconv.ErrRange,
+		},
+		"reserved_gid_missing_files": {
+			user:    "1000:4294967295",
+			wantErr: strconv.ErrRange,
+		},
+		"high_numeric_ids_missing_files": {
+			user:        "4294967294:4294967294",
+			expectedUID: 4294967294,
+			expectedGID: 4294967294,
+		},
+		"signed_padded_ids_missing_files": {
+			user:        "+01000:+02000",
+			expectedUID: 1000,
+			expectedGID: 2000,
+		},
+		"unknown_names_missing_files": {
+			user: "user0:group0",
+		},
+		"valid_numeric_gid_missing_group": {
+			user:           "user0:2000",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			missingGroup:   true,
+			expectedUID:    1000,
+		},
+		"padded_uid_matches_textually": {
+			user:           "01000",
+			passwdContents: "user0::01000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"padded_uid_does_not_match_unpadded_record": {
+			user:           "01000",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+		},
+		"digit_prefixed_name": {
+			user:           "1000user",
+			passwdContents: "1000user::1001:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1001,
+			expectedGID:    1111,
+		},
+		"selected_uid_oversized": {
+			user:           "user0",
+			passwdContents: "user0::4294967296:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrRange,
+		},
+		"selected_uid_reserved": {
+			user:           "user0",
+			passwdContents: "user0::4294967295:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrRange,
+		},
+		"selected_uid_empty": {
+			user:           "user0",
+			passwdContents: "user0:::1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_gid_negative": {
+			user:           "user0",
+			passwdContents: "user0::1000:-1::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_gid_reserved": {
+			user:           "user0",
+			passwdContents: "user0::1000:4294967295::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrRange,
+		},
+		"selected_gid_empty": {
+			user:           "user0",
+			passwdContents: "user0::1000:::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_passwd_record_short": {
+			user:           "user0",
+			passwdContents: "user0::1000",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_passwd_record_four_fields": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_passwd_record_six_fields": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111::/home/user0",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_passwd_record_extra_fields": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh:extra",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_passwd_record_empty_home": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111:::/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_passwd_record_empty_name": {
+			user:           "1000",
+			passwdContents: "::1000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"group_override_does_not_mask_empty_home": {
+			user:           "user0:2000",
+			passwdContents: "user0::1000:1111:::/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"unselected_empty_home": {
+			user:           "user0",
+			passwdContents: "other::1001:1111:::/bin/sh\nuser0::1000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+		},
+		"group_override_does_not_mask_invalid_passwd_gid": {
+			user:           "user0:2000",
+			passwdContents: "user0::1000:invalid::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"unselected_invalid_ids": {
+			user:           "user0",
+			passwdContents: "other::4294967296:-1::/home/other:/bin/sh\nuser0::1000:1111::/home/user0:/bin/sh",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"selected_group_negative": {
+			user:           "user0:group0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			groupContents:  "group0:x:-4294967296:",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_group_oversized": {
+			user:           "user0:group0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			groupContents:  "group0:x:4294967296:",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrRange,
+		},
+		"selected_group_reserved": {
+			user:           "user0:group0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			groupContents:  "group0:x:4294967295:",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrRange,
+		},
+		"selected_group_empty_gid": {
+			user:           "user0:group0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			groupContents:  "group0:x::",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"selected_group_record_short": {
+			user:           "user0:group0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			groupContents:  "group0:x",
+			fileMode:       linux.S_IFREG | 0666,
+			wantErr:        strconv.ErrSyntax,
+		},
+		"signed_padded_group_record": {
+			user:           "user0:group0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			groupContents:  "other\ngroup0:x:+02000:",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    2000,
+		},
+		"high_selected_ids": {
+			user:           "user0:group0",
+			passwdContents: "user0::4294967294:4294967294::/home/user0:/bin/sh",
+			groupContents:  "group0:x:4294967294:",
+			fileMode:       linux.S_IFREG | 0666,
+			expectedUID:    4294967294,
+			expectedGID:    4294967294,
+		},
+	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -422,11 +641,16 @@ func TestGetExecUIDGIDFromUser(t *testing.T) {
 			if err := createEtcFile(ctx, &vfsObj, creds, root, tc.passwdContents, tc.fileMode, "etc/passwd"); err != nil {
 				t.Fatalf("createEtcFile failed: %v", err)
 			}
-			if err := createEtcFile(ctx, &vfsObj, creds, root, tc.groupContents, tc.fileMode, "/etc/group"); err != nil {
-				t.Fatalf("createEtcFile failed: %v", err)
+			if !tc.missingGroup {
+				if err := createEtcFile(ctx, &vfsObj, creds, root, tc.groupContents, tc.fileMode, "/etc/group"); err != nil {
+					t.Fatalf("createEtcFile failed: %v", err)
+				}
 			}
 
-			gotUID, gotGID := GetExecUIDGIDFromUser(ctx, mns, tc.user)
+			gotUID, gotGID, err := GetExecUIDGIDFromUser(ctx, mns, tc.user)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("GetExecUIDGIDFromUser(%q): got UID %v, GID %v, error %v; want error %v", tc.user, gotUID, gotGID, err, tc.wantErr)
+			}
 			if gotUID != tc.expectedUID {
 				t.Fatalf("expectedUID %v, gotUID: %v", tc.expectedUID, gotUID)
 			}
