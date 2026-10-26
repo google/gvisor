@@ -293,7 +293,8 @@ func TestCubicRTOPreservesPriorWindow(t *testing.T) {
 	c.HandleLossDetected()
 	c.s.leaveRecovery()
 	prior := float64(c.s.SndCwnd)
-	c.HandleRTOExpired()
+	c.HandleRTOExpired(true)
+	c.s.SndCwnd = 1
 	c.Update(c.s.Ssthresh-c.s.SndCwnd, rtt, clock.NowMonotonic())
 	if got, want := c.WLastMax, prior; got != want {
 		t.Fatalf("prior window after RTO slow start = %f, want %f", got, want)
@@ -315,7 +316,8 @@ func TestCubicWindowRestartPreservesPeak(t *testing.T) {
 			// must use the actual window as the curve's origin.
 			c.s.SndCwnd = 7
 			if recovery == "timeout" {
-				c.HandleRTOExpired()
+				c.HandleRTOExpired(true)
+				c.s.SndCwnd = 1
 				c.Update(c.s.Ssthresh-c.s.SndCwnd, rtt, clock.NowMonotonic())
 			} else {
 				c.HandleLossDetected()
