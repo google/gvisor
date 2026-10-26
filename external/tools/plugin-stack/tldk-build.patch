@@ -1,0 +1,101 @@
+# Build only TLDK’s static archive. Its DPDK sources and vendor patches
+# come from Bazel, and recursive builds share the selected tools and jobserver.
+
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -56,7 +56,7 @@
+ 		S=$(CURDIR)/$(@) \
+ 		RTE_TARGET=$(RTE_TARGET) \
+ 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
+-		$(filter-out $(DIRS-y),$(MAKECMDGOALS))
++		$(filter-out $(DIRS-y) libtldk.a,$(MAKECMDGOALS))
+ 
+ test: libtldk.a libtldk.so
+ 
+@@ -74,10 +74,10 @@
+ 		echo $$fn ;				\
+ 		mkdir $$fn"_obj" ;			\
+ 		cd $$fn"_obj" ;				\
+-		ar x $$f ;				\
++		$(AR) x $$f ;				\
+ 		cd .. ;					\
+ 	done;						\
+-ar cru ../$1 $$(find */*.o | paste -sd " " -); cd ..; rm -rf $2
++$(AR) cru ../$1 $$(find */*.o | paste -sd " " -); cd ..; rm -rf $2
+ endef
+ 
+ ifeq ($(SHARED_HUGE),y)
+@@ -93,5 +93,5 @@
+ 
+ $(RTE_SDK)/mk/rte.vars.mk:
+ ifeq ($(RTE_SDK),$(LOCAL_RTE_SDK))
+-	@make RTE_TARGET=$(RTE_TARGET) config all -C $(TLDK_ROOT)/dpdk/
++	@$(MAKE) RTE_TARGET=$(RTE_TARGET) config all -C $(TLDK_ROOT)/dpdk/
+ endif
+diff --git a/dpdk/Makefile b/dpdk/Makefile
+--- a/dpdk/Makefile
++++ b/dpdk/Makefile
+@@ -42,8 +42,6 @@
+ ifeq (,$(DPDK_TARGET))
+ DPDK_TARGET := x86_64-native-linuxapp-$(DPDK_CC)
+ endif
+-
+-JOBS := $(shell grep processor /proc/cpuinfo | wc -l)
+ 
+ # compiler/linker custom arguments
+ DPDK_CPU_CFLAGS := -fPIC
+@@ -76,7 +74,7 @@
+ endif
+ 
+ # assemble DPDK make arguments
+-DPDK_MAKE_ARGS := -C $(DPDK_SOURCE) -j $(JOBS) \
++DPDK_MAKE_ARGS := -C $(DPDK_SOURCE) \
+ 	T=$(DPDK_TARGET) \
+ 	RTE_CONFIG_TEMPLATE=../custom-config \
+ 	RTE_OUTPUT=$(I) \
+@@ -102,8 +100,8 @@
+ $(B)/custom-config: $(B)/.patch.ok Makefile
+ 	@echo --- generating custom config from \
+ 		$(DPDK_SOURCE)/config/defconfig_$(DPDK_TARGET) --- $@
+-	@cpp -undef -ffreestanding -x assembler-with-cpp \
+-		$(DPDK_SOURCE)/config/defconfig_$(DPDK_TARGET) $@
++	@$(CC) -E -undef -ffreestanding -x assembler-with-cpp \
++		$(DPDK_SOURCE)/config/defconfig_$(DPDK_TARGET) -o $@
+ 	$(call set,RTE_MACHINE,$(DPDK_MACHINE))
+ 	@# modify options
+ 	$(call set,RTE_MAX_LCORE,256)
+@@ -219,6 +217,13 @@
+ 	$(call set,RTE_LIBRTE_PDUMP,n)
+ 	@rm -f .config.ok
+ 
++ifneq ($(DPDK_MAKEFILE),)
++# Bazel has already verified the source archive and applied TLDK's patches.
++$(B)/.patch.ok:
++	@mkdir -p $(DPDK_SOURCE)
++	@cp -R $(dir $(DPDK_MAKEFILE)). $(DPDK_SOURCE)
++	@touch $@
++else
+ $(B)/.download.ok:
+ 	@mkdir -p $(B)
+ 	@if [ -e $(DPDK_SOURCE) ] ; \
+@@ -242,16 +247,17 @@
+ 
+ .PHONY: patch
+ patch: $(B)/.patch.ok
++endif
+ 
+ $(B)/.config.ok: $(B)/.patch.ok $(B)/custom-config
+-	@make $(DPDK_MAKE_ARGS) config
++	@$(MAKE) $(DPDK_MAKE_ARGS) config
+ 	@touch $@
+ 
+ .PHONY: config
+ config: $(B)/.config.ok
+ 
+ $(B)/.build.ok: $(DPDK_SOURCE_FILES) $(B)/.config.ok
+-	@make $(DPDK_MAKE_ARGS) install -j
++	@$(MAKE) $(DPDK_MAKE_ARGS) install
+ 	@cp $(I)/.config $(B)/.config
+ 	@touch $@
+ 
