@@ -493,11 +493,6 @@ func (s *BuildkiteStack) Replenish(ctx context.Context, pool *JobPool, listLimit
 
 		// Iterate over the list of candidate jobs fetched from Buildkite
 		for _, job := range jobs {
-			if !slices.Contains(job.AgentQueryRules, "stacktest=yes") {
-				// TODO: for now, during development of the coordinator,
-				// only activate on jobs containing `stacktest=yes`
-				continue
-			}
 			if job.RunnableAt.After(now) {
 				// Skip jobs not yet marked as runnable
 				continue
