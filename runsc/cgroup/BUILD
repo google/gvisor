@@ -37,8 +37,8 @@ go_test(
         "systemd_test.go",
     ],
     embed = [":cgroup"],
-    tags = ["local"],
     deps = [
+        "//pkg/test/capabilitytest",
         "//pkg/test/testutil",
         "@com_github_coreos_go_systemd_v22//dbus:go_default_library",
         "@com_github_godbus_dbus_v5//:go_default_library",

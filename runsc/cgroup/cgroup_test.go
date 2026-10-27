@@ -24,6 +24,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/test/capabilitytest"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -1217,6 +1218,7 @@ func TestCreateController(t *testing.T) {
 	}
 	defer os.Chmod(readOnlyCtrlr, 0755)
 
+	capabilitytest.DropEffective(t, unix.CAP_DAC_OVERRIDE)
 	skip, err = createController(c, "readonly")
 	if !skip {
 		t.Errorf("createController() for read-only controller got skip = false, want true")
