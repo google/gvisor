@@ -371,6 +371,7 @@ func (r *restoreMounts) String() string {
 }
 
 func (r *restorer) restore(l *Loader) error {
+	defer r.closeStateFile()
 	log.Infof("Starting to restore %d containers", len(r.containers))
 
 	// Validate the container specs to ensure they did not meaningfully change
@@ -673,8 +674,6 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("restorer.readyToStart callback failed: %w", err)
 	}
 
-	r.stateFile.Close()
-
 	// Transfer ownership of the `timer` to a new goroutine.
 	// This is because `timer.Log` blocks until all timed tasks are finished,
 	// but some restore tasks may still run in the background, and we don't
@@ -684,6 +683,14 @@ func (r *restorer) restore(l *Loader) error {
 	r.timer = nil
 
 	return nil
+}
+
+// closeStateFile closes r.stateFile if it is open.
+func (r *restorer) closeStateFile() {
+	if r.stateFile != nil {
+		r.stateFile.Close()
+		r.stateFile = nil
+	}
 }
 
 // restoreNamespacePathsLocked lets containers started after restore join the

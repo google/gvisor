@@ -374,6 +374,11 @@ func (cm *containerManager) Restore(o *sentryapi.RestoreOpts, reply *sentryapi.R
 	defer func() {
 		if retErr != nil {
 			cu.Clean() // Release `cm.l.mu` as onRestoreFailed will acquire it.
+			if r := cm.restorer; r != nil {
+				r.mu.Lock()
+				r.closeStateFile()
+				r.mu.Unlock()
+			}
 			cm.onRestoreFailed(fmt.Errorf("Restore failed: %w", retErr))
 		}
 	}()
@@ -507,19 +512,43 @@ func getRestoreReaders(o *sentryapi.RestoreOpts, cpus int) (io.ReadCloser, io.Re
 	return getRestoreReadersForLocalCheckpointFiles(o, cpus)
 }
 
+// Parameters of the read-ahead buffer for local state files.
+const (
+	localStateFileReadBytes        = 1 << 20
+	localStateFileMaxParallelReads = 8
+	localStateFileMaxBufBytes      = 8 << 20
+)
+
 func getRestoreReadersForLocalCheckpointFiles(o *sentryapi.RestoreOpts, cpus int) (io.ReadCloser, io.ReadCloser, stateio.AsyncReader, error) {
-	stateFile, err := o.ReleaseFD(0)
+	stateFileFD, err := o.ReleaseFD(0)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	var stateFile io.ReadCloser = stateFileFD
 	cu := cleanup.Make(func() { stateFile.Close() })
 	defer cu.Clean()
 	var stat unix.Stat_t
-	if err := unix.Fstat(stateFile.FD(), &stat); err != nil {
+	if err := unix.Fstat(stateFileFD.FD(), &stat); err != nil {
 		return nil, nil, nil, err
 	}
 	if stat.Size == 0 {
 		return nil, nil, nil, fmt.Errorf("statefile cannot be empty")
+	}
+	if stat.Mode&unix.S_IFMT == unix.S_IFREG {
+		// Read the state file ahead of kernel decode, so that decode waits for
+		// the host file less often. The buffer holds the whole file, up to
+		// localStateFileMaxBufBytes. The reads use file offsets, so only a
+		// regular file can use this reader.
+		fileBytes := (stat.Size + localStateFileReadBytes - 1) &^ (localStateFileReadBytes - 1)
+		bufBytes := min(fileBytes, localStateFileMaxBufBytes)
+		parallelReads := min(localStateFileMaxParallelReads, max(1, cpus))
+		stateFileAsync := stateio.NewFDReader(int32(stateFileFD.Release()), localStateFileReadBytes, 1 /* maxRanges */, parallelReads)
+		stateFileBuf, err := stateio.NewBufReader(stateFileAsync /* transfers ownership */, int(bufBytes))
+		if err != nil {
+			cu.Release()
+			return nil, nil, nil, fmt.Errorf("failed to buffer state file: %w", err)
+		}
+		stateFile = stateFileBuf
 	}
 
 	if !o.HavePagesFile {
@@ -537,9 +566,7 @@ func getRestoreReadersForLocalCheckpointFiles(o *sentryapi.RestoreOpts, cpus int
 	}
 	cu.Release()
 	// //pkg/state/wire reads one byte at a time; buffer reads from
-	// pagesMetadataFile to avoid making one syscall per read. For the state
-	// file, this buffering is handled by statefile.NewReader() =>
-	// compressio.Reader or compressio.NewSimpleReader().
+	// pagesMetadataFile to avoid making one syscall per read.
 	return stateFile,
 		stateio.NewBufioReadCloser(pagesMetadataFile),
 		stateio.NewPagesFileFDReaderDefault(int32(pagesFile.Release()), cpus),
