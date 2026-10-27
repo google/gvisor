@@ -32,16 +32,17 @@ var (
 
 func main() {
 	flag.Parse()
-	if wd := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); wd != "" {
+	if wd, ok := os.LookupEnv("BUILD_WORKSPACE_DIRECTORY"); ok {
 		if err := os.Chdir(wd); err != nil {
 			fmt.Fprintf(os.Stderr, "licensecheck: %v\n", err)
 			os.Exit(1)
 		}
 	}
 	p := licensecheck.Paths{
-		GoMod:  *goMod,
-		YAML:   *yamlPath,
-		Policy: *policy,
+		GoMod:    *goMod,
+		YAML:     *yamlPath,
+		Policy:   *policy,
+		BazelMod: licensecheck.NewBazelMod(flag.Args()...),
 	}
 	var err error
 	switch *mode {
@@ -50,7 +51,7 @@ func main() {
 	case "verify":
 		err = licensecheck.Verify(p)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: licensecheck --mode=fetch|verify")
+		fmt.Fprintln(os.Stderr, "usage: licensecheck --mode=fetch|verify [-- bazel [startup options] mod [options]]")
 		os.Exit(2)
 	}
 	if err != nil {
