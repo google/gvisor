@@ -1507,6 +1507,11 @@ func (c *Container) reloadLocked() error {
 		c.Status = saved.Status
 	}
 	c.Spec = saved.Spec
+	if c.GoferMountConfs == nil {
+		c.GoferPid.Store(saved.GoferPid.Load())
+		c.GoferPidIdentity = saved.GoferPidIdentity
+		c.GoferMountConfs = saved.GoferMountConfs
+	}
 	if c.Sandbox != nil && saved.Sandbox != nil {
 		c.Sandbox.Creating = saved.Sandbox.Creating
 		c.Sandbox.CPULimits = saved.Sandbox.CPULimits

@@ -121,6 +121,7 @@ go_test(
     embed = [":container"],
     deps = [
         "//runsc/sandbox",
+        "//runsc/specutils",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )

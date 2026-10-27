@@ -22,6 +22,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
 	"gvisor.dev/gvisor/runsc/sandbox"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // TestModify checks that modify works on the latest saved state, even from a
@@ -153,5 +154,73 @@ func TestModify(t *testing.T) {
 	}
 	if got := load().Status; got != Stopped {
 		t.Errorf("status after modify() of a stopped container = %v, want %v", got, Stopped)
+	}
+}
+
+// TestModifyGofer checks that `modify` takes the gofer fields from saved
+// state only if the container does not know its gofer yet.
+func TestModifyGofer(t *testing.T) {
+	rootDir := t.TempDir()
+	id := FullID{SandboxID: "sb", ContainerID: "sub"}
+	c := &Container{
+		ID:         id.ContainerID,
+		Spec:       &specs.Spec{},
+		Status:     Created,
+		Sandbox:    &sandbox.Sandbox{ID: id.SandboxID},
+		Saver:      StateFile{RootDir: rootDir, ID: id},
+		allowWrite: true,
+	}
+	if err := c.Saver.lock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	c.Saver.UnlockOrDie()
+	load := func() *Container {
+		t.Helper()
+		loaded, err := Load(rootDir, id, LoadOpts{Exact: true, SkipCheck: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loaded
+	}
+	// A copy loaded before the gofer starts, such as by `runsc kill`.
+	stale := load()
+
+	// The subcontainer start starts the gofer.
+	if err := c.modify(func() error {
+		c.GoferPid.Store(123)
+		c.GoferPidIdentity = 456
+		c.GoferMountConfs = specutils.GoferMountConfFlags{{Lower: specutils.Lisafs, Upper: specutils.NoOverlay}}
+		return nil
+	}); err != nil {
+		t.Fatalf("modify() failed: %v", err)
+	}
+
+	if err := stale.modify(func() error { return nil }); err != nil {
+		t.Fatalf("modify() failed: %v", err)
+	}
+	saved := load()
+	if got := saved.GoferPid.Load(); got != 123 {
+		t.Errorf("gofer PID after modify() of a stale copy = %d, want 123", got)
+	}
+	if got := saved.GoferPidIdentity; got != 456 {
+		t.Errorf("gofer PID identity after modify() of a stale copy = %d, want 456", got)
+	}
+	if got := len(saved.GoferMountConfs); got != 1 {
+		t.Errorf("gofer mount configs after modify() of a stale copy = %d, want 1", got)
+	}
+
+	// The gofer exits. `c` resets its PID in memory only, and keeps it even
+	// though the saved state changed since `c` saved it.
+	c.GoferPid.Store(0)
+	if err := c.modify(func() error {
+		if got := c.GoferPid.Load(); got != 0 {
+			t.Errorf("gofer PID in modify() after the gofer exited = %d, want 0", got)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("modify() failed: %v", err)
 	}
 }
