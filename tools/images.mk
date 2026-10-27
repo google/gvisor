@@ -52,6 +52,9 @@ BAZEL_IMAGE_CONTEXTS := \
   basic_alpine=//images/basic:alpine_context \
   basic_busybox=//images/basic:busybox_context \
   basic_tmpfile=//images/basic:tmpfile_context
+ifeq ($(ARCH),x86_64)
+BAZEL_IMAGE_CONTEXTS += benchmarks_syscallbench=//images/benchmarks/syscallbench:syscallbench_context
+endif
 BAZEL_IMAGES        := $(foreach entry,$(BAZEL_IMAGE_CONTEXTS),$(word 1,$(subst =, ,$(entry))))
 ALL_IMAGES          := $(BAZEL_IMAGES) $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | sed 's,/[^/]*$$,,' | sort -u)))
 NON_TEST_IMAGES     := gpu/ollama/bench\|gpu/vllm\|gpu/triton\|tpu/vllm
