@@ -63,6 +63,9 @@ func testConfig() *config.Config {
 	conf.RootDir = "unused_root_dir"
 	conf.Network = config.NetworkNone
 	conf.DisableSeccomp = true
+	// boot.New gets no platform device file here, so use a platform that
+	// needs none.
+	conf.Platform = "systrap"
 	return conf
 }
 

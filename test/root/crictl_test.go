@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/sandboxposture"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/autoplatform"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
@@ -1128,6 +1129,10 @@ func TestCrictlSandboxPosture(t *testing.T) {
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
 		t.Fatalf("Building a configuration from flags: %v", err)
+	}
+
+	if err := autoplatform.Resolve(conf, nil); err != nil {
+		t.Fatalf("Resolving the platform: %v", err)
 	}
 
 	var extraFDs []string
