@@ -15,10 +15,13 @@
 package nvproxy
 
 import (
+	"fmt"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 // openOnlyDevice implements vfs.Device for devices that can only be opened
@@ -61,6 +64,11 @@ type openOnlyFD struct {
 	dev           *openOnlyDevice
 	containerName string
 	hostFD        int32
+}
+
+// CheckSave implements vfs.FileDescriptionImpl.CheckSave.
+func (fd *openOnlyFD) CheckSave() error {
+	return fmt.Errorf("nvproxy: open %s device: %w", fd.dev.relpath, state.ErrUnsavable)
 }
 
 // IsNvidiaDeviceFD implements NvidiaDeviceFD.IsNvidiaDeviceFD.
