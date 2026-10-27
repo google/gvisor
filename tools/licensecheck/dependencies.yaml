@@ -1121,6 +1121,12 @@
   license:
     - Apache-2.0 WITH LLVM-exception
     - MIT
+- dependency: ltp
+  version: https://github.com/linux-test-project/ltp/releases/download/20260930/ltp-full-20260930.tar.xz
+  retrieved: "2026-10-22"
+  commit: 2279d708c817db657611a30c427c7d06c4360049
+  sha256: b9837481134fa6eabce91c2fba57d96695f81360468f83e11e6982584ad4d29d
+  license: GPL-2.0-only
 - dependency: nlohmann_json
   version: https://github.com/nlohmann/json/releases/download/v3.12.0/include.zip
   retrieved: "2026-09-10"

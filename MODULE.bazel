@@ -248,6 +248,15 @@ http_file(
 )
 
 ### Docker integration test images
+# LTP provides the standalone fsstress filesystem workload.
+http_archive(
+    name = "ltp",
+    build_file = "//images/basic:ltp.BUILD",
+    sha256 = "b9837481134fa6eabce91c2fba57d96695f81360468f83e11e6982584ad4d29d",
+    strip_prefix = "ltp-full-20260930",
+    urls = ["https://github.com/linux-test-project/ltp/releases/download/20260930/ltp-full-20260930.tar.xz"],
+)
+
 # Pin both architectures of the existing test distributions. Image assembly
 # uses declared layers and does not require a Docker daemon.
 img_pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")

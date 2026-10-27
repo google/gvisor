@@ -53,6 +53,13 @@ exceptions:
       distributed with gVisor. The LLVM exception only relaxes
       Apache-2.0's requirements, and the MIT match comes from third-party
       notices embedded in LICENSE.TXT.
+  - dependency: ltp
+    license: GPL-2.0-only
+    exception_rationale: >-
+      LTP's fsstress is a standalone filesystem test executable. It runs in
+      test containers and is not linked into released gVisor binaries.
+      Its source archive and GPLv2 license are retained with the build inputs,
+      and the test image includes the license text.
   - dependency: qemu_user_amd64
     license: GPL-2.0-only
     exception_rationale: >-
