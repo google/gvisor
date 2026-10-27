@@ -207,7 +207,6 @@ go_test(
     name = "pgalloc_test",
     size = "small",
     srcs = [
-        "decommit_restore_test.go",
         "decommit_test.go",
         "pgalloc_64k_test.go",
         "pgalloc_test.go",

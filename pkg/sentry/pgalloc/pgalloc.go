@@ -1045,25 +1045,23 @@ func tryPopulate(b safemem.Block) bool {
 }
 
 // Decommit uncommits the given pages, causing them to become zeroed. If async
-// page loading of pages in fr failed, Decommit returns the error without
-// decommitting fr.
+// page loading is in progress, Decommit may wait for in-flight reads of pages
+// in fr.
 //
 // Preconditions:
 //   - fr.Start and fr.End must be page-aligned.
 //   - fr.Length() > 0.
 //   - At least one reference must be held on all pages in fr.
-func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
+func (f *MemoryFile) Decommit(fr memmap.FileRange) {
 	if !fr.WellFormed() || fr.Length() == 0 || !hostarch.IsPageAligned(fr.Start) || !hostarch.IsPageAligned(fr.End) {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 
 	if amfl := f.asyncPageLoad.Load(); amfl != nil {
-		if err := amfl.cancelLoadForDecommit(fr); err != nil {
-			return err
-		}
+		amfl.decommit(fr)
+	} else {
+		f.decommitOrManuallyZero(fr)
 	}
-
-	f.decommitOrManuallyZero(fr)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1082,7 +1080,6 @@ func (f *MemoryFile) Decommit(fr memmap.FileRange) error {
 		ma.commitSeq = f.commitSeq
 		return true
 	})
-	return nil
 }
 
 func (f *MemoryFile) commitFile(fr memmap.FileRange) error {

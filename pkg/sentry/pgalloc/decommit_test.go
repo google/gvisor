@@ -311,21 +311,22 @@ func saveAndRestore(t *testing.T, f *MemoryFile, fr memmap.FileRange) *MemoryFil
 }
 
 // startDecommit calls f.Decommit(fr) in a new goroutine and returns a channel
-// that receives its result.
-func startDecommit(f *MemoryFile, fr memmap.FileRange) <-chan error {
-	done := make(chan error, 1)
-	go func() { done <- f.Decommit(fr) }()
+// that is closed when it returns.
+func startDecommit(f *MemoryFile, fr memmap.FileRange) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		f.Decommit(fr)
+		close(done)
+	}()
 	return done
 }
 
-func awaitDecommit(t *testing.T, done <-chan error) error {
+func awaitDecommit(t *testing.T, done <-chan struct{}) {
 	t.Helper()
 	select {
-	case err := <-done:
-		return err
+	case <-done:
 	case <-time.After(decommitTestTimeout):
 		t.Fatalf("Decommit did not return")
-		return nil
 	}
 }
 
@@ -340,12 +341,30 @@ func startMapInternal(f *MemoryFile, fr memmap.FileRange) <-chan error {
 	return done
 }
 
-func expectBlocked(t *testing.T, done <-chan error, what string) {
+func expectBlocked[T any](t *testing.T, done <-chan T, what string) {
 	t.Helper()
 	select {
-	case err := <-done:
-		t.Fatalf("%s returned (%v) before the read of decommitted pages completed", what, err)
+	case <-done:
+		t.Fatalf("%s returned before the read of decommitted pages completed", what)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// awaitLoadWaiter waits for a goroutine to wait for async page loading of f.
+func awaitLoadWaiter(t *testing.T, f *MemoryFile) {
+	t.Helper()
+	apfl := f.asyncPageLoad.Load().pf
+	for deadline := time.Now().Add(decommitTestTimeout); ; {
+		apfl.mu.Lock()
+		n := apfl.numWaiters
+		apfl.mu.Unlock()
+		if n != 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no goroutine waited for async page loading")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -370,9 +389,7 @@ func TestDecommitCancelsUnstartedLoads(t *testing.T) {
 	l.awaitReadStart(t, 0)
 
 	// Page 0 is being read; pages 4-7 are unstarted.
-	if err := awaitDecommit(t, startDecommit(f, decommitTestPages(fr, 4, 8))); err != nil {
-		t.Fatalf("Decommit: %v", err)
-	}
+	awaitDecommit(t, startDecommit(f, decommitTestPages(fr, 4, 8)))
 	l.releaseReads()
 	if err := l.wait(t); err != nil {
 		t.Fatalf("async page loading failed: %v", err)
@@ -385,23 +402,19 @@ func TestDecommitCancelsUnstartedLoads(t *testing.T) {
 	l.checkPages(t, 0, map[int]bool{4: true, 5: true, 6: true, 7: true})
 }
 
-// TestDecommitDuringInflightLoad checks that Decommit doesn't wait for an
-// in-flight read of decommitted pages, that accesses to those pages wait for
-// the read to complete and observe zeroed pages, and that unstarted reads of
-// decommitted pages are still cancelled.
+// TestDecommitDuringInflightLoad checks that Decommit waits for an in-flight
+// read of decommitted pages, that those pages are zero afterwards, and that
+// unstarted reads of decommitted pages are still cancelled.
 func TestDecommitDuringInflightLoad(t *testing.T) {
 	l := startDecommitTestLoad(t, 1, -1)
 	f, fr := l.fs[0], l.frs[0]
 	l.awaitReadStart(t, 0)
 
 	// Page 0 is being read; pages 1-2 are unstarted.
-	if err := awaitDecommit(t, startDecommit(f, decommitTestPages(fr, 0, 3))); err != nil {
-		t.Fatalf("Decommit: %v", err)
-	}
-	mapped := startMapInternal(f, decommitTestPage(fr, 0))
-	expectBlocked(t, mapped, "MapInternal")
+	done := startDecommit(f, decommitTestPages(fr, 0, 3))
+	expectBlocked(t, done, "Decommit")
 	l.releaseReads()
-	awaitMapInternal(t, mapped)
+	awaitDecommit(t, done)
 	if err := l.wait(t); err != nil {
 		t.Fatalf("async page loading failed: %v", err)
 	}
@@ -413,9 +426,9 @@ func TestDecommitDuringInflightLoad(t *testing.T) {
 	l.checkPages(t, 0, map[int]bool{0: true, 1: true, 2: true})
 }
 
-// TestDecommitDuringAwaitedLoad checks that Decommit doesn't cancel awaited
-// loads of decommitted pages, which would block their waiters forever, and
-// that the decommitted pages are zeroed after they are loaded.
+// TestDecommitDuringAwaitedLoad checks that Decommit cancels awaited loads of
+// decommitted pages whose read hasn't started, and wakes their waiters, which
+// observe zeroed pages.
 func TestDecommitDuringAwaitedLoad(t *testing.T) {
 	l := startDecommitTestLoad(t, 1, -1)
 	f, fr := l.fs[0], l.frs[0]
@@ -424,30 +437,50 @@ func TestDecommitDuringAwaitedLoad(t *testing.T) {
 	// Page 0 is being read. Wait for page 5 in another goroutine.
 	page5 := decommitTestPage(fr, 5)
 	mapped := startMapInternal(f, page5)
-	apfl := f.asyncPageLoad.Load().pf
-	for deadline := time.Now().Add(decommitTestTimeout); ; {
-		apfl.mu.Lock()
-		n := apfl.numWaiters
-		apfl.mu.Unlock()
-		if n != 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("MapInternal did not wait for page 5")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	awaitLoadWaiter(t, f)
 
-	if err := awaitDecommit(t, startDecommit(f, page5)); err != nil {
-		t.Fatalf("Decommit: %v", err)
+	awaitDecommit(t, startDecommit(f, page5))
+	// Page 0 is still being read, so only Decommit can wake the waiter.
+	awaitMapInternal(t, mapped)
+	checkMemoryFilePages(t, f, page5, []byte{0})
+	l.releaseReads()
+	if err := l.wait(t); err != nil {
+		t.Fatalf("async page loading failed: %v", err)
 	}
+	for _, off := range l.r.readOffsets() {
+		if off/hostarch.PageSize == 5 {
+			t.Errorf("decommitted page 5 was read")
+		}
+	}
+	l.checkPages(t, 0, map[int]bool{5: true})
+}
+
+// TestDecommitDuringPartlyInflightAwaitedLoad checks that when Decommit
+// cancels loading of some pages awaited by a waiter, the waiter still waits
+// for the other pages it awaits, which are being read.
+func TestDecommitDuringPartlyInflightAwaitedLoad(t *testing.T) {
+	l := startDecommitTestLoad(t, 1, -1)
+	f, fr := l.fs[0], l.frs[0]
+	l.awaitReadStart(t, 0)
+
+	// Page 0 is being read; page 1 is unstarted. Wait for both in another
+	// goroutine.
+	mapped := startMapInternal(f, decommitTestPages(fr, 0, 2))
+	awaitLoadWaiter(t, f)
+
+	awaitDecommit(t, startDecommit(f, decommitTestPage(fr, 1)))
 	expectBlocked(t, mapped, "MapInternal")
 	l.releaseReads()
 	awaitMapInternal(t, mapped)
 	if err := l.wait(t); err != nil {
 		t.Fatalf("async page loading failed: %v", err)
 	}
-	l.checkPages(t, 0, map[int]bool{5: true})
+	for _, off := range l.r.readOffsets() {
+		if off/hostarch.PageSize == 1 {
+			t.Errorf("decommitted page 1 was read")
+		}
+	}
+	l.checkPages(t, 0, map[int]bool{1: true})
 }
 
 // TestDecommitFinishesAsyncLoad checks that async page loading of a
@@ -463,9 +496,7 @@ func TestDecommitFinishesAsyncLoad(t *testing.T) {
 	if !f.IsAsyncLoading() {
 		t.Fatalf("second MemoryFile is not async loading")
 	}
-	if err := awaitDecommit(t, startDecommit(f, fr)); err != nil {
-		t.Fatalf("Decommit: %v", err)
-	}
+	awaitDecommit(t, startDecommit(f, fr))
 	if f.IsAsyncLoading() {
 		t.Errorf("second MemoryFile is still async loading after all of its unloaded pages were decommitted")
 	}
@@ -486,17 +517,44 @@ func TestDecommitFinishesAsyncLoad(t *testing.T) {
 	l.checkPages(t, 1, decommitted)
 }
 
-// TestDecommitAfterAsyncLoadFailure checks that Decommit returns an error for
-// pages that will never be loaded due to an async page loading failure.
+// TestDecommitAfterAsyncLoadFailure checks that, after async page loading
+// fails, Decommit zeroes pages that were loaded, and pages that were never
+// loaded stay inaccessible.
 func TestDecommitAfterAsyncLoadFailure(t *testing.T) {
-	l := startDecommitTestLoad(t, 1, 0)
+	l := startDecommitTestLoad(t, 1, 2*hostarch.PageSize)
 	f, fr := l.fs[0], l.frs[0]
 	l.releaseReads()
 	if err := l.wait(t); err == nil {
 		t.Fatalf("async page loading succeeded, want failure")
 	}
-	if err := f.Decommit(decommitTestPage(fr, 5)); err == nil {
-		t.Errorf("Decommit succeeded, want failure")
+	// Pages 0-1 were loaded before the read of page 2 failed.
+	f.Decommit(decommitTestPages(fr, 0, 4))
+	checkMemoryFilePages(t, f, decommitTestPages(fr, 0, 2), []byte{0, 0})
+	for _, i := range []int{2, 3} {
+		if _, err := f.MapInternal(decommitTestPage(fr, i), hostarch.Read); err == nil {
+			t.Errorf("MapInternal(page %d) succeeded after async page loading failed", i)
+		}
+	}
+}
+
+// TestDecommitDuringFailingInflightLoad checks that Decommit returns when the
+// in-flight read of decommitted pages that it waits for fails, and that those
+// pages stay inaccessible.
+func TestDecommitDuringFailingInflightLoad(t *testing.T) {
+	l := startDecommitTestLoad(t, 1, 0)
+	f, fr := l.fs[0], l.frs[0]
+	l.awaitReadStart(t, 0)
+
+	// Page 0 is being read, and the read will fail.
+	done := startDecommit(f, decommitTestPage(fr, 0))
+	expectBlocked(t, done, "Decommit")
+	l.releaseReads()
+	awaitDecommit(t, done)
+	if err := l.wait(t); err == nil {
+		t.Fatalf("async page loading succeeded, want failure")
+	}
+	if _, err := f.MapInternal(decommitTestPage(fr, 0), hostarch.Read); err == nil {
+		t.Errorf("MapInternal(page 0) succeeded after async page loading failed")
 	}
 }
 
@@ -512,50 +570,8 @@ func TestDecommitAfterAsyncLoad(t *testing.T) {
 	if f.IsAsyncLoading() {
 		t.Fatalf("MemoryFile is still async loading")
 	}
-	if err := f.Decommit(decommitTestPage(fr, 5)); err != nil {
-		t.Fatalf("Decommit: %v", err)
-	}
+	f.Decommit(decommitTestPage(fr, 5))
 	l.checkPages(t, 0, map[int]bool{5: true})
-}
-
-// TestDecommitDuringInflightLoadThenWrite checks that data written to pages
-// that were decommitted (twice) during their in-flight read is not discarded
-// when the read completes, and that the pages aren't committed afterwards
-// until written.
-func TestDecommitDuringInflightLoadThenWrite(t *testing.T) {
-	l := startDecommitTestLoad(t, 1, -1)
-	f, fr := l.fs[0], l.frs[0]
-	l.awaitReadStart(t, 0)
-
-	// Page 0 is being read.
-	for range 2 {
-		if err := awaitDecommit(t, startDecommit(f, decommitTestPage(fr, 0))); err != nil {
-			t.Fatalf("Decommit: %v", err)
-		}
-	}
-	mapped := startMapInternal(f, decommitTestPage(fr, 0))
-	expectBlocked(t, mapped, "MapInternal")
-	l.releaseReads()
-	awaitMapInternal(t, mapped)
-	writeMemoryFilePage(t, f, fr, 0, 0xaa)
-	if err := l.wait(t); err != nil {
-		t.Fatalf("async page loading failed: %v", err)
-	}
-	want := make([]byte, 16)
-	for i := range want {
-		want[i] = byte(i + 1)
-	}
-	want[0] = 0xaa
-	checkCommitted(t, f, 16)
-	checkMemoryFilePages(t, f, fr, want)
-
-	// A decommit after loading behaves normally.
-	if err := f.Decommit(decommitTestPage(fr, 0)); err != nil {
-		t.Fatalf("Decommit: %v", err)
-	}
-	want[0] = 0
-	checkCommitted(t, f, 15)
-	checkMemoryFilePages(t, f, fr, want)
 }
 
 // TestDecommitDuringLoadCommitted checks that pages decommitted during async
@@ -567,12 +583,10 @@ func TestDecommitDuringLoadCommitted(t *testing.T) {
 	l.awaitReadStart(t, 0)
 
 	// Page 0 is being read; pages 4-7 are unstarted.
-	for _, dfr := range []memmap.FileRange{decommitTestPage(fr, 0), decommitTestPages(fr, 4, 8)} {
-		if err := awaitDecommit(t, startDecommit(f, dfr)); err != nil {
-			t.Fatalf("Decommit: %v", err)
-		}
-	}
+	inflight := startDecommit(f, decommitTestPage(fr, 0))
+	awaitDecommit(t, startDecommit(f, decommitTestPages(fr, 4, 8)))
 	l.releaseReads()
+	awaitDecommit(t, inflight)
 	if err := l.wait(t); err != nil {
 		t.Fatalf("async page loading failed: %v", err)
 	}
@@ -586,20 +600,15 @@ func TestDecommitDuringLoadCommitted(t *testing.T) {
 	l.checkPages(t, 0, map[int]bool{0: true, 4: true, 5: true, 6: true, 7: true})
 }
 
-// TestDecommitThenSaveDuringLoad checks that saving a MemoryFile while pages
-// decommitted during async page loading are still being loaded saves them as
-// zeroed.
+// TestDecommitThenSaveDuringLoad checks that saving a MemoryFile during async
+// page loading saves pages whose loading was cancelled by Decommit as zeroed.
 func TestDecommitThenSaveDuringLoad(t *testing.T) {
 	l := startDecommitTestLoad(t, 1, -1)
 	f, fr := l.fs[0], l.frs[0]
 	l.awaitReadStart(t, 0)
 
 	// Page 0 is being read; pages 4-7 are unstarted.
-	for _, dfr := range []memmap.FileRange{decommitTestPage(fr, 0), decommitTestPages(fr, 4, 8)} {
-		if err := awaitDecommit(t, startDecommit(f, dfr)); err != nil {
-			t.Fatalf("Decommit: %v", err)
-		}
-	}
+	awaitDecommit(t, startDecommit(f, decommitTestPages(fr, 4, 8)))
 	var buf bytes.Buffer
 	saved := make(chan error, 1)
 	go func() { saved <- f.SaveTo(context.Background(), &buf, &SaveOpts{}) }()
@@ -620,7 +629,7 @@ func TestDecommitThenSaveDuringLoad(t *testing.T) {
 	t.Cleanup(func() { restored.DecRef(fr) })
 	want := make([]byte, 16)
 	for i := range want {
-		if i != 0 && (i < 4 || i >= 8) {
+		if i < 4 || i >= 8 {
 			want[i] = byte(i + 1)
 		}
 	}
@@ -658,9 +667,7 @@ func TestDecommitStress(t *testing.T) {
 				switch rng.Intn(3) {
 				case 0:
 					j := min(i+1+rng.Intn(5), pages)
-					if err := f.Decommit(decommitTestPages(fr, i, j)); err != nil {
-						t.Fatalf("Decommit: %v", err)
-					}
+					f.Decommit(decommitTestPages(fr, i, j))
 					for k := i; k < j; k++ {
 						want[k] = 0
 						readZero[k] = false
