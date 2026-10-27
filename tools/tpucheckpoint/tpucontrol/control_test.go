@@ -17,6 +17,8 @@ package tpucontrol_test
 import (
 	"encoding/binary"
 	"errors"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -104,25 +106,40 @@ func writeDelimited(f *os.File, msg []byte) {
 	f.Write(msg)
 }
 
-// readRequest consumes one framed request message from the pipe.
-func readRequest(reqRead *os.File) {
+// readRequest decodes one framed request message from the pipe.
+func readRequest(reqRead *os.File) (*tpupb.ControlRequest, error) {
 	var sizeBuf [4]byte
-	if _, err := reqRead.Read(sizeBuf[:]); err != nil {
-		return
+	if _, err := io.ReadFull(reqRead, sizeBuf[:]); err != nil {
+		return nil, err
 	}
 	size := binary.BigEndian.Uint32(sizeBuf[:])
-	discard := make([]byte, size)
-	reqRead.Read(discard)
+	data := make([]byte, size)
+	if _, err := io.ReadFull(reqRead, data); err != nil {
+		return nil, err
+	}
+	req := &tpupb.ControlRequest{}
+	if err := proto.Unmarshal(data, req); err != nil {
+		return nil, err
+	}
+	return req, nil
 }
 
-func mockResponder(t *testing.T, reqRead, rspWrite *os.File, success bool, state tpupb.RuntimeState, errMsg string) {
+func mockResponder(t *testing.T, reqRead, rspWrite *os.File, success bool, state tpupb.RuntimeState, errMsg string) <-chan *tpupb.ControlRequest {
 	t.Helper()
 	resp := marshalResponse(t, success, state, errMsg)
+	requests := make(chan *tpupb.ControlRequest, 1)
 	go func() {
 		defer rspWrite.Close()
-		readRequest(reqRead)
+		defer close(requests)
+		req, err := readRequest(reqRead)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			return
+		}
+		requests <- req
 		writeDelimited(rspWrite, resp)
 	}()
+	return requests
 }
 
 func TestParsePIDs(t *testing.T) {
@@ -176,9 +193,9 @@ func TestCheckpointSuccess(t *testing.T) {
 		rspReadFile:  rspRead,
 	}})
 
-	mockResponder(t, reqRead, rspWrite, true, tpupb.RuntimeState_STATE_DETACHED, "")
+	requests := mockResponder(t, reqRead, rspWrite, true, tpupb.RuntimeState_STATE_DETACHED, "")
 
-	results := tpucontrol.Checkpoint([]int{42}, 10)
+	results := tpucontrol.Checkpoint([]int{42}, math.MaxInt32)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -187,6 +204,10 @@ func TestCheckpointSuccess(t *testing.T) {
 	}
 	if results[0].PID != 42 {
 		t.Errorf("results[0].PID = %d, want 42", results[0].PID)
+	}
+	req := <-requests
+	if req == nil || req.GetAction() != tpupb.ControlAction_ACTION_CHECKPOINT || req.GetTimeoutSecs() != math.MaxInt32 {
+		t.Errorf("request = %v, want action CHECKPOINT and timeout %d", req, math.MaxInt32)
 	}
 }
 
@@ -203,11 +224,15 @@ func TestRestoreSuccess(t *testing.T) {
 		rspReadFile:  rspRead,
 	}})
 
-	mockResponder(t, reqRead, rspWrite, true, tpupb.RuntimeState_STATE_RUNNING, "")
+	requests := mockResponder(t, reqRead, rspWrite, true, tpupb.RuntimeState_STATE_RUNNING, "")
 
-	results := tpucontrol.Restore([]int{42}, 10)
+	results := tpucontrol.Restore([]int{42}, 0)
 	if results[0].Err != nil {
 		t.Fatalf("Restore() error = %v", results[0].Err)
+	}
+	req := <-requests
+	if req == nil || req.GetAction() != tpupb.ControlAction_ACTION_RESTORE || req.GetTimeoutSecs() != 180 {
+		t.Errorf("request = %v, want action RESTORE and timeout %d", req, 180)
 	}
 }
 
@@ -224,14 +249,18 @@ func TestGetStateSuccess(t *testing.T) {
 		rspReadFile:  rspRead,
 	}})
 
-	mockResponder(t, reqRead, rspWrite, true, tpupb.RuntimeState_STATE_DETACHED, "")
+	requests := mockResponder(t, reqRead, rspWrite, true, tpupb.RuntimeState_STATE_DETACHED, "")
 
-	results := tpucontrol.GetState([]int{42}, 10)
+	results := tpucontrol.GetState([]int{42}, -1)
 	if results[0].Err != nil {
 		t.Fatalf("GetState() error = %v", results[0].Err)
 	}
 	if results[0].State != tpupb.RuntimeState_STATE_DETACHED {
 		t.Errorf("GetState() = %v, want %v", results[0].State, tpupb.RuntimeState_STATE_DETACHED)
+	}
+	req := <-requests
+	if req == nil || req.GetAction() != tpupb.ControlAction_ACTION_GETSTATE || req.GetTimeoutSecs() != -1 {
+		t.Errorf("request = %v, want action GETSTATE and timeout %d", req, -1)
 	}
 }
 
