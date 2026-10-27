@@ -70,7 +70,7 @@ func restoreContainers(conf *config.Config, specs []*specs.Spec, ids []string, i
 		cu.Add(func() { cont.Destroy() })
 		containers = append(containers, cont)
 
-		if err := cont.Restore(conf, imagePath, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+		if err := cont.Restore(conf, imagePath, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
 			return nil, nil, fmt.Errorf("error restoring container: %v", err)
 		}
 
@@ -1710,7 +1710,7 @@ func restoreSandbox(t *testing.T, conf *config.Config, imagePath string, sbSpec 
 			t.Fatalf("error creating container %q: %v", id, err)
 		}
 		t.Cleanup(func() { c.Destroy() })
-		if err := c.Restore(conf, imagePath, false /* direct */, background, nil /* networkArgs */); err != nil {
+		if err := c.Restore(conf, imagePath, sandbox.DirectIOOff, background, nil /* networkArgs */); err != nil {
 			t.Fatalf("error restoring container %q: %v", id, err)
 		}
 		return c
@@ -1802,7 +1802,7 @@ func TestCheckpointRestoreNoRootContainer(t *testing.T) {
 		}
 		defer c.Destroy()
 		const want = "no-root-container=true cannot be restored with no-root-container=false"
-		if err := c.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+		if err := c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Restore() = %v, want error containing %q", err, want)
 		}
 	})
@@ -1974,7 +1974,7 @@ func TestCheckpointRestoreRootContainerIntoNoRootContainer(t *testing.T) {
 	}
 	defer sb.Destroy()
 	const want = "no-root-container=false cannot be restored with no-root-container=true"
-	if err := sb.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
+	if err := sb.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("Restore() = %v, want error containing %q", err, want)
 	}
 }
@@ -2006,7 +2006,7 @@ func TestCheckpointRestoreNoRootContainerFailedRestore(t *testing.T) {
 			t.Fatalf("error creating container %q: %v", id, err)
 		}
 		t.Cleanup(func() { c.Destroy() })
-		return c, c.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
+		return c, c.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */)
 	}
 	newSbID := testutil.RandomContainerID()
 	sb2, err := restore(noRootContainerSandboxSpec(), newSbID, true /* noRootContainer */)
