@@ -54,7 +54,6 @@ func TestPointRegistrationFields(t *testing.T) {
 		{
 			name: "optional_name",
 			point: PointDesc{
-				Name: "test",
 				OptionalFields: []FieldDesc{
 					{ID: 123, Name: "field1"},
 					{ID: 456, Name: "field1"},
@@ -64,7 +63,6 @@ func TestPointRegistrationFields(t *testing.T) {
 		{
 			name: "optional_id",
 			point: PointDesc{
-				Name: "test",
 				OptionalFields: []FieldDesc{
 					{ID: 123, Name: "field1"},
 					{ID: 123, Name: "field2"},
@@ -74,7 +72,6 @@ func TestPointRegistrationFields(t *testing.T) {
 		{
 			name: "context_name",
 			point: PointDesc{
-				Name: "test",
 				ContextFields: []FieldDesc{
 					{ID: 123, Name: "field1"},
 					{ID: 456, Name: "field1"},
@@ -84,7 +81,6 @@ func TestPointRegistrationFields(t *testing.T) {
 		{
 			name: "context_id",
 			point: PointDesc{
-				Name: "test",
 				ContextFields: []FieldDesc{
 					{ID: 123, Name: "field1"},
 					{ID: 123, Name: "field2"},
@@ -93,12 +89,15 @@ func TestPointRegistrationFields(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Use a unique point name, so that only the repeated field can cause
+			// the registration to panic.
+			pt := tc.point
+			pt.Name = "test_fields/" + tc.name
 			defer func() {
 				recover()
 			}()
-			registerPoint(tc.point)
-			t.Errorf("Registering the same point twice should panic")
-
+			registerPoint(pt)
+			t.Errorf("Registering a point with repeated fields should panic")
 		})
 	}
 }
