@@ -538,6 +538,39 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "Dev",
+			args: []string{"--dev", "/dev1/", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev1"},
+					{Type: sandbox.MountTypeDevpts, Destination: "/dev1/pts"},
+				},
+			},
+		},
+		{
+			name: "DeduplicatedDev",
+			args: []string{"--dev", "/dev1", "--dev", "/dev1", "bash"},
+			wantCfg: &bwrapConfig{
+				Env:  os.Environ(),
+				UID:  -1,
+				GID:  -1,
+				Args: []string{"bash"},
+				Mounts: []sandbox.Mount{
+					{Type: sandbox.MountTypeDevtmpfs, Destination: "/dev1"},
+					{Type: sandbox.MountTypeDevpts, Destination: "/dev1/pts"},
+				},
+			},
+		},
+		{
+			name:        "MissingDevArg",
+			args:        []string{"--dev"},
+			errContains: "--dev takes 1 argument",
+		},
+		{
 			name: "CapDrop",
 			args: []string{"--cap-drop", "all", "bash"},
 			wantCfg: &bwrapConfig{

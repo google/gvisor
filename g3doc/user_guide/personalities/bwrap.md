@@ -47,6 +47,7 @@ line unchanged.
 | `--dir` | `<DEST>` | Creates a directory at `DEST`, like `bwrap`: an existing `DEST` is left as it is, and a missing one is created with its parents. Under a `--bind` the directory is created on the host and outlives the sandbox; under a `--ro-bind` a missing `DEST` fails with `Can't mkdir`. | Where no bind mount backs `DEST` (for example under a `--tmpfs`), the directory is a fresh `tmpfs` mount rather than a plain directory. |
 | `--perms` | `<OCTAL>` | Sets the mode of the mount created by the next `--tmpfs` or `--dir`. Must come right before that flag, takes an octal value up to `07777`, and may appear once per action. | Without it, the mount keeps the `tmpfs` default of `01777`, where `bwrap` uses `0755`. `--file`, `--bind-data`, and `--ro-bind-data` are not supported yet. |
 | `--proc` | `<DEST>` | Mounts a new `procfs` filesystem at `DEST`. Repeating the same `DEST` on one command line is a no-op. | `/proc` is mounted in every sandbox whether or not you pass the flag. |
+| `--dev` | `<DEST>` | Mounts gVisor's `dev` filesystem at `DEST` and a new `devpts` at `DEST/pts`. Repeating the same `DEST` on one command line is a no-op. | The device nodes come from the Sentry, not from host bind mounts. `/dev` is mounted in every sandbox whether or not you pass the flag. |
 
 <!-- mdformat on -->
 

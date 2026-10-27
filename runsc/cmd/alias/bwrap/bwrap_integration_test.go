@@ -1116,3 +1116,83 @@ func TestAsPID1Argv0(t *testing.T) {
 		})
 	}
 }
+
+func TestDev(t *testing.T) {
+	if err := testutil.ConfigureExePath(); err != nil {
+		t.Fatalf("failed to configure exe path: %v", err)
+	}
+
+	stop := testutil.StartReaper()
+	defer stop()
+
+	// check succeeds if DIR holds working device nodes, the standard symlinks
+	// and a devpts at DIR/pts.
+	check := func(dir string) string {
+		return fmt.Sprintf("test -c %[1]s/null && echo x > %[1]s/null && "+
+			"test -c %[1]s/urandom && test -L %[1]s/stdin && "+
+			"test -c %[1]s/pts/ptmx && echo ok", dir)
+	}
+
+	tests := []struct {
+		name      string
+		bwrapArgs []string
+	}{
+		{
+			name: "NewDest",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/mnt",
+				"--dev", "/mnt/dev",
+				"--",
+				"/bin/sh", "-c", check("/mnt/dev"),
+			},
+		},
+		{
+			name: "ReplaceDev",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--dev", "/dev",
+				"--",
+				"/bin/sh", "-c", check("/dev"),
+			},
+		},
+		{
+			// runsc always serves /dev from its dev filesystem, so a tmpfs
+			// at /dev still holds the device nodes.
+			name: "TmpfsAtDev",
+			bwrapArgs: []string{
+				"--unshare-user",
+				"--ro-bind", "/", "/",
+				"--tmpfs", "/dev",
+				"--",
+				"/bin/sh", "-c", check("/dev"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runRootDir := newRunRootDir(t)
+
+			args := append([]string{
+				"--root", runRootDir,
+				"bwrap",
+			}, tc.bwrapArgs...)
+
+			cmd := exec.Command(specutils.ExePath, args...)
+
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := testutil.RunCmd(cmd); err != nil {
+				t.Fatalf("runsc bwrap failed: %v\nStderr: %s", err, stderr.String())
+			}
+
+			if got := strings.TrimSpace(stdout.String()); got != "ok" {
+				t.Errorf("output = %q, want %q", got, "ok")
+			}
+		})
+	}
+}

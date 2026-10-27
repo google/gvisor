@@ -61,6 +61,7 @@ const (
 	flagPerms         = "perms"
 	flagDir           = "dir"
 	flagAsPID1        = "as-pid-1"
+	flagDev           = "dev"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -92,6 +93,7 @@ type Cli struct {
 	perms         string
 	dir           string
 	asPID1        bool
+	dev           string
 }
 
 // Name implements subcommands.Command.Name.
@@ -137,6 +139,7 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.perms, flagPerms, "", "Set permissions of the next argument (--tmpfs, --dir)")
 	f.StringVar(&c.dir, flagDir, "", "Create dir at DEST")
 	f.BoolVar(&c.asPID1, flagAsPID1, false, "Do not install a reaper process with PID=1")
+	f.StringVar(&c.dev, flagDev, "", "Mount new dev on DEST")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -232,6 +235,8 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseDir(bwrapArgs, i)
 		case flagAsPID1:
 			i, err = cfg.parseAsPID1(bwrapArgs, i)
+		case flagDev:
+			i, err = cfg.parseDev(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -447,6 +452,33 @@ func (c *bwrapConfig) parseProc(args []string, i int) (int, error) {
 		return i, err
 	}
 	c.Mounts = append(c.Mounts, mnt)
+
+	return i + 2, nil
+}
+
+// parseDev handles --dev DEST. gVisor's dev filesystem provides the device
+// nodes and symlinks that bubblewrap bind mounts from the host, but only an
+// empty pts directory, so a devpts is mounted at DEST/pts as bubblewrap does.
+func (c *bwrapConfig) parseDev(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagDev)
+	}
+
+	dst := filepath.Clean(args[i+1])
+	for _, m := range append(defaultMounts(), c.Mounts...) {
+		if m.Type == sandbox.MountTypeDevtmpfs && m.Destination == dst {
+			return i + 2, nil
+		}
+	}
+	dev, err := c.newMount("", dst, sandbox.MountTypeDevtmpfs, false /* readOnly */)
+	if err != nil {
+		return i, err
+	}
+	pts, err := c.newMount("", filepath.Join(dst, "pts"), sandbox.MountTypeDevpts, false /* readOnly */)
+	if err != nil {
+		return i, err
+	}
+	c.Mounts = append(c.Mounts, dev, pts)
 
 	return i + 2, nil
 }
