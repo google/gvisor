@@ -13,10 +13,9 @@ nothing inside the sandbox owns its lifetime: whoever created the sandbox is
 responsible for deleting it.
 
 The mode exists for the containerd Sandbox API, where containerd manages the pod
-sandbox itself and gives the runtime no spec to run. That is the only intended
-caller. `--no-root-container` is not a user-facing workflow; it is what makes
-the mode reachable without containerd, for testing and for the walkthrough
-below.
+sandbox itself and gives the runtime no spec to run. That is the main caller.
+Runtimes that drive `runsc` directly can use `--no-root-container` too; the user
+guide is g3doc/user_guide/no_root_container.md.
 
 ## Driving it by hand
 
@@ -106,7 +105,7 @@ that does require `--force`:
 
 ```bash
 runsc delete pod1
-cannot delete sandbox "pod1" while it still holds 1 container(s) without --force flag
+cannot delete sandbox "pod1" while container "c1" is running without --force flag
 
 runsc delete --force pod1   # destroys the sandbox and everything in it
 runsc delete c1             # container state files outlive the sandbox

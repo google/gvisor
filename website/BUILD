@@ -169,6 +169,7 @@ docs(
         "//g3doc/user_guide:gpu",
         "//g3doc/user_guide:install",
         "//g3doc/user_guide:networking",
+        "//g3doc/user_guide:no_root_container",
         "//g3doc/user_guide:observability",
         "//g3doc/user_guide:platforms",
         "//g3doc/user_guide:production",
