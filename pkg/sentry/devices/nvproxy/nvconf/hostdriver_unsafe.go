@@ -17,6 +17,7 @@ package nvconf
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -24,13 +25,25 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 )
 
-// HostDriverVersion returns the version of the host Nvidia driver.
-func HostDriverVersion() (string, error) {
-	ctlFD, err := unix.Openat(-1, "/dev/nvidiactl", unix.O_RDONLY|unix.O_NOFOLLOW, 0)
+// HostDriverVersion returns the version of the host Nvidia driver. devRoot is
+// the host directory under which the Nvidia device files are found.
+func HostDriverVersion(devRoot string) (string, error) {
+	ctlPath := filepath.Join(devRoot, "/dev/nvidiactl")
+	ctlFD, err := unix.Openat(-1, ctlPath, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return "", fmt.Errorf("failed to open /dev/nvidiactl: %w", err)
+		return "", fmt.Errorf("failed to open %s: %w", ctlPath, err)
 	}
 	defer unix.Close(ctlFD)
+
+	// The path was checked when the dev root was chosen, but it is opened by
+	// name here, so check what was opened.
+	var st unix.Stat_t
+	if err := unix.Fstat(ctlFD, &st); err != nil {
+		return "", fmt.Errorf("failed to stat %s: %w", ctlPath, err)
+	}
+	if err := checkNVControlDeviceStat(ctlPath, &st); err != nil {
+		return "", err
+	}
 
 	// From src/nvidia/arch/nvalloc/unix/include/nv-ioctl.h:
 	const NV_RM_API_VERSION_REPLY_RECOGNIZED = 1

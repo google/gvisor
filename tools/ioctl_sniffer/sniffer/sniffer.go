@@ -197,7 +197,11 @@ func Init() error {
 	nvproxy.Init()
 
 	// Load the ABI for the host driver.
-	driverVerStr, err := nvconf.HostDriverVersion()
+	devRoot, err := nvconf.ResolveDevRoot(nvconf.DefaultDevRoots)
+	if err != nil {
+		return fmt.Errorf("failed to find the NVIDIA device files: %w", err)
+	}
+	driverVerStr, err := nvconf.HostDriverVersion(devRoot)
 	if err != nil {
 		return fmt.Errorf("failed to get host driver version: %w", err)
 	}

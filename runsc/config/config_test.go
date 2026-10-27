@@ -339,6 +339,27 @@ func TestValidationFail(t *testing.T) {
 			error: "num_network_channels must be > 0",
 		},
 		{
+			name: "nvproxy-dev-roots-empty",
+			flags: map[string]string{
+				"nvproxy-dev-roots": "",
+			},
+			error: "--nvproxy-dev-roots=\"\": dev root must not be empty",
+		},
+		{
+			name: "nvproxy-dev-roots-empty-entry",
+			flags: map[string]string{
+				"nvproxy-dev-roots": "/,",
+			},
+			error: "--nvproxy-dev-roots=\"/,\": dev root must not be empty",
+		},
+		{
+			name: "nvproxy-dev-roots-relative",
+			flags: map[string]string{
+				"nvproxy-dev-roots": "/,run/nvidia/driver",
+			},
+			error: "--nvproxy-dev-roots=\"/,run/nvidia/driver\": dev root \"run/nvidia/driver\" must be an absolute path",
+		},
+		{
 			name: "qdisc-tbf-burst-overflow",
 			flags: map[string]string{
 				"qdisc-tbf-burst": "4294967296",
