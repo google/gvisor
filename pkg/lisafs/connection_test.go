@@ -15,11 +15,13 @@
 package connection_test
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -31,11 +33,13 @@ const (
 )
 
 var handlers = [...]lisafs.RPCHandler{
-	lisafs.Error:   lisafs.ErrorHandler,
-	lisafs.Mount:   lisafs.MountHandler,
-	lisafs.Channel: lisafs.ChannelHandler,
-	dynamicMsgID:   dynamicMsgHandler,
-	versionMsgID:   versionHandler,
+	lisafs.Error:      lisafs.ErrorHandler,
+	lisafs.Mount:      lisafs.MountHandler,
+	lisafs.Channel:    lisafs.ChannelHandler,
+	dynamicMsgID:      dynamicMsgHandler,
+	versionMsgID:      versionHandler,
+	lisafs.FGetXattr:  lisafs.FGetXattrHandler,
+	lisafs.FListXattr: lisafs.FListXattrHandler,
 }
 
 type testControlFD struct {
@@ -48,6 +52,29 @@ func (fd *testControlFD) FD() *lisafs.ControlFD {
 }
 
 func (fd *testControlFD) Close() {}
+
+// Sizes passed to the last testControlFD.GetXattr and ListXattr calls.
+var (
+	xattrSizesMu  sync.Mutex
+	getXattrSize  uint32
+	listXattrSize uint64
+)
+
+// GetXattr implements lisafs.ControlFDImpl.GetXattr.
+func (fd *testControlFD) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
+	xattrSizesMu.Lock()
+	defer xattrSizesMu.Unlock()
+	getXattrSize = size
+	return 0, nil
+}
+
+// ListXattr implements lisafs.ControlFDImpl.ListXattr.
+func (fd *testControlFD) ListXattr(size uint64) (lisafs.StringArray, error) {
+	xattrSizesMu.Lock()
+	defer xattrSizesMu.Unlock()
+	listXattrSize = size
+	return nil, nil
+}
 
 // testConnImpl implements lisafs.ConnectionImpl.
 type testConnImpl struct{}
@@ -77,10 +104,16 @@ func (s *testConnImpl) SupportedMessages() []lisafs.MID {
 		lisafs.Channel,
 		dynamicMsgID,
 		versionMsgID,
+		lisafs.FGetXattr,
+		lisafs.FListXattr,
 	}
 }
 
 func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
+	runServerClientWithRoot(t, func(c *lisafs.Client, _ lisafs.Inode) { clientFn(c) })
+}
+
+func runServerClientWithRoot(t testing.TB, clientFn func(c *lisafs.Client, root lisafs.Inode)) {
 	serverSocket, clientSocket, err := unet.SocketPair(false)
 	if err != nil {
 		t.Fatalf("socketpair got err %v expected nil", err)
@@ -95,7 +128,7 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 	}
 	ts.StartConnection(conn)
 
-	c, _, _, err := lisafs.NewClient(clientSocket)
+	c, root, _, err := lisafs.NewClient(clientSocket)
 	if err != nil {
 		t.Fatalf("client creation failed: %v", err)
 	}
@@ -103,7 +136,7 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 		t.Fatalf("failed to start channels: %v", err)
 	}
 
-	clientFn(c)
+	clientFn(c, root)
 
 	c.Close() // This should trigger client and server shutdown.
 	ts.Wait()
@@ -125,6 +158,29 @@ func TestUnsupportedMessage(t *testing.T) {
 	runServerClient(t, func(c *lisafs.Client) {
 		if err := c.SndRcvMessage(unsupportedM, uint32(em.SizeBytes()), em.MarshalBytes, em.CheckedUnmarshal, nil, em.String, em.String); err != unix.EOPNOTSUPP {
 			t.Errorf("expected EOPNOTSUPP but got err: %v", err)
+		}
+	})
+}
+
+// TestXattrSizeCapped tests that the server caps the xattr buffer sizes the
+// client asks for at XATTR_SIZE_MAX and XATTR_LIST_MAX, as Linux does.
+func TestXattrSizeCapped(t *testing.T) {
+	runServerClientWithRoot(t, func(c *lisafs.Client, root lisafs.Inode) {
+		fd := c.NewFD(root.ControlFD)
+		ctx := context.Background()
+		if _, err := fd.GetXattr(ctx, "user.test", math.MaxUint32); err != nil {
+			t.Errorf("GetXattr got err %v want nil", err)
+		}
+		if _, err := fd.ListXattr(ctx, math.MaxUint64); err != nil {
+			t.Errorf("ListXattr got err %v want nil", err)
+		}
+		xattrSizesMu.Lock()
+		defer xattrSizesMu.Unlock()
+		if getXattrSize != linux.XATTR_SIZE_MAX {
+			t.Errorf("GetXattr size got %d want %d", getXattrSize, linux.XATTR_SIZE_MAX)
+		}
+		if listXattrSize != linux.XATTR_LIST_MAX {
+			t.Errorf("ListXattr size got %d want %d", listXattrSize, linux.XATTR_LIST_MAX)
 		}
 	})
 }

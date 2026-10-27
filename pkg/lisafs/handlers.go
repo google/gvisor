@@ -1607,12 +1607,14 @@ func FGetXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uint
 	// FGetXattrResp simply is a wrapper around SizedString.
 	var valueLen primitive.Uint16
 	respMetaSize := uint32(valueLen.SizeBytes())
+	// Linux's fs/xattr.c:do_getxattr() caps the value at XATTR_SIZE_MAX.
+	bufSize := min(uint32(req.BufSize), linux.XATTR_SIZE_MAX)
 	var n uint16
 	if err := fd.safelyRead(func() error {
 		if fd.node.isDeleted() {
 			return unix.EINVAL
 		}
-		n, err = fd.impl.GetXattr(string(req.Name), uint32(req.BufSize), func(dataLen uint32) []byte {
+		n, err = fd.impl.GetXattr(string(req.Name), bufSize, func(dataLen uint32) []byte {
 			return comm.PayloadBuf(dataLen + respMetaSize)[respMetaSize:]
 		})
 		return err
@@ -1672,7 +1674,8 @@ func FListXattrHandler(c *Connection, comm Communicator, payloadLen uint32) (uin
 		if fd.node.isDeleted() {
 			return unix.EINVAL
 		}
-		resp.Xattrs, err = fd.impl.ListXattr(req.Size)
+		// Linux's fs/xattr.c:listxattr() caps the list at XATTR_LIST_MAX.
+		resp.Xattrs, err = fd.impl.ListXattr(min(req.Size, linux.XATTR_LIST_MAX))
 		return err
 	}); err != nil {
 		return 0, err
