@@ -730,6 +730,221 @@ TEST(EpollTest, ReadyMutexCircularity) {
   read(sigfd.get(), &info, sizeof(info));
 }
 
+// EPOLL_CTL_ADD of a target that does not support poll fails with EPERM
+// before the EPOLLEXCLUSIVE bit check.
+TEST(EpollTest, ExclusiveRegularFileEPERM) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_RDONLY));
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE | EPOLLONESHOT;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, fd.get(), &event),
+              SyscallFailsWithErrno(EPERM));
+}
+
+// epoll_ctl(EPOLL_CTL_MOD) with EPOLLEXCLUSIVE in the new event fails with
+// EINVAL, even for an interest that was added without it.
+TEST(EpollTest, ExclusiveModEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), efd.get(), EPOLLIN, 0));
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, efd.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// EPOLLEXCLUSIVE in EPOLL_CTL_MOD is rejected before the interest is looked
+// up, so it yields EINVAL rather than ENOENT.
+TEST(EpollTest, ExclusiveModNotRegisteredEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, efd.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Without EPOLLEXCLUSIVE, the same MOD is ENOENT.
+  event.events = EPOLLIN;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, efd.get(), &event),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+// EPOLLEXCLUSIVE cannot be used when the target is an epoll instance.
+TEST(EpollTest, ExclusiveAddEpollTargetEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto target = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, target.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Without EPOLLEXCLUSIVE, the same ADD succeeds.
+  event.events = EPOLLIN;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, target.get(), &event),
+              SyscallSucceeds());
+}
+
+// The EPOLLEXCLUSIVE check on an epoll target precedes the cycle check.
+TEST(EpollTest, ExclusiveAddEpollTargetCycleEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto epollfd1 = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(
+      RegisterEpollFD(epollfd.get(), epollfd1.get(), EPOLLIN, kMagicConstant));
+
+  // Adding epollfd to epollfd1 would be a cycle (ELOOP) without
+  // EPOLLEXCLUSIVE.
+  struct epoll_event event = {};
+  event.events = EPOLLIN;
+  EXPECT_THAT(epoll_ctl(epollfd1.get(), EPOLL_CTL_ADD, epollfd.get(), &event),
+              SyscallFailsWithErrno(ELOOP));
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  EXPECT_THAT(epoll_ctl(epollfd1.get(), EPOLL_CTL_ADD, epollfd.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// Only EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLWAKEUP and EPOLLET may be
+// combined with EPOLLEXCLUSIVE in EPOLL_CTL_ADD; any other bit, defined or
+// not, fails with EINVAL.
+TEST(EpollTest, ExclusiveAddInvalidBitsEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+
+  const uint32_t kBadBits[] = {
+      EPOLLONESHOT, EPOLLPRI,    EPOLLRDHUP, EPOLLRDNORM, EPOLLRDBAND,
+      EPOLLWRNORM,  EPOLLWRBAND, EPOLLMSG,   1u << 20,
+  };
+  for (uint32_t bad : kBadBits) {
+    SCOPED_TRACE(::testing::Message() << std::hex << std::showbase << bad);
+    auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+    struct epoll_event event = {};
+    event.events = EPOLLIN | EPOLLEXCLUSIVE | bad;
+    EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+                SyscallFailsWithErrno(EINVAL));
+
+    // The failed add did not register anything.
+    event.events = EPOLLIN;
+    EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+                SyscallSucceeds());
+  }
+}
+
+// The EPOLLEXCLUSIVE bit check precedes the check for an existing interest.
+TEST(EpollTest, ExclusiveAddInvalidBitsExistingEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), efd.get(), EPOLLIN, 0));
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE | EPOLLONESHOT;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// EPOLLEXCLUSIVE may be used alone or combined with EPOLLIN, EPOLLOUT,
+// EPOLLERR, EPOLLHUP, EPOLLWAKEUP and EPOLLET. EPOLLWAKEUP is accepted even
+// without CAP_BLOCK_SUSPEND, which only causes it to be ignored.
+TEST(EpollTest, ExclusiveAddValidBits) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+
+  const uint32_t kGoodEvents[] = {
+      EPOLLEXCLUSIVE,
+      EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLET | EPOLLEXCLUSIVE,
+      EPOLLIN | EPOLLWAKEUP | EPOLLEXCLUSIVE,
+  };
+  for (uint32_t events : kGoodEvents) {
+    SCOPED_TRACE(::testing::Message() << std::hex << std::showbase << events);
+    auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+    struct epoll_event event = {};
+    event.events = events;
+    EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+                SyscallSucceeds());
+  }
+}
+
+// An interest added with EPOLLEXCLUSIVE cannot be modified, whatever the new
+// event is.
+TEST(EpollTest, ExclusiveInterestModEINVAL) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  event.data.u64 = kMagicConstant;
+  ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallSucceeds());
+
+  event.events = EPOLLIN;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, efd.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+  event.events = EPOLLOUT;
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_MOD, efd.get(), &event),
+              SyscallFailsWithErrno(EINVAL));
+
+  // The interest is unchanged: it does not report EPOLLOUT, although the
+  // eventfd is writable.
+  struct epoll_event result = {};
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &result, 1, 0),
+              SyscallSucceedsWithValue(0));
+}
+
+// Adding the same exclusive interest twice fails with EEXIST.
+TEST(EpollTest, ExclusiveAddTwiceEEXIST) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallSucceeds());
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallFailsWithErrno(EEXIST));
+}
+
+// An exclusive interest can be deleted, and then added again.
+TEST(EpollTest, ExclusiveInterestDelete) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallSucceeds());
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_DEL, efd.get(), nullptr),
+              SyscallSucceeds());
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_DEL, efd.get(), nullptr),
+              SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallSucceeds());
+}
+
+// An exclusive interest reports EPOLLIN when the file becomes readable.
+TEST(EpollTest, ExclusiveInterestReportsEPOLLIN) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  auto efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
+  struct epoll_event event = {};
+  event.events = EPOLLIN | EPOLLEXCLUSIVE;
+  event.data.u64 = kMagicConstant;
+  ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, efd.get(), &event),
+              SyscallSucceeds());
+
+  struct epoll_event result = {};
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &result, 1, 0),
+              SyscallSucceedsWithValue(0));
+
+  uint64_t one = 1;
+  ASSERT_THAT(write(efd.get(), &one, sizeof(one)),
+              SyscallSucceedsWithValue(sizeof(one)));
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &result, 1, 5000),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result.events, static_cast<uint32_t>(EPOLLIN));
+  EXPECT_EQ(result.data.u64, kMagicConstant);
+}
+
 }  // namespace
 
 }  // namespace testing
