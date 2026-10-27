@@ -139,6 +139,7 @@ func newDecommitRestoreFixture(t *testing.T, readErr error) (*MemoryFile, *decom
 		stateio.NewIOReader(reader, page, 1, 1),
 		func(err error) { asyncDone <- err },
 		nil,
+		AsyncPagesFileLoadOpts{},
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -168,7 +168,7 @@ func startDecommitTestLoadOpts(t *testing.T, opts decommitTestOpts) *decommitTes
 		done: make(chan error, 1),
 	}
 	ar := stateio.NewIOReader(l.r, uint64(opts.maxReadPages)*hostarch.PageSize, opts.maxReadPages, opts.maxParallel)
-	apfl, err := StartAsyncPagesFileLoad(ar, func(err error) { l.done <- err }, nil)
+	apfl, err := StartAsyncPagesFileLoad(ar, func(err error) { l.done <- err }, nil, AsyncPagesFileLoadOpts{})
 	if err != nil {
 		t.Fatalf("StartAsyncPagesFileLoad: %v", err)
 	}
