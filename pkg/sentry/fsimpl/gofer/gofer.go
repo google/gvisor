@@ -236,10 +236,13 @@ type filesystem struct {
 	dentryCache *dentryCache
 
 	// syncableDentries contains all non-synthetic dentries. specialFileFDs
-	// contains all open specialFileFDs. These fields are protected by syncMu.
+	// contains all open specialFileFDs. directFDs contains all open
+	// regularFileFDs with a direct handle. These fields are protected by
+	// syncMu.
 	syncMu           sync.Mutex `state:"nosave"`
 	syncableDentries dentryList
 	specialFileFDs   specialFDList
+	directFDs        map[*regularFileFD]struct{}
 
 	// inoByKey maps previously-observed device ID and host inode numbers to
 	// internal inode numbers assigned to those files. inoByKey is not preserved
@@ -645,6 +648,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		devMinor:   devMinor,
 		inoByKey:   make(map[inoKey]uint64),
 		inodeByKey: make(map[inoKey]*inode),
+		directFDs:  make(map[*regularFileFD]struct{}),
 	}
 
 	// Did the user configure a global dentry cache?
@@ -2188,7 +2192,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 	//		between multiple handles for the same file.
 	openReadable := d.inode.isReadHandleOk() || read
 	openWritable := d.inode.isWriteHandleOk() || write
-	h, err := d.openHandle(ctx, openReadable, openWritable, trunc)
+	h, err := d.openHandle(ctx, openReadable, openWritable, trunc, false /* direct */)
 	if linuxerr.Equals(linuxerr.EACCES, err) && (openReadable != read || openWritable != write) {
 		// It may not be possible to use a single handle for both
 		// reading and writing, since permissions on the file may have
@@ -2198,7 +2202,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		ctx.Debugf("gofer.dentry.ensureSharedHandle: bifurcating read/write handles for dentry %p", d)
 		openReadable = read
 		openWritable = write
-		h, err = d.openHandle(ctx, openReadable, openWritable, trunc)
+		h, err = d.openHandle(ctx, openReadable, openWritable, trunc, false /* direct */)
 	}
 	if err != nil {
 		d.inode.handleMu.Unlock()
