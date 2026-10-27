@@ -481,36 +481,26 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestReadRepoMapping(t *testing.T) {
-	origMakeMod := makeMod
-	defer func() { makeMod = origMakeMod }()
-
-	makeMod = func(args ...string) (string, error) {
-		return "", errors.New("boom")
-	}
-	if _, err := readRepoMapping(""); err == nil {
-		t.Fatal("readRepoMapping succeeded on makeMod error")
-	}
-
-	makeMod = func(args ...string) (string, error) {
-		return "no json here", nil
-	}
-	if _, err := readRepoMapping("hub"); err == nil || !strings.Contains(err.Error(), "no repository mapping JSON") {
-		t.Fatalf("readRepoMapping = %v, want missing JSON error", err)
-	}
-
-	makeMod = func(args ...string) (string, error) {
-		return "{invalid json", nil
-	}
-	if _, err := readRepoMapping("hub"); err == nil || !strings.Contains(err.Error(), "cannot parse repository mapping") {
-		t.Fatalf("readRepoMapping = %v, want parse error", err)
+	for _, tc := range []struct {
+		name, out, want string
+		err             error
+	}{
+		{name: "query error", err: errors.New("Bazel query failed"), want: "Bazel query failed"},
+		{name: "no mapping", out: "no json here", want: "no repository mapping JSON"},
+		{name: "invalid mapping", out: "{invalid json", want: "cannot parse repository mapping"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mod BazelMod = func(string, ...string) (string, error) { return tc.out, tc.err }
+			if _, err := mod.readRepoMapping("hub"); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("readRepoMapping() error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 
 func TestEnumerateAndFetchQemuLicenseSource(t *testing.T) {
-	origMakeMod := makeMod
 	origHTTPClient := httpClient
 	defer func() {
-		makeMod = origMakeMod
 		httpClient = origHTTPClient
 	}()
 
@@ -566,12 +556,13 @@ func TestEnumerateAndFetchQemuLicenseSource(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			makeMod = func(args ...string) (string, error) {
-				switch args[0] {
+			p := paths
+			p.BazelMod = func(subcommand string, args ...string) (string, error) {
+				switch subcommand {
 				case "graph":
 					return graphJSON, nil
 				case "dump_repo_mapping":
-					if args[1] == "''" {
+					if args[0] == "" {
 						return tc.rootMap, tc.rootErr
 					}
 					return tc.hubMap, tc.hubErr
@@ -579,25 +570,25 @@ func TestEnumerateAndFetchQemuLicenseSource(t *testing.T) {
 					return showRepoOut, nil
 				}
 			}
-			if _, err := enumerate(paths); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			if _, err := enumerate(p); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("enumerate() = %v, want error containing %q", err, tc.wantErr)
 			}
 		})
 	}
 
-	makeMod = func(args ...string) (string, error) {
-		switch args[0] {
+	paths.BazelMod = func(subcommand string, args ...string) (string, error) {
+		switch subcommand {
 		case "graph":
 			return graphJSON, nil
 		case "dump_repo_mapping":
-			if args[1] == "''" {
+			if args[0] == "" {
 				return `{"qemu_user_toolchains":"rules_qemu++qemu+hub"}`, nil
 			}
 			return `{"` + depName + `":"rules_qemu++qemu+arm"}`, nil
 		case "show_repo":
 			return showRepoOut, nil
 		default:
-			return "", errors.New("unexpected makeMod call")
+			return "", errors.New("unexpected bazel mod query")
 		}
 	}
 

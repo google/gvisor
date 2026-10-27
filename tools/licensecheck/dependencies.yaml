@@ -1,7 +1,8 @@
 # Licenses of gVisor's external dependencies, as declared in MODULE.bazel and
 # go.mod.
-# Regenerate with: make run TARGETS=//tools/licensecheck/main:licensecheck ARGS=--mode=fetch
-# Check completeness with ARGS=--mode=verify.
+# Regenerate with: bazel run //tools/licensecheck/main:licensecheck -- --mode=fetch
+# In the Make builder, use: make license-check ARGS=--mode=fetch
+# Check completeness with: make license-check
 # Entries whose license cannot be fetched automatically are maintained by hand and preserved
 # by --mode=fetch, so you can hand-edit the file for these.
 # license_source selects an immutable upstream notice for a pinned binary artifact;
