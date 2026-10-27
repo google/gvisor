@@ -45,4 +45,10 @@ go_test(
     size = "small",
     srcs = ["gofer_mount_test.go"],
     embed = [":sandboxsetup"],
+    deps = [
+        "//runsc/config",
+        "//runsc/specutils",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )
