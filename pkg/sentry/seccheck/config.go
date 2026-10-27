@@ -88,6 +88,12 @@ type SinkConfig struct {
 // Create reads the session configuration and applies it to the system.
 func Create(conf *SessionConfig, force bool) error {
 	log.Debugf("Creating seccheck: %+v", conf)
+	if len(conf.Points) > 0 {
+		// Point descriptions are needed only to configure points, so build
+		// them on first use: sandboxes that never enable points do not pay
+		// for them.
+		Initialize()
+	}
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -227,6 +233,7 @@ func List(out *[]SessionConfig) {
 	}
 }
 
+// Preconditions: Initialize has been called.
 func findPointDesc(name string) (PointDesc, error) {
 	if desc, ok := Points[name]; ok {
 		return desc, nil

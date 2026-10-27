@@ -81,7 +81,8 @@ const (
 	FieldSentryExecvePipeProcInfo
 )
 
-// Points is a map with all the trace points registered in the system.
+// Points is a map with all the trace points available in the system, keyed by
+// name. It is empty until Initialize is called.
 var Points = map[string]PointDesc{}
 
 // Sinks is a map with all the sinks registered in the system.
@@ -342,8 +343,10 @@ func genericInit() {
 
 var initOnce sync.Once
 
-// Initialize initializes the Points available in the system.
-// Must be called prior to using any of them.
+// Initialize fills Points with all the trace points available in the system.
+// It must be called before Points is read. Other functions in this package
+// call it when they need Points, so that sandboxes that never create a trace
+// session do not pay for it.
 func Initialize() {
 	initOnce.Do(func() {
 		genericInit()
