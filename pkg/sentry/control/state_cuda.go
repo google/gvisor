@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
@@ -402,11 +403,11 @@ func toggleCudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath 
 			ckptProc.tg.WaitExited()
 		}
 		if status := ckptProc.tg.ExitStatus(); status != 0 {
+			var output string
 			if ckptProc.out != nil {
-				errs = append(errs, fmt.Errorf("%q failed with exit status %d; output: %q", ckptProc.desc, status, ckptProc.out.String()))
-			} else {
-				errs = append(errs, fmt.Errorf("%q failed with exit status %d", ckptProc.desc, status))
+				output = ckptProc.out.String()
 			}
+			errs = append(errs, cudaCheckpointFailure(ckptProc.desc, status, output))
 			delete(ckptProcs, cudaProc)
 		} else if log.IsLogging(log.Debug) && ckptProc.out != nil {
 			log.Debugf("%s succeeded; output: %q", ckptProc.desc, ckptProc.out.String())
@@ -451,4 +452,19 @@ func toggleCudaProcs(sctx context.Context, k *kernel.Kernel, cudaCheckpointPath 
 	log.Infof("cuda-checkpoint on %d processes took [%s]", len(ckptProcs), time.Since(start))
 	timeline.Reached("cuda-ckpts done")
 	return nil
+}
+
+func cudaCheckpointFailure(desc string, status linux.WaitStatus, output string) error {
+	var err error
+	if output != "" {
+		err = fmt.Errorf("%q failed with exit status %d; output: %q", desc, status, output)
+	} else {
+		err = fmt.Errorf("%q failed with exit status %d", desc, status)
+	}
+	// cuda-checkpoint reports CUDA_ERROR_NOT_READY in its output and exposes no
+	// structured error to the caller.
+	if strings.Contains(output, "device not ready") {
+		return fmt.Errorf("%w: %w", err, controlapi.ErrCudaNotReady)
+	}
+	return err
 }

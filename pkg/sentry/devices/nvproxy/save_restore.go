@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 type saveRestoreGoogleContextID int
@@ -179,7 +180,7 @@ func (nvp *nvproxy) beforeSave() {
 	for _, client := range nvp.clients {
 		for _, obj := range client.resources {
 			if _, ok := obj.impl.(restorableObjectImpl); !ok {
-				panic(fmt.Sprintf("nvproxy: object handle %v:%v (class %v, type %T) is not restorable", client.handle, obj.handle, obj.class, obj.impl))
+				panic(fmt.Errorf("nvproxy: object handle %v:%v (class %v, type %T): %w", client.handle, obj.handle, obj.class, obj.impl, state.ErrUnsavable))
 			}
 		}
 	}
@@ -337,7 +338,7 @@ func (fd *uvmFD) afterLoad(ctx goContext.Context) {
 // beforeSave is invoked by stateify.
 func (fd *uvmToolsFD) beforeSave() {
 	if len(fd.mirrors) != 0 {
-		panic("nvproxy: UVM tools event trackers are not restorable")
+		panic(fmt.Errorf("nvproxy: UVM tools event trackers: %w", state.ErrUnsavable))
 	}
 }
 

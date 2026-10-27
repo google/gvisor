@@ -96,6 +96,7 @@ go_test(
     srcs = [
         "fs_test.go",
         "proc_test.go",
+        "state_cuda_test.go",
     ],
     embed = [":control"],
     deps = [
