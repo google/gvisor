@@ -236,16 +236,28 @@ func BenchmarkRestoreEmpty(b *testing.B) {
 	}
 }
 
-func waitUntilHostServing(ctx context.Context, server *dockerutil.Container, port int) error {
+func waitUntilHTTPServing(ctx context.Context, server *dockerutil.Container, port int) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	hexPort := fmt.Sprintf(":%04X", port)
-	cmd := "while ! grep -s -E '" + hexPort + "' /proc/net/tcp /proc/net/tcp6; do sleep 0.001; done"
-	if output, err := server.Exec(ctx, dockerutil.ExecOpts{}, "sh", "-c", cmd); err != nil {
-		return fmt.Errorf("waiting for server on port %d (%s): %w\n%s", port, hexPort, err, output)
+	url := fmt.Sprintf("http://127.0.0.1:%d/index.html", port)
+	for {
+		output, err := server.Exec(ctx, dockerutil.ExecOpts{}, "curl", "--noproxy", "*", "--silent", "--show-error",
+			"--max-time", "5", "--output", "/dev/null", "--write-out", "%{http_code}", url)
+		if err == nil {
+			if output == "200" {
+				return nil
+			}
+			err = fmt.Errorf("HTTP status %s", output)
+		} else if output != "" {
+			err = fmt.Errorf("%w: %s", err, output)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("GET %s: %w (last attempt: %v)", url, ctx.Err(), err)
+		case <-time.After(time.Millisecond):
+		}
 	}
-	return nil
 }
 
 func spawnServerWorkloadAndWait(ctx context.Context, b *testing.B, client harness.Machine, name string, port int) *dockerutil.Container {
@@ -264,7 +276,7 @@ func spawnServerWorkloadAndWait(ctx context.Context, b *testing.B, client harnes
 		server.CleanUp(ctx)
 		b.Fatalf("failed to spawn %s: %v", name, err)
 	}
-	if err := waitUntilHostServing(ctx, server, port); err != nil {
+	if err := waitUntilHTTPServing(ctx, server, port); err != nil {
 		logs, _ := server.Logs(ctx)
 		server.CleanUp(ctx)
 		b.Fatalf("failed to wait for %s serving: %v\nServer logs:\n%s", name, err, logs)
@@ -326,7 +338,7 @@ func runRestoreServerWorkload(b *testing.B, name string, port int) {
 			if err := server.Restore(ctx, ckptName); err != nil {
 				b.Fatalf("failed to restore %s: %v", name, err)
 			}
-			if err := waitUntilHostServing(ctx, server, port); err != nil {
+			if err := waitUntilHTTPServing(ctx, server, port); err != nil {
 				b.Fatalf("failed to wait for %s serving after restore: %v", name, err)
 			}
 			b.StopTimer()
