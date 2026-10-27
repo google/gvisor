@@ -21,7 +21,7 @@ bzl_library(
 bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
-    visibility = ["//visibility:private"],
+    visibility = ["//tools:__pkg__"],
     deps = [
         "@bazel_skylib//rules/directory:providers",
         "@rules_cc//cc/common",

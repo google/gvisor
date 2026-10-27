@@ -37,6 +37,10 @@ bzl_library(
     visibility = [
         "//:sandbox",
     ],
+    deps = [
+        "//tools/bazeldefs:defs_bzl",
+        "@bazel_lib//lib:copy_file",
+    ],
 )
 
 bzl_library(
