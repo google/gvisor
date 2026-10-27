@@ -295,6 +295,64 @@ func TestTraceForceCreate(t *testing.T) {
 	}
 }
 
+// Test that a trace session can have sinks that do not have an endpoint.
+func TestTraceSinkWithoutEndpoint(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	server, err := test.NewServer()
+	if err != nil {
+		t.Fatalf("newServer(): %v", err)
+	}
+	defer server.Close()
+
+	// The null sink does not have an endpoint. It is the first sink, so the
+	// index of the remote sink endpoint in the request is not the same as the
+	// index of the remote sink.
+	session := seccheck.SessionConfig{
+		Name: seccheck.DefaultSessionName,
+		Points: []seccheck.PointConfig{
+			{Name: "sentry/task_exit"},
+		},
+		Sinks: []seccheck.SinkConfig{
+			{Name: "null"},
+			remoteSinkConfig(server.Endpoint),
+		},
+	}
+	if err := cont.Sandbox.CreateTraceSession(&session, false); err != nil {
+		t.Fatalf("CreateTraceSession(): %v", err)
+	}
+
+	// Trigger the configured point and check that the remote sink sends it.
+	if ws, err := execute(conf, cont, "/bin/true"); err != nil || ws != 0 {
+		t.Fatalf("exec: true, ws: %v, err: %v", ws, err)
+	}
+	server.WaitForCount(1)
+	pt := server.GetPoints()[0]
+	if want := pb.MessageType_MESSAGE_SENTRY_TASK_EXIT; pt.MsgType != want {
+		t.Errorf("wrong message type, want: %v, got: %v", want, pt.MsgType)
+	}
+}
+
 func TestProcfsDump(t *testing.T) {
 	spec, conf := sleepSpecConf(t)
 	testEnv := "GVISOR_IS_GREAT=true"

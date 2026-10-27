@@ -774,14 +774,19 @@ func (cm *containerManager) Signal(args *sentryapi.SignalArgs, _ *struct{}) erro
 // CreateTraceSession creates a new trace session.
 func (cm *containerManager) CreateTraceSession(args *sentryapi.CreateTraceSessionArgs, _ *struct{}) error {
 	log.Debugf("containerManager.CreateTraceSession: config: %+v", args.Config)
+	if len(args.SinkIndexes) != len(args.Files) {
+		return fmt.Errorf("got %d sink indexes for %d sink endpoints", len(args.SinkIndexes), len(args.Files))
+	}
 	for i, sinkFile := range args.Files {
-		if sinkFile != nil {
-			fd, err := fd.NewFromFile(sinkFile)
-			if err != nil {
-				return err
-			}
-			args.Config.Sinks[i].FD = fd
+		sinkIdx := args.SinkIndexes[i]
+		if sinkIdx < 0 || sinkIdx >= len(args.Config.Sinks) {
+			return fmt.Errorf("sink index %d of endpoint %d is out of range, session has %d sinks", sinkIdx, i, len(args.Config.Sinks))
 		}
+		fd, err := fd.NewFromFile(sinkFile)
+		if err != nil {
+			return err
+		}
+		args.Config.Sinks[sinkIdx].FD = fd
 	}
 	return seccheck.Create(&args.Config, args.Force)
 }

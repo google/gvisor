@@ -871,16 +871,24 @@ func (s *Sandbox) CreateTraceSession(config *seccheck.SessionConfig, force bool)
 	}
 	defer func() {
 		for _, f := range sinkFiles {
-			_ = f.Close()
+			if f != nil {
+				_ = f.Close()
+			}
 		}
 	}()
 
 	arg := sentryapi.CreateTraceSessionArgs{
 		Config: *config,
 		Force:  force,
-		FilePayload: urpc.FilePayload{
-			Files: sinkFiles,
-		},
+	}
+	// A sink that has no endpoint has a nil file, and urpc cannot send nil
+	// files. Send only the endpoints that exist, with the index of the sink of
+	// each one.
+	for i, f := range sinkFiles {
+		if f != nil {
+			arg.Files = append(arg.Files, f)
+			arg.SinkIndexes = append(arg.SinkIndexes, i)
+		}
 	}
 	if err := s.call(sentryapi.ContMgrCreateTraceSession, &arg, nil); err != nil {
 		return fmt.Errorf("creating trace session: %w", err)
