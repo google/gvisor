@@ -45,4 +45,5 @@ go_test(
     size = "small",
     srcs = ["gofer_mount_test.go"],
     embed = [":sandboxsetup"],
+    deps = ["//pkg/log"],
 )
