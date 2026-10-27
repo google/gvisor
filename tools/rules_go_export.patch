@@ -1,3 +1,7 @@
+# gVisor's nogo aspect imports Go types from .x files and inspects compiled
+# code in .a files. Keep both available on tool and proto libraries, and
+# propagate the export files of transitive dependencies through GoArchive.
+
 diff --git a/go/private/actions/archive.bzl b/go/private/actions/archive.bzl
 index ab56991c..ebe43ca2 100644
 --- a/go/private/actions/archive.bzl
@@ -10,6 +14,18 @@ index ab56991c..ebe43ca2 100644
          transitive = depset([data], transitive = [a.transitive for a in direct]),
          x_defs = x_defs,
          cgo_deps = depset(transitive = [cgo_deps] + [a.cgo_deps for a in direct]),
+diff --git a/go/private/providers.bzl b/go/private/providers.bzl
+index 538a8b9b..d32bcc7a 100644
+--- a/go/private/providers.bzl
++++ b/go/private/providers.bzl
+@@ -34,6 +34,7 @@
+     "cgo_link_inputs",
+     "data",
+     "direct",
++    "export_files",
+     "libs",
+     "mode",
+     "runfiles",
 diff --git a/go/private/rules/binary.bzl b/go/private/rules/binary.bzl
 index 064831bb..3ca16253 100644
 --- a/go/private/rules/binary.bzl
@@ -26,8 +42,8 @@ diff --git a/go/private/rules/library.bzl b/go/private/rules/library.bzl
 index 68a1d3b9..53c38cb2 100644
 --- a/go/private/rules/library.bzl
 +++ b/go/private/rules/library.bzl
-@@ -64,6 +64,8 @@ def _go_library_impl(ctx):
-             extensions = ["go"],
+@@ -71,6 +71,8 @@ def _go_library_impl(ctx):
+             **baseline_coverage_kwargs(go, ctx, ctx.files.srcs)
          ),
          OutputGroupInfo(
 +            export_files = archive.export_files,
