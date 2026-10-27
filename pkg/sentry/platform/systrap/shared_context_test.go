@@ -311,3 +311,59 @@ func TestStuckSubprocessHelper(t *testing.T) {
 	}
 	select {}
 }
+
+func TestCheckQueueStall(t *testing.T) {
+	stalledChecks := int(2 * stuckContextTimeout / contextPreemptTimeout)
+	for _, tc := range []struct {
+		name   string
+		checks int
+		// step changes the queue after a check and returns the time to the next one.
+		step func(q *contextQueue) time.Duration
+		want int
+	}{
+		{
+			name:   "stalled",
+			checks: stalledChecks,
+			step:   func(*contextQueue) time.Duration { return contextPreemptTimeout },
+			want:   1,
+		},
+		{
+			name:   "moving",
+			checks: stalledChecks,
+			step: func(q *contextQueue) time.Duration {
+				atomic.AddUint32(&q.start, 1)
+				atomic.AddUint32(&q.end, 1)
+				return contextPreemptTimeout
+			},
+		},
+		{
+			name:   "empty",
+			checks: stalledChecks,
+			step: func(q *contextQueue) time.Duration {
+				atomic.StoreUint32(&q.end, atomic.LoadUint32(&q.start))
+				return contextPreemptTimeout
+			},
+		},
+		{
+			name:   "frozen",
+			checks: 3,
+			step:   func(*contextQueue) time.Duration { return 2 * stuckContextTimeout },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestSharedContext(t).subprocess
+			atomic.StoreUint32(&s.contextQueue.end, 1)
+			now := time.Now()
+			warned := 0
+			for i := 0; i < tc.checks; i++ {
+				if s.checkQueueStall(now) {
+					warned++
+				}
+				now = now.Add(tc.step(s.contextQueue))
+			}
+			if warned != tc.want {
+				t.Errorf("checkQueueStall warned %d times, want %d", warned, tc.want)
+			}
+		})
+	}
+}
