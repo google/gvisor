@@ -598,3 +598,122 @@ func TestProcessDeferredDecRefsClearsSliceForSave(t *testing.T) {
 		t.Fatalf("state.Save(&fs.Filesystem) failed: %v", err)
 	}
 }
+
+func TestEvictCachedDentries(t *testing.T) {
+	var testFS *filesystem
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		testFS = fs
+		fs.MaxCachedDentries = 100
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"dir1": fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+				"file1": fs.newFile(ctx, creds, staticFileContent),
+			}),
+			"dir2": fs.newReadonlyDir(ctx, creds, 0755, nil),
+		})
+	})
+	defer sys.Destroy()
+
+	getDentry := func(path string) vfs.VirtualDentry {
+		return sys.GetDentryOrDie(sys.PathOpAtRoot(path))
+	}
+
+	// After the lookups below, dir1/file1 is only referenced by the dentry
+	// cache and keeps dir1 alive, while dir2 is still in use.
+	file1 := getDentry("dir1/file1")
+	file1.DecRef(sys.Ctx)
+	dir1 := getDentry("dir1")
+	dir1.DecRef(sys.Ctx)
+	dir2 := getDentry("dir2")
+	defer dir2.DecRef(sys.Ctx)
+
+	testFS.EvictCachedDentries(sys.Ctx)
+
+	if !file1.Dentry().IsDead() {
+		t.Errorf("dir1/file1 dentry is alive after EvictCachedDentries")
+	}
+	if dir2.Dentry().IsDead() {
+		t.Errorf("in-use dir2 dentry is dead after EvictCachedDentries")
+	}
+	// dir1 was only kept alive by its child, so evicting the child must evict
+	// it too.
+	if !dir1.Dentry().IsDead() {
+		t.Errorf("dir1 dentry is alive after EvictCachedDentries")
+	}
+	// Evicted files can be looked up again.
+	newFile1 := getDentry("dir1/file1")
+	defer newFile1.DecRef(sys.Ctx)
+	if newFile1.Dentry() == file1.Dentry() {
+		t.Errorf("dir1/file1 lookup returned the evicted dentry")
+	}
+}
+
+// lookupDir is a directory that creates a new file for every name on lookup,
+// so that only the file's dentry keeps it alive.
+type lookupDir struct {
+	readonlyDir
+	fs    *filesystem
+	creds *auth.Credentials
+}
+
+func (fs *filesystem) newLookupDir(ctx context.Context, creds *auth.Credentials) kernfs.Inode {
+	dir := &lookupDir{fs: fs, creds: creds}
+	dir.attrs.Init(ctx, creds, 0 /* devMajor */, 0 /* devMinor */, fs.NextIno(), linux.ModeDirectory|0755)
+	dir.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	dir.InitRefs()
+	return dir
+}
+
+// Lookup implements kernfs.Inode.Lookup.
+func (d *lookupDir) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
+	return d.fs.newFile(ctx, d.creds, staticFileContent), nil
+}
+
+func TestEvictCachedDentriesPreservesWatched(t *testing.T) {
+	var testFS *filesystem
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		testFS = fs
+		fs.MaxCachedDentries = 100
+		return fs.newReadonlyDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"dyn":       fs.newLookupDir(ctx, creds),
+			"unwatched": fs.newFile(ctx, creds, staticFileContent),
+		})
+	})
+	defer sys.Destroy()
+	ctx := vfs.WithMountNamespace(sys.Ctx, sys.MntNs)
+
+	inotifyFD, err := vfs.NewInotifyFD(ctx, sys.VFS, linux.O_NONBLOCK)
+	if err != nil {
+		t.Fatalf("NewInotifyFD failed: %v", err)
+	}
+	defer inotifyFD.DecRef(ctx)
+	ino := inotifyFD.Impl().(*vfs.Inotify)
+
+	// Inotify watches don't hold a reference on their target, so both
+	// dentries are only kept alive by the dentry cache after this.
+	watched := sys.GetDentryOrDie(sys.PathOpAtRoot("dyn/watched"))
+	wd := ino.AddWatch(watched.Dentry(), linux.IN_OPEN)
+	watched.DecRef(sys.Ctx)
+	unwatched := sys.GetDentryOrDie(sys.PathOpAtRoot("unwatched"))
+	unwatched.DecRef(sys.Ctx)
+
+	testFS.EvictCachedDentries(sys.Ctx)
+
+	if !unwatched.Dentry().IsDead() {
+		t.Errorf("unwatched dentry is alive after EvictCachedDentries")
+	}
+	if watched.Dentry().IsDead() {
+		t.Errorf("watched dentry is dead after EvictCachedDentries")
+	}
+
+	fd, err := sys.VFS.OpenAt(ctx, sys.Creds, sys.PathOpAtRoot("dyn/watched"), &vfs.OpenOptions{Flags: linux.O_RDONLY})
+	if err != nil {
+		t.Fatalf("OpenAt(dyn/watched) failed: %v", err)
+	}
+	defer fd.DecRef(ctx)
+
+	got := readInotifyEvents(t, ctx, inotifyFD)
+	want := []inotifyEvent{{WD: wd, Mask: linux.IN_OPEN}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("unexpected inotify events after EvictCachedDentries (-want +got):\n%s", diff)
+	}
+}
