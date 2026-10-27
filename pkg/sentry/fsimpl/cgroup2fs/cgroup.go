@@ -1430,13 +1430,16 @@ func (c *cgroup) updateTaskMemoryCgIDsLocked() {
 // ReadControl implements kernel.Cgroup2.ReadControl.
 // It allows reading from control files from outside the sandbox.
 func (c *cgroup) ReadControl(ctx context.Context, name string) (string, error) {
-	// The true root cgroup does not expose memory.current as a file, but
-	// external queries of the root's usage are still answered here.
-	if c.parent == nil && name == "memory.current" {
+	// The true root cgroup does not expose memory.current or memory.peak as a
+	// file, but external queries of the root's usage are still answered here.
+	if c.parent == nil && (name == "memory.current" || name == "memory.peak") {
 		memCgIDs := make(map[uint32]struct{})
 		c.fs.treeMu.RLock()
 		collectMemCgIDs(c, memCgIDs)
 		c.fs.treeMu.RUnlock()
+		if name == "memory.peak" {
+			return fmt.Sprintf("%d\n", getPeak(kernel.KernelFromContext(ctx), memCgIDs)), nil
+		}
 		total := getUsage(kernel.KernelFromContext(ctx), memCgIDs)
 		return fmt.Sprintf("%d\n", total), nil
 	}

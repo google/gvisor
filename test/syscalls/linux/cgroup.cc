@@ -21,6 +21,7 @@
 #include <linux/magic.h>
 #include <poll.h>
 #include <sys/inotify.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
@@ -30,6 +31,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <list>
 #include <memory>
 #include <optional>
@@ -196,6 +198,8 @@ TEST(Cgroup, OnlyContainsControllerSpecificFiles) {
   Cgroup mem = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   EXPECT_THAT(Exists(mem.Relpath("memory.usage_in_bytes")),
               IsPosixErrorOkAndHolds(true));
+  EXPECT_THAT(Exists(mem.Relpath("memory.max_usage_in_bytes")),
+              IsPosixErrorOkAndHolds(true));
   // CPU files shouldn't exist in memory cgroups.
   EXPECT_THAT(Exists(mem.Relpath("cpu.cfs_period_us")),
               IsPosixErrorOkAndHolds(false));
@@ -211,6 +215,8 @@ TEST(Cgroup, OnlyContainsControllerSpecificFiles) {
   EXPECT_THAT(Exists(cpu.Relpath("cpu.shares")), IsPosixErrorOkAndHolds(true));
   // Memory files shouldn't exist in cpu cgroups.
   EXPECT_THAT(Exists(cpu.Relpath("memory.usage_in_bytes")),
+              IsPosixErrorOkAndHolds(false));
+  EXPECT_THAT(Exists(cpu.Relpath("memory.max_usage_in_bytes")),
               IsPosixErrorOkAndHolds(false));
 }
 
@@ -568,6 +574,45 @@ TEST(MemoryCgroup, MemoryUsageInBytes) {
   const uint64_t usage = ASSERT_NO_ERRNO_AND_VALUE(
       c.ReadIntegerControlFile("memory.usage_in_bytes"));
   EXPECT_GE(usage, 0);
+}
+
+TEST(MemoryCgroup, MemoryMaxUsageInBytes) {
+  SKIP_IF(!CgroupsAvailable());
+  DisableSave ds;  // Avoid S/R memory overhead.
+
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("max_usage_child"));
+  auto cleanup_child = Cleanup([&] {
+    c.Enter(getpid()).IgnoreError();
+    child.Delete().IgnoreError();
+  });
+  ASSERT_NO_ERRNO(child.Enter(getpid()));
+
+  const int64_t max_usage_before = ASSERT_NO_ERRNO_AND_VALUE(
+      child.ReadIntegerControlFile("memory.max_usage_in_bytes"));
+
+  constexpr int64_t kMemSize = 10 * 1024 * 1024;         // 10 MB
+  constexpr int64_t kMemFloorSlack = 2 * 1024 * 1024;    // 2 MB
+  constexpr int64_t kMemCeilingSlack = 5 * 1024 * 1024;  // 5 MB
+  // Fault in kMemSize twice. Memory freed by the first munmap must not count
+  // towards the peak while the second mapping is in use.
+  for (int i = 0; i < 2; ++i) {
+    void* mem = mmap(nullptr, kMemSize, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(mem, MAP_FAILED);
+    auto cleanup_mem = Cleanup([&] { munmap(mem, kMemSize); });
+    memset(mem, 1, kMemSize);
+
+    const int64_t max_usage = ASSERT_NO_ERRNO_AND_VALUE(
+        child.ReadIntegerControlFile("memory.max_usage_in_bytes"));
+    EXPECT_GE(max_usage, max_usage_before + kMemSize - kMemFloorSlack);
+    EXPECT_LE(max_usage, max_usage_before + kMemSize + kMemCeilingSlack);
+  }
+
+  // The peak is retained after the memory is freed.
+  const int64_t max_usage_after = ASSERT_NO_ERRNO_AND_VALUE(
+      child.ReadIntegerControlFile("memory.max_usage_in_bytes"));
+  EXPECT_GE(max_usage_after, max_usage_before + kMemSize - kMemFloorSlack);
 }
 
 TEST(CPUCgroup, ControlFilesHaveDefaultValues) {
