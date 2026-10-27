@@ -132,6 +132,10 @@ type filesystem struct {
 	// tmpfs mount will allow. It is immutable.
 	allowXattrPrefix map[string]struct{}
 
+	// tarNanosecondTimestamps is FilesystemOpts.TarNanosecondTimestamps. It is
+	// immutable.
+	tarNanosecondTimestamps bool
+
 	// ovlWhiteout is the shared overlay whiteout device. It is protected by mu.
 	ovlWhiteout *deviceFile
 }
@@ -179,6 +183,10 @@ type FilesystemOpts struct {
 	// AllowXattrPrefix is a set of xattr namespace prefixes that this
 	// tmpfs mount will allow.
 	AllowXattrPrefix []string
+
+	// TarNanosecondTimestamps makes tar archives of this filesystem keep
+	// nanosecond modification times. Otherwise they are rounded to seconds.
+	TarNanosecondTimestamps bool
 
 	// SourceTar is the source tar file to be untarred into the tmpfs.
 	// Ownership is transferred to GetFilesystem, whether or not it returns an
@@ -426,6 +434,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		maxInodes:        maxInodes,
 		allowXattrPrefix: allowXattrPrefix,
 	}
+	fs.tarNanosecondTimestamps = tmpfsOpts.TarNanosecondTimestamps
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 	if tmpfsOptsOk && tmpfsOpts.MaxFilenameLen > 0 {
 		fs.maxFilenameLen = tmpfsOpts.MaxFilenameLen

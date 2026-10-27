@@ -740,6 +740,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		// If a mount is being overlaid, it should not be limited by the default
 		// tmpfs size limit.
 		DisableDefaultSizeLimit: true,
+		TarNanosecondTimestamps: conf.TarTimestampResolution == config.TarTimestampNanoseconds,
 	}
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
@@ -1095,6 +1096,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 				// If a mount is being overlaid with tmpfs, it should not be limited by
 				// the default tmpfs size limit.
 				DisableDefaultSizeLimit: true,
+				TarNanosecondTimestamps: conf.TarTimestampResolution == config.TarTimestampNanoseconds,
 			}
 			sourceTar, err := fsr.tmpfsSourceTar(resourceID, containerID)
 			if err != nil {

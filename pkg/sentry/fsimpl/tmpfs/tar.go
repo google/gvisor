@@ -400,6 +400,12 @@ func (d *dentry) writeToTar(ctx context.Context, tw *tar.Writer, baseDir string,
 	return nil
 }
 
+// tarOctalFieldLimit bounds the mode and device numbers that a PAX header can
+// hold. Tar stores them in seven octal digits, and PAX has no extended records
+// for them. Headers with larger values (e.g. from imported GNU archives) use
+// automatic format selection, which rounds timestamps to seconds.
+const tarOctalFieldLimit = 1 << 21
+
 // createTarHeader creates a tar header for the given dentry.
 func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb tarWriterCallbacks) (*tar.Header, error) {
 	if d.isSelfFilestoreWhiteout() {
@@ -413,6 +419,9 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
 		Uid:     int(d.inode.uid.Load()),
 		Gid:     int(d.inode.gid.Load()),
 		ModTime: time.Unix(0, d.inode.mtime.Load()),
+	}
+	if d.inode.fs.tarNanosecondTimestamps && header.Mode < tarOctalFieldLimit {
+		header.Format = tar.FormatPAX
 	}
 	// Hard link: Check if the inode has already been written to the tar archive.
 	if existingPath, ok := inoToPath[d.inode.ino]; ok {
@@ -441,6 +450,9 @@ func (d *dentry) createTarHeader(path string, inoToPath map[uint64]string, cb ta
 		}
 		header.Devmajor = int64(impl.major)
 		header.Devminor = int64(impl.minor)
+		if header.Devmajor >= tarOctalFieldLimit || header.Devminor >= tarOctalFieldLimit {
+			header.Format = tar.FormatUnknown
+		}
 	case *socketFile:
 		// This is consistent with the behavior of tar(1).
 		log.Warningf("Skipping socket file %q while generating tar archive", path)
