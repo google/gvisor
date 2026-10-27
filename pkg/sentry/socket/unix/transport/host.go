@@ -16,6 +16,7 @@ package transport
 
 import (
 	"fmt"
+	"math"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -302,7 +303,11 @@ func (c *HostSender) Recv(ctx context.Context, data [][]byte, args RecvArgs) (Re
 	out := RecvOutput{Source: Address{Addr: c.addr}}
 	var err error
 	var controlLen uint64
-	out.RecvLen, out.MsgLen, controlLen, out.ControlTrunc, err = fdReadVec(c.fd, data, []byte(cm), args.Peek, c.RecvMaxQueueSize())
+	maxlen := c.RecvMaxQueueSize()
+	if c.stype == linux.SOCK_STREAM {
+		maxlen = math.MaxInt64
+	}
+	out.RecvLen, out.MsgLen, controlLen, out.ControlTrunc, err = fdReadVec(c.fd, data, []byte(cm), args.Peek, maxlen)
 	if out.RecvLen > 0 && err != nil {
 		// We got some data, so all we need to do on error is return
 		// the data that we got. Short reads are fine, no need to
