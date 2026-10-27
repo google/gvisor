@@ -23,8 +23,26 @@ const (
 	// PageSize is the system page size.
 	PageSize = 1 << PageShift
 
+	// PageMask is PageSize - 1.
+	PageMask = PageSize - 1
+
+	// MinPageShift is the binary log of the smallest supported page size.
+	MinPageShift = PageShift
+
+	// MinPageSize is the smallest supported page size.
+	MinPageSize = 1 << MinPageShift
+
+	// MaxPageShift is the binary log of the largest supported page size.
+	MaxPageShift = PageShift
+
+	// MaxPageSize is the largest supported page size.
+	MaxPageSize = 1 << MaxPageShift
+
 	// HugePageSize is the system huge page size.
 	HugePageSize = 1 << HugePageShift
+
+	// HugePageMask is HugePageSize - 1.
+	HugePageMask = HugePageSize - 1
 
 	// JumboPageSize is the 1GB jumbo page size.
 	JumboPageSize = 1 << JumboPageShift
@@ -49,6 +67,12 @@ var (
 	// ByteOrder is the native byte order (little endian).
 	ByteOrder = binary.LittleEndian
 )
+
+// IsSupportedPageSize returns true if gVisor supports running on hosts with
+// the given page size.
+func IsSupportedPageSize(size int) bool {
+	return size == PageSize
+}
 
 // UntaggedUserAddr is no-op on x86.
 func UntaggedUserAddr(addr Addr) Addr {

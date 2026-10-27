@@ -22,9 +22,15 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
+
+// syscallStubMessageOffset is the offset of the stub message in the syscall
+// thread message. It is passed to the stub in a register, since the page size
+// is only known at runtime on arm64.
+var syscallStubMessageOffset = hostarch.PageSize
 
 func (t *syscallThread) detach() {
 	p := t.thread

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !pagesize_64k
-
 package pagetables
 
 import (
@@ -23,6 +21,8 @@ import (
 )
 
 func TestUnmap(t *testing.T) {
+	use4KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map and unmap one entry.
@@ -33,6 +33,8 @@ func TestUnmap(t *testing.T) {
 }
 
 func TestReadOnly(t *testing.T) {
+	use4KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map one entry.
@@ -44,6 +46,8 @@ func TestReadOnly(t *testing.T) {
 }
 
 func TestReadWrite(t *testing.T) {
+	use4KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map one entry.
@@ -55,6 +59,8 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestSerialEntries(t *testing.T) {
+	use4KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map two sequential entries.
@@ -68,6 +74,8 @@ func TestSerialEntries(t *testing.T) {
 }
 
 func TestSpanningEntries(t *testing.T) {
+	use4KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Span a pgd with two pages.
@@ -80,6 +88,8 @@ func TestSpanningEntries(t *testing.T) {
 }
 
 func TestSparseEntries(t *testing.T) {
+	use4KPagesForTest(t)
+
 	pt := New(NewRuntimeAllocator())
 
 	// Map two entries in different pgds.
