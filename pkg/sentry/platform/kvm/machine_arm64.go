@@ -63,7 +63,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 	// Leaving the top page unmapped here is fine: it only ever holds the
 	// host thread stack (accessed via the lower half), whereas the upper
 	// half is only used for kernel entry code and Go heap structs.
-	const maxUpperOffset = ring0.UserspaceSize - hostarch.PageSize
+	maxUpperOffset := ring0.UserspaceSize - hostarch.PageSize
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		if pr.virtual >= maxUpperOffset {
 			return true
@@ -261,7 +261,8 @@ func initFaultBlocks() {
 func archOverrideFaultBlocks() {}
 
 // tcrTGFlags returns the TCR_EL1 translation granule flags (TG0 and TG1)
-// matching the compiled hostarch.PageSize.
+// matching the host page size (hostarch.PageSize), which is determined at
+// runtime.
 //
 // In ARM64, TCR_EL1 controls the translation granule for both TTBR0 (lower/user
 // space, configured via TG0) and TTBR1 (upper/kernel space, configured via TG1).

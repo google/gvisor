@@ -1,5 +1,5 @@
 load("//tools:arch.bzl", "arch_genrule", "select_arch")
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "go_library")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "go_library", "go_test")
 load("build.bzl", "cc_pie_obj")
 
 package(
@@ -119,10 +119,10 @@ go_library(
     name = "sysmsg",
     srcs = [
         "sysmsg.go",
-        "sysmsg_4k.go",
-        "sysmsg_64k.go",
         "sysmsg_amd64.go",
         "sysmsg_arm64.go",
+        "sysmsg_layout_amd64.go",
+        "sysmsg_layout_arm64.go",
         "sysmsg_unsafe.go",
         ":sighandler_go_arch",
     ],
@@ -138,4 +138,15 @@ go_library(
         "//pkg/sentry/platform",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "sysmsg_test",
+    size = "small",
+    srcs = [
+        "sysmsg_layout_arm64_test.go",
+        "sysmsg_layout_test.go",
+    ],
+    embed = [":sysmsg"],
+    deps = ["//pkg/hostarch"],
 )

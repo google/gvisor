@@ -841,7 +841,7 @@ func New(args Args) (*Loader, error) {
 
 	// Create timekeeper.
 	tk := kernel.NewTimekeeper()
-	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamPage.FileRange())
+	params := kernel.NewVDSOParamPage(l.k.MemoryFile(), vdso.ParamsFileRange())
 	tk.SetClocks(time.NewCalibratedClocks(shouldEnableClockMonotonicRaw(args.Spec, args.Conf)), params)
 	args.StartupTimer.Reached("timekeeper configured")
 

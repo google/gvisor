@@ -9,8 +9,6 @@ go_library(
     name = "ring0",
     srcs = [
         "aarch64.go",
-        "aarch64_4k.go",
-        "aarch64_64k.go",
         "defs.go",
         "defs_amd64.go",
         "defs_arm64.go",

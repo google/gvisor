@@ -75,7 +75,6 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
     })
     base_gotags = kwargs.pop("gotags", [])
     kwargs["gotags"] = select({
-        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
         "//tools:debug": base_gotags + ["debug"],
         "//conditions:default": base_gotags,
     }) + select({
@@ -162,7 +161,6 @@ def go_test(name, static = False, pure = False, library = None, **kwargs):
         kwargs["embed"] = [library]
     base_gotags = kwargs.pop("gotags", [])
     kwargs["gotags"] = select({
-        "//tools/bazeldefs:pagesize_64k": base_gotags + ["pagesize_64k"],
         "//tools:debug": base_gotags + ["debug"],
         "//conditions:default": base_gotags,
     }) + select({
