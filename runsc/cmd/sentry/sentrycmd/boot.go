@@ -158,9 +158,6 @@ type Boot struct {
 	// userLogFD is the file descriptor to write user logs to.
 	userLogFD int
 
-	// startSyncFD is the file descriptor to synchronize runsc and sandbox.
-	startSyncFD int
-
 	// mountsFD is the file descriptor to read list of mounts after they have
 	// been resolved (direct paths, no symlinks). They are resolved outside the
 	// sandbox (e.g. gofer) and sent through this FD. When mountsFD is not
@@ -310,7 +307,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.goferFilestoreFDs, "gofer-filestore-fds", "FDs to the regular files that will back the overlayfs or tmpfs mount if a gofer mount is to be overlaid.")
 	f.Var(&b.goferMountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
-	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is an optional file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
@@ -355,7 +351,7 @@ func (b *Boot) willReexec() bool {
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if b.specFD == -1 || b.controllerFD == -1 || b.startSyncFD == -1 || f.NArg() != 1 {
+	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -774,8 +770,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Prepare metrics.
 	// This needs to happen after the kernel is initialized (such that all metrics are registered)
-	// but before the start-sync file is notified, as the parent process needs to query for
-	// registered metrics prior to sending the start signal.
+	// but before the control server starts, as runsc queries registered metrics prior to sending
+	// the start signal.
 	metric.Initialize()
 	timer.Reached("metrics initialized")
 	var finalMetricsFile *os.File
@@ -795,17 +791,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		defer metric.StopProfilingMetrics()
 	}
 
-	// Notify the parent process the sandbox has booted (and that the controller
-	// is up).
-	timer.Reached("notifying parent")
-	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
-	buf := make([]byte, 1)
-	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
-		l.Destroy()
-		util.Fatalf("unable to write into the start-sync descriptor: %v", err)
-	}
-	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
-	startSyncFile.Close()
+	l.StartControlServer()
 
 	// Wait for the start signal from runsc.
 	l.WaitForStartSignal()

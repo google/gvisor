@@ -277,7 +277,7 @@ func (o *RestoreOpts) args() []string {
 		out = append(out, "--detach")
 	}
 	if o.Direct {
-		out = append(out, "--direct")
+		out = append(out, "--direct-io=on")
 	}
 	if o.Background {
 		out = append(out, "--background")

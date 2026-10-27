@@ -411,38 +411,8 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		}
 	}
 
-	// Create pipe to synchronize when sandbox process has been booted.
-	clientSyncFile, sandboxSyncFile, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("creating pipe for sandbox %q: %v", s.ID, err)
-	}
-	defer clientSyncFile.Close()
-
-	// Create the sandbox process.
-	err = s.createSandboxProcess(conf, args, sandboxSyncFile)
-	// sandboxSyncFile has to be closed to be able to detect when the sandbox
-	// process exits unexpectedly.
-	sandboxSyncFile.Close()
-	if err != nil {
+	if err := s.createSandboxProcess(conf, args); err != nil {
 		return nil, fmt.Errorf("cannot create sandbox process: %w", err)
-	}
-
-	// Wait until the sandbox has booted.
-	b := make([]byte, 1)
-	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
-		err := fmt.Errorf("waiting for sandbox to start: %v", err)
-		// If the sandbox failed to start, it may be because the binary
-		// permissions were incorrect. Check the bits and return a more helpful
-		// error message.
-		//
-		// NOTE: The error message is checked because error types are lost over
-		// rpc calls.
-		if strings.Contains(err.Error(), io.EOF.Error()) {
-			if permsErr := checkBinaryPermissions(conf); permsErr != nil {
-				return nil, fmt.Errorf("%v: %v", err, permsErr)
-			}
-		}
-		return nil, fmt.Errorf("cannot read client sync file: %w", err)
 	}
 
 	c.Release()
@@ -582,8 +552,61 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	return nil
 }
 
+// DirectIO controls whether the checkpoint pages file is read with O_DIRECT.
+// This bypasses the host page cache, which is faster and saves memory when the
+// checkpoint is not already cached and will not be read again on this host.
+type DirectIO int
+
+// DirectIO values.
+const (
+	// DirectIOAuto uses O_DIRECT for GPU restores if the filesystem holding
+	// the pages file supports it. GPU checkpoints are large and typically
+	// restored once per host.
+	DirectIOAuto DirectIO = iota
+
+	// DirectIOOn always uses O_DIRECT. Restore fails if the filesystem holding
+	// the pages file does not support it.
+	DirectIOOn
+
+	// DirectIOOff never uses O_DIRECT.
+	DirectIOOff
+)
+
+// Set implements flag.Value.
+func (d *DirectIO) Set(v string) error {
+	switch v {
+	case "auto":
+		*d = DirectIOAuto
+	case "on":
+		*d = DirectIOOn
+	case "off":
+		*d = DirectIOOff
+	default:
+		return fmt.Errorf("invalid direct I/O mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (d DirectIO) Get() any {
+	return d
+}
+
+// String implements flag.Value.
+func (d DirectIO) String() string {
+	switch d {
+	case DirectIOAuto:
+		return "auto"
+	case DirectIOOn:
+		return "on"
+	case DirectIOOff:
+		return "off"
+	}
+	panic(fmt.Sprintf("invalid direct I/O mode %d", d))
+}
+
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, directIO DirectIO, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
 	waitRegisteredMetrics := s.fetchRegisteredMetrics()
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
@@ -611,7 +634,10 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 			_ = f.Close()
 		}
 	}()
-	if err := s.setRestoreOpts(conf, imagePath, direct, &opt); err != nil {
+	if directIO == DirectIOAuto && !specutils.NVProxyEnabled(spec, conf) {
+		directIO = DirectIOOff
+	}
+	if err := s.setRestoreOpts(conf, imagePath, directIO, &opt); err != nil {
 		return err
 	}
 
@@ -673,13 +699,13 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
-func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, direct bool, opt *sentryapi.RestoreOpts) error {
+func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, directIO DirectIO, opt *sentryapi.RestoreOpts) error {
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-reads")
 	if err != nil {
 		return err
 	}
 	if clientSockFile == nil {
-		return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, direct, opt)
+		return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, directIO, opt)
 	}
 	log.Infof("Restoring from GCS via checkpoint gofer")
 	opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
@@ -737,7 +763,21 @@ func openCheckpointFile(dirFD int, dir, name string, flags int) (*os.File, error
 	return os.NewFile(uintptr(fd), filepath.Join(dir, name)), nil
 }
 
-func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, opt *sentryapi.RestoreOpts) error {
+// openPagesFile opens the checkpoint pages file for reading. Its contents are
+// page-aligned, so it can be opened with O_DIRECT.
+func openPagesFile(dirFD int, imagePath string, directIO DirectIO) (*os.File, error) {
+	if directIO != DirectIOOff {
+		pf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, unix.O_RDONLY|unix.O_DIRECT)
+		if err == nil || directIO == DirectIOOn || !errors.Is(err, unix.EINVAL) {
+			return pf, err
+		}
+		// EINVAL means that the filesystem does not support O_DIRECT.
+		log.Infof("Reading pages file %q through the page cache: O_DIRECT is not supported", path.Join(imagePath, checkpointfiles.PagesFileName))
+	}
+	return openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, unix.O_RDONLY)
+}
+
+func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, directIO DirectIO, opt *sentryapi.RestoreOpts) error {
 	dirFD, err := openRestoreDir(imagePath)
 	if err != nil {
 		return fmt.Errorf("opening checkpoint directory %q failed: %w", imagePath, err)
@@ -754,12 +794,7 @@ func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, ima
 	// and we must pass them in.
 	if pmf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesMetadataFileName, unix.O_RDONLY); err == nil {
 		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf)
-		pagesReadFlags := unix.O_RDONLY
-		if direct {
-			// The contents are page-aligned, so it can be opened with O_DIRECT.
-			pagesReadFlags |= unix.O_DIRECT
-		}
-		pf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, pagesReadFlags)
+		pf, err := openPagesFile(dirFD, imagePath, directIO)
 		if err != nil {
 			return fmt.Errorf("opening pages file %q failed: %w", path.Join(imagePath, checkpointfiles.PagesFileName), err)
 		}
@@ -1046,7 +1081,7 @@ const sentryExeFD = 3
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
+func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	// Ensure we don't leak FDs to the sandbox process.
 	if err := SetCloExeOnAllFDs(); err != nil {
 		return fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
@@ -1178,7 +1213,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations.DonateAndClose("dev-io-fd", args.DevIOFile)
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
-	donations.Donate("start-sync-fd", startSyncFile)
 	var pinRing *os.File
 	if _, err := gvisorbinaries.FDParking.Path(); err != nil {
 		log.Warningf("Sidecar %q not found or usable (%v). This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
@@ -2960,6 +2994,16 @@ func sentryBinary(conf *config.Config) *gvisorbinaries.Binary {
 		return &gvisorbinaries.GvisorSentryPluginStack
 	}
 	return &gvisorbinaries.GvisorSentry
+}
+
+// ExitedBeforeStartError means that the sandbox exited before a container
+// could be started in it (failed to boot).
+func ExitedBeforeStartError(conf *config.Config) error {
+	err := errors.New("the sandbox exited before the container started (see the sandbox logs)")
+	if permsErr := checkBinaryPermissions(conf); permsErr != nil {
+		return fmt.Errorf("%w: %v", err, permsErr)
+	}
+	return err
 }
 
 // checkBinaryPermissions verifies that the required binary bits are set on

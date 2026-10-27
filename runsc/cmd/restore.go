@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -44,12 +45,12 @@ type Restore struct {
 	// detach indicates that runsc has to start a process and exit without waiting it.
 	detach bool
 
-	// direct indicates whether O_DIRECT should be used for reading the
-	// checkpoint pages file. It is faster if the checkpoint files are not
-	// already in the page cache (for example if its coming from an untouched
-	// network block device). Usually the restore is done only once, so the cost
-	// of adding the checkpoint files to the page cache can be redundant.
+	// direct is deprecated in favor of directIO.
 	direct bool
+
+	// directIO controls whether O_DIRECT is used for reading the checkpoint
+	// pages file.
+	directIO sandbox.DirectIO
 
 	// If background is true, the container image may continue to be read after
 	// the restore command exits. For large images, this significantly shortens
@@ -79,8 +80,9 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 	r.Create.SetFlags(f)
 	f.StringVar(&r.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
-	f.BoolVar(&r.direct, "direct", false, "use O_DIRECT for reading checkpoint pages file")
-	f.BoolVar(&r.background, "background", false, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
+	f.BoolVar(&r.direct, "direct", false, "deprecated, use --direct-io=on")
+	f.Var(&r.directIO, "direct-io", "use O_DIRECT for reading checkpoint pages file. Values: auto|on|off (default auto). auto enables it for GPU restores if the filesystem supports it.")
+	f.BoolVar(&r.background, "background", true, "allow image loading to continue after restore exits (requires uncompressed checkpoint)")
 
 	// Unimplemented flags necessary for compatibility with docker.
 
@@ -138,6 +140,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	if r.imagePath == "" {
 		return util.Errorf("image-path flag must be provided")
 	}
+	if r.direct && r.directIO == sandbox.DirectIOAuto {
+		r.directIO = sandbox.DirectIOOn
+	}
 
 	var cu cleanup.Cleanup
 	defer cu.Clean()
@@ -151,7 +156,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 		UserLog:             r.userLog,
 		Attached:            !r.detach,
 		FSRestoreImagePaths: []string(r.fsRestoreImagePaths),
-		FSRestoreDirect:     r.fsRestoreDirect || r.direct,
+		FSRestoreDirect:     r.fsRestoreDirect || r.directIO == sandbox.DirectIOOn,
 		CheckpointDirPath:   r.imagePath,
 		NoRootContainer:     r.noRootContainer,
 	}
@@ -197,7 +202,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", r.imagePath)
-	err = c.Restore(conf, r.imagePath, r.direct, r.background, nil /* networkArgs */)
+	err = c.Restore(conf, r.imagePath, r.directIO, r.background, nil /* networkArgs */)
 	if err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
