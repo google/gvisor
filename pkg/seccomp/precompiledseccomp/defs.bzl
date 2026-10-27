@@ -1,6 +1,53 @@
 """Macro for precompiling seccomp-bpf programs."""
 
-load("//tools:defs.bzl", "go_binary", "select_arch", "target_emulator")
+load("//tools:defs.bzl", "go_binary", "qemu_toolchain_type", "select_arch", "target_emulator")
+
+def _run_generator_impl(ctx):
+    generator = ctx.attr.exec_generator or ctx.attr.generator
+    executable = generator[DefaultInfo].files_to_run
+    tools = []
+    arguments = []
+    qemu = None
+    toolchain = None
+    if not ctx.attr.exec_generator:
+        if ctx.attr.emulator:
+            qemu = ctx.attr.emulator[DefaultInfo].files_to_run
+        elif qemu_toolchain_type:
+            tc = ctx.toolchains[qemu_toolchain_type]
+            if tc:
+                qemu = tc.qemu
+                toolchain = qemu_toolchain_type
+    if qemu:
+        arguments.extend(ctx.attr.qemu_args)
+        tools.append(executable)
+        arguments.append(executable.executable.path)
+        executable = qemu
+    arguments.extend([
+        "--package=" + ctx.attr.out_package_name,
+        "--out=" + ctx.outputs.out.path,
+    ])
+    ctx.actions.run(
+        executable = executable,
+        outputs = [ctx.outputs.out],
+        tools = tools,
+        arguments = arguments,
+        mnemonic = "PrecompileSeccomp",
+        toolchain = toolchain,
+    )
+    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+
+_run_generator = rule(
+    implementation = _run_generator_impl,
+    attrs = {
+        "generator": attr.label(executable = True, cfg = "target"),
+        "exec_generator": attr.label(executable = True, cfg = "exec"),
+        "emulator": attr.label(executable = True, cfg = "exec"),
+        "out": attr.output(mandatory = True),
+        "out_package_name": attr.string(mandatory = True),
+        "qemu_args": attr.string_list(),
+    },
+    toolchains = [config_common.toolchain_type(qemu_toolchain_type, mandatory = False)] if qemu_toolchain_type else [],
+)
 
 def precompiled_seccomp_rules(
         name,
@@ -13,7 +60,7 @@ def precompiled_seccomp_rules(
     """Generates a Go source file containing precompiled seccomp-bpf programs.
 
     Args:
-        name: Name of the final genrule.
+        name: Name of the generated target.
         programs_to_compile_go_library: go_library target which describes the
             set of seccomp-bpf programs that you wish to precompile. This must
             define the following package-level function:
@@ -28,7 +75,7 @@ def precompiled_seccomp_rules(
         out_package_name: Go package name that `out` belongs to.
         exclude_in_fastbuild: Whether to skip precompilation in fastbuild mode.
             The auto-generated `GetPrecompiled` function will fail all lookups.
-        tags: List of tags to pass to the generated genrule.
+        tags: List of tags to pass to the generated action.
     """
     if exclude_in_fastbuild:
         native.config_setting(
@@ -153,69 +200,26 @@ def precompiled_seccomp_rules(
             ],
         )
 
-    # This genrule actually runs the go_binary we just declared, and writes
-    # its output (containing the precompiled rules) to the desired `out` file.
-    #
-    # The generator is a source (rather than a tool) of this genrule, so that
-    # it is built for the target platform rather than for the execution
-    # platform. If the execution platform's architecture differs from the
-    # target's (i.e. when cross-compiling), it is run under a user-mode
-    # emulator. If no emulator is configured for the target architecture, it
-    # is run directly, which works if the kernel is configured to run foreign
-    # binaries (binfmt_misc) and fails otherwise.
-    #
-    # Execution platform constraints are deliberately not used here: they would
-    # make cross-architecture configurations fail analysis wherever no
-    # execution platform for the target architecture is available.
-    emulator = target_emulator()
-    out_args = " --package='" + out_package_name + "' --out=$@"
-    run_gen_cmd = (
-        "GEN=$(location :" + name + "_gen_bin); " +
-        "RUN=; " +
-        "if [ -n \"$$TARGET_ARCH\" ] && [ \"$$(uname -m)\" != \"$$TARGET_ARCH\" ]; then " +
-        "  RUN=\"$$EMULATOR\"; " +
-        "fi; " +
-        "$$RUN \"$$GEN\"" + out_args + " || { " +
-        "  echo \"Failed to run $$GEN (built for $$TARGET_ARCH) on $$(uname -m)" +
-        " (emulator: $${RUN:-none}).\" >&2; " +
-        "  exit 1; " +
-        "}"
-    )
-    run_gen_env = (
-        "TARGET_ARCH=" + select_arch(
-            amd64 = "x86_64",
-            arm64 = "aarch64",
-            riscv64 = "riscv64",
-            default = "",
-        ) + "; " +
-        "EMULATOR='" + emulator.cmd + "'; "
-    )
+    # Compile the real generator for the target platform and the stub for the
+    # execution platform. The action resolves QEMU for this target/exec pair.
+    generator = ":" + name + "_gen_bin"
+    exec_generator = None
     if exclude_in_fastbuild:
-        native.genrule(
-            name = name,
-            outs = [out],
-            srcs = select({
-                ":" + name + "_fastbuild_cond": [],
-                "//conditions:default": [":" + name + "_gen_bin"],
-            }),
-            # The stubbed generator's output does not depend on the
-            # architecture, so it is built for the execution platform.
-            cmd = run_gen_env + select({
-                ":" + name + "_fastbuild_cond": "$(location :" + name + "_gen_stubbed_bin)" + out_args,
-                "//conditions:default": run_gen_cmd,
-            }),
-            tools = select({
-                ":" + name + "_fastbuild_cond": [":" + name + "_gen_stubbed_bin"],
-                "//conditions:default": [],
-            }) + emulator.tools,
-            tags = tags + ["requires-mem:16g"],
-        )
-    else:
-        native.genrule(
-            name = name,
-            outs = [out],
-            srcs = [":" + name + "_gen_bin"],
-            cmd = run_gen_env + run_gen_cmd,
-            tools = emulator.tools,
-            tags = tags + ["requires-mem:16g"],
-        )
+        generator = select({
+            ":" + name + "_fastbuild_cond": None,
+            "//conditions:default": generator,
+        })
+        exec_generator = select({
+            ":" + name + "_fastbuild_cond": ":" + name + "_gen_stubbed_bin",
+            "//conditions:default": None,
+        })
+    _run_generator(
+        name = name,
+        generator = generator,
+        exec_generator = exec_generator,
+        emulator = target_emulator(),
+        out = out,
+        out_package_name = out_package_name,
+        qemu_args = select_arch(arm64 = ["-cpu", "neoverse-n1"], default = []),
+        tags = tags + ["requires-mem:16g"],
+    )
