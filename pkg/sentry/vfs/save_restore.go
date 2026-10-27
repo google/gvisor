@@ -52,7 +52,7 @@ func PrependErrMsg(prefix string, err error) error {
 // FilesystemImpl.
 type FilesystemImplSaveRestoreExtension interface {
 	// PrepareSave prepares this filesystem for serialization.
-	PrepareSave(ctx context.Context) error
+	PrepareSave(ctx context.Context, opts PrepareSaveOptions) error
 
 	// BeforeResume is called before the kernel is resumed after save. It can be
 	// used to clean up any state that should be discarded after save.
@@ -64,7 +64,7 @@ type FilesystemImplSaveRestoreExtension interface {
 }
 
 // PrepareSave prepares all filesystems for serialization.
-func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
+func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context, opts PrepareSaveOptions) error {
 	fss := vfs.GetFilesystems()
 	defer func() {
 		for _, fs := range fss {
@@ -73,12 +73,22 @@ func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
 	}()
 	for _, fs := range fss {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
-			if err := ext.PrepareSave(ctx); err != nil {
+			if err := ext.PrepareSave(ctx, opts); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// PrepareSaveOptions contains options to
+// VirtualFilesystem.PrepareSave() and
+// FilesystemImplSaveRestoreExtension.PrepareSave().
+type PrepareSaveOptions struct {
+	// If ValidateMetadata is true, filesystem implementations backed by
+	// remote filesystems should refresh metadata during save in case
+	// metadata validation will be performed during restore.
+	ValidateMetadata bool
 }
 
 // BeforeResume is called before the kernel is resumed after save and allows
