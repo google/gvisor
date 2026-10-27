@@ -163,7 +163,9 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		}
 		defer oldFD.DecRef(ctx)
 		newFD, err := vfsObj.OpenAt(ctx, d.fs.creds, &newpop, &vfs.OpenOptions{
-			Flags: linux.O_WRONLY | linux.O_CREAT | linux.O_EXCL,
+			// copy-up may need to migrate existing mappings. ConfigureMMap requests
+			// a read-write mapping, so the FD must be readable as well as writable.
+			Flags: linux.O_RDWR | linux.O_CREAT | linux.O_EXCL,
 			// d.mode can be read because d.copyMu is locked.
 			Mode: linux.FileMode(d.mode.RacyLoad() &^ linux.S_IFMT),
 		})

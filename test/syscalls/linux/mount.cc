@@ -3516,6 +3516,48 @@ TEST(MountTest, OverlayfsOnGoferBehavior) {
   }
 }
 
+// Regression test for copy-up of a memory-mapped lower file on a gofer-backed
+// overlay. link(2) copies up the source before creating the hard link.
+TEST(MountTest, OverlayfsLinkWithMappedLowerFile) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto base_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsGoferfs(base_dir.path())));
+
+  auto lower =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto upper =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto work = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+  auto merged =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base_dir.path()));
+
+  const std::string file_name = "mapped_file";
+  const std::string lower_file = JoinPath(lower.path(), file_name);
+  ASSERT_NO_ERRNO(
+      CreateWithContents(lower_file, std::string(kPageSize, 'x'), 0644));
+
+  const std::string opts = "lowerdir=" + lower.path() +
+                           ",upperdir=" + upper.path() +
+                           ",workdir=" + work.path() + ",userxattr";
+  ASSERT_THAT(
+      mount("overlay", merged.path().c_str(), "overlay", 0, opts.c_str()),
+      SyscallSucceeds());
+  auto overlay_cleanup = Cleanup([&merged] {
+    EXPECT_THAT(umount2(merged.path().c_str(), 0), SyscallSucceeds());
+  });
+
+  const std::string merged_file = JoinPath(merged.path(), file_name);
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(merged_file, O_RDONLY));
+  const Mapping mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, fd.get(), 0));
+  EXPECT_EQ(static_cast<const char*>(mapping.ptr())[0], 'x');
+
+  const std::string link_file = JoinPath(merged.path(), "mapped_file.link");
+  EXPECT_THAT(link(merged_file.c_str(), link_file.c_str()), SyscallSucceeds());
+}
+
 // OverlayOnTmpfs is a tmpfs mount holding lower, upper, work, and merged
 // directories. MountOverlay mounts an overlay of lower and upper at merged.
 struct OverlayOnTmpfs {
