@@ -1275,7 +1275,13 @@ func (c *Container) initGoferConfs(ovlConf config.Overlay2, mountHints *sentryap
 		overlaySize = rootfsHint.Size
 	}
 	if c.Spec.Root.Readonly {
-		overlayMedium = config.NoOverlay
+		if mountType == sentryapi.Bind {
+			overlayMedium = config.NoOverlay
+		} else if overlayMedium != config.NoOverlay {
+			// Mount points need no disk backing, and goferless containers have
+			// no filestore.
+			overlayMedium = config.MemoryOverlay
+		}
 	}
 	goferConf, err := createGoferConf(overlayMedium, overlaySize, mountType, c.Spec.Root.Path)
 	if err != nil {

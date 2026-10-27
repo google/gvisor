@@ -696,6 +696,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
+	upperOpts.ReadOnly = false
 	upperOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
 	if mountConf.Size != "" {
 		if upperOpts.GetFilesystemOptions.Data != "" {
