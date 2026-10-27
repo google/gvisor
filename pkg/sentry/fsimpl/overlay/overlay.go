@@ -145,6 +145,10 @@ type filesystem struct {
 	// is protected by dirInoCacheMu.
 	lastDirIno uint64
 
+	// lastTempWhiteoutID is the last ID used in the name of a temporary
+	// whiteout.
+	lastTempWhiteoutID atomicbitops.Uint64
+
 	// MaxFilenameLen is the maximum filename length allowed by the overlayfs.
 	maxFilenameLen uint64
 }
