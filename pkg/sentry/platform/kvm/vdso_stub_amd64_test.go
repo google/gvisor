@@ -27,7 +27,7 @@ import (
 // image offset startOff.
 func disasmAMD64(t *testing.T, buf []byte, startOff, endOff int) []string {
 	t.Helper()
-	return disasmBytes(t, "i386:x86-64", buf, startOff, endOff)
+	return disasmBytes(t, "elf64-x86-64", buf, startOff, endOff)
 }
 
 // TestMatchAMD64RDTSCOrderedSite verifies against objdump disassembly that
@@ -52,7 +52,7 @@ func TestMatchAMD64RDTSCOrderedSite(t *testing.T) {
 		{
 			name:       "RDTSCP_XchgAX",
 			bytes:      emit(func(w *amd64StubWriter) { w.rdtscp(); w.nop2() }),
-			wantDisasm: []string{"rdtscp", "xchg %ax,%ax"},
+			wantDisasm: []string{"rdtscp", "nop"},
 			wantRDTSCP: true,
 			wantOK:     true,
 		},
@@ -80,7 +80,7 @@ func TestMatchAMD64RDTSCOrderedSite(t *testing.T) {
 		{
 			name:       "RDTSC_K8NOP3",
 			bytes:      []byte{0x0f, 0x31, 0x66, 0x66, 0x90},
-			wantDisasm: []string{"rdtsc", "data16 xchg %ax,%ax"},
+			wantDisasm: []string{"rdtsc", "nop"},
 			wantRDTSCP: false,
 			wantOK:     true,
 		},
@@ -101,14 +101,14 @@ func TestMatchAMD64RDTSCOrderedSite(t *testing.T) {
 		{
 			name:       "RDTSC_ShortNOP",
 			bytes:      emit(func(w *amd64StubWriter) { w.rdtsc(); w.nop1(); w.ret(); w.nop1() }),
-			wantDisasm: []string{"rdtsc", "nop", "ret", "nop"},
+			wantDisasm: []string{"rdtsc", "nop", "retq", "nop"},
 			wantRDTSCP: false,
 			wantOK:     false,
 		},
 		{
 			name:       "Unrelated",
 			bytes:      []byte{0x48, 0x89, 0xe5, 0x90, 0x90},
-			wantDisasm: []string{"mov %rsp,%rbp", "nop", "nop"},
+			wantDisasm: []string{"movq %rsp, %rbp", "nop", "nop"},
 			wantRDTSCP: false,
 			wantOK:     false,
 		},
@@ -155,8 +155,8 @@ func TestAMD64StubWriter(t *testing.T) {
 	}
 	wantStub0 := []string{
 		"rdtscp",
-		"sub $0x9abcdef0,%eax",
-		"sbb $0x12345678,%edx",
+		"subl $0x9abcdef0, %eax",
+		"sbbl $0x12345678, %edx",
 		"jmp 0x85",
 	}
 	if got := disasmAMD64(t, buf, stub0Off, w0.offset()); !slices.Equal(got, wantStub0) {
@@ -187,8 +187,8 @@ func TestAMD64StubWriter(t *testing.T) {
 	wantStub1 := []string{
 		"lfence",
 		"rdtsc",
-		"sub $0x9abcdef0,%eax",
-		"sbb $0x12345678,%edx",
+		"subl $0x9abcdef0, %eax",
+		"sbbl $0x12345678, %edx",
 		"jmp 0x8b",
 	}
 	if got := disasmAMD64(t, buf, stub1Off, w1.offset()); !slices.Equal(got, wantStub1) {

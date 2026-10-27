@@ -59,10 +59,10 @@ func checkARM64PatchDisasm(t *testing.T, before, after []byte, patch vdsoPatch, 
 		}
 		want := []string{
 			orig[0],
-			fmt.Sprintf("str x%d, [sp, #-16]!", scratch),
+			fmt.Sprintf("str x%d, [sp, #-0x10]!", scratch),
 			fmt.Sprintf("ldr x%d, %#x", scratch, litOff),
 			fmt.Sprintf("sub x%d, x%d, x%d", rt, rt, scratch),
-			fmt.Sprintf("ldr x%d, [sp], #16", scratch),
+			fmt.Sprintf("ldr x%d, [sp], #0x10", scratch),
 			fmt.Sprintf("b %#x", site+patch.siteLen),
 		}
 		if got := disasmARM64(t, after, stubOff, stubOff+arm64StubLen); !slices.Equal(got, want) {
