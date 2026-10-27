@@ -235,3 +235,90 @@ func TestAsyncSaveToPreservesContents(t *testing.T) {
 		})
 	}
 }
+
+// TestSaveToExitAfterSaving checks that SaveTo leaves zero pages that are
+// committed on the host in place only if the sentry exits after saving.
+func TestSaveToExitAfterSaving(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		exitAfterSaving bool
+		wantDecommitted bool
+	}{
+		{name: "resume", wantDecommitted: true},
+		{name: "exit after saving", exitAfterSaving: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSaveTestMemoryFile(t, false)
+			fr := allocateSaveTestPages(t, f)
+			pwritePage(t, f, fr, 2, 1)
+			pwritePage(t, f, fr, 5, 0)
+			if err := f.SaveTo(context.Background(), io.Discard, &SaveOpts{ExitAfterSaving: tc.exitAfterSaving}); err != nil {
+				t.Fatalf("SaveTo: %v", err)
+			}
+			if got, want := f.knownCommittedBytes, uint64(hostarch.PageSize); got != want {
+				t.Errorf("knownCommittedBytes: got %d, want %d", got, want)
+			}
+			off := int64(fr.Start) + 5*int64(hostarch.PageSize)
+			data, err := unix.Seek(f.FD(), off, unix.SEEK_DATA)
+			if err != nil && err != unix.ENXIO {
+				t.Fatalf("lseek(SEEK_DATA): %v", err)
+			}
+			if decommitted := err == unix.ENXIO || data != off; decommitted != tc.wantDecommitted {
+				t.Errorf("zero page decommitted: got %t, want %t", decommitted, tc.wantDecommitted)
+			}
+		})
+	}
+}
+
+// BenchmarkSaveToCommittedZeroPages measures SaveTo for a 256 MiB MemoryFile
+// whose pages are all committed, with one of every 16 pages nonzero.
+func BenchmarkSaveToCommittedZeroPages(b *testing.B) {
+	const size = 256 << 20
+	for _, bc := range []struct {
+		name            string
+		exitAfterSaving bool
+	}{
+		{name: "resume"},
+		{name: "exit-after-saving", exitAfterSaving: true},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.SetBytes(size)
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				fd, err := memutil.CreateMemFD("pgalloc-save-bench", 0)
+				if err != nil {
+					b.Fatalf("CreateMemFD: %v", err)
+				}
+				f, err := NewMemoryFile(os.NewFile(uintptr(fd), "pgalloc-save-bench"), MemoryFileOpts{
+					DelayedEviction:         DelayedEvictionDisabled,
+					DisableMemoryAccounting: true,
+				})
+				if err != nil {
+					b.Fatalf("NewMemoryFile: %v", err)
+				}
+				fr, err := f.Allocate(size, AllocOpts{Mode: AllocateUncommitted})
+				if err != nil {
+					b.Fatalf("Allocate: %v", err)
+				}
+				page := 0
+				f.forEachMappingSlice(fr, func(bs []byte) {
+					for off := 0; off < len(bs); off += hostarch.PageSize {
+						if page%16 == 0 {
+							bs[off] = 1
+						} else {
+							bs[off] = 0
+						}
+						page++
+					}
+				})
+				b.StartTimer()
+				if err := f.SaveTo(context.Background(), io.Discard, &SaveOpts{ExitAfterSaving: bc.exitAfterSaving}); err != nil {
+					b.Fatalf("SaveTo: %v", err)
+				}
+				b.StopTimer()
+				f.DecRef(fr)
+				f.Destroy()
+			}
+		})
+	}
+}

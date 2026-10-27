@@ -178,6 +178,11 @@ type SaveOpts struct {
 	// but may instead improve SaveTo() and LoadFrom() time, and checkpoint
 	// size, if the application has many committed zero pages.
 	ExcludeCommittedZeroPages bool
+
+	// If ExitAfterSaving is true, the sentry exits soon after SaveTo()
+	// returns, so SaveTo() may leave zero pages that are already committed on
+	// the host in place rather than decommit them.
+	ExitAfterSaving bool
 }
 
 // SaveTo writes f's state to the given stream.
@@ -373,6 +378,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	}
 
 	dataSeeker := f.newHostFileDataSeeker()
+	// With dataSeeker, every page scanned below is already committed on the
+	// host, so keeping committed zero pages in place does not raise memory
+	// usage.
+	decommitZeroPages := !opts.ExitAfterSaving || dataSeeker == nil
 	zeroPage := make([]byte, hostarch.PageSize)
 	// f.mu is unlocked below, allowing concurrent calls to f.UpdateUsage() to
 	// observe pages that we transiently commit (for comparisons to zero) or
@@ -407,7 +416,9 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 				if isZeroed {
 					if !wasCommitted {
 						alreadyUncommittedBytes += uint64(hostarch.PageSize)
-						decommitAddPage(off)
+						if decommitZeroPages {
+							decommitAddPage(off)
+						}
 					} else {
 						newUncommittedBytes += uint64(hostarch.PageSize)
 					}
@@ -498,7 +509,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 	}
 
 	durScan := time.Duration(gohacks.Nanotime() - timeScanStart)
-	log.Infof("MemoryFile(%p): save scanning took %s for %d allocated bytes: %d bytes of zero pages (%d bytes expected including %d bytes of host holes, decommitted in %d syscalls, + %d bytes new), %d bytes of non-zero pages (%d bytes expected + %d bytes new); ExcludeCommittedZeroPages=%v",
+	log.Infof("MemoryFile(%p): save scanning took %s for %d allocated bytes: %d bytes of zero pages (%d bytes expected including %d bytes of host holes, decommitted in %d syscalls, + %d bytes new), %d bytes of non-zero pages (%d bytes expected + %d bytes new); ExcludeCommittedZeroPages=%v ExitAfterSaving=%v",
 		f,
 		durScan,
 		allocatedBytes,
@@ -510,7 +521,8 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer, opts *SaveOpts) er
 		alreadyCommittedBytes+newCommittedBytes,
 		alreadyCommittedBytes,
 		newCommittedBytes,
-		opts.ExcludeCommittedZeroPages)
+		opts.ExcludeCommittedZeroPages,
+		opts.ExitAfterSaving)
 
 	// Save metadata.
 	timeMetadataStart := gohacks.Nanotime()
