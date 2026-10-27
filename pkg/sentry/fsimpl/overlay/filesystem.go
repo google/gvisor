@@ -1626,6 +1626,21 @@ func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	return err
 }
 
+// isNoopChown returns true if opts only sets d's owner to its current value
+// and would not clear setid bits, which the gofer filesystem also skips.
+func (d *dentry) isNoopChown(opts *vfs.SetStatOptions) bool {
+	stat := &opts.Stat
+	mode := d.mode.Load()
+	setsMore := stat.Mask&^(linux.STATX_UID|linux.STATX_GID) != 0
+	changesUID := stat.Mask&linux.STATX_UID != 0 && stat.UID != d.uid.Load()
+	changesGID := stat.Mask&linux.STATX_GID != 0 && stat.GID != d.gid.Load()
+	clearsSetid := opts.ClearPrivs && vfs.ClearSUIDAndSGID(mode) != mode
+	if setsMore || changesUID || changesGID || clearsSetid {
+		return false
+	}
+	return true
+}
+
 // Preconditions: d.fs.renameMu must be held for reading, and the caller must hold a reference on d.
 func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	mode := linux.FileMode(d.mode.Load())
@@ -1645,6 +1660,9 @@ func (d *dentry) setStatLocked(ctx context.Context, rp *vfs.ResolvingPath, opts 
 		return err
 	}
 	defer mnt.EndWrite()
+	if !d.isCopiedUp() && d.isNoopChown(&opts) {
+		return nil
+	}
 	if err := d.copyUpForWriteLocked(ctx); err != nil {
 		return err
 	}
