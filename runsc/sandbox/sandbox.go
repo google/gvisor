@@ -2029,7 +2029,12 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
 		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
 	}
-	if err := s.call(sentryapi.ContMgrCheckpoint, &opt, nil); err != nil {
+	var result sentryapi.CheckpointResult
+	err = s.call(sentryapi.ContMgrCheckpoint, &opt, &result)
+	if err == nil {
+		err = result.Err()
+	}
+	if err != nil {
 		// The application may still be running.
 		if err := s.applyAppCPULimit(cpuPhaseLifecycle); err != nil {
 			log.Warningf("[Lifecycle CPU] Cannot restore the application CPU limit after failed checkpoint: %v", err)

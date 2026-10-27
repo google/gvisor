@@ -15,11 +15,16 @@
 package controlapi
 
 import (
+	"errors"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/urpc"
 )
+
+// ErrCudaNotReady indicates that cuda-checkpoint reported that a CUDA device
+// was not ready for the checkpoint operation.
+var ErrCudaNotReady = errors.New("cuda not ready")
 
 // DefaultSaveRestoreExecTimeout is the default timeout for the save/restore
 // binary.

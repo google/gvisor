@@ -15,12 +15,15 @@
 package sentryapi
 
 import (
+	"errors"
 	"fmt"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
 	"gvisor.dev/gvisor/pkg/sentry/fscheckpoint"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	statepkg "gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -88,8 +91,59 @@ const ContMgrDestroySubcontainer = "containerManager.DestroySubcontainer"
 // ContMgrExecuteAsync executes a command in a container.
 const ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
-// ContMgrCheckpoint checkpoints a container.
+// ContMgrCheckpoint checkpoints a container. Its CheckpointResult may contain
+// a checkpoint failure even when the RPC returns no error.
 const ContMgrCheckpoint = "containerManager.Checkpoint"
+
+// CheckpointResult holds results from ContMgrCheckpoint.
+type CheckpointResult struct {
+	// Unsavable is set when checkpointing failed because the sandbox holds
+	// state that cannot be saved.
+	Unsavable string `json:"unsavable"`
+
+	// CudaNotReady is set when cuda-checkpoint reported that a CUDA device
+	// was not ready for the checkpoint operation.
+	CudaNotReady string `json:"cudaNotReady"`
+}
+
+// SetError records err if it is a checkpoint state error that must survive the
+// URPC boundary. It returns true if err was recorded.
+func (r *CheckpointResult) SetError(err error) bool {
+	switch {
+	case errors.Is(err, statepkg.ErrUnsavable):
+		r.Unsavable = err.Error()
+	case errors.Is(err, controlapi.ErrCudaNotReady):
+		r.CudaNotReady = err.Error()
+	default:
+		return false
+	}
+	return true
+}
+
+// Err reconstructs a checkpoint state error received through URPC.
+func (r CheckpointResult) Err() error {
+	switch {
+	case r.Unsavable != "":
+		return checkpointStateError{message: r.Unsavable, kind: statepkg.ErrUnsavable}
+	case r.CudaNotReady != "":
+		return checkpointStateError{message: r.CudaNotReady, kind: controlapi.ErrCudaNotReady}
+	default:
+		return nil
+	}
+}
+
+type checkpointStateError struct {
+	message string
+	kind    error
+}
+
+func (e checkpointStateError) Error() string {
+	return e.message
+}
+
+func (e checkpointStateError) Unwrap() error {
+	return e.kind
+}
 
 // ContMgrPortForward starts port forwarding with the sandbox.
 const ContMgrPortForward = "containerManager.PortForward"

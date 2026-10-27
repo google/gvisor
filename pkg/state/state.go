@@ -49,6 +49,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -56,6 +57,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
+
+// ErrUnsavable indicates state that cannot be saved.
+var ErrUnsavable = errors.New("unsavable")
 
 // objectID is a unique identifier assigned to each object to be serialized.
 // Each instance of an object is considered separately, i.e. if there are two

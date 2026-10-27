@@ -93,6 +93,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
         "//pkg/sentry/vfs",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/sync/locking",
         "//pkg/usermem",
@@ -109,6 +110,7 @@ go_test(
         "//pkg/abi/nvgpu",
         "//pkg/seccomp",
         "//pkg/sentry/devices/nvproxy/nvconf",
+        "//pkg/state",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

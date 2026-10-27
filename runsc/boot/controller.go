@@ -338,12 +338,16 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 }
 
 // Checkpoint pauses a sandbox and saves its state.
-func (cm *containerManager) Checkpoint(o *controlapi.SaveOpts, _ *struct{}) error {
+func (cm *containerManager) Checkpoint(o *controlapi.SaveOpts, result *sentryapi.CheckpointResult) error {
 	log.Debugf("containerManager.Checkpoint")
 	o.RunscVersion = version.Version()
 	cm.l.lifecycleCPUs.hold()
 	defer cm.l.lifecycleCPUs.release()
-	return cm.l.save(o)
+	err := cm.l.save(o)
+	if err != nil && !result.SetError(err) {
+		return err
+	}
+	return nil
 }
 
 // PortForward initiates a port forward to the container.
