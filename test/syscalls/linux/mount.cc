@@ -39,6 +39,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -3644,6 +3645,113 @@ TEST(MountTest, OverlayfsUnlinkInDeletedDirFails) {
   EXPECT_THAT(openat(dirfd.get(), "file", O_RDWR),
               SyscallFailsWithErrno(ENOENT));
   EXPECT_THAT(unlinkat(dirfd.get(), "file", 0), SyscallFailsWithErrno(ENOENT));
+}
+
+// Replacing a copied-up file with a whiteout, or a whiteout with a file, must
+// not leave its parent directory empty on the upper layer, where it can be
+// removed concurrently.
+TEST(MountTest, OverlayfsWhiteoutRacesWithUpperRmdir) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  // Save/restore would make the loop below too slow.
+  const DisableSave ds;
+
+  OverlayOnTmpfs o = ASSERT_NO_ERRNO_AND_VALUE(CreateOverlayOnTmpfs());
+  ASSERT_NO_ERRNO(o.MountOverlay());
+
+  enum { kUnlink, kRmdir, kRename, kMkdir, kOpenCreat, kRenameDir, kNumOps };
+  for (int i = 0; i < 300 * kNumOps; i++) {
+    const int op = i % kNumOps;
+    SCOPED_TRACE(absl::StrCat("round ", i));
+    const std::string name = absl::StrCat("d", i);
+    ASSERT_THAT(mkdir(JoinPath(o.lower, name).c_str(), 0755),
+                SyscallSucceeds());
+    const std::string lower_target = JoinPath(o.lower, name, "t");
+    if (op == kRmdir) {
+      ASSERT_THAT(mkdir(lower_target.c_str(), 0755), SyscallSucceeds());
+      ASSERT_NO_ERRNO(
+          CreateWithContents(JoinPath(lower_target, "f"), "lower", 0644));
+    } else {
+      ASSERT_NO_ERRNO(CreateWithContents(lower_target, "lower", 0644));
+    }
+    // Leave target or its whiteout as the only entry in its parent's upper
+    // layer directory.
+    const std::string target = JoinPath(o.merged, name, "t");
+    const bool over_whiteout = op >= kMkdir;
+    if (over_whiteout) {
+      ASSERT_THAT(unlink(target.c_str()), SyscallSucceeds());
+    } else {
+      ASSERT_THAT(chmod(target.c_str(), 0700), SyscallSucceeds());
+    }
+    if (op == kRmdir) {
+      // rmdir removes this whiteout first, which leaves target empty and
+      // removable on the upper layer before its parent.
+      ASSERT_THAT(unlink(JoinPath(target, "f").c_str()), SyscallSucceeds());
+    }
+    const std::string other = JoinPath(o.merged, name + "t");
+    if (op == kRenameDir) {
+      ASSERT_THAT(mkdir(other.c_str(), 0755), SyscallSucceeds());
+    }
+
+    const std::string upper_parent = JoinPath(o.upper, name);
+    const std::string upper_target =
+        op == kRmdir ? JoinPath(upper_parent, "t") : "";
+    std::atomic<bool> done(false);
+    bool removed = true;
+    std::vector<std::unique_ptr<ScopedThread>> threads;
+    for (int t = 0; t < 4; t++) {
+      threads.push_back(std::make_unique<ScopedThread>([&] {
+        while (!done.load()) {
+          if (!upper_target.empty()) {
+            rmdir(upper_target.c_str());
+          }
+          rmdir(upper_parent.c_str());
+        }
+      }));
+    }
+    switch (op) {
+      case kUnlink:
+        EXPECT_THAT(unlink(target.c_str()), SyscallSucceeds());
+        break;
+      case kRmdir:
+        // Linux can fail if target is removed on the upper layer after it is
+        // emptied, which shows the lower directory again.
+        removed = rmdir(target.c_str()) == 0;
+        if (IsRunningOnGvisor()) {
+          EXPECT_TRUE(removed);
+        }
+        break;
+      case kRename:
+        EXPECT_THAT(rename(target.c_str(), other.c_str()), SyscallSucceeds());
+        EXPECT_NO_ERRNO(Stat(other));
+        break;
+      case kMkdir:
+        EXPECT_THAT(mkdir(target.c_str(), 0755), SyscallSucceeds());
+        break;
+      case kOpenCreat:
+        EXPECT_NO_ERRNO(Open(target, O_CREAT | O_WRONLY, 0644));
+        break;
+      case kRenameDir:
+        EXPECT_THAT(rename(other.c_str(), target.c_str()), SyscallSucceeds());
+        break;
+    }
+    done.store(true);
+    threads.clear();
+    // The lower layer target must stay hidden.
+    if (over_whiteout) {
+      struct stat st;
+      ASSERT_THAT(stat(target.c_str(), &st), SyscallSucceeds());
+      EXPECT_TRUE(S_ISDIR(st.st_mode) || st.st_size == 0);
+    } else if (removed) {
+      EXPECT_THAT(access(target.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+    }
+    // No temporary whiteouts are left behind.
+    auto entries = ListDir(upper_parent, /*skipdots=*/true);
+    if (entries.ok()) {
+      for (const std::string& entry : entries.ValueOrDie()) {
+        EXPECT_NE(entry[0], '#') << entry;
+      }
+    }
+  }
 }
 
 TEST(MountTest, PollMountInfo) {
