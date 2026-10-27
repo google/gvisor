@@ -325,7 +325,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 
 	for leafD, name := range filesToDelete {
 		if err := leafD.parent.Load().inode.unlink(ctx, name, 0 /* flags */); err != nil {
-			return fmt.Errorf("failed to clean up recreated deleted file %q: %v", genericDebugPathname(fs, leafD), err)
+			return vfs.ErrCorruption{Err: fmt.Errorf("failed to clean up recreated deleted file %q: %w", genericDebugPathname(fs, leafD), err)}
 		}
 	}
 
@@ -344,7 +344,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 			// name used to create the temporary directory. This name may differ from
 			// leafD.name if another non-deleted directory already exists there.
 			if err := leafD.parent.Load().inode.unlink(ctx, dirsToDelete[leafD], linux.AT_REMOVEDIR); err != nil {
-				return fmt.Errorf("failed to clean up recreated deleted directory %q: %v", genericDebugPathname(fs, leafD), err)
+				return vfs.ErrCorruption{Err: fmt.Errorf("failed to clean up recreated deleted directory %q: %w", genericDebugPathname(fs, leafD), err)}
 			}
 			delete(dirsToDelete, leafD)
 		}
@@ -422,14 +422,14 @@ func (d *dentry) restoreDeletedDirectory(ctx context.Context, opts *vfs.Complete
 		_, err = parent.mkdir(ctx, d.name, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()), false /* createDentry */)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to re-create deleted directory %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return vfs.ErrCorruption{Err: fmt.Errorf("failed to re-create deleted directory %q: %w", genericDebugPathname(d.inode.fs, d), err)}
 	}
 	// Restore the directory.
 	if err := d.restoreFile(ctx, opts); err != nil {
 		if err := parent.inode.unlink(ctx, d.name, linux.AT_REMOVEDIR); err != nil {
 			log.Warningf("failed to clean up recreated deleted directory %q: %v", genericDebugPathname(d.inode.fs, d), err)
 		}
-		return fmt.Errorf("failed to restore deleted directory: %w", err)
+		return vfs.PrependErrMsg("failed to restore deleted directory", err)
 	}
 	// We will delete the directory later. We need to keep it around in case any
 	// of its children need to be restored after this.
@@ -453,7 +453,7 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 		_, h, err = parent.openCreate(ctx, d.name, linux.O_WRONLY, linux.FileMode(d.inode.mode.Load()), auth.KUID(d.inode.uid.Load()), auth.KGID(d.inode.gid.Load()), false /* createDentry */)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to re-create deleted file %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return vfs.ErrCorruption{Err: fmt.Errorf("failed to re-create deleted file %q: %w", genericDebugPathname(d.inode.fs, d), err)}
 	}
 	defer h.close(ctx)
 	// In case of errors, clean up the recreated file.
@@ -466,10 +466,10 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 	// Write the file data to the recreated file.
 	n, err := h.writeFromBlocksAt(ctx, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(d.inode.savedDeletedData)), 0)
 	if err != nil {
-		return fmt.Errorf("failed to write deleted file %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return vfs.ErrCorruption{Err: fmt.Errorf("failed to write deleted file %q: %w", genericDebugPathname(d.inode.fs, d), err)}
 	}
 	if n != uint64(len(d.inode.savedDeletedData)) {
-		return fmt.Errorf("failed to write all of deleted file %q: wrote %d bytes, expected %d", genericDebugPathname(d.inode.fs, d), n, len(d.inode.savedDeletedData))
+		return vfs.ErrCorruption{Err: fmt.Errorf("failed to write all of deleted file %q: wrote %d bytes, expected %d", genericDebugPathname(d.inode.fs, d), n, len(d.inode.savedDeletedData))}
 	}
 	d.inode.savedDeletedData = nil
 	// Restore the file. Note that timestamps may not match since we re-created
@@ -477,7 +477,7 @@ func (d *dentry) restoreDeletedRegularFile(ctx context.Context, opts *vfs.Comple
 	recreateOpts := *opts
 	recreateOpts.ValidateFileModificationTimestamps = false
 	if err := d.restoreFile(ctx, &recreateOpts); err != nil {
-		return fmt.Errorf("failed to restore deleted regular file: %w", err)
+		return vfs.PrependErrMsg("failed to restore deleted regular file", err)
 	}
 	// We will delete the file later.
 	unlinkCU.Release()
@@ -490,7 +490,7 @@ func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	d := fd.dentry()
 	h, err := d.openHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
 	if err != nil {
-		return fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err)
+		return vfs.ErrCorruption{Err: fmt.Errorf("failed to open handle for specialFileFD for %q: %w", genericDebugPathname(d.inode.fs, d), err)}
 	}
 	fd.handle = h
 	fd.mmapFile.SetFD(int(h.fd))
