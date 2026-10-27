@@ -19,11 +19,14 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/rdma"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sys"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
@@ -96,6 +99,100 @@ func TestReadCPUFile(t *testing.T) {
 		}
 		if diff := cmp.Diff(expected, content); diff != "" {
 			t.Fatalf("Read returned unexpected data:\n--- want\n+++ got\n%v", diff)
+		}
+	}
+}
+
+func TestCPUDir(t *testing.T) {
+	// The test kernel has GOMAXPROCS application cores. Make sure that there
+	// are several, so that the per-CPU masks are not all the same.
+	const minCores = 4
+	if prev := runtime.GOMAXPROCS(0); prev < minCores {
+		runtime.GOMAXPROCS(minCores)
+		defer runtime.GOMAXPROCS(prev)
+	}
+	s := newTestSystem(t, "" /*pciTestDir*/)
+	defer s.Destroy()
+	cores := kernel.KernelFromContext(s.Ctx).ApplicationCores()
+	if cores < minCores {
+		t.Fatalf("test kernel has %d cores, want at least %d", cores, minCores)
+	}
+
+	nlink := func(p string) uint32 {
+		t.Helper()
+		stat, err := s.VFS.StatAt(s.Ctx, s.Creds, s.PathOpAtRoot(p), &vfs.StatOptions{Mask: linux.STATX_NLINK})
+		if err != nil {
+			t.Fatalf("StatAt(%s): %v", p, err)
+		}
+		return stat.Nlink
+	}
+	// Directories are populated on first use. Their link count, which
+	// depends on their children, must be right before that.
+	if got, want := nlink("devices/system/cpu"), uint32(2+cores); got != want {
+		t.Errorf("cpu link count: got %d, want %d", got, want)
+	}
+	if got, want := nlink("devices/system/cpu/cpu1"), uint32(3); got != want {
+		t.Errorf("cpu1 link count: got %d, want %d", got, want)
+	}
+
+	want := map[string]testutil.DirentType{
+		"online":   linux.DT_REG,
+		"possible": linux.DT_REG,
+		"present":  linux.DT_REG,
+	}
+	for i := uint(0); i < cores; i++ {
+		want[fmt.Sprintf("cpu%d", i)] = linux.DT_DIR
+	}
+	s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot("devices/system/cpu")), want)
+
+	// Populate cpu0 while leaving cpu1 unpopulated; rmdir must fail with
+	// ENOTEMPTY whether populated or not.
+	s.ListDirents(s.PathOpAtRoot("devices/system/cpu/cpu0"))
+	for _, p := range []string{"devices/system/cpu/cpu0", "devices/system/cpu/cpu1"} {
+		if err := s.VFS.RmdirAt(s.Ctx, s.Creds, s.PathOpAtRoot(p)); !linuxerr.Equals(linuxerr.ENOTEMPTY, err) {
+			t.Errorf("RmdirAt(%s): got error %v, want ENOTEMPTY", p, err)
+		}
+	}
+
+	// mask returns the expected sysfs CPU mask with the given CPUs set.
+	mask := func(set func(cpu uint) bool) string {
+		var words []string
+		for base := uint(0); base < cores; base += 32 {
+			var w uint32
+			for b := uint(0); b < 32 && base+b < cores; b++ {
+				if set(base + b) {
+					w |= 1 << b
+				}
+			}
+			width := 8
+			if base+32 > cores {
+				width = int(cores-base+3) / 4
+			}
+			words = append([]string{fmt.Sprintf("%0*x", width, w)}, words...)
+		}
+		return strings.Join(words, ",") + "\n"
+	}
+	fullMask := mask(func(uint) bool { return true })
+	for i := uint(0); i < cores; i++ {
+		dir := fmt.Sprintf("devices/system/cpu/cpu%d", i)
+		s.AssertAllDirentTypes(s.ListDirents(s.PathOpAtRoot(dir)), map[string]testutil.DirentType{
+			"topology": linux.DT_DIR,
+		})
+		oneMask := mask(func(cpu uint) bool { return cpu == i })
+		for name, want := range map[string]string{
+			"core_cpus":       oneMask,
+			"core_siblings":   fullMask,
+			"package_cpus":    fullMask,
+			"thread_siblings": oneMask,
+		} {
+			p := path.Join(dir, "topology", name)
+			got, err := readTestFile(s, p)
+			if err != nil {
+				t.Fatalf("reading %s: %v", p, err)
+			}
+			if got != want {
+				t.Errorf("%s: got %q, want %q", p, got, want)
+			}
 		}
 	}
 }

@@ -460,7 +460,6 @@ func (o *OrderedChildren) orderedChildren() *OrderedChildren {
 // Init initializes an OrderedChildren.
 func (o *OrderedChildren) Init(opts OrderedChildrenOptions) {
 	o.writable = opts.Writable
-	o.set = make(map[string]*slot)
 }
 
 // Destroy clears the children stored in o. It should be called by structs
@@ -490,14 +489,29 @@ func (o *OrderedChildren) Destroy(ctx context.Context) {
 //
 // Postcondition: Caller's references on inodes are transferred to o.
 func (o *OrderedChildren) Populate(children map[string]Inode) uint32 {
+	if len(children) == 0 {
+		return 0
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.set == nil {
+		o.set = make(map[string]*slot, len(children))
+	}
 	var links uint32
 	for name, child := range children {
 		if child.Mode().IsDir() {
 			links++
 		}
-		if err := o.insert(name, child, true); err != nil {
+		if _, ok := o.set[name]; ok {
 			panic(fmt.Sprintf("Collision when attempting to insert child %q (%+v)", name, child))
 		}
+		s := &slot{
+			name:   name,
+			inode:  child,
+			static: true,
+		}
+		o.order.PushBack(s)
+		o.set[name] = s
 	}
 	return links
 }
@@ -565,6 +579,9 @@ func (o *OrderedChildren) Inserter(name string, makeChild func() Inode) (Inode, 
 		inode:  child,
 		static: false,
 	}
+	if o.set == nil {
+		o.set = make(map[string]*slot)
+	}
 	o.order.PushBack(s)
 	o.set[name] = s
 	return child, nil
@@ -585,6 +602,9 @@ func (o *OrderedChildren) insert(name string, child Inode, static bool) error {
 		name:   name,
 		inode:  child,
 		static: static,
+	}
+	if o.set == nil {
+		o.set = make(map[string]*slot)
 	}
 	o.order.PushBack(s)
 	o.set[name] = s
@@ -704,6 +724,9 @@ func (o *OrderedChildren) Rename(ctx context.Context, oldname, newname string, c
 	s := &slot{
 		name:  newname,
 		inode: child,
+	}
+	if dst.set == nil {
+		dst.set = make(map[string]*slot)
 	}
 	dst.order.PushBack(s)
 	dst.set[newname] = s

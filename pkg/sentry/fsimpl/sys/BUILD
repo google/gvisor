@@ -47,6 +47,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -56,6 +57,11 @@ go_test(
     name = "sys_test",
     srcs = ["sys_test.go"],
     embed = [":sys"],
+    deps = [
+        "//pkg/errors/linuxerr",
+        "//pkg/sentry/contexttest",
+        "//pkg/sentry/kernel/auth",
+    ],
 )
 
 go_test(
@@ -64,6 +70,7 @@ go_test(
     deps = [
         ":sys",
         "//pkg/abi/linux",
+        "//pkg/errors/linuxerr",
         "//pkg/rdma",
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel",

@@ -16,6 +16,10 @@ package sys
 
 import (
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
 func TestFullCPUMask(t *testing.T) {
@@ -72,5 +76,64 @@ func TestOneCPUMask(t *testing.T) {
 		if got := oneCPUMask(test.i, test.cores); got != test.want {
 			t.Errorf("oneCPUMask(%d, %d): got %s, want %s", test.i, test.cores, got, test.want)
 		}
+	}
+}
+
+func TestIsCPUDirName(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want bool
+	}{
+		{"cpu0", true},
+		{"cpu12", true},
+		{"cpu", false},
+		{"cpufreq", false},
+		{"cpuidle", false},
+		{"cpu1a", false},
+		{"online", false},
+		{"xcpu0", false},
+	} {
+		if got := isCPUDirName(test.name); got != test.want {
+			t.Errorf("isCPUDirName(%q): got %t, want %t", test.name, got, test.want)
+		}
+	}
+}
+
+// TestCPUDirLookup checks that /sys/devices/system/cpu only creates the cpuN
+// directories when one of them is looked up.
+func TestCPUDirLookup(t *testing.T) {
+	ctx := contexttest.Context(t)
+	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
+	const cores = 4
+	d := (&filesystem{}).newLazyCPURootDir(ctx, creds, cores)
+	defer d.DecRef(ctx)
+
+	if got, want := d.Links(), uint32(2+cores); got != want {
+		t.Errorf("link count: got %d, want %d", got, want)
+	}
+	for _, name := range []string{"online", "possible", "present"} {
+		inode, err := d.Lookup(ctx, name)
+		if err != nil {
+			t.Fatalf("Lookup(%q): %v", name, err)
+		}
+		inode.DecRef(ctx)
+	}
+	if _, err := d.Lookup(ctx, "cpufreq"); !linuxerr.Equals(linuxerr.ENOENT, err) {
+		t.Errorf("Lookup(cpufreq): got error %v, want ENOENT", err)
+	}
+	if d.populated.Load() {
+		t.Errorf("directory is populated after lookups of non-cpuN names")
+	}
+
+	inode, err := d.Lookup(ctx, "cpu3")
+	if err != nil {
+		t.Fatalf("Lookup(cpu3): %v", err)
+	}
+	inode.DecRef(ctx)
+	if !d.populated.Load() {
+		t.Errorf("directory is not populated after lookup of cpu3")
+	}
+	if _, err := d.Lookup(ctx, "cpu4"); !linuxerr.Equals(linuxerr.ENOENT, err) {
+		t.Errorf("Lookup(cpu4): got error %v, want ENOENT", err)
 	}
 }
