@@ -136,12 +136,17 @@ go_test(
 go_test(
     name = "tcp_rack_test",
     size = "small",
-    srcs = ["tcp_rack_test.go"],
+    srcs = [
+        "tcp_rack_test.go",
+        "tcp_rto_recovery_test.go",
+    ],
     deps = [
         ":e2e",
         "//pkg/buffer",
         "//pkg/refs",
         "//pkg/tcpip",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/transport/tcp",
