@@ -378,9 +378,11 @@ gpu-smoke-images: load-gpu_cuda-tests load-gpu_cuda-tests-12-8
 
 gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:smoke_test,--runtime=runc -test.v $(ARGS))
+	@$(call install_runtime_noreload,$(RUNTIME)-nvproxy-devroot,--nvproxy=true --nvproxy-dev-roots=/tmp/nvproxy-dev-root)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
 	@$(call sudo,test/gpu:smoke_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call sudo,test/gpu:sr_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+	@$(call sudo,test/gpu:devroot_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-smoke-tests
 
 cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
