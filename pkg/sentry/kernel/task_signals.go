@@ -1326,7 +1326,8 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 	if canDeliver {
 		if info := t.dequeueSignalLocked(mask); info != nil {
 			if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
-				t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				t.prepareGroupExitLocked(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				t.tg.signalHandlers.mu.Unlock()
 				return (*runExit)(nil)
 			}
 

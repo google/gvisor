@@ -749,6 +749,7 @@ func (fs *Filesystem) StateFields() []string {
 		"cachedDentries",
 		"cachedDentriesLen",
 		"MaxCachedDentries",
+		"NoNegativeDentries",
 		"root",
 	}
 }
@@ -764,7 +765,8 @@ func (fs *Filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fs.cachedDentries)
 	stateSinkObject.Save(4, &fs.cachedDentriesLen)
 	stateSinkObject.Save(5, &fs.MaxCachedDentries)
-	stateSinkObject.Save(6, &fs.root)
+	stateSinkObject.Save(6, &fs.NoNegativeDentries)
+	stateSinkObject.Save(7, &fs.root)
 }
 
 func (fs *Filesystem) afterLoad(context.Context) {}
@@ -777,7 +779,8 @@ func (fs *Filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(3, &fs.cachedDentries)
 	stateSourceObject.Load(4, &fs.cachedDentriesLen)
 	stateSourceObject.Load(5, &fs.MaxCachedDentries)
-	stateSourceObject.Load(6, &fs.root)
+	stateSourceObject.Load(6, &fs.NoNegativeDentries)
+	stateSourceObject.Load(7, &fs.root)
 }
 
 func (d *Dentry) StateTypeName() string {
