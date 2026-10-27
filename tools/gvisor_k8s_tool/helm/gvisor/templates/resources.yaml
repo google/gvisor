@@ -1,0 +1,178 @@
+{{- $name := printf "%s-gvisor" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- $repo := required "image.repository must name the installer image" .Values.image.repository -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gvisor-node-installer
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gvisor-node-installer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gvisor-node-installer
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: {{ .Values.runtimeClassName | quote }}
+handler: {{ .Values.handler | quote }}
+scheduling:
+  nodeSelector:
+    gvisor.dev/ready: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  runsc.toml: {{ .Values.runscConfig | quote }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gvisor-installer
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gvisor-installer
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ .Values.runscConfig | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}
+      hostPID: true
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values: [linux]
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [amd64, arm64]
+                  - key: gvisor.dev/install
+                    operator: NotIn
+                    values: [disabled]
+      containers:
+        - name: installer
+          image: {{ printf "%s:%s" $repo $tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/usr/local/bin/nodeinstaller]
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: GVISOR_HANDLER
+              value: {{ .Values.handler | quote }}
+            - name: CONTAINERD_CONFIG
+              value: {{ .Values.containerd.config | quote }}
+            - name: CONTAINERD_SOCKET
+              value: {{ .Values.containerd.socket | quote }}
+            - name: CONTAINERD_SERVICE
+              value: {{ .Values.containerd.service | quote }}
+            - name: INSTALL_DIR
+              value: {{ .Values.installDir | quote }}
+          ports:
+            - name: health
+              containerPort: 8093
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          volumeMounts:
+            - name: host
+              mountPath: /host
+            - name: config
+              mountPath: /etc/gvisor-installer
+              readOnly: true
+      volumes:
+        - name: host
+          hostPath:
+            path: /
+            type: Directory
+        - name: config
+          configMap:
+            name: {{ $name }}

@@ -54,9 +54,15 @@ steps:
       - ./.buildkite/scripts/release/tag.sh stage
       - "make BAZEL_OPTIONS='--config=x86_64 --compilation_mode=opt' artifacts/x86_64"
       - "make BAZEL_OPTIONS='--config=aarch64 --compilation_mode=opt' artifacts/aarch64"
+      # Build before Python version injection modifies the checkout, so the
+      # installer carries the same clean release stamp as the binaries above.
+      - python3 tools/make_kubernetes_release.py ci-stage kubernetes-release
       - make artifacts-python
       - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
       - (cd repo && gcloud storage cp --recursive . gs://gvisor/releases/)
+      # Requires explicit registry destinations and preconfigured Helm/crane
+      # credentials. Publish the image index before the chart and release tag.
+      - python3 tools/make_kubernetes_release.py ci-publish kubernetes-release
       # Pushes release-<name> to GitHub.
       - ./.buildkite/scripts/release/tag.sh publish
       # Pushes the wheel from Artifact Registry to PyPI. Only runs if the rest

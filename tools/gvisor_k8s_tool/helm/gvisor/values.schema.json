@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "image",
+    "runtimeClassName",
+    "handler",
+    "containerd",
+    "installDir"
+  ],
+  "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag",
+        "pullPolicy"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "runtimeClassName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+    },
+    "handler": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "containerd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config",
+        "socket",
+        "service"
+      ],
+      "properties": {
+        "config": {
+          "type": "string",
+          "pattern": "^/",
+          "minLength": 2
+        },
+        "socket": {
+          "type": "string",
+          "pattern": "^/",
+          "minLength": 2
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.@-]+$"
+        }
+      }
+    },
+    "installDir": {
+      "type": "string",
+      "pattern": "^/",
+      "minLength": 2
+    },
+    "runscConfig": {
+      "type": "string"
+    }
+  }
+}

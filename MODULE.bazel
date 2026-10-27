@@ -252,6 +252,23 @@ http_file(
 # uses declared layers and does not require a Docker daemon.
 img_pull = use_repo_rule("@rules_img//img:pull.bzl", "pull")
 
+# The node installer needs a statically linked nsenter before entering the host.
+img_pull(
+    name = "gvisor_installer_base",
+    digest = "sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092",
+    layer_handling = "eager",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    registries = [
+        "mirror.gcr.io",
+        "index.docker.io",
+    ],
+    repository = "library/busybox",
+    tag = "1.37.0-musl",
+)
+
 # CI workers share a Docker Hub pull quota. Try the mirror first.
 DOCKER_HUB_REGISTRIES = [
     "mirror.gcr.io",
@@ -394,6 +411,7 @@ use_repo(
     "io_k8s_api",
     "io_k8s_apimachinery",
     "io_k8s_client_go",
+    "io_k8s_cri_api",
     "io_opentelemetry_go_auto_sdk",
     "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
     "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",

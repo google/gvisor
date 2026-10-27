@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/cmd/alias"
 	"gvisor.dev/gvisor/runsc/cmd/profile"
+	"gvisor.dev/gvisor/runsc/cmd/setupk8s"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 )
@@ -70,13 +71,14 @@ func commands() (map[util.SubCommand]string, []subcommands.Command) {
 		new(cmd.Tar):          userGroup,
 
 		// Helpers.
-		new(cmd.Install):     helperGroup,
-		new(cmd.Mitigate):    helperGroup,
-		new(cmd.Uninstall):   helperGroup,
-		new(cmd.Nvproxy):     helperGroup,
-		new(trace.Trace):     helperGroup,
-		new(cmd.CPUFeatures): helperGroup,
-		new(cmd.Features):    helperGroup,
+		new(cmd.Install):      helperGroup,
+		new(cmd.Mitigate):     helperGroup,
+		new(cmd.Uninstall):    helperGroup,
+		new(cmd.Nvproxy):      helperGroup,
+		new(trace.Trace):      helperGroup,
+		new(cmd.CPUFeatures):  helperGroup,
+		new(cmd.Features):     helperGroup,
+		new(setupk8s.Command): helperGroup,
 
 		new(cmd.Debug):        debugGroup,
 		new(profile.Profile):  debugGroup,

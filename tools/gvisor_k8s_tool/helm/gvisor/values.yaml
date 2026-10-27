@@ -1,0 +1,14 @@
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+runtimeClassName: gvisor
+handler: runsc
+nodeSelector: {}
+tolerations: []
+containerd:
+  config: /etc/containerd/config.toml
+  socket: /run/containerd/containerd.sock
+  service: containerd
+installDir: /opt/gvisor
+runscConfig: ""

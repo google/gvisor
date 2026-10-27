@@ -19,6 +19,7 @@ go_library(
         "//runsc/cmd",
         "//runsc/cmd/alias",
         "//runsc/cmd/profile",
+        "//runsc/cmd/setupk8s",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",
         "@com_github_google_subcommands//:go_default_library",

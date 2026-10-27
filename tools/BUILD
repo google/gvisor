@@ -75,6 +75,7 @@ exports_files([
     "benchmark-umbrella-exports.patch",
     "build_cover.sh",
     "go-allow-internal.patch",
+    "make_kubernetes_release.py",
 ])
 
 py_test(
