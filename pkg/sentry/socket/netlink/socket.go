@@ -930,7 +930,7 @@ func (s *Socket) SendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr
 		})
 
 		// Add the dump_done_errno payload.
-		m.Put(primitive.AllocateInt64(0))
+		m.Put(primitive.AllocateInt32(0))
 
 		if err := s.sendBufs(ctx, [][]byte{m.Finalize()}, cms, 0 /* srcPort */); err != nil {
 			return err

@@ -137,9 +137,10 @@ PosixError NetlinkResponse(
       // Done should include an integer payload for dump_done_errno.
       // See net/netlink/af_netlink.c:netlink_dump
       // Some tools like the 'ip' tool check the minimum length of the
-      // NLMSG_DONE message.
+      // NLMSG_DONE message. Without NETLINK_EXT_ACK, the payload is exactly
+      // that integer.
       if (type == NLMSG_DONE) {
-        EXPECT_GE(hdr->nlmsg_len, NLMSG_LENGTH(sizeof(int)));
+        EXPECT_EQ(hdr->nlmsg_len, NLMSG_LENGTH(sizeof(int)));
       }
     }
   } while ((flags & NLM_F_MULTI) && type != NLMSG_DONE && type != NLMSG_ERROR);
