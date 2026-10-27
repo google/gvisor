@@ -103,6 +103,7 @@ go_test(
     srcs = [
         "bootposture_test.go",
         "capability_test.go",
+        "checkpoint_test.go",
         "delete_test.go",
         "do_test.go",
         "exec_test.go",
@@ -129,6 +130,7 @@ go_test(
         "//pkg/log",
         "//pkg/sentry/control/controlapi",
         "//pkg/sentry/kernel/auth",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/test/sandboxposture",
         "//pkg/test/testutil",
