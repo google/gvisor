@@ -538,6 +538,25 @@ func (c *Container) Start(conf *config.Config) error {
 	return c.startImpl(conf, "start", c.Sandbox.StartRoot, c.Sandbox.StartSubcontainer)
 }
 
+// endSandboxCreation marks the sandbox as having been created.
+// This sets CPU limits appropriate for running untrusted code,
+// as opposed to sandbox-creation-time CPU limits.
+func (c *Container) endSandboxCreation() error {
+	root, err := Load(c.Saver.RootDir, FullID{SandboxID: c.Sandbox.ID, ContainerID: c.Sandbox.ID}, LoadOpts{Exact: true, SkipCheck: true})
+	if err == nil {
+		defer func() { _ = root.Saver.close() }()
+		err = root.modify(root.Sandbox.MarkCreated)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		// The sandbox was deleted.
+		return nil
+	}
+	if err != nil {
+		return c.Sandbox.DestroyOverCPULimit(fmt.Errorf("cannot end creation of sandbox %q: %w", c.Sandbox.ID, err))
+	}
+	return nil
+}
+
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
 func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
@@ -587,6 +606,7 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
+		subStarted := false
 		err = cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
 			specFile, err := specutils.CopySpec(c.Spec)
@@ -628,8 +648,15 @@ func (c *Container) startLocked(conf *config.Config, action string, startRoot fu
 				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
 			}
 
+			subStarted = true // Set to `true` even if `startSub` below fails.
 			return startSub(c.Spec, conf, c.ID, stdios, goferFiles, goferFilestores, devIOFile, c.GoferMountConfs)
 		})
+		// In a sandbox with no root container, the first subcontainer starting
+		// marks the creation of the sandbox, even if it fails, as user code
+		// may have started running.
+		if subStarted && c.Sandbox.Creating {
+			err = errors.Join(err, c.endSandboxCreation())
+		}
 	}
 	if err != nil {
 		// Treat container as stopped.
@@ -1469,6 +1496,7 @@ func (c *Container) reloadLocked() error {
 	}
 	c.Spec = saved.Spec
 	if c.Sandbox != nil && saved.Sandbox != nil {
+		c.Sandbox.Creating = saved.Sandbox.Creating
 		c.Sandbox.CPULimits = saved.Sandbox.CPULimits
 		c.Sandbox.RegisteredMetrics = saved.Sandbox.RegisteredMetrics
 		c.Sandbox.Restored = saved.Sandbox.Restored
@@ -2306,7 +2334,8 @@ func logCPUPoliciesNotApplied(conf *config.Config, reason string) {
 // cgroupResources returns `res` as the sandbox cgroup should have it now:
 // with the creation CPU limit until the application starts.
 func (c *Container) cgroupResources(res *specs.LinuxResources) *specs.LinuxResources {
-	if c.Status == Created && c.Sandbox.CPULimits != nil {
+	creating := c.Sandbox.Creating || (c.Status == Created && !c.Sandbox.NoRootContainer)
+	if creating && c.Sandbox.CPULimits != nil {
 		return c.Sandbox.CPULimits.CreationResources(res)
 	}
 	return res
