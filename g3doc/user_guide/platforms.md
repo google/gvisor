@@ -56,9 +56,15 @@ supported and is expected to eventually be removed entirely. If you depend on
 ## Configuring Docker
 
 The platform is selected by the `--platform` command line flag passed to
-`runsc`. By default, the `systrap` platform is selected. For example, to select
-the KVM platform, modify your Docker configuration (`/etc/docker/daemon.json`)
-to pass the `--platform` argument:
+`runsc`. By default, `runsc` uses `--platform=auto`, which picks the best
+platform for the host: KVM if `/dev/kvm` is usable, `runsc` is not running in a
+virtual machine, and the sandbox does not use NVIDIA GPUs; `systrap` otherwise.
+If your KVM device is not at `/dev/kvm`, pass its path with
+`--platform_device_path=kvm=<path>`.
+
+To select a platform explicitly, modify your Docker configuration
+(`/etc/docker/daemon.json`) to pass the `--platform` argument. For example, to
+select the KVM platform:
 
 ```json
 {

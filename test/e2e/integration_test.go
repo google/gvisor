@@ -313,15 +313,10 @@ func TestMemLimit(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	allocMemoryKb := 128 * 1024
-	runArgs, err := dockerutil.RuntimeArgs()
-	if err != nil {
-		t.Fatalf("dockerutil.RuntimeArgs() failed: %v", err)
-	}
-	if slices.Contains(runArgs, "--platform=kvm") {
-		// TODO: b/498290339 - KVM allocates more than 128 MB on startup and OOMs the sandbox.
-		allocMemoryKb = 150 * 1024
-	}
+	// TODO: b/498290339 - KVM allocates more than 128 MB on startup and OOMs
+	// the sandbox. --platform=auto may pick KVM, so use a limit that fits
+	// every platform.
+	allocMemoryKb := 150 * 1024
 	opts := dockerutil.RunOpts{
 		Image:  "basic/alpine",
 		Memory: allocMemoryKb * 1024, // In bytes.

@@ -286,6 +286,9 @@ func TestConfig(t *testing.T) *config.Config {
 	conf.Strace = true
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
 	conf.WatchdogAction = "panic"
+	// Tests skip cli.Main, which resolves --platform=auto. Pin systrap
+	// instead so that tests behave the same on every host.
+	conf.Platform = "systrap"
 	return conf
 }
 
@@ -320,6 +323,9 @@ func ConfigForBenchmark(b *testing.B) *config.Config {
 	// TODO: b/567596480 - Investigate running benchmarks with TestOnlyAllowRunAsCurrentUserWithoutChroot = false
 	conf.TestOnlyAllowRunAsCurrentUserWithoutChroot = true
 	conf.WatchdogAction = "panic"
+	// Benchmarks skip cli.Main, which resolves --platform=auto. Pin systrap
+	// instead so that results are comparable across hosts.
+	conf.Platform = "systrap"
 	return conf
 }
 

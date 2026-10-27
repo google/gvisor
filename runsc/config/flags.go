@@ -104,7 +104,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("strace-event", false, "send strace to event.")
 
 	// Flags that control sandbox runtime behavior.
-	flagSet.String("platform", "systrap", "specifies which platform to use: systrap (default), ptrace, kvm, auto. auto picks the best platform usable on the host.")
+	flagSet.String("platform", PlatformAuto, "specifies which platform to use: auto (default), systrap, ptrace, kvm. auto picks the best platform usable on the host.")
 	flagSet.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform), or comma-separated platform=path pairs (e.g. kvm=/dev/kvm2) that apply only to the named platforms. "+
 		"If unset, will use a sane platform-specific default. --platform=auto accepts only platform=path pairs.")
 	flagSet.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")

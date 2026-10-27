@@ -11,9 +11,7 @@ go_library(
         "autoplatform.go",
         "platform_list.go",
     ],
-    visibility = [
-        "//runsc:__subpackages__",
-    ],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
         "//pkg/sentry/platform/platformdesc",
