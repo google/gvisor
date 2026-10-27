@@ -230,5 +230,6 @@ go_test(
         "//pkg/sentry/kernel/auth",
         "//pkg/sync",
         "//pkg/usermem",
+        "//pkg/waiter",
     ],
 )

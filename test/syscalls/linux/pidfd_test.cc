@@ -1222,13 +1222,17 @@ TEST(PidfdTest, FasyncIsUnsupported) {
   ASSERT_THAT(fcntl(pidfd.get(), F_SETFL, flags | FASYNC), SyscallSucceeds());
   int who = getpid();
 
-  if (IsRunningOnGvisor()) {
-    EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
-                SyscallFailsWithErrno(EINVAL));
-  } else {
-    // Linux < 6.9 and >= 6.11 return ENOTTY; Linux 6.9-6.10 returns EINVAL.
-    EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
-                SyscallFailsWithErrno(::testing::AnyOf(EINVAL, ENOTTY)));
+  // A failed registration must not let a second FIOSETOWN succeed.
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    SCOPED_TRACE(absl::StrCat("FIOSETOWN attempt ", attempt));
+    if (IsRunningOnGvisor()) {
+      EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
+                  SyscallFailsWithErrno(EINVAL));
+    } else {
+      // Linux < 6.9 and >= 6.11 return ENOTTY; Linux 6.9-6.10 returns EINVAL.
+      EXPECT_THAT(ioctl(pidfd.get(), FIOSETOWN, &who),
+                  SyscallFailsWithErrno(::testing::AnyOf(EINVAL, ENOTTY)));
+    }
   }
 }
 
