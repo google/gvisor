@@ -279,6 +279,8 @@ func (ep *EpollInstance) AddInterest(file *FileDescription, num int32, event lin
 	wmask := waiter.EventMaskFromLinux(mask)
 	epi.waiter.Init(epi, wmask)
 	if err := file.EventRegister(&epi.waiter); err != nil {
+		// EventRegister can notify the waiter before returning an error.
+		ep.removeLocked(epi)
 		return err
 	}
 
