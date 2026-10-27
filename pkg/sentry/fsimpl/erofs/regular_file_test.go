@@ -211,3 +211,43 @@ func TestChunkReadAndMMap(t *testing.T) {
 		}
 	}
 }
+
+// Every alias excluded from the cache by a watch must become evictable when
+// that watch is removed, even if the alias was created after the watch.
+func TestWatchRemovalReleasesAllAliases(t *testing.T) {
+	fd := openTestFile(t, newTestImage(0, erofs.InodeCompact{}))
+	ctx := contexttest.Context(t)
+	fs := fd.inode().fs
+	fs.maxCachedDentries = 0
+	inotifyFD, err := vfs.NewInotifyFD(ctx, fs.vfsfs.VirtualFilesystem(), linux.O_NONBLOCK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inotifyFD.DecRef(ctx)
+	ino := inotifyFD.Impl().(*vfs.Inotify)
+	wd := ino.AddWatch(fd.dentry().WatchTarget(), linux.IN_OPEN)
+
+	var aliases []*dentry
+	for _, name := range []string{"a", "b"} {
+		d, err := fs.newDentry(testFileNid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs.root.dirMu.Lock()
+		d.name = name
+		d.parent.Store(fs.root)
+		fs.root.IncRef()
+		fs.root.childMap[name] = d
+		fs.root.dirMu.Unlock()
+		d.DecRef(ctx)
+		aliases = append(aliases, d)
+	}
+	if err := ino.RmWatch(ctx, wd); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range aliases {
+		if got := d.refs.Load(); got != -1 {
+			t.Errorf("alias %q retained after watch removal: refs=%d", d.name, got)
+		}
+	}
+}

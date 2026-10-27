@@ -624,13 +624,18 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	d.inode.fs.ancestryMu.RUnlock()
 }
 
-// Watches implements vfs.DentryImpl.Watches.
-func (d *dentry) Watches() *vfs.Watches {
-	return &d.inode.watches
+// WatchTarget implements vfs.DentryImpl.WatchTarget.
+func (d *dentry) WatchTarget() vfs.WatchTarget {
+	return d.inode
 }
 
-// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
-func (d *dentry) OnZeroWatches(context.Context) {}
+// Watches implements vfs.WatchTarget.Watches.
+func (i *inode) Watches() *vfs.Watches {
+	return &i.watches
+}
+
+// OnZeroWatches implements vfs.WatchTarget.OnZeroWatches.
+func (i *inode) OnZeroWatches(context.Context) {}
 
 // inode represents a filesystem object.
 //

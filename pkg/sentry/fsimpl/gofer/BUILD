@@ -146,5 +146,6 @@ go_test(
         "//pkg/sentry/contexttest",
         "//pkg/sentry/ktime",
         "//pkg/sentry/pgalloc",
+        "//pkg/sentry/vfs",
     ],
 )

@@ -611,13 +611,10 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	d.inode.Watches().Notify(ctx, "", events, cookie, et, d.isDeleted())
 }
 
-// Watches implements vfs.DentryImpl.Watches.
-func (d *Dentry) Watches() *vfs.Watches {
-	return d.inode.Watches()
+// WatchTarget implements vfs.DentryImpl.WatchTarget.
+func (d *Dentry) WatchTarget() vfs.WatchTarget {
+	return d.inode
 }
-
-// OnZeroWatches implements vfs.Dentry.OnZeroWatches.
-func (d *Dentry) OnZeroWatches(context.Context) {}
 
 // insertChild inserts child into the vfs dentry cache with the given name under
 // this dentry. This does not update the directory inode, so calling this on its
@@ -786,8 +783,8 @@ type Inode interface {
 	// be resolved again by a call to Lookup.
 	Valid(ctx context.Context, parent *Dentry, name string) bool
 
-	// Watches returns the set of inotify watches associated with this inode.
-	Watches() *vfs.Watches
+	// WatchTarget provides the inotify watch set and its cleanup callback.
+	vfs.WatchTarget
 
 	// Anonymous indicates that the Inode is anonymous. It will never have
 	// a name or parent.
