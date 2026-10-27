@@ -647,10 +647,6 @@ func New(args Args) (*Loader, error) {
 		metric.StopProfilingMetrics()
 	}
 
-	// Initialize seccheck points.
-	seccheck.Initialize()
-	args.StartupTimer.Reached("seccheck initialized")
-
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
