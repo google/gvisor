@@ -200,7 +200,6 @@ go_test(
         "//pkg/sentry/fscheckpoint",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/seccheck",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/unet",

@@ -38,7 +38,6 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm" // Register the KVM platform.
 	"gvisor.dev/gvisor/pkg/sentry/platform/platformdesc"
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace" // Register the ptrace platform.
-	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -52,7 +51,6 @@ var (
 // Boot initializes a new bare bones kernel for test.
 func Boot() (*kernel.Kernel, error) {
 	cpuid.Initialize()
-	seccheck.Initialize()
 
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory accounting: %v", err)

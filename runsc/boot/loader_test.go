@@ -36,7 +36,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -661,7 +660,6 @@ func TestCreateMountPoint(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	cpuid.Initialize()
-	seccheck.Initialize()
 	os.Exit(m.Run())
 }
 
