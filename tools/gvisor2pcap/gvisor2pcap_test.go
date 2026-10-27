@@ -171,6 +171,62 @@ func TestGolden6(t *testing.T) {
 // allowedErrors matches output for packets that are known to be unhandled.
 var allowedErrors = regexp.MustCompile("unhandled protocol (udp|arp|icmp)")
 
+// TestMalformedInput ensures that malformed packet log lines are skipped
+// instead of crashing gvisor2pcap.
+func TestMalformedInput(t *testing.T) {
+	const prefix = "I0903 14:40:00.429095       1 sniffer.go:388] "
+	const tcp = "tcp 192.168.9.2:45751 -> 142.251.46.174:80 len:0 id:0x0000 flags:    A    seqnum:1 ack:2 win:228 xsum:0x877a "
+	for _, tc := range []struct {
+		name string
+		line string
+	}{
+		{
+			name: "multiple SACKBlocks terminators",
+			line: prefix + "send " + tcp + "options:{TS:true TSVal:1 TSEcr:2 SACKBlocks:[] ] ]}",
+		},
+		{
+			name: "unterminated SACKBlocks",
+			line: prefix + "send " + tcp + "options:{TS:true TSVal:1 TSEcr:2 SACKBlocks:[",
+		},
+		{
+			name: "missing SACKBlocks",
+			line: prefix + "send " + tcp + "options:{TS:true TSVal:1 TSEcr:2",
+		},
+		{
+			name: "missing window scale",
+			line: prefix + "send " + tcp + "options:{MSS:1460",
+		},
+		{
+			name: "missing Flags",
+			line: prefix + "send " + tcp + "options:{MSS:1460 WS:7 TS:true TSVal:1 TSEcr:0 SACKPermitted:true",
+		},
+		{
+			name: "unknown direction",
+			line: prefix + "sending " + tcp + "options:{TS:true TSVal:1 TSEcr:2 SACKBlocks:[]}",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			tempIn := path.Join(tempDir, "in.log")
+			if err := os.WriteFile(tempIn, []byte(tc.line+"\n"), 0644); err != nil {
+				t.Fatalf("couldn't write input file: %v", err)
+			}
+			gvisor2pcap, err := testutil.FindFile("tools/gvisor2pcap/gvisor2pcap")
+			if err != nil {
+				t.Fatalf("couldn't get binary: %v", err)
+			}
+			cmd := exec.Command(gvisor2pcap, "--out", path.Join(tempDir, "out.pcap"), "--in", tempIn)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("command %v failed: %v: %s", cmd, err, output)
+			}
+			if !strings.Contains(string(output), "skipping line") {
+				t.Errorf("line was not skipped; output: %s", output)
+			}
+		})
+	}
+}
+
 // testBinary runs gvisor2pcap with an input and checks that packets are either
 // handled or in the set of known unhandled packet types.
 func testBinary(t *testing.T, inputPath, outDir string) {
