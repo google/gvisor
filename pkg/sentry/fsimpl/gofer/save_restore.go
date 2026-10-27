@@ -45,7 +45,7 @@ type savedDentryRW struct {
 }
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
-func (fs *filesystem) PrepareSave(ctx context.Context) error {
+func (fs *filesystem) PrepareSave(ctx context.Context, opts vfs.PrepareSaveOptions) error {
 	if len(fs.iopts.UniqueID.Path) == 0 {
 		return fmt.Errorf("gofer.filesystem with no UniqueID cannot be saved")
 	}
@@ -85,7 +85,7 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 		return err
 	}
 
-	return fs.root.prepareSaveRecursive(ctx)
+	return fs.root.prepareSaveRecursive(ctx, opts)
 }
 
 // Preconditions:
@@ -177,8 +177,8 @@ func (d *dentry) prepareSaveDeletedRegularFile(ctx context.Context) error {
 	return nil
 }
 
-func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
-	if d.inode.isRegularFile() && !d.inode.cachedMetadataAuthoritative() {
+func (d *dentry) prepareSaveRecursive(ctx context.Context, opts vfs.PrepareSaveOptions) error {
+	if opts.ValidateMetadata && d.inode.isRegularFile() && !d.inode.cachedMetadataAuthoritative() {
 		// Get updated metadata for d in case we need to perform metadata
 		// validation during restore.
 		if err := d.inode.updateMetadata(ctx); err != nil {
@@ -201,7 +201,7 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 			delete(d.children, childName)
 			continue
 		}
-		if err := child.prepareSaveRecursive(ctx); err != nil {
+		if err := child.prepareSaveRecursive(ctx, opts); err != nil {
 			return err
 		}
 	}

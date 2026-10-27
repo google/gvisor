@@ -76,6 +76,11 @@ type SaveOpts struct {
 
 	// RunscVersion is the runsc binary version.
 	RunscVersion string `json:"runsc_version"`
+
+	// ValidateMetadata indicates whether filesystem implementations backed by
+	// remote filesystems should refresh metadata during save so that restore
+	// can validate file sizes and/or modification timestamps.
+	ValidateMetadata bool `json:"validate_metadata"`
 }
 
 // SaveRestoreExecOpts contains options for executing a binary

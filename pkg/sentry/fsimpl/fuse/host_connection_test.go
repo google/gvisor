@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -418,7 +419,7 @@ func TestHostConnectionAbortedOnSave(t *testing.T) {
 	id2, fut2 := registerOutstandingRequest(conn, creds)
 
 	fs := &filesystem{conn: conn}
-	if err := fs.PrepareSave(s.Ctx); err != nil {
+	if err := fs.PrepareSave(s.Ctx, vfs.PrepareSaveOptions{}); err != nil {
 		t.Fatalf("PrepareSave: %v", err)
 	}
 	for id, fut := range map[linux.FUSEOpID]*futureResponse{id1: fut1, id2: fut2} {

@@ -69,7 +69,7 @@ func (lc *lostHostConn) release(ctx context.Context) {
 func (*lostHostConn) interrupt(*futureResponse) {}
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
-func (fs *filesystem) PrepareSave(ctx context.Context) error {
+func (fs *filesystem) PrepareSave(ctx context.Context, _ vfs.PrepareSaveOptions) error {
 	if fs.conn.hostTransport {
 		// Connections to FUSE servers outside the sandbox can't be
 		// preserved, since the host FD isn't saved. Abort the connection, as
