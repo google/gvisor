@@ -52,8 +52,7 @@ steps:
     commands:
       # Stamps the binaries below with release-<name>.
       - ./.buildkite/scripts/release/tag.sh stage
-      - "make BAZEL_OPTIONS='--config=x86_64 --compilation_mode=opt' artifacts/x86_64"
-      - "make BAZEL_OPTIONS='--config=aarch64 --compilation_mode=opt' artifacts/aarch64"
+      - make BAZEL_OPTIONS=--compilation_mode=opt artifacts-all
       - make artifacts-python
       - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
       - (cd repo && gcloud storage cp --recursive . gs://gvisor/releases/)
