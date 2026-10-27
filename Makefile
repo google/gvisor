@@ -77,10 +77,6 @@ query: ## Runs a bazel query. E.g. make query TARGETS=//test/...
 	@$(call query,$(OPTIONS) $(TARGETS))
 .PHONY: query
 
-mod: ## Runs a bazel mod command. E.g. make mod TARGETS="deps --output json"
-	@$(call mod,$(OPTIONS) $(TARGETS))
-.PHONY: mod
-
 sudo: ## Runs the given $(TARGETS) as per run, but using "sudo -E". E.g. make sudo TARGETS=test/root:root_test ARGS=-test.v
 	@$(call sudo,$(TARGETS),$(ARGS))
 .PHONY: sudo
@@ -217,8 +213,11 @@ gazelle-fix: ## Rewrites the BUILD files of the packages in tools/gazelle.bzl to
 	@$(call wrapper,$(BAZEL) run $(BASE_OPTIONS) $(BAZEL_OPTIONS) //:gazelle_fix)
 .PHONY: gazelle-fix
 
-license-check: ## Checks that tools/licensecheck/dependencies.yaml has an entry for every dependency.
-	@$(call run,//tools/licensecheck/main:licensecheck,--mode=verify)
+license-check: ARGS = --mode=verify
+license-check: ## Checks the license catalog; use ARGS=--mode=fetch to update it.
+	@$(call wrapper,$(BAZEL) run $(BASE_OPTIONS) $(BAZEL_OPTIONS) //tools/licensecheck/main:licensecheck \
+	  -- $(ARGS) \
+	  -- $(BAZEL) mod $(BASE_OPTIONS) $(BAZEL_OPTIONS))
 .PHONY: license-check
 
 ##
