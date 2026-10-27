@@ -15,7 +15,10 @@
 package systrap
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sync/atomic"
@@ -30,21 +33,36 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
+// startStuckChild starts a child process that never responds
+// as a stand-in for a stub process.
+func startStuckChild() (*exec.Cmd, error) {
+	cmd := exec.Command(os.Args[0])
+	cmd.Env = append(os.Environ(), childEnv+"=stuck")
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("cannot start stuck child: %w", err)
+	}
+	return cmd, nil
+}
+
+func stopChild(cmd *exec.Cmd) {
+	cmd.Process.Kill()
+	cmd.Wait()
+}
+
 func newTestSharedContext(t *testing.T) *sharedContext {
 	t.Helper()
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestStuckSubprocessHelper")
-	cmd.Env = append(os.Environ(), "GVISOR_STUCK_SUBPROCESS_HELPER=1")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start helper subprocess: %v", err)
+	cmd, err := startStuckChild()
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-	})
+	t.Cleanup(func() { stopChild(cmd) })
+	return newChildSharedContext(cmd.Process.Pid)
+}
 
+func newChildSharedContext(pid int) *sharedContext {
 	threadID := uint32(1)
-	child := &thread{tgid: int32(cmd.Process.Pid), tid: int32(cmd.Process.Pid)}
+	child := &thread{tgid: int32(pid), tid: int32(pid)}
 	queue := &contextQueue{}
 	queue.init()
 	atomic.AddUint32(&queue.end, 1)
@@ -120,6 +138,70 @@ func TestSleepOnStateRecoveredContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sleepOnStateWithTimeout got error %v, want nil", err)
 	}
+}
+
+func TestSleepOnStateHostStall(t *testing.T) {
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("cannot create pipe: %v", err)
+	}
+	defer readyRead.Close()
+	cmd := exec.Command(os.Args[0])
+	cmd.Env = append(os.Environ(), childEnv+"=hoststall")
+	cmd.ExtraFiles = []*os.File{readyWrite}
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err = cmd.Start()
+	readyWrite.Close()
+	if err != nil {
+		t.Fatalf("cannot start child: %v", err)
+	}
+	defer cmd.Process.Kill()
+	if _, err := io.ReadAll(readyRead); err != nil {
+		t.Fatalf("cannot wait for child readiness: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if err := cmd.Process.Signal(unix.SIGSTOP); err != nil {
+		t.Fatalf("cannot stop child: %v", err)
+	}
+	time.Sleep(hostStallThreshold * 2)
+	if err := cmd.Process.Signal(unix.SIGCONT); err != nil {
+		t.Fatalf("cannot continue child: %v", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("child failed: %v\n%s", err, out.String())
+	}
+}
+
+// hostStallChild waits on a context whose stub thread responds shortly after
+// the host stall ends.
+// Closes FD 3 once it is about to wait.
+func hostStallChild() error {
+	unix.CloseOnExec(3)
+	cmd, err := startStuckChild()
+	if err != nil {
+		return err
+	}
+	defer stopChild(cmd)
+	sc := newChildSharedContext(cmd.Process.Pid)
+	go func() {
+		for last := time.Now(); ; {
+			time.Sleep(10 * time.Millisecond)
+			now := time.Now()
+			if now.Sub(last) > hostStallThreshold {
+				break
+			}
+			last = now
+		}
+		time.Sleep(100 * time.Millisecond)
+		sc.setState(sysmsg.ContextStateSyscall)
+	}()
+	os.NewFile(3, "marker").Close()
+	if err := sc.sleepOnStateWithTimeout(sysmsg.ContextStateNone, 500*time.Millisecond, time.Second); err != nil {
+		return fmt.Errorf("sleepOnStateWithTimeout got error %v, want nil", err)
+	}
+	return nil
 }
 
 func TestSleepOnStateDeadSubprocess(t *testing.T) {
@@ -303,11 +385,4 @@ func TestInitSyscallThreadPoolExhausted(t *testing.T) {
 	if err := s.initSyscallThread(p, false); err == nil {
 		t.Fatalf("initSyscallThread succeeded when pool was exhausted, want error")
 	}
-}
-
-func TestStuckSubprocessHelper(t *testing.T) {
-	if os.Getenv("GVISOR_STUCK_SUBPROCESS_HELPER") == "" {
-		return
-	}
-	select {}
 }

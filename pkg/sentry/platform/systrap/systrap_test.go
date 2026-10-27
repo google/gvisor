@@ -15,6 +15,7 @@
 package systrap
 
 import (
+	"fmt"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -34,9 +35,27 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+const childEnv = "SYSTRAP_TEST_CHILD"
+
 func TestMain(m *testing.M) {
-	cpuid.Initialize()
-	os.Exit(m.Run())
+	switch mode := os.Getenv(childEnv); mode {
+	case "":
+		cpuid.Initialize()
+		os.Exit(m.Run())
+	case "stuck":
+		for {
+			unix.Pause()
+		}
+	case "hoststall":
+		if err := hostStallChild(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown %s: %q\n", childEnv, mode)
+		os.Exit(1)
+	}
 }
 
 // testMemoryManager implements the parts of platform.MemoryManager that
