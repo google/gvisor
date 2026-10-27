@@ -240,8 +240,14 @@ func (c *Command) Wait(ctx context.Context) ([]string, []string, error) {
 	}
 	c.mu.Unlock()
 	select {
-	case <-ctx.Done():
 	case <-c.Done():
+	case <-ctx.Done():
+		// Prefer the command's result if it finished concurrently.
+		select {
+		case <-c.Done():
+		default:
+			return c.Stdout(), c.Stderr(), fmt.Errorf("command did not complete: %w", ctx.Err())
+		}
 	}
 	stdout := c.Stdout()
 	stderr := c.Stderr()
