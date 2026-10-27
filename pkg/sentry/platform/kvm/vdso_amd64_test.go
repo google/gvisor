@@ -44,8 +44,8 @@ func checkAMD64PatchDisasm(t *testing.T, before, after []byte, patch vdsoPatch, 
 			stubLen = amd64RDTSCPStubLen
 		}
 		want = append(want,
-			fmt.Sprintf("sub $%#x,%%eax", uint32(tscOffset)),
-			fmt.Sprintf("sbb $%#x,%%edx", uint32(tscOffset>>32)),
+			fmt.Sprintf("subl $%#x, %%eax", uint32(tscOffset)),
+			fmt.Sprintf("sbbl $%#x, %%edx", uint32(tscOffset>>32)),
 			fmt.Sprintf("jmp %#x", site+patch.siteLen))
 		if got := disasmAMD64(t, after, stubOff, stubOff+stubLen); !slices.Equal(got, want) {
 			t.Errorf("stub %d at %#x for site %q disassembly: got %q, want %q", i, stubOff, orig, got, want)

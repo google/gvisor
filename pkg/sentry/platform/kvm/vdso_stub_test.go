@@ -15,6 +15,7 @@
 package kvm
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,29 +26,44 @@ import (
 )
 
 var (
+	objcopyPath      = flag.String("objcopy", "", "Path to the declared LLVM objcopy")
+	objdumpPath      = flag.String("objdump", "", "Path to the declared LLVM objdump")
 	disasmInsnLineRE = regexp.MustCompile(`^\s*[0-9a-fA-F]+:\s+(.+)$`)
 	disasmSymbolRE   = regexp.MustCompile(`\s*<[^>]+>`)
 )
 
 // disasmBytes disassembles buf[startOff:endOff] as instructions at image
-// offset startOff using objdump (with -b binary -m <arch>), returning one
-// normalized assembly line per instruction.
-func disasmBytes(t *testing.T, arch string, buf []byte, startOff, endOff int) []string {
+// offset startOff using the declared LLVM tools, returning one normalized
+// assembly line per instruction. The ELF wrapper preserves the byte offsets
+// so PC-relative branches are checked against their actual destinations.
+func disasmBytes(t *testing.T, format string, buf []byte, startOff, endOff int) []string {
 	t.Helper()
+	if *objcopyPath == "" || *objdumpPath == "" {
+		t.Fatal("both --objcopy and --objdump are required")
+	}
 	binPath := filepath.Join(t.TempDir(), "vdso.bin")
 	if err := os.WriteFile(binPath, buf, 0600); err != nil {
 		t.Fatalf("failed to write temporary binary: %v", err)
 	}
 
-	cmd := exec.Command(
-		"objdump",
-		"-b", "binary",
-		"-m", arch,
-		"-D",
+	elfPath := binPath + ".o"
+	cmd := exec.CommandContext(t.Context(),
+		*objcopyPath,
+		"--input-target=binary",
+		"--output-target="+format,
+		"--rename-section=.data=.text,alloc,load,readonly,code",
+		binPath, elfPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v failed: %v\nOutput:\n%s", cmd, err, out)
+	}
+	cmd = exec.CommandContext(t.Context(),
+		*objdumpPath,
+		"--disassemble",
 		"--no-show-raw-insn",
 		fmt.Sprintf("--start-address=%#x", startOff),
 		fmt.Sprintf("--stop-address=%#x", endOff),
-		binPath,
+		elfPath,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
