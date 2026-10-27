@@ -23,7 +23,6 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/rdma"
@@ -206,7 +205,7 @@ func tpuProxyUpdateChroot(hostRoot, chroot string, spec *specs.Spec, conf *confi
 		allowedDeviceIDs[tpu.TPUV5pDeviceID] = struct{}{}
 		allowedDeviceIDs[tpu.TPUV5eDeviceID] = struct{}{}
 		allowedDeviceIDs[tpu.TPUV6eDeviceID] = struct{}{}
-		allowedDeviceIDs[tpu.TPU7xDeviceID] = struct{}{}
+		allowedDeviceIDs[tpu.TPUV7xDeviceID] = struct{}{}
 	}
 	if len(allowedDeviceIDs) == 0 {
 		paths, err = filepath.Glob(path.Join(hostRoot, "dev/accel*"))

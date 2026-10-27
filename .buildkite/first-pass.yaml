@@ -1,0 +1,111 @@
+_templates:
+  retry_settings: &retry_settings
+    automatic:
+      - exit_status: 80
+        limit: 0
+      - signal_reason: cancel
+        limit: 0
+      - exit_status: -1
+        limit: 3
+      - exit_status: "*"
+        limit: 2
+  common: &common
+    timeout_in_minutes: 55
+    retry:
+      <<: *retry_settings
+  source_test: &source_test
+    if: build.env("STAGED_BINARIES") == null
+  source_test_presubmit: &source_test_presubmit
+    if: build.env("STAGED_BINARIES") == null && build.branch != "master"
+  docker: &docker
+    env:
+      BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
+env:
+  # Force a clean checkout every time to avoid reuse of files between runs.
+  BUILDKITE_CLEAN_CHECKOUT: true
+
+  # Optional filter for syscall tests.
+  SYSCALL_TEST_FILTERS: ''
+
+priority: ${PRIORITY:-0}
+
+agents:
+  queue: "default"
+
+steps:
+  # Run smoke tests before the other tests.
+  - <<: *common
+    <<: *source_test
+    label: ":fire: Smoke tests (AMD64)"
+    command: make smoke-tests
+  - <<: *common
+    <<: *source_test
+    env:
+      GLIBC_TUNABLES: glibc.pthread.rseq=0
+    label: ":fire: Smoke race tests"
+    command: make smoke-race-tests
+
+  # Run the remaining tests only if the smoke tests pass, so that a change
+  # that does not build or start does not use the other agents (presubmits
+  # only).
+  - wait: ~
+    if: build.branch != "master"
+
+  # Build runsc and pkg (presubmits only).
+  - <<: *common
+    <<: *source_test_presubmit
+    label: ":world_map: Build runsc and pkg (AMD64)"
+    commands:
+      - "make build TARGETS=//pkg/..."
+      - "make build OPTIONS='--build_tag_filters=-network_plugins' TARGETS='//runsc/...'"
+
+  - <<: *common
+    <<: *source_test
+    label: ":broom: Lint"
+    command: make lint
+  - <<: *common
+    <<: *source_test
+    label: ":soap: Lint (C++)"
+    command: make lint-cc
+  - <<: *common
+    <<: *source_test
+    label: ":scroll: Governance file sync check"
+    command: make governance-check
+  - <<: *common
+    <<: *source_test
+    label: ":building_construction: Gazelle BUILD file check"
+    command: make gazelle-check
+  - <<: *common
+    <<: *source_test
+    label: ":scales: Dependency license check"
+    command: make license-check
+
+  # Basic unit tests.
+  - <<: *common
+    <<: *source_test
+    label: ":golang: Nogo tests"
+    command: make nogo-tests
+  - <<: *common
+    <<: *source_test
+    label: ":test_tube: Unit tests (cgroupv2)"
+    command: make unit-tests
+  - <<: *common
+    <<: *docker
+    # This variant is not really a source test, but we annotate it as such to
+    # avoid running binary-only tests for all variants of cgroups. It is
+    # sufficient to run cgroupv2 variants only for source changes.
+    <<: *source_test
+    label: ":test_tube: Container tests (cgroupv2)"
+    command: make container-tests
+
+  # System call tests.
+  - <<: *common
+    label: ":toolbox: System call tests (AMD64)"
+    command: make OPTIONS=--config=syscalls-amd64 syscall-tests
+    parallelism: 20
+
+  - <<: *common
+    <<: *docker
+    <<: *source_test
+    label: ":lock: Root tests"
+    command: make root-tests

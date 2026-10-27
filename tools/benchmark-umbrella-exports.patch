@@ -1,0 +1,23 @@
+# Benchmark 1.10.0 split benchmark.h without marking its includes as exports:
+# https://github.com/google/benchmark/commit/6daf2dff6f7018187309d480867e7ea60c8ba917
+# Backport the export annotations so Include Cleaner recognizes benchmark.h:
+# https://github.com/google/benchmark/commit/0a78b5d203283b54f65590ecef23e0b835b4787c
+# Remove when gVisor pins a Benchmark release that includes the annotations.
+
+--- a/include/benchmark/benchmark.h
++++ b/include/benchmark/benchmark.h
+@@ -15,6 +15,7 @@
+ #ifndef BENCHMARK_BENCHMARK_H_
+ #define BENCHMARK_BENCHMARK_H_
+ 
++// IWYU pragma: begin_exports
+ #include "benchmark/benchmark_api.h"
+ #include "benchmark/counter.h"
+ #include "benchmark/macros.h"
+@@ -26,5 +27,6 @@
+ #include "benchmark/sysinfo.h"
+ #include "benchmark/types.h"
+ #include "benchmark/utils.h"
++// IWYU pragma: end_exports
+ 
+ #endif  // BENCHMARK_BENCHMARK_H_

@@ -3846,59 +3846,361 @@ func TestMSSNotDelayed(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			const maxPayload = 100
-			c := context.New(t, e2e.DefaultMTU)
-			defer c.Cleanup()
+		for _, gso := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/gso=%t", test.name, gso), func(t *testing.T) {
+				const maxPayload = 100
+				// Keep retransmission timers stopped so a probe cannot satisfy the
+				// assertion that full segments are sent without waiting for ACKs.
+				c := context.NewWithOpts(t, context.Options{
+					EnableV4: true,
+					MTU:      e2e.DefaultMTU,
+					Clock:    faketime.NewManualClock(),
+				})
+				defer c.Cleanup()
+				c.SetGSOEnabled(gso)
 
-			c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
-				header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
-			})
+				c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+					header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+				})
 
-			test.fn(c.EP)
+				seq := c.IRS.Add(1)
+				iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+				allData := [][]byte{{0}, make([]byte, maxPayload), make([]byte, maxPayload)}
+				for i, data := range allData {
+					if i == 1 {
+						// Leave the initial small packet unacknowledged before enabling
+						// the option; CORK would otherwise retain that packet too.
+						test.fn(c.EP)
+					}
+					var r bytes.Reader
+					r.Reset(data)
+					if got, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
+						t.Fatalf("Write #%d failed: %s", i+1, err)
+					} else if want := int64(len(data)); got != want {
+						t.Fatalf("Write #%d = %d, want %d", i+1, got, want)
+					}
 
-			allData := [][]byte{{0}, make([]byte, maxPayload), make([]byte, maxPayload)}
-			for i, data := range allData {
-				var r bytes.Reader
-				r.Reset(data)
-				if _, err := c.EP.Write(&r, tcpip.WriteOptions{}); err != nil {
-					t.Fatalf("Write #%d failed: %s", i+1, err)
+					// Read each write before issuing the next, preventing GSO from
+					// coalescing them into a larger packet that bypasses the check.
+					packet := c.GetPacket()
+					defer packet.Release()
+					checker.IPv4(t, packet,
+						checker.PayloadLen(len(data)+header.TCPMinimumSize),
+						checker.TCP(
+							checker.DstPort(context.TestPort),
+							checker.TCPSeqNum(uint32(seq)),
+							checker.TCPAckNum(uint32(iss)),
+							checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
+						),
+					)
+
+					if got, want := packet.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize:], data; !bytes.Equal(got, want) {
+						t.Fatalf("got packet #%d's data = %v, want = %v", i+1, got, want)
+					}
+
+					seq = seq.Add(seqnum.Size(len(data)))
 				}
-			}
 
-			seq := c.IRS.Add(1)
-			iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
-			for i, data := range allData {
-				// Check that data is received.
-				packet := c.GetPacket()
-				defer packet.Release()
-				checker.IPv4(t, packet,
-					checker.PayloadLen(len(data)+header.TCPMinimumSize),
-					checker.TCP(
-						checker.DstPort(context.TestPort),
-						checker.TCPSeqNum(uint32(seq)),
-						checker.TCPAckNum(uint32(iss)),
-						checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
-					),
-				)
+				// Acknowledge the data.
+				c.SendPacket(nil, &context.Headers{
+					SrcPort: context.TestPort,
+					DstPort: c.Port,
+					Flags:   header.TCPFlagAck,
+					SeqNum:  iss,
+					AckNum:  seq,
+					RcvWnd:  30000,
+				})
+			})
+		}
+	}
+}
 
-				if got, want := packet.AsSlice()[header.IPv4MinimumSize+header.TCPMinimumSize:], data; !bytes.Equal(got, want) {
-					t.Fatalf("got packet #%d's data = %v, want = %v", i+1, got, want)
+// TestMinshallPartialSegment checks that Nagle waits for an outstanding small
+// segment, rather than for every outstanding full segment.
+func TestMinshallPartialSegment(t *testing.T) {
+	const maxPayload = 100
+	for _, gso := range []bool{false, true} {
+		for _, test := range []struct {
+			name       string
+			prefix     int
+			expireCork bool
+		}{
+			{name: "full-prefix=0"},
+			{name: "full-prefix=100", prefix: maxPayload},
+			{name: "cork-expired", expireCork: true},
+		} {
+			t.Run(fmt.Sprintf("gso=%t/%s", gso, test.name), func(t *testing.T) {
+				clock := faketime.NewManualClock()
+				acknowledged := make(chan seqnum.Value, 16)
+				c := context.NewWithOpts(t, context.Options{
+					EnableV4: true,
+					MTU:      e2e.DefaultMTU,
+					// Keep timers stopped except for the explicit CORK expiry below.
+					Clock: clock,
+					Probe: func(state *tcp.TCPEndpointState) {
+						select {
+						case acknowledged <- state.Sender.SndUna:
+						default:
+						}
+					},
+				})
+				defer c.Cleanup()
+				c.SetGSOEnabled(gso)
+				c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, 30000, -1 /* epRcvBuf */, []byte{
+					header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+				})
+				c.EP.SocketOptions().SetDelayOption(true)
+				data := make([]byte, test.prefix+3*maxPayload+3)
+				for i := range data {
+					data[i] = byte(i)
+				}
+				written, received := 0, 0
+				write := func(size int) {
+					t.Helper()
+					if got, err := c.EP.Write(bytes.NewReader(data[written:written+size]), tcpip.WriteOptions{}); err != nil {
+						t.Fatalf("Write failed: %s", err)
+					} else if want := int64(size); got != want {
+						t.Fatalf("Write = %d, want %d", got, want)
+					}
+					written += size
+				}
+				receive := func(size int) {
+					t.Helper()
+					for size != 0 {
+						packetSize := size
+						if !gso {
+							packetSize = min(packetSize, maxPayload)
+						}
+						c.ReceiveAndCheckPacket(data, received, packetSize)
+						received += packetSize
+						size -= packetSize
+					}
+				}
+				noPacket := func() {
+					t.Helper()
+					ep := c.EP.(*tcp.Endpoint)
+					ep.LockUser()
+					defer ep.UnlockUser()
+					if packet := c.GetPacketNonBlocking(); packet != nil {
+						defer packet.Release()
+						t.Fatalf("unexpected packet: %x", packet.AsSlice())
+					}
+				}
+				ack := func(count int) {
+					t.Helper()
+					c.SendAck(seqnum.Value(context.TestInitialSequenceNumber).Add(1), count)
+					want := c.IRS.Add(1 + seqnum.Size(count))
+					deadline := time.After(5 * time.Second)
+					for {
+						select {
+						case got := <-acknowledged:
+							if got == want {
+								return
+							}
+						case <-deadline:
+							t.Fatalf("ACK of %d bytes was not processed", count)
+						}
+					}
 				}
 
-				seq = seq.Add(seqnum.Size(len(data)))
-			}
-
-			// Acknowledge the data.
-			c.SendPacket(nil, &context.Headers{
-				SrcPort: context.TestPort,
-				DstPort: c.Port,
-				Flags:   header.TCPFlagAck,
-				SeqNum:  iss,
-				AckNum:  seq,
-				RcvWnd:  30000,
+				if test.prefix != 0 {
+					write(test.prefix)
+					receive(test.prefix)
+				}
+				// Both an idle connection and one with only full segments in
+				// flight must send the split write's short tail without an ACK.
+				c.EP.SocketOptions().SetCorkOption(test.expireCork)
+				write(2*maxPayload + 1)
+				if test.expireCork {
+					receive(2 * maxPayload)
+					noPacket()
+					// CORK expiry assigns flags before sending. Its partial tail
+					// must still count as outstanding data for Nagle below.
+					clock.Advance(tcp.MinRTO)
+					receive(1)
+					c.EP.SocketOptions().SetCorkOption(false)
+				} else {
+					receive(2*maxPayload + 1)
+				}
+				smallEnd := received
+				// Sending another full segment must not replace the small end.
+				write(maxPayload)
+				receive(maxPayload)
+				write(1)
+				noPacket()
+				// A partial ACK must not release the next small write. Wait for
+				// the real ACK handler before checking the absence of output.
+				ack(smallEnd - 1)
+				noPacket()
+				// ACKing the small tail releases it even though the later full
+				// segment remains unacknowledged.
+				ack(smallEnd)
+				receive(1)
+				write(1)
+				noPacket()
+				ack(received - 1)
+				noPacket()
+				ack(received)
+				receive(1)
+				noPacket()
+				ack(received)
 			})
-		})
+		}
+	}
+}
+
+func TestPartialSegmentDelayed(t *testing.T) {
+	const maxPayload = 100
+	type sendCounts struct {
+		first       int
+		afterWindow int
+	}
+	for _, option := range []string{"nodelay", "nagle", "cork"} {
+		for _, gso := range []bool{false, true} {
+			for _, test := range []struct {
+				name           string
+				window         seqnum.Size
+				dataSize       int
+				queuedPrefix   int
+				openWindow     bool
+				wantCork       sendCounts
+				wantNagle      sendCounts
+				wantNoDelay    sendCounts
+				wantNoDelayGSO sendCounts
+			}{
+				{
+					name: "full-and-partial", window: 30000, dataSize: 201,
+					wantCork:       sendCounts{first: 200},
+					wantNagle:      sendCounts{first: 200},
+					wantNoDelay:    sendCounts{first: 201},
+					wantNoDelayGSO: sendCounts{first: 201},
+				},
+				{
+					name: "window-budget", window: 151, dataSize: 201, openWindow: true,
+					wantCork:       sendCounts{first: 100, afterWindow: 100},
+					wantNagle:      sendCounts{first: 100, afterWindow: 101},
+					wantNoDelay:    sendCounts{first: 100, afterWindow: 101},
+					wantNoDelayGSO: sendCounts{first: 150, afterWindow: 51},
+				},
+				{
+					name: "window-filled-short", window: 51, dataSize: 50,
+					wantCork:       sendCounts{first: 50},
+					wantNagle:      sendCounts{first: 50},
+					wantNoDelay:    sendCounts{first: 50},
+					wantNoDelayGSO: sendCounts{first: 50},
+				},
+				{
+					name: "next-write-too-big", window: 201, dataSize: 250, queuedPrefix: 50, openWindow: true,
+					wantCork:  sendCounts{first: 100, afterWindow: 100},
+					wantNagle: sendCounts{first: 100, afterWindow: 100},
+				},
+			} {
+				if option == "nodelay" && test.queuedPrefix != 0 {
+					// This case needs a held write before queuing the next one.
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/gso=%t/%s", option, gso, test.name), func(t *testing.T) {
+					want := test.wantCork
+					switch option {
+					case "nagle":
+						want = test.wantNagle
+					case "nodelay":
+						want = test.wantNoDelay
+						if gso {
+							want = test.wantNoDelayGSO
+						}
+					}
+					c := context.NewWithOpts(t, context.Options{
+						EnableV4: true,
+						MTU:      e2e.DefaultMTU,
+						// No timer may send or retransmit data for these assertions.
+						Clock: faketime.NewManualClock(),
+					})
+					defer c.Cleanup()
+					c.SetGSOEnabled(gso)
+					c.CreateConnectedWithRawOptions(context.TestInitialSequenceNumber, test.window, -1 /* epRcvBuf */, []byte{
+						header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+					})
+					data := make([]byte, test.dataSize+1)
+					for i := range data {
+						data[i] = byte(i)
+					}
+					received := 0
+					iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
+					write := func(data []byte) {
+						t.Helper()
+						if got, err := c.EP.Write(bytes.NewReader(data), tcpip.WriteOptions{}); err != nil {
+							t.Fatalf("Write failed: %s", err)
+						} else if want := int64(len(data)); got != want {
+							t.Fatalf("Write = %d, want %d", got, want)
+						}
+					}
+					receive := func(size int) {
+						t.Helper()
+						for size != 0 {
+							packetSize := size
+							if !gso {
+								packetSize = min(packetSize, maxPayload)
+							}
+							c.ReceiveAndCheckPacket(data, received, packetSize)
+							received += packetSize
+							size -= packetSize
+						}
+					}
+					noPacket := func() {
+						t.Helper()
+						// Write sends synchronously. Each ACK path below first
+						// receives a positive data prefix; acquiring the endpoint
+						// lock then waits for that observed send loop to finish.
+						ep := c.EP.(*tcp.Endpoint)
+						ep.LockUser()
+						defer ep.UnlockUser()
+						if packet := c.GetPacketNonBlocking(); packet != nil {
+							defer packet.Release()
+							t.Fatalf("unexpected packet: %x", packet.AsSlice())
+						}
+					}
+
+					// Leave one small packet outstanding before enabling either
+					// hold policy. CORK would otherwise retain this write too.
+					write(data[:1])
+					receive(1)
+					c.EP.SocketOptions().SetDelayOption(option == "nagle")
+					c.EP.SocketOptions().SetCorkOption(option == "cork")
+					payload := data[1:]
+					if test.queuedPrefix != 0 {
+						write(payload[:test.queuedPrefix])
+						noPacket()
+						write(payload[test.queuedPrefix:])
+						// Preserve the existing whole-write exception: do not split
+						// the following write to fill this short segment.
+						receive(test.queuedPrefix)
+					} else {
+						write(payload)
+					}
+					receive(want.first)
+					noPacket()
+					if test.openWindow {
+						// Reopen the window, ACKing only the initial byte. Nagle
+						// releases a tail if no other small segment is outstanding;
+						// CORK still holds it.
+						c.SendAck(iss, 1)
+						receive(want.afterWindow)
+						noPacket()
+					}
+					if received != len(data) {
+						if option == "cork" {
+							c.EP.SocketOptions().SetCorkOption(false)
+						} else {
+							c.SendAck(iss, received)
+						}
+						receive(len(data) - received)
+						noPacket()
+					}
+					c.SendAck(iss, received)
+				})
+			}
+		}
 	}
 }
 
@@ -9744,6 +10046,101 @@ func TestLateSynCookieAck(t *testing.T) {
 	}
 	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestSynCookieACKAfterClose(t *testing.T) {
+	for _, delivery := range []string{"queued", "after_close"} {
+		t.Run(delivery, func(t *testing.T) {
+			c := context.NewWithOpts(t, context.Options{
+				EnableV4: true,
+				MTU:      e2e.DefaultMTU,
+				Clock:    faketime.NewManualClock(),
+			})
+			defer c.Cleanup()
+			cookies := tcpip.TCPAlwaysUseSynCookies(true)
+			if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, &cookies); err != nil {
+				t.Fatalf("SetTransportProtocolOption(TCPAlwaysUseSynCookies): %s", err)
+			}
+			c.Create(-1)
+			listener := c.EP
+			if err := listener.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatalf("Bind: %s", err)
+			}
+			if err := listener.Listen(1); err != nil {
+				t.Fatalf("Listen: %s", err)
+			}
+			peer := c.PassiveConnectWithOptions(int(c.MSSWithoutOptions()), -1, header.TCPSynOptions{
+				MSS: c.MSSWithoutOptions(),
+				WS:  -1,
+			}, 0)
+			// Drain queued packet work with virtual time held still.
+			c.Stack().Pause()
+			c.Stack().Resume()
+			accepted, _, err := listener.Accept(nil)
+			if err != nil {
+				t.Fatalf("Accept: %s", err)
+			}
+			defer accepted.Close()
+
+			// Close the peer's write side, then the accepted socket's write
+			// side. Each FIN consumes one sequence number.
+			peer.Flags = header.TCPFlagFin | header.TCPFlagAck
+			peer.SendPacket(nil, nil)
+			peer.NextSeqNum++
+			peer.VerifyACKNoSACK()
+			if err := accepted.Shutdown(tcpip.ShutdownWrite); err != nil {
+				t.Fatalf("Shutdown: %s", err)
+			}
+			fin := c.GetPacket()
+			checker.IPv4(t, fin, checker.TCP(
+				checker.TCPFlags(header.TCPFlagFin|header.TCPFlagAck),
+				checker.TCPSeqNum(uint32(peer.AckNum)),
+				checker.TCPAckNum(uint32(peer.NextSeqNum)),
+			))
+			fin.Release()
+			peer.AckNum++
+			peer.Flags = header.TCPFlagAck
+
+			if delivery == "queued" {
+				// Queue both copies before processing the ACK that closes the
+				// endpoint; its remaining packets are rematched to the listener.
+				ep := accepted.(*tcp.Endpoint)
+				ep.LockUser()
+				peer.SendPacket(nil, nil)
+				peer.SendPacket(nil, nil)
+				ep.UnlockUser()
+				// Drain the accepted endpoint before the listener barrier below.
+				c.Stack().Pause()
+				c.Stack().Resume()
+			} else {
+				peer.SendPacket(nil, nil)
+				c.Stack().Pause()
+				c.Stack().Resume()
+				peer.SendPacket(nil, nil)
+			}
+			c.Stack().Pause()
+			c.Stack().Resume()
+			if got, want := tcp.EndpointState(accepted.State()), tcp.StateClose; got != want {
+				t.Fatalf("state after final ACK = %s, want %s", got, want)
+			}
+
+			// Both numbers in this ACK advanced since the handshake. It must
+			// not validate as a new cookie and create another accepted socket.
+			extra, _, err := listener.Accept(nil)
+			if extra != nil {
+				extra.Close()
+			}
+			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+				t.Fatalf("Accept after duplicate close ACK = %v, want ErrWouldBlock", err)
+			}
+			reset := c.GetPacket()
+			checker.IPv4(t, reset, checker.TCP(
+				checker.TCPFlags(header.TCPFlagRst),
+				checker.TCPSeqNum(uint32(peer.AckNum)),
+			))
+			reset.Release()
+		})
 	}
 }
 

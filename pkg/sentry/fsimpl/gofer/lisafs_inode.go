@@ -129,8 +129,12 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	// This also avoids a correctness issue when a directory is bind-mounted on the host:
 	// different paths (e.g., /mnt/ and /mnt/a/b/c if /mnt/a/b/c is a bind mount of /mnt/)
 	// can return the same device ID and inode number from a stat call.
+	var cacheHit bool
 	temp.d.inode = fs.getOrCreateInode(inoKey /* dontCache = */, isDir,
-		func() { fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */) },
+		func() {
+			cacheHit = true
+			fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
+		},
 		func() *inode {
 			temp.i = lisafsInode{
 				inode: inode{
@@ -194,6 +198,12 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 			}
 			return inode
 		})
+	if cacheHit && !temp.d.inode.cachedMetadataAuthoritative() {
+		i := temp.d.inode.impl.(*lisafsInode)
+		i.metadataMu.Lock()
+		i.updateMetadataFromStatxLocked(&ino.Stat)
+		i.metadataMu.Unlock()
+	}
 
 	temp.d.init()
 	// If this dentry adopted a cached inode that already carries a bound-socket
@@ -473,7 +483,7 @@ func (i *lisafsInode) newChildDentry(ctx context.Context, childIno *lisafs.Inode
 
 func (i *lisafsInode) mknod(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
 	if _, ok := opts.Endpoint.(transport.HostBoundEndpoint); !ok {
-		childInode, err := i.controlFD.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
+		childInode, err := i.controlFD.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID), opts.DevMinor, opts.DevMajor)
 		if err != nil {
 			return nil, err
 		}
@@ -482,7 +492,7 @@ func (i *lisafsInode) mknod(ctx context.Context, name string, creds *auth.Creden
 
 	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	childInode, boundSocketFD, err := i.controlFD.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID))
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +536,7 @@ func (i *lisafsInode) mkdir(ctx context.Context, name string, mode linux.FileMod
 }
 
 func (i *lisafsInode) symlink(ctx context.Context, name, target string, creds *auth.Credentials) (*dentry, error) {
-	symlinkInode, err := i.controlFD.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	symlinkInode, err := i.controlFD.SymlinkAt(ctx, name, target, lisafs.UID(creds.FilesystemKUID), lisafs.GID(creds.FilesystemKGID))
 	if err != nil {
 		return nil, err
 	}

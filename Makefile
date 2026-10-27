@@ -266,7 +266,7 @@ nogo-tests:
 #
 # FIXME(gvisor.dev/issue/10045): Need to fix broken tests.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/trace/... -//pkg/metric:metric_test -//pkg/coretag:coretag_test -//tools/tracereplay:tracereplay_test -//test/trace:trace_test)
+	@$(call test,--test_tag_filters=-nogo$(COMMA)-requires-kvm --build_tag_filters=-network_plugins --test_env=CGROUPV2=$(CGROUPV2) -- //:all pkg/... tools/... runsc/... vdso/... sandboxexec/... examples/... test/trace/...)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
@@ -499,7 +499,7 @@ docker-tests: integration-test-images $(RUNTIME_BIN)
 
 plugin-network-tests: integration-test-images $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME)-dpdk,--network=plugin)
-	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf $(INTEGRATION_TARGETS))
+	@$(call test_runtime_cached,$(RUNTIME)-dpdk, --test_arg=-test.run=ConnectToSelf //test/e2e:integration_test)
 
 plugin-network-tests: RUNSC_TARGET=--config plugin-tldk //runsc:runsc-plugin-stack
 plugin-network-tests: EXTRA_SIDECAR_TARGETS=--config plugin-tldk //runsc/cmd/sentry:gvisor_sentry_plugin_stack
@@ -684,22 +684,28 @@ run_platform_benchmark = \
 	($(call header,BENCHMARK $(1)); \
 	set -euo pipefail; \
 	export T=$$(mktemp --tmpdir logs.$(1).XXXXXX); \
-	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T; \
+	trap 'rm -rf "$$T"' EXIT; \
+	exit_code=0; \
+	$(call sudo,$(BENCHMARKS_TARGETS),--test_platforms=$(1) $(BENCHMARKS_ARGS) $(BENCHMARKS_PROFILE)) | tee $$T || exit_code=$$?; \
 	if test "$(BENCHMARKS_UPLOAD)" = "true"; then \
-	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)); \
+	  upload_ret=0; \
+	  $(call run,tools/parsers:parser,parse --debug --file=$$T --runtime=$(1) --suite_name=$(BENCHMARKS_SUITE) --project=$(BENCHMARKS_PROJECT) --dataset=$(BENCHMARKS_DATASET) --table=$(BENCHMARKS_TABLE) --official=$(BENCHMARKS_OFFICIAL)) || upload_ret=$$?; \
+	  if test "$$upload_ret" -ne 0 && test "$$exit_code" -eq 0; then \
+	    exit_code=$$upload_ret; \
+	  fi; \
 	fi; \
-	rm -rf $$T)
+	exit $$exit_code)
 
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc and all (selected) platforms.
-	@set -xe; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
+	@set -xe; exit_code=0; if test -z "$(BENCHMARKS_PLATFORMS)"; then \
 	  for PLATFORM in $$($(RUNTIME_BIN) help platforms); do \
 	    if test "$${PLATFORM}" = "slimvm"; then \
 	      continue; \
 	    fi; \
 	    export PLATFORM; \
 	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
-	    $(call run_benchmark,$${PLATFORM}); \
+	    $(call run_benchmark,$${PLATFORM}) || exit_code=$$?; \
 	  done; \
 	else \
 	  for PLATFORM in $(BENCHMARKS_PLATFORMS); do \
@@ -708,24 +714,27 @@ benchmark-platforms: load-benchmarks $(RUNTIME_BIN) ## Runs benchmarks for runc 
 	    fi; \
 	    export PLATFORM; \
 	    $(call install_runtime,$${PLATFORM},--platform $${PLATFORM} --profile); \
-	    $(call run_benchmark,$${PLATFORM}); \
+	    $(call run_benchmark,$${PLATFORM}) || exit_code=$$?; \
 	  done; \
-	fi
-	@set -xe; if test "$(BENCHMARKS_RUNC)" == true; then \
-	  $(call run_benchmark,runc); \
-	fi
+	fi; \
+	if test "$(BENCHMARKS_RUNC)" == true; then \
+	  $(call run_benchmark,runc) || exit_code=$$?; \
+	fi; \
+	exit $$exit_code
 .PHONY: benchmark-platforms
 
 # TODO: b/529809802 - Enable benchmarks for slimvm.
 benchmark-platforms-nodocker: $(RUNTIME_BIN) ## Runs non-Docker benchmarks for all (selected) platforms.
 	@set -xe; \
+	exit_code=0; \
 	for PLATFORM in $$(if test -z "$(BENCHMARKS_PLATFORMS)"; then $(RUNTIME_BIN) help platforms; else echo $(BENCHMARKS_PLATFORMS); fi); do \
 	  if test "$${PLATFORM}" = "slimvm"; then \
 	    continue; \
 	  fi; \
 	  export PLATFORM; \
-	  $(call run_platform_benchmark,$${PLATFORM}); \
-	done
+	  $(call run_platform_benchmark,$${PLATFORM}) || exit_code=$$?; \
+	done; \
+	exit $$exit_code
 .PHONY: benchmark-platforms-nodocker
 
 run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends data to BigQuery.
@@ -1011,15 +1020,15 @@ tag: ## Stages a release tag; the release pipeline publishes it once the artifac
 ##
 ## Lint targets.
 ##
-##   These run the source-level linters that live outside the Bazel build.
+##   These run source-level formatting and lint checks.
 ##   Deep Go analysis is owned by gVisor nogo.
 ##
-lint: ## Runs the source linters.
-	@tools/lint.sh
+lint: ensure-bazel-server ## Runs the source linters.
+	@$(call wrapper,tools/lint.sh)
 .PHONY: lint
 
-lint-fix: ## Reformats sources in place.
-	@tools/lint.sh --fix
+lint-fix: ensure-bazel-server ## Reformats sources in place.
+	@$(call wrapper,tools/lint.sh --fix)
 .PHONY: lint-fix
 
 lint-cc: ensure-bazel-server ## Runs clang-tidy over the C++ sources; needs bazel for compile_commands.json.

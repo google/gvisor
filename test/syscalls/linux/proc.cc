@@ -30,10 +30,12 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
@@ -446,6 +448,147 @@ TEST(ProcTest, RootInodeNumber) {
 TEST(ProcTest, NotFoundInRoot) {
   struct stat s;
   EXPECT_THAT(stat("/proc/foobar", &s), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(ProcTest, Create) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY));
+  const auto check = [&] {
+    for (const char* parent :
+         {"/proc", "/proc/self", "/proc/thread-self", "/proc/self/task",
+          "/proc/self/fd", "/proc/self/fdinfo", "/proc/sys", "/proc/sys/kernel",
+          "/proc/fs"}) {
+      SCOPED_TRACE(parent);
+      for (const std::string& name : {std::string("nonexistent-create"),
+                                      std::string(NAME_MAX + 1, 'x')}) {
+        SCOPED_TRACE(name);
+        const std::string missing = JoinPath(parent, name);
+        EXPECT_THAT(mkdir(missing.c_str(), 0700),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(symlink("target", missing.c_str()),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(mknod(missing.c_str(), S_IFIFO | 0600, 0),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(Open(missing, O_CREAT | O_RDONLY, 0600),
+                    PosixErrorIs(ENOENT));
+        EXPECT_THAT(Open(missing, O_RDONLY), PosixErrorIs(ENOENT));
+        EXPECT_THAT(mkdir(absl::StrCat(missing, "/").c_str(), 0700),
+                    SyscallFailsWithErrno(ENOENT));
+        EXPECT_THAT(mkdir(JoinPath(missing, "child").c_str(), 0700),
+                    SyscallFailsWithErrno(ENOENT));
+      }
+      EXPECT_THAT(mkdir(JoinPath(parent, ".").c_str(), 0700),
+                  SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(mkdir(JoinPath(parent, "..").c_str(), 0700),
+                  SyscallFailsWithErrno(EEXIST));
+    }
+    // Existing directories, files, and symlinks fail with EEXIST, whether or
+    // not they have already been looked up or the path has a trailing slash.
+    for (const std::string& existing :
+         {std::string("/proc/self"), std::string("/proc/version"),
+          std::string("/proc/self/status"), std::string("/proc/self/exe"),
+          absl::StrCat("/proc/self/task/", getpid()),
+          absl::StrCat("/proc/self/fd/", fd.get()),
+          absl::StrCat("/proc/self/fdinfo/", fd.get())}) {
+      SCOPED_TRACE(existing);
+      EXPECT_THAT(mkdir(existing.c_str(), 0700), SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(symlink("target", existing.c_str()),
+                  SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(mknod(existing.c_str(), S_IFIFO | 0600, 0),
+                  SyscallFailsWithErrno(EEXIST));
+      EXPECT_THAT(Open(existing, O_CREAT | O_EXCL | O_RDONLY, 0600),
+                  PosixErrorIs(EEXIST));
+      EXPECT_THAT(mkdir(absl::StrCat(existing, "/").c_str(), 0700),
+                  SyscallFailsWithErrno(EEXIST));
+    }
+  };
+  check();
+  // O_CREAT without O_EXCL still opens an existing file.
+  EXPECT_NO_ERRNO(Open("/proc/version", O_CREAT | O_RDONLY, 0600));
+  // A missing procfs child fails lookup before the parent's write permissions
+  // are checked.
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
+  SCOPED_TRACE("without DAC capabilities");
+  check();
+}
+
+TEST(ProcTest, LinkDestinationLookup) {
+  const auto outside = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const std::string missing = "/proc/nonexistent-create";
+
+  // The source exists but cannot be linked: it is either on a different
+  // mount or a directory. Linux still reports the destination lookup first.
+  for (const std::string& source :
+       {outside.path(), std::string("/proc/self/task")}) {
+    SCOPED_TRACE(source);
+    EXPECT_THAT(link(source.c_str(), missing.c_str()),
+                SyscallFailsWithErrno(ENOENT));
+    EXPECT_THAT(link(source.c_str(), "/proc/version"),
+                SyscallFailsWithErrno(EEXIST));
+  }
+}
+
+TEST(ProcTest, LinkAndRenameMissing) {
+  struct statvfs st;
+  ASSERT_THAT(statvfs("/proc", &st), SyscallSucceeds());
+  SKIP_IF(st.f_flag & ST_RDONLY);  // rename checks for a writable mount first.
+  const std::string source = "/proc/self/status";
+
+  // Even without write access to the directory, the missing destination
+  // fails lookup before link or rename can modify it.
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
+  for (const std::string& name :
+       {std::string("nonexistent-create"), std::string(NAME_MAX + 1, 'x')}) {
+    SCOPED_TRACE(name);
+    const std::string missing = JoinPath("/proc", name);
+    EXPECT_THAT(link(source.c_str(), missing.c_str()),
+                SyscallFailsWithErrno(ENOENT));
+    EXPECT_THAT(rename(source.c_str(), missing.c_str()),
+                SyscallFailsWithErrno(ENOENT));
+  }
+
+  // RENAME_NOREPLACE rejects an existing destination before write checks.
+  const std::string version = "/proc/version";
+  EXPECT_THAT(renameat2(AT_FDCWD, source.c_str(), AT_FDCWD, version.c_str(),
+                        RENAME_NOREPLACE),
+              SyscallFailsWithErrno(EEXIST));
+  EXPECT_THAT(rename(source.c_str(), source.c_str()), SyscallSucceeds());
+  // The proc root denies removal of version before the destination's
+  // immutable PID directory would reject a write.
+  EXPECT_THAT(rename(version.c_str(), source.c_str()),
+              SyscallFailsWithErrno(EACCES));
+}
+
+TEST(ProcTest, CreateReadOnly) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // Bind a proc directory so this also works in a user namespace that
+  // does not own the current PID namespace and cannot mount a new procfs.
+  const auto bind = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("/proc/self", dir.path(), "", MS_BIND, "", 0));
+  ASSERT_THAT(
+      mount(nullptr, dir.path().c_str(), nullptr,
+            MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC,
+            nullptr),
+      SyscallSucceeds());
+
+  for (const auto& [name, err] :
+       {std::pair{"nonexistent-create", ENOENT}, std::pair{"status", EEXIST}}) {
+    SCOPED_TRACE(name);
+    const std::string path = JoinPath(dir.path(), name);
+    EXPECT_THAT(mkdir(path.c_str(), 0700), SyscallFailsWithErrno(err));
+    EXPECT_THAT(symlink("target", path.c_str()), SyscallFailsWithErrno(err));
+    EXPECT_THAT(mknod(path.c_str(), S_IFIFO | 0600, 0),
+                SyscallFailsWithErrno(err));
+    EXPECT_THAT(Open(path, O_CREAT | O_EXCL | O_RDONLY, 0600),
+                PosixErrorIs(err));
+  }
+
+  // Unlike creation, rename needs a writable mount before final lookup.
+  EXPECT_THAT(rename(JoinPath(dir.path(), "status").c_str(),
+                     JoinPath(dir.path(), "nonexistent-create").c_str()),
+              SyscallFailsWithErrno(EROFS));
 }
 
 TEST(ProcSelfTest, IsThreadGroupLeader) {
@@ -1345,6 +1488,21 @@ TEST(ProcSelfFdInfo, GetdentsDuplicates) {
   CheckFdDirGetdentsDuplicates("/proc/self/fdinfo");
 }
 
+TEST(ProcSelfFd, NoncanonicalNames) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_RDONLY));
+  for (const char* dir : {"/proc/self/fd/", "/proc/self/fdinfo/"}) {
+    struct stat st;
+    ASSERT_THAT(lstat(absl::StrCat(dir, fd.get()).c_str(), &st),
+                SyscallSucceeds());
+    for (const char* prefix : {"0", "+"}) {
+      const std::string path = absl::StrCat(dir, prefix, fd.get());
+      SCOPED_TRACE(path);
+      EXPECT_THAT(lstat(path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+    }
+  }
+}
+
 TEST(ProcSelfFdInfo, CorrectFds) {
   // Make sure there is at least one open file.
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -1681,15 +1839,20 @@ TEST(ProcLoadavg, Fields) {
   EXPECT_EQ(fields.size(), 6) << proc_loadvg;
 
   double val;
-  uint64_t val2;
   // First three fields are floating point numbers.
   EXPECT_TRUE(absl::SimpleAtod(fields[0], &val)) << proc_loadvg;
   EXPECT_TRUE(absl::SimpleAtod(fields[1], &val)) << proc_loadvg;
   EXPECT_TRUE(absl::SimpleAtod(fields[2], &val)) << proc_loadvg;
   // Rest of the fields are valid base 10 numbers.
-  EXPECT_TRUE(absl::SimpleAtoi(fields[3], &val2)) << proc_loadvg;
-  EXPECT_TRUE(absl::SimpleAtoi(fields[4], &val2)) << proc_loadvg;
-  EXPECT_TRUE(absl::SimpleAtoi(fields[5], &val2)) << proc_loadvg;
+  uint64_t running_tasks = 0;
+  EXPECT_TRUE(absl::SimpleAtoi(fields[3], &running_tasks)) << proc_loadvg;
+  EXPECT_GE(running_tasks, 1) << proc_loadvg;
+  uint64_t total_tasks = 0;
+  EXPECT_TRUE(absl::SimpleAtoi(fields[4], &total_tasks)) << proc_loadvg;
+  EXPECT_GE(total_tasks, running_tasks) << proc_loadvg;
+  uint64_t last_tid = 0;
+  EXPECT_TRUE(absl::SimpleAtoi(fields[5], &last_tid)) << proc_loadvg;
+  EXPECT_GE(last_tid, 1) << proc_loadvg;
 }
 
 // NOTE: Tests in priority.cc also check certain priority related fields in
@@ -2741,6 +2904,24 @@ std::vector<std::string> TaskFiles(const std::vector<pid_t>& pids) {
 TEST(ProcTask, Basic) {
   EXPECT_NO_ERRNO(
       DirContains("/proc/self/task", {".", "..", absl::StrCat(getpid())}, {}));
+}
+
+TEST(ProcTask, InvalidTaskNames) {
+  const std::string invalid_names[] = {
+      absl::StrCat("0", getpid()),
+      absl::StrCat((uint64_t{1} << 32) + getpid()),
+      "2147483648",
+      "4294967295",
+      "18446744073709551616",
+  };
+  for (const std::string& name : invalid_names) {
+    for (const char* dir : {"/proc/", "/proc/self/task/"}) {
+      const std::string path = absl::StrCat(dir, name);
+      SCOPED_TRACE(path);
+      struct stat st;
+      EXPECT_THAT(stat(path.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+    }
+  }
 }
 
 // Helper class for creating a new task in the current thread group.

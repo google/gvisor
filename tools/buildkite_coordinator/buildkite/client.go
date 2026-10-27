@@ -46,8 +46,11 @@ func NewClient(agentToken []byte) *Client {
 }
 
 // call makes a request to the Buildkite Agent API, authenticated with the
-// agent token, sending body as JSON if it is non-nil. It decodes the JSON
-// response as Resp, or returns the zero Resp if the response has no content.
+// agent token, sending body as JSON if it is non-nil, and decodes the JSON
+// response as Resp.
+//
+// Use struct{} as Resp for endpoints that return no body. Any body is then
+// ignored. For any other Resp, an empty response returns an error.
 func call[Resp, Req any](ctx context.Context, c *Client, method, path string, body *Req) (Resp, error) {
 	var out Resp
 	var reqBody io.Reader
@@ -75,8 +78,12 @@ func call[Resp, Req any](ctx context.Context, c *Client, method, path string, bo
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return out, fmt.Errorf("%s %s: %s: %s", method, path, resp.Status, msg)
 	}
-	if resp.StatusCode == http.StatusNoContent {
+	if _, noBody := any(out).(struct{}); noBody {
+		// No response body is expected.
 		return out, nil
+	}
+	if resp.StatusCode == http.StatusNoContent {
+		return out, fmt.Errorf("%s %s: expected a response body, got %s", method, path, resp.Status)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return out, fmt.Errorf("failed to decode response to %s %s: %w", method, path, err)

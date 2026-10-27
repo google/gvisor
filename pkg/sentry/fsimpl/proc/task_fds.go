@@ -135,7 +135,7 @@ func (fs *filesystem) newFDDirInode(ctx context.Context, task *kernel.Task) kern
 			produceSymlink: true,
 		},
 	}
-	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0500)
+	inode.InodeAttrs.Init(ctx, taskOwnerCreds(task), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0500)
 	inode.InitRefs()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
@@ -152,12 +152,8 @@ func (i *fdDirInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Ite
 //
 // +checklocksexclude:i.fdDir.task.mu
 func (i *fdDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	fdInt, err := strconv.ParseInt(name, 10, 32)
-	if err != nil {
-		return nil, linuxerr.ENOENT
-	}
-	fd := int32(fdInt)
-	if !taskFDExists(ctx, i.fs, i.task, fd) {
+	fd, ok := parseIDName(name)
+	if !ok || !taskFDExists(ctx, i.fs, i.task, fd) {
 		return nil, linuxerr.ENOENT
 	}
 	return i.fs.newFDSymlink(ctx, i.task, fd, i.fs.NextIno()), nil
@@ -226,7 +222,7 @@ func (fs *filesystem) newFDSymlink(ctx context.Context, task *kernel.Task, fd in
 		task: task,
 		fd:   fd,
 	}
-	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
+	inode.Init(ctx, taskOwnerCreds(task), linux.UNNAMED_MAJOR, fs.devMinor, ino, linux.ModeSymlink|0777)
 	return inode
 }
 
@@ -296,7 +292,7 @@ func (fs *filesystem) newFDInfoDirInode(ctx context.Context, task *kernel.Task) 
 			task: task,
 		},
 	}
-	inode.InodeAttrs.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
+	inode.InodeAttrs.Init(ctx, taskOwnerCreds(task), linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0555)
 	inode.InitRefs()
 	inode.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	return inode
@@ -306,12 +302,8 @@ func (fs *filesystem) newFDInfoDirInode(ctx context.Context, task *kernel.Task) 
 //
 // +checklocksexclude:i.fdDir.task.mu
 func (i *fdInfoDirInode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
-	fdInt, err := strconv.ParseInt(name, 10, 32)
-	if err != nil {
-		return nil, linuxerr.ENOENT
-	}
-	fd := int32(fdInt)
-	if !taskFDExists(ctx, i.fs, i.task, fd) {
+	fd, ok := parseIDName(name)
+	if !ok || !taskFDExists(ctx, i.fs, i.task, fd) {
 		return nil, linuxerr.ENOENT
 	}
 	data := &fdInfoData{

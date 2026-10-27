@@ -161,8 +161,8 @@ func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid 
 	i.nodeID = nodeid
 	i.ino.Store(nodeid)
 	i.mode.Store(uint32(mode))
-	i.uid.Store(uint32(creds.EffectiveKUID))
-	i.gid.Store(uint32(creds.EffectiveKGID))
+	i.uid.Store(uint32(creds.FilesystemKUID))
+	i.gid.Store(uint32(creds.FilesystemKGID))
 	i.nlink.Store(nlink)
 	i.blockSize.Store(4096) // Default block size.
 

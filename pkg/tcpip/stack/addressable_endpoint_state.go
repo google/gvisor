@@ -598,6 +598,11 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 		return ep
 	}
 
+	// Do not create temporary addresses while the network endpoint is disabled.
+	if !a.networkEndpoint.Enabled() {
+		return nil
+	}
+
 	// Proceed to add a new temporary endpoint.
 	addr := localAddr.WithPrefix()
 	ep, err := a.addAndAcquireAddressLocked(addr, AddressProperties{PEB: tempPEB, Temporary: true}, Temporary)
@@ -820,6 +825,9 @@ func (a *addressState) remove(reason AddressRemovalReason) {
 
 // IsAssigned implements AddressEndpoint.
 func (a *addressState) IsAssigned(allowExpired bool) bool {
+	if a.addressableEndpointState.options.HiddenWhileDisabled && !a.addressableEndpointState.networkEndpoint.Enabled() {
+		return false
+	}
 	switch kind := a.GetKind(); kind {
 	case PermanentTentative:
 		return false

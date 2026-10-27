@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
   }
 
   // Create a file in the test directory.
-  char* file_path = malloc(strlen(kDirPath) + 1 + strlen(kFileBasename));
+  char* file_path = malloc(strlen(kDirPath) + 1 + sizeof(kFileBasename));
   if (!file_path) {
     errx(1, "malloc");
   }

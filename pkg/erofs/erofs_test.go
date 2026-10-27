@@ -240,3 +240,41 @@ func TestInvalidChunks(t *testing.T) {
 		})
 	}
 }
+
+// TestBlockSizeBits checks that only block sizes from the host page size up to
+// 64 KiB are accepted, and that a bad size is rejected before the superblock
+// checksum is read.
+func TestBlockSizeBits(t *testing.T) {
+	open := func(bits uint8, compat uint32) error {
+		img := make([]byte, hostarch.PageSize)
+		sb := SuperBlock{Magic: SuperBlockMagicV1, BlockSizeBits: bits, Blocks: 1, FeatureCompat: compat}
+		sb.MarshalUnsafe(img[SuperBlockOffset:])
+		f, err := os.CreateTemp(t.TempDir(), "erofs")
+		if err != nil {
+			t.Fatalf("CreateTemp: %v", err)
+		}
+		if _, err := f.Write(img); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		// OpenImage takes ownership of f on success.
+		image, err := OpenImage(f)
+		if err != nil {
+			f.Close()
+			return err
+		}
+		image.Close()
+		return nil
+	}
+	for bits := uint8(hostarch.PageShift); bits <= maxBlockSizeBits; bits++ {
+		if err := open(bits, 0); err != nil {
+			t.Errorf("OpenImage with BlockSizeBits=%d: %v", bits, err)
+		}
+	}
+	for _, bits := range []uint8{uint8(hostarch.PageShift) - 1, maxBlockSizeBits + 1, 32, 40} {
+		for _, compat := range []uint32{0, FeatureCompatSuperBlockChecksum} {
+			if err := open(bits, compat); err == nil {
+				t.Errorf("OpenImage with BlockSizeBits=%d and FeatureCompat=%#x succeeded", bits, compat)
+			}
+		}
+	}
+}

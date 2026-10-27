@@ -748,6 +748,60 @@ func TestCalculateTransportChecksumUnknownProtocol(t *testing.T) {
 	pk.CalculateTransportChecksum()
 }
 
+func TestCalculateTransportChecksumIPv6Extensions(t *testing.T) {
+	const extensionSize = 8
+	src := tcpip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	dst := tcpip.AddrFrom16([16]byte{0x20, 1, 0xdb, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})
+	for _, protocol := range []tcpip.TransportProtocolNumber{header.TCPProtocolNumber, header.UDPProtocolNumber} {
+		for _, extension := range []header.IPv6ExtensionHeaderIdentifier{header.IPv6HopByHopOptionsExtHdrIdentifier, header.IPv6DestinationOptionsExtHdrIdentifier} {
+			t.Run(fmt.Sprintf("protocol=%d/extension=%d", protocol, extension), func(t *testing.T) {
+				pk := NewPacketBuffer(PacketBufferOptions{
+					ReserveHeaderBytes: header.IPv6MinimumSize + extensionSize + header.TCPMinimumSize,
+					Payload:            buffer.MakeWithData([]byte{1, 2, 3, 4}),
+				})
+				defer pk.DecRef()
+				pk.NetworkProtocolNumber = header.IPv6ProtocolNumber
+				pk.TransportProtocolNumber = protocol
+				var transport header.ChecksummableTransport
+				switch protocol {
+				case header.TCPProtocolNumber:
+					tcp := header.TCP(pk.TransportHeader().Push(header.TCPMinimumSize))
+					tcp.SetDataOffset(header.TCPMinimumSize)
+					transport = tcp
+				case header.UDPProtocolNumber:
+					udp := header.UDP(pk.TransportHeader().Push(header.UDPMinimumSize))
+					udp.SetLength(uint16(header.UDPMinimumSize + pk.Data().Size()))
+					transport = udp
+				}
+				transport.SetSourcePort(1234)
+				transport.SetDestinationPort(5678)
+				netHdr := pk.NetworkHeader().Push(header.IPv6MinimumSize + extensionSize)
+				header.IPv6(netHdr).Encode(&header.IPv6Fields{
+					PayloadLength:     uint16(extensionSize + len(pk.TransportHeader().Slice()) + pk.Data().Size()),
+					TransportProtocol: protocol,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				header.IPv6(netHdr).SetNextHeader(uint8(extension))
+				netHdr[header.IPv6MinimumSize] = byte(protocol)
+
+				pk.CalculateTransportChecksum()
+
+				var valid bool
+				switch transport := transport.(type) {
+				case header.TCP:
+					valid = transport.IsChecksumValid(src, dst, pk.Data().Checksum(), uint16(pk.Data().Size()))
+				case header.UDP:
+					valid = transport.IsChecksumValid(src, dst, pk.Data().Checksum())
+				}
+				if !valid {
+					t.Errorf("invalid transport checksum: %#x", transport.Checksum())
+				}
+			})
+		}
+	}
+}
+
 // TestCalculateTransportChecksumUDPZero verifies that
 // CalculateTransportChecksum() when the checksum evaluates to zero.
 func TestCalculateTransportChecksumUDPZero(t *testing.T) {

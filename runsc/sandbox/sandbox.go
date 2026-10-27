@@ -36,7 +36,6 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -47,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
+	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/pinring"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control/controlapi"
@@ -69,8 +69,6 @@ import (
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/starttime"
-
-	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
 
 const (
@@ -171,6 +169,11 @@ type Sandbox struct {
 	// is not running.
 	Pid Pid `json:"pid"`
 
+	// PidIdentity is the specutils.ProcessIdentity of the sandbox process,
+	// which distinguishes it from processes that later reuse its PID.
+	// Zero if unknown.
+	PidIdentity uint64 `json:"pidIdentity,omitempty"`
+
 	// UID is the user ID in the parent namespace that the sandbox is running as.
 	UID int `json:"uid"`
 	// GID is the group ID in the parent namespace that the sandbox is running as.
@@ -180,14 +183,24 @@ type Sandbox struct {
 	// and allow serialization of the configuration into json
 	CgroupJSON cgroup.CgroupJSON `json:"cgroup"`
 
+	// CPULimits, if set, are the CPU limits of the cgroup in CgroupJSON.
+	CPULimits *CPULimits `json:"cpuLimits,omitempty"`
+
+	// In a sandbox with no root container and with CPULimits set,
+	// `Creating` is set to true from sandbox creation until its first
+	// subcontainer starts. During this time, the sandbox keeps its
+	// creation-time CPU limit. Cleared by `Sandbox.MarkCreated`.
+	Creating bool `json:"creating,omitempty"`
+
 	// OriginalOOMScoreAdj stores the value of oom_score_adj when the sandbox
 	// started, before it may be modified.
 	OriginalOOMScoreAdj int `json:"originalOomScoreAdj"`
 
-	// RegisteredMetrics is the set of metrics registered in the sandbox.
-	// Used for verifying metric data integrity after containers are started.
-	// Only populated if exporting metrics was requested when the sandbox was
-	// created.
+	// RegisteredMetrics is the set of metrics registered in the sandbox before
+	// it starts running untrusted code, so that a compromised sandbox cannot
+	// produce bogus metrics.
+	// Set when the root container starts/is restored,
+	// if the sandbox is configured to export metrics at all.
 	RegisteredMetrics *metricpb.MetricRegistration `json:"registeredMetrics"`
 
 	// MetricMetadata are key-value pairs that are useful to export about this
@@ -307,6 +320,9 @@ type Args struct {
 	// to the entire pod.
 	MountHints *sentryapi.PodMountHints
 
+	// SpecFile is a specutils.CopySpec copy of Spec. Caller closes it.
+	SpecFile *os.File
+
 	// MountsFile is a file container mount information from the spec. It's
 	// equivalent to the mounts from the spec, except that all paths have been
 	// resolved to their final absolute location.
@@ -314,6 +330,10 @@ type Args struct {
 
 	// Gcgroup is the cgroup that the sandbox is part of.
 	Cgroup cgroup.Cgroup
+
+	// CPULimits, if set, are the CPU limits of `Cgroup`, which currently has
+	// the lifecycle limit.
+	CPULimits *CPULimits
 
 	// CloneIntoCgroupFD, when non-nil, is an FD to `Cgroup`'s directory. The
 	// sandbox process is created inside the cgroup via `CLONE_INTO_CGROUP`.
@@ -356,6 +376,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		CgroupJSON: cgroup.CgroupJSON{
 			Cgroup: args.Cgroup,
 		},
+		CPULimits:           args.CPULimits,
 		UID:                 -1, // prevent usage before it's set.
 		GID:                 -1, // prevent usage before it's set.
 		MetricMetadata:      conf.MetricMetadata(),
@@ -363,6 +384,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		MountHints:          args.MountHints,
 		StartTime:           starttime.Get(),
 		NoRootContainer:     args.NoRootContainer,
+		Creating:            args.NoRootContainer && args.CPULimits != nil,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
@@ -389,49 +411,8 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		}
 	}
 
-	// Create pipe to synchronize when sandbox process has been booted.
-	clientSyncFile, sandboxSyncFile, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("creating pipe for sandbox %q: %v", s.ID, err)
-	}
-	defer clientSyncFile.Close()
-
-	// Create the sandbox process.
-	err = s.createSandboxProcess(conf, args, sandboxSyncFile)
-	// sandboxSyncFile has to be closed to be able to detect when the sandbox
-	// process exits unexpectedly.
-	sandboxSyncFile.Close()
-	if err != nil {
+	if err := s.createSandboxProcess(conf, args); err != nil {
 		return nil, fmt.Errorf("cannot create sandbox process: %w", err)
-	}
-
-	// Wait until the sandbox has booted.
-	b := make([]byte, 1)
-	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
-		err := fmt.Errorf("waiting for sandbox to start: %v", err)
-		// If the sandbox failed to start, it may be because the binary
-		// permissions were incorrect. Check the bits and return a more helpful
-		// error message.
-		//
-		// NOTE: The error message is checked because error types are lost over
-		// rpc calls.
-		if strings.Contains(err.Error(), io.EOF.Error()) {
-			if permsErr := checkBinaryPermissions(conf); permsErr != nil {
-				return nil, fmt.Errorf("%v: %v", err, permsErr)
-			}
-		}
-		return nil, fmt.Errorf("cannot read client sync file: %w", err)
-	}
-
-	if conf.MetricServer != "" {
-		// The control server is up and the sandbox was configured to export metrics.
-		// We must gather data about registered metrics prior to any process starting in the sandbox.
-		log.Debugf("Getting metric registration information from sandbox %q", s.ID)
-		var registeredMetrics controlapi.MetricsRegistrationResponse
-		if err := s.call(sentryapi.MetricsGetRegistered, nil, &registeredMetrics); err != nil {
-			return nil, fmt.Errorf("cannot get registered metrics: %v", err)
-		}
-		s.RegisteredMetrics = registeredMetrics.RegisteredMetrics
 	}
 
 	c.Release()
@@ -477,6 +458,7 @@ func getDisableIPv6(spec *specs.Spec) (bool, error) {
 
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
+	waitRegisteredMetrics := s.fetchRegisteredMetrics()
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
@@ -498,12 +480,21 @@ func (s *Sandbox) StartRoot(conf *config.Config, spec *specs.Spec) error {
 		return fmt.Errorf("setting up network: %w", err)
 	}
 
+	registeredMetrics, err := waitRegisteredMetrics()
+	if err != nil {
+		return err
+	}
+
 	// Send a message to the sandbox control server to start the root container.
 	if err := conn.Call(sentryapi.ContMgrRootContainerStart, &s.ID, nil); err != nil {
 		return fmt.Errorf("starting root container: %w", err)
 	}
-
-	return nil
+	s.RegisteredMetrics = registeredMetrics
+	if s.Creating {
+		log.Infof("[Lifecycle CPU] Keeping the creation CPU limit until the first container of sandbox %q starts", s.ID)
+		return nil
+	}
+	return s.applyAppCPULimit(cpuPhaseCreation)
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
@@ -561,13 +552,74 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	return nil
 }
 
+// DirectIO controls whether the checkpoint pages file is read with O_DIRECT.
+// This bypasses the host page cache, which is faster and saves memory when the
+// checkpoint is not already cached and will not be read again on this host.
+type DirectIO int
+
+// DirectIO values.
+const (
+	// DirectIOAuto uses O_DIRECT for GPU restores if the filesystem holding
+	// the pages file supports it. GPU checkpoints are large and typically
+	// restored once per host.
+	DirectIOAuto DirectIO = iota
+
+	// DirectIOOn always uses O_DIRECT. Restore fails if the filesystem holding
+	// the pages file does not support it.
+	DirectIOOn
+
+	// DirectIOOff never uses O_DIRECT.
+	DirectIOOff
+)
+
+// Set implements flag.Value.
+func (d *DirectIO) Set(v string) error {
+	switch v {
+	case "auto":
+		*d = DirectIOAuto
+	case "on":
+		*d = DirectIOOn
+	case "off":
+		*d = DirectIOOff
+	default:
+		return fmt.Errorf("invalid direct I/O mode %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (d DirectIO) Get() any {
+	return d
+}
+
+// String implements flag.Value.
+func (d DirectIO) String() string {
+	switch d {
+	case DirectIOAuto:
+		return "auto"
+	case DirectIOOn:
+		return "on"
+	case DirectIOOff:
+		return "off"
+	}
+	panic(fmt.Sprintf("invalid direct I/O mode %d", d))
+}
+
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, direct, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, imagePath string, directIO DirectIO, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+	waitRegisteredMetrics := s.fetchRegisteredMetrics()
 	if err := hostsettings.Handle(conf); err != nil {
 		return fmt.Errorf("host settings: %w (use --host-settings=ignore to bypass)", err)
 	}
 
 	log.Debugf("Restore sandbox %q from path %q", s.ID, imagePath)
+
+	s.Creating = false
+	// TODO(fvoznika): Once `runsc create --for-restore` exists, this should
+	// become a no-op and no longer be needed:
+	if err := s.switchCPULimit(cpuPhaseCreation, cpuPhaseLifecycle); err != nil {
+		log.Warningf("[Lifecycle CPU] Restore will run under the creation CPU limit: %v. This affects gVisor restore speed.", err)
+	}
 
 	if !s.FSRestore && HasFSCheckpointManifest(imagePath) {
 		return fmt.Errorf("cannot restore split filesystem checkpoint: sandbox was created without filesystem restore support")
@@ -582,7 +634,10 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 			_ = f.Close()
 		}
 	}()
-	if err := s.setRestoreOpts(conf, imagePath, direct, &opt); err != nil {
+	if directIO == DirectIOAuto && !specutils.NVProxyEnabled(spec, conf) {
+		directIO = DirectIOOff
+	}
+	if err := s.setRestoreOpts(conf, imagePath, directIO, &opt); err != nil {
 		return err
 	}
 
@@ -621,8 +676,14 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		}
 	}
 
+	registeredMetrics, err := waitRegisteredMetrics()
+	if err != nil {
+		return err
+	}
+
 	// Restore the container and start the root container.
-	if err := conn.Call(sentryapi.ContMgrRestore, &opt, nil); err != nil {
+	var reply sentryapi.RestoreReply
+	if err := conn.Call(sentryapi.ContMgrRestore, &opt, &reply); err != nil {
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
 				return fmt.Errorf("restoring container %q from %s: %w", cid, target, err)
@@ -630,17 +691,21 @@ func (s *Sandbox) Restore(conf *config.Config, spec *specs.Spec, cid string, ima
 		}
 		return fmt.Errorf("restoring container %q: %w", cid, err)
 	}
+	s.RegisteredMetrics = registeredMetrics
 	s.Restored = true
-	return nil
+	if !reply.KernelStarted {
+		return nil
+	}
+	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
-func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, direct bool, opt *sentryapi.RestoreOpts) error {
+func (s *Sandbox) setRestoreOpts(conf *config.Config, imagePath string, directIO DirectIO, opt *sentryapi.RestoreOpts) error {
 	clientSockFile, err := s.maybeStartCheckpointGoferAndGetSocket(conf, s.CgroupJSON.Cgroup, imagePath, "-allow-checkpoint-reads")
 	if err != nil {
 		return err
 	}
 	if clientSockFile == nil {
-		return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, direct, opt)
+		return s.setRestoreOptsForLocalCheckpointFiles(conf, imagePath, directIO, opt)
 	}
 	log.Infof("Restoring from GCS via checkpoint gofer")
 	opt.FilePayload.Files = append(opt.FilePayload.Files, clientSockFile)
@@ -698,7 +763,21 @@ func openCheckpointFile(dirFD int, dir, name string, flags int) (*os.File, error
 	return os.NewFile(uintptr(fd), filepath.Join(dir, name)), nil
 }
 
-func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, direct bool, opt *sentryapi.RestoreOpts) error {
+// openPagesFile opens the checkpoint pages file for reading. Its contents are
+// page-aligned, so it can be opened with O_DIRECT.
+func openPagesFile(dirFD int, imagePath string, directIO DirectIO) (*os.File, error) {
+	if directIO != DirectIOOff {
+		pf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, unix.O_RDONLY|unix.O_DIRECT)
+		if err == nil || directIO == DirectIOOn || !errors.Is(err, unix.EINVAL) {
+			return pf, err
+		}
+		// EINVAL means that the filesystem does not support O_DIRECT.
+		log.Infof("Reading pages file %q through the page cache: O_DIRECT is not supported", path.Join(imagePath, checkpointfiles.PagesFileName))
+	}
+	return openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, unix.O_RDONLY)
+}
+
+func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, imagePath string, directIO DirectIO, opt *sentryapi.RestoreOpts) error {
 	dirFD, err := openRestoreDir(imagePath)
 	if err != nil {
 		return fmt.Errorf("opening checkpoint directory %q failed: %w", imagePath, err)
@@ -715,12 +794,7 @@ func (s *Sandbox) setRestoreOptsForLocalCheckpointFiles(conf *config.Config, ima
 	// and we must pass them in.
 	if pmf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesMetadataFileName, unix.O_RDONLY); err == nil {
 		opt.FilePayload.Files = append(opt.FilePayload.Files, pmf)
-		pagesReadFlags := unix.O_RDONLY
-		if direct {
-			// The contents are page-aligned, so it can be opened with O_DIRECT.
-			pagesReadFlags |= unix.O_DIRECT
-		}
-		pf, err := openCheckpointFile(dirFD, imagePath, checkpointfiles.PagesFileName, pagesReadFlags)
+		pf, err := openPagesFile(dirFD, imagePath, directIO)
 		if err != nil {
 			return fmt.Errorf("opening pages file %q failed: %w", path.Join(imagePath, checkpointfiles.PagesFileName), err)
 		}
@@ -766,10 +840,14 @@ func (s *Sandbox) RestoreSubcontainer(spec *specs.Spec, conf *config.Config, cid
 		GoferMountConfs:      goferMountConf,
 		FilePayload:          payload,
 	}
-	if err := s.call(sentryapi.ContMgrRestoreSubcontainer, &args, nil); err != nil {
+	var reply sentryapi.RestoreReply
+	if err := s.call(sentryapi.ContMgrRestoreSubcontainer, &args, &reply); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
 	}
-	return nil
+	if !reply.KernelStarted {
+		return nil
+	}
+	return s.applyAppCPULimit(cpuPhaseLifecycle)
 }
 
 // Processes retrieves the list of processes and associated metadata for a
@@ -1003,7 +1081,7 @@ const sentryExeFD = 3
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
+func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args) error {
 	// Ensure we don't leak FDs to the sandbox process.
 	if err := SetCloExeOnAllFDs(); err != nil {
 		return fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
@@ -1135,7 +1213,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations.DonateAndClose("dev-io-fd", args.DevIOFile)
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
-	donations.Donate("start-sync-fd", startSyncFile)
 	var pinRing *os.File
 	if _, err := gvisorbinaries.FDParking.Path(); err != nil {
 		log.Warningf("Sidecar %q not found or usable (%v). This slows down gVisor sandbox teardown.", gvisorbinaries.FDParking.Name, err)
@@ -1174,11 +1251,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	log.Infof("Control socket path: %q", s.ControlSocketPath)
 	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
-	specFile, err := specutils.OpenSpec(args.BundleDir)
-	if err != nil {
-		return fmt.Errorf("cannot open spec file in bundle dir %v: %w", args.BundleDir, err)
-	}
-	donations.DonateAndClose("spec-fd", specFile)
+	donations.Donate("spec-fd", args.SpecFile)
 
 	if err := donations.DonateLogFile("pod-init-config-fd", conf.PodInitConfig, os.O_RDONLY, lfOpts); err != nil {
 		return err
@@ -1474,11 +1547,16 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	mem := totalSysMem
 	if s.CgroupJSON.Cgroup != nil {
-		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, conf.CPUNumFromQuota)
+		cgCPUNum := cgroupCPUNum(s.CgroupJSON.Cgroup)
+		cpuNum, cpuQuota, cpuPeriod, err := calculateCPUNum(s.CgroupJSON.Cgroup, cgCPUNum, s.CPULimits, conf.CPUNumFromQuota)
 		if err != nil {
 			return err
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
+		if s.CPULimits != nil {
+			cmd.Args = append(cmd.Args, "--lifecycle-cpu-num", strconv.Itoa(s.CPULimits.lifecycleCPUNum(cgCPUNum)))
+		}
+		cmd.Env = append(cmd.Env, "GOMAXPROCS="+strconv.Itoa(cpuNum))
 		if cpuQuota > 0 {
 			cmd.Args = append(cmd.Args, "--cpu-quota", strconv.FormatInt(cpuQuota, 10))
 		}
@@ -1544,6 +1622,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	s.child = true
 	s.Pid.Store(cmd.Process.Pid)
+	if s.PidIdentity, err = specutils.ProcessIdentity(cmd.Process.Pid); err != nil {
+		return err
+	}
 	log.Infof("Sandbox started, PID: %d", cmd.Process.Pid)
 
 	if pinRing != nil {
@@ -1610,21 +1691,34 @@ func spawnFDParking(ring *os.File, pid int) error {
 	return nil
 }
 
-// calculateCPUNum calculates the number of CPUs to configure for the sandbox,
-// along with the cgroup CPU quota and period.
-func calculateCPUNum(cg cgroup.Cgroup, cpuNumFromQuota bool) (int, int64, int64, error) {
+// cgroupCPUNum returns the number of CPUs that `cg` can run on.
+func cgroupCPUNum(cg cgroup.Cgroup) int {
 	cpuNum, err := cg.NumCPU()
 	if err != nil {
 		log.Warningf("Failed to get cpu count from cgroups: %v. Falling back to runtime.NumCPU()", err)
-		cpuNum = runtime.NumCPU()
+		return runtime.NumCPU()
 	}
-	cpuQuota, err := cg.CPUQuota()
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
-	}
-	cpuPeriod, err := cg.CPUPeriod()
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+	return cpuNum
+}
+
+// calculateCPUNum calculates the number of CPUs to configure for the sandbox,
+// out of the `cgCPUNum` CPUs that `cg` can run on, along with the cgroup CPU
+// quota and period.
+// `limits`, if set, holds the application CPU limit, which `cg` does not have
+// yet.
+func calculateCPUNum(cg cgroup.Cgroup, cgCPUNum int, limits *CPULimits, cpuNumFromQuota bool) (int, int64, int64, error) {
+	cpuNum := cgCPUNum
+	var cpuQuota, cpuPeriod int64
+	if limits != nil {
+		cpuQuota, cpuPeriod = *limits.App.Quota, int64(*limits.App.Period)
+	} else {
+		var err error
+		if cpuQuota, err = cg.CPUQuota(); err != nil {
+			return 0, 0, 0, fmt.Errorf("getting raw cpu quota from cgroups: %v", err)
+		}
+		if cpuPeriod, err = cg.CPUPeriod(); err != nil {
+			return 0, 0, 0, fmt.Errorf("getting raw cpu period from cgroups: %v", err)
+		}
 	}
 	if cpuNumFromQuota && cpuQuota > 0 && cpuPeriod > 0 {
 		// Dropping below 2 CPUs can trigger application to disable
@@ -1695,6 +1789,9 @@ func (s *Sandbox) Wait(cid string) (unix.WaitStatus, error) {
 		conn.Close()
 		if err == nil {
 			if s.IsRootContainer(cid) {
+				if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+					log.Warningf("[Lifecycle CPU] Sandbox teardown after root container exit will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+				}
 				if err := s.waitForStopped(); err != nil {
 					return unix.WaitStatus(0), err
 				}
@@ -1793,9 +1890,14 @@ func (s *Sandbox) destroy() error {
 	}
 	pid := s.Pid.Load()
 	if pid != 0 {
+		if running, _ := s.IsRunning(); running {
+			if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+				log.Warningf("[Lifecycle CPU] Sandbox destruction will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+			}
+		}
 		log.Debugf("Killing sandbox %q", s.ID)
-		if err := unix.Kill(pid, unix.SIGKILL); err != nil && err != unix.ESRCH {
-			return fmt.Errorf("killing sandbox %q PID %d: %w", s.ID, pid, err)
+		if err := specutils.KillProcess(pid, s.PidIdentity); err != nil {
+			return fmt.Errorf("killing sandbox %q: %w", s.ID, err)
 		}
 		if err := s.waitForStopped(); err != nil {
 			return fmt.Errorf("waiting sandbox %q stop: %w", s.ID, err)
@@ -1810,6 +1912,12 @@ func (s *Sandbox) destroy() error {
 // returning.
 func (s *Sandbox) SignalContainer(cid string, sig unix.Signal, all bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
+	if sig == unix.SIGKILL && s.IsRootContainer(cid) {
+		// This stops the application.
+		if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+			log.Warningf("[Lifecycle CPU] Sandbox teardown after SIGKILL of the root container will run under the application CPU limit: %v. This slows down gVisor teardown.", err)
+		}
+	}
 	mode := sentryapi.DeliverToProcess
 	if all {
 		mode = sentryapi.DeliverToAllProcesses
@@ -1918,7 +2026,14 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return err
 	}
 
+	if err := s.switchCPULimit(cpuPhaseApp, cpuPhaseLifecycle); err != nil {
+		log.Warningf("[Lifecycle CPU] Checkpoint will run under the application CPU limit: %v. This slows down gVisor checkpointing speed.", err)
+	}
 	if err := s.call(sentryapi.ContMgrCheckpoint, &opt, nil); err != nil {
+		// The application may still be running.
+		if err := s.applyAppCPULimit(cpuPhaseLifecycle); err != nil {
+			log.Warningf("[Lifecycle CPU] Cannot restore the application CPU limit after failed checkpoint: %v", err)
+		}
 		if opt.UseCheckpointGofer {
 			if target := getGCSURIFromImagePath(imagePath); target != "" {
 				return fmt.Errorf("checkpointing container %q to %s: %w", cid, target, err)
@@ -1927,6 +2042,9 @@ func (s *Sandbox) Checkpoint(conf *config.Config, cid string, imagePath string, 
 		return fmt.Errorf("checkpointing container %q: %w", cid, err)
 	}
 	s.Checkpointed = true
+	if opts.Resume {
+		return s.applyAppCPULimit(cpuPhaseLifecycle)
+	}
 	return nil
 }
 
@@ -2606,16 +2724,23 @@ func (s *Sandbox) UsageFD() (*controlapi.MemoryUsageRecord, error) {
 	return controlapi.NewMemoryUsageRecord(*m.FilePayload.Files[0], *m.FilePayload.Files[1])
 }
 
-// GetRegisteredMetrics returns metric registration data from the sandbox.
-// This data is meant to be used as a way to sanity-check any exported metrics data during the
-// lifetime of the sandbox in order to avoid a compromised sandbox from being able to produce
-// bogus metrics.
-// This returns an error if the sandbox has not requested instrumentation during creation time.
-func (s *Sandbox) GetRegisteredMetrics() (*metricpb.MetricRegistration, error) {
-	if s.RegisteredMetrics == nil {
-		return nil, errors.New("sandbox did not request instrumentation when it was created")
+// fetchRegisteredMetrics starts fetching the metrics registered in the
+// sandbox, if it exports metrics.
+// Must be called before untrusted code starts running in the sandbox.
+func (s *Sandbox) fetchRegisteredMetrics() func() (*metricpb.MetricRegistration, error) {
+	if s.MetricServerAddress == "" {
+		return func() (*metricpb.MetricRegistration, error) { return nil, nil } // No-op
 	}
-	return s.RegisteredMetrics, nil
+	log.Debugf("Getting metric registration information from sandbox %q", s.ID)
+	var registeredMetrics controlapi.MetricsRegistrationResponse
+	done := make(chan error, 1)
+	go func() { done <- s.call(sentryapi.MetricsGetRegistered, nil, &registeredMetrics) }()
+	return func() (*metricpb.MetricRegistration, error) {
+		if err := <-done; err != nil {
+			return nil, fmt.Errorf("cannot get registered metrics: %w", err)
+		}
+		return registeredMetrics.RegisteredMetrics, nil
+	}
 }
 
 // TimeSaved returns the cached CPU and wall time saved by restoration.
@@ -2669,31 +2794,7 @@ func (s *Sandbox) ExportMetrics(opts controlapi.MetricsExportOpts) (*prometheus.
 
 // IsRunning returns true if the sandbox process is running (and not a zombie).
 func (s *Sandbox) IsRunning() (bool, error) {
-	pid := s.Pid.Load()
-	if pid <= 0 {
-		return false, nil
-	}
-	pidfd, err := unix.PidfdOpen(pid, 0)
-	if err != nil {
-		if err == unix.ESRCH || err == unix.EINVAL {
-			return false, nil
-		}
-		return false, fmt.Errorf("pidfd_open(%d): %w", pid, err)
-	}
-	defer unix.Close(pidfd)
-
-	pfds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
-	for {
-		n, err := unix.Poll(pfds, 0)
-		if err == unix.EINTR {
-			continue
-		}
-		if err != nil {
-			return false, fmt.Errorf("polling pidfd for process %d: %w", pid, err)
-		}
-		// A pidfd becomes readable (POLLIN) when the process exits (including when it is a zombie).
-		return n == 0, nil
-	}
+	return specutils.IsProcessRunning(s.Pid.Load(), s.PidIdentity)
 }
 
 // Stacks collects and returns all stacks for the sandbox.
@@ -2830,7 +2931,7 @@ func (s *Sandbox) waitForStopped() error {
 	if pid == 0 {
 		return nil
 	}
-	return specutils.WaitForNonChildExit(pid, waitTimeout)
+	return specutils.WaitForNonChildExit(pid, s.PidIdentity, waitTimeout)
 }
 
 // configureStdios change stdios ownership to give access to the sandbox
@@ -2893,6 +2994,16 @@ func sentryBinary(conf *config.Config) *gvisorbinaries.Binary {
 		return &gvisorbinaries.GvisorSentryPluginStack
 	}
 	return &gvisorbinaries.GvisorSentry
+}
+
+// ExitedBeforeStartError means that the sandbox exited before a container
+// could be started in it (failed to boot).
+func ExitedBeforeStartError(conf *config.Config) error {
+	err := errors.New("the sandbox exited before the container started (see the sandbox logs)")
+	if permsErr := checkBinaryPermissions(conf); permsErr != nil {
+		return fmt.Errorf("%w: %v", err, permsErr)
+	}
+	return err
 }
 
 // checkBinaryPermissions verifies that the required binary bits are set on

@@ -50,9 +50,11 @@ go_test(
     ],
     embed = [":v1"],
     deps = [
+        "//pkg/shim/v1/extension",
         "//runsc/specutils",
         "@com_github_containerd_containerd_api//runtime/task/v2:go_default_library",
         "@com_github_containerd_containerd_v2//core/events:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/protobuf/types:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/shim:go_default_library",
         "@com_github_containerd_containerd_v2//pkg/shutdown:go_default_library",
         "@com_github_containerd_typeurl_v2//:go_default_library",

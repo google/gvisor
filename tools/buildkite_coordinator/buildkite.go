@@ -26,8 +26,6 @@ import (
 	"time"
 
 	compute "google.golang.org/api/compute/v1"
-
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/tools/buildkite_coordinator/buildkite"
 )
 
@@ -35,8 +33,24 @@ const (
 	// reservationExpiry is how long jobs are reserved for.
 	reservationExpiry = 10 * time.Minute
 
+	// exitStatusInfraError is returned for jobs that the coordinator could
+	// not give to an agent due to an infrastructure error.
+	//
+	// Such failures should be retried.
+	exitStatusInfraError = -1
+
+	// exitStatusRateLimited is returned for jobs that the coordinator could
+	// not give out to an agent due to the author being rate-limited.
+	//
+	// There is no point in retrying such failures.
+	exitStatusRateLimited = 80
+
 	// tokenMinLifetime is how long a token must live for to be kept in the pool.
 	tokenMinLifetime = 15 * time.Second
+
+	// jatMaxAttempts is the maximum number of times the coordinator will attempt
+	// to assign a JAT to an agent before dropping it.
+	jatMaxAttempts = 5
 )
 
 // BuildUUID represents a Buildkite build UUID.
@@ -54,6 +68,10 @@ type JobAcquisitionToken struct {
 	// expiresAt stores the approximate time at which the JAT will expire.
 	// Stored for the purposes of avoiding handing expired JATs to agents.
 	expiresAt time.Time
+
+	// attempts stores the number of times we have previously attempted to
+	// assign this JAT to an agent.
+	attempts uint
 }
 
 const (
@@ -163,10 +181,15 @@ func (p *JobPool) countLocked(queue string, uuid BuildUUID) uint {
 	return uint(len(q.trustedBuilds[uuid].reservedJobs) + len(q.untrustedBuilds[uuid].reservedJobs))
 }
 
-// addLocked adds a reserved job and its token to the pool.
+// addLocked implements add.
 //
 // p.mu must be held.
-func (p *JobPool) addLocked(queue string, uuid BuildUUID, metadata BuildMetadata, jobID JobUUID, token JobAcquisitionToken) {
+func (p *JobPool) addLocked(queue string, uuid BuildUUID, metadata BuildMetadata, jobID JobUUID, token JobAcquisitionToken) bool {
+	if token.attempts >= jatMaxAttempts {
+		return false
+	}
+	token.attempts++
+
 	q := p.queues[queue]
 	builds := q.untrustedBuilds
 	if p.trusted(metadata) {
@@ -178,6 +201,15 @@ func (p *JobPool) addLocked(queue string, uuid BuildUUID, metadata BuildMetadata
 		builds[uuid] = b
 	}
 	b.reservedJobs[jobID] = token
+	return true
+}
+
+// add adds a reserved job and its token to the pool.
+// If the JAT has run out of retries, it returns false.
+func (p *JobPool) add(queue string, uuid BuildUUID, metadata BuildMetadata, jobID JobUUID, token JobAcquisitionToken) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.addLocked(queue, uuid, metadata, jobID, token)
 }
 
 // jobIDsLocked returns a list of all jobs present in the pool.
@@ -222,26 +254,39 @@ func (p *JobPool) trusted(metadata BuildMetadata) bool {
 	}
 }
 
+// A JobAssignment represents a job that is about to be assigned to an agent.
+//
+// It is returned by assignJob.
+type JobAssignment struct {
+	jobUUID   JobUUID
+	jat       JobAcquisitionToken
+	buildUUID BuildUUID
+	metadata  BuildMetadata
+	queue     string
+}
+
+// PinAgentFunc represents a callback to pin an agent.
+type PinAgentFunc func(ctx context.Context) (agent, error)
+
 // assignJob removes a job suitable for the given agent from the pool, and
-// returns it along with its token and the agent as it is after taking the job:
+// returns a job assignment and a function that MUST be called to update the
+// agent's pin status before handing the JAT over to the agent.
 //
 //   - A trusted agent takes a job from any trusted build.
 //   - An untrusted agent takes a job only from the build it is pinned to.
-//   - An unassigned agent is pinned before it is handed a job.
 //
-// Returns nil job and token if no suitable job is available.
-func (p *JobPool) assignJob(ctx context.Context, svc *compute.Service, a agent) (*JobUUID, *JobAcquisitionToken, agent, error) {
+// Returns a nil JobAssignment if no suitable job is available.
+func (p *JobPool) assignJob(svc *compute.Service, a agent) (*JobAssignment, PinAgentFunc) {
 	queue := a.getQueue()
 
 	p.mu.Lock()
-	muCleanup := cleanup.Make(func() {
-		p.mu.Unlock() // +checklocksforce: p.mu is held at the point of entry.
-	})
-	defer muCleanup.Clean()
+	defer p.mu.Unlock()
 
 	q, ok := p.queues[queue]
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("agent %v has invalid queue %v", a, queue)
+		// We have no queue for this agent, so we can't assign a job
+		log.Printf("Warning: agent %v has unknown queue %v", a, queue)
+		return nil, nil
 	}
 
 	// Choose the builds to take a job from, and the build within them. An
@@ -273,45 +318,46 @@ func (p *JobPool) assignJob(ctx context.Context, svc *compute.Service, a agent) 
 	// build that is present has at least one.
 	b, ok := builds[buildUUID]
 	if !ok {
-		return nil, nil, a, nil
+		return nil, nil
 	}
 	var jobUUID JobUUID
-	var token JobAcquisitionToken
-	for jobUUID, token = range b.reservedJobs {
+	var jat JobAcquisitionToken
+	for jobUUID, jat = range b.reservedJobs {
 		break
 	}
 	delete(b.reservedJobs, jobUUID)
 	if len(b.reservedJobs) == 0 {
 		delete(builds, buildUUID)
 	}
-	muCleanup.Release()()
 
+	pinAgent := func(ctx context.Context) (agent, error) {
+		return a, nil
+	}
 	unassigned, ok := a.(*unassignedAgent)
-	if !ok {
-		// Agent already pinned; skip pinning
-		return &jobUUID, &token, a, nil
+	if ok {
+		// Agent is not already pinned; give the caller a handle to pin
+		// the agent when it wants to.
+		if trusted {
+			pinAgent = func(ctx context.Context) (agent, error) {
+				newAgent, err := unassigned.pinTrusted(ctx, svc)
+				return &newAgent, err
+			}
+		} else {
+			pinAgent = func(ctx context.Context) (agent, error) {
+				newAgent, err := unassigned.pinToBuild(ctx, svc, buildUUID)
+				return &newAgent, err
+			}
+		}
 	}
 
-	// Pin the agent to match the job. Structured to avoid holding p.mu
-	// during this step
-	var err error
-	if trusted {
-		var pinned trustedAgent
-		pinned, err = unassigned.pinTrusted(ctx, svc)
-		a = &pinned
-	} else {
-		var pinned untrustedAgent
-		pinned, err = unassigned.pinToBuild(ctx, svc, buildUUID)
-		a = &pinned
+	assignment := &JobAssignment{
+		jobUUID:   jobUUID,
+		jat:       jat,
+		buildUUID: buildUUID,
+		metadata:  b.BuildMetadata,
+		queue:     queue,
 	}
-	if err != nil {
-		// Put the job back for another agent
-		p.mu.Lock() // +checklocksforce: p.mu was released by muCleanup.Release()() above.
-		defer p.mu.Unlock()
-		p.addLocked(queue, buildUUID, b.BuildMetadata, jobUUID, token)
-		return nil, nil, nil, err
-	}
-	return &jobUUID, &token, a, nil
+	return assignment, pinAgent
 }
 
 // BuildkiteStack is a Buildkite stack: the coordinator's registration with the Stacks
@@ -447,11 +493,6 @@ func (s *BuildkiteStack) Replenish(ctx context.Context, pool *JobPool, listLimit
 
 		// Iterate over the list of candidate jobs fetched from Buildkite
 		for _, job := range jobs {
-			if !slices.Contains(job.AgentQueryRules, "stacktest=yes") {
-				// TODO: for now, during development of the coordinator,
-				// only activate on jobs containing `stacktest=yes`
-				continue
-			}
 			if job.RunnableAt.After(now) {
 				// Skip jobs not yet marked as runnable
 				continue
@@ -566,6 +607,15 @@ func (s *BuildkiteStack) GetBuildMetadata(ctx context.Context, uuid BuildUUID, j
 	return metadata, nil
 }
 
+// FailJob finishes the given job with the given exit status and a
+// detail message which will be shown on the Buildkite UI.
+func (s *BuildkiteStack) FailJob(ctx context.Context, jobID JobUUID, exitStatus int, detail string) error {
+	if err := s.api.FinishJob(ctx, s.key, string(jobID), exitStatus, detail); err != nil {
+		return fmt.Errorf("failed to finish job %s: %w", jobID, err)
+	}
+	return nil
+}
+
 // register registers the stack.
 func (s *BuildkiteStack) register(ctx context.Context, queue string) error {
 	_, err := s.api.RegisterStack(ctx, buildkite.RegisterStackRequest{
@@ -611,6 +661,26 @@ func (s *BuildkiteStack) jobEnv(ctx context.Context, jobID JobUUID) (map[string]
 		return nil, fmt.Errorf("failed to get job %s: %w", jobID, err)
 	}
 	return job.Env, nil
+}
+
+// jobTimeout returns the Buildkite timeout of the given job, if it has one specified.
+//
+// Note that this value can be set by the PR author and should be treated as untrusted.
+func (s *BuildkiteStack) jobTimeout(ctx context.Context, jobID JobUUID) (*time.Duration, error) {
+	env, err := s.jobEnv(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	timeoutRaw, ok := env["BUILDKITE_TIMEOUT"]
+	if !ok {
+		return nil, nil
+	}
+	minutes, err := strconv.Atoi(timeoutRaw)
+	if err != nil {
+		return nil, nil
+	}
+	timeout := time.Duration(minutes) * time.Minute
+	return &timeout, nil
 }
 
 // reserveJobs reserves the given jobs for reservationExpiry, and returns the

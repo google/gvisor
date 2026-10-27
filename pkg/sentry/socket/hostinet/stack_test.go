@@ -106,14 +106,15 @@ func TestRestoreListenersContinuesAfterFailure(t *testing.T) {
 	}
 }
 
-// TestResetConfigTransfersHostState verifies that ResetConfig configures the
-// stack with host state.
+// TestResetConfigTransfersHostState verifies that restore retains socket
+// configuration while using the destination host's proc files and port range.
 func TestResetConfigTransfersHostState(t *testing.T) {
 	// Simulate a restored stack by populating some fields.
 	restored := &Stack{
 		supportsIPv6:    true,
 		tcpRecvBufSize:  inet.TCPBufferSize{Min: 1, Default: 2, Max: 3},
 		tcpSendBufSize:  inet.TCPBufferSize{Min: 4, Default: 5, Max: 6},
+		portRange:       [2]uint16{32768, 60999},
 		allowRawSockets: true,
 	}
 	restored.ResetConfig()
@@ -132,7 +133,12 @@ func TestResetConfigTransfersHostState(t *testing.T) {
 		devFile.Close()
 		t.Fatalf("Open: %v", err)
 	}
-	restored.SetFiles(devFile, snmpFile)
+	ports := [2]uint16{40000, 40050}
+	restored.SetHostConfig(devFile, snmpFile, ports)
+	start, end := restored.PortRange()
+	if got, want := [2]uint16{start, end}, ports; got != want {
+		t.Errorf("PortRange: got %v, want %v", got, want)
+	}
 
 	if restored.netDevFile != devFile {
 		t.Errorf("netDevFile: got %v, want %v", restored.netDevFile, devFile)

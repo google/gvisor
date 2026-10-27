@@ -18,10 +18,12 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"runtime"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/bitmap"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/rand"
 )
 
@@ -319,4 +321,45 @@ func TestGoQueue(t *testing.T) {
 		q := NewGoQueue(cap)
 		return q, nil
 	})
+}
+
+// TestSerialGoQueue checks serial reads and writes with queued operations.
+func TestSerialGoQueue(t *testing.T) {
+	testQueue(t, func(cap int) (Queue, error) {
+		return NewSerialGoQueue(cap), nil
+	})
+}
+
+// TestGoQueueGOMAXPROCS checks CPU budgets across overlapping queue lifetimes.
+func TestGoQueueGOMAXPROCS(t *testing.T) {
+	initial := runtime.GOMAXPROCS(0)
+	t.Cleanup(func() {
+		gomaxprocs.SetBase(initial)
+	})
+
+	check := func(want int) {
+		t.Helper()
+		if got := runtime.GOMAXPROCS(0); got != want {
+			t.Fatalf("GOMAXPROCS = %d, want %d", got, want)
+		}
+	}
+
+	gomaxprocs.SetBase(2)
+	check(2)
+	readers := []*GoQueue{NewGoQueue(1), NewGoQueue(8)}
+	check(2)
+	serial := NewSerialGoQueue(8)
+	check(3)
+	readers = append(readers, NewGoQueue(8))
+	check(3)
+	otherSerial := NewSerialGoQueue(8)
+	check(4)
+	for _, q := range readers {
+		q.Destroy()
+		check(4)
+	}
+	serial.Destroy()
+	check(3)
+	otherSerial.Destroy()
+	check(2)
 }

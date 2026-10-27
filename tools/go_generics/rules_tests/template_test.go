@@ -46,3 +46,9 @@ func TestImport(t *testing.T) {
 		t.Errorf("Bad max value, got %v, want %v", v, uint64(math.MaxUint64))
 	}
 }
+
+func TestInitialization(t *testing.T) {
+	if got, want := initializations, 3; got != want {
+		t.Errorf("initializations = %d, want %d", got, want)
+	}
+}

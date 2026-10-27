@@ -20,10 +20,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // PollEventSet is the set of poll(2) event flags.

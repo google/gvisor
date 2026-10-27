@@ -61,3 +61,10 @@ func (b *badCycleStruct) afterLoad(context.Context) {
 		panic("badCycleStruct.afterLoad called")
 	}
 }
+
+// +stateify savable
+type branchingCycle struct {
+	reachable   *branchingCycle
+	waitFor     *branchingCycle `state:"wait"`
+	alsoWaitFor *branchingCycle `state:"wait"`
+}

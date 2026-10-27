@@ -15,16 +15,67 @@
 package specutils
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"math"
+	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy/nvconf"
 	"gvisor.dev/gvisor/runsc/config"
 )
+
+func TestIsProcessRunning(t *testing.T) {
+	for _, tc := range []struct {
+		pid  int
+		want bool
+	}{
+		{pid: 0, want: false},
+		{pid: -1, want: false},
+		{pid: os.Getpid(), want: true},
+	} {
+		if got, err := IsProcessRunning(tc.pid, 0); err != nil || got != tc.want {
+			t.Errorf("IsProcessRunning(%d) = (%t, %v), want (%t, nil)", tc.pid, got, err, tc.want)
+		}
+	}
+
+	cmd := exec.Command("/bin/true")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	})
+	pid := cmd.Process.Pid
+	// Wait for exit without reaping the child so the zombie remains observable.
+	_, _, err := RetryEintr(func() (uintptr, uintptr, error) {
+		_, _, errno := unix.Syscall6(unix.SYS_WAITID, unix.P_PID, uintptr(pid), 0, unix.WEXITED|unix.WNOWAIT, 0, 0)
+		if errno != 0 {
+			return 0, 0, errno
+		}
+		return 0, 0, nil
+	})
+	if err != nil {
+		t.Fatalf("waitid(%d): %v", pid, err)
+	}
+	if got, err := IsProcessRunning(pid, 0); err != nil || got {
+		t.Errorf("IsProcessRunning(%d) for zombie = (%t, %v), want (false, nil)", pid, got, err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := IsProcessRunning(pid, 0); err != nil || got {
+		t.Errorf("IsProcessRunning(%d) after reaping = (%t, %v), want (false, nil)", pid, got, err)
+	}
+}
 
 func TestWaitForReadyHappy(t *testing.T) {
 	cmd := exec.Command("/bin/sleep", "1000")
@@ -979,6 +1030,121 @@ func TestTPUProxyEnabled(t *testing.T) {
 			got := TPUProxyEnabled(&tc.spec, &tc.conf)
 			if got != tc.want {
 				t.Errorf("TPUProxyEnabled() got: %v, want: %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCopySpec checks that spec copies hold the given spec, and that the copy
+// is actually sealed (i.e. read-only).
+func TestCopySpec(t *testing.T) {
+	want := &specs.Spec{
+		Version:  "1.0.0",
+		Hostname: "test",
+		Process:  &specs.Process{Args: []string{"/bin/true"}},
+	}
+	f, err := CopySpec(want)
+	if err != nil {
+		t.Fatalf("CopySpec failed: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteAt([]byte("{}"), 0); err == nil {
+		t.Errorf("writing the spec copy succeeded")
+	}
+	data, err := io.ReadAll(io.NewSectionReader(f, 0, math.MaxInt64))
+	if err != nil {
+		t.Fatalf("error reading spec copy: %v", err)
+	}
+	var got specs.Spec
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("error decoding spec copy: %v", err)
+	}
+	if !reflect.DeepEqual(&got, want) {
+		t.Errorf("spec copy got %+v, want %+v", got, want)
+	}
+}
+
+// TestProcessIdentity checks that process identities tell processes apart, and
+// that KillProcess doesn't kill a process with a different identity but the
+// same PID.
+func TestProcessIdentity(t *testing.T) {
+	var procs [2]*exec.Cmd
+	var identities [2]uint64
+	for i := range procs {
+		procs[i] = exec.Command("/bin/sleep", "1000")
+		if err := procs[i].Start(); err != nil {
+			t.Fatalf("cmd.Start() failed: %v", err)
+		}
+		defer procs[i].Process.Kill()
+		var err error
+		if identities[i], err = ProcessIdentity(procs[i].Process.Pid); err != nil {
+			t.Fatalf("ProcessIdentity failed: %v", err)
+		}
+		if identities[i] == 0 {
+			t.Skip("host has no pidfs")
+		}
+	}
+	if identities[0] == identities[1] {
+		t.Errorf("two processes have the same identity %d", identities[0])
+	}
+	pid := procs[0].Process.Pid
+	pidfd, err := OpenProcess(pid, identities[0])
+	if err != nil {
+		t.Errorf("OpenProcess with the process identity failed: %v", err)
+	} else {
+		unix.Close(pidfd)
+	}
+	if _, err := OpenProcess(pid, identities[1]); err != unix.ESRCH {
+		t.Errorf("OpenProcess with another process identity got %v, expected ESRCH", err)
+	}
+	if err := KillProcess(pid, identities[1]); err != nil {
+		t.Errorf("KillProcess with another process identity failed: %v", err)
+	}
+	if err := procs[0].Process.Signal(unix.Signal(0)); err != nil {
+		t.Errorf("KillProcess with another process identity killed the process: %v", err)
+	}
+	if err := KillProcess(pid, identities[0]); err != nil {
+		t.Errorf("KillProcess failed: %v", err)
+	}
+	if err := procs[0].Wait(); err == nil {
+		t.Errorf("process exited cleanly, expected it to be killed")
+	}
+}
+
+func TestValidateSpecForContainerOOMScoreAdj(t *testing.T) {
+	newSpec := func(oomScoreAdj *int, noNewPrivileges bool) *specs.Spec {
+		return &specs.Spec{
+			Process: &specs.Process{
+				Args:            []string{"/bin/true"},
+				Cwd:             "/",
+				OOMScoreAdj:     oomScoreAdj,
+				NoNewPrivileges: noNewPrivileges,
+			},
+		}
+	}
+	intPtr := func(i int) *int { return &i }
+
+	for _, tc := range []struct {
+		name     string
+		old, new *specs.Spec
+		wantErr  bool
+	}{
+		{name: "same", old: newSpec(intPtr(500), false), new: newSpec(intPtr(500), false)},
+		{name: "changed", old: newSpec(intPtr(500), false), new: newSpec(intPtr(900), false)},
+		{name: "added", old: newSpec(nil, false), new: newSpec(intPtr(900), false)},
+		{name: "removed", old: newSpec(intPtr(500), false), new: newSpec(nil, false)},
+		{
+			// Other fields in specs.Process must still be validated.
+			name:    "other field changed",
+			old:     newSpec(intPtr(500), false),
+			new:     newSpec(intPtr(900), true),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSpecForContainer(tc.old, tc.new, "test")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("validateSpecForContainer() = %v, wantErr: %t", err, tc.wantErr)
 			}
 		})
 	}

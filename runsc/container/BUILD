@@ -76,6 +76,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/cleanup",
+        "//pkg/cpuid",
         "//pkg/hostos",
         "//pkg/log",
         "//pkg/seccheck/scsdk",
@@ -90,6 +91,7 @@ go_test(
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/seccheck/sinks/remote/test",
         "//pkg/sentry/state/checkpointfiles",
+        "//pkg/state",
         "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/test/testutil",
@@ -110,6 +112,16 @@ go_test(
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_google_protobuf//types/known/emptypb:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "modify_test",
+    srcs = ["modify_test.go"],
+    embed = [":container"],
+    deps = [
+        "//runsc/sandbox",
+        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
     ],
 )
 

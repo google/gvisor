@@ -16,6 +16,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,8 +24,10 @@ import (
 
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	"github.com/containerd/containerd/v2/core/events"
+	types "github.com/containerd/containerd/v2/pkg/protobuf/types"
 	"github.com/containerd/containerd/v2/pkg/shim"
 	"github.com/containerd/containerd/v2/pkg/shutdown"
+	"gvisor.dev/gvisor/pkg/shim/v1/extension"
 )
 
 type mockPublisher struct{}
@@ -100,5 +103,75 @@ func TestShutdownSocketCleanup(t *testing.T) {
 		t.Errorf("Socket file %s still exists, cleanup failed", socketPath)
 	} else if !os.IsNotExist(err) {
 		t.Errorf("Unexpected error checking socket file: %v", err)
+	}
+}
+
+// fakeTaskService is an extension.TaskServiceExt that only implements
+// Shutdown. Calling any other method panics.
+type fakeTaskService struct {
+	extension.TaskServiceExt
+
+	shutdownResp *types.Empty
+	shutdownErr  error
+}
+
+func (f *fakeTaskService) Shutdown(context.Context, *task.ShutdownRequest) (*types.Empty, error) {
+	return f.shutdownResp, f.shutdownErr
+}
+
+// fakeShutdownService records whether shutdown was initiated. Calling any
+// method other than Shutdown panics.
+type fakeShutdownService struct {
+	shutdown.Service
+
+	shutdownCalled bool
+}
+
+func (f *fakeShutdownService) Shutdown() {
+	f.shutdownCalled = true
+}
+
+// TestShutdownResponse verifies that Shutdown always acknowledges the request
+// with a non-nil response, and only shuts down the shim once it no longer
+// services any container.
+func TestShutdownResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		main         *fakeTaskService
+		wantShutdown bool
+	}{
+		{
+			name:         "no containers",
+			main:         &fakeTaskService{shutdownResp: &types.Empty{}},
+			wantShutdown: true,
+		},
+		{
+			// With shim grouping, a single shim services all containers of a
+			// pod and receives a Shutdown request every time one of them is
+			// deleted.
+			name:         "still servicing containers",
+			main:         &fakeTaskService{shutdownErr: errors.New("shim still servicing 1 containers")},
+			wantShutdown: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sd := &fakeShutdownService{}
+			s := &shimRedirector{
+				main:     tc.main,
+				shutdown: sd,
+			}
+			resp, err := s.Shutdown(context.Background(), &task.ShutdownRequest{ID: "test-id"})
+			if err != nil {
+				t.Fatalf("Shutdown() failed: %v", err)
+			}
+			// ttrpc fails to marshal a nil response, which turns the request
+			// into an error for the caller (containerd).
+			if resp == nil {
+				t.Errorf("Shutdown() returned a nil response")
+			}
+			if sd.shutdownCalled != tc.wantShutdown {
+				t.Errorf("Shutdown() initiated shim shutdown: %t, want: %t", sd.shutdownCalled, tc.wantShutdown)
+			}
+		})
 	}
 }

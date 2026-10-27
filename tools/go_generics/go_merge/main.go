@@ -53,40 +53,44 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load all files.
-	files := make(map[string]*ast.File)
+	source, err := merge(flag.Args())
+	if err != nil {
+		fatalf("%v\n", err)
+	}
+	if err := os.WriteFile(*output, source, 0644); err != nil {
+		fatalf("write: %v\n", err)
+	}
+}
+
+// merge combines template sources in filename order. Declarations retain their
+// original positions and comments; only imports are coalesced. In particular,
+// separate init functions and methods must not be discarded based on their names.
+func merge(paths []string) ([]byte, error) {
+	var decls []ast.Decl
 	comments := make(ast.CommentMap)
 	fset := token.NewFileSet()
 	var name string
-	// Match MergePackageFiles' declaration order when assigning token positions.
-	srcs := slices.Sorted(slices.Values(flag.Args()))
+	// Assign token positions in declaration order, independent of argument order.
+	srcs := slices.Compact(slices.Sorted(slices.Values(paths)))
 	for _, fname := range srcs {
 		f, err := parser.ParseFile(fset, fname, nil, parser.ParseComments|parser.DeclarationErrors|parser.SpuriousErrors)
 		if err != nil {
-			fatalf("%v\n", err)
+			return nil, err
 		}
-		maps.Copy(comments, ast.NewCommentMap(fset, f, f.Comments))
-
-		files[fname] = f
 		if name == "" {
 			name = f.Name.Name
 		} else if name != f.Name.Name {
-			fatalf("Expected '%s' for package name instead of '%s'.\n", name, f.Name.Name)
+			return nil, fmt.Errorf("expected %q for package name instead of %q", name, f.Name.Name)
 		}
+		maps.Copy(comments, ast.NewCommentMap(fset, f, f.Comments))
+		decls = append(decls, f.Decls...)
 	}
-
-	// Merge all files into one.
-	pkg := &ast.Package{
-		Name:  name,
-		Files: files,
-	}
-	f := ast.MergePackageFiles(pkg, ast.FilterUnassociatedComments|ast.FilterFuncDuplicates|ast.FilterImportDuplicates)
 
 	// Put imports first and remove redundant specs. Keep the original import
 	// declarations so their comments retain valid positions within each file.
 	imports := make(map[string]*ast.ImportSpec)
-	newDecls := make([]ast.Decl, 0, len(f.Decls))
-	for _, d := range f.Decls {
+	newDecls := make([]ast.Decl, 0, len(decls))
+	for _, d := range decls {
 		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.IMPORT {
 			specs := g.Specs[:0]
 			for _, s := range g.Specs {
@@ -103,7 +107,7 @@ func main() {
 				} else {
 					if i2, ok := imports[n]; ok {
 						if first, second := i.Path.Value, i2.Path.Value; first != second {
-							fatalf("Conflicting paths for import name '%s': '%s' vs. '%s'\n", n, first, second)
+							return nil, fmt.Errorf("conflicting paths for import name %q: %q vs. %q", n, first, second)
 						}
 					} else {
 						imports[n] = i
@@ -117,17 +121,17 @@ func main() {
 			}
 		}
 	}
-	for _, d := range f.Decls {
+	for _, d := range decls {
 		if g, ok := d.(*ast.GenDecl); !ok || g.Tok != token.IMPORT {
 			newDecls = append(newDecls, d)
 		}
 	}
-	f.Decls = newDecls
+	decls = newDecls
 
 	// Infer build constraints for the output file.
-	bcexpr, err := constraintutil.CombineFromFiles(flag.Args())
+	bcexpr, err := constraintutil.CombineFromFiles(srcs)
 	if err != nil {
-		fatalf("Failed to read build constraints: %v\n", err)
+		return nil, fmt.Errorf("failed to read build constraints: %w", err)
 	}
 
 	// Print each declaration with only its own comments. Imports moved from
@@ -136,26 +140,18 @@ func main() {
 	// reconstructed separately below.
 	var buf bytes.Buffer
 	_, _ = fmt.Fprintf(&buf, "package %s\n\n", name)
-	for _, decl := range f.Decls {
+	for _, decl := range decls {
 		if err := format.Node(&buf, fset, &printer.CommentedNode{
 			Node:     decl,
 			Comments: comments.Filter(decl).Comments(),
 		}); err != nil {
-			fatalf("formatting: %v\n", err)
+			return nil, fmt.Errorf("formatting: %w", err)
 		}
 		_, _ = buf.WriteString("\n\n")
 	}
 	source, err := format.Source(buf.Bytes())
 	if err != nil {
-		fatalf("formatting merged source: %v\n", err)
+		return nil, fmt.Errorf("formatting merged source: %w", err)
 	}
-	outf, err := os.OpenFile(*output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		fatalf("opening output: %v\n", err)
-	}
-	defer outf.Close()
-	outf.WriteString(constraintutil.Lines(bcexpr))
-	if _, err := outf.Write(source); err != nil {
-		fatalf("write: %v\n", err)
-	}
+	return append([]byte(constraintutil.Lines(bcexpr)), source...), nil
 }

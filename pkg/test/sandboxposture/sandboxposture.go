@@ -312,7 +312,8 @@ type Attrs struct {
 	ChildOfRef bool
 
 	// Environ is the environment, sorted, with variables like
-	// `RUNSC_START_TIME_NANOS` and `GVISOR_ENFORCE_RELEASE` removed.
+	// `RUNSC_START_TIME_NANOS` and `GVISOR_ENFORCE_RELEASE` removed, and
+	// others like `GOMAXPROCS` normalized.
 	Environ []string
 
 	// Argv0 is argv[0], which `runsc` should set to "runsc-sandbox".
@@ -1118,6 +1119,24 @@ func parseLimits(s string) (map[string]string, error) {
 // ignoredEnvRegExp matches the start-time env variable `runsc` uses.
 var ignoredEnvRegExp = regexp.MustCompile(`^(RUNSC_START_TIME_NANOS=\d+|GVISOR_ENFORCE_RELEASE=.*)$`)
 
+const envGOMAXPROCSPrefix = "GOMAXPROCS="
+
+// EnvGOMAXPROCSFromCPUNum is the normalized `Attrs.Environ` entry for
+// `GOMAXPROCS`.
+const EnvGOMAXPROCSFromCPUNum = envGOMAXPROCSPrefix + "<--cpu-num>"
+
+func argValue(argv []string, flag string) string {
+	for i, arg := range argv {
+		if v, ok := strings.CutPrefix(arg, flag+"="); ok {
+			return v
+		}
+		if arg == flag && i+1 < len(argv) {
+			return argv[i+1]
+		}
+	}
+	return ""
+}
+
 func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS string) (Attrs, error) {
 	var a Attrs
 
@@ -1139,18 +1158,6 @@ func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS stri
 	a.ProcessGroupLeader = st.pgrp == p.pid
 	a.ChildOfRef = st.ppid == ref.pid
 
-	env, err := p.readNUL("environ")
-	if err != nil {
-		return a, fmt.Errorf("reading environ: %w", err)
-	}
-	for _, e := range env {
-		if ignoredEnvRegExp.MatchString(e) {
-			continue
-		}
-		a.Environ = append(a.Environ, e)
-	}
-	sort.Strings(a.Environ)
-
 	if a.Argv, err = p.readNUL("cmdline"); err != nil {
 		return a, fmt.Errorf("reading cmdline: %w", err)
 	}
@@ -1158,6 +1165,22 @@ func collectAttrs(p, ref *proc, status, refStatus map[string]string, userNS stri
 		return a, fmt.Errorf("empty cmdline: process %d is a zombie or exited", p.pid)
 	}
 	a.Argv0 = a.Argv[0]
+
+	env, err := p.readNUL("environ")
+	if err != nil {
+		return a, fmt.Errorf("reading environ: %w", err)
+	}
+	cpuNum := argValue(a.Argv, "--cpu-num")
+	for _, e := range env {
+		if ignoredEnvRegExp.MatchString(e) {
+			continue
+		}
+		if cpuNum != "" && e == envGOMAXPROCSPrefix+cpuNum {
+			e = EnvGOMAXPROCSFromCPUNum
+		}
+		a.Environ = append(a.Environ, e)
+	}
+	sort.Strings(a.Environ)
 	limitsRaw, err := p.read("limits")
 	if err != nil {
 		return a, fmt.Errorf("reading limits: %w", err)

@@ -27,6 +27,7 @@ import (
 	apievents "github.com/containerd/containerd/api/events"
 	task "github.com/containerd/containerd/api/runtime/task/v2"
 	coreevents "github.com/containerd/containerd/v2/core/events"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/stdio"
 	"github.com/containerd/errdefs"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -36,69 +37,82 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
-// errorPublisher is a publisher that always returns an error.
-type errorPublisher struct{}
+// errorPublisher is a publisher that always returns an error. It records the
+// contexts it is called with and whether it was closed.
+type errorPublisher struct {
+	ctxs   []context.Context
+	closed bool
+}
 
-func (p *errorPublisher) Publish(_ context.Context, _ string, _ coreevents.Event) error {
+func (p *errorPublisher) Publish(ctx context.Context, _ string, _ coreevents.Event) error {
+	p.ctxs = append(p.ctxs, ctx)
 	return fmt.Errorf("dial unix: missing address")
 }
 
-func (p *errorPublisher) Close() error { return nil }
-
-// TestForwardDoesNotPanicOnPublishError verifies that the event forward
-// function logs errors instead of panicking when the publisher fails and no
-// event sink is configured (empty TTRPC_ADDRESS). This is how the shim runs
-// under CRI-O, where publish errors are expected and non-fatal.
-func TestForwardDoesNotPanicOnPublishError(t *testing.T) {
-	// Empty TTRPC_ADDRESS means no event sink is configured (as under CRI-O).
-	t.Setenv("TTRPC_ADDRESS", "")
-
-	s := &runscService{
-		events: make(chan any, 2),
-	}
-	s.events <- &apievents.TaskCreate{ContainerID: "test"}
-	s.events <- &apievents.TaskExit{ContainerID: "test"}
-	close(s.events)
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.forward(context.Background(), &errorPublisher{})
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("forward did not complete within timeout")
-	}
+func (p *errorPublisher) Close() error {
+	p.closed = true
+	return nil
 }
 
-// TestForwardPanicsOnPublishErrorUnderContainerd verifies that, when a
-// containerd event sink is configured (TTRPC_ADDRESS set), a publish failure
-// remains fatal (panics) as it did before CRI-O support was added. This keeps
-// the non-fatal behavior scoped to the CRI-O case only.
-func TestForwardPanicsOnPublishErrorUnderContainerd(t *testing.T) {
-	t.Setenv("TTRPC_ADDRESS", "/run/containerd/containerd.sock.ttrpc")
+// TestForwardDoesNotPanicOnPublishError verifies that the event forward loop
+// logs publish errors instead of panicking, whether or not an event sink is
+// configured (TTRPC_ADDRESS is empty under CRI-O). The publisher queues failed
+// events for retry, and with shim grouping a panic would take down every
+// container in the pod. It also verifies that events are published with a live
+// context that keeps the namespace, even once the shim context is done, and
+// that the publisher is closed once all events are drained.
+func TestForwardDoesNotPanicOnPublishError(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		ttrpcAddress string
+	}{
+		{name: "no-event-sink", ttrpcAddress: ""},
+		{name: "containerd", ttrpcAddress: "/run/containerd/containerd.sock.ttrpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TTRPC_ADDRESS", tc.ttrpcAddress)
 
-	s := &runscService{
-		events: make(chan any, 1),
-	}
-	s.events <- &apievents.TaskCreate{ContainerID: "test"}
-	close(s.events)
+			s := &runscService{
+				events: make(chan any, 2),
+			}
+			s.events <- &apievents.TaskCreate{ContainerID: "test"}
+			s.events <- &apievents.TaskExit{ContainerID: "test"}
+			close(s.events)
 
-	panicked := make(chan any, 1)
-	go func() {
-		defer func() { panicked <- recover() }()
-		s.forward(context.Background(), &errorPublisher{})
-	}()
+			// The shim context is done once shutdown completes.
+			ctx, cancel := context.WithCancel(namespaces.WithNamespace(context.Background(), "k8s.io"))
+			cancel()
 
-	select {
-	case r := <-panicked:
-		if r == nil {
-			t.Fatal("forward did not panic on publish error under containerd")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("forward did not complete within timeout")
+			pub := &errorPublisher{}
+			panicked := make(chan any, 1)
+			go func() {
+				defer func() { panicked <- recover() }()
+				s.forward(ctx, pub)
+			}()
+
+			select {
+			case r := <-panicked:
+				if r != nil {
+					t.Fatalf("forward panicked on publish error: %v", r)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("forward did not complete within timeout")
+			}
+			if got, want := len(pub.ctxs), 2; got != want {
+				t.Errorf("forward published %d events, want %d", got, want)
+			}
+			for _, pctx := range pub.ctxs {
+				if err := pctx.Err(); err != nil {
+					t.Errorf("event published with a done context: %v", err)
+				}
+				if ns, _ := namespaces.Namespace(pctx); ns != "k8s.io" {
+					t.Errorf("event published in namespace %q, want %q", ns, "k8s.io")
+				}
+			}
+			if !pub.closed {
+				t.Error("forward did not close the publisher")
+			}
+		})
 	}
 }
 

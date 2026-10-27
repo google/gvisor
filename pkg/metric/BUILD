@@ -47,7 +47,6 @@ go_test(
         "utils_test.go",
     ],
     embed = [":metric"],
-    tags = ["not_run:arm"],
     deps = [
         ":metric_go_proto",
         "//pkg/eventchannel",

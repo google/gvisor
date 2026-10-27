@@ -37,6 +37,7 @@ import (
 // A nonnil leader always belongs to this thread group.
 //
 // +checklocksalias:leader.tg.signalHandlers.mu=signalHandlers.mu
+// +checklocksalias:leader.tg.pidns.owner.mu=pidns.owner.mu
 // +stateify savable
 type ThreadGroup struct {
 	threadGroupNode
@@ -81,12 +82,12 @@ type ThreadGroup struct {
 	//
 	// groupStopDequeued is analogous to Linux's JOBCTL_STOP_DEQUEUED.
 	//
-	// groupStopDequeued is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopDequeued bool
 
 	// groupStopSignal is the signal that caused a group stop to be initiated.
 	//
-	// groupStopSignal is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopSignal linux.Signal
 
 	// groupStopPendingCount is the number of active tasks in the thread group
@@ -95,7 +96,7 @@ type ThreadGroup struct {
 	// groupStopPendingCount is analogous to Linux's
 	// signal_struct::group_stop_count.
 	//
-	// groupStopPendingCount is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopPendingCount int
 
 	// If groupStopComplete is true, groupStopPendingCount transitioned from
@@ -103,7 +104,7 @@ type ThreadGroup struct {
 	//
 	// groupStopComplete is analogous to Linux's SIGNAL_STOP_STOPPED.
 	//
-	// groupStopComplete is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopComplete bool
 
 	// If groupStopWaitable is true, the thread group is indicating a waitable
@@ -112,7 +113,7 @@ type ThreadGroup struct {
 	// Linux represents the analogous state as SIGNAL_STOP_STOPPED being set
 	// and group_exit_code being non-zero.
 	//
-	// groupStopWaitable is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupStopWaitable bool
 
 	// If groupContNotify is true, then a SIGCONT has recently ended a group
@@ -131,9 +132,10 @@ type ThreadGroup struct {
 	//
 	//	- !groupContNotify is represented by neither flag being set.
 	//
-	// groupContNotify and groupContInterrupted are protected by the signal
-	// mutex.
-	groupContNotify      bool
+	// +checklocks:signalHandlers.mu
+	groupContNotify bool
+
+	// +checklocks:signalHandlers.mu
 	groupContInterrupted bool
 
 	// If groupContWaitable is true, the thread group is indicating a waitable
@@ -141,7 +143,7 @@ type ThreadGroup struct {
 	//
 	// groupContWaitable is analogous to Linux's SIGNAL_STOP_CONTINUED.
 	//
-	// groupContWaitable is protected by the signal mutex.
+	// +checklocks:signalHandlers.mu
 	groupContWaitable bool
 
 	// signalUnkillable is true if the thread group is the init process of its
@@ -169,7 +171,7 @@ type ThreadGroup struct {
 	// terminationSignal is the signal that this thread group's leader will
 	// send to its parent when it exits.
 	//
-	// terminationSignal is protected by the TaskSet mutex.
+	// +checklocks:pidns.owner.mu
 	terminationSignal linux.Signal
 
 	// liveGoroutines is the number of non-exited task goroutines in the thread
@@ -290,6 +292,14 @@ type ThreadGroup struct {
 	// should look for a child_subreaper process at exit"
 	isChildSubreaper  bool
 	hasChildSubreaper bool
+
+	// containerInit is true if Kernel.CreateProcess created this thread group
+	// as a container's init process, not for an exec. It has no equivalent in
+	// Linux. runsc uses it to find a container's init process after restore:
+	// without a global init, an orphan has no parent either.
+	//
+	// containerInit is immutable.
+	containerInit bool
 
 	// These help serialize execve(2) with PTRACE_ATTACH and seccomp thread-sync. Since checkpointing
 	// precludes holding onto a sync.Mutex across taskRunStates, and execve(2) spans multiple
@@ -774,6 +784,12 @@ func (tg *ThreadGroup) IsChildSubreaper() bool {
 	return tg.isChildSubreaper
 }
 
+// IsContainerInit returns whether this ThreadGroup was created as a
+// container's init process.
+func (tg *ThreadGroup) IsContainerInit() bool {
+	return tg.containerInit
+}
+
 // IsInitIn returns whether this ThreadGroup has TID 1 int the given
 // PIDNamespace.
 func (tg *ThreadGroup) IsInitIn(pidns *PIDNamespace) bool {
@@ -815,7 +831,9 @@ func (tg *ThreadGroup) SigsegvUnlock() {
 		for t := tg.tasks.Front(); t != nil; t = t.Next() {
 			if _, ok := t.stop.(*sigsegvLockStop); ok {
 				t.Infof("Resuming execution due to SigsegvUnlock")
-				t.endInternalStopLocked()
+				// signalLock holds tg's current signal mutex, and t is
+				// in tg; checklocks cannot infer either owner identity.
+				t.endInternalStopLocked() // +checklocksignore
 			}
 		}
 	} else if count < 0 {

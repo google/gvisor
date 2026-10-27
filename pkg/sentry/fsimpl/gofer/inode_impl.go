@@ -455,17 +455,24 @@ func (i *inode) allocate(ctx context.Context, mode, offset, length uint64) error
 //   - fs.renameMu is locked.
 func (d *dentry) connect(ctx context.Context, sockType linux.SockType) (int, error) {
 	creds := auth.CredentialsOrNilFromContext(ctx)
+	// The host reports these IDs as the client's SO_PEERCRED, which Linux
+	// derives from the effective (not filesystem) IDs.
 	euid := lisafs.NoUID
 	egid := lisafs.NoGID
+	var groups []lisafs.GID
 	if creds != nil {
 		euid = lisafs.UID(creds.EffectiveKUID)
 		egid = lisafs.GID(creds.EffectiveKGID)
+		groups = make([]lisafs.GID, len(creds.ExtraKGIDs))
+		for i, kgid := range creds.ExtraKGIDs {
+			groups[i] = lisafs.GID(kgid)
+		}
 	}
 	switch it := d.inode.impl.(type) {
 	case *lisafsInode:
-		return it.controlFD.Connect(ctx, sockType, euid, egid)
+		return it.controlFD.Connect(ctx, sockType, euid, egid, groups)
 	case *directfsInode:
-		return it.connect(ctx, sockType, euid, egid, d)
+		return it.connect(ctx, sockType, euid, egid, groups, d)
 	default:
 		panic("unknown inode implementation")
 	}

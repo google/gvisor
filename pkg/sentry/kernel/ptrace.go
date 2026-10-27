@@ -484,7 +484,7 @@ func (t *Task) beginPtraceStopLocked() bool {
 	return true
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.tg.pidns.owner.mu
 func (t *Task) ptraceTrapLocked(code int32) {
 	// This is unconditional in ptrace_stop().
 	t.tg.signalHandlers.mu.Lock()
@@ -540,9 +540,9 @@ func (t *Task) ptraceUnfreeze() {
 	t.ptraceUnfreezeLocked()
 }
 
-// Preconditions:
-//   - t must be in a frozen ptraceStop.
-//   - t's signal mutex must be locked.
+// Preconditions: t must be in a frozen ptraceStop.
+//
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) ptraceUnfreezeLocked() {
 	// Do this even if the task has been killed to ensure a panic if t.stop is
 	// nil or not a ptraceStop.
@@ -692,14 +692,16 @@ func (t *Task) ptraceDetach(target *Task, sig linux.Signal) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	target.ptraceCode = int32(sig)
-	target.forgetTracerLocked()
+	// A tracee belongs to its tracer's TaskSet, whose mutex is held here;
+	// checklocks cannot relate target to t through that relationship.
+	target.forgetTracerLocked() // +checklocksignore
 	delete(t.ptraceTracees, target)
 	return nil
 }
 
 // exitPtraceLocked is called in the exit path to detach all of t's tracees.
 //
-// Preconditions: The TaskSet mutex must be locked for writing.
+// +checklocks:t.tg.pidns.owner.mu
 func (t *Task) exitPtraceLocked() {
 	for target := range t.ptraceTracees {
 		if target.ptraceOpts.ExitKill {
@@ -712,7 +714,9 @@ func (t *Task) exitPtraceLocked() {
 		// Leave ptraceCode unchanged so that if the task is ptrace-stopped, it
 		// observes the ptraceCode it set before it entered the stop. I believe
 		// this is consistent with Linux.
-		target.forgetTracerLocked()
+		// Map members belong to t's locked TaskSet; checklocks cannot
+		// follow that relationship to target.
+		target.forgetTracerLocked() // +checklocksignore
 	}
 	clear(t.ptraceTracees) // nil maps cannot be saved
 
@@ -729,7 +733,7 @@ func (t *Task) exitPtraceLocked() {
 // forgetTracerLocked detaches t's tracer and ensures that t is no longer
 // ptrace-stopped.
 //
-// Preconditions: The TaskSet mutex must be locked for writing.
+// +checklocks:t.tg.pidns.owner.mu
 func (t *Task) forgetTracerLocked() {
 	t.ptraceOpts = ptraceOptions{}
 	t.ptraceSyscallMode = ptraceSyscallNone
@@ -861,7 +865,7 @@ func (t *Task) ptraceSyscallExit() {
 	t.ptraceSyscallStopLocked()
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.tg.pidns.owner.mu
 func (t *Task) ptraceSyscallStopLocked() {
 	code := int32(linux.SIGTRAP)
 	if t.ptraceOpts.SysGood {
@@ -1043,7 +1047,7 @@ func (t *Task) ptraceExit() {
 	t.ptraceEventLocked(linux.PTRACE_EVENT_EXIT, uint64(status))
 }
 
-// Preconditions: The TaskSet mutex must be locked.
+// +checklocksread:t.tg.pidns.owner.mu
 func (t *Task) ptraceEventLocked(event int32, msg uint64) {
 	t.ptraceEventMsg = msg
 	// """

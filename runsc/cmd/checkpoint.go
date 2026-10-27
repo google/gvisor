@@ -73,7 +73,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
 	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelDefault, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
-	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", false, "exclude committed zero-filled pages from checkpoint")
+	f.BoolVar(&c.excludeCommittedZeroPages, "exclude-committed-zero-pages", true, "exclude committed zero-filled pages from checkpoint")
 	f.BoolVar(&c.direct, "direct", false, "use O_DIRECT for writing checkpoint pages file")
 	f.StringVar(&c.cudaCheckpointPath, "cuda-checkpoint-path", "", "path to the cuda-checkpoint binary in the container")
 	f.BoolVar(&c.cudaCheckpointSequential, "cuda-checkpoint-sequential", false, "run cuda-checkpoint sequentially in the container")
@@ -90,7 +90,7 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 
 // FetchSpec implements util.SubCommand.FetchSpec.
 func (c *Checkpoint) FetchSpec(conf *config.Config, f *flag.FlagSet) (string, *specs.Spec, error) {
-	cont, err := c.loadContainer(conf, f, container.LoadOpts{})
+	cont, err := c.loadContainer(conf, f, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		return "", nil, fmt.Errorf("loading container: %w", err)
 	}
@@ -106,7 +106,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 
 	conf := args[0].(*config.Config)
 
-	cont, err := c.loadContainer(conf, f, container.LoadOpts{})
+	cont, err := c.loadContainer(conf, f, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}

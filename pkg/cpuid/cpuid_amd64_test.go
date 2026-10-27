@@ -209,6 +209,52 @@ func TestHasFeature(t *testing.T) {
 	}
 }
 
+func TestFeatureNames(t *testing.T) {
+	// SPEC_CTRL does not appear in cpuinfo, so FlagString omits it but
+	// FeatureNames must include it. Block 7 comes after block 1 in
+	// linuxBlockOrder, so it must also come last regardless of insertion order.
+	fs := makeFeatureSet(X86FeatureSPEC_CTRL, X86FeaturePAE, X86FeatureFPU)
+	if got, want := fs.FeatureNames(), []string{"fpu", "pae", "spec_ctrl"}; !slices.Equal(got, want) {
+		t.Errorf("FeatureNames() = %v, want %v", got, want)
+	}
+	if got, want := fs.FlagString(), "fpu pae"; got != want {
+		t.Errorf("FlagString() = %q, want %q", got, want)
+	}
+	if got := makeFeatureSet().FeatureNames(); len(got) != 0 {
+		t.Errorf("FeatureNames() of empty set = %v, want empty", got)
+	}
+}
+
+func TestFeatureMask(t *testing.T) {
+	// X86FeatureSSE3 is block 0 bit 0; X86FeatureFPU is block 1 bit 0;
+	// X86FeaturePAE is block 1 bit 6; X86FeatureSPEC_CTRL is block 7 bit 26;
+	// X86FeatureAVX_VNNI is block 8 bit 4.
+	fs := makeFeatureSet(X86FeatureSSE3, X86FeatureFPU, X86FeaturePAE, X86FeatureSPEC_CTRL, X86FeatureAVX_VNNI)
+	const wantMask = "0x00000001,0x00000041,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x04000000,0x00000010"
+	if got := fs.FeatureMaskString(); got != wantMask {
+		t.Errorf("FeatureMaskString() = %q, want %q", got, wantMask)
+	}
+	names := fs.FeatureNames()
+	gotFromNames, err := FeatureMaskStringFromNames(names)
+	if err != nil {
+		t.Fatalf("FeatureMaskStringFromNames(%v) unexpected error: %v", names, err)
+	}
+	if gotFromNames != wantMask {
+		t.Errorf("FeatureMaskStringFromNames(%v) = %q, want %q", names, gotFromNames, wantMask)
+	}
+
+	const wantEmptyMask = "0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000"
+	if got := makeFeatureSet().FeatureMaskString(); got != wantEmptyMask {
+		t.Errorf("FeatureMaskString() of empty set = %q, want %q", got, wantEmptyMask)
+	}
+	if got, err := FeatureMaskStringFromNames(nil); err != nil || got != wantEmptyMask {
+		t.Errorf("FeatureMaskStringFromNames(nil) = (%q, %v), want (%q, nil)", got, err, wantEmptyMask)
+	}
+	if _, err := FeatureMaskStringFromNames([]string{"fpu", "nonexistent"}); err == nil {
+		t.Errorf("FeatureMaskStringFromNames with unknown feature succeeded, want error")
+	}
+}
+
 func TestAdd(t *testing.T) {
 	// Test a basic insertion into the FeatureSet.
 	testFeatures := makeFeatureSet(X86FeatureCLFSH)

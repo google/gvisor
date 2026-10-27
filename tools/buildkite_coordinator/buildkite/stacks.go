@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -216,4 +217,25 @@ func (c *Client) GetJobStates(ctx context.Context, key string, jobIDs []string) 
 		return nil, err
 	}
 	return resp.States, nil
+}
+
+// MaxFinishDetailSize is the longest detail message a job may be finished with.
+const MaxFinishDetailSize = 4096
+
+// FinishJobRequest is the body of a job finish request.
+type FinishJobRequest struct {
+	ExitStatus int    `json:"exit_status"`
+	Detail     string `json:"detail"`
+}
+
+// FinishJob finishes the given job without running it, with the given exit
+// status and a detail message shown on the build page. A detail longer than
+// MaxFinishDetailSize is truncated.
+func (c *Client) FinishJob(ctx context.Context, key, jobID string, exitStatus int, detail string) error {
+	if len(detail) > MaxFinishDetailSize {
+		detail = strings.ToValidUTF8(detail[:MaxFinishDetailSize], "")
+	}
+	req := FinishJobRequest{ExitStatus: exitStatus, Detail: detail}
+	_, err := call[struct{}](ctx, c, http.MethodPost, "/stacks/"+key+"/jobs/"+jobID+"/finish", &req)
+	return err
 }

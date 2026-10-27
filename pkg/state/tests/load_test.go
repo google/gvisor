@@ -15,7 +15,11 @@
 package tests
 
 import (
+	"bytes"
+	"strings"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func TestLoadHooks(t *testing.T) {
@@ -66,13 +70,48 @@ func TestDeadlock(t *testing.T) {
 		&bs,
 	})
 
-	// bs2 and bs2 are in a deadlocking cycle.
+	// bs1 and bs2 are in a deadlocking cycle.
 	bs1 := badCycleStruct{nil}
 	bs2 := badCycleStruct{nil}
 	bs1.b = &bs2
 	bs2.b = &bs1
 
-	runTestCases(t, true, "deadlock", []any{
-		&bs1,
+	t.Run("cycle_with_user_callback", func(t *testing.T) {
+		checkDependencyCycle(t, &bs1)
 	})
+
+	t.Run("dependent_outside_cycle", func(t *testing.T) {
+		// The first incomplete object is blocked by a cycle but is not
+		// itself in that cycle.
+		dependent := badCycleStruct{b: &bs1}
+		checkDependencyCycle(t, &dependent)
+	})
+
+	t.Run("branch_to_another_cycle", func(t *testing.T) {
+		var a, b, c, d branchingCycle
+		// Discover B before D: B is the first object waiting on A, but
+		// traversing B's dependents reaches the B/C cycle without A.
+		// Searching only for a return to A would recurse indefinitely.
+		a.reachable = &b
+		a.waitFor = &d
+		b.waitFor = &a
+		b.alsoWaitFor = &c
+		c.waitFor = &b
+		d.waitFor = &a
+		checkDependencyCycle(t, &a)
+	})
+}
+
+func checkDependencyCycle[T any](t *testing.T, root *T) {
+	t.Helper()
+	var saved bytes.Buffer
+	// Keep the nodes below the special root object, which Load permits
+	// other objects to reference without waiting.
+	if _, err := state.Save(t.Context(), &saved, &root); err != nil {
+		t.Fatal(err)
+	}
+	var restored *T
+	if _, err := state.Load(t.Context(), &saved, &restored); err == nil || !strings.Contains(err.Error(), "dependency cycle:") {
+		t.Fatalf("Load = %v, want a dependency cycle diagnostic", err)
+	}
 }

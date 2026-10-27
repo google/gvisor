@@ -199,10 +199,9 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Wait for the final statement. This structure has the side
-		// effect that all container logs will appear within the
-		// individual test context.
-		if _, err := d.WaitForOutput(ctx, TerminalStatement, TestTimeout); err != nil && !errors.Is(err, context.Canceled) {
+		// The runner exits successfully only after ContainerAction succeeds.
+		// Cleanup retrieves its logs independently of the traffic context.
+		if err := d.Wait(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			errCh <- fmt.Errorf("ContainerAction failed: %v", err)
 		} else {
 			errCh <- nil

@@ -19,6 +19,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -204,6 +205,14 @@ type Config struct {
 	// SidecarReleaseEnforcementPolicy controls when spawned sidecar binaries
 	// must match `runsc`'s build label.
 	SidecarReleaseEnforcementPolicy SidecarReleasePolicy `flag:"sidecar-release-enforcement-policy"`
+
+	// SandboxCreationCPUPolicy is the CPU limit of the sandbox cgroup while a
+	// new sandbox is created and started.
+	SandboxCreationCPUPolicy SandboxCPUPolicy `flag:"sandbox-creation-cpu-policy"`
+
+	// SandboxLifecycleCPUPolicy is the CPU limit of the sandbox cgroup during
+	// checkpoint, restore, and teardown.
+	SandboxLifecycleCPUPolicy SandboxCPUPolicy `flag:"sandbox-lifecycle-cpu-policy"`
 
 	// FinalMetricsLog is the file to which all metric data should be written
 	// upon sandbox termination.
@@ -556,8 +565,13 @@ func (c *Config) PlatformDeviceFor(platform string) string {
 // Config.Override does not validate, so callers must call Validate once they
 // are done overriding.
 func (c *Config) Validate() error {
-	if _, err := parsePlatformDevicePaths(c.PlatformDevicePath); err != nil {
+	paths, err := parsePlatformDevicePaths(c.PlatformDevicePath)
+	if err != nil {
 		return err
+	}
+	if c.Platform == PlatformAuto && paths.any != "" {
+		// A single path cannot apply to every platform that auto may choose.
+		return fmt.Errorf("--platform=%s accepts only --platform_device_path={platform}={path}[,{platform}={path}...], got %q", PlatformAuto, c.PlatformDevicePath)
 	}
 	if c.Overlay && c.Overlay2.Enabled() {
 		// Deprecated flag was used together with flag that replaced it.
@@ -1534,6 +1548,131 @@ var releaseVersionRE = regexp.MustCompile(`^(?:release|g[a-z]*)-\d{8}(?:\.\d+)?$
 // IsReleaseVersion returns whether ver is a tagged-release version string.
 func IsReleaseVersion(ver string) bool {
 	return releaseVersionRE.MatchString(ver)
+}
+
+// SandboxCPUPolicy is the CPU limit of the sandbox cgroup while the
+// application is not running. It never goes below the OCI spec limit.
+// The zero value keeps the OCI spec limit.
+type SandboxCPUPolicy struct {
+	// uncapped removes the limit.
+	uncapped bool
+
+	// milliCPUs, if non-zero, is the limit in milliCPUs.
+	milliCPUs int64
+
+	// implicit is set on flag defaults, i.e. when the policy was not
+	// specified on the command-line.
+	implicit bool
+
+	// factor, if non-zero, multiplies the OCI spec limit.
+	// It is always above or equal to 1, since the limit should
+	// never go below the OCI spec one.
+	factor float64
+}
+
+// Default sandbox CPU policies.
+var (
+	DefaultSandboxCreationCPUPolicy  = SandboxCPUPolicy{uncapped: true, implicit: true}
+	DefaultSandboxLifecycleCPUPolicy = SandboxCPUPolicy{factor: 4, milliCPUs: 1000, implicit: true}
+)
+
+// Set implements flag.Value. Set(String()) should be idempotent.
+// `max(...)` keeps the largest of its values, so it reduces to at most one
+// milliCPU count and one factor.
+func (p *SandboxCPUPolicy) Set(v string) error {
+	terms := []string{v}
+	if inner, ok := strings.CutPrefix(v, "max("); ok {
+		inner, ok = strings.CutSuffix(inner, ")")
+		if !ok || inner == "" {
+			return fmt.Errorf("invalid sandbox CPU policy %q: max(...) must list one or more comma-separated values", v)
+		}
+		terms = strings.Split(inner, ",")
+	}
+	var policy SandboxCPUPolicy
+	for _, term := range terms {
+		switch term = strings.TrimSpace(term); {
+		case term == "uncapped":
+			policy.uncapped = true
+		case strings.HasSuffix(term, "m"):
+			milliCPUs, err := strconv.ParseInt(strings.TrimSuffix(term, "m"), 10, 64)
+			if err != nil || milliCPUs <= 0 {
+				return fmt.Errorf("invalid sandbox CPU policy %q: CPU count %q must be a positive integer of milliCPUs (e.g. \"2500m\")", v, term)
+			}
+			policy.milliCPUs = max(policy.milliCPUs, milliCPUs)
+		case strings.HasSuffix(term, "x"):
+			factor, err := strconv.ParseFloat(strings.TrimSuffix(term, "x"), 64)
+			if err != nil || !(factor > 0) || math.IsInf(factor, 1) {
+				return fmt.Errorf("invalid sandbox CPU policy %q: factor %q must be a positive number", v, term)
+			}
+			if factor > 1 {
+				policy.factor = max(policy.factor, factor)
+			}
+		default:
+			return fmt.Errorf("invalid sandbox CPU policy %q: must be \"uncapped\", \"<N>m\" (milliCPUs), \"<X>x\" (multiplier of OCI spec CPU cap), or \"max(<value>,...)\"", v)
+		}
+	}
+	if policy.uncapped {
+		policy = SandboxCPUPolicy{uncapped: true}
+	}
+	*p = policy
+	return nil
+}
+
+// Get implements flag.Value.
+func (p *SandboxCPUPolicy) Get() any {
+	return *p
+}
+
+// String implements flag.Value.
+func (p SandboxCPUPolicy) String() string {
+	milliCPUs := strconv.FormatInt(p.milliCPUs, 10) + "m"
+	factor := strconv.FormatFloat(p.factor, 'g', -1, 64) + "x"
+	switch {
+	case p.uncapped:
+		return "uncapped"
+	case p.milliCPUs != 0 && p.factor != 0:
+		return "max(" + factor + "," + milliCPUs + ")"
+	case p.milliCPUs != 0:
+		return milliCPUs
+	case p.factor != 0:
+		return factor
+	default:
+		return "1x"
+	}
+}
+
+// Implicit returns whether the policy is a flag default rather than chosen.
+func (p SandboxCPUPolicy) Implicit() bool {
+	return p.implicit
+}
+
+// Enabled returns whether the policy's limit may differ from the OCI spec
+// limit.
+func (p SandboxCPUPolicy) Enabled() bool {
+	return p.uncapped || p.milliCPUs != 0 || p.factor != 0
+}
+
+// Kernel bounds of a CFS quota, in microseconds.
+const (
+	minCPUQuota = 1000
+	maxCPUQuota = 1<<44 - 1
+)
+
+// Quota returns the policy's CFS quota for an application CFS quota of
+// `quota` per `period`, both in microseconds. It is never below `quota`.
+// -1 means unlimited.
+func (p SandboxCPUPolicy) Quota(quota int64, period uint64) int64 {
+	if p.uncapped {
+		return -1
+	}
+	policyQuota := float64(quota)
+	if p.factor != 0 {
+		policyQuota = max(policyQuota, float64(quota)*p.factor)
+	}
+	if p.milliCPUs != 0 {
+		policyQuota = max(policyQuota, float64(p.milliCPUs)*float64(period)/1000)
+	}
+	return int64(math.Round(min(max(policyQuota, minCPUQuota), maxCPUQuota)))
 }
 
 // RestoreSpecValidationPolicy dictates how spec validation should be handled.

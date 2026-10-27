@@ -133,3 +133,51 @@ func BenchmarkSyscallUnderSeccomp(b *testing.B) {
 		}()
 	}
 }
+
+// BenchmarkForkUnderSeccomp measures fork, child exit, and wait under seccomp.
+// The selected filter is installed once before all b.N forks.
+func BenchmarkForkUnderSeccomp(b *testing.B) {
+	ctx := context.Background()
+	machine, err := harness.GetMachine()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer machine.CleanUp()
+
+	for _, tc := range []struct {
+		policy string
+		flag   string
+	}{
+		{policy: "none"},
+		{policy: "cacheable", flag: "--seccomp_cacheable"},
+		{policy: "uncacheable", flag: "--seccomp_notcacheable"},
+	} {
+		name, err := tools.ParametersToName(tools.Parameter{Name: "seccomp", Value: tc.policy})
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(name, func(b *testing.B) {
+			container := machine.GetContainer(ctx, b)
+			defer container.CleanUp(ctx)
+			if err := container.Spawn(ctx, dockerutil.RunOpts{
+				Image:      "benchmarks/syscallbench",
+				CpusetCpus: harness.ServerCPUSet(),
+				// Each case selects its own guest policy, including none.
+				SecurityOpts: []string{"seccomp=unconfined"},
+			}, "sh", "-c", "trap 'exit 0' TERM; sleep 24h & wait"); err != nil {
+				b.Fatal(err)
+			}
+			defer metricsviz.FromContainerLogs(ctx, b, container)
+			cmd := []string{"syscallbench", "--syscall=2", fmt.Sprintf("--loops=%d", b.N)}
+			if tc.flag != "" {
+				cmd = append(cmd, tc.flag)
+			}
+			b.ResetTimer()
+			out, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
+			b.StopTimer()
+			if err != nil {
+				b.Fatalf("forks failed: %v, output: %s", err, out)
+			}
+		})
+	}
+}

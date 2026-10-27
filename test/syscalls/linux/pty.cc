@@ -25,6 +25,7 @@
 #include <sys/poll.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -909,7 +910,7 @@ TEST_F(PtyTest, PacketModeFailsOnReplica) {
 
 TEST_F(PtyTest, WriteInvalidUTF8) {
   char c = 0xff;
-  ASSERT_THAT(syscall(__NR_write, master_.get(), &c, sizeof(c)),
+  ASSERT_THAT(syscall(SYS_write, master_.get(), &c, sizeof(c)),
               SyscallSucceedsWithValue(sizeof(c)));
 }
 

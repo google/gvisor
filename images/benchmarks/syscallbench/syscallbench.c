@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <getopt.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
@@ -20,11 +21,13 @@
 #include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static int loops = 10000000;
 
-enum syscall_type { get_pid, get_pid_opt };
+enum syscall_type { get_pid, get_pid_opt, fork_process };
 enum seccomp_policy { seccomp_none, seccomp_cacheable, seccomp_uncacheable };
 
 #ifdef __x86_64__
@@ -50,8 +53,32 @@ static void show_usage(const char* cmd) {
           "seccomp filter for this syscall\n"
           "\tOptions:\n"
           "\t%d) getpid\n"
-          "\t%d) getpidopt\n",
-          cmd, get_pid, get_pid_opt);
+          "\t%d) getpidopt\n"
+          "\t%d) fork, exit, and wait\n",
+          cmd, get_pid, get_pid_opt, fork_process);
+}
+
+// do_fork creates a child that exits immediately and waits for it.
+static void do_fork() {
+  pid_t child = fork();
+  if (child < 0) {
+    perror("fork");
+    exit(1);
+  }
+  if (child == 0) {
+    _exit(0);
+  }
+  int status;
+  while (waitpid(child, &status, 0) < 0) {
+    if (errno != EINTR) {
+      perror("waitpid");
+      exit(1);
+    }
+  }
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    fprintf(stderr, "child failed with wait status %d\n", status);
+    exit(1);
+  }
 }
 
 static void set_cacheable_filter() {
@@ -158,6 +185,11 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  if (sys_val == fork_process && prctl(PR_GET_SECCOMP, 0, 0, 0, 0) != 0) {
+    fprintf(stderr, "fork benchmark requires no preinstalled seccomp filter\n");
+    exit(1);
+  }
+
   switch (seccomp_policy_flag) {
     case seccomp_none:
       break;
@@ -179,6 +211,9 @@ int main(int argc, char* argv[]) {
       break;
     case (int)get_pid_opt:
       for (i = 0; i < loops; i++) do_getpidopt();
+      break;
+    case (int)fork_process:
+      for (i = 0; i < loops; i++) do_fork();
       break;
     default:
       fprintf(stderr, "unknown syscall option: %d\n", sys_val);

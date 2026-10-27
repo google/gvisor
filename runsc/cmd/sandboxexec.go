@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
-
 	sandboxexecpb "gvisor.dev/gvisor/sandboxexec/proto/sandbox_options_go_proto"
 )
 

@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/components"
 	"github.com/go-echarts/go-echarts/v2/opts"
@@ -693,7 +693,8 @@ func Parse(logs string, hasPrefix bool) (*Data, error) {
 		if len(tabularData) != len(header)+1 {
 			return nil, fmt.Errorf("invalid data line: %q with %d components which does not match header which has %d components. This is likely due to a log buffer overrun or similar issue causing the line to be cut off; please configure the container or the runtime to allow higher logging volume", line, len(tabularData), len(header))
 		}
-		offsetNanos, err := strconv.ParseUint(tabularData[0], 10, 64)
+		// Offsets must fit in time.Duration without becoming negative.
+		offsetNanos, err := strconv.ParseUint(tabularData[0], 10, 63)
 		if err != nil {
 			return nil, fmt.Errorf("invalid data line: %q (bad timestamp: %w)", line, err)
 		}
@@ -746,7 +747,7 @@ func slugify(s string) string {
 // get logs.
 type Container interface {
 	Stop(context.Context) error
-	Status(context.Context) (types.ContainerState, error)
+	Status(context.Context) (container.State, error)
 	Logs(context.Context) (string, error)
 }
 

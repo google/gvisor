@@ -95,7 +95,7 @@ func (d *DriverSourceDir) GetUVMIncludePaths() []string {
 }
 
 // WriteIncludeFile writes an cc file at file that includes all the given sources.
-func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName) error {
+func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName, constants []string) error {
 	bufW := bufio.NewWriter(w)
 	for _, source := range sources {
 		if _, err := fmt.Fprintf(bufW, "#include \"%s\"\n", source); err != nil {
@@ -112,6 +112,13 @@ func WriteIncludeFile(sources []string, w io.Writer, ioctls []nvproxy.IoctlName)
 	// which are initialized with the ioctl macro.
 	for _, ioctl := range ioctls {
 		if _, err := fmt.Fprintf(bufW, "#ifdef %s\nconst uint64_t GVISOR_%s = %s;\n#endif\n", ioctl, ioctl, ioctl); err != nil {
+			return fmt.Errorf("failed to write to include file: %w", err)
+		}
+	}
+	// Other constants may be enumerators rather than macros, so they are
+	// defined unconditionally.
+	for _, constant := range constants {
+		if _, err := fmt.Fprintf(bufW, "const uint64_t GVISOR_%s = %s;\n", constant, constant); err != nil {
 			return fmt.Errorf("failed to write to include file: %w", err)
 		}
 	}

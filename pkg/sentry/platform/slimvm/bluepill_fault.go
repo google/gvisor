@@ -16,7 +16,6 @@ package slimvm
 
 import (
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 )

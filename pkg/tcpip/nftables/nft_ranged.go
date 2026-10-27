@@ -17,7 +17,6 @@ package nftables
 import (
 	"bytes"
 	"fmt"
-
 	"slices"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"

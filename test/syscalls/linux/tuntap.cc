@@ -19,9 +19,11 @@
 #include <linux/if.h>
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
+#include <linux/if_link.h>
 #include <linux/if_packet.h>
 #include <linux/if_tun.h>
 #include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -48,13 +50,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/ascii.h"
-#include "absl/strings/str_split.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
-#include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
-#include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -224,6 +223,66 @@ class TuntapTest : public ::testing::Test {
     }
   }
 };
+
+struct MTUParams {
+  bool tap;
+  uint16_t request;
+};
+
+class TuntapMTUTest : public TuntapTest,
+                      public ::testing::WithParamInterface<MTUParams> {};
+
+TEST_P(TuntapMTUTest, ChangeMTULimits) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  const auto param = GetParam();
+  FileDescriptor tun = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+  struct ifreq ifr = {};
+  ifr.ifr_flags = param.tap ? IFF_TAP : IFF_TUN;
+  strncpy(ifr.ifr_name, param.tap ? kTapName : kTunName, IFNAMSIZ);
+  ASSERT_THAT(ioctl(tun.get(), TUNSETIFF, &ifr), SyscallSucceeds());
+  auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(ifr.ifr_name));
+  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+    struct rtattr attr;
+    uint32_t mtu;
+  } req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = param.request;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = 1;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = link.index;
+  req.attr.rta_type = IFLA_MTU;
+  req.attr.rta_len = RTA_LENGTH(sizeof(req.mtu));
+
+  const uint32_t max_mtu = param.tap ? 65521 : 65535;
+  for (const auto& test : {std::pair<uint32_t, int>{68, 0},
+                           {67, EINVAL},
+                           {max_mtu, 0},
+                           {max_mtu + 1, EINVAL},
+                           {UINT32_MAX, EINVAL}}) {
+    SCOPED_TRACE(test.first);
+    req.mtu = test.first;
+    const auto result =
+        NetlinkRequestAckOrError(fd, req.hdr.nlmsg_seq, &req, sizeof(req));
+    EXPECT_EQ(result.errno_value(), test.second) << result;
+    if (test.second == 0) {
+      link.mtu = test.first;
+    }
+    EXPECT_EQ(ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(link.name)).mtu,
+              link.mtu);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(Netlink, TuntapMTUTest,
+                         ::testing::Values(MTUParams{false, RTM_NEWLINK},
+                                           MTUParams{false, RTM_SETLINK},
+                                           MTUParams{true, RTM_NEWLINK},
+                                           MTUParams{true, RTM_SETLINK}));
 
 TEST_F(TuntapTest, CreateInterfaceNoCap) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
@@ -815,6 +874,68 @@ TEST_F(TuntapTest, RawPacketSocket) {
       }
     }
   }
+}
+
+TEST_F(TuntapTest, SaveRestoreAfterNetnsMove) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  constexpr char kName[] = "tun_move";
+  FileDescriptor tun;
+  {
+    // Only checkpoint after the device has moved back to the original stack.
+    const DisableSave disable_save;
+    const FileDescriptor original_netns =
+        ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/net", O_RDONLY));
+    Cleanup restore_netns([&] {
+      ASSERT_THAT(setns(original_netns.get(), CLONE_NEWNET), SyscallSucceeds());
+    });
+    ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceeds());
+
+    tun = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
+    struct ifreq ifr = {};
+    ifr.ifr_flags = IFF_TUN;
+    strncpy(ifr.ifr_name, kName, IFNAMSIZ);
+    ASSERT_THAT(ioctl(tun.get(), TUNSETIFF, &ifr), SyscallSucceeds());
+    const auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kName));
+    const FileDescriptor nlsk =
+        ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+    struct {
+      struct nlmsghdr hdr;
+      struct ifinfomsg msg;
+      struct rtattr netns;
+      int fd;
+    } req = {};
+    req.hdr.nlmsg_len = sizeof(req);
+    req.hdr.nlmsg_type = RTM_NEWLINK;
+    req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    req.hdr.nlmsg_seq = 1;
+    req.msg.ifi_family = AF_UNSPEC;
+    req.msg.ifi_index = link.index;
+    req.netns.rta_type = IFLA_NET_NS_FD;
+    req.netns.rta_len = RTA_LENGTH(sizeof(req.fd));
+    req.fd = original_netns.get();
+    ASSERT_NO_ERRNO(NetlinkRequestAckOrError(nlsk, req.hdr.nlmsg_seq, &req,
+                                             req.hdr.nlmsg_len));
+    ASSERT_THAT(setns(original_netns.get(), CLONE_NEWNET), SyscallSucceeds());
+    restore_netns.Release();
+  }
+
+  MaybeSave();
+
+  const auto link = ASSERT_NO_ERRNO_AND_VALUE(GetLinkByName(kName));
+  EXPECT_EQ(link.kind, "tun");
+  ASSERT_NO_ERRNO(LinkChangeFlags(link.index, IFF_UP, IFF_UP));
+  FileDescriptor nlsk =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  const struct in_addr addr = {.s_addr = kTapIPAddr};
+  ASSERT_NO_ERRNO(
+      LinkAddLocalAddr(nlsk, link.index, AF_INET, 24, &addr, sizeof(addr)));
+
+  // Restore must bind teardown to the destination stack and its new NIC ID.
+  tun.reset();
+  EXPECT_THAT(DumpLinkNames(), IsPosixErrorOkAndHolds(
+                                   ::testing::Not(::testing::Contains(kName))));
 }
 
 TEST_F(TuntapTest, SaveRestorePreservesAddressesAndPendingPackets) {

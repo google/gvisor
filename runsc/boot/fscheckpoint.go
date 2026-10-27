@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
+
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -297,7 +298,7 @@ func makeFSRestoreOptsForLocalCheckpoint(args *Args) ([]fsRestoreOpts, error) {
 			ManifestFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[offset].ReleaseToFile(checkpointfiles.FSCheckpointManifestFileName)),
 			MultiTarFile:      stateio.NewBufioReadCloser(args.FSRestoreFDs[offset+1].ReleaseToFile(checkpointfiles.FSCheckpointMultiTarFileName)),
 			PagesMetadataFile: stateio.NewBufioReadCloser(args.FSRestoreFDs[offset+2].ReleaseToFile(checkpointfiles.PagesMetadataFileName)),
-			PagesFile:         stateio.NewPagesFileFDReaderDefault(int32(args.FSRestoreFDs[offset+3].Release())),
+			PagesFile:         stateio.NewPagesFileFDReaderDefault(int32(args.FSRestoreFDs[offset+3].Release()), args.NumCPU),
 		}
 	}
 	return opts, nil
@@ -489,13 +490,15 @@ func startFSRestore(optsList []fsRestoreOpts) (*fsRestore, error) {
 				}
 			}
 
+			// Page loading is not throttled, since no kernel restore competes
+			// with it and nothing would call Unthrottle().
 			apfl, err := pgalloc.StartAsyncPagesFileLoad(opts.PagesFile /* transfers ownership */, func(err error) {
 				if err != nil {
 					log.Warningf("Failed to load filesystem checkpoint pages: %v", err)
 				} else if log.IsLogging(log.Debug) {
 					log.Debugf("Finished loading filesystem checkpoint pages")
 				}
-			}, nil)
+			}, nil, pgalloc.AsyncPagesFileLoadOpts{})
 			opts.PagesFile = nil
 			if err != nil {
 				return fmt.Errorf("failed to start async page loading: %w", err)

@@ -210,8 +210,7 @@ func invokeCudaCheckpoint(sctx context.Context, k *kernel.Kernel, proc *Proc, cu
 		PIDNamespace:   leader.PIDNamespace(),
 	}
 	// Provision environment variables from leader's container spec.
-	contName := k.ContainerName(contID)
-	args.Envv = k.Saver().SpecEnviron(contName)
+	args.Envv = k.SpecEnviron(contID)
 
 	// Provide standard streams to cuda-checkpoint. Use /dev/null as stdin
 	// and direct cuda-checkpoint's stdout/stderr to a pipe.

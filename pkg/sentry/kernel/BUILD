@@ -435,8 +435,10 @@ go_test(
     size = "small",
     srcs = [
         "fd_table_test.go",
+        "kcov_test.go",
         "kernel_restore_test.go",
         "pending_signals_test.go",
+        "seccomp_cache_test.go",
         "table_test.go",
         "task_signals_test.go",
         "task_syscall_benchmark_test.go",
@@ -447,6 +449,7 @@ go_test(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
@@ -464,6 +467,7 @@ go_test(
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
+        "//pkg/state",
         "//pkg/sync",
         "//pkg/tcpip",
         "@org_golang_google_protobuf//proto:go_default_library",

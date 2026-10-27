@@ -23,11 +23,11 @@ go_test(
     embed = [":prometheus"],
     deps = [
         "//pkg/metric:metric_go_proto",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_prometheus_common//expfmt",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_google_protobuf//protoadapt:go_default_library",
         "@org_golang_google_protobuf//reflect/protoreflect:go_default_library",
         "@org_golang_google_protobuf//testing/protocmp:go_default_library",
     ],

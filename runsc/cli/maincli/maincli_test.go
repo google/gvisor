@@ -30,6 +30,7 @@ var fakeFlagValues = [...]string{
 	"foo",
 	"none",
 	"never",
+	"on",
 	"1,2,3",
 	"2h45m",
 	"1:1,2:2",

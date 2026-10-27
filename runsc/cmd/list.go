@@ -25,12 +25,17 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 )
+
+// listCheckTimeout bounds how long `list` waits to check whether containers
+// stopped.
+const listCheckTimeout = 5 * time.Second
 
 // List implements subcommands.Command for the "list" command.
 type List struct {
@@ -102,14 +107,37 @@ func (l *List) execute(rootDir string, out io.Writer) error {
 	}
 
 	// Collect the containers.
+	type loaded struct {
+		c   *container.Container
+		err error
+	}
+	results := make([]chan loaded, len(ids))
+	for i, id := range ids {
+		results[i] = make(chan loaded, 1)
+		go func(i int, id container.FullID) {
+			c, err := container.Load(rootDir, id, container.LoadOpts{Exact: true, ReadOnly: true})
+			results[i] <- loaded{c, err}
+		}(i, id)
+	}
+	deadline := time.Now().Add(listCheckTimeout)
 	var containers []*container.Container
-	for _, id := range ids {
-		c, err := container.Load(rootDir, id, container.LoadOpts{Exact: true})
-		if err != nil {
-			log.Warningf("Skipping container %q: %v", id, err)
+	for i, id := range ids {
+		var r loaded
+		select {
+		case r = <-results[i]:
+		case <-time.After(time.Until(deadline)):
+			select {
+			case r = <-results[i]:
+			default:
+				log.Warningf("Timed out checking whether container %q stopped, reporting its saved status", id.ContainerID)
+				r.c, r.err = container.Load(rootDir, id, container.LoadOpts{Exact: true, SkipCheck: true, ReadOnly: true})
+			}
+		}
+		if r.err != nil {
+			log.Warningf("Skipping container %q: %v", id, r.err)
 			continue
 		}
-		containers = append(containers, c)
+		containers = append(containers, r.c)
 	}
 
 	switch l.format {

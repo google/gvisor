@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	_ "embed" // Necessary to use go:embed.
 	"flag"
 	"fmt"
 	"os"
@@ -24,8 +25,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/tools/ioctl_sniffer/sniffer"
-
-	_ "embed" // Necessary to use go:embed.
 )
 
 var (

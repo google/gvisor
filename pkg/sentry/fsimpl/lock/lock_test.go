@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"testing"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
@@ -688,6 +690,33 @@ func TestSetLock(t *testing.T) {
 	}
 }
 
+func TestFileLocksFirstUse(t *testing.T) {
+	var locks Locks
+	ctx := context.Background()
+	r := LockRange{End: LockEOF}
+	locks.UnlockRegion(1, r)
+	if got := locks.TestRegion(ctx, 1, WriteLock, r, false).Type; got != unix.F_UNLCK {
+		t.Fatalf("query on unused file: got %d, want F_UNLCK", got)
+	}
+	locks.mu.Lock()
+	allocated := locks.locks != nil
+	locks.mu.Unlock()
+	if allocated {
+		t.Fatal("unlock or query allocated a lock tree")
+	}
+
+	if err := locks.LockRegion(ctx, 1, 42, WriteLock, r, false, false); err != nil {
+		t.Fatalf("first write lock: %v", err)
+	}
+	if got := locks.TestRegion(ctx, 2, ReadLock, r, false); got.Type != unix.F_WRLCK || got.PID != 42 {
+		t.Fatalf("query from another owner: got %+v, want write lock held by PID 42", got)
+	}
+	locks.UnlockRegion(1, r)
+	if got := locks.TestRegion(ctx, 2, ReadLock, r, false).Type; got != unix.F_UNLCK {
+		t.Errorf("query after unlock: got %d, want F_UNLCK", got)
+	}
+}
+
 func TestUnlock(t *testing.T) {
 	tests := []struct {
 		// description of test.
@@ -1033,7 +1062,8 @@ func TestUnlock(t *testing.T) {
 			l := fill(test.before)
 
 			r := LockRange{Start: test.start, End: test.end}
-			l.unlock(test.uid, r)
+			locks := Locks{locks: &l}
+			locks.UnlockRegion(test.uid, r)
 			var got []entry
 			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 				got = append(got, entry{

@@ -21,7 +21,6 @@ import (
 
 	typeurl "github.com/containerd/typeurl/v2"
 	"github.com/opencontainers/runtime-spec/specs-go/features"
-
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 

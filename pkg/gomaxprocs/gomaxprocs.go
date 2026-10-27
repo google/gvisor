@@ -21,8 +21,8 @@
 // Note that changing GOMAXPROCS stops the world, so callers should adjust
 // GOMAXPROCS infrequently.
 //
-// TODO: Add gomaxprocs.Get() and check that other gVisor packages don't call
-// runtime.GOMAXPROCS() at all.
+// TODO: Check that other gVisor packages size long-lived state with Base()
+// rather than runtime.GOMAXPROCS().
 package gomaxprocs
 
 import (
@@ -50,6 +50,18 @@ func SetBase(n int) {
 	oldBase := base
 	base = n
 	updateRuntime(oldBase, temp)
+}
+
+// Base returns base GOMAXPROCS, or GOMAXPROCS if this package is not active.
+// Unlike GOMAXPROCS, it excludes temporary GOMAXPROCS, so it fits sizes that
+// last longer than the operations that added them.
+func Base() int {
+	mu.Lock()
+	defer mu.Unlock()
+	if base == 0 {
+		return runtime.GOMAXPROCS(0)
+	}
+	return base
 }
 
 // Add adds n temporary GOMAXPROCS. n may be negative; callers should call Add

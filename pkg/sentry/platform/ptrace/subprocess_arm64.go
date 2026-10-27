@@ -23,7 +23,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
@@ -176,12 +175,6 @@ func patchSignalInfo(regs *arch.Registers, signalInfo *linux.SignalInfo) {
 //
 //go:nosplit
 func enableCpuidFault() {
-}
-
-// appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
-// Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction seccomp.Action) []seccomp.RuleSet {
-	return rules
 }
 
 // probeSeccomp returns true if seccomp is run after ptrace notifications,

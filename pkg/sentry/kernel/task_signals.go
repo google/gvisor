@@ -173,7 +173,7 @@ var StopSignals = linux.MakeSignalSet(linux.SIGSTOP, linux.SIGTSTP, linux.SIGTTI
 // dequeueSignalLocked returns a pending signal that is *not* included in mask.
 // If there are no pending unmasked signals, dequeueSignalLocked returns nil.
 //
-// Preconditions: t.tg.signalHandlers.mu must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) dequeueSignalLocked(mask linux.SignalSet) *linux.SignalInfo {
 	if info := t.pendingSignals.dequeue(mask); info != nil {
 		return info
@@ -184,7 +184,7 @@ func (t *Task) dequeueSignalLocked(mask linux.SignalSet) *linux.SignalInfo {
 // discardSpecificLocked removes all instances of the given signal from all
 // signal queues in tg.
 //
-// Preconditions: The signal mutex must be locked.
+// +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) discardSpecificLocked(sig linux.Signal) {
 	tg.pendingSignals.discardSpecific(sig)
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
@@ -391,16 +391,26 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 // Sigtimedwait implements the semantics of sigtimedwait(2).
 //
 // Preconditions:
-//   - The caller must be running on the task goroutine.
+//   - If timeout != 0, the caller must be running on the task goroutine.
 //   - t.exitState < TaskExitZombie.
+//
+// TODO(b/171089913): Fix signalfd semantics.
+// If timeout == 0, Sigtimedwait does not block and may be called from any
+// goroutine; signalfd relies on this to dequeue signals for the task that
+// created the signalfd on behalf of whichever task reads it.
 func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.SignalInfo, error) {
 	// set is the set of signals we're interested in; invert it to get the set
 	// of signals to block.
 	mask := ^(set &^ UnblockableSignals)
 
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
-	if info := t.dequeueSignalLocked(mask); info != nil {
+	// If we are not running on t's task goroutine, an execve by t.tg may
+	// replace t.tg.signalHandlers concurrently, so use signalLock() to lock
+	// (and later unlock) the current SignalHandlers.
+	sh := t.tg.signalLock()
+	defer sh.mu.Unlock()
+	// signalLock returned t.tg's current handler with sh.mu held.
+	// checklocks does not relate that result to the thread-group field.
+	if info := t.dequeueSignalLocked(mask); info != nil { // +checklocksforce
 		return info, nil
 	}
 
@@ -414,10 +424,12 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 	t.realSignalMask = linux.SignalSet(t.signalMask.RacyLoad())
 	t.setSignalMaskLocked(t.realSignalMask & mask)
 
-	// Wait for a timeout or new signal.
-	t.tg.signalHandlers.mu.Unlock()
+	// Wait for a timeout or new signal. Since we're running on the task
+	// goroutine, t.tg can't complete an execve while we're blocked, so sh is
+	// still t.tg's SignalHandlers when we relock it.
+	sh.mu.Unlock()
 	_, err := t.BlockWithTimeout(nil, true, timeout)
-	t.tg.signalHandlers.mu.Lock()
+	sh.mu.Lock()
 
 	// Restore the original signal mask.
 	t.setSignalMaskLocked(t.realSignalMask)
@@ -639,7 +651,7 @@ func (t *Task) signalIgnoredLocked(sig linux.Signal, forced bool) bool {
 	return computeAction(sig, act) == SignalActionIgnore
 }
 
-// Preconditions: The signal mutex must be locked.
+// +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 	switch {
 	case linux.SignalSetOf(sig)&StopSignals != 0:
@@ -669,7 +681,9 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 			tg.exitStatus = linux.WaitStatusTerminationSignal(linux.SIGKILL)
 		}
 		for t := tg.tasks.Front(); t != nil; t = t.Next() {
-			t.killLocked()
+			// The list contains tasks in tg; checklocks cannot infer
+			// that t uses the signal mutex required by this helper.
+			t.killLocked() // +checklocksignore
 		}
 	}
 }
@@ -681,8 +695,6 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 // sendSignalTimerLocked): checking tg.leader.Kernel() here would race
 // without the taskset mutex, which this function's callers don't hold.
 //
-// Preconditions: the signal mutex must be locked.
-//
 // +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) wakeFrozenTasksForFatalSignalLocked(sig linux.Signal) {
 	act := tg.signalHandlers.actions[sig]
@@ -691,7 +703,9 @@ func (tg *ThreadGroup) wakeFrozenTasksForFatalSignalLocked(sig linux.Signal) {
 	}
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
 		if _, ok := t.stop.(*frozenStop); ok {
-			t.endInternalStopLocked()
+			// The list contains tasks in tg; checklocks cannot infer
+			// that t uses the signal mutex required by this helper.
+			t.endInternalStopLocked() // +checklocksignore
 		}
 	}
 }
@@ -700,7 +714,7 @@ func (tg *ThreadGroup) wakeFrozenTasksForFatalSignalLocked(sig linux.Signal) {
 // the given signal. canReceiveSignalLocked is analogous to Linux's
 // kernel/signal.c:wants_signal(), but see below for divergences.
 //
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	// Notify that the signal is queued.
 	t.signalQueue.Notify(waiter.EventMask(linux.MakeSignalSet(sig)))
@@ -731,10 +745,11 @@ func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 //
 // Linux actually records curr_target to balance the group signal targets.
 //
-// Preconditions: The signal mutex must be locked.
+// +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) findSignalReceiverLocked(sig linux.Signal) *Task {
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
-		if t.canReceiveSignalLocked(sig) {
+		// t.tg is tg, but checklocks can't infer that from tg.tasks.
+		if t.canReceiveSignalLocked(sig) { // +checklocksignore
 			return t
 		}
 	}
@@ -791,7 +806,9 @@ func (t *Task) SetSignalMask(mask linux.SignalSet) {
 	t.tg.signalHandlers.mu.Unlock()
 }
 
-// Preconditions: The signal mutex must be locked.
+// Sets the signal mask of the task and handles any side effects.
+//
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 	oldMask := linux.SignalSet(t.signalMask.RacyLoad())
 	t.signalMask.Store(uint64(mask))
@@ -805,7 +822,9 @@ func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
 	blockedGroupPending := blocked & linux.SignalSet(t.tg.pendingSignals.pendingSet.RacyLoad())
 	if blockedGroupPending != 0 && t.interrupted() {
 		linux.ForEachSignal(blockedGroupPending, func(sig linux.Signal) {
-			if nt := t.tg.findSignalReceiverLocked(sig); nt != nil {
+			// ForEachSignal calls this synchronously, so the signal mutex is
+			// still held, but checklocks analyzes the closure without it.
+			if nt := t.tg.findSignalReceiverLocked(sig); nt != nil { // +checklocksignore
 				nt.interrupt()
 				return
 			}
@@ -1021,7 +1040,9 @@ func (t *Task) initiateGroupStop(info *linux.SignalInfo) {
 		if t2.ptraceSeized {
 			t2.trapNotifyPending = true
 			if s, ok := t2.stop.(*ptraceStop); ok && s.listen {
-				t2.endInternalStopLocked()
+				// The list contains tasks in t.tg; checklocks cannot infer
+				// that t2 uses the signal mutex held above.
+				t2.endInternalStopLocked() // +checklocksignore
 			}
 		}
 		t2.interrupt()
@@ -1034,7 +1055,7 @@ func (t *Task) initiateGroupStop(info *linux.SignalInfo) {
 // not stopping tg and will not stop tg in the future. If broadcast is true,
 // parent and tracer notification will be scheduled if appropriate.
 //
-// Preconditions: The signal mutex must be locked.
+// +checklocks:tg.signalHandlers.mu
 func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 	// Discard all previously-queued stop signals.
 	linux.ForEachSignal(StopSignals, tg.discardSpecificLocked)
@@ -1053,14 +1074,16 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 	tg.leader.Debugf("Ending %s group stop with %d threads pending", completeStr, tg.groupStopPendingCount)
 	for t := tg.tasks.Front(); t != nil; t = t.Next() {
 		t.groupStopPending = false
+		// The list contains tasks in tg; checklocks cannot infer that t
+		// uses the signal mutex required by this helper for either stop.
 		if t.ptraceSeized {
 			t.trapNotifyPending = true
 			if s, ok := t.stop.(*ptraceStop); ok && s.listen {
-				t.endInternalStopLocked()
+				t.endInternalStopLocked() // +checklocksignore
 			}
 		} else {
 			if _, ok := t.stop.(*groupStop); ok {
-				t.endInternalStopLocked()
+				t.endInternalStopLocked() // +checklocksignore
 				// t may still be effectively frozen but couldn't enter
 				// frozenStop while parked (single t.stop slot); nudge it to recheck.
 				if t.freezeOrdered {
@@ -1096,7 +1119,7 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 // the caller must notify t.tg.leader's parent of a completed group stop (which
 // participateGroupStopLocked cannot do due to holding the wrong locks).
 //
-// Preconditions: The signal mutex must be locked.
+// +checklocks:t.tg.signalHandlers.mu
 func (t *Task) participateGroupStopLocked() bool {
 	if t.groupStopAcknowledged {
 		return false
@@ -1121,7 +1144,10 @@ func (t *Task) participateGroupStopLocked() bool {
 // continue, or ptrace stop, if appropriate. code and status are set in the
 // signal sent to tg, if any.
 //
-// Preconditions: The TaskSet mutex must be locked (for reading or writing).
+// All tasks share one TaskSet, so target.tg.pidns.owner.mu is the TaskSet
+// mutex. It's named through target because callers lock it that way.
+//
+// +checklocksread:target.tg.pidns.owner.mu
 func (t *Task) signalStop(target *Task, code int32, status int32) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -1300,7 +1326,8 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 	if canDeliver {
 		if info := t.dequeueSignalLocked(mask); info != nil {
 			if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
-				t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				t.prepareGroupExitLocked(linux.WaitStatusTerminationSignal(linux.SIGILL))
+				t.tg.signalHandlers.mu.Unlock()
 				return (*runExit)(nil)
 			}
 
@@ -1399,17 +1426,25 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 }
 
 // SignalRegister registers a waiter for pending signals.
+//
+// TODO(b/171089913): Fix signalfd semantics.
+// SignalRegister may be called from any goroutine.
 func (t *Task) SignalRegister(e *waiter.Entry) {
-	t.tg.signalHandlers.mu.Lock()
+	// The caller may race with an execve by t.tg. See Sigtimedwait.
+	sh := t.tg.signalLock()
 	t.signalQueue.EventRegister(e)
-	t.tg.signalHandlers.mu.Unlock()
+	sh.mu.Unlock()
 }
 
 // SignalUnregister unregisters a waiter for pending signals.
+//
+// TODO(b/171089913): Fix signalfd semantics.
+// SignalUnregister may be called from any goroutine.
 func (t *Task) SignalUnregister(e *waiter.Entry) {
-	t.tg.signalHandlers.mu.Lock()
+	// The caller may race with an execve by t.tg. See Sigtimedwait.
+	sh := t.tg.signalLock()
 	t.signalQueue.EventUnregister(e)
-	t.tg.signalHandlers.mu.Unlock()
+	sh.mu.Unlock()
 }
 
 // MayKill checks if task t has permission to send signal sig to target.

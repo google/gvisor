@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/runsc/autoplatform"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -178,6 +179,12 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 		}
 	}
 
+	// Replace --platform=auto with a concrete platform. Child processes
+	// receive the concrete platform through their flags.
+	if err := autoplatform.Resolve(conf, spec); err != nil {
+		util.Fatalf("%v", err)
+	}
+
 	// Construct LogFileOpts for the subcommand.
 	lfOpts := &specutils.LogFileOpts{
 		SandboxID: "<unknown>",
@@ -229,7 +236,7 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	} else {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
-		emitters = append(emitters, newEmitter("text", io.Discard))
+		emitters = append(emitters, discardEmitter{})
 	}
 
 	if *panicLogFD > -1 || *debugLogFD > -1 {
@@ -325,6 +332,12 @@ func Run(sidecar *gvisorbinaries.Binary, commands map[util.SubCommand]string, he
 	log.Warningf("Failure to execute command, err: %v", subCmdCode)
 	os.Exit(128)
 }
+
+// discardEmitter drops logs without formatting them.
+type discardEmitter struct{}
+
+// Emit implements log.Emitter.Emit.
+func (discardEmitter) Emit(int, log.Level, time.Time, string, ...any) {}
 
 func newEmitter(format string, logFile io.Writer) log.Emitter {
 	switch format {

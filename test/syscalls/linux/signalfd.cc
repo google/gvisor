@@ -17,26 +17,41 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <cstdint>
 #include <ctime>
 #include <functional>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+
+ABSL_FLAG(int32_t, signalfd_test_execve_count, -1,
+          "If non-negative, execve this binary this many more times and then "
+          "exit. Used by Signalfd.ReadDuringExecveInOtherProcess.");
 
 using ::testing::KilledBySignal;
 
@@ -376,6 +391,127 @@ TEST(Signalfd, RtQueueDeliversPayload) {
   EXPECT_EQ(ssi.ssi_int, second.sival_int);
 }
 
+// Sends fd over the connected Unix domain socket sock. Returns true on success.
+//
+// Async-signal-safe.
+bool SendFDSignalSafe(int sock, int fd) {
+  char byte = 0;
+  struct iovec iov = {&byte, sizeof(byte)};
+  alignas(struct cmsghdr) char control[CMSG_SPACE(sizeof(fd))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
+  memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
+  return sendmsg(sock, &msg, 0) == sizeof(byte);
+}
+
+// Receives a file descriptor sent by SendFDSignalSafe.
+PosixErrorOr<FileDescriptor> RecvFD(int sock) {
+  char byte;
+  struct iovec iov = {&byte, sizeof(byte)};
+  alignas(struct cmsghdr) char control[CMSG_SPACE(sizeof(int))] = {};
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+  const int ret = RetryEINTR(recvmsg)(sock, &msg, MSG_CMSG_CLOEXEC);
+  if (ret < 0) {
+    return PosixError(errno, "recvmsg");
+  }
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  if (ret != sizeof(byte) || cmsg == nullptr ||
+      cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
+      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+    return PosixError(EPROTO, "no file descriptor received");
+  }
+  int fd;
+  memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
+  return FileDescriptor(fd);
+}
+
+// TODO(b/171089913): Fix signalfd semantics.
+// Linux reads the signals of the reading task, so here every read just checks
+// this process' (empty) signal queue. gVisor instead reads the signals of the
+// task that created the signalfd, so every read accesses the child's signal
+// state while the child repeatedly replaces its signal handlers via execve.
+TEST(Signalfd, ReadDuringExecveInOtherProcess) {
+  constexpr int kExecveCount = 30;
+  constexpr int kReaders = 4;
+  const DisableSave ds;
+
+  int sockets[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets),
+              SyscallSucceeds());
+  FileDescriptor sock(sockets[0]);
+  FileDescriptor child_sock(sockets[1]);
+
+  // The child creates a signalfd and sends it to us before its first execve,
+  // then calls execve before exiting.
+  const std::string flag =
+      absl::StrCat("--signalfd_test_execve_count=", kExecveCount - 1);
+  const int child_sock_fd = child_sock.get();
+  pid_t child_pid = -1;
+  int execve_errno = 0;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+      "/proc/self/exe", {"/proc/self/exe", flag}, {},
+      [child_sock_fd] {
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigaddset(&mask, kSigno);
+        const int sfd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+        TEST_PCHECK(sfd >= 0);
+        TEST_PCHECK(SendFDSignalSafe(child_sock_fd, sfd));
+      },
+      &child_pid, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+  child_sock.reset();
+
+  const FileDescriptor sfd = ASSERT_NO_ERRNO_AND_VALUE(RecvFD(sock.get()));
+
+  // Read the signalfd from several threads until the child exits. No signal is
+  // ever sent, so every read fails with EWOULDBLOCK.
+  std::atomic<bool> done(false);
+  std::vector<std::unique_ptr<ScopedThread>> readers;
+  readers.reserve(kReaders);
+  for (int i = 0; i < kReaders; i++) {
+    readers.push_back(std::make_unique<ScopedThread>([&] {
+      while (!done.load()) {
+        struct signalfd_siginfo info;
+        ASSERT_THAT(read(sfd.get(), &info, sizeof(info)),
+                    SyscallFailsWithErrno(EWOULDBLOCK));
+      }
+    }));
+  }
+
+  int status;
+  const pid_t ret = RetryEINTR(waitpid)(child_pid, &status, 0);
+  done.store(true);
+  readers.clear();
+  ASSERT_THAT(ret, SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status " << status;
+}
+
+// Executes this binary count more times, then exits successfully. Used by
+// Signalfd.ReadDuringExecveInOtherProcess.
+void RunExecveChild(int count) {
+  if (count == 0) {
+    _exit(0);
+  }
+  const std::string flag =
+      absl::StrCat("--signalfd_test_execve_count=", count - 1);
+  char* const argv[] = {const_cast<char*>("/proc/self/exe"),
+                        const_cast<char*>(flag.c_str()), nullptr};
+  TEST_PCHECK(execv("/proc/self/exe", argv) == 0);
+}
+
 }  // namespace
 
 }  // namespace testing
@@ -393,6 +529,11 @@ int main(int argc, char** argv) {
   TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
 
   gvisor::testing::TestInit(&argc, &argv);
+
+  const int execve_count = absl::GetFlag(FLAGS_signalfd_test_execve_count);
+  if (execve_count >= 0) {
+    gvisor::testing::RunExecveChild(execve_count);
+  }
 
   return gvisor::testing::RunAllTests();
 }

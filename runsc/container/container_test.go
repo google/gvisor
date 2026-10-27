@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -38,7 +39,6 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -240,6 +240,64 @@ func blockUntilWaitable(pid int) error {
 		return 0, 0, err
 	})
 	return err
+}
+
+func TestSetOOMScoreAdjExited(t *testing.T) {
+	cmd := exec.Command("/bin/cat")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stdin.Close() })
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	})
+
+	pid := cmd.Process.Pid
+	if err := setOOMScoreAdj(pid, 1000); err != nil {
+		t.Fatalf("setOOMScoreAdj(%d, 1000) while alive: %v", pid, err)
+	}
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "1000" {
+		t.Fatalf("live oom_score_adj = %q, want 1000", got)
+	}
+
+	// Keep the child waitable but unreaped so its proc files still exist.
+	if err := stdin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := blockUntilWaitable(pid); err != nil {
+		t.Fatal(err)
+	}
+	if err := setOOMScoreAdj(pid, 1000); err != nil {
+		t.Fatalf("setOOMScoreAdj(%d, 1000) after exit = %v, want nil", pid, err)
+	}
+}
+
+func TestSetOOMScoreAdjPermissionDenied(t *testing.T) {
+	// Probe without writing: a privileged caller may be able to change PID 1's
+	// score, in which case this permission-denied control does not apply.
+	f, err := os.OpenFile("/proc/1/oom_score_adj", os.O_WRONLY, 0)
+	if err == nil {
+		f.Close()
+		t.Skip("PID 1's oom_score_adj is writable")
+	}
+	if !errors.Is(err, unix.EACCES) {
+		t.Fatalf("opening PID 1's oom_score_adj: %v, want EACCES", err)
+	}
+	if running, err := specutils.IsProcessRunning(1, 0); err != nil || !running {
+		t.Fatalf("IsProcessRunning(1) = (%t, %v), want (true, nil)", running, err)
+	}
+	if err := setOOMScoreAdj(1, 1000); !errors.Is(err, unix.EACCES) {
+		t.Fatalf("setOOMScoreAdj(1, 1000) = %v, want EACCES", err)
+	}
 }
 
 // execPS executes `ps` inside the container and return the processes.
@@ -549,6 +607,68 @@ func TestPostStartHookFailure(t *testing.T) {
 	}
 }
 
+// TestSpecChangeAfterCreate checks that changes to config.json after create
+// don't affect the container.
+func TestSpecChangeAfterCreate(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	c, err := New(conf, Args{ID: testutil.RandomContainerID(), Spec: spec, BundleDir: bundleDir})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+
+	if err := os.WriteFile(filepath.Join(bundleDir, "config.json"), nil, 0644); err != nil {
+		t.Fatalf("error truncating config.json: %v", err)
+	}
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	if out, err := executeCombinedOutput(conf, c, nil, "/bin/true"); err != nil {
+		t.Errorf("exec failed: %v, output: %s", err, out)
+	}
+}
+
+// TestRootStartFailureStops checks that a root container that the sandbox
+// fails to start is reported as stopped once its sandbox exits.
+func TestRootStartFailureStops(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	spec.Process.Args = []string{"/does/not/exist"}
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	c, err := New(conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err == nil {
+		t.Fatalf("starting a container with a missing executable succeeded")
+	}
+	if err := testutil.Poll(func() error {
+		loaded, err := Load(conf.RootDir, FullID{ContainerID: c.ID}, LoadOpts{})
+		if err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		if loaded.Status != Stopped {
+			return fmt.Errorf("got status %v, expected %v", loaded.Status, Stopped)
+		}
+		return nil
+	}, pollTimeout); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestGetNetworkConfig(t *testing.T) {
 	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
@@ -726,6 +846,91 @@ func TestLifecycle(t *testing.T) {
 				t.Errorf("expected loading destroyed container to fail, but it did not")
 			}
 		})
+	}
+}
+
+func TestGoferWillNeedHostRPC(t *testing.T) {
+	allIDs := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 0, Size: math.MaxUint32}}
+	uidMappings, err := getIdentityMapping("uid_map")
+	if err != nil {
+		t.Fatalf("getIdentityMapping failed: %v", err)
+	}
+	gidMappings, err := getIdentityMapping("gid_map")
+	if err != nil {
+		t.Fatalf("getIdentityMapping failed: %v", err)
+	}
+	// Tests may run in a user namespace that doesn't map every ID, where the
+	// gofer may always need this process.
+	partialUserNS := !slices.Equal(uidMappings, allIDs) || !slices.Equal(gidMappings, allIDs)
+	userns := []specs.LinuxNamespace{{Type: specs.UserNamespace}}
+	shifted := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 100000, Size: 65536}}
+	idMapped := specs.Mount{Destination: "/mnt", Source: "/mnt", Type: "bind", UIDMappings: shifted, GIDMappings: shifted}
+	for _, tc := range []struct {
+		name string
+		spec *specs.Spec
+		want bool
+	}{
+		{name: "no userns", spec: &specs.Spec{Linux: &specs.Linux{}}, want: partialUserNS},
+		{name: "userns mapping all IDs", spec: &specs.Spec{Linux: &specs.Linux{Namespaces: userns, UIDMappings: allIDs, GIDMappings: allIDs}}, want: partialUserNS},
+		{name: "shifted userns", spec: &specs.Spec{Linux: &specs.Linux{Namespaces: userns, UIDMappings: shifted, GIDMappings: shifted}}, want: true},
+		{name: "id-mapped mount", spec: &specs.Spec{Linux: &specs.Linux{}, Mounts: []specs.Mount{idMapped}}, want: true},
+		{name: "host procfs mount", spec: &specs.Spec{Linux: &specs.Linux{}, Mounts: []specs.Mount{{Destination: "/mnt", Source: "/proc/1/ns", Type: "bind"}}}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := goferWillNeedHostRPC(tc.spec)
+			if err != nil {
+				t.Fatalf("goferWillNeedHostRPC failed: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("goferWillNeedHostRPC got %t, expected %t", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSandboxExitBeforeStart checks that if the sandbox exits before the
+// container starts (e.g. because it failed to boot), `start` still reports
+// it as exited, and the container can still be properly destroyed.
+func TestSandboxExitBeforeStart(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	id := testutil.RandomContainerID()
+	c, err := New(conf, Args{ID: id, Spec: spec, BundleDir: bundleDir})
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := unix.Kill(c.SandboxPid(), unix.SIGKILL); err != nil {
+		t.Fatalf("error killing sandbox: %v", err)
+	}
+
+	// The sandbox process exits asynchronously.
+	var loaded *Container
+	if err := testutil.Poll(func() error {
+		var err error
+		if loaded, err = Load(rootDir, FullID{ContainerID: id}, LoadOpts{}); err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		if got, want := loaded.Status, Stopped; got != want {
+			return fmt.Errorf("container status got %v, want %v", got, want)
+		}
+		return nil
+	}, pollTimeout); err != nil {
+		t.Fatalf("container status check failed: %v", err)
+	}
+	const want = "the sandbox exited before the container started"
+	// loaded is Stopped, while c is still Created.
+	for _, cont := range []*Container{loaded, c} {
+		if err := cont.Start(conf); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("starting %v container got error %v, expected it to contain %q", cont.Status, err, want)
+		}
+	}
+	if err := c.Destroy(); err != nil {
+		t.Errorf("error destroying container: %v", err)
 	}
 }
 
@@ -1910,7 +2115,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+			if err := contRestore.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -2496,6 +2701,11 @@ func TestIDMappedMount(t *testing.T) {
 				t.Fatalf("error creating container: %v", err)
 			}
 			defer c.Destroy()
+			select {
+			case <-c.goferRPCDone:
+			default:
+				t.Errorf("New returned before the gofer was done with gofer-to-host RPCs")
+			}
 			if err := c.Start(conf); err != nil {
 				t.Fatalf("error starting container: %v", err)
 			}
@@ -4182,7 +4392,7 @@ func TestUsageFD(t *testing.T) {
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -4392,7 +4602,7 @@ func TestSaveSystemdCgroup(t *testing.T) {
 	defer cont.Destroy()
 
 	cont.CompatCgroup = cgroup.CgroupJSON{Cgroup: cgroup.CreateMockSystemdCgroup()}
-	if err := cont.Saver.lock(BlockAcquire); err != nil {
+	if err := cont.Saver.lock(); err != nil {
 		t.Fatalf("cannot lock container metadata file: %v", err)
 	}
 	if err := cont.saveLocked(); err != nil {
@@ -5546,7 +5756,7 @@ func TestSpecValidation(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			err = cont2.Restore(conf, dir, false /* direct */, false /* background */, nil /* networkArgs */)
+			err = cont2.Restore(conf, dir, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */)
 			if err == nil {
 				if test.wantErr == "" {
 					return
@@ -6177,7 +6387,7 @@ func TestSaveRestoreExecReconfigure(t *testing.T) {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	if err := cont2.Restore(conf, lastImage, false /* direct */, false /* background */, nil /* networkArgs */); err != nil {
+	if err := cont2.Restore(conf, lastImage, sandbox.DirectIOOff, false /* background */, nil /* networkArgs */); err != nil {
 		t.Fatalf("error restoring: %v", err)
 	}
 	// Restore does not wait for its hook to finish. Wait before starting another

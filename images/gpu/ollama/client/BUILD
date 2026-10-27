@@ -5,7 +5,16 @@ package(
     licenses = ["notice"],
 )
 
+filegroup(
+    name = "sources",
+    srcs = glob(["**"]),
+    visibility = ["//images:__pkg__"],
+)
+
 go_binary(
     name = "client",
     srcs = ["client.go"],
+    pure = True,
+    static = True,
+    visibility = ["//images:__pkg__"],
 )

@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,7 +35,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -485,6 +485,21 @@ func new(pid, cgroupsPath string, useSystemd bool) (Cgroup, error) {
 	}
 	log.Debugf("New cgroup for pid: %s, %T: %+v", pid, cg, cg)
 	return cg, nil
+}
+
+// OwnsCPULimit returns whether `Install` set `cg`'s CPU limit, i.e. it created
+// the cgroup rather than finding it pre-configured.
+func OwnsCPULimit(cg Cgroup) bool {
+	switch c := cg.(type) {
+	case *cgroupSystemd:
+		return true
+	case *cgroupV2:
+		return slices.Contains(c.Own, c.MakePath(""))
+	case *cgroupV1:
+		return c.Own["cpu"]
+	default:
+		return false
+	}
 }
 
 // InstallSubcontainerCompatDir creates the host-side cgroup directory for a

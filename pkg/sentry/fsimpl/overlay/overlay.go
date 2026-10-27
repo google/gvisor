@@ -255,7 +255,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: gofer filesystem used as overlay upper layer; enabling userxattr")
 			userXattr = true
 		}
-		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
+		privateUpperRoot, err := clonePrivateMount(ctx, vfsObj, creds, upperRoot, false /* forceReadOnly */)
 		upperRoot.DecRef(ctx)
 		if err != nil {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to make private bind mount of upperdir %q: %v", upperPathname, err)
@@ -290,7 +290,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve lowerdir %q: %v", lowerPathname, err)
 				return nil, nil, err
 			}
-			privateLowerRoot, err := clonePrivateMount(vfsObj, lowerRoot, true /* forceReadOnly */)
+			privateLowerRoot, err := clonePrivateMount(ctx, vfsObj, creds, lowerRoot, true /* forceReadOnly */)
 			lowerRoot.DecRef(ctx)
 			if err != nil {
 				ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to make private bind mount of lowerdir %q: %v", lowerPathname, err)
@@ -453,7 +453,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 // single mount, and therefore can't cross into e.g. the overlay filesystem
 // itself, risking lock recursion.) A reference is held on the returned
 // VirtualDentry.
-func clonePrivateMount(vfsObj *vfs.VirtualFilesystem, vd vfs.VirtualDentry, forceReadOnly bool) (vfs.VirtualDentry, error) {
+func clonePrivateMount(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, vd vfs.VirtualDentry, forceReadOnly bool) (vfs.VirtualDentry, error) {
+	if err := vfsObj.CheckClonePrivateMount(ctx, creds, vd); err != nil {
+		return vfs.VirtualDentry{}, err
+	}
 	oldmnt := vd.Mount()
 	opts := oldmnt.Options()
 	if forceReadOnly {
@@ -564,6 +567,8 @@ func (fs *filesystem) TarUpperLayer(ctx context.Context, outFD *os.File) error {
 //
 // +stateify savable
 type dentry struct {
+	memmap.MappableNoHugepages
+
 	vfsd vfs.Dentry
 
 	refs atomicbitops.Int64
@@ -912,7 +917,8 @@ func (d *dentry) topLayer() vfs.VirtualDentry {
 }
 
 func (d *dentry) topLookupLayer() lookupLayer {
-	if d.upperVD.Ok() {
+	// copyMu may not be held, so read the atomic copied-up flag rather than upperVD.
+	if d.isCopiedUp() {
 		return lookupLayerUpper
 	}
 	return lookupLayerLower
@@ -1003,17 +1009,15 @@ func (d *dentry) mayDelete(creds *auth.Credentials, child *dentry) error {
 // credsForCreate returns the creds to use for creation operations.
 func (d *dentry) credsForCreate(creds *auth.Credentials, isSGIDSet bool) *auth.Credentials {
 	// During creation operations, Linux uses a modified version of fs.creds. It
-	// sets the fsuid/fsgid to the caller's fsuid/fsgid. Note that gVisor doesn't
-	// support fsuid/fsgid and just uses euid/egid to determine file ownership
-	// for new files. So we just update euid/egid with the caller's euid/egid.
+	// sets the fsuid/fsgid to the caller's fsuid/fsgid.
 	key := createCredsKey{
-		uid: creds.EffectiveKUID,
-		gid: creds.EffectiveKGID,
+		uid: creds.FilesystemKUID,
+		gid: creds.FilesystemKGID,
 	}
 	if isSGIDSet {
 		key.gid = auth.KGID(d.gid.Load())
 	}
-	if d.fs.creds.EffectiveKUID == key.uid && d.fs.creds.EffectiveKGID == key.gid {
+	if d.fs.creds.FilesystemKUID == key.uid && d.fs.creds.FilesystemKGID == key.gid {
 		return d.fs.creds
 	}
 	d.fs.createCredsMu.Lock()
@@ -1021,8 +1025,8 @@ func (d *dentry) credsForCreate(creds *auth.Credentials, isSGIDSet bool) *auth.C
 	newCreds, ok := d.fs.createCreds[key]
 	if !ok {
 		newCreds = d.fs.creds.Fork()
-		newCreds.EffectiveKUID = key.uid
-		newCreds.EffectiveKGID = key.gid
+		newCreds.FilesystemKUID = key.uid
+		newCreds.FilesystemKGID = key.gid
 		if d.fs.createCreds == nil {
 			d.fs.createCreds = make(map[createCredsKey]*auth.Credentials)
 		}

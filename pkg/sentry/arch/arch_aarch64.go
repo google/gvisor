@@ -199,7 +199,7 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	if !regs.validRegs() {
 		return 0, linuxerr.EINVAL
 	}
-	s.Regs = regs
+	s.Regs.PtraceRegs = regs.PtraceRegs
 	return ptraceRegistersSize, nil
 }
 

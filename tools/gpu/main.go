@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/sync/errgroup"
@@ -34,25 +35,25 @@ const (
 	checksumCmdStr              = "checksum"
 	checksumDescription         = "computes the sha256 checksum for a given driver version"
 	validateChecksumCmdStr      = "validate_checksum"
-	validateChecksumDescription = "validates the checksum of all supported drivers"
+	validateChecksumDescription = "validates public installer checksums and expected absences"
 	listCmdStr                  = "list"
-	listDescription             = "lists the supported drivers"
+	listDescription             = "lists publicly installable drivers for this host"
 )
 
 var (
 	// Install installs a give driver on the host machine.
 	installCmd = flag.NewFlagSet(installCmdStr, flag.ContinueOnError)
-	latest     = installCmd.Bool("latest", false, "install the latest supported driver")
+	latest     = installCmd.Bool("latest", false, "install the latest publicly available driver for this host")
 	version    = installCmd.String("version", "", "version of the driver")
 
 	// Computes the sha256 checksum for a given driver's .run file from the nvidia site.
 	checksumCmd     = flag.NewFlagSet(checksumCmdStr, flag.ContinueOnError)
 	checksumVersion = checksumCmd.String("version", "", "version of the driver")
 
-	// Validates all supported driver's checksums of each driver's .run file from the nvidia site.
+	// Validates public installer checksums and declared absence at NVIDIA URLs.
 	validateChecksumCmd = flag.NewFlagSet(validateChecksumCmdStr, flag.ContinueOnError)
 
-	// The list command returns the list of supported drivers from this tool.
+	// The list command returns the publicly installable drivers for this host.
 	listCmd = flag.NewFlagSet(listCmdStr, flag.ContinueOnError)
 	outfile = listCmd.String("outfile", "", "if set, write the list output to this file")
 
@@ -82,7 +83,6 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
-	nvproxy.Init()
 	switch os.Args[1] {
 	case installCmdStr:
 		if err := installCmd.Parse(os.Args[2:]); err != nil {
@@ -104,16 +104,18 @@ func main() {
 			os.Exit(1)
 		}
 
+		driverVersion, err := nvconf.DriverVersionFrom(*checksumVersion)
+		if err != nil {
+			log.Warningf("Failed to parse driver version: %v", err)
+			os.Exit(1)
+		}
+		var downloader drivers.Downloader
 		var eg errgroup.Group
 		for _, arch := range []string{"amd64", "arm64"} {
 			eg.Go(func() error {
-				installer, err := drivers.NewInstaller(*checksumVersion, false)
+				checksum, err := downloader.Download(ctx, driverVersion, arch, io.Discard)
 				if err != nil {
-					return fmt.Errorf("failed to create installer: %w", err)
-				}
-				checksum, err := installer.ChecksumDriver(ctx, arch)
-				if err != nil {
-					return fmt.Errorf("failed to get checksum on arch %q: %w", arch, err)
+					return err
 				}
 				fmt.Printf("%s %s %s\n", arch, *checksumVersion, checksum)
 				return nil
@@ -130,11 +132,12 @@ func main() {
 			os.Exit(1)
 		}
 
+		var downloader drivers.Downloader
 		var eg errgroup.Group
 
 		nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
 			eg.Go(func() error {
-				return drivers.ValidateChecksum(ctx, version.String(), checksums)
+				return downloader.ValidateChecksum(ctx, version, checksums)
 			})
 		})
 

@@ -28,6 +28,10 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
+// PlatformAuto is the --platform value that selects the best platform usable
+// on the host. runsc replaces it with a concrete platform at startup.
+const PlatformAuto = "auto"
+
 // Reused flag names.
 const (
 	flagDebug                   = "debug"
@@ -100,8 +104,9 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("strace-event", false, "send strace to event.")
 
 	// Flags that control sandbox runtime behavior.
-	flagSet.String("platform", "systrap", "specifies which platform to use: systrap (default), ptrace, kvm.")
-	flagSet.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform), or comma-separated platform=path pairs (e.g. kvm=/dev/kvm2) that apply only to the named platforms. If unset, will use a sane platform-specific default.")
+	flagSet.String("platform", "systrap", "specifies which platform to use: systrap (default), ptrace, kvm, auto. auto picks the best platform usable on the host.")
+	flagSet.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform), or comma-separated platform=path pairs (e.g. kvm=/dev/kvm2) that apply only to the named platforms. "+
+		"If unset, will use a sane platform-specific default. --platform=auto accepts only platform=path pairs.")
 	flagSet.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
 	flagSet.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
 	flagSet.Int("dump-goroutines-signal", -1, "register signal handling that dumps all goroutine stacks. -1 disables it.")
@@ -121,6 +126,10 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("pod-init-config", "", "path to configuration file with additional steps to take during pod creation.")
 	flagSet.Var(HostSettingsCheck.Ptr(), "host-settings", "how to handle non-optimal host kernel settings: check (default, advisory-only), ignore (do not check), adjust (best-effort auto-adjustment), or enforce (auto-adjustment must succeed).")
 	flagSet.Var(SidecarReleaseIfReleaseBuild.Ptr(), "sidecar-release-enforcement-policy", "when spawned sidecar binaries must match runsc's release: NEVER, ALWAYS, or IF_RELEASE_BUILD. May be overridden by setting GVISOR_ENFORCE_RELEASE=SKIP as env var.")
+	creationCPUPolicy := DefaultSandboxCreationCPUPolicy
+	flagSet.Var(&creationCPUPolicy, "sandbox-creation-cpu-policy", "CPU limit applied during sandbox creation and initialization, until the application starts. Takes the same values, and applies under the same conditions, as --sandbox-lifecycle-cpu-policy. Note that pre-cgroup-setup sandbox creation steps are not CPU-limited regardless of this flag's value. If you need to limit end-to-end sandbox creation, run gVisor in a CPU-limited cgroup.")
+	lifecycleCPUPolicy := DefaultSandboxLifecycleCPUPolicy
+	flagSet.Var(&lifecycleCPUPolicy, "sandbox-lifecycle-cpu-policy", "CPU limit of non-creation sandbox lifecycle operations: checkpoint, restore, and teardown (while the application is not running). Values: 'uncapped', '<N>m' (thousandths of a CPU, e.g. 2500m), '<N>x' (multiple of the OCI spec limit, e.g. 3.5x), or 'max(<value>,...)' for the largest of several values. 1x naturally means the OCI-spec-provided limit, and the limit never goes below it. Only applies when the OCI spec sets a CPU quota (`linux.resources.cpu.quota`, or `cpu.max` in `linux.resources.unified`), and only when `runsc` creates the sandbox cgroup itself; never to pods or pre-existing cgroups.")
 	flagSet.Var(RestoreSpecValidationEnforce.Ptr(), "restore-spec-validation", "how to handle spec validation during restore.")
 	flagSet.Bool("systrap-disable-syscall-patching", false, "disables syscall patching when using the Systrap platform. May be necessary to use in case the workload uses the GS register, or uses ptrace within gVisor. Has significant performance implications and is only recommended when the sandbox is known to run otherwise-incompatible workloads. Only relevant for x86.")
 	flagSet.Bool("systrap-disable-fast-path", false, "unconditionally disables the Systrap fast path.")

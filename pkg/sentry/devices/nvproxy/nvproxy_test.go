@@ -47,6 +47,47 @@ func TestAllSupportedHashesPresent(t *testing.T) {
 	}
 }
 
+func TestPublicInstallerUnavailable(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	public := NewChecksums(digest, digest)
+	noPublicAMD := public
+	noPublicAMD.NoPublicX86_64Installer = true
+	noPublicARM := public
+	noPublicARM.NoPublicARM64Installer = true
+	emptyAMD := noPublicAMD
+	emptyAMD.X86_64 = ""
+	emptyARM := noPublicARM
+	emptyARM.ARM64 = ""
+	for _, test := range []struct {
+		name        string
+		checksums   Checksums
+		arch        string
+		unavailable bool
+		wantErr     bool
+	}{
+		{"public_amd", public, "amd64", false, false},
+		{"public_arm", public, "arm64", false, false},
+		{"no_driver", NewChecksums(ChecksumNoDriver, ChecksumNoDriver), "amd64", true, false},
+		{"unavailable_amd", noPublicAMD, "amd64", true, false},
+		{"unavailable_arm", noPublicARM, "arm64", true, false},
+		{"only_amd_unavailable", noPublicAMD, "arm64", false, false},
+		{"only_arm_unavailable", noPublicARM, "amd64", false, false},
+		{"empty_amd", emptyAMD, "amd64", false, true},
+		{"empty_arm", emptyARM, "arm64", false, true},
+		{"unknown_architecture", noPublicARM, "unknown", false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			unavailable, err := test.checksums.PublicInstallerUnavailable(test.arch)
+			if got, want := err != nil, test.wantErr; got != want {
+				t.Fatalf("PublicInstallerUnavailable error = %v, want error %t", err, want)
+			}
+			if got, want := unavailable, test.unavailable; got != want {
+				t.Errorf("PublicInstallerUnavailable = %t, want %t", got, want)
+			}
+		})
+	}
+}
+
 // TestABIStructNamesInSync tests that all the supported ioctls in an ABI version are also mapped
 // by GetStructNames.
 func TestABIStructNamesInSync(t *testing.T) {
@@ -215,16 +256,8 @@ func TestHandlers(t *testing.T) {
 			uvmHandler(func(*uvmIoctlState) (uintptr, error) {
 				return 42, nil
 			}, capCompute),
-			&uvmIoctlState{
-				fd: &uvmFD{
-					dev: &uvmDevice{nvp: capComputeNVP},
-				},
-			},
-			&uvmIoctlState{
-				fd: &uvmFD{
-					dev: &uvmDevice{nvp: capUtilityNVP},
-				},
-			},
+			&uvmIoctlState{nvp: capComputeNVP},
+			&uvmIoctlState{nvp: capUtilityNVP},
 		)
 	})
 }

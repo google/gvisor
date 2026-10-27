@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path"
@@ -118,6 +119,10 @@ type Container struct {
 	// be 0 if the gofer has been killed.
 	GoferPid sandbox.Pid `json:"goferPid"`
 
+	// GoferPidIdentity is the specutils.ProcessIdentity of the gofer process.
+	// Zero if unknown.
+	GoferPidIdentity uint64 `json:"goferPidIdentity,omitempty"`
+
 	// Sandbox is the sandbox this container is running in. It's set when the
 	// container is created and reset when the sandbox is destroyed.
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
@@ -151,6 +156,15 @@ type Container struct {
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
 	goferIsChild bool `nojson:"true"`
+
+	// goferRPCDone is closed once the gofer has reached the point where it
+	// no longer needs to make RPCs to its parent process.
+	// Set to nil if the RPC channel was never needed to begin with.
+	goferRPCDone chan struct{} `nojson:"true"`
+
+	// allowWrite is set if the container may be saved or destroyed.
+	// Writes will be refused if `true`.
+	allowWrite bool `nojson:"true"`
 }
 
 // Args is used to configure a new container.
@@ -265,6 +279,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		ConsoleSocket: args.ConsoleSocket,
 		BundleDir:     args.BundleDir,
 		Status:        Creating,
+		allowWrite:    true, // Never serialized yet, so start writable.
 		CreatedAt:     time.Now(),
 		Owner:         os.Getenv("USER"),
 		Saver: StateFile{
@@ -328,7 +343,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			SandboxID:   sandboxID,
 			ContainerID: sandboxID,
 		}
-		sb, err := Load(conf.RootDir, fullID, LoadOpts{Exact: true})
+		sb, err := Load(conf.RootDir, fullID, LoadOpts{Exact: true, SkipCheck: true, ReadOnly: true})
 		if err != nil {
 			return nil, fmt.Errorf("cannot load sandbox: %w", err)
 		}
@@ -363,6 +378,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 	}
 
+	if c.goferRPCDone != nil {
+		<-c.goferRPCDone // Wait until Gofer no longer needs us.
+	}
+
 	// Write the PID file. Containerd considers the call to create complete after
 	// this file is created, so it must be the last thing we do.
 	if args.PIDFile != "" {
@@ -388,14 +407,28 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		args.Spec.Linux.CgroupsPath = "/" + args.ID
 	}
 	var subCgroup, parentCgroup, containerCgroup cgroup.Cgroup
+	var cpuLimits *sandbox.CPULimits
 	if !conf.IgnoreCgroups {
 		var err error
 
+		cpuLimits = newCPULimits(conf, args.Spec.Linux.Resources, willRestoreSandbox(args))
+		if parentPath, inPod := args.Spec.Annotations[cgroupParentAnnotation]; inPod && cpuLimits != nil {
+			logCPUPoliciesNotApplied(conf, fmt.Sprintf("the orchestrator owns the pod cgroup %q. Note that this means gVisor sandbox lifecycle operations are being capped by the pod CPU limit, and could go faster otherwise", parentPath))
+			cpuLimits = nil
+		}
+
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all their children processes).
-		parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec)
+		parentCgroup, subCgroup, err = c.setupCgroupForRoot(conf, args.Spec, cpuLimits)
 		if err != nil {
 			return nil, fmt.Errorf("cannot set up cgroup for root: %w", err)
+		}
+		if cpuLimits != nil && parentCgroup == nil {
+			cpuLimits = nil
+		}
+		if cpuLimits != nil && !cgroup.OwnsCPULimit(parentCgroup) {
+			logCPUPoliciesNotApplied(conf, "runsc did not create the sandbox cgroup. Note that this means gVisor sandbox lifecycle operations are being capped by the CPU limit you set in that cgroup, and could go faster otherwise")
+			cpuLimits = nil
 		}
 		// Join the child cgroup when using cgroupfs. Joining non leaf-node
 		// cgroups is illegal in cgroupsv2 and will return EBUSY.
@@ -414,17 +447,21 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 		return parentCgroup, err
 	}
 	if err := cgroup.RunInCgroup(containerCgroup, func(cloneIntoCgroupFD *os.File) error {
+		specFile, err := specutils.CopySpec(args.Spec)
+		if err != nil {
+			return fmt.Errorf("cannot copy spec file: %w", err)
+		}
+		defer specFile.Close()
 		// No rootfs and no mounts, so nothing for a gofer to serve.
 		// Subcontainers get their own.
 		var (
 			ioFiles         []*os.File
 			goferFilestores []*os.File
 			devIOFile       *os.File
-			specFile        *os.File
+			mountsFile      *os.File
 		)
 		if !args.NoRootContainer {
-			var err error
-			ioFiles, goferFilestores, devIOFile, specFile, err = c.createGoferProcess(conf, mountHints, args.Attached, cloneIntoCgroupFD)
+			ioFiles, goferFilestores, devIOFile, mountsFile, err = c.createGoferProcess(conf, specFile, mountHints, args.Attached, cloneIntoCgroupFD)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
 			}
@@ -440,8 +477,10 @@ func (c *Container) createRoot(conf *config.Config, args Args, sandboxID string)
 			UserLog:             args.UserLog,
 			IOFiles:             ioFiles,
 			DevIOFile:           devIOFile,
-			MountsFile:          specFile,
+			SpecFile:            specFile,
+			MountsFile:          mountsFile,
 			Cgroup:              containerCgroup,
+			CPULimits:           cpuLimits,
 			CloneIntoCgroupFD:   cloneIntoCgroupFD,
 			Attached:            args.Attached,
 			GoferFilestoreFiles: goferFilestores,
@@ -499,25 +538,64 @@ func (c *Container) Start(conf *config.Config) error {
 	return c.startImpl(conf, "start", c.Sandbox.StartRoot, c.Sandbox.StartSubcontainer)
 }
 
+// endSandboxCreation marks the sandbox as having been created.
+// This sets CPU limits appropriate for running untrusted code,
+// as opposed to sandbox-creation-time CPU limits.
+func (c *Container) endSandboxCreation() error {
+	root, err := Load(c.Saver.RootDir, FullID{SandboxID: c.Sandbox.ID, ContainerID: c.Sandbox.ID}, LoadOpts{Exact: true, SkipCheck: true})
+	if err == nil {
+		defer func() { _ = root.Saver.close() }()
+		err = root.modify(root.Sandbox.MarkCreated)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		// The sandbox was deleted.
+		return nil
+	}
+	if err != nil {
+		return c.Sandbox.DestroyOverCPULimit(fmt.Errorf("cannot end creation of sandbox %q: %w", c.Sandbox.ID, err))
+	}
+	return nil
+}
+
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(conf *config.Config, imagePath string, direct, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
+func (c *Container) Restore(conf *config.Config, imagePath string, directIO sandbox.DirectIO, background bool, networkArgs *sentryapi.CreateLinksAndRoutesArgs) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 
 	restore := func(conf *config.Config, spec *specs.Spec) error {
-		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, direct, background, networkArgs)
+		return c.Sandbox.Restore(conf, spec, c.ID, imagePath, directIO, background, networkArgs)
 	}
 	return c.startImpl(conf, "restore", restore, c.Sandbox.RestoreSubcontainer)
 }
 
 func (c *Container) startImpl(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
-	if err := c.Saver.lock(BlockAcquire); err != nil {
+	if err := c.modify(func() error {
+		return c.startLocked(conf, action, startRoot, startSub)
+	}); err != nil {
 		return err
 	}
-	unlock := cleanup.Make(c.Saver.UnlockOrDie)
-	defer unlock.Clean()
 
+	// Adjust the oom_score_adj for sandbox. This must be done after saving c,
+	// and without its lock, which is acquired there.
+	if err := adjustSandboxOOMScoreAdj(c.Sandbox, c.Spec, c.Saver.RootDir, false); err != nil {
+		return err
+	}
+
+	// Set container's oom_score_adj to the gofer since it is dedicated to
+	// the container, in case the gofer uses up too much memory.
+	return c.adjustGoferOOMScoreAdj()
+}
+
+// startLocked starts the container with startRoot or startSub.
+//
+// Preconditions: c.Saver is locked.
+func (c *Container) startLocked(conf *config.Config, action string, startRoot func(conf *config.Config, spec *specs.Spec) error, startSub func(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []specutils.GoferMountConf) error) error {
 	if err := c.requireStatus(action, Created); err != nil {
+		if c.Status == Stopped && c.IsSandboxRoot() {
+			if running, runErr := c.IsSandboxRunning(); runErr == nil && !running {
+				return fmt.Errorf("%w: %w", err, sandbox.ExitedBeforeStartError(conf))
+			}
+		}
 		return err
 	}
 
@@ -527,16 +605,21 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
+	var err error
 	if specutils.IsRootContainer(c.Spec) {
-		if err := startRoot(conf, c.Spec); err != nil {
-			return err
-		}
+		err = startRoot(conf, c.Spec)
 	} else {
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
-		if err := cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
+		subStarted := false
+		err = cgroup.RunInCgroup(c.Sandbox.CgroupJSON.Cgroup, func(cloneIntoCgroupFD *os.File) error {
 			// Create the gofer process.
-			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
+			specFile, err := specutils.CopySpec(c.Spec)
+			if err != nil {
+				return fmt.Errorf("cannot copy spec file: %w", err)
+			}
+			defer specFile.Close()
+			goferFiles, goferFilestores, devIOFile, mountsFile, err := c.createGoferProcess(conf, specFile, c.Sandbox.MountHints, false /* attached */, cloneIntoCgroupFD)
 			if err != nil {
 				return err
 			}
@@ -570,10 +653,35 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
 			}
 
+			subStarted = true // Set to `true` even if `startSub` below fails.
 			return startSub(c.Spec, conf, c.ID, stdios, goferFiles, goferFilestores, devIOFile, c.GoferMountConfs)
-		}); err != nil {
-			return err
+		})
+		// In a sandbox with no root container, the first subcontainer starting
+		// marks the creation of the sandbox, even if it fails, as user code
+		// may have started running.
+		if subStarted && c.Sandbox.Creating {
+			err = errors.Join(err, c.endSandboxCreation())
 		}
+	}
+	if err != nil {
+		// Errors reported by the sandbox mean that it was up at *some* point,
+		// even if it exited since.
+		var remoteErr urpc.RemoteError
+		switch {
+		case errors.As(err, &remoteErr):
+			// Treat container as stopped.
+			if specutils.IsRootContainer(c.Spec) {
+				if state, stateErr := c.Sandbox.ContainerRuntimeState(c.ID); stateErr == nil && state == sentryapi.RuntimeStateStopped {
+					c.changeStatus(Stopped)
+					if err := c.saveLocked(); err != nil {
+						log.Warningf("Cannot mark container %q as stopped: %v", c.ID, err)
+					}
+				}
+			}
+		case specutils.WaitForNonChildExit(c.Sandbox.Pid.Load(), c.Sandbox.PidIdentity, 100*time.Millisecond) == nil:
+			return fmt.Errorf("%w: %w", err, sandbox.ExitedBeforeStartError(conf))
+		}
+		return err
 	}
 
 	// "If any poststart hook fails, the runtime MUST generate an error,
@@ -585,21 +693,7 @@ func (c *Container) startImpl(conf *config.Config, action string, startRoot func
 	}
 
 	c.changeStatus(Running)
-	if err := c.saveLocked(); err != nil {
-		return err
-	}
-
-	// Release lock before adjusting OOM score because the lock is acquired there.
-	unlock.Clean()
-
-	// Adjust the oom_score_adj for sandbox. This must be done after saveLocked().
-	if err := adjustSandboxOOMScoreAdj(c.Sandbox, c.Spec, c.Saver.RootDir, false); err != nil {
-		return err
-	}
-
-	// Set container's oom_score_adj to the gofer since it is dedicated to
-	// the container, in case the gofer uses up too much memory.
-	return c.adjustGoferOOMScoreAdj()
+	return nil
 }
 
 // Run is a helper that calls Create + Start + Wait.
@@ -636,37 +730,39 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 }
 
 // Update sets the resources of a running container as configured.
-func (c *Container) Update(res *specs.LinuxResources) error {
+func (c *Container) Update(conf *config.Config, res *specs.LinuxResources) error {
 	log.Debugf("Set resources for container, cid: %s", c.ID)
-	if err := c.requireStatus("set resources for", Created, Running); err != nil {
-		return err
-	}
-
-	if c.Sandbox == nil {
-		return fmt.Errorf("sandbox cannot be nil")
-	}
-
-	if c.Sandbox.IsRootContainer(c.ID) {
-		cg := c.Sandbox.CgroupJSON.Cgroup
-		if cg == nil {
-			return fmt.Errorf("cgroup cannot be nil")
-		}
-		if err := cg.Update(res); err != nil {
-			// set back to original
-			if err2 := cg.Update(c.Spec.Linux.Resources); err2 != nil {
-				return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
-			}
+	return c.modify(func() error {
+		if err := c.requireStatus("set resources for", Created, Running); err != nil {
 			return err
 		}
-	}
 
-	c.Spec.Linux.Resources = res
+		if c.Sandbox == nil {
+			return fmt.Errorf("sandbox cannot be nil")
+		}
 
-	if err := c.Saver.lock(BlockAcquire); err != nil {
-		return err
-	}
-	defer c.Saver.unlock()
-	return c.saveLocked()
+		if c.Sandbox.IsRootContainer(c.ID) {
+			cg := c.Sandbox.CgroupJSON.Cgroup
+			if cg == nil {
+				return fmt.Errorf("cgroup cannot be nil")
+			}
+			oldCPULimits := c.Sandbox.CPULimits
+			if _, inPod := c.Spec.Annotations[cgroupParentAnnotation]; !inPod && cgroup.OwnsCPULimit(cg) {
+				c.Sandbox.CPULimits = newCPULimits(conf, res, oldCPULimits != nil && oldCPULimits.WillRestore)
+			}
+			if err := cg.Update(c.cgroupResources(res)); err != nil {
+				// set back to original
+				c.Sandbox.CPULimits = oldCPULimits
+				if err2 := cg.Update(c.cgroupResources(c.Spec.Linux.Resources)); err2 != nil {
+					return fmt.Errorf("setting back cgroup configs failed due to error: %v, your state file and actual configs might be inconsistent", err2)
+				}
+				return err
+			}
+		}
+
+		c.Spec.Linux.Resources = res
+		return nil
+	})
 }
 
 // Execute runs the specified command in the container. It returns the PID of
@@ -858,38 +954,30 @@ func (c *Container) signalRunning(sig unix.Signal, all bool) error {
 // receive the signal, so a terminating signal (SIGKILL/SIGTERM) is honored by
 // stopping the container.
 func (c *Container) signalCreated(sig unix.Signal, all bool) error {
-	if err := c.Saver.lock(BlockAcquire); err != nil {
-		return err
-	}
-	defer c.Saver.UnlockOrDie()
-	// The status read before acquiring the lock may be stale: a concurrent start
-	// could have moved the container to Running (or a kill/delete to Stopped).
-	// Re-read the persisted state under the lock before acting on it.
-	reloaded := &Container{}
-	if err := c.Saver.loadLocked(reloaded); err != nil {
-		return err
-	}
-	c.Status = reloaded.Status
-	if c.Status != Created {
-		// The container now has a process (or has already stopped), so deliver
-		// the signal normally.
-		return c.signalRunning(sig, all)
-	}
-	// Still Created: only a terminating signal is actionable; there is nothing
-	// to deliver other signals to, so drop them.
-	if sig != unix.SIGKILL && sig != unix.SIGTERM {
-		return nil
-	}
-	// Tear down the container. For the root container this SIGKILLs the sandbox
-	// (boot) process; for a subcontainer it destroys the not-yet-started
-	// container in the sentry.
-	if c.Sandbox != nil {
-		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
-			return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+	// modify reloads the status, which a concurrent start could have moved
+	// to Running (or a kill/delete to Stopped).
+	return c.modify(func() error {
+		if c.Status != Created {
+			// The container now has a process (or has already stopped), so
+			// deliver the signal normally.
+			return c.signalRunning(sig, all)
 		}
-	}
-	c.changeStatus(Stopped)
-	return c.saveLocked()
+		// Still Created: only a terminating signal is actionable; there is
+		// nothing to deliver other signals to, so drop them.
+		if sig != unix.SIGKILL && sig != unix.SIGTERM {
+			return nil
+		}
+		// Tear down the container. For the root container this SIGKILLs the
+		// sandbox (boot) process; for a subcontainer it destroys the
+		// not-yet-started container in the sentry.
+		if c.Sandbox != nil {
+			if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
+				return fmt.Errorf("destroying created container %q: %w", c.ID, err)
+			}
+		}
+		c.changeStatus(Stopped)
+		return nil
+	})
 }
 
 // SignalProcess sends sig to a specific process in the container.
@@ -957,39 +1045,33 @@ func (c *Container) FSSave(conf *config.Config, imagePath string, opts sandbox.F
 // The call only succeeds if the container's status is created or running.
 func (c *Container) Pause() error {
 	log.Debugf("Pausing container, cid: %s", c.ID)
-	if err := c.Saver.lock(BlockAcquire); err != nil {
-		return err
-	}
-	defer c.Saver.UnlockOrDie()
+	return c.modify(func() error {
+		if c.Status != Created && c.Status != Running {
+			return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
+		}
 
-	if c.Status != Created && c.Status != Running {
-		return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
-	}
-
-	if err := c.Sandbox.Pause(c.ID); err != nil {
-		return fmt.Errorf("pausing container %q: %v", c.ID, err)
-	}
-	c.changeStatus(Paused)
-	return c.saveLocked()
+		if err := c.Sandbox.Pause(c.ID); err != nil {
+			return fmt.Errorf("pausing container %q: %v", c.ID, err)
+		}
+		c.changeStatus(Paused)
+		return nil
+	})
 }
 
 // Resume unpauses the container and its kernel.
 // The call only succeeds if the container's status is paused.
 func (c *Container) Resume() error {
 	log.Debugf("Resuming container, cid: %s", c.ID)
-	if err := c.Saver.lock(BlockAcquire); err != nil {
-		return err
-	}
-	defer c.Saver.UnlockOrDie()
-
-	if c.Status != Paused {
-		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
-	}
-	if err := c.Sandbox.Resume(c.ID); err != nil {
-		return fmt.Errorf("resuming container: %v", err)
-	}
-	c.changeStatus(Running)
-	return c.saveLocked()
+	return c.modify(func() error {
+		if c.Status != Paused {
+			return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
+		}
+		if err := c.Sandbox.Resume(c.ID); err != nil {
+			return fmt.Errorf("resuming container: %v", err)
+		}
+		c.changeStatus(Running)
+		return nil
+	})
 }
 
 // State returns the metadata of the container.
@@ -1016,9 +1098,10 @@ func (c *Container) Processes() ([]*controlapi.Process, error) {
 // Destroy stops all processes and frees all resources associated with the
 // container.
 func (c *Container) Destroy() error {
+	c.requireAllowWrite()
 	log.Debugf("Destroy container, cid: %s", c.ID)
 
-	if err := c.Saver.lock(BlockAcquire); err != nil {
+	if err := c.Saver.lock(); err != nil {
 		return err
 	}
 	defer func() {
@@ -1376,11 +1459,71 @@ func (c *Container) createGoferFilestoreInDir(goferRootfs string, filestoreDir s
 //
 // Precondition: container must be locked with container.lock().
 func (c *Container) saveLocked() error {
+	c.requireAllowWrite()
 	log.Debugf("Save container, cid: %s", c.ID)
 	if err := c.Saver.SaveLocked(c); err != nil {
 		return fmt.Errorf("saving container metadata: %v", err)
 	}
 	return nil
+}
+
+// modify locks the state file of `c`, reloads the fields of `c` that other
+// `runsc` commands change, and calls `fn`.
+// If `fn` succeeds, it saves `c`.
+// `fn` runs with the state file lock held.
+func (c *Container) modify(fn func() error) error {
+	c.requireAllowWrite()
+	if err := c.Saver.lock(); err != nil {
+		return err
+	}
+	defer c.Saver.UnlockOrDie()
+	if err := c.reloadLocked(); err != nil {
+		return err
+	}
+	if err := fn(); err != nil {
+		// fn may have changed c without saving it, so reload it next time.
+		c.Saver.setLoaded(nil)
+		return err
+	}
+	return c.saveLocked()
+}
+
+// reloadLocked sets the fields of c that runsc commands change after the
+// container is created to their saved values. Other saved fields are only
+// changed by the process that created the container, or only in memory, such
+// as process IDs when processes exit.
+//
+// Preconditions: c.Saver is locked.
+func (c *Container) reloadLocked() error {
+	if c.Saver.unchangedLocked() {
+		return nil
+	}
+	saved := &Container{}
+	if err := c.Saver.loadLocked(saved); err != nil {
+		return fmt.Errorf("loading container metadata: %w", err)
+	}
+	// Stopped is final, and c may know it from CheckStopped or Wait only.
+	if c.Status != Stopped {
+		c.Status = saved.Status
+	}
+	c.Spec = saved.Spec
+	if c.Sandbox != nil && saved.Sandbox != nil {
+		c.Sandbox.Creating = saved.Sandbox.Creating
+		c.Sandbox.CPULimits = saved.Sandbox.CPULimits
+		c.Sandbox.RegisteredMetrics = saved.Sandbox.RegisteredMetrics
+		c.Sandbox.Restored = saved.Sandbox.Restored
+	}
+	return nil
+}
+
+// requireAllowWrite panics if the container was loaded read-only.
+// Meant to be called on a codepath where `c` is expected to be writable,
+// i.e. it being non-writable is a logic flow bug, not a runtime bug,
+// hence the panic.
+func (c *Container) requireAllowWrite() {
+	if !c.allowWrite {
+		panic(fmt.Sprintf("container %q was loaded read-only and cannot be written", c.ID))
+	}
 }
 
 // stop stops the container (for regular containers) or the sandbox (for
@@ -1407,8 +1550,8 @@ func (c *Container) stop() error {
 		log.Debugf("Killing gofer for container, cid: %s, PID: %d", c.ID, goferPid)
 		// The gofer process may have been racily reaped by the goroutine from
 		// c.Wait() so ignore ESRCH errors.
-		if err := unix.Kill(goferPid, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
-			log.Warningf("Error sending signal %d to gofer %d: %v", unix.SIGKILL, goferPid, err)
+		if err := specutils.KillProcess(goferPid, c.GoferPidIdentity); err != nil {
+			log.Warningf("Error killing gofer: %v", err)
 		}
 	}
 
@@ -1456,7 +1599,7 @@ func (c *Container) waitForStopped() error {
 			return fmt.Errorf("error waiting the gofer process: %v", err)
 		}
 	} else {
-		if err := specutils.WaitForNonChildExit(int(goferPid), 5*time.Second); err != nil {
+		if err := specutils.WaitForNonChildExit(int(goferPid), c.GoferPidIdentity, 5*time.Second); err != nil {
 			return fmt.Errorf("waiting for gofer (PID %d) to exit: %v", goferPid, err)
 		}
 	}
@@ -1501,7 +1644,7 @@ func createLisafsSocketPair(sandEnds *[]*os.File, donations *donation.Agency) er
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
+func (c *Container) createGoferProcess(conf *config.Config, specFile *os.File, mountHints *sentryapi.PodMountHints, attached bool, cloneIntoCgroupFD *os.File) ([]*os.File, []*os.File, *os.File, *os.File, error) {
 	rootfsHint, err := sentryapi.NewRootfsHint(c.Spec)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("error creating rootfs hint: %w", err)
@@ -1611,12 +1754,7 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	cmd.Args = append(cmd.Args, "gofer", "--bundle", c.BundleDir)
 	cmd.Args = append(cmd.Args, "--gofer-mount-confs="+c.GoferMountConfs.String())
 
-	// Open the spec file to donate to the sandbox.
-	specFile, err := specutils.OpenSpec(c.BundleDir)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("opening spec file: %v", err)
-	}
-	donations.DonateAndClose("spec-fd", specFile)
+	donations.Donate("spec-fd", specFile)
 
 	// Donate any profile FDs to the gofer.
 	if err := profile.DonateProfileFDs(conf, &donations, true /* isGofer */, lfOpts); err != nil {
@@ -1631,24 +1769,34 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	}
 	donations.DonateAndClose("mounts-fd", mountsGofer)
 
-	rpcServ, rpcClnt, err := unet.SocketPair(false)
+	willNeedHostRPC, err := goferWillNeedHostRPC(c.Spec)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create an rpc socket pair: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("cannot determine whether the gofer needs gofer-to-host RPCs: %w", err)
 	}
-	rpcClntFD, _ := rpcClnt.Release()
-	donations.DonateAndClose("rpc-fd", os.NewFile(uintptr(rpcClntFD), "gofer-rpc"))
+
 	rpcPidCh := make(chan int, 1)
 	defer close(rpcPidCh)
-	go func() {
-		pid := <-rpcPidCh
-		if pid == 0 {
-			rpcServ.Close()
-			return
+	if willNeedHostRPC {
+		rpcServ, rpcClnt, err := unet.SocketPair(false)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to create an rpc socket pair: %w", err)
 		}
-		s := urpc.NewServer()
-		s.Register(&goferToHostRPC{goferPID: pid})
-		s.StartHandling(rpcServ)
-	}()
+		rpcClntFD, _ := rpcClnt.Release()
+		donations.DonateAndClose("rpc-fd", os.NewFile(uintptr(rpcClntFD), "gofer-rpc"))
+		goferRPCDone := make(chan struct{})
+		c.goferRPCDone = goferRPCDone
+		go func() {
+			defer close(goferRPCDone)
+			pid := <-rpcPidCh
+			if pid == 0 {
+				rpcServ.Close()
+				return
+			}
+			s := urpc.NewServer()
+			s.Register(&goferToHostRPC{goferPID: pid})
+			s.Handle(rpcServ)
+		}()
+	}
 
 	// Count the number of mounts that needs an IO file.
 	ioFileCount := 0
@@ -1741,6 +1889,13 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 			specutils.SetUIDGIDMappings(cmd, c.Spec)
 			// We need to set UID and GID to have capabilities in a new user namespace.
 			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			if conf.GetHostUDS().AllowOpen() && len(cmd.SysProcAttr.GidMappings) > 0 && specutils.SetgroupsAllowed() {
+				// Connecting to a host socket applies the application's supplementary
+				// groups, which setgroups(2) refuses in a user namespace that denies
+				// it. Allowing it also makes os/exec start the gofer with no
+				// supplementary groups.
+				cmd.SysProcAttr.GidMappingsEnableSetgroups = true
+			}
 		}
 	} else {
 		userNS, ok := specutils.GetNS(specs.UserNamespace, c.Spec)
@@ -1794,6 +1949,9 @@ func (c *Container) createGoferProcess(conf *config.Config, mountHints *sentryap
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid.Store(cmd.Process.Pid)
 	c.goferIsChild = true
+	if c.GoferPidIdentity, err = specutils.ProcessIdentity(cmd.Process.Pid); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	rpcPidCh <- cmd.Process.Pid
 
 	if pinGoferNetNS {
@@ -2002,7 +2160,7 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir stri
 		return nil
 	}
 
-	containers, err := LoadSandbox(rootDir, s.ID, LoadOpts{})
+	containers, err := LoadSandbox(rootDir, s.ID, LoadOpts{ReadOnly: true})
 	if err != nil {
 		return fmt.Errorf("loading sandbox containers: %v", err)
 	}
@@ -2068,6 +2226,15 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 		if os.IsNotExist(err) {
 			log.Warningf("Process (%d) not found setting oom_score_adj", pid)
 			return nil
+		}
+		// An exited process without an mm has root-owned proc files. For a
+		// nonroot caller, opening oom_score_adj can fail before reaching the
+		// write that would otherwise report ESRCH.
+		if errors.Is(err, unix.EACCES) {
+			if running, err := specutils.IsProcessRunning(pid, 0); err == nil && !running {
+				log.Warningf("Process (%d) exited while setting oom_score_adj", pid)
+				return nil
+			}
 		}
 		return err
 	}
@@ -2165,10 +2332,58 @@ func (c *Container) createParentCgroup(parentPath string, conf *config.Config) (
 	return parentCgroup, nil
 }
 
+// logCPUPoliciesNotApplied logs that the sandbox CPU policies do not apply,
+// because of `reason`.
+// Only warns if either policy was set explicitly.
+func logCPUPoliciesNotApplied(conf *config.Config, reason string) {
+	logf := log.Infof
+	if !conf.SandboxCreationCPUPolicy.Implicit() || !conf.SandboxLifecycleCPUPolicy.Implicit() {
+		logf = log.Warningf
+	}
+	logf("[Lifecycle CPU] Not applying --sandbox-creation-cpu-policy=%v and --sandbox-lifecycle-cpu-policy=%v: %s.", conf.SandboxCreationCPUPolicy, conf.SandboxLifecycleCPUPolicy, reason)
+}
+
+// cgroupResources returns `res` as the sandbox cgroup should have it now:
+// with the creation CPU limit until the application starts.
+func (c *Container) cgroupResources(res *specs.LinuxResources) *specs.LinuxResources {
+	creating := c.Sandbox.Creating || (c.Status == Created && !c.Sandbox.NoRootContainer)
+	if creating && c.Sandbox.CPULimits != nil {
+		return c.Sandbox.CPULimits.CreationResources(res)
+	}
+	return res
+}
+
+// newCPULimits returns the CPU limits of the sandbox with resources `res`.
+// `willRestore` is whether creating it restores application data (see
+// `willRestoreSandbox`).
+func newCPULimits(conf *config.Config, res *specs.LinuxResources, willRestore bool) *sandbox.CPULimits {
+	limits := sandbox.NewCPULimits(conf.SandboxCreationCPUPolicy, conf.SandboxLifecycleCPUPolicy, res)
+	if limits != nil && willRestore {
+		limits.WillRestore = true
+		limits.Creation = limits.Lifecycle
+	}
+	return limits
+}
+
+// willRestoreSandbox returns whether creating the sandbox for `args` already
+// restores application data. Its CPU cost scales with that data, so it runs
+// under the lifecycle CPU limit rather than the creation one.
+func willRestoreSandbox(args Args) bool {
+	// TODO(fvoznika): Also return true when `runsc create --for-restore=true`
+	// is specified, when such a flag exists.
+	for _, p := range args.FSRestoreImagePaths {
+		if p != "" {
+			return true
+		}
+	}
+	return specutils.RootfsTarUpperPath(args.Spec) != ""
+}
+
 // setupCgroupForRoot configures and returns cgroup for the sandbox and the
 // root container. If `cgroupParentAnnotation` is set, use that path as the
 // sandbox cgroup and use Spec.Linux.CgroupsPath as the root container cgroup.
-func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (cgroup.Cgroup, cgroup.Cgroup, error) {
+// `cpuLimits`, if set, gives the sandbox cgroup its creation CPU limit.
+func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec, cpuLimits *sandbox.CPULimits) (cgroup.Cgroup, cgroup.Cgroup, error) {
 	var parentCgroup cgroup.Cgroup
 	if parentPath, ok := spec.Annotations[cgroupParentAnnotation]; ok {
 		var err error
@@ -2187,8 +2402,12 @@ func (c *Container) setupCgroupForRoot(conf *config.Config, spec *specs.Spec) (c
 		}
 	}
 
+	res := spec.Linux.Resources
+	if cpuLimits != nil {
+		res = cpuLimits.CreationResources(res)
+	}
 	var err error
-	parentCgroup, err = cgroupInstall(conf, parentCgroup, spec.Linux.Resources)
+	parentCgroup, err = cgroupInstall(conf, parentCgroup, res)
 	if parentCgroup == nil || err != nil {
 		return nil, nil, err
 	}
@@ -2292,6 +2511,31 @@ func modifySpecForDirectfs(conf *config.Config, spec *specs.Spec) error {
 	spec.Linux.GIDMappings = gidMappings
 	logIDMappings(gidMappings, "GID")
 	return nil
+}
+
+// goferWillNeedHostRPC returns whether the gofer may need its setup process,
+// e.g. to open mounts that it cannot open itself (which need capabilities in
+// the initial user namespace, or different permissions).
+func goferWillNeedHostRPC(spec *specs.Spec) (bool, error) {
+	if slices.ContainsFunc(spec.Mounts, func(m specs.Mount) bool {
+		return specutils.IsIDMappedMount(m) || strings.HasPrefix(m.Source, "/proc/")
+	}) {
+		return true, nil
+	}
+	allIDs := []specs.LinuxIDMapping{{ContainerID: 0, HostID: 0, Size: math.MaxUint32}}
+	for _, mapFileName := range []string{"uid_map", "gid_map"} {
+		mappings, err := getIdentityMapping(mapFileName)
+		if err != nil {
+			return false, err
+		}
+		if !slices.Equal(mappings, allIDs) {
+			return true, nil
+		}
+	}
+	if _, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
+		return !slices.Equal(spec.Linux.UIDMappings, allIDs) || !slices.Equal(spec.Linux.GIDMappings, allIDs), nil
+	}
+	return false, nil
 }
 
 func getIdentityMapping(mapFileName string) ([]specs.LinuxIDMapping, error) {
@@ -2542,21 +2786,27 @@ func nvidiaContainerCliConfigureNeedsCudaCompatModeFlag(cliPath string) bool {
 
 // CheckStopped checks if the container is stopped and updates its status.
 func (c *Container) CheckStopped() error {
-	if state, err := c.Sandbox.ContainerRuntimeState(c.ID); err != nil {
+	// The sandbox of a Created root container may still be booting, and only
+	// answers once it has booted. Such a container is stopped only if its
+	// sandbox exited.
+	if c.Status != Created || !c.IsSandboxRoot() {
+		state, err := c.Sandbox.ContainerRuntimeState(c.ID)
+		if err == nil {
+			if state == sentryapi.RuntimeStateStopped {
+				log.Warningf("Container %v is stopped", c.ID)
+				c.changeStatus(Stopped)
+			}
+			return nil
+		}
 		log.Warningf("Cannot find if container %v exists, checking if sandbox %v is running, err: %v", c.ID, c.Sandbox.ID, err)
-		running, err := c.IsSandboxRunning()
-		if err != nil {
-			return fmt.Errorf("checking if sandbox %v is running: %w", c.Sandbox.ID, err)
-		}
-		if !running {
-			log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
-			c.changeStatus(Stopped)
-		}
-	} else {
-		if state == sentryapi.RuntimeStateStopped {
-			log.Warningf("Container %v is stopped", c.ID)
-			c.changeStatus(Stopped)
-		}
+	}
+	running, err := c.IsSandboxRunning()
+	if err != nil {
+		return fmt.Errorf("checking if sandbox %v is running: %w", c.Sandbox.ID, err)
+	}
+	if !running {
+		log.Warningf("Sandbox isn't running anymore, marking container %v as stopped:", c.ID)
+		c.changeStatus(Stopped)
 	}
 	return nil
 }

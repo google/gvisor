@@ -4175,11 +4175,17 @@ func TestMasqueradePortRange(t *testing.T) {
 			name:       "IPv6 UDP",
 			netProto:   ipv6.ProtocolNumber,
 			transProto: header.UDPProtocolNumber,
-			buf:        udpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */),
+			buf:        udpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 4 /* dataSize */),
 			check: func(t *testing.T, v *buffer.View) {
-				checker.IPv6(t, v,
+				checker.IPv6WithExtHdr(t, v,
 					checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
-					checker.UDP(checker.SrcPort(mappedPort), checker.DstPort(dstPort)),
+					checker.UDP(checker.SrcPort(mappedPort), checker.DstPort(dstPort), func(t *testing.T, transport header.Transport) {
+						t.Helper()
+						udp := transport.(header.UDP)
+						if !udp.IsChecksumValid(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, checksum.Checksum(udp.Payload(), 0)) {
+							t.Errorf("invalid UDP checksum: %#x", udp.Checksum())
+						}
+					}),
 				)
 			},
 		},
@@ -4187,14 +4193,37 @@ func TestMasqueradePortRange(t *testing.T) {
 			name:       "IPv6 TCP",
 			netProto:   ipv6.ProtocolNumber,
 			transProto: header.TCPProtocolNumber,
-			buf:        tcpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 0 /* dataSize */),
+			buf:        tcpv6Packet(utils.Host2IPv6Addr.AddressWithPrefix.Address, utils.Host1IPv6Addr.AddressWithPrefix.Address, srcPort, dstPort, 4 /* dataSize */),
 			check: func(t *testing.T, v *buffer.View) {
-				checker.IPv6(t, v,
+				checker.IPv6WithExtHdr(t, v,
 					checker.SrcAddr(utils.RouterNIC1IPv6Addr.AddressWithPrefix.Address),
 					checker.TCP(checker.SrcPort(mappedPort), checker.DstPort(dstPort)),
 				)
 			},
 		},
+	}
+
+	for _, test := range tests {
+		if test.netProto != header.IPv6ProtocolNumber {
+			continue
+		}
+		for _, extension := range []struct {
+			name string
+			kind header.IPv6ExtensionHeaderIdentifier
+		}{
+			{name: "HopByHop", kind: header.IPv6HopByHopOptionsExtHdrIdentifier},
+			{name: "DestinationOptions", kind: header.IPv6DestinationOptionsExtHdrIdentifier},
+		} {
+			extended := test
+			extended.name += "/" + extension.name
+			extended.buf = append([]byte(nil), test.buf[:header.IPv6MinimumSize]...)
+			extended.buf = append(extended.buf, byte(test.transProto), 0, 0, 0, 0, 0, 0, 0)
+			extended.buf = append(extended.buf, test.buf[header.IPv6MinimumSize:]...)
+			ip := header.IPv6(extended.buf)
+			ip.SetNextHeader(uint8(extension.kind))
+			ip.SetPayloadLength(uint16(len(extended.buf) - header.IPv6MinimumSize))
+			tests = append(tests, extended)
+		}
 	}
 
 	for _, test := range tests {

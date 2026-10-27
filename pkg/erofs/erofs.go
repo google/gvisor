@@ -30,7 +30,6 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -142,6 +141,10 @@ type SuperBlock struct {
 	DevTableSlotOff uint16
 	Reserved        [38]uint8
 }
+
+// maxBlockSizeBits caps the block size at 64 KiB, the largest page size of any
+// host that gVisor supports. Linux caps it at the host's own page size.
+const maxBlockSizeBits = 16
 
 // BlockSize returns the block size.
 func (sb *SuperBlock) BlockSize() uint32 {
@@ -298,16 +301,16 @@ func (i *Image) initSuperBlock() error {
 		return fmt.Errorf("unknown magic: 0x%x", i.sb.Magic)
 	}
 
+	if i.sb.BlockSizeBits < uint8(hostarch.PageShift) || i.sb.BlockSizeBits > maxBlockSizeBits {
+		return fmt.Errorf("unsupported block size bits: %d", i.sb.BlockSizeBits)
+	}
+
 	if err := i.verifyChecksum(); err != nil {
 		return err
 	}
 
 	if featureIncompat := i.sb.FeatureIncompat & ^uint32(FeatureIncompatSupported); featureIncompat != 0 {
 		return fmt.Errorf("unsupported incompatible features detected: 0x%x", featureIncompat)
-	}
-
-	if i.BlockSize()%uint32(hostarch.PageSize) != 0 {
-		return fmt.Errorf("unsupported block size: 0x%x", i.BlockSize())
 	}
 
 	return nil

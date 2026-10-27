@@ -175,7 +175,7 @@ type MemoryFile struct {
 	knownCommittedBytes uint64
 	commitSeq           uint64
 	nextCommitScan      time.Time
-	ongoingCommitScan   atomic.Bool
+	ongoingCommitScan   atomicbitops.Bool
 	isSaving            bool
 
 	// evictable maps EvictableMemoryUsers to eviction state.
@@ -190,8 +190,8 @@ type MemoryFile struct {
 	opts MemoryFileOpts
 
 	// savable is true if this MemoryFile will be saved via SaveTo() during
-	// the kernel's SaveTo operation. savable is protected by mu.
-	savable bool
+	// the kernel's SaveTo operation.
+	savable atomicbitops.Bool
 
 	// destroyed is set by Destroy to instruct the releaser goroutine to
 	// release all MemoryFile resources and exit. destroyed is protected by mu.
@@ -1651,10 +1651,11 @@ func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
 func (f *MemoryFile) updateUsageLocked(memCgIDs map[uint32]struct{}) error {
-	// Track if anything changed to elide the merge.
+	// Track if anything changed to elide the merge. f.SaveTo() holds an
+	// iterator into f.memAcct across f.mu unlocks, so don't merge while saving.
 	changedAny := false
 	defer func() {
-		if changedAny {
+		if changedAny && !f.isSaving {
 			f.memAcct.MergeAll()
 		}
 	}()

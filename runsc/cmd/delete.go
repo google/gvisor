@@ -117,7 +117,7 @@ func requireForce(conf *config.Config, c *container.Container) error {
 	if c.Sandbox == nil || !c.Sandbox.NoRootContainer || !c.Sandbox.IsRootContainer(c.ID) {
 		return fmt.Errorf("cannot delete container that is not stopped without --force flag")
 	}
-	containers, err := container.LoadSandbox(conf.RootDir, c.Sandbox.ID, container.LoadOpts{})
+	containers, err := container.LoadSandbox(conf.RootDir, c.Sandbox.ID, container.LoadOpts{ReadOnly: true})
 	if err != nil {
 		return fmt.Errorf("loading containers of sandbox %q: %w", c.Sandbox.ID, err)
 	}

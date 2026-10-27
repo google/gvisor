@@ -17,14 +17,11 @@ package drivers
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
@@ -35,197 +32,172 @@ import (
 const (
 	nvidiaSMIPath       = "/usr/bin/nvidia-smi"
 	nvidiaUninstallPath = "/usr/bin/nvidia-uninstall"
-	nvidiaBaseURLX86_64 = "https://us.download.nvidia.com/tesla/%s/NVIDIA-Linux-x86_64-%s.run"
-	nvidiaARM64BaseURL  = "https://us.download.nvidia.com/XFree86/aarch64/%s/NVIDIA-Linux-aarch64-%s.run"
-
-	archAMD64 = "amd64"
-	archARM64 = "arm64"
 )
 
 func init() {
 	nvproxy.Init()
 }
 
-func getNvidiaBaseURL(driverVersion, arch string) string {
-	switch arch {
-	case archARM64:
-		return fmt.Sprintf(nvidiaARM64BaseURL, driverVersion, driverVersion)
-	case archAMD64:
-		return fmt.Sprintf(nvidiaBaseURLX86_64, driverVersion, driverVersion)
-	}
-	panic(fmt.Sprintf("unsupported arch: %q", arch))
-}
-
-// Installer handles the logic to install drivers.
+// Installer installs one supported driver on the host architecture.
 type Installer struct {
 	requestedVersion nvconf.DriverVersion
-	// include functions so they can be mocked in tests.
-	expectedChecksumFunc func(nvconf.DriverVersion) (nvproxy.Checksums, bool)
-	getCurrentDriverFunc func() (nvconf.DriverVersion, error)
-	downloadFunc         func(context.Context, string, string) (io.ReadCloser, error)
-	installFunc          func(string) error
+	checksum         string
+	downloader       Downloader
+	tempDir          string
+
+	getCurrentDriverFunc func(context.Context) (nvconf.DriverVersion, error)
+	checkHostFunc        func(context.Context) error
+	uninstallFunc        func(context.Context) error
+	installFunc          func(context.Context, string) error
 }
 
-func latestInstallableDriver() (nvconf.DriverVersion, error) {
-	var latest nvconf.DriverVersion
-	var found bool
+type installableDriver struct {
+	version  nvconf.DriverVersion
+	checksum string
+}
+
+func hostDriver(version nvconf.DriverVersion, checksums nvproxy.Checksums) (installableDriver, error) {
+	unavailable, err := checksums.PublicInstallerUnavailable(runtime.GOARCH)
+	if err != nil {
+		return installableDriver{}, fmt.Errorf("invalid installer metadata for driver %q: %w", version, err)
+	}
+	if unavailable {
+		return installableDriver{}, fmt.Errorf("driver %q has no public NVIDIA .run installer for arch %q", version, runtime.GOARCH)
+	}
+	checksum, err := checksums.Checksum()
+	if err != nil {
+		return installableDriver{}, fmt.Errorf("failed to get checksum for driver %q: %w", version, err)
+	}
+	return installableDriver{version, checksum}, nil
+}
+
+// installableDrivers is the common host-architecture selection for installation
+// and listing. Registered ABIs without a public installer are excluded.
+func installableDrivers() []installableDriver {
+	var drivers []installableDriver
 	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
-		checksum, err := checksums.Checksum()
-		if err != nil {
-			return
-		}
-		if checksum != nvproxy.ChecksumNoDriver && checksum != "" {
-			if version.IsGreaterThan(latest) {
-				latest = version
-				found = true
-			}
+		if driver, err := hostDriver(version, checksums); err == nil {
+			drivers = append(drivers, driver)
 		}
 	})
-	if !found {
-		return nvconf.DriverVersion{}, fmt.Errorf("no installable driver found for arch %q", runtime.GOARCH)
-	}
-	return latest, nil
+	return drivers
 }
 
-// NewInstaller returns a driver installer instance.
+// NewInstaller selects a supported, publicly installable driver for this host.
 func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
-
-	ret := &Installer{
-		expectedChecksumFunc: nvproxy.ExpectedDriverChecksum,
-		getCurrentDriverFunc: getCurrentDriver,
-		downloadFunc:         DownloadDriver,
-		installFunc:          installDriver,
-	}
-	switch {
-	case latest:
-		version, err := latestInstallableDriver()
-		if err != nil {
-			return nil, err
+	var selected installableDriver
+	if latest {
+		for _, driver := range installableDrivers() {
+			if driver.version.IsGreaterThan(selected.version) {
+				selected = driver
+			}
 		}
-		ret.requestedVersion = version
-	default:
-		d, err := nvconf.DriverVersionFrom(requestedVersion)
+		if selected.checksum == "" {
+			return nil, fmt.Errorf("no installable driver found for arch %q", runtime.GOARCH)
+		}
+	} else {
+		version, err := nvconf.DriverVersionFrom(requestedVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse requested driver version: %w", err)
 		}
-		ret.requestedVersion = d
+		checksums, ok := nvproxy.ExpectedDriverChecksum(version)
+		if !ok {
+			return nil, fmt.Errorf("requested driver %q is not supported", version)
+		}
+		selected, err = hostDriver(version, checksums)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return ret, nil
+	return &Installer{
+		requestedVersion:     selected.version,
+		checksum:             selected.checksum,
+		getCurrentDriverFunc: getCurrentDriver,
+		checkHostFunc:        checkHost,
+		uninstallFunc:        uninstallDriver,
+		installFunc:          installDriver,
+	}, nil
 }
 
-// MaybeInstall installs a driver if 1) no driver is present on the system already or 2) the
-// driver currently installed does not match the requested version.
+// MaybeInstall replaces an absent or different driver with the requested
+// version. The replacement is downloaded and verified before any uninstall.
 func (i *Installer) MaybeInstall(ctx context.Context) error {
-	// If we don't support the driver, don't attempt to install it.
-	if _, ok := i.expectedChecksumFunc(i.requestedVersion); !ok {
-		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
-	}
-
-	existingDriver, err := i.getCurrentDriverFunc()
+	existingDriver, err := i.getCurrentDriverFunc(ctx)
 	if err != nil {
-		log.Warningf("failed to get current driver: %v", err)
+		return fmt.Errorf("failed to get current driver: %w", err)
 	}
 	if existingDriver.Equals(i.requestedVersion) {
 		log.Infof("Driver already installed: %s", i.requestedVersion)
 		return nil
 	}
-
-	if !existingDriver.Equals(nvconf.DriverVersion{}) {
-		log.Infof("Uninstalling driver: %s", existingDriver)
-		if err := i.uninstallDriver(ctx, existingDriver.String()); err != nil {
-			return fmt.Errorf("failed to uninstall driver: %w", err)
-		}
-		log.Infof("Driver uninstalled: %s", i.requestedVersion)
+	if err := i.checkHostFunc(ctx); err != nil {
+		return fmt.Errorf("host cannot install the requested driver: %w", err)
 	}
 
-	log.Infof("Downloading driver: %s", i.requestedVersion)
-	reader, err := i.downloadFunc(ctx, i.requestedVersion.String(), runtime.GOARCH)
-	if err != nil {
-		return fmt.Errorf("failed to download driver: %w", err)
-	}
-
-	f, err := os.CreateTemp("", "")
+	f, err := os.CreateTemp(i.tempDir, "nvidia-driver-*.run")
 	if err != nil {
 		return fmt.Errorf("failed to open driver file: %w", err)
 	}
 	defer os.Remove(f.Name())
-	if err := i.writeAndCheck(f, reader); err != nil {
-		f.Close()
-		return fmt.Errorf("writeAndCheck: %w", err)
+	defer f.Close()
+	log.Infof("Downloading driver: %s", i.requestedVersion)
+	checksum, err := i.downloader.Download(ctx, i.requestedVersion, runtime.GOARCH, f)
+	if err != nil {
+		return err
+	}
+	if err := checkChecksum(i.requestedVersion, runtime.GOARCH, checksum, i.checksum); err != nil {
+		return err
 	}
 	if err := f.Chmod(0755); err != nil {
-		return fmt.Errorf("failed to chmod: %w", err)
+		return fmt.Errorf("failed to chmod driver file: %w", err)
 	}
+	// An executable cannot be run while it is still open for writing.
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to close driver file: %w", err)
 	}
 	log.Infof("Driver downloaded: %s", i.requestedVersion)
+
+	if !existingDriver.Equals(nvconf.DriverVersion{}) {
+		log.Infof("Uninstalling driver: %s", existingDriver)
+		if err := i.uninstallFunc(ctx); err != nil {
+			return fmt.Errorf("failed to uninstall driver: %w", err)
+		}
+		log.Infof("Driver uninstalled: %s", existingDriver)
+	}
 	log.Infof("Installing driver: %s", i.requestedVersion)
-	if err := i.installFunc(f.Name()); err != nil {
+	if err := i.installFunc(ctx, f.Name()); err != nil {
 		return fmt.Errorf("failed to install driver: %w", err)
 	}
 	log.Infof("Installation Complete!")
 	return nil
 }
 
-func (i *Installer) uninstallDriver(ctx context.Context, driverVersion string) error {
-	exec.Command(nvidiaUninstallPath, "-s", driverVersion)
-	cmd := exec.Command(nvidiaUninstallPath, "-s")
+func driverCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	return cmd
+}
+
+func uninstallDriver(ctx context.Context) error {
+	if err := driverCommand(ctx, nvidiaUninstallPath, "-s").Run(); err != nil {
 		return fmt.Errorf("failed to run nvidia-uninstall: %w", err)
 	}
 	return nil
 }
 
-func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser) error {
-	checksum := sha256.New()
-	buf := make([]byte, 1024*1024)
-	for {
-		n, err := reader.Read(buf[0:])
-		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to read: %w", err)
-		}
-		if n == 0 || err == io.EOF {
-			break
-		}
-		if _, err := checksum.Write(buf[:n]); err != nil {
-			return fmt.Errorf("failed to write: %w", err)
-		}
-		if _, err := f.Write(buf[:n]); err != nil {
-			return fmt.Errorf("failed to write: %w", err)
-		}
-	}
-	gotChecksum := fmt.Sprintf("%x", checksum.Sum(nil))
-	c, ok := i.expectedChecksumFunc(i.requestedVersion)
-	if !ok {
-		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
-	}
-
-	wantChecksum, err := c.Checksum()
-	if err != nil {
-		return fmt.Errorf("failed to get checksum for driver %q: %v", i.requestedVersion, err)
-	}
-
-	if gotChecksum != wantChecksum {
-		return fmt.Errorf("driver %q checksum mismatch: got %q, want %q", i.requestedVersion, gotChecksum, wantChecksum)
-	}
-	return nil
-}
-
-func getCurrentDriver() (nvconf.DriverVersion, error) {
+func getCurrentDriver(ctx context.Context) (nvconf.DriverVersion, error) {
 	_, err := os.Stat(nvidiaSMIPath)
-	// If the nvidia-smi executable does not exist, then we don't have a driver installed.
+	// A missing nvidia-smi is treated as no managed driver. Other inspection
+	// failures must not be mistaken for absence.
 	if os.IsNotExist(err) {
-		return nvconf.DriverVersion{}, fmt.Errorf("nvidia-smi does not exist at path: %q", nvidiaSMIPath)
+		return nvconf.DriverVersion{}, nil
 	}
 	if err != nil {
 		return nvconf.DriverVersion{}, fmt.Errorf("failed to stat nvidia-smi: %w", err)
 	}
-	out, err := exec.Command(nvidiaSMIPath, []string{"--query-gpu", "driver_version", "--format=csv,noheader"}...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, nvidiaSMIPath, "--query-gpu", "driver_version", "--format=csv,noheader").CombinedOutput()
 	if err != nil {
-		log.Warningf("failed to run nvidia-smi: %v", err)
 		return nvconf.DriverVersion{}, fmt.Errorf("failed to run nvidia-smi: %w", err)
 	}
 	// If there are multiple GPUs, there will be one version per line.
@@ -250,71 +222,31 @@ func getCurrentDriver() (nvconf.DriverVersion, error) {
 	return nvconf.DriverVersionFrom(sameVersion)
 }
 
-// ListSupportedDrivers prints the driver to stderr in a format that can be
-// consumed by the Makefile to iterate tests across drivers.
+// ListSupportedDrivers prints the publicly installable drivers for this host in
+// a format that can be consumed by the Makefile to iterate tests across drivers.
 func ListSupportedDrivers(outfile string) error {
-	out := os.Stdout
-	if outfile != "" {
-		f, err := os.OpenFile(outfile, os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open outfile: %w", err)
-		}
-		defer f.Close()
-		out = f
-	}
-
 	var list []string
-	nvproxy.ForEachSupportDriver(func(version nvconf.DriverVersion, checksums nvproxy.Checksums) {
-		checksum, err := checksums.Checksum()
-		if err != nil || checksum == nvproxy.ChecksumNoDriver || checksum == "" {
-			return
-		}
-		list = append(list, version.String())
-	})
-	sort.Strings(list)
-	if _, err := out.WriteString(strings.Join(list, " ") + "\n"); err != nil {
-		return fmt.Errorf("failed to write to outfile: %w", err)
+	for _, driver := range installableDrivers() {
+		list = append(list, driver.version.String())
+	}
+	slices.Sort(list)
+	data := strings.Join(list, " ") + "\n"
+	var err error
+	if outfile == "" {
+		_, err = os.Stdout.WriteString(data)
+	} else {
+		err = os.WriteFile(outfile, []byte(data), 0644)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to write supported drivers: %w", err)
 	}
 	return nil
 }
 
-// ChecksumDriver downloads and returns the SHA265 checksum of the driver.
-func (i *Installer) ChecksumDriver(ctx context.Context, arch string) (string, error) {
-	f, err := DownloadDriver(ctx, i.requestedVersion.String(), arch)
-	if err != nil {
-		return "", fmt.Errorf("failed to download driver: %w", err)
-	}
-	checksum := sha256.New()
-	for {
-		n, err := io.Copy(checksum, f)
-		if err == io.EOF || n == 0 {
-			break
-		}
-		if err != nil {
-			return "", fmt.Errorf("failed to copy driver: %w", err)
-		}
-	}
-	return fmt.Sprintf("%x", checksum.Sum(nil)), nil
-}
-
-// DownloadDriver downloads the requested driver and returns the binary as a []byte so it can be
-// checked before written to disk.
-func DownloadDriver(ctx context.Context, driverVersion, arch string) (io.ReadCloser, error) {
-	url := getNvidiaBaseURL(driverVersion, arch)
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download driver: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download driver with statusCode: %d: status: %s", resp.StatusCode, resp.Status)
-	}
-	return resp.Body, nil
-}
-
-func installDriver(driverPath string) error {
-	// Certain VMs can be broken if we attempt to install drivers on them. Do a simple check of the
-	// PCI device to ensure we have a GPU attached.
-	out, err := exec.Command("lspci").CombinedOutput()
+// checkHost rejects unsupported machines before downloading or uninstalling.
+func checkHost(ctx context.Context) error {
+	// Require an NVIDIA PCI device before modifying installed drivers.
+	out, err := exec.CommandContext(ctx, "lspci").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to run lspci: %w out: %s", err, string(out))
 	}
@@ -322,10 +254,12 @@ func installDriver(driverPath string) error {
 		return fmt.Errorf("no NVIDIA PCI device on host:\n%s", string(out))
 	}
 
-	driverArgs := strings.Split("--dkms -a -s --no-drm --install-libglvnd -m=kernel-open", " ")
-	cmd := exec.Command(driverPath, driverArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	return nil
+}
+
+func installDriver(ctx context.Context, driverPath string) error {
+	driverArgs := []string{"--dkms", "-a", "-s", "--no-drm", "--install-libglvnd", "-m=kernel-open"}
+	cmd := driverCommand(ctx, driverPath, driverArgs...)
 	if osIsUbuntu2204() {
 		// As of this writing (2024), current Ubuntu 22.04 kernels are built
 		// with gcc-12, but Ubuntu 22.04 defaults to gcc-11, so unless we force
@@ -335,14 +269,12 @@ func installDriver(driverPath string) error {
 	}
 	if err := cmd.Run(); err != nil {
 		tryToPrintFailureLogs()
-		return fmt.Errorf("failed to run nvidia-install: %w out: %s", err, string(out))
+		return fmt.Errorf("failed to run nvidia-install: %w", err)
 	}
 
-	cmd = exec.Command(nvidiaSMIPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd = driverCommand(ctx, nvidiaSMIPath)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run nvidia-smi post install: %w out: %s", err, string(out))
+		return fmt.Errorf("failed to run nvidia-smi post install: %w", err)
 	}
 	return nil
 }
@@ -350,14 +282,7 @@ func installDriver(driverPath string) error {
 func tryToPrintFailureLogs() {
 	// nvidia driver installers print failure logs to this path.
 	const logPath = "/var/log/nvidia-installer.log"
-	f, err := os.OpenFile(logPath, os.O_RDONLY, 0644)
-	if err != nil {
-		log.Warningf("failed to stat nvidia-installer.log: %v", err)
-		return
-	}
-	defer f.Close()
-
-	out, err := io.ReadAll(f)
+	out, err := os.ReadFile(logPath)
 	if err != nil {
 		log.Warningf("failed to read nvidia-installer.log: %v", err)
 		return
@@ -366,36 +291,6 @@ func tryToPrintFailureLogs() {
 	for _, line := range strings.Split(string(out), "\n") {
 		fmt.Printf("[nvidia-installer]: %s\n", line)
 	}
-}
-
-// ValidateChecksum validates the checksum of the driver.
-func ValidateChecksum(ctx context.Context, version string, checksums nvproxy.Checksums) error {
-	for _, arch := range []string{archAMD64, archARM64} {
-		wantChecksum := checksums.X86_64
-		if arch == archARM64 {
-			wantChecksum = checksums.ARM64
-		}
-		installer, err := NewInstaller(version, false)
-		if err != nil {
-			return fmt.Errorf("failed to create installer for driver %q on arch %q: %v", version, arch, err)
-		}
-		gotChecksum, err := installer.ChecksumDriver(ctx, arch)
-		if wantChecksum == nvproxy.ChecksumNoDriver {
-			log.Infof("Runfile does not exist for driver %q arch: %q", version, arch)
-			if err == nil || !strings.Contains(err.Error(), "failed to download driver with statusCode: 404") {
-				return fmt.Errorf("checksum mismatch for driver %q on arch %q: got %q, want %q", version, arch, gotChecksum, wantChecksum)
-			}
-			return nil
-		}
-		log.Infof("Checksum for driver %q arch: %q: %q", version, arch, gotChecksum)
-		if err != nil {
-			return fmt.Errorf("failed to get checksum for driver %q on arch %q: %v", version, arch, err)
-		}
-		if gotChecksum != wantChecksum {
-			return fmt.Errorf("checksum mismatch for driver %q on arch %q: got %q, want %q", version, arch, gotChecksum, wantChecksum)
-		}
-	}
-	return nil
 }
 
 func osIsUbuntu2204() bool {

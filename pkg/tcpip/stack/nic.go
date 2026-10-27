@@ -47,6 +47,11 @@ type nic struct {
 	kind    string
 	context NICContext
 
+	// minMTU and maxMTU are immutable bounds on MTU changes. Zero means that
+	// the corresponding bound is unrestricted.
+	minMTU uint32
+	maxMTU uint32
+
 	stats sharedStats
 
 	// enableDisableMu is used to synchronize attempts to enable/disable the NIC.
@@ -197,6 +202,8 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		deliverLinkPackets:        opts.DeliverLinkPackets,
 		experimentIPOptionEnabled: opts.EnableExperimentIPOption,
 		kind:                      opts.Kind,
+		minMTU:                    opts.MinMTU,
+		maxMTU:                    opts.MaxMTU,
 	}
 	nic.linkResQueue.init(nic)
 

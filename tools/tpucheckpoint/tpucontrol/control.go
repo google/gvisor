@@ -84,7 +84,7 @@ func CheckProcessExists(pid int) error {
 
 // Checkpoint sends ACTION_CHECKPOINT to all libtpu threads of every PID,
 // concurrently across PIDs. Results are indexed to match pids.
-func Checkpoint(pids []int, timeoutSecs int) []Result {
+func Checkpoint(pids []int, timeoutSecs int32) []Result {
 	return forEachPID(pids, func(r *Result) {
 		r.Err = controlPid(r.PID, tpupb.ControlAction_ACTION_CHECKPOINT, timeoutSecs)
 	})
@@ -92,7 +92,7 @@ func Checkpoint(pids []int, timeoutSecs int) []Result {
 
 // Restore sends ACTION_RESTORE to all libtpu threads of every PID,
 // concurrently across PIDs. Results are indexed to match pids.
-func Restore(pids []int, timeoutSecs int) []Result {
+func Restore(pids []int, timeoutSecs int32) []Result {
 	return forEachPID(pids, func(r *Result) {
 		r.Err = controlPid(r.PID, tpupb.ControlAction_ACTION_RESTORE, timeoutSecs)
 	})
@@ -100,7 +100,7 @@ func Restore(pids []int, timeoutSecs int) []Result {
 
 // GetState sends ACTION_GETSTATE to the first libtpu thread of every PID,
 // concurrently across PIDs. Results are indexed to match pids.
-func GetState(pids []int, timeoutSecs int) []Result {
+func GetState(pids []int, timeoutSecs int32) []Result {
 	return forEachPID(pids, func(r *Result) {
 		r.State, r.Err = getStatePid(r.PID, timeoutSecs)
 	})
@@ -127,7 +127,7 @@ func forEachPID(pids []int, op func(r *Result)) []Result {
 	return results
 }
 
-func getStatePid(pid int, timeoutSecs int) (tpupb.RuntimeState, error) {
+func getStatePid(pid int, timeoutSecs int32) (tpupb.RuntimeState, error) {
 	if err := CheckProcessExists(pid); err != nil {
 		return tpupb.RuntimeState_STATE_UNSPECIFIED, err
 	}
@@ -142,7 +142,7 @@ func getStatePid(pid int, timeoutSecs int) (tpupb.RuntimeState, error) {
 	return resp.GetCurrentState(), nil
 }
 
-func controlPid(pid int, action tpupb.ControlAction, timeoutSecs int) error {
+func controlPid(pid int, action tpupb.ControlAction, timeoutSecs int32) error {
 	if err := CheckProcessExists(pid); err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func controlPid(pid int, action tpupb.ControlAction, timeoutSecs int) error {
 	return nil
 }
 
-func controlOne(pid int, pipe PipeInfo, action tpupb.ControlAction, timeoutSecs int) (*tpupb.ControlResponse, error) {
+func controlOne(pid int, pipe PipeInfo, action tpupb.ControlAction, timeoutSecs int32) (*tpupb.ControlResponse, error) {
 	reqPath := PipePath(pid, pipe.ReqWriteFD)
 	rspPath := PipePath(pid, pipe.RspReadFD)
 
@@ -188,7 +188,7 @@ func controlOne(pid int, pipe PipeInfo, action tpupb.ControlAction, timeoutSecs 
 
 	req := tpupb.ControlRequest_builder{
 		Action:      action.Enum(),
-		TimeoutSecs: proto.Int32(int32(timeoutSecs)),
+		TimeoutSecs: proto.Int32(timeoutSecs),
 	}.Build()
 	reqBytes, err := proto.Marshal(req)
 	if err != nil {

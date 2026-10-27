@@ -360,6 +360,28 @@ TEST(Cgroup, MigrateInvalidPID) {
   EXPECT_THAT(c.WriteControlFile("tasks", "-1"), PosixErrorIs(EINVAL));
   EXPECT_THAT(c.WriteControlFile("tasks", "not-a-number"),
               PosixErrorIs(EINVAL));
+
+  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
+  auto restore = Cleanup([&] {
+    EXPECT_NO_ERRNO(c.WriteIntegerControlFile("cgroup.procs", 0));
+    EXPECT_NO_ERRNO(child.Delete());
+  });
+  for (absl::string_view control : {"cgroup.procs", "tasks"}) {
+    const int64_t id = control == "tasks" ? syscall(SYS_gettid) : getpid();
+    // The latter two values alias the calling task if narrowed to pid_t before
+    // validation. A rejected write must not migrate it into the child.
+    for (int64_t invalid : {int64_t{INT_MAX} + 1, (int64_t{1} << 32) + id,
+                            id - (int64_t{1} << 32)}) {
+      SCOPED_TRACE(absl::StrCat(control, ": ", invalid));
+      ASSERT_NO_ERRNO(c.WriteIntegerControlFile("cgroup.procs", 0));
+      EXPECT_THAT(child.WriteIntegerControlFile(control, invalid),
+                  PosixErrorIs(EINVAL));
+      EXPECT_NO_ERRNO(c.ContainsCallingProcess());
+      EXPECT_NO_ERRNO(c.ContainsCallingThread());
+      EXPECT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(child.Procs()).empty());
+      EXPECT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(child.Tasks()).empty());
+    }
+  }
 }
 
 // Regression test for b/222278194.

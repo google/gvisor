@@ -30,7 +30,6 @@ import (
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -140,6 +139,10 @@ type Boot struct {
 	// cpuNum number of CPUs to create inside the sandbox.
 	cpuNum int
 
+	// lifecycleCPUNum is the number of CPUs that the sandbox can use during
+	// checkpoint and restore.
+	lifecycleCPUNum int
+
 	// cpuQuota and cpuPeriod carry the raw host CFS CPU settings that should be
 	// exposed through sandbox cgroupfs.
 	cpuQuota  int64
@@ -154,9 +157,6 @@ type Boot struct {
 
 	// userLogFD is the file descriptor to write user logs to.
 	userLogFD int
-
-	// startSyncFD is the file descriptor to synchronize runsc and sandbox.
-	startSyncFD int
 
 	// mountsFD is the file descriptor to read list of mounts after they have
 	// been resolved (direct paths, no symlinks). They are resolved outside the
@@ -271,6 +271,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
+	f.IntVar(&b.lifecycleCPUNum, "lifecycle-cpu-num", 0, "number of CPUs that the sandbox can use during checkpoint and restore (0 means the same as --cpu-num)")
 	// cpu-quota defaults to -1 (unlimited), matching the Linux CFS default
 	// for cpu.cfs_quota_us. A positive value is passed through as-is to sandbox
 	// cgroupfs.
@@ -306,7 +307,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.goferFilestoreFDs, "gofer-filestore-fds", "FDs to the regular files that will back the overlayfs or tmpfs mount if a gofer mount is to be overlaid.")
 	f.Var(&b.goferMountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
-	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is an optional file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
@@ -351,7 +351,7 @@ func (b *Boot) willReexec() bool {
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if b.specFD == -1 || b.controllerFD == -1 || b.startSyncFD == -1 || f.NArg() != 1 {
+	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -517,10 +517,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				// Remove the args that have already been done before calling self.
 				args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
-				// Note that we've already read the spec from the spec FD, and
-				// we will read it again after the exec call. This works
-				// because the ReadSpecFromFile function seeks to the beginning
-				// of the file before reading.
 				util.Fatalf("callSelfAsNobody(%v): %v", args, sandboxsetup.CallSelfAsNobody(args))
 
 				// This prevents the specFile finalizer from running and closed
@@ -588,10 +584,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// Remove the args that have already been done before calling self.
 			args := sandboxsetup.PrepareArgs(b.Name(), f, argOverride)
 
-			// Note that we've already read the spec from the spec FD, and
-			// we will read it again after the exec call. This works
-			// because the ReadSpecFromFile function seeks to the beginning
-			// of the file before reading.
 			util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, caps, sandboxsetup.SetCapsAndCallSelf(args, caps))
 
 			// This prevents the specFile finalizer from running and closed
@@ -721,6 +713,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
 		GoferMountConfs:     b.goferMountConfs.GetArray(),
 		NumCPU:              b.cpuNum,
+		LifecycleNumCPU:     b.lifecycleCPUNum,
 		CPUQuota:            b.cpuQuota,
 		CPUPeriod:           b.cpuPeriod,
 		TotalMem:            b.totalMem,
@@ -777,8 +770,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Prepare metrics.
 	// This needs to happen after the kernel is initialized (such that all metrics are registered)
-	// but before the start-sync file is notified, as the parent process needs to query for
-	// registered metrics prior to sending the start signal.
+	// but before the control server starts, as runsc queries registered metrics prior to sending
+	// the start signal.
 	metric.Initialize()
 	timer.Reached("metrics initialized")
 	var finalMetricsFile *os.File
@@ -798,17 +791,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		defer metric.StopProfilingMetrics()
 	}
 
-	// Notify the parent process the sandbox has booted (and that the controller
-	// is up).
-	timer.Reached("notifying parent")
-	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
-	buf := make([]byte, 1)
-	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
-		l.Destroy()
-		util.Fatalf("unable to write into the start-sync descriptor: %v", err)
-	}
-	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
-	startSyncFile.Close()
+	l.StartControlServer()
 
 	// Wait for the start signal from runsc.
 	l.WaitForStartSignal()

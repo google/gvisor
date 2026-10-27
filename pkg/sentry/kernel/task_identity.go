@@ -158,16 +158,28 @@ func (t *Task) SetRESUID(r, e, s auth.UID) error {
 			return err
 		}
 	}
+	// Match Linux >= 6.3 (commit 659c0ce1cb9e): a call that changes nothing
+	// returns early, so it does not reset the filesystem UID either.
+	if (!r.Ok() || newR == creds.RealKUID) &&
+		(!e.Ok() || (newE == creds.EffectiveKUID && newE == creds.FilesystemKUID)) &&
+		(!s.Ok() || newS == creds.SavedKUID) {
+		return nil
+	}
 	t.setKUIDsUnchecked(newR, newE, newS)
 	return nil
 }
 
+// setKUIDsUnchecked sets the real, effective and saved UIDs. Like Linux's
+// setuid family, it also sets the filesystem UID to the new effective UID.
+//
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) setKUIDsUnchecked(newR, newE, newS auth.KUID) {
-	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
+	oldCreds := t.Credentials()
+	creds := oldCreds.Fork() // The credentials object is immutable. See doc for creds.
 	root := creds.UserNamespace.MapToKUID(auth.RootUID)
 	oldR, oldE, oldS := creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID
 	creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID = newR, newE, newS
+	creds.FilesystemKUID = newE
 
 	if !creds.NoSetUIDFixup {
 		// "1. If one or more of the real, effective or saved set user IDs was
@@ -205,26 +217,86 @@ func (t *Task) setKUIDsUnchecked(newR, newE, newS auth.KUID) {
 			creds.EffectiveCaps = creds.PermittedCaps
 		}
 	}
-	// "4. If the filesystem user ID is changed from 0 to nonzero (see
-	// setfsuid(2)), then the following capabilities are cleared from the
-	// effective set: ..."
-	// (filesystem UIDs aren't implemented, nor are any of the capabilities in
-	// question)
+	// Rule 4 of capabilities(7) (filesystem UID changes) is applied only by
+	// setfsuid(2); like Linux's cap_emulate_setxuid(), the filesystem UID
+	// reset above does not drop or raise the filesystem capabilities.
+	t.commitIDChange(oldCreds, creds)
+}
 
-	if oldE != newE {
+// commitIDChange installs creds, which replace oldCreds after a UID or GID
+// change.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) commitIDChange(oldCreds, creds *auth.Credentials) {
+	if oldCreds.EffectiveKUID != creds.EffectiveKUID ||
+		oldCreds.EffectiveKGID != creds.EffectiveKGID ||
+		oldCreds.FilesystemKUID != creds.FilesystemKUID ||
+		oldCreds.FilesystemKGID != creds.FilesystemKGID {
 		// "[dumpability] is reset to the current value contained in
 		// the file /proc/sys/fs/suid_dumpable (which by default has
 		// the value 0), in the following circumstances: The process's
-		// effective user or group ID is changed." - prctl(2)
+		// effective user or group ID is changed. The process's filesystem
+		// user or group ID is changed ..." - prctl(2)
 		//
 		// (suid_dumpable isn't implemented, so we just use the
 		// default.
 		t.MemoryManager().SetDumpability(mm.NotDumpable)
 
 		// Not documented, but compare Linux's kernel/cred.c:commit_creds().
-		t.parentDeathSignal = 0
+		t.SetParentDeathSignal(0)
 	}
 	t.creds.Store(creds)
+}
+
+// SetFSUID implements the semantics of setfsuid(2). It returns the previous
+// filesystem UID; like Linux, it reports failure only through that value.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) SetFSUID(uid auth.UID) auth.UID {
+	oldCreds := t.Credentials()
+	oldFSUID := oldCreds.FilesystemKUID.In(oldCreds.UserNamespace).OrOverflow()
+	kuid := oldCreds.UserNamespace.MapToKUID(uid)
+	if !kuid.Ok() || kuid == oldCreds.FilesystemKUID {
+		return oldFSUID
+	}
+	if kuid != oldCreds.RealKUID && kuid != oldCreds.EffectiveKUID && kuid != oldCreds.SavedKUID &&
+		!oldCreds.HasSelfCapability(linux.CAP_SETUID) {
+		return oldFSUID
+	}
+	creds := oldCreds.Fork() // The credentials object is immutable. See doc for creds.
+	creds.FilesystemKUID = kuid
+	// Match Linux's cap_task_fix_setuid(LSM_SETID_FS).
+	if !creds.NoSetUIDFixup {
+		root := creds.UserNamespace.MapToKUID(auth.RootUID)
+		if oldCreds.FilesystemKUID == root && kuid != root {
+			creds.EffectiveCaps &^= auth.FilesystemCapabilities
+		} else if oldCreds.FilesystemKUID != root && kuid == root {
+			creds.EffectiveCaps |= creds.PermittedCaps & auth.FilesystemCapabilities
+		}
+	}
+	t.commitIDChange(oldCreds, creds)
+	return oldFSUID
+}
+
+// SetFSGID implements the semantics of setfsgid(2). It returns the previous
+// filesystem GID; like Linux, it reports failure only through that value.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) SetFSGID(gid auth.GID) auth.GID {
+	oldCreds := t.Credentials()
+	oldFSGID := oldCreds.FilesystemKGID.In(oldCreds.UserNamespace).OrOverflow()
+	kgid := oldCreds.UserNamespace.MapToKGID(gid)
+	if !kgid.Ok() || kgid == oldCreds.FilesystemKGID {
+		return oldFSGID
+	}
+	if kgid != oldCreds.RealKGID && kgid != oldCreds.EffectiveKGID && kgid != oldCreds.SavedKGID &&
+		!oldCreds.HasSelfCapability(linux.CAP_SETGID) {
+		return oldFSGID
+	}
+	creds := oldCreds.Fork() // The credentials object is immutable. See doc for creds.
+	creds.FilesystemKGID = kgid
+	t.commitIDChange(oldCreds, creds)
+	return oldFSGID
 }
 
 // SetGID implements the semantics of setgid(2).
@@ -314,31 +386,26 @@ func (t *Task) SetRESGID(r, e, s auth.GID) error {
 			return err
 		}
 	}
+	// See the matching no-op check in SetRESUID.
+	if (!r.Ok() || newR == creds.RealKGID) &&
+		(!e.Ok() || (newE == creds.EffectiveKGID && newE == creds.FilesystemKGID)) &&
+		(!s.Ok() || newS == creds.SavedKGID) {
+		return nil
+	}
 	t.setKGIDsUnchecked(newR, newE, newS)
 	return nil
 }
 
+// setKGIDsUnchecked sets the real, effective and saved GIDs. Like Linux's
+// setgid family, it also sets the filesystem GID to the new effective GID.
+//
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) setKGIDsUnchecked(newR, newE, newS auth.KGID) {
-	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
-	oldE := creds.EffectiveKGID
+	oldCreds := t.Credentials()
+	creds := oldCreds.Fork() // The credentials object is immutable. See doc for creds.
 	creds.RealKGID, creds.EffectiveKGID, creds.SavedKGID = newR, newE, newS
-
-	if oldE != newE {
-		// "[dumpability] is reset to the current value contained in
-		// the file /proc/sys/fs/suid_dumpable (which by default has
-		// the value 0), in the following circumstances: The process's
-		// effective user or group ID is changed." - prctl(2)
-		//
-		// (suid_dumpable isn't implemented, so we just use the
-		// default.
-		t.MemoryManager().SetDumpability(mm.NotDumpable)
-
-		// Not documented, but compare Linux's
-		// kernel/cred.c:commit_creds().
-		t.parentDeathSignal = 0
-	}
-	t.creds.Store(creds)
+	creds.FilesystemKGID = newE
+	t.commitIDChange(oldCreds, creds)
 }
 
 // SetExtraGIDs attempts to change t's supplemental groups. All IDs are

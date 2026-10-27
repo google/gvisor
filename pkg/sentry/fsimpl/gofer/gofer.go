@@ -1132,6 +1132,8 @@ func (i *inode) destroy(ctx context.Context, d *dentry) {
 //
 // +stateify savable
 type dentry struct {
+	memmap.MappableNoHugepages
+
 	vfsd vfs.Dentry
 
 	// refs is the reference count. Each dentry holds a reference on its
@@ -2326,20 +2328,21 @@ func (d *dentry) syncRemoteFile(ctx context.Context, dataOnly bool) error {
 func (d *dentry) syncRemoteFileLocked(ctx context.Context, dataOnly bool) error {
 	// Prefer syncing write handles over read handles, since some remote
 	// filesystem implementations may not sync changes made through write
-	// handles otherwise.
-	wh := d.inode.writeHandle()
-	if dataOnly {
-		wh.syncData(ctx)
-	} else {
-		wh.sync(ctx)
+	// handles otherwise. Only one handle needs to be synced, but its sync
+	// error must be reported to the caller (e.g. fsync(2) and O_SYNC/
+	// O_DSYNC writes).
+	if d.inode.isWriteHandleOk() {
+		wh := d.inode.writeHandle()
+		if dataOnly {
+			return wh.syncData(ctx)
+		}
+		return wh.sync(ctx)
 	}
 	rh := d.inode.readHandle()
 	if dataOnly {
-		rh.syncData(ctx)
-	} else {
-		rh.sync(ctx)
+		return rh.syncData(ctx)
 	}
-	return nil
+	return rh.sync(ctx)
 }
 
 func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool, dataOnly bool) error {

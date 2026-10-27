@@ -40,3 +40,9 @@ func getName() string {
 func getMax() uint64 {
 	return o
 }
+
+var initializations int
+
+func init() {
+	initializations++
+}

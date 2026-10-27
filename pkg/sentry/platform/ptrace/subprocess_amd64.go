@@ -177,35 +177,6 @@ func enableCpuidFault() {
 	unix.RawSyscall6(unix.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0, 0, 0, 0)
 }
 
-// appendArchSeccompRules append architecture specific seccomp rules when creating BPF program.
-// Ref attachedThread() for more detail.
-func appendArchSeccompRules(rules []seccomp.RuleSet, defaultAction seccomp.Action) []seccomp.RuleSet {
-	rules = append(rules,
-		// Rules for trapping vsyscall access.
-		seccomp.RuleSet{
-			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-				unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
-				unix.SYS_TIME:         seccomp.MatchAll{},
-				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
-			}),
-			Action:   seccomp.Trap,
-			Vsyscall: true,
-		})
-	if defaultAction != seccomp.Allow {
-		rules = append(rules,
-			seccomp.RuleSet{
-				Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-					unix.SYS_ARCH_PRCTL: seccomp.PerArg{
-						seccomp.EqualTo(linux.ARCH_SET_CPUID),
-						seccomp.EqualTo(0),
-					},
-				}),
-				Action: seccomp.Allow,
-			})
-	}
-	return rules
-}
-
 // probeSeccomp returns true iff seccomp is run after ptrace notifications,
 // which is generally the case for kernel version >= 4.8. This check is dynamic
 // because kernels have be backported behavior.
@@ -222,7 +193,7 @@ func probeSeccomp() bool {
 	defer t.destroy()
 
 	// Set registers to the yield system call. This call is not allowed
-	// by the filters specified in the attachThread function.
+	// by the filters specified in stubfilter.Program.
 	regs := createSyscallRegs(&t.initRegs, unix.SYS_SCHED_YIELD)
 	if err := t.setRegs(&regs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs failed: %v", err))

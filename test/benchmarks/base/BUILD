@@ -98,3 +98,14 @@ benchmark_test(
         "@com_github_docker_docker//api/types/container:go_default_library",
     ],
 )
+
+benchmark_test(
+    name = "bun_spawn_test",
+    srcs = ["bun_spawn_test.go"],
+    use_for_pgo = False,
+    deps = [
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/harness",
+        "//test/metricsviz",
+    ],
+)

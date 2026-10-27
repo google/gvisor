@@ -16,34 +16,20 @@ package container
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/gofrs/flock"
+
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const stateFileExtension = "state"
-
-// ErrStateFileLocked indicates that a state file is locked and TryLock is
-// enabled. Callers can identify wrapped lock errors with errors.Is.
-var ErrStateFileLocked = errors.New("state file locked")
-
-// TryLock represents whether we should block waiting for the lock to be acquired or not.
-type TryLock bool
-
-const (
-	// BlockAcquire means we will block until the lock can be acquired.
-	BlockAcquire TryLock = false
-
-	// TryAcquire means we will fail fast if the lock cannot be acquired.
-	TryAcquire TryLock = true
-)
 
 // LoadOpts provides options for Load()ing a container.
 type LoadOpts struct {
@@ -53,10 +39,10 @@ type LoadOpts struct {
 	// SkipCheck tells Load() to skip checking if container is running.
 	SkipCheck bool
 
-	// TryLock tells Load() to fail if the container state file cannot be locked,
-	// as opposed to blocking until it is available.
-	// When the state file cannot be locked, it will error with ErrStateFileLocked.
-	TryLock TryLock
+	// ReadOnly tells Load() to read the container state file without locking
+	// it, which never blocks. Container objects returned when `ReadOnly` is
+	// `true` will panic if the caller attempts to save them.
+	ReadOnly bool
 
 	// RootContainer when true matches the search only with the root container of
 	// a sandbox. This is used when looking for a sandbox given that root
@@ -92,13 +78,16 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 	}
 	defer state.close()
 
-	c := &Container{}
+	c := &Container{allowWrite: !opts.ReadOnly}
 	if err := state.load(c, opts); err != nil {
 		if os.IsNotExist(err) {
 			// Preserve error so that callers can distinguish 'not found' errors.
 			return nil, err
 		}
 		return nil, fmt.Errorf("reading container metadata file %q: %w", state.statePath(), err)
+	}
+	if !opts.ReadOnly {
+		c.Saver.loaded, state.loaded = state.loaded, nil
 	}
 	c.Sandbox.SetRootDir(rootDir)
 
@@ -289,26 +278,21 @@ type StateFile struct {
 
 	once  sync.Once    `nojson:"true"`
 	flock *flock.Flock `nojson:"true"`
+
+	// loaded is the state file as last loaded or saved.
+	// Stays open so that its inode number cannot be reused.
+	// This makes it possible to use inode number matching as evidence that
+	// no concurrent write occurred.
+	loaded *os.File `nojson:"true"`
 }
 
 // lock globally locks all locking operations for the container.
-func (s *StateFile) lock(tryLock TryLock) error {
+func (s *StateFile) lock() error {
 	s.once.Do(func() {
 		s.flock = flock.New(s.lockPath())
 	})
-
-	if tryLock {
-		gotLock, err := s.flock.TryLock()
-		if err != nil {
-			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
-		}
-		if !gotLock {
-			return ErrStateFileLocked
-		}
-	} else {
-		if err := s.flock.Lock(); err != nil {
-			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
-		}
+	if err := s.flock.Lock(); err != nil {
+		return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
 	}
 	return nil
 }
@@ -317,7 +301,7 @@ func (s *StateFile) lock(tryLock TryLock) error {
 // is done to ensure that more than one creation didn't race to create
 // containers with the same ID.
 func (s *StateFile) LockForNew() error {
-	if err := s.lock(BlockAcquire); err != nil {
+	if err := s.lock(); err != nil {
 		return err
 	}
 
@@ -367,9 +351,22 @@ func (s *StateFile) SaveLocked(v any) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.statePath(), meta, 0640); err != nil {
+	tmpPath := s.tmpStatePath()
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	if err != nil {
 		return fmt.Errorf("writing json file: %v", err)
 	}
+	if _, err := f.Write(meta); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("writing json file: %v", err)
+	}
+	if err := os.Rename(tmpPath, s.statePath()); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("renaming json file: %v", err)
+	}
+	s.setLoaded(f)
 	return nil
 }
 
@@ -380,7 +377,10 @@ func (s *StateFile) Stat() (os.FileInfo, error) {
 }
 
 func (s *StateFile) load(v any, opts LoadOpts) error {
-	if err := s.lock(opts.TryLock); err != nil {
+	if opts.ReadOnly {
+		return s.loadLocked(v)
+	}
+	if err := s.lock(); err != nil {
 		return err
 	}
 	defer s.UnlockOrDie()
@@ -389,20 +389,61 @@ func (s *StateFile) load(v any, opts LoadOpts) error {
 
 // loadLocked reads and decodes the state file into v.
 //
-// Preconditions: lock(*) must have been called.
+// Preconditions: lock() must have been called, unless v is not saved (see
+// LoadOpts.ReadOnly).
 func (s *StateFile) loadLocked(v any) error {
 	path := s.statePath()
-	metaBytes, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		// Caller of this function relies on error code, we cannot return new error,
 		// but we need to provide a message with file name.
 		log.Warningf("Error loading state file %q: %v", path, err)
 		return err
 	}
-	return json.Unmarshal(metaBytes, &v)
+	metaBytes, err := io.ReadAll(f)
+	if err != nil {
+		_ = f.Close()
+		log.Warningf("Error loading state file %q: %v", path, err)
+		return err
+	}
+	if err := json.Unmarshal(metaBytes, &v); err != nil {
+		_ = f.Close()
+		return err
+	}
+	s.setLoaded(f)
+	return nil
+}
+
+// unchangedLocked returns true if the state file was not saved since `s` last
+// loaded or saved it. Replaces the state file with a new file, which
+// cannot have the same inode number as we stored in `s.loaded`.
+//
+// Preconditions: lock() must have been called.
+func (s *StateFile) unchangedLocked() bool {
+	if s.loaded == nil {
+		return false
+	}
+	loaded, err := s.loaded.Stat()
+	if err != nil {
+		return false
+	}
+	current, err := os.Stat(s.statePath())
+	if err != nil {
+		return false
+	}
+	return os.SameFile(loaded, current)
+}
+
+// setLoaded replaces `s.loaded` with `f`, which may be nil.
+func (s *StateFile) setLoaded(f *os.File) {
+	if s.loaded != nil {
+		_ = s.loaded.Close()
+	}
+	s.loaded = f
 }
 
 func (s *StateFile) close() error {
+	s.setLoaded(nil)
 	if s.flock == nil {
 		return nil
 	}
@@ -423,6 +464,12 @@ func (s *StateFile) statePath() string {
 	return buildPath(s.RootDir, s.ID, stateFileExtension)
 }
 
+// tmpStatePath is the full path to the temporary file used to write the state
+// file. It must not match the state file glob used by listMatch.
+func (s *StateFile) tmpStatePath() string {
+	return buildPath(s.RootDir, s.ID, stateFileExtension+".tmp")
+}
+
 // lockPath is the full path to the lock file.
 func (s *StateFile) lockPath() string {
 	return buildPath(s.RootDir, s.ID, "lock")
@@ -433,6 +480,9 @@ func (s *StateFile) lockPath() string {
 // properly closed after destroy returns.
 func (s *StateFile) Destroy() error {
 	if err := os.Remove(s.statePath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Remove(s.tmpStatePath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := os.Remove(s.lockPath()); err != nil && !os.IsNotExist(err) {

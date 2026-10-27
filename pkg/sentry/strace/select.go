@@ -17,10 +17,9 @@ package strace
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func fdsFromSet(t *kernel.Task, set []byte) []int {

@@ -22,7 +22,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -186,6 +185,29 @@ func TestTCPMigration(t *testing.T) {
 // from pre-checkpoint readiness probes) that are terminated upon restore
 // without live migration.
 func TestRestoreListenWithPreexistingConnection(t *testing.T) {
+	acceptProbe := func(t *testing.T, c *testcontext.Context) tcpip.Endpoint {
+		t.Helper()
+		waitEntry, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+		c.WQ.EventRegister(&waitEntry)
+		defer c.WQ.EventUnregister(&waitEntry)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		for {
+			ep, _, err := c.EP.Accept(nil)
+			if err == nil {
+				return ep
+			}
+			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
+				t.Fatalf("Accept failed: %v", err)
+			}
+			select {
+			case <-ch:
+			case <-ctx.Done():
+				t.Fatalf("waiting for accept: %v", ctx.Err())
+			}
+		}
+	}
+
 	testCases := []struct {
 		name        string
 		setupProbes func(t *testing.T, c *testcontext.Context) []tcpip.Endpoint
@@ -193,52 +215,18 @@ func TestRestoreListenWithPreexistingConnection(t *testing.T) {
 		{
 			name: "EstablishedProbeConnection",
 			setupProbes: func(t *testing.T, c *testcontext.Context) []tcpip.Endpoint {
-				waitEntry, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-				c.WQ.EventRegister(&waitEntry)
-				defer c.WQ.EventUnregister(&waitEntry)
-
 				c.PassiveConnect(100, -1, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS})
 
-				acceptedEP, _, tcpErr := c.EP.Accept(nil)
-				if cmp.Equal(&tcpip.ErrWouldBlock{}, tcpErr) {
-					select {
-					case <-ch:
-						acceptedEP, _, tcpErr = c.EP.Accept(nil)
-						if tcpErr != nil {
-							t.Fatalf("Accept failed: %v", tcpErr)
-						}
-					case <-time.After(5 * time.Second):
-						t.Fatalf("Timed out waiting for accept")
-					}
-				} else if tcpErr != nil {
-					t.Fatalf("Accept failed: %v", tcpErr)
-				}
+				acceptedEP := acceptProbe(t, c)
 				return []tcpip.Endpoint{acceptedEP}
 			},
 		},
 		{
 			name: "CloseWaitProbeConnection",
 			setupProbes: func(t *testing.T, c *testcontext.Context) []tcpip.Endpoint {
-				waitEntry, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-				c.WQ.EventRegister(&waitEntry)
-				defer c.WQ.EventUnregister(&waitEntry)
-
 				c.PassiveConnect(100, -1, header.TCPSynOptions{MSS: e2e.DefaultIPv4MSS})
 
-				acceptedEP, _, tcpErr := c.EP.Accept(nil)
-				if cmp.Equal(&tcpip.ErrWouldBlock{}, tcpErr) {
-					select {
-					case <-ch:
-						acceptedEP, _, tcpErr = c.EP.Accept(nil)
-						if tcpErr != nil {
-							t.Fatalf("Accept failed: %v", tcpErr)
-						}
-					case <-time.After(5 * time.Second):
-						t.Fatalf("Timed out waiting for accept")
-					}
-				} else if tcpErr != nil {
-					t.Fatalf("Accept failed: %v", tcpErr)
-				}
+				acceptedEP := acceptProbe(t, c)
 
 				// Peer sends FIN to transition server-side accepted endpoint to StateCloseWait.
 				c.SendPacket(nil, &testcontext.Headers{
@@ -264,10 +252,6 @@ func TestRestoreListenWithPreexistingConnection(t *testing.T) {
 		{
 			name: "MultipleProbeConnections",
 			setupProbes: func(t *testing.T, c *testcontext.Context) []tcpip.Endpoint {
-				waitEntry, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
-				c.WQ.EventRegister(&waitEntry)
-				defer c.WQ.EventUnregister(&waitEntry)
-
 				var acceptedEPs []tcpip.Endpoint
 				for i := uint16(0); i < 3; i++ {
 					srcPort := testcontext.TestPort + i
@@ -307,21 +291,7 @@ func TestRestoreListenWithPreexistingConnection(t *testing.T) {
 						RcvWnd:  30000,
 					})
 
-					acceptedEP, _, tcpErr := c.EP.Accept(nil)
-					if cmp.Equal(&tcpip.ErrWouldBlock{}, tcpErr) {
-						select {
-						case <-ch:
-							acceptedEP, _, tcpErr = c.EP.Accept(nil)
-							if tcpErr != nil {
-								t.Fatalf("Accept probe %d failed: %v", i, tcpErr)
-							}
-						case <-time.After(5 * time.Second):
-							t.Fatalf("Timed out waiting for accept on probe %d", i)
-						}
-					} else if tcpErr != nil {
-						t.Fatalf("Accept probe %d failed: %v", i, tcpErr)
-					}
-					acceptedEPs = append(acceptedEPs, acceptedEP)
+					acceptedEPs = append(acceptedEPs, acceptProbe(t, c))
 				}
 				return acceptedEPs
 			},

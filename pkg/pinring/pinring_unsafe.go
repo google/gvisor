@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 

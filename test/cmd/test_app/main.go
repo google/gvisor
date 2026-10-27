@@ -66,6 +66,7 @@ func main() {
 	subcommands.Register(new(setXattr), "")
 	subcommands.Register(new(getXattr), "")
 	subcommands.Register(new(segfault), "")
+	subcommands.Register(new(vdsoClock), "")
 
 	flag.Parse()
 

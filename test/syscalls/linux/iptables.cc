@@ -108,16 +108,17 @@ TEST(IPTablesBasic, GetEntriesShortBuffer) {
 }
 
 TEST(IPTablesBasic, OriginalDstErrors) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  const FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
 
-  int sock;
-  ASSERT_THAT(sock = socket(AF_INET, SOCK_STREAM, 0), SyscallSucceeds());
-
-  // Sockets not affected by NAT should fail to find an original destination.
+  // An unconnected socket has no tracked connection to look up.
   struct sockaddr_in addr = {};
   socklen_t addr_len = sizeof(addr);
-  EXPECT_THAT(getsockopt(sock, SOL_IP, SO_ORIGINAL_DST, &addr, &addr_len),
-              SyscallFailsWithErrno(ENOTCONN));
+  int ret = getsockopt(sock.get(), SOL_IP, SO_ORIGINAL_DST, &addr, &addr_len);
+  // Linux fails with ENOPROTOOPT if nf_conntrack is not loaded.
+  SKIP_IF(ret == -1 && errno == ENOPROTOOPT &&
+          GvisorPlatform() == Platform::kNative);
+  EXPECT_THAT(ret, SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(IPTablesBasic, GetRevision) {
@@ -205,6 +206,10 @@ TEST_F(IPTablesTest, GetInfoNonexistentTable) {
   socklen_t info_size = sizeof(info);
   EXPECT_THAT(getsockopt(s_, SOL_IP, IPT_SO_GET_INFO, &info, &info_size),
               SyscallFailsWithErrno(ENOENT));
+
+  info_size = sizeof(info) + 1;
+  EXPECT_THAT(getsockopt(s_, SOL_IP, IPT_SO_GET_INFO, &info, &info_size),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST_F(IPTablesTest, GetEntriesNonexistentTable) {
@@ -216,6 +221,11 @@ TEST_F(IPTablesTest, GetEntriesNonexistentTable) {
   EXPECT_THAT(
       getsockopt(s_, SOL_IP, IPT_SO_GET_ENTRIES, &entries, &entries_size),
       SyscallFailsWithErrno(ENOENT));
+
+  entries.size = 1;
+  EXPECT_THAT(
+      getsockopt(s_, SOL_IP, IPT_SO_GET_ENTRIES, &entries, &entries_size),
+      SyscallFailsWithErrno(EINVAL));
 }
 
 // This tests the initial state of a machine with empty iptables. We don't
@@ -551,6 +561,16 @@ TEST_P(GetSockOptRequiresCapNetAdminTest, Validate) {
         // getsockopt is async signal safe, so it's okay to call it here.
         TEST_CHECK_ERRNO(getsockopt(sock_fd, SOL_IP, optname, optval, optlen),
                          EPERM);
+        if (optname == IPT_SO_GET_INFO) {
+          socklen_t invalid_len = 0;
+          TEST_CHECK_ERRNO(
+              getsockopt(sock_fd, SOL_IP, optname, optval, &invalid_len),
+              EPERM);
+          invalid_len = *optlen + 1;
+          TEST_CHECK_ERRNO(
+              getsockopt(sock_fd, SOL_IP, optname, optval, &invalid_len),
+              EPERM);
+        }
       }),
       IsPosixErrorOkAndHolds(0));
 }

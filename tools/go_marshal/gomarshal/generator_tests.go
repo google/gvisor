@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"go/ast"
 	"io"
-	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var standardImports = []string{
@@ -77,7 +79,7 @@ func (g *testGenerator) typeName() string {
 }
 
 func (g *testGenerator) testFuncName(base string) string {
-	return fmt.Sprintf("%s%s", base, strings.Title(g.t.Name.Name))
+	return base + cases.Title(language.Und, cases.NoLower).String(g.t.Name.Name)
 }
 
 func (g *testGenerator) inTestFunction(name string, body func()) {

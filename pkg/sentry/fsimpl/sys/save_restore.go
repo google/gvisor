@@ -26,7 +26,7 @@ import (
 var _ vfs.FilesystemImplSaveRestoreExtension = (*filesystem)(nil)
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
-func (fs *filesystem) PrepareSave(ctx context.Context) error {
+func (fs *filesystem) PrepareSave(ctx context.Context, _ vfs.PrepareSaveOptions) error {
 	return nil
 }
 
@@ -68,6 +68,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	}
 	busSub := make(map[string]kernfs.Inode)
 	kernelSub := kernelDir(ctx, fs, creds)
+	fs.addDMIDirs(ctx, creds, classSub, devicesSub)
 
 	sysDevicesPath := path.Join(fs.testSysfsPathPrefix, sysDevicesMainPath)
 	iommuGroupsPath := path.Join(fs.testSysfsPathPrefix, iommuGroupSysPath)

@@ -17,6 +17,7 @@ package dockerutil
 
 import (
 	"context"
+	_ "embed" // Needed for go:embed.
 	"flag"
 	"fmt"
 	"os"
@@ -27,9 +28,6 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
-
-	// Needed for go:embed
-	_ "embed"
 )
 
 // Flags.

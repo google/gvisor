@@ -11,70 +11,70 @@
   sha256: f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d
   license: Apache-2.0
 - dependency: actionlint_darwin_amd64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_amd64.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 28e5de5a05fc558474f638323d736d822fff183d2d492f0aecb2b73cc44584f5
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_amd64.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644
   license: MIT
 - dependency: actionlint_darwin_arm64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_arm64.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_arm64.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f
   license: MIT
 - dependency: actionlint_freebsd_386
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_freebsd_386.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: a6ee742126aa632b32009bdd6f820e0274c5b24536dc302a9574118378ee92f4
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_freebsd_386.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 7170cc3db006f83154583dc385c84bea3f6ee767a167bb9ca41de6593ebbb186
   license: MIT
 - dependency: actionlint_freebsd_amd64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_freebsd_amd64.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: f6eec0e5efd17183a954f0d88280885b7a58f39808050cdfcd7f068fc1734bc8
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_freebsd_amd64.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 3de1b027d0b749e81d6d972cbf5d14dc708a275248da1ba4eed4a9af707d1339
   license: MIT
 - dependency: actionlint_linux_386
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_386.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 01d4c173f411aeecf670d5219c008e07bf11539cf1181fdeee0cdb0eb8244aac
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_386.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 72a44b32c2d032700e6d0c23ca2f540b67519ec68db098ddfcfa96059e61f723
   license: MIT
 - dependency: actionlint_linux_amd64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
   license: MIT
 - dependency: actionlint_linux_arm64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_arm64.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_arm64.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6
   license: MIT
 - dependency: actionlint_linux_armv6
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_armv6.tar.gz
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 82e98d7252341b83fa557764824f225fa50431801b8e3d8e99f70dc1efc317b2
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_armv6.tar.gz
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: ae4a0a5227578e66f5d00ee02788d5c64fdae1fa6484ab88ceaeee9359c28fa4
   license: MIT
 - dependency: actionlint_windows_386
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_windows_386.zip
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 66de2b65bcee17de1866287a513cadf47d812229e976e99024e9757645258adb
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_386.zip
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: cdc8643b2c8dc890c76ad16095da97e75f86572805cc3573cc13f31ea0f19127
   license: MIT
 - dependency: actionlint_windows_amd64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_windows_amd64.zip
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 7f12f1801bca3d480d67aaf7774f4c2a6359a3ca8eebe382c95c10c9704aa731
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_amd64.zip
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: 6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9
   license: MIT
 - dependency: actionlint_windows_arm64
-  version: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_windows_arm64.zip
-  retrieved: "2026-09-29"
-  commit: 03d0035246f3e81f36aed592ffb4bebf33a03106
-  sha256: 76e9514cfac18e5677aa04f3a89873c981f16a2f2353bb97372a86cd09b1f5a8
+  version: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_arm64.zip
+  retrieved: "2026-10-16"
+  commit: 914e7df21a07ef503a81201c76d2b11c789d3fca
+  sha256: cadcf7ea4efe3a68728893813643cebe1185e5b1d4be5b96245f65c9a4d5ea41
   license: MIT
 - dependency: bazel_lib
   version: https://github.com/bazel-contrib/bazel-lib/releases/download/v3.2.2/bazel-lib-v3.2.2.tar.gz
@@ -89,10 +89,10 @@
   sha256: 37cdfbc6faefea94f7b37760a305c98c08981116c2bc9e821e3b423221fad8c8
   license: Apache-2.0
 - dependency: buildkite_pipeline_schema
-  version: https://raw.githubusercontent.com/buildkite/pipeline-schema/f7a0894074d194bcf19eec5411fec0528f7f4180/schema.json
-  retrieved: "2026-08-27"
-  commit: f7a0894074d194bcf19eec5411fec0528f7f4180
-  sha256: 3369c58038b4d55c08928affafb653716eb1e7b3cabb4a391aef979dd921f4e1
+  version: https://raw.githubusercontent.com/buildkite/pipeline-schema/3413455899dadd5f721f481ca247bc55e78bf5b9/schema.json
+  retrieved: "2026-10-26"
+  commit: 3413455899dadd5f721f481ca247bc55e78bf5b9
+  sha256: c0340a344ebb83f72e4969e09818d945055abe7ac0bb0c49226a60e7d33f84f6
   license: MIT
 - dependency: cel-spec
   version: https://github.com/google/cel-spec/archive/refs/tags/v0.25.1.tar.gz
@@ -142,11 +142,23 @@
   commit: e992f090fd6a4a0d576b960a3c0590f73a71e3e7
   sha256: 646de8d32751e7e90d738382be1f163287239f5282855f9229b10a0dca87ebc5
   license: Apache-2.0
+- dependency: cloud.google.com/go/firestore
+  version: v1.22.0
+  retrieved: "2026-10-20"
+  commit: 9d47d1ca53dc1a3183352f67ebeb174b1d194846
+  sha256: 899690c561e928f15581c6372cdefb76afe372d0c98c9418b07fb647bb441829
+  license: Apache-2.0
 - dependency: cloud.google.com/go/iam
   version: v1.7.0
   retrieved: "2026-08-27"
   commit: 54d941a9a3f5177b37915f89084e4ba7ed3dae6a
   sha256: a3d9f0ebc3baf0cda13db7be112508b19c3b8dee58c2176997a8aadd50ecc87a
+  license: Apache-2.0
+- dependency: cloud.google.com/go/longrunning
+  version: v0.9.0
+  retrieved: "2026-10-20"
+  commit: 54d941a9a3f5177b37915f89084e4ba7ed3dae6a
+  sha256: 989d72eb620d4b04514df9d695a234edee783e00bfb0bdcbdb7f772ec50a43c8
   license: Apache-2.0
 - dependency: cloud.google.com/go/monitoring
   version: v1.24.3
@@ -630,10 +642,12 @@
   license: Apache-2.0
 - dependency: github.com/moby/sys/symlink
   version: v0.3.0
-  retrieved: "2026-08-27"
+  retrieved: "2026-10-21"
   commit: cafbe42351600ca9b363e220722f66d96f6e71f4
   sha256: c0036c97c9b7b7a246468165a968fedd974691161b083f1e7e99bafc58e57451
-  license: Apache-2.0
+  license:
+    - Apache-2.0
+    - BSD-3-Clause
 - dependency: github.com/moby/sys/user
   version: v0.4.0
   retrieved: "2026-08-27"
@@ -981,10 +995,10 @@
   sha256: 14983d36c56a814ed91b6d652f2b8f895baba1b84eb43b28a0b132c8637cd274
   license: BSD-3-Clause
 - dependency: google_benchmark
-  version: https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz
-  retrieved: "2026-09-10"
-  commit: 192ef10025eb2c4cdd392bc502f0c852196baa48
-  sha256: 9631341c82bac4a288bef951f8b26b41f69021794184ece969f8473977eaa340
+  version: https://github.com/google/benchmark/archive/refs/tags/v1.10.0.tar.gz
+  retrieved: "2026-10-17"
+  commit: a6b4a9f00b36c19af9997d68a1cf6e0b5b3d032c
+  sha256: acc5c7c0fbed855c4aaa2d7c3c36fb82b0c15c28f4e151e3f679c2fc0aa404af
   license: Apache-2.0
 - dependency: google_root_pem
   version: https://pki.goog/roots.pem
@@ -1012,10 +1026,12 @@
   license: BSD-3-Clause
 - dependency: gopkg.in/yaml.v2
   version: v2.4.0
-  retrieved: "2026-08-27"
+  retrieved: "2026-10-21"
   commit: ""
   sha256: ede49e27c4cca6cdd2ec719aed8ea4d363710cceb3d411e7a786fbdec0d391fd
-  license: Apache-2.0
+  license:
+    - Apache-2.0
+    - MIT
 - dependency: gopkg.in/yaml.v3
   version: v3.0.1
   retrieved: "2026-08-27"
@@ -1035,10 +1051,12 @@
     - MPL-2.0
 - dependency: honnef.co/go/tools
   version: v0.5.1
-  retrieved: "2026-08-27"
+  retrieved: "2026-10-21"
   commit: 56172d41b117cc2c2f99f65fe0a790c8d7d7ea66
   sha256: d728ff392fc5b6f676a30c36e9d0a5b85f6f2e06b4ebbb121c27d965cbdffa11
-  license: MIT
+  license:
+    - BSD-3-Clause
+    - MIT
 - dependency: k8s.io/api
   version: v0.32.3
   retrieved: "2026-08-27"
@@ -1083,6 +1101,18 @@
   license:
     - Apache-2.0
     - MIT
+- dependency: libbpf
+  version: https://github.com/libbpf/libbpf/archive/refs/tags/v1.7.0.tar.gz
+  retrieved: "2026-09-26"
+  commit: f5dcbae736e5d7f83a35718e01be1a8e3010fa39
+  sha256: 7ab5feffbf78557f626f2e3e3204788528394494715a30fc2070fcddc2051b7b
+  license: BSD-2-Clause
+- dependency: llvm
+  version: https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.24/hermetic-llvm-v0.8.24.tar.gz
+  retrieved: "2026-10-02"
+  commit: 39e71f9391895169b05ccd62cbb1956ae5322ff3
+  sha256: 64d421959bba30cb3bcdd1e57a01b8ef2f12b93db3d1ab4a34fe5f4d2ca78aa4
+  license: MIT
 - dependency: llvm-raw
   version: https://github.com/llvm/llvm-project/archive/cb2f0d0a5f14c183e7182aba0f0e54a518de9e3f.tar.gz
   retrieved: "2026-08-27"
@@ -1128,16 +1158,22 @@
   sha256: c73711af02b97cd5e2667e735d9c06890c57165517110ca4e646c95a7083158d
   license: GPL-2.0-only
 - dependency: rules_cc
-  version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.22/rules_cc-0.2.22.tar.gz
-  retrieved: "2026-10-06"
-  commit: 21e14308c2afc7691f43295acc9852d9a6844f04
-  sha256: 81c10a95a5c22d838276ee90d712635d6042419fdfca5ef88328226b6321e53b
+  version: https://github.com/bazelbuild/rules_cc/releases/download/0.2.25/rules_cc-0.2.25.tar.gz
+  retrieved: "2026-10-02"
+  commit: 77064f0caa37d0fb2232f54feb5fba275aeebbd3
+  sha256: bd7124a844d0403b4b353bcea34d6c8b2ba88dc26881c26c9ee668da89b71846
   license: Apache-2.0
 - dependency: rules_go
   version: https://github.com/bazel-contrib/rules_go/releases/download/v0.63.0/rules_go-v0.63.0.zip
   retrieved: "2026-09-29"
   commit: 9792f1c079a7602347e0fd966542b6d6b35a6c64
   sha256: c3e253237109ab2e2a8d3cb075688b98a6e6fce43d849849648e8e3a84f20d6f
+  license: Apache-2.0
+- dependency: rules_img
+  version: https://github.com/bazel-contrib/rules_img/releases/download/v0.3.23/rules_img-v0.3.23.tar.gz
+  retrieved: "2026-10-21"
+  commit: 5a6bfd045c78fec2ad600e22ec697e65a7c49c27
+  sha256: 22092bd8f72d915995ab75c803a12f8506b8cf56bc59bc540f7df7812cc49a1d
   license: Apache-2.0
 - dependency: rules_license
   version: https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz
@@ -1199,8 +1235,8 @@
   sha256: 58dddbe703a26df30f79a6335ab13f4a4a0c128dc2f9371ec7a4722e12f258cc
   license: Apache-2.0
 - dependency: zstd
-  version: https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz
-  retrieved: "2026-08-27"
-  commit: 63779c798237346c2b245c546c40b72a5a5913fe
-  sha256: 9c4396cc829cfae319a6e2615202e82aad41372073482fce286fac78646d3ee4
+  version: https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+  retrieved: "2026-10-02"
+  commit: f8745da6ff1ad1e7bab384bd1f9d742439278e99
+  sha256: eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
   license: BSD-3-Clause

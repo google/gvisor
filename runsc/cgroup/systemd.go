@@ -30,7 +30,6 @@ import (
 	dbus "github.com/godbus/dbus/v5"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -183,9 +182,11 @@ func (c *cgroupSystemd) Install(res *specs.LinuxResources) error {
 	// For compatibility with runc.
 	c.addProp("DefaultDependencies", false)
 
-	if err := c.updateControllersProps(res); err != nil {
+	props, err := c.resourceProps(res)
+	if err != nil {
 		return err
 	}
+	c.properties = append(c.properties, props...)
 	c.initialResources = res
 	return nil
 }
@@ -193,7 +194,8 @@ func (c *cgroupSystemd) Install(res *specs.LinuxResources) error {
 // Update updates the cgroup resources of an existing systemd unit.
 func (c *cgroupSystemd) Update(res *specs.LinuxResources) error {
 	log.Debugf("Updating systemd cgroup resource controller under %v", c.Parent)
-	if err := c.updateControllersProps(res); err != nil {
+	props, err := c.resourceProps(res)
+	if err != nil {
 		return err
 	}
 
@@ -204,7 +206,7 @@ func (c *cgroupSystemd) Update(res *specs.LinuxResources) error {
 	}
 	c.dbusConn = conn
 	// Our systemd units are transient, hence runtime=true.
-	if err := c.dbusConn.SetUnitPropertiesContext(ctx, c.unitName(), true /* runtime */, c.properties...); err != nil {
+	if err := c.dbusConn.SetUnitPropertiesContext(ctx, c.unitName(), true /* runtime */, props...); err != nil {
 		return fmt.Errorf("error setting systemd unit properties: %v", err)
 	}
 	return (&io2{}).set(res, c.MakePath(""))
@@ -385,7 +387,9 @@ func newProp(name string, units any) systemdDbus.Property {
 	}
 }
 
-func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error {
+// resourceProps returns the unit properties that apply `res`.
+func (c *cgroupSystemd) resourceProps(res *specs.LinuxResources) ([]systemdDbus.Property, error) {
+	var resProps []systemdDbus.Property
 	for controllerName, ctrlr := range controllers2 {
 		// First check if our controller is found in the system.
 		found := false
@@ -398,20 +402,20 @@ func (c *cgroupSystemd) updateControllersProps(res *specs.LinuxResources) error 
 		if found {
 			props, err := ctrlr.generateProperties(res)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			c.properties = append(c.properties, props...)
+			resProps = append(resProps, props...)
 			continue
 		}
 		if ctrlr.optional() {
 			if err := ctrlr.skip(res); err != nil {
-				return err
+				return nil, err
 			}
 		} else {
-			return fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.Path)
+			return nil, fmt.Errorf("mandatory cgroup controller %q is missing for %q", controllerName, c.Path)
 		}
 	}
-	return nil
+	return resProps, nil
 }
 
 // CreateMockSystemdCgroup returns a mock Cgroup configured for systemd. This

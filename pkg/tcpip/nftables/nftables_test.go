@@ -341,10 +341,8 @@ func makeIPv6TCPPacket(reserved int, ipv6Fields *header.IPv6Fields, tcpFields *h
 
 	// Calculates the TCP checksum using the pseudo-header and sets it in the TCP header.
 	tcpHdr.SetChecksum(^tcpHdr.CalculateChecksum(header.PseudoHeaderChecksum(
-		// Next header is supposed to be in pseudo-header calculation for IPv6
-		// transport protocol checksum, not the transport protocol number according
-		// to RFC 2460 (https://www.rfc-editor.org/rfc/rfc2460.html#section-8.1).
-		header.IPv6(pkt.NetworkHeader().Slice()).TransportProtocol(),
+		// No extension headers separate the IPv6 and TCP headers here.
+		tcpip.TransportProtocolNumber(header.IPv6(pkt.NetworkHeader().Slice()).NextHeader()),
 		ipv6Fields.SrcAddr,
 		ipv6Fields.DstAddr,
 		uint16(ipv6Fields.PayloadLength),
@@ -2606,36 +2604,38 @@ func TestEvaluateRoute(t *testing.T) {
 	}
 }
 
-func TestFIBPresence(t *testing.T) {
+func TestFIBAttributes(t *testing.T) {
+	const flags = linux.NFTA_FIB_F_SADDR | linux.NFTA_FIB_F_IIF
 	for _, test := range []struct {
 		name    string
 		result  int
-		present bool
+		dreg    uint32
+		flags   uint32
 		wantErr *syserr.Error
 	}{
-		{name: "oif", result: linux.NFT_FIB_RESULT_OIF},
-		{name: "oifname", result: linux.NFT_FIB_RESULT_OIFNAME},
-		{name: "addrtype", result: linux.NFT_FIB_RESULT_ADDRTYPE},
-		{name: "oif_present", result: linux.NFT_FIB_RESULT_OIF, present: true},
-		{name: "oifname_present", result: linux.NFT_FIB_RESULT_OIFNAME, present: true, wantErr: syserr.ErrInvalidArgument},
-		{name: "addrtype_present", result: linux.NFT_FIB_RESULT_ADDRTYPE, present: true, wantErr: syserr.ErrInvalidArgument},
+		{name: "oif", result: linux.NFT_FIB_RESULT_OIF, dreg: linux.NFT_REG_1, flags: flags},
+		{name: "oifname", result: linux.NFT_FIB_RESULT_OIFNAME, dreg: linux.NFT_REG_1, flags: flags},
+		{name: "addrtype", result: linux.NFT_FIB_RESULT_ADDRTYPE, dreg: linux.NFT_REG_1, flags: flags},
+		{name: "oif_present", result: linux.NFT_FIB_RESULT_OIF, dreg: linux.NFT_REG_1, flags: flags | linux.NFTA_FIB_F_PRESENT},
+		{name: "oifname_present", result: linux.NFT_FIB_RESULT_OIFNAME, dreg: linux.NFT_REG_1, flags: flags | linux.NFTA_FIB_F_PRESENT, wantErr: syserr.ErrInvalidArgument},
+		{name: "addrtype_present", result: linux.NFT_FIB_RESULT_ADDRTYPE, dreg: linux.NFT_REG_1, flags: flags | linux.NFTA_FIB_F_PRESENT, wantErr: syserr.ErrInvalidArgument},
+		{name: "last_register", result: linux.NFT_FIB_RESULT_OIF, dreg: linux.NFT_REG32_15, flags: flags},
+		{name: "register_above_max", result: linux.NFT_FIB_RESULT_OIF, dreg: linux.NFT_REG32_15 + 1, flags: flags, wantErr: syserr.ErrRange},
+		{name: "register_truncation", result: linux.NFT_FIB_RESULT_OIF, dreg: 257, flags: flags, wantErr: syserr.ErrRange},
+		{name: "unknown_flags", result: linux.NFT_FIB_RESULT_OIF, dreg: linux.NFT_REG_1, flags: flags | 1<<31, wantErr: syserr.ErrInvalidArgument},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			flags := uint32(linux.NFTA_FIB_F_SADDR | linux.NFTA_FIB_F_IIF)
-			if test.present {
-				flags |= linux.NFTA_FIB_F_PRESENT
-			}
 			attrs := &nlmsg.Message{}
-			attrs.PutAttr(linux.NFTA_FIB_DREG, nlmsg.PutU32(linux.NFT_REG_1))
+			attrs.PutAttr(linux.NFTA_FIB_DREG, nlmsg.PutU32(test.dreg))
 			attrs.PutAttr(linux.NFTA_FIB_RESULT, nlmsg.PutU32(uint32(test.result)))
-			attrs.PutAttr(linux.NFTA_FIB_FLAGS, nlmsg.PutU32(flags))
+			attrs.PutAttr(linux.NFTA_FIB_FLAGS, nlmsg.PutU32(test.flags))
 			_, err := initFIB(nil, ExprInfo{ExprName: "fib", ExprData: attrs.Buffer()})
 			var got *syserr.Error
 			if err != nil {
 				got = err.GetError()
 			}
 			if got, want := got, test.wantErr; got != want {
-				t.Errorf("initFIB(%d, %#x) error = %v, want %v", test.result, flags, got, want)
+				t.Errorf("initFIB(%d, %d, %#x) error = %v, want %v", test.result, test.dreg, test.flags, got, want)
 			}
 		})
 	}

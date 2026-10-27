@@ -59,6 +59,8 @@ const (
 	flagDieWithParent = "die-with-parent"
 	flagArgv0         = "argv0"
 	flagPerms         = "perms"
+	flagDir           = "dir"
+	flagAsPID1        = "as-pid-1"
 )
 
 // Cli implements subcommands.Command for the "bwrap" command.
@@ -88,6 +90,8 @@ type Cli struct {
 	dieWithParent bool
 	argv0         string
 	perms         string
+	dir           string
+	asPID1        bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -130,7 +134,9 @@ func (c *Cli) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.newSession, flagNewSession, false, "Create a new terminal session")
 	f.BoolVar(&c.dieWithParent, flagDieWithParent, false, "Kills with SIGKILL child process (COMMAND) when runsc or runsc's parent dies")
 	f.StringVar(&c.argv0, flagArgv0, "", "Set argv[0] to VALUE before running the program")
-	f.StringVar(&c.perms, flagPerms, "", "Set permissions of the next argument (--tmpfs)")
+	f.StringVar(&c.perms, flagPerms, "", "Set permissions of the next argument (--tmpfs, --dir)")
+	f.StringVar(&c.dir, flagDir, "", "Create dir at DEST")
+	f.BoolVar(&c.asPID1, flagAsPID1, false, "Do not install a reaper process with PID=1")
 
 	// Override the default usage function to print the custom usage message.
 	f.Usage = func() {
@@ -222,6 +228,10 @@ func parseBwrapArgs(bwrapArgs []string) (*bwrapConfig, error) {
 			i, err = cfg.parseArgv0(bwrapArgs, i)
 		case flagPerms:
 			i, err = cfg.parsePerms(bwrapArgs, i)
+		case flagDir:
+			i, err = cfg.parseDir(bwrapArgs, i)
+		case flagAsPID1:
+			i, err = cfg.parseAsPID1(bwrapArgs, i)
 		default:
 			return nil, fmt.Errorf("bwrap: Unknown option: %s", arg)
 		}
@@ -302,6 +312,40 @@ func (c *bwrapConfig) parseTmpfs(args []string, i int) (int, error) {
 		return i, err
 	}
 	mnt.Mode = c.takePerms()
+	c.Mounts = append(c.Mounts, mnt)
+	return i + 2, nil
+}
+
+// parseDir handles --dir DEST. It is a no-op
+// when DEST exists, otherwise a mkdir in whatever filesystem holds DEST. When
+// a bind mount declared before --dir covers DEST, that filesystem is on the
+// host, so do() applies the same rules to the host path. Otherwise DEST lives
+// in a sandbox filesystem that runsc cannot reach before the sandbox starts.
+// DEST already exists there if an earlier mount sits at or below it, so --dir
+// does nothing. If not, an empty tmpfs mounted at DEST stands in for the
+// directory.
+func (c *bwrapConfig) parseDir(args []string, i int) (int, error) {
+	if i+1 >= len(args) {
+		return i, fmt.Errorf("bwrap: --%s takes 1 argument", flagDir)
+	}
+	dst := args[i+1]
+	perms := c.takePerms()
+	if bind, hostPath, ok := c.hostPath(dst); ok {
+		dir := HostDir{Dest: dst, Path: hostPath, ReadOnly: bind.ReadOnly, Perms: defaultDirPerms}
+		if perms != nil {
+			dir.Perms = *perms
+		}
+		c.HostDirs = append(c.HostDirs, dir)
+		return i + 2, nil
+	}
+	if c.hasMountAtOrBelow(dst) {
+		return i + 2, nil
+	}
+	mnt, err := c.newMount("", dst, sandbox.MountTypeTmpfs, false /* readOnly */)
+	if err != nil {
+		return i, err
+	}
+	mnt.Mode = perms
 	c.Mounts = append(c.Mounts, mnt)
 	return i + 2, nil
 }
@@ -433,6 +477,15 @@ func (c *bwrapConfig) parseNoopZeroArg(args []string, i int) (int, error) {
 	return i + 1, nil
 }
 
+// parseAsPID1 handles --as-pid-1. The /bin/sleep placeholder is PID 1 of the
+// sandbox and COMMAND runs as an exec inside it, so do() runs COMMAND in a new
+// PID namespace where it is PID 1. The Sentry always gives the sandbox its own
+// PID namespace, so this does not require --unshare-pid.
+func (c *bwrapConfig) parseAsPID1(args []string, i int) (int, error) {
+	c.AsPID1 = true
+	return i + 1, nil
+}
+
 // TODO: Support --share-net once netstack has a rootless mode.
 func (c *bwrapConfig) parseShareNet(args []string, i int) (int, error) {
 	return i + 1, fmt.Errorf("bwrap: --%s is currently not supported by runsc", flagShareNet)
@@ -499,8 +552,8 @@ func (c *bwrapConfig) parsePerms(args []string, i int) (int, error) {
 // acceptsPerms reports whether the flag consumes a pending --perms value.
 // --perms itself is included so that repeating it reports its own error.
 //
-// TODO(rexren): bubblewrap also accepts --perms before --dir, --file,
-// --bind-data and --ro-bind-data. Add them here as they are implemented.
+// TODO: b/508701483 - bubblewrap also accepts --perms before --file, --bind-data
+// and --ro-bind-data. Add them here as they are implemented.
 func acceptsPerms(flagName string) bool {
-	return flagName == flagTmpfs || flagName == flagPerms
+	return flagName == flagTmpfs || flagName == flagDir || flagName == flagPerms
 }

@@ -38,6 +38,7 @@ type SignalFileDescription struct {
 
 	// target is the original signal target task.
 	//
+	// TODO(b/171089913): Fix signalfd semantics.
 	// The semantics here are a bit broken. Linux will always use current
 	// for all reads, regardless of where the signalfd originated. We can't
 	// do exactly that because we need to plumb the context through

@@ -1142,23 +1142,23 @@ func (pk *PacketBuffer) CalculateTransportChecksum() {
 		}
 	}
 
+	// The IPv6 base header may identify an extension header. Use the matched
+	// transport protocol for the pseudoheader instead.
 	var xsum uint16
 	switch t := transHdr.(type) {
 	case header.TCP:
 		src := netHdr.SourceAddress()
 		dst := netHdr.DestinationAddress()
-		proto := netHdr.TransportProtocol()
 		totalLen := uint16(len(t) + pk.Data().Size())
-		xsum = header.PseudoHeaderChecksum(proto, src, dst, totalLen)
+		xsum = header.PseudoHeaderChecksum(header.TCPProtocolNumber, src, dst, totalLen)
 		xsum = checksum.Combine(xsum, pk.Data().Checksum())
 		t.SetChecksum(0)
 		t.SetChecksum(^t.CalculateChecksum(xsum))
 	case header.UDP:
 		src := netHdr.SourceAddress()
 		dst := netHdr.DestinationAddress()
-		proto := netHdr.TransportProtocol()
 		totalLen := uint16(len(t) + pk.Data().Size())
-		xsum = header.PseudoHeaderChecksum(proto, src, dst, totalLen)
+		xsum = header.PseudoHeaderChecksum(header.UDPProtocolNumber, src, dst, totalLen)
 		xsum = checksum.Combine(xsum, pk.Data().Checksum())
 		t.SetChecksum(0)
 		csum := ^t.CalculateChecksum(xsum)

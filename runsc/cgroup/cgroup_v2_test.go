@@ -500,7 +500,7 @@ func TestInstallPrecreatedCgroupV2SetsMemorySwap(t *testing.T) {
 	}
 }
 
-func TestParseCPUQuotaAndPeriod(t *testing.T) {
+func TestParseCPUMax(t *testing.T) {
 	cases := []struct {
 		quota     string
 		expQuota  int64
@@ -524,7 +524,7 @@ func TestParseCPUQuotaAndPeriod(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		quota, period, err := parseCPUQuotaAndPeriod(c.quota)
+		quota, period, err := ParseCPUMax(c.quota)
 		if c.expErr {
 			if err == nil {
 				t.Errorf("quota: %q, expected error, got (%d, %d), nil", c.quota, quota, period)
@@ -743,5 +743,16 @@ func TestUpdateUnified(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOwnsCPULimit(t *testing.T) {
+	cg := &cgroupV2{Mountpoint: "/sys/fs/cgroup", Path: "/parent/leaf"}
+	if OwnsCPULimit(cg) {
+		t.Errorf("OwnsCPULimit() = true for a pre-existing cgroup")
+	}
+	cg.Own = []string{"/sys/fs/cgroup/parent/leaf"}
+	if !OwnsCPULimit(cg) {
+		t.Errorf("OwnsCPULimit() = false for a cgroup created by Install")
 	}
 }

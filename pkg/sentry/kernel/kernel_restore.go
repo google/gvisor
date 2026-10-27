@@ -33,7 +33,6 @@ import (
 // Saver is an interface for saving the kernel.
 type Saver interface {
 	SaveAsync() error
-	SpecEnviron(containerName string) []string
 	FSSave() error
 }
 
@@ -349,11 +348,15 @@ type AsyncMFLoader struct {
 	privateMFsChan chan privateMFsInfo
 
 	// Error fields are published by WaitGroup completion rather than a mutex:
-	// mainMFStartWg publishes mainMetadataErr, metadataWg publishes metadataErr,
-	// and loadWg publishes loadErr. Readers wait for the corresponding group.
+	// mainMFStartWg publishes mainMetadataErr and apfl, metadataWg publishes
+	// metadataErr, and loadWg publishes loadErr. Readers wait for the
+	// corresponding group.
 	// checklocks cannot express these completion-based publication boundaries.
 	mainMFStartWg   sync.WaitGroup
 	mainMetadataErr error
+
+	// apfl is nil if async page loading failed to start.
+	apfl *pgalloc.AsyncPagesFileLoad
 
 	metadataWg  sync.WaitGroup
 	metadataErr error
@@ -374,18 +377,18 @@ type privateMFsInfo struct {
 // If timeline is provided, it will be used to track async page loading.
 // It takes ownership of the timeline, and will end it when done loading all
 // pages.
-func NewAsyncMFLoader(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) *AsyncMFLoader {
+func NewAsyncMFLoader(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline, pageLoadOpts pgalloc.AsyncPagesFileLoadOpts) *AsyncMFLoader {
 	mfl := &AsyncMFLoader{
 		privateMFsChan: make(chan privateMFsInfo, 1),
 	}
 	mfl.mainMFStartWg.Add(1)
 	mfl.metadataWg.Add(1)
 	mfl.loadWg.Add(1)
-	go mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF, timeline)
+	go mfl.backgroundGoroutine(pagesMetadata, pagesFile, mainMF, timeline, pageLoadOpts)
 	return mfl
 }
 
-func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline) {
+func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pagesFile stateio.AsyncReader, mainMF *pgalloc.MemoryFile, timeline *timing.Timeline, pageLoadOpts pgalloc.AsyncPagesFileLoadOpts) {
 	defer timeline.End()
 	defer pagesMetadata.Close()
 	cu := cleanup.Make(func() {
@@ -398,7 +401,7 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 	apfl, err := pgalloc.StartAsyncPagesFileLoad(pagesFile, func(err error) {
 		defer mfl.loadWg.Done()
 		mfl.loadErr = err
-	}, timeline) // transfers ownership of pagesFile
+	}, timeline, pageLoadOpts) // transfers ownership of pagesFile
 	if err != nil {
 		mfl.loadWg.Done()
 		mfl.mainMetadataErr = err
@@ -408,6 +411,7 @@ func (mfl *AsyncMFLoader) backgroundGoroutine(pagesMetadata io.ReadCloser, pages
 		return
 	}
 	cu.Add(apfl.MemoryFilesDone)
+	mfl.apfl = apfl
 
 	opts := pgalloc.LoadOpts{
 		PagesFile: apfl,
@@ -457,6 +461,14 @@ func (mfl *AsyncMFLoader) KickoffPrivate(ctx context.Context, mfmap map[checkpoi
 	mfl.privateMFsChan <- privateMFsInfo{
 		mfmap:          mfmap,
 		fsCheckpointed: FSCheckpointedMemoryFilesFromContext(ctx),
+	}
+}
+
+// Unthrottle allows page loading to use full I/O parallelism.
+func (mfl *AsyncMFLoader) Unthrottle() {
+	mfl.mainMFStartWg.Wait()
+	if mfl.apfl != nil {
+		mfl.apfl.Unthrottle()
 	}
 }
 

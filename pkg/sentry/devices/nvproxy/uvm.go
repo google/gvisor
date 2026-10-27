@@ -76,6 +76,7 @@ type uvmFD struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 	memmap.MappableNoTrackMappings
+	memmap.MappableNoHugepages
 
 	dev           *uvmDevice
 	containerName string
@@ -122,6 +123,10 @@ func (fd *uvmFD) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	return uvmIoctl(ctx, fd.dev.nvp, fd.hostFD, nil /* toolsFD */, args)
+}
+
+func uvmIoctl(ctx context.Context, nvp *nvproxy, hostFD int32, toolsFD *uvmToolsFD, args arch.SyscallArguments) (uintptr, error) {
 	cmd := args[1].Uint()
 	argPtr := args[2].Pointer()
 
@@ -135,13 +140,15 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	}
 
 	ui := uvmIoctlState{
-		fd:              fd,
+		nvp:             nvp,
+		hostFD:          hostFD,
+		toolsFD:         toolsFD,
 		ctx:             ctx,
 		t:               t,
 		cmd:             cmd,
 		ioctlParamsAddr: argPtr,
 	}
-	result, err := fd.dev.nvp.abi.uvmIoctl[cmd].handle(&ui)
+	result, err := nvp.abi.uvmIoctl[cmd].handle(&ui)
 	if err != nil {
 		if handleErr, ok := err.(*errHandler); ok {
 			ctx.Warningf("nvproxy: %v for uvm ioctl %d = %#x", handleErr, cmd, cmd)
@@ -154,9 +161,13 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 // IsNvidiaDeviceFD implements NvidiaDeviceFD.IsNvidiaDeviceFD.
 func (fd *uvmFD) IsNvidiaDeviceFD() {}
 
-// uvmIoctlState holds the state of a call to uvmFD.Ioctl().
+// uvmIoctlState holds the state of a call to uvmIoctl().
 type uvmIoctlState struct {
-	fd              *uvmFD
+	nvp    *nvproxy
+	hostFD int32
+	// toolsFD is the /dev/nvidia-uvm-tools FD the ioctl was issued on, or
+	// nil if it was issued on /dev/nvidia-uvm.
+	toolsFD         *uvmToolsFD
 	ctx             context.Context
 	t               *kernel.Task
 	cmd             uint32
@@ -164,7 +175,7 @@ type uvmIoctlState struct {
 }
 
 func uvmIoctlNoParams(ui *uvmIoctlState) (uintptr, error) {
-	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), 0 /* params */)
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.hostFD), uintptr(ui.cmd), 0 /* params */)
 	if errno != 0 {
 		return n, errno
 	}

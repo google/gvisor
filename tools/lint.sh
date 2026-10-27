@@ -19,9 +19,9 @@
 # CI runs with the unit tests. Deep Go analysis is owned by gVisor nogo.
 #
 # Usage:
-#   tools/lint.sh                     # run every check
-#   tools/lint.sh gofmt clang-format  # run only the named checks
-#   tools/lint.sh --fix               # rewrite files in place where a check can
+#   tools/lint.sh                        # run every check
+#   tools/lint.sh goimports clang-format  # run only the named checks
+#   tools/lint.sh --fix                  # rewrite files in place where a check can
 #
 # Environment:
 #   LINT_CACHE_DIR   where to cache downloaded linters
@@ -42,10 +42,10 @@ fi
 readonly CACHE_DIR
 
 # Every check, in run order, named as tools/lint.sh accepts it.
-declare -ra ALL_CHECKS=(gofmt clang-format cpplint buildifier spelling)
+declare -ra ALL_CHECKS=(goimports clang-format cpplint buildifier spelling)
 # Only the formatters can rewrite a file; the rest have no safe autofix.
-declare -ra FIXABLE_CHECKS=(gofmt clang-format buildifier)
-# These may need Bazel, so they run only when named.
+declare -ra FIXABLE_CHECKS=(goimports clang-format buildifier)
+# These additional checks run only when named.
 declare -ra OPTIONAL_CHECKS=(actions clang-tidy)
 declare -ra KNOWN_CHECKS=("${ALL_CHECKS[@]}" "${OPTIONAL_CHECKS[@]}")
 
@@ -53,7 +53,6 @@ declare -r CODESPELL_VERSION="2.3.0"
 declare -r CPPLINT_VERSION="1.4.0"
 declare -r CLANG_FORMAT_VERSION="23.1.1"
 declare -r CLANG_TIDY_VERSION="22.1.8"
-declare -r GOFMT_MINIMUM_GO_VERSION="1.27"
 # Keep in sync with images/default/Dockerfile.
 declare -r BUILDIFIER_VERSION="8.5.1"
 
@@ -93,7 +92,8 @@ declare FIX=0
 # leaving <output> in place only if the checksum matches.
 fetch() {
   local -r url="$1" want="$2" out="$3"
-  local -r tmp="$(mktemp "${out}.XXXXXX")"
+  local tmp
+  tmp="$(mktemp "${out}.XXXXXX")"
   if ! curl --fail --silent --show-error --location --retry 3 \
       --max-time 300 --output "${tmp}" "${url}"; then
     rm -f "${tmp}"
@@ -127,7 +127,8 @@ install_codespell() {
   if [[ ! -d "${dir}" ]]; then
     local -r wheel="${CACHE_DIR}/codespell.whl"
     fetch "${CODESPELL_URL}" "${CODESPELL_SHA256}" "${wheel}"
-    rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
+    rm -rf "${dir}.tmp"
+    mkdir -p "${dir}.tmp"
     unzip -q "${wheel}" -d "${dir}.tmp"
     mv "${dir}.tmp" "${dir}"
     rm -f "${wheel}"
@@ -140,7 +141,8 @@ install_cpplint() {
   if [[ ! -d "${dir}" ]]; then
     local -r wheel="${CACHE_DIR}/cpplint.whl"
     fetch "${CPPLINT_URL}" "${CPPLINT_SHA256}" "${wheel}"
-    rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
+    rm -rf "${dir}.tmp"
+    mkdir -p "${dir}.tmp"
     unzip -q "${wheel}" -d "${dir}.tmp"
     mv "${dir}.tmp" "${dir}"
     rm -f "${wheel}"
@@ -154,7 +156,8 @@ install_clang_format() {
     local -r wheel="${CACHE_DIR}/clang-format.whl"
     local -r dir="${CACHE_DIR}/clang-format.d"
     fetch "${CLANG_FORMAT_URL}" "${CLANG_FORMAT_SHA256}" "${wheel}"
-    rm -rf "${dir}" && mkdir -p "${dir}"
+    rm -rf "${dir}"
+    mkdir -p "${dir}"
     unzip -q "${wheel}" -d "${dir}"
     mv "${dir}/clang_format/data/bin/clang-format" "${bin}"
     chmod +x "${bin}"
@@ -169,73 +172,19 @@ install_clang_tidy() {
   if [[ ! -x "${bin}" ]]; then
     local -r wheel="${CACHE_DIR}/clang-tidy.whl"
     fetch "${CLANG_TIDY_URL}" "${CLANG_TIDY_SHA256}" "${wheel}"
-    rm -rf "${dir}.tmp" && mkdir -p "${dir}.tmp"
+    rm -rf "${dir}.tmp"
+    mkdir -p "${dir}.tmp"
     unzip -q "${wheel}" -d "${dir}.tmp"
     chmod +x "${dir}.tmp/clang_tidy/data/bin/clang-tidy"
-    rm -rf "${dir}" && mv "${dir}.tmp" "${dir}"
+    rm -rf "${dir}"
+    mv "${dir}.tmp" "${dir}"
     rm -f "${wheel}"
   fi
   echo "${bin}"
 }
 
-version_at_least() {
-  local -r have_major="${1%%.*}" want_major="${2%%.*}"
-  local -r have_rest="${1#*.}" want_rest="${2#*.}"
-  local -r have_minor="${have_rest%%.*}" want_minor="${want_rest%%.*}"
-  if (( have_major != want_major )); then
-    if (( have_major > want_major )); then
-      return 0
-    fi
-    return 1
-  fi
-  if (( have_minor >= want_minor )); then
-    return 0
-  fi
-  return 1
-}
-
-go_toolchain() {
-  local version
-  version="$(awk '$1 == "toolchain" { sub(/^go/, "", $2); print $2; exit }' \
-      "${REPO_DIR}/go.mod")"
-  if [[ -z "${version}" ]]; then
-    version="$(awk '$1 == "go" { print $2; exit }' "${REPO_DIR}/go.mod")"
-  fi
-  if [[ -z "${version}" ]]; then
-    echo "lint: no go or toolchain directive in ${REPO_DIR}/go.mod" >&2
-    return 1
-  fi
-  if ! version_at_least "${version}" "${GOFMT_MINIMUM_GO_VERSION}"; then
-    version="${GOFMT_MINIMUM_GO_VERSION}"
-  fi
-  if [[ "${version}" =~ ^[0-9]+\.[0-9]+$ ]]; then
-    version="${version}.0"
-  fi
-  echo "go${version}"
-}
-
-install_gofmt() {
-  if ! command -v go >/dev/null 2>&1; then
-    echo "lint: go not found; install Go or put go on PATH" >&2
-    return 1
-  fi
-  local toolchain
-  toolchain="$(go_toolchain)" || return 1
-  local goroot
-  if ! goroot="$(GOTOOLCHAIN="${toolchain}" go env GOROOT)"; then
-    echo "lint: failed to resolve Go toolchain ${toolchain}" >&2
-    return 1
-  fi
-  local -r bin="${goroot}/bin/gofmt"
-  if [[ ! -x "${bin}" ]]; then
-    echo "lint: no gofmt in Go toolchain ${toolchain}" >&2
-    return 1
-  fi
-  echo "${bin}"
-}
-
 # Only tracked files, to skip bazel-* symlinks and other build output.
-go_files() { git ls-files -z -- '*.go'; }
+go_files() { git ls-files -z -- '*.go' "$@"; }
 doc_files() { git ls-files -z -- '*.md' '*.html'; }
 cc_files() { git ls-files -z -- '*.c' '*.cc' '*.h'; }
 bazel_files() {
@@ -254,20 +203,24 @@ report() {
   fi
 }
 
-check_gofmt() {
-  local gofmt
-  gofmt="$(install_gofmt)" || return 1
+# Formatting-only mode does not add or remove imports: generated packages may
+# not exist until Bazel builds them.
+check_goimports() {
+  local -ra goimports=(
+    bazel run --run_in_cwd @org_golang_x_tools//cmd/goimports -- -format-only
+  )
+  # This golden output tests comment positions across merged import declarations.
+  # goimports would merge the declarations and move their comments.
+  local -r golden_outputs=':(exclude)tools/go_generics/tests/simple/output.go'
   if [[ "${FIX}" -eq 1 ]]; then
-    go_files | xargs -0 "${gofmt}" -w -l
-    return 0
+    go_files "${golden_outputs}" | xargs -0 "${goimports[@]}" -w -l
+    return
   fi
-  local unformatted
-  unformatted="$(go_files | xargs -0 "${gofmt}" -l)"
-  if [[ -n "${unformatted}" ]]; then
-    # -d shows what would change; -l alone only names the files.
-    echo "${unformatted}" | xargs -d '\n' "${gofmt}" -d
-    echo
-    echo "Run \`make lint-fix\` to reformat these files." >&2
+  local output
+  output="$(go_files "${golden_outputs}" | xargs -0 "${goimports[@]}" -d)"
+  if [[ -n "${output}" ]]; then
+    printf '%s\n' "${output}"
+    echo 'Run `make lint-fix` to reformat these files.' >&2
     return 1
   fi
 }
@@ -294,6 +247,7 @@ check_clang_format() {
     xargs -0 -P "${jobs}" -n 32 "${clang_format}" --dry-run -Werror 2>&1)" ||
     status=$?
   if [[ "${status}" -ne 0 ]]; then
+    printf '%s\n' "${warnings}" >&2
     # -Werror reports these as "error:" rather than "warning:".
     local file
     while IFS= read -r file; do
@@ -320,7 +274,7 @@ check_clang_tidy() {
       echo "lint: run tools/gen_compile_commands.py to create it" >&2
       return 1
     fi
-    python3 "${REPO_DIR}/tools/gen_compile_commands.py" >&2 || return 1
+    python3 "${REPO_DIR}/tools/gen_compile_commands.py" >&2
   fi
   local clang_tidy
   clang_tidy="$(install_clang_tidy)"
@@ -341,16 +295,16 @@ check_buildifier() {
     bazel_files | xargs -0 "${buildifier}" --mode=fix --lint=fix --warnings="${warnings}"
     return 0
   fi
-  local output
-  output="$(bazel_files | xargs -0 "${buildifier}" --mode=check --lint=warn --warnings="${warnings}" 2>&1)" || true
+  local output status=0
+  output="$(bazel_files | xargs -0 "${buildifier}" --mode=check --lint=warn --warnings="${warnings}" 2>&1)" || status=$?
   if [[ -z "${output}" ]]; then
-    return 0
+    return "${status}"
   fi
   local unformatted
   unformatted="$(printf '%s\n' "${output}" | sed -n 's/^\(.*\) # reformat$/\1/p')"
   local lint_warnings
   lint_warnings="$(printf '%s\n' "${output}" | grep -v ' # reformat$' || true)"
-  local rc=0
+  local rc="${status}"
   if [[ -n "${unformatted}" ]]; then
     local file
     while IFS= read -r file; do
@@ -383,7 +337,7 @@ check_spelling() {
   codespell_dir="$(install_codespell)"
   # Source is included, so identifiers codespell reads as prose (offsetP,
   # FillIn, ...) need entries in tools/.codespellrc.
-  { doc_files; go_files; cc_files; } |
+  { doc_files && go_files && cc_files; } |
     PYTHONPATH="${codespell_dir}" xargs -0 python3 -m codespell_lib \
       --config "${REPO_DIR}/tools/.codespellrc"
 }
@@ -413,8 +367,18 @@ contains() {
 run_check() {
   local -r name="$1" fn="$2" desc="$3"
   echo "==> ${desc}" >&2
-  local status=0
-  "${fn}" || status=$?
+  # A conditional call would disable errexit throughout the check. Capture an
+  # unconditional subshell instead, so one failed check does not stop the rest.
+  local status
+  set +e
+  (
+    set -eE
+    # Bash clears errexit in command substitutions; inherit this trap into them.
+    trap 'exit "$?"' ERR
+    "${fn}"
+  )
+  status=$?
+  set -e
   report "${name}" "${status}"
 }
 
@@ -461,7 +425,7 @@ main() {
   local check
   for check in "${checks[@]}"; do
     case "${check}" in
-      gofmt)        run_check gofmt check_gofmt "gofmt" ;;
+      goimports)    run_check goimports check_goimports "goimports" ;;
       clang-format) run_check clang-format check_clang_format "clang-format" ;;
       cpplint)      run_check cpplint check_cpplint "cpplint" ;;
       clang-tidy)   run_check clang-tidy check_clang_tidy "clang-tidy" ;;

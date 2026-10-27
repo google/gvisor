@@ -173,12 +173,16 @@ func TestCreateContainerHooksRootFS(t *testing.T) {
 					}
 				}()
 			}
+			// Wait for boot. This also ensures hooks have run.
+			if err == nil {
+				_, err = c.Sandbox.ContainerRuntimeState(c.ID)
+			}
 			if tc.wantError {
 				if err == nil {
-					t.Fatal("container creation succeeded with hooks at the process root")
+					t.Fatal("sandbox booted with hooks at the process root")
 				}
-				// Creation reports a synchronization failure when the gofer exits;
-				// check its log to distinguish rejection from unrelated failures.
+				// The sandbox fails to boot when the gofer exits.
+				// Check its log to distinguish rejection from unrelated failures.
 				out, err := os.ReadFile(filepath.Join(logDir, "gofer.log"))
 				if err != nil {
 					t.Fatal(err)
@@ -192,11 +196,133 @@ func TestCreateContainerHooksRootFS(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("creating container with hooks at a named root: %v", err)
+				t.Fatalf("booting sandbox with hooks at a named root: %v", err)
 			}
 			if out, err := os.ReadFile(marker); err != nil || string(out) != "hook\n" {
 				t.Errorf("hook marker: got %q, err %v; want %q", out, err, "hook\n")
 			}
+		})
+	}
+}
+
+// TestSandboxCreationCPULimit checks that the sandbox cgroup keeps the creation
+// CPU limit until the application starts: either when the root container
+// starts, or (in a sandbox with no root container) when its first container
+// starts.
+func TestSandboxCreationCPULimit(t *testing.T) {
+	if !cgroup.IsOnlyV2() {
+		t.Skip("cpu.max requires cgroup v2")
+	}
+	for _, tc := range []struct {
+		name            string
+		noRootContainer bool
+		failPoststart   bool
+		failFirstStart  bool
+	}{
+		{name: "root container"},
+		{name: "no root container", noRootContainer: true},
+		{name: "no root container with failed poststart hook", noRootContainer: true, failPoststart: true},
+		{name: "no root container with failed first container start", noRootContainer: true, failFirstStart: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+			config.RegisterFlags(testFlags)
+			conf, err := config.NewFromFlags(testFlags)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conf.Network = config.NetworkNone
+			conf.Overlay2.Set("none")
+			if err := conf.SandboxCreationCPUPolicy.Set("uncapped"); err != nil {
+				t.Fatal(err)
+			}
+			cgPath := "/" + testutil.RandomID("runsc-cpu-")
+			checkCPUMax := func(when, want string) {
+				t.Helper()
+				data, err := os.ReadFile(cgroupPath(cgPath, "cpu.max"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := strings.TrimSpace(string(data)); got != want {
+					t.Errorf("cpu.max %s = %q, want %q", when, got, want)
+				}
+			}
+			newContainer := func(spec *specs.Spec, args container.Args) *container.Container {
+				t.Helper()
+				// Gofers fail to bind mount the test temporary directory once
+				// it holds the null network namespace pinned in rootDir.
+				spec.Mounts = nil
+				bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(cleanup)
+				args.ID, args.Spec, args.BundleDir = testutil.RandomContainerID(), spec, bundleDir
+				c, err := container.New(conf, args)
+				if err != nil {
+					t.Fatalf("creating container: %v", err)
+				}
+				t.Cleanup(func() {
+					if err := c.Destroy(); err != nil {
+						t.Errorf("destroying container: %v", err)
+					}
+				})
+				return c
+			}
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(cleanup)
+			conf.RootDir = rootDir
+
+			sbSpec := testutil.NewSpecWithArgs("/bin/sleep", "1000")
+			if tc.noRootContainer {
+				sbSpec = &specs.Spec{
+					Version:     specs.Version,
+					Annotations: map[string]string{specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox},
+				}
+			}
+			sbSpec.Linux = &specs.Linux{
+				CgroupsPath: cgPath,
+				Resources:   &specs.LinuxResources{CPU: &specs.LinuxCPU{Quota: new(int64(25000)), Period: new(uint64(100000))}},
+			}
+			if tc.failPoststart {
+				sbSpec.Hooks = &specs.Hooks{Poststart: []specs.Hook{{Path: "/bin/false"}}}
+			}
+			sb := newContainer(sbSpec, container.Args{NoRootContainer: tc.noRootContainer})
+			checkCPUMax("after creating the sandbox", "max 100000")
+			if err := sb.Start(conf); (err != nil) != tc.failPoststart {
+				t.Fatalf("starting sandbox: got error %v, want error: %t", err, tc.failPoststart)
+			}
+			if !tc.noRootContainer {
+				checkCPUMax("after starting the root container", "25000 100000")
+				return
+			}
+			checkCPUMax("after starting the sandbox", "max 100000")
+
+			for i, wantAfterCreate := range []string{"max 100000", "25000 100000"} {
+				subSpec := testutil.NewSpecWithArgs("/bin/sleep", "1000")
+				subSpec.Annotations = map[string]string{
+					specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+					specutils.ContainerdSandboxIDAnnotation:     sb.ID,
+				}
+				failStart := i == 0 && tc.failFirstStart
+				if failStart {
+					subSpec.Process.Args = []string{"/does/not/exist"}
+				}
+				sub := newContainer(subSpec, container.Args{})
+				checkCPUMax(fmt.Sprintf("after creating container %d", i), wantAfterCreate)
+				if err := sub.Start(conf); (err != nil) != failStart {
+					t.Fatalf("starting container %d: got error %v, want error: %t", i, err, failStart)
+				}
+				checkCPUMax(fmt.Sprintf("after starting container %d", i), "25000 100000")
+			}
+
+			if err := sb.Update(conf, sbSpec.Linux.Resources); err != nil {
+				t.Fatalf("updating sandbox: %v", err)
+			}
+			checkCPUMax("after updating the sandbox", "25000 100000")
 		})
 	}
 }
@@ -346,6 +472,7 @@ func TestSandboxProcessEnv(t *testing.T) {
 	got = regexp.MustCompile("(^|\x00)TMPDIR=[^\x00]*\x00").ReplaceAll(got, []byte("$1"))
 	godebug := regexp.QuoteMeta("GODEBUG=" + sandboxposture.GoDebug(conf.Platform))
 	got = regexp.MustCompile("(^|\x00)"+godebug+"\x00").ReplaceAll(got, []byte("$1"))
+	got = regexp.MustCompile("(^|\x00)GOMAXPROCS=\\d+\x00").ReplaceAll(got, []byte("$1"))
 	if len(got) != 0 && string(got) != "GLIBC_TUNABLES=glibc.pthread.rseq=0\x00" {
 		t.Errorf("sandbox process's environment is not empty: got %s (%v)", string(got), got)
 	}

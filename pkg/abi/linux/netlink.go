@@ -195,5 +195,9 @@ type NetlinkErrorMessage struct {
 
 // RTNetlink multicast groups, from uapi/linux/rtnetlink.h.
 const (
-	RTNLGRP_LINK = 1
+	RTNLGRP_LINK        = 1
+	RTNLGRP_IPV4_IFADDR = 5
+	RTNLGRP_IPV4_ROUTE  = 7
+	RTNLGRP_IPV6_IFADDR = 9
+	RTNLGRP_IPV6_ROUTE  = 11
 )

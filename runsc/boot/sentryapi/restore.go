@@ -24,6 +24,11 @@ import (
 )
 
 const (
+	// CPUFeaturesKey is the key used to save the sandbox's CPU features in the
+	// save metadata. The value is a comma-separated list of feature names, in
+	// the same format as the output of `runsc cpu-features`.
+	CPUFeaturesKey = "cpu_features"
+
 	AnnotationCheckpointPrefix = "dev.gvisor.internal.checkpoint."
 
 	// AnnotationCheckpointPath is the path to the directory where the checkpoint files will be

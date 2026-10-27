@@ -82,7 +82,7 @@ func (i *inode) loadDefaultACL(_ goContext.Context, defaultACL *vfs.PosixACL) {
 }
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
-func (fs *filesystem) PrepareSave(ctx context.Context) error {
+func (fs *filesystem) PrepareSave(ctx context.Context, _ vfs.PrepareSaveOptions) error {
 	resourceID := fs.mf.ResourceID()
 	if !resourceID.Ok() {
 		return nil

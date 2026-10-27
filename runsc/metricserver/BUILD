@@ -33,6 +33,7 @@ go_library(
         "@com_google_cloud_go_compute_metadata//:go_default_library",
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//credentials/insecure:go_default_library",
     ],
 )
 

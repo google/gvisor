@@ -20,9 +20,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
-
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
 func epollEvent(t *kernel.Task, eventAddr hostarch.Addr) string {

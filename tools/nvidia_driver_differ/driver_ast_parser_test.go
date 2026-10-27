@@ -24,7 +24,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/tools/nvidia_driver_differ/parser"
 )

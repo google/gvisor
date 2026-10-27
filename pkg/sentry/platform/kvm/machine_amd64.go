@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
-	"runtime"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/gomaxprocs"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/hostsyscall"
 	"gvisor.dev/gvisor/pkg/log"
@@ -580,7 +580,7 @@ func (m *machine) getMaxVCPU() {
 	// overcommit with factor 2 is still acceptable. We allocate a set of
 	// vCPU for each goruntime processor (P) and two sets of vCPUs to run
 	// user code.
-	rCPUs := runtime.GOMAXPROCS(0)
+	rCPUs := gomaxprocs.Base()
 	if 3*rCPUs < m.maxVCPUs {
 		m.maxVCPUs = 3 * rCPUs
 	}

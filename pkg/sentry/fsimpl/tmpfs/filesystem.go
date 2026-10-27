@@ -301,7 +301,7 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		if parentDir.inode.nlink.Load() == maxLinks {
 			return linuxerr.EMLINK
 		}
-		childDir, err := fs.newDirectory(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+		childDir, err := fs.newDirectory(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		if err != nil {
 			return err
 		}
@@ -320,13 +320,13 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		var err error
 		switch opts.Mode.FileType() {
 		case linux.S_IFREG:
-			childInode, err = fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+			childInode, err = fs.newRegularFile(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		case linux.S_IFIFO:
-			childInode, err = fs.newNamedPipe(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+			childInode, err = fs.newNamedPipe(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		case linux.S_IFBLK, linux.S_IFCHR:
-			childInode, err = fs.newDeviceFileLocked(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
+			childInode, err = fs.newDeviceFileLocked(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, opts.DevMajor, opts.DevMinor, parentDir)
 		case linux.S_IFSOCK:
-			childInode, err = fs.newSocketFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, opts.Endpoint, parentDir)
+			childInode, err = fs.newSocketFile(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, opts.Endpoint, parentDir)
 		default:
 			return linuxerr.EINVAL
 		}
@@ -414,6 +414,11 @@ afterTrailingSymlink:
 		goto afterTrailingSymlink
 	}
 	if linuxerr.Equals(linuxerr.ENOENT, err) {
+		// tmpfs never calls VFS.InvalidateDentry(), so parentDir.dentry can
+		// only be dead if it was deleted.
+		if parentDir.dentry.vfsd.IsDead() {
+			return nil, linuxerr.ENOENT
+		}
 		// Already checked for searchability above; now check for writability.
 		if err := parentDir.inode.checkPermissions(rp.Credentials(), vfs.MayWrite); err != nil {
 			return nil, err
@@ -424,7 +429,7 @@ afterTrailingSymlink:
 		defer rp.Mount().EndWrite()
 		// Create and open the child.
 		creds := rp.Credentials()
-		childInode, err := fs.newRegularFile(creds.EffectiveKUID, creds.EffectiveKGID, opts.Mode, parentDir)
+		childInode, err := fs.newRegularFile(creds.FilesystemKUID, creds.FilesystemKGID, opts.Mode, parentDir)
 		if err != nil {
 			return nil, err
 		}
@@ -698,9 +703,9 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			return linuxerr.EMLINK
 		}
 	}
-	// tmpfs never calls VFS.InvalidateDentry(), so newParentDir.dentry can
-	// only be dead if it was deleted.
-	if newParentDir.dentry.vfsd.IsDead() {
+	// tmpfs never calls VFS.InvalidateDentry(), so oldParentDir.dentry and
+	// newParentDir.dentry can only be dead if they were deleted.
+	if oldParentDir.dentry.vfsd.IsDead() || newParentDir.dentry.vfsd.IsDead() {
 		return linuxerr.ENOENT
 	}
 
@@ -910,7 +915,7 @@ func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 			}
 		}
 		creds := rp.Credentials()
-		childInode, err := fs.newSymlink(creds.EffectiveKUID, creds.EffectiveKGID, 0777, target, parentDir)
+		childInode, err := fs.newSymlink(creds.FilesystemKUID, creds.FilesystemKGID, 0777, target, parentDir)
 		if err != nil {
 			return err
 		}

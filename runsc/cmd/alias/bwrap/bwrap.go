@@ -19,6 +19,7 @@ package bwrap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -57,9 +58,26 @@ type CapOp struct {
 	Cap  string
 }
 
+// defaultDirPerms is the mode bubblewrap gives a --dir without --perms.
+const defaultDirPerms = 0755
+
+// HostDir is a --dir that a bind mount backs, so it is created on the host
+// rather than mounted as a tmpfs.
+type HostDir struct {
+	// Dest is the sandbox path, as given on the command line.
+	Dest string
+	// Path is the host path behind Dest.
+	Path string
+	// ReadOnly reports whether the bind mount behind Dest is read-only.
+	ReadOnly bool
+	// Perms is the mode of the directory, from --perms or defaultDirPerms.
+	Perms uint32
+}
+
 // bwrapConfig represents the configuration for the bwrap sandbox.
 type bwrapConfig struct {
 	Mounts      []sandbox.Mount
+	HostDirs    []HostDir
 	CapOps      []*CapOp
 	UnshareNet  bool
 	Args        []string
@@ -72,6 +90,7 @@ type bwrapConfig struct {
 	UnshareUser bool
 	Hostname    string
 	Argv0       string
+	AsPID1      bool
 	hasArgv0    bool
 	nextPerms   *uint32
 }
@@ -190,6 +209,43 @@ func (c *bwrapConfig) mapCWD() (string, error) {
 		}
 	}
 	return "/", nil
+}
+
+// hostPath maps a sandbox path to the host path behind it. Mounts stack in
+// command-line order, so the most recent mount that covers path decides: a
+// bind mount yields its source plus the rest of path, while any other mount
+// type, or no mount at all, means the path exists only inside the sandbox.
+func (c *bwrapConfig) hostPath(path string) (bind sandbox.Mount, host string, ok bool) {
+	path = filepath.Clean(path)
+	for i := len(c.Mounts) - 1; i >= 0; i-- {
+		m := c.Mounts[i]
+		rel, err := filepath.Rel(m.Destination, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+			continue
+		}
+		if m.Type != sandbox.MountTypeBind {
+			return sandbox.Mount{}, "", false
+		}
+		return m, filepath.Join(m.Source, rel), true
+	}
+	return sandbox.Mount{}, "", false
+}
+
+// hasMountAtOrBelow reports whether the sandbox already has a directory at
+// path because of the mounts declared so far: path is the root, a mount
+// point, or a parent of one.
+func (c *bwrapConfig) hasMountAtOrBelow(path string) bool {
+	path = filepath.Clean(path)
+	if path == "/" {
+		return true
+	}
+	for _, m := range c.Mounts {
+		rel, err := filepath.Rel(path, m.Destination)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+			return true
+		}
+	}
+	return false
 }
 
 // userNamespace returns the namespace and the user options implied by
@@ -312,10 +368,98 @@ func (c *bwrapConfig) sandboxOptions() ([]sandbox.Option, error) {
 	return opts, nil
 }
 
+// makeHostDirs applies every --dir that a bind mount backs, as bubblewrap's
+// --dir would inside the sandbox: an existing directory is left as it
+// is, a missing one is created along with its parents, and a missing one
+// under a read-only bind fails with EROFS. The directories outlive the
+// sandbox, as they do with bubblewrap.
+func (c *bwrapConfig) makeHostDirs() error {
+	// Under --unshare-user the sandbox runs as SUDO_UID when runsc runs under
+	// sudo, so new directories go to that user, as writeBindData does for
+	// --bind-data files. -1 leaves the owner alone otherwise.
+	uid, gid := -1, -1
+	if c.UnshareUser {
+		uid, gid = getEnvInt("SUDO_UID", os.Getuid()), getEnvInt("SUDO_GID", os.Getgid())
+	}
+	for _, d := range c.HostDirs {
+		if err := d.make(uid, gid); err != nil {
+			return fmt.Errorf("bwrap: Can't mkdir %s: %v", d.Dest, err)
+		}
+	}
+	return nil
+}
+
+// make creates d on the host unless it already exists. Every directory it
+// creates is handed to uid:gid.
+func (d HostDir) make(uid, gid int) error {
+	if info, err := os.Stat(d.Path); err == nil {
+		if !info.IsDir() {
+			return unix.ENOTDIR
+		}
+		return nil
+	}
+	if d.ReadOnly {
+		return unix.EROFS
+	}
+	// Collect the missing parents, nearest first, then create them from the
+	// top down.
+	var parents []string
+	for p := filepath.Dir(d.Path); p != "/"; p = filepath.Dir(p) {
+		if _, err := os.Stat(p); err == nil {
+			break
+		}
+		parents = append(parents, p)
+	}
+	for i := len(parents) - 1; i >= 0; i-- {
+		if err := mkdir(parents[i], d.parentPerms(), uid, gid); err != nil {
+			return err
+		}
+	}
+	return mkdir(d.Path, d.Perms, uid, gid)
+}
+
+// parentPerms returns the mode bubblewrap gives the parents it creates for d:
+// 0755, minus the group and other bits that d itself does not grant.
+func (d HostDir) parentPerms() uint32 {
+	perms := uint32(0755)
+	if d.Perms&0070 == 0 {
+		perms &^= 0050
+	}
+	if d.Perms&0007 == 0 {
+		perms &^= 0005
+	}
+	return perms
+}
+
+// mkdir creates path with mode perms and hands it to uid:gid. bubblewrap
+// clears its umask while it sets up the sandbox, so the umask runsc inherits
+// must not narrow perms: a chmod after mkdir(2) restores any bits it masked,
+// keeping a setgid bit inherited from the parent as mkdir(2) would. A path
+// that appeared in the meantime is left as it is.
+func mkdir(path string, perms uint32, uid, gid int) error {
+	if err := unix.Mkdir(path, perms); err != nil {
+		if errors.Is(err, unix.EEXIST) {
+			return nil
+		}
+		return err
+	}
+	if err := os.Chown(path, uid, gid); err != nil {
+		return err
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return err
+	}
+	return unix.Chmod(path, perms|st.Mode&unix.S_ISGID)
+}
+
 // do runs the command in a gVisor sandbox and records its exit status.
 func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
 	opts, err := c.sandboxOptions()
 	if err != nil {
+		return util.Errorf("%v", err)
+	}
+	if err := c.makeHostDirs(); err != nil {
 		return util.Errorf("%v", err)
 	}
 	// Configure the sandbox to invoke the current runsc executable.
@@ -336,6 +480,9 @@ func do(ctx context.Context, c *bwrapConfig, waitStatus *unix.WaitStatus) subcom
 	execOpts := []sandbox.ExecOption{
 		sandbox.WithExecStdio(os.Stdin, os.Stdout, os.Stderr),
 		sandbox.WithExecSignalRelay(),
+	}
+	if c.AsPID1 {
+		execOpts = append(execOpts, sandbox.WithExecNewPIDNamespace())
 	}
 	argv := c.Args
 	if c.hasArgv0 {

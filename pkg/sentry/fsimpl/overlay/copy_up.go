@@ -51,10 +51,29 @@ func (d *dentry) canBeCopiedUp() bool {
 //
 // Preconditions: filesystem.renameMu must be locked.
 func (d *dentry) copyUpLocked(ctx context.Context) error {
-	return d.copyUpMaybeSyntheticMountpointLocked(ctx, false /* forSyntheticMountpoint */)
+	return d.copyUpMaybeSyntheticMountpointLocked(ctx, false /* forSyntheticMountpoint */, false /* skipData */, false /* mayUnlockRenameMu */)
 }
 
-func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSyntheticMountpoint bool) error {
+// copyUpForTruncateLocked is copyUpLocked for an open with O_TRUNC, which
+// truncates the upper file right after copy-up, so regular file data is not
+// copied. Compare Linux's fs/overlayfs/copy_up.c:ovl_copy_up_flags().
+//
+// Preconditions: filesystem.renameMu must be locked.
+func (d *dentry) copyUpForTruncateLocked(ctx context.Context) error {
+	return d.copyUpMaybeSyntheticMountpointLocked(ctx, false /* forSyntheticMountpoint */, true /* skipData */, false /* mayUnlockRenameMu */)
+}
+
+// copyUpForWriteLocked is copyUpLocked for a write operation. It may
+// temporarily unlock filesystem.renameMu while copying regular file data, but
+// returns with filesystem.renameMu locked for reading.
+//
+// Preconditions: filesystem.renameMu must be locked for reading, and the
+// caller must hold a reference on d.
+func (d *dentry) copyUpForWriteLocked(ctx context.Context) error {
+	return d.copyUpMaybeSyntheticMountpointLocked(ctx, false /* forSyntheticMountpoint */, false /* skipData */, true /* mayUnlockRenameMu */)
+}
+
+func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSyntheticMountpoint, skipData, mayUnlockRenameMu bool) error {
 	// Fast path.
 	if d.isCopiedUp() {
 		return nil
@@ -74,12 +93,19 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		// d is a filesystem root with no upper layer.
 		return linuxerr.EROFS
 	}
-	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, forSyntheticMountpoint); err != nil {
+	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, forSyntheticMountpoint, false /* skipData */, false /* mayUnlockRenameMu */); err != nil {
 		return err
 	}
 
 	d.copyMu.Lock()
-	defer d.copyMu.Unlock()
+	// Can free renameMu when copying data, but must reclaim it to exit cleanly.
+	renameMuUnlocked := false
+	defer func() {
+		d.copyMu.Unlock()
+		if renameMuUnlocked {
+			d.fs.renameMu.RLock()
+		}
+	}()
 	if d.upperVD.Ok() {
 		// Raced with another call to d.copyUpLocked().
 		return nil
@@ -145,9 +171,16 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 			return err
 		}
 		defer newFD.DecRef(ctx)
-		if _, err := vfs.CopyRegularFileData(ctx, newFD, oldFD); err != nil {
-			cleanupUndoCopyUp()
-			return err
+		if !skipData {
+			// While copying data, free renameMu.
+			if mayUnlockRenameMu {
+				d.fs.renameMu.RUnlock()
+				renameMuUnlocked = true
+			}
+			if _, err := vfs.CopyRegularFileData(ctx, newFD, oldFD); err != nil {
+				cleanupUndoCopyUp()
+				return err
+			}
 		}
 		if d.wrappedMappable != nil {
 			// We may have memory mappings of the file on the lower layer.
@@ -405,7 +438,9 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 		lowerMappable := d.wrappedMappable
 		d.wrappedMappable = upperMappable
 		d.dataMu.Unlock()
-		d.lowerMappings.InvalidateAll(memmap.InvalidateOpts{})
+		// Without data, the upper file is already empty, so the open's
+		// truncation won't invalidate private copies of lower pages.
+		d.lowerMappings.InvalidateAll(memmap.InvalidateOpts{InvalidatePrivate: skipData})
 
 		// Remove mappings from the old Mappable.
 		for seg := d.lowerMappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {

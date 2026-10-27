@@ -104,16 +104,17 @@ func (is *idMapSlice) Set(s string) error {
 		if len(fs) != 3 {
 			return fmt.Errorf("invalid mapping: %s", idMap)
 		}
-		var cid, hid, size int
-		var err error
-		if cid, err = strconv.Atoi(fs[0]); err != nil {
-			return fmt.Errorf("invalid mapping: %s", idMap)
+		cid, err := strconv.ParseUint(fs[0], 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid container ID in mapping %q: %w", idMap, err)
 		}
-		if hid, err = strconv.Atoi(fs[1]); err != nil {
-			return fmt.Errorf("invalid mapping: %s", idMap)
+		hid, err := strconv.ParseUint(fs[1], 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid host ID in mapping %q: %w", idMap, err)
 		}
-		if size, err = strconv.Atoi(fs[2]); err != nil {
-			return fmt.Errorf("invalid mapping: %s", idMap)
+		size, err := strconv.ParseUint(fs[2], 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid size in mapping %q: %w", idMap, err)
 		}
 		m := specs.LinuxIDMapping{
 			ContainerID: uint32(cid),

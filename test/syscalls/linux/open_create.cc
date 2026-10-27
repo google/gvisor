@@ -21,10 +21,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/strings/string_view.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/temp_path.h"
@@ -232,6 +234,31 @@ TEST(CreateTest, CreateWithWriteFlagNotAllowedByMode) {
   c = 0;
   EXPECT_THAT(read(rfd.get(), &c, 1), SyscallSucceedsWithValue(1));
   EXPECT_EQ(c, 'x');
+}
+
+// Creates a directory in parent, removes it while holding an FD to it, and
+// checks that creating a file in the deleted directory fails with ENOENT.
+void CreateInDeletedDirFails(absl::string_view parent) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent));
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+  ASSERT_THAT(rmdir(dir.path().c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(openat(dirfd.get(), "foo", O_RDWR | O_CREAT | O_EXCL, 0644),
+              SyscallFailsWithErrno(ENOENT));
+}
+
+TEST(CreateTest, CreateInDeletedDirFails) {
+  CreateInDeletedDirFails(GetAbsoluteTestTmpdir());
+}
+
+TEST(CreateTest, CreateInDeletedTmpfsDirFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", mountpoint.path(), "tmpfs", 0, "", 0));
+  CreateInDeletedDirFails(mountpoint.path());
 }
 
 }  // namespace

@@ -43,7 +43,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/sentryapi"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
-	"gvisor.dev/gvisor/runsc/fsgofer"
+	fsgofer "gvisor.dev/gvisor/runsc/gofer/fs"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -253,6 +253,23 @@ func TestStartSignal(t *testing.T) {
 		// OK.
 	case <-time.After(50 * time.Millisecond):
 		t.Errorf("WaitForStartSignal did not complete but it should have")
+	}
+}
+
+// TestRestoreFailBeforeStart checks that a restore that fails before it starts
+// restoring reports the failure.
+func TestRestoreFailBeforeStart(t *testing.T) {
+	l, cleanup, err := createLoader(testConfig(), testSpec())
+	if err != nil {
+		t.Fatalf("error creating loader: %v", err)
+	}
+	defer l.Destroy()
+	defer cleanup()
+	if err := l.ctrl.manager.Restore(&sentryapi.RestoreOpts{}, nil); err == nil {
+		t.Fatalf("restoring without files succeeded")
+	}
+	if err := l.waitRestore(); err == nil {
+		t.Errorf("waiting for the failed restore succeeded")
 	}
 }
 

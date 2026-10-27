@@ -16,7 +16,6 @@ package metricserver
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -109,18 +108,16 @@ func TestShutdownWithActivePIDRequest(t *testing.T) {
 	}
 }
 
-// TestRefreshSandboxesRetriesLockedState checks that temporary state-file
-// contention does not discard a sandbox or cache a permanent rejection.
-func TestRefreshSandboxesRetriesLockedState(t *testing.T) {
+// TestRefreshSandboxesReadsLockedState checks that sandbox state files can
+// be refreshed by the metric server even while they are being locked for
+// writing.
+func TestRefreshSandboxesReadsLockedState(t *testing.T) {
 	for _, test := range []struct {
 		name       string
-		locked     string
 		registered bool
 	}{
-		{name: "new_root", locked: "root"},
-		{name: "new_child", locked: "child"},
-		{name: "registered_root", locked: "root", registered: true},
-		{name: "registered_child", locked: "child", registered: true},
+		{name: "new"},
+		{name: "registered", registered: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			rootID := container.FullID{SandboxID: "root", ContainerID: "root"}
@@ -138,8 +135,7 @@ func TestRefreshSandboxesRetriesLockedState(t *testing.T) {
 				}
 			})
 
-			var unlockContended func()
-			writeState := func(id, containerType string) *container.StateFile {
+			writeState := func(id, containerType string) {
 				t.Helper()
 				cont := &container.Container{
 					ID:     id,
@@ -165,33 +161,13 @@ func TestRefreshSandboxesRetriesLockedState(t *testing.T) {
 				if err := state.LockForNew(); err != nil {
 					t.Fatalf("LockForNew(%s): %v", id, err)
 				}
-				unlock := sync.OnceFunc(state.UnlockOrDie)
-				t.Cleanup(unlock)
+				t.Cleanup(state.UnlockOrDie)
 				if err := state.SaveLocked(cont); err != nil {
 					t.Fatalf("SaveLocked(%s): %v", id, err)
 				}
-				if id == test.locked {
-					unlockContended = unlock
-				} else {
-					unlock()
-				}
-				return state
 			}
-			rootState := writeState("root", specutils.ContainerdContainerTypeSandbox)
-			_ = writeState("child", specutils.ContainerdContainerTypeContainer)
-			rootStat, err := rootState.Stat()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			lockedID := container.FullID{SandboxID: rootID.SandboxID, ContainerID: test.locked}
-			if _, loadErr := container.Load(m.rootDir, lockedID, container.LoadOpts{
-				Exact:     true,
-				SkipCheck: true,
-				TryLock:   container.TryAcquire,
-			}); !errors.Is(loadErr, container.ErrStateFileLocked) {
-				t.Errorf("Load(%s) error = %v, want ErrStateFileLocked", test.locked, loadErr)
-			}
+			writeState("root", specutils.ContainerdContainerTypeSandbox)
+			writeState("child", specutils.ContainerdContainerTypeContainer)
 
 			var pending *servedSandbox
 			m.mu.Lock()
@@ -200,59 +176,23 @@ func TestRefreshSandboxesRetriesLockedState(t *testing.T) {
 				m.sandboxes[rootID] = pending
 				m.numSandboxes = 1
 			}
+			m.refreshSandboxesLocked()
+			served := m.sandboxes[rootID]
+			_, rejected := m.lastStateFileStat[rootID]
+			count := m.numSandboxes
 			m.mu.Unlock()
-			refresh := func() (*servedSandbox, bool, int64) {
-				m.mu.Lock()
-				defer m.mu.Unlock()
-				m.refreshSandboxesLocked()
-				_, rejected := m.lastStateFileStat[rootID]
-				return m.sandboxes[rootID], rejected, m.numSandboxes
-			}
 
-			// Hold the real lock across repeated scans. Child contention occurs
-			// after the root load succeeds and must not become a cached rejection.
-			wantPending := test.registered || test.locked == "child"
-			for range 2 {
-				served, rejected, count := refresh()
-				if rejected {
-					t.Fatal("temporary contention cached a permanent rejection")
-				}
-				if (served != nil) != wantPending {
-					t.Fatalf("sandbox retained = %t, want %t", served != nil, wantPending)
-				}
-				var wantCount int64
-				if wantPending {
-					wantCount = 1
-					if pending != nil && served != pending {
-						t.Fatal("temporary contention replaced the registered sandbox")
-					}
-					pending = served
-				}
-				if count != wantCount {
-					t.Fatalf("numSandboxes = %d, want %d", count, wantCount)
-				}
-			}
-
-			unlockContended()
-			afterUnlock, err := rootState.Stat()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !sufficientlyEqualStats(rootStat, afterUnlock) {
-				t.Fatal("root state changed while testing a retry of the same state")
-			}
-			served, rejected, count := refresh()
 			if served == nil || rejected {
-				t.Fatalf("after unlock: sandbox = %v, rejected = %t", served, rejected)
+				t.Fatalf("sandbox = %v, rejected = %t, expected it served", served, rejected)
 			}
 			if pending != nil && served != pending {
-				t.Fatal("retry replaced the registered sandbox")
+				t.Error("refresh replaced the registered sandbox")
 			}
 			if count != 1 {
-				t.Fatalf("after unlock: numSandboxes = %d, want 1", count)
+				t.Errorf("numSandboxes = %d, expected 1", count)
 			}
 			if sand, verifier, err := served.load(); err != nil || sand == nil || verifier == nil {
-				t.Fatalf("load after unlock = (%v, %v, %v), want sandbox and verifier", sand, verifier, err)
+				t.Errorf("load = (%v, %v, %v), expected sandbox and verifier", sand, verifier, err)
 			}
 		})
 	}

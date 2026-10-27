@@ -21,12 +21,12 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/moby/sys/capability"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -230,6 +230,17 @@ func HasCapabilities(cs ...capability.Cap) bool {
 		}
 	}
 	return true
+}
+
+// SetgroupsAllowed returns true if the user is allowed to set supplementary
+// groups.
+func SetgroupsAllowed() bool {
+	policy, err := os.ReadFile("/proc/self/setgroups")
+	if err != nil {
+		log.Warningf("Failed to read the user namespace setgroups policy; err: %v", err)
+		return false
+	}
+	return strings.TrimSpace(string(policy)) == "allow"
 }
 
 // MaybeRunAsRoot ensures the process runs with capabilities needed to create a

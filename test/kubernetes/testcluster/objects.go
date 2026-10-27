@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	cspb "google.golang.org/genproto/googleapis/container/v1"
+	cspb "cloud.google.com/go/container/apiv1/containerpb"
 	"google.golang.org/protobuf/proto"
 	v13 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"

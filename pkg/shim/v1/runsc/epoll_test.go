@@ -20,6 +20,7 @@ package runsc
 import (
 	"context"
 	"testing"
+	"time"
 
 	cgroups "github.com/containerd/cgroups/v3/cgroup1"
 	"golang.org/x/sys/unix"
@@ -35,68 +36,92 @@ type fakeCgroup struct {
 func (f *fakeCgroup) State() cgroups.State { return f.state }
 
 // newTestEpoller returns an epoller with one live container registered on an
-// eventfd, along with that fd. The epoll fd is invalid: these tests never wait
-// on it.
-func newTestEpoller(t *testing.T, state cgroups.State) (*epoller, uintptr) {
+// eventfd, along with its publisher and that fd. The epoll fd is invalid: these
+// tests never wait on it.
+func newTestEpoller(t *testing.T, state cgroups.State) (*epoller, *errorPublisher, uintptr) {
 	t.Helper()
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
 		t.Skipf("eventfd unavailable: %v", err)
 	}
 	fd := uintptr(efd)
+	pub := &errorPublisher{}
 	e := &epoller{
 		fd:        -1,
-		publisher: &errorPublisher{},
+		publisher: pub,
 		set: map[uintptr]*item{
 			fd: {id: "test", cg: &fakeCgroup{state: state}},
 		},
 	}
-	return e, fd
+	return e, pub, fd
 }
 
 // TestEpollerProcessDoesNotPanicOnPublishError verifies that an OOM publish
-// failure is logged rather than fatal when no event sink is configured,
-// matching runscService.forward. Under CRI-O the first OOM used to kill the
-// shim.
+// failure is logged rather than fatal, whether or not an event sink is
+// configured, matching runscService.forward. A panic would take down every
+// container the shim serves.
 func TestEpollerProcessDoesNotPanicOnPublishError(t *testing.T) {
-	t.Setenv("TTRPC_ADDRESS", "")
+	for _, tc := range []struct {
+		name         string
+		ttrpcAddress string
+	}{
+		{name: "no-event-sink", ttrpcAddress: ""},
+		{name: "containerd", ttrpcAddress: "/run/containerd/containerd.sock.ttrpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TTRPC_ADDRESS", tc.ttrpcAddress)
 
-	e, fd := newTestEpoller(t, cgroups.Thawed)
-	t.Cleanup(func() { unix.Close(int(fd)) })
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("process() panicked without an event sink: %v", r)
-		}
-	}()
-	e.process(context.Background(), fd)
-}
-
-// TestEpollerProcessPanicsOnPublishErrorUnderContainerd verifies that a publish
-// failure remains fatal when an event sink is configured.
-func TestEpollerProcessPanicsOnPublishErrorUnderContainerd(t *testing.T) {
-	t.Setenv("TTRPC_ADDRESS", "/run/containerd/containerd.sock.ttrpc")
-
-	e, fd := newTestEpoller(t, cgroups.Thawed)
-	t.Cleanup(func() { unix.Close(int(fd)) })
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("process() did not panic on publish error under containerd")
-		}
-	}()
-	e.process(context.Background(), fd)
+			e, pub, fd := newTestEpoller(t, cgroups.Thawed)
+			t.Cleanup(func() { unix.Close(int(fd)) })
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("process() panicked on publish error: %v", r)
+				}
+			}()
+			e.process(context.Background(), fd)
+			if got := len(pub.ctxs); got != 1 {
+				t.Errorf("process() published %d events, want 1", got)
+			}
+		})
+	}
 }
 
 // TestEpollerProcessDeletedCgroup verifies that a deleted cgroup is
 // unregistered without publishing.
 func TestEpollerProcessDeletedCgroup(t *testing.T) {
-	t.Setenv("TTRPC_ADDRESS", "/run/containerd/containerd.sock.ttrpc")
-
 	// No cleanup: process() closes the fd itself on this path.
-	e, fd := newTestEpoller(t, cgroups.Deleted)
+	e, pub, fd := newTestEpoller(t, cgroups.Deleted)
 	e.process(context.Background(), fd)
+	if got := len(pub.ctxs); got != 0 {
+		t.Errorf("process() published %d events for a deleted cgroup, want 0", got)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if _, ok := e.set[fd]; ok {
 		t.Error("deleted cgroup was not removed from the epoller set")
+	}
+}
+
+// TestEpollerRunStopsOnEpollWaitError verifies that a permanent epoll_wait
+// error stops OOM monitoring instead of panicking the shim.
+func TestEpollerRunStopsOnEpollWaitError(t *testing.T) {
+	// An invalid epoll fd makes epoll_wait fail with EBADF.
+	e := &epoller{
+		fd:        -1,
+		publisher: &errorPublisher{},
+		set:       make(map[uintptr]*item),
+	}
+	done := make(chan any, 1)
+	go func() {
+		defer func() { done <- recover() }()
+		e.run(context.Background())
+	}()
+	select {
+	case r := <-done:
+		if r != nil {
+			t.Fatalf("run() panicked on epoll_wait error: %v", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() did not return on a permanent epoll_wait error")
 	}
 }

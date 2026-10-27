@@ -87,7 +87,7 @@ After any change, regenerate.
 ## Regenerate
 
 ```bash
-bazel run //:governance-regen
+make governance-regen
 ```
 
 This regenerates both files in place.
@@ -95,7 +95,7 @@ This regenerates both files in place.
 Then:
 
 ```bash
-bazel test //:governance-check
+make governance-check
 ```
 
 This fails if the source data changed and you forgot to regenerate, or if

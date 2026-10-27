@@ -16,7 +16,6 @@ package checklocks
 
 import (
 	"fmt"
-
 	"go/token"
 	"slices"
 	"strings"
